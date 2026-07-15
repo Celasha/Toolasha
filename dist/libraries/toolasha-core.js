@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.71.1
+ * Version: 2.72.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2460,6 +2460,48 @@
                     default: true,
                     help: "Displays which guild members have not yet signed up for the current week's skilling and combat trials.",
                 },
+                guildMembersShowGameMode: {
+                    id: 'guildMembersShowGameMode',
+                    label: 'Guild Members: Show Game Mode column',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'Shows the MC/IC/LC game mode column. Disable if all members play the same mode.',
+                },
+                guildMembersShowJoined: {
+                    id: 'guildMembersShowJoined',
+                    label: 'Guild Members: Show Joined column',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Shows the date each member joined the guild (Status tab).',
+                },
+                guildMembersShowLastXPH: {
+                    id: 'guildMembersShowLastXPH',
+                    label: 'Guild Members: Show Last XP/h column',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Shows recent XP/hr tracked by Toolasha (Contributions tab).',
+                },
+                guildMembersShowLastDayXPH: {
+                    id: 'guildMembersShowLastDayXPH',
+                    label: 'Guild Members: Show Last day XP/h column',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Shows 24-hour average XP/hr tracked by Toolasha (Contributions tab).',
+                },
+                guildMembersShowLastActive: {
+                    id: 'guildMembersShowLastActive',
+                    label: 'Guild Members: Show Last Active column',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Shows online status or time since last activity (Contributions tab).',
+                },
+                guildCreditValue: {
+                    id: 'guildCreditValue',
+                    label: 'Guild Shop: Show gold cost per credit table',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Injects a cost-efficiency table into each guild credit exchange modal, sorted cheapest first using your profit pricing mode.',
+                },
             },
         },
 
@@ -2736,17 +2778,20 @@
         constructor() {
             this.storageKey = 'script_settingsMap'; // Legacy global key (used as template)
             this.storageArea = 'settings';
-            this.currentCharacterId = null; // Current character ID (set after login)
-            this.knownCharactersKey = 'known_character_ids'; // List of character IDs
+            this.currentCharacterId = null;
+            this.currentCharacterName = null;
+            this.knownCharactersKey = 'known_character_ids';
         }
 
         /**
-         * Set the current character ID
-         * Must be called after character_initialized event
-         * @param {string} characterId - Character ID
+         * Set the current character ID and name.
+         * Must be called after character_initialized event.
+         * @param {string} characterId
+         * @param {string} [characterName]
          */
-        setCharacterId(characterId) {
+        setCharacterId(characterId, characterName) {
             this.currentCharacterId = characterId;
+            if (characterName) this.currentCharacterName = characterName;
         }
 
         /**
@@ -2781,7 +2826,7 @@
                 }
 
                 // Add character to known characters list
-                await this.addToKnownCharacters(this.currentCharacterId);
+                await this.addToKnownCharacters(this.currentCharacterId, this.currentCharacterName);
             }
 
             const settings = {};
@@ -2894,43 +2939,68 @@
         }
 
         /**
-         * Add character to known characters list
-         * @param {string} characterId - Character ID
+         * Add character to known characters list, storing name alongside ID.
+         * Migrates old flat-array format ([id, id]) to object format ([{id, name}]).
+         * @param {string} characterId
+         * @param {string} characterName
          * @returns {Promise<void>}
          */
-        async addToKnownCharacters(characterId) {
-            const knownCharacters = await storage.getJSON(this.knownCharactersKey, this.storageArea, []);
-            if (!knownCharacters.includes(characterId)) {
-                knownCharacters.push(characterId);
-                await storage.setJSON(this.knownCharactersKey, knownCharacters, this.storageArea, true);
+        async addToKnownCharacters(characterId, characterName) {
+            const raw = await storage.getJSON(this.knownCharactersKey, this.storageArea, []);
+            const list = this._normalizeKnownCharacters(raw);
+            const existing = list.find((c) => c.id === characterId);
+            if (existing) {
+                if (characterName && existing.name !== characterName) {
+                    existing.name = characterName;
+                    await storage.setJSON(this.knownCharactersKey, list, this.storageArea, true);
+                }
+            } else {
+                list.push({ id: characterId, name: characterName || characterId });
+                await storage.setJSON(this.knownCharactersKey, list, this.storageArea, true);
             }
         }
 
         /**
-         * Get list of known character IDs
-         * @returns {Promise<Array<string>>} Character IDs
+         * Normalise stored known-characters to [{id, name}] regardless of legacy format.
+         * @param {Array} raw
+         * @returns {Array<{id: string, name: string}>}
+         * @private
          */
-        async getKnownCharacters() {
-            return await storage.getJSON(this.knownCharactersKey, this.storageArea, []);
+        _normalizeKnownCharacters(raw) {
+            if (!Array.isArray(raw)) return [];
+            return raw.map((entry) =>
+                typeof entry === 'object' && entry !== null
+                    ? { id: String(entry.id), name: entry.name || String(entry.id) }
+                    : { id: String(entry), name: String(entry) }
+            );
         }
 
         /**
-         * Sync current settings to all other characters
+         * Get list of known characters as [{id, name}] objects.
+         * @returns {Promise<Array<{id: string, name: string}>>}
+         */
+        async getKnownCharacters() {
+            const raw = await storage.getJSON(this.knownCharactersKey, this.storageArea, []);
+            return this._normalizeKnownCharacters(raw);
+        }
+
+        /**
+         * Sync current settings to a specified subset of characters.
          * @param {Object} settings - Current settings to copy
+         * @param {string[]} targetIds - IDs to sync to (omit to sync to all others)
          * @returns {Promise<number>} Number of characters synced
          */
-        async syncSettingsToAllCharacters(settings) {
+        async syncSettingsToAllCharacters(settings, targetIds) {
             const knownCharacters = await this.getKnownCharacters();
             let syncedCount = 0;
 
-            for (const characterId of knownCharacters) {
-                // Skip current character (already has these settings)
-                if (characterId === this.currentCharacterId) {
-                    continue;
-                }
+            const targets = targetIds
+                ? knownCharacters.filter((c) => targetIds.includes(c.id))
+                : knownCharacters.filter((c) => c.id !== this.currentCharacterId);
 
-                // Write settings to this character's key
-                const characterKey = `${this.storageKey}_${characterId}`;
+            for (const character of targets) {
+                if (character.id === this.currentCharacterId) continue;
+                const characterKey = `${this.storageKey}_${character.id}`;
                 await storage.setJSON(characterKey, settings, this.storageArea, true);
                 syncedCount++;
             }
@@ -5481,7 +5551,7 @@
                 return;
             }
 
-            settingsStorage.setCharacterId(characterId);
+            settingsStorage.setCharacterId(characterId, dataManager.getCurrentCharacterName());
 
             const previousMap = this.settingsMap;
 
@@ -5692,35 +5762,31 @@
          * Sync current settings to all other characters
          * @returns {Promise<{success: boolean, count: number, error?: string}>} Result object
          */
-        async syncSettingsToAllCharacters() {
+        async syncSettingsToAllCharacters(targetIds) {
             try {
-                // Ensure character ID is set
                 const characterId = dataManager.getCurrentCharacterId();
                 if (!characterId) {
-                    return {
-                        success: false,
-                        count: 0,
-                        error: 'No character ID available',
-                    };
+                    return { success: false, count: 0, error: 'No character ID available' };
                 }
-
-                // Set character ID in settings storage
-                settingsStorage.setCharacterId(characterId);
-
-                // Sync settings to all other characters
-                const syncedCount = await settingsStorage.syncSettingsToAllCharacters(this.settingsMap);
-
-                return {
-                    success: true,
-                    count: syncedCount,
-                };
+                settingsStorage.setCharacterId(characterId, dataManager.getCurrentCharacterName());
+                const syncedCount = await settingsStorage.syncSettingsToAllCharacters(this.settingsMap, targetIds);
+                return { success: true, count: syncedCount };
             } catch (error) {
                 console.error('[Config] Failed to sync settings:', error);
-                return {
-                    success: false,
-                    count: 0,
-                    error: error.message,
-                };
+                return { success: false, count: 0, error: error.message };
+            }
+        }
+
+        /**
+         * Get list of known characters as [{id, name}] objects.
+         * @returns {Promise<Array<{id: string, name: string}>>}
+         */
+        async getKnownCharacters() {
+            try {
+                return await settingsStorage.getKnownCharacters();
+            } catch (error) {
+                console.error('[Config] Failed to get known characters:', error);
+                return [];
             }
         }
 

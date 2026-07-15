@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.71.1
+ * Version: 2.72.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -20484,32 +20484,79 @@ ${starCSS}
          * Handle sync settings to all characters
          */
         async handleSync() {
-            // Get character count to show in confirmation
-            const characterCount = await this.config.getKnownCharacterCount();
+            const knownCharacters = await this.config.getKnownCharacters();
+            const currentId = String(dataManager.getCurrentCharacterId() || '');
+            const others = knownCharacters.filter((c) => c.id !== currentId);
 
-            // If only 1 character (current), no need to sync
-            if (characterCount <= 1) {
+            if (others.length === 0) {
                 alert('You only have one character. Settings are already saved for this character.');
                 return;
             }
 
-            // Confirm action
-            const otherCharacters = characterCount - 1;
-            const message = `This will copy your current settings to ${otherCharacters} other character${otherCharacters > 1 ? 's' : ''}. Their existing settings will be overwritten.\n\nContinue?`;
+            // Build a small modal with checkboxes for each character
+            const overlay = document.createElement('div');
+            overlay.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:99999;display:flex;align-items:center;justify-content:center;`;
 
-            if (!confirm(message)) {
-                return;
-            }
+            const dialog = document.createElement('div');
+            dialog.style.cssText = `background:#1a1a2e;border:1px solid rgba(74,158,255,0.5);border-radius:10px;padding:20px;min-width:280px;font-family:'Segoe UI',sans-serif;color:#e0e0e0;`;
 
-            // Perform sync
-            const result = await this.config.syncSettingsToAllCharacters();
+            const title = document.createElement('div');
+            title.style.cssText = `font-size:14px;font-weight:700;color:#4a9eff;margin-bottom:12px;`;
+            title.textContent = 'Copy Settings To';
+            dialog.appendChild(title);
 
-            // Show result
-            if (result.success) {
-                alert(`Settings successfully copied to ${result.count} character${result.count > 1 ? 's' : ''}!`);
-            } else {
-                alert(`Failed to sync settings: ${result.error || 'Unknown error'}`);
-            }
+            const checkboxes = others.map((char) => {
+                const row = document.createElement('label');
+                row.style.cssText = `display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;`;
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.checked = true;
+                cb.value = char.id;
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = char.name !== char.id ? char.name : `Character ${char.id}`;
+                row.appendChild(cb);
+                row.appendChild(nameSpan);
+                dialog.appendChild(row);
+                return cb;
+            });
+
+            const btnRow = document.createElement('div');
+            btnRow.style.cssText = `display:flex;gap:8px;margin-top:16px;justify-content:flex-end;`;
+
+            const cancelBtn = document.createElement('button');
+            cancelBtn.textContent = 'Cancel';
+            cancelBtn.style.cssText = `padding:6px 14px;border:1px solid #555;background:transparent;color:#aaa;border-radius:4px;cursor:pointer;`;
+
+            const copyBtn = document.createElement('button');
+            copyBtn.textContent = 'Copy Settings';
+            copyBtn.style.cssText = `padding:6px 14px;background:#4a9eff;border:none;color:#fff;border-radius:4px;cursor:pointer;font-weight:600;`;
+
+            btnRow.appendChild(cancelBtn);
+            btnRow.appendChild(copyBtn);
+            dialog.appendChild(btnRow);
+            overlay.appendChild(dialog);
+            document.body.appendChild(overlay);
+
+            const close = () => overlay.remove();
+            cancelBtn.addEventListener('click', close);
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) close();
+            });
+
+            copyBtn.addEventListener('click', async () => {
+                const selected = checkboxes.filter((cb) => cb.checked).map((cb) => cb.value);
+                if (selected.length === 0) {
+                    close();
+                    return;
+                }
+                close();
+                const result = await this.config.syncSettingsToAllCharacters(selected);
+                if (result.success) {
+                    alert(`Settings copied to ${result.count} character${result.count !== 1 ? 's' : ''}!`);
+                } else {
+                    alert(`Failed to copy settings: ${result.error || 'Unknown error'}`);
+                }
+            });
         }
 
         /**
@@ -32242,6 +32289,7 @@ ${starCSS}
             this.ownGuildName = null;
             this.ownGuildID = null;
             this.guildCreatedAt = null;
+            this.guildType = null;
             this.currentWeekStartAt = null;
             this.guildXPHistory = {}; // guildName → [{t, xp}]
             this.memberXPHistory = {}; // characterID → [{t, xp}]
@@ -32300,6 +32348,7 @@ ${starCSS}
             const guildXP = guild.experience;
             this.ownGuildName = guildName;
             this.guildCreatedAt = guild.createdAt;
+            this.guildType = guild.guildType || null;
             this.currentWeekStartAt = guild.currentWeekStartAt || null;
 
             // Extract guild ID and member metadata
@@ -32370,6 +32419,7 @@ ${starCSS}
             const name = guild.name;
             this.ownGuildName = name;
             this.guildCreatedAt = guild.createdAt;
+            this.guildType = guild.guildType || this.guildType;
             this.currentWeekStartAt = guild.currentWeekStartAt || this.currentWeekStartAt;
 
             if (!this.guildXPHistory[name]) {
@@ -32550,6 +32600,14 @@ ${starCSS}
          */
         getCurrentWeekStartAt() {
             return this.currentWeekStartAt;
+        }
+
+        /**
+         * Get the guild type ('standard', 'ironcow', etc.)
+         * @returns {string|null}
+         */
+        getGuildType() {
+            return this.guildType;
         }
 
         /**
@@ -33269,97 +33327,117 @@ ${starCSS}
             if (!theadTr) return;
 
             // Find Activity column index — its presence indicates the Status tab.
-            // Only inject on the Contributions tab (no game Activity column).
             const activityIndex = Array.from(theadTr.children).findIndex((el) => el.textContent.trim() === 'Activity');
-            if (activityIndex >= 0) return;
-
+            const isStatusTab = activityIndex >= 0;
             const insertAfter = theadTr.children.length - 1;
 
             const gameModes = { standard: 'MC', ironcow: 'IC', legacy_ironcow: 'LC' };
+            const showGameMode = config.getSetting('guildMembersShowGameMode', false);
+            const showJoined = config.getSetting('guildMembersShowJoined', true);
+            const showLastXPH = config.getSetting('guildMembersShowLastXPH', true);
+            const showLastDayXPH = config.getSetting('guildMembersShowLastDayXPH', true);
+            const showLastActive = config.getSetting('guildMembersShowLastActive', true);
+
+            // Joined column — Status tab only
+            if (isStatusTab) {
+                if (showJoined) {
+                    addColumn(tableEl, {
+                        name: 'Joined',
+                        insertAfter,
+                        data: allStats.map((s) => s.joinTime),
+                        format: (v) =>
+                            v
+                                ? `<span style="white-space: nowrap;">${formatters_js.formatDateTime(new Date(v), { includeTime: false, includeYear: true })}</span>`
+                                : '',
+                        makeSortable: true,
+                        sortId: 'joinTime',
+                        sortData: allStats.map((s) => (s.joinTime ? +new Date(s.joinTime) : 0)),
+                    });
+                }
+                return;
+            }
+
+            // Contributions tab columns
+            let colOffset = 0;
 
             // Game Mode column
-            addColumn(tableEl, {
-                name: 'Game Mode',
-                insertAfter,
-                data: allStats.map((s) => s.gameMode),
-                format: (v) => gameModes[v] || v || '',
-                makeSortable: true,
-                sortId: 'gameMode',
-                sortData: allStats.map((s) => s.gameMode || ''),
-            });
+            if (showGameMode) {
+                addColumn(tableEl, {
+                    name: 'Game Mode',
+                    insertAfter,
+                    data: allStats.map((s) => s.gameMode),
+                    format: (v) => gameModes[v] || v || '',
+                    makeSortable: true,
+                    sortId: 'gameMode',
+                    sortData: allStats.map((s) => s.gameMode || ''),
+                });
+                colOffset++;
+            }
+            if (showLastXPH) {
+                addColumn(tableEl, {
+                    name: 'Last XP/h',
+                    insertAfter: insertAfter + colOffset,
+                    data: allStats.map((s) => s.lastXPH),
+                    format: (v, i) => {
+                        if (!v || v <= 0) return '';
+                        return `${fNum(v)} ${rankBadge(allStats[i].lastXPH_rank)}`;
+                    },
+                    makeSortable: true,
+                    sortId: 'lastXPH',
+                    sortData: allStats.map((s) => s.lastXPH),
+                });
+                colOffset++;
+            }
 
-            // Joined column
-            addColumn(tableEl, {
-                name: 'Joined',
-                insertAfter: insertAfter + 1,
-                data: allStats.map((s) => s.joinTime),
-                format: (v) =>
-                    v
-                        ? `<span style="white-space: nowrap;">${formatters_js.formatDateTime(new Date(v), { includeTime: false, includeYear: true })}</span>`
-                        : '',
-                makeSortable: true,
-                sortId: 'joinTime',
-                sortData: allStats.map((s) => (s.joinTime ? +new Date(s.joinTime) : 0)),
-            });
+            // Last day XP/h column — Contributions tab
+            if (showLastDayXPH) {
+                addColumn(tableEl, {
+                    name: 'Last day XP/h',
+                    insertAfter: insertAfter + colOffset,
+                    data: allStats.map((s) => s.lastDayXPH),
+                    format: (v, i) => {
+                        if (!v || v <= 0) return '';
+                        return `${fNum(v)} ${rankBadge(allStats[i].lastDayXPH_rank)}`;
+                    },
+                    makeSortable: true,
+                    sortId: 'lastDayXPH',
+                    sortData: allStats.map((s) => s.lastDayXPH),
+                });
+                colOffset++;
+            }
 
-            // Last XP/h column
-            addColumn(tableEl, {
-                name: 'Last XP/h',
-                insertAfter: insertAfter + 2,
-                data: allStats.map((s) => s.lastXPH),
-                format: (v, i) => {
-                    if (!v || v <= 0) return '';
-                    return `${fNum(v)} ${rankBadge(allStats[i].lastXPH_rank)}`;
-                },
-                makeSortable: true,
-                sortId: 'lastXPH',
-                sortData: allStats.map((s) => s.lastXPH),
-            });
-
-            // Last day XP/h column
-            addColumn(tableEl, {
-                name: 'Last day XP/h',
-                insertAfter: insertAfter + 3,
-                data: allStats.map((s) => s.lastDayXPH),
-                format: (v, i) => {
-                    if (!v || v <= 0) return '';
-                    return `${fNum(v)} ${rankBadge(allStats[i].lastDayXPH_rank)}`;
-                },
-                makeSortable: true,
-                sortId: 'lastDayXPH',
-                sortData: allStats.map((s) => s.lastDayXPH),
-            });
-
-            // Activity column
-            addColumn(tableEl, {
-                name: 'Activity',
-                insertAfter: insertAfter + 4,
-                data: allStats.map((s) => ({
-                    inactiveTime: s.inactiveTime,
-                    isOnline: s.isOnline,
-                    hide: s.hideOnlineStatus,
-                })),
-                format: (v) => {
-                    if (v.hide) return '–';
-                    if (v.isOnline) return '<span style="color:#4ade80; font-size:14px;" title="Online">●</span>';
-                    if (!v.inactiveTime) return '–';
-                    const ms = Date.now() - new Date(v.inactiveTime).getTime();
-                    const days = Math.floor(ms / 86400000);
-                    const hours = Math.floor(ms / 3600000);
-                    const mins = Math.floor(ms / 60000);
-                    if (days > 0) return `${days}d ago`;
-                    if (hours > 0) return `${hours}h ago`;
-                    return mins > 0 ? `${mins}m ago` : 'just now';
-                },
-                makeSortable: true,
-                sortId: 'activityTime',
-                sortData: allStats.map((s) => {
-                    if (s.hideOnlineStatus) return Infinity;
-                    if (s.isOnline) return 0;
-                    if (!s.inactiveTime) return Infinity;
-                    return Date.now() - new Date(s.inactiveTime).getTime();
-                }),
-            });
+            // Last Active column — Contributions tab
+            if (showLastActive) {
+                addColumn(tableEl, {
+                    name: 'Last Active',
+                    insertAfter: insertAfter + colOffset,
+                    data: allStats.map((s) => ({
+                        inactiveTime: s.inactiveTime,
+                        isOnline: s.isOnline,
+                        hide: s.hideOnlineStatus,
+                    })),
+                    format: (v) => {
+                        if (v.hide) return '–';
+                        if (v.isOnline) return '<span style="color:#4ade80; font-size:14px;" title="Online">●</span>';
+                        if (!v.inactiveTime) return '–';
+                        const ms = Date.now() - new Date(v.inactiveTime).getTime();
+                        const days = Math.floor(ms / 86400000);
+                        const hours = Math.floor(ms / 3600000);
+                        const mins = Math.floor(ms / 60000);
+                        if (days > 0) return `${days}d ago`;
+                        if (hours > 0) return `${hours}h ago`;
+                        return mins > 0 ? `${mins}m ago` : 'just now';
+                    },
+                    makeSortable: true,
+                    sortId: 'activityTime',
+                    sortData: allStats.map((s) => {
+                        if (s.hideOnlineStatus) return Infinity;
+                        if (s.isOnline) return 0;
+                        if (!s.inactiveTime) return Infinity;
+                        return Date.now() - new Date(s.inactiveTime).getTime();
+                    }),
+                });
+            }
 
             // Make existing columns sortable
             const nameHeader = theadTr.children[0];
@@ -33499,6 +33577,9 @@ ${starCSS}
             for (const member of memberList) {
                 const meta = guildXPTracker.getMemberMeta(member.characterID);
                 if (!meta) continue;
+
+                // Members who joined after this week's reset are ineligible until next week
+                if (currentWeek && meta.joinTime && new Date(meta.joinTime) >= new Date(currentWeek)) continue;
 
                 const signedUpThisWeek = currentWeek && meta.signupWeekStartAt === currentWeek;
 
@@ -33734,6 +33815,299 @@ ${starCSS}
         name: 'Guild XP Display',
         initialize: () => guildXPDisplay.initialize(),
         cleanup: () => guildXPDisplay.disable(),
+    };
+
+    /**
+     * Guild Credit Value Display
+     *
+     * Injects cost-efficiency tables into guild credit exchange modals and shrine
+     * upgrade modals. Shows both sell-side (opportunity cost) and buy-side
+     * (acquisition cost) columns. Pricing mode is taken from the user's profit
+     * calculation settings.
+     */
+
+
+    const CSS_CLASS = 'mwi-guild-credit-value';
+
+    /**
+     * Build cheapest-gold-per-credit maps for both sell and buy sides.
+     * @param {Object} itemDetailMap
+     * @returns {{ sell: Object, buy: Object }}
+     */
+    function buildCheapestPerCredit(itemDetailMap) {
+        const sell = {};
+        const buy = {};
+        for (const [hrid, item] of Object.entries(itemDetailMap)) {
+            for (const conv of item.guildCreditConversions || []) {
+                const creditHrid = conv.creditItemHrid;
+                const sellPrice = marketData_js.getItemPrice(hrid, { context: 'profit', side: 'sell' });
+                const buyPrice = marketData_js.getItemPrice(hrid, { context: 'profit', side: 'buy' });
+                if (sellPrice > 0) {
+                    const gpc = (sellPrice * conv.itemCount) / conv.creditCount;
+                    if (!sell[creditHrid] || gpc < sell[creditHrid]) sell[creditHrid] = gpc;
+                }
+                if (buyPrice > 0) {
+                    const gpc = (buyPrice * conv.itemCount) / conv.creditCount;
+                    if (!buy[creditHrid] || gpc < buy[creditHrid]) buy[creditHrid] = gpc;
+                }
+            }
+        }
+        return { sell, buy };
+    }
+
+    class GuildCreditValue {
+        constructor() {
+            this.initialized = false;
+            this.unregisterObservers = [];
+        }
+
+        initialize() {
+            if (this.initialized) return;
+
+            const unregister = domObserver.onClass('GuildCreditValue', 'GuildPanel_exchangeModalContent', (el) =>
+                this._render(el)
+            );
+            this.unregisterObservers.push(unregister);
+
+            const unregisterShrine = domObserver.onClass('GuildCreditValue-Shrine', 'GuildPanel_guildModalContent', (el) =>
+                this._renderShrine(el)
+            );
+            this.unregisterObservers.push(unregisterShrine);
+
+            this.initialized = true;
+        }
+
+        _render(modalEl) {
+            if (!config.getSetting('guildCreditValue', true)) return;
+
+            modalEl.querySelectorAll(`.${CSS_CLASS}`).forEach((el) => el.remove());
+
+            const gameData = dataManager.getInitClientData();
+            if (!gameData) return;
+
+            const titleEl = modalEl.querySelector('[class*="GuildPanel_header"]');
+            const titleText = titleEl?.textContent?.trim() || '';
+            if (!titleText) return;
+
+            const creditHrid = Object.keys(gameData.itemDetailMap || {}).find(
+                (hrid) => hrid.includes('guild_credit') && gameData.itemDetailMap[hrid].name === titleText
+            );
+            if (!creditHrid) return;
+
+            const rows = [];
+            for (const [hrid, item] of Object.entries(gameData.itemDetailMap)) {
+                const conv = (item.guildCreditConversions || []).find((c) => c.creditItemHrid === creditHrid);
+                if (!conv) continue;
+
+                const sellPrice = marketData_js.getItemPrice(hrid, { context: 'profit', side: 'sell' });
+                const buyPrice = marketData_js.getItemPrice(hrid, { context: 'profit', side: 'buy' });
+                if (!sellPrice && !buyPrice) continue;
+
+                const sellGPC = sellPrice > 0 ? (sellPrice * conv.itemCount) / conv.creditCount : null;
+                const buyGPC = buyPrice > 0 ? (buyPrice * conv.itemCount) / conv.creditCount : null;
+
+                rows.push({
+                    name: item.name,
+                    itemCount: conv.itemCount,
+                    creditCount: conv.creditCount,
+                    sellPrice,
+                    buyPrice,
+                    sellGPC,
+                    buyGPC,
+                });
+            }
+
+            if (rows.length === 0) return;
+
+            // Sort by sell side cheapest first (null last)
+            rows.sort((a, b) => {
+                if (a.sellGPC === null && b.sellGPC === null) return 0;
+                if (a.sellGPC === null) return 1;
+                if (b.sellGPC === null) return -1;
+                return a.sellGPC - b.sellGPC;
+            });
+
+            const exchangeBtn = modalEl.querySelector('button');
+            if (!exchangeBtn) return;
+
+            const wrapper = document.createElement('div');
+            wrapper.className = CSS_CLASS;
+            wrapper.style.cssText = 'margin-top:12px; font-size:12px; width:100%; max-height:260px; overflow-y:auto;';
+
+            const hdr = document.createElement('div');
+            hdr.style.cssText = 'font-size:11px; color:#9ca3af; margin-bottom:6px; text-align:center;';
+            hdr.textContent = 'Gold cost per credit — cheapest ask first';
+            wrapper.appendChild(hdr);
+
+            const table = document.createElement('table');
+            table.style.cssText = 'width:100%; border-collapse:collapse;';
+            table.innerHTML = `
+            <thead>
+                <tr style="color:#6b7280; font-size:11px; border-bottom:1px solid rgba(255,255,255,0.1);">
+                    <th style="text-align:left; padding:3px 6px; font-weight:500;">Item</th>
+                    <th style="text-align:center; padding:3px 6px; font-weight:500;">Rate</th>
+                    <th style="text-align:right; padding:3px 6px; font-weight:500;">Ask ea.</th>
+                    <th style="text-align:right; padding:3px 6px; font-weight:500;">Bid ea.</th>
+                    <th style="text-align:right; padding:3px 6px; font-weight:500;">Ask/credit</th>
+                    <th style="text-align:right; padding:3px 6px; font-weight:500;">Bid/credit</th>
+                </tr>
+            </thead>
+        `;
+
+            const tbody = document.createElement('tbody');
+            rows.forEach((row, i) => {
+                const tr = document.createElement('tr');
+                tr.style.cssText = `border-bottom:1px solid rgba(255,255,255,0.05); color:${i === 0 ? '#4ade80' : '#e0e0e0'};`;
+                const rate = row.creditCount === 1 ? `${row.itemCount} → 1` : `${row.itemCount} → ${row.creditCount}`;
+                tr.innerHTML = `
+                <td style="padding:4px 6px; text-align:left;">${row.name}</td>
+                <td style="padding:4px 6px; text-align:center; color:#9ca3af;">${rate}</td>
+                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.sellPrice ? formatters_js.formatKMB(row.sellPrice) : '–'}</td>
+                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buyPrice ? formatters_js.formatKMB(row.buyPrice) : '–'}</td>
+                <td style="padding:4px 6px; text-align:right; font-weight:${i === 0 ? '700' : '400'};">${row.sellGPC ? formatters_js.formatKMB(row.sellGPC) : '–'}</td>
+                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buyGPC ? formatters_js.formatKMB(row.buyGPC) : '–'}</td>
+            `;
+                tbody.appendChild(tr);
+            });
+            table.appendChild(tbody);
+            wrapper.appendChild(table);
+            exchangeBtn.insertAdjacentElement('afterend', wrapper);
+        }
+
+        _renderShrine(modalEl) {
+            if (!config.getSetting('guildCreditValue', true)) return;
+
+            modalEl.querySelectorAll('.mwi-shrine-cost').forEach((el) => el.remove());
+
+            const requirements = modalEl.querySelector('[class*="GuildPanel_itemRequirements"]');
+            if (!requirements) return;
+
+            const upgradeBtn = modalEl.querySelector('button');
+            if (!upgradeBtn) return;
+
+            const gameData = dataManager.getInitClientData();
+            if (!gameData) return;
+
+            const { sell: cheapestSell, buy: cheapestBuy } = buildCheapestPerCredit(gameData.itemDetailMap);
+
+            const itemContainers = Array.from(requirements.querySelectorAll('[class*="Item_itemContainer"]'));
+            const inputCounts = Array.from(requirements.querySelectorAll('[class*="GuildPanel_inputCount"]'));
+            if (itemContainers.length === 0) return;
+
+            const rows = [];
+            let totalSell = 0;
+            let totalBuy = 0;
+            let allSellPriced = true;
+            let allBuyPriced = true;
+
+            itemContainers.forEach((container, i) => {
+                const use = container.querySelector('use');
+                const spriteId = use?.getAttribute('href')?.split('#')[1];
+                if (!spriteId) return;
+
+                const itemHrid = `/items/${spriteId}`;
+                const required = parseInt(inputCounts[i]?.textContent?.replace(/[^0-9]/g, '') || '', 10) || 0;
+                const itemName = gameData.itemDetailMap?.[itemHrid]?.name || spriteId.replace(/_/g, ' ');
+                const isToken = itemHrid.includes('guild_token');
+                const isCredit = itemHrid.includes('guild_credit');
+
+                let sellEach = marketData_js.getItemPrice(itemHrid, { context: 'profit', side: 'sell' });
+                let buyEach = marketData_js.getItemPrice(itemHrid, { context: 'profit', side: 'buy' });
+
+                if (isCredit) {
+                    if (!sellEach || sellEach <= 0) sellEach = cheapestSell[itemHrid] || null;
+                    if (!buyEach || buyEach <= 0) buyEach = cheapestBuy[itemHrid] || null;
+                }
+
+                const sellSub = sellEach && required ? sellEach * required : null;
+                const buySub = buyEach && required ? buyEach * required : null;
+
+                if (sellSub !== null) totalSell += sellSub;
+                else if (!isToken) allSellPriced = false;
+
+                if (buySub !== null) totalBuy += buySub;
+                else if (!isToken) allBuyPriced = false;
+
+                rows.push({ itemName, required, sellEach, buyEach, sellSub, buySub });
+            });
+
+            if (rows.length === 0) return;
+
+            const wrapper = document.createElement('div');
+            wrapper.className = 'mwi-shrine-cost';
+            wrapper.style.cssText = 'margin-top:12px; font-size:12px; width:100%;';
+
+            const hdr = document.createElement('div');
+            hdr.style.cssText = 'font-size:11px; color:#9ca3af; margin-bottom:6px; text-align:center;';
+            hdr.textContent = 'Gold cost of upgrade';
+            wrapper.appendChild(hdr);
+
+            const table = document.createElement('table');
+            table.style.cssText = 'width:100%; border-collapse:collapse;';
+            table.innerHTML = `
+            <thead>
+                <tr style="color:#6b7280; font-size:11px; border-bottom:1px solid rgba(255,255,255,0.1);">
+                    <th style="text-align:left; padding:3px 6px; font-weight:500;">Item</th>
+                    <th style="text-align:right; padding:3px 6px; font-weight:500;">Qty</th>
+                    <th style="text-align:right; padding:3px 6px; font-weight:500;">Ask ea.</th>
+                    <th style="text-align:right; padding:3px 6px; font-weight:500;">Bid ea.</th>
+                    <th style="text-align:right; padding:3px 6px; font-weight:500;">Ask cost</th>
+                    <th style="text-align:right; padding:3px 6px; font-weight:500;">Bid cost</th>
+                </tr>
+            </thead>
+        `;
+
+            const tbody = document.createElement('tbody');
+            rows.forEach((row) => {
+                const tr = document.createElement('tr');
+                tr.style.cssText = 'border-bottom:1px solid rgba(255,255,255,0.05); color:#e0e0e0;';
+                tr.innerHTML = `
+                <td style="padding:4px 6px; text-align:left;">${row.itemName}</td>
+                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.required.toLocaleString()}</td>
+                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.sellEach ? formatters_js.formatKMB(row.sellEach) : '–'}</td>
+                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buyEach ? formatters_js.formatKMB(row.buyEach) : '–'}</td>
+                <td style="padding:4px 6px; text-align:right;">${row.sellSub ? formatters_js.formatKMB(row.sellSub) : '–'}</td>
+                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buySub ? formatters_js.formatKMB(row.buySub) : '–'}</td>
+            `;
+                tbody.appendChild(tr);
+            });
+
+            const totalRow = document.createElement('tr');
+            totalRow.style.cssText = 'border-top:1px solid rgba(255,255,255,0.2); color:#4ade80; font-weight:700;';
+            totalRow.innerHTML = `
+            <td style="padding:5px 6px;" colspan="4">Total</td>
+            <td style="padding:5px 6px; text-align:right;">${totalSell > 0 ? formatters_js.formatKMB(totalSell) : '–'}${!allSellPriced ? '*' : ''}</td>
+            <td style="padding:5px 6px; text-align:right;">${totalBuy > 0 ? formatters_js.formatKMB(totalBuy) : '–'}${!allBuyPriced ? '*' : ''}</td>
+        `;
+            tbody.appendChild(totalRow);
+            table.appendChild(tbody);
+            wrapper.appendChild(table);
+
+            if (!allSellPriced || !allBuyPriced) {
+                const note = document.createElement('div');
+                note.style.cssText = 'font-size:10px; color:#6b7280; margin-top:4px; text-align:center;';
+                note.textContent = '* some items have no market price data';
+                wrapper.appendChild(note);
+            }
+
+            upgradeBtn.insertAdjacentElement('afterend', wrapper);
+        }
+
+        cleanup() {
+            this.unregisterObservers.forEach((fn) => fn());
+            this.unregisterObservers = [];
+            document.querySelectorAll(`.${CSS_CLASS}`).forEach((el) => el.remove());
+            document.querySelectorAll('.mwi-shrine-cost').forEach((el) => el.remove());
+            this.initialized = false;
+        }
+    }
+
+    const guildCreditValue = new GuildCreditValue();
+
+    var guildCreditValue$1 = {
+        name: 'Guild Credit Value',
+        initialize: () => guildCreditValue.initialize(),
+        cleanup: () => guildCreditValue.cleanup(),
     };
 
     /**
@@ -34470,6 +34844,7 @@ ${starCSS}
         xphCalculator,
         guildXPTracker: guildXPTracker$1,
         guildXPDisplay: guildXPDisplay$1,
+        guildCreditValue: guildCreditValue$1,
         emptyQueueNotification,
         queueMonitor,
         pformancePanel,
