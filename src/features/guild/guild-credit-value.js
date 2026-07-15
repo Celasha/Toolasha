@@ -41,6 +41,46 @@ function buildCheapestPerCredit(itemDetailMap) {
     return { sell, buy };
 }
 
+/**
+ * Build top-N conversion options per credit type, ranked by ask/credit ascending.
+ * @param {Object} itemDetailMap
+ * @param {number} n
+ * @returns {Object} Map of creditHrid → array of up to n options
+ */
+function buildTopConversions(itemDetailMap, n) {
+    const byCredit = {};
+    for (const [hrid, item] of Object.entries(itemDetailMap)) {
+        for (const conv of item.guildCreditConversions || []) {
+            const creditHrid = conv.creditItemHrid;
+            const askPrice = getItemPrice(hrid, { context: 'profit', side: 'sell' });
+            const bidPrice = getItemPrice(hrid, { context: 'profit', side: 'buy' });
+            if (!askPrice && !bidPrice) continue;
+            const askGPC = askPrice > 0 ? (askPrice * conv.itemCount) / conv.creditCount : null;
+            const bidGPC = bidPrice > 0 ? (bidPrice * conv.itemCount) / conv.creditCount : null;
+            if (!byCredit[creditHrid]) byCredit[creditHrid] = [];
+            byCredit[creditHrid].push({
+                name: item.name,
+                itemCount: conv.itemCount,
+                creditCount: conv.creditCount,
+                askPrice,
+                bidPrice,
+                askGPC,
+                bidGPC,
+            });
+        }
+    }
+    for (const creditHrid of Object.keys(byCredit)) {
+        byCredit[creditHrid].sort((a, b) => {
+            if (a.askGPC === null && b.askGPC === null) return 0;
+            if (a.askGPC === null) return 1;
+            if (b.askGPC === null) return -1;
+            return a.askGPC - b.askGPC;
+        });
+        byCredit[creditHrid] = byCredit[creditHrid].slice(0, n);
+    }
+    return byCredit;
+}
+
 class GuildCreditValue {
     constructor() {
         this.initialized = false;
@@ -174,6 +214,8 @@ class GuildCreditValue {
         const gameData = dataManager.getInitClientData();
         if (!gameData) return;
 
+        const topConversions = buildTopConversions(gameData.itemDetailMap, 3);
+        // Still need cheapest sell/buy for the credit row's own cost columns
         const { sell: cheapestSell, buy: cheapestBuy } = buildCheapestPerCredit(gameData.itemDetailMap);
 
         const itemContainers = Array.from(requirements.querySelectorAll('[class*="Item_itemContainer"]'));
@@ -214,7 +256,16 @@ class GuildCreditValue {
             if (buySub !== null) totalBuy += buySub;
             else if (!isToken) allBuyPriced = false;
 
-            rows.push({ itemName, required, sellEach, buyEach, sellSub, buySub });
+            rows.push({
+                itemName,
+                required,
+                sellEach,
+                buyEach,
+                sellSub,
+                buySub,
+                isCredit,
+                creditHrid: isCredit ? itemHrid : null,
+            });
         });
 
         if (rows.length === 0) return;
@@ -256,6 +307,29 @@ class GuildCreditValue {
                 <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buySub ? formatKMB(row.buySub) : '–'}</td>
             `;
             tbody.appendChild(tr);
+
+            if (row.isCredit && row.creditHrid) {
+                const options = topConversions[row.creditHrid] || [];
+                options.forEach((opt, idx) => {
+                    const qtyNeeded = Math.ceil(row.required / opt.creditCount) * opt.itemCount;
+                    const askTotal = opt.askPrice ? opt.askPrice * qtyNeeded : null;
+                    const bidTotal = opt.bidPrice ? opt.bidPrice * qtyNeeded : null;
+                    const isTop = idx === 0;
+                    const nameColor = isTop ? '#4ade80' : '#9ca3af';
+                    const rankPrefix = `↳ #${idx + 1}`;
+                    const subTr = document.createElement('tr');
+                    subTr.style.cssText = `border-bottom:1px solid rgba(255,255,255,0.03); font-size:11px;`;
+                    subTr.innerHTML = `
+                        <td style="padding:2px 6px 2px 16px; text-align:left; color:${nameColor};">${rankPrefix} ${opt.name}</td>
+                        <td style="padding:2px 6px; text-align:right; color:${nameColor};">${qtyNeeded.toLocaleString()}</td>
+                        <td style="padding:2px 6px; text-align:right; color:#6b7280;">${opt.askPrice ? formatKMB(opt.askPrice) : '–'}</td>
+                        <td style="padding:2px 6px; text-align:right; color:#6b7280;">${opt.bidPrice ? formatKMB(opt.bidPrice) : '–'}</td>
+                        <td style="padding:2px 6px; text-align:right; color:${isTop ? '#4ade80' : '#9ca3af'}; font-weight:${isTop ? '600' : '400'};">${askTotal ? formatKMB(askTotal) : '–'}</td>
+                        <td style="padding:2px 6px; text-align:right; color:#6b7280;">${bidTotal ? formatKMB(bidTotal) : '–'}</td>
+                    `;
+                    tbody.appendChild(subTr);
+                });
+            }
         });
 
         const totalRow = document.createElement('tr');
