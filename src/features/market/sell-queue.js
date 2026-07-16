@@ -135,6 +135,7 @@ function buildBadgeHtml(itemName, count) {
 
 /**
  * Update tab badges and remove tabs for items that have sold out.
+ * Auto-navigates to the next queued item when the current one sells out.
  */
 function updateTabsOnInventoryChange() {
     if (currentTabs.length === 0) return;
@@ -166,6 +167,11 @@ function updateTabsOnInventoryChange() {
             currentTabs[tabIdx].remove();
             currentTabs.splice(tabIdx, 1);
         }
+    }
+
+    // After removing sold-out tabs, navigate to the first remaining queued item
+    if (toRemove.length > 0 && queue.length > 0) {
+        navigateToMarketplace(queue[0].itemHrid, 0);
     }
 }
 
