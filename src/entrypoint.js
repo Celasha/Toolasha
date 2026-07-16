@@ -477,6 +477,13 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'hideGuildBadge',
+            name: 'Hide Guild Badge',
+            category: 'UI',
+            module: UI.hideGuildBadge,
+            async: false,
+        },
+        {
             key: 'tabReorder',
             name: 'Tab Reorder',
             category: 'UI',

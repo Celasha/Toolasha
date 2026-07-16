@@ -11,6 +11,7 @@ import alchemyItemDimming from '../features/ui/alchemy-item-dimming.js';
 import skillExperiencePercentage from '../features/ui/skill-experience-percentage.js';
 import externalLinks from '../features/ui/external-links.js';
 import hideLabyrinthBadge from '../features/ui/hide-labyrinth-badge.js';
+import hideGuildBadge from '../features/ui/hide-guild-badge.js';
 import tabReorder from '../features/ui/tab-reorder.js';
 
 // Navigation features
@@ -94,6 +95,7 @@ toolashaRoot.UI = {
     skillExperiencePercentage,
     externalLinks,
     hideLabyrinthBadge,
+    hideGuildBadge,
     tabReorder,
     altClickNavigation,
     collectionNavigation,

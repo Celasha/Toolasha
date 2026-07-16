@@ -1897,6 +1897,12 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: false,
             },
+            hideGuildBadge: {
+                id: 'hideGuildBadge',
+                label: 'Left sidebar: Hide Guild notification badge',
+                type: 'checkbox',
+                default: false,
+            },
             tabReorder: {
                 id: 'tabReorder',
                 label: 'Character panel: Drag-and-drop tab reordering',
