@@ -248,6 +248,12 @@ function makeColumnSortable(thEl, options) {
         rows.sort((a, b) => {
             const av = options.valueGetter(a);
             const bv = options.valueGetter(b);
+            // Always sort Infinity (unknown/hidden) to the bottom regardless of direction
+            const aInf = av === Infinity || av === -Infinity;
+            const bInf = bv === Infinity || bv === -Infinity;
+            if (aInf && bInf) return 0;
+            if (aInf) return 1;
+            if (bInf) return -1;
             if (typeof av === 'number' && typeof bv === 'number') {
                 return direction === 'asc' ? av - bv : bv - av;
             }
@@ -342,12 +348,13 @@ function addColumn(tableEl, options) {
 
     // Make sortable
     if (options.makeSortable) {
-        const colIndex = Array.from(theadTr.children).indexOf(th);
         makeColumnSortable(th, {
             sortId: options.sortId || options.name,
             skipFirst: options.skipFirst || false,
             valueGetter: (trEl) => {
-                const cell = trEl.children[colIndex];
+                // Resolve column index dynamically so stale closures after tab re-injection don't misalign
+                const currentIndex = Array.from(theadTr.children).indexOf(th);
+                const cell = currentIndex >= 0 ? trEl.children[currentIndex] : undefined;
                 if (cell && cell._sortValue !== undefined) return cell._sortValue;
                 const text = cell?.textContent?.replace(/[^\d.-]/g, '');
                 return text ? parseFloat(text) : 0;
