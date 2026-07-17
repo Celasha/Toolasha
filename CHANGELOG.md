@@ -2,18 +2,16 @@
 
 ## [2.74.0](https://github.com/Celasha/Toolasha/compare/v2.73.0...v2.74.0) (2026-07-17)
 
-
 ### Features
 
-* add option to hide Guild notification badge in sidebar ([a75e91f](https://github.com/Celasha/Toolasha/commit/a75e91fe25f397773bf880aa71467719b7955234))
-* auto-advance to next sell queue tab when item sells out ([0ffb3e6](https://github.com/Celasha/Toolasha/commit/0ffb3e6933a2621b4cdda17ebc77e54ecc55b715))
-
+- add option to hide Guild notification badge in sidebar ([a75e91f](https://github.com/Celasha/Toolasha/commit/a75e91fe25f397773bf880aa71467719b7955234))
+- auto-advance to next sell queue tab when item sells out ([0ffb3e6](https://github.com/Celasha/Toolasha/commit/0ffb3e6933a2621b4cdda17ebc77e54ecc55b715))
 
 ### Bug Fixes
 
-* correct Game Mode sort misalignment and Activity hidden-status ordering ([3fc4b2a](https://github.com/Celasha/Toolasha/commit/3fc4b2a02fbb470edad6940f7bed66cea5e8882b))
-* handle DD/MM date format in dungeon tracker chat timestamp parser ([903c353](https://github.com/Celasha/Toolasha/commit/903c3534705ae182d602e377cf38ef016b40a9e9))
-* preserve blue ocean badges when hiding guild and labyrinth badges ([5e026d8](https://github.com/Celasha/Toolasha/commit/5e026d8dedd84534cd5c5f407032e376912fd6d1))
+- correct Game Mode sort misalignment and Activity hidden-status ordering ([3fc4b2a](https://github.com/Celasha/Toolasha/commit/3fc4b2a02fbb470edad6940f7bed66cea5e8882b))
+- handle DD/MM date format in dungeon tracker chat timestamp parser ([903c353](https://github.com/Celasha/Toolasha/commit/903c3534705ae182d602e377cf38ef016b40a9e9))
+- preserve blue ocean badges when hiding guild and labyrinth badges ([5e026d8](https://github.com/Celasha/Toolasha/commit/5e026d8dedd84534cd5c5f407032e376912fd6d1))
 
 ## [2.73.0](https://github.com/Celasha/Toolasha/compare/v2.72.2...v2.73.0) (2026-07-15)
 
