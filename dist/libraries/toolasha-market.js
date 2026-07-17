@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.73.0
+ * Version: 2.74.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -15567,6 +15567,7 @@ self.onmessage = function (e) {
 
     /**
      * Update tab badges and remove tabs for items that have sold out.
+     * Auto-navigates to the next queued item when the current one sells out.
      */
     function updateTabsOnInventoryChange() {
         if (currentTabs.length === 0) return;
@@ -15598,6 +15599,11 @@ self.onmessage = function (e) {
                 currentTabs[tabIdx].remove();
                 currentTabs.splice(tabIdx, 1);
             }
+        }
+
+        // After removing sold-out tabs, navigate to the first remaining queued item
+        if (toRemove.length > 0 && queue.length > 0) {
+            navigateToMarketplace(queue[0].itemHrid, 0);
         }
     }
 

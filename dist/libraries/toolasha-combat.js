@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.73.0
+ * Version: 2.74.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2237,9 +2237,14 @@
                                 // Determine format based on separator
                                 let month, day;
                                 if (separator === '/') {
-                                    // MM/DD format
-                                    month = part1;
-                                    day = part2;
+                                    // MM/DD format — but if first part > 12 it must be DD/MM (e.g. "16/07")
+                                    if (part1 > 12) {
+                                        day = part1;
+                                        month = part2;
+                                    } else {
+                                        month = part1;
+                                        day = part2;
+                                    }
                                 } else {
                                     // DD-M format (dash separator)
                                     day = part1;
@@ -2283,11 +2288,16 @@
                                     // Determine format based on separator
                                     let month, day;
                                     if (separator === '/') {
-                                        // MM/DD format
-                                        month = part1;
-                                        day = part2;
+                                        // MM/DD format — but if first part > 12 it must be DD/MM (e.g. "16/07")
+                                        if (part1 > 12) {
+                                            day = part1;
+                                            month = part2;
+                                        } else {
+                                            month = part1;
+                                            day = part2;
+                                        }
                                     } else {
-                                        // DD-M or D.M. format (dash or dot separator)
+                                        // DD-M format (dash separator)
                                         day = part1;
                                         month = part2;
                                     }
@@ -4088,12 +4098,16 @@
             let month, day, hour, min, sec, period;
 
             if (isAmerican) {
-                // American format: M/D
+                // American format: M/D — but if first part > 12 it must be DD/MM (e.g. "16/07")
                 [, month, day, hour, min, sec, period] = match;
                 month = parseInt(month, 10);
                 day = parseInt(day, 10);
+                if (month > 12) {
+                    // Swap: first part is day, second part is month
+                    [month, day] = [day, month];
+                }
             } else {
-                // International format: D-M
+                // International format: D-M or D.M.
                 [, day, month, hour, min, sec] = match;
                 month = parseInt(month, 10);
                 day = parseInt(day, 10);

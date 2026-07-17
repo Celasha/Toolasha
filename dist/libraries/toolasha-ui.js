@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.73.0
+ * Version: 2.74.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -782,9 +782,9 @@
      */
 
 
-    const STYLE_ID$1 = 'mwi-hide-labyrinth-badge';
-    const CSS$1 = `
-    [class*="NavigationBar_nav__"]:has(svg[aria-label="navigationBar.labyrinth"]) [class*="NavigationBar_badge"] {
+    const STYLE_ID$2 = 'mwi-hide-labyrinth-badge';
+    const CSS$2 = `
+    [class*="NavigationBar_nav__"]:has(svg[aria-label="navigationBar.labyrinth"]) [class*="NavigationBar_badge"]:not([class*="NavigationBar_ocean"]) {
         display: none !important;
     }
 `;
@@ -792,6 +792,32 @@
     const hideLabyrinthBadge = {
         initialize() {
             if (!config.getSetting('hideLabyrinthBadge')) {
+                return;
+            }
+            dom_js.addStyles(CSS$2, STYLE_ID$2);
+        },
+
+        disable() {
+            dom_js.removeStyles(STYLE_ID$2);
+        },
+    };
+
+    /**
+     * Hide Guild Badge
+     * Hides the notification badge on the Guild navigation bar item
+     */
+
+
+    const STYLE_ID$1 = 'mwi-hide-guild-badge';
+    const CSS$1 = `
+    [class*="NavigationBar_nav__"]:has(svg[aria-label="navigationBar.guild"]) [class*="NavigationBar_badge"]:not([class*="NavigationBar_ocean"]) {
+        display: none !important;
+    }
+`;
+
+    const hideGuildBadge = {
+        initialize() {
+            if (!config.getSetting('hideGuildBadge')) {
                 return;
             }
             dom_js.addStyles(CSS$1, STYLE_ID$1);
@@ -32957,6 +32983,12 @@ ${starCSS}
             rows.sort((a, b) => {
                 const av = options.valueGetter(a);
                 const bv = options.valueGetter(b);
+                // Always sort Infinity (unknown/hidden) to the bottom regardless of direction
+                const aInf = av === Infinity || av === -Infinity;
+                const bInf = bv === Infinity || bv === -Infinity;
+                if (aInf && bInf) return 0;
+                if (aInf) return 1;
+                if (bInf) return -1;
                 if (typeof av === 'number' && typeof bv === 'number') {
                     return direction === 'asc' ? av - bv : bv - av;
                 }
@@ -33051,12 +33083,13 @@ ${starCSS}
 
         // Make sortable
         if (options.makeSortable) {
-            const colIndex = Array.from(theadTr.children).indexOf(th);
             makeColumnSortable(th, {
                 sortId: options.sortId || options.name,
                 skipFirst: options.skipFirst || false,
                 valueGetter: (trEl) => {
-                    const cell = trEl.children[colIndex];
+                    // Resolve column index dynamically so stale closures after tab re-injection don't misalign
+                    const currentIndex = Array.from(theadTr.children).indexOf(th);
+                    const cell = currentIndex >= 0 ? trEl.children[currentIndex] : undefined;
                     if (cell && cell._sortValue !== undefined) return cell._sortValue;
                     const text = cell?.textContent?.replace(/[^\d.-]/g, '');
                     return text ? parseFloat(text) : 0;
@@ -35004,6 +35037,7 @@ ${starCSS}
         skillExperiencePercentage,
         externalLinks,
         hideLabyrinthBadge,
+        hideGuildBadge,
         tabReorder: tabReorder$1,
         altClickNavigation,
         collectionNavigation: collectionNavigation$1,

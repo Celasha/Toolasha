@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.73.0
+ * Version: 2.74.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2463,6 +2463,12 @@
                 hideLabyrinthBadge: {
                     id: 'hideLabyrinthBadge',
                     label: 'Left sidebar: Hide Labyrinth ping badge',
+                    type: 'checkbox',
+                    default: false,
+                },
+                hideGuildBadge: {
+                    id: 'hideGuildBadge',
+                    label: 'Left sidebar: Hide Guild notification badge',
                     type: 'checkbox',
                     default: false,
                 },
