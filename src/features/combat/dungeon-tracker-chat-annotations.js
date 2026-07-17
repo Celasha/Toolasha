@@ -763,12 +763,16 @@ class DungeonTrackerChatAnnotations {
         let month, day, hour, min, sec, period;
 
         if (isAmerican) {
-            // American format: M/D
+            // American format: M/D — but if first part > 12 it must be DD/MM (e.g. "16/07")
             [, month, day, hour, min, sec, period] = match;
             month = parseInt(month, 10);
             day = parseInt(day, 10);
+            if (month > 12) {
+                // Swap: first part is day, second part is month
+                [month, day] = [day, month];
+            }
         } else {
-            // International format: D-M
+            // International format: D-M or D.M.
             [, day, month, hour, min, sec] = match;
             month = parseInt(month, 10);
             day = parseInt(day, 10);

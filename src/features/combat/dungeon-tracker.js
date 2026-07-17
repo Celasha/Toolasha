@@ -407,9 +407,14 @@ class DungeonTracker {
                             // Determine format based on separator
                             let month, day;
                             if (separator === '/') {
-                                // MM/DD format
-                                month = part1;
-                                day = part2;
+                                // MM/DD format — but if first part > 12 it must be DD/MM (e.g. "16/07")
+                                if (part1 > 12) {
+                                    day = part1;
+                                    month = part2;
+                                } else {
+                                    month = part1;
+                                    day = part2;
+                                }
                             } else {
                                 // DD-M format (dash separator)
                                 day = part1;
@@ -453,11 +458,16 @@ class DungeonTracker {
                                 // Determine format based on separator
                                 let month, day;
                                 if (separator === '/') {
-                                    // MM/DD format
-                                    month = part1;
-                                    day = part2;
+                                    // MM/DD format — but if first part > 12 it must be DD/MM (e.g. "16/07")
+                                    if (part1 > 12) {
+                                        day = part1;
+                                        month = part2;
+                                    } else {
+                                        month = part1;
+                                        day = part2;
+                                    }
                                 } else {
-                                    // DD-M or D.M. format (dash or dot separator)
+                                    // DD-M format (dash separator)
                                     day = part1;
                                     month = part2;
                                 }
