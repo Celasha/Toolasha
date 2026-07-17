@@ -8,7 +8,7 @@ import { addStyles, removeStyles } from '../../utils/dom.js';
 
 const STYLE_ID = 'mwi-hide-labyrinth-badge';
 const CSS = `
-    [class*="NavigationBar_nav__"]:has(svg[aria-label="navigationBar.labyrinth"]) [class*="NavigationBar_badge"] {
+    [class*="NavigationBar_nav__"]:has(svg[aria-label="navigationBar.labyrinth"]) [class*="NavigationBar_badge"]:not([class*="NavigationBar_ocean"]) {
         display: none !important;
     }
 `;
