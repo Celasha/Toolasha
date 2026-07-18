@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.74.2
+ * Version: 2.75.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6319,11 +6319,12 @@ ${starCSS}
     }
 
     /**
-     * Build extra buffs from community buffs and MooPass.
+     * Build extra buffs from community buffs, MooPass, and guild combat buffs.
      * @param {Object} communityBuffs - { mooPass, comExp, comDrop }
+     * @param {Array} [guildCombatBuffs] - Pre-computed guild buff objects for /action_types/combat
      * @returns {Array<Object>}
      */
-    function buildExtraBuffs(communityBuffs) {
+    function buildExtraBuffs(communityBuffs, guildCombatBuffs) {
         const extraBuffs = [];
 
         if (communityBuffs?.mooPass) {
@@ -6363,6 +6364,10 @@ ${starCSS}
                 startTime: '0001-01-01T00:00:00Z',
                 duration: 0,
             });
+        }
+
+        if (Array.isArray(guildCombatBuffs)) {
+            extraBuffs.push(...guildCombatBuffs);
         }
 
         return extraBuffs;
@@ -6541,7 +6546,8 @@ ${starCSS}
     async function runSimulation(params, onProgress) {
         const { gameData, playerDTOs, zoneHrid, difficultyTier, hours, communityBuffs } = params;
 
-        const extraBuffs = buildExtraBuffs(communityBuffs);
+        const guildCombatBuffs = playerDTOs[0]?.guildCombatBuffs;
+        const extraBuffs = buildExtraBuffs(communityBuffs, guildCombatBuffs);
         const ONE_HOUR_NS = 3600 * 1e9;
 
         // Cancel any previous run
@@ -7015,6 +7021,7 @@ ${starCSS}
             houseRooms: {},
             tokenUpgrades: { speed: 0, efficiency: 0, success: 0, doubleProgress: 0 },
             communityBuffLevels: { productionEfficiency: 0, enhancingSpeed: 0, gatheringQuantity: 0, experience: 0 },
+            guildCombatBuffs: [],
         };
 
         // Extract all skill levels (combat + skilling)
@@ -7044,6 +7051,9 @@ ${starCSS}
             gatheringQuantity: dataManager.getCommunityBuffLevel('/community_buff_types/gathering_quantity') || 0,
             experience: dataManager.getCommunityBuffLevel('/community_buff_types/experience') || 0,
         };
+
+        // Extract guild combat buffs (pre-computed server-side per action type)
+        dto.guildCombatBuffs = characterData.guildActionTypeBuffsMap?.['/action_types/combat'] || [];
 
         // Extract equipped items → keyed by equipment type
         // Prefer the always-current characterEquipment Map (updated on every items_updated WS message)
@@ -33946,6 +33956,7 @@ ${starCSS}
                 const bidGPC = bidPrice > 0 ? (bidPrice * conv.itemCount) / conv.creditCount : null;
                 if (!byCredit[creditHrid]) byCredit[creditHrid] = [];
                 byCredit[creditHrid].push({
+                    hrid,
                     name: item.name,
                     itemCount: conv.itemCount,
                     creditCount: conv.creditCount,
@@ -33972,10 +33983,13 @@ ${starCSS}
         constructor() {
             this.initialized = false;
             this.unregisterObservers = [];
+            this.autofillManager = createAutofillManager('GuildCreditValue-MissingMats');
         }
 
         initialize() {
             if (this.initialized) return;
+
+            this.autofillManager.initialize();
 
             const unregister = domObserver.onClass('GuildCreditValue', 'GuildPanel_exchangeModalContent', (el) =>
                 this._render(el)
@@ -34328,6 +34342,79 @@ ${starCSS}
                 note.style.cssText = 'font-size:10px; color:#6b7280; margin-top:4px; text-align:center;';
                 note.textContent = '* some items have no market price data';
                 wrapper.appendChild(note);
+            }
+
+            // Build missing mats list from top-1 conversion per credit row
+            const inventory = dataManager.getInventory();
+            const missingMats = [];
+            for (const row of rows) {
+                if (!row.isCredit || !row.creditHrid) continue;
+                const top = (topConversions[row.creditHrid] || [])[0];
+                if (!top?.hrid) continue;
+                const qtyNeeded = Math.ceil(row.required / top.creditCount) * top.itemCount;
+                const have = inventory
+                    .filter((i) => i.itemHrid === top.hrid && i.itemLocationHrid === '/item_locations/inventory')
+                    .reduce((sum, i) => sum + (i.count || 0), 0);
+                const missing = Math.max(0, qtyNeeded - have);
+                if (missing > 0) {
+                    missingMats.push({ itemHrid: top.hrid, itemName: top.name, missing, isTradeable: true });
+                }
+            }
+
+            if (missingMats.length > 0) {
+                const missingBtn = document.createElement('button');
+                missingBtn.style.cssText = `
+                width:100%; padding:8px 12px; margin-top:8px;
+                background:linear-gradient(180deg,rgba(91,141,239,0.2) 0%,rgba(91,141,239,0.1) 100%);
+                color:#fff; border:1px solid rgba(91,141,239,0.4); border-radius:6px;
+                cursor:pointer; font-size:12px; font-weight:600;
+            `;
+                missingBtn.textContent = 'Missing Mats Marketplace';
+                missingBtn.addEventListener('mouseenter', () => {
+                    missingBtn.style.background =
+                        'linear-gradient(180deg,rgba(91,141,239,0.35) 0%,rgba(91,141,239,0.25) 100%)';
+                });
+                missingBtn.addEventListener('mouseleave', () => {
+                    missingBtn.style.background =
+                        'linear-gradient(180deg,rgba(91,141,239,0.2) 0%,rgba(91,141,239,0.1) 100%)';
+                });
+                missingBtn.addEventListener('click', async () => {
+                    navigateToMarketplace(missingMats[0].itemHrid, 0);
+
+                    // Wait for the marketplace tablist to render
+                    let tabsContainer = null;
+                    let referenceTab = null;
+                    for (let i = 0; i < 20; i++) {
+                        await new Promise((r) => setTimeout(r, 100));
+                        tabsContainer = document.querySelector('.MuiTabs-flexContainer[role="tablist"]');
+                        referenceTab = tabsContainer
+                            ? Array.from(tabsContainer.children).find((btn) => btn.textContent.includes('My Listings'))
+                            : null;
+                        if (referenceTab) break;
+                    }
+                    if (!referenceTab) return;
+
+                    // Allow tabs to wrap and make the scroller visible
+                    const scroller = tabsContainer.closest('[class*="MuiTabs-scroller"]');
+                    const muiRoot = scroller?.closest('[class*="MuiTabs-root"]');
+                    tabsContainer.style.flexWrap = 'wrap';
+                    if (scroller) scroller.style.overflow = 'visible';
+                    if (muiRoot) muiRoot.style.height = 'auto';
+
+                    removeMaterialTabs();
+                    for (const mat of missingMats) {
+                        let tabEl = null;
+                        const tab = createMaterialTab(mat, referenceTab, (_e, m) => {
+                            this.autofillManager.setPendingCalculation(() =>
+                                parseInt(tabEl?.getAttribute('data-missing-quantity') || '0', 10)
+                            );
+                            navigateToMarketplace(m.itemHrid, 0);
+                        });
+                        tabEl = tab;
+                        tabsContainer.appendChild(tab);
+                    }
+                });
+                wrapper.appendChild(missingBtn);
             }
 
             upgradeBtn.insertAdjacentElement('afterend', wrapper);

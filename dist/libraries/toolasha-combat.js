@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.74.2
+ * Version: 2.75.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7636,6 +7636,7 @@
             houseRooms: {},
             tokenUpgrades: { speed: 0, efficiency: 0, success: 0, doubleProgress: 0 },
             communityBuffLevels: { productionEfficiency: 0, enhancingSpeed: 0, gatheringQuantity: 0, experience: 0 },
+            guildCombatBuffs: [],
         };
 
         // Extract all skill levels (combat + skilling)
@@ -7665,6 +7666,9 @@
             gatheringQuantity: dataManager.getCommunityBuffLevel('/community_buff_types/gathering_quantity') || 0,
             experience: dataManager.getCommunityBuffLevel('/community_buff_types/experience') || 0,
         };
+
+        // Extract guild combat buffs (pre-computed server-side per action type)
+        dto.guildCombatBuffs = characterData.guildActionTypeBuffsMap?.['/action_types/combat'] || [];
 
         // Extract equipped items → keyed by equipment type
         // Prefer the always-current characterEquipment Map (updated on every items_updated WS message)
@@ -8756,11 +8760,12 @@
     }
 
     /**
-     * Build extra buffs from community buffs and MooPass.
+     * Build extra buffs from community buffs, MooPass, and guild combat buffs.
      * @param {Object} communityBuffs - { mooPass, comExp, comDrop }
+     * @param {Array} [guildCombatBuffs] - Pre-computed guild buff objects for /action_types/combat
      * @returns {Array<Object>}
      */
-    function buildExtraBuffs(communityBuffs) {
+    function buildExtraBuffs(communityBuffs, guildCombatBuffs) {
         const extraBuffs = [];
 
         if (communityBuffs?.mooPass) {
@@ -8800,6 +8805,10 @@
                 startTime: '0001-01-01T00:00:00Z',
                 duration: 0,
             });
+        }
+
+        if (Array.isArray(guildCombatBuffs)) {
+            extraBuffs.push(...guildCombatBuffs);
         }
 
         return extraBuffs;
@@ -8978,7 +8987,8 @@
     async function runSimulation(params, onProgress) {
         const { gameData, playerDTOs, zoneHrid, difficultyTier, hours, communityBuffs } = params;
 
-        const extraBuffs = buildExtraBuffs(communityBuffs);
+        const guildCombatBuffs = playerDTOs[0]?.guildCombatBuffs;
+        const extraBuffs = buildExtraBuffs(communityBuffs, guildCombatBuffs);
         const ONE_HOUR_NS = 3600 * 1e9;
 
         // Cancel any previous run
@@ -9061,7 +9071,8 @@
             labyrinthCombatBuffs,
         } = params;
 
-        const extraBuffs = [...buildExtraBuffs(communityBuffs), ...(labyrinthCombatBuffs || [])];
+        const guildCombatBuffs = playerDTOs[0]?.guildCombatBuffs;
+        const extraBuffs = [...buildExtraBuffs(communityBuffs, guildCombatBuffs), ...(labyrinthCombatBuffs || [])];
         const ONE_HOUR_NS = 3600 * 1e9;
 
         // Cancel any previous run

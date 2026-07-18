@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.74.2
+ * Version: 2.75.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5656,6 +5656,12 @@ self.onmessage = function (e) {
         const achievementWisdom = dataManager.getAchievementBuffFlatBoost(actionTypeHrid, '/buff_types/wisdom') * 100;
         const mooPassWisdom = parseMooPassWisdom();
         const personalWisdom = dataManager.getPersonalBuffFlatBoost(actionTypeHrid, '/buff_types/wisdom') * 100;
+        const guildBuffs = dataManager.characterData?.guildActionTypeBuffsMap?.[actionTypeHrid] || [];
+        const guildWisdom =
+            guildBuffs.reduce(
+                (sum, b) => (b.typeHrid === '/buff_types/wisdom' ? sum + (b.flatBoost || 0) + (b.ratioBoost || 0) : sum),
+                0
+            ) * 100;
 
         const totalWisdom =
             equipmentWisdom +
@@ -5664,7 +5670,8 @@ self.onmessage = function (e) {
             consumableWisdom +
             achievementWisdom +
             mooPassWisdom +
-            personalWisdom;
+            personalWisdom +
+            guildWisdom;
 
         // Parse charm experience (skill-specific) - now returns object with total and breakdown
         const charmData = parseCharmExperience(equipment, skillHrid, itemDetailMap);
@@ -5687,6 +5694,7 @@ self.onmessage = function (e) {
                 achievementWisdom,
                 mooPassWisdom,
                 personalWisdom,
+                guildWisdom,
                 charmExperience,
             },
         };
