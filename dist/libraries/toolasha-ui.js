@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.74.0
+ * Version: 2.74.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -29245,7 +29245,17 @@ ${starCSS}
                 });
             }
 
-            // 4. Consumable Buffs (from wisdom tea, etc.)
+            // 4. Guild Buffs
+            const guildEnhancingBuffs = charData.guildActionTypeBuffsMap?.['/action_types/enhancing'];
+            if (Array.isArray(guildEnhancingBuffs)) {
+                guildEnhancingBuffs.forEach((buff) => {
+                    if (buff.typeHrid === '/buff_types/wisdom') {
+                        totalFlatBoost += buff.flatBoost || 0;
+                    }
+                });
+            }
+
+            // 5. Consumable Buffs (from wisdom tea, etc.)
             const consumableEnhancingBuffs = charData.consumableActionTypeBuffsMap?.['/action_types/enhancing'];
             if (Array.isArray(consumableEnhancingBuffs)) {
                 consumableEnhancingBuffs.forEach((buff) => {
@@ -29359,6 +29369,7 @@ ${starCSS}
             const buffMaps = [
                 charData.equipmentActionTypeBuffsMap,
                 charData.houseActionTypeBuffsMap,
+                charData.guildActionTypeBuffsMap,
                 charData.communityActionTypeBuffsMap,
                 charData.consumableActionTypeBuffsMap,
             ];
@@ -33902,8 +33913,8 @@ ${starCSS}
         for (const [hrid, item] of Object.entries(itemDetailMap)) {
             for (const conv of item.guildCreditConversions || []) {
                 const creditHrid = conv.creditItemHrid;
-                const sellPrice = marketData_js.getItemPrice(hrid, { context: 'profit', side: 'sell' });
-                const buyPrice = marketData_js.getItemPrice(hrid, { context: 'profit', side: 'buy' });
+                const sellPrice = marketData_js.getItemPrice(hrid, { mode: 'ask' });
+                const buyPrice = marketData_js.getItemPrice(hrid, { mode: 'bid' });
                 if (sellPrice > 0) {
                     const gpc = (sellPrice * conv.itemCount) / conv.creditCount;
                     if (!sell[creditHrid] || gpc < sell[creditHrid]) sell[creditHrid] = gpc;
@@ -33928,8 +33939,8 @@ ${starCSS}
         for (const [hrid, item] of Object.entries(itemDetailMap)) {
             for (const conv of item.guildCreditConversions || []) {
                 const creditHrid = conv.creditItemHrid;
-                const askPrice = marketData_js.getItemPrice(hrid, { context: 'profit', side: 'sell' });
-                const bidPrice = marketData_js.getItemPrice(hrid, { context: 'profit', side: 'buy' });
+                const askPrice = marketData_js.getItemPrice(hrid, { mode: 'ask' });
+                const bidPrice = marketData_js.getItemPrice(hrid, { mode: 'bid' });
                 if (!askPrice && !bidPrice) continue;
                 const askGPC = askPrice > 0 ? (askPrice * conv.itemCount) / conv.creditCount : null;
                 const bidGPC = bidPrice > 0 ? (bidPrice * conv.itemCount) / conv.creditCount : null;
@@ -34001,8 +34012,8 @@ ${starCSS}
                 const conv = (item.guildCreditConversions || []).find((c) => c.creditItemHrid === creditHrid);
                 if (!conv) continue;
 
-                const sellPrice = marketData_js.getItemPrice(hrid, { context: 'profit', side: 'sell' });
-                const buyPrice = marketData_js.getItemPrice(hrid, { context: 'profit', side: 'buy' });
+                const sellPrice = marketData_js.getItemPrice(hrid, { mode: 'ask' });
+                const buyPrice = marketData_js.getItemPrice(hrid, { mode: 'bid' });
                 if (!sellPrice && !buyPrice) continue;
 
                 const sellGPC = sellPrice > 0 ? (sellPrice * conv.itemCount) / conv.creditCount : null;
@@ -34157,8 +34168,8 @@ ${starCSS}
                 const isToken = itemHrid.includes('guild_token');
                 const isCredit = itemHrid.includes('guild_credit');
 
-                let sellEach = marketData_js.getItemPrice(itemHrid, { context: 'profit', side: 'sell' });
-                let buyEach = marketData_js.getItemPrice(itemHrid, { context: 'profit', side: 'buy' });
+                let sellEach = marketData_js.getItemPrice(itemHrid, { mode: 'ask' });
+                let buyEach = marketData_js.getItemPrice(itemHrid, { mode: 'bid' });
 
                 if (isCredit) {
                     if (!sellEach || sellEach <= 0) sellEach = cheapestSell[itemHrid] || null;
@@ -34320,6 +34331,20 @@ ${starCSS}
             }
 
             upgradeBtn.insertAdjacentElement('afterend', wrapper);
+
+            const levelEl = modalEl.querySelector('[class*="GuildPanel_level"]');
+
+            upgradeBtn.addEventListener(
+                'click',
+                () => {
+                    const observer = new MutationObserver(() => {
+                        observer.disconnect();
+                        this._renderShrine(modalEl);
+                    });
+                    observer.observe(levelEl, { subtree: true, childList: true, characterData: true });
+                },
+                { once: true }
+            );
         }
 
         cleanup() {

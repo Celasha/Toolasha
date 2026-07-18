@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.74.0
+ * Version: 2.74.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2218,6 +2218,7 @@
         communityEfficiency = 0,
         achievementEfficiency = 0,
         personalEfficiency = 0,
+        guildEfficiency = 0,
     }) {
         const effectiveRequirement = (requiredLevel || 0) + actionLevelBonus;
         const baseSkillLevel = Math.max(skillLevel || 0, requiredLevel || 0);
@@ -2230,7 +2231,8 @@
             teaEfficiency,
             communityEfficiency,
             achievementEfficiency,
-            personalEfficiency
+            personalEfficiency,
+            guildEfficiency
         );
 
         return {
@@ -2245,6 +2247,7 @@
                 communityEfficiency,
                 achievementEfficiency,
                 personalEfficiency,
+                guildEfficiency,
                 actionLevelBonus,
                 teaSkillLevelBonus,
             },
@@ -2281,7 +2284,19 @@
         const baseTimePerActionSec = actionDetails.baseTimeCost / 1e9;
         const speedBonus = parseEquipmentSpeedBonuses(equipment, actionDetails.type, itemDetailMap);
         const personalSpeedBonus = dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/action_speed');
-        const actionTime = baseTimePerActionSec / (1 + speedBonus + personalSpeedBonus);
+
+        const guildBuffs = dataManager.characterData?.guildActionTypeBuffsMap?.[actionDetails.type] || [];
+        const guildSpeedBonus = guildBuffs.reduce(
+            (sum, b) => (b.typeHrid === '/buff_types/action_speed' ? sum + (b.flatBoost || 0) + (b.ratioBoost || 0) : sum),
+            0
+        );
+        const guildEfficiency = guildBuffs.reduce(
+            (sum, b) =>
+                b.typeHrid === '/buff_types/efficiency' ? sum + ((b.flatBoost || 0) + (b.ratioBoost || 0)) * 100 : sum,
+            0
+        );
+
+        const actionTime = baseTimePerActionSec / (1 + speedBonus + personalSpeedBonus + guildSpeedBonus);
 
         // Skill level
         const baseRequirement = actionDetails.levelRequirement?.level || 1;
@@ -2371,6 +2386,7 @@
             communityEfficiency,
             achievementEfficiency,
             personalEfficiency,
+            guildEfficiency,
         });
 
         const efficiencyMultiplier = calculateEfficiencyMultiplier(efficiencyBreakdown.totalEfficiency);
@@ -2385,6 +2401,7 @@
             actionTime,
             speedBonus,
             personalSpeedBonus,
+            guildSpeedBonus,
             baseTimePerActionSec,
             // Skill
             skillLevel,
@@ -2399,6 +2416,7 @@
             equipmentEfficiencyItems,
             achievementEfficiency,
             personalEfficiency,
+            guildEfficiency,
             // Production-only (zero for gathering)
             artisanBonus,
             actionLevelBonus,
@@ -5254,8 +5272,27 @@ self.onmessage = function (e) {
             dataManager.getAchievementBuffFlatBoost(actionDetails.type, '/buff_types/rare_find') * 100;
         const personalRareFindBonus =
             dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/rare_find') * 100;
+
+        const guildBuffs = dataManager.characterData?.guildActionTypeBuffsMap?.[actionDetails.type] || [];
+        const guildRareFindBonus =
+            guildBuffs.reduce(
+                (sum, b) => (b.typeHrid === '/buff_types/rare_find' ? sum + (b.flatBoost || 0) + (b.ratioBoost || 0) : sum),
+                0
+            ) * 100;
+        const guildEssenceFindBonus =
+            guildBuffs.reduce(
+                (sum, b) =>
+                    b.typeHrid === '/buff_types/essence_find' ? sum + (b.flatBoost || 0) + (b.ratioBoost || 0) : sum,
+                0
+            ) * 100;
+
+        const totalEssenceFindBonus = essenceFindBonus + guildEssenceFindBonus;
         const rareFindBonus =
-            equipmentRareFindBonus + houseRareFindBonus + achievementRareFindBonus + personalRareFindBonus;
+            equipmentRareFindBonus +
+            houseRareFindBonus +
+            achievementRareFindBonus +
+            personalRareFindBonus +
+            guildRareFindBonus;
         const equipmentRareFindItems = parseRareFindBreakdown(characterEquipment, actionDetails.type, itemDetailMap);
         const rareFindBreakdown = {
             equipment: equipmentRareFindBonus,
@@ -5263,6 +5300,7 @@ self.onmessage = function (e) {
             house: houseRareFindBonus,
             achievement: achievementRareFindBonus,
             personal: personalRareFindBonus,
+            guild: guildRareFindBonus,
         };
 
         const bonusDrops = [];
@@ -5279,7 +5317,7 @@ self.onmessage = function (e) {
                 const avgCount = (drop.minCount + drop.maxCount) / 2;
 
                 // Apply Essence Find multiplier to drop rate
-                const finalDropRate = drop.dropRate * (1 + essenceFindBonus / 100);
+                const finalDropRate = drop.dropRate * (1 + totalEssenceFindBonus / 100);
 
                 // Expected drops per hour
                 const dropsPerHour = actionsPerHour * finalDropRate * avgCount;
@@ -5390,7 +5428,7 @@ self.onmessage = function (e) {
         }
 
         return {
-            essenceFindBonus, // Essence Find % from equipment
+            essenceFindBonus: totalEssenceFindBonus, // Essence Find % from equipment + guild
             rareFindBonus, // Rare Find % from equipment + house rooms + achievements (combined)
             rareFindBreakdown,
             bonusDrops, // Array of all bonus drops with details
@@ -5808,8 +5846,20 @@ self.onmessage = function (e) {
             const speedBonus = parseEquipmentSpeedBonuses(equipment, actionDetails.type, itemDetailMap);
             const personalSpeedBonus = dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/action_speed');
 
+            const guildBuffs = dataManager.characterData?.guildActionTypeBuffsMap?.[actionDetails.type] || [];
+            const guildSpeedBonus = guildBuffs.reduce(
+                (sum, b) =>
+                    b.typeHrid === '/buff_types/action_speed' ? sum + (b.flatBoost || 0) + (b.ratioBoost || 0) : sum,
+                0
+            );
+            const guildEfficiency = guildBuffs.reduce(
+                (sum, b) =>
+                    b.typeHrid === '/buff_types/efficiency' ? sum + ((b.flatBoost || 0) + (b.ratioBoost || 0)) * 100 : sum,
+                0
+            );
+
             // Calculate action time with equipment speed
-            let actionTime = baseTime / (1 + speedBonus + personalSpeedBonus);
+            let actionTime = baseTime / (1 + speedBonus + personalSpeedBonus + guildSpeedBonus);
 
             // Apply task speed multiplicatively (if action is an active task)
             if (actionHrid && dataManager.isTaskAction(actionHrid)) {
@@ -5908,7 +5958,8 @@ self.onmessage = function (e) {
                 teaEfficiency,
                 communityEfficiency,
                 achievementEfficiency,
-                personalEfficiency
+                personalEfficiency,
+                guildEfficiency
             );
 
             // Build result object
@@ -5928,6 +5979,7 @@ self.onmessage = function (e) {
                     communityEfficiency,
                     achievementEfficiency,
                     personalEfficiency,
+                    guildEfficiency,
                     skillLevel,
                     baseRequirement,
                     actionLevelBonus,

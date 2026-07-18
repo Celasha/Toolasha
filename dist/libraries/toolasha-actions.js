@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.74.0
+ * Version: 2.74.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6290,6 +6290,7 @@
             const buffMaps = [
                 charData.equipmentActionTypeBuffsMap,
                 charData.houseActionTypeBuffsMap,
+                charData.guildActionTypeBuffsMap,
                 charData.communityActionTypeBuffsMap,
                 charData.consumableActionTypeBuffsMap,
             ];

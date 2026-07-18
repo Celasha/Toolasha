@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.74.0
+ * Version: 2.74.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -9410,6 +9410,7 @@
                 loadoutEquipBuffs || charData.equipmentActionTypeBuffsMap?.[actionTypeHrid],
                 charData.communityActionTypeBuffsMap?.[actionTypeHrid],
                 charData.houseActionTypeBuffsMap?.[actionTypeHrid],
+                charData.guildActionTypeBuffsMap?.[actionTypeHrid],
                 charData.achievementActionTypeBuffsMap?.[actionTypeHrid],
                 charData.mooPassActionTypeBuffsMap?.[actionTypeHrid],
             ];
@@ -10524,6 +10525,7 @@
                 overrides.communityBuffs,
                 overrides.houseBuffs,
                 dataManager.characterData?.achievementActionTypeBuffsMap?.[actionTypeHrid],
+                dataManager.characterData?.guildActionTypeBuffsMap?.[actionTypeHrid],
             ];
 
             for (const buffs of buffSources) {
