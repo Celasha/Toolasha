@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.74.1
+ * Version: 2.74.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -27322,13 +27322,23 @@ self.onmessage = function (e) {
             panel.innerHTML = `
             <div id="mwi-abilities-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; flex-shrink: 0; cursor: move; user-select: none;">
                 <div style="font-weight: bold; color: ${config.COLOR_ACCENT}; font-size: 0.9rem;">${playerName} - Abilities & Triggers</div>
-                <span id="mwi-abilities-close-btn" style="
-                    cursor: pointer;
-                    font-size: 18px;
-                    color: #aaa;
-                    padding: 0 5px;
-                    line-height: 1;
-                " title="Close">×</span>
+                <div style="display: flex; align-items: center; gap: 4px;">
+                    <span id="mwi-abilities-expand-btn" style="
+                        cursor: pointer;
+                        font-size: 14px;
+                        color: #aaa;
+                        padding: 0 5px;
+                        line-height: 1;
+                        user-select: none;
+                    " title="Expand / Collapse">⤢</span>
+                    <span id="mwi-abilities-close-btn" style="
+                        cursor: pointer;
+                        font-size: 18px;
+                        color: #aaa;
+                        padding: 0 5px;
+                        line-height: 1;
+                    " title="Close">×</span>
+                </div>
             </div>
             <div style="cursor: pointer; font-weight: bold; margin-bottom: 8px; color: ${config.COLOR_ACCENT}; flex-shrink: 0;" id="mwi-abilities-toggle">
                 + Show Details
@@ -27392,9 +27402,37 @@ self.onmessage = function (e) {
                 });
             }
 
-            // Toggle details
+            // Expand / collapse button
+            const expandBtn = panel.querySelector('#mwi-abilities-expand-btn');
             const toggleBtn = panel.querySelector('#mwi-abilities-toggle');
             const details = panel.querySelector('#mwi-abilities-details');
+            if (expandBtn) {
+                let expanded = false;
+                expandBtn.addEventListener('click', () => {
+                    expanded = !expanded;
+                    panel.style.maxHeight = expanded ? 'none' : '200px';
+                    expandBtn.textContent = expanded ? '⤡' : '⤢';
+                    expandBtn.title = expanded ? 'Collapse' : 'Expand';
+
+                    if (expanded && details && details.style.display === 'none') {
+                        details.style.display = 'block';
+                        if (toggleBtn) toggleBtn.textContent = '- Hide Details';
+                    }
+
+                    // Anchor bottom of panel to bottom of screen
+                    requestAnimationFrame(() => {
+                        panel.style.top = Math.max(10, window.innerHeight - panel.offsetHeight - 10) + 'px';
+                    });
+                });
+                expandBtn.addEventListener('mouseover', () => {
+                    expandBtn.style.color = '#fff';
+                });
+                expandBtn.addEventListener('mouseout', () => {
+                    expandBtn.style.color = '#aaa';
+                });
+            }
+
+            // Toggle details
             if (toggleBtn && details) {
                 toggleBtn.addEventListener('click', () => {
                     const isCollapsed = details.style.display === 'none';
