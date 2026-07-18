@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.74.2](https://github.com/Celasha/Toolasha/compare/v2.74.1...v2.74.2) (2026-07-18)
+
+
+### Bug Fixes
+
+* add expand button to abilities & triggers panel to avoid scrolling ([40e68c7](https://github.com/Celasha/Toolasha/commit/40e68c747267ff93cce4c6e5d1ef69eeb54741b9))
+
 ## [2.74.1](https://github.com/Celasha/Toolasha/compare/v2.74.0...v2.74.1) (2026-07-18)
 
 ### Bug Fixes
