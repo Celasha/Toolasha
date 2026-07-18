@@ -12,7 +12,14 @@ import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import { getItemPrice } from '../../utils/market-data.js';
 import { formatKMB } from '../../utils/formatters.js';
-import { navigateToMarketplace, createMaterialTab, removeMaterialTabs } from '../../utils/marketplace-tabs.js';
+import webSocketHook from '../../core/websocket.js';
+import {
+    navigateToMarketplace,
+    createMaterialTab,
+    removeMaterialTabs,
+    removeShrineMarketTabs,
+    updateTabBadge,
+} from '../../utils/marketplace-tabs.js';
 import { createAutofillManager } from '../../utils/marketplace-autofill.js';
 
 const CSS_CLASS = 'mwi-guild-credit-value';
@@ -89,6 +96,7 @@ class GuildCreditValue {
         this.initialized = false;
         this.unregisterObservers = [];
         this.autofillManager = createAutofillManager('GuildCreditValue-MissingMats');
+        this._shrineTabCleanup = null;
     }
 
     initialize() {
@@ -462,7 +470,13 @@ class GuildCreditValue {
                 .reduce((sum, i) => sum + (i.count || 0), 0);
             const missing = Math.max(0, qtyNeeded - have);
             if (missing > 0) {
-                missingMats.push({ itemHrid: top.hrid, itemName: top.name, missing, isTradeable: true });
+                missingMats.push({
+                    itemHrid: top.hrid,
+                    itemName: top.name,
+                    missing,
+                    required: qtyNeeded,
+                    isTradeable: true,
+                });
             }
         }
 
@@ -486,6 +500,12 @@ class GuildCreditValue {
             missingBtn.addEventListener('click', async () => {
                 navigateToMarketplace(missingMats[0].itemHrid, 0);
 
+                // Tear down any previous shrine tab listener before creating new tabs
+                if (this._shrineTabCleanup) {
+                    this._shrineTabCleanup();
+                    this._shrineTabCleanup = null;
+                }
+
                 // Wait for the marketplace tablist to render
                 let tabsContainer = null;
                 let referenceTab = null;
@@ -506,7 +526,10 @@ class GuildCreditValue {
                 if (scroller) scroller.style.overflow = 'visible';
                 if (muiRoot) muiRoot.style.height = 'auto';
 
+                // Remove any existing action tabs and shrine tabs before inserting new ones
                 removeMaterialTabs();
+                removeShrineMarketTabs();
+
                 for (const mat of missingMats) {
                     let tabEl = null;
                     const tab = createMaterialTab(mat, referenceTab, (_e, m) => {
@@ -515,9 +538,59 @@ class GuildCreditValue {
                         );
                         navigateToMarketplace(m.itemHrid, 0);
                     });
+                    // Opt out of global removeMaterialTabs() cleanup so tabs survive tab-to-tab navigation
+                    tab.removeAttribute('data-mwi-custom-tab');
+                    tab.setAttribute('data-mwi-shrine-tab', 'true');
+                    tab.setAttribute('data-required-quantity', mat.required.toString());
+                    tab.setAttribute('data-item-name', mat.itemName);
                     tabEl = tab;
                     tabsContainer.appendChild(tab);
                 }
+
+                // Watch for inventory/market changes and update shrine tabs accordingly
+                const shrineTabs = Array.from(document.querySelectorAll('[data-mwi-shrine-tab="true"]'));
+                const inventoryUpdateHandler = (message) => {
+                    const msgType = message?.type || '';
+                    if (
+                        !msgType.includes('item') &&
+                        !msgType.includes('inventory') &&
+                        !msgType.includes('market') &&
+                        !message?.inventory &&
+                        !message?.characterItems
+                    )
+                        return;
+
+                    const inventory = dataManager.getInventory();
+                    let anyRemaining = false;
+
+                    for (const tab of shrineTabs) {
+                        if (!tab.isConnected) continue;
+                        const itemHrid = tab.getAttribute('data-item-hrid');
+                        const required = parseInt(tab.getAttribute('data-required-quantity') || '0', 10);
+                        const itemName = tab.getAttribute('data-item-name') || '';
+                        const have = inventory
+                            .filter(
+                                (i) => i.itemHrid === itemHrid && i.itemLocationHrid === '/item_locations/inventory'
+                            )
+                            .reduce((sum, i) => sum + (i.count || 0), 0);
+                        const missing = Math.max(0, required - have);
+
+                        if (missing === 0) {
+                            tab.remove();
+                        } else {
+                            updateTabBadge(tab, { itemHrid, itemName, missing, required, isTradeable: true });
+                            anyRemaining = true;
+                        }
+                    }
+
+                    if (!anyRemaining) {
+                        webSocketHook.off('*', inventoryUpdateHandler);
+                        this._shrineTabCleanup = null;
+                    }
+                };
+
+                webSocketHook.on('*', inventoryUpdateHandler);
+                this._shrineTabCleanup = () => webSocketHook.off('*', inventoryUpdateHandler);
             });
             wrapper.appendChild(missingBtn);
         }
@@ -542,6 +615,11 @@ class GuildCreditValue {
     cleanup() {
         this.unregisterObservers.forEach((fn) => fn());
         this.unregisterObservers = [];
+        if (this._shrineTabCleanup) {
+            this._shrineTabCleanup();
+            this._shrineTabCleanup = null;
+        }
+        removeShrineMarketTabs();
         document.querySelectorAll(`.${CSS_CLASS}`).forEach((el) => el.remove());
         document.querySelectorAll('.mwi-shrine-cost').forEach((el) => el.remove());
         this.initialized = false;

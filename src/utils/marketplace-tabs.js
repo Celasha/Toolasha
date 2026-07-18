@@ -105,6 +105,67 @@ export function removeMaterialTabs() {
 }
 
 /**
+ * Remove all shrine-specific material tabs from the marketplace
+ */
+export function removeShrineMarketTabs() {
+    document.querySelectorAll('[data-mwi-shrine-tab="true"]').forEach((tab) => tab.remove());
+}
+
+/**
+ * Update the badge content and quantity attribute on an existing material tab
+ * @param {HTMLElement} tab - Tab element created by createMaterialTab
+ * @param {Object} material - Updated material data
+ * @param {string} material.itemName - Display name
+ * @param {number} material.missing - Current missing quantity
+ * @param {number} [material.required] - Total required quantity
+ * @param {boolean} material.isTradeable - Whether tradeable
+ * @param {number} [material.queued] - Queued quantity
+ */
+export function updateTabBadge(tab, material) {
+    const badgeSpan = tab.querySelector('[class*="TabsComponent_badge"]');
+    if (!badgeSpan) return;
+
+    let statusColor;
+    let statusText;
+
+    if (!material.isTradeable) {
+        statusColor = '#888888';
+        statusText = 'Not Tradeable';
+    } else if (material.missing > 0) {
+        statusColor = '#ef4444';
+        const queuedText = material.queued > 0 ? ` (${formatWithSeparator(material.queued)} Q'd)` : '';
+        statusText = `Missing: ${formatWithSeparator(material.missing)}${queuedText}`;
+    } else {
+        statusColor = '#4ade80';
+        statusText = `Sufficient (${formatWithSeparator(material.required)})`;
+    }
+
+    const titleCaseName = material.itemName
+        .split(' ')
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join(' ');
+
+    badgeSpan.innerHTML = `
+        <div style="text-align: center;">
+            <div>${titleCaseName}</div>
+            <div style="font-size: 0.75em; color: ${statusColor};">
+                ${statusText}
+            </div>
+        </div>
+    `;
+
+    tab.setAttribute('data-missing-quantity', material.missing.toString());
+
+    if (!material.isTradeable) {
+        tab.style.opacity = '0.5';
+        tab.style.cursor = 'not-allowed';
+    } else {
+        tab.style.opacity = '1';
+        tab.style.cursor = 'pointer';
+    }
+}
+
+/**
  * Setup marketplace cleanup observer
  * Watches for marketplace panel removal and calls cleanup callback
  * @param {Function} onCleanup - Callback when marketplace closes, receives no args
