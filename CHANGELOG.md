@@ -2,10 +2,9 @@
 
 ## [2.74.1](https://github.com/Celasha/Toolasha/compare/v2.74.0...v2.74.1) (2026-07-18)
 
-
 ### Bug Fixes
 
-* include guild shrine buffs in all skilling calculations ([f2b444f](https://github.com/Celasha/Toolasha/commit/f2b444f8bf89abd85103309ce00a55deac19cc5a))
+- include guild shrine buffs in all skilling calculations ([f2b444f](https://github.com/Celasha/Toolasha/commit/f2b444f8bf89abd85103309ce00a55deac19cc5a))
 
 ## [2.74.0](https://github.com/Celasha/Toolasha/compare/v2.73.0...v2.74.0) (2026-07-17)
 
