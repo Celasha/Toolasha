@@ -426,6 +426,9 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
                 : '';
             rareRows.push(`${icon}+${rareFindBreakdown.personal.toFixed(2)}% Scroll of Rare Find`);
         }
+        if (rareFindBreakdown.guild > 0) {
+            rareRows.push(`+${rareFindBreakdown.guild.toFixed(2)}% Guild Shrine`);
+        }
         modifierSummaryParts.push(`+${rareFindBonus.toFixed(2)}% rare`);
         modifierSubSections.push(makeModifierSection('Rare Find', `${rareFindBonus.toFixed(2)}%`, rareRows));
     }

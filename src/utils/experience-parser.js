@@ -215,6 +215,12 @@ export function calculateExperienceMultiplier(skillHrid, actionTypeHrid) {
     const achievementWisdom = dataManager.getAchievementBuffFlatBoost(actionTypeHrid, '/buff_types/wisdom') * 100;
     const mooPassWisdom = parseMooPassWisdom();
     const personalWisdom = dataManager.getPersonalBuffFlatBoost(actionTypeHrid, '/buff_types/wisdom') * 100;
+    const guildBuffs = dataManager.characterData?.guildActionTypeBuffsMap?.[actionTypeHrid] || [];
+    const guildWisdom =
+        guildBuffs.reduce(
+            (sum, b) => (b.typeHrid === '/buff_types/wisdom' ? sum + (b.flatBoost || 0) + (b.ratioBoost || 0) : sum),
+            0
+        ) * 100;
 
     const totalWisdom =
         equipmentWisdom +
@@ -223,7 +229,8 @@ export function calculateExperienceMultiplier(skillHrid, actionTypeHrid) {
         consumableWisdom +
         achievementWisdom +
         mooPassWisdom +
-        personalWisdom;
+        personalWisdom +
+        guildWisdom;
 
     // Parse charm experience (skill-specific) - now returns object with total and breakdown
     const charmData = parseCharmExperience(equipment, skillHrid, itemDetailMap);
@@ -246,6 +253,7 @@ export function calculateExperienceMultiplier(skillHrid, actionTypeHrid) {
             achievementWisdom,
             mooPassWisdom,
             personalWisdom,
+            guildWisdom,
             charmExperience,
         },
     };

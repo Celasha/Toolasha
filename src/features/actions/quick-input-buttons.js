@@ -448,6 +448,9 @@ class QuickInputButtons {
                             `  - ${simSprite}Scroll of Action Speed: +${formatPercentage(personalSpeedBonus, 1)}`
                         );
                     }
+                    if (speedBreakdown.guild > 0) {
+                        speedLines.push(`  - Guild Shrine: +${speedBreakdown.guild.toFixed(1)}%`);
+                    }
                 }
 
                 // Task Speed section (multiplicative, separate from equipment speed)
@@ -564,6 +567,9 @@ class QuickInputButtons {
                         ? scrollSpriteHtml('/buff_types/efficiency')
                         : '';
                     speedLines.push(`  - ${simSprite}Seal: +${efficiencyBreakdown.personalEfficiency.toFixed(2)}%`);
+                }
+                if (efficiencyBreakdown.guildEfficiency > 0) {
+                    speedLines.push(`  - Guild Shrine: +${efficiencyBreakdown.guildEfficiency.toFixed(2)}%`);
                 }
 
                 // Total time (dynamic)
@@ -976,6 +982,19 @@ class QuickInputButtons {
         breakdown.consumables = consumableSpeed;
         breakdown.total += consumableSpeed.reduce((sum, c) => sum + c.speed, 0);
 
+        // Guild shrine action speed
+        const guildBuffs = dataManager.characterData?.guildActionTypeBuffsMap?.[actionData.type] || [];
+        const guildSpeed =
+            guildBuffs.reduce(
+                (sum, b) =>
+                    b.typeHrid === '/buff_types/action_speed' ? sum + (b.flatBoost || 0) + (b.ratioBoost || 0) : sum,
+                0
+            ) * 100;
+        if (guildSpeed > 0) {
+            breakdown.guild = guildSpeed;
+            breakdown.total += guildSpeed;
+        }
+
         return breakdown;
     }
 
@@ -1316,6 +1335,9 @@ class QuickInputButtons {
                         ? scrollSpriteHtml('/buff_types/wisdom')
                         : '';
                     lines.push(`    • ${simSprite}Scroll of Wisdom: +${xpData.breakdown.personalWisdom.toFixed(2)}%`);
+                }
+                if (xpData.breakdown.guildWisdom > 0) {
+                    lines.push(`    • Guild Shrine: +${xpData.breakdown.guildWisdom.toFixed(2)}%`);
                 }
             }
 
