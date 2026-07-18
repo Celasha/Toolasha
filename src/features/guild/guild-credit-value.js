@@ -12,7 +12,8 @@ import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import { getItemPrice } from '../../utils/market-data.js';
 import { formatKMB } from '../../utils/formatters.js';
-import { createMaterialTab, navigateToMarketplace } from '../../utils/marketplace-tabs.js';
+import { navigateToMarketplace, createMaterialTab, removeMaterialTabs } from '../../utils/marketplace-tabs.js';
+import { createAutofillManager } from '../../utils/marketplace-autofill.js';
 
 const CSS_CLASS = 'mwi-guild-credit-value';
 
@@ -87,10 +88,13 @@ class GuildCreditValue {
     constructor() {
         this.initialized = false;
         this.unregisterObservers = [];
+        this.autofillManager = createAutofillManager('GuildCreditValue-MissingMats');
     }
 
     initialize() {
         if (this.initialized) return;
+
+        this.autofillManager.initialize();
 
         const unregister = domObserver.onClass('GuildCreditValue', 'GuildPanel_exchangeModalContent', (el) =>
             this._render(el)
@@ -481,10 +485,38 @@ class GuildCreditValue {
             });
             missingBtn.addEventListener('click', async () => {
                 navigateToMarketplace(missingMats[0].itemHrid, 0);
-                await new Promise((r) => setTimeout(r, 200));
-                const refTab = document.querySelector('[class*="Marketplace_categoryTab"]');
+
+                // Wait for the marketplace tablist to render
+                let tabsContainer = null;
+                let referenceTab = null;
+                for (let i = 0; i < 20; i++) {
+                    await new Promise((r) => setTimeout(r, 100));
+                    tabsContainer = document.querySelector('.MuiTabs-flexContainer[role="tablist"]');
+                    referenceTab = tabsContainer
+                        ? Array.from(tabsContainer.children).find((btn) => btn.textContent.includes('My Listings'))
+                        : null;
+                    if (referenceTab) break;
+                }
+                if (!referenceTab) return;
+
+                // Allow tabs to wrap and make the scroller visible
+                const scroller = tabsContainer.closest('[class*="MuiTabs-scroller"]');
+                const muiRoot = scroller?.closest('[class*="MuiTabs-root"]');
+                tabsContainer.style.flexWrap = 'wrap';
+                if (scroller) scroller.style.overflow = 'visible';
+                if (muiRoot) muiRoot.style.height = 'auto';
+
+                removeMaterialTabs();
                 for (const mat of missingMats) {
-                    createMaterialTab(mat, refTab, (_e, m) => navigateToMarketplace(m.itemHrid, 0));
+                    let tabEl = null;
+                    const tab = createMaterialTab(mat, referenceTab, (_e, m) => {
+                        this.autofillManager.setPendingCalculation(() =>
+                            parseInt(tabEl?.getAttribute('data-missing-quantity') || '0', 10)
+                        );
+                        navigateToMarketplace(m.itemHrid, 0);
+                    });
+                    tabEl = tab;
+                    tabsContainer.appendChild(tab);
                 }
             });
             wrapper.appendChild(missingBtn);
