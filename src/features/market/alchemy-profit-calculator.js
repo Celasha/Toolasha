@@ -99,14 +99,36 @@ function calculateAlchemyBonusDrops(itemLevel, actionsPerHour, equipment, itemDe
     const houseRareFindBonus = calculateHouseRareFind();
     const achievementRareFindBonus =
         dataManager.getAchievementBuffFlatBoost('/action_types/alchemy', '/buff_types/rare_find') * 100;
-    const rareFindBonus = equipmentRareFindBonus + houseRareFindBonus + achievementRareFindBonus;
+    const personalRareFindBonus =
+        dataManager.getPersonalBuffFlatBoost('/action_types/alchemy', '/buff_types/rare_find') * 100;
+
+    const guildBuffs = dataManager.characterData?.guildActionTypeBuffsMap?.['/action_types/alchemy'] || [];
+    const guildRareFindBonus =
+        guildBuffs.reduce(
+            (sum, b) => (b.typeHrid === '/buff_types/rare_find' ? sum + (b.flatBoost || 0) + (b.ratioBoost || 0) : sum),
+            0
+        ) * 100;
+    const guildEssenceFindBonus =
+        guildBuffs.reduce(
+            (sum, b) =>
+                b.typeHrid === '/buff_types/essence_find' ? sum + (b.flatBoost || 0) + (b.ratioBoost || 0) : sum,
+            0
+        ) * 100;
+
+    const totalEssenceFindBonus = essenceFindBonus + guildEssenceFindBonus;
+    const rareFindBonus =
+        equipmentRareFindBonus +
+        houseRareFindBonus +
+        achievementRareFindBonus +
+        personalRareFindBonus +
+        guildRareFindBonus;
 
     const bonusDrops = [];
     let totalBonusRevenue = 0;
 
     // Essence drop: Alchemy Essence
     const baseEssenceRate = (100 + itemLevel) / 1800;
-    const finalEssenceRate = baseEssenceRate * (1 + essenceFindBonus / 100);
+    const finalEssenceRate = baseEssenceRate * (1 + totalEssenceFindBonus / 100);
     const essenceDropsPerHour = actionsPerHour * finalEssenceRate;
 
     let essencePrice = 0;
@@ -181,17 +203,20 @@ function calculateAlchemyBonusDrops(itemLevel, actionsPerHour, equipment, itemDe
     return {
         bonusDrops,
         totalBonusRevenue,
-        essenceFindBonus,
+        essenceFindBonus: totalEssenceFindBonus,
         rareFindBonus,
         rareFindBreakdown: {
             equipment: equipmentRareFindBonus,
             house: houseRareFindBonus,
             achievement: achievementRareFindBonus,
+            personal: personalRareFindBonus,
+            guild: guildRareFindBonus,
             total: rareFindBonus,
         },
         essenceFindBreakdown: {
             equipment: essenceFindBonus,
-            total: essenceFindBonus,
+            guild: guildEssenceFindBonus,
+            total: totalEssenceFindBonus,
         },
     };
 }

@@ -29,8 +29,27 @@ export function calculateBonusRevenue(actionDetails, actionsPerHour, characterEq
         dataManager.getAchievementBuffFlatBoost(actionDetails.type, '/buff_types/rare_find') * 100;
     const personalRareFindBonus =
         dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/rare_find') * 100;
+
+    const guildBuffs = dataManager.characterData?.guildActionTypeBuffsMap?.[actionDetails.type] || [];
+    const guildRareFindBonus =
+        guildBuffs.reduce(
+            (sum, b) => (b.typeHrid === '/buff_types/rare_find' ? sum + (b.flatBoost || 0) + (b.ratioBoost || 0) : sum),
+            0
+        ) * 100;
+    const guildEssenceFindBonus =
+        guildBuffs.reduce(
+            (sum, b) =>
+                b.typeHrid === '/buff_types/essence_find' ? sum + (b.flatBoost || 0) + (b.ratioBoost || 0) : sum,
+            0
+        ) * 100;
+
+    const totalEssenceFindBonus = essenceFindBonus + guildEssenceFindBonus;
     const rareFindBonus =
-        equipmentRareFindBonus + houseRareFindBonus + achievementRareFindBonus + personalRareFindBonus;
+        equipmentRareFindBonus +
+        houseRareFindBonus +
+        achievementRareFindBonus +
+        personalRareFindBonus +
+        guildRareFindBonus;
     const equipmentRareFindItems = parseRareFindBreakdown(characterEquipment, actionDetails.type, itemDetailMap);
     const rareFindBreakdown = {
         equipment: equipmentRareFindBonus,
@@ -38,6 +57,7 @@ export function calculateBonusRevenue(actionDetails, actionsPerHour, characterEq
         house: houseRareFindBonus,
         achievement: achievementRareFindBonus,
         personal: personalRareFindBonus,
+        guild: guildRareFindBonus,
     };
 
     const bonusDrops = [];
@@ -54,7 +74,7 @@ export function calculateBonusRevenue(actionDetails, actionsPerHour, characterEq
             const avgCount = (drop.minCount + drop.maxCount) / 2;
 
             // Apply Essence Find multiplier to drop rate
-            const finalDropRate = drop.dropRate * (1 + essenceFindBonus / 100);
+            const finalDropRate = drop.dropRate * (1 + totalEssenceFindBonus / 100);
 
             // Expected drops per hour
             const dropsPerHour = actionsPerHour * finalDropRate * avgCount;
@@ -165,7 +185,7 @@ export function calculateBonusRevenue(actionDetails, actionsPerHour, characterEq
     }
 
     return {
-        essenceFindBonus, // Essence Find % from equipment
+        essenceFindBonus: totalEssenceFindBonus, // Essence Find % from equipment + guild
         rareFindBonus, // Rare Find % from equipment + house rooms + achievements (combined)
         rareFindBreakdown,
         bonusDrops, // Array of all bonus drops with details

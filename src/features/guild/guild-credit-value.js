@@ -26,8 +26,8 @@ function buildCheapestPerCredit(itemDetailMap) {
     for (const [hrid, item] of Object.entries(itemDetailMap)) {
         for (const conv of item.guildCreditConversions || []) {
             const creditHrid = conv.creditItemHrid;
-            const sellPrice = getItemPrice(hrid, { context: 'profit', side: 'sell' });
-            const buyPrice = getItemPrice(hrid, { context: 'profit', side: 'buy' });
+            const sellPrice = getItemPrice(hrid, { mode: 'ask' });
+            const buyPrice = getItemPrice(hrid, { mode: 'bid' });
             if (sellPrice > 0) {
                 const gpc = (sellPrice * conv.itemCount) / conv.creditCount;
                 if (!sell[creditHrid] || gpc < sell[creditHrid]) sell[creditHrid] = gpc;
@@ -52,8 +52,8 @@ function buildTopConversions(itemDetailMap, n) {
     for (const [hrid, item] of Object.entries(itemDetailMap)) {
         for (const conv of item.guildCreditConversions || []) {
             const creditHrid = conv.creditItemHrid;
-            const askPrice = getItemPrice(hrid, { context: 'profit', side: 'sell' });
-            const bidPrice = getItemPrice(hrid, { context: 'profit', side: 'buy' });
+            const askPrice = getItemPrice(hrid, { mode: 'ask' });
+            const bidPrice = getItemPrice(hrid, { mode: 'bid' });
             if (!askPrice && !bidPrice) continue;
             const askGPC = askPrice > 0 ? (askPrice * conv.itemCount) / conv.creditCount : null;
             const bidGPC = bidPrice > 0 ? (bidPrice * conv.itemCount) / conv.creditCount : null;
@@ -125,8 +125,8 @@ class GuildCreditValue {
             const conv = (item.guildCreditConversions || []).find((c) => c.creditItemHrid === creditHrid);
             if (!conv) continue;
 
-            const sellPrice = getItemPrice(hrid, { context: 'profit', side: 'sell' });
-            const buyPrice = getItemPrice(hrid, { context: 'profit', side: 'buy' });
+            const sellPrice = getItemPrice(hrid, { mode: 'ask' });
+            const buyPrice = getItemPrice(hrid, { mode: 'bid' });
             if (!sellPrice && !buyPrice) continue;
 
             const sellGPC = sellPrice > 0 ? (sellPrice * conv.itemCount) / conv.creditCount : null;
@@ -281,8 +281,8 @@ class GuildCreditValue {
             const isToken = itemHrid.includes('guild_token');
             const isCredit = itemHrid.includes('guild_credit');
 
-            let sellEach = getItemPrice(itemHrid, { context: 'profit', side: 'sell' });
-            let buyEach = getItemPrice(itemHrid, { context: 'profit', side: 'buy' });
+            let sellEach = getItemPrice(itemHrid, { mode: 'ask' });
+            let buyEach = getItemPrice(itemHrid, { mode: 'bid' });
 
             if (isCredit) {
                 if (!sellEach || sellEach <= 0) sellEach = cheapestSell[itemHrid] || null;
@@ -444,6 +444,20 @@ class GuildCreditValue {
         }
 
         upgradeBtn.insertAdjacentElement('afterend', wrapper);
+
+        const levelEl = modalEl.querySelector('[class*="GuildPanel_level"]');
+
+        upgradeBtn.addEventListener(
+            'click',
+            () => {
+                const observer = new MutationObserver(() => {
+                    observer.disconnect();
+                    this._renderShrine(modalEl);
+                });
+                observer.observe(levelEl, { subtree: true, childList: true, characterData: true });
+            },
+            { once: true }
+        );
     }
 
     cleanup() {

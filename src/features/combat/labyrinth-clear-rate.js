@@ -308,6 +308,7 @@ class LabyrinthClearRate {
             loadoutEquipBuffs || charData.equipmentActionTypeBuffsMap?.[actionTypeHrid],
             charData.communityActionTypeBuffsMap?.[actionTypeHrid],
             charData.houseActionTypeBuffsMap?.[actionTypeHrid],
+            charData.guildActionTypeBuffsMap?.[actionTypeHrid],
             charData.achievementActionTypeBuffsMap?.[actionTypeHrid],
             charData.mooPassActionTypeBuffsMap?.[actionTypeHrid],
         ];
@@ -1422,6 +1423,7 @@ class LabyrinthClearRate {
             overrides.communityBuffs,
             overrides.houseBuffs,
             dataManager.characterData?.achievementActionTypeBuffsMap?.[actionTypeHrid],
+            dataManager.characterData?.guildActionTypeBuffsMap?.[actionTypeHrid],
         ];
 
         for (const buffs of buffSources) {

@@ -51,8 +51,20 @@ export function calculateActionStats(actionDetails, options = {}) {
         const speedBonus = parseEquipmentSpeedBonuses(equipment, actionDetails.type, itemDetailMap);
         const personalSpeedBonus = dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/action_speed');
 
+        const guildBuffs = dataManager.characterData?.guildActionTypeBuffsMap?.[actionDetails.type] || [];
+        const guildSpeedBonus = guildBuffs.reduce(
+            (sum, b) =>
+                b.typeHrid === '/buff_types/action_speed' ? sum + (b.flatBoost || 0) + (b.ratioBoost || 0) : sum,
+            0
+        );
+        const guildEfficiency = guildBuffs.reduce(
+            (sum, b) =>
+                b.typeHrid === '/buff_types/efficiency' ? sum + ((b.flatBoost || 0) + (b.ratioBoost || 0)) * 100 : sum,
+            0
+        );
+
         // Calculate action time with equipment speed
-        let actionTime = baseTime / (1 + speedBonus + personalSpeedBonus);
+        let actionTime = baseTime / (1 + speedBonus + personalSpeedBonus + guildSpeedBonus);
 
         // Apply task speed multiplicatively (if action is an active task)
         if (actionHrid && dataManager.isTaskAction(actionHrid)) {
@@ -151,7 +163,8 @@ export function calculateActionStats(actionDetails, options = {}) {
             teaEfficiency,
             communityEfficiency,
             achievementEfficiency,
-            personalEfficiency
+            personalEfficiency,
+            guildEfficiency
         );
 
         // Build result object
@@ -171,6 +184,7 @@ export function calculateActionStats(actionDetails, options = {}) {
                 communityEfficiency,
                 achievementEfficiency,
                 personalEfficiency,
+                guildEfficiency,
                 skillLevel,
                 baseRequirement,
                 actionLevelBonus,

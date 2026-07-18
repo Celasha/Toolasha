@@ -71,7 +71,17 @@ function getWisdomBuff() {
             });
         }
 
-        // 4. Consumable Buffs (from wisdom tea, etc.)
+        // 4. Guild Buffs
+        const guildEnhancingBuffs = charData.guildActionTypeBuffsMap?.['/action_types/enhancing'];
+        if (Array.isArray(guildEnhancingBuffs)) {
+            guildEnhancingBuffs.forEach((buff) => {
+                if (buff.typeHrid === '/buff_types/wisdom') {
+                    totalFlatBoost += buff.flatBoost || 0;
+                }
+            });
+        }
+
+        // 5. Consumable Buffs (from wisdom tea, etc.)
         const consumableEnhancingBuffs = charData.consumableActionTypeBuffsMap?.['/action_types/enhancing'];
         if (Array.isArray(consumableEnhancingBuffs)) {
             consumableEnhancingBuffs.forEach((buff) => {
@@ -185,6 +195,7 @@ function getEnhancingActionTime(itemHrid) {
         const buffMaps = [
             charData.equipmentActionTypeBuffsMap,
             charData.houseActionTypeBuffsMap,
+            charData.guildActionTypeBuffsMap,
             charData.communityActionTypeBuffsMap,
             charData.consumableActionTypeBuffsMap,
         ];
@@ -247,11 +258,20 @@ export function getEnhancingSpeedBreakdown(itemHrid) {
         const sources = {
             equipment: charData.equipmentActionTypeBuffsMap,
             house: charData.houseActionTypeBuffsMap,
+            guild: charData.guildActionTypeBuffsMap,
             community: charData.communityActionTypeBuffsMap,
             consumable: charData.consumableActionTypeBuffsMap,
         };
 
-        const breakdown = { equipment: 0, house: 0, community: 0, consumable: 0, personal: 0, levelAdvantage: 0 };
+        const breakdown = {
+            equipment: 0,
+            house: 0,
+            guild: 0,
+            community: 0,
+            consumable: 0,
+            personal: 0,
+            levelAdvantage: 0,
+        };
 
         for (const [source, buffMap] of Object.entries(sources)) {
             const enhancingBuffs = buffMap?.['/action_types/enhancing'];

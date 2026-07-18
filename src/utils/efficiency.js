@@ -79,6 +79,7 @@ export function calculateEfficiencyBreakdown({
     communityEfficiency = 0,
     achievementEfficiency = 0,
     personalEfficiency = 0,
+    guildEfficiency = 0,
 }) {
     const effectiveRequirement = (requiredLevel || 0) + actionLevelBonus;
     const baseSkillLevel = Math.max(skillLevel || 0, requiredLevel || 0);
@@ -91,7 +92,8 @@ export function calculateEfficiencyBreakdown({
         teaEfficiency,
         communityEfficiency,
         achievementEfficiency,
-        personalEfficiency
+        personalEfficiency,
+        guildEfficiency
     );
 
     return {
@@ -106,6 +108,7 @@ export function calculateEfficiencyBreakdown({
             communityEfficiency,
             achievementEfficiency,
             personalEfficiency,
+            guildEfficiency,
             actionLevelBonus,
             teaSkillLevelBonus,
         },
@@ -142,7 +145,19 @@ export function getActionEfficiencyContext(actionDetails, options = {}) {
     const baseTimePerActionSec = actionDetails.baseTimeCost / 1e9;
     const speedBonus = parseEquipmentSpeedBonuses(equipment, actionDetails.type, itemDetailMap);
     const personalSpeedBonus = dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/action_speed');
-    const actionTime = baseTimePerActionSec / (1 + speedBonus + personalSpeedBonus);
+
+    const guildBuffs = dataManager.characterData?.guildActionTypeBuffsMap?.[actionDetails.type] || [];
+    const guildSpeedBonus = guildBuffs.reduce(
+        (sum, b) => (b.typeHrid === '/buff_types/action_speed' ? sum + (b.flatBoost || 0) + (b.ratioBoost || 0) : sum),
+        0
+    );
+    const guildEfficiency = guildBuffs.reduce(
+        (sum, b) =>
+            b.typeHrid === '/buff_types/efficiency' ? sum + ((b.flatBoost || 0) + (b.ratioBoost || 0)) * 100 : sum,
+        0
+    );
+
+    const actionTime = baseTimePerActionSec / (1 + speedBonus + personalSpeedBonus + guildSpeedBonus);
 
     // Skill level
     const baseRequirement = actionDetails.levelRequirement?.level || 1;
@@ -232,6 +247,7 @@ export function getActionEfficiencyContext(actionDetails, options = {}) {
         communityEfficiency,
         achievementEfficiency,
         personalEfficiency,
+        guildEfficiency,
     });
 
     const efficiencyMultiplier = calculateEfficiencyMultiplier(efficiencyBreakdown.totalEfficiency);
@@ -246,6 +262,7 @@ export function getActionEfficiencyContext(actionDetails, options = {}) {
         actionTime,
         speedBonus,
         personalSpeedBonus,
+        guildSpeedBonus,
         baseTimePerActionSec,
         // Skill
         skillLevel,
@@ -260,6 +277,7 @@ export function getActionEfficiencyContext(actionDetails, options = {}) {
         equipmentEfficiencyItems,
         achievementEfficiency,
         personalEfficiency,
+        guildEfficiency,
         // Production-only (zero for gathering)
         artisanBonus,
         actionLevelBonus,
