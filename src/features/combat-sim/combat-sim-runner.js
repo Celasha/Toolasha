@@ -41,11 +41,12 @@ export function getWorkerURL() {
 }
 
 /**
- * Build extra buffs from community buffs and MooPass.
+ * Build extra buffs from community buffs, MooPass, and guild combat buffs.
  * @param {Object} communityBuffs - { mooPass, comExp, comDrop }
+ * @param {Array} [guildCombatBuffs] - Pre-computed guild buff objects for /action_types/combat
  * @returns {Array<Object>}
  */
-export function buildExtraBuffs(communityBuffs) {
+export function buildExtraBuffs(communityBuffs, guildCombatBuffs) {
     const extraBuffs = [];
 
     if (communityBuffs?.mooPass) {
@@ -85,6 +86,10 @@ export function buildExtraBuffs(communityBuffs) {
             startTime: '0001-01-01T00:00:00Z',
             duration: 0,
         });
+    }
+
+    if (Array.isArray(guildCombatBuffs)) {
+        extraBuffs.push(...guildCombatBuffs);
     }
 
     return extraBuffs;
@@ -263,7 +268,8 @@ function mergeSimResults(results) {
 export async function runSimulation(params, onProgress) {
     const { gameData, playerDTOs, zoneHrid, difficultyTier, hours, communityBuffs } = params;
 
-    const extraBuffs = buildExtraBuffs(communityBuffs);
+    const guildCombatBuffs = playerDTOs[0]?.guildCombatBuffs;
+    const extraBuffs = buildExtraBuffs(communityBuffs, guildCombatBuffs);
     const ONE_HOUR_NS = 3600 * 1e9;
 
     // Cancel any previous run
@@ -367,7 +373,8 @@ export async function runLabyrinthSimulation(params, onProgress) {
         labyrinthCombatBuffs,
     } = params;
 
-    const extraBuffs = [...buildExtraBuffs(communityBuffs), ...(labyrinthCombatBuffs || [])];
+    const guildCombatBuffs = playerDTOs[0]?.guildCombatBuffs;
+    const extraBuffs = [...buildExtraBuffs(communityBuffs, guildCombatBuffs), ...(labyrinthCombatBuffs || [])];
     const ONE_HOUR_NS = 3600 * 1e9;
 
     // Cancel any previous run
