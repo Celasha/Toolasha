@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.75.0](https://github.com/Celasha/Toolasha/compare/v2.74.2...v2.75.0) (2026-07-18)
+
+### Features
+
+- add missing mats marketplace button to shrine upgrade cost table ([89f51bc](https://github.com/Celasha/Toolasha/commit/89f51bc02fcd1d6684aa45f19f34eff7084f0043))
+- add missing mats marketplace tabs to shrine upgrade modal ([3656e84](https://github.com/Celasha/Toolasha/commit/3656e843fd44210d7fad91f86fcfe62b288f358d))
+
+### Bug Fixes
+
+- include guild shrine buffs in combat simulator ([667a2e7](https://github.com/Celasha/Toolasha/commit/667a2e7ac6548bb39227ccbc6349cf75bc8ac5b5))
+- show guild shrine buffs in action breakdown displays ([93e47fc](https://github.com/Celasha/Toolasha/commit/93e47fc268ddd4a5f3219daf2c0b3ea2deccb782))
+
 ## [2.74.2](https://github.com/Celasha/Toolasha/compare/v2.74.1...v2.74.2) (2026-07-18)
 
 ### Bug Fixes
