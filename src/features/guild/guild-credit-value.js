@@ -12,6 +12,7 @@ import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import { getItemPrice } from '../../utils/market-data.js';
 import { formatKMB } from '../../utils/formatters.js';
+import { createMaterialTab, navigateToMarketplace } from '../../utils/marketplace-tabs.js';
 
 const CSS_CLASS = 'mwi-guild-credit-value';
 
@@ -59,6 +60,7 @@ function buildTopConversions(itemDetailMap, n) {
             const bidGPC = bidPrice > 0 ? (bidPrice * conv.itemCount) / conv.creditCount : null;
             if (!byCredit[creditHrid]) byCredit[creditHrid] = [];
             byCredit[creditHrid].push({
+                hrid,
                 name: item.name,
                 itemCount: conv.itemCount,
                 creditCount: conv.creditCount,
@@ -441,6 +443,51 @@ class GuildCreditValue {
             note.style.cssText = 'font-size:10px; color:#6b7280; margin-top:4px; text-align:center;';
             note.textContent = '* some items have no market price data';
             wrapper.appendChild(note);
+        }
+
+        // Build missing mats list from top-1 conversion per credit row
+        const inventory = dataManager.getInventory();
+        const missingMats = [];
+        for (const row of rows) {
+            if (!row.isCredit || !row.creditHrid) continue;
+            const top = (topConversions[row.creditHrid] || [])[0];
+            if (!top?.hrid) continue;
+            const qtyNeeded = Math.ceil(row.required / top.creditCount) * top.itemCount;
+            const have = inventory
+                .filter((i) => i.itemHrid === top.hrid && i.itemLocationHrid === '/item_locations/inventory')
+                .reduce((sum, i) => sum + (i.count || 0), 0);
+            const missing = Math.max(0, qtyNeeded - have);
+            if (missing > 0) {
+                missingMats.push({ itemHrid: top.hrid, itemName: top.name, missing, isTradeable: true });
+            }
+        }
+
+        if (missingMats.length > 0) {
+            const missingBtn = document.createElement('button');
+            missingBtn.style.cssText = `
+                width:100%; padding:8px 12px; margin-top:8px;
+                background:linear-gradient(180deg,rgba(91,141,239,0.2) 0%,rgba(91,141,239,0.1) 100%);
+                color:#fff; border:1px solid rgba(91,141,239,0.4); border-radius:6px;
+                cursor:pointer; font-size:12px; font-weight:600;
+            `;
+            missingBtn.textContent = 'Missing Mats Marketplace';
+            missingBtn.addEventListener('mouseenter', () => {
+                missingBtn.style.background =
+                    'linear-gradient(180deg,rgba(91,141,239,0.35) 0%,rgba(91,141,239,0.25) 100%)';
+            });
+            missingBtn.addEventListener('mouseleave', () => {
+                missingBtn.style.background =
+                    'linear-gradient(180deg,rgba(91,141,239,0.2) 0%,rgba(91,141,239,0.1) 100%)';
+            });
+            missingBtn.addEventListener('click', async () => {
+                navigateToMarketplace(missingMats[0].itemHrid, 0);
+                await new Promise((r) => setTimeout(r, 200));
+                const refTab = document.querySelector('[class*="Marketplace_categoryTab"]');
+                for (const mat of missingMats) {
+                    createMaterialTab(mat, refTab, (_e, m) => navigateToMarketplace(m.itemHrid, 0));
+                }
+            });
+            wrapper.appendChild(missingBtn);
         }
 
         upgradeBtn.insertAdjacentElement('afterend', wrapper);
