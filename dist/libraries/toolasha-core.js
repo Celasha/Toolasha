@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.75.0
+ * Version: 2.76.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1250,6 +1250,22 @@
                     type: 'checkbox',
                     default: false,
                     help: 'When enabled, uses the lower of crafting cost or market price for the base item in enhancement path calculations, applied independently to both the Ask and Bid columns',
+                },
+                enhanceSim_autoTargetLevel: {
+                    id: 'enhanceSim_autoTargetLevel',
+                    label: 'Enhancement: Auto-fill target level on panel open (0 = disabled)',
+                    type: 'number',
+                    default: 0,
+                    min: 0,
+                    max: 20,
+                    help: "When non-zero, automatically sets the Target Level input to this value whenever you open an item's enhancement panel. Re-applies each time you switch items.",
+                },
+                enhanceSim_autoProtectFrom: {
+                    id: 'enhanceSim_autoProtectFrom',
+                    label: 'Enhancement: Auto-fill optimal protect-from level when protection item is set',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'When enabled, automatically fills the Protect From Level input with the optimal (cheapest) value whenever a protection item is placed in the slot.',
                 },
                 enhanceSim_autoDetect: {
                     id: 'enhanceSim_autoDetect',

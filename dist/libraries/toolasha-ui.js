@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.75.0
+ * Version: 2.76.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -17027,6 +17027,61 @@ ${starCSS}
     }
 
     /**
+     * Remove all shrine-specific material tabs from the marketplace
+     */
+    function removeShrineMarketTabs() {
+        document.querySelectorAll('[data-mwi-shrine-tab="true"]').forEach((tab) => tab.remove());
+    }
+
+    /**
+     * Update the badge content and quantity attribute on an existing material tab
+     * @param {HTMLElement} tab - Tab element created by createMaterialTab
+     * @param {Object} material - Updated material data
+     * @param {string} material.itemName - Display name
+     * @param {number} material.missing - Current missing quantity
+     * @param {number} [material.required] - Total required quantity
+     * @param {boolean} material.isTradeable - Whether tradeable
+     * @param {number} [material.queued] - Queued quantity
+     */
+    function updateTabBadge(tab, material) {
+        const badgeSpan = tab.querySelector('[class*="TabsComponent_badge"]');
+        if (!badgeSpan) return;
+
+        let statusColor;
+        let statusText;
+
+        if (material.missing > 0) {
+            statusColor = '#ef4444';
+            const queuedText = material.queued > 0 ? ` (${formatters_js.formatWithSeparator(material.queued)} Q'd)` : '';
+            statusText = `Missing: ${formatters_js.formatWithSeparator(material.missing)}${queuedText}`;
+        } else {
+            statusColor = '#4ade80';
+            statusText = `Sufficient (${formatters_js.formatWithSeparator(material.required)})`;
+        }
+
+        const titleCaseName = material.itemName
+            .split(' ')
+            .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+            .join(' ');
+
+        badgeSpan.innerHTML = `
+        <div style="text-align: center;">
+            <div>${titleCaseName}</div>
+            <div style="font-size: 0.75em; color: ${statusColor};">
+                ${statusText}
+            </div>
+        </div>
+    `;
+
+        tab.setAttribute('data-missing-quantity', material.missing.toString());
+
+        {
+            tab.style.opacity = '1';
+            tab.style.cursor = 'pointer';
+        }
+    }
+
+    /**
      * Setup marketplace cleanup observer
      * Watches for marketplace panel removal and calls cleanup callback
      * @param {Function} onCleanup - Callback when marketplace closes, receives no args
@@ -33984,6 +34039,7 @@ ${starCSS}
             this.initialized = false;
             this.unregisterObservers = [];
             this.autofillManager = createAutofillManager('GuildCreditValue-MissingMats');
+            this._shrineTabCleanup = null;
         }
 
         initialize() {
@@ -34000,6 +34056,11 @@ ${starCSS}
                 this._renderShrine(el)
             );
             this.unregisterObservers.push(unregisterShrine);
+
+            const unregisterTrial = domObserver.onClass('GuildCreditValue-Trial', 'GuildPanel_signupModal', (el) =>
+                this._renderTrialSignup(el)
+            );
+            this.unregisterObservers.push(unregisterTrial);
 
             this.initialized = true;
         }
@@ -34141,6 +34202,47 @@ ${starCSS}
 
             wrapper.appendChild(table);
             exchangeBtn.insertAdjacentElement('afterend', wrapper);
+        }
+
+        _renderTrialSignup(modalEl) {
+            modalEl.querySelectorAll('.mwi-trial-copy-btn').forEach((el) => el.remove());
+
+            const memberList = modalEl.querySelector('[class*="GuildPanel_memberList"]');
+            if (!memberList) return;
+
+            const buttonsContainer = modalEl.querySelector('[class*="GuildPanel_buttonsContainer"]');
+            if (!buttonsContainer) return;
+
+            const copyBtn = document.createElement('button');
+            copyBtn.className = 'mwi-trial-copy-btn';
+            copyBtn.style.cssText = `
+            width:100%; padding:8px 12px; margin-bottom:6px;
+            background:linear-gradient(180deg,rgba(91,141,239,0.2) 0%,rgba(91,141,239,0.1) 100%);
+            color:#fff; border:1px solid rgba(91,141,239,0.4); border-radius:6px;
+            cursor:pointer; font-size:12px; font-weight:600;
+        `;
+            copyBtn.textContent = 'Copy List';
+            copyBtn.addEventListener('mouseenter', () => {
+                copyBtn.style.background = 'linear-gradient(180deg,rgba(91,141,239,0.35) 0%,rgba(91,141,239,0.25) 100%)';
+            });
+            copyBtn.addEventListener('mouseleave', () => {
+                copyBtn.style.background = 'linear-gradient(180deg,rgba(91,141,239,0.2) 0%,rgba(91,141,239,0.1) 100%)';
+            });
+            copyBtn.addEventListener('click', () => {
+                const names = Array.from(memberList.querySelectorAll('[class*="GuildPanel_memberName"]'))
+                    .map((el) => el.textContent.trim())
+                    .filter(Boolean)
+                    .join('\n');
+                if (!names) return;
+                navigator.clipboard.writeText(names).then(() => {
+                    copyBtn.textContent = 'Copied!';
+                    setTimeout(() => {
+                        copyBtn.textContent = 'Copy List';
+                    }, 1500);
+                });
+            });
+
+            buttonsContainer.insertAdjacentElement('beforebegin', copyBtn);
         }
 
         _renderShrine(modalEl) {
@@ -34357,7 +34459,13 @@ ${starCSS}
                     .reduce((sum, i) => sum + (i.count || 0), 0);
                 const missing = Math.max(0, qtyNeeded - have);
                 if (missing > 0) {
-                    missingMats.push({ itemHrid: top.hrid, itemName: top.name, missing, isTradeable: true });
+                    missingMats.push({
+                        itemHrid: top.hrid,
+                        itemName: top.name,
+                        missing,
+                        required: qtyNeeded,
+                        isTradeable: true,
+                    });
                 }
             }
 
@@ -34381,6 +34489,12 @@ ${starCSS}
                 missingBtn.addEventListener('click', async () => {
                     navigateToMarketplace(missingMats[0].itemHrid, 0);
 
+                    // Tear down any previous shrine tab listener before creating new tabs
+                    if (this._shrineTabCleanup) {
+                        this._shrineTabCleanup();
+                        this._shrineTabCleanup = null;
+                    }
+
                     // Wait for the marketplace tablist to render
                     let tabsContainer = null;
                     let referenceTab = null;
@@ -34401,7 +34515,10 @@ ${starCSS}
                     if (scroller) scroller.style.overflow = 'visible';
                     if (muiRoot) muiRoot.style.height = 'auto';
 
+                    // Remove any existing action tabs and shrine tabs before inserting new ones
                     removeMaterialTabs();
+                    removeShrineMarketTabs();
+
                     for (const mat of missingMats) {
                         let tabEl = null;
                         const tab = createMaterialTab(mat, referenceTab, (_e, m) => {
@@ -34410,9 +34527,59 @@ ${starCSS}
                             );
                             navigateToMarketplace(m.itemHrid, 0);
                         });
+                        // Opt out of global removeMaterialTabs() cleanup so tabs survive tab-to-tab navigation
+                        tab.removeAttribute('data-mwi-custom-tab');
+                        tab.setAttribute('data-mwi-shrine-tab', 'true');
+                        tab.setAttribute('data-required-quantity', mat.required.toString());
+                        tab.setAttribute('data-item-name', mat.itemName);
                         tabEl = tab;
                         tabsContainer.appendChild(tab);
                     }
+
+                    // Watch for inventory/market changes and update shrine tabs accordingly
+                    const shrineTabs = Array.from(document.querySelectorAll('[data-mwi-shrine-tab="true"]'));
+                    const inventoryUpdateHandler = (message) => {
+                        const msgType = message?.type || '';
+                        if (
+                            !msgType.includes('item') &&
+                            !msgType.includes('inventory') &&
+                            !msgType.includes('market') &&
+                            !message?.inventory &&
+                            !message?.characterItems
+                        )
+                            return;
+
+                        const inventory = dataManager.getInventory();
+                        let anyRemaining = false;
+
+                        for (const tab of shrineTabs) {
+                            if (!tab.isConnected) continue;
+                            const itemHrid = tab.getAttribute('data-item-hrid');
+                            const required = parseInt(tab.getAttribute('data-required-quantity') || '0', 10);
+                            const itemName = tab.getAttribute('data-item-name') || '';
+                            const have = inventory
+                                .filter(
+                                    (i) => i.itemHrid === itemHrid && i.itemLocationHrid === '/item_locations/inventory'
+                                )
+                                .reduce((sum, i) => sum + (i.count || 0), 0);
+                            const missing = Math.max(0, required - have);
+
+                            if (missing === 0) {
+                                tab.remove();
+                            } else {
+                                updateTabBadge(tab, { itemName, missing, required});
+                                anyRemaining = true;
+                            }
+                        }
+
+                        if (!anyRemaining) {
+                            webSocketHook.off('*', inventoryUpdateHandler);
+                            this._shrineTabCleanup = null;
+                        }
+                    };
+
+                    webSocketHook.on('*', inventoryUpdateHandler);
+                    this._shrineTabCleanup = () => webSocketHook.off('*', inventoryUpdateHandler);
                 });
                 wrapper.appendChild(missingBtn);
             }
@@ -34437,8 +34604,14 @@ ${starCSS}
         cleanup() {
             this.unregisterObservers.forEach((fn) => fn());
             this.unregisterObservers = [];
+            if (this._shrineTabCleanup) {
+                this._shrineTabCleanup();
+                this._shrineTabCleanup = null;
+            }
+            removeShrineMarketTabs();
             document.querySelectorAll(`.${CSS_CLASS}`).forEach((el) => el.remove());
             document.querySelectorAll('.mwi-shrine-cost').forEach((el) => el.remove());
+            document.querySelectorAll('.mwi-trial-copy-btn').forEach((el) => el.remove());
             this.initialized = false;
         }
     }
