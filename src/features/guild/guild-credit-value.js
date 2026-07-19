@@ -114,6 +114,11 @@ class GuildCreditValue {
         );
         this.unregisterObservers.push(unregisterShrine);
 
+        const unregisterTrial = domObserver.onClass('GuildCreditValue-Trial', 'GuildPanel_signupModal', (el) =>
+            this._renderTrialSignup(el)
+        );
+        this.unregisterObservers.push(unregisterTrial);
+
         this.initialized = true;
     }
 
@@ -254,6 +259,47 @@ class GuildCreditValue {
 
         wrapper.appendChild(table);
         exchangeBtn.insertAdjacentElement('afterend', wrapper);
+    }
+
+    _renderTrialSignup(modalEl) {
+        modalEl.querySelectorAll('.mwi-trial-copy-btn').forEach((el) => el.remove());
+
+        const memberList = modalEl.querySelector('[class*="GuildPanel_memberList"]');
+        if (!memberList) return;
+
+        const buttonsContainer = modalEl.querySelector('[class*="GuildPanel_buttonsContainer"]');
+        if (!buttonsContainer) return;
+
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'mwi-trial-copy-btn';
+        copyBtn.style.cssText = `
+            width:100%; padding:8px 12px; margin-bottom:6px;
+            background:linear-gradient(180deg,rgba(91,141,239,0.2) 0%,rgba(91,141,239,0.1) 100%);
+            color:#fff; border:1px solid rgba(91,141,239,0.4); border-radius:6px;
+            cursor:pointer; font-size:12px; font-weight:600;
+        `;
+        copyBtn.textContent = 'Copy List';
+        copyBtn.addEventListener('mouseenter', () => {
+            copyBtn.style.background = 'linear-gradient(180deg,rgba(91,141,239,0.35) 0%,rgba(91,141,239,0.25) 100%)';
+        });
+        copyBtn.addEventListener('mouseleave', () => {
+            copyBtn.style.background = 'linear-gradient(180deg,rgba(91,141,239,0.2) 0%,rgba(91,141,239,0.1) 100%)';
+        });
+        copyBtn.addEventListener('click', () => {
+            const names = Array.from(memberList.querySelectorAll('[class*="GuildPanel_memberName"]'))
+                .map((el) => el.textContent.trim())
+                .filter(Boolean)
+                .join('\n');
+            if (!names) return;
+            navigator.clipboard.writeText(names).then(() => {
+                copyBtn.textContent = 'Copied!';
+                setTimeout(() => {
+                    copyBtn.textContent = 'Copy List';
+                }, 1500);
+            });
+        });
+
+        buttonsContainer.insertAdjacentElement('beforebegin', copyBtn);
     }
 
     _renderShrine(modalEl) {
@@ -622,6 +668,7 @@ class GuildCreditValue {
         removeShrineMarketTabs();
         document.querySelectorAll(`.${CSS_CLASS}`).forEach((el) => el.remove());
         document.querySelectorAll('.mwi-shrine-cost').forEach((el) => el.remove());
+        document.querySelectorAll('.mwi-trial-copy-btn').forEach((el) => el.remove());
         this.initialized = false;
     }
 }
