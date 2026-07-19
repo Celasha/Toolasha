@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.77.0
+ * Version: 2.77.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -34622,8 +34622,8 @@ ${starCSS}
 
             const tierSpan = document.createElement('span');
             tierSpan.className = 'mwi-trial-tier';
-            tierSpan.style.cssText = 'color:#9ca3af; margin-left:4px;';
-            tierSpan.textContent = `(T${tier})`;
+            tierSpan.style.cssText = 'color:#9ca3af; margin-left:3px; font-size:0.85em; white-space:nowrap;';
+            tierSpan.textContent = `T${tier}`;
             el.appendChild(tierSpan);
         }
 
