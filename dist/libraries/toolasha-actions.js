@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.77.1
+ * Version: 2.77.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8770,6 +8770,11 @@
                 }
 
                 if (itemNameFromDom && currentAction.primaryItemHash) {
+                    const { itemHrid: hashItemHrid } = this.parseItemHash(currentAction.primaryItemHash);
+                    if (hashItemHrid) {
+                        const hashItemDetails = dataManager.getItemDetails(hashItemHrid);
+                        if (hashItemDetails?.name === itemNameFromDom) return true;
+                    }
                     return currentAction.primaryItemHash.includes(itemHridFromDom);
                 }
 
@@ -9202,6 +9207,11 @@
 
                 // If there's an item name, match on primaryItemHash
                 if (itemNameFromDiv && a.primaryItemHash) {
+                    const { itemHrid: hashItemHrid } = this.parseItemHash(a.primaryItemHash);
+                    if (hashItemHrid) {
+                        const hashItemDetails = dataManager.getItemDetails(hashItemHrid);
+                        if (hashItemDetails?.name === itemNameFromDiv) return true;
+                    }
                     const itemHrid = '/items/' + itemNameFromDiv.toLowerCase().replace(/\s+/g, '_');
                     return a.primaryItemHash.includes(itemHrid);
                 }
