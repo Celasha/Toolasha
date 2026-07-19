@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.76.0](https://github.com/Celasha/Toolasha/compare/v2.75.0...v2.76.0) (2026-07-19)
+
+
+### Features
+
+* add Copy List button to guild trial signup modals ([c60b883](https://github.com/Celasha/Toolasha/commit/c60b88345846320592a50a44f2b7b96e548199c9))
+* auto-fill enhancement target level from settings ([54dfa65](https://github.com/Celasha/Toolasha/commit/54dfa659813313e240f88550889af1ecefb9b16a))
+* auto-fill optimal protect-from level when protection item is set ([7b44dba](https://github.com/Celasha/Toolasha/commit/7b44dba83598026aa7121a6a35359c5f9273464e))
+
+
+### Bug Fixes
+
+* decrement and remove shrine missing mats tabs on purchase ([2a3032a](https://github.com/Celasha/Toolasha/commit/2a3032a4bf13a6bb14564c208a1c8b8215632407))
+
 ## [2.75.0](https://github.com/Celasha/Toolasha/compare/v2.74.2...v2.75.0) (2026-07-18)
 
 ### Features
