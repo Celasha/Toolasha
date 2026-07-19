@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.77.1](https://github.com/Celasha/Toolasha/compare/v2.77.0...v2.77.1) (2026-07-19)
+
+### Bug Fixes
+
+- remove parentheses from trial tier badge to prevent line wrap ([4f9f484](https://github.com/Celasha/Toolasha/commit/4f9f4848b9ef1cd3de025d4a0dae58af7a7b9a4a))
+
 ## [2.77.0](https://github.com/Celasha/Toolasha/compare/v2.76.0...v2.77.0) (2026-07-19)
 
 ### Features
