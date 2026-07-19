@@ -2,10 +2,9 @@
 
 ## [2.77.0](https://github.com/Celasha/Toolasha/compare/v2.76.0...v2.77.0) (2026-07-19)
 
-
 ### Features
 
-* show tier label on guild trial tiles ([5692a3e](https://github.com/Celasha/Toolasha/commit/5692a3e0af918805c106cf94b5831773f73c726f))
+- show tier label on guild trial tiles ([5692a3e](https://github.com/Celasha/Toolasha/commit/5692a3e0af918805c106cf94b5831773f73c726f))
 
 ## [2.76.0](https://github.com/Celasha/Toolasha/compare/v2.75.0...v2.76.0) (2026-07-19)
 
