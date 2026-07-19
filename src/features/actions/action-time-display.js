@@ -1593,6 +1593,11 @@ class ActionTimeDisplay {
             }
 
             if (itemNameFromDom && currentAction.primaryItemHash) {
+                const { itemHrid: hashItemHrid } = this.parseItemHash(currentAction.primaryItemHash);
+                if (hashItemHrid) {
+                    const hashItemDetails = dataManager.getItemDetails(hashItemHrid);
+                    if (hashItemDetails?.name === itemNameFromDom) return true;
+                }
                 return currentAction.primaryItemHash.includes(itemHridFromDom);
             }
 
@@ -2025,6 +2030,11 @@ class ActionTimeDisplay {
 
             // If there's an item name, match on primaryItemHash
             if (itemNameFromDiv && a.primaryItemHash) {
+                const { itemHrid: hashItemHrid } = this.parseItemHash(a.primaryItemHash);
+                if (hashItemHrid) {
+                    const hashItemDetails = dataManager.getItemDetails(hashItemHrid);
+                    if (hashItemDetails?.name === itemNameFromDiv) return true;
+                }
                 const itemHrid = '/items/' + itemNameFromDiv.toLowerCase().replace(/\s+/g, '_');
                 return a.primaryItemHash.includes(itemHrid);
             }
