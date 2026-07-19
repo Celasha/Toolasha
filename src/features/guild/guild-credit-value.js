@@ -679,8 +679,8 @@ class GuildCreditValue {
 
         const tierSpan = document.createElement('span');
         tierSpan.className = 'mwi-trial-tier';
-        tierSpan.style.cssText = 'color:#9ca3af; margin-left:4px;';
-        tierSpan.textContent = `(T${tier})`;
+        tierSpan.style.cssText = 'color:#9ca3af; margin-left:3px; font-size:0.85em; white-space:nowrap;';
+        tierSpan.textContent = `T${tier}`;
         el.appendChild(tierSpan);
     }
 
