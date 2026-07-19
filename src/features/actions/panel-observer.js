@@ -10,6 +10,7 @@
  */
 
 import dataManager from '../../core/data-manager.js';
+import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import { displayEnhancementStats } from './enhancement-display.js';
 import { displayGatheringProfit, displayProductionProfit } from './profit-display.js';
@@ -501,6 +502,29 @@ async function handleEnhancingPanel(panel) {
 
     // Store itemHrid on panel for later reference (when new inputs are added)
     panel.dataset.mwiItemHrid = itemHrid;
+
+    // Auto-fill target level if configured and not yet applied for this item
+    if (panel.dataset.mwiAutoTargetFilledFor !== itemHrid) {
+        const autoTargetLevel = config.getSettingValue('enhanceSim_autoTargetLevel', 0);
+        if (autoTargetLevel >= 1 && autoTargetLevel <= 20) {
+            const labels = Array.from(panel.querySelectorAll('*')).filter(
+                (el) => el.textContent.trim() === 'Target Level' && el.children.length === 0
+            );
+            if (labels.length > 0) {
+                const input = labels[0].parentElement?.querySelector('input[type="number"], input[type="text"]');
+                if (input) {
+                    const nativeSetter = Object.getOwnPropertyDescriptor(
+                        window.HTMLInputElement.prototype,
+                        'value'
+                    ).set;
+                    nativeSetter.call(input, autoTargetLevel.toString());
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                    input.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            }
+        }
+        panel.dataset.mwiAutoTargetFilledFor = itemHrid;
+    }
 
     // Double-check tab state right before rendering (safety check for race conditions)
     if (!isEnhanceTabActive(panel)) {

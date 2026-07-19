@@ -682,6 +682,15 @@ export const settingsGroups = {
                 default: false,
                 help: 'When enabled, uses the lower of crafting cost or market price for the base item in enhancement path calculations, applied independently to both the Ask and Bid columns',
             },
+            enhanceSim_autoTargetLevel: {
+                id: 'enhanceSim_autoTargetLevel',
+                label: 'Enhancement: Auto-fill target level on panel open (0 = disabled)',
+                type: 'number',
+                default: 0,
+                min: 0,
+                max: 20,
+                help: "When non-zero, automatically sets the Target Level input to this value whenever you open an item's enhancement panel. Re-applies each time you switch items.",
+            },
             enhanceSim_autoDetect: {
                 id: 'enhanceSim_autoDetect',
                 label: 'Auto-detect your stats (false = use settings below)',
