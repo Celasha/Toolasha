@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.77.2](https://github.com/Celasha/Toolasha/compare/v2.77.1...v2.77.2) (2026-07-19)
+
+### Bug Fixes
+
+- resolve [Unknown action] for items with mismatched display name and HRID ([3190702](https://github.com/Celasha/Toolasha/commit/3190702ce5c704b94c3face20a1ad1a0c0d32137))
+
 ## [2.77.1](https://github.com/Celasha/Toolasha/compare/v2.77.0...v2.77.1) (2026-07-19)
 
 ### Bug Fixes
