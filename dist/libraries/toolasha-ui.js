@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.76.0
+ * Version: 2.77.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -34062,6 +34062,13 @@ ${starCSS}
             );
             this.unregisterObservers.push(unregisterTrial);
 
+            const unregisterTileSummary = domObserver.onClass(
+                'GuildCreditValue-TileSummary',
+                'GuildPanel_tileSummary',
+                (el) => this._renderTrialTier(el)
+            );
+            this.unregisterObservers.push(unregisterTileSummary);
+
             this.initialized = true;
         }
 
@@ -34601,6 +34608,25 @@ ${starCSS}
             );
         }
 
+        _renderTrialTier(el) {
+            if (el.dataset.mwiTierInjected) return;
+            el.dataset.mwiTierInjected = 'true';
+
+            const match = el.textContent.match(/Lv\.(\d+)/);
+            if (!match) return;
+
+            const level = parseInt(match[1], 10);
+            if (level < 100) return;
+
+            const tier = Math.min(20, Math.floor((level - 100) / 10) + 1);
+
+            const tierSpan = document.createElement('span');
+            tierSpan.className = 'mwi-trial-tier';
+            tierSpan.style.cssText = 'color:#9ca3af; margin-left:4px;';
+            tierSpan.textContent = `(T${tier})`;
+            el.appendChild(tierSpan);
+        }
+
         cleanup() {
             this.unregisterObservers.forEach((fn) => fn());
             this.unregisterObservers = [];
@@ -34612,6 +34638,7 @@ ${starCSS}
             document.querySelectorAll(`.${CSS_CLASS}`).forEach((el) => el.remove());
             document.querySelectorAll('.mwi-shrine-cost').forEach((el) => el.remove());
             document.querySelectorAll('.mwi-trial-copy-btn').forEach((el) => el.remove());
+            document.querySelectorAll('.mwi-trial-tier').forEach((el) => el.remove());
             this.initialized = false;
         }
     }
