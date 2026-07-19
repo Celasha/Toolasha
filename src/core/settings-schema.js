@@ -691,6 +691,13 @@ export const settingsGroups = {
                 max: 20,
                 help: "When non-zero, automatically sets the Target Level input to this value whenever you open an item's enhancement panel. Re-applies each time you switch items.",
             },
+            enhanceSim_autoProtectFrom: {
+                id: 'enhanceSim_autoProtectFrom',
+                label: 'Enhancement: Auto-fill optimal protect-from level when protection item is set',
+                type: 'checkbox',
+                default: false,
+                help: 'When enabled, automatically fills the Protect From Level input with the optimal (cheapest) value whenever a protection item is placed in the slot.',
+            },
             enhanceSim_autoDetect: {
                 id: 'enhanceSim_autoDetect',
                 label: 'Auto-detect your stats (false = use settings below)',
