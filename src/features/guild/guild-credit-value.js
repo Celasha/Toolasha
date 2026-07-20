@@ -266,6 +266,120 @@ class GuildCreditValue {
 
         wrapper.appendChild(table);
         exchangeBtn.insertAdjacentElement('afterend', wrapper);
+
+        // Exchange advisor — initial render + re-render on item selection change
+        if (config.getSetting('guildCreditExchangeAdvisor', true)) {
+            this._renderExchangeAdvisor(modalEl, creditHrid, rows);
+
+            const itemSelector = modalEl.querySelector('[class*="ItemSelector_itemContainer"]');
+            if (itemSelector) {
+                const observer = new MutationObserver(() => {
+                    this._renderExchangeAdvisor(modalEl, creditHrid, rows);
+                });
+                observer.observe(itemSelector, { subtree: true, childList: true, attributes: true });
+            }
+        }
+    }
+
+    _renderExchangeAdvisor(modalEl, creditHrid, rows) {
+        modalEl.querySelectorAll('.mwi-exchange-advisor').forEach((el) => el.remove());
+
+        // The source item is inside ItemSelector_itemContainer; its SVG has aria-label="Item Name"
+        const selectorContainer = modalEl.querySelector('[class*="ItemSelector_itemContainer"]');
+        const itemSvg = selectorContainer?.querySelector('svg[aria-label]');
+        const selectedItemName = itemSvg?.getAttribute('aria-label') || null;
+
+        // Read batch quantity
+        const quantityInput = modalEl.querySelector('input[type="number"]');
+        const batches = Math.max(1, parseInt(quantityInput?.value || '1', 10) || 1);
+
+        // Find best and selected rows (rows are pre-built from _render)
+        const validRows = rows.filter((r) => r.sellGPC !== null || r.buyGPC !== null);
+        if (validRows.length === 0) return;
+
+        const bestRow = [...validRows].sort((a, b) => {
+            const aVal = a.sellGPC ?? Infinity;
+            const bVal = b.sellGPC ?? Infinity;
+            return aVal - bVal;
+        })[0];
+
+        const advisor = document.createElement('div');
+        advisor.className = 'mwi-exchange-advisor';
+        advisor.style.cssText = `
+            margin-top:8px; padding:8px 10px; border-radius:6px; font-size:12px;
+            border:1px solid rgba(255,255,255,0.1); background:rgba(0,0,0,0.2);
+        `;
+
+        if (!selectedItemName) {
+            // No item selected yet
+            advisor.innerHTML = `<div style="color:#6b7280; text-align:center;">Select an item to see exchange advice</div>`;
+            modalEl.querySelector(`.${CSS_CLASS}`)?.insertAdjacentElement('afterend', advisor);
+            return;
+        }
+
+        const selectedRow = validRows.find((r) => r.name === selectedItemName);
+
+        if (!selectedRow) {
+            // Item in modal has no conversion for this credit type
+            advisor.innerHTML = `<div style="color:#6b7280; text-align:center;">Selected item has no conversion for this credit</div>`;
+            modalEl.querySelector(`.${CSS_CLASS}`)?.insertAdjacentElement('afterend', advisor);
+            return;
+        }
+
+        if (selectedRow === bestRow) {
+            advisor.style.borderColor = 'rgba(74,222,128,0.4)';
+            advisor.innerHTML = `<div style="color:#4ade80; font-weight:600; text-align:center;">✓ Optimal choice for this credit type</div>`;
+            modalEl.querySelector(`.${CSS_CLASS}`)?.insertAdjacentElement('afterend', advisor);
+            return;
+        }
+
+        // Calculate sell → rebuy scenario
+        const SELLER_TAX = 0.02;
+        const sellPrice = selectedRow.buyPrice; // bid price = what market will buy at
+        const directCredits = batches * selectedRow.creditCount;
+
+        if (!sellPrice || sellPrice <= 0 || !bestRow.sellPrice || bestRow.sellPrice <= 0) {
+            advisor.innerHTML = `<div style="color:#6b7280; text-align:center;">Best: <b style="color:#e0e0e0;">${bestRow.name}</b> — no price data for comparison</div>`;
+            modalEl.querySelector(`.${CSS_CLASS}`)?.insertAdjacentElement('afterend', advisor);
+            return;
+        }
+
+        const gross = batches * selectedRow.itemCount * sellPrice;
+        const tax = Math.floor(gross * SELLER_TAX);
+        const net = gross - tax;
+
+        // How many batches of the best item can we buy with net proceeds?
+        const bestBatchCost = bestRow.itemCount * bestRow.sellPrice;
+        const bestBatches = Math.floor(net / bestBatchCost);
+        const bestCredits = bestBatches * bestRow.creditCount;
+        const creditDiff = bestCredits - directCredits;
+
+        const diffColor = creditDiff > 0 ? '#4ade80' : '#ff6b6b';
+        const diffSign = creditDiff > 0 ? '+' : '';
+        const diffLabel = creditDiff > 0 ? '↑ better' : '↓ worse';
+
+        advisor.style.borderColor = creditDiff > 0 ? 'rgba(74,222,128,0.3)' : 'rgba(255,107,107,0.3)';
+        advisor.innerHTML = `
+            <div style="color:#9ca3af; margin-bottom:6px; font-size:11px;">Sell → rebuy best item (2% tax)</div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:3px;">
+                <span style="color:#aaa;">Direct exchange</span>
+                <span style="color:#e0e0e0; font-weight:600;">${directCredits.toLocaleString()} credits</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:3px;">
+                <span style="color:#aaa;">Sell proceeds (after tax)</span>
+                <span style="color:#e0e0e0;">${formatKMB(net)}</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                <span style="color:#aaa;">Buy <b style="color:#e0e0e0;">${bestRow.name}</b> → credits</span>
+                <span style="color:#e0e0e0; font-weight:600;">${bestCredits.toLocaleString()} credits</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; border-top:1px solid rgba(255,255,255,0.1); padding-top:6px;">
+                <span style="color:#aaa;">Difference</span>
+                <span style="color:${diffColor}; font-weight:700;">${diffSign}${creditDiff.toLocaleString()} credits ${diffLabel}</span>
+            </div>
+        `;
+
+        modalEl.querySelector(`.${CSS_CLASS}`)?.insertAdjacentElement('afterend', advisor);
     }
 
     _renderTrialSignup(modalEl) {
@@ -696,6 +810,7 @@ class GuildCreditValue {
         document.querySelectorAll('.mwi-shrine-cost').forEach((el) => el.remove());
         document.querySelectorAll('.mwi-trial-copy-btn').forEach((el) => el.remove());
         document.querySelectorAll('.mwi-trial-tier').forEach((el) => el.remove());
+        document.querySelectorAll('.mwi-exchange-advisor').forEach((el) => el.remove());
         this.initialized = false;
     }
 }

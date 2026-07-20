@@ -2038,6 +2038,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Injects a cost-efficiency table into each guild credit exchange modal, sorted cheapest first using your profit pricing mode.',
             },
+            guildCreditExchangeAdvisor: {
+                id: 'guildCreditExchangeAdvisor',
+                label: 'Guild Shop: Show exchange advisor (sell → rebuy comparison)',
+                type: 'checkbox',
+                default: true,
+                help: 'When the selected item is not the cheapest option, shows whether selling it and rebuying the best item would yield more credits (accounts for 2% seller tax).',
+            },
         },
     },
 
