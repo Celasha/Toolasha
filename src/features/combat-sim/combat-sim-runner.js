@@ -225,6 +225,47 @@ function mergeSimResults(results) {
             }
         }
 
+        // Mana run out (OR across chunks — if any chunk went OOM, mark as true)
+        if (r.playerRanOutOfMana) {
+            if (!merged.playerRanOutOfMana) merged.playerRanOutOfMana = {};
+            for (const [playerHrid, ranOut] of Object.entries(r.playerRanOutOfMana)) {
+                merged.playerRanOutOfMana[playerHrid] = merged.playerRanOutOfMana[playerHrid] || ranOut;
+            }
+        }
+
+        // Mana run out time (sum closed OOM windows; close any still-open window at chunk boundary)
+        if (r.playerRanOutOfManaTime) {
+            if (!merged.playerRanOutOfManaTime) merged.playerRanOutOfManaTime = {};
+            for (const [playerHrid, stat] of Object.entries(r.playerRanOutOfManaTime)) {
+                const openWindow = stat.isOutOfMana ? r.simulatedTime - stat.startTimeForOutOfMana : 0;
+                const chunkTotal = stat.totalTimeForOutOfMana + openWindow;
+                if (!merged.playerRanOutOfManaTime[playerHrid]) {
+                    merged.playerRanOutOfManaTime[playerHrid] = {
+                        isOutOfMana: false,
+                        startTimeForOutOfMana: 0,
+                        totalTimeForOutOfMana: 0,
+                    };
+                }
+                merged.playerRanOutOfManaTime[playerHrid].totalTimeForOutOfMana += chunkTotal;
+            }
+        }
+
+        // Debuff on level gap — constant per player, just take the value from any chunk
+        if (r.debuffOnLevelGap) {
+            if (!merged.debuffOnLevelGap) merged.debuffOnLevelGap = {};
+            for (const [playerHrid, debuff] of Object.entries(r.debuffOnLevelGap)) {
+                merged.debuffOnLevelGap[playerHrid] = debuff;
+            }
+        }
+
+        // Wipe events — collect up to 20 across all chunks
+        if (r.wipeEvents && r.wipeEvents.length > 0) {
+            if (!merged.wipeEvents) merged.wipeEvents = [];
+            for (const event of r.wipeEvents) {
+                if (merged.wipeEvents.length < 20) merged.wipeEvents.push(event);
+            }
+        }
+
         // Dungeon stats
         if (r.isDungeon) {
             merged.dungeonsCompleted = (merged.dungeonsCompleted || 0) + (r.dungeonsCompleted || 0);
