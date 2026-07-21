@@ -185,7 +185,7 @@ class Storage {
                 const request = store.get(key);
 
                 request.onsuccess = () => {
-                    resolve(request.result !== undefined ? request.result : defaultValue);
+                    resolve(request.result != null ? request.result : defaultValue);
                 };
 
                 request.onerror = () => {
