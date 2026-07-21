@@ -2045,6 +2045,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'When the selected item is not the cheapest option, shows whether selling it and rebuying the best item would yield more credits (accounts for 2% seller tax).',
             },
+            guildShrineUpgradePlanner: {
+                id: 'guildShrineUpgradePlanner',
+                label: 'Guild Shop: Show shrine upgrade planner',
+                type: 'checkbox',
+                default: true,
+                help: 'Adds a shrine upgrade planner to the guild credit exchange panel, showing total credit and token costs to upgrade from your current level to a target level.',
+            },
         },
     },
 

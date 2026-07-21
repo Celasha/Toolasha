@@ -279,6 +279,198 @@ class GuildCreditValue {
                 observer.observe(itemSelector, { subtree: true, childList: true, attributes: true });
             }
         }
+
+        // Shrine upgrade planner
+        if (config.getSetting('guildShrineUpgradePlanner', true)) {
+            this._renderShrinePlanner(modalEl);
+        }
+    }
+
+    _renderShrinePlanner(modalEl) {
+        modalEl.querySelectorAll('.mwi-shrine-planner').forEach((el) => el.remove());
+
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.guildBuffDetailMap) return;
+
+        // Group buffs by shrine
+        const byShrine = {};
+        for (const [buffHrid, buff] of Object.entries(gameData.guildBuffDetailMap)) {
+            const shrineHrid = buff.shrineHrid;
+            if (!byShrine[shrineHrid]) byShrine[shrineHrid] = [];
+            byShrine[shrineHrid].push({ buffHrid, buff });
+        }
+        if (Object.keys(byShrine).length === 0) return;
+
+        const SHRINE_LABELS = {
+            '/guild_shrines/force': 'Force',
+            '/guild_shrines/tempo': 'Tempo',
+            '/guild_shrines/rarity': 'Rarity',
+            '/guild_shrines/scholar': 'Scholar',
+            '/guild_shrines/spirit': 'Spirit',
+        };
+
+        // Aggregate total costs across all target levels selected
+        const aggregateCosts = (plans) => {
+            const tokens = { total: 0 };
+            const credits = {};
+            for (const { buffHrid, fromLevel, toLevel } of plans) {
+                const levelCosts = gameData.guildBuffDetailMap[buffHrid]?.levelCosts || {};
+                for (let lvl = fromLevel + 1; lvl <= toLevel; lvl++) {
+                    const cost = levelCosts[String(lvl)];
+                    if (!cost) continue;
+                    tokens.total += cost.guildTokenCost || 0;
+                    for (const { itemHrid, count } of cost.creditCosts || []) {
+                        credits[itemHrid] = (credits[itemHrid] || 0) + count;
+                    }
+                }
+            }
+            return { tokens, credits };
+        };
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'mwi-shrine-planner';
+        wrapper.style.cssText = 'margin-top:10px; font-size:12px; width:100%;';
+
+        // Collapsible header
+        const header = document.createElement('div');
+        header.style.cssText = `
+            display:flex; justify-content:space-between; align-items:center;
+            padding:5px 6px; background:rgba(255,255,255,0.04); border-radius:4px;
+            cursor:pointer; font-size:11px; color:#9ca3af; user-select:none;
+            border:1px solid rgba(255,255,255,0.08); margin-bottom:4px;
+        `;
+        const headerTitle = document.createElement('span');
+        headerTitle.textContent = 'Shrine Upgrade Planner';
+        const headerArrow = document.createElement('span');
+        headerArrow.textContent = '▶';
+        header.appendChild(headerTitle);
+        header.appendChild(headerArrow);
+        wrapper.appendChild(header);
+
+        const body = document.createElement('div');
+        body.style.display = 'none';
+        wrapper.appendChild(body);
+
+        header.addEventListener('click', () => {
+            const isOpen = body.style.display !== 'none';
+            body.style.display = isOpen ? 'none' : 'block';
+            headerArrow.textContent = isOpen ? '▶' : '▼';
+        });
+
+        // Track target inputs for cost recalculation
+        const planInputs = []; // [{buffHrid, currentLevel, capLevel, inputEl}]
+
+        const totalsEl = document.createElement('div');
+        totalsEl.style.cssText =
+            'margin-top:8px; padding:6px; border-radius:4px; border:1px solid rgba(255,255,255,0.1); background:rgba(0,0,0,0.2);';
+
+        const recalculate = () => {
+            const plans = planInputs
+                .map(({ buffHrid, currentLevel, inputEl }) => ({
+                    buffHrid,
+                    fromLevel: currentLevel,
+                    toLevel: Math.min(parseInt(inputEl.value, 10) || currentLevel, parseInt(inputEl.max, 10)),
+                }))
+                .filter(({ fromLevel, toLevel }) => toLevel > fromLevel);
+
+            totalsEl.innerHTML = '';
+
+            if (plans.length === 0) {
+                totalsEl.innerHTML =
+                    '<div style="color:#6b7280; text-align:center; font-size:11px;">Set target levels above current to see costs</div>';
+                return;
+            }
+
+            const { tokens, credits } = aggregateCosts(plans);
+            const itemDetailMap = gameData.itemDetailMap || {};
+
+            const titleEl = document.createElement('div');
+            titleEl.style.cssText = 'color:#9ca3af; font-size:11px; margin-bottom:6px;';
+            titleEl.textContent = 'Total upgrade cost';
+            totalsEl.appendChild(titleEl);
+
+            // Guild tokens row
+            if (tokens.total > 0) {
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex; justify-content:space-between; padding:2px 0; font-size:12px;';
+                row.innerHTML = `<span style="color:#aaa;">Guild Tokens</span><span style="color:#e0e0e0; font-weight:600;">${tokens.total.toLocaleString()}</span>`;
+                totalsEl.appendChild(row);
+            }
+
+            // Credit costs
+            for (const [itemHrid, count] of Object.entries(credits)) {
+                const name = itemDetailMap[itemHrid]?.name || itemHrid.split('/').pop();
+                const price = getItemPrice(itemHrid, { mode: 'ask' });
+                const goldStr = price > 0 ? ` (${formatKMB(price * count)})` : '';
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex; justify-content:space-between; padding:2px 0; font-size:12px;';
+                row.innerHTML = `<span style="color:#aaa;">${name}</span><span style="color:#e0e0e0; font-weight:600;">${count.toLocaleString()}<span style="color:#6b7280; font-weight:400;">${goldStr}</span></span>`;
+                totalsEl.appendChild(row);
+            }
+        };
+
+        // Build rows per shrine
+        for (const [shrineHrid, buffs] of Object.entries(byShrine).sort()) {
+            const shrineLabel = SHRINE_LABELS[shrineHrid] || shrineHrid.split('/').pop();
+            const shrineCapLevel = dataManager.getGuildBuildingLevel(shrineHrid);
+
+            const shrineSection = document.createElement('div');
+            shrineSection.style.cssText = 'margin-bottom:6px;';
+
+            const shrineTitleEl = document.createElement('div');
+            shrineTitleEl.style.cssText =
+                'color:#c4b5fd; font-size:11px; font-weight:600; margin-bottom:3px; padding:2px 0;';
+            shrineTitleEl.textContent = `${shrineLabel} Shrine${shrineCapLevel > 0 ? ` (cap: ${shrineCapLevel})` : ''}`;
+            shrineSection.appendChild(shrineTitleEl);
+
+            for (const { buffHrid, buff } of buffs.sort((a, b) => a.buffHrid.localeCompare(b.buffHrid))) {
+                const isCombat = buff.isCombat;
+                const buffLabel = isCombat ? 'Combat' : 'Skilling';
+                const currentLevel = dataManager.getCharacterGuildBuffLevel(buffHrid);
+                const maxLevel = Math.max(...Object.keys(buff.levelCosts).map(Number));
+                const capLevel = shrineCapLevel > 0 ? Math.min(shrineCapLevel, maxLevel) : maxLevel;
+
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex; align-items:center; gap:6px; padding:2px 0; font-size:11px;';
+
+                const label = document.createElement('span');
+                label.style.cssText = 'flex:1; color:#9ca3af;';
+                label.textContent = `${buffLabel} (lvl ${currentLevel})`;
+
+                const input = document.createElement('input');
+                input.type = 'number';
+                input.min = String(currentLevel);
+                input.max = String(capLevel);
+                input.value = String(currentLevel);
+                input.style.cssText = `
+                    width:52px; padding:2px 4px; background:#1a1a2e; border:1px solid #374151;
+                    border-radius:3px; color:#e0e0e0; font-size:11px; text-align:center;
+                `;
+                input.addEventListener('input', recalculate);
+
+                const capLabel = document.createElement('span');
+                capLabel.style.cssText = 'color:#4b5563; font-size:10px;';
+                capLabel.textContent = `/ ${capLevel}`;
+
+                row.appendChild(label);
+                row.appendChild(input);
+                row.appendChild(capLabel);
+                shrineSection.appendChild(row);
+
+                planInputs.push({ buffHrid, currentLevel, capLevel, inputEl: input });
+            }
+
+            body.appendChild(shrineSection);
+        }
+
+        body.appendChild(totalsEl);
+        recalculate();
+
+        // Insert after the advisor (or after the ranking table if no advisor)
+        const advisorEl = modalEl.querySelector('.mwi-exchange-advisor');
+        const rankingEl = modalEl.querySelector(`.${CSS_CLASS}`);
+        const insertAfter = advisorEl || rankingEl;
+        insertAfter?.insertAdjacentElement('afterend', wrapper);
     }
 
     _renderExchangeAdvisor(modalEl, creditHrid, rows) {
@@ -811,6 +1003,7 @@ class GuildCreditValue {
         document.querySelectorAll('.mwi-trial-copy-btn').forEach((el) => el.remove());
         document.querySelectorAll('.mwi-trial-tier').forEach((el) => el.remove());
         document.querySelectorAll('.mwi-exchange-advisor').forEach((el) => el.remove());
+        document.querySelectorAll('.mwi-shrine-planner').forEach((el) => el.remove());
         this.initialized = false;
     }
 }
