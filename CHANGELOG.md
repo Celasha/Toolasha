@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.78.0](https://github.com/Celasha/Toolasha/compare/v2.77.2...v2.78.0) (2026-07-21)
+
+### Features
+
+- add exchange advisor to guild credit modal ([66d11b5](https://github.com/Celasha/Toolasha/commit/66d11b5e5a09b261642df3b2ad14d3452ee2c259))
+- add mana run out, debuff on level gap, and wipe event log to combat sim results ([0a8fbd9](https://github.com/Celasha/Toolasha/commit/0a8fbd9dc016720d351bd026217594ea249872a8))
+- add shrine upgrade planner to guild credit exchange panel ([783a04a](https://github.com/Celasha/Toolasha/commit/783a04a0639c52931dc2c98c2b005e73c2ae0e82))
+
+### Bug Fixes
+
+- return defaultValue from storage.get when stored value is null ([7e5ce1e](https://github.com/Celasha/Toolasha/commit/7e5ce1eb0ceff763a5c92cf545e6ca29dfd4c6b9))
+
 ## [2.77.2](https://github.com/Celasha/Toolasha/compare/v2.77.1...v2.77.2) (2026-07-19)
 
 ### Bug Fixes
