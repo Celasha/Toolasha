@@ -276,6 +276,14 @@ function mergeSimResults(results) {
         // Simulated time
         merged.simulatedTime = (merged.simulatedTime || 0) + (r.simulatedTime || 0);
 
+        // Total damage dealt per source
+        if (r.totalDamageDealt) {
+            if (!merged.totalDamageDealt) merged.totalDamageDealt = {};
+            for (const [hrid, damage] of Object.entries(r.totalDamageDealt)) {
+                merged.totalDamageDealt[hrid] = (merged.totalDamageDealt[hrid] || 0) + damage;
+            }
+        }
+
         // Time spent alive
         if (r.timeSpentAlive) {
             if (!merged.timeSpentAlive) merged.timeSpentAlive = [];

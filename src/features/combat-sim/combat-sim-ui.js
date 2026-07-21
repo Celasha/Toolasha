@@ -1824,35 +1824,45 @@ class CombatSimUI {
             html += '</div>';
         }
 
-        // DPS — estimated from monster kills × max HP / time
-        if (gameData) {
-            const monsterDetailMap = gameData.combatMonsterDetailMap || {};
-            let totalDamage = 0;
-            let prevTotalDamage = 0;
-            for (const [hrid, count] of Object.entries(simResult.deaths)) {
-                if (hrid.startsWith('player')) continue;
-                const monster = monsterDetailMap[hrid];
-                if (monster?.combatDetails?.maxHitpoints) {
-                    totalDamage += count * monster.combatDetails.maxHitpoints;
-                }
+        // DPS — from actual damage dealt per player
+        if (simResult.totalDamageDealt && simResult.simulatedTime > 0) {
+            const simSeconds = simResult.simulatedTime / 1e9;
+            let partyDamage = 0;
+            for (const { hrid } of playerInfo) {
+                partyDamage += simResult.totalDamageDealt[hrid] || 0;
             }
-            const dps = totalDamage / (hours * 3600);
-            this._lastComputedDps = dps;
-            let prevDps = null;
-            if (hasPrev) {
-                for (const [hrid, count] of Object.entries(compResult.deaths)) {
-                    if (hrid.startsWith('player')) continue;
-                    const monster = monsterDetailMap[hrid];
-                    if (monster?.combatDetails?.maxHitpoints) {
-                        prevTotalDamage += count * monster.combatDetails.maxHitpoints;
-                    }
+            const partyDps = partyDamage / simSeconds;
+            this._lastComputedDps = partyDps;
+
+            let prevPartyDps = null;
+            if (hasPrev && compResult.totalDamageDealt && compResult.simulatedTime > 0) {
+                const compSimSeconds = compResult.simulatedTime / 1e9;
+                let prevDamage = 0;
+                for (const { hrid } of playerInfo) {
+                    prevDamage += compResult.totalDamageDealt[hrid] || 0;
                 }
-                prevDps = prevTotalDamage / (compHours * 3600);
+                prevPartyDps = prevDamage / compSimSeconds;
             }
+
+            const dpsLabel = numberOfPlayers > 1 ? 'Party DPS' : 'DPS';
             html += `<div style="${rowStyle}">`;
-            html += `<span style="${labelStyle}">Party DPS (est.)</span>`;
-            html += `<span style="${valueStyle}">${formatWithSeparator(Math.round(dps))}${this._formatDelta(dps, prevDps)}</span>`;
+            html += `<span style="${labelStyle}">${dpsLabel}</span>`;
+            html += `<span style="${valueStyle}">${formatWithSeparator(Math.round(partyDps))}${this._formatDelta(partyDps, prevPartyDps)}</span>`;
             html += '</div>';
+
+            if (numberOfPlayers > 1) {
+                for (const { hrid, name } of playerInfo) {
+                    const playerDps = (simResult.totalDamageDealt[hrid] || 0) / simSeconds;
+                    let prevPlayerDps = null;
+                    if (hasPrev && compResult.totalDamageDealt && compResult.simulatedTime > 0) {
+                        prevPlayerDps = (compResult.totalDamageDealt[hrid] || 0) / (compResult.simulatedTime / 1e9);
+                    }
+                    html += `<div style="${rowStyle}">`;
+                    html += `<span style="color:#888; padding-left:12px;">${name}</span>`;
+                    html += `<span style="${valueStyle}">${formatWithSeparator(Math.round(playerDps))}${this._formatDelta(playerDps, prevPlayerDps)}</span>`;
+                    html += '</div>';
+                }
+            }
         }
 
         // Dungeon stats if applicable
@@ -2438,17 +2448,13 @@ class CombatSimUI {
         // Encounters
         const encountersPerHr = simResult.encounters / hours;
 
-        // DPS from monster kills × HP
+        // DPS from actual damage dealt
+        const simSeconds = simResult.simulatedTime > 0 ? simResult.simulatedTime / 1e9 : hours * 3600;
         let totalDamage = 0;
-        const monsterDetailMap = gameData?.combatMonsterDetailMap || {};
-        for (const [hrid, count] of Object.entries(simResult.deaths)) {
-            if (hrid.startsWith('player')) continue;
-            const monster = monsterDetailMap[hrid];
-            if (monster?.combatDetails?.maxHitpoints) {
-                totalDamage += count * monster.combatDetails.maxHitpoints;
-            }
+        for (const [hrid, damage] of Object.entries(simResult.totalDamageDealt || {})) {
+            if (hrid.startsWith('player')) totalDamage += damage;
         }
-        const dps = totalDamage / (hours * 3600);
+        const dps = simSeconds > 0 ? totalDamage / simSeconds : 0;
 
         // XP/hr for active player
         let totalXpPerHr = 0;

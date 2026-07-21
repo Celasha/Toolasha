@@ -35,6 +35,7 @@ class SimResult {
         this.maxEnrageStack = 0;
 
         this.wipeEvents = [];
+        this.totalDamageDealt = {}; // sourceHrid → total damage dealt
     }
 
     addWipeEvent(logs, simulationTime, wave) {
@@ -147,6 +148,10 @@ class SimResult {
         }
 
         this.attacks[source.hrid][target.hrid][ability][hit] += 1;
+
+        if (hit !== 'miss') {
+            this.totalDamageDealt[source.hrid] = (this.totalDamageDealt[source.hrid] || 0) + hit;
+        }
     }
 
     addConsumableUse(unit, consumable) {
