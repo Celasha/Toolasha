@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.77.2
+ * Version: 2.78.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -195,7 +195,7 @@
                     const request = store.get(key);
 
                     request.onsuccess = () => {
-                        resolve(request.result !== undefined ? request.result : defaultValue);
+                        resolve(request.result != null ? request.result : defaultValue);
                     };
 
                     request.onerror = () => {
@@ -2607,6 +2607,20 @@
                     default: true,
                     help: 'Injects a cost-efficiency table into each guild credit exchange modal, sorted cheapest first using your profit pricing mode.',
                 },
+                guildCreditExchangeAdvisor: {
+                    id: 'guildCreditExchangeAdvisor',
+                    label: 'Guild Shop: Show exchange advisor (sell → rebuy comparison)',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'When the selected item is not the cheapest option, shows whether selling it and rebuying the best item would yield more credits (accounts for 2% seller tax).',
+                },
+                guildShrineUpgradePlanner: {
+                    id: 'guildShrineUpgradePlanner',
+                    label: 'Guild Shop: Show shrine upgrade planner',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Adds a shrine upgrade planner to the guild credit exchange panel, showing total credit and token costs to upgrade from your current level to a target level.',
+                },
             },
         },
 
@@ -4169,6 +4183,8 @@
             this.characterEquipment = new Map();
             this.characterHouseRooms = new Map(); // House room HRID -> {houseRoomHrid, level}
             this.actionTypeDrinkSlotsMap = new Map(); // Action type HRID -> array of drink items
+            this.characterGuildBuffMap = {}; // Guild buff HRID -> {guildBuffHrid, level}
+            this.guildBuildingLevelMap = {}; // Building/shrine HRID -> level
             this.monsterSortIndexMap = new Map(); // Monster HRID -> combat zone sortIndex
             this.bossMonsterHrids = new Set(); // Monster HRIDs that appear in bossSpawns
             this.battleData = null; // Current battle data (for Combat Sim export on Steam)
@@ -4366,6 +4382,8 @@
                     this.characterHouseRooms.clear();
                     this.actionTypeDrinkSlotsMap.clear();
                     this.personalActionTypeBuffsMap = {};
+                    this.characterGuildBuffMap = {};
+                    this.guildBuildingLevelMap = {};
                     this.battleData = null;
 
                     // Reset switching flag (cleanup complete, ready for re-init)
@@ -4403,6 +4421,10 @@
                 if (data.personalActionTypeBuffsMap) {
                     this.personalActionTypeBuffsMap = data.personalActionTypeBuffsMap;
                 }
+
+                // Load guild buff levels and shrine/building levels
+                this.characterGuildBuffMap = data.characterGuildBuffMap || {};
+                this.guildBuildingLevelMap = data.guildBuildingLevelMap || {};
 
                 // Clear switching flag
                 this.isCharacterSwitching = false;
@@ -4757,6 +4779,24 @@
         getHouseRoomLevel(houseRoomHrid) {
             const room = this.characterHouseRooms.get(houseRoomHrid);
             return room?.level || 0;
+        }
+
+        /**
+         * Get character's purchased level for a guild buff
+         * @param {string} guildBuffHrid - Guild buff HRID (e.g., "/guild_buffs/force_combat")
+         * @returns {number} Current purchased level (0 if not purchased)
+         */
+        getCharacterGuildBuffLevel(guildBuffHrid) {
+            return this.characterGuildBuffMap[guildBuffHrid]?.level || 0;
+        }
+
+        /**
+         * Get guild shrine or building level
+         * @param {string} hrid - Building/shrine HRID (e.g., "/guild_shrines/force")
+         * @returns {number} Current guild building level (0 if not in a guild or not built)
+         */
+        getGuildBuildingLevel(hrid) {
+            return this.guildBuildingLevelMap[hrid] || 0;
         }
 
         /**
