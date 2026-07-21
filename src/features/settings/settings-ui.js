@@ -355,6 +355,10 @@ class SettingsUI {
                 const settingId = e.target.dataset.settingId;
                 this.openTemplateEditor(settingId);
             }
+            if (e.target.classList.contains('toolasha-text-vars-btn')) {
+                const settingId = e.target.dataset.settingId;
+                this.openTextVariablesHelper(settingId);
+            }
             if (e.target.classList.contains('toolasha-custom-price-edit-btn')) {
                 this.openCustomPriceOverridesEditor();
             }
@@ -554,13 +558,51 @@ class SettingsUI {
             }
 
             case 'text': {
-                const value = currentSetting?.value ?? settingDef.default ?? '';
-                return `
+                let value = currentSetting?.value ?? settingDef.default ?? '';
+                // Migrate old template array format (previously type:'template') to plain string
+                if (Array.isArray(value)) {
+                    value = value.map((item) => (item.type === 'variable' ? item.key : (item.value ?? ''))).join('');
+                } else if (typeof value === 'string' && value.startsWith('[')) {
+                    try {
+                        const arr = JSON.parse(value);
+                        if (Array.isArray(arr)) {
+                            value = arr
+                                .map((item) => (item.type === 'variable' ? item.key : (item.value ?? '')))
+                                .join('');
+                        }
+                    } catch (e) {
+                        /* leave as-is */
+                    }
+                }
+                const hasVars = settingDef.templateVariables?.length > 0;
+                const input = `
                     <input type="text"
                         id="${settingId}"
                         class="toolasha-text-input"
-                        value="${value}"
+                        value="${String(value).replace(/"/g, '&quot;')}"
                         placeholder="${settingDef.placeholder || ''}">
+                `;
+                if (!hasVars) return input;
+                return `
+                    <div style="display:flex; gap:6px; align-items:center;">
+                        ${input}
+                        <button type="button"
+                            class="toolasha-text-vars-btn"
+                            data-setting-id="${settingId}"
+                            style="
+                                background: #4a7c59;
+                                border: 1px solid #5a8c69;
+                                border-radius: 4px;
+                                padding: 6px 12px;
+                                color: #e0e0e0;
+                                cursor: pointer;
+                                font-size: 13px;
+                                white-space: nowrap;
+                                flex-shrink: 0;
+                            ">
+                            Edit Template
+                        </button>
+                    </div>
                 `;
             }
 
@@ -1521,6 +1563,151 @@ class SettingsUI {
                 if (input) input.checked = entry.isTrue ?? false;
             }
         }
+    }
+
+    /**
+     * Open variable-helper popup for freeform text settings with templateVariables.
+     * @param {string} settingId - Setting ID
+     */
+    openTextVariablesHelper(settingId) {
+        const setting = this.findSettingDef(settingId);
+        if (!setting?.templateVariables?.length) return;
+
+        const textInput = document.getElementById(settingId);
+        if (!textInput) return;
+
+        const overlay = document.createElement('div');
+        overlay.style.cssText = `
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            z-index: 100000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        `;
+
+        const modal = document.createElement('div');
+        modal.style.cssText = `
+            background: #1a1a1a;
+            border: 2px solid #3a3a3a;
+            border-radius: 8px;
+            padding: 20px;
+            max-width: 500px;
+            width: 90%;
+            color: #e0e0e0;
+        `;
+
+        const header = document.createElement('div');
+        header.style.cssText = `
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            border-bottom: 2px solid #3a3a3a;
+            padding-bottom: 10px;
+        `;
+        header.innerHTML = `
+            <h3 style="margin:0; color:#e0e0e0;">Edit Template</h3>
+            <button style="background:none; border:none; color:#e0e0e0; font-size:32px; cursor:pointer; padding:0; line-height:1;">×</button>
+        `;
+        header.querySelector('button').onclick = () => overlay.remove();
+
+        const textareaLabel = document.createElement('p');
+        textareaLabel.style.cssText = 'margin: 0 0 8px; font-size:13px; color:#9ca3af;';
+        textareaLabel.textContent = 'Message text:';
+
+        const textarea = document.createElement('textarea');
+        textarea.value = textInput.value;
+        textarea.style.cssText = `
+            width: 100%;
+            box-sizing: border-box;
+            background: #2a2a2a;
+            border: 1px solid #4a4a4a;
+            border-radius: 4px;
+            color: #e0e0e0;
+            font-size: 13px;
+            padding: 8px;
+            resize: vertical;
+            min-height: 80px;
+            margin-bottom: 16px;
+            font-family: monospace;
+        `;
+
+        const varsLabel = document.createElement('p');
+        varsLabel.style.cssText = 'margin: 0 0 8px; font-size:13px; color:#9ca3af;';
+        varsLabel.textContent = 'Click a variable to insert it at the cursor:';
+
+        const chipsRow = document.createElement('div');
+        chipsRow.style.cssText = 'display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px;';
+
+        for (const v of setting.templateVariables) {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.style.cssText = `
+                background: #2a4a7c;
+                border: 1px solid #3a5a8c;
+                border-radius: 4px;
+                color: #e0e0e0;
+                padding: 4px 10px;
+                cursor: pointer;
+                font-size: 13px;
+            `;
+            chip.title = v.description || '';
+            chip.textContent = v.label;
+            chip.onclick = () => {
+                const start = textarea.selectionStart;
+                const end = textarea.selectionEnd;
+                const val = textarea.value;
+                textarea.value = val.slice(0, start) + v.key + val.slice(end);
+                textarea.selectionStart = textarea.selectionEnd = start + v.key.length;
+                textarea.focus();
+            };
+            chipsRow.appendChild(chip);
+        }
+
+        const footer = document.createElement('div');
+        footer.style.cssText = 'display:flex; justify-content:flex-end; gap:8px;';
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.style.cssText = `
+            background: #3a3a3a; border: 1px solid #5a5a5a;
+            border-radius: 4px; color: #e0e0e0;
+            padding: 8px 16px; cursor: pointer; font-size: 13px;
+        `;
+        cancelBtn.onclick = () => overlay.remove();
+
+        const saveBtn = document.createElement('button');
+        saveBtn.type = 'button';
+        saveBtn.textContent = 'Save';
+        saveBtn.style.cssText = `
+            background: #4a7c59; border: 1px solid #5a8c69;
+            border-radius: 4px; color: #e0e0e0;
+            padding: 8px 16px; cursor: pointer; font-size: 13px;
+        `;
+        saveBtn.onclick = () => {
+            textInput.value = textarea.value;
+            textInput.dispatchEvent(new Event('change', { bubbles: true }));
+            overlay.remove();
+        };
+
+        footer.appendChild(cancelBtn);
+        footer.appendChild(saveBtn);
+        modal.appendChild(header);
+        modal.appendChild(textareaLabel);
+        modal.appendChild(textarea);
+        modal.appendChild(varsLabel);
+        modal.appendChild(chipsRow);
+        modal.appendChild(footer);
+        overlay.appendChild(modal);
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) overlay.remove();
+        });
+        document.body.appendChild(overlay);
+        textarea.focus();
     }
 
     /**

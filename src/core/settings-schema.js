@@ -1991,6 +1991,16 @@ export const settingsGroups = {
                 default: true,
                 help: "Displays which guild members have not yet signed up for the current week's skilling and combat trials.",
             },
+            guildTrialWhisperTemplate: {
+                id: 'guildTrialWhisperTemplate',
+                label: 'Guild Trials: Whisper message when clicking a name',
+                type: 'text',
+                default: "/w {name} Why haven't you signed up for your trial(s) yet?!",
+                help: "Message pre-filled in chat when clicking an unsigned member's name. Use {name} for the player's name.",
+                templateVariables: [
+                    { key: '{name}', label: 'Player Name', description: 'The name of the unsigned guild member' },
+                ],
+            },
             guildMembersActivityTab: {
                 id: 'guildMembersActivityTab',
                 label: 'Guild Members: Show Activity column on',

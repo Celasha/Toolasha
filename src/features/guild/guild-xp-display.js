@@ -958,7 +958,15 @@ class GuildXPDisplay {
                 const chatInput = document.querySelector('[class*="Chat_chatInputContainer"] input');
                 if (!chatInput) return;
                 const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                setter.call(chatInput, `/w ${name} Why haven't you signed up for your trial(s) yet?!`);
+                const DEFAULT_TEMPLATE = "/w {name} Why haven't you signed up for your trial(s) yet?!";
+                let template =
+                    config.getSettingValue('guildTrialWhisperTemplate', DEFAULT_TEMPLATE) || DEFAULT_TEMPLATE;
+                if (Array.isArray(template)) {
+                    template = template
+                        .map((item) => (item.type === 'variable' ? item.key : (item.value ?? '')))
+                        .join('');
+                }
+                setter.call(chatInput, String(template).replace('{name}', name));
                 chatInput.dispatchEvent(new Event('input', { bubbles: true }));
                 chatInput.focus();
             });
