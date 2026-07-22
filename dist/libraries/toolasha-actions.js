@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.79.0
+ * Version: 2.80.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -12177,6 +12177,9 @@
                 this.getResizeObserver().observe(display);
             }
 
+            // Register with sort manager for all actions regardless of pin feature state
+            actionPanelSort.registerPanel(actionPanel, actionHrid);
+
             // Create pin icon only when the pinned page feature is enabled
             if (!config.getSetting('actions_pinnedPage')) {
                 this.actionElements.set(actionPanel, {
@@ -12187,6 +12190,7 @@
                 if (display) {
                     this.updateCount(actionPanel);
                 }
+                actionPanelSort.triggerSort();
                 return;
             }
 
@@ -12234,9 +12238,6 @@
                 displayElement: display,
                 pinElement: pinIcon,
             });
-
-            // Register panel with shared sort manager
-            actionPanelSort.registerPanel(actionPanel, actionHrid);
 
             // Note: Profit calculation is deferred to updateAllCounts() in setupObserver()
             // This prevents 20-50 simultaneous API calls during character switch
