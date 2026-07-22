@@ -408,8 +408,8 @@ class GuildXPDisplay {
             const el = document.querySelector('[class*="GuildPanel_trialsContent"]');
             if (el) this._renderTrialSignups(el);
         };
-        this._boundRefreshLeaderboard = (_data) => {
-            this._refreshLeaderboardIfVisible();
+        this._boundRefreshLeaderboard = (data) => {
+            this._refreshLeaderboardIfVisible(data?.leaderboardCategory);
         };
 
         webSocketHook.on('guild_updated', this._boundRefreshOverview);
@@ -988,11 +988,14 @@ class GuildXPDisplay {
 
     // ─── Leaderboard tab ─────────────────────────────────────────────────────
 
-    _renderLeaderboard(tableEl) {
+    _renderLeaderboard(tableEl, category) {
         // Skip if already rendered
         if (tableEl.querySelector(`.${CSS_PREFIX}`)) return;
 
         const isGuildLeaderboard = !!tableEl.closest('[class*="GuildPanel"]');
+
+        // For player leaderboard, resolve category from parameter or last seen WS category
+        const resolvedCategory = isGuildLeaderboard ? null : category || guildXPTracker.getLastLeaderboardCategory();
 
         if (isGuildLeaderboard) {
             const allHistories = guildXPTracker.getAllGuildHistories();
@@ -1020,7 +1023,7 @@ class GuildXPDisplay {
             const stats = name
                 ? isGuildLeaderboard
                     ? guildXPTracker.getGuildStats(name)
-                    : guildXPTracker.getPlayerStats(name)
+                    : guildXPTracker.getPlayerStats(name, resolvedCategory)
                 : { lastXPH: 0, lastDayXPH: 0 };
             allStats.push({
                 name,
@@ -1081,12 +1084,12 @@ class GuildXPDisplay {
         }
     }
 
-    _refreshLeaderboardIfVisible() {
+    _refreshLeaderboardIfVisible(category) {
         const tableEl = document.querySelector('[class*="LeaderboardPanel_leaderboardTable"]');
         if (tableEl) {
             // Remove existing columns and re-render
             tableEl.querySelectorAll(`.${CSS_PREFIX}`).forEach((el) => el.remove());
-            this._renderLeaderboard(tableEl);
+            this._renderLeaderboard(tableEl, category);
         }
     }
 

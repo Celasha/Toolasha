@@ -223,7 +223,8 @@ class GuildXPTracker {
         this.guildXPHistory = {}; // guildName → [{t, xp}]
         this.memberXPHistory = {}; // characterID → [{t, xp}]
         this.memberMeta = {}; // characterID → {name, gameMode, joinTime, invitedBy, ...}
-        this.playerXPHistory = {}; // playerName → [{t, xp}] (main leaderboard)
+        this.playerXPHistory = {}; // `${category}_${playerName}` → [{t, xp}]
+        this.lastLeaderboardCategory = null;
         this.unregisterHandlers = [];
     }
 
@@ -261,6 +262,14 @@ class GuildXPTracker {
 
         // Load persisted player leaderboard history
         this.playerXPHistory = await storage.get('playerXP_leaderboard', STORE_NAME, {});
+
+        // Clear legacy data: old format used bare player names as keys; new format uses
+        // "category_name". If no stored key contains "_", the data is from the old format.
+        const storedKeys = Object.keys(this.playerXPHistory);
+        if (storedKeys.length > 0 && storedKeys.every((k) => !k.includes('_'))) {
+            this.playerXPHistory = {};
+            storage.set('playerXP_leaderboard', {}, STORE_NAME);
+        }
 
         this.initialized = true;
     }
@@ -455,15 +464,18 @@ class GuildXPTracker {
                 storage.set(`guildXP_${this.ownGuildName}`, this.guildXPHistory, STORE_NAME);
             }
         } else {
+            this.lastLeaderboardCategory = data.leaderboardCategory;
+
             for (const row of rows) {
                 const name = row.name;
                 const xp = row.value2;
                 if (!name || xp === undefined) continue;
 
-                if (!this.playerXPHistory[name]) {
-                    this.playerXPHistory[name] = [];
+                const key = `${data.leaderboardCategory}_${name}`;
+                if (!this.playerXPHistory[key]) {
+                    this.playerXPHistory[key] = [];
                 }
-                pushXP(this.playerXPHistory[name], { t, xp });
+                pushXP(this.playerXPHistory[key], { t, xp });
             }
 
             storage.set('playerXP_leaderboard', this.playerXPHistory, STORE_NAME);
@@ -553,10 +565,20 @@ class GuildXPTracker {
     /**
      * Get XP/hr stats for a player on the main leaderboard.
      * @param {string} playerName
+     * @param {string} category - Leaderboard category (e.g. 'foraging', 'enhancing')
      * @returns {{lastXPH: number, lastHourXPH: number, lastDayXPH: number, chart: Array}}
      */
-    getPlayerStats(playerName) {
-        return calcStats(this.playerXPHistory[playerName]);
+    getPlayerStats(playerName, category) {
+        const key = `${category}_${playerName}`;
+        return calcStats(this.playerXPHistory[key]);
+    }
+
+    /**
+     * Get the most recently seen non-guild leaderboard category.
+     * @returns {string|null}
+     */
+    getLastLeaderboardCategory() {
+        return this.lastLeaderboardCategory;
     }
 
     /**
@@ -629,6 +651,7 @@ class GuildXPTracker {
         this.memberXPHistory = {};
         this.memberMeta = {};
         this.playerXPHistory = {};
+        this.lastLeaderboardCategory = null;
         this.initialized = false;
     }
 }
