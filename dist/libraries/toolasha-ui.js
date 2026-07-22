@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.80.1
+ * Version: 2.80.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -32697,7 +32697,8 @@ ${starCSS}
             this.guildXPHistory = {}; // guildName → [{t, xp}]
             this.memberXPHistory = {}; // characterID → [{t, xp}]
             this.memberMeta = {}; // characterID → {name, gameMode, joinTime, invitedBy, ...}
-            this.playerXPHistory = {}; // playerName → [{t, xp}] (main leaderboard)
+            this.playerXPHistory = {}; // `${category}_${playerName}` → [{t, xp}]
+            this.lastLeaderboardCategory = null;
             this.unregisterHandlers = [];
         }
 
@@ -32735,6 +32736,14 @@ ${starCSS}
 
             // Load persisted player leaderboard history
             this.playerXPHistory = await storage.get('playerXP_leaderboard', STORE_NAME$1, {});
+
+            // Clear legacy data: old format used bare player names as keys; new format uses
+            // "category_name". If no stored key contains "_", the data is from the old format.
+            const storedKeys = Object.keys(this.playerXPHistory);
+            if (storedKeys.length > 0 && storedKeys.every((k) => !k.includes('_'))) {
+                this.playerXPHistory = {};
+                storage.set('playerXP_leaderboard', {}, STORE_NAME$1);
+            }
 
             this.initialized = true;
         }
@@ -32929,15 +32938,18 @@ ${starCSS}
                     storage.set(`guildXP_${this.ownGuildName}`, this.guildXPHistory, STORE_NAME$1);
                 }
             } else {
+                this.lastLeaderboardCategory = data.leaderboardCategory;
+
                 for (const row of rows) {
                     const name = row.name;
                     const xp = row.value2;
                     if (!name || xp === undefined) continue;
 
-                    if (!this.playerXPHistory[name]) {
-                        this.playerXPHistory[name] = [];
+                    const key = `${data.leaderboardCategory}_${name}`;
+                    if (!this.playerXPHistory[key]) {
+                        this.playerXPHistory[key] = [];
                     }
-                    pushXP(this.playerXPHistory[name], { t, xp });
+                    pushXP(this.playerXPHistory[key], { t, xp });
                 }
 
                 storage.set('playerXP_leaderboard', this.playerXPHistory, STORE_NAME$1);
@@ -33027,10 +33039,20 @@ ${starCSS}
         /**
          * Get XP/hr stats for a player on the main leaderboard.
          * @param {string} playerName
+         * @param {string} category - Leaderboard category (e.g. 'foraging', 'enhancing')
          * @returns {{lastXPH: number, lastHourXPH: number, lastDayXPH: number, chart: Array}}
          */
-        getPlayerStats(playerName) {
-            return calcStats(this.playerXPHistory[playerName]);
+        getPlayerStats(playerName, category) {
+            const key = `${category}_${playerName}`;
+            return calcStats(this.playerXPHistory[key]);
+        }
+
+        /**
+         * Get the most recently seen non-guild leaderboard category.
+         * @returns {string|null}
+         */
+        getLastLeaderboardCategory() {
+            return this.lastLeaderboardCategory;
         }
 
         /**
@@ -33103,6 +33125,7 @@ ${starCSS}
             this.memberXPHistory = {};
             this.memberMeta = {};
             this.playerXPHistory = {};
+            this.lastLeaderboardCategory = null;
             this.initialized = false;
         }
     }
@@ -33519,8 +33542,8 @@ ${starCSS}
                 const el = document.querySelector('[class*="GuildPanel_trialsContent"]');
                 if (el) this._renderTrialSignups(el);
             };
-            this._boundRefreshLeaderboard = (_data) => {
-                this._refreshLeaderboardIfVisible();
+            this._boundRefreshLeaderboard = (data) => {
+                this._refreshLeaderboardIfVisible(data?.leaderboardCategory);
             };
 
             webSocketHook.on('guild_updated', this._boundRefreshOverview);
@@ -34099,11 +34122,14 @@ ${starCSS}
 
         // ─── Leaderboard tab ─────────────────────────────────────────────────────
 
-        _renderLeaderboard(tableEl) {
+        _renderLeaderboard(tableEl, category) {
             // Skip if already rendered
             if (tableEl.querySelector(`.${CSS_PREFIX}`)) return;
 
             const isGuildLeaderboard = !!tableEl.closest('[class*="GuildPanel"]');
+
+            // For player leaderboard, resolve category from parameter or last seen WS category
+            const resolvedCategory = isGuildLeaderboard ? null : category || guildXPTracker.getLastLeaderboardCategory();
 
             if (isGuildLeaderboard) {
                 const allHistories = guildXPTracker.getAllGuildHistories();
@@ -34131,7 +34157,7 @@ ${starCSS}
                 const stats = name
                     ? isGuildLeaderboard
                         ? guildXPTracker.getGuildStats(name)
-                        : guildXPTracker.getPlayerStats(name)
+                        : guildXPTracker.getPlayerStats(name, resolvedCategory)
                     : { lastXPH: 0, lastDayXPH: 0 };
                 allStats.push({
                     name,
@@ -34192,12 +34218,12 @@ ${starCSS}
             }
         }
 
-        _refreshLeaderboardIfVisible() {
+        _refreshLeaderboardIfVisible(category) {
             const tableEl = document.querySelector('[class*="LeaderboardPanel_leaderboardTable"]');
             if (tableEl) {
                 // Remove existing columns and re-render
                 tableEl.querySelectorAll(`.${CSS_PREFIX}`).forEach((el) => el.remove());
-                this._renderLeaderboard(tableEl);
+                this._renderLeaderboard(tableEl, category);
             }
         }
 

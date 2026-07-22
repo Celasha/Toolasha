@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.80.1
+ * Version: 2.80.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5631,63 +5631,9 @@
             targetAttempts[level] = minResult.expectedAttempts;
         }
 
-        // Find the base (non-refined) item HRID for the Philosopher's Mirror path.
-        // The mirror path consumes copies of the item at lower enhancement levels; for refined items
-        // those copies are the non-refined base item, so we compute a separate cost array for it.
-        // Only applies to actual refined items (HRID contains '_refined').
-        let mirrorItemHrid = itemHrid;
-        if (itemHrid.includes('_refined')) {
-            for (const action of Object.values(gameData.actionDetailMap)) {
-                if (action.outputItems?.[0]?.itemHrid === itemHrid && action.upgradeItemHrid) {
-                    mirrorItemHrid = action.upgradeItemHrid;
-                    break;
-                }
-            }
-        }
-
-        let mirrorTargetCosts = targetCosts;
-        let mirrorTargetTimes = targetTimes;
-        let mirrorTargetAttempts = targetAttempts;
-
-        if (mirrorItemHrid !== itemHrid) {
-            const mirrorItemDetails = gameData.itemDetailMap[mirrorItemHrid];
-            const mirrorItemLevel = mirrorItemDetails?.itemLevel || 1;
-            const mirrorAllResults = [];
-            for (let targetLevel = 1; targetLevel <= currentEnhancementLevel; targetLevel++) {
-                const resultsForLevel = [];
-                const neverProtect = calculateCostForStrategy(mirrorItemHrid, targetLevel, 0, mirrorItemLevel, config);
-                if (neverProtect) resultsForLevel.push({ protectFrom: 0, ...neverProtect });
-                for (let protectFrom = 2; protectFrom <= targetLevel; protectFrom++) {
-                    const result = calculateCostForStrategy(
-                        mirrorItemHrid,
-                        targetLevel,
-                        protectFrom,
-                        mirrorItemLevel,
-                        config
-                    );
-                    if (result) resultsForLevel.push({ protectFrom, ...result });
-                }
-                mirrorAllResults.push(resultsForLevel);
-            }
-            mirrorTargetCosts = new Array(currentEnhancementLevel + 1);
-            mirrorTargetTimes = new Array(currentEnhancementLevel + 1);
-            mirrorTargetAttempts = new Array(currentEnhancementLevel + 1);
-            mirrorTargetCosts[0] = toolashaConfig.isFeatureEnabled('enhanceSim_baseItemCraftingCost')
-                ? Math.min(
-                      getProductionCost(mirrorItemHrid) || Infinity,
-                      marketData_js.getItemPrices(mirrorItemHrid, 0)?.ask || Infinity
-                  ) || getRealisticBaseItemPrice(mirrorItemHrid)
-                : getRealisticBaseItemPrice(mirrorItemHrid);
-            mirrorTargetTimes[0] = 0;
-            mirrorTargetAttempts[0] = 0;
-            for (let level = 1; level <= currentEnhancementLevel; level++) {
-                const resultsForLevel = mirrorAllResults[level - 1];
-                const minResult = resultsForLevel.reduce((best, curr) => (curr.totalCost < best.totalCost ? curr : best));
-                mirrorTargetCosts[level] = minResult.totalCost;
-                mirrorTargetTimes[level] = minResult.totalTime;
-                mirrorTargetAttempts[level] = minResult.expectedAttempts;
-            }
-        }
+        const mirrorTargetCosts = targetCosts;
+        const mirrorTargetTimes = targetTimes;
+        const mirrorTargetAttempts = targetAttempts;
 
         // Step 3: Apply Philosopher's Mirror optimization (single pass, in-place)
         // Like Enhancelator lines 456-465
@@ -5726,7 +5672,7 @@
                 currentEnhancementLevel,
                 mirrorStartLevel,
                 targetCosts,
-                mirrorItemHrid,
+                itemHrid,
                 mirrorTargetCosts,
                 mirrorTargetTimes,
                 mirrorTargetAttempts,
@@ -5852,7 +5798,7 @@
         targetLevel,
         mirrorStartLevel,
         targetCosts,
-        mirrorItemHrid,
+        consumedItemHrid,
         mirrorTargetCosts,
         mirrorTargetTimes,
         mirrorTargetAttempts,
@@ -5935,7 +5881,7 @@
             traditionalCost: optimalTraditional.totalCost,
             consumedItems: consumedItems,
             mirrorCount: numMirrors,
-            consumedItemHrid: mirrorItemHrid,
+            consumedItemHrid: consumedItemHrid,
         };
     }
 

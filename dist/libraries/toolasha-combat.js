@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.80.1
+ * Version: 2.80.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -14583,7 +14583,7 @@
             profitPerHour: revenue.netPerHour,
             deathsPerHour: deaths,
             encountersPerHour: encounters,
-            dps: totalXpPerHour, // Total combat XP/hr as DPS proxy
+            dps: (simResult.totalDamageDealt?.[playerHrid] || 0) / (simHours * 3600),
         };
     }
 

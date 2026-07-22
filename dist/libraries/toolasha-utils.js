@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.80.1
+ * Version: 2.80.2
  * License: CC-BY-NC-SA-4.0
  */
 
