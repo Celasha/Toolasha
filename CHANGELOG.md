@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.80.0](https://github.com/Celasha/Toolasha/compare/v2.79.0...v2.80.0) (2026-07-22)
+
+### Features
+
+- use session-based XP/hr for combat skills ([2494e52](https://github.com/Celasha/Toolasha/commit/2494e52d5cea024baf55a50b12157bb4cdf02afd))
+
+### Bug Fixes
+
+- register production panels with sort manager when pinned page is off ([f79a20c](https://github.com/Celasha/Toolasha/commit/f79a20c5c55c0e09101069f6957f8b1f10eee3b3))
+
 ## [2.79.0](https://github.com/Celasha/Toolasha/compare/v2.78.0...v2.79.0) (2026-07-22)
 
 ### Features
