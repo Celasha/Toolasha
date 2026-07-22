@@ -2,12 +2,11 @@
 
 ## [2.80.2](https://github.com/Celasha/Toolasha/compare/v2.80.1...v2.80.2) (2026-07-22)
 
-
 ### Bug Fixes
 
-* compute upgrade advisor DPS from actual damage dealt instead of XP/hr ([cf83826](https://github.com/Celasha/Toolasha/commit/cf83826bc534adfb1629e9458942c3ed56ab5553))
-* key player leaderboard XP history by category to prevent cross-category contamination ([9090a6a](https://github.com/Celasha/Toolasha/commit/9090a6aad1cd5f787e74ee65cde9dfb312256a74))
-* use refined item costs for mirror path instead of non-refined base item ([9dd1941](https://github.com/Celasha/Toolasha/commit/9dd1941bebad166edf33cdafe008fe9c5c143cbc))
+- compute upgrade advisor DPS from actual damage dealt instead of XP/hr ([cf83826](https://github.com/Celasha/Toolasha/commit/cf83826bc534adfb1629e9458942c3ed56ab5553))
+- key player leaderboard XP history by category to prevent cross-category contamination ([9090a6a](https://github.com/Celasha/Toolasha/commit/9090a6aad1cd5f787e74ee65cde9dfb312256a74))
+- use refined item costs for mirror path instead of non-refined base item ([9dd1941](https://github.com/Celasha/Toolasha/commit/9dd1941bebad166edf33cdafe008fe9c5c143cbc))
 
 ## [2.80.1](https://github.com/Celasha/Toolasha/compare/v2.80.0...v2.80.1) (2026-07-22)
 
