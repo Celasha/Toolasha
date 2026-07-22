@@ -229,6 +229,9 @@ class MaxProduceable {
             this.getResizeObserver().observe(display);
         }
 
+        // Register with sort manager for all actions regardless of pin feature state
+        actionPanelSort.registerPanel(actionPanel, actionHrid);
+
         // Create pin icon only when the pinned page feature is enabled
         if (!config.getSetting('actions_pinnedPage')) {
             this.actionElements.set(actionPanel, {
@@ -239,6 +242,7 @@ class MaxProduceable {
             if (display) {
                 this.updateCount(actionPanel);
             }
+            actionPanelSort.triggerSort();
             return;
         }
 
@@ -286,9 +290,6 @@ class MaxProduceable {
             displayElement: display,
             pinElement: pinIcon,
         });
-
-        // Register panel with shared sort manager
-        actionPanelSort.registerPanel(actionPanel, actionHrid);
 
         // Note: Profit calculation is deferred to updateAllCounts() in setupObserver()
         // This prevents 20-50 simultaneous API calls during character switch
