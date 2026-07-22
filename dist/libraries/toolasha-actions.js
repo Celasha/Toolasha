@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.78.0
+ * Version: 2.79.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6704,6 +6704,7 @@
         if (!protectInput) return;
 
         const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        if (protectInput.value === optimalProtectFrom.toString()) return;
         nativeSetter.call(protectInput, optimalProtectFrom.toString());
         protectInput.dispatchEvent(new Event('input', { bubbles: true }));
         protectInput.dispatchEvent(new Event('change', { bubbles: true }));
@@ -6847,6 +6848,22 @@
 
         // Set up observers for Target Level and Protect From Level inputs
         setupInputObservers(panel, itemHrid);
+
+        // Re-trigger auto-fill when target level changes (handles race where target level loads after initial auto-fill)
+        if (!panel.dataset.mwiAutoProtectTargetListenerAdded) {
+            panel.dataset.mwiAutoProtectTargetListenerAdded = 'true';
+            const targetLabels = Array.from(panel.querySelectorAll('*')).filter(
+                (el) => el.textContent.trim() === 'Target Level' && el.children.length === 0
+            );
+            const targetInput = targetLabels[0]?.parentElement?.querySelector('input[type="number"], input[type="text"]');
+            if (targetInput) {
+                targetInput.addEventListener('change', () => {
+                    if (config.getSetting('enhanceSim_autoProtectFrom')) {
+                        autoFillProtectFrom(panel, panel.dataset.mwiItemHrid);
+                    }
+                });
+            }
+        }
     }
 
     /**

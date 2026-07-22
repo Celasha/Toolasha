@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.78.0
+ * Version: 2.79.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2559,6 +2559,16 @@
                     type: 'checkbox',
                     default: true,
                     help: "Displays which guild members have not yet signed up for the current week's skilling and combat trials.",
+                },
+                guildTrialWhisperTemplate: {
+                    id: 'guildTrialWhisperTemplate',
+                    label: 'Guild Trials: Whisper message when clicking a name',
+                    type: 'text',
+                    default: "/w {name} Why haven't you signed up for your trial(s) yet?!",
+                    help: "Message pre-filled in chat when clicking an unsigned member's name. Use {name} for the player's name.",
+                    templateVariables: [
+                        { key: '{name}', label: 'Player Name', description: 'The name of the unsigned guild member' },
+                    ],
                 },
                 guildMembersActivityTab: {
                     id: 'guildMembersActivityTab',
