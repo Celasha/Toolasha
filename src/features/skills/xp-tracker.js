@@ -6,6 +6,7 @@
 import dataManager from '../../core/data-manager.js';
 import storage from '../../core/storage.js';
 import domObserver from '../../core/dom-observer.js';
+import webSocketHook from '../../core/websocket.js';
 import config from '../../core/config.js';
 import { formatKMB } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
@@ -45,6 +46,8 @@ SKILLS.forEach((s) => (SKILL_NAME_TO_ID[s.name.toLowerCase()] = s.id));
 // Also map hrid → skill for reverse lookups
 const SKILL_HRID_TO_ID = {};
 SKILLS.forEach((s) => (SKILL_HRID_TO_ID[s.hrid] = s.id));
+
+const COMBAT_SKILL_IDS = new Set(['stamina', 'intelligence', 'attack', 'melee', 'defense', 'ranged', 'magic']);
 
 /**
  * Append an XP data point to a skill's history array, compacting as needed.
@@ -182,6 +185,7 @@ class XPTracker {
         this.initialized = false;
         this.characterId = null;
         this.xpHistory = {}; // skillId → [{t, xp}]
+        this.combatSession = {}; // skillId → { startExp, startTime, lastExp }
         this.timerRegistry = createTimerRegistry();
         this.unregisterObservers = [];
         this.tooltipObserver = null;
@@ -202,9 +206,26 @@ class XPTracker {
         dataManager.on('character_initialized', characterInitHandler);
         dataManager.on('action_completed', actionCompletedHandler);
 
+        const actionsUpdatedHandler = (data) => {
+            if (!Array.isArray(data.endCharacterActions)) return;
+            const combatDone = data.endCharacterActions.some(
+                (a) => a?.actionHrid?.startsWith('/actions/combat/') && a.isDone === true
+            );
+            if (combatDone) this._resetCombatSession();
+        };
+
+        const cancelActionHandler = () => {
+            this._resetCombatSession();
+        };
+
+        webSocketHook.on('actions_updated', actionsUpdatedHandler);
+        webSocketHook.on('cancel_character_action', cancelActionHandler);
+
         this.unregisterObservers.push(() => {
             dataManager.off('character_initialized', characterInitHandler);
             dataManager.off('action_completed', actionCompletedHandler);
+            webSocketHook.off('actions_updated', actionsUpdatedHandler);
+            webSocketHook.off('cancel_character_action', cancelActionHandler);
         });
 
         // If character data is already loaded, initialize immediately
@@ -226,6 +247,7 @@ class XPTracker {
         if (!charId) return;
 
         this.characterId = charId;
+        this.combatSession = {};
 
         // Load persisted history for this character
         const stored = await storage.get(`xpHistory_${charId}`, STORE_NAME, {});
@@ -271,11 +293,43 @@ class XPTracker {
             }
 
             pushXP(this.xpHistory[skillId], { t, xp: skillEntry.experience });
+
+            if (COMBAT_SKILL_IDS.has(skillId)) {
+                if (!this.combatSession[skillId]) {
+                    this.combatSession[skillId] = {
+                        startExp: skillEntry.experience,
+                        startTime: t,
+                        lastExp: skillEntry.experience,
+                    };
+                } else {
+                    this.combatSession[skillId].lastExp = skillEntry.experience;
+                }
+            }
         });
 
         storage.set(`xpHistory_${this.characterId}`, this.xpHistory, STORE_NAME);
 
         this._updateNavBars();
+    }
+
+    /**
+     * Reset all combat session tracking (combat ended or cancelled).
+     */
+    _resetCombatSession() {
+        this.combatSession = {};
+    }
+
+    /**
+     * Calculate XP/hr for a combat skill from its current session.
+     * @param {string} skillId
+     * @returns {number} XP per hour, or 0 if no active session
+     */
+    _calcSessionRate(skillId) {
+        const session = this.combatSession[skillId];
+        if (!session || session.lastExp === session.startExp) return 0;
+        const elapsed = Date.now() - session.startTime;
+        if (elapsed <= 0) return 0;
+        return ((session.lastExp - session.startExp) / elapsed) * 3600000;
     }
 
     /**
@@ -300,7 +354,7 @@ class XPTracker {
             if (!history) return;
 
             const stats = calcStats(history);
-            const rate = stats.lastXPH;
+            const rate = COMBAT_SKILL_IDS.has(skillId) ? this._calcSessionRate(skillId) : stats.lastXPH;
 
             // Remove existing rate span (may be inline or standalone)
             navEl.querySelector('.mwi-xp-rate')?.remove();
@@ -394,7 +448,8 @@ class XPTracker {
         }
 
         const stats = calcStats(history);
-        if (stats.lastXPH <= 0) {
+        const rate = COMBAT_SKILL_IDS.has(skillId) ? this._calcSessionRate(skillId) : stats.lastXPH;
+        if (rate <= 0) {
             return;
         }
 
@@ -414,7 +469,7 @@ class XPTracker {
         // Remove any previously injected element
         tooltipEl.querySelector('.mwi-xp-time-left')?.remove();
 
-        const msLeft = (xpTillLevel / stats.lastXPH) * 3600000;
+        const msLeft = (xpTillLevel / rate) * 3600000;
         const timeStr = formatTimeLeft(msLeft);
 
         const div = document.createElement('div');
