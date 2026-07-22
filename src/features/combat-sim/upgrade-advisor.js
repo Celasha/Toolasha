@@ -1102,7 +1102,7 @@ function computeMetrics(simResult, gameData, playerHrid, hours) {
         profitPerHour: revenue.netPerHour,
         deathsPerHour: deaths,
         encountersPerHour: encounters,
-        dps: totalXpPerHour, // Total combat XP/hr as DPS proxy
+        dps: (simResult.totalDamageDealt?.[playerHrid] || 0) / (simHours * 3600),
     };
 }
 
