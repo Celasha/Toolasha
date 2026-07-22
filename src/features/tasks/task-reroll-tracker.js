@@ -11,6 +11,7 @@ import dataManager from '../../core/data-manager.js';
 import storage from '../../core/storage.js';
 import { GAME, TOOLASHA } from '../../utils/selectors.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import { addStyles } from '../../utils/dom.js';
 
 class TaskRerollTracker {
     constructor() {
@@ -35,6 +36,10 @@ class TaskRerollTracker {
 
         // Register DOM observer for display updates
         this.registerDOMObservers();
+
+        // Normalize task action area height so combat (1 compact row) and
+        // non-combat (3 stat rows) cards stay the same overall height
+        addStyles('.RandomTask_action__3eC6o { min-height: 72px; }', 'mwi-task-action-min-height');
 
         this.isInitialized = true;
     }
@@ -331,7 +336,10 @@ class TaskRerollTracker {
 
             // For monster tasks, check monsterHrid
             if (taskData.monsterHrid) {
-                const monsterName = taskData.monsterHrid.replace('/monsters/', '').replace(/_/g, ' ');
+                const gameData = dataManager.getInitClientData();
+                const monsterDetail = gameData?.combatMonsterDetailMap?.[taskData.monsterHrid];
+                const monsterName =
+                    monsterDetail?.name || taskData.monsterHrid.replace('/monsters/', '').replace(/_/g, ' ');
                 if (descLower.includes(monsterName.toLowerCase())) {
                     claimedIds?.add(taskId);
                     return taskId;
@@ -358,28 +366,9 @@ class TaskRerollTracker {
      * @param {Set<number>} [claimedIds] - Task IDs already matched to other DOM elements this pass
      */
     updateTaskDisplay(taskElement, claimedIds) {
-        const taskId = this.getTaskIdFromElement(taskElement, claimedIds);
-        if (!taskId) {
-            // Remove display if task not found in our data
-            const existingDisplay = taskElement.querySelector('.mwi-reroll-cost-display');
-            if (existingDisplay) {
-                existingDisplay.remove();
-            }
-            return;
-        }
-
-        const taskData = this.taskRerollData.get(taskId);
-        if (!taskData) {
-            return;
-        }
-
-        // Calculate totals
-        const goldSpent = this.calculateGoldSpent(taskData.coinRerollCount);
-        const cowbellSpent = this.calculateCowbellSpent(taskData.cowbellRerollCount);
-
-        // Find or create display element
+        // Always ensure placeholder element exists to reserve layout space,
+        // regardless of whether this task has been rerolled yet
         let displayElement = taskElement.querySelector(TOOLASHA.REROLL_COST_DISPLAY);
-
         if (!displayElement) {
             displayElement = document.createElement('div');
             displayElement.className = 'mwi-reroll-cost-display';
@@ -390,9 +379,10 @@ class TaskRerollTracker {
                 padding: 2px 4px;
                 border-radius: 3px;
                 background: rgba(0, 0, 0, 0.3);
+                visibility: hidden;
             `;
+            displayElement.textContent = 'Reroll spent: –';
 
-            // Insert at top of task card
             const taskContent = taskElement.querySelector(GAME.TASK_CONTENT);
             if (taskContent) {
                 taskContent.insertBefore(displayElement, taskContent.firstChild);
@@ -400,6 +390,21 @@ class TaskRerollTracker {
                 taskElement.insertBefore(displayElement, taskElement.firstChild);
             }
         }
+
+        const taskId = this.getTaskIdFromElement(taskElement, claimedIds);
+        if (!taskId) {
+            return;
+        }
+
+        const taskData = this.taskRerollData.get(taskId);
+        if (!taskData) {
+            displayElement.style.visibility = 'hidden';
+            return;
+        }
+
+        // Calculate totals
+        const goldSpent = this.calculateGoldSpent(taskData.coinRerollCount);
+        const cowbellSpent = this.calculateCowbellSpent(taskData.cowbellRerollCount);
 
         // Format display text
         const parts = [];
@@ -412,9 +417,9 @@ class TaskRerollTracker {
 
         if (parts.length > 0) {
             displayElement.textContent = `Reroll spent: ${parts.join(' + ')}`;
-            displayElement.style.display = 'block';
+            displayElement.style.visibility = 'visible';
         } else {
-            displayElement.style.display = 'none';
+            displayElement.style.visibility = 'hidden';
         }
     }
 
@@ -422,13 +427,12 @@ class TaskRerollTracker {
      * Update all task displays
      */
     updateAllTaskDisplays() {
-        const taskList = document.querySelector(GAME.TASK_LIST);
-        if (!taskList) {
+        const allTasks = document.querySelectorAll(GAME.TASK_CARD);
+        if (allTasks.length === 0) {
             return;
         }
 
         const claimedIds = new Set();
-        const allTasks = taskList.querySelectorAll(GAME.TASK_CARD);
         allTasks.forEach((task) => {
             this.updateTaskDisplay(task, claimedIds);
         });

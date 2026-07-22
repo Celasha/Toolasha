@@ -439,7 +439,7 @@ class TaskIcons {
             }
         }
 
-        this.addIconOverlay(taskCard, iconName, spriteType);
+        this.addIconOverlay(taskCard, iconName, spriteType, '70%');
     }
 
     /**
@@ -724,8 +724,11 @@ class TaskIcons {
         iconDiv.className = `mwi-task-icon mwi-task-icon-${type}`;
         iconDiv.style.position = 'absolute';
         iconDiv.style.left = leftPosition;
+        iconDiv.style.top = '50%';
+        iconDiv.style.transform = 'translateY(-50%)';
         iconDiv.style.width = widthPercent;
-        iconDiv.style.height = '100%';
+        iconDiv.style.height = '150px';
+        iconDiv.style.overflow = 'hidden';
         iconDiv.style.opacity = '0.3';
         iconDiv.style.pointerEvents = 'none';
         iconDiv.style.zIndex = '0';
@@ -752,6 +755,8 @@ class TaskIcons {
         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         svg.setAttribute('width', '100%');
         svg.setAttribute('height', '100%');
+        svg.setAttribute('viewBox', '0 0 100 100');
+        svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
 
         // Create use element with external sprite reference
         const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
@@ -759,6 +764,8 @@ class TaskIcons {
         const spriteReference = `${spriteUrl}#${iconName}`;
         use.setAttribute('href', spriteReference);
         use.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', spriteReference);
+        use.setAttribute('width', '100');
+        use.setAttribute('height', '100');
         svg.appendChild(use);
 
         iconDiv.appendChild(svg);
