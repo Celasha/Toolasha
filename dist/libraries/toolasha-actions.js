@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.80.0
+ * Version: 2.80.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -12177,8 +12177,12 @@
                 this.getResizeObserver().observe(display);
             }
 
-            // Register with sort manager for all actions regardless of pin feature state
-            actionPanelSort.registerPanel(actionPanel, actionHrid);
+            // Register production panels with sort manager regardless of pin feature state.
+            // Gathering panels are registered by gathering-stats.js — skip them here to avoid
+            // overwriting their profit data with null.
+            if (isProductionAction) {
+                actionPanelSort.registerPanel(actionPanel, actionHrid);
+            }
 
             // Create pin icon only when the pinned page feature is enabled
             if (!config.getSetting('actions_pinnedPage')) {
