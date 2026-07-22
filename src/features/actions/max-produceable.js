@@ -229,8 +229,12 @@ class MaxProduceable {
             this.getResizeObserver().observe(display);
         }
 
-        // Register with sort manager for all actions regardless of pin feature state
-        actionPanelSort.registerPanel(actionPanel, actionHrid);
+        // Register production panels with sort manager regardless of pin feature state.
+        // Gathering panels are registered by gathering-stats.js — skip them here to avoid
+        // overwriting their profit data with null.
+        if (isProductionAction) {
+            actionPanelSort.registerPanel(actionPanel, actionHrid);
+        }
 
         // Create pin icon only when the pinned page feature is enabled
         if (!config.getSetting('actions_pinnedPage')) {
