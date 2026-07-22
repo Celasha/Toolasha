@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.79.0](https://github.com/Celasha/Toolasha/compare/v2.78.0...v2.79.0) (2026-07-22)
+
+
+### Features
+
+* add configurable whisper template for guild trial unsigned members ([f8cd052](https://github.com/Celasha/Toolasha/commit/f8cd052aa0252aa0fc6b7e07fb969f86a7b3709a))
+* add per-player DPS to combat sim results ([65b564d](https://github.com/Celasha/Toolasha/commit/65b564d91c68fa5640eb72829cb3300f8f810aea))
+
+
+### Bug Fixes
+
+* correct guild shrine costs and enhance protect-from race condition ([81796a1](https://github.com/Celasha/Toolasha/commit/81796a1be4512436b92b1868a9928062b01216b4))
+* stabilize task card heights and fix task reroll tracker display ([7c6aa23](https://github.com/Celasha/Toolasha/commit/7c6aa230b9a906c4163e39886974a60bf78dbd5d))
+
 ## [2.78.0](https://github.com/Celasha/Toolasha/compare/v2.77.2...v2.78.0) (2026-07-21)
 
 ### Features
