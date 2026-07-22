@@ -136,7 +136,7 @@ if (isCombatSimulatorPage()) {
     const toolashaRoot = targetWindow.Toolasha || {};
     targetWindow.Toolasha = toolashaRoot;
 
-    toolashaRoot.version = '2.80.1';
+    toolashaRoot.version = '2.80.2';
 
     toolashaRoot.features = {
         list: () => config.getFeaturesByCategory(),
