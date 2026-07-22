@@ -637,6 +637,7 @@ class GuildCreditValue {
         const inputCounts = Array.from(requirements.querySelectorAll('[class*="GuildPanel_inputCount"]'));
         if (itemContainers.length === 0) return;
 
+        const inventory = dataManager.getInventory();
         const rows = [];
         let totalSell = 0;
         let totalBuy = 0;
@@ -650,6 +651,10 @@ class GuildCreditValue {
 
             const itemHrid = `/items/${spriteId}`;
             const required = parseInt(inputCounts[i]?.textContent?.replace(/[^0-9]/g, '') || '', 10) || 0;
+            const owned = inventory
+                .filter((inv) => inv.itemHrid === itemHrid && inv.itemLocationHrid === '/item_locations/inventory')
+                .reduce((sum, inv) => sum + (inv.count || 0), 0);
+            const effectiveRequired = Math.max(0, required - owned);
             const itemName = gameData.itemDetailMap?.[itemHrid]?.name || spriteId.replace(/_/g, ' ');
             const isToken = itemHrid.includes('guild_token');
             const isCredit = itemHrid.includes('guild_credit');
@@ -662,18 +667,36 @@ class GuildCreditValue {
                 if (!buyEach || buyEach <= 0) buyEach = cheapestBuy[itemHrid] || null;
             }
 
-            const sellSub = sellEach && required ? sellEach * required : null;
-            const buySub = buyEach && required ? buyEach * required : null;
+            let sellSub = sellEach && effectiveRequired ? sellEach * effectiveRequired : null;
+            let buySub = buyEach && effectiveRequired ? buyEach * effectiveRequired : null;
+
+            if (isCredit && effectiveRequired > 0) {
+                const creditOptions = topConversions[itemHrid] || [];
+                const askTop = creditOptions.find((o) => o.askGPC !== null);
+                const bidTop = [...creditOptions].sort((a, b) => {
+                    if (a.bidGPC === null) return 1;
+                    if (b.bidGPC === null) return -1;
+                    return a.bidGPC - b.bidGPC;
+                })[0];
+                sellSub = askTop?.askPrice
+                    ? Math.ceil(effectiveRequired / askTop.creditCount) * askTop.itemCount * askTop.askPrice
+                    : null;
+                buySub = bidTop?.bidPrice
+                    ? Math.ceil(effectiveRequired / bidTop.creditCount) * bidTop.itemCount * bidTop.bidPrice
+                    : null;
+            }
 
             if (sellSub !== null) totalSell += sellSub;
-            else if (!isToken) allSellPriced = false;
+            else if (!isToken && effectiveRequired > 0) allSellPriced = false;
 
             if (buySub !== null) totalBuy += buySub;
-            else if (!isToken) allBuyPriced = false;
+            else if (!isToken && effectiveRequired > 0) allBuyPriced = false;
 
             rows.push({
                 itemName,
                 required,
+                effectiveRequired,
+                owned,
                 sellEach,
                 buyEach,
                 sellSub,
@@ -694,7 +717,7 @@ class GuildCreditValue {
                 tr.style.cssText = 'border-bottom:1px solid rgba(255,255,255,0.05); color:#e0e0e0;';
                 tr.innerHTML = `
                     <td style="padding:4px 6px; text-align:left;">${row.itemName}</td>
-                    <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.required.toLocaleString()}</td>
+                    <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.effectiveRequired.toLocaleString()}${row.owned > 0 ? ` <span style="color:#6b7280;font-size:10px;">(own ${row.owned.toLocaleString()})</span>` : ''}</td>
                     <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.sellEach ? formatKMB(row.sellEach) : '–'}</td>
                     <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buyEach ? formatKMB(row.buyEach) : '–'}</td>
                     <td style="padding:4px 6px; text-align:right;">${row.sellSub ? formatKMB(row.sellSub) : '–'}</td>
@@ -713,7 +736,7 @@ class GuildCreditValue {
                         return aVal - bVal;
                     });
                     options.forEach((opt, idx) => {
-                        const qtyNeeded = Math.ceil(row.required / opt.creditCount) * opt.itemCount;
+                        const qtyNeeded = Math.ceil(row.effectiveRequired / opt.creditCount) * opt.itemCount;
                         const askTotal = opt.askPrice ? opt.askPrice * qtyNeeded : null;
                         const bidTotal = opt.bidPrice ? opt.bidPrice * qtyNeeded : null;
                         const isTop = idx === 0;
@@ -817,13 +840,12 @@ class GuildCreditValue {
         }
 
         // Build missing mats list from top-1 conversion per credit row
-        const inventory = dataManager.getInventory();
         const missingMats = [];
         for (const row of rows) {
             if (!row.isCredit || !row.creditHrid) continue;
             const top = (topConversions[row.creditHrid] || [])[0];
             if (!top?.hrid) continue;
-            const qtyNeeded = Math.ceil(row.required / top.creditCount) * top.itemCount;
+            const qtyNeeded = Math.ceil(row.effectiveRequired / top.creditCount) * top.itemCount;
             const have = inventory
                 .filter((i) => i.itemHrid === top.hrid && i.itemLocationHrid === '/item_locations/inventory')
                 .reduce((sum, i) => sum + (i.count || 0), 0);
