@@ -2,10 +2,9 @@
 
 ## [2.80.1](https://github.com/Celasha/Toolasha/compare/v2.80.0...v2.80.1) (2026-07-22)
 
-
 ### Bug Fixes
 
-* skip sort registration in max-produceable for gathering panels ([afbaa9a](https://github.com/Celasha/Toolasha/commit/afbaa9a60d58815b929a640ea5746afa383f13c7))
+- skip sort registration in max-produceable for gathering panels ([afbaa9a](https://github.com/Celasha/Toolasha/commit/afbaa9a60d58815b929a640ea5746afa383f13c7))
 
 ## [2.80.0](https://github.com/Celasha/Toolasha/compare/v2.79.0...v2.80.0) (2026-07-22)
 
