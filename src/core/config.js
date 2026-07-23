@@ -142,6 +142,13 @@ class Config {
                 description: 'View and export all market listing history',
                 settingKey: 'market_showHistoryViewer',
             },
+            market_listingRefreshNavigator: {
+                enabled: true,
+                name: 'Listing Refresh Navigator',
+                category: 'Market',
+                description: 'Cycles through My Listings navigating to each order book one at a time',
+                settingKey: 'market_listingRefreshNavigator',
+            },
             market_showPhiloCalculator: {
                 enabled: true,
                 name: 'Philo Gamba Calculator',

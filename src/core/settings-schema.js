@@ -1046,6 +1046,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Displays top order price and total value on each listing in My Listings table',
             },
+            market_listingRefreshNavigator: {
+                id: 'market_listingRefreshNavigator',
+                label: 'Market: Show Refresh Next button on My Listings',
+                type: 'checkbox',
+                default: true,
+                help: 'Adds a "Refresh Next" button next to the Market History tab that cycles through your listings, navigating to each item\'s order book one at a time',
+            },
             market_tradeHistory: {
                 id: 'market_tradeHistory',
                 label: 'Market: Show personal trade history',

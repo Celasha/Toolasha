@@ -128,6 +128,13 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'listingRefreshNavigator',
+            name: 'Listing Refresh Navigator',
+            category: 'Market',
+            module: Market.listingRefreshNavigator,
+            async: false,
+        },
+        {
             key: 'philoCalculator',
             name: 'Philo Calculator',
             category: 'Market',
