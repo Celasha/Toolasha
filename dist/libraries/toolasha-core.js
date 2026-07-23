@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.80.2
+ * Version: 2.81.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1614,6 +1614,13 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Displays top order price and total value on each listing in My Listings table',
+                },
+                market_listingRefreshNavigator: {
+                    id: 'market_listingRefreshNavigator',
+                    label: 'Market: Show Refresh Next button on My Listings',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Adds a "Refresh Next" button next to the Market History tab that cycles through your listings, navigating to each item\'s order book one at a time',
                 },
                 market_tradeHistory: {
                     id: 'market_tradeHistory',
@@ -5418,6 +5425,13 @@
                     category: 'Market',
                     description: 'View and export all market listing history',
                     settingKey: 'market_showHistoryViewer',
+                },
+                market_listingRefreshNavigator: {
+                    enabled: true,
+                    name: 'Listing Refresh Navigator',
+                    category: 'Market',
+                    description: 'Cycles through My Listings navigating to each order book one at a time',
+                    settingKey: 'market_listingRefreshNavigator',
                 },
                 market_showPhiloCalculator: {
                     enabled: true,

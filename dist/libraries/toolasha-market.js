@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.80.2
+ * Version: 2.81.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -12874,6 +12874,288 @@ self.onmessage = function (e) {
     const marketHistoryViewer = new MarketHistoryViewer();
 
     /**
+     * Marketplace Custom Tabs Utility
+     * Provides shared functionality for creating and managing custom marketplace tabs
+     * Used by missing materials features (actions, houses, etc.)
+     */
+
+
+    /**
+     * Create a custom material tab for the marketplace
+     * @param {Object} material - Material data object
+     * @param {string} material.itemHrid - Item HRID
+     * @param {string} material.itemName - Display name for the item
+     * @param {number} material.missing - Amount missing (0 if sufficient)
+     * @param {number} [material.queued=0] - Amount reserved by queue
+     * @param {boolean} material.isTradeable - Whether item can be traded
+     * @param {HTMLElement} referenceTab - Tab element to clone structure from
+     * @param {Function} onClickCallback - Callback when tab is clicked, receives (e, material)
+     * @returns {HTMLElement} Created tab element
+     */
+    function createMaterialTab(material, referenceTab, onClickCallback) {
+        // Clone reference tab structure
+        const tab = referenceTab.cloneNode(true);
+
+        // Mark as custom tab for later identification
+        tab.setAttribute('data-mwi-custom-tab', 'true');
+        tab.setAttribute('data-item-hrid', material.itemHrid);
+        tab.setAttribute('data-missing-quantity', material.missing.toString());
+
+        // Color coding:
+        // - Red: Missing materials (missing > 0)
+        // - Green: Sufficient materials (missing = 0)
+        // - Gray: Not tradeable
+        let statusColor;
+        let statusText;
+
+        if (material.missing > 0) {
+            statusColor = '#ef4444'; // Red - missing materials
+            // Show queued amount if any materials are reserved by queue
+            const queuedText = material.queued > 0 ? ` (${formatters_js.formatWithSeparator(material.queued)} Q'd)` : '';
+            statusText = `Missing: ${formatters_js.formatWithSeparator(material.missing)}${queuedText}`;
+        } else {
+            statusColor = '#4ade80'; // Green - sufficient materials
+            statusText = `Sufficient (${formatters_js.formatWithSeparator(material.required)})`;
+        }
+
+        // Update text content
+        const badgeSpan = tab.querySelector('[class*="TabsComponent_badge"]');
+        if (badgeSpan) {
+            // Title case: capitalize first letter of each word
+            const titleCaseName = material.itemName
+                .split(' ')
+                .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                .join(' ');
+
+            badgeSpan.innerHTML = `
+            <div style="text-align: center;">
+                <div>${titleCaseName}</div>
+                <div style="font-size: 0.75em; color: ${statusColor};">
+                    ${statusText}
+                </div>
+            </div>
+        `;
+        }
+
+        // Remove selected state
+        tab.classList.remove('Mui-selected');
+        tab.setAttribute('aria-selected', 'false');
+        tab.setAttribute('tabindex', '-1');
+
+        // Add click handler
+        tab.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            // Call the provided callback
+            if (onClickCallback) {
+                onClickCallback(e, material);
+            }
+        });
+
+        return tab;
+    }
+
+    /**
+     * Remove all custom material tabs from the marketplace
+     */
+    function removeMaterialTabs() {
+        const customTabs = document.querySelectorAll('[data-mwi-custom-tab="true"]');
+        customTabs.forEach((tab) => tab.remove());
+    }
+
+    /**
+     * Setup marketplace cleanup observer
+     * Watches for marketplace panel removal and calls cleanup callback
+     * @param {Function} onCleanup - Callback when marketplace closes, receives no args
+     * @param {Array} tabsArray - Array reference to track tabs (will be checked for length)
+     * @returns {Function} Unregister function to stop observing
+     */
+    function setupMarketplaceCleanupObserver(onCleanup, tabsArray) {
+        let pollInterval = null;
+
+        function poll() {
+            if (!tabsArray || tabsArray.length === 0) return;
+
+            // If custom tabs were removed from DOM, clean up
+            const hasCustomTabsInDOM = tabsArray.some((tab) => document.body.contains(tab));
+            if (!hasCustomTabsInDOM) {
+                if (onCleanup) onCleanup();
+                return;
+            }
+
+            // If marketplace panel is hidden (navigated away), clean up
+            const marketplacePanel = document.querySelector('.MarketplacePanel_marketplacePanel__21b7o');
+            const subPanelContainer = marketplacePanel?.closest('.MainPanel_subPanelContainer__1i-H9');
+            if (subPanelContainer && getComputedStyle(subPanelContainer).display === 'none') {
+                if (onCleanup) onCleanup();
+            }
+        }
+
+        pollInterval = setInterval(poll, 1000);
+
+        return () => {
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                pollInterval = null;
+            }
+        };
+    }
+
+    /**
+     * Get game object via React fiber
+     * @returns {Object|null} Game component instance
+     */
+    function getGameObject() {
+        const rootEl = document.getElementById('root');
+        const rootFiber = rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
+        if (!rootFiber) return null;
+
+        function find(fiber) {
+            if (!fiber) return null;
+            if (fiber.stateNode?.handleGoToMarketplace) return fiber.stateNode;
+            return find(fiber.child) || find(fiber.sibling);
+        }
+
+        return find(rootFiber);
+    }
+
+    /**
+     * Navigate to marketplace for a specific item
+     * @param {string} itemHrid - Item HRID to navigate to
+     * @param {number} enhancementLevel - Enhancement level (default 0)
+     */
+    function navigateToMarketplace(itemHrid, enhancementLevel = 0) {
+        const game = getGameObject();
+        if (game?.handleGoToMarketplace) {
+            game.handleGoToMarketplace(itemHrid, enhancementLevel);
+        }
+        // Silently fail if game API unavailable - feature still provides value without auto-navigation
+    }
+
+    /**
+     * Listing Refresh Navigator
+     *
+     * Adds a "Refresh Next" button next to "Upgrade Capacity" on the My Listings page.
+     * Each click navigates to the next listing's order book, cycling through all listings.
+     *
+     * Depends on listing-price-display.js stamping row.dataset.itemHrid / listingId.
+     */
+
+
+    const LISTING_COUNT_SEL = '[class*="MarketplacePanel_listingCount"]';
+    const TABLE_SEL = '[class*="MarketplacePanel_myListingsTable"]';
+    const BTN_CLASS = 'Button_button__1Fe9z Button_small__3fqC7';
+
+    class ListingRefreshNavigator {
+        constructor() {
+            this.isInitialized = false;
+            this.lastListingId = null;
+            this.watcher = null;
+            this.refreshBtn = null;
+        }
+
+        initialize() {
+            if (this.isInitialized) return;
+            if (!config.getSetting('market_listingRefreshNavigator')) return;
+            this.isInitialized = true;
+            this._watch();
+        }
+
+        _watch() {
+            const ensureButton = () => {
+                const countContainer = document.querySelector(LISTING_COUNT_SEL);
+
+                if (!countContainer) {
+                    if (this.refreshBtn && document.body.contains(this.refreshBtn)) {
+                        this.refreshBtn.remove();
+                        this.refreshBtn = null;
+                    }
+                    return;
+                }
+
+                if (this.refreshBtn && !document.body.contains(this.refreshBtn)) {
+                    this.refreshBtn = null;
+                }
+
+                if (this.refreshBtn) return;
+
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = BTN_CLASS;
+                btn.textContent = 'Refresh Next';
+                btn.addEventListener('click', () => this._refreshNext());
+
+                const upgradeBtn = Array.from(countContainer.querySelectorAll('button')).find((b) =>
+                    b.textContent.includes('Upgrade Capacity')
+                );
+
+                if (upgradeBtn) {
+                    upgradeBtn.after(btn);
+                } else {
+                    countContainer.appendChild(btn);
+                }
+
+                this.refreshBtn = btn;
+            };
+
+            if (!this.watcher) {
+                this.watcher = domObserverHelpers_js.createMutationWatcher(document.body, ensureButton, {
+                    childList: true,
+                    subtree: true,
+                });
+            }
+
+            ensureButton();
+        }
+
+        _refreshNext() {
+            const table = document.querySelector(TABLE_SEL);
+            if (!table) return;
+
+            const rows = Array.from(table.querySelectorAll('tbody tr'));
+            if (rows.length === 0) return;
+
+            let startIndex = 0;
+            if (this.lastListingId !== null) {
+                const lastIdx = rows.findIndex((row) => row.dataset.listingId === this.lastListingId);
+                if (lastIdx !== -1) {
+                    startIndex = (lastIdx + 1) % rows.length;
+                }
+            }
+
+            const row = rows[startIndex];
+            const itemHrid = row.dataset.itemHrid;
+            const enhancementLevel = parseInt(row.dataset.enhancementLevel || '0', 10);
+
+            if (!itemHrid) return;
+
+            this.lastListingId = row.dataset.listingId || null;
+
+            if (this.refreshBtn) {
+                this.refreshBtn.textContent = `Refresh Next (${startIndex + 1}/${rows.length})`;
+            }
+
+            navigateToMarketplace(itemHrid, enhancementLevel);
+        }
+
+        cleanup() {
+            if (this.watcher) {
+                this.watcher.disconnect();
+                this.watcher = null;
+            }
+            if (this.refreshBtn) {
+                this.refreshBtn.remove();
+                this.refreshBtn = null;
+            }
+            this.lastListingId = null;
+            this.isInitialized = false;
+        }
+    }
+
+    const listingRefreshNavigator = new ListingRefreshNavigator();
+
+    /**
      * Philosopher's Stone Transmutation Calculator
      *
      * Calculates expected value and ROI for transmuting items into Philosopher's Stones.
@@ -14458,166 +14740,6 @@ self.onmessage = function (e) {
     }
 
     const networkAlert = new NetworkAlert();
-
-    /**
-     * Marketplace Custom Tabs Utility
-     * Provides shared functionality for creating and managing custom marketplace tabs
-     * Used by missing materials features (actions, houses, etc.)
-     */
-
-
-    /**
-     * Create a custom material tab for the marketplace
-     * @param {Object} material - Material data object
-     * @param {string} material.itemHrid - Item HRID
-     * @param {string} material.itemName - Display name for the item
-     * @param {number} material.missing - Amount missing (0 if sufficient)
-     * @param {number} [material.queued=0] - Amount reserved by queue
-     * @param {boolean} material.isTradeable - Whether item can be traded
-     * @param {HTMLElement} referenceTab - Tab element to clone structure from
-     * @param {Function} onClickCallback - Callback when tab is clicked, receives (e, material)
-     * @returns {HTMLElement} Created tab element
-     */
-    function createMaterialTab(material, referenceTab, onClickCallback) {
-        // Clone reference tab structure
-        const tab = referenceTab.cloneNode(true);
-
-        // Mark as custom tab for later identification
-        tab.setAttribute('data-mwi-custom-tab', 'true');
-        tab.setAttribute('data-item-hrid', material.itemHrid);
-        tab.setAttribute('data-missing-quantity', material.missing.toString());
-
-        // Color coding:
-        // - Red: Missing materials (missing > 0)
-        // - Green: Sufficient materials (missing = 0)
-        // - Gray: Not tradeable
-        let statusColor;
-        let statusText;
-
-        if (material.missing > 0) {
-            statusColor = '#ef4444'; // Red - missing materials
-            // Show queued amount if any materials are reserved by queue
-            const queuedText = material.queued > 0 ? ` (${formatters_js.formatWithSeparator(material.queued)} Q'd)` : '';
-            statusText = `Missing: ${formatters_js.formatWithSeparator(material.missing)}${queuedText}`;
-        } else {
-            statusColor = '#4ade80'; // Green - sufficient materials
-            statusText = `Sufficient (${formatters_js.formatWithSeparator(material.required)})`;
-        }
-
-        // Update text content
-        const badgeSpan = tab.querySelector('[class*="TabsComponent_badge"]');
-        if (badgeSpan) {
-            // Title case: capitalize first letter of each word
-            const titleCaseName = material.itemName
-                .split(' ')
-                .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-                .join(' ');
-
-            badgeSpan.innerHTML = `
-            <div style="text-align: center;">
-                <div>${titleCaseName}</div>
-                <div style="font-size: 0.75em; color: ${statusColor};">
-                    ${statusText}
-                </div>
-            </div>
-        `;
-        }
-
-        // Remove selected state
-        tab.classList.remove('Mui-selected');
-        tab.setAttribute('aria-selected', 'false');
-        tab.setAttribute('tabindex', '-1');
-
-        // Add click handler
-        tab.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-
-            // Call the provided callback
-            if (onClickCallback) {
-                onClickCallback(e, material);
-            }
-        });
-
-        return tab;
-    }
-
-    /**
-     * Remove all custom material tabs from the marketplace
-     */
-    function removeMaterialTabs() {
-        const customTabs = document.querySelectorAll('[data-mwi-custom-tab="true"]');
-        customTabs.forEach((tab) => tab.remove());
-    }
-
-    /**
-     * Setup marketplace cleanup observer
-     * Watches for marketplace panel removal and calls cleanup callback
-     * @param {Function} onCleanup - Callback when marketplace closes, receives no args
-     * @param {Array} tabsArray - Array reference to track tabs (will be checked for length)
-     * @returns {Function} Unregister function to stop observing
-     */
-    function setupMarketplaceCleanupObserver(onCleanup, tabsArray) {
-        let pollInterval = null;
-
-        function poll() {
-            if (!tabsArray || tabsArray.length === 0) return;
-
-            // If custom tabs were removed from DOM, clean up
-            const hasCustomTabsInDOM = tabsArray.some((tab) => document.body.contains(tab));
-            if (!hasCustomTabsInDOM) {
-                if (onCleanup) onCleanup();
-                return;
-            }
-
-            // If marketplace panel is hidden (navigated away), clean up
-            const marketplacePanel = document.querySelector('.MarketplacePanel_marketplacePanel__21b7o');
-            const subPanelContainer = marketplacePanel?.closest('.MainPanel_subPanelContainer__1i-H9');
-            if (subPanelContainer && getComputedStyle(subPanelContainer).display === 'none') {
-                if (onCleanup) onCleanup();
-            }
-        }
-
-        pollInterval = setInterval(poll, 1000);
-
-        return () => {
-            if (pollInterval) {
-                clearInterval(pollInterval);
-                pollInterval = null;
-            }
-        };
-    }
-
-    /**
-     * Get game object via React fiber
-     * @returns {Object|null} Game component instance
-     */
-    function getGameObject() {
-        const rootEl = document.getElementById('root');
-        const rootFiber = rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
-        if (!rootFiber) return null;
-
-        function find(fiber) {
-            if (!fiber) return null;
-            if (fiber.stateNode?.handleGoToMarketplace) return fiber.stateNode;
-            return find(fiber.child) || find(fiber.sibling);
-        }
-
-        return find(rootFiber);
-    }
-
-    /**
-     * Navigate to marketplace for a specific item
-     * @param {string} itemHrid - Item HRID to navigate to
-     * @param {number} enhancementLevel - Enhancement level (default 0)
-     */
-    function navigateToMarketplace(itemHrid, enhancementLevel = 0) {
-        const game = getGameObject();
-        if (game?.handleGoToMarketplace) {
-            game.handleGoToMarketplace(itemHrid, enhancementLevel);
-        }
-        // Silently fail if game API unavailable - feature still provides value without auto-navigation
-    }
 
     /**
      * Marketplace Shortcuts Module
@@ -28204,6 +28326,7 @@ self.onmessage = function (e) {
         queueLengthEstimator,
         marketOrderTotals,
         marketHistoryViewer,
+        listingRefreshNavigator,
         philoCalculator,
         tradeHistory,
         tradeHistoryDisplay,
