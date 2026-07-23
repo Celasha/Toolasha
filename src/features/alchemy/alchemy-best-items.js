@@ -503,10 +503,14 @@ class AlchemyBestItems {
             filtered = filtered.filter((r) => r.itemPrice <= this.filterPriceMax);
         }
 
-        // Sort
+        // Sort — secondary sort is the other metric when primary values tie
         const sorted = [...filtered].sort((a, b) => {
-            if (this.sortMode === 'xp') return b.xpPerHour - a.xpPerHour;
-            return b.profitPerHour - a.profitPerHour;
+            if (this.sortMode === 'xp') {
+                const primary = b.xpPerHour - a.xpPerHour;
+                return primary !== 0 ? primary : b.profitPerHour - a.profitPerHour;
+            }
+            const primary = b.profitPerHour - a.profitPerHour;
+            return primary !== 0 ? primary : b.xpPerHour - a.xpPerHour;
         });
 
         // Update title
