@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.81.0](https://github.com/Celasha/Toolasha/compare/v2.80.2...v2.81.0) (2026-07-23)
+
+### Features
+
+- add listing refresh navigator to My Listings page ([107c118](https://github.com/Celasha/Toolasha/commit/107c11877a34cd2315e8a94255fc6d833a28a3c3))
+
 ## [2.80.2](https://github.com/Celasha/Toolasha/compare/v2.80.1...v2.80.2) (2026-07-22)
 
 ### Bug Fixes
