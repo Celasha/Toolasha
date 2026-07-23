@@ -28,6 +28,18 @@ class DrinkTimer {
         );
         this.observers.push(unregister);
 
+        const unregisterAlchemy = domObserver.onClass('DrinkTimer-Alchemy', 'AlchemyPanel_consumablesContainer', (el) =>
+            this._updatePanel(el)
+        );
+        this.observers.push(unregisterAlchemy);
+
+        const unregisterEnhancing = domObserver.onClass(
+            'DrinkTimer-Enhancing',
+            'EnhancingPanel_consumablesContainer',
+            (el) => this._updatePanel(el)
+        );
+        this.observers.push(unregisterEnhancing);
+
         const onUpdate = () => this._updateAllPanels();
         dataManager.on('consumables_updated', onUpdate);
         dataManager.on('items_updated', onUpdate);
@@ -42,6 +54,12 @@ class DrinkTimer {
 
     _updateAllPanels() {
         document.querySelectorAll('[class*="GatheringProductionSkillPanel_consumablesContainer"]').forEach((el) => {
+            this._updatePanel(el);
+        });
+        document.querySelectorAll('[class*="AlchemyPanel_consumablesContainer"]').forEach((el) => {
+            this._updatePanel(el);
+        });
+        document.querySelectorAll('[class*="EnhancingPanel_consumablesContainer"]').forEach((el) => {
             this._updatePanel(el);
         });
     }
