@@ -451,7 +451,7 @@ function registerFeatures() {
             async: false,
         },
         {
-            key: 'combatSim',
+            key: 'labSim',
             name: 'Lab Simulator',
             category: 'Combat',
             module: Combat.labSim,

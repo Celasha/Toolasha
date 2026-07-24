@@ -1596,6 +1596,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Simulate combat encounters to estimate XP/hr, deaths, and consumable usage',
             },
+            labSim: {
+                id: 'labSim',
+                label: 'Lab Simulator',
+                type: 'checkbox',
+                default: true,
+                help: 'Simulate labyrinth runs to estimate performance across skills and combat',
+            },
             combatSim_defaultHours: {
                 id: 'combatSim_defaultHours',
                 label: 'Combat Simulator: Default hours (single zone)',
