@@ -497,13 +497,9 @@ class SkillingSimulatorUI {
         skillSelect.addEventListener('change', () => {
             this.currentSkill = skillSelect.value;
             this.currentLevel = getPlayerSkillLevel(this.currentSkill);
-            levelInput.value = String(this.currentLevel);
             this.teas = [null, null, null];
-            this._teaBtns.forEach(({ nameBtn, clearBtn }) => {
-                nameBtn.textContent = '— Empty —';
-                clearBtn.style.display = 'none';
-            });
-            resetActions();
+            this.selectedActionHrids = null;
+            this._rebuildPanel();
         });
 
         levelInput.addEventListener('change', () => {
