@@ -296,6 +296,20 @@ export function parseEssenceFindBonus(characterEquipment, itemDetailMap) {
 }
 
 /**
+ * Get total gathering quantity bonus from equipment.
+ * @param {Map} characterEquipment - Equipment map
+ * @param {Object} itemDetailMap - Item details
+ * @returns {number} Total gathering quantity bonus (decimal, e.g. 0.02)
+ */
+export function parseGatheringQuantityBonus(characterEquipment, itemDetailMap) {
+    return parseEquipmentStat(characterEquipment, itemDetailMap, {
+        skillSpecificField: null,
+        genericField: 'gatheringQuantity',
+        returnAsPercentage: false,
+    });
+}
+
+/**
  * Valid rare find fields from game data
  */
 const VALID_RARE_FIND_FIELDS = [

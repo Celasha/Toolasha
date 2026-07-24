@@ -331,6 +331,13 @@ function registerFeatures() {
             module: Actions.pinnedActionsPage,
             async: false,
         },
+        {
+            key: 'skillingOptimizer',
+            name: 'Skilling Optimizer',
+            category: 'Actions',
+            module: Actions.skillingOptimizer,
+            async: false,
+        },
     ];
 
     // Combat Features

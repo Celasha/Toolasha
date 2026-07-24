@@ -1473,6 +1473,12 @@ export const settingsGroups = {
                 default: 24,
                 help: 'Show an amber warning on drink time displays when remaining supply falls below this many hours.',
             },
+            skillingOptimizer: {
+                id: 'skillingOptimizer',
+                label: 'Skilling Simulator/Optimizer: Enable Optimizer tab in character panel',
+                type: 'checkbox',
+                default: true,
+            },
         },
     },
 

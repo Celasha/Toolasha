@@ -27,6 +27,9 @@ import drinkTimer from '../features/actions/drink-timer.js';
 import alchemyProfitDisplay from '../features/alchemy/alchemy-profit-display.js';
 import alchemyBestItems from '../features/alchemy/alchemy-best-items.js';
 
+// Skilling optimizer
+import skillingOptimizer from '../features/skilling-optimizer/skilling-optimizer-ui.js';
+
 // Export to global namespace
 const toolashaRoot = window.Toolasha || {};
 window.Toolasha = toolashaRoot;
@@ -54,6 +57,7 @@ toolashaRoot.Actions = {
     inventoryCountDisplay,
     pinnedActionsPage,
     drinkTimer,
+    skillingOptimizer,
 };
 
 console.log('[Toolasha] Actions library loaded');

@@ -7,7 +7,11 @@ import dataManager from '../core/data-manager.js';
 import { calculateEfficiencyBreakdown, calculateEfficiencyMultiplier } from './efficiency.js';
 import { calculateExperienceMultiplier } from './experience-parser.js';
 import { getDrinkConcentration } from './tea-parser.js';
-import { parseEquipmentSpeedBonuses, parseEquipmentEfficiencyBonuses } from './equipment-parser.js';
+import {
+    parseEquipmentSpeedBonuses,
+    parseEquipmentEfficiencyBonuses,
+    parseGatheringQuantityBonus,
+} from './equipment-parser.js';
 import { calculateActionsPerHour, calculateEffectiveActionsPerHour, calculateDrinksPerHour } from './profit-helpers.js';
 import { getItemPrice } from './market-data.js';
 import { calculateBonusRevenue } from './bonus-revenue-calculator.js';
@@ -651,7 +655,7 @@ function findProcessingConversion(itemHrid, gameData) {
  * @param {number} playerLevel - Player's skill level
  * @returns {Object} { available: [], excluded: [] } with exclusion reasons
  */
-function getActionsForSkill(skillName, playerLevel) {
+function getActionsForSkill(skillName, playerLevel, selectedActionHrids = null) {
     const gameData = dataManager.getInitClientData();
     if (!gameData?.actionDetailMap) return { available: [], excluded: [] };
 
@@ -661,24 +665,41 @@ function getActionsForSkill(skillName, playerLevel) {
     const available = [];
     const excluded = [];
 
-    for (const [_hrid, action] of Object.entries(gameData.actionDetailMap)) {
-        if (action.type !== actionType) {
-            continue;
-        }
+    for (const [hrid, action] of Object.entries(gameData.actionDetailMap)) {
+        if (action.type !== actionType) continue;
+        if (selectedActionHrids && !selectedActionHrids.has(hrid)) continue;
 
         const requiredLevel = action.levelRequirement?.level || 1;
         if (playerLevel >= requiredLevel) {
             available.push(action);
         } else {
-            excluded.push({
-                action,
-                reason: 'level',
-                requiredLevel,
-            });
+            excluded.push({ action, reason: 'level', requiredLevel });
         }
     }
 
     return { available, excluded };
+}
+
+/**
+ * Get all actions for a skill for display purposes, including level-locked ones.
+ * @param {string} skillName
+ * @param {number} playerLevel
+ * @returns {Array<{ hrid, name, requiredLevel, available }>} Sorted by level requirement
+ */
+export function getSkillActionsForDisplay(skillName, playerLevel) {
+    const gameData = dataManager.getInitClientData();
+    if (!gameData?.actionDetailMap) return [];
+
+    const actionType = SKILL_TO_ACTION_TYPE[skillName.toLowerCase()];
+    if (!actionType) return [];
+
+    const result = [];
+    for (const [hrid, action] of Object.entries(gameData.actionDetailMap)) {
+        if (action.type !== actionType) continue;
+        const requiredLevel = action.levelRequirement?.level || 1;
+        result.push({ hrid, name: action.name, requiredLevel, available: playerLevel >= requiredLevel });
+    }
+    return result.sort((a, b) => a.requiredLevel - b.requiredLevel || a.name.localeCompare(b.name));
 }
 
 /**
@@ -798,7 +819,9 @@ export function findOptimalTeas(
     locationName = null,
     actionNameFilter = null,
     constraints = null,
-    alchemyContext = null
+    alchemyContext = null,
+    equipmentOverride = null,
+    selectedActionHrids = null
 ) {
     const normalizedSkill = skillName.toLowerCase();
     const isGathering = GATHERING_SKILLS.includes(normalizedSkill);
@@ -825,7 +848,7 @@ export function findOptimalTeas(
     }
 
     // Get drink concentration
-    const equipment = dataManager.getEquipment();
+    const equipment = equipmentOverride ?? dataManager.getEquipment();
     const drinkConcentration = getDrinkConcentration(equipment, gameData.itemDetailMap);
 
     // Get relevant teas and generate combinations
@@ -833,7 +856,7 @@ export function findOptimalTeas(
     const combinations = generateCombinations(relevantTeas, constraints);
 
     // Get actions for this skill (available and excluded)
-    const actionData = getActionsForSkill(normalizedSkill, playerLevel);
+    const actionData = getActionsForSkill(normalizedSkill, playerLevel, selectedActionHrids);
     let actions = actionData.available;
     let excludedActions = actionData.excluded;
 
@@ -1051,6 +1074,94 @@ export function findOptimalTeas(
 }
 
 /**
+ * Score a hypothetical equipment setup for a skill and goal with zero tea buffs.
+ * Used by the skilling optimizer to rank equipment candidates per slot independently of teas.
+ * @param {string} skillName
+ * @param {string} goal - 'xp' or 'gold'
+ * @param {Map} equipment - Map<itemLocationHrid, { itemHrid, enhancementLevel }>
+ * @param {number} playerLevel
+ * @returns {number} Average XP/hr or Gold/hr across available actions
+ */
+export function scoreEquipmentSetup(skillName, goal, equipment, playerLevel, selectedActionHrids = null) {
+    const normalizedSkill = skillName.toLowerCase();
+    const isGathering = GATHERING_SKILLS.includes(normalizedSkill);
+    const isProduction = PRODUCTION_SKILLS.includes(normalizedSkill);
+
+    if (!isGathering && !isProduction) return 0;
+
+    const gameData = dataManager.getInitClientData();
+    if (!gameData?.itemDetailMap) return 0;
+
+    const actionType = SKILL_TO_ACTION_TYPE[normalizedSkill];
+    if (!actionType) return 0;
+
+    const otherEfficiency = getOtherEfficiencySources(actionType);
+
+    // Add equipment gathering quantity bonus — not captured by the standard speed/efficiency parsers
+    if (isGathering) {
+        const equipGathering = parseGatheringQuantityBonus(equipment, gameData.itemDetailMap);
+        if (equipGathering > 0) otherEfficiency.gathering = (otherEfficiency.gathering || 0) + equipGathering;
+    }
+
+    const { available: actions } = getActionsForSkill(normalizedSkill, playerLevel, selectedActionHrids);
+    if (!actions.length) return 0;
+
+    const emptyBuffs = {
+        efficiency: 0,
+        wisdom: 0,
+        gathering: 0,
+        processing: 0,
+        artisan: 0,
+        gourmet: 0,
+        actionLevel: 0,
+        alchemySuccess: 0,
+        skillLevels: {},
+    };
+
+    const calcContext = { equipment, itemDetailMap: gameData.itemDetailMap };
+
+    let totalScore = 0;
+    let count = 0;
+
+    for (const action of actions) {
+        let score;
+        if (goal === 'xp') {
+            score = calculateXpPerHour(action, emptyBuffs, playerLevel, otherEfficiency, calcContext);
+            totalScore += score;
+            count++;
+        } else if (isGathering) {
+            score = calculateGatheringGoldPerHour(
+                action,
+                emptyBuffs,
+                playerLevel,
+                otherEfficiency,
+                gameData,
+                calcContext
+            );
+            if (score > 0) {
+                totalScore += score;
+                count++;
+            }
+        } else {
+            score = calculateProductionGoldPerHour(
+                action,
+                emptyBuffs,
+                playerLevel,
+                otherEfficiency,
+                gameData,
+                calcContext
+            );
+            if (score > 0) {
+                totalScore += score;
+                count++;
+            }
+        }
+    }
+
+    return count > 0 ? totalScore / count : 0;
+}
+
+/**
  * Get buff description for a tea
  * @param {string} teaHrid - Tea item HRID
  * @returns {string} Human-readable buff description
@@ -1132,8 +1243,83 @@ function formatBuffWithDC(scaledValue, dcBonus, suffix, isPercent) {
     return `${mainFormatted} ${dcFormatted}`;
 }
 
+/**
+ * Calculate XP/hr and Gold/hr for a specific equipment and tea setup.
+ * Unlike scoreEquipmentSetup (which uses empty teas for equipment comparison),
+ * this evaluates a real configured setup and returns both metrics.
+ * @param {string} skillName
+ * @param {Map} equipment - Map<itemLocationHrid, { itemHrid, enhancementLevel }>
+ * @param {string[]} teaHrids - Tea item HRIDs (null/empty entries are filtered)
+ * @param {number} playerLevel
+ * @param {Set<string>|null} selectedActionHrids
+ * @returns {{ xpPerHour: number, goldPerHour: number, teaCostPerHour: number }}
+ */
+export function calculateSkillPerformance(skillName, equipment, teaHrids, playerLevel, selectedActionHrids = null) {
+    const normalizedSkill = skillName.toLowerCase();
+    const isGathering = GATHERING_SKILLS.includes(normalizedSkill);
+    const isProduction = PRODUCTION_SKILLS.includes(normalizedSkill);
+
+    const empty = { xpPerHour: 0, goldPerHour: 0, teaCostPerHour: 0 };
+    if (!isGathering && !isProduction) return empty;
+    if (selectedActionHrids !== null && selectedActionHrids.size === 0) return empty;
+
+    const gameData = dataManager.getInitClientData();
+    if (!gameData?.itemDetailMap) return empty;
+
+    const actionType = SKILL_TO_ACTION_TYPE[normalizedSkill];
+    if (!actionType) return empty;
+
+    const { available: actions } = getActionsForSkill(normalizedSkill, playerLevel, selectedActionHrids);
+    if (!actions.length) return empty;
+
+    const filteredTeas = (teaHrids || []).filter(Boolean);
+    const drinkConcentration = getDrinkConcentration(equipment, gameData.itemDetailMap);
+    const buffs = parseTeaBuffs(filteredTeas, gameData.itemDetailMap, drinkConcentration);
+
+    const otherEfficiency = getOtherEfficiencySources(actionType);
+    if (isGathering) {
+        const equipGathering = parseGatheringQuantityBonus(equipment, gameData.itemDetailMap);
+        if (equipGathering > 0) otherEfficiency.gathering = (otherEfficiency.gathering || 0) + equipGathering;
+    }
+
+    const teaCost = calculateTeaCostPerHour(filteredTeas, drinkConcentration);
+    const calcContext = { equipment, itemDetailMap: gameData.itemDetailMap };
+
+    let totalXp = 0,
+        xpCount = 0;
+    let totalGold = 0,
+        goldCount = 0;
+
+    for (const action of actions) {
+        const xp = calculateXpPerHour(action, buffs, playerLevel, otherEfficiency, calcContext);
+        if (xp > 0) {
+            totalXp += xp;
+            xpCount++;
+        }
+
+        const gold = isGathering
+            ? calculateGatheringGoldPerHour(action, buffs, playerLevel, otherEfficiency, gameData, calcContext) -
+              teaCost.total
+            : calculateProductionGoldPerHour(action, buffs, playerLevel, otherEfficiency, gameData, calcContext) -
+              teaCost.total;
+        if (gold > 0) {
+            totalGold += gold;
+            goldCount++;
+        }
+    }
+
+    return {
+        xpPerHour: xpCount > 0 ? totalXp / xpCount : 0,
+        goldPerHour: goldCount > 0 ? totalGold / goldCount : 0,
+        teaCostPerHour: teaCost.total,
+    };
+}
+
 export default {
     findOptimalTeas,
     getRelevantTeas,
     getTeaBuffDescription,
+    scoreEquipmentSetup,
+    getSkillActionsForDisplay,
+    calculateSkillPerformance,
 };
