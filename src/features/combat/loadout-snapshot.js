@@ -96,6 +96,7 @@ function buildSnapshot(loadout) {
         actionTypeHrid: loadout.actionTypeHrid || '',
         isDefault: !!loadout.isDefault,
         useExactEnhancement: loadout.useExactEnhancement ?? false,
+        ordinal: loadout.ordinal || 0,
         equipment,
         abilities,
         food,
@@ -296,7 +297,7 @@ class LoadoutSnapshot {
      * @returns {Array<Object>} Array of snapshot objects
      */
     getAllSnapshots() {
-        return Object.values(this.snapshots);
+        return Object.values(this.snapshots).sort((a, b) => a.ordinal - b.ordinal);
     }
 
     /**
