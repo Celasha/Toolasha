@@ -696,6 +696,20 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'leaderboardXPTracker',
+            name: 'Leaderboard XP Tracker',
+            category: 'Leaderboard',
+            module: UI.leaderboardXPTracker,
+            async: false,
+        },
+        {
+            key: 'leaderboardXPDisplay',
+            name: 'Leaderboard XP Display',
+            category: 'Leaderboard',
+            module: UI.leaderboardXPDisplay,
+            async: false,
+        },
+        {
             key: 'emptyQueueNotification',
             name: 'Empty Queue Notification',
             category: 'Notifications',

@@ -72,6 +72,10 @@ import guildXPTracker from '../features/guild/guild-xp-tracker.js';
 import guildXPDisplay from '../features/guild/guild-xp-display.js';
 import guildCreditValue from '../features/guild/guild-credit-value.js';
 
+// Leaderboard
+import leaderboardXPTracker from '../features/leaderboard/leaderboard-xp-tracker.js';
+import leaderboardXPDisplay from '../features/leaderboard/leaderboard-xp-display.js';
+
 // Notifications
 import emptyQueueNotification from '../features/notifications/empty-queue-notification.js';
 
@@ -133,6 +137,8 @@ toolashaRoot.UI = {
     guildXPTracker,
     guildXPDisplay,
     guildCreditValue,
+    leaderboardXPTracker,
+    leaderboardXPDisplay,
     emptyQueueNotification,
     queueMonitor,
     pformancePanel,

@@ -7,7 +7,7 @@
  * - character_initialized (via dataManager) — initial snapshot on login
  * - guild_updated — guild total XP changes
  * - guild_characters_updated — per-member XP changes
- * - leaderboard_updated (category: guild) — XP for all guilds on leaderboard
+ * - leaderboard_updated (category: guild) — XP for all guilds on the guild leaderboard
  */
 
 import dataManager from '../../core/data-manager.js';
@@ -223,8 +223,6 @@ class GuildXPTracker {
         this.guildXPHistory = {}; // guildName → [{t, xp}]
         this.memberXPHistory = {}; // characterID → [{t, xp}]
         this.memberMeta = {}; // characterID → {name, gameMode, joinTime, invitedBy, ...}
-        this.playerXPHistory = {}; // `${category}_${playerName}` → [{t, xp}]
-        this.lastLeaderboardCategory = null;
         this.unregisterHandlers = [];
     }
 
@@ -258,17 +256,6 @@ class GuildXPTracker {
         // If character data already loaded, initialize immediately
         if (dataManager.characterData) {
             await this._onCharacterInit(dataManager.characterData);
-        }
-
-        // Load persisted player leaderboard history
-        this.playerXPHistory = await storage.get('playerXP_leaderboard', STORE_NAME, {});
-
-        // Clear legacy data: old format used bare player names as keys; new format uses
-        // "category_name". If no stored key contains "_", the data is from the old format.
-        const storedKeys = Object.keys(this.playerXPHistory);
-        if (storedKeys.length > 0 && storedKeys.every((k) => !k.includes('_'))) {
-            this.playerXPHistory = {};
-            storage.set('playerXP_leaderboard', {}, STORE_NAME);
         }
 
         this.initialized = true;
@@ -437,48 +424,30 @@ class GuildXPTracker {
     }
 
     /**
-     * Handle leaderboard_updated — record XP for all guilds on leaderboard,
-     * or player XP for the main leaderboard.
+     * Handle leaderboard_updated (category: guild) — record XP for all guilds on the guild leaderboard.
      * @param {Object} data - leaderboard_updated message
      */
     _onLeaderboardUpdated(data) {
+        if (data.leaderboardCategory !== 'guild') return;
+
         const rows = data.leaderboard?.rows;
         if (!rows || rows.length === 0) return;
 
         const t = Date.now();
 
-        if (data.leaderboardCategory === 'guild') {
-            for (const row of rows) {
-                const name = row.name;
-                const xp = row.value2;
-                if (!name || xp === undefined) continue;
+        for (const row of rows) {
+            const name = row.name;
+            const xp = row.value2;
+            if (!name || xp === undefined) continue;
 
-                if (!this.guildXPHistory[name]) {
-                    this.guildXPHistory[name] = [];
-                }
-                pushXP(this.guildXPHistory[name], { t, xp });
+            if (!this.guildXPHistory[name]) {
+                this.guildXPHistory[name] = [];
             }
+            pushXP(this.guildXPHistory[name], { t, xp });
+        }
 
-            // Persist using own guild name as key (all guild histories stored together)
-            if (this.ownGuildName) {
-                storage.set(`guildXP_${this.ownGuildName}`, this.guildXPHistory, STORE_NAME);
-            }
-        } else {
-            this.lastLeaderboardCategory = data.leaderboardCategory;
-
-            for (const row of rows) {
-                const name = row.name;
-                const xp = row.value2;
-                if (!name || xp === undefined) continue;
-
-                const key = `${data.leaderboardCategory}_${name}`;
-                if (!this.playerXPHistory[key]) {
-                    this.playerXPHistory[key] = [];
-                }
-                pushXP(this.playerXPHistory[key], { t, xp });
-            }
-
-            storage.set('playerXP_leaderboard', this.playerXPHistory, STORE_NAME);
+        if (this.ownGuildName) {
+            storage.set(`guildXP_${this.ownGuildName}`, this.guildXPHistory, STORE_NAME);
         }
     }
 
@@ -563,26 +532,7 @@ class GuildXPTracker {
     }
 
     /**
-     * Get XP/hr stats for a player on the main leaderboard.
-     * @param {string} playerName
-     * @param {string} category - Leaderboard category (e.g. 'foraging', 'enhancing')
-     * @returns {{lastXPH: number, lastHourXPH: number, lastDayXPH: number, chart: Array}}
-     */
-    getPlayerStats(playerName, category) {
-        const key = `${category}_${playerName}`;
-        return calcStats(this.playerXPHistory[key]);
-    }
-
-    /**
-     * Get the most recently seen non-guild leaderboard category.
-     * @returns {string|null}
-     */
-    getLastLeaderboardCategory() {
-        return this.lastLeaderboardCategory;
-    }
-
-    /**
-     * Get all guild XP histories (for leaderboard stats).
+     * Get all guild XP histories (for guild leaderboard display).
      * @returns {Object} guildName → [{t, xp}]
      */
     getAllGuildHistories() {
@@ -650,8 +600,6 @@ class GuildXPTracker {
         this.guildXPHistory = {};
         this.memberXPHistory = {};
         this.memberMeta = {};
-        this.playerXPHistory = {};
-        this.lastLeaderboardCategory = null;
         this.initialized = false;
     }
 }

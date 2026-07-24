@@ -9,8 +9,9 @@ import webSocketHook from '../../core/websocket.js';
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import { guildXPTracker } from './guild-xp-tracker.js';
-import { formatWithSeparator, formatDateTime } from '../../utils/formatters.js';
+import { formatDateTime } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import { fNum, rankBadge, addColumn, makeColumnSortable } from '../../utils/table-columns.js';
 
 const CSS_PREFIX = 'mwi-guild-xp';
 
@@ -41,27 +42,6 @@ function formatTimeLeft(ms) {
     if (ms < 6 * h1 && m >= 1) parts.push(`${m} minute${s(m)}`);
 
     return parts.join(' ') || '< 1 minute';
-}
-
-/**
- * Format number with non-breaking spaces as thousands separator (for chart display).
- * @param {number} n
- * @returns {string}
- */
-function fNum(n) {
-    return formatWithSeparator(Math.round(n));
-}
-
-/**
- * Get ranking emoji for top 3 places.
- * @param {number} rank - 1-indexed rank
- * @returns {string} HTML
- */
-function rankBadge(rank) {
-    if (rank <= 3) {
-        return ['&#x1F947;', '&#x1F948;', '&#x1F949;'][rank - 1];
-    }
-    return `<span style="color: var(--color-disabled);">#${rank}</span>`;
 }
 
 // ─── Chart rendering ────────────────────────────────────────────────────────
@@ -193,176 +173,6 @@ function buildChart(chart) {
         </div>`;
 }
 
-// ─── Column sort helpers ────────────────────────────────────────────────────
-
-/**
- * Sort icon HTML.
- * @param {string} direction - 'asc', 'desc', or 'none'
- * @returns {string} HTML
- */
-function sortIcon(direction) {
-    return `<span class="${CSS_PREFIX}__sort-icon" style="display: inline-flex; flex-direction: column; vertical-align: middle; margin-left: 2px;">
-        <span style="font-size: 8px; line-height: 8px;">${direction === 'asc' ? '\u25B2' : '\u25B3'}</span>
-        <span style="font-size: 8px; line-height: 8px;">${direction === 'desc' ? '\u25BC' : '\u25BD'}</span>
-    </span>`;
-}
-
-/**
- * Make a column header sortable.
- * @param {HTMLElement} thEl - Header cell
- * @param {Object} options
- * @param {string} options.sortId - Unique sort identifier
- * @param {Function} options.valueGetter - (trEl) => number|string
- * @param {boolean} [options.skipFirst=false] - Skip first body row (sticky row)
- */
-function makeColumnSortable(thEl, options) {
-    const tableEl = thEl.closest('table');
-    if (!tableEl) return;
-
-    thEl.dataset.sortId = options.sortId;
-    thEl.style.cursor = 'pointer';
-    thEl.insertAdjacentHTML('beforeend', sortIcon('none'));
-
-    thEl.addEventListener('click', (e) => {
-        // Stop React's delegated handler from re-sorting the column as a string
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-        const tbodyEl = tableEl.querySelector('tbody');
-        if (!tbodyEl) return;
-
-        // Toggle direction
-        if (tableEl.dataset.sortId === options.sortId) {
-            tableEl.dataset.sortDirection = tableEl.dataset.sortDirection === 'asc' ? 'desc' : 'asc';
-        } else {
-            tableEl.dataset.sortId = options.sortId;
-            tableEl.dataset.sortDirection = 'desc';
-        }
-
-        const direction = tableEl.dataset.sortDirection;
-
-        let rows = Array.from(tbodyEl.children);
-        if (options.skipFirst) {
-            rows = rows.slice(1);
-        }
-
-        rows.sort((a, b) => {
-            const av = options.valueGetter(a);
-            const bv = options.valueGetter(b);
-            // Always sort Infinity (unknown/hidden) to the bottom regardless of direction
-            const aInf = av === Infinity || av === -Infinity;
-            const bInf = bv === Infinity || bv === -Infinity;
-            if (aInf && bInf) return 0;
-            if (aInf) return 1;
-            if (bInf) return -1;
-            if (typeof av === 'number' && typeof bv === 'number') {
-                return direction === 'asc' ? av - bv : bv - av;
-            }
-            const sa = String(av);
-            const sb = String(bv);
-            return direction === 'asc' ? sa.localeCompare(sb) : sb.localeCompare(sa);
-        });
-
-        for (const row of rows) {
-            tbodyEl.appendChild(row);
-        }
-
-        // Update all sort icons in this table
-        const theadTr = thEl.parentElement;
-        for (const th of theadTr.children) {
-            const icon = th.querySelector(`.${CSS_PREFIX}__sort-icon`);
-            if (icon) {
-                const d = th.dataset.sortId === tableEl.dataset.sortId ? direction : 'none';
-                icon.outerHTML = sortIcon(d);
-            }
-        }
-    });
-}
-
-/**
- * Add a column to a table.
- * @param {HTMLElement} tableEl
- * @param {Object} options
- * @param {string} options.name - Column header text
- * @param {Array} options.data - One value per body row
- * @param {Function} [options.format] - (value, index) => HTML string
- * @param {number} [options.insertAfter] - Column index to insert after
- * @param {boolean} [options.makeSortable] - Whether to make column sortable
- * @param {string} [options.sortId] - Sort identifier
- * @param {boolean} [options.skipFirst] - Skip first row for sorting (leaderboard)
- * @param {Array} [options.sortData] - Custom sort values (numbers) per row
- */
-function addColumn(tableEl, options) {
-    // Don't add duplicate columns
-    if (tableEl.querySelector(`th.${CSS_PREFIX}[data-name="${options.name}"]`)) return;
-
-    const theadTr = tableEl.querySelector('thead tr');
-    if (!theadTr) return;
-
-    const insertAfter = options.insertAfter !== undefined ? options.insertAfter : theadTr.children.length - 1;
-
-    // Add header
-    const th = document.createElement('th');
-    th.className = CSS_PREFIX;
-    th.dataset.name = options.name;
-    th.textContent = options.name;
-
-    if (insertAfter < theadTr.children.length - 1) {
-        theadTr.children[insertAfter + 1].insertAdjacentElement('beforebegin', th);
-    } else {
-        theadTr.appendChild(th);
-    }
-
-    // Add body cells
-    const tbodyEl = tableEl.querySelector('tbody');
-    const rows = Array.from(tbodyEl.children);
-
-    for (let i = 0; i < rows.length; i++) {
-        const td = document.createElement('td');
-        td.className = CSS_PREFIX;
-
-        const value = i < options.data.length ? options.data[i] : null;
-        if (options.format) {
-            td.innerHTML = options.format(value, i);
-        } else if (value === null || value === undefined || (typeof value === 'number' && isNaN(value))) {
-            td.textContent = '';
-        } else if (typeof value === 'number') {
-            td.textContent = fNum(value);
-        } else {
-            td.textContent = value;
-        }
-
-        // Store sort value
-        if (options.sortData) {
-            td._sortValue = options.sortData[i];
-        } else if (typeof value === 'number') {
-            td._sortValue = value;
-        }
-
-        const refChild = rows[i].children[insertAfter + 1];
-        if (refChild) {
-            refChild.insertAdjacentElement('beforebegin', td);
-        } else {
-            rows[i].appendChild(td);
-        }
-    }
-
-    // Make sortable
-    if (options.makeSortable) {
-        makeColumnSortable(th, {
-            sortId: options.sortId || options.name,
-            skipFirst: options.skipFirst || false,
-            valueGetter: (trEl) => {
-                // Resolve column index dynamically so stale closures after tab re-injection don't misalign
-                const currentIndex = Array.from(theadTr.children).indexOf(th);
-                const cell = currentIndex >= 0 ? trEl.children[currentIndex] : undefined;
-                if (cell && cell._sortValue !== undefined) return cell._sortValue;
-                const text = cell?.textContent?.replace(/[^\d.-]/g, '');
-                return text ? parseFloat(text) : 0;
-            },
-        });
-    }
-}
-
 // ─── Display class ──────────────────────────────────────────────────────────
 
 class GuildXPDisplay {
@@ -388,11 +198,13 @@ class GuildXPDisplay {
         );
         this.unregisterObservers.push(unregMembers);
 
-        // Watch for guild leaderboard
+        // Watch for guild leaderboard tab (only process tables inside GuildPanel)
         const unregLeaderboard = domObserver.onClass(
             'GuildXPDisplay-Leaderboard',
             'LeaderboardPanel_leaderboardTable',
-            (el) => this._renderLeaderboard(el)
+            (el) => {
+                if (el.closest('[class*="GuildPanel"]')) this._renderGuildLeaderboard(el);
+            }
         );
         this.unregisterObservers.push(unregLeaderboard);
 
@@ -409,7 +221,7 @@ class GuildXPDisplay {
             if (el) this._renderTrialSignups(el);
         };
         this._boundRefreshLeaderboard = (data) => {
-            this._refreshLeaderboardIfVisible(data?.leaderboardCategory);
+            if (data?.leaderboardCategory === 'guild') this._refreshGuildLeaderboardIfVisible();
         };
 
         webSocketHook.on('guild_updated', this._boundRefreshOverview);
@@ -665,7 +477,7 @@ class GuildXPDisplay {
             }
 
             if (showGameMode) {
-                addColumn(tableEl, {
+                addColumn(tableEl, CSS_PREFIX, {
                     name: 'Game Mode',
                     insertAfter,
                     data: allStats.map((s) => s.gameMode),
@@ -677,7 +489,7 @@ class GuildXPDisplay {
             }
 
             if (showJoined) {
-                addColumn(tableEl, {
+                addColumn(tableEl, CSS_PREFIX, {
                     name: 'Joined',
                     insertAfter,
                     data: allStats.map((s) => s.joinTime),
@@ -697,7 +509,7 @@ class GuildXPDisplay {
         let colOffset = 0;
 
         if (showLastXPH) {
-            addColumn(tableEl, {
+            addColumn(tableEl, CSS_PREFIX, {
                 name: 'Last XP/h',
                 insertAfter: insertAfter + colOffset,
                 data: allStats.map((s) => s.lastXPH),
@@ -714,7 +526,7 @@ class GuildXPDisplay {
 
         // Last day XP/h column — Contributions tab
         if (showLastDayXPH) {
-            addColumn(tableEl, {
+            addColumn(tableEl, CSS_PREFIX, {
                 name: 'Last day XP/h',
                 insertAfter: insertAfter + colOffset,
                 data: allStats.map((s) => s.lastDayXPH),
@@ -731,7 +543,7 @@ class GuildXPDisplay {
 
         // Activity column — Contributions tab (uses cached HTML from game's Status tab render)
         if (activityTab !== 'status') {
-            addColumn(tableEl, {
+            addColumn(tableEl, CSS_PREFIX, {
                 name: 'Activity',
                 insertAfter: insertAfter + colOffset,
                 data: allStats.map((s) => ({
@@ -767,7 +579,7 @@ class GuildXPDisplay {
 
         // Make existing columns sortable
         const nameHeader = theadTr.children[0];
-        if (nameHeader && !nameHeader.querySelector(`.${CSS_PREFIX}__sort-icon`)) {
+        if (nameHeader && !nameHeader.querySelector('.mwi-col-sort-icon')) {
             makeColumnSortable(nameHeader, {
                 sortId: 'name',
                 valueGetter: (trEl) => trEl.children[0]?.textContent?.trim() || '',
@@ -776,7 +588,7 @@ class GuildXPDisplay {
 
         // Guild Exp column
         const expHeader = Array.from(theadTr.children).find((el) => el.textContent.includes('Guild Exp'));
-        if (expHeader && !expHeader.querySelector(`.${CSS_PREFIX}__sort-icon`)) {
+        if (expHeader && !expHeader.querySelector('.mwi-col-sort-icon')) {
             makeColumnSortable(expHeader, {
                 sortId: 'xp',
                 valueGetter: (trEl) => {
@@ -790,7 +602,7 @@ class GuildXPDisplay {
         // Role column
         const rolePriority = { Leader: 1, General: 2, Officer: 3, Member: 4 };
         const roleHeader = Array.from(theadTr.children).find((el) => el.textContent.trim() === 'Role');
-        if (roleHeader && !roleHeader.querySelector(`.${CSS_PREFIX}__sort-icon`)) {
+        if (roleHeader && !roleHeader.querySelector('.mwi-col-sort-icon')) {
             const roleColIndex = Array.from(theadTr.children).indexOf(roleHeader);
             makeColumnSortable(roleHeader, {
                 sortId: 'role',
@@ -803,7 +615,7 @@ class GuildXPDisplay {
 
         // Activity column
         const activityHeader = Array.from(theadTr.children).find((el) => el.textContent.trim() === 'Activity');
-        if (activityHeader && !activityHeader.querySelector(`.${CSS_PREFIX}__sort-icon`)) {
+        if (activityHeader && !activityHeader.querySelector('.mwi-col-sort-icon')) {
             const activityColIndex = Array.from(theadTr.children).indexOf(activityHeader);
             makeColumnSortable(activityHeader, {
                 sortId: 'activity',
@@ -828,7 +640,7 @@ class GuildXPDisplay {
 
         // Status column
         const statusHeader = Array.from(theadTr.children).find((el) => el.textContent.trim() === 'Status');
-        if (statusHeader && !statusHeader.querySelector(`.${CSS_PREFIX}__sort-icon`)) {
+        if (statusHeader && !statusHeader.querySelector('.mwi-col-sort-icon')) {
             const statusColIndex = Array.from(theadTr.children).indexOf(statusHeader);
             makeColumnSortable(statusHeader, {
                 sortId: 'status',
@@ -986,27 +798,16 @@ class GuildXPDisplay {
         return num * mult;
     }
 
-    // ─── Leaderboard tab ─────────────────────────────────────────────────────
+    // ─── Guild Leaderboard tab ───────────────────────────────────────────────
 
-    _renderLeaderboard(tableEl, category) {
-        // Skip if already rendered
-        if (tableEl.querySelector(`.${CSS_PREFIX}`)) return;
+    _renderGuildLeaderboard(tableEl) {
+        if (tableEl.querySelector(`th.${CSS_PREFIX}`)) return;
 
-        const isGuildLeaderboard = !!tableEl.closest('[class*="GuildPanel"]');
+        const allHistories = guildXPTracker.getAllGuildHistories();
+        if (!allHistories || Object.keys(allHistories).length === 0) return;
 
-        // For player leaderboard, resolve category from parameter or last seen WS category
-        const resolvedCategory = isGuildLeaderboard ? null : category || guildXPTracker.getLastLeaderboardCategory();
-
-        if (isGuildLeaderboard) {
-            const allHistories = guildXPTracker.getAllGuildHistories();
-            if (!allHistories || Object.keys(allHistories).length === 0) return;
-        }
-
-        // Widen container
         const containerEl = tableEl.closest('[class*="LeaderboardPanel_content"]');
-        if (containerEl) {
-            containerEl.style.maxWidth = '1000px';
-        }
+        if (containerEl) containerEl.style.maxWidth = '1000px';
 
         const tbodyEl = tableEl.querySelector('tbody');
         if (!tbodyEl) return;
@@ -1015,24 +816,13 @@ class GuildXPDisplay {
         const theadTr = tableEl.querySelector('thead tr');
         if (!theadTr) return;
 
-        // Calculate stats for each row
         const allStats = [];
         for (const row of rows) {
-            // Leaderboard: col[0]=Rank, col[1]=Name
             const name = row.children[1]?.textContent?.trim();
-            const stats = name
-                ? isGuildLeaderboard
-                    ? guildXPTracker.getGuildStats(name)
-                    : guildXPTracker.getPlayerStats(name, resolvedCategory)
-                : { lastXPH: 0, lastDayXPH: 0 };
-            allStats.push({
-                name,
-                lastXPH: stats.lastXPH,
-                lastDayXPH: stats.lastDayXPH,
-            });
+            const stats = name ? guildXPTracker.getGuildStats(name) : { lastXPH: 0, lastDayXPH: 0 };
+            allStats.push({ name, lastXPH: stats.lastXPH, lastDayXPH: stats.lastDayXPH });
         }
 
-        // Compute rankings
         const byLastXPH = allStats.slice().sort((a, b) => b.lastXPH - a.lastXPH);
         const byLastDayXPH = allStats.slice().sort((a, b) => b.lastDayXPH - a.lastDayXPH);
         for (let i = 0; i < byLastXPH.length; i++) byLastXPH[i].lastXPH_rank = i + 1;
@@ -1040,39 +830,30 @@ class GuildXPDisplay {
 
         const insertAfter = theadTr.children.length - 1;
 
-        // Last XP/h
-        addColumn(tableEl, {
+        addColumn(tableEl, CSS_PREFIX, {
             name: 'Last XP/h',
             insertAfter,
             data: allStats.map((s) => s.lastXPH),
-            format: (v, i) => {
-                if (!v || v <= 0) return '';
-                return `${fNum(v)} ${rankBadge(allStats[i].lastXPH_rank)}`;
-            },
+            format: (v, i) => (!v || v <= 0 ? '' : `${fNum(v)} ${rankBadge(allStats[i].lastXPH_rank)}`),
             makeSortable: true,
             sortId: 'lastXPH',
             skipFirst: true,
             sortData: allStats.map((s) => s.lastXPH),
         });
 
-        // Last day XP/h
-        addColumn(tableEl, {
+        addColumn(tableEl, CSS_PREFIX, {
             name: 'Last day XP/h',
             insertAfter: insertAfter + 1,
             data: allStats.map((s) => s.lastDayXPH),
-            format: (v, i) => {
-                if (!v || v <= 0) return '';
-                return `${fNum(v)} ${rankBadge(allStats[i].lastDayXPH_rank)}`;
-            },
+            format: (v, i) => (!v || v <= 0 ? '' : `${fNum(v)} ${rankBadge(allStats[i].lastDayXPH_rank)}`),
             makeSortable: true,
             sortId: 'lastDayXPH',
             skipFirst: true,
             sortData: allStats.map((s) => s.lastDayXPH),
         });
 
-        // Make Rank column sortable
         const rankHeader = Array.from(theadTr.children).find((el) => el.textContent.trim() === 'Rank');
-        if (rankHeader && !rankHeader.querySelector(`.${CSS_PREFIX}__sort-icon`)) {
+        if (rankHeader && !rankHeader.querySelector('.mwi-col-sort-icon')) {
             makeColumnSortable(rankHeader, {
                 sortId: 'rank',
                 skipFirst: true,
@@ -1084,12 +865,11 @@ class GuildXPDisplay {
         }
     }
 
-    _refreshLeaderboardIfVisible(category) {
-        const tableEl = document.querySelector('[class*="LeaderboardPanel_leaderboardTable"]');
+    _refreshGuildLeaderboardIfVisible() {
+        const tableEl = document.querySelector('[class*="GuildPanel"] [class*="LeaderboardPanel_leaderboardTable"]');
         if (tableEl) {
-            // Remove existing columns and re-render
-            tableEl.querySelectorAll(`.${CSS_PREFIX}`).forEach((el) => el.remove());
-            this._renderLeaderboard(tableEl, category);
+            tableEl.querySelectorAll(`th.${CSS_PREFIX}, td.${CSS_PREFIX}`).forEach((el) => el.remove());
+            this._renderGuildLeaderboard(tableEl);
         }
     }
 

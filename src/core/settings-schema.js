@@ -1988,11 +1988,11 @@ export const settingsGroups = {
                 label: 'Track guild and member XP over time',
                 type: 'checkbox',
                 default: true,
-                help: 'Records guild and member XP data from WebSocket messages for XP/hr calculations',
+                help: 'Records guild and member XP data from WebSocket messages for XP/hr calculations on the Guild panel.',
             },
             guildXPDisplay: {
                 id: 'guildXPDisplay',
-                label: 'Show XP/hr stats on Guild panel and Leaderboard',
+                label: 'Show XP/hr stats on Guild panel',
                 type: 'checkbox',
                 default: true,
                 help: 'Displays XP/hr rates, rankings, and a weekly chart on the Guild Overview, Members, and Guild Leaderboard tabs. Disable the standalone Guild XP/h userscript if using this.',
@@ -2087,6 +2087,27 @@ export const settingsGroups = {
                 label: 'Show upgrade costs with market prices and inventory comparison',
                 type: 'checkbox',
                 default: true,
+            },
+        },
+    },
+
+    leaderboard: {
+        title: 'Leaderboard',
+        icon: '🏆',
+        settings: {
+            leaderboardXPTracker: {
+                id: 'leaderboardXPTracker',
+                label: 'Track player XP over time from Leaderboard',
+                type: 'checkbox',
+                default: true,
+                help: 'Records player XP from leaderboard WebSocket messages for XP/hr calculations on the Leaderboard panel.',
+            },
+            leaderboardXPDisplay: {
+                id: 'leaderboardXPDisplay',
+                label: 'Show XP/hr columns on Leaderboard',
+                type: 'checkbox',
+                default: true,
+                help: 'Adds Last XP/h and Last day XP/h columns to the player Leaderboard panel.',
             },
         },
     },
