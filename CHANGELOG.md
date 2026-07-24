@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.82.0](https://github.com/Celasha/Toolasha/compare/v2.81.0...v2.82.0) (2026-07-24)
+
+### Features
+
+- add Skilling Simulator and Optimizer tab to character panel ([3318f48](https://github.com/Celasha/Toolasha/commit/3318f48634cce30a4f3338deb999213128f2d4f8))
+- make all My Listings table headers sortable ([81f1a54](https://github.com/Celasha/Toolasha/commit/81f1a54e5817f60c25aae4f183a7355ab2db79a2))
+
+### Bug Fixes
+
+- show drink timer on Alchemy and Enhancing panels ([2a3c25e](https://github.com/Celasha/Toolasha/commit/2a3c25e467c4e63255ce158c91ec56155db2579d))
+- use profit as secondary sort when sorting Best Items by XP, and vice versa ([bb6b66e](https://github.com/Celasha/Toolasha/commit/bb6b66e83ce6b9be1f36cc0f2d0570c669cf166b))
+
 ## [2.81.0](https://github.com/Celasha/Toolasha/compare/v2.80.2...v2.81.0) (2026-07-23)
 
 ### Features
