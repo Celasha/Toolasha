@@ -34,7 +34,6 @@ const HIDE_CLASS = 'toolasha-opt-hide-content';
 
 const STYLE_EL = document.createElement('style');
 STYLE_EL.textContent = `.${HIDE_CLASS} [class*="TabsComponent_tabPanelsContainer"] { display: none !important; }`;
-document.head.appendChild(STYLE_EL);
 
 class SkillingSimulatorUI {
     constructor() {
@@ -195,6 +194,7 @@ class SkillingSimulatorUI {
     // -------------------------------------------------------------------------
 
     _buildPanel() {
+        if (!STYLE_EL.isConnected) document.head.appendChild(STYLE_EL);
         this._slotBtns.clear();
         this._teaBtns = [];
 
