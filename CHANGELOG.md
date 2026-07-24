@@ -2,16 +2,14 @@
 
 ## [2.82.1](https://github.com/Celasha/Toolasha/compare/v2.82.0...v2.82.1) (2026-07-24)
 
-
 ### Bug Fixes
 
-* defer skilling optimizer style injection until DOM is ready ([dba550b](https://github.com/Celasha/Toolasha/commit/dba550ba4692b814f684c3ebf5375a5ce4f4e779))
-* rebuild equipment section when skill changes in simulator ([fd2d06a](https://github.com/Celasha/Toolasha/commit/fd2d06a2a9425900f3daf405a3071ffaad0e8778))
-
+- defer skilling optimizer style injection until DOM is ready ([dba550b](https://github.com/Celasha/Toolasha/commit/dba550ba4692b814f684c3ebf5375a5ce4f4e779))
+- rebuild equipment section when skill changes in simulator ([fd2d06a](https://github.com/Celasha/Toolasha/commit/fd2d06a2a9425900f3daf405a3071ffaad0e8778))
 
 ### Code Refactoring
 
-* split leaderboard XP tracking into independent feature ([4d2fc58](https://github.com/Celasha/Toolasha/commit/4d2fc58defa8dbe45fe067ea449be39117d828dd))
+- split leaderboard XP tracking into independent feature ([4d2fc58](https://github.com/Celasha/Toolasha/commit/4d2fc58defa8dbe45fe067ea449be39117d828dd))
 
 ## [2.82.0](https://github.com/Celasha/Toolasha/compare/v2.81.0...v2.82.0) (2026-07-24)
 
