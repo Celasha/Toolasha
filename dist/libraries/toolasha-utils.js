@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.81.0
+ * Version: 2.82.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1217,6 +1217,20 @@
     }
 
     /**
+     * Get total gathering quantity bonus from equipment.
+     * @param {Map} characterEquipment - Equipment map
+     * @param {Object} itemDetailMap - Item details
+     * @returns {number} Total gathering quantity bonus (decimal, e.g. 0.02)
+     */
+    function parseGatheringQuantityBonus(characterEquipment, itemDetailMap) {
+        return parseEquipmentStat(characterEquipment, itemDetailMap, {
+            skillSpecificField: null,
+            genericField: 'gatheringQuantity',
+            returnAsPercentage: false,
+        });
+    }
+
+    /**
      * Valid rare find fields from game data
      */
     const VALID_RARE_FIND_FIELDS = [
@@ -1389,6 +1403,7 @@
         parseEquipmentEfficiencyBreakdown: parseEquipmentEfficiencyBreakdown,
         parseEquipmentSpeedBonuses: parseEquipmentSpeedBonuses,
         parseEssenceFindBonus: parseEssenceFindBonus,
+        parseGatheringQuantityBonus: parseGatheringQuantityBonus,
         parseRareFindBonus: parseRareFindBonus,
         parseRareFindBreakdown: parseRareFindBreakdown
     });

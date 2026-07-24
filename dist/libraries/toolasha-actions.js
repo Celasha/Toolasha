@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.81.0
+ * Version: 2.82.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -18068,7 +18068,7 @@
         alchemy: '/action_types/alchemy',
     };
 
-    const GATHERING_SKILLS = ['milking', 'foraging', 'woodcutting'];
+    const GATHERING_SKILLS$1 = ['milking', 'foraging', 'woodcutting'];
     const PRODUCTION_SKILLS = ['cheesesmithing', 'crafting', 'tailoring', 'cooking', 'brewing', 'alchemy'];
 
     /**
@@ -18080,7 +18080,7 @@
      */
     function getRelevantTeas(skillName, goal) {
         const skill = skillName.toLowerCase();
-        const isGathering = GATHERING_SKILLS.includes(skill);
+        const isGathering = GATHERING_SKILLS$1.includes(skill);
 
         // Skill-specific teas (mutually exclusive - can only equip ONE)
         const skillTeas = [`/items/${skill}_tea`, `/items/super_${skill}_tea`, `/items/ultra_${skill}_tea`];
@@ -18693,7 +18693,7 @@
      * @param {number} playerLevel - Player's skill level
      * @returns {Object} { available: [], excluded: [] } with exclusion reasons
      */
-    function getActionsForSkill(skillName, playerLevel) {
+    function getActionsForSkill(skillName, playerLevel, selectedActionHrids = null) {
         const gameData = dataManager.getInitClientData();
         if (!gameData?.actionDetailMap) return { available: [], excluded: [] };
 
@@ -18703,24 +18703,41 @@
         const available = [];
         const excluded = [];
 
-        for (const [_hrid, action] of Object.entries(gameData.actionDetailMap)) {
-            if (action.type !== actionType) {
-                continue;
-            }
+        for (const [hrid, action] of Object.entries(gameData.actionDetailMap)) {
+            if (action.type !== actionType) continue;
+            if (selectedActionHrids && !selectedActionHrids.has(hrid)) continue;
 
             const requiredLevel = action.levelRequirement?.level || 1;
             if (playerLevel >= requiredLevel) {
                 available.push(action);
             } else {
-                excluded.push({
-                    action,
-                    reason: 'level',
-                    requiredLevel,
-                });
+                excluded.push({ action, reason: 'level', requiredLevel });
             }
         }
 
         return { available, excluded };
+    }
+
+    /**
+     * Get all actions for a skill for display purposes, including level-locked ones.
+     * @param {string} skillName
+     * @param {number} playerLevel
+     * @returns {Array<{ hrid, name, requiredLevel, available }>} Sorted by level requirement
+     */
+    function getSkillActionsForDisplay(skillName, playerLevel) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.actionDetailMap) return [];
+
+        const actionType = SKILL_TO_ACTION_TYPE[skillName.toLowerCase()];
+        if (!actionType) return [];
+
+        const result = [];
+        for (const [hrid, action] of Object.entries(gameData.actionDetailMap)) {
+            if (action.type !== actionType) continue;
+            const requiredLevel = action.levelRequirement?.level || 1;
+            result.push({ hrid, name: action.name, requiredLevel, available: playerLevel >= requiredLevel });
+        }
+        return result.sort((a, b) => a.requiredLevel - b.requiredLevel || a.name.localeCompare(b.name));
     }
 
     /**
@@ -18840,10 +18857,12 @@
         locationName = null,
         actionNameFilter = null,
         constraints = null,
-        alchemyContext = null
+        alchemyContext = null,
+        equipmentOverride = null,
+        selectedActionHrids = null
     ) {
         const normalizedSkill = skillName.toLowerCase();
-        const isGathering = GATHERING_SKILLS.includes(normalizedSkill);
+        const isGathering = GATHERING_SKILLS$1.includes(normalizedSkill);
         const isProduction = PRODUCTION_SKILLS.includes(normalizedSkill);
 
         if (!isGathering && !isProduction) {
@@ -18867,7 +18886,7 @@
         }
 
         // Get drink concentration
-        const equipment = dataManager.getEquipment();
+        const equipment = equipmentOverride ?? dataManager.getEquipment();
         const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, gameData.itemDetailMap);
 
         // Get relevant teas and generate combinations
@@ -18875,7 +18894,7 @@
         const combinations = generateCombinations(relevantTeas, constraints);
 
         // Get actions for this skill (available and excluded)
-        const actionData = getActionsForSkill(normalizedSkill, playerLevel);
+        const actionData = getActionsForSkill(normalizedSkill, playerLevel, selectedActionHrids);
         let actions = actionData.available;
         let excludedActions = actionData.excluded;
 
@@ -19093,6 +19112,93 @@
     }
 
     /**
+     * Score a hypothetical equipment setup for a skill and goal with zero tea buffs.
+     * Used by the skilling optimizer to rank equipment candidates per slot independently of teas.
+     * @param {string} skillName
+     * @param {string} goal - 'xp' or 'gold'
+     * @param {Map} equipment - Map<itemLocationHrid, { itemHrid, enhancementLevel }>
+     * @param {number} playerLevel
+     * @returns {number} Average XP/hr or Gold/hr across available actions
+     */
+    function scoreEquipmentSetup(skillName, goal, equipment, playerLevel, selectedActionHrids = null) {
+        const normalizedSkill = skillName.toLowerCase();
+        const isGathering = GATHERING_SKILLS$1.includes(normalizedSkill);
+        const isProduction = PRODUCTION_SKILLS.includes(normalizedSkill);
+
+        if (!isGathering && !isProduction) return 0;
+
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.itemDetailMap) return 0;
+
+        const actionType = SKILL_TO_ACTION_TYPE[normalizedSkill];
+        if (!actionType) return 0;
+
+        const otherEfficiency = getOtherEfficiencySources(actionType);
+
+        // Add equipment gathering quantity bonus — not captured by the standard speed/efficiency parsers
+        if (isGathering) {
+            const equipGathering = equipmentParser_js.parseGatheringQuantityBonus(equipment, gameData.itemDetailMap);
+            if (equipGathering > 0) otherEfficiency.gathering = (otherEfficiency.gathering || 0) + equipGathering;
+        }
+
+        const { available: actions } = getActionsForSkill(normalizedSkill, playerLevel, selectedActionHrids);
+        if (!actions.length) return 0;
+
+        const emptyBuffs = {
+            efficiency: 0,
+            wisdom: 0,
+            gathering: 0,
+            processing: 0,
+            artisan: 0,
+            gourmet: 0,
+            actionLevel: 0,
+            skillLevels: {},
+        };
+
+        const calcContext = { equipment, itemDetailMap: gameData.itemDetailMap };
+
+        let totalScore = 0;
+        let count = 0;
+
+        for (const action of actions) {
+            let score;
+            if (goal === 'xp') {
+                score = calculateXpPerHour(action, emptyBuffs, playerLevel, otherEfficiency, calcContext);
+                totalScore += score;
+                count++;
+            } else if (isGathering) {
+                score = calculateGatheringGoldPerHour(
+                    action,
+                    emptyBuffs,
+                    playerLevel,
+                    otherEfficiency,
+                    gameData,
+                    calcContext
+                );
+                if (score > 0) {
+                    totalScore += score;
+                    count++;
+                }
+            } else {
+                score = calculateProductionGoldPerHour(
+                    action,
+                    emptyBuffs,
+                    playerLevel,
+                    otherEfficiency,
+                    gameData,
+                    calcContext
+                );
+                if (score > 0) {
+                    totalScore += score;
+                    count++;
+                }
+            }
+        }
+
+        return count > 0 ? totalScore / count : 0;
+    }
+
+    /**
      * Get buff description for a tea
      * @param {string} teaHrid - Tea item HRID
      * @returns {string} Human-readable buff description
@@ -19172,6 +19278,78 @@
             : `(+${dcBonus < 1 ? dcBonus.toFixed(1) : dcBonus.toFixed(0)})`;
 
         return `${mainFormatted} ${dcFormatted}`;
+    }
+
+    /**
+     * Calculate XP/hr and Gold/hr for a specific equipment and tea setup.
+     * Unlike scoreEquipmentSetup (which uses empty teas for equipment comparison),
+     * this evaluates a real configured setup and returns both metrics.
+     * @param {string} skillName
+     * @param {Map} equipment - Map<itemLocationHrid, { itemHrid, enhancementLevel }>
+     * @param {string[]} teaHrids - Tea item HRIDs (null/empty entries are filtered)
+     * @param {number} playerLevel
+     * @param {Set<string>|null} selectedActionHrids
+     * @returns {{ xpPerHour: number, goldPerHour: number, teaCostPerHour: number }}
+     */
+    function calculateSkillPerformance(skillName, equipment, teaHrids, playerLevel, selectedActionHrids = null) {
+        const normalizedSkill = skillName.toLowerCase();
+        const isGathering = GATHERING_SKILLS$1.includes(normalizedSkill);
+        const isProduction = PRODUCTION_SKILLS.includes(normalizedSkill);
+
+        const empty = { xpPerHour: 0, goldPerHour: 0, teaCostPerHour: 0 };
+        if (!isGathering && !isProduction) return empty;
+        if (selectedActionHrids !== null && selectedActionHrids.size === 0) return empty;
+
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.itemDetailMap) return empty;
+
+        const actionType = SKILL_TO_ACTION_TYPE[normalizedSkill];
+        if (!actionType) return empty;
+
+        const { available: actions } = getActionsForSkill(normalizedSkill, playerLevel, selectedActionHrids);
+        if (!actions.length) return empty;
+
+        const filteredTeas = (teaHrids || []).filter(Boolean);
+        const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, gameData.itemDetailMap);
+        const buffs = parseTeaBuffs(filteredTeas, gameData.itemDetailMap, drinkConcentration);
+
+        const otherEfficiency = getOtherEfficiencySources(actionType);
+        if (isGathering) {
+            const equipGathering = equipmentParser_js.parseGatheringQuantityBonus(equipment, gameData.itemDetailMap);
+            if (equipGathering > 0) otherEfficiency.gathering = (otherEfficiency.gathering || 0) + equipGathering;
+        }
+
+        const teaCost = calculateTeaCostPerHour(filteredTeas, drinkConcentration);
+        const calcContext = { equipment, itemDetailMap: gameData.itemDetailMap };
+
+        let totalXp = 0,
+            xpCount = 0;
+        let totalGold = 0,
+            goldCount = 0;
+
+        for (const action of actions) {
+            const xp = calculateXpPerHour(action, buffs, playerLevel, otherEfficiency, calcContext);
+            if (xp > 0) {
+                totalXp += xp;
+                xpCount++;
+            }
+
+            const gold = isGathering
+                ? calculateGatheringGoldPerHour(action, buffs, playerLevel, otherEfficiency, gameData, calcContext) -
+                  teaCost.total
+                : calculateProductionGoldPerHour(action, buffs, playerLevel, otherEfficiency, gameData, calcContext) -
+                  teaCost.total;
+            if (gold > 0) {
+                totalGold += gold;
+                goldCount++;
+            }
+        }
+
+        return {
+            xpPerHour: xpCount > 0 ? totalXp / xpCount : 0,
+            goldPerHour: goldCount > 0 ? totalGold / goldCount : 0,
+            teaCostPerHour: teaCost.total,
+        };
     }
 
     /**
@@ -22049,6 +22227,18 @@
             );
             this.observers.push(unregister);
 
+            const unregisterAlchemy = domObserver.onClass('DrinkTimer-Alchemy', 'AlchemyPanel_consumablesContainer', (el) =>
+                this._updatePanel(el)
+            );
+            this.observers.push(unregisterAlchemy);
+
+            const unregisterEnhancing = domObserver.onClass(
+                'DrinkTimer-Enhancing',
+                'EnhancingPanel_consumablesContainer',
+                (el) => this._updatePanel(el)
+            );
+            this.observers.push(unregisterEnhancing);
+
             const onUpdate = () => this._updateAllPanels();
             dataManager.on('consumables_updated', onUpdate);
             dataManager.on('items_updated', onUpdate);
@@ -22063,6 +22253,12 @@
 
         _updateAllPanels() {
             document.querySelectorAll('[class*="GatheringProductionSkillPanel_consumablesContainer"]').forEach((el) => {
+                this._updatePanel(el);
+            });
+            document.querySelectorAll('[class*="AlchemyPanel_consumablesContainer"]').forEach((el) => {
+                this._updatePanel(el);
+            });
+            document.querySelectorAll('[class*="EnhancingPanel_consumablesContainer"]').forEach((el) => {
                 this._updatePanel(el);
             });
         }
@@ -24108,10 +24304,14 @@
                 filtered = filtered.filter((r) => r.itemPrice <= this.filterPriceMax);
             }
 
-            // Sort
+            // Sort — secondary sort is the other metric when primary values tie
             const sorted = [...filtered].sort((a, b) => {
-                if (this.sortMode === 'xp') return b.xpPerHour - a.xpPerHour;
-                return b.profitPerHour - a.profitPerHour;
+                if (this.sortMode === 'xp') {
+                    const primary = b.xpPerHour - a.xpPerHour;
+                    return primary !== 0 ? primary : b.profitPerHour - a.profitPerHour;
+                }
+                const primary = b.profitPerHour - a.profitPerHour;
+                return primary !== 0 ? primary : b.xpPerHour - a.xpPerHour;
             });
 
             // Update title
@@ -24414,6 +24614,1717 @@
     const alchemyBestItems = new AlchemyBestItems();
 
     /**
+     * Skilling Optimizer Engine
+     * Per-slot independent optimization: for each equipment slot, finds the best item
+     * at each enhancement breakpoint. Uses the same breakpoint tables as the combat
+     * upgrade advisor.
+     */
+
+
+    // Equipment type → item location mapping (two_hand maps to main_hand slot)
+    const EQUIPMENT_TYPE_TO_LOCATION = {
+        '/equipment_types/back': '/item_locations/back',
+        '/equipment_types/head': '/item_locations/head',
+        '/equipment_types/trinket': '/item_locations/trinket',
+        '/equipment_types/main_hand': '/item_locations/main_hand',
+        '/equipment_types/two_hand': '/item_locations/main_hand',
+        '/equipment_types/body': '/item_locations/body',
+        '/equipment_types/off_hand': '/item_locations/off_hand',
+        '/equipment_types/hands': '/item_locations/hands',
+        '/equipment_types/legs': '/item_locations/legs',
+        '/equipment_types/pouch': '/item_locations/pouch',
+        '/equipment_types/feet': '/item_locations/feet',
+        '/equipment_types/neck': '/item_locations/neck',
+        '/equipment_types/earrings': '/item_locations/earrings',
+        '/equipment_types/ring': '/item_locations/ring',
+        '/equipment_types/charm': '/item_locations/charm',
+        // Skill-specific tool slots
+        '/equipment_types/milking_tool': '/item_locations/milking_tool',
+        '/equipment_types/foraging_tool': '/item_locations/foraging_tool',
+        '/equipment_types/woodcutting_tool': '/item_locations/woodcutting_tool',
+        '/equipment_types/cheesesmithing_tool': '/item_locations/cheesesmithing_tool',
+        '/equipment_types/crafting_tool': '/item_locations/crafting_tool',
+        '/equipment_types/tailoring_tool': '/item_locations/tailoring_tool',
+        '/equipment_types/cooking_tool': '/item_locations/cooking_tool',
+        '/equipment_types/brewing_tool': '/item_locations/brewing_tool',
+        '/equipment_types/alchemy_tool': '/item_locations/alchemy_tool',
+    };
+
+    // Build reverse map: location → [equipment types]
+    const LOCATION_TO_EQUIPMENT_TYPES = {};
+    for (const [eqType, loc] of Object.entries(EQUIPMENT_TYPE_TO_LOCATION)) {
+        if (!LOCATION_TO_EQUIPMENT_TYPES[loc]) LOCATION_TO_EQUIPMENT_TYPES[loc] = [];
+        LOCATION_TO_EQUIPMENT_TYPES[loc].push(eqType);
+    }
+
+    // Enhancement breakpoints — same as combat upgrade advisor
+    const BREAKPOINTS_DEFAULT = [7, 10, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+    const BREAKPOINTS_JEWELRY = [5, 7, 10, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+    const BREAKPOINTS_BACK = [3, 5, 7, 10, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+    const BREAKPOINTS_REFINED = [10, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+
+    const JEWELRY_LOCATIONS = new Set(['/item_locations/neck', '/item_locations/ring', '/item_locations/earrings']);
+
+    const SKILLING_LOCATIONS = [
+        // Skill-specific tools (shown first)
+        '/item_locations/milking_tool',
+        '/item_locations/foraging_tool',
+        '/item_locations/woodcutting_tool',
+        '/item_locations/cheesesmithing_tool',
+        '/item_locations/crafting_tool',
+        '/item_locations/tailoring_tool',
+        '/item_locations/cooking_tool',
+        '/item_locations/brewing_tool',
+        '/item_locations/alchemy_tool',
+        // General equipment slots
+        '/item_locations/main_hand',
+        '/item_locations/off_hand',
+        '/item_locations/head',
+        '/item_locations/body',
+        '/item_locations/legs',
+        '/item_locations/hands',
+        '/item_locations/feet',
+        '/item_locations/back',
+        '/item_locations/neck',
+        '/item_locations/ring',
+        '/item_locations/earrings',
+        '/item_locations/trinket',
+        '/item_locations/pouch',
+        '/item_locations/charm',
+    ];
+
+    const SLOT_DISPLAY_NAMES = {
+        '/item_locations/milking_tool': 'Milking Tool',
+        '/item_locations/foraging_tool': 'Foraging Tool',
+        '/item_locations/woodcutting_tool': 'Woodcutting Tool',
+        '/item_locations/cheesesmithing_tool': 'Cheesesmithing Tool',
+        '/item_locations/crafting_tool': 'Crafting Tool',
+        '/item_locations/tailoring_tool': 'Tailoring Tool',
+        '/item_locations/cooking_tool': 'Cooking Tool',
+        '/item_locations/brewing_tool': 'Brewing Tool',
+        '/item_locations/alchemy_tool': 'Alchemy Tool',
+        '/item_locations/main_hand': 'Main Hand',
+        '/item_locations/off_hand': 'Off Hand',
+        '/item_locations/head': 'Head',
+        '/item_locations/body': 'Body',
+        '/item_locations/legs': 'Legs',
+        '/item_locations/hands': 'Hands',
+        '/item_locations/feet': 'Feet',
+        '/item_locations/back': 'Back',
+        '/item_locations/neck': 'Neck',
+        '/item_locations/ring': 'Ring',
+        '/item_locations/earrings': 'Earrings',
+        '/item_locations/trinket': 'Trinket',
+        '/item_locations/pouch': 'Pouch',
+        '/item_locations/charm': 'Charm',
+    };
+
+    const SKILL_TOOL_LOCATION = {
+        Milking: '/item_locations/milking_tool',
+        Foraging: '/item_locations/foraging_tool',
+        Woodcutting: '/item_locations/woodcutting_tool',
+        Cheesesmithing: '/item_locations/cheesesmithing_tool',
+        Crafting: '/item_locations/crafting_tool',
+        Tailoring: '/item_locations/tailoring_tool',
+        Cooking: '/item_locations/cooking_tool',
+        Brewing: '/item_locations/brewing_tool',
+        Alchemy: '/item_locations/alchemy_tool',
+    };
+
+    const GATHERING_SKILLS = new Set(['milking', 'foraging', 'woodcutting']);
+
+    const SKILL_NAMES = [
+        'Milking',
+        'Foraging',
+        'Woodcutting',
+        'Cheesesmithing',
+        'Crafting',
+        'Tailoring',
+        'Cooking',
+        'Brewing',
+        'Alchemy',
+    ];
+
+    /**
+     * Get the player's current level for a skill.
+     * @param {string} skillName
+     * @returns {number}
+     */
+    function getPlayerSkillLevel(skillName) {
+        const skills = dataManager.getSkills();
+        const skillHrid = `/skills/${skillName.toLowerCase()}`;
+        return skills?.find((s) => s.skillHrid === skillHrid)?.level ?? 1;
+    }
+
+    /**
+     * Get breakpoints for a location/item combination.
+     * @param {string} locationHrid
+     * @param {string} itemHrid
+     * @returns {number[]}
+     */
+    function getBreakpoints(locationHrid, itemHrid) {
+        if (itemHrid.includes('_refined')) return BREAKPOINTS_REFINED;
+        if (JEWELRY_LOCATIONS.has(locationHrid)) return BREAKPOINTS_JEWELRY;
+        if (locationHrid === '/item_locations/back') return BREAKPOINTS_BACK;
+        return BREAKPOINTS_DEFAULT;
+    }
+
+    /**
+     * Build a map of all player skill levels, with the target skill overridden.
+     * @param {string} skillName
+     * @param {number} overrideLevel
+     * @returns {Map<string, number>}
+     */
+    function buildPlayerLevelMap(skillName, overrideLevel) {
+        const skills = dataManager.getSkills() || [];
+        const map = new Map(skills.map((s) => [s.skillHrid, s.level]));
+        map.set(`/skills/${skillName.toLowerCase()}`, overrideLevel);
+        return map;
+    }
+
+    /**
+     * Check if the player meets all level requirements for an item.
+     * @param {Object} itemDetail
+     * @param {Map<string, number>} playerLevels
+     * @returns {boolean}
+     */
+    function meetsLevelRequirements(itemDetail, playerLevels) {
+        for (const req of itemDetail.equipmentDetail?.levelRequirements || []) {
+            if (!req.levelTypeHrid) continue;
+            const skillHrid = req.levelTypeHrid.replace('/level_types/', '/skills/');
+            const playerLevel = playerLevels.get(skillHrid) ?? 1;
+            if (playerLevel < req.level) return false;
+        }
+        return true;
+    }
+
+    /**
+     * Get all equipment candidates for a slot that the player can equip.
+     * @param {string} locationHrid
+     * @param {Map<string, number>} playerLevels
+     * @param {Object} itemDetailMap
+     * @returns {Array<{ hrid: string, name: string }>}
+     */
+    function getCandidatesForSlot(locationHrid, playerLevels, itemDetailMap) {
+        const validEqTypes = new Set(LOCATION_TO_EQUIPMENT_TYPES[locationHrid] || []);
+        if (!validEqTypes.size) return [];
+
+        return Object.entries(itemDetailMap)
+            .filter(([_hrid, detail]) => {
+                if (!detail.equipmentDetail) return false;
+                if (!validEqTypes.has(detail.equipmentDetail.type)) return false;
+                if (!detail.equipmentDetail.noncombatStats) return false;
+                return meetsLevelRequirements(detail, playerLevels);
+            })
+            .map(([hrid, detail]) => ({ hrid, name: detail.name }));
+    }
+
+    /**
+     * Score a single candidate item in a slot at a specific enhancement level.
+     * @param {string} itemHrid
+     * @param {string} locationHrid
+     * @param {string} skillName
+     * @param {string} goal
+     * @param {number} enhancementLevel
+     * @param {number} playerLevel
+     * @returns {number}
+     */
+    function scoreCandidate(itemHrid, locationHrid, skillName, goal, enhancementLevel, playerLevel, selectedActionHrids) {
+        const equipment = new Map([[locationHrid, { itemHrid, enhancementLevel }]]);
+        return scoreEquipmentSetup(skillName, goal, equipment, playerLevel, selectedActionHrids);
+    }
+
+    /**
+     * Build the set of noncombatStats field names that are relevant to a skill.
+     * @param {string} skillName
+     * @returns {Set<string>}
+     */
+    function getRelevantStatsForSkill(skillName) {
+        const key = skillName.toLowerCase();
+        const fields = new Set([
+            `${key}Speed`,
+            `${key}Efficiency`,
+            `${key}RareFind`,
+            'skillingSpeed',
+            'skillingEfficiency',
+            'skillingRareFind',
+            'skillingEssenceFind',
+        ]);
+        if (GATHERING_SKILLS.has(key)) fields.add('gatheringQuantity');
+        return fields;
+    }
+
+    /**
+     * Get all equippable items for a slot that have stats relevant to the given skill.
+     * Availability is based on the player's actual skill levels.
+     * @param {string} locationHrid
+     * @param {string} skillName
+     * @returns {Array<{ hrid, name, available, maxReq, itemLevel }>} Sorted by itemLevel descending
+     */
+    function getItemsForSlot(locationHrid, skillName) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.itemDetailMap) return [];
+
+        const validEqTypes = new Set(LOCATION_TO_EQUIPMENT_TYPES[locationHrid] || []);
+        if (!validEqTypes.size) return [];
+
+        const skills = dataManager.getSkills() || [];
+        const playerLevels = new Map(skills.map((s) => [s.skillHrid, s.level]));
+        const relevantStats = getRelevantStatsForSkill(skillName);
+
+        const result = [];
+        for (const [hrid, detail] of Object.entries(gameData.itemDetailMap)) {
+            if (!detail.equipmentDetail) continue;
+            if (!validEqTypes.has(detail.equipmentDetail.type)) continue;
+            const stats = detail.equipmentDetail.noncombatStats;
+            if (!stats) continue;
+            // Only include items with at least one relevant non-zero stat for this skill
+            if (!Object.entries(stats).some(([field, val]) => val > 0 && relevantStats.has(field))) continue;
+
+            let available = true;
+            let maxReq = 1;
+            for (const req of detail.equipmentDetail.levelRequirements || []) {
+                if (!req.levelTypeHrid) continue;
+                const skillHrid = req.levelTypeHrid.replace('/level_types/', '/skills/');
+                if (req.level > maxReq) maxReq = req.level;
+                if ((playerLevels.get(skillHrid) ?? 1) < req.level) available = false;
+            }
+
+            result.push({ hrid, name: detail.name, available, maxReq, itemLevel: detail.itemLevel || 0 });
+        }
+
+        return result.sort((a, b) => b.itemLevel - a.itemLevel || a.name.localeCompare(b.name));
+    }
+
+    const SKILLING_BUFF_TYPES = new Set([
+        '/buff_types/efficiency',
+        '/buff_types/wisdom',
+        '/buff_types/gathering',
+        '/buff_types/processing',
+        '/buff_types/artisan',
+        '/buff_types/gourmet',
+        '/buff_types/action_level',
+        '/buff_types/alchemy_success',
+    ]);
+
+    /**
+     * Get all consumable drink items that provide skilling-relevant buffs.
+     * @returns {Array<{ hrid, name }>} Sorted by name
+     */
+    function getSkillDrinkItems() {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.itemDetailMap) return [];
+
+        const result = [];
+        for (const [hrid, detail] of Object.entries(gameData.itemDetailMap)) {
+            if (!detail.consumableDetail?.buffs?.length) continue;
+            const hasSkillBuff = detail.consumableDetail.buffs.some(
+                (b) => SKILLING_BUFF_TYPES.has(b.typeHrid) || b.typeHrid?.endsWith('_level')
+            );
+            if (!hasSkillBuff) continue;
+            result.push({ hrid, name: detail.name });
+        }
+
+        return result.sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    /**
+     * Optimize a skill for the given player level and selected actions.
+     * Equipment is always scored for XP (efficiency/speed benefit both goals equally).
+     * Returns per-slot progression plus tea results for both XP and Gold goals.
+     *
+     * @param {string} skillName
+     * @param {number} playerLevel
+     * @param {Set<string>|null} selectedActionHrids - HRIDs of actions to score against, or null for all
+     * @returns {Object|null}
+     */
+    function optimizeSkill(skillName, playerLevel, selectedActionHrids = null) {
+        // Gathering skills: score for Gold — captures gathering quantity, rare/essence find + speed/efficiency.
+        // Production skills: score for XP — more reliable since it doesn't depend on market prices.
+        const goal = GATHERING_SKILLS.has(skillName.toLowerCase()) ? 'gold' : 'xp';
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.itemDetailMap) return null;
+
+        const { itemDetailMap } = gameData;
+        const playerLevels = buildPlayerLevelMap(skillName, playerLevel);
+
+        // Baseline: empty equipment — all slot results must beat this to be shown
+        const baseline = scoreEquipmentSetup(skillName, goal, new Map(), playerLevel, selectedActionHrids);
+
+        const slots = {};
+        const optimalEquipmentAtMax = new Map();
+
+        for (const locationHrid of SKILLING_LOCATIONS) {
+            const candidates = getCandidatesForSlot(locationHrid, playerLevels, itemDetailMap);
+            if (!candidates.length) continue;
+
+            // Collect union of all breakpoints across candidates (refined items differ)
+            const allBreakpoints = new Set();
+            for (const candidate of candidates) {
+                for (const bp of getBreakpoints(locationHrid, candidate.hrid)) {
+                    allBreakpoints.add(bp);
+                }
+            }
+            const sortedBreakpoints = [...allBreakpoints].sort((a, b) => a - b);
+
+            const progression = [];
+            let lastWinnerHrid = null;
+
+            for (const bp of sortedBreakpoints) {
+                let bestItem = null;
+                let bestScore = baseline;
+
+                for (const candidate of candidates) {
+                    // Refined items can't be enhanced below +10
+                    const effectiveLevel = candidate.hrid.includes('_refined') ? Math.max(bp, 10) : bp;
+                    const score = scoreCandidate(
+                        candidate.hrid,
+                        locationHrid,
+                        skillName,
+                        goal,
+                        effectiveLevel,
+                        playerLevel,
+                        selectedActionHrids
+                    );
+
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestItem = candidate;
+                    }
+                }
+
+                progression.push({
+                    breakpoint: bp,
+                    itemHrid: bestItem?.hrid ?? null,
+                    itemName: bestItem?.name ?? null,
+                    score: bestScore,
+                    isChange: (bestItem?.hrid ?? null) !== lastWinnerHrid,
+                });
+
+                lastWinnerHrid = bestItem?.hrid ?? null;
+            }
+
+            // Only include slots where at least one item beats the baseline
+            if (!progression.some((p) => p.itemHrid !== null)) continue;
+
+            slots[locationHrid] = {
+                name: SLOT_DISPLAY_NAMES[locationHrid] || locationHrid,
+                candidateCount: candidates.length,
+                progression,
+            };
+
+            // Record the optimal item at max breakpoint for tea optimization
+            const maxEntry = progression[progression.length - 1];
+            if (maxEntry?.itemHrid) {
+                optimalEquipmentAtMax.set(locationHrid, { itemHrid: maxEntry.itemHrid, enhancementLevel: 20 });
+            }
+        }
+
+        // Run tea optimizer for both goals with optimal equipment at max enhancement
+        const xpTeaResult = findOptimalTeas(
+            skillName,
+            'xp',
+            null,
+            null,
+            null,
+            null,
+            optimalEquipmentAtMax,
+            selectedActionHrids
+        );
+        const goldTeaResult = findOptimalTeas(
+            skillName,
+            'gold',
+            null,
+            null,
+            null,
+            null,
+            optimalEquipmentAtMax,
+            selectedActionHrids
+        );
+
+        return {
+            skill: skillName,
+            playerLevel,
+            slots,
+            xpTeaResult: xpTeaResult?.error ? null : xpTeaResult,
+            goldTeaResult: goldTeaResult?.error ? null : goldTeaResult,
+        };
+    }
+
+    /**
+     * Loadout Scraper Utilities
+     *
+     * Shared DOM scraping helpers for reading equipment, abilities, and consumables
+     * from the game's LoadoutsPanel_selectedLoadout element.
+     *
+     * Used by loadout-export-button.js and loadout-snapshot.js.
+     */
+
+
+    /**
+     * Build a map of itemHrid → highest enhancementLevel across all character items.
+     * Covers both currently equipped items and inventory items.
+     * @returns {Map<string, number>}
+     */
+    function buildEnhancementLevelMap() {
+        const inventory = dataManager.getInventory();
+        const map = new Map();
+        if (!inventory) return map;
+
+        for (const item of inventory) {
+            if (!item.itemHrid || item.count === 0) continue;
+            const existing = map.get(item.itemHrid) ?? 0;
+            const level = item.enhancementLevel ?? 0;
+            if (level > existing) {
+                map.set(item.itemHrid, level);
+            }
+        }
+        return map;
+    }
+
+    /**
+     * Skilling Simulator UI
+     * Injects a "Optimizer" tab next to Loadouts in the character panel.
+     * Lets the user configure equipment + teas (optionally loading from a saved loadout),
+     * pick which actions to include, and simulate XP/hr + Gold/hr.
+     */
+
+
+    function getLoadoutSnapshot() {
+        return window.Toolasha?.Combat?.loadoutSnapshot || loadoutSnapshot;
+    }
+
+    const TAB_CLASS = 'toolasha-skilling-opt-tab';
+    const PANEL_CLASS = 'toolasha-skilling-opt-panel';
+    const HIDE_CLASS = 'toolasha-opt-hide-content';
+
+    const STYLE_EL = document.createElement('style');
+    STYLE_EL.textContent = `.${HIDE_CLASS} [class*="TabsComponent_tabPanelsContainer"] { display: none !important; }`;
+    document.head.appendChild(STYLE_EL);
+
+    class SkillingSimulatorUI {
+        constructor() {
+            this.tabBtn = null;
+            this.panel = null;
+            this.isActive = false;
+            this.watcher = null;
+            this.contentParent = null;
+
+            // Mode
+            this.currentMode = 'simulator'; // 'simulator' | 'optimizer'
+            this.lastOptimizerResult = null;
+            this.optimizerLoadout = null;
+
+            // Simulator state
+            this.currentSkill = 'Woodcutting';
+            this.currentLevel = 1;
+            this.equipment = new Map(); // locationHrid → { itemHrid, enhancementLevel }
+            this.teas = [null, null, null];
+            this.selectedActionHrids = null; // null = all available
+
+            // UI element refs (updated in place without rebuilding panel)
+            this._slotBtns = new Map(); // locationHrid → { nameBtn, enhInput, clearBtn }
+            this._teaBtns = []; // [{ nameBtn, clearBtn }, ...]
+            this._actionBtn = null;
+            this._actionBtnGetLabel = null;
+            this._resultsArea = null;
+            this._picker = null;
+            this._pickerCleanup = null;
+        }
+
+        initialize() {
+            this.currentLevel = getPlayerSkillLevel(this.currentSkill);
+            this.watcher = domObserverHelpers_js.createMutationWatcher(document.body, () => this._tryInjectTabButton(), {
+                childList: true,
+                subtree: true,
+            });
+            this._tryInjectTabButton();
+        }
+
+        // -------------------------------------------------------------------------
+        // Tab injection
+        // -------------------------------------------------------------------------
+
+        _findTabList() {
+            for (const tl of document.querySelectorAll('[role="tablist"]')) {
+                for (const tab of tl.querySelectorAll('[role="tab"]')) {
+                    if (tab.textContent.trim().startsWith('Loadouts')) return tl;
+                }
+            }
+            return null;
+        }
+
+        _tryInjectTabButton() {
+            const tabList = this._findTabList();
+            if (!tabList) return;
+            if (tabList.querySelector(`.${TAB_CLASS}`)) return;
+
+            const existingTab = tabList.querySelector('[role="tab"]');
+            const btn = document.createElement('button');
+            btn.className = `${TAB_CLASS} ${existingTab ? existingTab.className.replace(/Mui-selected/g, '').trim() : ''}`;
+            btn.setAttribute('role', 'tab');
+            btn.setAttribute('type', 'button');
+            btn.textContent = 'Optimizer';
+            btn.style.minWidth = 'auto';
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this._activatePanel();
+            });
+
+            const loadoutsTab = [...tabList.querySelectorAll('[role="tab"]')].find((t) =>
+                t.textContent.trim().startsWith('Loadouts')
+            );
+            if (loadoutsTab?.nextSibling) tabList.insertBefore(btn, loadoutsTab.nextSibling);
+            else tabList.appendChild(btn);
+            this.tabBtn = btn;
+
+            const scroller = tabList.parentElement;
+            if (scroller?.className?.includes('MuiTabs-scroller')) scroller.style.overflow = 'auto';
+
+            for (const tab of tabList.querySelectorAll(`[role="tab"]:not(.${TAB_CLASS})`)) {
+                tab.addEventListener('click', (e) => this._deactivatePanel(e.currentTarget));
+            }
+
+            if (this.isActive) this._activatePanel();
+        }
+
+        _findContentContainer() {
+            const tabList = this._findTabList();
+            if (!tabList) return null;
+            return tabList.closest('[class*="TabsComponent_tabsContainer"]')?.nextElementSibling || null;
+        }
+
+        // -------------------------------------------------------------------------
+        // Activation
+        // -------------------------------------------------------------------------
+
+        _activatePanel() {
+            this.isActive = true;
+
+            if (this.tabBtn) {
+                this.tabBtn.classList.add('Mui-selected');
+                this.tabBtn.setAttribute('aria-selected', 'true');
+            }
+
+            const tabList = this.tabBtn?.parentElement;
+            if (tabList) {
+                for (const tab of tabList.querySelectorAll(`[role="tab"]:not(.${TAB_CLASS})`)) {
+                    tab.classList.remove('Mui-selected');
+                    tab.setAttribute('aria-selected', 'false');
+                }
+            }
+
+            const contentContainer = this._findContentContainer();
+            if (contentContainer?.parentElement) {
+                this.contentParent = contentContainer.parentElement;
+                this.contentParent.classList.add(HIDE_CLASS);
+            }
+
+            this.panel?.remove();
+            this._picker?.remove();
+            this._picker = null;
+
+            if (contentContainer) {
+                this.panel = this._buildPanel();
+                contentContainer.parentElement?.insertBefore(this.panel, contentContainer.nextSibling);
+            }
+        }
+
+        _rebuildPanel() {
+            const contentContainer = this._findContentContainer();
+            if (!contentContainer) return;
+            this._closePicker();
+            this.panel?.remove();
+            this.panel = this._buildPanel();
+            contentContainer.parentElement?.insertBefore(this.panel, contentContainer.nextSibling);
+        }
+
+        _deactivatePanel(clickedTab = null) {
+            this.isActive = false;
+            this._closePicker();
+            this.panel?.remove();
+            this.panel = null;
+            this.contentParent?.classList.remove(HIDE_CLASS);
+            this.contentParent = null;
+            if (this.tabBtn) {
+                this.tabBtn.classList.remove('Mui-selected');
+                this.tabBtn.setAttribute('aria-selected', 'false');
+            }
+            if (clickedTab) {
+                clickedTab.classList.add('Mui-selected');
+                clickedTab.setAttribute('aria-selected', 'true');
+            }
+        }
+
+        // -------------------------------------------------------------------------
+        // Panel construction
+        // -------------------------------------------------------------------------
+
+        _buildPanel() {
+            this._slotBtns.clear();
+            this._teaBtns = [];
+
+            const panel = document.createElement('div');
+            panel.className = PANEL_CLASS;
+            panel.style.cssText = `
+            padding: 12px;
+            color: rgba(255,255,255,0.85);
+            font-size: 13px;
+            overflow-y: auto;
+            flex: 1;
+            min-height: 0;
+            box-sizing: border-box;
+        `;
+
+            panel.addEventListener('click', (e) => {
+                if (this._picker && !this._picker.contains(e.target)) this._closePicker();
+            });
+
+            // Mode selector
+            const modeRow = document.createElement('div');
+            modeRow.style.cssText = 'display: flex; gap: 6px; margin-bottom: 14px;';
+
+            for (const [mode, label] of [
+                ['simulator', 'Simulator'],
+                ['optimizer', 'Optimizer'],
+            ]) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.textContent = label;
+                const active = this.currentMode === mode;
+                btn.style.cssText = `
+                padding: 4px 14px; border-radius: 4px; font-size: 12px; font-weight: 600; cursor: pointer;
+                border: 1px solid ${active ? config.COLOR_ACCENT : 'rgba(255,255,255,0.2)'};
+                background: ${active ? config.COLOR_ACCENT + '22' : 'transparent'};
+                color: ${active ? config.COLOR_ACCENT : 'rgba(255,255,255,0.5)'};
+            `;
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (this.currentMode !== mode) {
+                        this.currentMode = mode;
+                        this._rebuildPanel();
+                    }
+                });
+                modeRow.appendChild(btn);
+            }
+            panel.appendChild(modeRow);
+
+            panel.appendChild(this._buildTopControls());
+
+            if (this.currentMode === 'simulator') {
+                panel.appendChild(this._buildEquipmentSection());
+                panel.appendChild(this._buildTeasSection());
+
+                const simulateBtn = document.createElement('button');
+                simulateBtn.type = 'button';
+                simulateBtn.textContent = 'Simulate';
+                simulateBtn.style.cssText = `
+                margin-top: 12px; padding: 6px 20px;
+                background: ${config.COLOR_ACCENT}; color: #000;
+                border: none; border-radius: 4px;
+                font-size: 12px; font-weight: 700; cursor: pointer;
+            `;
+                simulateBtn.addEventListener('click', () => {
+                    simulateBtn.textContent = 'Simulating…';
+                    simulateBtn.disabled = true;
+                    requestAnimationFrame(() =>
+                        setTimeout(() => {
+                            this._runSimulation();
+                            simulateBtn.textContent = 'Simulate';
+                            simulateBtn.disabled = false;
+                        }, 0)
+                    );
+                });
+                panel.appendChild(simulateBtn);
+
+                const resultsArea = document.createElement('div');
+                resultsArea.style.marginTop = '16px';
+                panel.appendChild(resultsArea);
+                this._resultsArea = resultsArea;
+            } else {
+                // Loadout comparison selector
+                const compareRow = document.createElement('div');
+                compareRow.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 8px;';
+                const compareLabel = document.createElement('span');
+                compareLabel.textContent = 'Compare:';
+                compareLabel.style.cssText = 'color: rgba(255,255,255,0.5); font-size: 12px; width: 56px; flex-shrink: 0;';
+                const compareSelect = document.createElement('select');
+                compareSelect.style.cssText =
+                    'background: #2a2a2a; color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; padding: 4px 8px; font-size: 12px; flex: 1; cursor: pointer;';
+                const noneOpt = document.createElement('option');
+                noneOpt.value = '';
+                noneOpt.textContent = '— None —';
+                compareSelect.appendChild(noneOpt);
+                for (const snap of getLoadoutSnapshot().getAllSnapshots()) {
+                    const opt = document.createElement('option');
+                    opt.value = snap.name;
+                    opt.textContent = snap.name + (snap.isDefault ? ' ★' : '');
+                    if (this.optimizerLoadout?.name === snap.name) opt.selected = true;
+                    compareSelect.appendChild(opt);
+                }
+                compareSelect.addEventListener('change', () => {
+                    const name = compareSelect.value;
+                    this.optimizerLoadout = name
+                        ? getLoadoutSnapshot()
+                              .getAllSnapshots()
+                              .find((s) => s.name === name) || null
+                        : null;
+                });
+                compareRow.appendChild(compareLabel);
+                compareRow.appendChild(compareSelect);
+                panel.appendChild(compareRow);
+
+                const optimizeBtn = document.createElement('button');
+                optimizeBtn.type = 'button';
+                optimizeBtn.textContent = 'Optimize';
+                optimizeBtn.style.cssText = `
+                padding: 6px 20px;
+                background: ${config.COLOR_ACCENT}; color: #000;
+                border: none; border-radius: 4px;
+                font-size: 12px; font-weight: 700; cursor: pointer;
+            `;
+
+                const resultsArea = document.createElement('div');
+                resultsArea.style.marginTop = '16px';
+
+                optimizeBtn.addEventListener('click', () => {
+                    optimizeBtn.textContent = 'Optimizing…';
+                    optimizeBtn.disabled = true;
+                    requestAnimationFrame(() =>
+                        setTimeout(() => {
+                            const result = optimizeSkill(this.currentSkill, this.currentLevel, this.selectedActionHrids);
+                            this.lastOptimizerResult = result;
+
+                            // Build equipment map using player's actual owned enhancement levels
+                            const enhMap = buildEnhancementLevelMap();
+                            const achievableEquipment = new Map();
+                            if (result) {
+                                for (const [locationHrid, slotData] of Object.entries(result.slots)) {
+                                    const best = slotData.progression[slotData.progression.length - 1];
+                                    if (best?.itemHrid) {
+                                        achievableEquipment.set(locationHrid, {
+                                            itemHrid: best.itemHrid,
+                                            enhancementLevel: enhMap.get(best.itemHrid) ?? 0,
+                                        });
+                                    }
+                                }
+                            }
+
+                            // Performance with achievable equipment and optimal teas for each goal
+                            const xpAchievable = result
+                                ? findOptimalTeas(
+                                      this.currentSkill,
+                                      'xp',
+                                      null,
+                                      null,
+                                      null,
+                                      null,
+                                      achievableEquipment,
+                                      this.selectedActionHrids
+                                  )
+                                : null;
+                            const goldAchievable = result
+                                ? findOptimalTeas(
+                                      this.currentSkill,
+                                      'gold',
+                                      null,
+                                      null,
+                                      null,
+                                      null,
+                                      achievableEquipment,
+                                      this.selectedActionHrids
+                                  )
+                                : null;
+
+                            // Build loadout item map for comparison
+                            const loadoutItemMap = new Map();
+                            if (this.optimizerLoadout) {
+                                for (const eq of this.optimizerLoadout.equipment || []) {
+                                    if (eq.itemHrid) loadoutItemMap.set(eq.itemLocationHrid, eq.itemHrid);
+                                }
+                            }
+
+                            optimizeBtn.textContent = 'Optimize';
+                            optimizeBtn.disabled = false;
+                            resultsArea.innerHTML = '';
+                            if (result) {
+                                this._renderOptimizerResults(
+                                    resultsArea,
+                                    result,
+                                    { xpResult: xpAchievable, goldResult: goldAchievable },
+                                    loadoutItemMap.size > 0 ? loadoutItemMap : null
+                                );
+                            }
+                        }, 0)
+                    );
+                });
+
+                panel.appendChild(optimizeBtn);
+                panel.appendChild(resultsArea);
+
+                if (this.lastOptimizerResult)
+                    this._renderOptimizerResults(resultsArea, this.lastOptimizerResult, null, null);
+            }
+
+            return panel;
+        }
+
+        _buildTopControls() {
+            const wrap = document.createElement('div');
+            wrap.style.cssText = 'display: flex; flex-direction: column; gap: 7px;';
+
+            const makeRow = (labelText) => {
+                const row = document.createElement('div');
+                row.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+                const label = document.createElement('span');
+                label.textContent = labelText;
+                label.style.cssText = 'color: rgba(255,255,255,0.5); font-size: 12px; width: 56px; flex-shrink: 0;';
+                row.appendChild(label);
+                return row;
+            };
+
+            const inputCss = `
+            background: #2a2a2a; color: #fff;
+            border: 1px solid rgba(255,255,255,0.2); border-radius: 4px;
+            padding: 4px 8px; font-size: 12px;
+        `;
+
+            // Skill
+            const skillRow = makeRow('Skill:');
+            const skillSelect = document.createElement('select');
+            skillSelect.style.cssText = inputCss + ' flex: 1; cursor: pointer;';
+            for (const s of SKILL_NAMES) {
+                const opt = document.createElement('option');
+                opt.value = s;
+                opt.textContent = s;
+                if (s === this.currentSkill) opt.selected = true;
+                skillSelect.appendChild(opt);
+            }
+            skillRow.appendChild(skillSelect);
+            wrap.appendChild(skillRow);
+
+            // Level
+            const levelRow = makeRow('Level:');
+            const levelInput = document.createElement('input');
+            levelInput.type = 'number';
+            levelInput.min = '1';
+            levelInput.max = '200';
+            levelInput.value = String(this.currentLevel);
+            levelInput.style.cssText = inputCss + ' width: 64px;';
+            levelRow.appendChild(levelInput);
+            wrap.appendChild(levelRow);
+
+            // Loadout (simulator only)
+            if (this.currentMode === 'simulator') {
+                const loadoutRow = makeRow('Loadout:');
+                const loadoutSelect = document.createElement('select');
+                loadoutSelect.style.cssText = inputCss + ' flex: 1; cursor: pointer;';
+                this._populateLoadoutSelect(loadoutSelect);
+                loadoutRow.appendChild(loadoutSelect);
+                wrap.appendChild(loadoutRow);
+                loadoutSelect.addEventListener('change', () => this._loadLoadout(loadoutSelect.value));
+            }
+            // Actions
+            const actionsRow = makeRow('Actions:');
+            actionsRow.style.position = 'relative';
+            const actionBtn = document.createElement('button');
+            actionBtn.type = 'button';
+            actionBtn.style.cssText = inputCss + ' flex: 1; cursor: pointer; text-align: left;';
+
+            const getActionLabel = () => {
+                const all = getSkillActionsForDisplay(this.currentSkill, this.currentLevel);
+                const avail = all.filter((a) => a.available);
+                if (!this.selectedActionHrids) return `All (${avail.length})`;
+                const n = [...this.selectedActionHrids].filter((h) => avail.some((a) => a.hrid === h)).length;
+                return `${n} / ${avail.length}`;
+            };
+            actionBtn.textContent = getActionLabel();
+            this._actionBtn = actionBtn;
+            this._actionBtnGetLabel = getActionLabel;
+
+            actionBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (this._picker) {
+                    this._closePicker();
+                    return;
+                }
+                this._openActionPicker(actionBtn, getActionLabel);
+            });
+            actionsRow.appendChild(actionBtn);
+            wrap.appendChild(actionsRow);
+
+            // Wire up skill/level changes
+            const resetActions = () => {
+                this.selectedActionHrids = null;
+                actionBtn.textContent = getActionLabel();
+                this._closePicker();
+            };
+
+            skillSelect.addEventListener('change', () => {
+                this.currentSkill = skillSelect.value;
+                this.currentLevel = getPlayerSkillLevel(this.currentSkill);
+                levelInput.value = String(this.currentLevel);
+                this.teas = [null, null, null];
+                this._teaBtns.forEach(({ nameBtn, clearBtn }) => {
+                    nameBtn.textContent = '— Empty —';
+                    clearBtn.style.display = 'none';
+                });
+                resetActions();
+            });
+
+            levelInput.addEventListener('change', () => {
+                this.currentLevel = Math.max(1, Math.min(200, parseInt(levelInput.value, 10) || 1));
+                levelInput.value = String(this.currentLevel);
+                resetActions();
+            });
+
+            return wrap;
+        }
+
+        _populateLoadoutSelect(select) {
+            const empty = document.createElement('option');
+            empty.value = '';
+            empty.textContent = '— No loadout —';
+            select.appendChild(empty);
+
+            const snapshots = getLoadoutSnapshot().getAllSnapshots();
+            for (const snap of snapshots) {
+                const opt = document.createElement('option');
+                opt.value = snap.name;
+                opt.textContent = snap.name + (snap.isDefault ? ' ★' : '');
+                select.appendChild(opt);
+            }
+        }
+
+        _loadLoadout(name) {
+            if (!name) return;
+            const snap = getLoadoutSnapshot()
+                .getAllSnapshots()
+                .find((s) => s.name === name);
+            if (!snap) return;
+
+            // Load equipment
+            this.equipment.clear();
+            for (const eq of snap.equipment || []) {
+                if (eq.itemHrid) {
+                    this.equipment.set(eq.itemLocationHrid, {
+                        itemHrid: eq.itemHrid,
+                        enhancementLevel: eq.enhancementLevel || 0,
+                    });
+                }
+            }
+
+            // Load drinks
+            this.teas = [
+                snap.drinks?.[0]?.itemHrid || null,
+                snap.drinks?.[1]?.itemHrid || null,
+                snap.drinks?.[2]?.itemHrid || null,
+            ];
+
+            // Update slot UI
+            for (const [locationHrid, refs] of this._slotBtns) {
+                const eq = this.equipment.get(locationHrid);
+                this._updateSlotUI(locationHrid, refs, eq?.itemHrid || null, eq?.enhancementLevel ?? 0);
+            }
+
+            // Update tea UI
+            for (let i = 0; i < 3; i++) {
+                const refs = this._teaBtns[i];
+                if (!refs) continue;
+                const hrid = this.teas[i];
+                this._updateTeaUI(i, refs, hrid);
+            }
+        }
+
+        // -------------------------------------------------------------------------
+        // Equipment section
+        // -------------------------------------------------------------------------
+
+        _buildEquipmentSection() {
+            const section = document.createElement('div');
+            section.style.marginTop = '14px';
+            section.appendChild(this._makeSectionHeader('Equipment'));
+
+            const relevantTool = SKILL_TOOL_LOCATION[this.currentSkill];
+            const locations = SKILLING_LOCATIONS.filter((loc) => !loc.endsWith('_tool') || loc === relevantTool);
+
+            for (const locationHrid of locations) {
+                if (getItemsForSlot(locationHrid, this.currentSkill).length === 0) continue;
+                section.appendChild(this._buildSlotRow(locationHrid));
+            }
+
+            return section;
+        }
+
+        _buildSlotRow(locationHrid) {
+            const eq = this.equipment.get(locationHrid);
+            const currentHrid = eq?.itemHrid || null;
+            const currentEnh = eq?.enhancementLevel ?? 0;
+
+            const row = document.createElement('div');
+            row.style.cssText = 'display: flex; align-items: center; gap: 6px; padding: 2px 0;';
+
+            const label = document.createElement('span');
+            label.textContent = SLOT_DISPLAY_NAMES[locationHrid] || locationHrid;
+            label.style.cssText =
+                'font-size: 10px; color: rgba(255,255,255,0.35); width: 58px; flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.04em;';
+            row.appendChild(label);
+
+            const nameBtn = document.createElement('button');
+            nameBtn.type = 'button';
+            nameBtn.style.cssText = `
+            flex: 1; padding: 3px 6px; font-size: 11px; text-align: left;
+            background: #2a2a2a; color: ${currentHrid ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.25)'};
+            border: 1px solid rgba(255,255,255,0.15); border-radius: 3px;
+            cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        `;
+            nameBtn.textContent = currentHrid ? this._getItemName(currentHrid) || currentHrid : '—';
+
+            const enhInput = document.createElement('input');
+            enhInput.type = 'number';
+            enhInput.min = '0';
+            enhInput.max = '20';
+            enhInput.value = String(currentEnh);
+            enhInput.style.cssText = `
+            width: 40px; padding: 3px 4px; font-size: 11px; text-align: center;
+            background: #2a2a2a; color: #fff;
+            border: 1px solid rgba(255,255,255,0.15); border-radius: 3px;
+            display: ${currentHrid ? 'block' : 'none'};
+        `;
+            enhInput.addEventListener('change', () => {
+                const level = Math.max(0, Math.min(20, parseInt(enhInput.value, 10) || 0));
+                enhInput.value = String(level);
+                const existing = this.equipment.get(locationHrid);
+                if (existing) existing.enhancementLevel = level;
+            });
+
+            const clearBtn = document.createElement('button');
+            clearBtn.type = 'button';
+            clearBtn.textContent = '✕';
+            clearBtn.style.cssText = `
+            padding: 2px 5px; font-size: 10px; cursor: pointer;
+            background: transparent; color: rgba(255,255,255,0.3);
+            border: 1px solid rgba(255,255,255,0.15); border-radius: 3px;
+            display: ${currentHrid ? 'block' : 'none'};
+        `;
+            clearBtn.addEventListener('click', () => {
+                this.equipment.delete(locationHrid);
+                this._updateSlotUI(locationHrid, { nameBtn, enhInput, clearBtn }, null, 0);
+            });
+
+            nameBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (this._picker) {
+                    this._closePicker();
+                    return;
+                }
+                const items = getItemsForSlot(locationHrid, this.currentSkill);
+                this._openItemPicker(nameBtn, items, this.equipment.get(locationHrid)?.itemHrid || null, (hrid) => {
+                    if (hrid) {
+                        this.equipment.set(locationHrid, { itemHrid: hrid, enhancementLevel: 0 });
+                    } else {
+                        this.equipment.delete(locationHrid);
+                    }
+                    this._updateSlotUI(locationHrid, { nameBtn, enhInput, clearBtn }, hrid, 0);
+                });
+            });
+
+            row.appendChild(nameBtn);
+            row.appendChild(enhInput);
+            row.appendChild(clearBtn);
+
+            this._slotBtns.set(locationHrid, { nameBtn, enhInput, clearBtn });
+            return row;
+        }
+
+        _updateSlotUI(locationHrid, refs, itemHrid, enhLevel) {
+            const { nameBtn, enhInput, clearBtn } = refs;
+            const name = itemHrid ? this._getItemName(itemHrid) || itemHrid : null;
+            nameBtn.textContent = name || '—';
+            nameBtn.style.color = itemHrid ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.25)';
+            enhInput.value = String(enhLevel);
+            enhInput.style.display = itemHrid ? 'block' : 'none';
+            clearBtn.style.display = itemHrid ? 'block' : 'none';
+        }
+
+        // -------------------------------------------------------------------------
+        // Tea section
+        // -------------------------------------------------------------------------
+
+        _buildTeasSection() {
+            const section = document.createElement('div');
+            section.style.marginTop = '14px';
+            section.appendChild(this._makeSectionHeader('Teas'));
+
+            for (let i = 0; i < 3; i++) {
+                const row = this._buildTeaRow(i);
+                section.appendChild(row);
+            }
+
+            return section;
+        }
+
+        _buildTeaRow(index) {
+            const currentHrid = this.teas[index];
+
+            const row = document.createElement('div');
+            row.style.cssText = 'display: flex; align-items: center; gap: 6px; padding: 2px 0;';
+
+            const label = document.createElement('span');
+            label.textContent = `TEA ${index + 1}`;
+            label.style.cssText =
+                'font-size: 10px; color: rgba(255,255,255,0.35); width: 58px; flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.04em;';
+            row.appendChild(label);
+
+            const nameBtn = document.createElement('button');
+            nameBtn.type = 'button';
+            nameBtn.style.cssText = `
+            flex: 1; padding: 3px 6px; font-size: 11px; text-align: left;
+            background: #2a2a2a; color: ${currentHrid ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.25)'};
+            border: 1px solid rgba(255,255,255,0.15); border-radius: 3px;
+            cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        `;
+            nameBtn.textContent = currentHrid ? this._getItemName(currentHrid) || currentHrid : '—';
+
+            const clearBtn = document.createElement('button');
+            clearBtn.type = 'button';
+            clearBtn.textContent = '✕';
+            clearBtn.style.cssText = `
+            padding: 2px 5px; font-size: 10px; cursor: pointer;
+            background: transparent; color: rgba(255,255,255,0.3);
+            border: 1px solid rgba(255,255,255,0.15); border-radius: 3px;
+            display: ${currentHrid ? 'block' : 'none'};
+        `;
+            clearBtn.addEventListener('click', () => {
+                this.teas[index] = null;
+                this._updateTeaUI(index, { nameBtn, clearBtn }, null);
+            });
+
+            nameBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (this._picker) {
+                    this._closePicker();
+                    return;
+                }
+                const drinks = getSkillDrinkItems();
+                this._openItemPicker(nameBtn, drinks, this.teas[index], (hrid) => {
+                    this.teas[index] = hrid;
+                    this._updateTeaUI(index, { nameBtn, clearBtn }, hrid);
+                });
+            });
+
+            row.appendChild(nameBtn);
+            row.appendChild(clearBtn);
+
+            this._teaBtns[index] = { nameBtn, clearBtn };
+            return row;
+        }
+
+        _updateTeaUI(index, refs, hrid) {
+            const { nameBtn, clearBtn } = refs;
+            const name = hrid ? this._getItemName(hrid) || hrid : null;
+            nameBtn.textContent = name || '—';
+            nameBtn.style.color = hrid ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.25)';
+            clearBtn.style.display = hrid ? 'block' : 'none';
+        }
+
+        // -------------------------------------------------------------------------
+        // Item picker popup
+        // -------------------------------------------------------------------------
+
+        _openItemPicker(anchorEl, items, currentHrid, onSelect) {
+            this._closePicker();
+
+            const popup = document.createElement('div');
+            popup.style.cssText = `
+            position: fixed; z-index: 20000;
+            background: #1e1e1e; border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 6px; width: 260px; max-height: 300px;
+            display: flex; flex-direction: column;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+        `;
+
+            // Position below anchor, flip up if too close to bottom
+            const rect = anchorEl.getBoundingClientRect();
+            let top = rect.bottom + 4;
+            let left = rect.left;
+            if (left + 260 > window.innerWidth - 8) left = window.innerWidth - 268;
+            if (top + 300 > window.innerHeight - 8) top = rect.top - 304;
+            popup.style.top = `${Math.max(8, top)}px`;
+            popup.style.left = `${Math.max(8, left)}px`;
+
+            // Search input
+            const search = document.createElement('input');
+            search.placeholder = 'Search…';
+            search.style.cssText = `
+            padding: 7px 10px; background: #2a2a2a; color: #fff; font-size: 12px;
+            border: none; border-bottom: 1px solid rgba(255,255,255,0.15); outline: none;
+            border-radius: 6px 6px 0 0; flex-shrink: 0;
+        `;
+            popup.appendChild(search);
+
+            const list = document.createElement('div');
+            list.style.cssText = 'overflow-y: auto; flex: 1;';
+            popup.appendChild(list);
+
+            const render = (filter) => {
+                list.innerHTML = '';
+
+                // Empty option
+                const emptyRow = document.createElement('div');
+                emptyRow.textContent = '— Empty —';
+                emptyRow.style.cssText =
+                    'padding: 6px 10px; cursor: pointer; font-size: 12px; color: rgba(255,255,255,0.35); font-style: italic; border-bottom: 1px solid rgba(255,255,255,0.08);';
+                emptyRow.addEventListener('mouseenter', () => (emptyRow.style.background = 'rgba(255,255,255,0.05)'));
+                emptyRow.addEventListener('mouseleave', () => (emptyRow.style.background = ''));
+                emptyRow.addEventListener('click', () => {
+                    onSelect(null);
+                    this._closePicker();
+                });
+                list.appendChild(emptyRow);
+
+                const lc = filter.toLowerCase();
+                const filtered = filter ? items.filter((i) => i.name.toLowerCase().includes(lc)) : items;
+                const avail = filtered.filter((i) => i.available !== false);
+                const locked = filtered.filter((i) => i.available === false);
+
+                for (const item of avail) list.appendChild(this._makePickerRow(item, currentHrid, onSelect));
+
+                if (locked.length) {
+                    const sep = document.createElement('div');
+                    sep.textContent = '— Level locked —';
+                    sep.style.cssText =
+                        'padding: 4px 10px; font-size: 10px; color: rgba(255,255,255,0.3); border-top: 1px solid rgba(255,255,255,0.08);';
+                    list.appendChild(sep);
+                    for (const item of locked) list.appendChild(this._makePickerRow(item, currentHrid, onSelect));
+                }
+            };
+
+            render('');
+            search.addEventListener('input', () => render(search.value));
+
+            document.body.appendChild(popup);
+            this._picker = popup;
+
+            const closeHandler = (e) => {
+                if (!popup.contains(e.target) && e.target !== anchorEl) {
+                    this._closePicker();
+                    document.removeEventListener('click', closeHandler, true);
+                }
+            };
+            setTimeout(() => document.addEventListener('click', closeHandler, true), 100);
+            this._pickerCleanup = () => document.removeEventListener('click', closeHandler, true);
+
+            search.focus();
+        }
+
+        _makePickerRow(item, currentHrid, onSelect) {
+            const isSelected = item.hrid === currentHrid;
+            const isLocked = item.available === false;
+
+            const row = document.createElement('div');
+            row.style.cssText = `
+            padding: 5px 10px; font-size: 12px; cursor: ${isLocked ? 'default' : 'pointer'};
+            color: ${isLocked ? 'rgba(255,255,255,0.2)' : isSelected ? config.COLOR_ACCENT : 'rgba(255,255,255,0.8)'};
+            ${isLocked ? 'text-decoration: line-through;' : ''}
+            ${isSelected ? 'font-weight: 600; background: rgba(255,255,255,0.04);' : ''}
+            display: flex; justify-content: space-between;
+        `;
+
+            const name = document.createElement('span');
+            name.textContent = item.name;
+            row.appendChild(name);
+
+            if (item.itemLevel > 0) {
+                const req = document.createElement('span');
+                req.textContent = `T${item.itemLevel}`;
+                req.style.cssText = 'font-size: 10px; color: rgba(255,255,255,0.25); flex-shrink: 0; margin-left: 6px;';
+                row.appendChild(req);
+            }
+
+            if (!isLocked) {
+                row.addEventListener('mouseenter', () => {
+                    if (!isSelected) row.style.background = 'rgba(255,255,255,0.06)';
+                });
+                row.addEventListener('mouseleave', () => {
+                    row.style.background = isSelected ? 'rgba(255,255,255,0.04)' : '';
+                });
+                row.addEventListener('click', () => {
+                    onSelect(item.hrid);
+                    this._closePicker();
+                });
+            }
+
+            return row;
+        }
+
+        _closePicker() {
+            if (this._pickerCleanup) {
+                this._pickerCleanup();
+                this._pickerCleanup = null;
+            }
+            this._picker?.remove();
+            this._picker = null;
+        }
+
+        // -------------------------------------------------------------------------
+        // Action picker popup
+        // -------------------------------------------------------------------------
+
+        _openActionPicker(anchorBtn, getBtnLabel) {
+            this._closePicker();
+
+            const actions = getSkillActionsForDisplay(this.currentSkill, this.currentLevel);
+            const available = actions.filter((a) => a.available);
+
+            const popup = document.createElement('div');
+            popup.style.cssText = `
+            position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 10000;
+            background: #1e1e1e; border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 6px; max-height: 260px; overflow-y: auto;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.5); font-size: 12px;
+        `;
+
+            const makeRow = (label, checked, disabled, onToggle) => {
+                const row = document.createElement('label');
+                row.style.cssText = `
+                display: flex; align-items: center; gap: 8px; padding: 5px 10px;
+                cursor: ${disabled ? 'default' : 'pointer'};
+                color: ${disabled ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.85)'};
+                ${disabled ? 'text-decoration: line-through;' : ''}
+            `;
+                if (!disabled) {
+                    row.addEventListener('mouseenter', () => (row.style.background = 'rgba(255,255,255,0.06)'));
+                    row.addEventListener('mouseleave', () => (row.style.background = ''));
+                }
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.checked = checked;
+                cb.disabled = disabled;
+                cb.addEventListener('change', () => onToggle(cb.checked));
+                row.appendChild(cb);
+                const text = document.createElement('span');
+                text.textContent = label;
+                row.appendChild(text);
+                return { row, cb };
+            };
+
+            const allChecked = this.selectedActionHrids === null;
+            const itemRows = [];
+
+            const { row: allRow, cb: allCb } = makeRow('All', allChecked, false, (checked) => {
+                if (checked) {
+                    this.selectedActionHrids = null;
+                    itemRows.forEach(({ cb }) => {
+                        cb.checked = true;
+                    });
+                } else {
+                    this.selectedActionHrids = new Set();
+                    itemRows.forEach(({ cb }) => {
+                        cb.checked = false;
+                    });
+                }
+                anchorBtn.textContent = getBtnLabel();
+            });
+            allRow.style.cssText += ' font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.1);';
+            popup.appendChild(allRow);
+
+            for (const action of actions) {
+                const isChecked =
+                    action.available && (this.selectedActionHrids === null || this.selectedActionHrids.has(action.hrid));
+                const label = action.available ? action.name : `${action.name} (lv ${action.requiredLevel})`;
+                const { row, cb } = makeRow(label, isChecked, !action.available, (checked) => {
+                    if (this.selectedActionHrids === null) {
+                        this.selectedActionHrids = new Set(available.map((a) => a.hrid));
+                    }
+                    if (checked) this.selectedActionHrids.add(action.hrid);
+                    else this.selectedActionHrids.delete(action.hrid);
+                    if (available.every((a) => this.selectedActionHrids.has(a.hrid))) {
+                        this.selectedActionHrids = null;
+                        allCb.checked = true;
+                    } else {
+                        allCb.checked = false;
+                    }
+                    anchorBtn.textContent = getBtnLabel();
+                });
+                itemRows.push({ cb, hrid: action.hrid });
+                popup.appendChild(row);
+            }
+
+            anchorBtn.parentElement.style.position = 'relative';
+            anchorBtn.parentElement.appendChild(popup);
+            this._picker = popup;
+
+            const closeHandler = (e) => {
+                if (!popup.contains(e.target) && e.target !== anchorBtn) {
+                    this._closePicker();
+                    document.removeEventListener('click', closeHandler, true);
+                }
+            };
+            setTimeout(() => document.addEventListener('click', closeHandler, true), 100);
+            this._pickerCleanup = () => document.removeEventListener('click', closeHandler, true);
+        }
+
+        // -------------------------------------------------------------------------
+        // Simulation
+        // -------------------------------------------------------------------------
+
+        _runSimulation() {
+            if (!this._resultsArea) return;
+
+            const result = calculateSkillPerformance(
+                this.currentSkill,
+                this.equipment,
+                this.teas,
+                this.currentLevel,
+                this.selectedActionHrids
+            );
+
+            this._resultsArea.innerHTML = '';
+
+            const section = document.createElement('div');
+            section.appendChild(this._makeSectionHeader('Results'));
+
+            const stats = document.createElement('div');
+            stats.style.cssText = 'display: flex; gap: 20px; margin-bottom: 8px;';
+
+            const makeStat = (label, value, color) => {
+                const el = document.createElement('div');
+                el.innerHTML = `
+                <div style="font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">${label}</div>
+                <div style="font-size:15px;font-weight:700;color:${color};">${value > 0 ? formatters_js.formatKMB(value) : '—'}</div>
+            `;
+                return el;
+            };
+
+            stats.appendChild(makeStat('XP / hr', result.xpPerHour, config.COLOR_INFO));
+            stats.appendChild(makeStat('Gold / hr', result.goldPerHour, config.COLOR_PROFIT));
+            section.appendChild(stats);
+
+            if (result.teaCostPerHour > 0) {
+                const cost = document.createElement('div');
+                cost.style.cssText = 'font-size: 11px; color: rgba(255,255,255,0.4);';
+                cost.textContent = `Tea cost: ${formatters_js.formatKMB(result.teaCostPerHour)}/hr`;
+                section.appendChild(cost);
+            }
+
+            this._resultsArea.appendChild(section);
+        }
+
+        // -------------------------------------------------------------------------
+        // Optimizer results rendering
+        // -------------------------------------------------------------------------
+
+        _renderOptimizerResults(container, result, achievableStats, loadoutItemMap) {
+            const { slots } = result;
+            const slotEntries = Object.entries(slots);
+
+            if (!slotEntries.length) {
+                const empty = document.createElement('div');
+                empty.style.color = 'rgba(255,255,255,0.5)';
+                empty.textContent = 'No relevant equipment found for this skill at the selected level.';
+                container.appendChild(empty);
+                return;
+            }
+
+            container.appendChild(this._makeSectionHeader('Equipment Progression'));
+            for (const [locationHrid, slotData] of slotEntries) {
+                const loadoutHrid = loadoutItemMap?.get(locationHrid) ?? null;
+                this._renderSlotRow(container, slotData, loadoutHrid);
+            }
+
+            const xpResult = achievableStats?.xpResult;
+            const goldResult = achievableStats?.goldResult;
+            const hasXp = xpResult?.optimal?.avgScore > 0;
+            const hasGold = goldResult?.optimal?.avgScore > 0;
+
+            if (hasXp || hasGold) {
+                const statsRow = document.createElement('div');
+                statsRow.style.cssText = 'display: flex; gap: 20px; margin-top: 16px; margin-bottom: 4px;';
+                if (hasXp) statsRow.appendChild(this._makeStat('Avg XP/hr', xpResult.optimal.avgScore, config.COLOR_INFO));
+                if (hasGold)
+                    statsRow.appendChild(this._makeStat('Avg Gold/hr', goldResult.optimal.avgScore, config.COLOR_PROFIT));
+                container.appendChild(statsRow);
+            }
+
+            if (hasXp || hasGold) {
+                const teasSection = document.createElement('div');
+                teasSection.style.marginTop = '14px';
+                teasSection.appendChild(this._makeSectionHeader('Optimal Teas'));
+                const cols = document.createElement('div');
+                cols.style.cssText = 'display: flex; gap: 16px;';
+                if (hasXp) cols.appendChild(this._makeTeaCol('For XP', config.COLOR_INFO, xpResult.optimal.teas));
+                if (hasGold) cols.appendChild(this._makeTeaCol('For Gold', config.COLOR_PROFIT, goldResult.optimal.teas));
+                teasSection.appendChild(cols);
+                container.appendChild(teasSection);
+            }
+
+            const note = document.createElement('div');
+            note.style.cssText = 'margin-top: 12px; font-size: 10px; color: rgba(255,255,255,0.3); font-style: italic;';
+            note.textContent = achievableStats
+                ? 'Performance uses your currently owned enhancement levels for optimal items.'
+                : 'Each slot scored independently at each breakpoint.';
+            container.appendChild(note);
+        }
+
+        _renderSlotRow(container, slotData, loadoutItemHrid = null) {
+            const tiers = this._groupTiers(slotData.progression);
+            if (!tiers.length) return;
+
+            const optimalItemHrid = slotData.progression[slotData.progression.length - 1]?.itemHrid;
+
+            const row = document.createElement('div');
+            row.style.cssText = 'margin-bottom: 10px;';
+
+            // Slot label + loadout diff indicator
+            const headerRow = document.createElement('div');
+            headerRow.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-bottom: 2px;';
+
+            const slotLabel = document.createElement('div');
+            slotLabel.style.cssText =
+                'font-size: 10px; color: rgba(255,255,255,0.38); text-transform: uppercase; letter-spacing: 0.04em;';
+            slotLabel.textContent = slotData.name;
+            headerRow.appendChild(slotLabel);
+
+            if (loadoutItemHrid !== null) {
+                if (loadoutItemHrid === optimalItemHrid) {
+                    const check = document.createElement('span');
+                    check.textContent = '✓';
+                    check.style.cssText = `font-size: 10px; color: ${config.COLOR_PROFIT};`;
+                    headerRow.appendChild(check);
+                } else {
+                    const diff = document.createElement('span');
+                    const loadoutName = loadoutItemHrid ? this._getItemName(loadoutItemHrid) || loadoutItemHrid : 'empty';
+                    diff.textContent = `≠ ${loadoutName}`;
+                    diff.style.cssText = `font-size: 10px; color: ${config.COLOR_WARNING}; font-style: italic;`;
+                    headerRow.appendChild(diff);
+                }
+            }
+
+            row.appendChild(headerRow);
+
+            const showBreakpoints = tiers.length > 1;
+
+            for (let i = 0; i < tiers.length; i++) {
+                const tier = tiers[i];
+                const tierRow = document.createElement('div');
+                tierRow.style.cssText = 'display: flex; align-items: baseline; gap: 8px; padding: 1px 0 1px 6px;';
+
+                if (showBreakpoints) {
+                    const range = document.createElement('span');
+                    range.style.cssText =
+                        'font-size: 10px; color: rgba(255,255,255,0.35); flex-shrink: 0; min-width: 56px;';
+                    const isLast = i === tiers.length - 1;
+                    range.textContent = isLast ? `+${tier.fromBp}+` : `+${tier.fromBp} – +${tier.toBp}`;
+                    tierRow.appendChild(range);
+                }
+
+                const name = document.createElement('span');
+                name.style.cssText = `font-size: 12px; color: ${i === 0 ? 'rgba(255,255,255,0.85)' : config.COLOR_ACCENT}; font-weight: ${i > 0 ? '600' : '400'};`;
+                name.textContent = tier.itemName;
+                tierRow.appendChild(name);
+                row.appendChild(tierRow);
+            }
+
+            container.appendChild(row);
+        }
+
+        _groupTiers(progression) {
+            const tiers = [];
+            let current = null;
+            for (const entry of progression) {
+                if (!entry.itemHrid) {
+                    current = null;
+                    continue;
+                }
+                if (!current || entry.itemHrid !== current.itemHrid) {
+                    if (current) tiers.push(current);
+                    current = {
+                        itemHrid: entry.itemHrid,
+                        itemName: entry.itemName,
+                        fromBp: entry.breakpoint,
+                        toBp: entry.breakpoint,
+                    };
+                } else {
+                    current.toBp = entry.breakpoint;
+                }
+            }
+            if (current) tiers.push(current);
+            return tiers;
+        }
+
+        _makeStat(label, value, color) {
+            const el = document.createElement('div');
+            el.innerHTML = `
+            <div style="font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">${label}</div>
+            <div style="font-size:15px;font-weight:700;color:${color};">${value > 0 ? formatters_js.formatKMB(value) : '—'}</div>
+        `;
+            return el;
+        }
+
+        _makeTeaCol(label, color, teas) {
+            const col = document.createElement('div');
+            col.style.flex = '1';
+            const h = document.createElement('div');
+            h.style.cssText = `font-size:11px;font-weight:600;color:${color};margin-bottom:4px;`;
+            h.textContent = label;
+            col.appendChild(h);
+            for (const tea of teas) {
+                const row = document.createElement('div');
+                row.style.cssText = 'font-size:12px;color:rgba(255,255,255,0.8);padding:1px 0;';
+                row.textContent = `• ${tea.name}`;
+                col.appendChild(row);
+            }
+            return col;
+        }
+
+        _makeSectionHeader(text) {
+            const h = document.createElement('div');
+            h.style.cssText = `
+            font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.4);
+            text-transform: uppercase; letter-spacing: 0.06em;
+            margin-bottom: 6px; padding-bottom: 4px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        `;
+            h.textContent = text;
+            return h;
+        }
+
+        _getItemName(hrid) {
+            const gameData = window.Toolasha?.Core?.dataManager?.getInitClientData?.();
+            return gameData?.itemDetailMap?.[hrid]?.name || null;
+        }
+
+        // -------------------------------------------------------------------------
+        // Cleanup
+        // -------------------------------------------------------------------------
+
+        cleanup() {
+            if (this.watcher) {
+                this.watcher.disconnect();
+                this.watcher = null;
+            }
+            this._closePicker();
+            this.tabBtn?.remove();
+            this.panel?.remove();
+            this.contentParent?.classList.remove(HIDE_CLASS);
+            STYLE_EL.remove();
+            this.tabBtn = null;
+            this.panel = null;
+            this.contentParent = null;
+            this.isActive = false;
+        }
+    }
+
+    const skillingSimulatorUI = new SkillingSimulatorUI();
+
+    var skillingOptimizer = {
+        name: 'Skilling Simulator',
+        initialize: () => skillingSimulatorUI.initialize(),
+        cleanup: () => skillingSimulatorUI.cleanup(),
+    };
+
+    /**
      * Actions Library
      * Production, gathering, and alchemy features
      *
@@ -24448,6 +26359,7 @@
         inventoryCountDisplay: inventoryCountDisplay$1,
         pinnedActionsPage,
         drinkTimer: drinkTimer$1,
+        skillingOptimizer,
     };
 
     console.log('[Toolasha] Actions library loaded');

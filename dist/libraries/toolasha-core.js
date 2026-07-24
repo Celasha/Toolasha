@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.81.0
+ * Version: 2.82.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2041,6 +2041,12 @@
                     type: 'number',
                     default: 24,
                     help: 'Show an amber warning on drink time displays when remaining supply falls below this many hours.',
+                },
+                skillingOptimizer: {
+                    id: 'skillingOptimizer',
+                    label: 'Skilling Simulator/Optimizer: Enable Optimizer tab in character panel',
+                    type: 'checkbox',
+                    default: true,
                 },
             },
         },

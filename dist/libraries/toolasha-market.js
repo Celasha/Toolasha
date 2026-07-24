@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.81.0
+ * Version: 2.82.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8371,9 +8371,11 @@ self.onmessage = function (e) {
             this.activeRefreshes = new WeakSet(); // Track tables being refreshed (debouncing)
             this.tbodyObservers = new WeakMap(); // Track MutationObservers per tbody
 
-            // Sort state for "Progress" column header (sort by item name)
-            this.sortState = 'none'; // 'none' | 'asc' | 'desc'
-            this.originalRowOrder = []; // Stores original row order for reset
+            // Multi-column sort state
+            this.activeSortColumn = null; // currently sorted column key, or null
+            this.activeSortDirection = null; // 'asc' | 'desc' | 'sortIndex' (progress only)
+            this.sortHeaders = new Map(); // colKey → <th> element
+            this.originalRowOrder = []; // original row order for reset
         }
 
         /**
@@ -8646,6 +8648,7 @@ self.onmessage = function (e) {
 
             // Add table headers
             this.addTableHeaders(tableNode);
+            this.wireHeaderSorting(tableNode);
 
             // Add data to rows
             this.addDataToRows(tbody);
@@ -8723,19 +8726,229 @@ self.onmessage = function (e) {
             if (listedHeader) {
                 thead.insertBefore(listedHeader, thead.children[insertIndex++]);
             }
+        }
 
-            // Make "Progress" header (index 2) clickable for sort-by-item-name
-            const progressHeader = thead.children[2];
-            if (progressHeader && !progressHeader.dataset.mwiSortable) {
-                progressHeader.dataset.mwiSortable = 'true';
-                progressHeader.style.cursor = 'pointer';
-                progressHeader.style.userSelect = 'none';
-                progressHeader.title = 'Click to sort by item name';
-                this.updateSortIndicator(progressHeader);
-                progressHeader.addEventListener('click', () => {
-                    this.cycleSortState(tableNode);
-                    this.updateSortIndicator(progressHeader);
-                });
+        /**
+         * Wire click-to-sort on all sortable table headers
+         * @param {HTMLElement} tableNode - The listings table
+         */
+        wireHeaderSorting(tableNode) {
+            const thead = tableNode.querySelector('thead tr');
+            if (!thead) return;
+
+            const SKIP_COLS = new Set(['chat link', 'cancel']);
+
+            for (const th of thead.querySelectorAll('th')) {
+                const rawText = th.textContent
+                    .trim()
+                    .toLowerCase()
+                    .replace(/\s*[▲▼#]$/, '')
+                    .trim();
+                if (SKIP_COLS.has(rawText)) continue;
+
+                const colKey = this._textToColKey(rawText);
+                if (!colKey) continue;
+
+                // Always refresh sortHeaders map (headers may be re-created by React)
+                this.sortHeaders.set(colKey, th);
+
+                if (th.dataset.mwiSortable) continue;
+
+                th.dataset.mwiSortable = 'true';
+                th.style.cursor = 'pointer';
+                th.style.userSelect = 'none';
+                th.title = `Click to sort by ${rawText}`;
+
+                th.addEventListener('click', () => this._handleHeaderClick(colKey, tableNode));
+            }
+        }
+
+        /** @returns {string|null} */
+        _textToColKey(text) {
+            const map = {
+                status: 'status',
+                type: 'type',
+                progress: 'progress',
+                price: 'price',
+                'top order price': 'topOrderPrice',
+                'top order age': 'topOrderAge',
+                'total price': 'totalPrice',
+                listed: 'listed',
+                collect: 'collect',
+            };
+            return map[text] ?? null;
+        }
+
+        /** @returns {string} */
+        _colKeyToBaseText(colKey) {
+            const map = {
+                status: 'Status',
+                type: 'Type',
+                progress: 'Progress',
+                price: 'Price',
+                topOrderPrice: 'Top Order Price',
+                topOrderAge: 'Top Order Age',
+                totalPrice: 'Total Price',
+                listed: 'Listed',
+                collect: 'Collect',
+            };
+            return map[colKey] ?? colKey;
+        }
+
+        /**
+         * Handle a sortable header click — cycle direction or switch column
+         * @param {string} colKey
+         * @param {HTMLElement} tableNode
+         */
+        _handleHeaderClick(colKey, tableNode) {
+            const tbody = tableNode.querySelector('tbody');
+            if (!tbody) return;
+
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            if (rows.length === 0) return;
+
+            if (this.originalRowOrder.length === 0) {
+                this.originalRowOrder = rows.slice();
+            }
+
+            if (this.activeSortColumn === colKey) {
+                this.activeSortDirection = this._nextDirection(colKey, this.activeSortDirection);
+            } else {
+                if (this.activeSortColumn) {
+                    this._updateHeaderIndicator(this.activeSortColumn, null);
+                }
+                this.activeSortColumn = colKey;
+                this.activeSortDirection = 'asc';
+            }
+
+            this._updateHeaderIndicator(colKey, this.activeSortDirection);
+
+            if (this.activeSortDirection === null) {
+                this.activeSortColumn = null;
+                for (const row of this.originalRowOrder) {
+                    tbody.appendChild(row);
+                }
+            } else {
+                this._sortTable(tableNode, colKey, this.activeSortDirection);
+            }
+        }
+
+        /** @returns {string|null} */
+        _nextDirection(colKey, current) {
+            if (current === 'asc') return 'desc';
+            if (current === 'desc') return colKey === 'progress' ? 'sortIndex' : null;
+            if (current === 'sortIndex') return null;
+            return 'asc';
+        }
+
+        /**
+         * Update the sort indicator on a header element
+         * @param {string} colKey
+         * @param {string|null} direction
+         */
+        _updateHeaderIndicator(colKey, direction) {
+            const th = this.sortHeaders.get(colKey);
+            if (!th) return;
+
+            const base = this._colKeyToBaseText(colKey);
+            if (!direction) {
+                th.textContent = base;
+            } else if (direction === 'asc') {
+                th.textContent = `${base} ▲`;
+            } else if (direction === 'desc') {
+                th.textContent = `${base} ▼`;
+            } else if (direction === 'sortIndex') {
+                th.textContent = `${base} #`;
+            }
+        }
+
+        /**
+         * Sort table rows by column
+         * @param {HTMLElement} tableNode
+         * @param {string} colKey
+         * @param {string} direction - 'asc' | 'desc' | 'sortIndex'
+         */
+        _sortTable(tableNode, colKey, direction) {
+            const tbody = tableNode.querySelector('tbody');
+            if (!tbody) return;
+
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+
+            const sorted = rows.slice().sort((a, b) => {
+                if (direction === 'sortIndex') {
+                    return this.getItemSortIndex(a) - this.getItemSortIndex(b);
+                }
+
+                const valA = this._getSortValue(a, colKey);
+                const valB = this._getSortValue(b, colKey);
+
+                if (typeof valA === 'string' && typeof valB === 'string') {
+                    const cmp = valA.localeCompare(valB);
+                    return direction === 'desc' ? -cmp : cmp;
+                }
+
+                // Push +Infinity (missing/unknown) to end regardless of direction
+                if (valA === Infinity && valB !== Infinity) return 1;
+                if (valB === Infinity && valA !== Infinity) return -1;
+
+                const cmp = valA - valB;
+                return direction === 'desc' ? -cmp : cmp;
+            });
+
+            for (const row of sorted) {
+                tbody.appendChild(row);
+            }
+        }
+
+        /**
+         * Get the numeric or string sort value for a row's column
+         * @param {HTMLElement} row
+         * @param {string} colKey
+         * @returns {string|number}
+         */
+        _getSortValue(row, colKey) {
+            switch (colKey) {
+                case 'status':
+                    return row.children[0]?.textContent.trim().toLowerCase() ?? '';
+                case 'type':
+                    return row.dataset.isSell === 'true' ? 1 : row.dataset.isSell === 'false' ? 0 : Infinity;
+                case 'progress': {
+                    const cat = this.getItemCategory(row);
+                    const name = this.getItemNameForRow(row);
+                    return `${cat}|${name}`;
+                }
+                case 'price': {
+                    const p = Number(row.dataset.price);
+                    return isNaN(p) ? Infinity : p;
+                }
+                case 'topOrderPrice': {
+                    if (!row.dataset.mwiTopOrderPrice) return Infinity;
+                    const v = Number(row.dataset.mwiTopOrderPrice);
+                    return isNaN(v) || v < 0 ? Infinity : v;
+                }
+                case 'topOrderAge': {
+                    if (!row.dataset.mwiTopOrderAgeMs) return Infinity;
+                    const v = Number(row.dataset.mwiTopOrderAgeMs);
+                    return isNaN(v) || v < 0 ? Infinity : v;
+                }
+                case 'totalPrice': {
+                    if (!row.dataset.mwiTotalPrice) return Infinity;
+                    const v = Number(row.dataset.mwiTotalPrice);
+                    return isNaN(v) ? Infinity : v;
+                }
+                case 'listed': {
+                    if (!row.dataset.createdTimestamp) return Infinity;
+                    const t = new Date(row.dataset.createdTimestamp).getTime();
+                    return isNaN(t) ? Infinity : t;
+                }
+                case 'collect': {
+                    const coins = Number(row.dataset.unclaimedCoinCount) || 0;
+                    const items = Number(row.dataset.unclaimedItemCount) || 0;
+                    const price = Number(row.dataset.price) || 0;
+                    return coins + items * price;
+                }
+                default:
+                    return '';
             }
         }
 
@@ -9008,6 +9221,32 @@ self.onmessage = function (e) {
                         const listedAgeCell = this.createListedAgeCell(dataset.createdTimestamp);
                         row.insertBefore(listedAgeCell, row.children[listedInsertIndex]);
                     }
+
+                    // Stamp numeric sort values for column sorting
+                    row.dataset.mwiTotalPrice = String(
+                        this._computeTotalPrice(
+                            itemHrid,
+                            isSell,
+                            price,
+                            orderQuantity,
+                            filledQuantity,
+                            unclaimedCoinCount,
+                            unclaimedItemCount
+                        )
+                    );
+                    const topOrderPriceVal = this._getTopOrderPrice(
+                        itemHrid,
+                        enhancementLevel,
+                        isSell,
+                        priceCache,
+                        ownListingIds
+                    );
+                    row.dataset.mwiTopOrderPrice =
+                        topOrderPriceVal !== null && topOrderPriceVal >= 0 ? String(topOrderPriceVal) : '';
+                    if (config.getSetting('market_showTopOrderAge')) {
+                        const ageMs = this._getTopOrderAgeMs(itemHrid, enhancementLevel, isSell, ownListingIds);
+                        row.dataset.mwiTopOrderAgeMs = ageMs !== null ? String(ageMs) : '';
+                    }
                 } else {
                     // Unmatched row - create placeholder cells to prevent column misalignment
                     const topOrderCell = this.createPlaceholderCell();
@@ -9032,6 +9271,63 @@ self.onmessage = function (e) {
         }
 
         /**
+         * Compute the total price value for a listing (shared by cell display and sort)
+         */
+        _computeTotalPrice(itemHrid, isSell, price, orderQuantity, filledQuantity, unclaimedCoinCount, unclaimedItemCount) {
+            if (filledQuantity === orderQuantity) {
+                return isSell ? unclaimedCoinCount : unclaimedItemCount * price;
+            }
+            const taxRate = isSell ? (itemHrid === '/items/bag_of_10_cowbells' ? 0.18 : 0.02) : 0;
+            return (orderQuantity - filledQuantity) * Math.floor(profitHelpers_js.calculatePriceAfterTax(price, taxRate));
+        }
+
+        /**
+         * Get the top competing order price for a listing (shared by cell display and sort)
+         * @returns {number|null} Price or null if unavailable
+         */
+        _getTopOrderPrice(itemHrid, enhancementLevel, isSell, priceCache, ownListingIds) {
+            const cacheEntry = estimatedListingAge.orderBooksCache[itemHrid];
+            if (cacheEntry) {
+                const orderBookData = cacheEntry.data || cacheEntry;
+                if (orderBookData?.orderBooks) {
+                    const orderBook = orderBookData.orderBooks[enhancementLevel] ?? null;
+                    if (orderBook) {
+                        const topOrders = isSell ? orderBook.asks : orderBook.bids;
+                        const topCompeting = topOrders?.find((o) => !ownListingIds.has(o.listingId));
+                        if (topCompeting) return topCompeting.price;
+                    }
+                }
+            }
+            const key = `${itemHrid}:${enhancementLevel}`;
+            const marketPrice = priceCache.get(key);
+            return marketPrice ? (isSell ? marketPrice.ask : marketPrice.bid) : null;
+        }
+
+        /**
+         * Get the top competing order age in ms for a listing (shared by cell display and sort)
+         * Returns -1 if no competing orders exist, null if data unavailable
+         * @returns {number|null}
+         */
+        _getTopOrderAgeMs(itemHrid, enhancementLevel, isSell, ownListingIds) {
+            const cacheEntry = estimatedListingAge.orderBooksCache[itemHrid];
+            if (!cacheEntry) return null;
+
+            const orderBookData = cacheEntry.data || cacheEntry;
+            if (!orderBookData || !orderBookData.orderBooks || orderBookData.orderBooks.length === 0) return null;
+
+            const orderBook = orderBookData.orderBooks[enhancementLevel] ?? null;
+            if (!orderBook) return null;
+
+            const topOrders = isSell ? orderBook.asks : orderBook.bids;
+            if (!topOrders || topOrders.length === 0) return -1;
+
+            const topOrder = topOrders.find((o) => !ownListingIds.has(o.listingId));
+            if (!topOrder) return -1;
+
+            return Date.now() - estimatedListingAge.estimateTimestamp(topOrder.listingId);
+        }
+
+        /**
          * Create Top Order Price cell
          * @param {string} itemHrid - Item HRID
          * @param {number} enhancementLevel - Enhancement level
@@ -9042,67 +9338,23 @@ self.onmessage = function (e) {
          * @returns {HTMLElement} Table cell element
          */
         createTopOrderPriceCell(itemHrid, enhancementLevel, isSell, price, priceCache, ownListingIds = new Set()) {
-            // PRIMARY: Get price from order book cache (same source as Top Order Age)
-            let topOrderPrice = null;
-            let lastUpdated = null;
-
-            const cacheEntry = estimatedListingAge.orderBooksCache[itemHrid];
-            if (cacheEntry) {
-                const orderBookData = cacheEntry.data || cacheEntry;
-                lastUpdated = cacheEntry.lastUpdated;
-
-                if (orderBookData && orderBookData.orderBooks) {
-                    // orderBooks is indexed by enhancement level (same structure as processOrderBook)
-                    const orderBook = orderBookData.orderBooks[enhancementLevel] ?? null;
-
-                    if (orderBook) {
-                        const topOrders = isSell ? orderBook.asks : orderBook.bids;
-                        if (topOrders && topOrders.length > 0) {
-                            // Asks are sorted ascending (lowest = best ask = index 0)
-                            // Bids are sorted descending (highest = best bid = index 0)
-                            // Skip over the user's own listings to find the top external order.
-                            const topCompeting = topOrders.find((o) => !ownListingIds.has(o.listingId));
-                            if (topCompeting) {
-                                topOrderPrice = topCompeting.price;
-                            }
-                        }
-                    }
-                }
-            }
-
-            // FALLBACK: Use market API if no order book data
-            if (topOrderPrice === null) {
-                const key = `${itemHrid}:${enhancementLevel}`;
-                const marketPrice = priceCache.get(key);
-                topOrderPrice = marketPrice ? (isSell ? marketPrice.ask : marketPrice.bid) : null;
-            }
-
-            let content;
-            let color;
-            let title;
+            const topOrderPrice = this._getTopOrderPrice(itemHrid, enhancementLevel, isSell, priceCache, ownListingIds);
+            const lastUpdated = estimatedListingAge.orderBooksCache[itemHrid]?.lastUpdated ?? null;
 
             if (topOrderPrice === null || topOrderPrice === -1) {
-                content = formatters_js.coinFormatter(null);
-                color = '#004FFF'; // Blue for no data
-            } else {
-                content = formatters_js.formatKMB(topOrderPrice, 1);
-
-                // Color coding based on competitiveness
-                if (isSell) {
-                    // Sell order: green if our price is lower (better), red if higher (undercut)
-                    color = topOrderPrice < price ? '#FF0000' : '#00FF00';
-                } else {
-                    // Buy order: green if our price is higher (better), red if lower (undercut)
-                    color = topOrderPrice > price ? '#FF0000' : '#00FF00';
-                }
-
-                // Add staleness indicator via tooltip if using order book cache
-                if (lastUpdated) {
-                    title = estimatedListingAge.getStalenessTooltip(lastUpdated);
-                }
+                return createStyledCell(formatters_js.coinFormatter(null), '#004FFF');
             }
 
-            return createStyledCell(content, color, { title });
+            const color = isSell
+                ? topOrderPrice < price
+                    ? '#FF0000'
+                    : '#00FF00'
+                : topOrderPrice > price
+                  ? '#FF0000'
+                  : '#00FF00';
+            const title = lastUpdated ? estimatedListingAge.getStalenessTooltip(lastUpdated) : undefined;
+
+            return createStyledCell(formatters_js.formatKMB(topOrderPrice, 1), color, { title });
         }
 
         /**
@@ -9114,56 +9366,16 @@ self.onmessage = function (e) {
          * @returns {HTMLElement} Table cell element
          */
         createTopOrderAgeCell(itemHrid, enhancementLevel, isSell, ownListingIds = new Set()) {
-            // Get order book data from estimatedListingAge module (shared cache)
             const cacheEntry = estimatedListingAge.orderBooksCache[itemHrid];
+            if (!cacheEntry) return createStyledCell('N/A', config.COLOR_TEXT_SECONDARY, { fontSize: '0.9em' });
 
-            if (!cacheEntry) {
-                // No order book data available
-                return createStyledCell('N/A', config.COLOR_TEXT_SECONDARY, { fontSize: '0.9em' });
-            }
-
-            // Support both old format (direct data) and new format ({data, lastUpdated})
-            const orderBookData = cacheEntry.data || cacheEntry;
             const lastUpdated = cacheEntry.lastUpdated;
+            const ageMs = this._getTopOrderAgeMs(itemHrid, enhancementLevel, isSell, ownListingIds);
 
-            if (!orderBookData || !orderBookData.orderBooks || orderBookData.orderBooks.length === 0) {
-                // No order book data available
-                return createStyledCell('N/A', config.COLOR_TEXT_SECONDARY, { fontSize: '0.9em' });
-            }
+            if (ageMs === null) return createStyledCell('N/A', config.COLOR_TEXT_SECONDARY, { fontSize: '0.9em' });
+            if (ageMs === -1) return createStyledCell('None', '#00FF00', { fontSize: '0.9em' });
 
-            // Order books are indexed by enhancement level (same as createTopOrderPriceCell)
-            const orderBook = orderBookData.orderBooks[enhancementLevel] ?? null;
-
-            if (!orderBook) {
-                return createStyledCell('N/A', config.COLOR_TEXT_SECONDARY, { fontSize: '0.9em' });
-            }
-
-            // Get top order — asks sorted ascending (best = index 0), bids sorted descending (best = index 0)
-            const topOrders = isSell ? orderBook.asks : orderBook.bids;
-
-            if (!topOrders || topOrders.length === 0) {
-                // No competing orders
-                return createStyledCell('None', '#00FF00', { fontSize: '0.9em' }); // Green = you're the only one
-            }
-
-            // Skip over the user's own listings to find the top external (competing) order
-            const topOrder = topOrders.find((o) => !ownListingIds.has(o.listingId));
-
-            if (!topOrder) {
-                // All orders on this side are the user's own
-                return createStyledCell('None', '#00FF00', { fontSize: '0.9em' });
-            }
-
-            const topListingId = topOrder.listingId;
-
-            // Estimate timestamp using existing logic
-            const estimatedTimestamp = estimatedListingAge.estimateTimestamp(topListingId);
-
-            // Format as elapsed time
-            const ageMs = Date.now() - estimatedTimestamp;
-            const formatted = formatters_js.formatRelativeTime(ageMs);
-
-            return createStyledCell(`~${formatted}`, estimatedListingAge.getStalenessColor(lastUpdated), {
+            return createStyledCell(`~${formatters_js.formatRelativeTime(ageMs)}`, estimatedListingAge.getStalenessColor(lastUpdated), {
                 fontSize: '0.9em',
                 title: lastUpdated ? estimatedListingAge.getStalenessTooltip(lastUpdated) : undefined,
             });
@@ -9189,24 +9401,15 @@ self.onmessage = function (e) {
             unclaimedCoinCount,
             unclaimedItemCount
         ) {
-            let totalPrice;
-
-            // For filled listings, show unclaimed amount
-            if (filledQuantity === orderQuantity) {
-                if (isSell) {
-                    // Sell order: show unclaimed coins
-                    totalPrice = unclaimedCoinCount;
-                } else {
-                    // Buy order: show value of unclaimed items
-                    totalPrice = unclaimedItemCount * price;
-                }
-            } else {
-                // For active listings, calculate remaining value
-                // Calculate tax rate (0.18 for cowbells, 0.02 for others, 0.0 for buy orders)
-                const taxRate = isSell ? (itemHrid === '/items/bag_of_10_cowbells' ? 0.18 : 0.02) : 0;
-                totalPrice = (orderQuantity - filledQuantity) * Math.floor(profitHelpers_js.calculatePriceAfterTax(price, taxRate));
-            }
-
+            const totalPrice = this._computeTotalPrice(
+                itemHrid,
+                isSell,
+                price,
+                orderQuantity,
+                filledQuantity,
+                unclaimedCoinCount,
+                unclaimedItemCount
+            );
             return createStyledCell(formatters_js.formatKMB(totalPrice, 1), this.getAmountColor(totalPrice));
         }
 
@@ -9240,69 +9443,6 @@ self.onmessage = function (e) {
             if (amount >= 100000) return config.COLOR_LISTING_PRICE_100K;
             if (amount >= 10000) return config.COLOR_LISTING_PRICE_10K;
             return config.COLOR_LISTING_PRICE_LOW;
-        }
-
-        /**
-         * Update the sort indicator arrow on the Progress header
-         * @param {HTMLElement} header - The Progress <th> element
-         */
-        updateSortIndicator(header) {
-            const labels = { none: 'Progress', asc: 'Progress \u25B2', desc: 'Progress \u25BC', sortIndex: 'Progress #' };
-            header.textContent = labels[this.sortState];
-        }
-
-        /**
-         * Cycle sort state and reorder table rows
-         * @param {HTMLElement} tableNode - The listings table element
-         */
-        cycleSortState(tableNode) {
-            const tbody = tableNode.querySelector('tbody');
-            if (!tbody) return;
-
-            const rows = Array.from(tbody.querySelectorAll('tr'));
-            if (rows.length === 0) return;
-
-            // Store original order on first sort interaction
-            if (this.originalRowOrder.length === 0) {
-                this.originalRowOrder = rows.slice();
-            }
-
-            // Cycle: none → asc → desc → sortIndex → none
-            if (this.sortState === 'none') {
-                this.sortState = 'asc';
-            } else if (this.sortState === 'asc') {
-                this.sortState = 'desc';
-            } else if (this.sortState === 'desc') {
-                this.sortState = 'sortIndex';
-            } else {
-                this.sortState = 'none';
-            }
-
-            if (this.sortState === 'none') {
-                for (const row of this.originalRowOrder) {
-                    tbody.appendChild(row);
-                }
-                return;
-            }
-
-            const sortedRows = rows.slice().sort((a, b) => {
-                if (this.sortState === 'sortIndex') {
-                    return this.getItemSortIndex(a) - this.getItemSortIndex(b);
-                }
-                // Category + name sort
-                const catA = this.getItemCategory(a);
-                const catB = this.getItemCategory(b);
-                const catCmp = catA.localeCompare(catB);
-                if (catCmp !== 0) return this.sortState === 'asc' ? catCmp : -catCmp;
-                const nameA = this.getItemNameForRow(a);
-                const nameB = this.getItemNameForRow(b);
-                const nameCmp = nameA.localeCompare(nameB);
-                return this.sortState === 'asc' ? nameCmp : -nameCmp;
-            });
-
-            for (const row of sortedRows) {
-                tbody.appendChild(row);
-            }
         }
 
         /**
@@ -9363,7 +9503,12 @@ self.onmessage = function (e) {
             });
             document.querySelectorAll('.mwi-listing-price-header').forEach((el) => el.remove());
             document.querySelectorAll('.mwi-listing-price-cell').forEach((el) => el.remove());
-            this.sortState = 'none';
+            for (const colKey of this.sortHeaders.keys()) {
+                this._updateHeaderIndicator(colKey, null);
+            }
+            this.sortHeaders = new Map();
+            this.activeSortColumn = null;
+            this.activeSortDirection = null;
             this.originalRowOrder = [];
         }
 
