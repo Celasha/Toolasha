@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.82.0
+ * Version: 2.82.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -15171,10 +15171,10 @@ ${starCSS}
      */
 
 
-    const STORE_NAME$3 = 'xpHistory';
-    const WINDOW_10M$1 = 10 * 60 * 1000;
-    const WINDOW_1H$1 = 60 * 60 * 1000;
-    const WINDOW_1W$1 = 7 * 24 * 60 * 60 * 1000;
+    const STORE_NAME$4 = 'xpHistory';
+    const WINDOW_10M$2 = 10 * 60 * 1000;
+    const WINDOW_1H$2 = 60 * 60 * 1000;
+    const WINDOW_1W$2 = 7 * 24 * 60 * 60 * 1000;
 
     /**
      * Skill definitions matching game skill HRIDs
@@ -15215,7 +15215,7 @@ ${starCSS}
      * @param {Array} arr - Existing history array (mutated in place)
      * @param {{t: number, xp: number}} d - New data point
      */
-    function pushXP$1(arr, d) {
+    function pushXP$2(arr, d) {
         if (arr.length === 0 || d.xp >= arr[arr.length - 1].xp) {
             arr.push(d);
         } else {
@@ -15228,7 +15228,7 @@ ${starCSS}
         // Rule 1: within the last 10 minutes, keep only first + last
         let recentLength = 0;
         for (let i = arr.length - 1; i >= 0; i--) {
-            if (d.t - arr[i].t <= WINDOW_10M$1) {
+            if (d.t - arr[i].t <= WINDOW_10M$2) {
                 recentLength++;
             } else {
                 break;
@@ -15241,7 +15241,7 @@ ${starCSS}
         // Rule 2: collapse consecutive same-XP entries that are within 1 hour apart
         let sameLength = 0;
         for (let i = arr.length - 1; i >= 0; i--) {
-            if (arr[i].xp === d.xp && d.t - arr[i].t <= WINDOW_1H$1) {
+            if (arr[i].xp === d.xp && d.t - arr[i].t <= WINDOW_1H$2) {
                 sameLength++;
             } else {
                 break;
@@ -15254,7 +15254,7 @@ ${starCSS}
         // Rule 3: drop entries older than 1 week
         let oldLength = 0;
         for (let i = 0; i < arr.length; i++) {
-            if (d.t - arr[i].t > WINDOW_1W$1) {
+            if (d.t - arr[i].t > WINDOW_1W$2) {
                 oldLength++;
             } else {
                 break;
@@ -15271,7 +15271,7 @@ ${starCSS}
      * @param {number} interval - ms
      * @returns {Array}
      */
-    function inLastInterval$1(arr, interval) {
+    function inLastInterval$2(arr, interval) {
         const now = Date.now();
         const result = [];
         for (let i = arr.length - 1; i >= 0; i--) {
@@ -15290,7 +15290,7 @@ ${starCSS}
      * @param {{t: number, xp: number}} cur
      * @returns {number} XP per hour
      */
-    function calcXPH$1(prev, cur) {
+    function calcXPH$2(prev, cur) {
         const xpDelta = cur.xp - prev.xp;
         const tDeltaMs = cur.t - prev.t;
         return (xpDelta / tDeltaMs) * 3600000;
@@ -15301,14 +15301,14 @@ ${starCSS}
      * @param {Array} arr - History array for one skill
      * @returns {{lastXPH: number, lastHourXPH: number}}
      */
-    function calcStats$1(arr) {
+    function calcStats$2(arr) {
         if (arr.length < 2) return { lastXPH: 0, lastHourXPH: 0 };
 
-        const last10m = inLastInterval$1(arr, WINDOW_10M$1);
-        const lastXPH = last10m.length >= 2 ? calcXPH$1(last10m[0], last10m[last10m.length - 1]) : 0;
+        const last10m = inLastInterval$2(arr, WINDOW_10M$2);
+        const lastXPH = last10m.length >= 2 ? calcXPH$2(last10m[0], last10m[last10m.length - 1]) : 0;
 
-        const last1h = inLastInterval$1(arr, WINDOW_1H$1);
-        const lastHourXPH = last1h.length >= 2 ? calcXPH$1(last1h[0], last1h[last1h.length - 1]) : 0;
+        const last1h = inLastInterval$2(arr, WINDOW_1H$2);
+        const lastHourXPH = last1h.length >= 2 ? calcXPH$2(last1h[0], last1h[last1h.length - 1]) : 0;
 
         return { lastXPH, lastHourXPH };
     }
@@ -15410,7 +15410,7 @@ ${starCSS}
             this.combatSession = {};
 
             // Load persisted history for this character
-            const stored = await storage.get(`xpHistory_${charId}`, STORE_NAME$3, {});
+            const stored = await storage.get(`xpHistory_${charId}`, STORE_NAME$4, {});
             this.xpHistory = stored;
 
             const t = data.currentTimestamp ? +new Date(data.currentTimestamp) : Date.now();
@@ -15424,11 +15424,11 @@ ${starCSS}
                     this.xpHistory[skillId] = [];
                 }
 
-                pushXP$1(this.xpHistory[skillId], { t, xp: skillEntry.experience });
+                pushXP$2(this.xpHistory[skillId], { t, xp: skillEntry.experience });
             });
 
             // Don't await — write is fire-and-forget, no need to block initialization
-            storage.set(`xpHistory_${charId}`, this.xpHistory, STORE_NAME$3);
+            storage.set(`xpHistory_${charId}`, this.xpHistory, STORE_NAME$4);
 
             this._updateNavBars();
         }
@@ -15452,7 +15452,7 @@ ${starCSS}
                     this.xpHistory[skillId] = [];
                 }
 
-                pushXP$1(this.xpHistory[skillId], { t, xp: skillEntry.experience });
+                pushXP$2(this.xpHistory[skillId], { t, xp: skillEntry.experience });
 
                 if (COMBAT_SKILL_IDS.has(skillId)) {
                     if (!this.combatSession[skillId]) {
@@ -15467,7 +15467,7 @@ ${starCSS}
                 }
             });
 
-            storage.set(`xpHistory_${this.characterId}`, this.xpHistory, STORE_NAME$3);
+            storage.set(`xpHistory_${this.characterId}`, this.xpHistory, STORE_NAME$4);
 
             this._updateNavBars();
         }
@@ -15513,7 +15513,7 @@ ${starCSS}
                 const history = this.xpHistory[skillId];
                 if (!history) return;
 
-                const stats = calcStats$1(history);
+                const stats = calcStats$2(history);
                 const rate = COMBAT_SKILL_IDS.has(skillId) ? this._calcSessionRate(skillId) : stats.lastXPH;
 
                 // Remove existing rate span (may be inline or standalone)
@@ -15607,7 +15607,7 @@ ${starCSS}
                 return;
             }
 
-            const stats = calcStats$1(history);
+            const stats = calcStats$2(history);
             const rate = COMBAT_SKILL_IDS.has(skillId) ? this._calcSessionRate(skillId) : stats.lastXPH;
             if (rate <= 0) {
                 return;
@@ -15668,7 +15668,7 @@ ${starCSS}
      */
 
 
-    const STORE_NAME$2 = 'lootLogHistory';
+    const STORE_NAME$3 = 'lootLogHistory';
     const MAX_ENTRIES = 500;
 
     class LootLogHistory {
@@ -15683,7 +15683,7 @@ ${starCSS}
         async _load() {
             const key = this._getKey();
             if (!key) return [];
-            return await storage.get(key, STORE_NAME$2, []);
+            return await storage.get(key, STORE_NAME$3, []);
         }
 
         /**
@@ -15692,7 +15692,7 @@ ${starCSS}
         async _save(entries) {
             const key = this._getKey();
             if (!key) return;
-            await storage.set(key, entries, STORE_NAME$2, true);
+            await storage.set(key, entries, STORE_NAME$3, true);
         }
 
         /**
@@ -15728,7 +15728,7 @@ ${starCSS}
         async clearHistory() {
             const key = this._getKey();
             if (!key) return;
-            await storage.delete(key, STORE_NAME$2);
+            await storage.delete(key, STORE_NAME$3);
         }
     }
 
@@ -32485,15 +32485,15 @@ ${starCSS}
      * - character_initialized (via dataManager) — initial snapshot on login
      * - guild_updated — guild total XP changes
      * - guild_characters_updated — per-member XP changes
-     * - leaderboard_updated (category: guild) — XP for all guilds on leaderboard
+     * - leaderboard_updated (category: guild) — XP for all guilds on the guild leaderboard
      */
 
 
-    const STORE_NAME$1 = 'guildHistory';
-    const WINDOW_10M = 10 * 60 * 1000;
-    const WINDOW_1H = 60 * 60 * 1000;
-    const WINDOW_1D = 24 * 60 * 60 * 1000;
-    const WINDOW_1W = 7 * 24 * 60 * 60 * 1000;
+    const STORE_NAME$2 = 'guildHistory';
+    const WINDOW_10M$1 = 10 * 60 * 1000;
+    const WINDOW_1H$1 = 60 * 60 * 1000;
+    const WINDOW_1D$1 = 24 * 60 * 60 * 1000;
+    const WINDOW_1W$1 = 7 * 24 * 60 * 60 * 1000;
 
     /**
      * Guild level experience table (same thresholds as skill levels).
@@ -32527,7 +32527,7 @@ ${starCSS}
      * @param {Array} arr - Existing history array (mutated in place)
      * @param {{t: number, xp: number}} d - New data point
      */
-    function pushXP(arr, d) {
+    function pushXP$1(arr, d) {
         if (arr.length === 0 || d.xp >= arr[arr.length - 1].xp) {
             arr.push(d);
         } else {
@@ -32539,7 +32539,7 @@ ${starCSS}
         // Rule 1: within the last 10 minutes, keep only first + last
         let recentLength = 0;
         for (let i = arr.length - 1; i >= 0; i--) {
-            if (d.t - arr[i].t <= WINDOW_10M) {
+            if (d.t - arr[i].t <= WINDOW_10M$1) {
                 recentLength++;
             } else {
                 break;
@@ -32552,7 +32552,7 @@ ${starCSS}
         // Rule 2: collapse consecutive same-XP entries within 1 hour
         let sameLength = 0;
         for (let i = arr.length - 1; i >= 0; i--) {
-            if (arr[i].xp === d.xp && d.t - arr[i].t <= WINDOW_1H) {
+            if (arr[i].xp === d.xp && d.t - arr[i].t <= WINDOW_1H$1) {
                 sameLength++;
             } else {
                 break;
@@ -32565,7 +32565,7 @@ ${starCSS}
         // Rule 3: drop entries older than 1 week
         let oldLength = 0;
         for (let i = 0; i < arr.length; i++) {
-            if (d.t - arr[i].t > WINDOW_1W) {
+            if (d.t - arr[i].t > WINDOW_1W$1) {
                 oldLength++;
             } else {
                 break;
@@ -32582,7 +32582,7 @@ ${starCSS}
      * @param {number} interval - Window in ms
      * @returns {Array}
      */
-    function inLastInterval(arr, interval) {
+    function inLastInterval$1(arr, interval) {
         const now = Date.now();
         const result = [];
         for (let i = arr.length - 1; i >= 0; i--) {
@@ -32621,7 +32621,7 @@ ${starCSS}
      * @param {{t: number, xp: number}} cur
      * @returns {number} XP per hour
      */
-    function calcXPH(prev, cur) {
+    function calcXPH$1(prev, cur) {
         const tDeltaMs = cur.t - prev.t;
         if (tDeltaMs <= 0) return 0;
         return ((cur.xp - prev.xp) / tDeltaMs) * 3600000;
@@ -32634,24 +32634,24 @@ ${starCSS}
      * @param {Array} arr - [{t, xp}, ...]
      * @returns {{lastXPH: number, lastHourXPH: number, lastDayXPH: number, chart: Array}}
      */
-    function calcStats(arr) {
+    function calcStats$1(arr) {
         const empty = { lastXPH: 0, lastHourXPH: 0, lastDayXPH: 0, chart: [] };
         if (!arr || arr.length < 2) return empty;
 
         // Last XP/h (between last two entries)
-        const lastXPH = calcXPH(arr[arr.length - 2], arr[arr.length - 1]);
+        const lastXPH = calcXPH$1(arr[arr.length - 2], arr[arr.length - 1]);
 
         // Last hour XP/h
-        const last1h = inLastInterval(arr, WINDOW_1H);
-        const lastHourXPH = last1h.length >= 2 ? calcXPH(last1h[0], last1h[last1h.length - 1]) : 0;
+        const last1h = inLastInterval$1(arr, WINDOW_1H$1);
+        const lastHourXPH = last1h.length >= 2 ? calcXPH$1(last1h[0], last1h[last1h.length - 1]) : 0;
 
         // Last day XP/h
-        const last1d = inLastInterval(arr, WINDOW_1D);
-        const lastDayXPH = last1d.length >= 2 ? calcXPH(last1d[0], last1d[last1d.length - 1]) : 0;
+        const last1d = inLastInterval$1(arr, WINDOW_1D$1);
+        const lastDayXPH = last1d.length >= 2 ? calcXPH$1(last1d[0], last1d[last1d.length - 1]) : 0;
 
         // Chart: weekly data at 10m resolution
-        const last1w = inLastInterval(arr, WINDOW_1W);
-        const chartData = keepOneInInterval(last1w, WINDOW_10M);
+        const last1w = inLastInterval$1(arr, WINDOW_1W$1);
+        const chartData = keepOneInInterval(last1w, WINDOW_10M$1);
         const chart = [];
         for (let i = 1; i < chartData.length; i++) {
             const prev = chartData[i - 1];
@@ -32659,7 +32659,7 @@ ${starCSS}
             chart.push({
                 t: cur.t,
                 tD: cur.t - prev.t,
-                xpH: calcXPH(prev, cur),
+                xpH: calcXPH$1(prev, cur),
             });
         }
 
@@ -32697,8 +32697,6 @@ ${starCSS}
             this.guildXPHistory = {}; // guildName → [{t, xp}]
             this.memberXPHistory = {}; // characterID → [{t, xp}]
             this.memberMeta = {}; // characterID → {name, gameMode, joinTime, invitedBy, ...}
-            this.playerXPHistory = {}; // `${category}_${playerName}` → [{t, xp}]
-            this.lastLeaderboardCategory = null;
             this.unregisterHandlers = [];
         }
 
@@ -32732,17 +32730,6 @@ ${starCSS}
             // If character data already loaded, initialize immediately
             if (dataManager.characterData) {
                 await this._onCharacterInit(dataManager.characterData);
-            }
-
-            // Load persisted player leaderboard history
-            this.playerXPHistory = await storage.get('playerXP_leaderboard', STORE_NAME$1, {});
-
-            // Clear legacy data: old format used bare player names as keys; new format uses
-            // "category_name". If no stored key contains "_", the data is from the old format.
-            const storedKeys = Object.keys(this.playerXPHistory);
-            if (storedKeys.length > 0 && storedKeys.every((k) => !k.includes('_'))) {
-                this.playerXPHistory = {};
-                storage.set('playerXP_leaderboard', {}, STORE_NAME$1);
             }
 
             this.initialized = true;
@@ -32792,9 +32779,9 @@ ${starCSS}
             }
 
             // Load persisted histories
-            this.guildXPHistory = await storage.get(`guildXP_${guildName}`, STORE_NAME$1, {});
+            this.guildXPHistory = await storage.get(`guildXP_${guildName}`, STORE_NAME$2, {});
             if (this.ownGuildID) {
-                this.memberXPHistory = await storage.get(`memberXP_${this.ownGuildID}`, STORE_NAME$1, {});
+                this.memberXPHistory = await storage.get(`memberXP_${this.ownGuildID}`, STORE_NAME$2, {});
             }
 
             const t = data.currentTimestamp ? +new Date(data.currentTimestamp) : Date.now();
@@ -32803,20 +32790,20 @@ ${starCSS}
             if (!this.guildXPHistory[guildName]) {
                 this.guildXPHistory[guildName] = [];
             }
-            pushXP(this.guildXPHistory[guildName], { t, xp: guildXP });
+            pushXP$1(this.guildXPHistory[guildName], { t, xp: guildXP });
 
             // Record member XP snapshots
             for (const [charId, guildChar] of Object.entries(guildCharacterMap)) {
                 if (!this.memberXPHistory[charId]) {
                     this.memberXPHistory[charId] = [];
                 }
-                pushXP(this.memberXPHistory[charId], { t, xp: guildChar.guildExperience });
+                pushXP$1(this.memberXPHistory[charId], { t, xp: guildChar.guildExperience });
             }
 
             // Persist
-            await storage.set(`guildXP_${guildName}`, this.guildXPHistory, STORE_NAME$1);
+            await storage.set(`guildXP_${guildName}`, this.guildXPHistory, STORE_NAME$2);
             if (this.ownGuildID) {
-                await storage.set(`memberXP_${this.ownGuildID}`, this.memberXPHistory, STORE_NAME$1);
+                await storage.set(`memberXP_${this.ownGuildID}`, this.memberXPHistory, STORE_NAME$2);
             }
         }
 
@@ -32839,8 +32826,8 @@ ${starCSS}
             }
 
             const t = Date.now();
-            pushXP(this.guildXPHistory[name], { t, xp: guild.experience });
-            storage.set(`guildXP_${name}`, this.guildXPHistory, STORE_NAME$1);
+            pushXP$1(this.guildXPHistory[name], { t, xp: guild.experience });
+            storage.set(`guildXP_${name}`, this.guildXPHistory, STORE_NAME$2);
         }
 
         /**
@@ -32857,7 +32844,7 @@ ${starCSS}
 
             if (newGuildID && this.ownGuildID && newGuildID !== this.ownGuildID) {
                 // Guild switched — clear stale member data and load fresh from storage
-                this.memberXPHistory = await storage.get(`memberXP_${newGuildID}`, STORE_NAME$1, {});
+                this.memberXPHistory = await storage.get(`memberXP_${newGuildID}`, STORE_NAME$2, {});
                 this.memberMeta = {};
             }
 
@@ -32889,11 +32876,11 @@ ${starCSS}
                 if (!this.memberXPHistory[charId]) {
                     this.memberXPHistory[charId] = [];
                 }
-                pushXP(this.memberXPHistory[charId], { t, xp: guildChar.guildExperience });
+                pushXP$1(this.memberXPHistory[charId], { t, xp: guildChar.guildExperience });
             }
 
             if (this.ownGuildID) {
-                storage.set(`memberXP_${this.ownGuildID}`, this.memberXPHistory, STORE_NAME$1);
+                storage.set(`memberXP_${this.ownGuildID}`, this.memberXPHistory, STORE_NAME$2);
             }
         }
 
@@ -32911,48 +32898,30 @@ ${starCSS}
         }
 
         /**
-         * Handle leaderboard_updated — record XP for all guilds on leaderboard,
-         * or player XP for the main leaderboard.
+         * Handle leaderboard_updated (category: guild) — record XP for all guilds on the guild leaderboard.
          * @param {Object} data - leaderboard_updated message
          */
         _onLeaderboardUpdated(data) {
+            if (data.leaderboardCategory !== 'guild') return;
+
             const rows = data.leaderboard?.rows;
             if (!rows || rows.length === 0) return;
 
             const t = Date.now();
 
-            if (data.leaderboardCategory === 'guild') {
-                for (const row of rows) {
-                    const name = row.name;
-                    const xp = row.value2;
-                    if (!name || xp === undefined) continue;
+            for (const row of rows) {
+                const name = row.name;
+                const xp = row.value2;
+                if (!name || xp === undefined) continue;
 
-                    if (!this.guildXPHistory[name]) {
-                        this.guildXPHistory[name] = [];
-                    }
-                    pushXP(this.guildXPHistory[name], { t, xp });
+                if (!this.guildXPHistory[name]) {
+                    this.guildXPHistory[name] = [];
                 }
+                pushXP$1(this.guildXPHistory[name], { t, xp });
+            }
 
-                // Persist using own guild name as key (all guild histories stored together)
-                if (this.ownGuildName) {
-                    storage.set(`guildXP_${this.ownGuildName}`, this.guildXPHistory, STORE_NAME$1);
-                }
-            } else {
-                this.lastLeaderboardCategory = data.leaderboardCategory;
-
-                for (const row of rows) {
-                    const name = row.name;
-                    const xp = row.value2;
-                    if (!name || xp === undefined) continue;
-
-                    const key = `${data.leaderboardCategory}_${name}`;
-                    if (!this.playerXPHistory[key]) {
-                        this.playerXPHistory[key] = [];
-                    }
-                    pushXP(this.playerXPHistory[key], { t, xp });
-                }
-
-                storage.set('playerXP_leaderboard', this.playerXPHistory, STORE_NAME$1);
+            if (this.ownGuildName) {
+                storage.set(`guildXP_${this.ownGuildName}`, this.guildXPHistory, STORE_NAME$2);
             }
         }
 
@@ -32964,7 +32933,7 @@ ${starCSS}
          * @returns {{lastXPH: number, lastHourXPH: number, lastDayXPH: number, chart: Array}}
          */
         getGuildStats(guildName) {
-            return calcStats(this.guildXPHistory[guildName]);
+            return calcStats$1(this.guildXPHistory[guildName]);
         }
 
         /**
@@ -32973,7 +32942,7 @@ ${starCSS}
          * @returns {{lastXPH: number, lastHourXPH: number, lastDayXPH: number, chart: Array}}
          */
         getMemberStats(characterID) {
-            return calcStats(this.memberXPHistory[characterID]);
+            return calcStats$1(this.memberXPHistory[characterID]);
         }
 
         /**
@@ -33037,26 +33006,7 @@ ${starCSS}
         }
 
         /**
-         * Get XP/hr stats for a player on the main leaderboard.
-         * @param {string} playerName
-         * @param {string} category - Leaderboard category (e.g. 'foraging', 'enhancing')
-         * @returns {{lastXPH: number, lastHourXPH: number, lastDayXPH: number, chart: Array}}
-         */
-        getPlayerStats(playerName, category) {
-            const key = `${category}_${playerName}`;
-            return calcStats(this.playerXPHistory[key]);
-        }
-
-        /**
-         * Get the most recently seen non-guild leaderboard category.
-         * @returns {string|null}
-         */
-        getLastLeaderboardCategory() {
-            return this.lastLeaderboardCategory;
-        }
-
-        /**
-         * Get all guild XP histories (for leaderboard stats).
+         * Get all guild XP histories (for guild leaderboard display).
          * @returns {Object} guildName → [{t, xp}]
          */
         getAllGuildHistories() {
@@ -33106,7 +33056,7 @@ ${starCSS}
         async resetMemberData() {
             if (!this.ownGuildID) return;
             this.memberXPHistory = {};
-            await storage.set(`memberXP_${this.ownGuildID}`, {}, STORE_NAME$1);
+            await storage.set(`memberXP_${this.ownGuildID}`, {}, STORE_NAME$2);
         }
 
         /**
@@ -33124,8 +33074,6 @@ ${starCSS}
             this.guildXPHistory = {};
             this.memberXPHistory = {};
             this.memberMeta = {};
-            this.playerXPHistory = {};
-            this.lastLeaderboardCategory = null;
             this.initialized = false;
         }
     }
@@ -33140,13 +33088,200 @@ ${starCSS}
     };
 
     /**
+     * Shared table column utilities for injecting sortable columns into game tables.
+     */
+
+
+    const SORT_ICON_CLASS = 'mwi-col-sort-icon';
+
+    /**
+     * Format a number with thousands separators.
+     * @param {number} n
+     * @returns {string}
+     */
+    function fNum(n) {
+        return formatters_js.formatWithSeparator(Math.round(n));
+    }
+
+    /**
+     * Get ranking badge HTML for top 3 places.
+     * @param {number} rank - 1-indexed rank
+     * @returns {string} HTML
+     */
+    function rankBadge(rank) {
+        if (rank <= 3) {
+            return ['&#x1F947;', '&#x1F948;', '&#x1F949;'][rank - 1];
+        }
+        return `<span style="color: var(--color-disabled);">#${rank}</span>`;
+    }
+
+    /**
+     * Sort icon HTML.
+     * @param {string} direction - 'asc', 'desc', or 'none'
+     * @returns {string} HTML
+     */
+    function sortIcon(direction) {
+        return `<span class="${SORT_ICON_CLASS}" style="display: inline-flex; flex-direction: column; vertical-align: middle; margin-left: 2px;">
+        <span style="font-size: 8px; line-height: 8px;">${direction === 'asc' ? '▲' : '△'}</span>
+        <span style="font-size: 8px; line-height: 8px;">${direction === 'desc' ? '▼' : '▽'}</span>
+    </span>`;
+    }
+
+    /**
+     * Make a column header sortable.
+     * @param {HTMLElement} thEl - Header cell
+     * @param {Object} options
+     * @param {string} options.sortId - Unique sort identifier
+     * @param {Function} options.valueGetter - (trEl) => number|string
+     * @param {boolean} [options.skipFirst=false] - Skip first body row (sticky row)
+     */
+    function makeColumnSortable(thEl, options) {
+        const tableEl = thEl.closest('table');
+        if (!tableEl) return;
+
+        thEl.dataset.sortId = options.sortId;
+        thEl.style.cursor = 'pointer';
+        thEl.insertAdjacentHTML('beforeend', sortIcon('none'));
+
+        thEl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            const tbodyEl = tableEl.querySelector('tbody');
+            if (!tbodyEl) return;
+
+            if (tableEl.dataset.sortId === options.sortId) {
+                tableEl.dataset.sortDirection = tableEl.dataset.sortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                tableEl.dataset.sortId = options.sortId;
+                tableEl.dataset.sortDirection = 'desc';
+            }
+
+            const direction = tableEl.dataset.sortDirection;
+
+            let rows = Array.from(tbodyEl.children);
+            if (options.skipFirst) {
+                rows = rows.slice(1);
+            }
+
+            rows.sort((a, b) => {
+                const av = options.valueGetter(a);
+                const bv = options.valueGetter(b);
+                const aInf = av === Infinity || av === -Infinity;
+                const bInf = bv === Infinity || bv === -Infinity;
+                if (aInf && bInf) return 0;
+                if (aInf) return 1;
+                if (bInf) return -1;
+                if (typeof av === 'number' && typeof bv === 'number') {
+                    return direction === 'asc' ? av - bv : bv - av;
+                }
+                const sa = String(av);
+                const sb = String(bv);
+                return direction === 'asc' ? sa.localeCompare(sb) : sb.localeCompare(sa);
+            });
+
+            for (const row of rows) {
+                tbodyEl.appendChild(row);
+            }
+
+            const theadTr = thEl.parentElement;
+            for (const th of theadTr.children) {
+                const icon = th.querySelector(`.${SORT_ICON_CLASS}`);
+                if (icon) {
+                    const d = th.dataset.sortId === tableEl.dataset.sortId ? direction : 'none';
+                    icon.outerHTML = sortIcon(d);
+                }
+            }
+        });
+    }
+
+    /**
+     * Add a column to a table.
+     * @param {HTMLElement} tableEl
+     * @param {string} cssPrefix - CSS class applied to injected th/td elements
+     * @param {Object} options
+     * @param {string} options.name - Column header text
+     * @param {Array} options.data - One value per body row
+     * @param {Function} [options.format] - (value, index) => HTML string
+     * @param {number} [options.insertAfter] - Column index to insert after
+     * @param {boolean} [options.makeSortable] - Whether to make column sortable
+     * @param {string} [options.sortId] - Sort identifier
+     * @param {boolean} [options.skipFirst] - Skip first row for sorting
+     * @param {Array} [options.sortData] - Custom sort values (numbers) per row
+     */
+    function addColumn(tableEl, cssPrefix, options) {
+        if (tableEl.querySelector(`th.${cssPrefix}[data-name="${options.name}"]`)) return;
+
+        const theadTr = tableEl.querySelector('thead tr');
+        if (!theadTr) return;
+
+        const insertAfter = options.insertAfter !== undefined ? options.insertAfter : theadTr.children.length - 1;
+
+        const th = document.createElement('th');
+        th.className = cssPrefix;
+        th.dataset.name = options.name;
+        th.textContent = options.name;
+
+        if (insertAfter < theadTr.children.length - 1) {
+            theadTr.children[insertAfter + 1].insertAdjacentElement('beforebegin', th);
+        } else {
+            theadTr.appendChild(th);
+        }
+
+        const tbodyEl = tableEl.querySelector('tbody');
+        const rows = Array.from(tbodyEl.children);
+
+        for (let i = 0; i < rows.length; i++) {
+            const td = document.createElement('td');
+            td.className = cssPrefix;
+
+            const value = i < options.data.length ? options.data[i] : null;
+            if (options.format) {
+                td.innerHTML = options.format(value, i);
+            } else if (value === null || value === undefined || (typeof value === 'number' && isNaN(value))) {
+                td.textContent = '';
+            } else if (typeof value === 'number') {
+                td.textContent = fNum(value);
+            } else {
+                td.textContent = value;
+            }
+
+            if (options.sortData) {
+                td._sortValue = options.sortData[i];
+            } else if (typeof value === 'number') {
+                td._sortValue = value;
+            }
+
+            const refChild = rows[i].children[insertAfter + 1];
+            if (refChild) {
+                refChild.insertAdjacentElement('beforebegin', td);
+            } else {
+                rows[i].appendChild(td);
+            }
+        }
+
+        if (options.makeSortable) {
+            makeColumnSortable(th, {
+                sortId: options.sortId || options.name,
+                skipFirst: options.skipFirst || false,
+                valueGetter: (trEl) => {
+                    const currentIndex = Array.from(theadTr.children).indexOf(th);
+                    const cell = currentIndex >= 0 ? trEl.children[currentIndex] : undefined;
+                    if (cell && cell._sortValue !== undefined) return cell._sortValue;
+                    const text = cell?.textContent?.replace(/[^\d.-]/g, '');
+                    return text ? parseFloat(text) : 0;
+                },
+            });
+        }
+    }
+
+    /**
      * Guild XP Display
      * Injects XP/hr stats, charts, and sortable columns into
      * the Guild Overview, Members, and Guild Leaderboard tabs.
      */
 
 
-    const CSS_PREFIX = 'mwi-guild-xp';
+    const CSS_PREFIX$1 = 'mwi-guild-xp';
 
     // ─── Formatting helpers ─────────────────────────────────────────────────────
 
@@ -33175,27 +33310,6 @@ ${starCSS}
         if (ms < 6 * h1 && m >= 1) parts.push(`${m} minute${s(m)}`);
 
         return parts.join(' ') || '< 1 minute';
-    }
-
-    /**
-     * Format number with non-breaking spaces as thousands separator (for chart display).
-     * @param {number} n
-     * @returns {string}
-     */
-    function fNum(n) {
-        return formatters_js.formatWithSeparator(Math.round(n));
-    }
-
-    /**
-     * Get ranking emoji for top 3 places.
-     * @param {number} rank - 1-indexed rank
-     * @returns {string} HTML
-     */
-    function rankBadge(rank) {
-        if (rank <= 3) {
-            return ['&#x1F947;', '&#x1F948;', '&#x1F949;'][rank - 1];
-        }
-        return `<span style="color: var(--color-disabled);">#${rank}</span>`;
     }
 
     // ─── Chart rendering ────────────────────────────────────────────────────────
@@ -33273,7 +33387,7 @@ ${starCSS}
                 ? 'background-image: linear-gradient(45deg, var(--color-space-300) 25%, transparent 25%, transparent 50%, var(--color-space-300) 50%, var(--color-space-300) 75%, transparent 75%); background-size: 10px 10px;'
                 : 'background-color: var(--color-space-300);';
 
-            barsHTML += `<div class="${CSS_PREFIX}__bar"
+            barsHTML += `<div class="${CSS_PREFIX$1}__bar"
             style="height: ${heightPct}%; width: ${widthPct}%; border-right: 1px solid var(--color-space-700); box-sizing: border-box; ${bgStyle}"
             data-xph="${d.xpH}"
             ${d.truncated ? 'data-truncated="true"' : ''}
@@ -33296,7 +33410,7 @@ ${starCSS}
         }
 
         return `
-        <div class="${CSS_PREFIX}" style="
+        <div class="${CSS_PREFIX$1}" style="
             display: grid;
             grid-template-columns: auto auto 1fr;
             grid-template-rows: 1fr auto;
@@ -33327,176 +33441,6 @@ ${starCSS}
         </div>`;
     }
 
-    // ─── Column sort helpers ────────────────────────────────────────────────────
-
-    /**
-     * Sort icon HTML.
-     * @param {string} direction - 'asc', 'desc', or 'none'
-     * @returns {string} HTML
-     */
-    function sortIcon(direction) {
-        return `<span class="${CSS_PREFIX}__sort-icon" style="display: inline-flex; flex-direction: column; vertical-align: middle; margin-left: 2px;">
-        <span style="font-size: 8px; line-height: 8px;">${direction === 'asc' ? '\u25B2' : '\u25B3'}</span>
-        <span style="font-size: 8px; line-height: 8px;">${direction === 'desc' ? '\u25BC' : '\u25BD'}</span>
-    </span>`;
-    }
-
-    /**
-     * Make a column header sortable.
-     * @param {HTMLElement} thEl - Header cell
-     * @param {Object} options
-     * @param {string} options.sortId - Unique sort identifier
-     * @param {Function} options.valueGetter - (trEl) => number|string
-     * @param {boolean} [options.skipFirst=false] - Skip first body row (sticky row)
-     */
-    function makeColumnSortable(thEl, options) {
-        const tableEl = thEl.closest('table');
-        if (!tableEl) return;
-
-        thEl.dataset.sortId = options.sortId;
-        thEl.style.cursor = 'pointer';
-        thEl.insertAdjacentHTML('beforeend', sortIcon('none'));
-
-        thEl.addEventListener('click', (e) => {
-            // Stop React's delegated handler from re-sorting the column as a string
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-            const tbodyEl = tableEl.querySelector('tbody');
-            if (!tbodyEl) return;
-
-            // Toggle direction
-            if (tableEl.dataset.sortId === options.sortId) {
-                tableEl.dataset.sortDirection = tableEl.dataset.sortDirection === 'asc' ? 'desc' : 'asc';
-            } else {
-                tableEl.dataset.sortId = options.sortId;
-                tableEl.dataset.sortDirection = 'desc';
-            }
-
-            const direction = tableEl.dataset.sortDirection;
-
-            let rows = Array.from(tbodyEl.children);
-            if (options.skipFirst) {
-                rows = rows.slice(1);
-            }
-
-            rows.sort((a, b) => {
-                const av = options.valueGetter(a);
-                const bv = options.valueGetter(b);
-                // Always sort Infinity (unknown/hidden) to the bottom regardless of direction
-                const aInf = av === Infinity || av === -Infinity;
-                const bInf = bv === Infinity || bv === -Infinity;
-                if (aInf && bInf) return 0;
-                if (aInf) return 1;
-                if (bInf) return -1;
-                if (typeof av === 'number' && typeof bv === 'number') {
-                    return direction === 'asc' ? av - bv : bv - av;
-                }
-                const sa = String(av);
-                const sb = String(bv);
-                return direction === 'asc' ? sa.localeCompare(sb) : sb.localeCompare(sa);
-            });
-
-            for (const row of rows) {
-                tbodyEl.appendChild(row);
-            }
-
-            // Update all sort icons in this table
-            const theadTr = thEl.parentElement;
-            for (const th of theadTr.children) {
-                const icon = th.querySelector(`.${CSS_PREFIX}__sort-icon`);
-                if (icon) {
-                    const d = th.dataset.sortId === tableEl.dataset.sortId ? direction : 'none';
-                    icon.outerHTML = sortIcon(d);
-                }
-            }
-        });
-    }
-
-    /**
-     * Add a column to a table.
-     * @param {HTMLElement} tableEl
-     * @param {Object} options
-     * @param {string} options.name - Column header text
-     * @param {Array} options.data - One value per body row
-     * @param {Function} [options.format] - (value, index) => HTML string
-     * @param {number} [options.insertAfter] - Column index to insert after
-     * @param {boolean} [options.makeSortable] - Whether to make column sortable
-     * @param {string} [options.sortId] - Sort identifier
-     * @param {boolean} [options.skipFirst] - Skip first row for sorting (leaderboard)
-     * @param {Array} [options.sortData] - Custom sort values (numbers) per row
-     */
-    function addColumn(tableEl, options) {
-        // Don't add duplicate columns
-        if (tableEl.querySelector(`th.${CSS_PREFIX}[data-name="${options.name}"]`)) return;
-
-        const theadTr = tableEl.querySelector('thead tr');
-        if (!theadTr) return;
-
-        const insertAfter = options.insertAfter !== undefined ? options.insertAfter : theadTr.children.length - 1;
-
-        // Add header
-        const th = document.createElement('th');
-        th.className = CSS_PREFIX;
-        th.dataset.name = options.name;
-        th.textContent = options.name;
-
-        if (insertAfter < theadTr.children.length - 1) {
-            theadTr.children[insertAfter + 1].insertAdjacentElement('beforebegin', th);
-        } else {
-            theadTr.appendChild(th);
-        }
-
-        // Add body cells
-        const tbodyEl = tableEl.querySelector('tbody');
-        const rows = Array.from(tbodyEl.children);
-
-        for (let i = 0; i < rows.length; i++) {
-            const td = document.createElement('td');
-            td.className = CSS_PREFIX;
-
-            const value = i < options.data.length ? options.data[i] : null;
-            if (options.format) {
-                td.innerHTML = options.format(value, i);
-            } else if (value === null || value === undefined || (typeof value === 'number' && isNaN(value))) {
-                td.textContent = '';
-            } else if (typeof value === 'number') {
-                td.textContent = fNum(value);
-            } else {
-                td.textContent = value;
-            }
-
-            // Store sort value
-            if (options.sortData) {
-                td._sortValue = options.sortData[i];
-            } else if (typeof value === 'number') {
-                td._sortValue = value;
-            }
-
-            const refChild = rows[i].children[insertAfter + 1];
-            if (refChild) {
-                refChild.insertAdjacentElement('beforebegin', td);
-            } else {
-                rows[i].appendChild(td);
-            }
-        }
-
-        // Make sortable
-        if (options.makeSortable) {
-            makeColumnSortable(th, {
-                sortId: options.sortId || options.name,
-                skipFirst: options.skipFirst || false,
-                valueGetter: (trEl) => {
-                    // Resolve column index dynamically so stale closures after tab re-injection don't misalign
-                    const currentIndex = Array.from(theadTr.children).indexOf(th);
-                    const cell = currentIndex >= 0 ? trEl.children[currentIndex] : undefined;
-                    if (cell && cell._sortValue !== undefined) return cell._sortValue;
-                    const text = cell?.textContent?.replace(/[^\d.-]/g, '');
-                    return text ? parseFloat(text) : 0;
-                },
-            });
-        }
-    }
-
     // ─── Display class ──────────────────────────────────────────────────────────
 
     class GuildXPDisplay {
@@ -33522,11 +33466,13 @@ ${starCSS}
             );
             this.unregisterObservers.push(unregMembers);
 
-            // Watch for guild leaderboard
+            // Watch for guild leaderboard tab (only process tables inside GuildPanel)
             const unregLeaderboard = domObserver.onClass(
                 'GuildXPDisplay-Leaderboard',
                 'LeaderboardPanel_leaderboardTable',
-                (el) => this._renderLeaderboard(el)
+                (el) => {
+                    if (el.closest('[class*="GuildPanel"]')) this._renderGuildLeaderboard(el);
+                }
             );
             this.unregisterObservers.push(unregLeaderboard);
 
@@ -33543,7 +33489,7 @@ ${starCSS}
                 if (el) this._renderTrialSignups(el);
             };
             this._boundRefreshLeaderboard = (data) => {
-                this._refreshLeaderboardIfVisible(data?.leaderboardCategory);
+                if (data?.leaderboardCategory === 'guild') this._refreshGuildLeaderboardIfVisible();
             };
 
             webSocketHook.on('guild_updated', this._boundRefreshOverview);
@@ -33602,7 +33548,7 @@ ${starCSS}
 
         _renderOverview(dataGridEl) {
             // Remove previous injection
-            dataGridEl.querySelectorAll(`.${CSS_PREFIX}`).forEach((el) => el.remove());
+            dataGridEl.querySelectorAll(`.${CSS_PREFIX$1}`).forEach((el) => el.remove());
 
             const guildName = guildXPTracker.getOwnGuildName();
             if (!guildName) return;
@@ -33614,7 +33560,7 @@ ${starCSS}
             const rateValue = stats.lastHourXPH > 0 ? stats.lastHourXPH : stats.lastXPH;
 
             const statsHTML = `
-            <div class="GuildPanel_dataBlockGroup__1d2rR ${CSS_PREFIX}">
+            <div class="GuildPanel_dataBlockGroup__1d2rR ${CSS_PREFIX$1}">
                 <div class="GuildPanel_dataBlock__3qVhK">
                     <div class="GuildPanel_label__-A63g">${rateLabel}</div>
                     <div class="GuildPanel_value__Hm2I9">${fNum(rateValue)}</div>
@@ -33627,7 +33573,7 @@ ${starCSS}
 
             // Chart row
             const chartHTML = `
-            <div class="GuildPanel_dataBlockGroup__1d2rR ${CSS_PREFIX}" style="grid-column: 1 / 3; max-width: none;">
+            <div class="GuildPanel_dataBlockGroup__1d2rR ${CSS_PREFIX$1}" style="grid-column: 1 / 3; max-width: none;">
                 <div class="GuildPanel_dataBlock__3qVhK" style="height: 240px;">
                     <div class="GuildPanel_label__-A63g">Last week XP/h</div>
                     ${buildChart(stats.chart)}
@@ -33637,7 +33583,7 @@ ${starCSS}
             dataGridEl.insertAdjacentHTML('beforeend', statsHTML + chartHTML);
 
             // Attach chart bar event listeners
-            dataGridEl.querySelectorAll(`.${CSS_PREFIX}__bar`).forEach((bar) => {
+            dataGridEl.querySelectorAll(`.${CSS_PREFIX$1}__bar`).forEach((bar) => {
                 bar.addEventListener('mouseenter', this._onBarEnter);
                 bar.addEventListener('mouseleave', this._onBarLeave);
             });
@@ -33645,7 +33591,7 @@ ${starCSS}
             // Time to level
             const timeToLevel = guildXPTracker.getTimeToLevel(guildName);
             if (timeToLevel !== null) {
-                const ttlHTML = `<div class="${CSS_PREFIX}" style="color: var(--color-space-300); font-size: 13px;">${formatTimeLeft(timeToLevel)}</div>`;
+                const ttlHTML = `<div class="${CSS_PREFIX$1}" style="color: var(--color-space-300); font-size: 13px;">${formatTimeLeft(timeToLevel)}</div>`;
                 // Find the "Exp to Next Level" data block and append
                 const dataBlocks = dataGridEl.querySelectorAll('.GuildPanel_dataBlock__3qVhK');
                 for (const block of dataBlocks) {
@@ -33669,7 +33615,7 @@ ${starCSS}
 
         _renderMembers(tableEl) {
             // Skip if already injected
-            if (tableEl.querySelector(`.${CSS_PREFIX}`)) return;
+            if (tableEl.querySelector(`.${CSS_PREFIX$1}`)) return;
 
             // Set up a tab-switch observer once per table element.
             // React reuses the same DOM element across the Status/Contributions tabs,
@@ -33680,7 +33626,7 @@ ${starCSS}
                 if (theadTrEl) {
                     const getGameHeaders = () =>
                         Array.from(theadTrEl.children)
-                            .filter((th) => !th.classList.contains(CSS_PREFIX))
+                            .filter((th) => !th.classList.contains(CSS_PREFIX$1))
                             .map((th) => th.textContent.trim())
                             .join('|');
                     let lastHeaders = getGameHeaders();
@@ -33689,7 +33635,7 @@ ${starCSS}
                         const cur = getGameHeaders();
                         if (cur === lastHeaders) return;
                         lastHeaders = cur;
-                        tableEl.querySelectorAll(`.${CSS_PREFIX}`).forEach((el) => el.remove());
+                        tableEl.querySelectorAll(`.${CSS_PREFIX$1}`).forEach((el) => el.remove());
                         setTimeout(() => {
                             this._injectMembersColumns(tableEl);
                             this._highlightMembersRows(tableEl);
@@ -33799,7 +33745,7 @@ ${starCSS}
                 }
 
                 if (showGameMode) {
-                    addColumn(tableEl, {
+                    addColumn(tableEl, CSS_PREFIX$1, {
                         name: 'Game Mode',
                         insertAfter,
                         data: allStats.map((s) => s.gameMode),
@@ -33811,7 +33757,7 @@ ${starCSS}
                 }
 
                 if (showJoined) {
-                    addColumn(tableEl, {
+                    addColumn(tableEl, CSS_PREFIX$1, {
                         name: 'Joined',
                         insertAfter,
                         data: allStats.map((s) => s.joinTime),
@@ -33831,7 +33777,7 @@ ${starCSS}
             let colOffset = 0;
 
             if (showLastXPH) {
-                addColumn(tableEl, {
+                addColumn(tableEl, CSS_PREFIX$1, {
                     name: 'Last XP/h',
                     insertAfter: insertAfter + colOffset,
                     data: allStats.map((s) => s.lastXPH),
@@ -33848,7 +33794,7 @@ ${starCSS}
 
             // Last day XP/h column — Contributions tab
             if (showLastDayXPH) {
-                addColumn(tableEl, {
+                addColumn(tableEl, CSS_PREFIX$1, {
                     name: 'Last day XP/h',
                     insertAfter: insertAfter + colOffset,
                     data: allStats.map((s) => s.lastDayXPH),
@@ -33865,7 +33811,7 @@ ${starCSS}
 
             // Activity column — Contributions tab (uses cached HTML from game's Status tab render)
             if (activityTab !== 'status') {
-                addColumn(tableEl, {
+                addColumn(tableEl, CSS_PREFIX$1, {
                     name: 'Activity',
                     insertAfter: insertAfter + colOffset,
                     data: allStats.map((s) => ({
@@ -33901,7 +33847,7 @@ ${starCSS}
 
             // Make existing columns sortable
             const nameHeader = theadTr.children[0];
-            if (nameHeader && !nameHeader.querySelector(`.${CSS_PREFIX}__sort-icon`)) {
+            if (nameHeader && !nameHeader.querySelector('.mwi-col-sort-icon')) {
                 makeColumnSortable(nameHeader, {
                     sortId: 'name',
                     valueGetter: (trEl) => trEl.children[0]?.textContent?.trim() || '',
@@ -33910,7 +33856,7 @@ ${starCSS}
 
             // Guild Exp column
             const expHeader = Array.from(theadTr.children).find((el) => el.textContent.includes('Guild Exp'));
-            if (expHeader && !expHeader.querySelector(`.${CSS_PREFIX}__sort-icon`)) {
+            if (expHeader && !expHeader.querySelector('.mwi-col-sort-icon')) {
                 makeColumnSortable(expHeader, {
                     sortId: 'xp',
                     valueGetter: (trEl) => {
@@ -33924,7 +33870,7 @@ ${starCSS}
             // Role column
             const rolePriority = { Leader: 1, General: 2, Officer: 3, Member: 4 };
             const roleHeader = Array.from(theadTr.children).find((el) => el.textContent.trim() === 'Role');
-            if (roleHeader && !roleHeader.querySelector(`.${CSS_PREFIX}__sort-icon`)) {
+            if (roleHeader && !roleHeader.querySelector('.mwi-col-sort-icon')) {
                 const roleColIndex = Array.from(theadTr.children).indexOf(roleHeader);
                 makeColumnSortable(roleHeader, {
                     sortId: 'role',
@@ -33937,7 +33883,7 @@ ${starCSS}
 
             // Activity column
             const activityHeader = Array.from(theadTr.children).find((el) => el.textContent.trim() === 'Activity');
-            if (activityHeader && !activityHeader.querySelector(`.${CSS_PREFIX}__sort-icon`)) {
+            if (activityHeader && !activityHeader.querySelector('.mwi-col-sort-icon')) {
                 const activityColIndex = Array.from(theadTr.children).indexOf(activityHeader);
                 makeColumnSortable(activityHeader, {
                     sortId: 'activity',
@@ -33962,7 +33908,7 @@ ${starCSS}
 
             // Status column
             const statusHeader = Array.from(theadTr.children).find((el) => el.textContent.trim() === 'Status');
-            if (statusHeader && !statusHeader.querySelector(`.${CSS_PREFIX}__sort-icon`)) {
+            if (statusHeader && !statusHeader.querySelector('.mwi-col-sort-icon')) {
                 const statusColIndex = Array.from(theadTr.children).indexOf(statusHeader);
                 makeColumnSortable(statusHeader, {
                     sortId: 'status',
@@ -34120,27 +34066,16 @@ ${starCSS}
             return num * mult;
         }
 
-        // ─── Leaderboard tab ─────────────────────────────────────────────────────
+        // ─── Guild Leaderboard tab ───────────────────────────────────────────────
 
-        _renderLeaderboard(tableEl, category) {
-            // Skip if already rendered
-            if (tableEl.querySelector(`.${CSS_PREFIX}`)) return;
+        _renderGuildLeaderboard(tableEl) {
+            if (tableEl.querySelector(`th.${CSS_PREFIX$1}`)) return;
 
-            const isGuildLeaderboard = !!tableEl.closest('[class*="GuildPanel"]');
+            const allHistories = guildXPTracker.getAllGuildHistories();
+            if (!allHistories || Object.keys(allHistories).length === 0) return;
 
-            // For player leaderboard, resolve category from parameter or last seen WS category
-            const resolvedCategory = isGuildLeaderboard ? null : category || guildXPTracker.getLastLeaderboardCategory();
-
-            if (isGuildLeaderboard) {
-                const allHistories = guildXPTracker.getAllGuildHistories();
-                if (!allHistories || Object.keys(allHistories).length === 0) return;
-            }
-
-            // Widen container
             const containerEl = tableEl.closest('[class*="LeaderboardPanel_content"]');
-            if (containerEl) {
-                containerEl.style.maxWidth = '1000px';
-            }
+            if (containerEl) containerEl.style.maxWidth = '1000px';
 
             const tbodyEl = tableEl.querySelector('tbody');
             if (!tbodyEl) return;
@@ -34149,24 +34084,13 @@ ${starCSS}
             const theadTr = tableEl.querySelector('thead tr');
             if (!theadTr) return;
 
-            // Calculate stats for each row
             const allStats = [];
             for (const row of rows) {
-                // Leaderboard: col[0]=Rank, col[1]=Name
                 const name = row.children[1]?.textContent?.trim();
-                const stats = name
-                    ? isGuildLeaderboard
-                        ? guildXPTracker.getGuildStats(name)
-                        : guildXPTracker.getPlayerStats(name, resolvedCategory)
-                    : { lastXPH: 0, lastDayXPH: 0 };
-                allStats.push({
-                    name,
-                    lastXPH: stats.lastXPH,
-                    lastDayXPH: stats.lastDayXPH,
-                });
+                const stats = name ? guildXPTracker.getGuildStats(name) : { lastXPH: 0, lastDayXPH: 0 };
+                allStats.push({ name, lastXPH: stats.lastXPH, lastDayXPH: stats.lastDayXPH });
             }
 
-            // Compute rankings
             const byLastXPH = allStats.slice().sort((a, b) => b.lastXPH - a.lastXPH);
             const byLastDayXPH = allStats.slice().sort((a, b) => b.lastDayXPH - a.lastDayXPH);
             for (let i = 0; i < byLastXPH.length; i++) byLastXPH[i].lastXPH_rank = i + 1;
@@ -34174,39 +34098,30 @@ ${starCSS}
 
             const insertAfter = theadTr.children.length - 1;
 
-            // Last XP/h
-            addColumn(tableEl, {
+            addColumn(tableEl, CSS_PREFIX$1, {
                 name: 'Last XP/h',
                 insertAfter,
                 data: allStats.map((s) => s.lastXPH),
-                format: (v, i) => {
-                    if (!v || v <= 0) return '';
-                    return `${fNum(v)} ${rankBadge(allStats[i].lastXPH_rank)}`;
-                },
+                format: (v, i) => (!v || v <= 0 ? '' : `${fNum(v)} ${rankBadge(allStats[i].lastXPH_rank)}`),
                 makeSortable: true,
                 sortId: 'lastXPH',
                 skipFirst: true,
                 sortData: allStats.map((s) => s.lastXPH),
             });
 
-            // Last day XP/h
-            addColumn(tableEl, {
+            addColumn(tableEl, CSS_PREFIX$1, {
                 name: 'Last day XP/h',
                 insertAfter: insertAfter + 1,
                 data: allStats.map((s) => s.lastDayXPH),
-                format: (v, i) => {
-                    if (!v || v <= 0) return '';
-                    return `${fNum(v)} ${rankBadge(allStats[i].lastDayXPH_rank)}`;
-                },
+                format: (v, i) => (!v || v <= 0 ? '' : `${fNum(v)} ${rankBadge(allStats[i].lastDayXPH_rank)}`),
                 makeSortable: true,
                 sortId: 'lastDayXPH',
                 skipFirst: true,
                 sortData: allStats.map((s) => s.lastDayXPH),
             });
 
-            // Make Rank column sortable
             const rankHeader = Array.from(theadTr.children).find((el) => el.textContent.trim() === 'Rank');
-            if (rankHeader && !rankHeader.querySelector(`.${CSS_PREFIX}__sort-icon`)) {
+            if (rankHeader && !rankHeader.querySelector('.mwi-col-sort-icon')) {
                 makeColumnSortable(rankHeader, {
                     sortId: 'rank',
                     skipFirst: true,
@@ -34218,12 +34133,11 @@ ${starCSS}
             }
         }
 
-        _refreshLeaderboardIfVisible(category) {
-            const tableEl = document.querySelector('[class*="LeaderboardPanel_leaderboardTable"]');
+        _refreshGuildLeaderboardIfVisible() {
+            const tableEl = document.querySelector('[class*="GuildPanel"] [class*="LeaderboardPanel_leaderboardTable"]');
             if (tableEl) {
-                // Remove existing columns and re-render
-                tableEl.querySelectorAll(`.${CSS_PREFIX}`).forEach((el) => el.remove());
-                this._renderLeaderboard(tableEl, category);
+                tableEl.querySelectorAll(`th.${CSS_PREFIX$1}, td.${CSS_PREFIX$1}`).forEach((el) => el.remove());
+                this._renderGuildLeaderboard(tableEl);
             }
         }
 
@@ -34239,7 +34153,7 @@ ${starCSS}
             const dbb = document.body.getBoundingClientRect();
 
             const tooltipHTML = `<div role="tooltip"
-            class="${CSS_PREFIX}__tooltip MuiPopper-root MuiTooltip-popper css-112l0a2"
+            class="${CSS_PREFIX$1}__tooltip MuiPopper-root MuiTooltip-popper css-112l0a2"
             style="position: absolute; inset: auto auto 0px 0px; margin: 0px; transform: translate(${Math.floor(bb.x - dbb.x)}px, ${Math.floor(bb.y - dbb.bottom)}px) translate(-50%, 0);"
             data-popper-placement="top">
             <div class="MuiTooltip-tooltip MuiTooltip-tooltipPlacementTop css-1spb1s5" style="opacity: 1;">
@@ -34255,12 +34169,12 @@ ${starCSS}
         </div>`;
 
             // Remove existing tooltip
-            document.body.querySelectorAll(`.${CSS_PREFIX}__tooltip`).forEach((el) => el.remove());
+            document.body.querySelectorAll(`.${CSS_PREFIX$1}__tooltip`).forEach((el) => el.remove());
             document.body.insertAdjacentHTML('beforeend', tooltipHTML);
         }
 
         _onBarLeave() {
-            document.body.querySelectorAll(`.${CSS_PREFIX}__tooltip`).forEach((el) => el.remove());
+            document.body.querySelectorAll(`.${CSS_PREFIX$1}__tooltip`).forEach((el) => el.remove());
         }
 
         // ─── Cleanup ─────────────────────────────────────────────────────────────
@@ -34273,8 +34187,8 @@ ${starCSS}
             this.timerRegistry.clearAll();
 
             // Remove all injected elements
-            document.querySelectorAll(`.${CSS_PREFIX}`).forEach((el) => el.remove());
-            document.querySelectorAll(`.${CSS_PREFIX}__tooltip`).forEach((el) => el.remove());
+            document.querySelectorAll(`.${CSS_PREFIX$1}`).forEach((el) => el.remove());
+            document.querySelectorAll(`.${CSS_PREFIX$1}__tooltip`).forEach((el) => el.remove());
             document.getElementById('mwi-guild-activity-hide')?.remove();
 
             this.initialized = false;
@@ -35316,6 +35230,339 @@ ${starCSS}
     };
 
     /**
+     * Leaderboard XP Tracker
+     * Records player XP over time from leaderboard WebSocket messages.
+     * Stores history in IndexedDB for XP/hr rate calculations on the Leaderboard panel.
+     *
+     * Data sources:
+     * - leaderboard_updated (non-guild categories) — XP for players on leaderboard
+     */
+
+
+    const STORE_NAME$1 = 'leaderboardHistory';
+    const WINDOW_10M = 10 * 60 * 1000;
+    const WINDOW_1H = 60 * 60 * 1000;
+    const WINDOW_1D = 24 * 60 * 60 * 1000;
+    const WINDOW_1W = 7 * 24 * 60 * 60 * 1000;
+
+    // ─── History compaction helpers ──────────────────────────────────────────────
+
+    function pushXP(arr, d) {
+        if (arr.length === 0 || d.xp >= arr[arr.length - 1].xp) {
+            arr.push(d);
+        } else {
+            return;
+        }
+
+        if (arr.length <= 2) return;
+
+        let recentLength = 0;
+        for (let i = arr.length - 1; i >= 0; i--) {
+            if (d.t - arr[i].t <= WINDOW_10M) {
+                recentLength++;
+            } else {
+                break;
+            }
+        }
+        if (recentLength > 2) {
+            arr.splice(arr.length - recentLength + 1, recentLength - 2);
+        }
+
+        let sameLength = 0;
+        for (let i = arr.length - 1; i >= 0; i--) {
+            if (arr[i].xp === d.xp && d.t - arr[i].t <= WINDOW_1H) {
+                sameLength++;
+            } else {
+                break;
+            }
+        }
+        if (sameLength > 1) {
+            arr.splice(arr.length - sameLength, sameLength - 1);
+        }
+
+        let oldLength = 0;
+        for (let i = 0; i < arr.length; i++) {
+            if (d.t - arr[i].t > WINDOW_1W) {
+                oldLength++;
+            } else {
+                break;
+            }
+        }
+        if (oldLength > 0) {
+            arr.splice(0, oldLength);
+        }
+    }
+
+    function inLastInterval(arr, interval) {
+        const now = Date.now();
+        const result = [];
+        for (let i = arr.length - 1; i >= 0; i--) {
+            if (now - arr[i].t <= interval) {
+                result.unshift(arr[i]);
+            } else {
+                break;
+            }
+        }
+        return result;
+    }
+
+    function calcXPH(prev, cur) {
+        const tDeltaMs = cur.t - prev.t;
+        if (tDeltaMs <= 0) return 0;
+        return ((cur.xp - prev.xp) / tDeltaMs) * 3600000;
+    }
+
+    function calcStats(arr) {
+        const empty = { lastXPH: 0, lastHourXPH: 0, lastDayXPH: 0 };
+        if (!arr || arr.length < 2) return empty;
+
+        const lastXPH = calcXPH(arr[arr.length - 2], arr[arr.length - 1]);
+
+        const last1h = inLastInterval(arr, WINDOW_1H);
+        const lastHourXPH = last1h.length >= 2 ? calcXPH(last1h[0], last1h[last1h.length - 1]) : 0;
+
+        const last1d = inLastInterval(arr, WINDOW_1D);
+        const lastDayXPH = last1d.length >= 2 ? calcXPH(last1d[0], last1d[last1d.length - 1]) : 0;
+
+        return { lastXPH, lastHourXPH, lastDayXPH };
+    }
+
+    // ─── Tracker class ──────────────────────────────────────────────────────────
+
+    class LeaderboardXPTracker {
+        constructor() {
+            this.initialized = false;
+            this.playerXPHistory = {}; // `${category}_${playerName}` → [{t, xp}]
+            this.lastLeaderboardCategory = null;
+            this.unregisterHandlers = [];
+        }
+
+        async initialize() {
+            if (this.initialized) return;
+            if (!config.getSetting('leaderboardXPTracker', true)) return;
+
+            // Load history BEFORE registering WS listener to avoid race condition where
+            // leaderboard_updated arrives before storage resolves, causing history to be overwritten.
+            this.playerXPHistory = await storage.get('playerXP', STORE_NAME$1, {});
+
+            this._boundOnLeaderboardUpdated = (data) => this._onLeaderboardUpdated(data);
+            webSocketHook.on('leaderboard_updated', this._boundOnLeaderboardUpdated);
+            this.unregisterHandlers.push(() => webSocketHook.off('leaderboard_updated', this._boundOnLeaderboardUpdated));
+
+            this.initialized = true;
+        }
+
+        /**
+         * Handle leaderboard_updated — record player XP for non-guild leaderboard categories.
+         * @param {Object} data - leaderboard_updated message
+         */
+        _onLeaderboardUpdated(data) {
+            if (data.leaderboardCategory === 'guild') return;
+
+            const rows = data.leaderboard?.rows;
+            if (!rows || rows.length === 0) return;
+
+            const t = Date.now();
+            this.lastLeaderboardCategory = data.leaderboardCategory;
+            let changed = false;
+
+            for (const row of rows) {
+                const name = row.name;
+                const xp = row.value2;
+                if (!name || xp === undefined) continue;
+
+                const key = `${data.leaderboardCategory}_${name}`;
+                if (!this.playerXPHistory[key]) {
+                    this.playerXPHistory[key] = [];
+                }
+                const history = this.playerXPHistory[key];
+                // Only record when XP changes — repeated same-XP navigations would otherwise
+                // extend the time window without changing the delta, causing rates to decay.
+                if (history.length === 0 || history[history.length - 1].xp !== xp) {
+                    pushXP(history, { t, xp });
+                    changed = true;
+                }
+            }
+
+            if (changed) {
+                storage.set('playerXP', this.playerXPHistory, STORE_NAME$1);
+            }
+        }
+
+        // ─── Public API ──────────────────────────────────────────────────────────
+
+        /**
+         * Get XP/hr stats for a player on the leaderboard.
+         * @param {string} playerName
+         * @param {string} category - Leaderboard category (e.g. 'foraging', 'enhancing')
+         * @returns {{lastXPH: number, lastHourXPH: number, lastDayXPH: number}}
+         */
+        getPlayerStats(playerName, category) {
+            const key = `${category}_${playerName}`;
+            return calcStats(this.playerXPHistory[key]);
+        }
+
+        /**
+         * Get the most recently seen leaderboard category.
+         * @returns {string|null}
+         */
+        getLastLeaderboardCategory() {
+            return this.lastLeaderboardCategory;
+        }
+
+        disable() {
+            for (const unregister of this.unregisterHandlers) {
+                unregister();
+            }
+            this.unregisterHandlers = [];
+            this.playerXPHistory = {};
+            this.lastLeaderboardCategory = null;
+            this.initialized = false;
+        }
+    }
+
+    const leaderboardXPTracker = new LeaderboardXPTracker();
+
+    var leaderboardXPTracker$1 = {
+        name: 'Leaderboard XP Tracker',
+        initialize: () => leaderboardXPTracker.initialize(),
+        cleanup: () => leaderboardXPTracker.disable(),
+    };
+
+    /**
+     * Leaderboard XP Display
+     * Adds Last XP/h and Last day XP/h columns to the player Leaderboard panel.
+     */
+
+
+    const CSS_PREFIX = 'mwi-leaderboard-xp';
+
+    class LeaderboardXPDisplay {
+        constructor() {
+            this.initialized = false;
+            this.unregisterObservers = [];
+        }
+
+        initialize() {
+            if (this.initialized) return;
+            if (!config.getSetting('leaderboardXPDisplay', true)) return;
+
+            // Only process leaderboard tables that are NOT inside the Guild panel
+            const unregLeaderboard = domObserver.onClass(
+                'LeaderboardXPDisplay-Leaderboard',
+                'LeaderboardPanel_leaderboardTable',
+                (el) => {
+                    if (!el.closest('[class*="GuildPanel"]')) this._renderLeaderboard(el);
+                }
+            );
+            this.unregisterObservers.push(unregLeaderboard);
+
+            this._boundRefreshLeaderboard = (data) => {
+                if (data?.leaderboardCategory !== 'guild') {
+                    this._refreshLeaderboardIfVisible(data?.leaderboardCategory);
+                }
+            };
+            webSocketHook.on('leaderboard_updated', this._boundRefreshLeaderboard);
+            this.unregisterObservers.push(() => webSocketHook.off('leaderboard_updated', this._boundRefreshLeaderboard));
+
+            this.initialized = true;
+        }
+
+        _renderLeaderboard(tableEl, category) {
+            if (tableEl.querySelector(`th.${CSS_PREFIX}`)) return;
+
+            const resolvedCategory = category || leaderboardXPTracker.getLastLeaderboardCategory();
+
+            const containerEl = tableEl.closest('[class*="LeaderboardPanel_content"]');
+            if (containerEl) containerEl.style.maxWidth = '1000px';
+
+            const tbodyEl = tableEl.querySelector('tbody');
+            if (!tbodyEl) return;
+
+            const rows = Array.from(tbodyEl.children);
+            const theadTr = tableEl.querySelector('thead tr');
+            if (!theadTr) return;
+
+            const allStats = [];
+            for (const row of rows) {
+                const name = row.children[1]?.textContent?.trim();
+                const stats = name
+                    ? leaderboardXPTracker.getPlayerStats(name, resolvedCategory)
+                    : { lastXPH: 0, lastDayXPH: 0 };
+                allStats.push({ name, lastXPH: stats.lastXPH, lastDayXPH: stats.lastDayXPH });
+            }
+
+            const byLastXPH = allStats.slice().sort((a, b) => b.lastXPH - a.lastXPH);
+            const byLastDayXPH = allStats.slice().sort((a, b) => b.lastDayXPH - a.lastDayXPH);
+            for (let i = 0; i < byLastXPH.length; i++) byLastXPH[i].lastXPH_rank = i + 1;
+            for (let i = 0; i < byLastDayXPH.length; i++) byLastDayXPH[i].lastDayXPH_rank = i + 1;
+
+            const insertAfter = theadTr.children.length - 1;
+
+            addColumn(tableEl, CSS_PREFIX, {
+                name: 'Last XP/h',
+                insertAfter,
+                data: allStats.map((s) => s.lastXPH),
+                format: (v, i) => (!v || v <= 0 ? '' : `${fNum(v)} ${rankBadge(allStats[i].lastXPH_rank)}`),
+                makeSortable: true,
+                sortId: 'lastXPH',
+                skipFirst: true,
+                sortData: allStats.map((s) => s.lastXPH),
+            });
+
+            addColumn(tableEl, CSS_PREFIX, {
+                name: 'Last day XP/h',
+                insertAfter: insertAfter + 1,
+                data: allStats.map((s) => s.lastDayXPH),
+                format: (v, i) => (!v || v <= 0 ? '' : `${fNum(v)} ${rankBadge(allStats[i].lastDayXPH_rank)}`),
+                makeSortable: true,
+                sortId: 'lastDayXPH',
+                skipFirst: true,
+                sortData: allStats.map((s) => s.lastDayXPH),
+            });
+
+            const rankHeader = Array.from(theadTr.children).find((el) => el.textContent.trim() === 'Rank');
+            if (rankHeader && !rankHeader.querySelector('.mwi-col-sort-icon')) {
+                makeColumnSortable(rankHeader, {
+                    sortId: 'rank',
+                    skipFirst: true,
+                    valueGetter: (trEl) => {
+                        const text = trEl.children[0]?.textContent?.replace(/[^\d]/g, '');
+                        return text ? parseInt(text, 10) : 0;
+                    },
+                });
+            }
+        }
+
+        _refreshLeaderboardIfVisible(category) {
+            const allTables = document.querySelectorAll('[class*="LeaderboardPanel_leaderboardTable"]');
+            for (const tableEl of allTables) {
+                if (!tableEl.closest('[class*="GuildPanel"]')) {
+                    tableEl.querySelectorAll(`th.${CSS_PREFIX}, td.${CSS_PREFIX}`).forEach((el) => el.remove());
+                    this._renderLeaderboard(tableEl, category);
+                }
+            }
+        }
+
+        disable() {
+            for (const unregister of this.unregisterObservers) {
+                unregister();
+            }
+            this.unregisterObservers = [];
+            document.querySelectorAll(`.${CSS_PREFIX}`).forEach((el) => el.remove());
+            this.initialized = false;
+        }
+    }
+
+    const leaderboardXPDisplay = new LeaderboardXPDisplay();
+
+    var leaderboardXPDisplay$1 = {
+        name: 'Leaderboard XP Display',
+        initialize: () => leaderboardXPDisplay.initialize(),
+        cleanup: () => leaderboardXPDisplay.disable(),
+    };
+
+    /**
      * Empty Queue Notification
      * Sends browser notification when action queue becomes empty
      */
@@ -36051,6 +36298,8 @@ ${starCSS}
         guildXPTracker: guildXPTracker$1,
         guildXPDisplay: guildXPDisplay$1,
         guildCreditValue: guildCreditValue$1,
+        leaderboardXPTracker: leaderboardXPTracker$1,
+        leaderboardXPDisplay: leaderboardXPDisplay$1,
         emptyQueueNotification,
         queueMonitor,
         pformancePanel,

@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.82.0
+ * Version: 2.82.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -19,7 +19,7 @@
             this.db = null;
             this.available = false;
             this.dbName = 'ToolashaDB';
-            this.dbVersion = 16; // Bumped for lootLogHistory store
+            this.dbVersion = 17; // Bumped for leaderboardHistory store
             this.saveDebounceTimers = new Map(); // Per-key debounce timers
             this.pendingWrites = new Map(); // Per-key pending write data: {value, storeName}
             this.SAVE_DEBOUNCE_DELAY = 3000; // 3 seconds
@@ -170,6 +170,11 @@
                     // Create lootLogHistory store if it doesn't exist (for extended loot log)
                     if (!db.objectStoreNames.contains('lootLogHistory')) {
                         db.createObjectStore('lootLogHistory');
+                    }
+
+                    // Create leaderboardHistory store if it doesn't exist (for leaderboard XP tracker)
+                    if (!db.objectStoreNames.contains('leaderboardHistory')) {
+                        db.createObjectStore('leaderboardHistory');
                     }
                 };
             });
@@ -2557,11 +2562,11 @@
                     label: 'Track guild and member XP over time',
                     type: 'checkbox',
                     default: true,
-                    help: 'Records guild and member XP data from WebSocket messages for XP/hr calculations',
+                    help: 'Records guild and member XP data from WebSocket messages for XP/hr calculations on the Guild panel.',
                 },
                 guildXPDisplay: {
                     id: 'guildXPDisplay',
-                    label: 'Show XP/hr stats on Guild panel and Leaderboard',
+                    label: 'Show XP/hr stats on Guild panel',
                     type: 'checkbox',
                     default: true,
                     help: 'Displays XP/hr rates, rankings, and a weekly chart on the Guild Overview, Members, and Guild Leaderboard tabs. Disable the standalone Guild XP/h userscript if using this.',
@@ -2656,6 +2661,27 @@
                     label: 'Show upgrade costs with market prices and inventory comparison',
                     type: 'checkbox',
                     default: true,
+                },
+            },
+        },
+
+        leaderboard: {
+            title: 'Leaderboard',
+            icon: '🏆',
+            settings: {
+                leaderboardXPTracker: {
+                    id: 'leaderboardXPTracker',
+                    label: 'Track player XP over time from Leaderboard',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Records player XP from leaderboard WebSocket messages for XP/hr calculations on the Leaderboard panel.',
+                },
+                leaderboardXPDisplay: {
+                    id: 'leaderboardXPDisplay',
+                    label: 'Show XP/hr columns on Leaderboard',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Adds Last XP/h and Last day XP/h columns to the player Leaderboard panel.',
                 },
             },
         },
@@ -3634,7 +3660,8 @@
                 messageType === 'labyrinth_updated' ||
                 messageType === 'loadouts_updated' ||
                 messageType === 'setting_updated' ||
-                messageType === 'labyrinth_room_progress';
+                messageType === 'labyrinth_room_progress' ||
+                messageType === 'leaderboard_updated';
 
             if (!skipDedup) {
                 // Deduplicate by message content to prevent 4x JSON.parse on same message

@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.82.0
+ * Version: 2.82.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -25100,7 +25100,6 @@
 
     const STYLE_EL = document.createElement('style');
     STYLE_EL.textContent = `.${HIDE_CLASS} [class*="TabsComponent_tabPanelsContainer"] { display: none !important; }`;
-    document.head.appendChild(STYLE_EL);
 
     class SkillingSimulatorUI {
         constructor() {
@@ -25261,6 +25260,7 @@
         // -------------------------------------------------------------------------
 
         _buildPanel() {
+            if (!STYLE_EL.isConnected) document.head.appendChild(STYLE_EL);
             this._slotBtns.clear();
             this._teaBtns = [];
 
@@ -25563,13 +25563,9 @@
             skillSelect.addEventListener('change', () => {
                 this.currentSkill = skillSelect.value;
                 this.currentLevel = getPlayerSkillLevel(this.currentSkill);
-                levelInput.value = String(this.currentLevel);
                 this.teas = [null, null, null];
-                this._teaBtns.forEach(({ nameBtn, clearBtn }) => {
-                    nameBtn.textContent = '— Empty —';
-                    clearBtn.style.display = 'none';
-                });
-                resetActions();
+                this.selectedActionHrids = null;
+                this._rebuildPanel();
             });
 
             levelInput.addEventListener('change', () => {
