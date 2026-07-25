@@ -1895,6 +1895,13 @@ export const settingsGroups = {
         title: 'UI & Appearance',
         icon: '🎨',
         settings: {
+            draggableModals: {
+                id: 'draggableModals',
+                label: 'Draggable modals',
+                type: 'checkbox',
+                default: true,
+                help: 'Makes game popup modals draggable. Position is remembered per modal type across sessions.',
+            },
             formatting_useKMBFormat: {
                 id: 'formatting_useKMBFormat',
                 label: 'Number format mode',

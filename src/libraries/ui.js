@@ -13,6 +13,7 @@ import externalLinks from '../features/ui/external-links.js';
 import hideLabyrinthBadge from '../features/ui/hide-labyrinth-badge.js';
 import hideGuildBadge from '../features/ui/hide-guild-badge.js';
 import tabReorder from '../features/ui/tab-reorder.js';
+import draggableModals from '../features/ui/draggable-modals.js';
 
 // Navigation features
 import altClickNavigation from '../features/navigation/alt-click-navigation.js';
@@ -101,6 +102,7 @@ toolashaRoot.UI = {
     hideLabyrinthBadge,
     hideGuildBadge,
     tabReorder,
+    draggableModals,
     altClickNavigation,
     collectionNavigation,
     collectionFilters,

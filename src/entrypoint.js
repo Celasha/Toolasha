@@ -505,6 +505,13 @@ function registerFeatures() {
             async: true,
         },
         {
+            key: 'draggableModals',
+            name: 'Draggable Modals',
+            category: 'UI',
+            module: UI.draggableModals,
+            async: false,
+        },
+        {
             key: 'altClickNavigation',
             name: 'Alt+Click Navigation',
             category: 'Navigation',
