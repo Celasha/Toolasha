@@ -343,6 +343,13 @@ class Config {
                 description: 'Shows remaining XP to next level on skill bars',
                 settingKey: 'skillRemainingXP',
             },
+            skillingOptimizer: {
+                enabled: true,
+                name: 'Skilling Simulator/Optimizer',
+                category: 'Skills',
+                description: 'Optimizer tab in the character panel',
+                settingKey: 'skillingOptimizer',
+            },
 
             // House Features
             houseCostDisplay: {
