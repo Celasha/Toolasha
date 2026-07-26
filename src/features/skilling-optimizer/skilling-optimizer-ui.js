@@ -20,6 +20,7 @@ import {
     SLOT_DISPLAY_NAMES,
     SKILL_TOOL_LOCATION,
 } from './skilling-optimizer-engine.js';
+import { scoreEquipmentSetup } from '../../utils/tea-optimizer.js';
 import { formatKMB } from '../../utils/formatters.js';
 import { buildEnhancementLevelMap } from '../../utils/loadout-scraper.js';
 import loadoutSnapshotLocal from '../combat/loadout-snapshot.js';
@@ -374,7 +375,11 @@ class SkillingSimulatorUI {
                         const loadoutItemMap = new Map();
                         if (this.optimizerLoadout) {
                             for (const eq of this.optimizerLoadout.equipment || []) {
-                                if (eq.itemHrid) loadoutItemMap.set(eq.itemLocationHrid, eq.itemHrid);
+                                if (eq.itemHrid)
+                                    loadoutItemMap.set(eq.itemLocationHrid, {
+                                        itemHrid: eq.itemHrid,
+                                        enhancementLevel: eq.enhancementLevel || 0,
+                                    });
                             }
                         }
 
@@ -1059,8 +1064,20 @@ class SkillingSimulatorUI {
 
         container.appendChild(this._makeSectionHeader('Equipment Progression'));
         for (const [locationHrid, slotData] of slotEntries) {
-            const loadoutHrid = loadoutItemMap?.get(locationHrid) ?? null;
-            this._renderSlotRow(container, slotData, loadoutHrid);
+            const loadoutEntry = loadoutItemMap?.get(locationHrid) ?? null;
+
+            // Use the loadout item's score as the baseline when a compare is selected,
+            // so percentages show improvement over what the user currently has.
+            // Fall back to global empty baseline when no compare is set.
+            let slotXpBaseline = result.xpBaseline;
+            let slotGoldBaseline = result.goldBaseline;
+            if (loadoutEntry) {
+                const equipment = new Map([[locationHrid, loadoutEntry]]);
+                slotXpBaseline = scoreEquipmentSetup(result.skill, 'xp', equipment, result.playerLevel);
+                slotGoldBaseline = scoreEquipmentSetup(result.skill, 'gold', equipment, result.playerLevel);
+            }
+
+            this._renderSlotRow(container, slotData, loadoutEntry, slotXpBaseline, slotGoldBaseline);
         }
 
         const xpResult = achievableStats?.xpResult;
@@ -1091,16 +1108,14 @@ class SkillingSimulatorUI {
 
         const note = document.createElement('div');
         note.style.cssText = 'margin-top: 12px; font-size: 10px; color: rgba(255,255,255,0.3); font-style: italic;';
-        note.textContent = achievableStats
-            ? 'Performance uses your currently owned enhancement levels for optimal items.'
-            : 'Each slot scored independently at each breakpoint.';
+        note.textContent = loadoutItemMap
+            ? '% shows gain over your compared loadout item for each slot.'
+            : '% shows gain over an empty slot. Select a loadout in Compare to see gains over your current gear.';
         container.appendChild(note);
     }
 
-    _renderSlotRow(container, slotData, loadoutItemHrid = null) {
-        const tiers = this._groupTiers(slotData.progression);
-        if (!tiers.length) return;
-
+    _renderSlotRow(container, slotData, loadoutEntry = null, xpBaseline = 0, goldBaseline = 0) {
+        const loadoutItemHrid = loadoutEntry?.itemHrid ?? null;
         const optimalItemHrid = slotData.progression[slotData.progression.length - 1]?.itemHrid;
 
         const row = document.createElement('div');
@@ -1117,15 +1132,16 @@ class SkillingSimulatorUI {
         headerRow.appendChild(slotLabel);
 
         if (loadoutItemHrid !== null) {
+            const enhStr = ` +${loadoutEntry.enhancementLevel}`;
             if (loadoutItemHrid === optimalItemHrid) {
                 const check = document.createElement('span');
-                check.textContent = '✓';
+                check.textContent = `✓${enhStr}`;
                 check.style.cssText = `font-size: 10px; color: ${config.COLOR_PROFIT};`;
                 headerRow.appendChild(check);
             } else {
                 const diff = document.createElement('span');
                 const loadoutName = loadoutItemHrid ? this._getItemName(loadoutItemHrid) || loadoutItemHrid : 'empty';
-                diff.textContent = `≠ ${loadoutName}`;
+                diff.textContent = `≠ ${loadoutName}${enhStr}`;
                 diff.style.cssText = `font-size: 10px; color: ${config.COLOR_WARNING}; font-style: italic;`;
                 headerRow.appendChild(diff);
             }
@@ -1133,30 +1149,134 @@ class SkillingSimulatorUI {
 
         row.appendChild(headerRow);
 
-        const showBreakpoints = tiers.length > 1;
+        const spriteUrl =
+            document.querySelector('use[href*="items_sprite"]')?.getAttribute('href')?.split('#')[0] ?? null;
 
-        for (let i = 0; i < tiers.length; i++) {
-            const tier = tiers[i];
-            const tierRow = document.createElement('div');
-            tierRow.style.cssText = 'display: flex; align-items: baseline; gap: 8px; padding: 1px 0 1px 6px;';
+        if (loadoutEntry) {
+            // Per-breakpoint view: one row per enhancement level where the user has something to gain
+            let prevItemHrid = null;
+            let anyVisible = false;
+            for (const entry of slotData.progression) {
+                if (!entry.itemHrid) {
+                    prevItemHrid = null;
+                    continue;
+                }
+                const xpDelta = entry.xpScore - xpBaseline;
+                const goldDelta = entry.goldScore - goldBaseline;
+                if (xpDelta <= 0 && goldDelta <= 0) {
+                    prevItemHrid = entry.itemHrid;
+                    continue;
+                }
+                anyVisible = true;
 
-            if (showBreakpoints) {
+                const entryRow = document.createElement('div');
+                entryRow.style.cssText = 'display: flex; align-items: baseline; gap: 8px; padding: 1px 0 1px 6px;';
+
+                const bpSpan = document.createElement('span');
+                bpSpan.style.cssText =
+                    'font-size: 10px; color: rgba(255,255,255,0.35); flex-shrink: 0; min-width: 32px;';
+                bpSpan.textContent = `+${entry.breakpoint}`;
+                entryRow.appendChild(bpSpan);
+
+                const isRepeat = entry.itemHrid === prevItemHrid;
+                const isDifferentFromLoadout = entry.itemHrid !== loadoutItemHrid;
+                const nameColor = isRepeat
+                    ? 'rgba(255,255,255,0.3)'
+                    : isDifferentFromLoadout
+                      ? config.COLOR_ACCENT
+                      : 'rgba(255,255,255,0.85)';
+                const nameSpan = document.createElement('span');
+                nameSpan.style.cssText = `font-size: 12px; color: ${nameColor}; font-weight: ${!isRepeat && isDifferentFromLoadout ? '600' : '400'};`;
+                nameSpan.textContent = entry.itemName;
+                entryRow.appendChild(nameSpan);
+
+                const gainEl = this._makeGainEl(entry.xpScore, xpBaseline, entry.goldScore, goldBaseline, spriteUrl);
+                if (gainEl) entryRow.appendChild(gainEl);
+
+                row.appendChild(entryRow);
+                prevItemHrid = entry.itemHrid;
+                break; // only show the immediate next step
+            }
+            if (!anyVisible) {
+                const none = document.createElement('div');
+                none.style.cssText =
+                    'padding: 1px 0 1px 6px; font-size: 11px; color: rgba(255,255,255,0.25); font-style: italic;';
+                none.textContent = 'Already at optimal enhancement';
+                row.appendChild(none);
+            }
+        } else {
+            // Grouped tier view (no compare selected): collapse same-item runs into one row
+            const tiers = this._groupTiers(slotData.progression);
+            for (let i = 0; i < tiers.length; i++) {
+                const tier = tiers[i];
+                const tierRow = document.createElement('div');
+                tierRow.style.cssText = 'display: flex; align-items: baseline; gap: 8px; padding: 1px 0 1px 6px;';
+
                 const range = document.createElement('span');
                 range.style.cssText =
                     'font-size: 10px; color: rgba(255,255,255,0.35); flex-shrink: 0; min-width: 56px;';
                 const isLast = i === tiers.length - 1;
                 range.textContent = isLast ? `+${tier.fromBp}+` : `+${tier.fromBp} – +${tier.toBp}`;
                 tierRow.appendChild(range);
-            }
 
-            const name = document.createElement('span');
-            name.style.cssText = `font-size: 12px; color: ${i === 0 ? 'rgba(255,255,255,0.85)' : config.COLOR_ACCENT}; font-weight: ${i > 0 ? '600' : '400'};`;
-            name.textContent = tier.itemName;
-            tierRow.appendChild(name);
-            row.appendChild(tierRow);
+                const name = document.createElement('span');
+                name.style.cssText = `font-size: 12px; color: ${i === 0 ? 'rgba(255,255,255,0.85)' : config.COLOR_ACCENT}; font-weight: ${i > 0 ? '600' : '400'};`;
+                name.textContent = tier.itemName;
+                tierRow.appendChild(name);
+
+                const gainEl = this._makeGainEl(tier.xpScore, xpBaseline, tier.goldScore, goldBaseline, spriteUrl);
+                if (gainEl) tierRow.appendChild(gainEl);
+
+                row.appendChild(tierRow);
+            }
         }
 
         container.appendChild(row);
+    }
+
+    _makeGainEl(xpScore, xpBaseline, goldScore, goldBaseline, spriteUrl) {
+        const gainParts = [];
+
+        if (xpBaseline > 0 && xpScore > xpBaseline) {
+            const delta = xpScore - xpBaseline;
+            const pct = ((delta / xpBaseline) * 100).toFixed(1);
+            const span = document.createElement('span');
+            span.textContent = `+${formatKMB(delta)} XP (+${pct}%)`;
+            gainParts.push(span);
+        }
+
+        if (goldBaseline > 0 && goldScore > goldBaseline) {
+            const delta = goldScore - goldBaseline;
+            const pct = ((delta / goldBaseline) * 100).toFixed(1);
+            const span = document.createElement('span');
+            span.style.cssText = 'display: inline-flex; align-items: center; gap: 2px;';
+            span.appendChild(document.createTextNode(`+${formatKMB(delta)}`));
+            if (spriteUrl) {
+                const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                svg.setAttribute('width', '12');
+                svg.setAttribute('height', '12');
+                svg.style.flexShrink = '0';
+                const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+                use.setAttribute('href', `${spriteUrl}#coin`);
+                svg.appendChild(use);
+                span.appendChild(svg);
+            } else {
+                span.appendChild(document.createTextNode(' G'));
+            }
+            span.appendChild(document.createTextNode(` (+${pct}%)`));
+            gainParts.push(span);
+        }
+
+        if (!gainParts.length) return null;
+
+        const wrapper = document.createElement('span');
+        wrapper.style.cssText =
+            'font-size: 10px; color: rgba(140,210,140,0.65); margin-left: auto; flex-shrink: 0; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;';
+        for (let i = 0; i < gainParts.length; i++) {
+            if (i > 0) wrapper.appendChild(document.createTextNode(' · '));
+            wrapper.appendChild(gainParts[i]);
+        }
+        return wrapper;
     }
 
     _groupTiers(progression) {
@@ -1174,6 +1294,9 @@ class SkillingSimulatorUI {
                     itemName: entry.itemName,
                     fromBp: entry.breakpoint,
                     toBp: entry.breakpoint,
+                    score: entry.score,
+                    xpScore: entry.xpScore,
+                    goldScore: entry.goldScore,
                 };
             } else {
                 current.toBp = entry.breakpoint;

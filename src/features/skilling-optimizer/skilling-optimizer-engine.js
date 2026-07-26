@@ -342,8 +342,9 @@ export function optimizeSkill(skillName, playerLevel, selectedActionHrids = null
     const { itemDetailMap } = gameData;
     const playerLevels = buildPlayerLevelMap(skillName, playerLevel);
 
-    // Baseline: empty equipment — all slot results must beat this to be shown
-    const baseline = scoreEquipmentSetup(skillName, goal, new Map(), playerLevel, selectedActionHrids);
+    const xpBaseline = scoreEquipmentSetup(skillName, 'xp', new Map(), playerLevel, selectedActionHrids);
+    const goldBaseline = scoreEquipmentSetup(skillName, 'gold', new Map(), playerLevel, selectedActionHrids);
+    const baseline = goal === 'xp' ? xpBaseline : goldBaseline;
 
     const slots = {};
     const optimalEquipmentAtMax = new Map();
@@ -392,6 +393,34 @@ export function optimizeSkill(skillName, playerLevel, selectedActionHrids = null
                 itemHrid: bestItem?.hrid ?? null,
                 itemName: bestItem?.name ?? null,
                 score: bestScore,
+                xpScore: (() => {
+                    if (!bestItem) return xpBaseline;
+                    if (goal === 'xp') return bestScore;
+                    const eBp = bestItem.hrid.includes('_refined') ? Math.max(bp, 10) : bp;
+                    return scoreCandidate(
+                        bestItem.hrid,
+                        locationHrid,
+                        skillName,
+                        'xp',
+                        eBp,
+                        playerLevel,
+                        selectedActionHrids
+                    );
+                })(),
+                goldScore: (() => {
+                    if (!bestItem) return goldBaseline;
+                    if (goal === 'gold') return bestScore;
+                    const eBp = bestItem.hrid.includes('_refined') ? Math.max(bp, 10) : bp;
+                    return scoreCandidate(
+                        bestItem.hrid,
+                        locationHrid,
+                        skillName,
+                        'gold',
+                        eBp,
+                        playerLevel,
+                        selectedActionHrids
+                    );
+                })(),
                 isChange: (bestItem?.hrid ?? null) !== lastWinnerHrid,
             });
 
@@ -439,6 +468,9 @@ export function optimizeSkill(skillName, playerLevel, selectedActionHrids = null
     return {
         skill: skillName,
         playerLevel,
+        goal,
+        xpBaseline,
+        goldBaseline,
         slots,
         xpTeaResult: xpTeaResult?.error ? null : xpTeaResult,
         goldTeaResult: goldTeaResult?.error ? null : goldTeaResult,
