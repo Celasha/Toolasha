@@ -137,10 +137,29 @@ class LabSimUI {
             <button id="mwi-labsim-tab-skilling" style="${tabStyle(false)}">Skilling</button>
         `;
 
+        const selectStyle =
+            'background:#1a1a2e; color:#e0e0e0; border:1px solid #444; border-radius:4px; padding:3px 6px; font-size:12px; flex:1; min-width:0;';
+        const inputStyle =
+            'width:60px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444; border-radius:4px; padding:3px 6px; font-size:12px; text-align:center;';
+
         // ── Configure tab ──
         const configureContent = document.createElement('div');
         configureContent.id = 'mwi-labsim-configure-content';
         configureContent.style.cssText = 'display:flex; flex-direction:column; flex:1; overflow:hidden;';
+
+        const configureControls = document.createElement('div');
+        configureControls.style.cssText = `
+            display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+            padding: 10px 14px; border-bottom: 1px solid #222; flex-shrink: 0;
+        `;
+        configureControls.innerHTML = `
+            <label style="color:#888; font-size:12px;">Monster</label>
+            <select id="mwi-labsim-monster" style="${selectStyle}"></select>
+            <label style="color:#888; font-size:12px;">Level</label>
+            <input id="mwi-labsim-level" type="number" min="20" max="300" value="100" style="${inputStyle}">
+            <label style="color:#888; font-size:12px;">Hours</label>
+            <input id="mwi-labsim-hours" type="number" min="1" max="10000" value="${config.getSettingValue('labyrinthRecommendSimHours', 10)}" style="${inputStyle}">
+        `;
 
         const crateRow = document.createElement('div');
         crateRow.style.cssText = `
@@ -186,6 +205,7 @@ class LabSimUI {
 
         this._editor = new SimEditor({ editorEl: editorArea, labMode: true });
 
+        configureContent.appendChild(configureControls);
         configureContent.appendChild(crateRow);
 
         // Collapsible Labyrinth Buffs section
@@ -222,25 +242,13 @@ class LabSimUI {
         maxLevelContent.id = 'mwi-labsim-maxlevel-content';
         maxLevelContent.style.cssText = 'display:none; flex-direction:column; flex:1; overflow:hidden;';
 
-        const selectStyle =
-            'background:#1a1a2e; color:#e0e0e0; border:1px solid #444; border-radius:4px; padding:3px 6px; font-size:12px; flex:1; min-width:0;';
-        const inputStyle =
-            'width:60px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444; border-radius:4px; padding:3px 6px; font-size:12px; text-align:center;';
-
         const maxLevelControls = document.createElement('div');
         maxLevelControls.style.cssText = `
-            display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
-            padding: 10px 14px; border-bottom: 1px solid #222; flex-shrink: 0;
+            display: flex; align-items: center; gap: 12px;
+            padding: 8px 14px; border-bottom: 1px solid #222; flex-shrink: 0; font-size: 12px;
         `;
         maxLevelControls.innerHTML = `
-            <label style="color:#888; font-size:12px;">Monster</label>
-            <select id="mwi-labsim-monster" style="${selectStyle}"></select>
-            <label style="color:#888; font-size:12px;">Level</label>
-            <input id="mwi-labsim-level" type="number" min="20" max="300" value="100" style="${inputStyle}">
-            <label style="color:#888; font-size:12px;">Hours</label>
-            <input id="mwi-labsim-hours" type="number" min="1" max="10000" value="${config.getSettingValue('labyrinthRecommendSimHours', 10)}" style="${inputStyle}">
             <button id="mwi-labsim-run" style="
-                margin-left: auto;
                 background: ${ACCENT_BTN_BG};
                 color: ${ACCENT};
                 border: 1px solid ${ACCENT_BTN_BORDER};
@@ -249,14 +257,6 @@ class LabSimUI {
                 font-size: 12px;
                 font-weight: 600;
                 cursor: pointer;">Simulate</button>
-        `;
-
-        const findMaxRow = document.createElement('div');
-        findMaxRow.style.cssText = `
-            display: flex; align-items: center; gap: 12px;
-            padding: 6px 14px; border-bottom: 1px solid #222; flex-shrink: 0; font-size: 12px;
-        `;
-        findMaxRow.innerHTML = `
             <label style="display:flex; align-items:center; gap:4px; color:#888; cursor:pointer;" title="Binary search for highest beatable level at the specified win rate threshold">
                 <input type="checkbox" id="mwi-labsim-findmax" style="margin:0; cursor:pointer;">
                 Find Max \u2265
@@ -285,7 +285,6 @@ class LabSimUI {
         maxLevelResults.style.cssText = 'flex:1; overflow-y:auto; padding:10px 14px;';
 
         maxLevelContent.appendChild(maxLevelControls);
-        maxLevelContent.appendChild(findMaxRow);
         maxLevelContent.appendChild(maxLevelProgress);
         maxLevelContent.appendChild(maxLevelResults);
 
@@ -302,9 +301,6 @@ class LabSimUI {
         upgradeControls.innerHTML = `
             <label style="color:#888; font-size:12px;">Player</label>
             <select id="mwi-labsim-upgrade-player" style="${selectStyle}"></select>
-            <label style="color:#888; font-size:12px;">Enemy Level</label>
-            <input id="mwi-labsim-upgrade-level" type="number" min="20" max="300" value="100" style="${inputStyle}"
-                title="Defaults to Max Level result when available">
             <button id="mwi-labsim-upgrade-run" style="
                 margin-left: auto;
                 background: ${ACCENT_BTN_BG};
@@ -485,7 +481,7 @@ class LabSimUI {
         status.id = 'mwi-labsim-status';
         status.style.cssText =
             'padding:6px 14px; color:#555; font-size:11px; border-top:1px solid #1a1a1a; flex-shrink:0; text-align:center;';
-        status.textContent = 'Select a monster and click Simulate.';
+        status.textContent = 'Select a monster in Configure, then use Max Level or Upgrade to simulate.';
 
         // Assemble
         this.panel.appendChild(header);
@@ -531,6 +527,11 @@ class LabSimUI {
         this.panel
             .querySelector('#mwi-labsim-tab-skilling')
             .addEventListener('click', () => this._switchTab('skilling'));
+
+        // Configure listeners
+        this.panel.querySelector('#mwi-labsim-monster').addEventListener('change', (e) => {
+            this._onMonsterChange(e.target.value);
+        });
 
         // Max Level listeners
         this.panel.querySelector('#mwi-labsim-run').addEventListener('click', () => this._onSimulate());
@@ -583,6 +584,21 @@ class LabSimUI {
             option.textContent = monster.name;
             select.appendChild(option);
         }
+    }
+
+    /** @private */
+    _onMonsterChange(monsterHrid) {
+        if (!monsterHrid || !this._editor?.isInitialized()) return;
+        const monsterId = monsterHrid.split('/').pop();
+        const pascal = monsterId
+            .split('_')
+            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+            .join('');
+        const loadoutId = dataManager.characterData?.characterSetting?.[`labyrinthLoadout${pascal}`];
+        if (!loadoutId) return;
+        const snapshot = loadoutSnapshot.snapshots[loadoutId];
+        if (!snapshot?.name) return;
+        this._editor.applyLoadoutByName(snapshot.name);
     }
 
     /** @private */
@@ -718,12 +734,6 @@ class LabSimUI {
             upgradeContent.style.display = 'flex';
             tabUpgrade.style.cssText = activeStyle;
             this._populateUpgradePlayerSelector();
-            if (this._maxLevel) {
-                const levelInput = this.panel.querySelector('#mwi-labsim-upgrade-level');
-                if (levelInput && !levelInput.dataset.userModified) {
-                    levelInput.value = this._maxLevel;
-                }
-            }
         } else if (tab === 'skilling') {
             skillingContent.style.display = 'flex';
             tabSkilling.style.cssText = activeStyle;
@@ -834,10 +844,6 @@ class LabSimUI {
                 this._maxLevel = maxResult.maxLevel;
                 const levelInput = this.panel.querySelector('#mwi-labsim-level');
                 if (levelInput) levelInput.value = maxResult.maxLevel;
-                const upgradeLevelInput = this.panel.querySelector('#mwi-labsim-upgrade-level');
-                if (upgradeLevelInput && !upgradeLevelInput.dataset.userModified) {
-                    upgradeLevelInput.value = maxResult.maxLevel;
-                }
 
                 this._displayFindMaxResults(maxResult, monsterHrid, simStartTime);
             } else {
@@ -954,7 +960,7 @@ class LabSimUI {
     /** @private */
     async _onUpgradeAnalyze() {
         const playerIndex = parseInt(this.panel.querySelector('#mwi-labsim-upgrade-player')?.value) || 0;
-        const roomLevel = parseInt(this.panel.querySelector('#mwi-labsim-upgrade-level')?.value) || 100;
+        const roomLevel = parseInt(this.panel.querySelector('#mwi-labsim-level')?.value) || 100;
         const monsterHrid = this.panel.querySelector('#mwi-labsim-monster')?.value;
         const hours = Math.min(
             10000,
@@ -962,7 +968,7 @@ class LabSimUI {
         );
 
         if (!monsterHrid) {
-            this._setStatus('Select a monster in the Max Level tab first.');
+            this._setStatus('Select a monster in the Configure tab first.');
             return;
         }
 

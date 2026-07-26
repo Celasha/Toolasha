@@ -61,6 +61,17 @@ export class SimEditor {
     }
 
     /**
+     * Apply a named loadout to the active player DTO and re-render.
+     * @param {string} loadoutName - Snapshot name to apply
+     */
+    applyLoadoutByName(loadoutName) {
+        if (!loadoutName || !this._editedDTOs) return;
+        this._selectedLoadoutName = loadoutName;
+        this._applyLoadoutToDTO(loadoutName);
+        this.renderEditor();
+    }
+
+    /**
      * Load DTOs from live character data.
      */
     async initEditor() {
