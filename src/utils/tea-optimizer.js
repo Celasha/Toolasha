@@ -1074,6 +1074,33 @@ export function findOptimalTeas(
 }
 
 /**
+ * Find the highest-level item at or below the player's alchemy level for use as a scoring reference.
+ * Falls back to the lowest available alchemy item if none are at/below the player's level.
+ * @param {number} playerLevel
+ * @param {Object} itemDetailMap
+ * @returns {string|null}
+ */
+function getRepresentativeAlchemyItemHrid(playerLevel, itemDetailMap) {
+    let bestHrid = null;
+    let bestLevel = 0;
+    let fallbackHrid = null;
+    let fallbackLevel = Infinity;
+    for (const [hrid, detail] of Object.entries(itemDetailMap)) {
+        if (!detail.alchemyDetail || !detail.itemLevel) continue;
+        if (detail.itemLevel <= playerLevel) {
+            if (detail.itemLevel > bestLevel) {
+                bestLevel = detail.itemLevel;
+                bestHrid = hrid;
+            }
+        } else if (detail.itemLevel < fallbackLevel) {
+            fallbackLevel = detail.itemLevel;
+            fallbackHrid = hrid;
+        }
+    }
+    return bestHrid ?? fallbackHrid;
+}
+
+/**
  * Score a hypothetical equipment setup for a skill and goal with zero tea buffs.
  * Used by the skilling optimizer to rank equipment candidates per slot independently of teas.
  * @param {string} skillName
@@ -1119,6 +1146,20 @@ export function scoreEquipmentSetup(skillName, goal, equipment, playerLevel, sel
     };
 
     const calcContext = { equipment, itemDetailMap: gameData.itemDetailMap };
+
+    // Alchemy XP is derived from item level, not from action data — standard calculateXpPerHour
+    // always returns 0 for alchemy. Use a dedicated path with a representative item instead.
+    if (normalizedSkill === 'alchemy') {
+        const repItemHrid = getRepresentativeAlchemyItemHrid(playerLevel, gameData.itemDetailMap);
+        if (!repItemHrid) return 0;
+        return calculateAlchemyXpPerHour(
+            { actionType: 'decompose', itemHrid: repItemHrid },
+            emptyBuffs,
+            playerLevel,
+            otherEfficiency,
+            calcContext
+        );
+    }
 
     let totalScore = 0;
     let count = 0;
