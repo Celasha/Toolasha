@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.83.0](https://github.com/Celasha/Toolasha/compare/v2.82.1...v2.83.0) (2026-07-26)
+
+
+### Features
+
+* add draggable modals with remembered position ([5d41e5a](https://github.com/Celasha/Toolasha/commit/5d41e5a4e3d315d1e479908f2e26efa13dd7279f))
+* consolidate lab sim inputs into Configure tab with auto-loadout ([7cb624e](https://github.com/Celasha/Toolasha/commit/7cb624e89db01aa0a6f43c33fa001932ef7b7631))
+* overhaul skilling optimizer to show loadout-relative progression ([efb990f](https://github.com/Celasha/Toolasha/commit/efb990f21a67ab5de8fe80f5454987b7bb1aa810))
+
+
+### Bug Fixes
+
+* give Lab Simulator its own independent setting ([33e405a](https://github.com/Celasha/Toolasha/commit/33e405ad21e0847564726f8ae1c4bb94b9ec699d))
+* make skilling optimizer score alchemy equipment correctly ([400b148](https://github.com/Celasha/Toolasha/commit/400b148715a6b908bf2da8375736d92e0da6d35a))
+* register skillingOptimizer in config features map ([dc53b94](https://github.com/Celasha/Toolasha/commit/dc53b94f8bc969df00de090106b3fa95452001f4))
+* sort loadout dropdowns by server ordinal ([acfca19](https://github.com/Celasha/Toolasha/commit/acfca19dd0a4227a2bc39bbad57afaa4d24d3264))
+
 ## [2.82.1](https://github.com/Celasha/Toolasha/compare/v2.82.0...v2.82.1) (2026-07-24)
 
 ### Bug Fixes
