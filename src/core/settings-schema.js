@@ -1836,8 +1836,9 @@ export const settingsGroups = {
                 options: [
                     { value: 'skill', label: 'Skill / Zone' },
                     { value: 'time', label: 'Time to Completion' },
+                    { value: 'protection', label: 'Protection (unprotected first)' },
                 ],
-                help: 'How tasks are ordered when clicking Sort Tasks. "Time to Completion" sorts fastest tasks first; combat and completed tasks go to the bottom.',
+                help: 'How tasks are ordered when clicking Sort Tasks. "Time to Completion" sorts fastest tasks first; combat and completed tasks go to the bottom. "Protection" puts unprotected tasks first.',
             },
             taskInventoryHighlighter: {
                 id: 'taskInventoryHighlighter',

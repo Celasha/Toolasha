@@ -8,6 +8,7 @@ import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import taskIcons from './task-icons.js';
 import taskIconFilters from './task-icon-filters.js';
+import taskRerollProtection from './task-reroll-protection.js';
 import domObserver from '../../core/dom-observer.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 
@@ -243,6 +244,20 @@ class TaskSorter {
     }
 
     /**
+     * Compare two task cards by protection status (unprotected first), then Skill/Zone.
+     */
+    compareTaskCardsByProtection(cardA, cardB) {
+        const protectedA = taskRerollProtection.isTaskProtected(cardA);
+        const protectedB = taskRerollProtection.isTaskProtected(cardB);
+
+        if (protectedA !== protectedB) {
+            return protectedA ? 1 : -1;
+        }
+
+        return this.compareTaskCards(cardA, cardB);
+    }
+
+    /**
      * Sort all tasks in the task board
      */
     sortTasks() {
@@ -261,6 +276,8 @@ class TaskSorter {
         const sortMode = config.getSettingValue('taskSorter_sortMode', 'skill');
         if (sortMode === 'time') {
             taskCards.sort((a, b) => this.compareTaskCardsByTime(a, b));
+        } else if (sortMode === 'protection') {
+            taskCards.sort((a, b) => this.compareTaskCardsByProtection(a, b));
         } else {
             taskCards.sort((a, b) => this.compareTaskCards(a, b));
         }
