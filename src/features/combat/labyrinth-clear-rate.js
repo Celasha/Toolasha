@@ -1274,9 +1274,7 @@ class LabyrinthClearRate {
 
         this.processSimQueue();
         this.injectRecommendControls();
-        if (this.recommendations.size > 0) {
-            this.injectRecommendationBadges();
-        }
+        this.injectRecommendationBadges();
     }
 
     appendBadge(cell, result, roomLevel) {
