@@ -2,16 +2,14 @@
 
 ## [2.84.0](https://github.com/Celasha/Toolasha/compare/v2.83.0...v2.84.0) (2026-07-27)
 
-
 ### Features
 
-* add Protection sort mode to task sorter ([f160f54](https://github.com/Celasha/Toolasha/commit/f160f548e66cda38d68c41b8313bcec3ee6aad36))
-
+- add Protection sort mode to task sorter ([f160f54](https://github.com/Celasha/Toolasha/commit/f160f548e66cda38d68c41b8313bcec3ee6aad36))
 
 ### Bug Fixes
 
-* remove stale Rec badge when skip threshold is edited ([e2d5ad6](https://github.com/Celasha/Toolasha/commit/e2d5ad68d880a5cec4ee0c10192c096343844c68))
-* skip battle counter injection when no active combat action ([46db6ec](https://github.com/Celasha/Toolasha/commit/46db6ecae50f76260dd2149525189b2dbe75e794))
+- remove stale Rec badge when skip threshold is edited ([e2d5ad6](https://github.com/Celasha/Toolasha/commit/e2d5ad68d880a5cec4ee0c10192c096343844c68))
+- skip battle counter injection when no active combat action ([46db6ec](https://github.com/Celasha/Toolasha/commit/46db6ecae50f76260dd2149525189b2dbe75e794))
 
 ## [2.83.0](https://github.com/Celasha/Toolasha/compare/v2.82.1...v2.83.0) (2026-07-26)
 
