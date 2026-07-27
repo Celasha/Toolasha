@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.83.0
+ * Version: 2.84.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6814,13 +6814,15 @@
         }
 
         _onNewBattle(data) {
+            const actions = dataManager.getCurrentActions();
+            const combatAction = actions.find((a) => a.actionHrid?.startsWith('/actions/combat/') && !a.isDone);
+            if (!combatAction) return;
+
             // A new battle implies we're not in a static labyrinth state — clear any
             // lingering labyrinth attempt count so it can't leak into a render.
             this.isLabyrinth = false;
             this.labyrinthAttempt = 0;
             this.battleId = data.battleId;
-            const actions = dataManager.getCurrentActions();
-            const combatAction = actions.find((a) => a.actionHrid?.startsWith('/actions/combat/') && !a.isDone);
             const isDungeon = combatAction
                 ? dataManager.getActionDetails(combatAction.actionHrid)?.combatZoneInfo?.isDungeon === true
                 : false;
@@ -10437,9 +10439,7 @@
 
             this.processSimQueue();
             this.injectRecommendControls();
-            if (this.recommendations.size > 0) {
-                this.injectRecommendationBadges();
-            }
+            this.injectRecommendationBadges();
         }
 
         appendBadge(cell, result, roomLevel) {
