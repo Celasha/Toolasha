@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.82.1
+ * Version: 2.83.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1066,6 +1066,161 @@
         disable: () => {
             tabReorder.disable();
         },
+    };
+
+    /**
+     * Draggable Modals
+     * Makes game modals draggable and remembers their last position per modal title.
+     *
+     * DOM structure (confirmed via console inspection):
+     *   Modal_modalContainer  — position:fixed, top:0, left:0, full-viewport flex overlay
+     *     Modal_background    — dark backdrop
+     *     Modal_modal         — visible dialog (display:grid) ← transform applied here
+     *       Modal_modalContent
+     *         MarketplacePanel_modalContent (display:flex)
+     *           MarketplacePanel_header  ← "Buy Now" title lives here
+     *           ...fields...
+     *       Modal_closeButton
+     *
+     * Selector: watch 'Modal_modalContent' (not 'Modal_modal') — otherwise the observer
+     * also fires for 'Modal_modalContainer' since it contains the same substring.
+     *
+     * Positioning: transform:translate(dx,dy) on Modal_modal — moves the visual element
+     * without touching layout, so backdrop and flex container are completely unaffected.
+     */
+
+
+    const STORAGE_KEY$5 = 'modalPositions3';
+    const STORE_NAME$5 = 'settings';
+
+    class DraggableModals {
+        constructor() {
+            this.offsets = {}; // title → { dx, dy }
+            this.unregisterObserver = null;
+            this.initialized = false;
+        }
+
+        async initialize() {
+            if (this.initialized) return;
+            if (!config.getSetting('draggableModals', true)) return;
+
+            this.offsets = (await storage.get(STORAGE_KEY$5, STORE_NAME$5, {})) || {};
+
+            // Watch Modal_modalContent — unique to the inner dialog content element.
+            // Its parentElement is Modal_modal (the box we apply transform to).
+            this.unregisterObserver = domObserver.onClass('DraggableModals', 'Modal_modalContent', (contentEl) => {
+                const modalBox = contentEl.parentElement;
+                if (!modalBox) return;
+                // Guard against double-processing (e.g. if observer fires twice)
+                if (modalBox.dataset.mwiDraggable) return;
+                modalBox.dataset.mwiDraggable = '1';
+                this._makeDraggable(modalBox, contentEl);
+            });
+
+            this.initialized = true;
+        }
+
+        _getTitle(contentEl) {
+            // Title is inside the inner content element, not directly in Modal_modal
+            const h = contentEl.querySelector('h1, h2, h3, h4, [class*="header"], [class*="Header"]');
+            return h?.textContent?.trim().substring(0, 40) || 'modal';
+        }
+
+        _applyTransform(modalBox, dx, dy) {
+            modalBox.style.transform = `translate(${dx}px, ${dy}px)`;
+        }
+
+        _makeDraggable(modalBox, contentEl) {
+            const title = this._getTitle(contentEl);
+
+            // Inject drag bar into contentEl (Modal_modalContent), not the grid parent.
+            // contentEl is a plain wrapper so prepending places the bar at the top visually.
+            const bar = document.createElement('div');
+            bar.className = 'mwi-drag-bar';
+            bar.title = 'Drag to move';
+            bar.style.cssText = [
+                'width: 100%',
+                'padding: 4px 0',
+                'text-align: center',
+                'cursor: grab',
+                'font-size: 11px',
+                'color: rgba(255,255,255,0.4)',
+                'letter-spacing: 4px',
+                'user-select: none',
+                'border-bottom: 1px solid rgba(255,255,255,0.08)',
+                'box-sizing: border-box',
+            ].join(';');
+            bar.textContent = '· · · · ·';
+            contentEl.insertBefore(bar, contentEl.firstChild);
+
+            // Apply saved offset
+            if (this.offsets[title]) {
+                requestAnimationFrame(() => {
+                    const { dx, dy } = this.offsets[title];
+                    this._applyTransform(modalBox, dx, dy);
+                });
+            }
+
+            let dragging = false;
+            let startMouseX = 0;
+            let startMouseY = 0;
+            let startDx = 0;
+            let startDy = 0;
+
+            const onMouseDown = (e) => {
+                if (e.button !== 0) return;
+                dragging = true;
+                startMouseX = e.clientX;
+                startMouseY = e.clientY;
+
+                const t = new DOMMatrix(window.getComputedStyle(modalBox).transform);
+                startDx = isNaN(t.m41) ? 0 : t.m41;
+                startDy = isNaN(t.m42) ? 0 : t.m42;
+
+                bar.style.cursor = 'grabbing';
+                e.preventDefault();
+            };
+
+            const onMouseMove = (e) => {
+                if (!dragging) return;
+                const dx = startDx + (e.clientX - startMouseX);
+                const dy = startDy + (e.clientY - startMouseY);
+                this._applyTransform(modalBox, dx, dy);
+            };
+
+            const onMouseUp = () => {
+                if (!dragging) return;
+                dragging = false;
+                bar.style.cursor = 'grab';
+
+                const t = new DOMMatrix(window.getComputedStyle(modalBox).transform);
+                const dx = isNaN(t.m41) ? 0 : t.m41;
+                const dy = isNaN(t.m42) ? 0 : t.m42;
+                this.offsets[title] = { dx, dy };
+                storage.set(STORAGE_KEY$5, this.offsets, STORE_NAME$5);
+            };
+
+            bar.addEventListener('mousedown', onMouseDown);
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        }
+
+        disable() {
+            if (this.unregisterObserver) {
+                this.unregisterObserver();
+                this.unregisterObserver = null;
+            }
+            this.offsets = {};
+            this.initialized = false;
+        }
+    }
+
+    const draggableModals = new DraggableModals();
+
+    var draggableModals$1 = {
+        name: 'Draggable Modals',
+        initialize: () => draggableModals.initialize(),
+        cleanup: () => draggableModals.disable(),
     };
 
     /**
@@ -6754,6 +6909,7 @@ ${starCSS}
             actionTypeHrid: loadout.actionTypeHrid || '',
             isDefault: !!loadout.isDefault,
             useExactEnhancement: loadout.useExactEnhancement ?? false,
+            ordinal: loadout.ordinal || 0,
             equipment,
             abilities,
             food,
@@ -6954,7 +7110,7 @@ ${starCSS}
          * @returns {Array<Object>} Array of snapshot objects
          */
         getAllSnapshots() {
-            return Object.values(this.snapshots);
+            return Object.values(this.snapshots).sort((a, b) => a.ordinal - b.ordinal);
         }
 
         /**
@@ -36262,6 +36418,7 @@ ${starCSS}
         hideLabyrinthBadge,
         hideGuildBadge,
         tabReorder: tabReorder$1,
+        draggableModals: draggableModals$1,
         altClickNavigation,
         collectionNavigation: collectionNavigation$1,
         collectionFilters,

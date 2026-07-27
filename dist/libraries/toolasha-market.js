@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.82.1
+ * Version: 2.83.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -17205,6 +17205,7 @@ self.onmessage = function (e) {
             actionTypeHrid: loadout.actionTypeHrid || '',
             isDefault: !!loadout.isDefault,
             useExactEnhancement: loadout.useExactEnhancement ?? false,
+            ordinal: loadout.ordinal || 0,
             equipment,
             abilities,
             food,
@@ -17405,7 +17406,7 @@ self.onmessage = function (e) {
          * @returns {Array<Object>} Array of snapshot objects
          */
         getAllSnapshots() {
-            return Object.values(this.snapshots);
+            return Object.values(this.snapshots).sort((a, b) => a.ordinal - b.ordinal);
         }
 
         /**

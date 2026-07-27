@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.82.1
+ * Version: 2.83.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2170,6 +2170,13 @@
                     default: true,
                     help: 'Simulate combat encounters to estimate XP/hr, deaths, and consumable usage',
                 },
+                labSim: {
+                    id: 'labSim',
+                    label: 'Lab Simulator',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Simulate labyrinth runs to estimate performance across skills and combat',
+                },
                 combatSim_defaultHours: {
                     id: 'combatSim_defaultHours',
                     label: 'Combat Simulator: Default hours (single zone)',
@@ -2462,6 +2469,13 @@
             title: 'UI & Appearance',
             icon: '🎨',
             settings: {
+                draggableModals: {
+                    id: 'draggableModals',
+                    label: 'Draggable modals',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Makes game popup modals draggable. Position is remembered per modal type across sessions.',
+                },
                 formatting_useKMBFormat: {
                     id: 'formatting_useKMBFormat',
                     label: 'Number format mode',
@@ -5659,6 +5673,13 @@
                     category: 'Skills',
                     description: 'Shows remaining XP to next level on skill bars',
                     settingKey: 'skillRemainingXP',
+                },
+                skillingOptimizer: {
+                    enabled: true,
+                    name: 'Skilling Simulator/Optimizer',
+                    category: 'Skills',
+                    description: 'Optimizer tab in the character panel',
+                    settingKey: 'skillingOptimizer',
                 },
 
                 // House Features
