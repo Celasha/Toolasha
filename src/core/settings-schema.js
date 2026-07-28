@@ -2012,6 +2012,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Displays XP/hr rates, rankings, and a weekly chart on the Guild Overview, Members, and Guild Leaderboard tabs. Disable the standalone Guild XP/h userscript if using this.',
             },
+            guildIdleDisplay: {
+                id: 'guildIdleDisplay',
+                label: 'Guild Overview: Show idle members list',
+                type: 'checkbox',
+                default: true,
+                help: 'Displays a list of guild members who are currently idle (not performing any action) on the Guild Overview tab.',
+            },
             guildTrialSignupDisplay: {
                 id: 'guildTrialSignupDisplay',
                 label: 'Guild Trials: Show unsigned members list',
