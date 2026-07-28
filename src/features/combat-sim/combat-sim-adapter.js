@@ -1154,9 +1154,10 @@ export function getZonesThatDropItem(itemHrid, gameData) {
         } else {
             // Regular zone: check each monster's drop table and rare drop table
             const spawns = action.combatZoneInfo?.fightInfo?.randomSpawnInfo?.spawns || [];
+            const bossSpawns = action.combatZoneInfo?.fightInfo?.bossSpawns || [];
             const validTiers = new Set();
 
-            for (const spawn of spawns) {
+            for (const spawn of [...spawns, ...bossSpawns]) {
                 const monster = combatMonsterDetailMap[spawn.combatMonsterHrid];
                 if (!monster) continue;
 
