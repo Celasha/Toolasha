@@ -84,6 +84,7 @@ class TaskRerollTracker {
         this.unregisterHandlers.forEach((unregister) => unregister());
         this.unregisterHandlers = [];
         this.timerRegistry.clearAll();
+        document.getElementById('mwi-task-action-min-height')?.remove();
         this.isInitialized = false;
     }
 
