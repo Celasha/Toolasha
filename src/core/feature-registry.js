@@ -14,6 +14,12 @@ import performanceMonitor from '../utils/performance-monitor.js';
 const featureRegistry = [];
 
 /**
+ * Per-feature instance store: key → returned value from initialize()
+ * Used to thread the instance into cleanup(instance) at teardown time.
+ */
+const featureInstances = new Map();
+
+/**
  * Initialize all enabled features
  * @returns {Promise<void>}
  */
@@ -33,14 +39,18 @@ async function initializeFeatures() {
                 continue;
             }
 
-            // Initialize feature
-            const start = performance.now();
-            if (feature.async) {
-                await feature.initialize();
-            } else {
-                feature.initialize();
+            // Skip if already initialized (idempotency — same-character resync guard)
+            if (featureInstances.has(feature.key)) {
+                continue;
             }
+
+            // Initialize feature; always await the result so async flag is not required for correctness
+            const start = performance.now();
+            const instance = await Promise.resolve(feature.initialize());
             performanceMonitor.snapshot(`init:${feature.key}`, performance.now() - start);
+
+            // Store the returned instance (may be undefined for module-singleton features)
+            featureInstances.set(feature.key, instance ?? null);
         } catch (error) {
             errors.push({
                 feature: feature.name,
@@ -53,6 +63,51 @@ async function initializeFeatures() {
     // Log errors if any occurred
     if (errors.length > 0) {
         console.error(`[Toolasha] ${errors.length} feature(s) failed to initialize`, errors);
+    }
+}
+
+/**
+ * Tear down all initialized features, threading their stored instance into cleanup.
+ * Clears the instance store so features can be re-initialized afterward.
+ * @returns {Promise<void>}
+ */
+async function cleanupFeatures() {
+    const cleanupPromises = [];
+
+    for (const feature of featureRegistry) {
+        if (!featureInstances.has(feature.key)) continue;
+
+        const instance = featureInstances.get(feature.key);
+        featureInstances.delete(feature.key);
+
+        try {
+            const featureModule = feature.module || feature;
+            let result;
+
+            if (typeof featureModule.cleanup === 'function') {
+                result = featureModule.cleanup(instance);
+            } else if (typeof featureModule.disable === 'function') {
+                result = featureModule.disable(instance);
+            } else if (instance && typeof instance.disable === 'function') {
+                result = instance.disable();
+            } else if (instance && typeof instance.cleanup === 'function') {
+                result = instance.cleanup();
+            }
+
+            if (result && typeof result.then === 'function') {
+                cleanupPromises.push(
+                    result.catch((error) => {
+                        console.error(`[FeatureRegistry] Failed to clean up ${feature.name}:`, error);
+                    })
+                );
+            }
+        } catch (error) {
+            console.error(`[FeatureRegistry] Failed to clean up ${feature.name}:`, error);
+        }
+    }
+
+    if (cleanupPromises.length > 0) {
+        await Promise.all(cleanupPromises);
     }
 }
 
@@ -139,30 +194,7 @@ function setupCharacterSwitchHandler() {
                     config.clearSettingsCache();
                 }
 
-                // Disable all active features (cleanup DOM elements, event listeners, etc.)
-                const cleanupPromises = [];
-                for (const feature of featureRegistry) {
-                    try {
-                        const featureInstance = getFeatureInstance(feature.key);
-                        if (featureInstance && typeof featureInstance.disable === 'function') {
-                            const result = featureInstance.disable();
-                            if (result && typeof result.then === 'function') {
-                                cleanupPromises.push(
-                                    result.catch((error) => {
-                                        console.error(`[FeatureRegistry] Failed to disable ${feature.name}:`, error);
-                                    })
-                                );
-                            }
-                        }
-                    } catch (error) {
-                        console.error(`[FeatureRegistry] Failed to disable ${feature.name}:`, error);
-                    }
-                }
-
-                // Wait for all cleanup in parallel
-                if (cleanupPromises.length > 0) {
-                    await Promise.all(cleanupPromises);
-                }
+                await cleanupFeatures();
             } catch (error) {
                 console.error('[FeatureRegistry] Error during character switch cleanup:', error);
             }
@@ -235,12 +267,12 @@ async function retryFailedFeatures(failedFeatures) {
         const feature = getFeature(failed.key);
         if (!feature) continue;
 
+        // Clear stale instance state so initializeFeatures won't skip it
+        featureInstances.delete(feature.key);
+
         try {
-            if (feature.async) {
-                await feature.initialize();
-            } else {
-                feature.initialize();
-            }
+            const instance = await Promise.resolve(feature.initialize());
+            featureInstances.set(feature.key, instance ?? null);
 
             // Verify the retry actually worked by running health check
             if (feature.healthCheck) {

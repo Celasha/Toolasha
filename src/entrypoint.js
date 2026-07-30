@@ -740,6 +740,7 @@ function registerFeatures() {
         key: feature.key,
         name: feature.name,
         category: feature.category,
+        module: feature.module,
         initialize: () => feature.module.initialize(),
         disable: typeof feature.module.disable === 'function' ? () => feature.module.disable() : undefined,
         async: feature.async,
@@ -805,12 +806,23 @@ if (isCombatSimulatorPage()) {
     // Setup character switch handler once (NOT inside character_initialized listener)
     featureRegistry.setupCharacterSwitchHandler();
 
+    // Guard: only run full global startup once per page lifetime.
+    // Same-character resyncs (reconnect/resync delivering init_character_data again for the
+    // already-active character) must not create a second set of feature instances.
+    let globalInitDone = false;
+
     dataManager.on('character_initialized', (_data) => {
         // Skip full initialization during character switches
         // The character_switched handler in feature-registry already handles reinitialization
         if (_data._isCharacterSwitch) {
             return;
         }
+
+        // Skip same-character resyncs — features are already running.
+        if (globalInitDone) {
+            return;
+        }
+        globalInitDone = true;
 
         // Initialize all features using the feature registry
         setTimeout(async () => {
