@@ -3,6 +3,8 @@
  */
 
 import { describe, test, expect, vi } from 'vitest';
+import { readdirSync, readFileSync, statSync } from 'fs';
+import { join, resolve } from 'path';
 
 vi.mock('./settings-storage.js', () => ({
     default: { getSetting: vi.fn(() => null), onSettingChange: vi.fn() },
@@ -18,6 +20,19 @@ const CSS_COLOR = /^#[0-9a-fA-F]{3,8}$|^rgba?\(|^[a-z]+$/;
 
 function isValidColor(value) {
     return typeof value === 'string' && CSS_COLOR.test(value.trim());
+}
+
+function collectJsFiles(dir, files = []) {
+    for (const entry of readdirSync(dir)) {
+        if (entry === 'node_modules') continue;
+        const full = join(dir, entry);
+        if (statSync(full).isDirectory()) {
+            collectJsFiles(full, files);
+        } else if (entry.endsWith('.js') && !entry.endsWith('.test.js')) {
+            files.push(full);
+        }
+    }
+    return files;
 }
 
 describe('Config — color constants', () => {
@@ -49,13 +64,29 @@ describe('Config — color constants', () => {
         });
     }
 
-    test('config.SCRIPT_COLOR_PRIMARY is not defined (was undefined, now removed from callers)', () => {
-        // Regression guard: if someone re-adds SCRIPT_COLOR_PRIMARY to config,
-        // the corresponding call sites should use the semantic constant instead.
+    test('config.SCRIPT_COLOR_PRIMARY is not defined', () => {
         expect(config.SCRIPT_COLOR_PRIMARY).toBeUndefined();
     });
 
-    test('config.SCRIPT_COLOR_SECONDARY is not defined (was undefined, now removed from callers)', () => {
+    test('config.SCRIPT_COLOR_SECONDARY is not defined', () => {
         expect(config.SCRIPT_COLOR_SECONDARY).toBeUndefined();
+    });
+});
+
+describe('Config — forbidden source references (TLA-009 regression)', () => {
+    const srcDir = resolve(new URL('.', import.meta.url).pathname, '..');
+    const forbidden = ['config.SCRIPT_COLOR_PRIMARY', 'config.SCRIPT_COLOR_SECONDARY'];
+
+    test('no source file references config.SCRIPT_COLOR_PRIMARY or config.SCRIPT_COLOR_SECONDARY', () => {
+        const violations = [];
+        for (const file of collectJsFiles(srcDir)) {
+            const content = readFileSync(file, 'utf8');
+            for (const name of forbidden) {
+                if (content.includes(name)) {
+                    violations.push(`${file}: ${name}`);
+                }
+            }
+        }
+        expect(violations).toEqual([]);
     });
 });
