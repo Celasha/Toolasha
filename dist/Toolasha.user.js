@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      2.84.0
+// @version      2.85.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -21,12 +21,12 @@
 // @require      https://cdnjs.cloudflare.com/ajax/libs/mathjs/12.4.2/math.js
 // @require      https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js
 // @require      https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0/dist/chartjs-plugin-datalabels.min.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@7134d110232295f0be485ef866bc9f13bc2fbf14/dist/libraries/toolasha-core.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@7134d110232295f0be485ef866bc9f13bc2fbf14/dist/libraries/toolasha-utils.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@7134d110232295f0be485ef866bc9f13bc2fbf14/dist/libraries/toolasha-market.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@7134d110232295f0be485ef866bc9f13bc2fbf14/dist/libraries/toolasha-actions.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@7134d110232295f0be485ef866bc9f13bc2fbf14/dist/libraries/toolasha-combat.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@7134d110232295f0be485ef866bc9f13bc2fbf14/dist/libraries/toolasha-ui.js
+// @require      https://UPDATE-THIS-URL/toolasha-core.js
+// @require      https://UPDATE-THIS-URL/toolasha-utils.js
+// @require      https://UPDATE-THIS-URL/toolasha-market.js
+// @require      https://UPDATE-THIS-URL/toolasha-actions.js
+// @require      https://UPDATE-THIS-URL/toolasha-combat.js
+// @require      https://UPDATE-THIS-URL/toolasha-ui.js
 // ==/UserScript==
 // Note: Combat Sim auto-import requires Tampermonkey for cross-domain storage. Not available on Steam (use manual clipboard copy/paste instead).
 
@@ -775,6 +775,7 @@
             key: feature.key,
             name: feature.name,
             category: feature.category,
+            module: feature.module,
             initialize: () => feature.module.initialize(),
             disable: typeof feature.module.disable === 'function' ? () => feature.module.disable() : undefined,
             async: feature.async,
@@ -840,12 +841,23 @@
         // Setup character switch handler once (NOT inside character_initialized listener)
         featureRegistry.setupCharacterSwitchHandler();
 
+        // Guard: only run full global startup once per page lifetime.
+        // Same-character resyncs (reconnect/resync delivering init_character_data again for the
+        // already-active character) must not create a second set of feature instances.
+        let globalInitDone = false;
+
         dataManager.on('character_initialized', (_data) => {
             // Skip full initialization during character switches
             // The character_switched handler in feature-registry already handles reinitialization
             if (_data._isCharacterSwitch) {
                 return;
             }
+
+            // Skip same-character resyncs — features are already running.
+            if (globalInitDone) {
+                return;
+            }
+            globalInitDone = true;
 
             // Initialize all features using the feature registry
             setTimeout(async () => {
@@ -908,7 +920,7 @@
         // Expose minimal user-facing API
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
-        targetWindow.Toolasha.version = '2.84.0';
+        targetWindow.Toolasha.version = '2.85.0';
 
         // Feature toggle API (for users to manage settings via console)
         targetWindow.Toolasha.features = {

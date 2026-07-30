@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.84.0
+ * Version: 2.85.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7971,8 +7971,7 @@ self.onmessage = function (e) {
                         const quantityText = row.children[0]?.textContent || '';
                         const price = this.parsePrice(priceText);
                         const quantity = this.parseQuantity(quantityText);
-
-                        // Get currently active listings to validate matches
+                        if (price === null) return;
                         const activeListings = dataManager.getMarketListings();
                         const activeListingIds = new Set(activeListings.map((l) => l.id));
 
@@ -8054,6 +8053,7 @@ self.onmessage = function (e) {
 
                         const price = this.parsePrice(priceText);
                         const quantity = this.parseQuantity(quantityText);
+                        if (price === null) continue;
 
                         // Find matching listing from YOUR listings
                         const matchedListing = this.knownListings.find((listing) => {
@@ -8091,24 +8091,6 @@ self.onmessage = function (e) {
 
             // Default to enhancement level 0 (non-equipment or base equipment)
             return 0;
-        }
-
-        /**
-         * Parse price from text (handles K/M suffixes)
-         * @param {string} text - Price text
-         * @returns {number} Price value
-         */
-        parsePrice(text) {
-            let multiplier = 1;
-            if (text.toUpperCase().includes('K')) {
-                multiplier = 1000;
-                text = text.replace(/K/gi, '');
-            } else if (text.toUpperCase().includes('M')) {
-                multiplier = 1000000;
-                text = text.replace(/M/gi, '');
-            }
-            const numStr = text.replace(/[^0-9.]/g, '');
-            return numStr ? Number(numStr) * multiplier : 0;
         }
 
         /**
@@ -13286,7 +13268,7 @@ self.onmessage = function (e) {
 
         cleanup() {
             if (this.watcher) {
-                this.watcher.disconnect();
+                this.watcher();
                 this.watcher = null;
             }
             if (this.refreshBtn) {
@@ -13818,10 +13800,7 @@ self.onmessage = function (e) {
             cursor: pointer;
             padding: 0 4px;
         `;
-            closeBtn.addEventListener('click', () => {
-                this.modal.remove();
-                this.modal = null;
-            });
+            closeBtn.addEventListener('click', () => closeModal());
             header.appendChild(closeBtn);
 
             // Controls
@@ -13841,21 +13820,22 @@ self.onmessage = function (e) {
             dialog.appendChild(tableContainer);
             this.modal.appendChild(dialog);
 
+            // Single teardown used by all close paths
+            const closeModal = () => {
+                if (!this.modal) return;
+                this.modal.remove();
+                this.modal = null;
+                document.removeEventListener('keydown', escHandler);
+            };
+
             // Close on backdrop click
             this.modal.addEventListener('click', (e) => {
-                if (e.target === this.modal) {
-                    this.modal.remove();
-                    this.modal = null;
-                }
+                if (e.target === this.modal) closeModal();
             });
 
             // Close on Escape key
             const escHandler = (e) => {
-                if (e.key === 'Escape' && this.modal) {
-                    this.modal.remove();
-                    this.modal = null;
-                    document.removeEventListener('keydown', escHandler);
-                }
+                if (e.key === 'Escape') closeModal();
             };
             document.addEventListener('keydown', escHandler);
 
@@ -25810,16 +25790,18 @@ self.onmessage = function (e) {
             }
 
             // Live setting change for default-tab behaviour
-            const unregisterDefaultTab = config.onSettingChange('inventoryTabs_defaultTab', () => {
+            const onDefaultTabChange = () => {
                 this._applyDefaultTabSetting();
-            });
-            this._unregisterHandlers.push(unregisterDefaultTab);
+            };
+            config.onSettingChange('inventoryTabs_defaultTab', onDefaultTabChange);
+            this._unregisterHandlers.push(() => config.offSettingChange('inventoryTabs_defaultTab', onDefaultTabChange));
 
             // Live setting change for tile gap
-            const unregisterTileGap = config.onSettingChange('inventoryTabs_tileGap', () => {
+            const onTileGapChange = () => {
                 if (this._isActive) this._applyTileGap();
-            });
-            this._unregisterHandlers.push(unregisterTileGap);
+            };
+            config.onSettingChange('inventoryTabs_tileGap', onTileGapChange);
+            this._unregisterHandlers.push(() => config.offSettingChange('inventoryTabs_tileGap', onTileGapChange));
 
             // Re-apply layout when inventory changes.
             // Uses requestAnimationFrame instead of a long debounce — rAF fires at the next frame

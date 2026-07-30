@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.84.0
+ * Version: 2.85.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -21,7 +21,8 @@
             this.dbName = 'ToolashaDB';
             this.dbVersion = 17; // Bumped for leaderboardHistory store
             this.saveDebounceTimers = new Map(); // Per-key debounce timers
-            this.pendingWrites = new Map(); // Per-key pending write data: {value, storeName}
+            this.pendingWrites = new Map(); // Per-key pending write data: {value, storeName, resolvers, generation}
+            this._writeGeneration = new Map(); // Per-key monotonic generation counter
             this.SAVE_DEBOUNCE_DELAY = 3000; // 3 seconds
             this._reconnecting = false; // Guard against concurrent reconnection attempts
             this._dbNulledReason = null; // Track why db was last set to null
@@ -271,7 +272,9 @@
             const existing = this.pendingWrites.get(timerKey);
             const resolvers = existing?.resolvers || [];
 
-            this.pendingWrites.set(timerKey, { value, storeName, resolvers });
+            const generation = (this._writeGeneration.get(timerKey) || 0) + 1;
+            this._writeGeneration.set(timerKey, generation);
+            this.pendingWrites.set(timerKey, { value, storeName, resolvers, generation });
 
             if (this.saveDebounceTimers.has(timerKey)) {
                 clearTimeout(this.saveDebounceTimers.get(timerKey));
@@ -281,17 +284,43 @@
                 resolvers.push(resolve);
 
                 const timer = setTimeout(async () => {
-                    const pending = this.pendingWrites.get(timerKey);
-                    this.pendingWrites.delete(timerKey);
                     this.saveDebounceTimers.delete(timerKey);
 
-                    let success = false;
-                    if (pending) {
-                        success = await this._saveToIndexedDB(key, pending.value, pending.storeName);
+                    const pending = this.pendingWrites.get(timerKey);
+                    if (!pending || pending.generation !== generation) {
+                        // A newer write arrived and owns this slot — do nothing.
+                        // The newer timer will handle persistence and resolve all coalesced callers.
+                        return;
                     }
 
-                    for (const r of pending?.resolvers || []) {
-                        r(success);
+                    // Take ownership: remove from queue before attempting save
+                    // so a concurrent newer write can claim the slot cleanly.
+                    this.pendingWrites.delete(timerKey);
+
+                    const success = await this._saveToIndexedDB(key, pending.value, pending.storeName);
+
+                    if (!success) {
+                        // Requeue without a timer so the value survives for the next
+                        // flushAll() or the next debounced write to this key.
+                        if (!this.pendingWrites.has(timerKey)) {
+                            this.pendingWrites.set(timerKey, {
+                                value: pending.value,
+                                storeName: pending.storeName,
+                                resolvers: pending.resolvers,
+                                generation: pending.generation,
+                            });
+                        }
+                        // A newer write already reclaimed the slot — resolve callers with false.
+                        else {
+                            for (const r of pending.resolvers) {
+                                r(false);
+                            }
+                        }
+                        return;
+                    }
+
+                    for (const r of pending.resolvers) {
+                        r(true);
                     }
                 }, this.SAVE_DEBOUNCE_DELAY);
 
@@ -471,17 +500,32 @@
             }
             this.saveDebounceTimers.clear();
 
-            // Now execute all pending writes immediately and resolve their Promises
+            // Snapshot the current pending writes; do not clear the map upfront.
+            // Each entry is only removed after its write succeeds to preserve durability.
             const writes = Array.from(this.pendingWrites.entries());
-            this.pendingWrites.clear();
 
             for (const [timerKey, pending] of writes) {
+                // Skip if a newer write has already replaced this entry.
+                if (this.pendingWrites.get(timerKey) !== pending) continue;
+
                 const colonIndex = timerKey.indexOf(':');
                 const key = timerKey.substring(colonIndex + 1);
 
                 const success = await this._saveToIndexedDB(key, pending.value, pending.storeName);
-                for (const r of pending.resolvers || []) {
-                    r(success);
+
+                if (success) {
+                    // Only remove if no newer write has claimed the slot since we started.
+                    if (this.pendingWrites.get(timerKey) === pending) {
+                        this.pendingWrites.delete(timerKey);
+                    }
+                    for (const r of pending.resolvers || []) {
+                        r(true);
+                    }
+                } else {
+                    // Leave the entry in pendingWrites so reconnect / next flush can retry.
+                    for (const r of pending.resolvers || []) {
+                        r(false);
+                    }
                 }
             }
         }
@@ -504,6 +548,7 @@
                 }
             }
             this.pendingWrites.clear();
+            this._writeGeneration.clear();
         }
 
         /**
@@ -2586,6 +2631,13 @@
                     default: true,
                     help: 'Displays XP/hr rates, rankings, and a weekly chart on the Guild Overview, Members, and Guild Leaderboard tabs. Disable the standalone Guild XP/h userscript if using this.',
                 },
+                guildIdleDisplay: {
+                    id: 'guildIdleDisplay',
+                    label: 'Guild Overview: Show idle members list',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Displays a list of guild members who are currently idle (not performing any action) on the Guild Overview tab.',
+                },
                 guildTrialSignupDisplay: {
                     id: 'guildTrialSignupDisplay',
                     label: 'Guild Trials: Show unsigned members list',
@@ -2973,7 +3025,7 @@
          * @param {string} [characterName]
          */
         setCharacterId(characterId, characterName) {
-            this.currentCharacterId = characterId;
+            this.currentCharacterId = String(characterId);
             if (characterName) this.currentCharacterName = characterName;
         }
 
@@ -3283,10 +3335,11 @@
                 let imported = 0;
                 let skipped = 0;
 
-                const knownCharacters = new Set(await this.getKnownCharacters());
+                const toId = (entry) => String(typeof entry === 'object' && entry !== null ? entry.id : entry);
+                const knownCharacters = new Set((await this.getKnownCharacters()).map((c) => c.id));
                 if (data[this.knownCharactersKey]) {
                     for (const id of data[this.knownCharactersKey]) {
-                        knownCharacters.add(String(id));
+                        knownCharacters.add(toId(id));
                     }
                 }
 
@@ -3415,7 +3468,6 @@
             }
 
             this.wrapWebSocketConstructor();
-            this.wrapWebSocketPrototype();
 
             // Capture hook instance for closure
             const hookInstance = this;
@@ -3452,65 +3504,6 @@
             Object.defineProperty(pageMessageEvent.prototype, 'data', dataProperty);
 
             this.isHooked = true;
-        }
-
-        /**
-         * Wrap WebSocket prototype handlers to intercept message events
-         */
-        wrapWebSocketPrototype() {
-            const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
-            if (typeof targetWindow === 'undefined' || !targetWindow.WebSocket || !targetWindow.WebSocket.prototype) {
-                return;
-            }
-
-            const hookInstance = this;
-            const proto = targetWindow.WebSocket.prototype;
-
-            if (!proto.__toolashaPatched) {
-                const originalAddEventListener = proto.addEventListener;
-                proto.addEventListener = function toolashaAddEventListener(type, listener, options) {
-                    if (type === 'message' && typeof listener === 'function') {
-                        const wrappedListener = function toolashaMessageListener(event) {
-                            if (!hookInstance.isMessageEventProcessed(event) && typeof event?.data === 'string') {
-                                hookInstance.markMessageEventProcessed(event);
-                                hookInstance.processMessage(event.data);
-                            }
-                            return listener.call(this, event);
-                        };
-
-                        wrappedListener.__toolashaOriginal = listener;
-                        return originalAddEventListener.call(this, type, wrappedListener, options);
-                    }
-
-                    return originalAddEventListener.call(this, type, listener, options);
-                };
-
-                const originalOnMessage = Object.getOwnPropertyDescriptor(proto, 'onmessage');
-                if (originalOnMessage && originalOnMessage.set) {
-                    Object.defineProperty(proto, 'onmessage', {
-                        configurable: true,
-                        get: originalOnMessage.get,
-                        set(handler) {
-                            if (typeof handler !== 'function') {
-                                return originalOnMessage.set.call(this, handler);
-                            }
-
-                            const wrappedHandler = function toolashaOnMessage(event) {
-                                if (!hookInstance.isMessageEventProcessed(event) && typeof event?.data === 'string') {
-                                    hookInstance.markMessageEventProcessed(event);
-                                    hookInstance.processMessage(event.data);
-                                }
-                                return handler.call(this, event);
-                            };
-
-                            wrappedHandler.__toolashaOriginal = handler;
-                            return originalOnMessage.set.call(this, wrappedHandler);
-                        },
-                    });
-                }
-
-                proto.__toolashaPatched = true;
-            }
         }
 
         /**
@@ -6345,7 +6338,7 @@
             this.handlers = [];
             this.isObserving = false;
             this.debounceTimers = new Map(); // Track debounce timers per handler
-            this.debouncedElements = new Map(); // Track pending elements per handler
+            this.debouncedLatest = new Map(); // Latest { node, mutation } per handler (O(1) per handler)
             this.DEFAULT_DEBOUNCE_DELAY = 50; // 50ms default delay
         }
 
@@ -6408,11 +6401,8 @@
             const handlerName = handler.name;
             const delay = handler.debounceDelay || this.DEFAULT_DEBOUNCE_DELAY;
 
-            // Store element for batched processing
-            if (!this.debouncedElements.has(handlerName)) {
-                this.debouncedElements.set(handlerName, []);
-            }
-            this.debouncedElements.get(handlerName).push({ node, mutation });
+            // Overwrite with the latest node/mutation — only the last one is ever used
+            this.debouncedLatest.set(handlerName, { node, mutation });
 
             // Clear existing timer
             if (this.debounceTimers.has(handlerName)) {
@@ -6421,21 +6411,17 @@
 
             // Set new timer
             const timer = setTimeout(() => {
-                const elements = this.debouncedElements.get(handlerName) || [];
-                this.debouncedElements.delete(handlerName);
+                const latest = this.debouncedLatest.get(handlerName);
+                this.debouncedLatest.delete(handlerName);
                 this.debounceTimers.delete(handlerName);
 
-                // Process all collected elements
-                // For most handlers, we only need to process the last element
-                // (e.g., task list updated multiple times, we only care about final state)
-                if (elements.length > 0) {
-                    const lastElement = elements[elements.length - 1];
+                if (latest) {
                     if (performanceMonitor.enabled) {
                         const start = performance.now();
-                        handler.callback(lastElement.node, lastElement.mutation);
+                        handler.callback(latest.node, latest.mutation);
                         performanceMonitor.record(`dom:${handler.name}`, performance.now() - start);
                     } else {
-                        handler.callback(lastElement.node, lastElement.mutation);
+                        handler.callback(latest.node, latest.mutation);
                     }
                 }
             }, delay);
@@ -6455,7 +6441,7 @@
             // Clear all debounce timers
             this.debounceTimers.forEach((timer) => clearTimeout(timer));
             this.debounceTimers.clear();
-            this.debouncedElements.clear();
+            this.debouncedLatest.clear();
 
             this.isObserving = false;
         }
@@ -6488,7 +6474,7 @@
                     if (this.debounceTimers.has(name)) {
                         clearTimeout(this.debounceTimers.get(name));
                         this.debounceTimers.delete(name);
-                        this.debouncedElements.delete(name);
+                        this.debouncedLatest.delete(name);
                     }
                 }
             };
@@ -6567,6 +6553,12 @@
     const featureRegistry = [];
 
     /**
+     * Per-feature instance store: key → returned value from initialize()
+     * Used to thread the instance into cleanup(instance) at teardown time.
+     */
+    const featureInstances = new Map();
+
+    /**
      * Initialize all enabled features
      * @returns {Promise<void>}
      */
@@ -6586,14 +6578,18 @@
                     continue;
                 }
 
-                // Initialize feature
-                const start = performance.now();
-                if (feature.async) {
-                    await feature.initialize();
-                } else {
-                    feature.initialize();
+                // Skip if already initialized (idempotency — same-character resync guard)
+                if (featureInstances.has(feature.key)) {
+                    continue;
                 }
+
+                // Initialize feature; always await the result so async flag is not required for correctness
+                const start = performance.now();
+                const instance = await Promise.resolve(feature.initialize());
                 performanceMonitor.snapshot(`init:${feature.key}`, performance.now() - start);
+
+                // Store the returned instance (may be undefined for module-singleton features)
+                featureInstances.set(feature.key, instance ?? null);
             } catch (error) {
                 errors.push({
                     feature: feature.name,
@@ -6606,6 +6602,51 @@
         // Log errors if any occurred
         if (errors.length > 0) {
             console.error(`[Toolasha] ${errors.length} feature(s) failed to initialize`, errors);
+        }
+    }
+
+    /**
+     * Tear down all initialized features, threading their stored instance into cleanup.
+     * Clears the instance store so features can be re-initialized afterward.
+     * @returns {Promise<void>}
+     */
+    async function cleanupFeatures() {
+        const cleanupPromises = [];
+
+        for (const feature of featureRegistry) {
+            if (!featureInstances.has(feature.key)) continue;
+
+            const instance = featureInstances.get(feature.key);
+            featureInstances.delete(feature.key);
+
+            try {
+                const featureModule = feature.module || feature;
+                let result;
+
+                if (typeof featureModule.cleanup === 'function') {
+                    result = featureModule.cleanup(instance);
+                } else if (typeof featureModule.disable === 'function') {
+                    result = featureModule.disable(instance);
+                } else if (instance && typeof instance.disable === 'function') {
+                    result = instance.disable();
+                } else if (instance && typeof instance.cleanup === 'function') {
+                    result = instance.cleanup();
+                }
+
+                if (result && typeof result.then === 'function') {
+                    cleanupPromises.push(
+                        result.catch((error) => {
+                            console.error(`[FeatureRegistry] Failed to clean up ${feature.name}:`, error);
+                        })
+                    );
+                }
+            } catch (error) {
+                console.error(`[FeatureRegistry] Failed to clean up ${feature.name}:`, error);
+            }
+        }
+
+        if (cleanupPromises.length > 0) {
+            await Promise.all(cleanupPromises);
         }
     }
 
@@ -6692,30 +6733,7 @@
                         config.clearSettingsCache();
                     }
 
-                    // Disable all active features (cleanup DOM elements, event listeners, etc.)
-                    const cleanupPromises = [];
-                    for (const feature of featureRegistry) {
-                        try {
-                            const featureInstance = getFeatureInstance(feature.key);
-                            if (featureInstance && typeof featureInstance.disable === 'function') {
-                                const result = featureInstance.disable();
-                                if (result && typeof result.then === 'function') {
-                                    cleanupPromises.push(
-                                        result.catch((error) => {
-                                            console.error(`[FeatureRegistry] Failed to disable ${feature.name}:`, error);
-                                        })
-                                    );
-                                }
-                            }
-                        } catch (error) {
-                            console.error(`[FeatureRegistry] Failed to disable ${feature.name}:`, error);
-                        }
-                    }
-
-                    // Wait for all cleanup in parallel
-                    if (cleanupPromises.length > 0) {
-                        await Promise.all(cleanupPromises);
-                    }
+                    await cleanupFeatures();
                 } catch (error) {
                     console.error('[FeatureRegistry] Error during character switch cleanup:', error);
                 }
@@ -6764,21 +6782,6 @@
     }
 
     /**
-     * Get feature instance from imported module
-     * @param {string} key - Feature key
-     * @returns {Object|null} Feature instance or null
-     * @private
-     */
-    function getFeatureInstance(key) {
-        const feature = getFeature(key);
-        if (!feature) {
-            return null;
-        }
-
-        return feature.module || feature;
-    }
-
-    /**
      * Retry initialization for specific features
      * @param {Array<Object>} failedFeatures - Array of failed feature objects
      * @returns {Promise<void>}
@@ -6788,12 +6791,12 @@
             const feature = getFeature(failed.key);
             if (!feature) continue;
 
+            // Clear stale instance state so initializeFeatures won't skip it
+            featureInstances.delete(feature.key);
+
             try {
-                if (feature.async) {
-                    await feature.initialize();
-                } else {
-                    feature.initialize();
-                }
+                const instance = await Promise.resolve(feature.initialize());
+                featureInstances.set(feature.key, instance ?? null);
 
                 // Verify the retry actually worked by running health check
                 if (feature.healthCheck) {

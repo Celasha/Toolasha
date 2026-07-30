@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.84.0
+ * Version: 2.85.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1098,6 +1098,7 @@
             this.offsets = {}; // title → { dx, dy }
             this.unregisterObserver = null;
             this.initialized = false;
+            this.dragListeners = []; // { onMouseMove, onMouseUp } pairs awaiting removal
         }
 
         async initialize() {
@@ -1203,6 +1204,22 @@
             bar.addEventListener('mousedown', onMouseDown);
             document.addEventListener('mousemove', onMouseMove);
             document.addEventListener('mouseup', onMouseUp);
+
+            // Track listeners so disable() can remove them if the modal is still open
+            const entry = { onMouseMove, onMouseUp };
+            this.dragListeners.push(entry);
+
+            // Remove document listeners as soon as the modal element is detached
+            const observer = new MutationObserver(() => {
+                if (!document.contains(modalBox)) {
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+                    const idx = this.dragListeners.indexOf(entry);
+                    if (idx !== -1) this.dragListeners.splice(idx, 1);
+                    observer.disconnect();
+                }
+            });
+            observer.observe(document.body, { childList: true, subtree: true });
         }
 
         disable() {
@@ -1210,6 +1227,11 @@
                 this.unregisterObserver();
                 this.unregisterObserver = null;
             }
+            for (const { onMouseMove, onMouseUp } of this.dragListeners) {
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+            }
+            this.dragListeners = [];
             this.offsets = {};
             this.initialized = false;
         }
@@ -3090,11 +3112,6 @@ ${starCSS}
             if (existing) {
                 this.attachToInput(existing);
             }
-
-            // Listen for character switch to cleanup
-            dataManager.on('character_switching', () => {
-                this.cleanup();
-            });
         }
 
         /**
@@ -10153,7 +10170,7 @@ ${starCSS}
             // Determine if active (first in queue) or queued
             const isActive = matchActionHrid === activeActionHrid;
             const label = isActive ? '▶ Active' : '⏸ Queued';
-            const color = isActive ? config.COLOR_ACCENT : config.SCRIPT_COLOR_SECONDARY;
+            const color = isActive ? config.COLOR_ACCENT : config.COLOR_TEXT_SECONDARY;
 
             if (existingIndicator) {
                 // Update existing indicator's inner badge
@@ -10367,6 +10384,7 @@ ${starCSS}
             this.unregisterHandlers.forEach((unregister) => unregister());
             this.unregisterHandlers = [];
             this.timerRegistry.clearAll();
+            document.getElementById('mwi-task-action-min-height')?.remove();
             this.isInitialized = false;
         }
 
@@ -10656,7 +10674,7 @@ ${starCSS}
                 displayElement = document.createElement('div');
                 displayElement.className = 'mwi-reroll-cost-display';
                 displayElement.style.cssText = `
-                color: ${config.SCRIPT_COLOR_SECONDARY};
+                color: ${config.COLOR_TEXT_SECONDARY};
                 font-size: 0.75rem;
                 margin-top: 4px;
                 padding: 2px 4px;
@@ -17672,7 +17690,7 @@ ${starCSS}
         `;
 
             pricingCell.innerHTML = `
-            <span style="color: ${config.SCRIPT_COLOR_SECONDARY};">@ ${formatters_js.coinFormatter(materialData.marketPrice)}</span>
+            <span style="color: ${config.COLOR_TEXT_SECONDARY};">@ ${formatters_js.coinFormatter(materialData.marketPrice)}</span>
             <span style="color: ${config.COLOR_ACCENT}; font-weight: bold;">= ${formatters_js.coinFormatter(materialData.totalValue)}</span>
             <span style="color: ${hasEnough ? '#4ade80' : '#f87171'}; margin-left: auto; text-align: right;">${formatters_js.coinFormatter(amountNeeded)}</span>
         `;
@@ -17716,7 +17734,7 @@ ${starCSS}
             padding: 8px;
             background: rgba(0, 0, 0, 0.3);
             border-radius: 8px;
-            border: 1px solid ${config.SCRIPT_COLOR_SECONDARY};
+            border: 1px solid ${config.COLOR_BORDER};
             min-height: 0;
             overflow-y: auto;
         `;
@@ -17743,7 +17761,7 @@ ${starCSS}
             dropdown.style.cssText = `
             padding: 4px 8px;
             background: rgba(0, 0, 0, 0.3);
-            border: 1px solid ${config.SCRIPT_COLOR_SECONDARY};
+            border: 1px solid ${config.COLOR_BORDER};
             color: ${config.SCRIPT_COLOR_MAIN};
             border-radius: 4px;
             cursor: pointer;
@@ -31502,8 +31520,8 @@ ${starCSS}
             }
 
             // Unregister setting change listeners
-            for (const { key } of this.settingChangeHandlers) {
-                config.offSettingChange(key);
+            for (const { key, handler } of this.settingChangeHandlers) {
+                config.offSettingChange(key, handler);
             }
             this.settingChangeHandlers = [];
 
@@ -33677,6 +33695,7 @@ ${starCSS}
             };
 
             webSocketHook.on('guild_updated', this._boundRefreshOverview);
+            webSocketHook.on('guild_characters_updated', this._boundRefreshOverview);
             webSocketHook.on('guild_characters_updated', this._boundRefreshMembers);
             webSocketHook.on('guild_characters_updated', this._boundRefreshTrials);
             webSocketHook.on('guild_updated', this._boundRefreshTrials);
@@ -33685,6 +33704,7 @@ ${starCSS}
 
             this.unregisterObservers.push(() => {
                 webSocketHook.off('guild_updated', this._boundRefreshOverview);
+                webSocketHook.off('guild_characters_updated', this._boundRefreshOverview);
                 webSocketHook.off('guild_characters_updated', this._boundRefreshMembers);
                 webSocketHook.off('guild_characters_updated', this._boundRefreshTrials);
                 webSocketHook.off('guild_updated', this._boundRefreshTrials);
@@ -33764,7 +33784,8 @@ ${starCSS}
                 </div>
             </div>`;
 
-            dataGridEl.insertAdjacentHTML('beforeend', statsHTML + chartHTML);
+            const idleHTML = this._buildIdleHTML();
+            dataGridEl.insertAdjacentHTML('beforeend', statsHTML + idleHTML + chartHTML);
 
             // Attach chart bar event listeners
             dataGridEl.querySelectorAll(`.${CSS_PREFIX$1}__bar`).forEach((bar) => {
@@ -33786,6 +33807,31 @@ ${starCSS}
                     }
                 }
             }
+        }
+
+        _buildIdleHTML() {
+            if (!config.getSetting('guildIdleDisplay', true)) return '';
+
+            const memberList = guildXPTracker.getMemberList();
+            if (memberList.length === 0) return '';
+
+            const idleNames = memberList
+                .filter((m) => m.isOnline && m.inactiveTime !== null && !m.hideOnlineStatus)
+                .map((m) => m.name)
+                .sort((a, b) => a.localeCompare(b));
+
+            const namesStr =
+                idleNames.length === 0
+                    ? '<span style="color: var(--color-success);">None</span>'
+                    : idleNames.map((n) => `<span style="color: #f0a830;">${n}</span>`).join(', ');
+
+            return `
+            <div class="GuildPanel_dataBlockGroup__1d2rR ${CSS_PREFIX$1}" style="grid-column: 1 / 3; max-width: none;">
+                <div class="GuildPanel_dataBlock__3qVhK" style="padding: 8px 12px; height: auto; min-height: 0;">
+                    <div class="GuildPanel_label__-A63g">Idle members (${idleNames.length})</div>
+                    <div style="font-size: 13px; line-height: 1.6; max-height: 120px; overflow-y: auto;">${namesStr}</div>
+                </div>
+            </div>`;
         }
 
         _refreshOverviewIfVisible() {
@@ -36389,7 +36435,7 @@ ${starCSS}
      */
 
 
-    let unregisterSettingChange = null;
+    let settingChangeHandler = null;
 
     var queueMonitor = {
         name: 'Queue Monitor',
@@ -36402,22 +36448,23 @@ ${starCSS}
                 queueMonitorUI.initialize();
             }
 
-            unregisterSettingChange = config.onSettingChange('queueMonitor', (enabled) => {
+            settingChangeHandler = (enabled) => {
                 if (enabled) {
                     queueMonitorUI.initialize();
                 } else {
                     queueMonitorUI.disable();
                 }
-            });
+            };
+            config.onSettingChange('queueMonitor', settingChangeHandler);
         },
 
         disable: () => {
             queueSnapshot.disable();
             queueMonitorUI.disable();
 
-            if (unregisterSettingChange) {
-                unregisterSettingChange();
-                unregisterSettingChange = null;
+            if (settingChangeHandler) {
+                config.offSettingChange('queueMonitor', settingChangeHandler);
+                settingChangeHandler = null;
             }
         },
     };

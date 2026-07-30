@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.84.0
+ * Version: 2.85.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4604,14 +4604,7 @@
             border-radius: 4px;
             font-weight: bold;
         `;
-            closeBtn.addEventListener('click', () => {
-                // Destroy chart before removing modal
-                if (this.modalChartInstance) {
-                    this.modalChartInstance.destroy();
-                    this.modalChartInstance = null;
-                }
-                modal.remove();
-            });
+            closeBtn.addEventListener('click', () => destroyAndClose());
 
             header.appendChild(title);
             header.appendChild(closeBtn);
@@ -4635,17 +4628,19 @@
             // Render chart in modal
             this.renderModalChart(canvas);
 
+            // Shared teardown for button and Escape — idempotent
+            const destroyAndClose = () => {
+                if (this.modalChartInstance) {
+                    this.modalChartInstance.destroy();
+                    this.modalChartInstance = null;
+                }
+                modal.remove();
+                document.removeEventListener('keydown', escHandler);
+            };
+
             // Close on ESC key
             const escHandler = (e) => {
-                if (e.key === 'Escape') {
-                    // Destroy chart before removing modal
-                    if (this.modalChartInstance) {
-                        this.modalChartInstance.destroy();
-                        this.modalChartInstance = null;
-                    }
-                    modal.remove();
-                    document.removeEventListener('keydown', escHandler);
-                }
+                if (e.key === 'Escape') destroyAndClose();
             };
             document.addEventListener('keydown', escHandler);
         }
@@ -8682,9 +8677,10 @@
             } else {
                 // Regular zone: check each monster's drop table and rare drop table
                 const spawns = action.combatZoneInfo?.fightInfo?.randomSpawnInfo?.spawns || [];
+                const bossSpawns = action.combatZoneInfo?.fightInfo?.bossSpawns || [];
                 const validTiers = new Set();
 
-                for (const spawn of spawns) {
+                for (const spawn of [...spawns, ...bossSpawns]) {
                     const monster = combatMonsterDetailMap[spawn.combatMonsterHrid];
                     if (!monster) continue;
 
@@ -13768,30 +13764,40 @@
         }
 
         // Check for primary offensive stats (exclude defensiveDamage — it's a tank stat)
-        const melee = (combatStats.stabDamage || 0) + (combatStats.slashDamage || 0) + (combatStats.smashDamage || 0);
+        const stab = combatStats.stabDamage || 0;
+        const slash = combatStats.slashDamage || 0;
+        const smash = combatStats.smashDamage || 0;
         const ranged = combatStats.rangedDamage || 0;
         const magic = combatStats.magicDamage || 0;
+        const melee = stab + slash + smash;
 
-        // If item has offensive damage stats, classify by highest
+        // If item has offensive damage stats, classify by highest.
+        // Melee is subdivided by damage style so stab/slash/smash weapons form separate tier groups.
         if (melee > 0 || ranged > 0 || magic > 0) {
             if (ranged >= melee && ranged >= magic) return 'ranged';
             if (magic >= melee && magic >= ranged) return 'magic';
-            return 'melee';
+            if (stab >= slash && stab >= smash) return 'melee_stab';
+            if (slash >= stab && slash >= smash) return 'melee_slash';
+            return 'melee_smash';
         }
 
         // Items with only defensiveDamage and no offensive damage are tanks
         if (combatStats.defensiveDamage > 0) return 'defensive';
 
         // Check accuracy as secondary signal
-        const meleeAcc =
-            (combatStats.stabAccuracy || 0) + (combatStats.slashAccuracy || 0) + (combatStats.smashAccuracy || 0);
+        const stabAcc = combatStats.stabAccuracy || 0;
+        const slashAcc = combatStats.slashAccuracy || 0;
+        const smashAcc = combatStats.smashAccuracy || 0;
+        const meleeAcc = stabAcc + slashAcc + smashAcc;
         const rangedAcc = combatStats.rangedAccuracy || 0;
         const magicAcc = combatStats.magicAccuracy || 0;
 
         if (meleeAcc > 0 || rangedAcc > 0 || magicAcc > 0) {
             if (rangedAcc >= meleeAcc && rangedAcc >= magicAcc) return 'ranged';
             if (magicAcc >= meleeAcc && magicAcc >= rangedAcc) return 'magic';
-            return 'melee';
+            if (stabAcc >= slashAcc && stabAcc >= smashAcc) return 'melee_stab';
+            if (slashAcc >= stabAcc && slashAcc >= smashAcc) return 'melee_slash';
+            return 'melee_smash';
         }
 
         // Defensive/utility gear — armor, evasion, HP

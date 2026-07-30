@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.84.0
+ * Version: 2.85.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7209,6 +7209,7 @@
             this.activeBarProfitId = null;
             this.waitForPanelTimeout = null;
             this.retryUpdateTimeout = null;
+            this.settingChangeHandlers = []; // [{key, fn}] for offSettingChange cleanup
             this.cleanupRegistry = cleanupRegistry_js.createCleanupRegistry();
         }
 
@@ -7238,14 +7239,20 @@
                 'profitCalc_pricingMode',
             ];
             for (const key of actionBarSettings) {
-                config.onSettingChange(key, (newValue) => {
+                const fn = (newValue) => {
                     if (key === 'actionBar_enabled' && !newValue) {
                         this.disable();
                         return;
                     }
                     this.updateDisplay();
-                });
+                };
+                config.onSettingChange(key, fn);
+                this.settingChangeHandlers.push({ key, fn });
             }
+            this.cleanupRegistry.registerCleanup(() => {
+                this.settingChangeHandlers.forEach(({ key, fn }) => config.offSettingChange(key, fn));
+                this.settingChangeHandlers = [];
+            });
 
             // Set up handler for character switching
             if (!this.characterInitHandler) {
@@ -11497,24 +11504,6 @@
                 return null;
             }
         }
-
-        /**
-         * Disable quick input buttons (cleanup)
-         */
-        disable() {
-            // Disconnect main observer
-            if (this.observer) {
-                this.observer.disconnect();
-                this.observer = null;
-            }
-
-            // Note: inputObserver and newInputObserver are created locally in injectQuickInputButtons()
-            // and attached to panels, which will be garbage collected when panels are removed.
-            // They cannot be explicitly disconnected here, but this is acceptable as they're
-            // short-lived observers tied to specific panel instances.
-
-            this.isActive = false;
-        }
     }
 
     const quickInputButtons = new QuickInputButtons();
@@ -11953,6 +11942,9 @@
             this.actionCompletedHandler = null;
             this.characterSwitchingHandler = null; // Handler for character switch cleanup
             this.pricingModeHandler = null; // Handler for pricing mode changes
+            this.maxProduceableHandler = null;
+            this.showProfitPerHourHandler = null;
+            this.showExpPerHourHandler = null;
             this.profitCalcTimeout = null; // Debounce timer for deferred profit calculations
             this.actionNameToHridCache = null; // Cached reverse lookup map (name → hrid)
             this.isInitialized = false;
@@ -12002,10 +11994,19 @@
             this.pricingModeHandler = () => {
                 this.updateAllCounts();
             };
+            this.maxProduceableHandler = () => {
+                this.updateAllCounts();
+            };
+            this.showProfitPerHourHandler = () => {
+                this.updateAllCounts();
+            };
+            this.showExpPerHourHandler = () => {
+                this.updateAllCounts();
+            };
             config.onSettingChange('profitCalc_pricingMode', this.pricingModeHandler);
-            config.onSettingChange('actionPanel_maxProduceable', () => this.updateAllCounts());
-            config.onSettingChange('actionPanel_showProfitPerHour_production', () => this.updateAllCounts());
-            config.onSettingChange('actionPanel_showExpPerHour_production', () => this.updateAllCounts());
+            config.onSettingChange('actionPanel_maxProduceable', this.maxProduceableHandler);
+            config.onSettingChange('actionPanel_showProfitPerHour_production', this.showProfitPerHourHandler);
+            config.onSettingChange('actionPanel_showExpPerHour_production', this.showExpPerHourHandler);
         }
 
         /**
@@ -12866,6 +12867,21 @@
                 this.pricingModeHandler = null;
             }
 
+            if (this.maxProduceableHandler) {
+                config.offSettingChange('actionPanel_maxProduceable', this.maxProduceableHandler);
+                this.maxProduceableHandler = null;
+            }
+
+            if (this.showProfitPerHourHandler) {
+                config.offSettingChange('actionPanel_showProfitPerHour_production', this.showProfitPerHourHandler);
+                this.showProfitPerHourHandler = null;
+            }
+
+            if (this.showExpPerHourHandler) {
+                config.offSettingChange('actionPanel_showExpPerHour_production', this.showExpPerHourHandler);
+                this.showExpPerHourHandler = null;
+            }
+
             // Clear all DOM references
             this.clearAllReferences();
 
@@ -12908,6 +12924,8 @@
             this.consumablesUpdatedHandler = null; // Handler for tea/drink changes
             this.characterSwitchingHandler = null; // Handler for character switch cleanup
             this.pricingModeHandler = null; // Handler for pricing mode changes
+            this.showProfitPerHourHandler = null;
+            this.showExpPerHourHandler = null;
             this.isInitialized = false;
             this.itemsUpdatedDebounceTimer = null; // Debounce timer for items_updated events
             this.consumablesUpdatedDebounceTimer = null; // Debounce timer for consumables_updated events
@@ -12965,8 +12983,10 @@
                 this.updateAllStats();
             };
             config.onSettingChange('profitCalc_pricingMode', this.pricingModeHandler);
-            config.onSettingChange('actionPanel_showProfitPerHour_gathering', () => this.updateAllStats());
-            config.onSettingChange('actionPanel_showExpPerHour_gathering', () => this.updateAllStats());
+            this.showProfitPerHourHandler = () => this.updateAllStats();
+            this.showExpPerHourHandler = () => this.updateAllStats();
+            config.onSettingChange('actionPanel_showProfitPerHour_gathering', this.showProfitPerHourHandler);
+            config.onSettingChange('actionPanel_showExpPerHour_gathering', this.showExpPerHourHandler);
         }
 
         /**
@@ -13566,6 +13586,16 @@
             if (this.pricingModeHandler) {
                 config.offSettingChange('profitCalc_pricingMode', this.pricingModeHandler);
                 this.pricingModeHandler = null;
+            }
+
+            if (this.showProfitPerHourHandler) {
+                config.offSettingChange('actionPanel_showProfitPerHour_gathering', this.showProfitPerHourHandler);
+                this.showProfitPerHourHandler = null;
+            }
+
+            if (this.showExpPerHourHandler) {
+                config.offSettingChange('actionPanel_showExpPerHour_gathering', this.showExpPerHourHandler);
+                this.showExpPerHourHandler = null;
             }
 
             // Clear all DOM references
@@ -15576,17 +15606,20 @@
         overlay.appendChild(modal);
         document.body.appendChild(overlay);
 
-        const close = () => overlay.remove();
+        const close = () => {
+            overlay.remove();
+            document.removeEventListener('keydown', onEsc);
+        };
         overlay.querySelector('#mwi-budget-modal-close').addEventListener('click', close);
         overlay.addEventListener('click', (e) => {
             if (e.target === overlay) close();
         });
-        document.addEventListener('keydown', function onEsc(e) {
+        function onEsc(e) {
             if (e.key === 'Escape') {
                 close();
-                document.removeEventListener('keydown', onEsc);
             }
-        });
+        }
+        document.addEventListener('keydown', onEsc);
     }
 
     class BudgetCalculator {
@@ -15595,7 +15628,7 @@
             this.unregisterHandlers = [];
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
             this.processedPanels = new WeakSet();
-            this.panelObservers = new WeakMap();
+            this.panelObservers = new Map();
         }
 
         initialize() {
@@ -15788,8 +15821,8 @@
             document.getElementById('mwi-budget-modal-overlay')?.remove();
 
             // Disconnect all panel observers
-            // (WeakMap entries are cleaned up automatically as panels are GC'd)
-
+            this.panelObservers.forEach((obs) => obs.disconnect());
+            this.panelObservers = new Map();
             this.processedPanels = new WeakSet();
             this.isInitialized = false;
         }
@@ -17016,7 +17049,7 @@
             this.isInitialized = false;
             this.unregisterHandlers = [];
             this.processedPanels = new WeakSet();
-            this.panelObservers = new WeakMap();
+            this.panelObservers = new Map();
         }
 
         initialize() {
@@ -17107,7 +17140,8 @@
             document.querySelectorAll(`#${UI_ID}`).forEach((el) => el.remove());
 
             // Disconnect panel observers
-            this.panelObservers = new WeakMap();
+            this.panelObservers.forEach((obs) => obs.disconnect());
+            this.panelObservers = new Map();
             this.processedPanels = new WeakSet();
             this.isInitialized = false;
         }
@@ -19479,6 +19513,7 @@
             this.currentPopup = null;
             this.buttonContainer = null;
             this.closeHandlerCleanup = null;
+            this.dragCleanup = null;
             this.pinnedTeas = new Set();
             this.bannedTeas = new Set();
         }
@@ -19751,7 +19786,7 @@
                 header.textContent = `Optimal ${goalLabel}/hr for ${displayName}${dcSuffix}`;
             }
             popup.appendChild(header);
-            this.makeDraggable(popup, header);
+            this.dragCleanup = this.makeDraggable(popup, header);
 
             // Optimal teas list (or "no valid combinations" warning when constraints eliminate all combos)
             if (!result.optimal) {
@@ -20314,7 +20349,7 @@
             header.title = 'Drag to move';
             popup.appendChild(header);
 
-            this.makeDraggable(popup, header);
+            this.dragCleanup = this.makeDraggable(popup, header);
 
             // Two-column container
             const columns = document.createElement('div');
@@ -20500,6 +20535,10 @@
                 this.closeHandlerCleanup();
                 this.closeHandlerCleanup = null;
             }
+            if (this.dragCleanup) {
+                this.dragCleanup();
+                this.dragCleanup = null;
+            }
             if (this.currentPopup) {
                 this.currentPopup.remove();
                 this.currentPopup = null;
@@ -20529,7 +20568,7 @@
                 e.preventDefault();
             });
 
-            document.addEventListener('mousemove', (e) => {
+            const onMouseMove = (e) => {
                 if (!isDragging) return;
 
                 hasDragged = true;
@@ -20538,9 +20577,9 @@
 
                 element.style.left = `${initialX + dx}px`;
                 element.style.top = `${initialY + dy}px`;
-            });
+            };
 
-            document.addEventListener('mouseup', () => {
+            const onMouseUp = () => {
                 if (isDragging) {
                     isDragging = false;
                     handle.style.cursor = 'grab';
@@ -20553,7 +20592,15 @@
                         document.addEventListener('click', suppressClick, true);
                     }
                 }
-            });
+            };
+
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+
+            return () => {
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+            };
         }
 
         /**
@@ -24367,7 +24414,7 @@
             // Update tab styling
             this.modal.querySelectorAll('[data-mwi-type-tab]').forEach((tab) => {
                 const isActive = tab.getAttribute('data-mwi-type-tab') === this.currentType;
-                tab.style.background = isActive ? config.SCRIPT_COLOR_PRIMARY : 'transparent';
+                tab.style.background = isActive ? config.COLOR_ACCENT : 'transparent';
             });
 
             // Update sort button styling
@@ -26494,7 +26541,7 @@
 
         cleanup() {
             if (this.watcher) {
-                this.watcher.disconnect();
+                this.watcher();
                 this.watcher = null;
             }
             this._closePicker();
