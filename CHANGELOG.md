@@ -1,5 +1,33 @@
 # Changelog
 
+## [2.85.0](https://github.com/Celasha/Toolasha/compare/v2.84.0...v2.85.0) (2026-07-30)
+
+### Features
+
+- add idle members list to Guild Overview tab ([46ed6bd](https://github.com/Celasha/Toolasha/commit/46ed6bd6c4dfeadde5205d68f15ec2fd5f722c80))
+
+### Bug Fixes
+
+- close remaining TLA-002 lifecycle leaks across six features ([4282b9e](https://github.com/Celasha/Toolasha/commit/4282b9e6dda79528766bdc210d467bfb6863f70e))
+- correct character isolation in settings importer (TLA-006) ([da4021f](https://github.com/Celasha/Toolasha/commit/da4021f4359214e3bdde146dde10e1dc951557f9))
+- correct onSettingChange cleanup in four additional features ([56b9c5b](https://github.com/Celasha/Toolasha/commit/56b9c5b310ec6fd94e6eef05e80da356d817e9a9))
+- guard null price at both unguarded call sites in listing age (TLA-008) ([2452994](https://github.com/Celasha/Toolasha/commit/2452994dea63e413d34d7f8738e40837fc67b03b))
+- include boss spawns in Seek zone drop lookup ([593e913](https://github.com/Celasha/Toolasha/commit/593e913c2dc8d5f86c7339322bcc6c31a8636c02))
+- preserve queued writes across IndexedDB failures (TLA-007) ([71f9e3c](https://github.com/Celasha/Toolasha/commit/71f9e3c4313f4d3f6355072554ef7efa26feae7d))
+- prevent resource accumulation on same-character resyncs ([21102e5](https://github.com/Celasha/Toolasha/commit/21102e52cadecad3ed582fb10201a572772bd33b))
+- remove document listeners when transient modals and popups close ([cf5314a](https://github.com/Celasha/Toolasha/commit/cf5314ac8b7f01be96adc4640ecf31d7c777a4ea))
+- remove duplicate character_switching listener from chat-commands ([df80f51](https://github.com/Celasha/Toolasha/commit/df80f511e9a0c624fe02977bbec3020fb7e6e0d4))
+- remove duplicate parsePrice that discarded B suffix (TLA-008) ([ee4eed7](https://github.com/Celasha/Toolasha/commit/ee4eed74a609bb2e73d7ce0c22ca092b2a4302ea))
+- remove task card min-height style when reroll tracker is disabled ([2d3a2b0](https://github.com/Celasha/Toolasha/commit/2d3a2b0759ccda9cd8d3a83d2bb983d35f7d6850))
+- remove WebSocket prototype addEventListener/onmessage wrapping ([5824eca](https://github.com/Celasha/Toolasha/commit/5824ecad6c7d1f85f26c46960b17ac66a2fb9d24))
+- replace unbounded debounce array with O(1) latest-value retention ([e9ef830](https://github.com/Celasha/Toolasha/commit/e9ef83020e90f5bb991e094e7008023750a7b47f))
+- replace undefined SCRIPT_COLOR_PRIMARY/SECONDARY references (TLA-009) ([4135ecc](https://github.com/Celasha/Toolasha/commit/4135eccf11b4b76056f122a62b301dccf4d2b6d9))
+- separate melee damage styles in upgrade tier progression ([f303d2e](https://github.com/Celasha/Toolasha/commit/f303d2e788c141316e1632e899a9ed63db814363))
+
+### Tests
+
+- add source-scan guard for forbidden config color names (TLA-009) ([0be2418](https://github.com/Celasha/Toolasha/commit/0be2418c77b04b2108368bea4593af0ad8723881))
+
 ## [2.84.0](https://github.com/Celasha/Toolasha/compare/v2.83.0...v2.84.0) (2026-07-27)
 
 ### Features
