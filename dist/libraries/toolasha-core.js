@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.85.0
+ * Version: 2.85.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6586,7 +6586,8 @@
                 // Initialize feature; always await the result so async flag is not required for correctness
                 const start = performance.now();
                 const instance = await Promise.resolve(feature.initialize());
-                performanceMonitor.snapshot(`init:${feature.key}`, performance.now() - start);
+                const elapsed = performance.now() - start;
+                performanceMonitor.snapshot(`init:${feature.key}`, elapsed);
 
                 // Store the returned instance (may be undefined for module-singleton features)
                 featureInstances.set(feature.key, instance ?? null);

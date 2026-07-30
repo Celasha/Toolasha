@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.85.0
+ * Version: 2.85.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -18434,10 +18434,10 @@ self.onmessage = function (e) {
 
             // Persist to storage
             const storageKey = `networth_${this.characterId}`;
-            await storage.set(storageKey, this.history, STORE_NAME);
+            await storage.set(storageKey, this.history, STORE_NAME, true);
 
             const detailKey = `networthDetail_${this.characterId}`;
-            await storage.set(detailKey, this.detailHistory, STORE_NAME);
+            await storage.set(detailKey, this.detailHistory, STORE_NAME, true);
         }
 
         /**

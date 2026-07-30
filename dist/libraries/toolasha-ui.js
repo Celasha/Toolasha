@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.85.0
+ * Version: 2.85.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -33003,9 +33003,9 @@ ${starCSS}
             }
 
             // Persist
-            await storage.set(`guildXP_${guildName}`, this.guildXPHistory, STORE_NAME$2);
+            await storage.set(`guildXP_${guildName}`, this.guildXPHistory, STORE_NAME$2, true);
             if (this.ownGuildID) {
-                await storage.set(`memberXP_${this.ownGuildID}`, this.memberXPHistory, STORE_NAME$2);
+                await storage.set(`memberXP_${this.ownGuildID}`, this.memberXPHistory, STORE_NAME$2, true);
             }
         }
 
