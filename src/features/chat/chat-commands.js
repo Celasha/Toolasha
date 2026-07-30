@@ -15,7 +15,6 @@ class ChatCommands {
         this.itemData = null;
         this.chatInput = null;
         this.boundKeydownHandler = null;
-        this.boundCharacterSwitchingHandler = null;
         this.initialized = false;
         this.timerRegistry = createTimerRegistry();
         this.unregisterObserver = null;
@@ -45,10 +44,6 @@ class ChatCommands {
         if (existing) {
             this.attachToInput(existing);
         }
-
-        // Listen for character switch to cleanup
-        this.boundCharacterSwitchingHandler = () => this.cleanup();
-        dataManager.on('character_switching', this.boundCharacterSwitchingHandler);
     }
 
     /**
@@ -76,10 +71,6 @@ class ChatCommands {
         if (this.unregisterObserver) {
             this.unregisterObserver();
             this.unregisterObserver = null;
-        }
-        if (this.boundCharacterSwitchingHandler) {
-            dataManager.off('character_switching', this.boundCharacterSwitchingHandler);
-            this.boundCharacterSwitchingHandler = null;
         }
         this.initialized = false;
     }
