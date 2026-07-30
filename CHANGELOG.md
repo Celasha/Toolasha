@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.85.1](https://github.com/Celasha/Toolasha/compare/v2.85.0...v2.85.1) (2026-07-30)
+
+
+### Performance Improvements
+
+* use immediate writes for login-time storage snapshots ([18db361](https://github.com/Celasha/Toolasha/commit/18db36182633bee222481c7eeca2590d049ea6bc))
+
 ## [2.85.0](https://github.com/Celasha/Toolasha/compare/v2.84.0...v2.85.0) (2026-07-30)
 
 ### Features
