@@ -260,17 +260,20 @@ function showBreakdownModal(budget, result) {
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
 
-    const close = () => overlay.remove();
+    const close = () => {
+        overlay.remove();
+        document.removeEventListener('keydown', onEsc);
+    };
     overlay.querySelector('#mwi-budget-modal-close').addEventListener('click', close);
     overlay.addEventListener('click', (e) => {
         if (e.target === overlay) close();
     });
-    document.addEventListener('keydown', function onEsc(e) {
+    function onEsc(e) {
         if (e.key === 'Escape') {
             close();
-            document.removeEventListener('keydown', onEsc);
         }
-    });
+    }
+    document.addEventListener('keydown', onEsc);
 }
 
 class BudgetCalculator {

@@ -522,10 +522,7 @@ class PhiloCalculator {
             cursor: pointer;
             padding: 0 4px;
         `;
-        closeBtn.addEventListener('click', () => {
-            this.modal.remove();
-            this.modal = null;
-        });
+        closeBtn.addEventListener('click', () => closeModal());
         header.appendChild(closeBtn);
 
         // Controls
@@ -545,21 +542,22 @@ class PhiloCalculator {
         dialog.appendChild(tableContainer);
         this.modal.appendChild(dialog);
 
+        // Single teardown used by all close paths
+        const closeModal = () => {
+            if (!this.modal) return;
+            this.modal.remove();
+            this.modal = null;
+            document.removeEventListener('keydown', escHandler);
+        };
+
         // Close on backdrop click
         this.modal.addEventListener('click', (e) => {
-            if (e.target === this.modal) {
-                this.modal.remove();
-                this.modal = null;
-            }
+            if (e.target === this.modal) closeModal();
         });
 
         // Close on Escape key
         const escHandler = (e) => {
-            if (e.key === 'Escape' && this.modal) {
-                this.modal.remove();
-                this.modal = null;
-                document.removeEventListener('keydown', escHandler);
-            }
+            if (e.key === 'Escape') closeModal();
         };
         document.addEventListener('keydown', escHandler);
 

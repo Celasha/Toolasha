@@ -31,6 +31,7 @@ class DraggableModals {
         this.offsets = {}; // title → { dx, dy }
         this.unregisterObserver = null;
         this.initialized = false;
+        this.dragListeners = []; // { onMouseMove, onMouseUp } pairs awaiting removal
     }
 
     async initialize() {
@@ -136,6 +137,22 @@ class DraggableModals {
         bar.addEventListener('mousedown', onMouseDown);
         document.addEventListener('mousemove', onMouseMove);
         document.addEventListener('mouseup', onMouseUp);
+
+        // Track listeners so disable() can remove them if the modal is still open
+        const entry = { onMouseMove, onMouseUp };
+        this.dragListeners.push(entry);
+
+        // Remove document listeners as soon as the modal element is detached
+        const observer = new MutationObserver(() => {
+            if (!document.contains(modalBox)) {
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+                const idx = this.dragListeners.indexOf(entry);
+                if (idx !== -1) this.dragListeners.splice(idx, 1);
+                observer.disconnect();
+            }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
     }
 
     disable() {
@@ -143,6 +160,11 @@ class DraggableModals {
             this.unregisterObserver();
             this.unregisterObserver = null;
         }
+        for (const { onMouseMove, onMouseUp } of this.dragListeners) {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+        }
+        this.dragListeners = [];
         this.offsets = {};
         this.initialized = false;
     }

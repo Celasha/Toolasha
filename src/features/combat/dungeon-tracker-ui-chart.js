@@ -242,14 +242,7 @@ class DungeonTrackerUIChart {
             border-radius: 4px;
             font-weight: bold;
         `;
-        closeBtn.addEventListener('click', () => {
-            // Destroy chart before removing modal
-            if (this.modalChartInstance) {
-                this.modalChartInstance.destroy();
-                this.modalChartInstance = null;
-            }
-            modal.remove();
-        });
+        closeBtn.addEventListener('click', () => destroyAndClose());
 
         header.appendChild(title);
         header.appendChild(closeBtn);
@@ -273,17 +266,19 @@ class DungeonTrackerUIChart {
         // Render chart in modal
         this.renderModalChart(canvas);
 
+        // Shared teardown for button and Escape — idempotent
+        const destroyAndClose = () => {
+            if (this.modalChartInstance) {
+                this.modalChartInstance.destroy();
+                this.modalChartInstance = null;
+            }
+            modal.remove();
+            document.removeEventListener('keydown', escHandler);
+        };
+
         // Close on ESC key
         const escHandler = (e) => {
-            if (e.key === 'Escape') {
-                // Destroy chart before removing modal
-                if (this.modalChartInstance) {
-                    this.modalChartInstance.destroy();
-                    this.modalChartInstance = null;
-                }
-                modal.remove();
-                document.removeEventListener('keydown', escHandler);
-            }
+            if (e.key === 'Escape') destroyAndClose();
         };
         document.addEventListener('keydown', escHandler);
     }
