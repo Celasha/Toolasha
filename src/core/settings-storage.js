@@ -22,7 +22,7 @@ class SettingsStorage {
      * @param {string} [characterName]
      */
     setCharacterId(characterId, characterName) {
-        this.currentCharacterId = characterId;
+        this.currentCharacterId = String(characterId);
         if (characterName) this.currentCharacterName = characterName;
     }
 
@@ -332,10 +332,11 @@ class SettingsStorage {
             let imported = 0;
             let skipped = 0;
 
-            const knownCharacters = new Set(await this.getKnownCharacters());
+            const toId = (entry) => String(typeof entry === 'object' && entry !== null ? entry.id : entry);
+            const knownCharacters = new Set((await this.getKnownCharacters()).map((c) => c.id));
             if (data[this.knownCharactersKey]) {
                 for (const id of data[this.knownCharactersKey]) {
-                    knownCharacters.add(String(id));
+                    knownCharacters.add(toId(id));
                 }
             }
 
