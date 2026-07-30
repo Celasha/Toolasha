@@ -13,7 +13,7 @@ class DOMObserver {
         this.handlers = [];
         this.isObserving = false;
         this.debounceTimers = new Map(); // Track debounce timers per handler
-        this.debouncedElements = new Map(); // Track pending elements per handler
+        this.debouncedLatest = new Map(); // Latest { node, mutation } per handler (O(1) per handler)
         this.DEFAULT_DEBOUNCE_DELAY = 50; // 50ms default delay
     }
 
@@ -76,11 +76,8 @@ class DOMObserver {
         const handlerName = handler.name;
         const delay = handler.debounceDelay || this.DEFAULT_DEBOUNCE_DELAY;
 
-        // Store element for batched processing
-        if (!this.debouncedElements.has(handlerName)) {
-            this.debouncedElements.set(handlerName, []);
-        }
-        this.debouncedElements.get(handlerName).push({ node, mutation });
+        // Overwrite with the latest node/mutation — only the last one is ever used
+        this.debouncedLatest.set(handlerName, { node, mutation });
 
         // Clear existing timer
         if (this.debounceTimers.has(handlerName)) {
@@ -89,21 +86,17 @@ class DOMObserver {
 
         // Set new timer
         const timer = setTimeout(() => {
-            const elements = this.debouncedElements.get(handlerName) || [];
-            this.debouncedElements.delete(handlerName);
+            const latest = this.debouncedLatest.get(handlerName);
+            this.debouncedLatest.delete(handlerName);
             this.debounceTimers.delete(handlerName);
 
-            // Process all collected elements
-            // For most handlers, we only need to process the last element
-            // (e.g., task list updated multiple times, we only care about final state)
-            if (elements.length > 0) {
-                const lastElement = elements[elements.length - 1];
+            if (latest) {
                 if (performanceMonitor.enabled) {
                     const start = performance.now();
-                    handler.callback(lastElement.node, lastElement.mutation);
+                    handler.callback(latest.node, latest.mutation);
                     performanceMonitor.record(`dom:${handler.name}`, performance.now() - start);
                 } else {
-                    handler.callback(lastElement.node, lastElement.mutation);
+                    handler.callback(latest.node, latest.mutation);
                 }
             }
         }, delay);
@@ -123,7 +116,7 @@ class DOMObserver {
         // Clear all debounce timers
         this.debounceTimers.forEach((timer) => clearTimeout(timer));
         this.debounceTimers.clear();
-        this.debouncedElements.clear();
+        this.debouncedLatest.clear();
 
         this.isObserving = false;
     }
@@ -156,7 +149,7 @@ class DOMObserver {
                 if (this.debounceTimers.has(name)) {
                     clearTimeout(this.debounceTimers.get(name));
                     this.debounceTimers.delete(name);
-                    this.debouncedElements.delete(name);
+                    this.debouncedLatest.delete(name);
                 }
             }
         };
