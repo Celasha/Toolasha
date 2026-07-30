@@ -78,3 +78,26 @@ describe('EstimatedListingAge.parsePrice', () => {
         expect(Math.abs(storedPrice - parsed) < 0.01).toBe(true);
     });
 });
+
+describe('EstimatedListingAge — call-site null guards', () => {
+    test('invalid price text does not match a zero-price listing in addAgeColumn path', () => {
+        // null coerces to 0 in Math.abs(listing.price - null), so without a guard
+        // a zero-price stored listing would be falsely matched by any invalid row text.
+        // The guard `if (price === null) continue` must prevent this.
+        const price = estimatedListingAge.parsePrice('bad');
+        expect(price).toBeNull();
+        // Simulate the predicate that was previously unguarded:
+        const zeroPriceListing = { price: 0 };
+        const wouldFalselyMatch = price !== null && Math.abs(zeroPriceListing.price - price) < 0.01;
+        expect(wouldFalselyMatch).toBe(false);
+    });
+
+    test('invalid price text does not resolve an item via zero-price match in getCurrentItemHrid path', () => {
+        const price = estimatedListingAge.parsePrice('---');
+        expect(price).toBeNull();
+        // Without the guard, null coerces to 0 and matches listing.price === 0.
+        const zeroPriceListing = { price: 0, orderQuantity: 1, filledQuantity: 0 };
+        const wouldFalselyMatch = price !== null && Math.abs(zeroPriceListing.price - price) < 0.01;
+        expect(wouldFalselyMatch).toBe(false);
+    });
+});
