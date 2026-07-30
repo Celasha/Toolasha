@@ -523,7 +523,7 @@ class AlchemyBestItems {
         // Update tab styling
         this.modal.querySelectorAll('[data-mwi-type-tab]').forEach((tab) => {
             const isActive = tab.getAttribute('data-mwi-type-tab') === this.currentType;
-            tab.style.background = isActive ? config.SCRIPT_COLOR_PRIMARY : 'transparent';
+            tab.style.background = isActive ? config.COLOR_ACCENT : 'transparent';
         });
 
         // Update sort button styling

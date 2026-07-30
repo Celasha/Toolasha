@@ -235,7 +235,7 @@ class HouseCostDisplay {
         `;
 
         pricingCell.innerHTML = `
-            <span style="color: ${config.SCRIPT_COLOR_SECONDARY};">@ ${coinFormatter(materialData.marketPrice)}</span>
+            <span style="color: ${config.COLOR_TEXT_SECONDARY};">@ ${coinFormatter(materialData.marketPrice)}</span>
             <span style="color: ${config.COLOR_ACCENT}; font-weight: bold;">= ${coinFormatter(materialData.totalValue)}</span>
             <span style="color: ${hasEnough ? '#4ade80' : '#f87171'}; margin-left: auto; text-align: right;">${coinFormatter(amountNeeded)}</span>
         `;
@@ -279,7 +279,7 @@ class HouseCostDisplay {
             padding: 8px;
             background: rgba(0, 0, 0, 0.3);
             border-radius: 8px;
-            border: 1px solid ${config.SCRIPT_COLOR_SECONDARY};
+            border: 1px solid ${config.COLOR_BORDER};
             min-height: 0;
             overflow-y: auto;
         `;
@@ -306,7 +306,7 @@ class HouseCostDisplay {
         dropdown.style.cssText = `
             padding: 4px 8px;
             background: rgba(0, 0, 0, 0.3);
-            border: 1px solid ${config.SCRIPT_COLOR_SECONDARY};
+            border: 1px solid ${config.COLOR_BORDER};
             color: ${config.SCRIPT_COLOR_MAIN};
             border-radius: 4px;
             cursor: pointer;

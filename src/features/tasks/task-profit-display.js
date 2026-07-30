@@ -2239,7 +2239,7 @@ class TaskProfitDisplay {
         // Determine if active (first in queue) or queued
         const isActive = matchActionHrid === activeActionHrid;
         const label = isActive ? '▶ Active' : '⏸ Queued';
-        const color = isActive ? config.COLOR_ACCENT : config.SCRIPT_COLOR_SECONDARY;
+        const color = isActive ? config.COLOR_ACCENT : config.COLOR_TEXT_SECONDARY;
 
         if (existingIndicator) {
             // Update existing indicator's inner badge

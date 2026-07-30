@@ -374,7 +374,7 @@ class TaskRerollTracker {
             displayElement = document.createElement('div');
             displayElement.className = 'mwi-reroll-cost-display';
             displayElement.style.cssText = `
-                color: ${config.SCRIPT_COLOR_SECONDARY};
+                color: ${config.COLOR_TEXT_SECONDARY};
                 font-size: 0.75rem;
                 margin-top: 4px;
                 padding: 2px 4px;
