@@ -83,10 +83,10 @@ class NetworthHistory {
 
         // Persist to storage
         const storageKey = `networth_${this.characterId}`;
-        await storage.set(storageKey, this.history, STORE_NAME);
+        await storage.set(storageKey, this.history, STORE_NAME, true);
 
         const detailKey = `networthDetail_${this.characterId}`;
-        await storage.set(detailKey, this.detailHistory, STORE_NAME);
+        await storage.set(detailKey, this.detailHistory, STORE_NAME, true);
     }
 
     /**

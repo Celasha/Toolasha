@@ -327,9 +327,9 @@ class GuildXPTracker {
         }
 
         // Persist
-        await storage.set(`guildXP_${guildName}`, this.guildXPHistory, STORE_NAME);
+        await storage.set(`guildXP_${guildName}`, this.guildXPHistory, STORE_NAME, true);
         if (this.ownGuildID) {
-            await storage.set(`memberXP_${this.ownGuildID}`, this.memberXPHistory, STORE_NAME);
+            await storage.set(`memberXP_${this.ownGuildID}`, this.memberXPHistory, STORE_NAME, true);
         }
     }
 
