@@ -49,7 +49,6 @@ class WebSocketHook {
         }
 
         this.wrapWebSocketConstructor();
-        this.wrapWebSocketPrototype();
 
         // Capture hook instance for closure
         const hookInstance = this;
@@ -86,65 +85,6 @@ class WebSocketHook {
         Object.defineProperty(pageMessageEvent.prototype, 'data', dataProperty);
 
         this.isHooked = true;
-    }
-
-    /**
-     * Wrap WebSocket prototype handlers to intercept message events
-     */
-    wrapWebSocketPrototype() {
-        const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
-        if (typeof targetWindow === 'undefined' || !targetWindow.WebSocket || !targetWindow.WebSocket.prototype) {
-            return;
-        }
-
-        const hookInstance = this;
-        const proto = targetWindow.WebSocket.prototype;
-
-        if (!proto.__toolashaPatched) {
-            const originalAddEventListener = proto.addEventListener;
-            proto.addEventListener = function toolashaAddEventListener(type, listener, options) {
-                if (type === 'message' && typeof listener === 'function') {
-                    const wrappedListener = function toolashaMessageListener(event) {
-                        if (!hookInstance.isMessageEventProcessed(event) && typeof event?.data === 'string') {
-                            hookInstance.markMessageEventProcessed(event);
-                            hookInstance.processMessage(event.data);
-                        }
-                        return listener.call(this, event);
-                    };
-
-                    wrappedListener.__toolashaOriginal = listener;
-                    return originalAddEventListener.call(this, type, wrappedListener, options);
-                }
-
-                return originalAddEventListener.call(this, type, listener, options);
-            };
-
-            const originalOnMessage = Object.getOwnPropertyDescriptor(proto, 'onmessage');
-            if (originalOnMessage && originalOnMessage.set) {
-                Object.defineProperty(proto, 'onmessage', {
-                    configurable: true,
-                    get: originalOnMessage.get,
-                    set(handler) {
-                        if (typeof handler !== 'function') {
-                            return originalOnMessage.set.call(this, handler);
-                        }
-
-                        const wrappedHandler = function toolashaOnMessage(event) {
-                            if (!hookInstance.isMessageEventProcessed(event) && typeof event?.data === 'string') {
-                                hookInstance.markMessageEventProcessed(event);
-                                hookInstance.processMessage(event.data);
-                            }
-                            return handler.call(this, event);
-                        };
-
-                        wrappedHandler.__toolashaOriginal = handler;
-                        return originalOnMessage.set.call(this, wrappedHandler);
-                    },
-                });
-            }
-
-            proto.__toolashaPatched = true;
-        }
     }
 
     /**
