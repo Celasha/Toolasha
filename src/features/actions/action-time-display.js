@@ -68,6 +68,7 @@ class ActionTimeDisplay {
         this.activeBarProfitId = null;
         this.waitForPanelTimeout = null;
         this.retryUpdateTimeout = null;
+        this.settingChangeHandlers = []; // [{key, fn}] for offSettingChange cleanup
         this.cleanupRegistry = createCleanupRegistry();
     }
 
@@ -97,14 +98,20 @@ class ActionTimeDisplay {
             'profitCalc_pricingMode',
         ];
         for (const key of actionBarSettings) {
-            config.onSettingChange(key, (newValue) => {
+            const fn = (newValue) => {
                 if (key === 'actionBar_enabled' && !newValue) {
                     this.disable();
                     return;
                 }
                 this.updateDisplay();
-            });
+            };
+            config.onSettingChange(key, fn);
+            this.settingChangeHandlers.push({ key, fn });
         }
+        this.cleanupRegistry.registerCleanup(() => {
+            this.settingChangeHandlers.forEach(({ key, fn }) => config.offSettingChange(key, fn));
+            this.settingChangeHandlers = [];
+        });
 
         // Set up handler for character switching
         if (!this.characterInitHandler) {

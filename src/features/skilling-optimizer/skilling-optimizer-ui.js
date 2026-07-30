@@ -1354,7 +1354,7 @@ class SkillingSimulatorUI {
 
     cleanup() {
         if (this.watcher) {
-            this.watcher.disconnect();
+            this.watcher();
             this.watcher = null;
         }
         this._closePicker();

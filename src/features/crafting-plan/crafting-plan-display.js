@@ -617,7 +617,7 @@ class CraftingPlanDisplay {
         this.isInitialized = false;
         this.unregisterHandlers = [];
         this.processedPanels = new WeakSet();
-        this.panelObservers = new WeakMap();
+        this.panelObservers = new Map();
     }
 
     initialize() {
@@ -708,7 +708,8 @@ class CraftingPlanDisplay {
         document.querySelectorAll(`#${UI_ID}`).forEach((el) => el.remove());
 
         // Disconnect panel observers
-        this.panelObservers = new WeakMap();
+        this.panelObservers.forEach((obs) => obs.disconnect());
+        this.panelObservers = new Map();
         this.processedPanels = new WeakSet();
         this.isInitialized = false;
     }

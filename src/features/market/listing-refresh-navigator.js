@@ -109,7 +109,7 @@ class ListingRefreshNavigator {
 
     cleanup() {
         if (this.watcher) {
-            this.watcher.disconnect();
+            this.watcher();
             this.watcher = null;
         }
         if (this.refreshBtn) {

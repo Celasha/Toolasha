@@ -282,7 +282,7 @@ class BudgetCalculator {
         this.unregisterHandlers = [];
         this.timerRegistry = createTimerRegistry();
         this.processedPanels = new WeakSet();
-        this.panelObservers = new WeakMap();
+        this.panelObservers = new Map();
     }
 
     initialize() {
@@ -475,8 +475,8 @@ class BudgetCalculator {
         document.getElementById('mwi-budget-modal-overlay')?.remove();
 
         // Disconnect all panel observers
-        // (WeakMap entries are cleaned up automatically as panels are GC'd)
-
+        this.panelObservers.forEach((obs) => obs.disconnect());
+        this.panelObservers = new Map();
         this.processedPanels = new WeakSet();
         this.isInitialized = false;
     }
