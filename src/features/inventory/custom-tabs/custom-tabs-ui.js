@@ -570,16 +570,18 @@ export default class CustomTabsUI {
         }
 
         // Live setting change for default-tab behaviour
-        const unregisterDefaultTab = config.onSettingChange('inventoryTabs_defaultTab', () => {
+        const onDefaultTabChange = () => {
             this._applyDefaultTabSetting();
-        });
-        this._unregisterHandlers.push(unregisterDefaultTab);
+        };
+        config.onSettingChange('inventoryTabs_defaultTab', onDefaultTabChange);
+        this._unregisterHandlers.push(() => config.offSettingChange('inventoryTabs_defaultTab', onDefaultTabChange));
 
         // Live setting change for tile gap
-        const unregisterTileGap = config.onSettingChange('inventoryTabs_tileGap', () => {
+        const onTileGapChange = () => {
             if (this._isActive) this._applyTileGap();
-        });
-        this._unregisterHandlers.push(unregisterTileGap);
+        };
+        config.onSettingChange('inventoryTabs_tileGap', onTileGapChange);
+        this._unregisterHandlers.push(() => config.offSettingChange('inventoryTabs_tileGap', onTileGapChange));
 
         // Re-apply layout when inventory changes.
         // Uses requestAnimationFrame instead of a long debounce — rAF fires at the next frame

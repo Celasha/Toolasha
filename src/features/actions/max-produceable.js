@@ -58,6 +58,9 @@ class MaxProduceable {
         this.actionCompletedHandler = null;
         this.characterSwitchingHandler = null; // Handler for character switch cleanup
         this.pricingModeHandler = null; // Handler for pricing mode changes
+        this.maxProduceableHandler = null;
+        this.showProfitPerHourHandler = null;
+        this.showExpPerHourHandler = null;
         this.profitCalcTimeout = null; // Debounce timer for deferred profit calculations
         this.actionNameToHridCache = null; // Cached reverse lookup map (name → hrid)
         this.isInitialized = false;
@@ -107,10 +110,19 @@ class MaxProduceable {
         this.pricingModeHandler = () => {
             this.updateAllCounts();
         };
+        this.maxProduceableHandler = () => {
+            this.updateAllCounts();
+        };
+        this.showProfitPerHourHandler = () => {
+            this.updateAllCounts();
+        };
+        this.showExpPerHourHandler = () => {
+            this.updateAllCounts();
+        };
         config.onSettingChange('profitCalc_pricingMode', this.pricingModeHandler);
-        config.onSettingChange('actionPanel_maxProduceable', () => this.updateAllCounts());
-        config.onSettingChange('actionPanel_showProfitPerHour_production', () => this.updateAllCounts());
-        config.onSettingChange('actionPanel_showExpPerHour_production', () => this.updateAllCounts());
+        config.onSettingChange('actionPanel_maxProduceable', this.maxProduceableHandler);
+        config.onSettingChange('actionPanel_showProfitPerHour_production', this.showProfitPerHourHandler);
+        config.onSettingChange('actionPanel_showExpPerHour_production', this.showExpPerHourHandler);
     }
 
     /**
@@ -969,6 +981,21 @@ class MaxProduceable {
         if (this.pricingModeHandler) {
             config.offSettingChange('profitCalc_pricingMode', this.pricingModeHandler);
             this.pricingModeHandler = null;
+        }
+
+        if (this.maxProduceableHandler) {
+            config.offSettingChange('actionPanel_maxProduceable', this.maxProduceableHandler);
+            this.maxProduceableHandler = null;
+        }
+
+        if (this.showProfitPerHourHandler) {
+            config.offSettingChange('actionPanel_showProfitPerHour_production', this.showProfitPerHourHandler);
+            this.showProfitPerHourHandler = null;
+        }
+
+        if (this.showExpPerHourHandler) {
+            config.offSettingChange('actionPanel_showExpPerHour_production', this.showExpPerHourHandler);
+            this.showExpPerHourHandler = null;
         }
 
         // Clear all DOM references

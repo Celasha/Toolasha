@@ -1154,8 +1154,8 @@ class EnhancementUI {
         }
 
         // Unregister setting change listeners
-        for (const { key } of this.settingChangeHandlers) {
-            config.offSettingChange(key);
+        for (const { key, handler } of this.settingChangeHandlers) {
+            config.offSettingChange(key, handler);
         }
         this.settingChangeHandlers = [];
 

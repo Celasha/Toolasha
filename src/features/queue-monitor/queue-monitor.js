@@ -8,7 +8,7 @@ import config from '../../core/config.js';
 import queueSnapshot from './queue-snapshot.js';
 import queueMonitorUI from './queue-monitor-ui.js';
 
-let unregisterSettingChange = null;
+let settingChangeHandler = null;
 
 export default {
     name: 'Queue Monitor',
@@ -21,22 +21,23 @@ export default {
             queueMonitorUI.initialize();
         }
 
-        unregisterSettingChange = config.onSettingChange('queueMonitor', (enabled) => {
+        settingChangeHandler = (enabled) => {
             if (enabled) {
                 queueMonitorUI.initialize();
             } else {
                 queueMonitorUI.disable();
             }
-        });
+        };
+        config.onSettingChange('queueMonitor', settingChangeHandler);
     },
 
     disable: () => {
         queueSnapshot.disable();
         queueMonitorUI.disable();
 
-        if (unregisterSettingChange) {
-            unregisterSettingChange();
-            unregisterSettingChange = null;
+        if (settingChangeHandler) {
+            config.offSettingChange('queueMonitor', settingChangeHandler);
+            settingChangeHandler = null;
         }
     },
 };
