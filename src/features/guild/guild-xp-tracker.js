@@ -223,6 +223,7 @@ class GuildXPTracker {
         this.guildXPHistory = {}; // guildName → [{t, xp}]
         this.memberXPHistory = {}; // characterID → [{t, xp}]
         this.memberMeta = {}; // characterID → {name, gameMode, joinTime, invitedBy, ...}
+        this.lastMembersUpdateTime = null;
         this.unregisterHandlers = [];
     }
 
@@ -297,6 +298,7 @@ class GuildXPTracker {
                 invitedBy: sharableMap[inviterId]?.name || null,
                 inactiveTime: sharableData.inactiveTime || null,
                 isOnline: sharableData.isOnline || false,
+                actionType: sharableData.actionType || '',
                 hideOnlineStatus: sharableData.hideOnlineStatus || false,
                 signedUpSkillingTrialHrid: guildChar?.signedUpSkillingTrialHrid || '',
                 signedUpCombatTrialHrid: guildChar?.signedUpCombatTrialHrid || '',
@@ -364,6 +366,8 @@ class GuildXPTracker {
         const guildCharacterMap = data.guildCharacterMap || {};
         const sharableMap = data.guildSharableCharacterMap || {};
 
+        this.lastMembersUpdateTime = Date.now();
+
         // Detect guild change (same character, different guild)
         const charIds = Object.keys(guildCharacterMap);
         const newGuildID = charIds.length > 0 ? guildCharacterMap[charIds[0]].guildID : null;
@@ -389,6 +393,7 @@ class GuildXPTracker {
                 invitedBy: sharableMap[inviterId]?.name || null,
                 inactiveTime: sharableData.inactiveTime || null,
                 isOnline: sharableData.isOnline || false,
+                actionType: sharableData.actionType || '',
                 hideOnlineStatus: sharableData.hideOnlineStatus || false,
                 signedUpSkillingTrialHrid: guildChar?.signedUpSkillingTrialHrid || '',
                 signedUpCombatTrialHrid: guildChar?.signedUpCombatTrialHrid || '',

@@ -9,7 +9,7 @@ import webSocketHook from '../../core/websocket.js';
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import { guildXPTracker } from './guild-xp-tracker.js';
-import { formatDateTime } from '../../utils/formatters.js';
+import { formatDateTime, timeReadable } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { fNum, rankBadge, addColumn, makeColumnSortable } from '../../utils/table-columns.js';
 
@@ -346,20 +346,52 @@ class GuildXPDisplay {
         if (memberList.length === 0) return '';
 
         const idleNames = memberList
-            .filter((m) => m.isOnline && m.inactiveTime !== null && !m.hideOnlineStatus)
+            .filter((m) => m.isOnline && !m.actionType && !m.hideOnlineStatus)
             .map((m) => m.name)
             .sort((a, b) => a.localeCompare(b));
 
-        const namesStr =
+        const offlineMembers = memberList
+            .filter((m) => !m.isOnline && !m.actionType && !m.hideOnlineStatus)
+            .sort((a, b) => {
+                const tA = a.inactiveTime ? new Date(a.inactiveTime).getTime() : 0;
+                const tB = b.inactiveTime ? new Date(b.inactiveTime).getTime() : 0;
+                return tB - tA;
+            });
+
+        const idleNamesStr =
             idleNames.length === 0
                 ? '<span style="color: var(--color-success);">None</span>'
                 : idleNames.map((n) => `<span style="color: #f0a830;">${n}</span>`).join(', ');
 
+        const lastUpdate = guildXPTracker.lastMembersUpdateTime;
+        const offlineNamesStr =
+            offlineMembers.length === 0
+                ? '<span style="color: var(--color-success);">None</span>'
+                : offlineMembers
+                      .map((m) => {
+                          const memberInactiveMs = m.inactiveTime ? new Date(m.inactiveTime).getTime() : null;
+                          const isBulkTimestamp =
+                              memberInactiveMs && lastUpdate && Math.abs(memberInactiveMs - lastUpdate) < 10000;
+                          const ms = memberInactiveMs ? Date.now() - memberInactiveMs : null;
+                          const ago =
+                              ms === null || isBulkTimestamp
+                                  ? ''
+                                  : ` <span style="color:#6b7280;font-size:0.85em;">(${timeReadable(ms / 1000)} ago)</span>`;
+                          return `<span style="color: #9ca3af;">${m.name}</span>${ago}`;
+                      })
+                      .join(', ');
+
         return `
             <div class="GuildPanel_dataBlockGroup__1d2rR ${CSS_PREFIX}" style="grid-column: 1 / 3; max-width: none;">
                 <div class="GuildPanel_dataBlock__3qVhK" style="padding: 8px 12px; height: auto; min-height: 0;">
-                    <div class="GuildPanel_label__-A63g">Idle members (${idleNames.length})</div>
-                    <div style="font-size: 13px; line-height: 1.6; max-height: 120px; overflow-y: auto;">${namesStr}</div>
+                    <div class="GuildPanel_label__-A63g">Online — Idle (${idleNames.length})</div>
+                    <div style="font-size: 13px; line-height: 1.6; max-height: 120px; overflow-y: auto;">${idleNamesStr}</div>
+                </div>
+            </div>
+            <div class="GuildPanel_dataBlockGroup__1d2rR ${CSS_PREFIX}" style="grid-column: 1 / 3; max-width: none;">
+                <div class="GuildPanel_dataBlock__3qVhK" style="padding: 8px 12px; height: auto; min-height: 0;">
+                    <div class="GuildPanel_label__-A63g">Offline (${offlineMembers.length})</div>
+                    <div style="font-size: 13px; line-height: 1.6; max-height: 120px; overflow-y: auto;">${offlineNamesStr}</div>
                 </div>
             </div>`;
     }
@@ -453,6 +485,7 @@ class GuildXPDisplay {
                 xp: xp || 0,
                 inactiveTime: meta?.inactiveTime || null,
                 isOnline: meta?.isOnline || false,
+                actionType: meta?.actionType || '',
                 hideOnlineStatus: meta?.hideOnlineStatus || false,
             });
         }
