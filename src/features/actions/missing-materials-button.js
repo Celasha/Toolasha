@@ -812,11 +812,15 @@ async function waitForMarketplace() {
  */
 function makeMaterialClickHandler(tabRef, sessionId) {
     return (_e, mat) => {
-        // Read the current missing quantity from the tab's data attribute,
-        // which is kept up-to-date by the inventory listener.
-        autofillManager.setQuantityProvider(() => {
-            return parseInt(tabRef.tab?.getAttribute('data-missing-quantity') || '0', 10);
-        }, sessionId);
+        const armed = autofillManager.arm({
+            sessionId,
+            itemHrid: mat.itemHrid,
+            enhancementLevel: 0,
+            modalMode: 'buy',
+            // Read the live missing quantity from the tab attribute kept current by the inventory listener.
+            quantityProvider: () => parseInt(tabRef.tab?.getAttribute('data-missing-quantity') || '0', 10),
+        });
+        if (!armed) return;
         navigateToMarketplace(mat.itemHrid, 0);
     };
 }

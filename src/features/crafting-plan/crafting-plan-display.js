@@ -682,11 +682,17 @@ function createCraftingPlanTabs(missingMaterials, tabsContainer) {
     for (const material of missingMaterials) {
         const tabRef = { tab: null };
         const sessionIdForTab = craftingPlanSessionId;
+        const matHrid = material.itemHrid;
         const handler = () => {
-            autofillManager.setQuantityProvider(() => {
-                return parseInt(tabRef.tab?.getAttribute('data-missing-quantity') || '0', 10);
-            }, sessionIdForTab);
-            navigateToMarketplace(material.itemHrid, 0);
+            const armed = autofillManager.arm({
+                sessionId: sessionIdForTab,
+                itemHrid: matHrid,
+                enhancementLevel: 0,
+                modalMode: 'buy',
+                quantityProvider: () => parseInt(tabRef.tab?.getAttribute('data-missing-quantity') || '0', 10),
+            });
+            if (!armed) return;
+            navigateToMarketplace(matHrid, 0);
         };
         const tab = createMaterialTab(material, referenceTab, handler, MARKETPLACE_OWNER.CRAFTING_PLAN);
         tabRef.tab = tab;
