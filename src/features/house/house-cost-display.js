@@ -14,24 +14,26 @@ import {
     createMaterialTab,
     removeMaterialTabsForOwner,
     setupMarketplaceCleanupObserver,
-    getVisibleMarketplaceTabContainer,
     navigateToMarketplace,
+    watchNativeTabExit,
 } from '../../utils/marketplace-tabs.js';
 
 class HouseCostDisplay {
     constructor() {
         this.isActive = false;
-        this.currentModalContent = null; // Track current modal to detect room switches
+        this.currentModalContent = null;
         this.isInitialized = false;
-        this.currentMaterialsTabs = []; // Track marketplace tabs
-        this.cleanupObserver = null; // Marketplace cleanup observer
+        this.currentMaterialsTabs = [];
+        this.cleanupObserver = null;
         this.timerRegistry = createTimerRegistry();
         this.autofillManager = createAutofillManager('MissingMats-Houses');
-        this._itemsUpdatedHandler = null; // Inventory change listener
-        this._houseRoomsUpdatedHandler = null; // House room level change listener
-        this._cumulativeState = null; // State for refreshing cumulative display
-        this._costContext = null; // { houseRoomHrid, currentLevel, targetLevel } for recalculating missing mats
+        this._itemsUpdatedHandler = null;
+        this._houseRoomsUpdatedHandler = null;
+        this._cumulativeState = null;
+        this._costContext = null;
         this._houseSessionId = null;
+        this._nativeTabExitCleanup = null;
+        this._houseReturnGeneration = 0;
         this.activeWorkflowModel = null;
     }
 
@@ -65,11 +67,9 @@ class HouseCostDisplay {
         this.isActive = true;
         this.isInitialized = true;
 
-        // Listen for inventory changes to refresh the cumulative display
         this._itemsUpdatedHandler = () => this._onInventoryChanged();
         dataManager.on('items_updated', this._itemsUpdatedHandler);
 
-        // Listen for house room level changes to refresh the dropdown and display
         this._houseRoomsUpdatedHandler = () => this._onHouseRoomUpdated();
         dataManager.on('house_rooms_updated', this._houseRoomsUpdatedHandler);
 
@@ -83,21 +83,16 @@ class HouseCostDisplay {
      * @param {Element} modalContent - The modal content element
      */
     async addCostColumn(costsSection, houseRoomHrid, modalContent) {
-        // Remove any existing augmentation first
         this.removeExistingColumn(modalContent);
 
         const currentLevel = houseCostCalculator.getCurrentRoomLevel(houseRoomHrid);
 
-        // Don't show if already max level
         if (currentLevel >= 8) {
             return;
         }
 
         try {
-            // Add "Cumulative to Level" section
             await this.addCompactToLevel(costsSection, houseRoomHrid, currentLevel);
-
-            // Mark this modal as processed
             this.currentModalContent = modalContent;
         } catch {
             // Silently fail - augmentation is optional
@@ -109,12 +104,10 @@ class HouseCostDisplay {
      * @param {Element} modalContent - The modal content element
      */
     removeExistingColumn(modalContent) {
-        // Remove all MWI-added elements
         modalContent
             .querySelectorAll('.mwi-house-pricing, .mwi-house-pricing-empty, .mwi-house-total, .mwi-house-to-level')
             .forEach((el) => el.remove());
 
-        // Restore original grid columns
         const itemRequirementsGrid = modalContent.querySelector('[class*="HousePanel_itemRequirements"]');
         if (itemRequirementsGrid) {
             itemRequirementsGrid.style.gridTemplateColumns = '';
@@ -127,41 +120,30 @@ class HouseCostDisplay {
      * @param {Object} costData - Cost data from calculator
      */
     async augmentNativeCosts(costsSection, costData) {
-        // Find the item requirements grid container
         const itemRequirementsGrid = costsSection.querySelector('[class*="HousePanel_itemRequirements"]');
         if (!itemRequirementsGrid) {
             return;
         }
 
-        // Modify the grid to accept 4 columns instead of 3
-        // Native grid is: icon | inventory count | input count
-        // We want: icon | inventory count | input count | pricing
         const currentGridStyle = window.getComputedStyle(itemRequirementsGrid).gridTemplateColumns;
-
-        // Add a 4th column for pricing (auto width)
         itemRequirementsGrid.style.gridTemplateColumns = currentGridStyle + ' auto';
 
-        // Find all item containers (these have the icons)
         const itemContainers = itemRequirementsGrid.querySelectorAll('[class*="Item_itemContainer"]');
         if (itemContainers.length === 0) {
             return;
         }
 
         for (const itemContainer of itemContainers) {
-            // Game uses SVG sprites, not img tags
             const svg = itemContainer.querySelector('svg');
             if (!svg) continue;
 
-            // Extract item name from href (e.g., #lumber -> lumber)
             const useElement = svg.querySelector('use');
             const hrefValue = useElement?.getAttribute('href') || '';
             const itemName = hrefValue.split('#')[1];
             if (!itemName) continue;
 
-            // Convert to item HRID
             const itemHrid = `/items/${itemName}`;
 
-            // Find matching material in costData
             let materialData;
             if (itemHrid === '/items/coin') {
                 materialData = {
@@ -176,14 +158,11 @@ class HouseCostDisplay {
 
             if (!materialData) continue;
 
-            // Skip coins (no pricing needed)
             if (materialData.itemHrid === '/items/coin') {
-                // Add empty cell to maintain grid structure
                 this.addEmptyCell(itemRequirementsGrid, itemContainer);
                 continue;
             }
 
-            // Add pricing as a new grid cell to the right
             this.addPricingCell(itemRequirementsGrid, itemContainer, materialData);
         }
     }
@@ -196,8 +175,6 @@ class HouseCostDisplay {
     addEmptyCell(grid, itemContainer) {
         const emptyCell = document.createElement('span');
         emptyCell.className = 'mwi-house-pricing-empty HousePanel_itemRequirementCell__3hSBN';
-
-        // Insert immediately after the item badge
         itemContainer.after(emptyCell);
     }
 
@@ -208,7 +185,6 @@ class HouseCostDisplay {
      * @param {Object} materialData - Material data with pricing
      */
     addPricingCell(grid, itemContainer, materialData) {
-        // Check if already augmented
         const nextSibling = itemContainer.nextElementSibling;
         if (nextSibling?.classList.contains('mwi-house-pricing')) {
             return;
@@ -218,7 +194,6 @@ class HouseCostDisplay {
         const hasEnough = inventoryCount >= materialData.count;
         const amountNeeded = Math.max(0, materialData.count - inventoryCount);
 
-        // Create pricing cell
         const pricingCell = document.createElement('span');
         pricingCell.className = 'mwi-house-pricing HousePanel_itemRequirementCell__3hSBN';
         pricingCell.style.cssText = `
@@ -238,7 +213,6 @@ class HouseCostDisplay {
             <span style="color: ${hasEnough ? '#4ade80' : '#f87171'}; margin-left: auto; text-align: right;">${coinFormatter(amountNeeded)}</span>
         `;
 
-        // Insert immediately after the item badge
         itemContainer.after(pricingCell);
     }
 
@@ -282,7 +256,6 @@ class HouseCostDisplay {
             overflow-y: auto;
         `;
 
-        // Compact header with inline dropdown
         const headerRow = document.createElement('div');
         headerRow.style.cssText = `
             display: flex;
@@ -311,7 +284,6 @@ class HouseCostDisplay {
             font-size: 0.875rem;
         `;
 
-        // Add options
         for (let level = currentLevel + 1; level <= 8; level++) {
             const option = document.createElement('option');
             option.value = level;
@@ -319,7 +291,6 @@ class HouseCostDisplay {
             dropdown.appendChild(option);
         }
 
-        // Default to next level (currentLevel + 1)
         const defaultLevel = currentLevel + 1;
         dropdown.value = defaultLevel;
 
@@ -327,7 +298,6 @@ class HouseCostDisplay {
         headerRow.appendChild(dropdown);
         section.appendChild(headerRow);
 
-        // Cost display container
         const costContainer = document.createElement('div');
         costContainer.className = 'mwi-cumulative-cost-container';
         costContainer.style.cssText = `
@@ -337,14 +307,11 @@ class HouseCostDisplay {
         `;
         section.appendChild(costContainer);
 
-        // Initial render
         await this.updateCompactCumulativeDisplay(costContainer, houseRoomHrid, currentLevel, parseInt(dropdown.value));
 
-        // Store state for inventory-change refresh
         this._cumulativeState = { costContainer, houseRoomHrid, currentLevel, dropdown };
         this._costContext = { houseRoomHrid, currentLevel, targetLevel: parseInt(dropdown.value) };
 
-        // Update on change
         dropdown.addEventListener('change', async () => {
             this._costContext = { houseRoomHrid, currentLevel, targetLevel: parseInt(dropdown.value) };
             await this.updateCompactCumulativeDisplay(
@@ -370,7 +337,6 @@ class HouseCostDisplay {
 
         const costData = await houseCostCalculator.calculateCumulativeCost(houseRoomHrid, currentLevel, targetLevel);
 
-        // Materials list as vertical stack of single-line rows
         const materialsList = document.createElement('div');
         materialsList.style.cssText = `
             display: flex;
@@ -378,7 +344,6 @@ class HouseCostDisplay {
             gap: 8px;
         `;
 
-        // Coins first
         if (costData.coins > 0) {
             this.appendMaterialRow(materialsList, {
                 itemHrid: '/items/coin',
@@ -387,14 +352,12 @@ class HouseCostDisplay {
             });
         }
 
-        // Materials
         for (const material of costData.materials) {
             this.appendMaterialRow(materialsList, material);
         }
 
         container.appendChild(materialsList);
 
-        // Total
         const totalDiv = document.createElement('div');
         totalDiv.style.cssText = `
             margin-top: 12px;
@@ -408,7 +371,6 @@ class HouseCostDisplay {
         totalDiv.textContent = `Total Market Value: ${coinFormatter(costData.totalValue)}`;
         container.appendChild(totalDiv);
 
-        // Add Missing Mats Marketplace button if any materials are missing
         const missingMaterials = this.getMissingMaterials(costData);
         if (missingMaterials.length > 0) {
             const button = this.createMissingMaterialsButton(missingMaterials);
@@ -437,7 +399,6 @@ class HouseCostDisplay {
             line-height: 1.4;
         `;
 
-        // [inv / req] - left side
         const inventorySpan = document.createElement('span');
         inventorySpan.style.cssText = `
             color: ${hasEnough ? 'white' : '#f87171'};
@@ -447,7 +408,6 @@ class HouseCostDisplay {
         inventorySpan.textContent = `${coinFormatter(inventoryCount)} / ${coinFormatter(material.count)}`;
         row.appendChild(inventorySpan);
 
-        // [Badge] Material Name
         const nameSpan = document.createElement('span');
         nameSpan.style.cssText = `
             color: white;
@@ -456,7 +416,6 @@ class HouseCostDisplay {
         nameSpan.textContent = itemName;
         row.appendChild(nameSpan);
 
-        // @ price = total (skip for coins)
         if (!isCoin) {
             const pricingSpan = document.createElement('span');
             pricingSpan.style.cssText = `
@@ -466,13 +425,11 @@ class HouseCostDisplay {
             pricingSpan.textContent = `@ ${coinFormatter(material.marketPrice)} = ${coinFormatter(material.totalValue)}`;
             row.appendChild(pricingSpan);
         } else {
-            // Empty spacer for coins
             const spacer = document.createElement('span');
             spacer.style.minWidth = '180px';
             row.appendChild(spacer);
         }
 
-        // Missing: X - right side
         const missingSpan = document.createElement('span');
         missingSpan.style.cssText = `
             color: ${hasEnough ? '#4ade80' : '#f87171'};
@@ -495,10 +452,7 @@ class HouseCostDisplay {
         const inventory = dataManager.getInventory();
         const missing = [];
 
-        // Process all materials (skip coins)
         for (const material of costData.materials) {
-            // Only count items in inventory (not equipped) with no enhancement
-            // Enhanced items and equipped items cannot be used for house construction
             const inventoryItem = inventory.find(
                 (i) =>
                     i.itemHrid === material.itemHrid &&
@@ -508,7 +462,6 @@ class HouseCostDisplay {
             const have = inventoryItem?.count || 0;
             const missingAmount = Math.max(0, material.count - have);
 
-            // Only include if missing > 0
             if (missingAmount > 0) {
                 const itemDetails = gameData.itemDetailMap[material.itemHrid];
                 if (itemDetails) {
@@ -549,7 +502,6 @@ class HouseCostDisplay {
         `;
         button.textContent = 'Missing Mats Marketplace';
 
-        // Hover effects
         button.addEventListener('mouseenter', () => {
             button.style.background =
                 'linear-gradient(180deg, rgba(91, 141, 239, 0.35) 0%, rgba(91, 141, 239, 0.25) 100%)';
@@ -564,7 +516,6 @@ class HouseCostDisplay {
             button.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.2)';
         });
 
-        // Click handler
         button.addEventListener('click', async () => {
             await this.handleMissingMaterialsClick(missingMaterials);
         });
@@ -572,84 +523,198 @@ class HouseCostDisplay {
         return button;
     }
 
+    // =========================================================================
+    // Session lifecycle
+    // =========================================================================
+
     /**
-     * Idempotent teardown for the house marketplace session
+     * End the captured Core House session.
+     * The session's onEnd callback performs idempotent local teardown.
+     * @param {number|null} capturedSessionId
+     * @returns {boolean}
+     */
+    exitHouseMarketplaceSession(capturedSessionId) {
+        if (capturedSessionId == null) return false;
+        return marketplaceSession.end(capturedSessionId);
+    }
+
+    /**
+     * Idempotent local teardown — called by the Core session's onEnd callback.
+     * Must NOT call marketplaceSession.end (this IS the onEnd handler).
+     * Increments _houseReturnGeneration so any in-flight Return async work stops.
      */
     teardownHouseMarketplaceSession() {
+        this._houseReturnGeneration++;
+
+        // Capture before nulling so autofill can disarm the exact old target
+        const sessionIdToDisarm = this._houseSessionId ?? this.activeWorkflowModel?.sessionId ?? null;
+
         this._houseSessionId = null;
+
+        if (this._nativeTabExitCleanup) {
+            this._nativeTabExitCleanup();
+            this._nativeTabExitCleanup = null;
+        }
+
         removeMaterialTabsForOwner(MARKETPLACE_OWNER.HOUSE);
         this.currentMaterialsTabs.length = 0;
+
         if (this.cleanupObserver) {
             this.cleanupObserver();
             this.cleanupObserver = null;
         }
-        const sessionIdToExit = this.activeWorkflowModel?.sessionId ?? null;
-        this.autofillManager.exitSession(sessionIdToExit);
+
         this.activeWorkflowModel = null;
-        // NOTE: Do NOT unregister _itemsUpdatedHandler here — it's feature-level not session-level
+        this.autofillManager.exitSession(sessionIdToDisarm);
+        // NOTE: Do NOT unregister _itemsUpdatedHandler — it is feature-level, not session-level.
     }
 
+    // =========================================================================
+    // Activation
+    // =========================================================================
+
     /**
-     * Handle missing materials button click
-     * @param {Array} missingMaterials - Array of missing material objects
+     * Handle missing materials button click.
+     * Closes the House room modal, navigates to Marketplace, and installs material tabs.
+     * @param {Array} missingMaterials
      */
     async handleMissingMaterialsClick(missingMaterials) {
-        // Claim session BEFORE first await
+        // 1. Validate and snapshot _costContext — fail closed if room context is absent
+        const costCtx = this._costContext;
+        const houseRoomHrid = costCtx?.houseRoomHrid ?? null;
+        if (!houseRoomHrid) {
+            console.error('[HouseCostDisplay] No active room context — cannot start marketplace session');
+            return;
+        }
+        const { currentLevel, targetLevel } = costCtx;
+
+        // 2. Start the Core House session before the first await
         const sessionId = marketplaceSession.start({
             owner: MARKETPLACE_OWNER.HOUSE,
             onEnd: () => this.teardownHouseMarketplaceSession(),
         });
         this._houseSessionId = sessionId;
 
-        // Navigate to marketplace
-        const success = await this.navigateToMarketplace();
-        if (!success) {
-            console.error('[HouseCostDisplay] Failed to navigate to marketplace');
-            this.teardownHouseMarketplaceSession();
+        // 3. Store model and immutable returnContext immediately, before any await
+        this.activeWorkflowModel = {
+            sessionId,
+            materials: missingMaterials.map((m) => ({ ...m })),
+            returnContext: Object.freeze({ houseRoomHrid, currentLevel, targetLevel, sessionId }),
+        };
+
+        // 4. Resolve exactly one House component that owns the captured room
+        const houseComponent = this._getHouseComponent(houseRoomHrid);
+        if (!houseComponent) {
+            console.error('[HouseCostDisplay] Could not resolve unique House component for', houseRoomHrid);
+            this.exitHouseMarketplaceSession(sessionId);
             return;
         }
 
-        if (!marketplaceSession.isActive(sessionId)) return;
+        // 5. Close the exact House room modal before navigation
+        houseComponent.handleCloseModal();
 
-        // Wait for marketplace to settle
+        // 6. Bounded wait: the exact captured House component no longer owns the room.
+        // Do not treat an ambiguous resolver result as proof that the modal closed.
+        const houseModalClosed = await this._pollUntil(
+            () => houseComponent.state?.selectedHouseRoomHrid !== houseRoomHrid,
+            1500,
+            50
+        );
+
+        if (!marketplaceSession.isActive(sessionId) || this._houseSessionId !== sessionId) return;
+
+        if (!houseModalClosed) {
+            console.error('[HouseCostDisplay] House room modal did not close within timeout');
+            this.exitHouseMarketplaceSession(sessionId);
+            return;
+        }
+
+        // 7. Navigate to Marketplace
+        const navSuccess = await this.navigateToMarketplace();
+
+        if (!marketplaceSession.isActive(sessionId) || this._houseSessionId !== sessionId) return;
+
+        if (!navSuccess) {
+            console.error('[HouseCostDisplay] Failed to navigate to marketplace — restoring room');
+            await this._restoreHouseRoom(houseRoomHrid, targetLevel, sessionId);
+            this.exitHouseMarketplaceSession(sessionId);
+            return;
+        }
+
+        // Brief settle wait for Marketplace tabs to stabilise
         await new Promise((resolve) => {
-            const delayTimeout = setTimeout(resolve, 200);
-            this.timerRegistry.registerTimeout(delayTimeout);
+            const t = setTimeout(resolve, 200);
+            this.timerRegistry.registerTimeout(t);
         });
 
-        if (!marketplaceSession.isActive(sessionId)) return;
+        if (!marketplaceSession.isActive(sessionId) || this._houseSessionId !== sessionId) return;
 
-        // Store model for reinject / tab updates
-        this.activeWorkflowModel = { sessionId, materials: missingMaterials.map((m) => ({ ...m })) };
-
-        // Arm autofill
+        // 8. Arm the autofill session
         this.autofillManager.startSession({ sessionId });
 
-        // Create custom tabs
-        this.createMissingMaterialTabs(missingMaterials);
+        // 9. Install material tabs in the current visible Marketplace tablist.
+        if (!this.createMissingMaterialTabs(missingMaterials)) {
+            console.error('[HouseCostDisplay] Could not install Marketplace material tabs');
+            this.exitHouseMarketplaceSession(sessionId);
+            return;
+        }
 
-        // Set up per-session cleanup observer
+        // 10. Per-session cleanup observer — ends the captured Core token on overlay close
         this.cleanupObserver = setupMarketplaceCleanupObserver({
             owner: MARKETPLACE_OWNER.HOUSE,
             onTabsGone: () => {
-                const capturedSessionId = sessionId;
-                if (!marketplaceSession.isActive(capturedSessionId)) return;
-                const tabContainer = getVisibleMarketplaceTabContainer();
+                if (!marketplaceSession.isActive(sessionId)) return;
+                const tabContainer = this._getVisibleMarketplaceTabContainer();
                 if (tabContainer) {
-                    this._reinjectHouseMarketplaceTabs(tabContainer, capturedSessionId);
+                    this._reinjectHouseMarketplaceTabs(tabContainer, sessionId);
                 } else {
-                    this.teardownHouseMarketplaceSession();
+                    this.exitHouseMarketplaceSession(sessionId);
                 }
             },
         });
     }
 
     /**
-     * Navigate to marketplace by clicking navbar
-     * @returns {Promise<boolean>} True if successful
+     * Restore the House room and target level after navigation failure.
+     * Does not end the session — the caller does that after this returns.
+     * @private
+     */
+    async _restoreHouseRoom(houseRoomHrid, targetLevel, sessionId) {
+        const houseComponent = this._getHouseComponent();
+        if (!houseComponent) return;
+
+        houseComponent.handleHouseRoomClicked(houseRoomHrid);
+
+        const ready = await this._pollUntil(
+            () => {
+                if (this._houseSessionId !== sessionId) return true; // session replaced — stop
+                const s = this._cumulativeState;
+                if (s?.houseRoomHrid !== houseRoomHrid) return false;
+                if (!s.costContainer?.isConnected || !s.dropdown?.isConnected) return false;
+                const currentHouse = this._getHouseComponent();
+                return currentHouse?.state?.selectedHouseRoomHrid === houseRoomHrid;
+            },
+            2000,
+            50
+        );
+
+        if (!ready || this._houseSessionId !== sessionId || !marketplaceSession.isActive(sessionId)) return;
+
+        const s = this._cumulativeState;
+        if (!s?.costContainer?.isConnected || !s.dropdown?.isConnected) return;
+
+        const levelStr = String(targetLevel);
+        if (Array.from(s.dropdown.options).some((o) => o.value === levelStr)) {
+            s.dropdown.value = levelStr;
+            s.dropdown.dispatchEvent(new Event('change'));
+        }
+    }
+
+    /**
+     * Navigate to Marketplace by clicking the nav button, then polling for the panel.
+     * @returns {Promise<boolean>}
      */
     async navigateToMarketplace() {
-        // Find marketplace navbar button
         const navButtons = document.querySelectorAll('[class*="NavigationBar_nav"]');
         const marketplaceButton = Array.from(navButtons).find((nav) => {
             const svg = nav.querySelector('svg[aria-label="navigationBar.marketplace"]');
@@ -661,23 +726,21 @@ class HouseCostDisplay {
             return false;
         }
 
-        // Click button
         marketplaceButton.click();
 
-        // Wait for marketplace to appear
         return await this.waitForMarketplace();
     }
 
     /**
-     * Wait for marketplace panel to appear
-     * @returns {Promise<boolean>} True if marketplace appeared
+     * Poll until the Marketplace panel with "Market Listings" tab appears.
+     * @returns {Promise<boolean>}
      */
     async waitForMarketplace() {
         const maxAttempts = 50;
         const delayMs = 100;
 
         for (let i = 0; i < maxAttempts; i++) {
-            const tabsContainer = document.querySelector('.MuiTabs-flexContainer[role="tablist"]');
+            const tabsContainer = this._getVisibleMarketplaceTabContainer();
             if (tabsContainer) {
                 const hasMarketListings = Array.from(tabsContainer.children).some((btn) =>
                     btn.textContent.includes('Market Listings')
@@ -697,72 +760,81 @@ class HouseCostDisplay {
         return false;
     }
 
+    // =========================================================================
+    // Tab management
+    // =========================================================================
+
     /**
-     * Create custom tabs for missing materials
-     * @param {Array} missingMaterials - Array of missing material objects
+     * Create custom material tabs (and Return tab) in the Marketplace tab bar.
+     * @param {Array} missingMaterials
      */
     createMissingMaterialTabs(missingMaterials) {
-        const tabsContainer = document.querySelector('.MuiTabs-flexContainer[role="tablist"]');
+        const tabsContainer = this._getVisibleMarketplaceTabContainer();
         if (!tabsContainer) {
-            console.error('[HouseCostDisplay] Tabs container not found');
-            return;
+            console.error('[HouseCostDisplay] Visible Marketplace tabs container not found');
+            return false;
         }
 
-        // Remove existing custom tabs for this owner
         removeMaterialTabsForOwner(MARKETPLACE_OWNER.HOUSE);
 
-        // Get reference tab
         const referenceTab = Array.from(tabsContainer.children).find((btn) => btn.textContent.includes('My Listings'));
         if (!referenceTab) {
             console.error('[HouseCostDisplay] Reference tab not found');
-            return;
+            return false;
         }
 
-        // Enable flex wrapping
         tabsContainer.style.flexWrap = 'wrap';
 
-        // Use event delegation on tabs container to clear quantity when regular tabs are clicked
-        // This avoids memory leaks from adding listeners to each tab repeatedly
-        if (!tabsContainer.hasAttribute('data-mwi-delegated-listener')) {
-            tabsContainer.setAttribute('data-mwi-delegated-listener', 'true');
-            tabsContainer.addEventListener('click', (e) => {
-                // Check if clicked element is a regular tab (not our custom tab)
-                const clickedTab = e.target.closest('button');
-                if (clickedTab && !clickedTab.hasAttribute('data-mwi-custom-tab')) {
-                    this.autofillManager.setQuantityProvider(null, this._houseSessionId);
-                }
-            });
-        }
+        // Capture session token before listener installation — listener must never act on a newer session
+        const capturedSessionId = this._houseSessionId;
 
-        // Create tab for each missing material
-        this.currentMaterialsTabs.length = 0; // Clear without reassigning (preserves observer reference)
+        this._nativeTabExitCleanup?.();
+        this._nativeTabExitCleanup = watchNativeTabExit(tabsContainer, () => {
+            this.exitHouseMarketplaceSession(capturedSessionId);
+        });
+
+        this.currentMaterialsTabs.length = 0;
         for (const material of missingMaterials) {
-            let tabEl = null;
+            const capturedItemHrid = material.itemHrid;
             const tab = createMaterialTab(
                 material,
                 referenceTab,
                 (_e, mat) => {
-                    // Read the current missing quantity from the tab's data attribute,
-                    // which is kept up-to-date by the inventory listener.
-                    this.autofillManager.setQuantityProvider(() => {
-                        return parseInt(tabEl?.getAttribute('data-missing-quantity') || '0', 10);
-                    }, this._houseSessionId);
-                    // Navigate to marketplace
+                    const armed = this.autofillManager.arm({
+                        sessionId: capturedSessionId,
+                        itemHrid: mat.itemHrid,
+                        enhancementLevel: material.enhancementLevel ?? 0,
+                        modalMode: 'buy',
+                        quantityProvider: () => {
+                            const model = this.activeWorkflowModel;
+                            if (model?.sessionId !== capturedSessionId) return 0;
+                            const entry = model.materials.find((e) => e.itemHrid === capturedItemHrid);
+                            return entry?.missing ?? 0;
+                        },
+                    });
+                    if (!armed) return;
                     navigateToMarketplace(mat.itemHrid, 0);
                 },
                 MARKETPLACE_OWNER.HOUSE
             );
-            tabEl = tab;
             tab.setAttribute('data-item-name', material.itemName);
             tabsContainer.appendChild(tab);
             this.currentMaterialsTabs.push(tab);
         }
+
+        if (this.activeWorkflowModel?.returnContext) {
+            const returnTab = this._createHouseReturnTab(referenceTab, this.activeWorkflowModel.returnContext);
+            tabsContainer.appendChild(returnTab);
+            this.currentMaterialsTabs.push(returnTab);
+        }
+
+        return true;
     }
 
     /**
-     * Reinject house marketplace tabs into a tab container after they were removed
-     * @param {Element} tabContainer - The visible tab container
-     * @param {number} capturedSessionId - Session ID to guard against stale calls
+     * Reinject House material tabs after a remount (e.g. page navigation within Marketplace).
+     * @param {Element} tabContainer
+     * @param {number} capturedSessionId - Guards against stale reinject calls
      */
     _reinjectHouseMarketplaceTabs(tabContainer, capturedSessionId) {
         if (!this.activeWorkflowModel) return;
@@ -772,43 +844,371 @@ class HouseCostDisplay {
         const referenceTab = Array.from(tabContainer.children).find((btn) => btn.textContent.includes('My Listings'));
         if (!referenceTab) return;
 
+        this._nativeTabExitCleanup?.();
+        this._nativeTabExitCleanup = watchNativeTabExit(tabContainer, () => {
+            this.exitHouseMarketplaceSession(capturedSessionId);
+        });
+
         this.currentMaterialsTabs.length = 0;
         for (const material of materials) {
-            let tabEl = null;
+            const capturedItemHrid = material.itemHrid;
             const tab = createMaterialTab(
                 material,
                 referenceTab,
                 (_e, mat) => {
-                    this.autofillManager.setQuantityProvider(() => {
-                        return parseInt(tabEl?.getAttribute('data-missing-quantity') || '0', 10);
-                    }, this._houseSessionId);
+                    const armed = this.autofillManager.arm({
+                        sessionId: capturedSessionId,
+                        itemHrid: mat.itemHrid,
+                        enhancementLevel: material.enhancementLevel ?? 0,
+                        modalMode: 'buy',
+                        quantityProvider: () => {
+                            const model = this.activeWorkflowModel;
+                            if (model?.sessionId !== capturedSessionId) return 0;
+                            const entry = model.materials.find((e) => e.itemHrid === capturedItemHrid);
+                            return entry?.missing ?? 0;
+                        },
+                    });
+                    if (!armed) return;
                     navigateToMarketplace(mat.itemHrid, 0);
                 },
                 MARKETPLACE_OWNER.HOUSE
             );
-            tabEl = tab;
             tab.setAttribute('data-item-name', material.itemName);
             tabContainer.appendChild(tab);
             this.currentMaterialsTabs.push(tab);
         }
+
+        if (this.activeWorkflowModel?.returnContext) {
+            const returnTab = this._createHouseReturnTab(referenceTab, this.activeWorkflowModel.returnContext);
+            tabContainer.appendChild(returnTab);
+            this.currentMaterialsTabs.push(returnTab);
+        }
     }
 
     /**
-     * Handle marketplace cleanup (when leaving marketplace)
-     * Called by the marketplace cleanup observer
+     * Create a dedicated Return tab node (not a material tab) by cloning the reference tab.
+     * Carries data-mwi-house-return so _updateMarketplaceTabs skips it.
+     * @param {Element} referenceTab
+     * @param {Object} returnContext - Immutable snapshot
+     * @returns {Element}
+     */
+    _createHouseReturnTab(referenceTab, returnContext) {
+        const tab = referenceTab.cloneNode(true);
+        tab.setAttribute('data-mwi-custom-tab', 'true');
+        tab.setAttribute('data-mwi-tab-owner', MARKETPLACE_OWNER.HOUSE);
+        tab.setAttribute('data-mwi-house-return', 'true');
+        tab.removeAttribute('data-item-hrid');
+        tab.removeAttribute('data-missing-quantity');
+        tab.removeAttribute('id');
+        tab.removeAttribute('aria-controls');
+        tab.classList.remove('Mui-selected');
+        tab.setAttribute('aria-selected', 'false');
+        tab.setAttribute('tabindex', '-1');
+        tab.textContent = '↩ Return to House';
+        tab.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            this._handleHouseReturn(returnContext);
+        });
+        return tab;
+    }
+
+    // =========================================================================
+    // Component resolvers
+    // =========================================================================
+
+    /**
+     * Return true only when an element and every element ancestor are actually visible.
+     * Connected-but-hidden stale React panels must not participate in runtime resolution.
+     * @param {Element|null} element
+     * @returns {boolean}
+     */
+    _isElementActuallyVisible(element) {
+        if (!element?.isConnected) return false;
+
+        let current = element;
+        while (current) {
+            if (current.hidden || current.getAttribute?.('aria-hidden') === 'true') return false;
+            const style = getComputedStyle(current);
+            if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') {
+                return false;
+            }
+            current = current.parentElement;
+        }
+
+        return true;
+    }
+
+    /**
+     * Get all currently visible Marketplace panels.
+     * @returns {Element[]}
+     */
+    _getVisibleMarketplacePanels() {
+        return Array.from(document.querySelectorAll('[class*="MarketplacePanel_marketplacePanel"]')).filter((panel) =>
+            this._isElementActuallyVisible(panel)
+        );
+    }
+
+    _getVisibleMarketplaceTabContainer() {
+        const panels = this._getVisibleMarketplacePanels();
+        if (panels.length !== 1) return null;
+
+        const candidates = Array.from(panels[0].querySelectorAll('.MuiTabs-flexContainer[role="tablist"]')).filter(
+            (container) => {
+                if (!this._isElementActuallyVisible(container)) return false;
+                return Array.from(container.children).some(
+                    (tab) => tab.textContent.includes('Market Listings') || tab.textContent.includes('My Listings')
+                );
+            }
+        );
+
+        return candidates.length === 1 ? candidates[0] : null;
+    }
+
+    /**
+     * Find the single visible Marketplace component via fiber ancestry.
+     * Requires exactly one connected panel and exactly one matching fiber ancestor.
+     * Returns null on zero or multiple candidates (fail-closed).
+     * @returns {Object|null}
+     */
+    _getMarketplaceComponent() {
+        const REACT_FIBER_PREFIXES = ['__reactFiber$', '__reactInternalInstance$'];
+
+        const panels = this._getVisibleMarketplacePanels();
+
+        if (panels.length !== 1) return null;
+
+        const panel = panels[0];
+        const fiberKey = Object.getOwnPropertyNames(panel).find((key) =>
+            REACT_FIBER_PREFIXES.some((prefix) => key.startsWith(prefix))
+        );
+        if (!fiberKey) return null;
+
+        const candidates = [];
+        let fiber = panel[fiberKey];
+        let depth = 0;
+        while (fiber && depth < 64) {
+            if (fiber.stateNode?.handleCloseMarketplaceModal) {
+                candidates.push(fiber.stateNode);
+            }
+            fiber = fiber.return;
+            depth++;
+        }
+
+        // If ancestry continues beyond the explicit budget, uniqueness was not proven.
+        if (fiber) return null;
+
+        return candidates.length === 1 ? candidates[0] : null;
+    }
+
+    /**
+     * Find the single House component in the fiber tree using the full behavioral signature.
+     * Optionally filters to a component whose state.selectedHouseRoomHrid matches capturedRoomHrid.
+     * Requires exactly one candidate (fail-closed on zero or multiple).
+     * @param {string|null} capturedRoomHrid - If non-null, additionally require state match
+     * @returns {Object|null}
+     */
+    _getHouseComponent(capturedRoomHrid = null) {
+        const rootEl = document.getElementById('root');
+        const rootFiber = rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
+        if (!rootFiber) return null;
+
+        const candidates = [];
+        const stack = [rootFiber];
+        let visited = 0;
+
+        while (stack.length > 0 && visited < 2000) {
+            const fiber = stack.pop();
+            visited++;
+            if (!fiber) continue;
+
+            const node = fiber.stateNode;
+            if (
+                node &&
+                typeof node.handleHouseRoomClicked === 'function' &&
+                typeof node.handleCloseModal === 'function' &&
+                node.state &&
+                Object.prototype.hasOwnProperty.call(node.state, 'selectedHouseRoomHrid')
+            ) {
+                if (capturedRoomHrid === null || node.state.selectedHouseRoomHrid === capturedRoomHrid) {
+                    candidates.push(node);
+                }
+            }
+
+            if (fiber.sibling) stack.push(fiber.sibling);
+            if (fiber.child) stack.push(fiber.child);
+        }
+
+        // A truncated traversal cannot prove that no second candidate exists.
+        if (stack.length > 0) return null;
+
+        return candidates.length === 1 ? candidates[0] : null;
+    }
+
+    // =========================================================================
+    // House Return flow
+    // =========================================================================
+
+    /**
+     * Handle Return tab click: close Marketplace, reopen the saved House room,
+     * restore the target level, then end the captured Core session.
+     * Session is kept alive until successful restoration.
+     * @param {Object} returnContext - Immutable snapshot: { houseRoomHrid, currentLevel, targetLevel, sessionId }
+     */
+    async _handleHouseReturn(returnContext) {
+        const { houseRoomHrid, targetLevel, sessionId: capturedSessionId } = returnContext;
+
+        // Guard before incrementing generation: a stale detached Return node must not
+        // cancel a valid Return already in progress for the current session.
+        if (capturedSessionId !== this._houseSessionId || !marketplaceSession.isActive(capturedSessionId)) return;
+
+        // Bump Return generation — any older valid concurrent Return stops after its next await.
+        const generation = ++this._houseReturnGeneration;
+
+        // Cancel cleanup observer and native-tab listener before closing Marketplace
+        // to prevent premature session end when the Marketplace tabs disappear
+        if (this.cleanupObserver) {
+            this.cleanupObserver();
+            this.cleanupObserver = null;
+        }
+        if (this._nativeTabExitCleanup) {
+            this._nativeTabExitCleanup();
+            this._nativeTabExitCleanup = null;
+        }
+
+        // Resolve exactly one visible Marketplace component before mutating anything
+        const marketplaceComponent = this._getMarketplaceComponent();
+        if (!marketplaceComponent) {
+            console.error('[HouseCostDisplay] Return: could not resolve unique Marketplace component');
+            this.exitHouseMarketplaceSession(capturedSessionId);
+            return;
+        }
+
+        // Close Marketplace
+        marketplaceComponent.handleCloseMarketplaceModal();
+
+        // Bounded wait: no actually visible Marketplace panel remains.
+        const marketplaceClosed = await this._pollUntil(
+            () => this._getVisibleMarketplacePanels().length === 0,
+            2000,
+            50
+        );
+
+        // After await: verify this Return has not been superseded
+        if (this._houseReturnGeneration !== generation) return;
+        if (capturedSessionId !== this._houseSessionId || !marketplaceSession.isActive(capturedSessionId)) return;
+
+        if (!marketplaceClosed) {
+            console.error('[HouseCostDisplay] Return: Marketplace did not close within timeout');
+            this.exitHouseMarketplaceSession(capturedSessionId);
+            return;
+        }
+
+        // Resolve exactly one House component (no room filter — room is not yet selected)
+        const houseComponent = this._getHouseComponent();
+        if (!houseComponent) {
+            console.error('[HouseCostDisplay] Return: could not resolve unique House component');
+            this.exitHouseMarketplaceSession(capturedSessionId);
+            return;
+        }
+
+        // Reopen the saved House room
+        houseComponent.handleHouseRoomClicked(houseRoomHrid);
+
+        // Bounded wait: freshly connected exact-room Toolasha target control
+        const roomReady = await this._pollUntil(
+            () => {
+                if (this._houseReturnGeneration !== generation) return true; // superseded — exit loop
+                const s = this._cumulativeState;
+                if (!s || s.houseRoomHrid !== houseRoomHrid) return false;
+                if (!s.costContainer?.isConnected || !s.dropdown?.isConnected) return false;
+                const house = this._getHouseComponent();
+                return house?.state?.selectedHouseRoomHrid === houseRoomHrid;
+            },
+            3000,
+            50
+        );
+
+        // After await: verify generation and session
+        if (this._houseReturnGeneration !== generation) return;
+        if (capturedSessionId !== this._houseSessionId || !marketplaceSession.isActive(capturedSessionId)) return;
+
+        if (!roomReady) {
+            console.warn('[HouseCostDisplay] Return: room did not become ready within timeout');
+            this.exitHouseMarketplaceSession(capturedSessionId);
+            return;
+        }
+
+        // Final connected-state validation
+        const s = this._cumulativeState;
+        if (!s?.dropdown?.isConnected || !s?.costContainer?.isConnected) {
+            this.exitHouseMarketplaceSession(capturedSessionId);
+            return;
+        }
+
+        // Require target option to exist before writing
+        const levelStr = String(targetLevel);
+        if (!Array.from(s.dropdown.options).some((o) => o.value === levelStr)) {
+            this.exitHouseMarketplaceSession(capturedSessionId);
+            return;
+        }
+
+        // Restore target level
+        s.dropdown.value = levelStr;
+        s.dropdown.dispatchEvent(new Event('change'));
+
+        // End only the captured Core session — onEnd handles local teardown
+        this.exitHouseMarketplaceSession(capturedSessionId);
+    }
+
+    // =========================================================================
+    // Bounded polling
+    // =========================================================================
+
+    /**
+     * Poll conditionFn every stepMs up to maxMs, returning true as soon as it passes.
+     * Returns the final result of conditionFn if maxMs is exhausted without passing.
+     * @param {Function} conditionFn
+     * @param {number} maxMs
+     * @param {number} stepMs
+     * @returns {Promise<boolean>}
+     */
+    async _pollUntil(conditionFn, maxMs = 2000, stepMs = 50) {
+        let elapsed = 0;
+        while (elapsed < maxMs) {
+            if (conditionFn()) return true;
+            await new Promise((resolve) => {
+                const t = setTimeout(resolve, stepMs);
+                this.timerRegistry.registerTimeout(t);
+            });
+            elapsed += stepMs;
+        }
+        return conditionFn();
+    }
+
+    // =========================================================================
+    // Cleanup / legacy path
+    // =========================================================================
+
+    /**
+     * Handle marketplace cleanup (called when leaving Marketplace outside normal Return).
      */
     handleMarketplaceCleanup() {
+        const capturedSessionId = this.activeWorkflowModel?.sessionId ?? this._houseSessionId ?? null;
         removeMaterialTabsForOwner(MARKETPLACE_OWNER.HOUSE);
-        this.currentMaterialsTabs.length = 0; // Clear without reassigning (preserves observer reference)
-        this.autofillManager.exitSession(this.activeWorkflowModel?.sessionId);
+        this.currentMaterialsTabs.length = 0;
         this.activeWorkflowModel = null;
+        this.exitHouseMarketplaceSession(capturedSessionId);
     }
+
+    // =========================================================================
+    // Inventory / house-room updates
+    // =========================================================================
 
     /**
      * Refresh colors on existing displays
      */
     refresh() {
-        // Update pricing cell colors
         document.querySelectorAll('.mwi-house-pricing').forEach((cell) => {
             cell.style.color = config.COLOR_ACCENT;
             const boldSpan = cell.querySelector('span[style*="font-weight: bold"]');
@@ -817,18 +1217,15 @@ class HouseCostDisplay {
             }
         });
 
-        // Update total cost colors
         document.querySelectorAll('.mwi-house-total').forEach((total) => {
             total.style.borderTopColor = config.COLOR_ACCENT;
             total.style.color = config.COLOR_ACCENT;
         });
 
-        // Update "To Level" label colors
         document.querySelectorAll('.mwi-house-to-level span[style*="font-weight: bold"]').forEach((label) => {
             label.style.color = config.COLOR_ACCENT;
         });
 
-        // Update cumulative total colors
         document.querySelectorAll('.mwi-cumulative-cost-container span[style*="font-weight: bold"]').forEach((span) => {
             span.style.color = config.COLOR_ACCENT;
         });
@@ -838,12 +1235,10 @@ class HouseCostDisplay {
      * Handle inventory changes — refresh the cumulative display if visible
      */
     async _onInventoryChanged() {
-        // Update marketplace tabs (visible while shopping)
         this._updateMarketplaceTabs();
 
         if (!this._cumulativeState) return;
         const { costContainer, houseRoomHrid, currentLevel, dropdown } = this._cumulativeState;
-        // Only refresh if the container is still in the DOM
         if (!costContainer.isConnected) {
             this._cumulativeState = null;
             return;
@@ -870,7 +1265,6 @@ class HouseCostDisplay {
             return;
         }
 
-        // Remove dropdown options at or below the new current level
         while (dropdown.options.length > 0 && parseInt(dropdown.options[0].value) <= newLevel) {
             dropdown.remove(0);
         }
@@ -893,13 +1287,12 @@ class HouseCostDisplay {
 
     /**
      * Update marketplace tab badges when inventory changes.
-     * Recalculates missing amounts and updates each tab's display.
+     * Skips the dedicated Return tab (data-mwi-house-return).
      */
     async _updateMarketplaceTabs() {
         if (this.currentMaterialsTabs.length === 0) return;
         if (!this._costContext) return;
 
-        // Capture before await for stale-result guards
         const capturedSessionId = this._houseSessionId;
         const capturedCostContext = this._costContext;
 
@@ -912,12 +1305,14 @@ class HouseCostDisplay {
 
         const updatedMaterials = this.getMissingMaterials(costData);
 
-        // Update activeWorkflowModel materials
         if (this.activeWorkflowModel) {
             this.activeWorkflowModel.materials = updatedMaterials.map((m) => ({ ...m }));
         }
 
         for (const tab of this.currentMaterialsTabs) {
+            // Skip the dedicated Return tab — it has no material semantics
+            if (tab.hasAttribute('data-mwi-house-return')) continue;
+
             const itemHrid = tab.getAttribute('data-item-hrid');
             const material = updatedMaterials.find((m) => m.itemHrid === itemHrid);
 
@@ -963,31 +1358,27 @@ class HouseCostDisplay {
      * Disable the feature
      */
     disable() {
-        // Remove all MWI-added elements
         document
             .querySelectorAll('.mwi-house-pricing, .mwi-house-pricing-empty, .mwi-house-total, .mwi-house-to-level')
             .forEach((el) => el.remove());
 
-        // Restore all grid columns
         document.querySelectorAll('[class*="HousePanel_itemRequirements"]').forEach((grid) => {
             grid.style.gridTemplateColumns = '';
         });
 
-        // Clean up marketplace tabs and observer
-        this.teardownHouseMarketplaceSession();
-        this.handleMarketplaceCleanup();
+        // End the active House session — onEnd callback handles local teardown
+        this.exitHouseMarketplaceSession(this._houseSessionId);
+
         if (this.cleanupObserver) {
             this.cleanupObserver();
             this.cleanupObserver = null;
         }
 
-        // Remove inventory listener
         if (this._itemsUpdatedHandler) {
             dataManager.off('items_updated', this._itemsUpdatedHandler);
             this._itemsUpdatedHandler = null;
         }
 
-        // Remove house room listener
         if (this._houseRoomsUpdatedHandler) {
             dataManager.off('house_rooms_updated', this._houseRoomsUpdatedHandler);
             this._houseRoomsUpdatedHandler = null;
