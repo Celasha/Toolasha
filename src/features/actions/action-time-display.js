@@ -1855,9 +1855,17 @@ class ActionTimeDisplay {
                     limitType = `material:${alchItemHrid}`;
                 }
 
-                if (actionDetails.coinCost && actionDetails.coinCost > 0) {
+                let alchemyCoinCost = 0;
+                if (actionDetails.hrid?.includes('decompose') || actionDetails.hrid?.includes('unrefine')) {
+                    const itemLevel = alchItemDetails?.itemLevel || 1;
+                    alchemyCoinCost = (10 + itemLevel) * 5 * bulkMultiplier;
+                } else if (actionDetails.hrid?.includes('transmute')) {
+                    const sellPrice = alchItemDetails?.sellPrice || 0;
+                    alchemyCoinCost = Math.max(50, Math.floor(sellPrice / 5)) * bulkMultiplier;
+                }
+                if (alchemyCoinCost > 0) {
                     const availableGold = byHrid['/items/coin'] || 0;
-                    const maxFromGold = Math.floor(availableGold / actionDetails.coinCost);
+                    const maxFromGold = Math.floor(availableGold / alchemyCoinCost);
                     if (maxFromGold < minLimit) {
                         minLimit = maxFromGold;
                         limitType = 'gold';
