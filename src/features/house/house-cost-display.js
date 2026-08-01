@@ -9,10 +9,12 @@ import { coinFormatter, formatWithSeparator } from '../../utils/formatters.js';
 import dataManager from '../../core/data-manager.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { createAutofillManager } from '../../utils/marketplace-autofill.js';
+import { marketplaceSession, MARKETPLACE_OWNER } from '../../core/marketplace-session.js';
 import {
     createMaterialTab,
-    removeMaterialTabs,
+    removeMaterialTabsForOwner,
     setupMarketplaceCleanupObserver,
+    getVisibleMarketplaceTabContainer,
     navigateToMarketplace,
 } from '../../utils/marketplace-tabs.js';
 
@@ -29,6 +31,8 @@ class HouseCostDisplay {
         this._houseRoomsUpdatedHandler = null; // House room level change listener
         this._cumulativeState = null; // State for refreshing cumulative display
         this._costContext = null; // { houseRoomHrid, currentLevel, targetLevel } for recalculating missing mats
+        this._houseSessionId = null;
+        this.activeWorkflowModel = null;
     }
 
     /**
@@ -60,12 +64,6 @@ class HouseCostDisplay {
 
         this.isActive = true;
         this.isInitialized = true;
-
-        // Setup cleanup observer for marketplace tabs (consistent with actions feature)
-        this.cleanupObserver = setupMarketplaceCleanupObserver(
-            () => this.handleMarketplaceCleanup(),
-            this.currentMaterialsTabs
-        );
 
         // Listen for inventory changes to refresh the cumulative display
         this._itemsUpdatedHandler = () => this._onInventoryChanged();
@@ -575,16 +573,43 @@ class HouseCostDisplay {
     }
 
     /**
+     * Idempotent teardown for the house marketplace session
+     */
+    teardownHouseMarketplaceSession() {
+        this._houseSessionId = null;
+        removeMaterialTabsForOwner(MARKETPLACE_OWNER.HOUSE);
+        this.currentMaterialsTabs.length = 0;
+        if (this.cleanupObserver) {
+            this.cleanupObserver();
+            this.cleanupObserver = null;
+        }
+        const sessionIdToExit = this.activeWorkflowModel?.sessionId ?? null;
+        this.autofillManager.exitSession(sessionIdToExit);
+        this.activeWorkflowModel = null;
+        // NOTE: Do NOT unregister _itemsUpdatedHandler here — it's feature-level not session-level
+    }
+
+    /**
      * Handle missing materials button click
      * @param {Array} missingMaterials - Array of missing material objects
      */
     async handleMissingMaterialsClick(missingMaterials) {
+        // Claim session BEFORE first await
+        const sessionId = marketplaceSession.start({
+            owner: MARKETPLACE_OWNER.HOUSE,
+            onEnd: () => this.teardownHouseMarketplaceSession(),
+        });
+        this._houseSessionId = sessionId;
+
         // Navigate to marketplace
         const success = await this.navigateToMarketplace();
         if (!success) {
             console.error('[HouseCostDisplay] Failed to navigate to marketplace');
+            this.teardownHouseMarketplaceSession();
             return;
         }
+
+        if (!marketplaceSession.isActive(sessionId)) return;
 
         // Wait for marketplace to settle
         await new Promise((resolve) => {
@@ -592,8 +617,31 @@ class HouseCostDisplay {
             this.timerRegistry.registerTimeout(delayTimeout);
         });
 
+        if (!marketplaceSession.isActive(sessionId)) return;
+
+        // Store model for reinject / tab updates
+        this.activeWorkflowModel = { sessionId, materials: missingMaterials.map((m) => ({ ...m })) };
+
+        // Arm autofill
+        this.autofillManager.startSession({ sessionId });
+
         // Create custom tabs
         this.createMissingMaterialTabs(missingMaterials);
+
+        // Set up per-session cleanup observer
+        this.cleanupObserver = setupMarketplaceCleanupObserver({
+            owner: MARKETPLACE_OWNER.HOUSE,
+            onTabsGone: () => {
+                const capturedSessionId = sessionId;
+                if (!marketplaceSession.isActive(capturedSessionId)) return;
+                const tabContainer = getVisibleMarketplaceTabContainer();
+                if (tabContainer) {
+                    this._reinjectHouseMarketplaceTabs(tabContainer, capturedSessionId);
+                } else {
+                    this.teardownHouseMarketplaceSession();
+                }
+            },
+        });
     }
 
     /**
@@ -602,7 +650,7 @@ class HouseCostDisplay {
      */
     async navigateToMarketplace() {
         // Find marketplace navbar button
-        const navButtons = document.querySelectorAll('.NavigationBar_nav__3uuUl');
+        const navButtons = document.querySelectorAll('[class*="NavigationBar_nav"]');
         const marketplaceButton = Array.from(navButtons).find((nav) => {
             const svg = nav.querySelector('svg[aria-label="navigationBar.marketplace"]');
             return svg !== null;
@@ -660,8 +708,8 @@ class HouseCostDisplay {
             return;
         }
 
-        // Remove existing custom tabs
-        removeMaterialTabs();
+        // Remove existing custom tabs for this owner
+        removeMaterialTabsForOwner(MARKETPLACE_OWNER.HOUSE);
 
         // Get reference tab
         const referenceTab = Array.from(tabsContainer.children).find((btn) => btn.textContent.includes('My Listings'));
@@ -681,7 +729,7 @@ class HouseCostDisplay {
                 // Check if clicked element is a regular tab (not our custom tab)
                 const clickedTab = e.target.closest('button');
                 if (clickedTab && !clickedTab.hasAttribute('data-mwi-custom-tab')) {
-                    this.autofillManager.clearQuantity();
+                    this.autofillManager.setQuantityProvider(null, this._houseSessionId);
                 }
             });
         }
@@ -690,18 +738,57 @@ class HouseCostDisplay {
         this.currentMaterialsTabs.length = 0; // Clear without reassigning (preserves observer reference)
         for (const material of missingMaterials) {
             let tabEl = null;
-            const tab = createMaterialTab(material, referenceTab, (_e, mat) => {
-                // Read the current missing quantity from the tab's data attribute,
-                // which is kept up-to-date by the inventory listener.
-                this.autofillManager.setPendingCalculation(() => {
-                    return parseInt(tabEl?.getAttribute('data-missing-quantity') || '0', 10);
-                });
-                // Navigate to marketplace
-                navigateToMarketplace(mat.itemHrid, 0);
-            });
+            const tab = createMaterialTab(
+                material,
+                referenceTab,
+                (_e, mat) => {
+                    // Read the current missing quantity from the tab's data attribute,
+                    // which is kept up-to-date by the inventory listener.
+                    this.autofillManager.setQuantityProvider(() => {
+                        return parseInt(tabEl?.getAttribute('data-missing-quantity') || '0', 10);
+                    }, this._houseSessionId);
+                    // Navigate to marketplace
+                    navigateToMarketplace(mat.itemHrid, 0);
+                },
+                MARKETPLACE_OWNER.HOUSE
+            );
             tabEl = tab;
             tab.setAttribute('data-item-name', material.itemName);
             tabsContainer.appendChild(tab);
+            this.currentMaterialsTabs.push(tab);
+        }
+    }
+
+    /**
+     * Reinject house marketplace tabs into a tab container after they were removed
+     * @param {Element} tabContainer - The visible tab container
+     * @param {number} capturedSessionId - Session ID to guard against stale calls
+     */
+    _reinjectHouseMarketplaceTabs(tabContainer, capturedSessionId) {
+        if (!this.activeWorkflowModel) return;
+        if (!marketplaceSession.isActive(capturedSessionId)) return;
+
+        const { materials } = this.activeWorkflowModel;
+        const referenceTab = Array.from(tabContainer.children).find((btn) => btn.textContent.includes('My Listings'));
+        if (!referenceTab) return;
+
+        this.currentMaterialsTabs.length = 0;
+        for (const material of materials) {
+            let tabEl = null;
+            const tab = createMaterialTab(
+                material,
+                referenceTab,
+                (_e, mat) => {
+                    this.autofillManager.setQuantityProvider(() => {
+                        return parseInt(tabEl?.getAttribute('data-missing-quantity') || '0', 10);
+                    }, this._houseSessionId);
+                    navigateToMarketplace(mat.itemHrid, 0);
+                },
+                MARKETPLACE_OWNER.HOUSE
+            );
+            tabEl = tab;
+            tab.setAttribute('data-item-name', material.itemName);
+            tabContainer.appendChild(tab);
             this.currentMaterialsTabs.push(tab);
         }
     }
@@ -711,9 +798,10 @@ class HouseCostDisplay {
      * Called by the marketplace cleanup observer
      */
     handleMarketplaceCleanup() {
-        removeMaterialTabs();
+        removeMaterialTabsForOwner(MARKETPLACE_OWNER.HOUSE);
         this.currentMaterialsTabs.length = 0; // Clear without reassigning (preserves observer reference)
-        this.autofillManager.clearQuantity();
+        this.autofillManager.exitSession(this.activeWorkflowModel?.sessionId);
+        this.activeWorkflowModel = null;
     }
 
     /**
@@ -811,9 +899,23 @@ class HouseCostDisplay {
         if (this.currentMaterialsTabs.length === 0) return;
         if (!this._costContext) return;
 
-        const { houseRoomHrid, currentLevel, targetLevel } = this._costContext;
+        // Capture before await for stale-result guards
+        const capturedSessionId = this._houseSessionId;
+        const capturedCostContext = this._costContext;
+
+        const { houseRoomHrid, currentLevel, targetLevel } = capturedCostContext;
         const costData = await houseCostCalculator.calculateCumulativeCost(houseRoomHrid, currentLevel, targetLevel);
+
+        if (this._houseSessionId !== capturedSessionId) return;
+        if (this._costContext !== capturedCostContext) return;
+        if (!marketplaceSession.isActive(capturedSessionId)) return;
+
         const updatedMaterials = this.getMissingMaterials(costData);
+
+        // Update activeWorkflowModel materials
+        if (this.activeWorkflowModel) {
+            this.activeWorkflowModel.materials = updatedMaterials.map((m) => ({ ...m }));
+        }
 
         for (const tab of this.currentMaterialsTabs) {
             const itemHrid = tab.getAttribute('data-item-hrid');
@@ -872,6 +974,7 @@ class HouseCostDisplay {
         });
 
         // Clean up marketplace tabs and observer
+        this.teardownHouseMarketplaceSession();
         this.handleMarketplaceCleanup();
         if (this.cleanupObserver) {
             this.cleanupObserver();

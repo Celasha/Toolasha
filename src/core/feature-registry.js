@@ -6,6 +6,7 @@
 import config from './config.js';
 import dataManager from './data-manager.js';
 import performanceMonitor from '../utils/performance-monitor.js';
+import { marketplaceSession } from './marketplace-session.js';
 
 /**
  * Feature Registry
@@ -194,6 +195,10 @@ function setupCharacterSwitchHandler() {
                 if (config && typeof config.clearSettingsCache === 'function') {
                     config.clearSettingsCache();
                 }
+
+                // End any active marketplace session before features clean up
+                marketplaceSession.endAll();
+                marketplaceSession.clearAllMarketplaceUI();
 
                 await cleanupFeatures();
             } catch (error) {

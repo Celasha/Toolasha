@@ -7,6 +7,39 @@
 import { formatWithSeparator } from './formatters.js';
 
 /**
+ * Get the visible marketplace tab container.
+ * Returns null when the marketplace panel is hidden or does not have native tabs.
+ * @returns {HTMLElement|null}
+ */
+export function getVisibleMarketplaceTabContainer() {
+    const panel = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
+    if (!panel) return null;
+
+    // Check the panel's nearest ancestor sub-panel container for visibility
+    const subPanelContainer = panel.closest('[class*="MainPanel_subPanelContainer"]');
+    if (subPanelContainer && getComputedStyle(subPanelContainer).display === 'none') return null;
+
+    const tabsContainer = panel.querySelector('.MuiTabs-flexContainer[role="tablist"]');
+    if (!tabsContainer) return null;
+
+    // Confirm this is the native marketplace tablist (has Market Listings or My Listings)
+    const hasNativeTab = Array.from(tabsContainer.children).some(
+        (btn) => btn.textContent.includes('Market Listings') || btn.textContent.includes('My Listings')
+    );
+    if (!hasNativeTab) return null;
+
+    return tabsContainer;
+}
+
+/**
+ * Remove all custom material tabs that belong to a specific owner.
+ * @param {string} owner - MARKETPLACE_OWNER constant
+ */
+export function removeMaterialTabsForOwner(owner) {
+    document.querySelectorAll(`[data-mwi-custom-tab][data-mwi-tab-owner="${owner}"]`).forEach((el) => el.remove());
+}
+
+/**
  * Create a custom material tab for the marketplace
  * @param {Object} material - Material data object
  * @param {string} material.itemHrid - Item HRID
@@ -16,9 +49,10 @@ import { formatWithSeparator } from './formatters.js';
  * @param {boolean} material.isTradeable - Whether item can be traded
  * @param {HTMLElement} referenceTab - Tab element to clone structure from
  * @param {Function} onClickCallback - Callback when tab is clicked, receives (e, material)
+ * @param {string} [owner] - MARKETPLACE_OWNER constant for scoped removal
  * @returns {HTMLElement} Created tab element
  */
-export function createMaterialTab(material, referenceTab, onClickCallback) {
+export function createMaterialTab(material, referenceTab, onClickCallback, owner) {
     // Clone reference tab structure
     const tab = referenceTab.cloneNode(true);
 
@@ -26,6 +60,7 @@ export function createMaterialTab(material, referenceTab, onClickCallback) {
     tab.setAttribute('data-mwi-custom-tab', 'true');
     tab.setAttribute('data-item-hrid', material.itemHrid);
     tab.setAttribute('data-missing-quantity', material.missing.toString());
+    if (owner) tab.setAttribute('data-mwi-tab-owner', owner);
 
     // Color coding:
     // - Red: Missing materials (missing > 0)
@@ -166,30 +201,62 @@ export function updateTabBadge(tab, material) {
 }
 
 /**
- * Setup marketplace cleanup observer
- * Watches for marketplace panel removal and calls cleanup callback
- * @param {Function} onCleanup - Callback when marketplace closes, receives no args
- * @param {Array} tabsArray - Array reference to track tabs (will be checked for length)
- * @returns {Function} Unregister function to stop observing
+ * Setup marketplace cleanup observer.
+ * Polls to detect when the marketplace closes or custom tabs disappear.
+ *
+ * Accepts either the legacy call signature:
+ *   setupMarketplaceCleanupObserver(onCleanup, tabsArray)
+ *
+ * Or a new single-object signature:
+ *   setupMarketplaceCleanupObserver({ owner, onTabsGone })
+ *   where onTabsGone is called when the owner's tabs are no longer in the DOM
+ *   or the marketplace panel becomes hidden.
+ *
+ * @param {Function|Object} onCleanupOrOpts
+ * @param {Array} [tabsArray]
+ * @returns {Function} Unregister function
  */
-export function setupMarketplaceCleanupObserver(onCleanup, tabsArray) {
+export function setupMarketplaceCleanupObserver(onCleanupOrOpts, tabsArray) {
+    let owner = null;
+    let onTabsGone = null;
+    let legacyTabsArray = null;
+
+    if (typeof onCleanupOrOpts === 'function') {
+        // Legacy signature
+        onTabsGone = onCleanupOrOpts;
+        legacyTabsArray = tabsArray;
+    } else {
+        owner = onCleanupOrOpts?.owner || null;
+        onTabsGone = onCleanupOrOpts?.onTabsGone || null;
+    }
+
     let pollInterval = null;
 
     function poll() {
-        if (!tabsArray || tabsArray.length === 0) return;
+        let hasTabs = false;
 
-        // If custom tabs were removed from DOM, clean up
-        const hasCustomTabsInDOM = tabsArray.some((tab) => document.body.contains(tab));
-        if (!hasCustomTabsInDOM) {
-            if (onCleanup) onCleanup();
+        if (owner) {
+            const ownerTabs = Array.from(
+                document.querySelectorAll(`[data-mwi-custom-tab][data-mwi-tab-owner="${owner}"]`)
+            );
+            hasTabs = ownerTabs.some((tab) => document.body.contains(tab));
+        } else if (legacyTabsArray) {
+            if (!legacyTabsArray || legacyTabsArray.length === 0) return;
+            hasTabs = legacyTabsArray.some((tab) => document.body.contains(tab));
+        } else {
             return;
         }
 
-        // If marketplace panel is hidden (navigated away), clean up
-        const marketplacePanel = document.querySelector('.MarketplacePanel_marketplacePanel__21b7o');
-        const subPanelContainer = marketplacePanel?.closest('.MainPanel_subPanelContainer__1i-H9');
+        if (!hasTabs) {
+            if (onTabsGone) onTabsGone();
+            return;
+        }
+
+        // Marketplace panel hidden → also trigger cleanup
+        const marketplacePanel = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
+        const subPanelContainer = marketplacePanel?.closest('[class*="MainPanel_subPanelContainer"]');
         if (subPanelContainer && getComputedStyle(subPanelContainer).display === 'none') {
-            if (onCleanup) onCleanup();
+            if (onTabsGone) onTabsGone();
         }
     }
 

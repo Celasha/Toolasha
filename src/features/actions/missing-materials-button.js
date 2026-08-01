@@ -6,7 +6,7 @@
 import dataManager from '../../core/data-manager.js';
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
-import webSocketHook from '../../core/websocket.js';
+import { marketplaceSession, MARKETPLACE_OWNER } from '../../core/marketplace-session.js';
 import { findActionInput, attachInputListeners, performInitialUpdate } from '../../utils/action-panel-helper.js';
 import {
     calculateMaterialRequirements,
@@ -17,7 +17,8 @@ import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { createAutofillManager } from '../../utils/marketplace-autofill.js';
 import {
     createMaterialTab,
-    removeMaterialTabs,
+    removeMaterialTabsForOwner,
+    getVisibleMarketplaceTabContainer,
     setupMarketplaceCleanupObserver,
     navigateToMarketplace,
 } from '../../utils/marketplace-tabs.js';
@@ -38,9 +39,7 @@ let enhancementDomObserverUnregister = null;
 let processedPanels = new WeakSet();
 let processedEnhancingPanels = new WeakSet();
 let inventoryUpdateHandler = null;
-let storedActionHrid = null;
-let storedNumActions = 0;
-let storedEnhancementContext = null;
+let activeWorkflowModel = null;
 const timerRegistry = createTimerRegistry();
 const autofillManager = createAutofillManager('MissingMats-Actions');
 
@@ -64,7 +63,7 @@ const PRODUCTION_TYPES = [
  * Initialize missing materials button feature
  */
 export function initialize() {
-    cleanupObserver = setupMarketplaceCleanupObserver(handleMarketplaceCleanup, currentMaterialsTabs);
+    setupActionsCleanupObserver();
     autofillManager.initialize();
 
     // Watch for production action panels appearing
@@ -90,6 +89,8 @@ export function initialize() {
  * Cleanup function
  */
 export function cleanup() {
+    teardownActionsMarketplaceSession();
+
     if (domObserverUnregister) {
         domObserverUnregister();
         domObserverUnregister = null;
@@ -551,23 +552,25 @@ async function handleEnhancementMissingMaterialsClick(
     repeatCount,
     strategyInfo
 ) {
-    // Store context for live updates (already resolved values)
-    storedEnhancementContext = {
-        itemHrid,
-        startLevel,
-        targetLevel,
-        protectionItemHrid,
-        protectFromLevel,
-        repeatCount,
-        strategyInfo,
-    };
-    storedActionHrid = null;
-    storedNumActions = 0;
+    // Claim session ownership BEFORE first await
+    const capturedSessionId = marketplaceSession.start({
+        owner: MARKETPLACE_OWNER.ACTIONS,
+        onEnd: teardownActionsMarketplaceSession,
+    });
+
+    // Re-establish cleanup observer for this session (may have been nulled by previous teardown)
+    setupActionsCleanupObserver();
 
     // Navigate to marketplace
     const success = await openMarketplacePage();
     if (!success) {
         console.error('[MissingMats] Failed to navigate to marketplace');
+        teardownActionsMarketplaceSession();
+        return;
+    }
+
+    // Guard: verify session still active after navigation
+    if (!marketplaceSession.isActive(capturedSessionId)) {
         return;
     }
 
@@ -576,6 +579,11 @@ async function handleEnhancementMissingMaterialsClick(
         const delayTimeout = setTimeout(resolve, 200);
         timerRegistry.registerTimeout(delayTimeout);
     });
+
+    // Guard again after the extra delay
+    if (!marketplaceSession.isActive(capturedSessionId)) {
+        return;
+    }
 
     // Recalculate materials fresh (inventory may have changed since button was rendered)
     const freshMaterials = calculateEnhancementMaterialRequirements(
@@ -587,8 +595,31 @@ async function handleEnhancementMissingMaterialsClick(
         repeatCount
     );
 
+    // Set activeWorkflowModel AFTER startSession
+    autofillManager.startSession({ sessionId: capturedSessionId, quantityProvider: null });
+    activeWorkflowModel = {
+        sessionId: capturedSessionId,
+        materials: freshMaterials.map((m) => ({ ...m })),
+        returnContext: {
+            actionHrid: null,
+            numActions: 0,
+            enhancementContext: {
+                itemHrid,
+                startLevel,
+                targetLevel,
+                protectionItemHrid,
+                protectFromLevel,
+                repeatCount,
+                strategyInfo,
+            },
+        },
+    };
+
     // Create custom tabs
-    createMissingMaterialTabs(freshMaterials, strategyInfo);
+    const tabsContainer = document.querySelector('.MuiTabs-flexContainer[role="tablist"]');
+    if (tabsContainer) {
+        createMissingMaterialTabs(freshMaterials, strategyInfo, capturedSessionId);
+    }
 
     // Setup inventory listener for live updates
     setupInventoryListener();
@@ -657,15 +688,25 @@ function createMissingMaterialsButton(missingMaterials, actionHrid, numActions, 
  * @param {number} numActions - Number of actions for recalculating materials
  */
 async function handleMissingMaterialsClick(actionHrid, numActions) {
-    // Store context for live updates
-    storedActionHrid = actionHrid;
-    storedNumActions = numActions;
-    storedEnhancementContext = null;
+    // Claim session ownership BEFORE first await
+    const capturedSessionId = marketplaceSession.start({
+        owner: MARKETPLACE_OWNER.ACTIONS,
+        onEnd: teardownActionsMarketplaceSession,
+    });
+
+    // Re-establish cleanup observer for this session (may have been nulled by previous teardown)
+    setupActionsCleanupObserver();
 
     // Navigate to marketplace
     const success = await openMarketplacePage();
     if (!success) {
         console.error('[MissingMats] Failed to navigate to marketplace');
+        teardownActionsMarketplaceSession();
+        return;
+    }
+
+    // Guard: verify session still active after navigation
+    if (!marketplaceSession.isActive(capturedSessionId)) {
         return;
     }
 
@@ -675,13 +716,33 @@ async function handleMissingMaterialsClick(actionHrid, numActions) {
         timerRegistry.registerTimeout(delayTimeout);
     });
 
+    // Guard again after the extra delay
+    if (!marketplaceSession.isActive(capturedSessionId)) {
+        return;
+    }
+
     // Recalculate materials fresh (inventory may have changed since button was rendered)
     const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
     const accountForQueue = !ignoreQueue;
     const freshMaterials = calculateMaterialRequirements(actionHrid, numActions, accountForQueue);
 
+    // Set activeWorkflowModel AFTER startSession
+    autofillManager.startSession({ sessionId: capturedSessionId, quantityProvider: null });
+    activeWorkflowModel = {
+        sessionId: capturedSessionId,
+        materials: freshMaterials.map((m) => ({ ...m })),
+        returnContext: {
+            actionHrid,
+            numActions,
+            enhancementContext: null,
+        },
+    };
+
     // Create custom tabs
-    createMissingMaterialTabs(freshMaterials);
+    const tabsContainer = document.querySelector('.MuiTabs-flexContainer[role="tablist"]');
+    if (tabsContainer) {
+        createMissingMaterialTabs(freshMaterials, null, capturedSessionId);
+    }
 
     // Setup inventory listener for live updates
     setupInventoryListener();
@@ -746,15 +807,16 @@ async function waitForMarketplace() {
  * Build the click handler for a material tab.
  * Defined outside the loop to satisfy the no-loop-func lint rule.
  * @param {{ tab: HTMLElement|null }} tabRef - Holder updated to the tab element after creation
+ * @param {number} sessionId - The marketplaceSession token for this workflow
  * @returns {Function}
  */
-function makeMaterialClickHandler(tabRef) {
+function makeMaterialClickHandler(tabRef, sessionId) {
     return (_e, mat) => {
         // Read the current missing quantity from the tab's data attribute,
         // which is kept up-to-date by the inventory listener.
-        autofillManager.setPendingCalculation(() => {
+        autofillManager.setQuantityProvider(() => {
             return parseInt(tabRef.tab?.getAttribute('data-missing-quantity') || '0', 10);
-        });
+        }, sessionId);
         navigateToMarketplace(mat.itemHrid, 0);
     };
 }
@@ -824,17 +886,18 @@ function getGameObject() {
 /**
  * Create a "Return to Action" tab for navigating back after buying materials
  * @param {HTMLElement} referenceTab - Tab element to clone structure from
- * @returns {HTMLElement|null} Return tab element, or null if no stored context
+ * @param {Object} returnContext - Return context from activeWorkflowModel
+ * @returns {HTMLElement|null} Return tab element, or null if no context
  */
-function createReturnTab(referenceTab) {
+function createReturnTab(referenceTab, returnContext) {
     let displayName;
 
-    if (storedActionHrid) {
-        const details = dataManager.getActionDetails(storedActionHrid);
-        displayName = details?.name || storedActionHrid.split('/').pop();
-        if (storedNumActions > 0) displayName += ` (\u00d7${formatWithSeparator(storedNumActions)})`;
-    } else if (storedEnhancementContext) {
-        const ctx = storedEnhancementContext;
+    if (returnContext?.actionHrid) {
+        const details = dataManager.getActionDetails(returnContext.actionHrid);
+        displayName = details?.name || returnContext.actionHrid.split('/').pop();
+        if (returnContext.numActions > 0) displayName += ` (\u00d7${formatWithSeparator(returnContext.numActions)})`;
+    } else if (returnContext?.enhancementContext) {
+        const ctx = returnContext.enhancementContext;
         const itemName = dataManager.getItemDetails(ctx.itemHrid)?.name || '...';
         displayName = `${itemName} +${ctx.startLevel}\u2192+${ctx.targetLevel}`;
     } else {
@@ -843,6 +906,7 @@ function createReturnTab(referenceTab) {
 
     const tab = referenceTab.cloneNode(true);
     tab.setAttribute('data-mwi-custom-tab', 'true');
+    tab.setAttribute('data-mwi-tab-owner', MARKETPLACE_OWNER.ACTIONS);
     tab.classList.remove('Mui-selected');
     tab.setAttribute('aria-selected', 'false');
     tab.setAttribute('tabindex', '-1');
@@ -873,16 +937,18 @@ async function handleReturnToAction() {
     const game = getGameObject();
     if (!game) return;
 
-    if (storedActionHrid) {
-        game.handleGoToAction(storedActionHrid);
-    } else if (storedEnhancementContext) {
+    const returnContext = activeWorkflowModel?.returnContext;
+
+    if (returnContext?.actionHrid) {
+        game.handleGoToAction(returnContext.actionHrid);
+    } else if (returnContext?.enhancementContext) {
         game.handleChangeNavTarget('enhancing');
     } else {
         return;
     }
 
     // Restore input value for production actions — poll for the input to appear
-    if (storedActionHrid && storedNumActions > 0) {
+    if (returnContext?.actionHrid && returnContext.numActions > 0) {
         const maxAttempts = 20;
         for (let i = 0; i < maxAttempts; i++) {
             await new Promise((resolve) => {
@@ -894,7 +960,7 @@ async function handleReturnToAction() {
                 document.querySelector('[class*="maxActionCountInput"] input') ||
                 document.querySelector('[class*="SkillActionDetail_skillActionDetail"] input[type="number"]');
             if (input) {
-                setReactInputValue(input, storedNumActions);
+                setReactInputValue(input, returnContext.numActions);
                 break;
             }
         }
@@ -902,11 +968,110 @@ async function handleReturnToAction() {
 }
 
 /**
+ * Set up (or re-establish) the marketplace cleanup observer for the ACTIONS owner.
+ * Safe to call multiple times — stops any existing observer before creating a new one.
+ */
+function setupActionsCleanupObserver() {
+    if (cleanupObserver) {
+        cleanupObserver();
+        cleanupObserver = null;
+    }
+    cleanupObserver = setupMarketplaceCleanupObserver({
+        owner: MARKETPLACE_OWNER.ACTIONS,
+        onTabsGone: () => {
+            const capturedSessionId = activeWorkflowModel?.sessionId ?? null;
+            if (capturedSessionId !== null && !marketplaceSession.isActive(capturedSessionId)) return;
+            const tabContainer = getVisibleMarketplaceTabContainer();
+            if (tabContainer) {
+                reinjectActionsMarketplaceTabs(tabContainer);
+            } else {
+                teardownActionsMarketplaceSession();
+            }
+        },
+    });
+}
+
+/**
+ * Idempotent teardown for the ACTIONS marketplace session.
+ * Cleans up tabs, inventory listener, cleanup observer, autofill session, and workflow model.
+ * Does NOT touch storedActionHrid / storedNumActions / storedEnhancementContext (Return context).
+ */
+function teardownActionsMarketplaceSession() {
+    removeMaterialTabsForOwner(MARKETPLACE_OWNER.ACTIONS);
+    currentMaterialsTabs.length = 0;
+
+    if (inventoryUpdateHandler) {
+        dataManager.off('items_updated', inventoryUpdateHandler);
+        inventoryUpdateHandler = null;
+    }
+
+    if (cleanupObserver) {
+        cleanupObserver();
+        cleanupObserver = null;
+    }
+
+    const sessionIdToExit = activeWorkflowModel?.sessionId ?? null;
+    autofillManager.exitSession(sessionIdToExit);
+
+    activeWorkflowModel = null;
+}
+
+/**
+ * Rebuild ACTIONS marketplace tabs from the current activeWorkflowModel.
+ * Called when the cleanup observer detects that our tabs disappeared but the
+ * marketplace panel is still visible (e.g. a React re-render wiped them).
+ * @param {HTMLElement} tabContainer
+ */
+function reinjectActionsMarketplaceTabs(tabContainer) {
+    if (!activeWorkflowModel) return;
+    if (!marketplaceSession.isActive(activeWorkflowModel.sessionId)) return;
+
+    const sessionId = activeWorkflowModel.sessionId;
+    const { materials, returnContext } = activeWorkflowModel;
+    const strategyInfo = returnContext?.enhancementContext?.strategyInfo ?? null;
+
+    // Get reference tab for cloning
+    const referenceTab = Array.from(tabContainer.children).find((btn) => btn.textContent.includes('My Listings'));
+    if (!referenceTab) return;
+
+    // Ensure flex wrapping
+    tabContainer.style.flexWrap = 'wrap';
+
+    currentMaterialsTabs.length = 0;
+
+    // Strategy indicator
+    if (strategyInfo) {
+        const indicator = createStrategyIndicator(strategyInfo);
+        indicator.setAttribute('data-mwi-tab-owner', MARKETPLACE_OWNER.ACTIONS);
+        tabContainer.appendChild(indicator);
+        currentMaterialsTabs.push(indicator);
+    }
+
+    // Material tabs
+    for (const material of materials) {
+        const tabRef = { tab: null };
+        const handler = makeMaterialClickHandler(tabRef, sessionId);
+        const tab = createMaterialTab(material, referenceTab, handler, MARKETPLACE_OWNER.ACTIONS);
+        tabRef.tab = tab;
+        tabContainer.appendChild(tab);
+        currentMaterialsTabs.push(tab);
+    }
+
+    // Return tab
+    const returnTab = createReturnTab(referenceTab, returnContext);
+    if (returnTab) {
+        tabContainer.appendChild(returnTab);
+        currentMaterialsTabs.push(returnTab);
+    }
+}
+
+/**
  * Create custom tabs for missing materials
  * @param {Array} missingMaterials - Array of missing material objects
  * @param {Object|null} strategyInfo - Auto-calculated protection strategy info
+ * @param {number} sessionId - The marketplaceSession token for this workflow
  */
-function createMissingMaterialTabs(missingMaterials, strategyInfo = null) {
+function createMissingMaterialTabs(missingMaterials, strategyInfo = null, sessionId = null) {
     const tabsContainer = document.querySelector('.MuiTabs-flexContainer[role="tablist"]');
 
     if (!tabsContainer) {
@@ -914,8 +1079,8 @@ function createMissingMaterialTabs(missingMaterials, strategyInfo = null) {
         return;
     }
 
-    // Remove any existing custom tabs first (preserve stored context — we're recreating, not leaving)
-    removeMaterialTabs();
+    // Remove any existing custom tabs first (owner-scoped)
+    removeMaterialTabsForOwner(MARKETPLACE_OWNER.ACTIONS);
     currentMaterialsTabs.length = 0;
 
     // Get reference tab for cloning (use "My Listings" as template)
@@ -931,40 +1096,29 @@ function createMissingMaterialTabs(missingMaterials, strategyInfo = null) {
         tabsContainer.style.flexWrap = 'wrap';
     }
 
-    // Use event delegation on tabs container to clear quantity when regular tabs are clicked
-    // This avoids memory leaks from adding listeners to each tab repeatedly
-    if (!tabsContainer.hasAttribute('data-mwi-delegated-listener')) {
-        tabsContainer.setAttribute('data-mwi-delegated-listener', 'true');
-        tabsContainer.addEventListener('click', (e) => {
-            // Check if clicked element is a regular tab (not our custom tab)
-            const clickedTab = e.target.closest('button');
-            if (clickedTab && !clickedTab.hasAttribute('data-mwi-custom-tab')) {
-                autofillManager.clearQuantity();
-            }
-        });
-    }
-
     // Create tab for each missing material
     currentMaterialsTabs.length = 0; // Clear without reassigning (preserves observer reference)
 
     // Add strategy indicator if auto-calculated
     if (strategyInfo) {
         const indicator = createStrategyIndicator(strategyInfo);
+        indicator.setAttribute('data-mwi-tab-owner', MARKETPLACE_OWNER.ACTIONS);
         tabsContainer.appendChild(indicator);
         currentMaterialsTabs.push(indicator);
     }
 
     for (const material of missingMaterials) {
         const tabRef = { tab: null };
-        const handler = makeMaterialClickHandler(tabRef);
-        const tab = createMaterialTab(material, referenceTab, handler);
+        const handler = makeMaterialClickHandler(tabRef, sessionId);
+        const tab = createMaterialTab(material, referenceTab, handler, MARKETPLACE_OWNER.ACTIONS);
         tabRef.tab = tab;
         tabsContainer.appendChild(tab);
         currentMaterialsTabs.push(tab);
     }
 
     // Add "Return to Action" tab at the end
-    const returnTab = createReturnTab(referenceTab);
+    const returnContext = activeWorkflowModel?.returnContext ?? null;
+    const returnTab = createReturnTab(referenceTab, returnContext);
     if (returnTab) {
         tabsContainer.appendChild(returnTab);
         currentMaterialsTabs.push(returnTab);
@@ -973,33 +1127,20 @@ function createMissingMaterialTabs(missingMaterials, strategyInfo = null) {
 
 /**
  * Setup inventory listener for live tab updates
- * Listens for inventory changes via websocket and updates tabs accordingly
+ * Listens for inventory changes via dataManager and updates tabs accordingly
  */
 function setupInventoryListener() {
     // Remove existing listener if any
     if (inventoryUpdateHandler) {
-        webSocketHook.off('*', inventoryUpdateHandler);
+        dataManager.off('items_updated', inventoryUpdateHandler);
     }
 
     // Create new listener that watches for inventory-related messages
-    inventoryUpdateHandler = (data) => {
-        // Check if this message might affect inventory
-        // Common message types that update inventory:
-        // - item_added, item_removed, items_updated
-        // - market_buy_complete, market_sell_complete
-        // - Or any message with inventory field
-        if (
-            data.type?.includes('item') ||
-            data.type?.includes('inventory') ||
-            data.type?.includes('market') ||
-            data.inventory ||
-            data.characterItems
-        ) {
-            updateTabsOnInventoryChange();
-        }
+    inventoryUpdateHandler = () => {
+        updateTabsOnInventoryChange();
     };
 
-    webSocketHook.on('*', inventoryUpdateHandler);
+    dataManager.on('items_updated', inventoryUpdateHandler);
 }
 
 /**
@@ -1014,9 +1155,9 @@ function updateTabsOnInventoryChange() {
 
     let updatedMaterials;
 
-    if (storedEnhancementContext) {
+    if (activeWorkflowModel?.returnContext?.enhancementContext) {
         // Enhancement mode
-        const ctx = storedEnhancementContext;
+        const ctx = activeWorkflowModel.returnContext.enhancementContext;
         updatedMaterials = calculateEnhancementMaterialRequirements(
             ctx.itemHrid,
             ctx.startLevel,
@@ -1025,11 +1166,15 @@ function updateTabsOnInventoryChange() {
             ctx.protectFromLevel,
             ctx.repeatCount
         );
-    } else if (storedActionHrid && storedNumActions > 0) {
+    } else if (activeWorkflowModel?.returnContext?.actionHrid && activeWorkflowModel.returnContext.numActions > 0) {
         // Production mode
         const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
         const accountForQueue = !ignoreQueue;
-        updatedMaterials = calculateMaterialRequirements(storedActionHrid, storedNumActions, accountForQueue);
+        updatedMaterials = calculateMaterialRequirements(
+            activeWorkflowModel.returnContext.actionHrid,
+            activeWorkflowModel.returnContext.numActions,
+            accountForQueue
+        );
     } else {
         return;
     }
@@ -1041,6 +1186,14 @@ function updateTabsOnInventoryChange() {
 
         if (material) {
             updateTabBadge(tab, material);
+
+            // Also update activeWorkflowModel.materials
+            if (activeWorkflowModel) {
+                const modelEntry = activeWorkflowModel.materials.find((m) => m.itemHrid === itemHrid);
+                if (modelEntry) {
+                    modelEntry.missing = material.missing;
+                }
+            }
         }
     });
 }
@@ -1111,20 +1264,18 @@ function updateTabBadge(tab, material) {
  * Called by the marketplace cleanup observer
  */
 function handleMarketplaceCleanup() {
-    removeMaterialTabs();
+    removeMaterialTabsForOwner(MARKETPLACE_OWNER.ACTIONS);
     currentMaterialsTabs.length = 0; // Clear without reassigning (preserves observer reference)
 
     // Clean up inventory listener
     if (inventoryUpdateHandler) {
-        webSocketHook.off('*', inventoryUpdateHandler);
+        dataManager.off('items_updated', inventoryUpdateHandler);
         inventoryUpdateHandler = null;
     }
 
-    // Clear stored context — only when genuinely leaving the marketplace
-    storedActionHrid = null;
-    storedNumActions = 0;
-    storedEnhancementContext = null;
-    autofillManager.clearQuantity();
+    autofillManager.exitSession(activeWorkflowModel?.sessionId ?? null);
+
+    activeWorkflowModel = null;
 }
 
 export default {

@@ -7,10 +7,10 @@
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
-import webSocketHook from '../../core/websocket.js';
+import { marketplaceSession, MARKETPLACE_OWNER } from '../../core/marketplace-session.js';
 import {
     createMaterialTab,
-    removeMaterialTabs,
+    removeMaterialTabsForOwner,
     setupMarketplaceCleanupObserver,
     navigateToMarketplace,
 } from '../../utils/marketplace-tabs.js';
@@ -30,6 +30,7 @@ let currentItemHrid = null;
 let tooltipObserverUnregister = null;
 let contextMenuHandler = null;
 let isActive = false;
+let sellQueueSessionId = null;
 
 /**
  * Get total inventory count for an item hrid.
@@ -85,7 +86,7 @@ function injectTabs() {
     const tabsContainer = document.querySelector('.MuiTabs-flexContainer[role="tablist"]');
     if (!tabsContainer) return;
 
-    removeMaterialTabs();
+    removeMaterialTabsForOwner(MARKETPLACE_OWNER.SELL_QUEUE);
     currentTabs.length = 0;
 
     const referenceTab = Array.from(tabsContainer.children).find((btn) => btn.textContent.includes('My Listings'));
@@ -103,9 +104,14 @@ function injectTabs() {
             isTradeable: true,
         };
 
-        const tab = createMaterialTab(material, referenceTab, (_e, mat) => {
-            navigateToMarketplace(mat.itemHrid, 0);
-        });
+        const tab = createMaterialTab(
+            material,
+            referenceTab,
+            (_e, mat) => {
+                navigateToMarketplace(mat.itemHrid, 0);
+            },
+            MARKETPLACE_OWNER.SELL_QUEUE
+        );
 
         const badgeSpan = tab.querySelector('[class*="TabsComponent_badge"]');
         if (badgeSpan) {
@@ -176,37 +182,36 @@ function updateTabsOnInventoryChange() {
 }
 
 /**
- * Set up WebSocket listener to update tabs when inventory changes.
+ * Set up listener to update tabs when inventory changes.
  */
 function setupInventoryListener() {
     if (inventoryUpdateHandler) {
-        webSocketHook.off('*', inventoryUpdateHandler);
+        dataManager.off('items_updated', inventoryUpdateHandler);
     }
-    inventoryUpdateHandler = (data) => {
-        if (
-            data.type?.includes('item') ||
-            data.type?.includes('inventory') ||
-            data.type?.includes('market') ||
-            data.inventory ||
-            data.characterItems
-        ) {
-            updateTabsOnInventoryChange();
-        }
+    inventoryUpdateHandler = () => {
+        updateTabsOnInventoryChange();
     };
-    webSocketHook.on('*', inventoryUpdateHandler);
+    dataManager.on('items_updated', inventoryUpdateHandler);
 }
 
 /**
- * Handle cleanup when user leaves the marketplace.
+ * Idempotent teardown of the marketplace session and its associated state.
+ * Does NOT touch isActive, contextMenuHandler, or tooltipObserverUnregister.
  */
-function handleMarketplaceCleanup() {
-    removeMaterialTabs();
+function teardownSellQueueMarketplaceSession() {
+    sellQueueSessionId = null;
+    removeMaterialTabsForOwner(MARKETPLACE_OWNER.SELL_QUEUE);
     currentTabs.length = 0;
     queue.length = 0;
     if (inventoryUpdateHandler) {
-        webSocketHook.off('*', inventoryUpdateHandler);
+        dataManager.off('items_updated', inventoryUpdateHandler);
         inventoryUpdateHandler = null;
     }
+    if (cleanupObserver) {
+        cleanupObserver();
+        cleanupObserver = null;
+    }
+    currentItemHrid = null;
 }
 
 /**
@@ -230,9 +235,16 @@ async function addToQueue(itemHrid, itemName) {
             Array.from(tabsContainer.children).some((btn) => btn.textContent.includes('Market Listings'));
 
         if (!alreadyInMarket) {
+            // Claim session ownership BEFORE first await
+            sellQueueSessionId = marketplaceSession.start({
+                owner: MARKETPLACE_OWNER.SELL_QUEUE,
+                onEnd: teardownSellQueueMarketplaceSession,
+            });
             const success = await openMarketplacePage();
             if (!success) {
-                queue.length = 0;
+                marketplaceSession.end(sellQueueSessionId);
+                sellQueueSessionId = null;
+                teardownSellQueueMarketplaceSession();
                 return;
             }
             await new Promise((resolve) => {
@@ -240,7 +252,13 @@ async function addToQueue(itemHrid, itemName) {
             });
         }
 
-        cleanupObserver = setupMarketplaceCleanupObserver(handleMarketplaceCleanup, currentTabs);
+        cleanupObserver = setupMarketplaceCleanupObserver({
+            owner: MARKETPLACE_OWNER.SELL_QUEUE,
+            onTabsGone: () => {
+                if (!marketplaceSession.isActive(sellQueueSessionId)) return;
+                teardownSellQueueMarketplaceSession();
+            },
+        });
         setupInventoryListener();
     }
 
@@ -314,6 +332,7 @@ function initialize() {
 }
 
 function cleanup() {
+    teardownSellQueueMarketplaceSession();
     if (contextMenuHandler) {
         document.removeEventListener('contextmenu', contextMenuHandler, true);
         contextMenuHandler = null;
@@ -322,13 +341,7 @@ function cleanup() {
         tooltipObserverUnregister();
         tooltipObserverUnregister = null;
     }
-    if (cleanupObserver) {
-        cleanupObserver();
-        cleanupObserver = null;
-    }
-    handleMarketplaceCleanup();
     timerRegistry.clearAll();
-    currentItemHrid = null;
     isActive = false;
 }
 

@@ -15,6 +15,7 @@ import featureRegistry from '../core/feature-registry.js';
 import settingsStorage from '../core/settings-storage.js';
 import { settingsGroups } from '../core/settings-schema.js';
 import { setCurrentProfile, getCurrentProfile, clearCurrentProfile } from '../core/profile-manager.js';
+import { marketplaceSession, MARKETPLACE_OWNER } from '../core/marketplace-session.js';
 import tooltipObserver from '../core/tooltip-observer.js';
 import performanceMonitor from '../utils/performance-monitor.js';
 
@@ -46,6 +47,8 @@ toolashaRoot.Core = {
     },
     marketAPI,
     performanceMonitor,
+    marketplaceSession,
+    MARKETPLACE_OWNER,
 };
 
 console.log('[Toolasha] Core library loaded');

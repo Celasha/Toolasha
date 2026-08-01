@@ -11,7 +11,8 @@ import { numberFormatter, formatKMB } from '../../utils/formatters.js';
 import dom from '../../utils/dom.js';
 import domObserver from '../../core/dom-observer.js';
 import { navigateToMarketplace } from '../../utils/marketplace-tabs.js';
-import { createAutofillManager } from '../../utils/marketplace-autofill.js';
+import { createAutofillManager, readMarketplaceItemIdentity } from '../../utils/marketplace-autofill.js';
+import { marketplaceSession, MARKETPLACE_OWNER } from '../../core/marketplace-session.js';
 
 /**
  * AbilityBookCalculator class handles ability book calculations in Item Dictionary
@@ -22,6 +23,45 @@ class AbilityBookCalculator {
         this.isActive = false;
         this.isInitialized = false;
         this.autofillManager = createAutofillManager('AbilityBookCalculator');
+        this._abilityBookSessionId = null;
+        this._abilityBookExpiryTimer = null;
+        this._abilityBookNativeTabListener = null;
+    }
+
+    /**
+     * Idempotent teardown of the ability book marketplace session
+     */
+    teardownAbilityBookSession() {
+        if (this._abilityBookExpiryTimer) {
+            clearTimeout(this._abilityBookExpiryTimer);
+            this._abilityBookExpiryTimer = null;
+        }
+        if (this._abilityBookNativeTabListener) {
+            this._abilityBookNativeTabListener();
+            this._abilityBookNativeTabListener = null;
+        }
+        this._abilityBookSessionId = null;
+    }
+
+    /**
+     * Navigate the marketplace to the given item, polling until it resolves
+     * @param {string} itemHrid - Item HRID to navigate to
+     * @returns {Promise<boolean>} True if navigation succeeded within deadline
+     */
+    async navigateAbilityBookToItem(itemHrid) {
+        // Use the fiber game object to navigate
+        navigateToMarketplace(itemHrid, 0);
+
+        const deadline = 3000;
+        const interval = 100;
+        let elapsed = 0;
+        while (elapsed < deadline) {
+            await new Promise((r) => setTimeout(r, interval));
+            elapsed += interval;
+            const identity = readMarketplaceItemIdentity();
+            if (identity?.itemHrid === itemHrid) return true;
+        }
+        return false;
     }
 
     /**
@@ -289,8 +329,34 @@ class AbilityBookCalculator {
         `;
         buyButton.addEventListener('click', () => {
             if (currentBooks > 0) {
-                this.autofillManager.setQuantity(Math.ceil(currentBooks));
-                navigateToMarketplace(itemHrid);
+                const quantity = Math.ceil(currentBooks);
+                const sessionId = marketplaceSession.start({
+                    owner: MARKETPLACE_OWNER.ABILITY_BOOK,
+                    consumeOnFill: true,
+                    onEnd: () => this.teardownAbilityBookSession(),
+                });
+                this._abilityBookSessionId = sessionId;
+                this.autofillManager.startSession({
+                    itemHrid,
+                    enhancementLevel: 0,
+                    sessionId,
+                    quantityProvider: () => quantity,
+                });
+
+                // 30-second expiry timer
+                this._abilityBookExpiryTimer = setTimeout(() => {
+                    this._abilityBookExpiryTimer = null;
+                    if (marketplaceSession.isActive(sessionId)) {
+                        marketplaceSession.end(sessionId);
+                    }
+                }, 30000);
+
+                // Navigate with 3s failure detection
+                this.navigateAbilityBookToItem(itemHrid).then((success) => {
+                    if (!success && marketplaceSession.isActive(sessionId)) {
+                        marketplaceSession.end(sessionId);
+                    }
+                });
             }
         });
         calculatorDiv.appendChild(buyButton);
@@ -333,6 +399,7 @@ class AbilityBookCalculator {
      * Disable the feature
      */
     disable() {
+        this.teardownAbilityBookSession();
         if (this.unregisterObserver) {
             this.unregisterObserver();
             this.unregisterObserver = null;

@@ -12,13 +12,16 @@ import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import { getItemPrice } from '../../utils/market-data.js';
 import { formatKMB } from '../../utils/formatters.js';
-import webSocketHook from '../../core/websocket.js';
+
+import { marketplaceSession, MARKETPLACE_OWNER } from '../../core/marketplace-session.js';
 import {
     navigateToMarketplace,
     createMaterialTab,
-    removeMaterialTabs,
     removeShrineMarketTabs,
+    removeMaterialTabsForOwner,
     updateTabBadge,
+    setupMarketplaceCleanupObserver,
+    getVisibleMarketplaceTabContainer,
 } from '../../utils/marketplace-tabs.js';
 import { createAutofillManager } from '../../utils/marketplace-autofill.js';
 
@@ -97,6 +100,93 @@ class GuildCreditValue {
         this.unregisterObservers = [];
         this.autofillManager = createAutofillManager('GuildCreditValue-MissingMats');
         this._shrineTabCleanup = null;
+        this._guildSessionId = null;
+        this._guildCleanupObserver = null;
+        this._guildInventoryHandler = null;
+        this._guildActiveWorkflowModel = null;
+    }
+
+    teardownGuildMarketplaceSession() {
+        const sessionId = this._guildSessionId;
+        this._guildSessionId = null;
+        removeMaterialTabsForOwner(MARKETPLACE_OWNER.GUILD);
+        // Also remove shrine tabs (they have a different attribute)
+        document.querySelectorAll('[data-mwi-shrine-tab="true"]').forEach((el) => el.remove());
+        if (this._guildInventoryHandler) {
+            dataManager.off('items_updated', this._guildInventoryHandler);
+            this._guildInventoryHandler = null;
+        }
+        if (this._guildCleanupObserver) {
+            this._guildCleanupObserver();
+            this._guildCleanupObserver = null;
+        }
+        if (this._shrineTabCleanup) {
+            this._shrineTabCleanup();
+            this._shrineTabCleanup = null;
+        }
+        this._guildActiveWorkflowModel = null;
+        this.autofillManager.exitSession(sessionId);
+    }
+
+    _reinjectGuildMarketplaceTabs(tabContainer, capturedSessionId) {
+        const model = this._guildActiveWorkflowModel;
+        if (!model || !marketplaceSession.isActive(capturedSessionId)) {
+            this.teardownGuildMarketplaceSession();
+            return;
+        }
+
+        removeMaterialTabsForOwner(MARKETPLACE_OWNER.GUILD);
+        document.querySelectorAll('[data-mwi-shrine-tab="true"]').forEach((el) => el.remove());
+
+        const referenceTab = Array.from(tabContainer.children).find((btn) => btn.textContent.includes('My Listings'));
+        if (!referenceTab) {
+            this.teardownGuildMarketplaceSession();
+            return;
+        }
+
+        tabContainer.style.flexWrap = 'wrap';
+        const scroller = tabContainer.closest('[class*="MuiTabs-scroller"]');
+        const muiRoot = scroller?.closest('[class*="MuiTabs-root"]');
+        if (scroller) scroller.style.overflow = 'visible';
+        if (muiRoot) muiRoot.style.height = 'auto';
+
+        for (const mat of model.materials) {
+            const tab = createMaterialTab(
+                mat,
+                referenceTab,
+                (_e, m) => {
+                    navigateToMarketplace(m.itemHrid, 0);
+                },
+                MARKETPLACE_OWNER.GUILD
+            );
+            tab.setAttribute('data-required-quantity', mat.required.toString());
+            tab.setAttribute('data-item-name', mat.itemName);
+            tabContainer.appendChild(tab);
+        }
+
+        const guildButton = document
+            .querySelector('svg[aria-label="navigationBar.guild"]')
+            ?.closest('[class*="NavigationBar_nav"]');
+        if (guildButton) {
+            const returnTab = referenceTab.cloneNode(true);
+            returnTab.setAttribute('data-mwi-custom-tab', 'true');
+            returnTab.setAttribute('data-mwi-tab-owner', MARKETPLACE_OWNER.GUILD);
+            returnTab.classList.remove('Mui-selected');
+            returnTab.setAttribute('aria-selected', 'false');
+            returnTab.setAttribute('tabindex', '-1');
+            const badgeSpan = returnTab.querySelector('[class*="TabsComponent_badge"]');
+            if (badgeSpan) {
+                badgeSpan.innerHTML =
+                    '<div style="text-align:center;"><div>↩ Return</div><div style="font-size:0.75em;color:#60a5fa;">Guild</div></div>';
+            }
+            returnTab.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.teardownGuildMarketplaceSession();
+                guildButton.click();
+            });
+            tabContainer.appendChild(returnTab);
+        }
     }
 
     initialize() {
@@ -879,13 +969,14 @@ class GuildCreditValue {
                     'linear-gradient(180deg,rgba(91,141,239,0.2) 0%,rgba(91,141,239,0.1) 100%)';
             });
             missingBtn.addEventListener('click', async () => {
-                navigateToMarketplace(missingMats[0].itemHrid, 0);
+                // Claim session BEFORE first await
+                const sessionId = marketplaceSession.start({
+                    owner: MARKETPLACE_OWNER.GUILD,
+                    onEnd: () => this.teardownGuildMarketplaceSession(),
+                });
+                this._guildSessionId = sessionId;
 
-                // Tear down any previous shrine tab listener before creating new tabs
-                if (this._shrineTabCleanup) {
-                    this._shrineTabCleanup();
-                    this._shrineTabCleanup = null;
-                }
+                navigateToMarketplace(missingMats[0].itemHrid, 0);
 
                 // Wait for the marketplace tablist to render
                 let tabsContainer = null;
@@ -898,7 +989,11 @@ class GuildCreditValue {
                         : null;
                     if (referenceTab) break;
                 }
-                if (!referenceTab) return;
+                if (!referenceTab) {
+                    this.teardownGuildMarketplaceSession();
+                    return;
+                }
+                if (!marketplaceSession.isActive(sessionId)) return;
 
                 // Allow tabs to wrap and make the scroller visible
                 const scroller = tabsContainer.closest('[class*="MuiTabs-scroller"]');
@@ -907,39 +1002,69 @@ class GuildCreditValue {
                 if (scroller) scroller.style.overflow = 'visible';
                 if (muiRoot) muiRoot.style.height = 'auto';
 
-                // Remove any existing action tabs and shrine tabs before inserting new ones
-                removeMaterialTabs();
-                removeShrineMarketTabs();
+                // Remove any existing guild and shrine tabs before inserting new ones
+                removeMaterialTabsForOwner(MARKETPLACE_OWNER.GUILD);
+                document.querySelectorAll('[data-mwi-shrine-tab="true"]').forEach((el) => el.remove());
+
+                this._guildActiveWorkflowModel = {
+                    sessionId,
+                    materials: missingMats.map((m) => ({ ...m })),
+                };
+
+                // Arm autofill
+                this.autofillManager.startSession({ sessionId });
 
                 for (const mat of missingMats) {
-                    let tabEl = null;
-                    const tab = createMaterialTab(mat, referenceTab, (_e, m) => {
-                        this.autofillManager.setPendingCalculation(() =>
-                            parseInt(tabEl?.getAttribute('data-missing-quantity') || '0', 10)
-                        );
-                        navigateToMarketplace(m.itemHrid, 0);
-                    });
-                    // Opt out of global removeMaterialTabs() cleanup so tabs survive tab-to-tab navigation
-                    tab.removeAttribute('data-mwi-custom-tab');
-                    tab.setAttribute('data-mwi-shrine-tab', 'true');
+                    const tab = createMaterialTab(
+                        mat,
+                        referenceTab,
+                        (_e, m) => {
+                            navigateToMarketplace(m.itemHrid, 0);
+                        },
+                        MARKETPLACE_OWNER.GUILD
+                    );
                     tab.setAttribute('data-required-quantity', mat.required.toString());
                     tab.setAttribute('data-item-name', mat.itemName);
-                    tabEl = tab;
                     tabsContainer.appendChild(tab);
                 }
 
+                // Add Return tab that navigates back to guild
+                const guildButton = document
+                    .querySelector('svg[aria-label="navigationBar.guild"]')
+                    ?.closest('[class*="NavigationBar_nav"]');
+                if (guildButton) {
+                    const returnTab = referenceTab.cloneNode(true);
+                    returnTab.setAttribute('data-mwi-custom-tab', 'true');
+                    returnTab.setAttribute('data-mwi-tab-owner', MARKETPLACE_OWNER.GUILD);
+                    returnTab.classList.remove('Mui-selected');
+                    returnTab.setAttribute('aria-selected', 'false');
+                    returnTab.setAttribute('tabindex', '-1');
+                    const badgeSpan = returnTab.querySelector('[class*="TabsComponent_badge"]');
+                    if (badgeSpan) {
+                        badgeSpan.innerHTML =
+                            '<div style="text-align:center;"><div>↩ Return</div><div style="font-size:0.75em;color:#60a5fa;">Guild</div></div>';
+                    }
+                    returnTab.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        this.teardownGuildMarketplaceSession();
+                        guildButton.click();
+                    });
+                    tabsContainer.appendChild(returnTab);
+                }
+
                 // Watch for inventory/market changes and update shrine tabs accordingly
-                const shrineTabs = Array.from(document.querySelectorAll('[data-mwi-shrine-tab="true"]'));
-                const inventoryUpdateHandler = (message) => {
-                    const msgType = message?.type || '';
-                    if (
-                        !msgType.includes('item') &&
-                        !msgType.includes('inventory') &&
-                        !msgType.includes('market') &&
-                        !message?.inventory &&
-                        !message?.characterItems
+                const shrineTabs = Array.from(
+                    document.querySelectorAll(
+                        `[data-mwi-tab-owner="${MARKETPLACE_OWNER.GUILD}"][data-required-quantity]`
                     )
+                );
+                const inventoryUpdateHandler = () => {
+                    if (!marketplaceSession.isActive(sessionId)) {
+                        dataManager.off('items_updated', inventoryUpdateHandler);
+                        this._guildInventoryHandler = null;
                         return;
+                    }
 
                     const inventory = dataManager.getInventory();
                     let anyRemaining = false;
@@ -962,16 +1087,37 @@ class GuildCreditValue {
                             updateTabBadge(tab, { itemHrid, itemName, missing, required, isTradeable: true });
                             anyRemaining = true;
                         }
+
+                        // Keep the retained model live so reinjection uses current quantities
+                        if (this._guildActiveWorkflowModel) {
+                            const entry = this._guildActiveWorkflowModel.materials.find((m) => m.itemHrid === itemHrid);
+                            if (entry) entry.missing = missing;
+                        }
                     }
 
                     if (!anyRemaining) {
-                        webSocketHook.off('*', inventoryUpdateHandler);
-                        this._shrineTabCleanup = null;
+                        dataManager.off('items_updated', inventoryUpdateHandler);
+                        this._guildInventoryHandler = null;
                     }
                 };
 
-                webSocketHook.on('*', inventoryUpdateHandler);
-                this._shrineTabCleanup = () => webSocketHook.off('*', inventoryUpdateHandler);
+                dataManager.on('items_updated', inventoryUpdateHandler);
+                this._guildInventoryHandler = inventoryUpdateHandler;
+
+                // Watch for tab disappearance; reinject on React remount or tear down on panel exit
+                const capturedSessionId = sessionId;
+                this._guildCleanupObserver = setupMarketplaceCleanupObserver({
+                    owner: MARKETPLACE_OWNER.GUILD,
+                    onTabsGone: () => {
+                        if (!marketplaceSession.isActive(capturedSessionId)) return;
+                        const visibleContainer = getVisibleMarketplaceTabContainer();
+                        if (visibleContainer) {
+                            this._reinjectGuildMarketplaceTabs(visibleContainer, capturedSessionId);
+                        } else {
+                            this.teardownGuildMarketplaceSession();
+                        }
+                    },
+                });
             });
             wrapper.appendChild(missingBtn);
         }
@@ -1013,6 +1159,7 @@ class GuildCreditValue {
     }
 
     cleanup() {
+        this.teardownGuildMarketplaceSession();
         this.unregisterObservers.forEach((fn) => fn());
         this.unregisterObservers = [];
         if (this._shrineTabCleanup) {
