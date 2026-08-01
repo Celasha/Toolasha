@@ -1,35 +1,115 @@
 /**
  * Marketplace Buy Modal Autofill Utility
  * Session-aware autofill manager.  Each consumer calls createAutofillManager() to get
- * an instance, then drives it with startSession / setItem / setQuantityProvider / exitSession.
+ * an instance, then drives it with startSession / arm / exitSession.
  *
  * Exported helpers:
- *   readMarketplaceItemIdentity()  — reads the currently displayed marketplace item
+ *   readMarketplaceRuntimeState()  — reads live Marketplace React component state via fiber
+ *   readMarketplaceItemIdentity()  — @deprecated, DOM-based; absent selector in current client
  *   createAutofillManager(observerId)
  */
 
 import domObserver from '../core/dom-observer.js';
 import { marketplaceSession } from '../core/marketplace-session.js';
 
+const MARKETPLACE_PANEL_SELECTOR = '[class*="MarketplacePanel_marketplacePanel"]';
+const MARKETPLACE_STATE_KEYS = ['marketTabKey', 'marketListingsView', 'itemHrid', 'enhancementLevel', 'isSell'];
+const REACT_FIBER_PREFIXES = ['__reactFiber$', '__reactInternalInstance$'];
+const MAX_FIBER_ANCESTRY = 64;
+
+function hasMarketplaceStateSignature(state) {
+    return state && typeof state === 'object' && MARKETPLACE_STATE_KEYS.every((key) => key in state);
+}
+
+function isElementVisible(element) {
+    if (!element || element.nodeType !== 1 || !element.isConnected) return false;
+
+    for (let current = element; current; current = current.parentElement) {
+        if (current.hidden || current.getAttribute('aria-hidden') === 'true') return false;
+        const style = window.getComputedStyle(current);
+        if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function getReactFiberFromElement(element) {
+    const fiberKey = Object.getOwnPropertyNames(element).find((key) =>
+        REACT_FIBER_PREFIXES.some((prefix) => key.startsWith(prefix))
+    );
+    return fiberKey ? element[fiberKey] : null;
+}
+
+function normalizeMarketplaceState(state) {
+    if (!hasMarketplaceStateSignature(state)) return null;
+    if (typeof state.marketTabKey !== 'string' || typeof state.marketListingsView !== 'string') return null;
+    if (state.itemHrid !== null && (typeof state.itemHrid !== 'string' || !state.itemHrid)) return null;
+    if (!Number.isInteger(state.enhancementLevel) || state.enhancementLevel < 0) return null;
+    if (typeof state.isSell !== 'boolean') return null;
+
+    return {
+        marketTabKey: state.marketTabKey,
+        marketListingsView: state.marketListingsView,
+        itemHrid: state.itemHrid,
+        enhancementLevel: state.enhancementLevel,
+        isSell: state.isSell,
+        quantityInput: state.quantityInput,
+        priceInput: state.priceInput,
+    };
+}
+
 /**
- * Read the item identity currently shown in the marketplace buy/browse panel.
- * Returns null when no item is displayed or the panel is not visible.
+ * Read the live Marketplace React component state from the unique visible Marketplace panel.
+ * The selected component must be on that panel host fiber's bounded return ancestry.
+ *
+ * @returns {{ marketTabKey: string, marketListingsView: string, itemHrid: string|null,
+ *             enhancementLevel: number, isSell: boolean,
+ *             quantityInput: *, priceInput: * }|null}
+ */
+export function readMarketplaceRuntimeState() {
+    const visiblePanels = Array.from(document.querySelectorAll(MARKETPLACE_PANEL_SELECTOR)).filter(isElementVisible);
+    if (visiblePanels.length !== 1) return null;
+
+    let fiber = getReactFiberFromElement(visiblePanels[0]);
+    if (!fiber) return null;
+
+    const candidates = [];
+    const seenStateNodes = new Set();
+    let depth = 0;
+
+    while (fiber && depth < MAX_FIBER_ANCESTRY) {
+        const stateNode = fiber.stateNode;
+        const state = stateNode?.state;
+        if (hasMarketplaceStateSignature(state) && !seenStateNodes.has(stateNode)) {
+            seenStateNodes.add(stateNode);
+            candidates.push(state);
+        }
+        fiber = fiber.return;
+        depth += 1;
+    }
+
+    // Fail closed if the ancestry exceeds the explicit bound or is ambiguous.
+    if (fiber || candidates.length !== 1) return null;
+    return normalizeMarketplaceState(candidates[0]);
+}
+
+/**
+ * @deprecated Use readMarketplaceRuntimeState() instead.
+ * MarketplacePanel_listingsHeader is absent in the current client — this function
+ * will return null in production. Retained for test continuity only.
  * @returns {{ itemHrid: string, enhancementLevel: number }|null}
  */
 export function readMarketplaceItemIdentity() {
-    // Look for the active marketplace item header area
     const panel = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
     if (!panel) return null;
 
-    // The item name appears in a header with an SVG icon whose aria-label is the item name,
-    // or via a link element that encodes the item HRID.
-    // Primary signal: <a href="/items/..."> or SVG <use href="#..."> within the panel header
     const itemLink = panel.querySelector('[class*="MarketplacePanel_listingsHeader"] a[href*="/items/"]');
     if (itemLink) {
         const match = itemLink.getAttribute('href')?.match(/\/items\/(.+?)(?:\/|$|\?)/);
         if (match) {
             const itemHrid = `/items/${match[1]}`;
-            // Enhancement level: look for a nearby text like "+3" or an input labelled Enhancement Level
             const enhInput = panel.querySelector(
                 '[class*="MarketplacePanel_listingsHeader"] input[type="number"],' +
                     '[class*="MarketplacePanel_listingsHeader"] [class*="enhancementLevel"]'
@@ -39,7 +119,6 @@ export function readMarketplaceItemIdentity() {
         }
     }
 
-    // Fallback: find <use href="#item_name"> in the panel heading area
     const svgUse = panel.querySelector(
         '[class*="MarketplacePanel_listingsHeader"] use[href*="items_sprite"], ' +
             '[class*="MarketplacePanel_listingsHeader"] use[href^="#"]'
@@ -57,152 +136,233 @@ export function readMarketplaceItemIdentity() {
 
 /**
  * Find the quantity input in the buy modal.
- * Fails closed — returns null when the input cannot be positively identified.
+ * Requires exactly one input under MarketplacePanel_quantityInputs — fails closed otherwise.
  * @param {HTMLElement} modal
  * @returns {HTMLInputElement|null}
  */
 function findQuantityInput(modal) {
-    const allInputs = Array.from(modal.querySelectorAll('input[type="number"]'));
-    if (allInputs.length === 0) return null;
-    if (allInputs.length === 1) return allInputs[0];
-
-    // Multiple inputs: identify the quantity input by proximity to label text.
-    // Walk up 0–3 levels, looking for a container that mentions "Quantity" but not
-    // "Enhancement Level" — stop at the first (most specific) match.
-    for (let level = 0; level < 4; level++) {
-        for (const input of allInputs) {
-            let parent = input.parentElement;
-            for (let j = 0; j < level && parent; j++) parent = parent.parentElement;
-            if (!parent) continue;
-            const text = parent.textContent;
-            if (text.includes('Quantity') && !text.includes('Enhancement Level')) return input;
-        }
-    }
-
-    // Exclude inputs whose close parents (0–2 levels) mention "Enhancement Level" only.
-    for (const input of allInputs) {
-        let parent = input.parentElement;
-        let isEnh = false;
-        for (let j = 0; j < 3 && parent; j++) {
-            if (parent.textContent.includes('Enhancement Level') && !parent.textContent.includes('Quantity')) {
-                isEnh = true;
-                break;
-            }
-            parent = parent.parentElement;
-        }
-        if (!isEnh) return input;
-    }
-
-    // Could not positively identify — fail closed
-    return null;
+    const inputs = modal.querySelectorAll('[class*="MarketplacePanel_quantityInputs"] input[type="number"]');
+    if (inputs.length !== 1) return null;
+    return inputs[0];
 }
 
 /**
  * Create an autofill manager instance for one marketplace workflow owner.
  *
  * Lifecycle:
- *   initialize()          — call once at feature startup; installs the buy-modal observer
- *   startSession(opts)    — arm for a workflow; returns sessionId
- *   setItem(hrid, enh)    — record the item this session expects
- *   setQuantityProvider(fn, sessionId) — set the lazy quantity callback for a session
+ *   initialize()      — call once at feature startup; installs the buy-modal observer
+ *   startSession(opts) — claim a session slot by sessionId
+ *   arm(opts)         — atomically set target; only 'buy' modalMode is accepted
+ *   setItem()         — @deprecated, use arm()
+ *   setQuantityProvider() — @deprecated, use arm()
  *   exitSession(sessionId) — disarm without ending the marketplace session token
- *   cleanup()             — call on feature disable; removes observer
+ *   cleanup()         — call on feature disable; removes observer
  *
  * @param {string} observerId
  * @returns {Object}
  */
 export function createAutofillManager(observerId) {
     let observerUnregister = null;
-
-    // Per-session state
     let activeSessionId = null;
-    let expectedItemHrid = null;
-    let expectedEnhancementLevel = 0;
-    let quantityProvider = null; // () => number|null
+    let targetGeneration = 0;
+    let activeTarget = null;
+    let legacyDraft = null;
 
-    /**
-     * Arm the autofill manager for a new session.
-     * Clears any previous session state.
-     * @param {Object} [opts]
-     * @param {string} [opts.itemHrid] - Expected marketplace item HRID
-     * @param {number} [opts.enhancementLevel] - Expected enhancement level (default 0)
-     * @param {number} [opts.sessionId] - The marketplaceSession token for this workflow
-     * @param {Function} [opts.quantityProvider] - () => number|null
-     */
+    function invalidateTarget() {
+        targetGeneration += 1;
+        activeTarget = null;
+        legacyDraft = null;
+    }
+
+    function clearTargetIfCurrent(target) {
+        if (activeTarget === target) invalidateTarget();
+    }
+
+    function isValidItemHrid(itemHrid) {
+        return typeof itemHrid === 'string' && itemHrid.startsWith('/items/') && itemHrid.length > 7;
+    }
+
+    function isValidEnhancementLevel(enhancementLevel) {
+        return Number.isInteger(enhancementLevel) && enhancementLevel >= 0;
+    }
+
     function startSession({
         itemHrid = null,
         enhancementLevel = 0,
         sessionId = null,
-        quantityProvider: qp = null,
+        quantityProvider = null,
+        modalMode = 'buy',
     } = {}) {
-        activeSessionId = sessionId;
-        expectedItemHrid = itemHrid;
-        expectedEnhancementLevel = enhancementLevel;
-        quantityProvider = qp;
+        activeSessionId = marketplaceSession.isActive(sessionId) ? sessionId : null;
+        invalidateTarget();
+
+        if (activeSessionId !== null && (itemHrid !== null || quantityProvider !== null)) {
+            arm({ sessionId, itemHrid, enhancementLevel, modalMode, quantityProvider });
+        }
     }
 
-    function setItem(itemHrid, enhancementLevel = 0) {
-        expectedItemHrid = itemHrid;
-        expectedEnhancementLevel = enhancementLevel;
+    /**
+     * Atomically install one immutable autofill target generation.
+     * An invalid arm for the current session disarms the previous target.
+     * A stale session token is a no-op and cannot clear a newer target.
+     *
+     * @param {Object} opts
+     * @returns {boolean} True when a new target was armed
+     */
+    function arm(opts = {}) {
+        const { sessionId, itemHrid = null, enhancementLevel = 0, modalMode = 'buy', quantityProvider } = opts || {};
+
+        if (sessionId !== activeSessionId) return false;
+        if (!marketplaceSession.isActive(sessionId)) {
+            activeSessionId = null;
+            invalidateTarget();
+            return false;
+        }
+
+        if (
+            modalMode !== 'buy' ||
+            !isValidItemHrid(itemHrid) ||
+            !isValidEnhancementLevel(enhancementLevel) ||
+            typeof quantityProvider !== 'function'
+        ) {
+            invalidateTarget();
+            return false;
+        }
+
+        const generation = ++targetGeneration;
+        activeTarget = Object.freeze({
+            generation,
+            sessionId,
+            itemHrid,
+            enhancementLevel,
+            modalMode,
+            quantityProvider,
+        });
+        legacyDraft = null;
+        return true;
     }
 
-    function setQuantityProvider(fn, sessionId) {
-        // Guard: only accept if sessionId matches (prevents stale callers from arming)
-        if (sessionId !== undefined && sessionId !== activeSessionId) return;
-        quantityProvider = fn;
+    /**
+     * @deprecated Use arm(). Temporary compatibility wrapper for staged consumer migration.
+     * Requires the exact active session token and does not mutate the live target.
+     */
+    function setItem(itemHrid, enhancementLevel = 0, sessionId) {
+        if (sessionId === undefined) {
+            invalidateTarget();
+            return false;
+        }
+        if (sessionId !== activeSessionId) return false;
+        if (!marketplaceSession.isActive(sessionId)) {
+            activeSessionId = null;
+            invalidateTarget();
+            return false;
+        }
+        if (!isValidItemHrid(itemHrid) || !isValidEnhancementLevel(enhancementLevel)) {
+            invalidateTarget();
+            return false;
+        }
+
+        invalidateTarget();
+        legacyDraft = Object.freeze({ sessionId, itemHrid, enhancementLevel });
+        return true;
+    }
+
+    /**
+     * @deprecated Use arm(). Installs a target only when paired with a token-scoped setItem().
+     */
+    function setQuantityProvider(quantityProvider, sessionId) {
+        if (sessionId === undefined) {
+            invalidateTarget();
+            return false;
+        }
+        if (sessionId !== activeSessionId) return false;
+        if (!legacyDraft || legacyDraft.sessionId !== sessionId) {
+            invalidateTarget();
+            return false;
+        }
+
+        return arm({
+            sessionId,
+            itemHrid: legacyDraft.itemHrid,
+            enhancementLevel: legacyDraft.enhancementLevel,
+            modalMode: 'buy',
+            quantityProvider,
+        });
     }
 
     function exitSession(sessionId) {
         if (sessionId !== undefined && sessionId !== activeSessionId) return;
         activeSessionId = null;
-        expectedItemHrid = null;
-        expectedEnhancementLevel = 0;
-        quantityProvider = null;
+        invalidateTarget();
     }
 
     function handleBuyModal(modal) {
-        // Must have a quantity provider
-        if (!quantityProvider) return;
+        const target = activeTarget;
+        if (!target) return;
 
-        // Must have a valid session token
-        if (activeSessionId === null) return;
-        if (!marketplaceSession.isActive(activeSessionId)) {
-            // Session was replaced externally — disarm
-            activeSessionId = null;
-            quantityProvider = null;
+        if (activeSessionId !== target.sessionId || !marketplaceSession.isActive(target.sessionId)) {
+            clearTargetIfCurrent(target);
             return;
         }
 
-        // Must be a Buy Now / Buy Listing modal
-        const header = modal.querySelector('div[class*="MarketplacePanel_header"]');
-        if (!header) return;
-        const headerText = header.textContent.trim();
-        if (!headerText.includes('Buy Now') && !headerText.includes('Buy Listing')) return;
-
-        // Item identity check — fail closed
-        if (expectedItemHrid !== null) {
-            const identity = readMarketplaceItemIdentity();
-            if (!identity) return; // Cannot confirm item — do not write
-            if (identity.itemHrid !== expectedItemHrid) return;
-            if (identity.enhancementLevel !== expectedEnhancementLevel) return;
+        const runtimeState = readMarketplaceRuntimeState();
+        if (
+            !runtimeState ||
+            runtimeState.isSell !== false ||
+            runtimeState.marketTabKey !== 'MarketListings' ||
+            runtimeState.marketListingsView !== 'OrderBook' ||
+            runtimeState.itemHrid !== target.itemHrid ||
+            runtimeState.enhancementLevel !== target.enhancementLevel
+        ) {
+            clearTargetIfCurrent(target);
+            return;
         }
 
-        const quantity = quantityProvider();
-        if (!quantity || quantity <= 0) return;
-
         const quantityInput = findQuantityInput(modal);
-        if (!quantityInput) return;
+        if (!quantityInput) {
+            clearTargetIfCurrent(target);
+            return;
+        }
 
-        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        let quantity;
+        try {
+            quantity = target.quantityProvider();
+        } catch (error) {
+            console.error('[MarketplaceAutofill] quantityProvider failed:', error);
+            clearTargetIfCurrent(target);
+            return;
+        }
+
+        if (typeof quantity !== 'number' || !Number.isFinite(quantity) || quantity <= 0) {
+            clearTargetIfCurrent(target);
+            return;
+        }
+
+        // The provider may synchronously re-arm, exit, or replace the session.
+        // Recheck the captured generation and token immediately before writing.
+        if (activeTarget !== target || activeTarget.generation !== target.generation) return;
+        if (activeSessionId !== target.sessionId || !marketplaceSession.isActive(target.sessionId)) {
+            clearTargetIfCurrent(target);
+            return;
+        }
+
+        if (!quantityInput.isConnected || !modal.contains(quantityInput)) {
+            clearTargetIfCurrent(target);
+            return;
+        }
+
+        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+        if (typeof nativeInputValueSetter !== 'function') {
+            clearTargetIfCurrent(target);
+            return;
+        }
+
         nativeInputValueSetter.call(quantityInput, quantity.toString());
         quantityInput.dispatchEvent(new Event('input', { bubbles: true }));
-
-        // Consume one-shot session
-        marketplaceSession.consume(activeSessionId);
+        marketplaceSession.consume(target.sessionId);
     }
 
     return {
-        /** Install the buy-modal observer. Call once at feature startup. */
         initialize() {
             if (observerUnregister) {
                 observerUnregister();
@@ -214,20 +374,18 @@ export function createAutofillManager(observerId) {
         },
 
         startSession,
+        arm,
         setItem,
         setQuantityProvider,
         exitSession,
 
-        /** Remove observer and disarm. Call at feature disable. */
         cleanup() {
             if (observerUnregister) {
                 observerUnregister();
                 observerUnregister = null;
             }
             activeSessionId = null;
-            expectedItemHrid = null;
-            expectedEnhancementLevel = 0;
-            quantityProvider = null;
+            invalidateTarget();
         },
     };
 }

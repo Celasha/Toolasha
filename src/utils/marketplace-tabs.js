@@ -289,6 +289,29 @@ function getGameObject() {
 }
 
 /**
+ * Watch for a native Marketplace tab click and call onExit when it occurs.
+ * Uses a delegated click listener — does not fire on initial aria-selected DOM state.
+ *
+ * Resolves nested click targets (e.g. a span or icon inside the tab) via closest('[role="tab"]').
+ * Only fires when the resolved tab belongs to tabContainer and is not a Toolasha custom tab.
+ *
+ * @param {HTMLElement} tabContainer - The MuiTabs-flexContainer[role="tablist"] element
+ * @param {Function} onExit - Called when a native tab is clicked
+ * @returns {Function} Cleanup function that removes the exact delegated listener
+ */
+export function watchNativeTabExit(tabContainer, onExit) {
+    function handleClick(e) {
+        const origin = typeof e.target?.closest === 'function' ? e.target : e.target?.parentElement;
+        const target = origin?.closest('[role="tab"]');
+        if (!target || !tabContainer.contains(target)) return;
+        if (target.hasAttribute('data-mwi-custom-tab') || target.hasAttribute('data-mwi-shrine-tab')) return;
+        onExit();
+    }
+    tabContainer.addEventListener('click', handleClick, { capture: true });
+    return () => tabContainer.removeEventListener('click', handleClick, { capture: true });
+}
+
+/**
  * Navigate to marketplace for a specific item
  * @param {string} itemHrid - Item HRID to navigate to
  * @param {number} enhancementLevel - Enhancement level (default 0)

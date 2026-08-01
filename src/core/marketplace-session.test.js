@@ -371,6 +371,7 @@ import {
     createMaterialTab,
     removeMaterialTabsForOwner,
     getVisibleMarketplaceTabContainer,
+    watchNativeTabExit,
 } from '../utils/marketplace-tabs.js';
 
 describe('createMaterialTab / removeMaterialTabsForOwner', () => {
@@ -436,13 +437,52 @@ describe('createMaterialTab / removeMaterialTabsForOwner', () => {
 
 // ─── autofillManager ────────────────────────────────────────────────────────
 
+// Captures the last handleBuyModal callback registered via initialize().
+// Updated each time a manager calls initialize(); safe because tests use it immediately after.
+let _capturedModalCallback = null;
+
 vi.mock('../core/dom-observer.js', () => ({
     default: {
-        onClass: vi.fn(() => () => {}),
+        onClass: vi.fn((_id, _cls, cb) => {
+            _capturedModalCallback = cb;
+            return () => {};
+        }),
     },
 }));
 
-import { createAutofillManager, readMarketplaceItemIdentity } from '../utils/marketplace-autofill.js';
+import {
+    createAutofillManager,
+    readMarketplaceItemIdentity,
+    readMarketplaceRuntimeState,
+} from '../utils/marketplace-autofill.js';
+
+function makeMarketplaceRuntimeState(overrides = {}) {
+    return {
+        marketTabKey: 'MarketListings',
+        marketListingsView: 'OrderBook',
+        itemHrid: '/items/iron_ore',
+        enhancementLevel: 0,
+        isSell: false,
+        quantityInput: 1,
+        priceInput: 500,
+        ...overrides,
+    };
+}
+
+function attachMarketplacePanelFiber(panel, states) {
+    const hostFiber = { stateNode: panel, return: null };
+    let cursor = hostFiber;
+    for (const state of states) {
+        const componentFiber = { stateNode: { state }, return: null };
+        cursor.return = componentFiber;
+        cursor = componentFiber;
+    }
+    Object.defineProperty(panel, '__reactFiber$toolashaTest', {
+        configurable: true,
+        value: hostFiber,
+    });
+    return hostFiber;
+}
 
 describe('createAutofillManager', () => {
     beforeEach(freshSession);
@@ -656,33 +696,24 @@ describe('Test 5 — wrong-item modal rejection', () => {
         document.body.innerHTML = '';
     });
 
-    test('autofill does not fill when modal shows a different item than expected', () => {
+    test('autofill does not fill when the visible panel state has a different item', () => {
         const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
         const mgr = createAutofillManager('WrongItemTest');
         mgr.initialize();
-        mgr.startSession({
-            sessionId: id,
-            itemHrid: '/items/iron_ore',
-            enhancementLevel: 0,
-            quantityProvider: () => 99,
-        });
+        mgr.startSession({ sessionId: id });
+        mgr.arm({ sessionId: id, itemHrid: '/items/iron_ore', enhancementLevel: 0, quantityProvider: () => 99 });
 
-        // Modal opens for copper_ore instead of iron_ore — item identity mismatch
         document.body.innerHTML = `
-            <div class="MarketplacePanel_marketplacePanel__x">
-                <div class="MarketplacePanel_listingsHeader__x">
-                    <a href="/items/copper_ore">Copper Ore</a>
-                </div>
-            </div>
-            <div class="Modal_modalContainer__x">
-                <div class="MarketplacePanel_header__x">Buy Now</div>
-                <input type="number" value="" />
+            <div class="MarketplacePanel_marketplacePanel__test"></div>
+            <div class="Modal_modalContainer__test">
+                <div class="MarketplacePanel_quantityInputs__test"><input type="number" value="" /></div>
             </div>
         `;
-        const input = document.querySelector('.Modal_modalContainer__x input');
-        // handleBuyModal is driven by the observer internally; verify via side-effects:
-        // session not consumed (still active), input still empty
-        expect(input.value).toBe('');
+        const panel = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
+        attachMarketplacePanelFiber(panel, [makeMarketplaceRuntimeState({ itemHrid: '/items/copper_ore' })]);
+        _capturedModalCallback(document.querySelector('[class*="Modal_modalContainer"]'));
+
+        expect(document.querySelector('input').value).toBe('');
         expect(marketplaceSession.isActive(id)).toBe(true);
 
         mgr.cleanup();
@@ -698,33 +729,26 @@ describe('Test 10 — wrong enhancement level rejection', () => {
         document.body.innerHTML = '';
     });
 
-    test('autofill rejects when enhancement level mismatches (same item, wrong level)', () => {
+    test('autofill rejects the same item at the wrong enhancement level', () => {
         const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
         const mgr = createAutofillManager('WrongEnhTest');
         mgr.initialize();
-        // Expecting /items/sword at +3
-        mgr.startSession({
-            sessionId: id,
-            itemHrid: '/items/sword',
-            enhancementLevel: 3,
-            quantityProvider: () => 5,
-        });
+        mgr.startSession({ sessionId: id });
+        mgr.arm({ sessionId: id, itemHrid: '/items/sword', enhancementLevel: 3, quantityProvider: () => 5 });
 
-        // Modal shows /items/sword at +1 — level mismatch
         document.body.innerHTML = `
-            <div class="MarketplacePanel_marketplacePanel__x">
-                <div class="MarketplacePanel_listingsHeader__x">
-                    <a href="/items/sword">Sword</a>
-                    <input type="number" value="1" />
-                </div>
-            </div>
-            <div class="Modal_modalContainer__x">
-                <div class="MarketplacePanel_header__x">Buy Now</div>
-                <input type="number" value="" />
+            <div class="MarketplacePanel_marketplacePanel__test"></div>
+            <div class="Modal_modalContainer__test">
+                <div class="MarketplacePanel_quantityInputs__test"><input type="number" value="" /></div>
             </div>
         `;
-        const buyInput = document.querySelector('.Modal_modalContainer__x input');
-        expect(buyInput.value).toBe('');
+        const panel = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
+        attachMarketplacePanelFiber(panel, [
+            makeMarketplaceRuntimeState({ itemHrid: '/items/sword', enhancementLevel: 1 }),
+        ]);
+        _capturedModalCallback(document.querySelector('[class*="Modal_modalContainer"]'));
+
+        expect(document.querySelector('input').value).toBe('');
         expect(marketplaceSession.isActive(id)).toBe(true);
 
         mgr.cleanup();
@@ -786,29 +810,49 @@ describe("Test 17 — feature-local disable does not remove another owner's tabs
     });
 });
 
-// ─── Test 22: unidentifiable modal mode fails closed ─────────────────────────
+// ─── Test 22: unsupported modal/runtime state fails closed ───────────────────
 
-describe('Test 22 — unidentifiable/unsupported modal mode fails closed', () => {
+describe('Test 22 — unsupported modal/runtime state fails closed', () => {
     beforeEach(freshSession);
     afterEach(() => {
         document.body.innerHTML = '';
     });
 
-    test('modal with non-Buy header does not trigger autofill', () => {
+    function setupManager(observerId) {
         const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
-        const mgr = createAutofillManager('UnsupportedModal');
+        const mgr = createAutofillManager(observerId);
         mgr.initialize();
-        mgr.startSession({ sessionId: id, quantityProvider: () => 50 });
+        mgr.startSession({ sessionId: id });
+        mgr.arm({ sessionId: id, itemHrid: '/items/iron_ore', enhancementLevel: 0, quantityProvider: () => 50 });
+        return { id, mgr };
+    }
 
+    test('Sell mode in the visible panel state does not trigger autofill', () => {
+        const { id, mgr } = setupManager('SellModeTest');
         document.body.innerHTML = `
-            <div class="Modal_modalContainer__x">
-                <div class="MarketplacePanel_header__x">Sell Item</div>
-                <input type="number" value="" />
+            <div class="MarketplacePanel_marketplacePanel__test"></div>
+            <div class="Modal_modalContainer__test">
+                <div class="MarketplacePanel_quantityInputs__test"><input type="number" value="" /></div>
             </div>
         `;
-        const input = document.querySelector('input');
-        expect(input.value).toBe('');
+        const panel = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
+        attachMarketplacePanelFiber(panel, [makeMarketplaceRuntimeState({ isSell: true })]);
+        _capturedModalCallback(document.querySelector('[class*="Modal_modalContainer"]'));
+        expect(document.querySelector('input').value).toBe('');
+        mgr.cleanup();
+        marketplaceSession.end(id);
+    });
 
+    test('a visible panel without a React fiber fails closed', () => {
+        const { id, mgr } = setupManager('NoFiberTest');
+        document.body.innerHTML = `
+            <div class="MarketplacePanel_marketplacePanel__test"></div>
+            <div class="Modal_modalContainer__test">
+                <div class="MarketplacePanel_quantityInputs__test"><input type="number" value="" /></div>
+            </div>
+        `;
+        _capturedModalCallback(document.querySelector('[class*="Modal_modalContainer"]'));
+        expect(document.querySelector('input').value).toBe('');
         mgr.cleanup();
         marketplaceSession.end(id);
     });
@@ -1409,5 +1453,512 @@ describe('Test 9 — Crafting Plan immediate recalculation', () => {
         expect(marketplaceSession.isActive(id)).toBe(true);
 
         marketplaceSession.end(id);
+    });
+});
+
+// ─── readMarketplaceRuntimeState ─────────────────────────────────────────────
+
+describe('readMarketplaceRuntimeState', () => {
+    afterEach(() => {
+        document.body.innerHTML = '';
+    });
+
+    test('returns null when no Marketplace panel exists in the DOM', () => {
+        document.body.innerHTML = '<div id="root"></div>';
+        expect(readMarketplaceRuntimeState()).toBeNull();
+    });
+
+    test('returns null when the Marketplace panel itself is hidden', () => {
+        document.body.innerHTML = '<div class="MarketplacePanel_marketplacePanel__test" style="display:none"></div>';
+        const panel = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
+        attachMarketplacePanelFiber(panel, [makeMarketplaceRuntimeState()]);
+        expect(readMarketplaceRuntimeState()).toBeNull();
+    });
+
+    test('returns null when a non-immediate ancestor is hidden', () => {
+        document.body.innerHTML = `
+            <div style="display:none">
+                <div><div class="MarketplacePanel_marketplacePanel__test"></div></div>
+            </div>
+        `;
+        const panel = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
+        attachMarketplacePanelFiber(panel, [makeMarketplaceRuntimeState()]);
+        expect(readMarketplaceRuntimeState()).toBeNull();
+    });
+
+    test('returns null when two visible Marketplace panels exist', () => {
+        document.body.innerHTML = `
+            <div class="MarketplacePanel_marketplacePanel__one"></div>
+            <div class="MarketplacePanel_marketplacePanel__two"></div>
+        `;
+        const panels = document.querySelectorAll('[class*="MarketplacePanel_marketplacePanel"]');
+        attachMarketplacePanelFiber(panels[0], [makeMarketplaceRuntimeState()]);
+        attachMarketplacePanelFiber(panels[1], [makeMarketplaceRuntimeState({ itemHrid: '/items/coal' })]);
+        expect(readMarketplaceRuntimeState()).toBeNull();
+    });
+
+    test('returns null when the visible panel has no React host fiber', () => {
+        document.body.innerHTML = '<div class="MarketplacePanel_marketplacePanel__test"></div>';
+        expect(readMarketplaceRuntimeState()).toBeNull();
+    });
+
+    test('does not accept a stale root candidate unrelated to the visible panel', () => {
+        document.body.innerHTML = `
+            <div id="root"></div>
+            <div class="MarketplacePanel_marketplacePanel__test"></div>
+        `;
+        const root = document.getElementById('root');
+        root._reactRootContainer = {
+            current: { stateNode: { state: makeMarketplaceRuntimeState({ itemHrid: '/items/stale' }) } },
+        };
+        const panel = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
+        attachMarketplacePanelFiber(panel, [{ unrelated: true }]);
+        expect(readMarketplaceRuntimeState()).toBeNull();
+    });
+
+    test('returns state from the unique visible panel fiber ancestry', () => {
+        document.body.innerHTML = '<div class="MarketplacePanel_marketplacePanel__test"></div>';
+        const panel = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
+        attachMarketplacePanelFiber(panel, [makeMarketplaceRuntimeState()]);
+
+        expect(readMarketplaceRuntimeState()).toEqual(makeMarketplaceRuntimeState());
+    });
+
+    test('returns null when the visible panel ancestry has multiple matching components', () => {
+        document.body.innerHTML = '<div class="MarketplacePanel_marketplacePanel__test"></div>';
+        const panel = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
+        attachMarketplacePanelFiber(panel, [
+            makeMarketplaceRuntimeState(),
+            makeMarketplaceRuntimeState({ itemHrid: '/items/coal' }),
+        ]);
+        expect(readMarketplaceRuntimeState()).toBeNull();
+    });
+
+    test.each(['bad', NaN, Infinity, -1, 1.5])('returns null for malformed enhancementLevel %s', (enhancementLevel) => {
+        document.body.innerHTML = '<div class="MarketplacePanel_marketplacePanel__test"></div>';
+        const panel = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
+        attachMarketplacePanelFiber(panel, [makeMarketplaceRuntimeState({ enhancementLevel })]);
+        expect(readMarketplaceRuntimeState()).toBeNull();
+    });
+
+    test('fails closed when the owning component lies beyond the ancestry bound', () => {
+        document.body.innerHTML = '<div class="MarketplacePanel_marketplacePanel__test"></div>';
+        const panel = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
+        const nonMatchingStates = Array.from({ length: 64 }, (_, index) => ({ index }));
+        attachMarketplacePanelFiber(panel, [...nonMatchingStates, makeMarketplaceRuntimeState()]);
+        expect(readMarketplaceRuntimeState()).toBeNull();
+    });
+});
+
+// ─── arm() — atomic target generations ──────────────────────────────────────
+
+describe('arm() — atomic target generations', () => {
+    beforeEach(freshSession);
+    afterEach(() => {
+        document.body.innerHTML = '';
+    });
+
+    function setupModal(stateOverrides = {}, { numInputs = 1, withFiber = true, states = null } = {}) {
+        const inputs = Array.from({ length: numInputs }, () => '<input type="number" value="" />').join('');
+        document.body.innerHTML = `
+            <div class="MarketplacePanel_marketplacePanel__test"></div>
+            <div class="Modal_modalContainer__test">
+                <div class="MarketplacePanel_quantityInputs__test">${inputs}</div>
+            </div>
+        `;
+        const panel = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
+        if (withFiber) {
+            attachMarketplacePanelFiber(panel, states || [makeMarketplaceRuntimeState(stateOverrides)]);
+        }
+        return document.querySelector('[class*="Modal_modalContainer"]');
+    }
+
+    test('stale session arm is a no-op and does not clear the newer target', () => {
+        const idA = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
+        const mgr = createAutofillManager('ArmStaleSession');
+        mgr.initialize();
+        mgr.startSession({ sessionId: idA });
+        mgr.arm({ sessionId: idA, itemHrid: '/items/iron_ore', quantityProvider: () => 10 });
+
+        const idB = marketplaceSession.start({ owner: MARKETPLACE_OWNER.CRAFTING_PLAN });
+        mgr.startSession({ sessionId: idB });
+        mgr.arm({ sessionId: idB, itemHrid: '/items/coal', quantityProvider: () => 20 });
+        mgr.arm({ sessionId: idA, itemHrid: '/items/iron_ore', quantityProvider: () => 999 });
+
+        _capturedModalCallback(setupModal({ itemHrid: '/items/coal' }));
+        expect(document.querySelector('input').value).toBe('20');
+
+        mgr.cleanup();
+        marketplaceSession.end(idB);
+    });
+
+    test('unsupported mode for the current session disarms the previous target', () => {
+        const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
+        const mgr = createAutofillManager('ArmUnsupportedMode');
+        mgr.initialize();
+        mgr.startSession({ sessionId: id });
+        mgr.arm({ sessionId: id, itemHrid: '/items/iron_ore', quantityProvider: () => 10 });
+        mgr.arm({ sessionId: id, itemHrid: '/items/coal', modalMode: 'sell', quantityProvider: () => 20 });
+
+        _capturedModalCallback(setupModal({ itemHrid: '/items/iron_ore' }));
+        expect(document.querySelector('input').value).toBe('');
+
+        mgr.cleanup();
+        marketplaceSession.end(id);
+    });
+
+    test('invalid provider for the current session disarms the previous target', () => {
+        const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
+        const mgr = createAutofillManager('ArmInvalidProvider');
+        mgr.initialize();
+        mgr.startSession({ sessionId: id });
+        mgr.arm({ sessionId: id, itemHrid: '/items/iron_ore', quantityProvider: () => 10 });
+        mgr.arm({ sessionId: id, itemHrid: '/items/coal', quantityProvider: null });
+
+        _capturedModalCallback(setupModal({ itemHrid: '/items/iron_ore' }));
+        expect(document.querySelector('input').value).toBe('');
+
+        mgr.cleanup();
+        marketplaceSession.end(id);
+    });
+
+    test('autofill fills when target and panel state match exactly', () => {
+        const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
+        const mgr = createAutofillManager('ArmHappyPath');
+        mgr.initialize();
+        mgr.startSession({ sessionId: id });
+        mgr.arm({ sessionId: id, itemHrid: '/items/iron_ore', quantityProvider: () => 42 });
+
+        _capturedModalCallback(setupModal());
+        expect(document.querySelector('input').value).toBe('42');
+
+        mgr.cleanup();
+        marketplaceSession.end(id);
+    });
+
+    test('a newer accepted arm atomically supersedes the previous target', () => {
+        const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
+        const mgr = createAutofillManager('ArmSupersede');
+        mgr.initialize();
+        mgr.startSession({ sessionId: id });
+        mgr.arm({ sessionId: id, itemHrid: '/items/iron_ore', quantityProvider: () => 10 });
+        mgr.arm({ sessionId: id, itemHrid: '/items/coal', quantityProvider: () => 20 });
+
+        _capturedModalCallback(setupModal({ itemHrid: '/items/coal' }));
+        expect(document.querySelector('input').value).toBe('20');
+
+        mgr.cleanup();
+        marketplaceSession.end(id);
+    });
+
+    test('provider-side re-arm prevents the captured generation from writing', () => {
+        const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
+        const mgr = createAutofillManager('ArmProviderRearm');
+        mgr.initialize();
+        mgr.startSession({ sessionId: id });
+        mgr.arm({
+            sessionId: id,
+            itemHrid: '/items/iron_ore',
+            quantityProvider: () => {
+                mgr.arm({ sessionId: id, itemHrid: '/items/coal', quantityProvider: () => 20 });
+                return 10;
+            },
+        });
+
+        _capturedModalCallback(setupModal());
+        expect(document.querySelector('input').value).toBe('');
+
+        _capturedModalCallback(setupModal({ itemHrid: '/items/coal' }));
+        expect(document.querySelector('input').value).toBe('20');
+
+        mgr.cleanup();
+        marketplaceSession.end(id);
+    });
+
+    test('provider-side session end prevents the captured generation from writing', () => {
+        const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
+        const mgr = createAutofillManager('ArmProviderEnd');
+        mgr.initialize();
+        mgr.startSession({ sessionId: id });
+        mgr.arm({
+            sessionId: id,
+            itemHrid: '/items/iron_ore',
+            quantityProvider: () => {
+                marketplaceSession.end(id);
+                return 10;
+            },
+        });
+
+        _capturedModalCallback(setupModal());
+        expect(document.querySelector('input').value).toBe('');
+
+        mgr.cleanup();
+    });
+
+    test.each([NaN, Infinity, -Infinity, 0, -1, '5'])('invalid quantity %s never writes', (quantity) => {
+        const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
+        const mgr = createAutofillManager('ArmInvalidQuantity');
+        mgr.initialize();
+        mgr.startSession({ sessionId: id });
+        mgr.arm({ sessionId: id, itemHrid: '/items/iron_ore', quantityProvider: () => quantity });
+
+        _capturedModalCallback(setupModal());
+        expect(document.querySelector('input').value).toBe('');
+
+        mgr.cleanup();
+        marketplaceSession.end(id);
+    });
+
+    test('missing or malformed item identity does not arm', () => {
+        const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
+        const mgr = createAutofillManager('ArmInvalidItem');
+        mgr.initialize();
+        mgr.startSession({ sessionId: id });
+        mgr.arm({ sessionId: id, itemHrid: null, quantityProvider: () => 10 });
+
+        _capturedModalCallback(setupModal());
+        expect(document.querySelector('input').value).toBe('');
+
+        mgr.cleanup();
+        marketplaceSession.end(id);
+    });
+
+    test('deprecated split mutators require a token-scoped identity draft', () => {
+        const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
+        const mgr = createAutofillManager('LegacyDraft');
+        mgr.initialize();
+        mgr.startSession({ sessionId: id });
+
+        expect(mgr.setItem('/items/iron_ore', 0, id)).toBe(true);
+        expect(mgr.setQuantityProvider(() => 33, id)).toBe(true);
+        _capturedModalCallback(setupModal());
+        expect(document.querySelector('input').value).toBe('33');
+
+        mgr.cleanup();
+        marketplaceSession.end(id);
+    });
+});
+
+// ─── Disarm matrix — every rejected modal invalidates the target ─────────────
+
+describe('Disarm matrix — every rejection prevents a later fill', () => {
+    beforeEach(freshSession);
+    afterEach(() => {
+        document.body.innerHTML = '';
+    });
+
+    function setupModal(stateOverrides = {}, { numInputs = 1, withFiber = true, states = null } = {}) {
+        const inputs = Array.from({ length: numInputs }, () => '<input type="number" value="" />').join('');
+        document.body.innerHTML = `
+            <div class="MarketplacePanel_marketplacePanel__test"></div>
+            <div class="Modal_modalContainer__test">
+                <div class="MarketplacePanel_quantityInputs__test">${inputs}</div>
+            </div>
+        `;
+        const panel = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
+        if (withFiber) {
+            attachMarketplacePanelFiber(panel, states || [makeMarketplaceRuntimeState(stateOverrides)]);
+        }
+        return document.querySelector('[class*="Modal_modalContainer"]');
+    }
+
+    function createArmedManager(id, enhancementLevel = 0) {
+        const mgr = createAutofillManager('DisarmMatrix');
+        mgr.initialize();
+        mgr.startSession({ sessionId: id });
+        mgr.arm({
+            sessionId: id,
+            itemHrid: '/items/iron_ore',
+            enhancementLevel,
+            quantityProvider: () => 99,
+        });
+        return mgr;
+    }
+
+    function expectLaterModalNotFilled(mgr, firstModal, laterState = {}) {
+        _capturedModalCallback(firstModal);
+        _capturedModalCallback(setupModal(laterState));
+        expect(document.querySelector('input').value).toBe('');
+        mgr.cleanup();
+    }
+
+    test('wrong item disarms', () => {
+        const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
+        const mgr = createArmedManager(id);
+        expectLaterModalNotFilled(mgr, setupModal({ itemHrid: '/items/coal' }));
+        marketplaceSession.end(id);
+    });
+
+    test('wrong enhancement disarms', () => {
+        const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
+        const mgr = createArmedManager(id, 3);
+        expectLaterModalNotFilled(mgr, setupModal({ enhancementLevel: 1 }), { enhancementLevel: 3 });
+        marketplaceSession.end(id);
+    });
+
+    test('Sell mode disarms', () => {
+        const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
+        const mgr = createArmedManager(id);
+        expectLaterModalNotFilled(mgr, setupModal({ isSell: true }));
+        marketplaceSession.end(id);
+    });
+
+    test('missing runtime component disarms', () => {
+        const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
+        const mgr = createArmedManager(id);
+        expectLaterModalNotFilled(mgr, setupModal({}, { withFiber: false }));
+        marketplaceSession.end(id);
+    });
+
+    test('ambiguous runtime component disarms', () => {
+        const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
+        const mgr = createArmedManager(id);
+        expectLaterModalNotFilled(
+            mgr,
+            setupModal(
+                {},
+                {
+                    states: [makeMarketplaceRuntimeState(), makeMarketplaceRuntimeState({ itemHrid: '/items/coal' })],
+                }
+            )
+        );
+        marketplaceSession.end(id);
+    });
+
+    test('missing quantity input disarms', () => {
+        const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
+        const mgr = createArmedManager(id);
+        expectLaterModalNotFilled(mgr, setupModal({}, { numInputs: 0 }));
+        marketplaceSession.end(id);
+    });
+
+    test('multiple quantity inputs disarm', () => {
+        const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
+        const mgr = createArmedManager(id);
+        expectLaterModalNotFilled(mgr, setupModal({}, { numInputs: 2 }));
+        marketplaceSession.end(id);
+    });
+
+    test('unsupported market tab disarms', () => {
+        const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
+        const mgr = createArmedManager(id);
+        expectLaterModalNotFilled(mgr, setupModal({ marketTabKey: 'MyListings' }));
+        marketplaceSession.end(id);
+    });
+
+    test('unsupported market view disarms', () => {
+        const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
+        const mgr = createArmedManager(id);
+        expectLaterModalNotFilled(mgr, setupModal({ marketListingsView: 'History' }));
+        marketplaceSession.end(id);
+    });
+
+    test('malformed runtime enhancement disarms', () => {
+        const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
+        const mgr = createArmedManager(id);
+        expectLaterModalNotFilled(mgr, setupModal({ enhancementLevel: '0' }));
+        marketplaceSession.end(id);
+    });
+});
+
+// ─── watchNativeTabExit ───────────────────────────────────────────────────────
+
+describe('watchNativeTabExit', () => {
+    afterEach(() => {
+        document.body.innerHTML = '';
+    });
+
+    function createTablist() {
+        document.body.innerHTML = `
+            <div class="MuiTabs-flexContainer" role="tablist">
+                <button role="tab">Market Listings</button>
+                <button role="tab" data-mwi-custom-tab="true">Iron Ore</button>
+                <button role="tab" data-mwi-shrine-tab="true">Shrine</button>
+            </div>
+        `;
+        return document.querySelector('[role="tablist"]');
+    }
+
+    test('fires onExit when a native tab is clicked', () => {
+        const tablist = createTablist();
+        const onExit = vi.fn();
+        watchNativeTabExit(tablist, onExit);
+
+        tablist.querySelector('[role="tab"]:not([data-mwi-custom-tab]):not([data-mwi-shrine-tab])').click();
+        expect(onExit).toHaveBeenCalledOnce();
+    });
+
+    test('fires onExit when a child element inside a native tab is clicked', () => {
+        document.body.innerHTML = `
+            <div class="MuiTabs-flexContainer" role="tablist">
+                <button role="tab"><span class="label">Market Listings</span></button>
+                <button role="tab" data-mwi-custom-tab="true">Iron Ore</button>
+            </div>
+        `;
+        const tablist = document.querySelector('[role="tablist"]');
+        const onExit = vi.fn();
+        watchNativeTabExit(tablist, onExit);
+
+        // Click the nested span — closest('[role="tab"]') must resolve to the button
+        tablist.querySelector('span.label').click();
+        expect(onExit).toHaveBeenCalledOnce();
+    });
+
+    test('does not fire onExit when a custom tab is clicked', () => {
+        const tablist = createTablist();
+        const onExit = vi.fn();
+        watchNativeTabExit(tablist, onExit);
+
+        tablist.querySelector('[data-mwi-custom-tab]').click();
+        expect(onExit).not.toHaveBeenCalled();
+    });
+
+    test('does not fire onExit when a shrine tab is clicked', () => {
+        const tablist = createTablist();
+        const onExit = vi.fn();
+        watchNativeTabExit(tablist, onExit);
+
+        tablist.querySelector('[data-mwi-shrine-tab]').click();
+        expect(onExit).not.toHaveBeenCalled();
+    });
+
+    test('does not fire on initial aria-selected state — only on actual click', () => {
+        const tablist = createTablist();
+        const nativeTab = tablist.querySelector('[role="tab"]:not([data-mwi-custom-tab]):not([data-mwi-shrine-tab])');
+        nativeTab.setAttribute('aria-selected', 'true');
+
+        const onExit = vi.fn();
+        watchNativeTabExit(tablist, onExit);
+
+        expect(onExit).not.toHaveBeenCalled(); // no click occurred
+    });
+
+    test('cleanup removes the exact listener — no fire after unregister', () => {
+        const tablist = createTablist();
+        const onExit = vi.fn();
+        const cleanup = watchNativeTabExit(tablist, onExit);
+
+        cleanup();
+
+        tablist.querySelector('[role="tab"]:not([data-mwi-custom-tab]):not([data-mwi-shrine-tab])').click();
+        expect(onExit).not.toHaveBeenCalled();
+    });
+
+    test('resolved tab must belong to the captured tabContainer — click outside does not fire', () => {
+        document.body.innerHTML = `
+            <div id="tablist1" class="MuiTabs-flexContainer" role="tablist">
+                <button role="tab">Market Listings</button>
+            </div>
+            <div id="tablist2" class="MuiTabs-flexContainer" role="tablist">
+                <button role="tab">Other tab</button>
+            </div>
+        `;
+        const tablist1 = document.getElementById('tablist1');
+        const onExit = vi.fn();
+        watchNativeTabExit(tablist1, onExit);
+
+        // Click a tab in the second tablist — should not fire
+        document.querySelector('#tablist2 [role="tab"]').click();
+        expect(onExit).not.toHaveBeenCalled();
     });
 });
