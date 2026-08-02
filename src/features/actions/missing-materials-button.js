@@ -14,32 +14,42 @@ import {
 } from '../../utils/material-calculator.js';
 import { formatWithSeparator } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
-import { createAutofillManager } from '../../utils/marketplace-autofill.js';
+import { createAutofillManager, getReactFiberFromElement } from '../../utils/marketplace-autofill.js';
 import {
     createMaterialTab,
     removeMaterialTabsForOwner,
     getVisibleMarketplaceTabContainer,
     setupMarketplaceCleanupObserver,
     navigateToMarketplace,
+    watchNativeTabExit,
+    isElementActuallyVisible,
+    clickMarketplaceNavigationButton,
+    updateTabBadge,
+    MARKETPLACE_REMOUNT_GRACE_MS,
+    isMarketplaceMarketListingsSelected,
 } from '../../utils/marketplace-tabs.js';
 import { getProtectionItemFromUI, getProtectFromLevelFromUI } from './enhancement-display.js';
 import { calculateEnhancementPath } from '../enhancement/tooltip-enhancement.js';
 import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import { getActionHridFromName } from '../../utils/game-lookups.js';
-import { setReactInputValue } from '../../utils/react-input.js';
+import { getOrCreateProductionToolsBlock, normalizeProductionToolsBlock } from './production-tools-layout.js';
 
 /**
  * Module-level state
  */
 let cleanupObserver = null;
+let nativeTabExitCleanup = null;
 const currentMaterialsTabs = [];
 let domObserverUnregister = null;
 let enhancementDomObserverUnregister = null;
 let processedPanels = new WeakSet();
 let processedEnhancingPanels = new WeakSet();
+const enhancingPanelWatchers = new Map();
 let inventoryUpdateHandler = null;
 let activeWorkflowModel = null;
+let actionsSessionId = null;
+let enhancingReturnGeneration = 0;
 const timerRegistry = createTimerRegistry();
 const autofillManager = createAutofillManager('MissingMats-Actions');
 
@@ -63,7 +73,6 @@ const PRODUCTION_TYPES = [
  * Initialize missing materials button feature
  */
 export function initialize() {
-    setupActionsCleanupObserver();
     autofillManager.initialize();
 
     // Watch for production action panels appearing
@@ -89,7 +98,13 @@ export function initialize() {
  * Cleanup function
  */
 export function cleanup() {
-    teardownActionsMarketplaceSession();
+    enhancingReturnGeneration += 1;
+    const activeSessionId = actionsSessionId ?? activeWorkflowModel?.sessionId ?? null;
+    if (activeSessionId !== null && marketplaceSession.isActive(activeSessionId)) {
+        marketplaceSession.end(activeSessionId);
+    } else {
+        teardownActionsMarketplaceSession();
+    }
 
     if (domObserverUnregister) {
         domObserverUnregister();
@@ -111,6 +126,11 @@ export function cleanup() {
 
     // Remove any existing custom tabs
     handleMarketplaceCleanup();
+
+    for (const unwatchPanel of enhancingPanelWatchers.values()) {
+        unwatchPanel();
+    }
+    enhancingPanelWatchers.clear();
 
     // Clear processed panels
     processedPanels = new WeakSet();
@@ -165,11 +185,10 @@ function processActionPanels() {
 function updateButtonForPanel(panel, value) {
     const numActions = parseInt(value) || 0;
 
-    // Remove existing button
+    // Recreate only the button. The shared production tools block remains in
+    // place so Cost Summary and Budget Calculator do not jump during input updates.
     const existingButton = panel.querySelector('#mwi-missing-mats-button');
-    if (existingButton) {
-        existingButton.remove();
-    }
+    if (existingButton) existingButton.remove();
 
     // Check setting early
     if (!config.getSetting('actions_missingMaterialsButton')) {
@@ -209,29 +228,37 @@ function updateButtonForPanel(panel, value) {
         const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
         const accountForQueue = !ignoreQueue; // Invert: ignoreQueue=false means accountForQueue=true
         missingMaterials = calculateMaterialRequirements(actionHrid, numActions, accountForQueue);
-        if (missingMaterials.length === 0) {
-            disabled = true;
-        }
+        disabled = !missingMaterials.some((material) => material.isTradeable !== false && Number(material.missing) > 0);
     }
 
-    // Create and insert button with actionHrid and numActions for live updates
+    // Create and insert button with actionHrid and numActions for live updates.
     const button = createMissingMaterialsButton(missingMaterials, actionHrid, numActions, disabled);
+    button.style.boxSizing = 'border-box';
+    button.style.width = '100%';
+    button.style.maxWidth = '100%';
+    button.style.minWidth = '0';
+    button.style.margin = '0';
+    button.style.order = '1';
 
-    // Find insertion point: walk up from itemRequirements to find the direct child of panel.
-    const itemRequirements = panel.querySelector('.SkillActionDetail_itemRequirements__3SPnA');
-    if (itemRequirements) {
-        const anchor = findPanelLevelAncestor(itemRequirements, panel);
-        if (anchor) {
-            anchor.after(button);
-        } else {
-            panel.appendChild(button);
-        }
+    // Production uses a native two-column info grid. Keep the Requires label/value pair
+    // untouched, then inject ONE Toolasha row spanning both columns. The Missing Mats
+    // button, Cost Summary and Budget Calculator all live in this row, so they share the
+    // same width and can never overlap the following native rows.
+    const toolsBlock = getOrCreateProductionToolsBlock(panel);
+    if (toolsBlock) {
+        toolsBlock.appendChild(button);
+        normalizeProductionToolsBlock(panel);
     } else {
-        panel.appendChild(button);
+        const costSummary = panel.querySelector('#mwi-cost-summary');
+        const budgetCalculator = panel.querySelector('#mwi-budget-calculator');
+        if (costSummary?.parentElement) {
+            costSummary.parentElement.insertBefore(button, costSummary);
+        } else if (budgetCalculator?.parentElement) {
+            budgetCalculator.parentElement.insertBefore(button, budgetCalculator);
+        } else {
+            panel.prepend(button);
+        }
     }
-
-    // Don't manipulate modal styling - let the game handle it
-    // The modal will scroll naturally if content overflows
 }
 
 /**
@@ -273,18 +300,35 @@ function processEnhancingPanel(panel) {
         return;
     }
 
+    // Drop observers retained for detached React panels before tracking a remount.
+    for (const [trackedPanel, unwatchPanel] of enhancingPanelWatchers) {
+        if (trackedPanel.isConnected) continue;
+        unwatchPanel();
+        enhancingPanelWatchers.delete(trackedPanel);
+    }
+
     processedEnhancingPanels.add(panel);
 
-    // Watch for changes (item swap, level change, protection change) with debounce
-    createMutationWatcher(
+    // Watch for changes (item swap, level change, protection change) with debounce.
+    // Track the exact native observer so feature disable/re-enable cannot leave a stale
+    // watcher attached to an already-processed Enhancing panel.
+    const unwatchPanel = createMutationWatcher(
         panel,
         (mutations) => {
-            // Ignore mutations caused by our own button insertion/removal
-            const isOwnButton = mutations.every((m) => {
+            // Ignore every mutation caused by the injected button itself. In particular,
+            // its hover style changes must not schedule a replacement between mouseenter
+            // and click, which made the Enhancing button appear enabled but act as a no-op.
+            const isOwnButtonMutation = mutations.every((m) => {
+                const targetElement = m.target?.nodeType === Node.ELEMENT_NODE ? m.target : m.target?.parentElement;
+                if (targetElement?.closest?.('#mwi-missing-mats-button')) return true;
+
                 const nodes = [...m.addedNodes, ...m.removedNodes];
-                return nodes.length > 0 && nodes.every((n) => n.id === 'mwi-missing-mats-button');
+                return (
+                    nodes.length > 0 &&
+                    nodes.every((n) => n?.nodeType !== Node.ELEMENT_NODE || n.id === 'mwi-missing-mats-button')
+                );
             });
-            if (isOwnButton) return;
+            if (isOwnButtonMutation) return;
 
             if (enhancementDebounceTimeout) {
                 clearTimeout(enhancementDebounceTimeout);
@@ -292,13 +336,157 @@ function processEnhancingPanel(panel) {
             enhancementDebounceTimeout = setTimeout(() => {
                 enhancementDebounceTimeout = null;
                 updateEnhancementButton(panel);
-            }, 500);
+            }, 60);
         },
         { childList: true, subtree: true, attributes: true }
     );
+    enhancingPanelWatchers.set(panel, unwatchPanel);
 
-    // Initial button creation (delay to let panel-observer set mwiItemHrid first)
-    setTimeout(() => updateEnhancementButton(panel), 600);
+    // Create as soon as the panel observer provides the item HRID. Polling briefly
+    // avoids the visible one-second pop-in while remaining safe during item switches.
+    const tryInitialButton = (attempt = 0) => {
+        if (!panel.isConnected) {
+            enhancingPanelWatchers.get(panel)?.();
+            enhancingPanelWatchers.delete(panel);
+            return;
+        }
+        updateEnhancementButton(panel);
+        if (!panel.querySelector('#mwi-missing-mats-button') && attempt < 20) {
+            const retryTimer = setTimeout(() => tryInitialButton(attempt + 1), 50);
+            timerRegistry.registerTimeout(retryTimer);
+        }
+    };
+    const initialTimer = setTimeout(() => tryInitialButton(0), 0);
+    timerRegistry.registerTimeout(initialTimer);
+}
+
+/**
+ * Resolve the live SkillActionDetail class that owns the visible Enhancing component.
+ * @param {HTMLElement} panel
+ * @returns {Object|null}
+ */
+function isEnhancingActionComponent(node) {
+    if (
+        !node ||
+        typeof node.setState !== 'function' ||
+        typeof node.getPrimaryItem !== 'function' ||
+        typeof node.getSecondaryItem !== 'function' ||
+        typeof node.selectEnhancingItemHandler !== 'function' ||
+        !node.state ||
+        !Object.prototype.hasOwnProperty.call(node.state, 'primaryItemHash') ||
+        !Object.prototype.hasOwnProperty.call(node.state, 'enhancingMaxLevel')
+    ) {
+        return false;
+    }
+
+    const actionHrid = node.props?.actionDetail?.hrid || node.state?.actionDetail?.hrid;
+    return !actionHrid || actionHrid === '/actions/enhancing/enhance';
+}
+
+function getEnhancingActionComponent(panel) {
+    // Different renders attach the useful fiber key to different descendants.
+    // Probe concrete controls first, then use a bounded unique root-tree fallback.
+    const anchors = panel
+        ? [panel, ...panel.querySelectorAll('input, select, button, [class*="SkillActionDetail_item"]')]
+        : [];
+    const visitedFibers = new Set();
+    const anchoredMatches = new Set();
+
+    for (const anchor of anchors) {
+        let fiber = getReactFiberFromElement(anchor);
+        let depth = 0;
+        while (fiber && depth < 160) {
+            if (visitedFibers.has(fiber)) break;
+            visitedFibers.add(fiber);
+            if (isEnhancingActionComponent(fiber.stateNode)) anchoredMatches.add(fiber.stateNode);
+            fiber = fiber.return;
+            depth += 1;
+        }
+    }
+
+    if (anchoredMatches.size === 1) return anchoredMatches.values().next().value;
+    if (anchoredMatches.size > 1) return null;
+
+    const rootEl = document.getElementById('root');
+    const rootFiber = rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
+    if (!rootFiber) return null;
+
+    const stack = [rootFiber];
+    const matches = new Set();
+    let visited = 0;
+    while (stack.length > 0 && visited < 25000) {
+        const fiber = stack.pop();
+        if (!fiber) continue;
+        visited += 1;
+        if (isEnhancingActionComponent(fiber.stateNode)) matches.add(fiber.stateNode);
+        if (fiber.sibling) stack.push(fiber.sibling);
+        if (fiber.child) stack.push(fiber.child);
+    }
+
+    return matches.size === 1 ? matches.values().next().value : null;
+}
+
+function buildInventoryItemHash(itemHrid, enhancementLevel = 0) {
+    const characterId = dataManager.getCurrentCharacterId();
+    if (!characterId || !itemHrid) return null;
+    return `${characterId}::/item_locations/inventory::${itemHrid}::${Number(enhancementLevel) || 0}`;
+}
+
+function getEnhancingLoadoutValueFromUI(panel) {
+    const root = panel?.closest('[class*="SkillActionDetail_skillActionDetail"]') || panel;
+    if (!root) return 0;
+    const selects = Array.from(root.querySelectorAll('select'));
+    const loadoutSelect = selects.find((select) => {
+        const contextText = select.parentElement?.parentElement?.textContent || select.parentElement?.textContent || '';
+        return /Loadout/i.test(contextText) && select.id !== 'enhancementDropdown';
+    });
+    return loadoutSelect?.value ?? null;
+}
+
+/**
+ * Capture the exact Enhancing selection and controls for Return. If the React
+ * owner cannot be resolved at click time, derive stable item hashes from the
+ * already-known item/level context instead of disabling Return entirely.
+ * @param {HTMLElement} panel
+ * @param {Object} fallback
+ * @returns {Object|null}
+ */
+function captureEnhancingReturnState(panel, fallback = {}) {
+    const component = getEnhancingActionComponent(panel);
+    const state = component?.state || {};
+    const primaryItemHash = state.primaryItemHash || buildInventoryItemHash(fallback.itemHrid, fallback.startLevel);
+    if (!primaryItemHash) return null;
+
+    const hasFallbackProtection = Object.prototype.hasOwnProperty.call(fallback, 'protectionItemHrid');
+    const secondaryItemHash = hasFallbackProtection
+        ? fallback.protectionItemHrid
+            ? buildInventoryItemHash(fallback.protectionItemHrid, 0)
+            : null
+        : (state.secondaryItemHash ?? null);
+    const hasFallbackRepeat = Object.prototype.hasOwnProperty.call(fallback, 'repeatCount');
+    const fallbackHasMaxCount = hasFallbackRepeat && fallback.repeatCount !== null;
+    const liveLoadoutValue = getEnhancingLoadoutValueFromUI(panel);
+
+    return Object.freeze({
+        primaryItemHash,
+        secondaryItemHash,
+        // The focused Target/Protection/Repeat inputs can contain a newer value than
+        // React state until blur. Prefer the values read directly from the live UI.
+        enhancingMaxLevel: fallback.targetLevel ?? state.enhancingMaxLevel ?? 0,
+        protectionMinLevel: fallback.protectFromLevel ?? state.protectionMinLevel ?? 0,
+        hasMaxCount: hasFallbackRepeat ? fallbackHasMaxCount : (state.hasMaxCount ?? false),
+        maxActionCount: hasFallbackRepeat
+            ? fallbackHasMaxCount
+                ? Number(fallback.repeatCount) || 1
+                : 0
+            : (state.maxActionCount ?? 0),
+        maxActionCountInput: hasFallbackRepeat
+            ? fallbackHasMaxCount
+                ? String(Number(fallback.repeatCount) || 1)
+                : '∞'
+            : (state.maxActionCountInput ?? '∞'),
+        selectedCharacterLoadoutId: liveLoadoutValue ?? state.selectedCharacterLoadoutId ?? 0,
+    });
 }
 
 /**
@@ -307,34 +495,32 @@ function processEnhancingPanel(panel) {
  * @returns {number} Current enhancement level (0-19)
  */
 function getCurrentEnhancementLevel(panel) {
-    // Try action queue first
-    const currentActions = dataManager.getCurrentActions();
-    const enhancingAction = currentActions.find((a) => a.actionHrid === '/actions/enhancing/enhance');
-    if (enhancingAction?.primaryItemHash) {
-        const parts = enhancingAction.primaryItemHash.split('::');
-        const lastPart = parts[parts.length - 1];
-        if (lastPart && !lastPart.startsWith('/')) {
-            const parsed = parseInt(lastPart, 10);
-            if (!isNaN(parsed)) return parsed;
-        }
+    const parseItemHashLevel = (itemHash) => {
+        if (!itemHash) return null;
+        const parts = itemHash.split('::');
+        const parsed = Number.parseInt(parts.at(-1), 10);
+        return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+    };
+
+    // Prefer the exact visible Enhancing component over the global action queue.
+    // The queue can contain a different item from the one currently selected in the panel.
+    const componentLevel = parseItemHashLevel(getEnhancingActionComponent(panel)?.state?.primaryItemHash);
+    if (componentLevel !== null) return componentLevel;
+
+    // Fallback: read the selected item label from the current panel.
+    const selectedNames = panel.querySelectorAll('[class*="SkillActionDetail_item"] [class*="Item_name"]');
+    for (const selectedName of selectedNames) {
+        const levelMatch = selectedName.textContent.trim().match(/\+(\d+)$/);
+        if (levelMatch) return Number.parseInt(levelMatch[1], 10);
     }
 
-    // Fallback: read from DOM text (e.g., "Dairyhand's Top +5")
-    const inputItems = panel.querySelectorAll('.SkillActionDetail_item__2vEAz .Item_name__2C42x');
-    if (inputItems.length > 0) {
-        const inputName = inputItems[0].textContent.trim();
-        const levelMatch = inputName.match(/\+(\d+)$/);
-        if (levelMatch) return parseInt(levelMatch[1], 10);
-    }
-
-    return 0;
+    // Last resort: use the active Enhancing queue item when the panel has not finished mounting.
+    const enhancingAction = dataManager
+        .getCurrentActions()
+        .find((action) => action.actionHrid === '/actions/enhancing/enhance');
+    return parseItemHashLevel(enhancingAction?.primaryItemHash) ?? 0;
 }
 
-/**
- * Get target enhancement level from UI input
- * @param {HTMLElement} panel - Enhancing panel element
- * @returns {number|null} Target level (1-20) or null if not found
- */
 /**
  * Get repeat count from enhancement panel UI
  * @param {HTMLElement} panel - Enhancing panel element
@@ -432,7 +618,9 @@ function updateEnhancementButton(panel) {
         repeatCount
     );
 
-    const disabled = missingMaterials.length === 0;
+    const disabled = !missingMaterials.some(
+        (material) => material.isTradeable !== false && Number(material.missing) > 0
+    );
 
     // Create button
     const strategyInfo = autoProtection
@@ -447,25 +635,25 @@ function updateEnhancementButton(panel) {
         resolvedProtectFrom,
         repeatCount,
         disabled,
-        strategyInfo
+        strategyInfo,
+        panel
     );
 
-    // Find insertion point: walk up from itemRequirements to find the direct child of panel.
-    const itemRequirements = panel.querySelector('.SkillActionDetail_itemRequirements__3SPnA');
-    if (itemRequirements) {
-        const anchor = findPanelLevelAncestor(itemRequirements, panel);
-        if (anchor) {
-            anchor.after(button);
-        } else {
-            panel.appendChild(button);
-        }
+    // The Enhancing component is a two-column flex layout. A panel-level sibling
+    // becomes a third off-screen column. Keep the button inside the visible info column.
+    button.style.boxSizing = 'border-box';
+    button.style.width = '100%';
+    button.style.maxWidth = '360px';
+    button.style.alignSelf = 'flex-start';
+
+    const infoColumn = panel.querySelector('[class*="SkillActionDetail_info"]');
+    const costsSection = infoColumn?.querySelector('[class*="SkillActionDetail_costs"]');
+    if (costsSection?.parentElement) {
+        costsSection.after(button);
+    } else if (infoColumn) {
+        infoColumn.prepend(button);
     } else {
-        const enhancementStats = panel.querySelector('#mwi-enhancement-stats');
-        if (enhancementStats) {
-            enhancementStats.parentNode.insertBefore(button, enhancementStats);
-        } else {
-            panel.appendChild(button);
-        }
+        panel.prepend(button);
     }
 }
 
@@ -489,28 +677,30 @@ function createEnhancementMissingMaterialsButton(
     protectFromLevel,
     repeatCount,
     disabled,
-    strategyInfo
+    strategyInfo,
+    panel
 ) {
     const button = document.createElement('button');
     button.id = 'mwi-missing-mats-button';
+    button.type = 'button';
     button.textContent = 'Missing Mats Marketplace';
     button.disabled = disabled;
     button.style.cssText = `
-        width: 100%;
-        padding: 10px 16px;
-        margin: 8px 0 16px 0;
-        background: linear-gradient(180deg, rgba(91, 141, 239, 0.2) 0%, rgba(91, 141, 239, 0.1) 100%);
-        color: #ffffff;
-        border: 1px solid rgba(91, 141, 239, 0.4);
-        border-radius: 8px;
-        cursor: ${disabled ? 'default' : 'pointer'};
-        font-size: 14px;
-        font-weight: 600;
-        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-        transition: all 0.2s ease;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-        opacity: ${disabled ? '0.45' : '1'};
-    `;
+    width: 100%;
+    padding: 10px 16px;
+    margin: 8px 0 16px 0;
+    background: linear-gradient(180deg, rgba(91, 141, 239, 0.2) 0%, rgba(91, 141, 239, 0.1) 100%);
+    color: #ffffff;
+    border: 1px solid rgba(91, 141, 239, 0.4);
+    border-radius: 8px;
+    cursor: ${disabled ? 'default' : 'pointer'};
+    font-size: 14px;
+    font-weight: 600;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    opacity: ${disabled ? '0.45' : '1'};
+`;
 
     if (!disabled) {
         button.addEventListener('mouseenter', () => {
@@ -527,16 +717,83 @@ function createEnhancementMissingMaterialsButton(
             button.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.2)';
         });
 
-        button.addEventListener('click', async () => {
-            await handleEnhancementMissingMaterialsClick(
+        let activationStarted = false;
+        const activate = async () => {
+            if (activationStarted) return;
+            activationStarted = true;
+
+            // Read every editable control directly before navigation. A focused input
+            // may not have committed its value to React state yet, and the blur caused by
+            // clicking the button can remount the button before the normal click fires.
+            const liveTargetLevel = getTargetLevelFromUI(panel) ?? targetLevel;
+            const liveProtectionItemHrid = getProtectionItemFromUI(panel);
+            const liveProtectFromLevel = getProtectFromLevelFromUI(panel);
+            const liveRepeatCount = getRepeatCountFromUI(panel);
+
+            let liveResolvedProtectionItem = liveProtectionItemHrid;
+            let liveResolvedProtectFrom = liveProtectFromLevel;
+            let liveStrategyInfo = null;
+            if (liveProtectFromLevel === 0) {
+                const enhancingConfig = getEnhancingParams();
+                const pathResult = calculateEnhancementPath(itemHrid, liveTargetLevel, enhancingConfig);
+                if (pathResult?.optimalStrategy) {
+                    liveResolvedProtectFrom = pathResult.optimalStrategy.protectFrom;
+                    liveResolvedProtectionItem =
+                        pathResult.optimalStrategy.protectionItemHrid || liveProtectionItemHrid;
+                    liveStrategyInfo = {
+                        protectFrom: liveResolvedProtectFrom,
+                        protectionItemHrid: liveResolvedProtectionItem,
+                    };
+                }
+            }
+
+            const enhancingReturnState = captureEnhancingReturnState(panel, {
                 itemHrid,
                 startLevel,
-                targetLevel,
-                protectionItemHrid,
-                protectFromLevel,
-                repeatCount,
-                strategyInfo
-            );
+                targetLevel: liveTargetLevel,
+                protectionItemHrid: liveResolvedProtectionItem,
+                protectFromLevel: liveResolvedProtectFrom,
+                repeatCount: liveRepeatCount,
+            });
+
+            try {
+                await handleEnhancementMissingMaterialsClick(
+                    itemHrid,
+                    startLevel,
+                    liveTargetLevel,
+                    liveResolvedProtectionItem,
+                    liveResolvedProtectFrom,
+                    liveRepeatCount,
+                    liveStrategyInfo || strategyInfo,
+                    enhancingReturnState
+                );
+            } catch (error) {
+                console.error('[MissingMats] Enhancing workflow failed:', error);
+                const sessionId = actionsSessionId ?? activeWorkflowModel?.sessionId ?? null;
+                if (sessionId !== null && marketplaceSession.isActive(sessionId)) marketplaceSession.end(sessionId);
+            } finally {
+                // A successful workflow keeps the ACTIONS session active and the source
+                // panel is normally unmounted. A fail-closed navigation/identity path ends
+                // the session; if React kept this button mounted, allow a clean retry.
+                const active = marketplaceSession.getActive();
+                if (active?.owner !== MARKETPLACE_OWNER.ACTIONS) {
+                    activationStarted = false;
+                }
+            }
+        };
+
+        // Start on pointerdown, before the focused Target Level input blurs and causes
+        // React to replace this button. Keyboard activation continues through click.
+        button.addEventListener('pointerdown', (event) => {
+            if (event.button !== 0) return;
+            event.preventDefault();
+            event.stopPropagation();
+            void activate();
+        });
+        button.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            void activate();
         });
     }
 
@@ -559,22 +816,24 @@ async function handleEnhancementMissingMaterialsClick(
     protectionItemHrid,
     protectFromLevel,
     repeatCount,
-    strategyInfo
+    strategyInfo,
+    enhancingReturnState
 ) {
+    // Starting any new ACTIONS workflow invalidates an older asynchronous Enhancing Return.
+    enhancingReturnGeneration += 1;
+
     // Claim session ownership BEFORE first await
     const capturedSessionId = marketplaceSession.start({
         owner: MARKETPLACE_OWNER.ACTIONS,
         onEnd: teardownActionsMarketplaceSession,
     });
-
-    // Re-establish cleanup observer for this session (may have been nulled by previous teardown)
-    setupActionsCleanupObserver();
+    actionsSessionId = capturedSessionId;
 
     // Navigate to marketplace
-    const success = await openMarketplacePage();
+    const success = await openMarketplacePage(capturedSessionId);
     if (!success) {
         console.error('[MissingMats] Failed to navigate to marketplace');
-        teardownActionsMarketplaceSession();
+        marketplaceSession.end(capturedSessionId);
         return;
     }
 
@@ -620,36 +879,39 @@ async function handleEnhancementMissingMaterialsClick(
                 protectFromLevel,
                 repeatCount,
                 strategyInfo,
+                restoreState: enhancingReturnState,
             },
         },
     };
 
-    // Create custom tabs
-    const tabsContainer = document.querySelector('.MuiTabs-flexContainer[role="tablist"]');
-    if (tabsContainer) {
-        createMissingMaterialTabs(freshMaterials, strategyInfo, capturedSessionId);
+    // Create custom tabs in the unique visible Marketplace tablist.
+    if (!createMissingMaterialTabs(freshMaterials, strategyInfo, capturedSessionId)) {
+        marketplaceSession.end(capturedSessionId);
+        return;
     }
+    setupActionsCleanupObserver();
 
     // Activate the first tradeable missing material automatically (same as manual tab click).
     const firstMaterial = freshMaterials.find((m) => m.isTradeable !== false && m.missing > 0);
-    if (firstMaterial) {
-        const firstTab = currentMaterialsTabs.find(
-            (t) => t.getAttribute && t.getAttribute('data-item-hrid') === firstMaterial.itemHrid
-        );
-        const tabRef = { tab: firstTab ?? null };
-        const armed = autofillManager.arm({
-            sessionId: capturedSessionId,
-            itemHrid: firstMaterial.itemHrid,
-            enhancementLevel: 0,
-            modalMode: 'buy',
-            quantityProvider: () => parseInt(tabRef.tab?.getAttribute('data-missing-quantity') || '0', 10),
-        });
-        if (armed) {
-            navigateToMarketplace(firstMaterial.itemHrid, 0);
-        } else {
-            teardownActionsMarketplaceSession();
-            return;
-        }
+    if (!firstMaterial) {
+        marketplaceSession.end(capturedSessionId);
+        return;
+    }
+
+    const armed = autofillManager.arm({
+        sessionId: capturedSessionId,
+        itemHrid: firstMaterial.itemHrid,
+        enhancementLevel: 0,
+        modalMode: 'buy',
+        quantityProvider: () => {
+            const model = activeWorkflowModel;
+            if (model?.sessionId !== capturedSessionId) return 0;
+            return model.materials.find((entry) => entry.itemHrid === firstMaterial.itemHrid)?.missing ?? 0;
+        },
+    });
+    if (!armed || !navigateToMarketplace(firstMaterial.itemHrid, 0)) {
+        marketplaceSession.end(capturedSessionId);
+        return;
     }
 
     // Setup inventory listener for live updates
@@ -667,25 +929,26 @@ async function handleEnhancementMissingMaterialsClick(
 function createMissingMaterialsButton(missingMaterials, actionHrid, numActions, disabled = false) {
     const button = document.createElement('button');
     button.id = 'mwi-missing-mats-button';
+    button.type = 'button';
     button.textContent = 'Missing Mats Marketplace';
     button.disabled = disabled;
     button.title = disabled && numActions <= 0 ? 'Enter a quantity to check missing materials' : '';
     button.style.cssText = `
-        width: 100%;
-        padding: 10px 16px;
-        margin: 8px 0 16px 0;
-        background: linear-gradient(180deg, rgba(91, 141, 239, 0.2) 0%, rgba(91, 141, 239, 0.1) 100%);
-        color: #ffffff;
-        border: 1px solid rgba(91, 141, 239, 0.4);
-        border-radius: 8px;
-        cursor: ${disabled ? 'default' : 'pointer'};
-        font-size: 14px;
-        font-weight: 600;
-        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-        transition: all 0.2s ease;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-        opacity: ${disabled ? '0.45' : '1'};
-    `;
+    width: 100%;
+    padding: 10px 16px;
+    margin: 8px 0 16px 0;
+    background: linear-gradient(180deg, rgba(91, 141, 239, 0.2) 0%, rgba(91, 141, 239, 0.1) 100%);
+    color: #ffffff;
+    border: 1px solid rgba(91, 141, 239, 0.4);
+    border-radius: 8px;
+    cursor: ${disabled ? 'default' : 'pointer'};
+    font-size: 14px;
+    font-weight: 600;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    opacity: ${disabled ? '0.45' : '1'};
+`;
 
     if (!disabled) {
         // Hover effect
@@ -705,7 +968,13 @@ function createMissingMaterialsButton(missingMaterials, actionHrid, numActions, 
 
         // Click handler
         button.addEventListener('click', async () => {
-            await handleMissingMaterialsClick(actionHrid, numActions);
+            try {
+                await handleMissingMaterialsClick(actionHrid, numActions);
+            } catch (error) {
+                console.error('[MissingMats] Production workflow failed:', error);
+                const sessionId = actionsSessionId ?? activeWorkflowModel?.sessionId ?? null;
+                if (sessionId !== null && marketplaceSession.isActive(sessionId)) marketplaceSession.end(sessionId);
+            }
         });
     }
 
@@ -719,20 +988,21 @@ function createMissingMaterialsButton(missingMaterials, actionHrid, numActions, 
  * @param {number} numActions - Number of actions for recalculating materials
  */
 async function handleMissingMaterialsClick(actionHrid, numActions) {
+    // Starting any new ACTIONS workflow invalidates an older asynchronous Enhancing Return.
+    enhancingReturnGeneration += 1;
+
     // Claim session ownership BEFORE first await
     const capturedSessionId = marketplaceSession.start({
         owner: MARKETPLACE_OWNER.ACTIONS,
         onEnd: teardownActionsMarketplaceSession,
     });
-
-    // Re-establish cleanup observer for this session (may have been nulled by previous teardown)
-    setupActionsCleanupObserver();
+    actionsSessionId = capturedSessionId;
 
     // Navigate to marketplace
-    const success = await openMarketplacePage();
+    const success = await openMarketplacePage(capturedSessionId);
     if (!success) {
         console.error('[MissingMats] Failed to navigate to marketplace');
-        teardownActionsMarketplaceSession();
+        marketplaceSession.end(capturedSessionId);
         return;
     }
 
@@ -769,32 +1039,34 @@ async function handleMissingMaterialsClick(actionHrid, numActions) {
         },
     };
 
-    // Create custom tabs
-    const tabsContainer = document.querySelector('.MuiTabs-flexContainer[role="tablist"]');
-    if (tabsContainer) {
-        createMissingMaterialTabs(freshMaterials, null, capturedSessionId);
+    // Create custom tabs in the unique visible Marketplace tablist.
+    if (!createMissingMaterialTabs(freshMaterials, null, capturedSessionId)) {
+        marketplaceSession.end(capturedSessionId);
+        return;
     }
+    setupActionsCleanupObserver();
 
     // Activate the first tradeable missing material automatically (same as manual tab click).
     const firstMaterial = freshMaterials.find((m) => m.isTradeable !== false && m.missing > 0);
-    if (firstMaterial) {
-        const firstTab = currentMaterialsTabs.find(
-            (t) => t.getAttribute && t.getAttribute('data-item-hrid') === firstMaterial.itemHrid
-        );
-        const tabRef = { tab: firstTab ?? null };
-        const armed = autofillManager.arm({
-            sessionId: capturedSessionId,
-            itemHrid: firstMaterial.itemHrid,
-            enhancementLevel: 0,
-            modalMode: 'buy',
-            quantityProvider: () => parseInt(tabRef.tab?.getAttribute('data-missing-quantity') || '0', 10),
-        });
-        if (armed) {
-            navigateToMarketplace(firstMaterial.itemHrid, 0);
-        } else {
-            teardownActionsMarketplaceSession();
-            return;
-        }
+    if (!firstMaterial) {
+        marketplaceSession.end(capturedSessionId);
+        return;
+    }
+
+    const armed = autofillManager.arm({
+        sessionId: capturedSessionId,
+        itemHrid: firstMaterial.itemHrid,
+        enhancementLevel: 0,
+        modalMode: 'buy',
+        quantityProvider: () => {
+            const model = activeWorkflowModel;
+            if (model?.sessionId !== capturedSessionId) return 0;
+            return model.materials.find((entry) => entry.itemHrid === firstMaterial.itemHrid)?.missing ?? 0;
+        },
+    });
+    if (!armed || !navigateToMarketplace(firstMaterial.itemHrid, 0)) {
+        marketplaceSession.end(capturedSessionId);
+        return;
     }
 
     // Setup inventory listener for live updates
@@ -805,45 +1077,26 @@ async function handleMissingMaterialsClick(actionHrid, numActions) {
  * Navigate to marketplace by simulating click on navbar
  * @returns {Promise<boolean>} True if successful
  */
-async function openMarketplacePage() {
-    // Find marketplace navbar button
-    const navButtons = document.querySelectorAll('.NavigationBar_nav__3uuUl');
-    const marketplaceButton = Array.from(navButtons).find((nav) => {
-        const svg = nav.querySelector('svg[aria-label="navigationBar.marketplace"]');
-        return svg !== null;
-    });
-
-    if (!marketplaceButton) {
+async function openMarketplacePage(sessionId) {
+    if (!marketplaceSession.isActive(sessionId) || !clickMarketplaceNavigationButton()) {
         console.error('[MissingMats] Marketplace navbar button not found');
         return false;
     }
-
-    // Simulate click
-    marketplaceButton.click();
-
-    // Wait for marketplace panel to appear
-    return await waitForMarketplace();
+    return await waitForMarketplace(sessionId);
 }
 
 /**
  * Wait for marketplace panel to appear
  * @returns {Promise<boolean>} True if marketplace appeared within timeout
  */
-async function waitForMarketplace() {
+async function waitForMarketplace(sessionId) {
     const maxAttempts = 50;
     const delayMs = 100;
 
     for (let i = 0; i < maxAttempts; i++) {
-        // Check for marketplace panel by looking for tabs container
-        const tabsContainer = document.querySelector('.MuiTabs-flexContainer[role="tablist"]');
-        if (tabsContainer) {
-            // Verify it's the marketplace tabs (has "Market Listings" tab)
-            const hasMarketListings = Array.from(tabsContainer.children).some((btn) =>
-                btn.textContent.includes('Market Listings')
-            );
-            if (hasMarketListings) {
-                return true;
-            }
+        if (!marketplaceSession.isActive(sessionId)) return false;
+        if (getVisibleMarketplaceTabContainer()) {
+            return true;
         }
 
         await new Promise((resolve) => {
@@ -857,20 +1110,6 @@ async function waitForMarketplace() {
 }
 
 /**
- * Walk up from element until we find a direct child of panel, or null if not found.
- * @param {HTMLElement} element
- * @param {HTMLElement} panel
- * @returns {HTMLElement|null}
- */
-function findPanelLevelAncestor(element, panel) {
-    let current = element;
-    while (current && current.parentElement !== panel) {
-        current = current.parentElement;
-    }
-    return current;
-}
-
-/**
  * Build the click handler for a material tab.
  * Defined outside the loop to satisfy the no-loop-func lint rule.
  * @param {{ tab: HTMLElement|null }} tabRef - Holder updated to the tab element after creation
@@ -879,16 +1118,22 @@ function findPanelLevelAncestor(element, panel) {
  */
 function makeMaterialClickHandler(tabRef, sessionId) {
     return (_e, mat) => {
+        if (!marketplaceSession.isActive(sessionId)) return;
+        const liveMissing = parseInt(tabRef.tab?.getAttribute('data-missing-quantity') || '0', 10);
+        if (!Number.isFinite(liveMissing) || liveMissing <= 0 || mat.isTradeable === false) return;
+
         const armed = autofillManager.arm({
             sessionId,
             itemHrid: mat.itemHrid,
             enhancementLevel: 0,
             modalMode: 'buy',
-            // Read the live missing quantity from the tab attribute kept current by the inventory listener.
-            quantityProvider: () => parseInt(tabRef.tab?.getAttribute('data-missing-quantity') || '0', 10),
+            quantityProvider: () => {
+                const model = activeWorkflowModel;
+                if (model?.sessionId !== sessionId) return 0;
+                return model.materials.find((entry) => entry.itemHrid === mat.itemHrid)?.missing ?? 0;
+            },
         });
-        if (!armed) return;
-        navigateToMarketplace(mat.itemHrid, 0);
+        if (!armed || !navigateToMarketplace(mat.itemHrid, 0)) marketplaceSession.end(sessionId);
     };
 }
 
@@ -901,14 +1146,14 @@ function createStrategyIndicator(strategyInfo) {
     const indicator = document.createElement('div');
     indicator.setAttribute('data-mwi-custom-tab', 'true');
     indicator.style.cssText = `
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        padding: 6px 12px;
-        font-size: 12px;
-        color: #aaa;
-        white-space: nowrap;
-    `;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    color: #aaa;
+    white-space: nowrap;
+`;
 
     if (strategyInfo.protectFrom === 0) {
         indicator.textContent = 'No protection needed';
@@ -945,13 +1190,14 @@ function getGameObject() {
     const rootFiber = rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
     if (!rootFiber) return null;
 
-    function find(fiber) {
-        if (!fiber) return null;
-        if (fiber.stateNode?.handleGoToAction) return fiber.stateNode;
-        return find(fiber.child) || find(fiber.sibling);
+    const stack = [rootFiber];
+    while (stack.length > 0) {
+        const fiber = stack.pop();
+        if (typeof fiber?.stateNode?.handleGoToAction === 'function') return fiber.stateNode;
+        if (fiber?.sibling) stack.push(fiber.sibling);
+        if (fiber?.child) stack.push(fiber.child);
     }
-
-    return find(rootFiber);
+    return null;
 }
 
 /**
@@ -978,6 +1224,9 @@ function createReturnTab(referenceTab, returnContext) {
     const tab = referenceTab.cloneNode(true);
     tab.setAttribute('data-mwi-custom-tab', 'true');
     tab.setAttribute('data-mwi-tab-owner', MARKETPLACE_OWNER.ACTIONS);
+    // A custom tab must not duplicate the native tab/panel identity.
+    tab.removeAttribute('id');
+    tab.removeAttribute('aria-controls');
     tab.classList.remove('Mui-selected');
     tab.setAttribute('aria-selected', 'false');
     tab.setAttribute('tabindex', '-1');
@@ -985,57 +1234,202 @@ function createReturnTab(referenceTab, returnContext) {
     const badgeSpan = tab.querySelector('[class*="TabsComponent_badge"]');
     if (badgeSpan) {
         badgeSpan.innerHTML = `
-            <div style="text-align: center;">
-                <div>\u21a9 Return</div>
-                <div style="font-size: 0.75em; color: #60a5fa;">${displayName}</div>
-            </div>
-        `;
+        <div style="text-align: center;">
+            <div>\u21a9 Return</div>
+            <div style="font-size: 0.75em; color: #60a5fa;">${displayName}</div>
+        </div>
+    `;
     }
 
-    tab.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        handleReturnToAction();
+    tab.addEventListener('click', async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        try {
+            await handleReturnToAction();
+        } catch (error) {
+            console.error('[MissingMats] Return workflow failed:', error);
+            const sessionId = actionsSessionId ?? activeWorkflowModel?.sessionId ?? null;
+            if (sessionId !== null) marketplaceSession.end(sessionId);
+        }
     });
 
     return tab;
 }
 
 /**
+ * Return restoration may continue after the Marketplace session ends normally,
+ * because leaving Marketplace synchronously tears down that session. It must stop,
+ * however, when a newer Return starts or another Marketplace owner takes control.
+ * @param {number} generation
+ * @param {number|null} capturedSessionId
+ * @returns {boolean}
+ */
+function shouldAbortEnhancingReturn(generation, capturedSessionId) {
+    if (generation !== enhancingReturnGeneration) return true;
+    const active = marketplaceSession.getActive();
+    return Boolean(active && active.sessionId !== capturedSessionId);
+}
+
+/**
  * Navigate back to the stored action and restore input values
  */
 async function handleReturnToAction() {
+    const capturedSessionId = activeWorkflowModel?.sessionId ?? null;
+    const returnGeneration = ++enhancingReturnGeneration;
     const game = getGameObject();
-    if (!game) return;
-
-    const returnContext = activeWorkflowModel?.returnContext;
-
-    if (returnContext?.actionHrid) {
-        game.handleGoToAction(returnContext.actionHrid);
-    } else if (returnContext?.enhancementContext) {
-        game.handleChangeNavTarget('enhancing');
-    } else {
+    if (!game) {
+        console.error('[MissingMats] Return could not resolve the game navigation component');
+        if (capturedSessionId !== null) marketplaceSession.end(capturedSessionId);
         return;
     }
 
-    // Restore input value for production actions — poll for the input to appear
-    if (returnContext?.actionHrid && returnContext.numActions > 0) {
-        const maxAttempts = 20;
-        for (let i = 0; i < maxAttempts; i++) {
-            await new Promise((resolve) => {
-                const t = setTimeout(resolve, 100);
-                timerRegistry.registerTimeout(t);
-            });
+    // Snapshot locally because leaving Marketplace may synchronously tear down
+    // activeWorkflowModel through the cleanup observer.
+    const returnContext = activeWorkflowModel?.returnContext;
+    if (!returnContext) {
+        console.error('[MissingMats] Return context is no longer available');
+        if (capturedSessionId !== null) marketplaceSession.end(capturedSessionId);
+        return;
+    }
 
-            const input =
-                document.querySelector('[class*="maxActionCountInput"] input') ||
-                document.querySelector('[class*="SkillActionDetail_skillActionDetail"] input[type="number"]');
-            if (input) {
-                setReactInputValue(input, returnContext.numActions);
-                break;
+    if (returnContext.actionHrid) {
+        // The native override restores both the exact action and its count.
+        game.handleGoToAction(returnContext.actionHrid, returnContext.numActions || undefined);
+        if (capturedSessionId !== null) marketplaceSession.end(capturedSessionId);
+        return;
+    }
+
+    const ctx = returnContext.enhancementContext;
+    if (!ctx) {
+        console.error('[MissingMats] Return context does not contain an action or enhancement target');
+        if (capturedSessionId !== null) marketplaceSession.end(capturedSessionId);
+        return;
+    }
+
+    const restore =
+        ctx.restoreState ||
+        Object.freeze({
+            primaryItemHash: buildInventoryItemHash(ctx.itemHrid, ctx.startLevel),
+            secondaryItemHash: ctx.protectionItemHrid ? buildInventoryItemHash(ctx.protectionItemHrid, 0) : null,
+            enhancingMaxLevel: ctx.targetLevel,
+            protectionMinLevel: ctx.protectFromLevel || 0,
+            hasMaxCount: ctx.repeatCount !== null && ctx.repeatCount !== undefined,
+            maxActionCount: ctx.repeatCount ?? 0,
+            maxActionCountInput: ctx.repeatCount == null ? '∞' : String(ctx.repeatCount),
+            selectedCharacterLoadoutId: 0,
+        });
+    if (!restore?.primaryItemHash) {
+        console.error('[MissingMats] Enhancing Return could not derive the selected item hash');
+        if (capturedSessionId !== null) marketplaceSession.end(capturedSessionId);
+        return;
+    }
+
+    // Use the game's own item-navigation flow. handleEnhanceItem sets the internal
+    // Enhancing override and the freshly mounted action component consumes it via
+    // selectEnhancingItemHandler. Directly committing the whole state before this
+    // native override settled was being reset by componentDidUpdate/getInitState.
+    if (typeof game.handleEnhanceItem === 'function') {
+        game.handleEnhanceItem(restore.primaryItemHash);
+    } else if (typeof game.handleGoToNavTarget === 'function') {
+        game.handleGoToNavTarget('enhancing');
+    } else {
+        console.error('[MissingMats] Enhancing Return could not navigate back');
+        if (capturedSessionId !== null) marketplaceSession.end(capturedSessionId);
+        return;
+    }
+
+    let restoredComponent = null;
+    for (let attempt = 0; attempt < 120; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        if (shouldAbortEnhancingReturn(returnGeneration, capturedSessionId)) return;
+
+        const panels = Array.from(document.querySelectorAll('[class*="SkillActionDetail_enhancingComponent"]')).filter(
+            (panel) => panel.isConnected && isElementActuallyVisible(panel)
+        );
+        if (panels.length !== 1) continue;
+
+        const component = getEnhancingActionComponent(panels[0]);
+        if (!component) continue;
+
+        // The native GamePage override is transient. If the first render missed it,
+        // invoke the component's own selector once the exact component is available.
+        if (component.state?.primaryItemHash !== restore.primaryItemHash) {
+            try {
+                component.selectEnhancingItemHandler(restore.primaryItemHash);
+            } catch (error) {
+                console.error('[MissingMats] Enhancing primary-item restore failed:', error);
+            }
+            continue;
+        }
+
+        restoredComponent = component;
+        break;
+    }
+
+    if (!restoredComponent) {
+        console.error('[MissingMats] Enhancing Return could not restore the selected item');
+        if (capturedSessionId !== null) marketplaceSession.end(capturedSessionId);
+        return;
+    }
+
+    const component = restoredComponent;
+    if (shouldAbortEnhancingReturn(returnGeneration, capturedSessionId)) return;
+
+    try {
+        // Restore protection only after the primary item is stable, because the native
+        // selector validates and may clear protection whenever the primary item changes.
+        if (restore.secondaryItemHash) {
+            component.selectProtectionItemHandler(restore.secondaryItemHash);
+            for (let i = 0; i < 40; i++) {
+                if ((component.state?.secondaryItemHash ?? null) === restore.secondaryItemHash) break;
+                await new Promise((resolve) => setTimeout(resolve, 25));
+                if (shouldAbortEnhancingReturn(returnGeneration, capturedSessionId)) return;
+            }
+        } else if (typeof component.removeProtectionItemHandler === 'function') {
+            component.removeProtectionItemHandler();
+        }
+
+        component.enhancingMaxLevelChanged({ target: { value: String(restore.enhancingMaxLevel) } });
+        component.protectionMinLevelChanged({
+            target: { value: String(restore.secondaryItemHash ? restore.protectionMinLevel || 0 : 0) },
+        });
+
+        if (restore.hasMaxCount) {
+            component.maxActionCountChanged({
+                target: { value: String(restore.maxActionCountInput ?? restore.maxActionCount ?? 1) },
+            });
+        } else {
+            component.unlimitedActionCountClicked();
+        }
+
+        component.loadoutSelected({ target: { value: restore.selectedCharacterLoadoutId ?? 0 } });
+
+        // Wait for the native handlers' setState calls and verify every captured field.
+        for (let attempt = 0; attempt < 80; attempt++) {
+            await new Promise((resolve) => setTimeout(resolve, 25));
+            if (shouldAbortEnhancingReturn(returnGeneration, capturedSessionId)) return;
+            const state = component.state || {};
+            const restored =
+                state.primaryItemHash === restore.primaryItemHash &&
+                (state.secondaryItemHash ?? null) === (restore.secondaryItemHash ?? null) &&
+                Number(state.enhancingMaxLevel) === Number(restore.enhancingMaxLevel) &&
+                Number(state.protectionMinLevel || 0) ===
+                    Number(restore.secondaryItemHash ? restore.protectionMinLevel || 0 : 0) &&
+                Boolean(state.hasMaxCount) === Boolean(restore.hasMaxCount) &&
+                (!restore.hasMaxCount || Number(state.maxActionCount) === Number(restore.maxActionCount || 0)) &&
+                String(state.selectedCharacterLoadoutId ?? 0) === String(restore.selectedCharacterLoadoutId ?? 0);
+
+            if (restored) {
+                if (capturedSessionId !== null) marketplaceSession.end(capturedSessionId);
+                return;
             }
         }
+    } catch (error) {
+        console.error('[MissingMats] Enhancing native restore failed:', error);
     }
+
+    console.error('[MissingMats] Enhancing Return could not restore all captured controls');
+    if (capturedSessionId !== null) marketplaceSession.end(capturedSessionId);
 }
 
 /**
@@ -1049,15 +1443,19 @@ function setupActionsCleanupObserver() {
     }
     cleanupObserver = setupMarketplaceCleanupObserver({
         owner: MARKETPLACE_OWNER.ACTIONS,
+        invalidStateGraceMs: MARKETPLACE_REMOUNT_GRACE_MS,
         onTabsGone: () => {
             const capturedSessionId = activeWorkflowModel?.sessionId ?? null;
             if (capturedSessionId !== null && !marketplaceSession.isActive(capturedSessionId)) return;
             const tabContainer = getVisibleMarketplaceTabContainer();
-            if (tabContainer) {
-                reinjectActionsMarketplaceTabs(tabContainer);
-            } else {
-                teardownActionsMarketplaceSession();
+            if (
+                tabContainer &&
+                isMarketplaceMarketListingsSelected(tabContainer) &&
+                reinjectActionsMarketplaceTabs(tabContainer)
+            ) {
+                return;
             }
+            if (capturedSessionId !== null) marketplaceSession.end(capturedSessionId);
         },
     });
 }
@@ -1081,9 +1479,15 @@ function teardownActionsMarketplaceSession() {
         cleanupObserver = null;
     }
 
-    const sessionIdToExit = activeWorkflowModel?.sessionId ?? null;
+    if (nativeTabExitCleanup) {
+        nativeTabExitCleanup();
+        nativeTabExitCleanup = null;
+    }
+
+    const sessionIdToExit = actionsSessionId ?? activeWorkflowModel?.sessionId ?? null;
     autofillManager.exitSession(sessionIdToExit);
 
+    actionsSessionId = null;
     activeWorkflowModel = null;
 }
 
@@ -1094,46 +1498,10 @@ function teardownActionsMarketplaceSession() {
  * @param {HTMLElement} tabContainer
  */
 function reinjectActionsMarketplaceTabs(tabContainer) {
-    if (!activeWorkflowModel) return;
-    if (!marketplaceSession.isActive(activeWorkflowModel.sessionId)) return;
-
-    const sessionId = activeWorkflowModel.sessionId;
-    const { materials, returnContext } = activeWorkflowModel;
-    const strategyInfo = returnContext?.enhancementContext?.strategyInfo ?? null;
-
-    // Get reference tab for cloning
-    const referenceTab = Array.from(tabContainer.children).find((btn) => btn.textContent.includes('My Listings'));
-    if (!referenceTab) return;
-
-    // Ensure flex wrapping
-    tabContainer.style.flexWrap = 'wrap';
-
-    currentMaterialsTabs.length = 0;
-
-    // Strategy indicator
-    if (strategyInfo) {
-        const indicator = createStrategyIndicator(strategyInfo);
-        indicator.setAttribute('data-mwi-tab-owner', MARKETPLACE_OWNER.ACTIONS);
-        tabContainer.appendChild(indicator);
-        currentMaterialsTabs.push(indicator);
-    }
-
-    // Material tabs
-    for (const material of materials) {
-        const tabRef = { tab: null };
-        const handler = makeMaterialClickHandler(tabRef, sessionId);
-        const tab = createMaterialTab(material, referenceTab, handler, MARKETPLACE_OWNER.ACTIONS);
-        tabRef.tab = tab;
-        tabContainer.appendChild(tab);
-        currentMaterialsTabs.push(tab);
-    }
-
-    // Return tab
-    const returnTab = createReturnTab(referenceTab, returnContext);
-    if (returnTab) {
-        tabContainer.appendChild(returnTab);
-        currentMaterialsTabs.push(returnTab);
-    }
+    const model = activeWorkflowModel;
+    if (!model || !marketplaceSession.isActive(model.sessionId)) return false;
+    const strategyInfo = model.returnContext?.enhancementContext?.strategyInfo ?? null;
+    return createMissingMaterialTabs(model.materials, strategyInfo, model.sessionId, tabContainer);
 }
 
 /**
@@ -1142,35 +1510,29 @@ function reinjectActionsMarketplaceTabs(tabContainer) {
  * @param {Object|null} strategyInfo - Auto-calculated protection strategy info
  * @param {number} sessionId - The marketplaceSession token for this workflow
  */
-function createMissingMaterialTabs(missingMaterials, strategyInfo = null, sessionId = null) {
-    const tabsContainer = document.querySelector('.MuiTabs-flexContainer[role="tablist"]');
-
-    if (!tabsContainer) {
-        console.error('[MissingMats] Tabs container not found');
-        return;
+function createMissingMaterialTabs(missingMaterials, strategyInfo = null, sessionId = null, tabContainer = null) {
+    const tabsContainer = tabContainer || getVisibleMarketplaceTabContainer();
+    if (!tabsContainer || !marketplaceSession.isActive(sessionId)) {
+        console.error('[MissingMats] Visible Marketplace tabs container not found');
+        return false;
     }
 
-    // Remove any existing custom tabs first (owner-scoped)
     removeMaterialTabsForOwner(MARKETPLACE_OWNER.ACTIONS);
     currentMaterialsTabs.length = 0;
 
-    // Get reference tab for cloning (use "My Listings" as template)
     const referenceTab = Array.from(tabsContainer.children).find((btn) => btn.textContent.includes('My Listings'));
-
     if (!referenceTab) {
         console.error('[MissingMats] Reference tab not found');
-        return;
+        return false;
     }
 
-    // Enable flex wrapping for multiple rows (like game's native tabs)
-    if (tabsContainer) {
-        tabsContainer.style.flexWrap = 'wrap';
-    }
+    tabsContainer.style.flexWrap = 'wrap';
 
-    // Create tab for each missing material
-    currentMaterialsTabs.length = 0; // Clear without reassigning (preserves observer reference)
+    nativeTabExitCleanup?.();
+    nativeTabExitCleanup = watchNativeTabExit(tabsContainer, () => {
+        marketplaceSession.end(sessionId);
+    });
 
-    // Add strategy indicator if auto-calculated
     if (strategyInfo) {
         const indicator = createStrategyIndicator(strategyInfo);
         indicator.setAttribute('data-mwi-tab-owner', MARKETPLACE_OWNER.ACTIONS);
@@ -1187,13 +1549,14 @@ function createMissingMaterialTabs(missingMaterials, strategyInfo = null, sessio
         currentMaterialsTabs.push(tab);
     }
 
-    // Add "Return to Action" tab at the end
     const returnContext = activeWorkflowModel?.returnContext ?? null;
     const returnTab = createReturnTab(referenceTab, returnContext);
     if (returnTab) {
         tabsContainer.appendChild(returnTab);
         currentMaterialsTabs.push(returnTab);
     }
+
+    return true;
 }
 
 /**
@@ -1219,11 +1582,6 @@ function setupInventoryListener() {
  * Recalculates materials and updates badge display
  */
 function updateTabsOnInventoryChange() {
-    // Check if tabs still exist
-    if (currentMaterialsTabs.length === 0) {
-        return;
-    }
-
     let updatedMaterials;
 
     if (activeWorkflowModel?.returnContext?.enhancementContext) {
@@ -1250,83 +1608,24 @@ function updateTabsOnInventoryChange() {
         return;
     }
 
-    // Update each existing tab
-    currentMaterialsTabs.forEach((tab) => {
-        const itemHrid = tab.getAttribute('data-item-hrid');
-        const material = updatedMaterials.find((m) => m.itemHrid === itemHrid);
-
-        if (material) {
-            updateTabBadge(tab, material);
-
-            // Also update activeWorkflowModel.materials
-            if (activeWorkflowModel) {
-                const modelEntry = activeWorkflowModel.materials.find((m) => m.itemHrid === itemHrid);
-                if (modelEntry) {
-                    modelEntry.missing = material.missing;
-                }
-            }
-        }
-    });
-}
-
-/**
- * Update a single tab's badge with new material data
- * @param {HTMLElement} tab - Tab element to update
- * @param {Object} material - Material object with updated counts
- */
-function updateTabBadge(tab, material) {
-    const badgeSpan = tab.querySelector('[class*="TabsComponent_badge"]');
-    if (!badgeSpan) {
-        return;
+    if (!activeWorkflowModel) return;
+    const updatedByHrid = new Map(updatedMaterials.map((material) => [material.itemHrid, material]));
+    for (const modelEntry of activeWorkflowModel.materials) {
+        const updated = updatedByHrid.get(modelEntry.itemHrid);
+        if (updated) Object.assign(modelEntry, updated);
+        else modelEntry.missing = 0;
     }
 
-    // Color coding:
-    // - Red: Missing materials (missing > 0)
-    // - Green: Sufficient materials (missing = 0)
-    // - Gray: Not tradeable
-    let statusColor;
-    let statusText;
-
-    if (!material.isTradeable) {
-        statusColor = '#888888'; // Gray - not tradeable
-        statusText = 'Not Tradeable';
-    } else if (material.missing > 0) {
-        statusColor = '#ef4444'; // Red - missing materials
-        // Show queued amount if any materials are reserved by queue
-        const queuedText = material.queued > 0 ? ` (${formatWithSeparator(material.queued)} Q'd)` : '';
-        statusText = `Missing: ${formatWithSeparator(material.missing)}${queuedText}`;
-    } else {
-        statusColor = '#4ade80'; // Green - sufficient materials
-        statusText = `Sufficient (${formatWithSeparator(material.required)})`;
-    }
-
-    // Title case: capitalize first letter of each word
-    const titleCaseName = material.itemName
-        .split(' ')
-        .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-        .join(' ');
-
-    // Update badge HTML
-    badgeSpan.innerHTML = `
-        <div style="text-align: center;">
-            <div>${titleCaseName}</div>
-            <div style="font-size: 0.75em; color: ${statusColor};">
-                ${statusText}
-            </div>
-        </div>
-    `;
-
-    // Keep data-missing-quantity in sync so the click handler autofills the current amount
-    tab.setAttribute('data-missing-quantity', material.missing.toString());
-
-    // Update tab styling based on state
-    if (!material.isTradeable) {
-        tab.style.opacity = '0.5';
-        tab.style.cursor = 'not-allowed';
-    } else {
-        tab.style.opacity = '1';
-        tab.style.cursor = 'pointer';
-        tab.title = '';
+    const connectedTabs = Array.from(
+        document.querySelectorAll(
+            `[data-mwi-custom-tab][data-mwi-tab-owner="${MARKETPLACE_OWNER.ACTIONS}"][data-item-hrid]`
+        )
+    );
+    for (const tab of connectedTabs) {
+        const material = activeWorkflowModel.materials.find(
+            (entry) => entry.itemHrid === tab.getAttribute('data-item-hrid')
+        );
+        if (material) updateTabBadge(tab, material);
     }
 }
 
@@ -1335,18 +1634,12 @@ function updateTabBadge(tab, material) {
  * Called by the marketplace cleanup observer
  */
 function handleMarketplaceCleanup() {
-    removeMaterialTabsForOwner(MARKETPLACE_OWNER.ACTIONS);
-    currentMaterialsTabs.length = 0; // Clear without reassigning (preserves observer reference)
-
-    // Clean up inventory listener
-    if (inventoryUpdateHandler) {
-        dataManager.off('items_updated', inventoryUpdateHandler);
-        inventoryUpdateHandler = null;
+    const sessionId = actionsSessionId ?? activeWorkflowModel?.sessionId ?? null;
+    if (sessionId !== null && marketplaceSession.isActive(sessionId)) {
+        marketplaceSession.end(sessionId);
+        return;
     }
-
-    autofillManager.exitSession(activeWorkflowModel?.sessionId ?? null);
-
-    activeWorkflowModel = null;
+    teardownActionsMarketplaceSession();
 }
 
 export default {

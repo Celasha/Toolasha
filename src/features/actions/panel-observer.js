@@ -13,6 +13,7 @@ import dataManager from '../../core/data-manager.js';
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import { displayEnhancementStats, getProtectionItemFromUI } from './enhancement-display.js';
+import { removeInlineXpRate } from './inline-xp-rate.js';
 import { displayGatheringProfit, displayProductionProfit } from './profit-display.js';
 import { getOriginalText } from '../../utils/dom.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
@@ -45,7 +46,7 @@ const _ENHANCING_TYPE = '/action_types/enhancing';
 
 /**
  * Debounced update tracker for enhancement calculations
- * Maps itemHrid to timeout ID
+ * Maps panel elements to timeout IDs so item changes cancel stale calculations
  */
 const updateTimeouts = new Map();
 const timerRegistry = createTimerRegistry();
@@ -61,7 +62,9 @@ const DEBOUNCE_DELAY = 300; // 300ms debounce for event handlers
  * Module-level observer cleanup references
  */
 let unregisterHandlers = [];
-const observedEnhancingPanels = new WeakSet();
+let observedEnhancingPanels = new WeakSet();
+let observedEnhancingInputs = new WeakSet();
+let autoProtectTargetInputs = new WeakSet();
 let enhancingPanelWatchers = [];
 let itemsUpdatedHandler = null;
 let consumablesUpdatedHandler = null;
@@ -72,20 +75,24 @@ let consumablesUpdatedHandler = null;
  * @param {string} itemHrid - Item HRID
  */
 function triggerEnhancementUpdate(panel, itemHrid) {
-    // Clear existing timeout for this item
-    if (updateTimeouts.has(itemHrid)) {
-        clearTimeout(updateTimeouts.get(itemHrid));
+    if (updateTimeouts.has(panel)) {
+        clearTimeout(updateTimeouts.get(panel));
     }
 
-    // Set new timeout
     const timeoutId = setTimeout(async () => {
-        await displayEnhancementStats(panel, itemHrid);
-        updateTimeouts.delete(itemHrid);
-    }, 500); // Wait 500ms after last change
+        updateTimeouts.delete(panel);
+        const liveItemHrid = panel.dataset.mwiItemHrid;
+        if (!panel.isConnected || !liveItemHrid || liveItemHrid !== itemHrid) return;
+
+        try {
+            await displayEnhancementStats(panel, liveItemHrid);
+        } catch (error) {
+            console.error('[PanelObserver] Failed to refresh enhancement display:', error);
+        }
+    }, 150);
 
     timerRegistry.registerTimeout(timeoutId);
-
-    updateTimeouts.set(itemHrid, timeoutId);
+    updateTimeouts.set(panel, timeoutId);
 }
 
 /**
@@ -292,10 +299,31 @@ function handleEnhancingPanelMutations(panel, mutations) {
                     handleEnhancingPanel(panel);
                 }
 
-                if (addedNode.tagName === 'INPUT' && (addedNode.type === 'number' || addedNode.type === 'text')) {
+                if (
+                    Array.from(addedNode.classList || []).some((name) =>
+                        name.includes('SkillActionDetail_expOnSuccess')
+                    ) ||
+                    addedNode.querySelector?.('[class*="SkillActionDetail_expOnSuccess"]')
+                ) {
+                    const itemHrid = panel.dataset.mwiItemHrid;
+                    if (itemHrid) triggerEnhancementUpdate(panel, itemHrid);
+                }
+
+                const addedInputs = [];
+                if (addedNode.matches?.('input[type="number"], input[type="text"]')) {
+                    addedInputs.push(addedNode);
+                }
+                addedNode
+                    .querySelectorAll?.('input[type="number"], input[type="text"]')
+                    .forEach((input) => addedInputs.push(input));
+
+                if (addedInputs.length > 0) {
+                    addedInputs.forEach((input) => addInputListener(input, panel));
+                    setupTargetAutoProtectListener(panel);
+
                     const itemHrid = panel.dataset.mwiItemHrid;
                     if (itemHrid) {
-                        addInputListener(addedNode, panel, itemHrid);
+                        triggerEnhancementUpdate(panel, itemHrid);
                     }
                 }
             });
@@ -474,9 +502,8 @@ function autoFillProtectFrom(panel, itemHrid) {
 /**
  * Watch the protection item slot for changes and auto-fill protect-from level.
  * @param {HTMLElement} panel
- * @param {string} itemHrid
  */
-function setupProtectionSlotObserver(panel, itemHrid) {
+function setupProtectionSlotObserver(panel) {
     if (panel.dataset.mwiProtectObserverAdded) return;
     panel.dataset.mwiProtectObserverAdded = 'true';
 
@@ -490,7 +517,8 @@ function setupProtectionSlotObserver(panel, itemHrid) {
             clearTimeout(debounceTimer);
             debounceTimer = setTimeout(() => {
                 if (config.getSetting('enhanceSim_autoProtectFrom')) {
-                    autoFillProtectFrom(panel, itemHrid);
+                    const liveItemHrid = panel.dataset.mwiItemHrid;
+                    if (liveItemHrid) autoFillProtectFrom(panel, liveItemHrid);
                 }
             }, 300);
         },
@@ -506,6 +534,16 @@ function setupProtectionSlotObserver(panel, itemHrid) {
 async function handleEnhancingPanel(panel) {
     if (!panel) return;
 
+    const clearEnhancingDisplay = ({ clearItem = false } = {}) => {
+        panel.querySelector('#mwi-enhancement-stats')?.remove();
+        removeInlineXpRate(panel, 'enhancing');
+
+        if (clearItem) {
+            delete panel.dataset.mwiItemHrid;
+            delete panel.dataset.mwiAutoTargetFilledFor;
+        }
+    };
+
     // Set up tab click listeners (only once per panel)
     if (!panel.dataset.mwiTabListenersAdded) {
         setupTabClickListeners(panel);
@@ -514,17 +552,15 @@ async function handleEnhancingPanel(panel) {
 
     // Only show calculator on "Enhance" tab, not "Current Action" tab
     if (!isEnhanceTabActive(panel)) {
-        // Remove calculator if it exists
-        const existingDisplay = panel.querySelector('#mwi-enhancement-stats');
-        if (existingDisplay) {
-            existingDisplay.remove();
-        }
+        clearEnhancingDisplay();
         return;
     }
 
     // Find the output element that shows the enhanced item
     const outputsSection = panel.querySelector(SELECTORS.ENHANCING_OUTPUT);
     if (!outputsSection) {
+        // The output subtree can remount briefly; avoid discarding a valid selection.
+        clearEnhancingDisplay();
         return;
     }
 
@@ -532,24 +568,22 @@ async function handleEnhancingPanel(panel) {
     // When no item is selected, the outputs section exists but has no item icon
     const itemIcon = outputsSection.querySelector('svg[role="img"], img');
     if (!itemIcon) {
-        // No item icon = no item selected, don't show calculator
-        // Remove existing calculator display if present
-        const existingDisplay = panel.querySelector('#mwi-enhancement-stats');
-        if (existingDisplay) {
-            existingDisplay.remove();
-        }
+        // No item icon = no item selected, don't show calculator.
+        clearEnhancingDisplay({ clearItem: true });
         return;
     }
 
     // Get the item name from the Item_name element (without +1)
     const itemNameElement = outputsSection.querySelector(SELECTORS.ITEM_NAME);
     if (!itemNameElement) {
+        clearEnhancingDisplay();
         return;
     }
 
     const itemName = itemNameElement.textContent.trim();
 
     if (!itemName) {
+        clearEnhancingDisplay();
         return;
     }
 
@@ -558,12 +592,16 @@ async function handleEnhancingPanel(panel) {
     const itemHrid = getItemHridFromName(itemName);
 
     if (!itemHrid) {
+        clearEnhancingDisplay();
         return;
     }
 
     // Get item details
     const itemDetails = gameData.itemDetailMap[itemHrid];
-    if (!itemDetails) return;
+    if (!itemDetails) {
+        clearEnhancingDisplay();
+        return;
+    }
 
     // Store itemHrid on panel for later reference (when new inputs are added)
     panel.dataset.mwiItemHrid = itemHrid;
@@ -592,7 +630,7 @@ async function handleEnhancingPanel(panel) {
     }
 
     // Set up protection slot observer (checks setting internally on each change)
-    setupProtectionSlotObserver(panel, itemHrid);
+    setupProtectionSlotObserver(panel);
 
     // Auto-fill optimal protect-from level on initial load if setting is enabled
     if (config.getSetting('enhanceSim_autoProtectFrom')) {
@@ -602,6 +640,7 @@ async function handleEnhancingPanel(panel) {
     // Double-check tab state right before rendering (safety check for race conditions)
     if (!isEnhanceTabActive(panel)) {
         // Current Action tab became active during processing, don't render
+        clearEnhancingDisplay();
         return;
     }
 
@@ -609,23 +648,10 @@ async function handleEnhancingPanel(panel) {
     await displayEnhancementStats(panel, itemHrid);
 
     // Set up observers for Target Level and Protect From Level inputs
-    setupInputObservers(panel, itemHrid);
+    setupInputObservers(panel);
 
-    // Re-trigger auto-fill when target level changes (handles race where target level loads after initial auto-fill)
-    if (!panel.dataset.mwiAutoProtectTargetListenerAdded) {
-        panel.dataset.mwiAutoProtectTargetListenerAdded = 'true';
-        const targetLabels = Array.from(panel.querySelectorAll('*')).filter(
-            (el) => el.textContent.trim() === 'Target Level' && el.children.length === 0
-        );
-        const targetInput = targetLabels[0]?.parentElement?.querySelector('input[type="number"], input[type="text"]');
-        if (targetInput) {
-            targetInput.addEventListener('change', () => {
-                if (config.getSetting('enhanceSim_autoProtectFrom')) {
-                    autoFillProtectFrom(panel, panel.dataset.mwiItemHrid);
-                }
-            });
-        }
-    }
+    // Re-trigger auto-fill when target level changes. Inputs can remount, so bind per element.
+    setupTargetAutoProtectListener(panel);
 }
 
 /**
@@ -669,10 +695,9 @@ function setupTabClickListeners(panel) {
                 const existingDisplay = panel.querySelector('#mwi-enhancement-stats');
 
                 if (!isEnhanceActive) {
-                    // Current Action tab clicked - remove calculator
-                    if (existingDisplay) {
-                        existingDisplay.remove();
-                    }
+                    // Current Action tab clicked - remove calculator and inline rate.
+                    if (existingDisplay) existingDisplay.remove();
+                    removeInlineXpRate(panel, 'enhancing');
                 } else {
                     // Enhance tab clicked - show calculator if item is selected
                     const itemHrid = panel.dataset.mwiItemHrid;
@@ -688,18 +713,41 @@ function setupTabClickListeners(panel) {
 }
 
 /**
+ * Bind the target-level listener that recalculates the optimal protect-from level.
+ * React may replace the input without remounting the whole enhancing panel.
+ * @param {HTMLElement} panel - Enhancing panel element
+ */
+function setupTargetAutoProtectListener(panel) {
+    const targetLabels = Array.from(panel.querySelectorAll('*')).filter(
+        (el) => el.textContent.trim() === 'Target Level' && el.children.length === 0
+    );
+    const targetInput = targetLabels[0]?.parentElement?.querySelector('input[type="number"], input[type="text"]');
+    if (!targetInput || autoProtectTargetInputs.has(targetInput)) return;
+
+    autoProtectTargetInputs.add(targetInput);
+    targetInput.addEventListener('change', () => {
+        const liveItemHrid = panel.dataset.mwiItemHrid;
+        if (liveItemHrid && config.getSetting('enhanceSim_autoProtectFrom')) {
+            autoFillProtectFrom(panel, liveItemHrid);
+        }
+    });
+}
+
+/**
  * Add input listener to a single input element
  * @param {HTMLInputElement} input - Input element
  * @param {HTMLElement} panel - Enhancing panel element
- * @param {string} itemHrid - Item HRID
  */
-function addInputListener(input, panel, itemHrid) {
-    // Handler that triggers the shared debounced update
+function addInputListener(input, panel) {
+    if (observedEnhancingInputs.has(input)) return;
+    observedEnhancingInputs.add(input);
+
+    // Read the live item from the panel because the selected item can change without remounting the inputs.
     const handleInputChange = () => {
-        triggerEnhancementUpdate(panel, itemHrid);
+        const liveItemHrid = panel.dataset.mwiItemHrid;
+        if (liveItemHrid) triggerEnhancementUpdate(panel, liveItemHrid);
     };
 
-    // Add change listeners
     input.addEventListener('input', handleInputChange);
     input.addEventListener('change', handleInputChange);
 }
@@ -708,15 +756,14 @@ function addInputListener(input, panel, itemHrid) {
  * Set up observers for Target Level and Protect From Level inputs
  * Re-calculates enhancement stats when user changes these values
  * @param {HTMLElement} panel - Enhancing panel element
- * @param {string} itemHrid - Item HRID
  */
-function setupInputObservers(panel, itemHrid) {
+function setupInputObservers(panel) {
     // Find all input elements in the panel
     const inputs = panel.querySelectorAll('input[type="number"], input[type="text"]');
 
     // Add listeners to all existing inputs
     inputs.forEach((input) => {
-        addInputListener(input, panel, itemHrid);
+        addInputListener(input, panel);
     });
 }
 
@@ -732,6 +779,12 @@ export function disablePanelObserver() {
     // Clear enhancing panel watchers
     enhancingPanelWatchers.forEach((unwatch) => unwatch());
     enhancingPanelWatchers = [];
+    observedEnhancingPanels = new WeakSet();
+    document.querySelectorAll('[data-mwi-protect-observer-added]').forEach((panel) => {
+        delete panel.dataset.mwiProtectObserverAdded;
+    });
+    observedEnhancingInputs = new WeakSet();
+    autoProtectTargetInputs = new WeakSet();
 
     // Clear all pending debounced updates
     for (const timeoutId of updateTimeouts.values()) {

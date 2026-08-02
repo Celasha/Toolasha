@@ -65,11 +65,12 @@ describe('MarketplaceSessionService — basic lifecycle', () => {
         expect(marketplaceSession.isActive(id)).toBe(false);
     });
 
-    test('end() with wrong token is a no-op', () => {
+    test('end() reports whether it ended the active session', () => {
         const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
-        marketplaceSession.end(id + 999);
+        expect(marketplaceSession.end(id + 999)).toBe(false);
         expect(marketplaceSession.isActive(id)).toBe(true);
-        marketplaceSession.end(id);
+        expect(marketplaceSession.end(id)).toBe(true);
+        expect(marketplaceSession.end(id)).toBe(false);
     });
 
     // Test 4: stale-session token rejection
@@ -244,8 +245,11 @@ describe('endAll()', () => {
         expect(marketplaceSession.getActive()).toBeNull();
     });
 
-    test('endAll() on an empty registry is a no-op', () => {
-        expect(() => marketplaceSession.endAll()).not.toThrow();
+    test('endAll() reports whether it ended an active session', () => {
+        expect(marketplaceSession.endAll()).toBe(false);
+        marketplaceSession.start({ owner: MARKETPLACE_OWNER.GUILD });
+        expect(marketplaceSession.endAll()).toBe(true);
+        expect(marketplaceSession.endAll()).toBe(false);
         expect(marketplaceSession.getActive()).toBeNull();
     });
 });
@@ -457,12 +461,17 @@ import {
 } from '../utils/marketplace-autofill.js';
 
 function makeMarketplaceRuntimeState(overrides = {}) {
+    const enhancementLevel = overrides.enhancementLevel ?? 0;
     return {
         marketTabKey: 'MarketListings',
         marketListingsView: 'OrderBook',
         itemHrid: '/items/iron_ore',
-        enhancementLevel: 0,
+        enhancementLevel,
+        enhancementLevelInput: overrides.enhancementLevelInput ?? enhancementLevel,
         isSell: false,
+        showPostListing: true,
+        isPostNewListing: false,
+        isInstantOrder: true,
         quantityInput: 1,
         priceInput: 500,
         ...overrides,
@@ -473,7 +482,14 @@ function attachMarketplacePanelFiber(panel, states) {
     const hostFiber = { stateNode: panel, return: null };
     let cursor = hostFiber;
     for (const state of states) {
-        const componentFiber = { stateNode: { state }, return: null };
+        const componentFiber = {
+            stateNode: {
+                state,
+                setState: vi.fn(),
+                handleQuantityInputChanged: vi.fn(),
+            },
+            return: null,
+        };
         cursor.return = componentFiber;
         cursor = componentFiber;
     }
@@ -481,6 +497,14 @@ function attachMarketplacePanelFiber(panel, states) {
         configurable: true,
         value: hostFiber,
     });
+
+    for (const input of document.querySelectorAll('[class*="Modal_modalContainer"] input[type="number"]')) {
+        Object.defineProperty(input, '__reactFiber$toolashaTest', {
+            configurable: true,
+            value: { stateNode: input, return: hostFiber.return },
+        });
+    }
+
     return hostFiber;
 }
 
@@ -674,17 +698,20 @@ describe('Test 29 — navigation failure rollback', () => {
     });
 });
 
-// ─── Test 38: House Return absence is a passing test ─────────────────────────
+// ─── Test 38: stale House session is rejected before tab injection ────────────
 
-describe('Test 38 — House Return safely absent', () => {
-    test('No house Return tab is created without a confirmed fiber navigation method', () => {
-        // The house feature intentionally does NOT create a Return tab.
-        // This test verifies the safe-disabled state: no house Return tabs in DOM.
-        document.body.innerHTML = '<div id="container"></div>';
-        const returnTabs = document.querySelectorAll(
-            '[data-mwi-custom-tab][data-mwi-tab-owner="HOUSE"][data-mwi-return-tab]'
-        );
-        expect(returnTabs.length).toBe(0);
+describe('Test 38 — stale House session fails closed', () => {
+    beforeEach(freshSession);
+
+    test('replaced House token cannot remain active or own Marketplace UI', () => {
+        const houseId = marketplaceSession.start({ owner: MARKETPLACE_OWNER.HOUSE });
+        const replacementId = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
+
+        expect(marketplaceSession.isActive(houseId)).toBe(false);
+        expect(marketplaceSession.isActive(replacementId)).toBe(true);
+        expect(marketplaceSession.getActive()?.owner).toBe(MARKETPLACE_OWNER.ACTIONS);
+
+        marketplaceSession.end(replacementId);
     });
 });
 
@@ -1544,7 +1571,7 @@ describe('readMarketplaceRuntimeState', () => {
     test('fails closed when the owning component lies beyond the ancestry bound', () => {
         document.body.innerHTML = '<div class="MarketplacePanel_marketplacePanel__test"></div>';
         const panel = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
-        const nonMatchingStates = Array.from({ length: 64 }, (_, index) => ({ index }));
+        const nonMatchingStates = Array.from({ length: 256 }, (_, index) => ({ index }));
         attachMarketplacePanelFiber(panel, [...nonMatchingStates, makeMarketplaceRuntimeState()]);
         expect(readMarketplaceRuntimeState()).toBeNull();
     });
@@ -1554,15 +1581,24 @@ describe('readMarketplaceRuntimeState', () => {
 
 describe('arm() — atomic target generations', () => {
     beforeEach(freshSession);
+    beforeEach(() => vi.useFakeTimers());
     afterEach(() => {
+        vi.clearAllTimers();
+        vi.useRealTimers();
         document.body.innerHTML = '';
     });
+
+    function emitModal(modal) {
+        _capturedModalCallback(modal);
+        vi.advanceTimersByTime(0);
+    }
 
     function setupModal(stateOverrides = {}, { numInputs = 1, withFiber = true, states = null } = {}) {
         const inputs = Array.from({ length: numInputs }, () => '<input type="number" value="" />').join('');
         document.body.innerHTML = `
             <div class="MarketplacePanel_marketplacePanel__test"></div>
             <div class="Modal_modalContainer__test">
+                <div class="MarketplacePanel_header__test">Buy Now</div>
                 <div class="MarketplacePanel_quantityInputs__test">${inputs}</div>
             </div>
         `;
@@ -1585,7 +1621,7 @@ describe('arm() — atomic target generations', () => {
         mgr.arm({ sessionId: idB, itemHrid: '/items/coal', quantityProvider: () => 20 });
         mgr.arm({ sessionId: idA, itemHrid: '/items/iron_ore', quantityProvider: () => 999 });
 
-        _capturedModalCallback(setupModal({ itemHrid: '/items/coal' }));
+        emitModal(setupModal({ itemHrid: '/items/coal' }));
         expect(document.querySelector('input').value).toBe('20');
 
         mgr.cleanup();
@@ -1600,7 +1636,7 @@ describe('arm() — atomic target generations', () => {
         mgr.arm({ sessionId: id, itemHrid: '/items/iron_ore', quantityProvider: () => 10 });
         mgr.arm({ sessionId: id, itemHrid: '/items/coal', modalMode: 'sell', quantityProvider: () => 20 });
 
-        _capturedModalCallback(setupModal({ itemHrid: '/items/iron_ore' }));
+        emitModal(setupModal({ itemHrid: '/items/iron_ore' }));
         expect(document.querySelector('input').value).toBe('');
 
         mgr.cleanup();
@@ -1615,7 +1651,7 @@ describe('arm() — atomic target generations', () => {
         mgr.arm({ sessionId: id, itemHrid: '/items/iron_ore', quantityProvider: () => 10 });
         mgr.arm({ sessionId: id, itemHrid: '/items/coal', quantityProvider: null });
 
-        _capturedModalCallback(setupModal({ itemHrid: '/items/iron_ore' }));
+        emitModal(setupModal({ itemHrid: '/items/iron_ore' }));
         expect(document.querySelector('input').value).toBe('');
 
         mgr.cleanup();
@@ -1629,7 +1665,7 @@ describe('arm() — atomic target generations', () => {
         mgr.startSession({ sessionId: id });
         mgr.arm({ sessionId: id, itemHrid: '/items/iron_ore', quantityProvider: () => 42 });
 
-        _capturedModalCallback(setupModal());
+        emitModal(setupModal());
         expect(document.querySelector('input').value).toBe('42');
 
         mgr.cleanup();
@@ -1644,7 +1680,7 @@ describe('arm() — atomic target generations', () => {
         mgr.arm({ sessionId: id, itemHrid: '/items/iron_ore', quantityProvider: () => 10 });
         mgr.arm({ sessionId: id, itemHrid: '/items/coal', quantityProvider: () => 20 });
 
-        _capturedModalCallback(setupModal({ itemHrid: '/items/coal' }));
+        emitModal(setupModal({ itemHrid: '/items/coal' }));
         expect(document.querySelector('input').value).toBe('20');
 
         mgr.cleanup();
@@ -1665,10 +1701,10 @@ describe('arm() — atomic target generations', () => {
             },
         });
 
-        _capturedModalCallback(setupModal());
+        emitModal(setupModal());
         expect(document.querySelector('input').value).toBe('');
 
-        _capturedModalCallback(setupModal({ itemHrid: '/items/coal' }));
+        emitModal(setupModal({ itemHrid: '/items/coal' }));
         expect(document.querySelector('input').value).toBe('20');
 
         mgr.cleanup();
@@ -1689,7 +1725,7 @@ describe('arm() — atomic target generations', () => {
             },
         });
 
-        _capturedModalCallback(setupModal());
+        emitModal(setupModal());
         expect(document.querySelector('input').value).toBe('');
 
         mgr.cleanup();
@@ -1702,7 +1738,7 @@ describe('arm() — atomic target generations', () => {
         mgr.startSession({ sessionId: id });
         mgr.arm({ sessionId: id, itemHrid: '/items/iron_ore', quantityProvider: () => quantity });
 
-        _capturedModalCallback(setupModal());
+        emitModal(setupModal());
         expect(document.querySelector('input').value).toBe('');
 
         mgr.cleanup();
@@ -1716,7 +1752,7 @@ describe('arm() — atomic target generations', () => {
         mgr.startSession({ sessionId: id });
         mgr.arm({ sessionId: id, itemHrid: null, quantityProvider: () => 10 });
 
-        _capturedModalCallback(setupModal());
+        emitModal(setupModal());
         expect(document.querySelector('input').value).toBe('');
 
         mgr.cleanup();
@@ -1731,7 +1767,7 @@ describe('arm() — atomic target generations', () => {
 
         expect(mgr.setItem('/items/iron_ore', 0, id)).toBe(true);
         expect(mgr.setQuantityProvider(() => 33, id)).toBe(true);
-        _capturedModalCallback(setupModal());
+        emitModal(setupModal());
         expect(document.querySelector('input').value).toBe('33');
 
         mgr.cleanup();
@@ -1739,131 +1775,7 @@ describe('arm() — atomic target generations', () => {
     });
 });
 
-// ─── Disarm matrix — every rejection prevents a later fill ─────────────────────
-
-describe('Disarm matrix — every rejection prevents a later fill', () => {
-    beforeEach(freshSession);
-    beforeEach(() => vi.useFakeTimers());
-    afterEach(() => {
-        vi.useRealTimers();
-        document.body.innerHTML = '';
-    });
-
-    function setupModal(stateOverrides = {}, { numInputs = 1, withFiber = true, states = null } = {}) {
-        const inputs = Array.from({ length: numInputs }, () => '<input type="number" value="" />').join('');
-        document.body.innerHTML = `
-            <div class="MarketplacePanel_marketplacePanel__test"></div>
-            <div class="Modal_modalContainer__test">
-                <div class="MarketplacePanel_quantityInputs__test">${inputs}</div>
-            </div>
-        `;
-        const panel = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
-        if (withFiber) {
-            attachMarketplacePanelFiber(panel, states || [makeMarketplaceRuntimeState(stateOverrides)]);
-        }
-        return document.querySelector('[class*="Modal_modalContainer"]');
-    }
-
-    function createArmedManager(id, enhancementLevel = 0) {
-        const mgr = createAutofillManager('DisarmMatrix');
-        mgr.initialize();
-        mgr.startSession({ sessionId: id });
-        mgr.arm({
-            sessionId: id,
-            itemHrid: '/items/iron_ore',
-            enhancementLevel,
-            quantityProvider: () => 99,
-        });
-        return mgr;
-    }
-
-    async function expectLaterModalNotFilled(mgr, firstModal, laterState = {}) {
-        _capturedModalCallback(firstModal);
-        // Advance past the 500 ms polling window so the first modal's poll clears the target.
-        await vi.advanceTimersByTimeAsync(600);
-        _capturedModalCallback(setupModal(laterState));
-        expect(document.querySelector('input').value).toBe('');
-        mgr.cleanup();
-    }
-
-    test('wrong item disarms', async () => {
-        const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
-        const mgr = createArmedManager(id);
-        await expectLaterModalNotFilled(mgr, setupModal({ itemHrid: '/items/coal' }));
-        marketplaceSession.end(id);
-    });
-
-    test('wrong enhancement disarms', async () => {
-        const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
-        const mgr = createArmedManager(id, 3);
-        await expectLaterModalNotFilled(mgr, setupModal({ enhancementLevel: 1 }), { enhancementLevel: 3 });
-        marketplaceSession.end(id);
-    });
-
-    test('Sell mode disarms', async () => {
-        const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
-        const mgr = createArmedManager(id);
-        await expectLaterModalNotFilled(mgr, setupModal({ isSell: true }));
-        marketplaceSession.end(id);
-    });
-
-    test('missing runtime component disarms', async () => {
-        const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
-        const mgr = createArmedManager(id);
-        await expectLaterModalNotFilled(mgr, setupModal({}, { withFiber: false }));
-        marketplaceSession.end(id);
-    });
-
-    test('ambiguous runtime component disarms', async () => {
-        const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
-        const mgr = createArmedManager(id);
-        await expectLaterModalNotFilled(
-            mgr,
-            setupModal(
-                {},
-                {
-                    states: [makeMarketplaceRuntimeState(), makeMarketplaceRuntimeState({ itemHrid: '/items/coal' })],
-                }
-            )
-        );
-        marketplaceSession.end(id);
-    });
-
-    test('missing quantity input disarms', async () => {
-        const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
-        const mgr = createArmedManager(id);
-        await expectLaterModalNotFilled(mgr, setupModal({}, { numInputs: 0 }));
-        marketplaceSession.end(id);
-    });
-
-    test('multiple quantity inputs disarm', async () => {
-        const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
-        const mgr = createArmedManager(id);
-        await expectLaterModalNotFilled(mgr, setupModal({}, { numInputs: 2 }));
-        marketplaceSession.end(id);
-    });
-
-    test('unsupported market tab disarms', async () => {
-        const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
-        const mgr = createArmedManager(id);
-        await expectLaterModalNotFilled(mgr, setupModal({ marketTabKey: 'MyListings' }));
-        marketplaceSession.end(id);
-    });
-
-    test('unsupported market view disarms', async () => {
-        const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
-        const mgr = createArmedManager(id);
-        await expectLaterModalNotFilled(mgr, setupModal({ marketListingsView: 'History' }));
-        marketplaceSession.end(id);
-    });
-
-    test('malformed runtime enhancement disarms', async () => {
-        const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
-        const mgr = createArmedManager(id);
-        await expectLaterModalNotFilled(mgr, setupModal({ enhancementLevel: '0' }));
-        marketplaceSession.end(id);
-    });
-});
+// Retained-target behavior is covered in utils/marketplace-autofill.test.js.
 
 // ─── watchNativeTabExit ───────────────────────────────────────────────────────
 

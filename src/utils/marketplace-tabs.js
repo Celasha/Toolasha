@@ -6,29 +6,86 @@
 
 import { formatWithSeparator } from './formatters.js';
 
+export const MARKETPLACE_REMOUNT_GRACE_MS = 350;
+
 /**
- * Get the visible marketplace tab container.
- * Returns null when the marketplace panel is hidden or does not have native tabs.
+ * Return true only when an element and all element ancestors are actually visible.
+ * @param {HTMLElement} element
+ * @returns {boolean}
+ */
+export function isElementActuallyVisible(element) {
+    if (!element || element.nodeType !== 1 || !element.isConnected) return false;
+
+    for (let current = element; current; current = current.parentElement) {
+        if (current.hidden || current.getAttribute('aria-hidden') === 'true') return false;
+        const style = window.getComputedStyle(current);
+        if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') return false;
+    }
+
+    return true;
+}
+
+/**
+ * Get the unique visible Marketplace native tab container.
+ * Hidden retained panels and ambiguous duplicate visible panels fail closed.
  * @returns {HTMLElement|null}
  */
 export function getVisibleMarketplaceTabContainer() {
-    const panel = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
-    if (!panel) return null;
+    const candidates = new Set();
 
-    // Check the panel's nearest ancestor sub-panel container for visibility
-    const subPanelContainer = panel.closest('[class*="MainPanel_subPanelContainer"]');
-    if (subPanelContainer && getComputedStyle(subPanelContainer).display === 'none') return null;
+    for (const panel of document.querySelectorAll('[class*="MarketplacePanel_marketplacePanel"]')) {
+        if (!isElementActuallyVisible(panel)) continue;
 
-    const tabsContainer = panel.querySelector('.MuiTabs-flexContainer[role="tablist"]');
-    if (!tabsContainer) return null;
+        for (const tabsContainer of panel.querySelectorAll('.MuiTabs-flexContainer[role="tablist"]')) {
+            if (!isElementActuallyVisible(tabsContainer)) continue;
+            const hasNativeTab = Array.from(tabsContainer.children).some((tab) => {
+                const text = tab.textContent || '';
+                return text.includes('Market Listings') || text.includes('My Listings');
+            });
+            if (hasNativeTab) candidates.add(tabsContainer);
+        }
+    }
 
-    // Confirm this is the native marketplace tablist (has Market Listings or My Listings)
-    const hasNativeTab = Array.from(tabsContainer.children).some(
-        (btn) => btn.textContent.includes('Market Listings') || btn.textContent.includes('My Listings')
+    return candidates.size === 1 ? candidates.values().next().value : null;
+}
+
+/**
+ * Return true only when the unique selected native tab is Market Listings.
+ * Programmatic/native navigation to My Listings must terminate custom workflows,
+ * even if React temporarily retains the custom tab nodes.
+ * @param {HTMLElement|null} tabContainer
+ * @returns {boolean}
+ */
+export function isMarketplaceMarketListingsSelected(tabContainer = getVisibleMarketplaceTabContainer()) {
+    if (!tabContainer || !isElementActuallyVisible(tabContainer)) return false;
+
+    const selectedNativeTabs = Array.from(tabContainer.children).filter((tab) => {
+        if (tab.getAttribute('role') !== 'tab') return false;
+        if (tab.hasAttribute('data-mwi-custom-tab') || tab.hasAttribute('data-mwi-shrine-tab')) return false;
+        return tab.getAttribute('aria-selected') === 'true' || tab.classList.contains('Mui-selected');
+    });
+
+    return selectedNativeTabs.length === 1 && selectedNativeTabs[0].textContent.includes('Market Listings');
+}
+
+/**
+ * Click the unique visible native Marketplace navigation button.
+ * @returns {boolean} True when a button was found and clicked
+ */
+export function clickMarketplaceNavigationButton() {
+    const icons = Array.from(document.querySelectorAll('svg[aria-label="navigationBar.marketplace"]')).filter(
+        isElementActuallyVisible
     );
-    if (!hasNativeTab) return null;
+    const buttons = new Set();
 
-    return tabsContainer;
+    for (const icon of icons) {
+        const button = icon.closest('[class*="NavigationBar_nav__"]');
+        if (button && isElementActuallyVisible(button)) buttons.add(button);
+    }
+
+    if (buttons.size !== 1) return false;
+    buttons.values().next().value.click();
+    return true;
 }
 
 /**
@@ -55,11 +112,16 @@ export function removeMaterialTabsForOwner(owner) {
 export function createMaterialTab(material, referenceTab, onClickCallback, owner) {
     // Clone reference tab structure
     const tab = referenceTab.cloneNode(true);
+    const forceActionable = material.forceActionable === true;
 
     // Mark as custom tab for later identification
     tab.setAttribute('data-mwi-custom-tab', 'true');
+    // A cloned native tab must not duplicate the native tab/panel identity.
+    tab.removeAttribute('id');
+    tab.removeAttribute('aria-controls');
     tab.setAttribute('data-item-hrid', material.itemHrid);
     tab.setAttribute('data-missing-quantity', material.missing.toString());
+    if (forceActionable) tab.setAttribute('data-mwi-force-actionable', 'true');
     if (owner) tab.setAttribute('data-mwi-tab-owner', owner);
 
     // Color coding:
@@ -101,10 +163,15 @@ export function createMaterialTab(material, referenceTab, onClickCallback, owner
         `;
     }
 
-    // Gray out if not tradeable
-    if (!material.isTradeable) {
-        tab.style.opacity = '0.5';
+    // Disable non-tradeable and already-complete tabs.
+    if (!material.isTradeable || (material.missing <= 0 && !forceActionable)) {
+        tab.style.opacity = material.isTradeable ? '0.7' : '0.5';
         tab.style.cursor = 'not-allowed';
+        tab.setAttribute('aria-disabled', 'true');
+    } else {
+        tab.style.opacity = '1';
+        tab.style.cursor = 'pointer';
+        tab.setAttribute('aria-disabled', 'false');
     }
 
     // Remove selected state
@@ -117,15 +184,12 @@ export function createMaterialTab(material, referenceTab, onClickCallback, owner
         e.preventDefault();
         e.stopPropagation();
 
-        if (!material.isTradeable) {
-            // Not tradeable - do nothing
+        const currentMissing = Number.parseInt(tab.getAttribute('data-missing-quantity') || '0', 10);
+        if (!material.isTradeable || (!forceActionable && (!Number.isFinite(currentMissing) || currentMissing <= 0))) {
             return;
         }
 
-        // Call the provided callback
-        if (onClickCallback) {
-            onClickCallback(e, material);
-        }
+        if (onClickCallback) onClickCallback(e, material);
     });
 
     return tab;
@@ -191,26 +255,30 @@ export function updateTabBadge(tab, material) {
 
     tab.setAttribute('data-missing-quantity', material.missing.toString());
 
-    if (!material.isTradeable) {
-        tab.style.opacity = '0.5';
+    const forceActionable = tab.getAttribute('data-mwi-force-actionable') === 'true';
+    if (!material.isTradeable || (material.missing <= 0 && !forceActionable)) {
+        tab.style.opacity = material.isTradeable ? '0.7' : '0.5';
         tab.style.cursor = 'not-allowed';
+        tab.setAttribute('aria-disabled', 'true');
     } else {
         tab.style.opacity = '1';
         tab.style.cursor = 'pointer';
+        tab.setAttribute('aria-disabled', 'false');
     }
 }
 
 /**
  * Setup marketplace cleanup observer.
- * Polls to detect when the marketplace closes or custom tabs disappear.
+ * Uses MutationObserver for prompt close/remount detection, with polling as a fallback.
  *
  * Accepts either the legacy call signature:
  *   setupMarketplaceCleanupObserver(onCleanup, tabsArray)
  *
  * Or a new single-object signature:
- *   setupMarketplaceCleanupObserver({ owner, onTabsGone })
- *   where onTabsGone is called when the owner's tabs are no longer in the DOM
- *   or the marketplace panel becomes hidden.
+ *   setupMarketplaceCleanupObserver({ owner, onTabsGone, invalidStateGraceMs })
+ *   where onTabsGone is called when the owner's tabs are missing from the current
+ *   unique visible Marketplace tablist or the marketplace panel becomes hidden.
+ *   invalidStateGraceMs optionally tolerates a brief React remount gap.
  *
  * @param {Function|Object} onCleanupOrOpts
  * @param {Array} [tabsArray]
@@ -220,6 +288,7 @@ export function setupMarketplaceCleanupObserver(onCleanupOrOpts, tabsArray) {
     let owner = null;
     let onTabsGone = null;
     let legacyTabsArray = null;
+    let invalidStateGraceMs = 0;
 
     if (typeof onCleanupOrOpts === 'function') {
         // Legacy signature
@@ -228,41 +297,94 @@ export function setupMarketplaceCleanupObserver(onCleanupOrOpts, tabsArray) {
     } else {
         owner = onCleanupOrOpts?.owner || null;
         onTabsGone = onCleanupOrOpts?.onTabsGone || null;
+        invalidStateGraceMs = Math.max(0, Number(onCleanupOrOpts?.invalidStateGraceMs) || 0);
     }
 
     let pollInterval = null;
+    let mutationObserver = null;
+    let invalidStateTimer = null;
+    let isStopped = false;
+    let invalidStateNotified = false;
 
-    function poll() {
-        let hasTabs = false;
+    function hasValidState() {
+        const visibleContainer = getVisibleMarketplaceTabContainer();
+        if (!visibleContainer) return false;
 
         if (owner) {
+            if (!isMarketplaceMarketListingsSelected(visibleContainer)) return false;
+            // Only tabs inside the CURRENT unique visible Marketplace tablist count.
+            // Hidden retained panels must not mask a React remount that wiped the live tabs.
             const ownerTabs = Array.from(
-                document.querySelectorAll(`[data-mwi-custom-tab][data-mwi-tab-owner="${owner}"]`)
+                visibleContainer.querySelectorAll(`[data-mwi-custom-tab][data-mwi-tab-owner="${owner}"][role="tab"]`)
             );
-            hasTabs = ownerTabs.some((tab) => document.body.contains(tab));
-        } else if (legacyTabsArray) {
-            if (!legacyTabsArray || legacyTabsArray.length === 0) return;
-            hasTabs = legacyTabsArray.some((tab) => document.body.contains(tab));
-        } else {
+            return ownerTabs.some((tab) => tab.isConnected && isElementActuallyVisible(tab));
+        }
+
+        if (legacyTabsArray) {
+            if (legacyTabsArray.length === 0) return true;
+            return legacyTabsArray.some((tab) => document.body.contains(tab));
+        }
+
+        return true;
+    }
+
+    function clearInvalidStateTimer() {
+        if (!invalidStateTimer) return;
+        clearTimeout(invalidStateTimer);
+        invalidStateTimer = null;
+    }
+
+    function notifyInvalidState() {
+        if (invalidStateNotified || invalidStateTimer || !onTabsGone) return;
+
+        if (invalidStateGraceMs <= 0) {
+            invalidStateNotified = true;
+            onTabsGone();
             return;
         }
 
-        if (!hasTabs) {
-            if (onTabsGone) onTabsGone();
+        invalidStateTimer = setTimeout(() => {
+            invalidStateTimer = null;
+            if (isStopped || invalidStateNotified || hasValidState()) return;
+            invalidStateNotified = true;
+            onTabsGone();
+        }, invalidStateGraceMs);
+    }
+
+    function poll() {
+        if (isStopped) return;
+
+        if (!hasValidState()) {
+            notifyInvalidState();
             return;
         }
 
-        // Marketplace panel hidden → also trigger cleanup
-        const marketplacePanel = document.querySelector('[class*="MarketplacePanel_marketplacePanel"]');
-        const subPanelContainer = marketplacePanel?.closest('[class*="MainPanel_subPanelContainer"]');
-        if (subPanelContainer && getComputedStyle(subPanelContainer).display === 'none') {
-            if (onTabsGone) onTabsGone();
-        }
+        clearInvalidStateTimer();
+        invalidStateNotified = false;
+    }
+
+    if (document.body && typeof MutationObserver === 'function') {
+        mutationObserver = new MutationObserver(poll);
+        mutationObserver.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            // React changes native tab selection through aria-selected/class without
+            // necessarily mutating children. Observe both so native-tab exits are prompt
+            // even when navigation was triggered programmatically rather than by a click.
+            attributeFilter: ['style', 'hidden', 'aria-hidden', 'aria-selected', 'class'],
+        });
     }
 
     pollInterval = setInterval(poll, 1000);
 
     return () => {
+        isStopped = true;
+        clearInvalidStateTimer();
+        if (mutationObserver) {
+            mutationObserver.disconnect();
+            mutationObserver = null;
+        }
         if (pollInterval) {
             clearInterval(pollInterval);
             pollInterval = null;
@@ -279,13 +401,14 @@ function getGameObject() {
     const rootFiber = rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
     if (!rootFiber) return null;
 
-    function find(fiber) {
-        if (!fiber) return null;
-        if (fiber.stateNode?.handleGoToMarketplace) return fiber.stateNode;
-        return find(fiber.child) || find(fiber.sibling);
+    const stack = [rootFiber];
+    while (stack.length > 0) {
+        const fiber = stack.pop();
+        if (typeof fiber?.stateNode?.handleGoToMarketplace === 'function') return fiber.stateNode;
+        if (fiber?.sibling) stack.push(fiber.sibling);
+        if (fiber?.child) stack.push(fiber.child);
     }
-
-    return find(rootFiber);
+    return null;
 }
 
 /**
@@ -315,11 +438,13 @@ export function watchNativeTabExit(tabContainer, onExit) {
  * Navigate to marketplace for a specific item
  * @param {string} itemHrid - Item HRID to navigate to
  * @param {number} enhancementLevel - Enhancement level (default 0)
+ * @returns {boolean} True when the native Marketplace handler was invoked
  */
 export function navigateToMarketplace(itemHrid, enhancementLevel = 0) {
     const game = getGameObject();
     if (game?.handleGoToMarketplace) {
         game.handleGoToMarketplace(itemHrid, enhancementLevel);
+        return true;
     }
-    // Silently fail if game API unavailable - feature still provides value without auto-navigation
+    return false;
 }

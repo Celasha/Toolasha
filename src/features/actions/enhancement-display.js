@@ -13,6 +13,7 @@ import { MIN_ACTION_TIME_SECONDS } from '../../utils/profit-constants.js';
 import { timeReadable, formatLargeNumber } from '../../utils/formatters.js';
 import marketAPI from '../../api/marketplace.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
+import { removeInlineXpRate, renderInlineXpRate } from './inline-xp-rate.js';
 
 /**
  * Format a number with thousands separator and 2 decimal places
@@ -24,6 +25,105 @@ function formatAttempts(num) {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
     }).format(num);
+}
+
+/**
+ * Read the currently selected enhancement target directly from the native UI.
+ * @param {HTMLElement} panel
+ * @returns {number|null}
+ */
+export function getEnhancementTargetLevelFromUI(panel) {
+    const directInput = panel?.querySelector('[class*="enhancingMaxLevelInputContainer"] input');
+    const input =
+        directInput ||
+        Array.from(panel?.querySelectorAll('*') || [])
+            .find((element) => element.children.length === 0 && element.textContent.trim() === 'Target Level')
+            ?.parentElement?.querySelector('input[type="number"], input[type="text"]');
+
+    const targetLevel = Number.parseInt(input?.value || '', 10);
+    return Number.isFinite(targetLevel) ? Math.max(1, Math.min(20, targetLevel)) : null;
+}
+
+/**
+ * Read the enhancement level of the item selected in the native primary-item slot.
+ * @param {HTMLElement} panel
+ * @returns {number}
+ */
+export function getSelectedEnhancementLevelFromUI(panel) {
+    const primaryContainer = panel?.querySelector('[class*="primaryItemSelectorContainer"]');
+    const itemName = primaryContainer?.querySelector('[class*="Item_name"]')?.textContent?.trim() || '';
+    const match = itemName.match(/\+(\d+)$/);
+    return match ? Math.max(0, Math.min(19, Number.parseInt(match[1], 10))) : 0;
+}
+
+/**
+ * Calculate expected Enhancing XP across the Markov visit counts for a target path.
+ * Shared by the inline current-selection rate and the detailed per-target table.
+ * @param {Object} calculation
+ * @param {number} targetLevel
+ * @param {number} wisdomDecimal
+ * @param {number} itemLevel
+ * @returns {number}
+ */
+export function calculateExpectedEnhancementXp(calculation, targetLevel, wisdomDecimal, itemLevel) {
+    if (!calculation?.visitCounts || !Array.isArray(calculation.successRates)) return 0;
+
+    let totalXP = 0;
+    // Rebuilding after a failed attempt can visit levels below the item's
+    // starting enhancement. Those attempts still grant XP and must be included.
+    for (let level = 0; level < targetLevel; level++) {
+        const visits = Number(calculation.visitCounts[level]) || 0;
+        const successRate = (Number(calculation.successRates[level]?.actualRate) || 0) / 100;
+        const enhancementMultiplier = level === 0 ? 1 : level + 1;
+        // MWI client: 1.4 × Wisdom × (enhancementLevel + 1) × (10 + itemLevel).
+        // Keep the raw decimal value; the native Experience row also displays one decimal.
+        const successXP = 1.4 * (1 + wisdomDecimal) * enhancementMultiplier * (10 + itemLevel);
+        const failureXP = successXP * 0.1;
+        totalXP += visits * (successRate * successXP + (1 - successRate) * failureXP);
+    }
+    return totalXP;
+}
+
+/**
+ * Calculate the expected XP/hour for the exact target and protection settings
+ * currently selected in the Enhancing panel.
+ * @param {HTMLElement} panel
+ * @param {Object} params
+ * @param {Object} itemDetails
+ * @param {number} perActionTime
+ * @returns {number}
+ */
+export function calculateSelectedEnhancementXpPerHour(panel, params, itemDetails, perActionTime) {
+    const targetLevel = getEnhancementTargetLevelFromUI(panel);
+    const startLevel = getSelectedEnhancementLevelFromUI(panel);
+    if (!targetLevel || targetLevel <= startLevel || !Number.isFinite(perActionTime) || perActionTime <= 0) {
+        return 0;
+    }
+
+    const protectFromLevel = getProtectFromLevelFromUI(panel);
+    const effectiveProtectFrom = protectFromLevel >= 2 && protectFromLevel < targetLevel ? protectFromLevel : 0;
+    const itemLevel = itemDetails.itemLevel || 1;
+    const enhancementXpItemLevel = Number(itemDetails.itemLevel) || 0;
+    const wisdomDecimal = (params.experienceBonus || 0) / 100;
+
+    const calculation = calculateEnhancement({
+        enhancingLevel: params.enhancingLevel,
+        houseLevel: params.houseLevel,
+        toolBonus: params.toolBonus,
+        speedBonus: params.speedBonus,
+        itemLevel,
+        targetLevel,
+        startLevel,
+        protectFrom: effectiveProtectFrom,
+        blessedTea: params.teas.blessed,
+        guzzlingBonus: params.guzzlingBonus,
+    });
+
+    const totalTime = perActionTime * calculation.attempts;
+    if (!calculation.visitCounts || totalTime <= 0) return 0;
+
+    const totalXP = calculateExpectedEnhancementXp(calculation, targetLevel, wisdomDecimal, enhancementXpItemLevel);
+    return totalXP > 0 ? (totalXP / totalTime) * 3600 : 0;
 }
 
 /**
@@ -83,6 +183,7 @@ export async function displayEnhancementStats(panel, itemHrid) {
             if (existing) {
                 existing.remove();
             }
+            removeInlineXpRate(panel, 'enhancing');
             return;
         }
 
@@ -90,8 +191,10 @@ export async function displayEnhancementStats(panel, itemHrid) {
         const gameData = dataManager.getInitClientData();
 
         // Get item details directly (itemHrid is passed from panel observer)
-        const itemDetails = gameData.itemDetailMap[itemHrid];
+        const itemDetails = gameData?.itemDetailMap?.[itemHrid];
         if (!itemDetails) {
+            panel.querySelector('#mwi-enhancement-stats')?.remove();
+            removeInlineXpRate(panel, 'enhancing');
             return;
         }
 
@@ -148,6 +251,11 @@ export async function displayEnhancementStats(panel, itemHrid) {
         );
         injectDisplay(panel, html);
 
+        renderInlineXpRate(panel, calculateSelectedEnhancementXpPerHour(panel, params, itemDetails, perActionTime), {
+            approximate: true,
+            owner: 'enhancing',
+        });
+
         // Attach mode toggle button handler
         const modeToggleBtn = panel.querySelector('#mwi-enhance-mode-toggle');
         if (modeToggleBtn) {
@@ -158,6 +266,8 @@ export async function displayEnhancementStats(panel, itemHrid) {
             });
         }
     } catch (error) {
+        panel?.querySelector?.('#mwi-enhancement-stats')?.remove();
+        removeInlineXpRate(panel, 'enhancing');
         console.error('[Toolasha] ❌ Error displaying enhancement stats:', error);
         console.error('[Toolasha] Error stack:', error.stack);
     }
@@ -185,7 +295,7 @@ function generateCostsByLevelTable(
     const lines = [];
     const gameData = dataManager.getInitClientData();
     const itemLevel = itemDetails.itemLevel || 1;
-    const xpBaseLevel = itemDetails.level || itemDetails.equipmentDetail?.levelRequirements?.[0]?.level || 0;
+    const enhancementXpItemLevel = Number(itemDetails.itemLevel) || 0;
     const wisdomDecimal = params.experienceBonus / 100;
 
     lines.push('<div style="margin-top: 12px; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px;">');
@@ -275,18 +385,9 @@ function generateCostsByLevelTable(
         // Override time with buff-map-based per-action time (authoritative source)
         const totalTime = perActionTime * calc.attempts;
 
-        // Calculate XP/hr for this target level
-        let totalXP = 0;
-        if (calc.visitCounts && totalTime > 0) {
-            for (let i = 0; i < level; i++) {
-                const visits = calc.visitCounts[i];
-                const successRate = calc.successRates[i].actualRate / 100;
-                const enhMult = i === 0 ? 1.0 : i + 1;
-                const successXP = Math.floor(1.4 * (1 + wisdomDecimal) * enhMult * (10 + xpBaseLevel));
-                const failXP = Math.floor(successXP * 0.1);
-                totalXP += visits * (successRate * successXP + (1 - successRate) * failXP);
-            }
-        }
+        // Calculate XP/hr for this target level through the same shared expected-XP path
+        // used by the compact current-selection display.
+        const totalXP = calculateExpectedEnhancementXp(calc, level, wisdomDecimal, enhancementXpItemLevel);
         const xpPerHour = totalTime > 0 ? Math.round((totalXP / totalTime) * 3600) : 0;
 
         costData.push({

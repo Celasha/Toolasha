@@ -83,6 +83,12 @@ const {
 
 vi.mock('../../utils/marketplace-autofill.js', () => ({
     createAutofillManager: vi.fn(() => mockAutofillManager),
+    getReactFiberFromElement: vi.fn((element) => {
+        const key = Object.getOwnPropertyNames(element).find(
+            (name) => name.startsWith('__reactFiber$') || name.startsWith('__reactInternalInstance$')
+        );
+        return key ? element[key] : null;
+    }),
 }));
 
 vi.mock('../../core/marketplace-session.js', () => ({
@@ -112,8 +118,12 @@ vi.mock('../../utils/marketplace-tabs.js', () => ({
     navigateToMarketplace: mockNavigateToMarketplace,
     getVisibleMarketplaceTabContainer: mockGetVisibleTabContainer,
     setupMarketplaceCleanupObserver: mockSetupCleanupObserver,
+    clickMarketplaceNavigationButton: vi.fn(() => true),
+    isElementActuallyVisible: vi.fn(() => true),
     updateTabBadge: vi.fn(),
     removeMaterialTabs: vi.fn(),
+    MARKETPLACE_REMOUNT_GRACE_MS: 350,
+    isMarketplaceMarketListingsSelected: vi.fn(() => true),
 }));
 
 vi.mock('./house-cost-calculator.js', () => ({
@@ -122,6 +132,7 @@ vi.mock('./house-cost-calculator.js', () => ({
         getCurrentRoomLevel: vi.fn(() => 3),
         getInventoryCount: vi.fn(() => 0),
         getItemName: vi.fn(() => 'Test Item'),
+        getRoomName: vi.fn(() => 'Library'),
         calculateCumulativeCost: vi.fn(async () => ({ coins: 0, materials: [], totalValue: 0 })),
     },
 }));
@@ -164,6 +175,7 @@ vi.mock('../../utils/formatters.js', () => ({
     formatWithSeparator: vi.fn((n) => String(n)),
 }));
 
+import dataManager from '../../core/data-manager.js';
 import houseCostDisplay from './house-cost-display.js';
 
 // ---------------------------------------------------------------------------
@@ -249,11 +261,48 @@ describe('HouseCostDisplay — Section 3 Rev2 correction', () => {
         mockArm.mockReturnValue(true);
         mockIsActive.mockReturnValue(true);
         mockStart.mockReturnValue(1);
+        mockNavigateToMarketplace.mockReturnValue(true);
         resetInstanceState();
     });
 
     afterEach(() => {
         document.body.innerHTML = '';
+    });
+
+    describe('getMissingMaterials', () => {
+        it('sums inventory stacks and retains required quantity for the completed badge', () => {
+            dataManager.getInitClientData.mockReturnValue({
+                itemDetailMap: {
+                    '/items/wood': { name: 'Wood', isTradable: true },
+                },
+            });
+            dataManager.getInventory.mockReturnValue([
+                {
+                    itemHrid: '/items/wood',
+                    itemLocationHrid: '/item_locations/inventory',
+                    enhancementLevel: 0,
+                    count: 3,
+                },
+                {
+                    itemHrid: '/items/wood',
+                    itemLocationHrid: '/item_locations/inventory',
+                    enhancementLevel: 0,
+                    count: 4,
+                },
+            ]);
+
+            expect(
+                houseCostDisplay.getMissingMaterials({ materials: [{ itemHrid: '/items/wood', count: 10 }] })
+            ).toEqual([
+                {
+                    itemHrid: '/items/wood',
+                    itemName: 'Wood',
+                    required: 10,
+                    missing: 3,
+                    isTradeable: true,
+                },
+            ]);
+        });
     });
 
     // =========================================================================
@@ -398,13 +447,12 @@ describe('HouseCostDisplay — Section 3 Rev2 correction', () => {
             document.body.appendChild(p);
 
             const comp = { handleCloseMarketplaceModal: vi.fn() };
-            let fiber = { stateNode: comp, return: null };
-            const first = fiber;
+            // Place comp 64 levels above the element fiber — exceeds the depth-64 walk budget.
+            let chain = { stateNode: comp, return: null };
             for (let i = 0; i < 64; i++) {
-                fiber.return = { stateNode: null, return: null };
-                fiber = fiber.return;
+                chain = { stateNode: null, return: chain };
             }
-            p['__reactFiber$abc'] = first;
+            p['__reactFiber$abc'] = chain;
 
             expect(houseCostDisplay._getMarketplaceComponent()).toBeNull();
         });
@@ -573,7 +621,8 @@ describe('HouseCostDisplay — Section 3 Rev2 correction', () => {
 
     describe('createMissingMaterialTabs', () => {
         it('captures session token before watchNativeTabExit — stale listener cannot end newer session', () => {
-            makeTabsContainer();
+            const container = makeTabsContainer();
+            mockGetVisibleTabContainer.mockReturnValue(container);
             houseCostDisplay._houseSessionId = 5;
             houseCostDisplay.activeWorkflowModel = { sessionId: 5, materials: [], returnContext: null };
 
@@ -591,7 +640,8 @@ describe('HouseCostDisplay — Section 3 Rev2 correction', () => {
         });
 
         it('native-tab exit callback calls marketplaceSession.end (not just exitSession)', () => {
-            makeTabsContainer();
+            const container = makeTabsContainer();
+            mockGetVisibleTabContainer.mockReturnValue(container);
             houseCostDisplay._houseSessionId = 7;
             houseCostDisplay.activeWorkflowModel = { sessionId: 7, materials: [], returnContext: null };
 
@@ -604,7 +654,8 @@ describe('HouseCostDisplay — Section 3 Rev2 correction', () => {
         it('cleans up previous _nativeTabExitCleanup before installing a new one', () => {
             const previous = vi.fn();
             houseCostDisplay._nativeTabExitCleanup = previous;
-            makeTabsContainer();
+            const container = makeTabsContainer();
+            mockGetVisibleTabContainer.mockReturnValue(container);
             houseCostDisplay._houseSessionId = 5;
             houseCostDisplay.activeWorkflowModel = { sessionId: 5, materials: [], returnContext: null };
 
@@ -614,7 +665,8 @@ describe('HouseCostDisplay — Section 3 Rev2 correction', () => {
         });
 
         it('arm() uses model-based quantity provider that reads from activeWorkflowModel', () => {
-            makeTabsContainer();
+            const container = makeTabsContainer();
+            mockGetVisibleTabContainer.mockReturnValue(container);
             const mat = makeMaterial({ missing: 42 });
             houseCostDisplay._houseSessionId = 5;
             houseCostDisplay.activeWorkflowModel = {
@@ -631,7 +683,8 @@ describe('HouseCostDisplay — Section 3 Rev2 correction', () => {
         });
 
         it('model-based provider returns 0 when sessionId does not match', () => {
-            makeTabsContainer();
+            const container = makeTabsContainer();
+            mockGetVisibleTabContainer.mockReturnValue(container);
             const mat = makeMaterial({ missing: 10 });
             houseCostDisplay._houseSessionId = 5;
             houseCostDisplay.activeWorkflowModel = {
@@ -650,7 +703,8 @@ describe('HouseCostDisplay — Section 3 Rev2 correction', () => {
         });
 
         it('provider returns updated missing quantity after model update', () => {
-            makeTabsContainer();
+            const container = makeTabsContainer();
+            mockGetVisibleTabContainer.mockReturnValue(container);
             const mat = makeMaterial({ missing: 10 });
             houseCostDisplay._houseSessionId = 5;
             houseCostDisplay.activeWorkflowModel = {
@@ -669,7 +723,8 @@ describe('HouseCostDisplay — Section 3 Rev2 correction', () => {
         });
 
         it('Return tab is a dedicated cloneNode, not a createMaterialTab call', () => {
-            makeTabsContainer();
+            const container = makeTabsContainer();
+            mockGetVisibleTabContainer.mockReturnValue(container);
             houseCostDisplay._houseSessionId = 5;
             houseCostDisplay.activeWorkflowModel = {
                 sessionId: 5,

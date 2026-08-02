@@ -57,9 +57,10 @@ class MarketplaceSessionService {
      * End a session by token. No-op if the token does not match the active session.
      * Calls onEnd with reason 'ended'.
      * @param {number} sessionId
+     * @returns {boolean} True when the active session was ended
      */
     end(sessionId) {
-        if (!this._active || this._active.sessionId !== sessionId) return;
+        if (!this._active || this._active.sessionId !== sessionId) return false;
         const current = this._active;
         this._active = null;
         try {
@@ -67,14 +68,16 @@ class MarketplaceSessionService {
         } catch (err) {
             console.error('[MarketplaceSession] onEnd threw during end:', err);
         }
+        return true;
     }
 
     /**
      * End any active session unconditionally (e.g., on character switch).
      * Calls onEnd with reason 'ended'.
+     * @returns {boolean} True when an active session was ended
      */
     endAll() {
-        if (!this._active) return;
+        if (!this._active) return false;
         const current = this._active;
         this._active = null;
         try {
@@ -82,6 +85,7 @@ class MarketplaceSessionService {
         } catch (err) {
             console.error('[MarketplaceSession] onEnd threw during endAll:', err);
         }
+        return true;
     }
 
     /**

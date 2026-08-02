@@ -14,8 +14,10 @@ import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { calculateExperienceMultiplier } from '../../utils/experience-parser.js';
 import { calculateActionsPerHour } from '../../utils/profit-helpers.js';
 import { calculateMultiLevelProgress } from '../../utils/experience-calculator.js';
+import { compactActionPanelSection } from '../actions/production-tools-layout.js';
+import { removeInlineXpRate, renderInlineXpRate } from '../actions/inline-xp-rate.js';
 
-class AlchemyProfitDisplay {
+export class AlchemyProfitDisplay {
     constructor() {
         this.isActive = false;
         this.unregisterObserver = null;
@@ -30,6 +32,7 @@ class AlchemyProfitDisplay {
         this.sectionExpanded = new Map(); // Persistent expand/collapse state across rebuilds
         this.cachedInputField = null; // Cache input field since it gets removed when action starts
         this._alchemyTargetLevel = null;
+        this.inlineXpPerHour = 0;
     }
 
     /**
@@ -170,6 +173,7 @@ class AlchemyProfitDisplay {
                                 (className.includes('SkillActionDetail_itemRequirements') ||
                                     className.includes('SkillActionDetail_alchemyOutput') ||
                                     className.includes('SkillActionDetail_primaryItemSelectorContainer') ||
+                                    className.includes('SkillActionDetail_expOnSuccess') ||
                                     className.includes('SkillActionDetail_instructions'))
                             ) {
                                 triggerUpdate();
@@ -227,6 +231,11 @@ class AlchemyProfitDisplay {
             const fingerprint = alchemyProfit.getStateFingerprint();
             if (fingerprint !== this.lastFingerprint) {
                 this.handleAlchemyPanelUpdate(alchemyComponent);
+            } else if (this.inlineXpPerHour > 0) {
+                // React can replace only the native Experience row while leaving
+                // Toolasha's collapsible sections mounted. Reattach the cached
+                // rate even when the underlying calculation fingerprint is unchanged.
+                renderInlineXpRate(alchemyComponent, this.inlineXpPerHour, { owner: 'alchemy' });
             }
         }
     }
@@ -917,7 +926,9 @@ class AlchemyProfitDisplay {
         topLevelContent.appendChild(detailedBreakdownSection);
 
         // Create main profit section
-        const profitSection = this.createTrackedCollapsible('💰', 'Profitability', summary, topLevelContent, false, 0);
+        const profitSection = compactActionPanelSection(
+            this.createTrackedCollapsible('💰', 'Profitability', summary, topLevelContent, false, 0)
+        );
         profitSection.id = 'mwi-alchemy-profit';
         profitSection.classList.add('mwi-alchemy-profit');
         profitSection.setAttribute('data-mwi-profit-display', 'true');
@@ -959,6 +970,10 @@ class AlchemyProfitDisplay {
                 container.appendChild(levelProgressSection);
             }
         }
+
+        const alchemyPanel = container.closest('[class*="SkillActionDetail_alchemyComponent"]') || container;
+        this.inlineXpPerHour = this.calculateAlchemyXpPerHour(actionType, itemHrid, profitData);
+        renderInlineXpRate(alchemyPanel, this.inlineXpPerHour, { owner: 'alchemy' });
 
         this.displayElement = profitSection;
     }
@@ -1009,6 +1024,29 @@ class AlchemyProfitDisplay {
 
         // Expected value = (success rate × full XP) + (failure rate × 10% XP)
         return successRate * successXP + (1 - successRate) * failureXP;
+    }
+
+    /**
+     * Calculate the exact same XP/hour value used by the Level Progress section.
+     * Keeping one helper prevents the compact inline number from drifting from
+     * the detailed breakdown.
+     * @param {string} actionType
+     * @param {string} itemHrid
+     * @param {Object} profitData
+     * @returns {number}
+     */
+    calculateAlchemyXpPerHour(actionType, itemHrid, profitData) {
+        if (!actionType || !itemHrid || !profitData) return 0;
+
+        const xpPerAction = this.calculateAlchemyXPPerAction(actionType, itemHrid, profitData.successRate);
+        const actionTime = Number(profitData.actionTime);
+        if (!Number.isFinite(xpPerAction) || xpPerAction <= 0 || !Number.isFinite(actionTime) || actionTime <= 0) {
+            return 0;
+        }
+
+        const actionsPerHourBase = calculateActionsPerHour(actionTime);
+        const efficiencyMultiplier = 1 + (Number(profitData.efficiency) || 0);
+        return actionsPerHourBase * efficiencyMultiplier * xpPerAction;
     }
 
     /**
@@ -1207,8 +1245,7 @@ class AlchemyProfitDisplay {
             const timeNeeded = baseActionsNeeded * actionTime;
 
             // Calculate rates
-            const actionsPerHourBase = calculateActionsPerHour(actionTime);
-            const xpPerHour = actionsPerHourBase * efficiencyMultiplier * xpPerAction;
+            const xpPerHour = this.calculateAlchemyXpPerHour(actionType, itemHrid, profitData);
             const xpPerDay = xpPerHour * 24;
 
             const content = document.createElement('div');
@@ -1375,7 +1412,9 @@ class AlchemyProfitDisplay {
             // Create summary for collapsed view
             const summary = `${timeReadable(timeNeeded)} to Level ${nextLevel}`;
 
-            return this.createTrackedCollapsible('📈', 'Level Progress', summary, content, false);
+            return compactActionPanelSection(
+                this.createTrackedCollapsible('📈', 'Level Progress', summary, content, false)
+            );
         } catch (error) {
             console.error('[AlchemyProfitDisplay] Error creating level progress section:', error);
             return null;
@@ -1386,6 +1425,9 @@ class AlchemyProfitDisplay {
      * Remove profit display
      */
     removeDisplay() {
+        removeInlineXpRate(document, 'alchemy');
+        this.inlineXpPerHour = 0;
+
         // Remove profitability section
         if (this.displayElement && this.displayElement.parentNode) {
             this.displayElement.remove();

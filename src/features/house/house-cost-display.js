@@ -5,18 +5,44 @@
 
 import houseCostCalculator from './house-cost-calculator.js';
 import config from '../../core/config.js';
-import { coinFormatter, formatWithSeparator } from '../../utils/formatters.js';
+import { coinFormatter } from '../../utils/formatters.js';
 import dataManager from '../../core/data-manager.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
-import { createAutofillManager } from '../../utils/marketplace-autofill.js';
+import { createAutofillManager, getReactFiberFromElement } from '../../utils/marketplace-autofill.js';
 import { marketplaceSession, MARKETPLACE_OWNER } from '../../core/marketplace-session.js';
 import {
     createMaterialTab,
+    updateTabBadge,
     removeMaterialTabsForOwner,
     setupMarketplaceCleanupObserver,
     navigateToMarketplace,
     watchNativeTabExit,
+    getVisibleMarketplaceTabContainer,
+    clickMarketplaceNavigationButton,
+    MARKETPLACE_REMOUNT_GRACE_MS,
+    isMarketplaceMarketListingsSelected,
 } from '../../utils/marketplace-tabs.js';
+
+function getGameObject() {
+    const root = document.getElementById('root');
+    const rootFiber = root?._reactRootContainer?.current || root?._reactRootContainer?._internalRoot?.current;
+    if (!rootFiber) return null;
+
+    const stack = [rootFiber];
+    while (stack.length > 0) {
+        const fiber = stack.pop();
+        if (
+            fiber?.stateNode &&
+            (typeof fiber.stateNode.handleGoToMarketplace === 'function' ||
+                typeof fiber.stateNode.handleGoToNavTarget === 'function')
+        ) {
+            return fiber.stateNode;
+        }
+        if (fiber?.sibling) stack.push(fiber.sibling);
+        if (fiber?.child) stack.push(fiber.child);
+    }
+    return null;
+}
 
 class HouseCostDisplay {
     constructor() {
@@ -197,21 +223,21 @@ class HouseCostDisplay {
         const pricingCell = document.createElement('span');
         pricingCell.className = 'mwi-house-pricing HousePanel_itemRequirementCell__3hSBN';
         pricingCell.style.cssText = `
-            display: flex;
-            flex-direction: row;
-            align-items: center;
-            gap: 8px;
-            font-size: 0.75rem;
-            color: ${config.COLOR_ACCENT};
-            padding-left: 8px;
-            white-space: nowrap;
-        `;
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.75rem;
+        color: ${config.COLOR_ACCENT};
+        padding-left: 8px;
+        white-space: nowrap;
+    `;
 
         pricingCell.innerHTML = `
-            <span style="color: ${config.COLOR_TEXT_SECONDARY};">@ ${coinFormatter(materialData.marketPrice)}</span>
-            <span style="color: ${config.COLOR_ACCENT}; font-weight: bold;">= ${coinFormatter(materialData.totalValue)}</span>
-            <span style="color: ${hasEnough ? '#4ade80' : '#f87171'}; margin-left: auto; text-align: right;">${coinFormatter(amountNeeded)}</span>
-        `;
+        <span style="color: ${config.COLOR_TEXT_SECONDARY};">@ ${coinFormatter(materialData.marketPrice)}</span>
+        <span style="color: ${config.COLOR_ACCENT}; font-weight: bold;">= ${coinFormatter(materialData.totalValue)}</span>
+        <span style="color: ${hasEnough ? '#4ade80' : '#f87171'}; margin-left: auto; text-align: right;">${coinFormatter(amountNeeded)}</span>
+    `;
 
         itemContainer.after(pricingCell);
     }
@@ -225,14 +251,14 @@ class HouseCostDisplay {
         const totalDiv = document.createElement('div');
         totalDiv.className = 'mwi-house-total';
         totalDiv.style.cssText = `
-            margin-top: 12px;
-            padding-top: 12px;
-            border-top: 2px solid ${config.COLOR_ACCENT};
-            font-weight: bold;
-            font-size: 1rem;
-            color: ${config.COLOR_ACCENT};
-            text-align: center;
-        `;
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 2px solid ${config.COLOR_ACCENT};
+        font-weight: bold;
+        font-size: 1rem;
+        color: ${config.COLOR_ACCENT};
+        text-align: center;
+    `;
         totalDiv.textContent = `Total Market Value: ${coinFormatter(costData.totalValue)}`;
         costsSection.appendChild(totalDiv);
     }
@@ -247,42 +273,42 @@ class HouseCostDisplay {
         const section = document.createElement('div');
         section.className = 'mwi-house-to-level';
         section.style.cssText = `
-            margin-top: 8px;
-            padding: 8px;
-            background: rgba(0, 0, 0, 0.3);
-            border-radius: 8px;
-            border: 1px solid ${config.COLOR_BORDER};
-            min-height: 0;
-            overflow-y: auto;
-        `;
+        margin-top: 8px;
+        padding: 8px;
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 8px;
+        border: 1px solid ${config.COLOR_BORDER};
+        min-height: 0;
+        overflow-y: auto;
+    `;
 
         const headerRow = document.createElement('div');
         headerRow.style.cssText = `
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            margin-bottom: 8px;
-        `;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        margin-bottom: 8px;
+    `;
 
         const label = document.createElement('span');
         label.style.cssText = `
-            color: ${config.COLOR_ACCENT};
-            font-weight: bold;
-            font-size: 0.875rem;
-        `;
+        color: ${config.COLOR_ACCENT};
+        font-weight: bold;
+        font-size: 0.875rem;
+    `;
         label.textContent = 'Cumulative to Level:';
 
         const dropdown = document.createElement('select');
         dropdown.style.cssText = `
-            padding: 4px 8px;
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid ${config.COLOR_BORDER};
-            color: ${config.SCRIPT_COLOR_MAIN};
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 0.875rem;
-        `;
+        padding: 4px 8px;
+        background: rgba(0, 0, 0, 0.3);
+        border: 1px solid ${config.COLOR_BORDER};
+        color: ${config.SCRIPT_COLOR_MAIN};
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.875rem;
+    `;
 
         for (let level = currentLevel + 1; level <= 8; level++) {
             const option = document.createElement('option');
@@ -301,10 +327,10 @@ class HouseCostDisplay {
         const costContainer = document.createElement('div');
         costContainer.className = 'mwi-cumulative-cost-container';
         costContainer.style.cssText = `
-            font-size: 0.875rem;
-            margin-top: 8px;
-            text-align: left;
-        `;
+        font-size: 0.875rem;
+        margin-top: 8px;
+        text-align: left;
+    `;
         section.appendChild(costContainer);
 
         await this.updateCompactCumulativeDisplay(costContainer, houseRoomHrid, currentLevel, parseInt(dropdown.value));
@@ -339,10 +365,10 @@ class HouseCostDisplay {
 
         const materialsList = document.createElement('div');
         materialsList.style.cssText = `
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        `;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    `;
 
         if (costData.coins > 0) {
             this.appendMaterialRow(materialsList, {
@@ -360,14 +386,14 @@ class HouseCostDisplay {
 
         const totalDiv = document.createElement('div');
         totalDiv.style.cssText = `
-            margin-top: 12px;
-            padding-top: 12px;
-            border-top: 2px solid ${config.COLOR_ACCENT};
-            font-weight: bold;
-            font-size: 1rem;
-            color: ${config.COLOR_ACCENT};
-            text-align: center;
-        `;
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 2px solid ${config.COLOR_ACCENT};
+        font-weight: bold;
+        font-size: 1rem;
+        color: ${config.COLOR_ACCENT};
+        text-align: center;
+    `;
         totalDiv.textContent = `Total Market Value: ${coinFormatter(costData.totalValue)}`;
         container.appendChild(totalDiv);
 
@@ -392,36 +418,36 @@ class HouseCostDisplay {
 
         const row = document.createElement('div');
         row.style.cssText = `
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 0.875rem;
-            line-height: 1.4;
-        `;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.875rem;
+        line-height: 1.4;
+    `;
 
         const inventorySpan = document.createElement('span');
         inventorySpan.style.cssText = `
-            color: ${hasEnough ? 'white' : '#f87171'};
-            min-width: 120px;
-            text-align: right;
-        `;
+        color: ${hasEnough ? 'white' : '#f87171'};
+        min-width: 120px;
+        text-align: right;
+    `;
         inventorySpan.textContent = `${coinFormatter(inventoryCount)} / ${coinFormatter(material.count)}`;
         row.appendChild(inventorySpan);
 
         const nameSpan = document.createElement('span');
         nameSpan.style.cssText = `
-            color: white;
-            min-width: 140px;
-        `;
+        color: white;
+        min-width: 140px;
+    `;
         nameSpan.textContent = itemName;
         row.appendChild(nameSpan);
 
         if (!isCoin) {
             const pricingSpan = document.createElement('span');
             pricingSpan.style.cssText = `
-                color: ${config.COLOR_ACCENT};
-                min-width: 180px;
-            `;
+            color: ${config.COLOR_ACCENT};
+            min-width: 180px;
+        `;
             pricingSpan.textContent = `@ ${coinFormatter(material.marketPrice)} = ${coinFormatter(material.totalValue)}`;
             row.appendChild(pricingSpan);
         } else {
@@ -432,10 +458,10 @@ class HouseCostDisplay {
 
         const missingSpan = document.createElement('span');
         missingSpan.style.cssText = `
-            color: ${hasEnough ? '#4ade80' : '#f87171'};
-            margin-left: auto;
-            text-align: right;
-        `;
+        color: ${hasEnough ? '#4ade80' : '#f87171'};
+        margin-left: auto;
+        text-align: right;
+    `;
         missingSpan.textContent = `Missing: ${coinFormatter(amountNeeded)}`;
         row.appendChild(missingSpan);
 
@@ -453,13 +479,14 @@ class HouseCostDisplay {
         const missing = [];
 
         for (const material of costData.materials) {
-            const inventoryItem = inventory.find(
-                (i) =>
-                    i.itemHrid === material.itemHrid &&
-                    i.itemLocationHrid === '/item_locations/inventory' &&
-                    (!i.enhancementLevel || i.enhancementLevel === 0)
-            );
-            const have = inventoryItem?.count || 0;
+            const have = inventory
+                .filter(
+                    (item) =>
+                        item.itemHrid === material.itemHrid &&
+                        item.itemLocationHrid === '/item_locations/inventory' &&
+                        (!item.enhancementLevel || item.enhancementLevel === 0)
+                )
+                .reduce((total, item) => total + (item.count || 0), 0);
             const missingAmount = Math.max(0, material.count - have);
 
             if (missingAmount > 0) {
@@ -468,6 +495,7 @@ class HouseCostDisplay {
                     missing.push({
                         itemHrid: material.itemHrid,
                         itemName: itemDetails.name,
+                        required: material.count,
                         missing: missingAmount,
                         isTradeable: itemDetails.isTradable === true,
                     });
@@ -485,21 +513,22 @@ class HouseCostDisplay {
      */
     createMissingMaterialsButton(missingMaterials) {
         const button = document.createElement('button');
+        button.type = 'button';
         button.style.cssText = `
-            width: 100%;
-            padding: 10px 16px;
-            margin-top: 12px;
-            background: linear-gradient(180deg, rgba(91, 141, 239, 0.2) 0%, rgba(91, 141, 239, 0.1) 100%);
-            color: #ffffff;
-            border: 1px solid rgba(91, 141, 239, 0.4);
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 600;
-            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-            transition: all 0.2s ease;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-        `;
+        width: 100%;
+        padding: 10px 16px;
+        margin-top: 12px;
+        background: linear-gradient(180deg, rgba(91, 141, 239, 0.2) 0%, rgba(91, 141, 239, 0.1) 100%);
+        color: #ffffff;
+        border: 1px solid rgba(91, 141, 239, 0.4);
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+        transition: all 0.2s ease;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    `;
         button.textContent = 'Missing Mats Marketplace';
 
         button.addEventListener('mouseenter', () => {
@@ -517,7 +546,15 @@ class HouseCostDisplay {
         });
 
         button.addEventListener('click', async () => {
-            await this.handleMissingMaterialsClick(missingMaterials);
+            try {
+                await this.handleMissingMaterialsClick(missingMaterials);
+            } catch (error) {
+                console.error('[HouseCostDisplay] Missing Materials workflow failed:', error);
+                const sessionId = this._houseSessionId ?? this.activeWorkflowModel?.sessionId ?? null;
+                if (sessionId !== null && marketplaceSession.isActive(sessionId)) {
+                    this.exitHouseMarketplaceSession(sessionId);
+                }
+            }
         });
 
         return button;
@@ -587,6 +624,8 @@ class HouseCostDisplay {
             return;
         }
         const { currentLevel, targetLevel } = costCtx;
+        const gameBeforeMarketplace = getGameObject();
+        const previousNavTarget = gameBeforeMarketplace?.state?.navTarget ?? null;
 
         // 2. Start the Core House session before the first await
         const sessionId = marketplaceSession.start({
@@ -599,27 +638,39 @@ class HouseCostDisplay {
         this.activeWorkflowModel = {
             sessionId,
             materials: missingMaterials.map((m) => ({ ...m })),
-            returnContext: Object.freeze({ houseRoomHrid, currentLevel, targetLevel, sessionId }),
+            returnContext: Object.freeze({
+                houseRoomHrid,
+                currentLevel,
+                targetLevel,
+                previousNavTarget,
+                sessionId,
+            }),
         };
 
-        // 4. Resolve exactly one House component that owns the captured room
-        const houseComponent = this._getHouseComponent(houseRoomHrid);
-        if (!houseComponent) {
-            console.error('[HouseCostDisplay] Could not resolve unique House component for', houseRoomHrid);
-            this.exitHouseMarketplaceSession(sessionId);
-            return;
+        // 4. Prefer the exact visible native close control. Keep a bounded React
+        // fallback for retained/test DOMs where that button is unavailable.
+        const modalContent = this.currentModalContent;
+        const modalContainer = modalContent?.closest('[class*="Modal_modalContainer"]');
+        const closeButton = modalContainer?.querySelector('[class*="Modal_closeButton"]');
+        let houseComponent = null;
+        let modalClosedPredicate = null;
+
+        if (modalContent?.isConnected && modalContainer && closeButton) {
+            closeButton.click();
+            modalClosedPredicate = () => !modalContent.isConnected || !this._isElementActuallyVisible(modalContainer);
+        } else {
+            houseComponent = this._getHouseComponent(houseRoomHrid);
+            if (!houseComponent) {
+                console.error('[HouseCostDisplay] Could not resolve the active House modal close control');
+                this.exitHouseMarketplaceSession(sessionId);
+                return;
+            }
+            houseComponent.handleCloseModal();
+            modalClosedPredicate = () => houseComponent.state?.selectedHouseRoomHrid !== houseRoomHrid;
         }
 
-        // 5. Close the exact House room modal before navigation
-        houseComponent.handleCloseModal();
-
-        // 6. Bounded wait: the exact captured House component no longer owns the room.
-        // Do not treat an ambiguous resolver result as proof that the modal closed.
-        const houseModalClosed = await this._pollUntil(
-            () => houseComponent.state?.selectedHouseRoomHrid !== houseRoomHrid,
-            1500,
-            50
-        );
+        // 5. Bounded wait for the captured modal to detach, hide, or release the room.
+        const houseModalClosed = await this._pollUntil(modalClosedPredicate, 1500, 50);
 
         if (!marketplaceSession.isActive(sessionId) || this._houseSessionId !== sessionId) return;
 
@@ -630,13 +681,13 @@ class HouseCostDisplay {
         }
 
         // 7. Navigate to Marketplace
-        const navSuccess = await this.navigateToMarketplace();
+        const navSuccess = await this.navigateToMarketplace(sessionId);
 
         if (!marketplaceSession.isActive(sessionId) || this._houseSessionId !== sessionId) return;
 
         if (!navSuccess) {
             console.error('[HouseCostDisplay] Failed to navigate to marketplace — restoring room');
-            await this._restoreHouseRoom(houseRoomHrid, targetLevel, sessionId);
+            await this._restoreHouseRoom(houseRoomHrid, targetLevel, sessionId, houseComponent);
             this.exitHouseMarketplaceSession(sessionId);
             return;
         }
@@ -675,27 +726,51 @@ class HouseCostDisplay {
                     return entry?.missing ?? 0;
                 },
             });
-            if (armed) {
-                navigateToMarketplace(firstMaterial.itemHrid, firstMaterial.enhancementLevel ?? 0);
-            } else {
+            if (!armed || !navigateToMarketplace(firstMaterial.itemHrid, firstMaterial.enhancementLevel ?? 0)) {
                 this.exitHouseMarketplaceSession(sessionId);
                 return;
             }
+        } else {
+            this.exitHouseMarketplaceSession(sessionId);
+            return;
         }
 
         // 11. Per-session cleanup observer — ends the captured Core token on overlay close
         this.cleanupObserver = setupMarketplaceCleanupObserver({
             owner: MARKETPLACE_OWNER.HOUSE,
+            invalidStateGraceMs: MARKETPLACE_REMOUNT_GRACE_MS,
             onTabsGone: () => {
                 if (!marketplaceSession.isActive(sessionId)) return;
                 const tabContainer = this._getVisibleMarketplaceTabContainer();
-                if (tabContainer) {
-                    this._reinjectHouseMarketplaceTabs(tabContainer, sessionId);
-                } else {
-                    this.exitHouseMarketplaceSession(sessionId);
+                if (
+                    tabContainer &&
+                    isMarketplaceMarketListingsSelected(tabContainer) &&
+                    this._reinjectHouseMarketplaceTabs(tabContainer, sessionId)
+                ) {
+                    return;
                 }
+                this.exitHouseMarketplaceSession(sessionId);
             },
         });
+    }
+
+    _openHouseRoomByHrid(houseRoomHrid) {
+        const roomName = houseCostCalculator.getRoomName(houseRoomHrid);
+        const visiblePanels = Array.from(document.querySelectorAll('[class*="HousePanel_housePanel"]')).filter((el) =>
+            this._isElementActuallyVisible(el)
+        );
+        if (visiblePanels.length !== 1) return false;
+
+        const tiles = Array.from(visiblePanels[0].querySelectorAll('[class*="HousePanel_houseRoom"]'));
+        const roomSlug = houseRoomHrid.split('/').pop();
+        const tile = tiles.find((candidate) => {
+            const name = candidate.querySelector('[class*="HousePanel_name"]')?.textContent?.trim();
+            const iconHref = candidate.querySelector('use[href*="house_"]')?.getAttribute('href') || '';
+            return name === roomName || iconHref.endsWith(`#house_${roomSlug}`);
+        });
+        if (!tile) return false;
+        tile.click();
+        return true;
     }
 
     /**
@@ -703,34 +778,35 @@ class HouseCostDisplay {
      * Does not end the session — the caller does that after this returns.
      * @private
      */
-    async _restoreHouseRoom(houseRoomHrid, targetLevel, sessionId) {
-        const houseComponent = this._getHouseComponent();
-        if (!houseComponent) return;
-
-        houseComponent.handleHouseRoomClicked(houseRoomHrid);
+    async _restoreHouseRoom(houseRoomHrid, targetLevel, sessionId, houseComponent = null) {
+        if (!this._openHouseRoomByHrid(houseRoomHrid)) {
+            const fallbackHouse = houseComponent || this._getHouseComponent();
+            if (!fallbackHouse || typeof fallbackHouse.handleHouseRoomClicked !== 'function') return;
+            fallbackHouse.handleHouseRoomClicked(houseRoomHrid);
+        }
 
         const ready = await this._pollUntil(
             () => {
-                if (this._houseSessionId !== sessionId) return true; // session replaced — stop
-                const s = this._cumulativeState;
-                if (s?.houseRoomHrid !== houseRoomHrid) return false;
-                if (!s.costContainer?.isConnected || !s.dropdown?.isConnected) return false;
-                const currentHouse = this._getHouseComponent();
-                return currentHouse?.state?.selectedHouseRoomHrid === houseRoomHrid;
+                if (this._houseSessionId !== sessionId) return true;
+                const state = this._cumulativeState;
+                return (
+                    state?.houseRoomHrid === houseRoomHrid &&
+                    state.costContainer?.isConnected &&
+                    state.dropdown?.isConnected
+                );
             },
-            2000,
+            2500,
             50
         );
 
         if (!ready || this._houseSessionId !== sessionId || !marketplaceSession.isActive(sessionId)) return;
-
-        const s = this._cumulativeState;
-        if (!s?.costContainer?.isConnected || !s.dropdown?.isConnected) return;
+        const state = this._cumulativeState;
+        if (!state?.costContainer?.isConnected || !state?.dropdown?.isConnected) return;
 
         const levelStr = String(targetLevel);
-        if (Array.from(s.dropdown.options).some((o) => o.value === levelStr)) {
-            s.dropdown.value = levelStr;
-            s.dropdown.dispatchEvent(new Event('change'));
+        if (Array.from(state.dropdown.options).some((option) => option.value === levelStr)) {
+            state.dropdown.value = levelStr;
+            state.dropdown.dispatchEvent(new Event('change', { bubbles: true }));
         }
     }
 
@@ -738,32 +814,24 @@ class HouseCostDisplay {
      * Navigate to Marketplace by clicking the nav button, then polling for the panel.
      * @returns {Promise<boolean>}
      */
-    async navigateToMarketplace() {
-        const navButtons = document.querySelectorAll('[class*="NavigationBar_nav"]');
-        const marketplaceButton = Array.from(navButtons).find((nav) => {
-            const svg = nav.querySelector('svg[aria-label="navigationBar.marketplace"]');
-            return svg !== null;
-        });
-
-        if (!marketplaceButton) {
+    async navigateToMarketplace(sessionId) {
+        if (!marketplaceSession.isActive(sessionId) || !clickMarketplaceNavigationButton()) {
             console.error('[HouseCostDisplay] Marketplace navbar button not found');
             return false;
         }
-
-        marketplaceButton.click();
-
-        return await this.waitForMarketplace();
+        return await this.waitForMarketplace(sessionId);
     }
 
     /**
      * Poll until the Marketplace panel with "Market Listings" tab appears.
      * @returns {Promise<boolean>}
      */
-    async waitForMarketplace() {
+    async waitForMarketplace(sessionId) {
         const maxAttempts = 50;
         const delayMs = 100;
 
         for (let i = 0; i < maxAttempts; i++) {
+            if (!marketplaceSession.isActive(sessionId) || this._houseSessionId !== sessionId) return false;
             const tabsContainer = this._getVisibleMarketplaceTabContainer();
             if (tabsContainer) {
                 const hasMarketListings = Array.from(tabsContainer.children).some((btn) =>
@@ -792,8 +860,15 @@ class HouseCostDisplay {
      * Create custom material tabs (and Return tab) in the Marketplace tab bar.
      * @param {Array} missingMaterials
      */
-    createMissingMaterialTabs(missingMaterials) {
-        const tabsContainer = this._getVisibleMarketplaceTabContainer();
+    createMissingMaterialTabs(
+        missingMaterials,
+        tabsContainer = this._getVisibleMarketplaceTabContainer(),
+        capturedSessionId = this._houseSessionId
+    ) {
+        if (!marketplaceSession.isActive(capturedSessionId)) {
+            return false;
+        }
+
         if (!tabsContainer) {
             console.error('[HouseCostDisplay] Visible Marketplace tabs container not found');
             return false;
@@ -809,9 +884,6 @@ class HouseCostDisplay {
 
         tabsContainer.style.flexWrap = 'wrap';
 
-        // Capture session token before listener installation — listener must never act on a newer session
-        const capturedSessionId = this._houseSessionId;
-
         this._nativeTabExitCleanup?.();
         this._nativeTabExitCleanup = watchNativeTabExit(tabsContainer, () => {
             this.exitHouseMarketplaceSession(capturedSessionId);
@@ -824,6 +896,7 @@ class HouseCostDisplay {
                 material,
                 referenceTab,
                 (_e, mat) => {
+                    if (!marketplaceSession.isActive(capturedSessionId)) return;
                     const armed = this.autofillManager.arm({
                         sessionId: capturedSessionId,
                         itemHrid: mat.itemHrid,
@@ -836,8 +909,9 @@ class HouseCostDisplay {
                             return entry?.missing ?? 0;
                         },
                     });
-                    if (!armed) return;
-                    navigateToMarketplace(mat.itemHrid, 0);
+                    if (!armed || !navigateToMarketplace(mat.itemHrid, material.enhancementLevel ?? 0)) {
+                        this.exitHouseMarketplaceSession(capturedSessionId);
+                    }
                 },
                 MARKETPLACE_OWNER.HOUSE
             );
@@ -861,52 +935,11 @@ class HouseCostDisplay {
      * @param {number} capturedSessionId - Guards against stale reinject calls
      */
     _reinjectHouseMarketplaceTabs(tabContainer, capturedSessionId) {
-        if (!this.activeWorkflowModel) return;
-        if (!marketplaceSession.isActive(capturedSessionId)) return;
-
-        const { materials } = this.activeWorkflowModel;
-        const referenceTab = Array.from(tabContainer.children).find((btn) => btn.textContent.includes('My Listings'));
-        if (!referenceTab) return;
-
-        this._nativeTabExitCleanup?.();
-        this._nativeTabExitCleanup = watchNativeTabExit(tabContainer, () => {
-            this.exitHouseMarketplaceSession(capturedSessionId);
-        });
-
-        this.currentMaterialsTabs.length = 0;
-        for (const material of materials) {
-            const capturedItemHrid = material.itemHrid;
-            const tab = createMaterialTab(
-                material,
-                referenceTab,
-                (_e, mat) => {
-                    const armed = this.autofillManager.arm({
-                        sessionId: capturedSessionId,
-                        itemHrid: mat.itemHrid,
-                        enhancementLevel: material.enhancementLevel ?? 0,
-                        modalMode: 'buy',
-                        quantityProvider: () => {
-                            const model = this.activeWorkflowModel;
-                            if (model?.sessionId !== capturedSessionId) return 0;
-                            const entry = model.materials.find((e) => e.itemHrid === capturedItemHrid);
-                            return entry?.missing ?? 0;
-                        },
-                    });
-                    if (!armed) return;
-                    navigateToMarketplace(mat.itemHrid, 0);
-                },
-                MARKETPLACE_OWNER.HOUSE
-            );
-            tab.setAttribute('data-item-name', material.itemName);
-            tabContainer.appendChild(tab);
-            this.currentMaterialsTabs.push(tab);
+        const model = this.activeWorkflowModel;
+        if (!model || model.sessionId !== capturedSessionId || !marketplaceSession.isActive(capturedSessionId)) {
+            return false;
         }
-
-        if (this.activeWorkflowModel?.returnContext) {
-            const returnTab = this._createHouseReturnTab(referenceTab, this.activeWorkflowModel.returnContext);
-            tabContainer.appendChild(returnTab);
-            this.currentMaterialsTabs.push(returnTab);
-        }
+        return this.createMissingMaterialTabs(model.materials, tabContainer, capturedSessionId);
     }
 
     /**
@@ -928,11 +961,24 @@ class HouseCostDisplay {
         tab.classList.remove('Mui-selected');
         tab.setAttribute('aria-selected', 'false');
         tab.setAttribute('tabindex', '-1');
-        tab.textContent = '↩ Return to House';
-        tab.addEventListener('click', (event) => {
+        const badgeSpan = tab.querySelector('[class*="TabsComponent_badge"]');
+        if (badgeSpan) {
+            const roomName = houseCostCalculator.getRoomName(returnContext.houseRoomHrid) || 'House';
+            badgeSpan.innerHTML =
+                `<div style="text-align:center;"><div>↩ Return</div>` +
+                `<div style="font-size:0.75em;color:#60a5fa;">${roomName}</div></div>`;
+        } else {
+            tab.textContent = '↩ Return to House';
+        }
+        tab.addEventListener('click', async (event) => {
             event.preventDefault();
             event.stopPropagation();
-            this._handleHouseReturn(returnContext);
+            try {
+                await this._handleHouseReturn(returnContext);
+            } catch (error) {
+                console.error('[HouseCostDisplay] Return workflow failed:', error);
+                this.exitHouseMarketplaceSession(returnContext.sessionId);
+            }
         });
         return tab;
     }
@@ -974,19 +1020,7 @@ class HouseCostDisplay {
     }
 
     _getVisibleMarketplaceTabContainer() {
-        const panels = this._getVisibleMarketplacePanels();
-        if (panels.length !== 1) return null;
-
-        const candidates = Array.from(panels[0].querySelectorAll('.MuiTabs-flexContainer[role="tablist"]')).filter(
-            (container) => {
-                if (!this._isElementActuallyVisible(container)) return false;
-                return Array.from(container.children).some(
-                    (tab) => tab.textContent.includes('Market Listings') || tab.textContent.includes('My Listings')
-                );
-            }
-        );
-
-        return candidates.length === 1 ? candidates[0] : null;
+        return getVisibleMarketplaceTabContainer();
     }
 
     /**
@@ -996,31 +1030,24 @@ class HouseCostDisplay {
      * @returns {Object|null}
      */
     _getMarketplaceComponent() {
-        const REACT_FIBER_PREFIXES = ['__reactFiber$', '__reactInternalInstance$'];
-
         const panels = this._getVisibleMarketplacePanels();
 
         if (panels.length !== 1) return null;
 
-        const panel = panels[0];
-        const fiberKey = Object.getOwnPropertyNames(panel).find((key) =>
-            REACT_FIBER_PREFIXES.some((prefix) => key.startsWith(prefix))
-        );
-        if (!fiberKey) return null;
-
         const candidates = [];
-        let fiber = panel[fiberKey];
+        let fiber = getReactFiberFromElement(panels[0]);
+        if (!fiber) return null;
         let depth = 0;
+        const seen = new Set();
         while (fiber && depth < 64) {
-            if (fiber.stateNode?.handleCloseMarketplaceModal) {
-                candidates.push(fiber.stateNode);
+            const node = fiber.stateNode;
+            if (typeof node?.handleCloseMarketplaceModal === 'function' && !seen.has(node)) {
+                seen.add(node);
+                candidates.push(node);
             }
             fiber = fiber.return;
             depth++;
         }
-
-        // If ancestry continues beyond the explicit budget, uniqueness was not proven.
-        if (fiber) return null;
 
         return candidates.length === 1 ? candidates[0] : null;
     }
@@ -1034,24 +1061,32 @@ class HouseCostDisplay {
      * @returns {Object|null}
      */
     _getHouseComponent(capturedRoomHrid = null) {
-        const REACT_FIBER_PREFIXES_LOCAL = ['__reactFiber$', '__reactInternalInstance$'];
-        const panels = Array.from(document.querySelectorAll('[class*="HousePanel_"]')).filter((el) =>
-            this._isElementActuallyVisible(el)
-        );
-        if (panels.length === 0) return null;
+        const anchors = [];
+
+        if (this.currentModalContent?.isConnected && this._isElementActuallyVisible(this.currentModalContent)) {
+            anchors.push(this.currentModalContent);
+        }
+
+        const modalHousePanel = this.currentModalContent?.closest('[class*="HousePanel_"]');
+        if (modalHousePanel && this._isElementActuallyVisible(modalHousePanel) && !anchors.includes(modalHousePanel)) {
+            anchors.push(modalHousePanel);
+        }
+
+        if (anchors.length === 0) {
+            const visibleHouseRoots = Array.from(document.querySelectorAll('[class*="HousePanel_"]')).filter((el) =>
+                this._isElementActuallyVisible(el)
+            );
+            if (visibleHouseRoots.length === 0) return null;
+            anchors.push(...visibleHouseRoots);
+        }
 
         const seen = new Set();
         const candidates = [];
 
-        for (const panel of panels) {
-            const fiberKey = Object.getOwnPropertyNames(panel).find((k) =>
-                REACT_FIBER_PREFIXES_LOCAL.some((p) => k.startsWith(p))
-            );
-            if (!fiberKey) continue;
-
-            let fiber = panel[fiberKey];
+        for (const anchor of anchors) {
+            let fiber = getReactFiberFromElement(anchor);
+            if (!fiber) continue;
             let depth = 0;
-
             while (fiber && depth < 64) {
                 const node = fiber.stateNode;
                 if (
@@ -1062,8 +1097,8 @@ class HouseCostDisplay {
                     node.state &&
                     Object.prototype.hasOwnProperty.call(node.state, 'selectedHouseRoomHrid')
                 ) {
+                    seen.add(node);
                     if (capturedRoomHrid === null || node.state.selectedHouseRoomHrid === capturedRoomHrid) {
-                        seen.add(node);
                         candidates.push(node);
                     }
                 }
@@ -1086,7 +1121,7 @@ class HouseCostDisplay {
      * @param {Object} returnContext - Immutable snapshot: { houseRoomHrid, currentLevel, targetLevel, sessionId }
      */
     async _handleHouseReturn(returnContext) {
-        const { houseRoomHrid, targetLevel, sessionId: capturedSessionId } = returnContext;
+        const { houseRoomHrid, targetLevel, previousNavTarget, sessionId: capturedSessionId } = returnContext;
 
         // Guard before incrementing generation: a stale detached Return node must not
         // cancel a valid Return already in progress for the current session.
@@ -1106,16 +1141,22 @@ class HouseCostDisplay {
             this._nativeTabExitCleanup = null;
         }
 
-        // Resolve exactly one visible Marketplace component before mutating anything
-        const marketplaceComponent = this._getMarketplaceComponent();
-        if (!marketplaceComponent) {
-            console.error('[HouseCostDisplay] Return: could not resolve unique Marketplace component');
-            this.exitHouseMarketplaceSession(capturedSessionId);
-            return;
+        // Marketplace is normally opened as the main nav target. Restore that exact
+        // target when available; retained modal-based clients use the native close handler.
+        const game = getGameObject();
+        let fallbackHouseComponent = null;
+        if (game && typeof game.handleChangeNavTarget === 'function' && previousNavTarget != null) {
+            game.handleChangeNavTarget(previousNavTarget);
+        } else {
+            const marketplaceComponent = this._getMarketplaceComponent();
+            if (!marketplaceComponent) {
+                console.error('[HouseCostDisplay] Return: missing Marketplace navigation owner');
+                this.exitHouseMarketplaceSession(capturedSessionId);
+                return;
+            }
+            marketplaceComponent.handleCloseMarketplaceModal();
+            fallbackHouseComponent = this._getHouseComponent();
         }
-
-        // Close Marketplace
-        marketplaceComponent.handleCloseMarketplaceModal();
 
         // Bounded wait: no actually visible Marketplace panel remains.
         const marketplaceClosed = await this._pollUntil(
@@ -1134,26 +1175,31 @@ class HouseCostDisplay {
             return;
         }
 
-        // Resolve exactly one House component (no room filter — room is not yet selected)
-        const houseComponent = this._getHouseComponent();
-        if (!houseComponent) {
-            console.error('[HouseCostDisplay] Return: could not resolve unique House component');
-            this.exitHouseMarketplaceSession(capturedSessionId);
-            return;
+        // Reopen the saved House room through its visible native tile. A bounded
+        // component fallback supports modal-based retained clients without scanning the root.
+        if (!this._openHouseRoomByHrid(houseRoomHrid)) {
+            fallbackHouseComponent = fallbackHouseComponent || this._getHouseComponent();
+            if (!fallbackHouseComponent || typeof fallbackHouseComponent.handleHouseRoomClicked !== 'function') {
+                console.error('[HouseCostDisplay] Return: could not open the saved House room');
+                this.exitHouseMarketplaceSession(capturedSessionId);
+                return;
+            }
+            fallbackHouseComponent.handleHouseRoomClicked(houseRoomHrid);
         }
-
-        // Reopen the saved House room
-        houseComponent.handleHouseRoomClicked(houseRoomHrid);
 
         // Bounded wait: freshly connected exact-room Toolasha target control
         const roomReady = await this._pollUntil(
             () => {
                 if (this._houseReturnGeneration !== generation) return true; // superseded — exit loop
                 const s = this._cumulativeState;
-                if (!s || s.houseRoomHrid !== houseRoomHrid) return false;
-                if (!s.costContainer?.isConnected || !s.dropdown?.isConnected) return false;
-                const house = this._getHouseComponent();
-                return house?.state?.selectedHouseRoomHrid === houseRoomHrid;
+                const fallbackOwnsRoom =
+                    !fallbackHouseComponent || fallbackHouseComponent.state?.selectedHouseRoomHrid === houseRoomHrid;
+                return (
+                    fallbackOwnsRoom &&
+                    s?.houseRoomHrid === houseRoomHrid &&
+                    s.costContainer?.isConnected &&
+                    s.dropdown?.isConnected
+                );
             },
             3000,
             50
@@ -1185,7 +1231,7 @@ class HouseCostDisplay {
 
         // Restore target level
         s.dropdown.value = levelStr;
-        s.dropdown.dispatchEvent(new Event('change'));
+        s.dropdown.dispatchEvent(new Event('change', { bubbles: true }));
 
         // End only the captured Core session — onEnd handles local teardown
         this.exitHouseMarketplaceSession(capturedSessionId);
@@ -1336,51 +1382,20 @@ class HouseCostDisplay {
         const updatedMaterials = this.getMissingMaterials(costData);
 
         if (this.activeWorkflowModel) {
-            this.activeWorkflowModel.materials = updatedMaterials.map((m) => ({ ...m }));
+            for (const modelEntry of this.activeWorkflowModel.materials) {
+                const updated = updatedMaterials.find((material) => material.itemHrid === modelEntry.itemHrid);
+                if (updated) Object.assign(modelEntry, updated);
+                else modelEntry.missing = 0;
+            }
         }
 
-        for (const tab of this.currentMaterialsTabs) {
-            // Skip the dedicated Return tab — it has no material semantics
-            if (tab.hasAttribute('data-mwi-house-return')) continue;
-
+        const connectedTabs = document.querySelectorAll(
+            `[data-mwi-custom-tab][data-mwi-tab-owner="${MARKETPLACE_OWNER.HOUSE}"][data-item-hrid]`
+        );
+        for (const tab of connectedTabs) {
             const itemHrid = tab.getAttribute('data-item-hrid');
-            const material = updatedMaterials.find((m) => m.itemHrid === itemHrid);
-
-            const badgeSpan = tab.querySelector('[class*="TabsComponent_badge"]');
-            if (!badgeSpan) continue;
-
-            let statusColor;
-            let statusText;
-            let displayName = tab.getAttribute('data-item-name') || itemHrid;
-
-            if (!material) {
-                statusColor = '#4ade80';
-                statusText = 'Complete';
-            } else if (!material.isTradeable) {
-                statusColor = '#888888';
-                statusText = 'Not Tradeable';
-                displayName = material.itemName;
-            } else {
-                statusColor = '#ef4444';
-                statusText = `Missing: ${formatWithSeparator(material.missing)}`;
-                displayName = material.itemName;
-            }
-
-            const titleCaseName = displayName
-                .split(' ')
-                .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-                .join(' ');
-
-            badgeSpan.innerHTML = `
-                <div style="text-align: center;">
-                    <div>${titleCaseName}</div>
-                    <div style="font-size: 0.75em; color: ${statusColor};">
-                        ${statusText}
-                    </div>
-                </div>
-            `;
-
-            tab.setAttribute('data-missing-quantity', material ? material.missing.toString() : '0');
+            const material = this.activeWorkflowModel?.materials.find((entry) => entry.itemHrid === itemHrid);
+            if (material) updateTabBadge(tab, material);
         }
     }
 
@@ -1396,8 +1411,11 @@ class HouseCostDisplay {
             grid.style.gridTemplateColumns = '';
         });
 
-        // End the active House session — onEnd callback handles local teardown
-        this.exitHouseMarketplaceSession(this._houseSessionId);
+        // End the active House session — onEnd callback handles local teardown.
+        // Fall back to local teardown if the Core token was already gone.
+        if (!this.exitHouseMarketplaceSession(this._houseSessionId)) {
+            this.teardownHouseMarketplaceSession();
+        }
 
         if (this.cleanupObserver) {
             this.cleanupObserver();

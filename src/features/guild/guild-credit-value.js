@@ -10,10 +10,9 @@
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
-import { getItemPrice } from '../../utils/market-data.js';
-import { formatKMB } from '../../utils/formatters.js';
-
 import { marketplaceSession, MARKETPLACE_OWNER } from '../../core/marketplace-session.js';
+import { formatKMB } from '../../utils/formatters.js';
+import { getItemPrice } from '../../utils/market-data.js';
 import {
     navigateToMarketplace,
     createMaterialTab,
@@ -22,10 +21,68 @@ import {
     updateTabBadge,
     setupMarketplaceCleanupObserver,
     getVisibleMarketplaceTabContainer,
+    watchNativeTabExit,
+    isElementActuallyVisible,
+    MARKETPLACE_REMOUNT_GRACE_MS,
+    isMarketplaceMarketListingsSelected,
 } from '../../utils/marketplace-tabs.js';
 import { createAutofillManager } from '../../utils/marketplace-autofill.js';
+import { normalizeGuildShrineReturnLabel } from './guild-marketplace-label.js';
+
+function getVisibleGuildNavigationButton() {
+    const buttons = new Set();
+    for (const icon of document.querySelectorAll('svg[aria-label="navigationBar.guild"]')) {
+        const button = icon.closest('[class*="NavigationBar_nav__"]');
+        if (button && isElementActuallyVisible(button)) buttons.add(button);
+    }
+    return buttons.size === 1 ? buttons.values().next().value : null;
+}
 
 const CSS_CLASS = 'mwi-guild-credit-value';
+
+function createGuildReturnTab(referenceTab, returnLabel, sessionId) {
+    const returnTab = referenceTab.cloneNode(true);
+    returnTab.setAttribute('data-mwi-custom-tab', 'true');
+    returnTab.setAttribute('data-mwi-tab-owner', MARKETPLACE_OWNER.GUILD);
+    // A custom tab must not duplicate the native tab/panel identity.
+    returnTab.removeAttribute('id');
+    returnTab.removeAttribute('aria-controls');
+    returnTab.classList.remove('Mui-selected');
+    returnTab.setAttribute('aria-selected', 'false');
+    returnTab.setAttribute('tabindex', '-1');
+    returnTab.setAttribute('aria-disabled', 'false');
+    returnTab.style.cursor = 'pointer';
+    returnTab.style.opacity = '1';
+    returnTab.replaceChildren();
+
+    const returnContent = document.createElement('div');
+    returnContent.style.textAlign = 'center';
+    const returnTitle = document.createElement('div');
+    returnTitle.textContent = '↩ Return';
+    const returnSubtitle = document.createElement('div');
+    returnSubtitle.style.cssText = 'font-size:0.75em;color:#60a5fa;';
+    returnSubtitle.textContent = returnLabel || 'Guild';
+    returnContent.append(returnTitle, returnSubtitle);
+    returnTab.appendChild(returnContent);
+
+    returnTab.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!marketplaceSession.isActive(sessionId)) return;
+
+        // Resolve the live navigation button at click time. The sidebar can remount
+        // while Marketplace is open, so a button captured during tab creation may be detached.
+        const guildButton = getVisibleGuildNavigationButton();
+        if (!guildButton) {
+            marketplaceSession.end(sessionId);
+            return;
+        }
+        guildButton.click();
+        marketplaceSession.end(sessionId);
+    });
+
+    return returnTab;
+}
 
 /**
  * Build cheapest-gold-per-credit maps for both sell and buy sides.
@@ -130,19 +187,15 @@ class GuildCreditValue {
 
     _reinjectGuildMarketplaceTabs(tabContainer, capturedSessionId) {
         const model = this._guildActiveWorkflowModel;
-        if (!model || !marketplaceSession.isActive(capturedSessionId)) {
-            this.teardownGuildMarketplaceSession();
-            return;
+        if (!model || model.sessionId !== capturedSessionId || !marketplaceSession.isActive(capturedSessionId)) {
+            return false;
         }
 
         removeMaterialTabsForOwner(MARKETPLACE_OWNER.GUILD);
         document.querySelectorAll('[data-mwi-shrine-tab="true"]').forEach((el) => el.remove());
 
         const referenceTab = Array.from(tabContainer.children).find((btn) => btn.textContent.includes('My Listings'));
-        if (!referenceTab) {
-            this.teardownGuildMarketplaceSession();
-            return;
-        }
+        if (!referenceTab) return false;
 
         tabContainer.style.flexWrap = 'wrap';
         const scroller = tabContainer.closest('[class*="MuiTabs-scroller"]');
@@ -156,6 +209,7 @@ class GuildCreditValue {
                 mat,
                 referenceTab,
                 (_e, m) => {
+                    if (!marketplaceSession.isActive(capturedSessionId)) return;
                     const currentModel = this._guildActiveWorkflowModel;
                     const entry = currentModel?.materials.find((e) => e.itemHrid === capturedMat.itemHrid);
                     const armed = this.autofillManager.arm({
@@ -165,8 +219,9 @@ class GuildCreditValue {
                         modalMode: 'buy',
                         quantityProvider: () => entry?.missing ?? 0,
                     });
-                    if (!armed) return;
-                    navigateToMarketplace(m.itemHrid, 0);
+                    if (!armed || !navigateToMarketplace(m.itemHrid, 0)) {
+                        marketplaceSession.end(capturedSessionId);
+                    }
                 },
                 MARKETPLACE_OWNER.GUILD
             );
@@ -175,29 +230,14 @@ class GuildCreditValue {
             tabContainer.appendChild(tab);
         }
 
-        const guildButton = document
-            .querySelector('svg[aria-label="navigationBar.guild"]')
-            ?.closest('[class*="NavigationBar_nav"]');
-        if (guildButton) {
-            const returnTab = referenceTab.cloneNode(true);
-            returnTab.setAttribute('data-mwi-custom-tab', 'true');
-            returnTab.setAttribute('data-mwi-tab-owner', MARKETPLACE_OWNER.GUILD);
-            returnTab.classList.remove('Mui-selected');
-            returnTab.setAttribute('aria-selected', 'false');
-            returnTab.setAttribute('tabindex', '-1');
-            const badgeSpan = returnTab.querySelector('[class*="TabsComponent_badge"]');
-            if (badgeSpan) {
-                badgeSpan.innerHTML =
-                    '<div style="text-align:center;"><div>↩ Return</div><div style="font-size:0.75em;color:#60a5fa;">Guild</div></div>';
-            }
-            returnTab.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                this.teardownGuildMarketplaceSession();
-                guildButton.click();
-            });
-            tabContainer.appendChild(returnTab);
-        }
+        if (!getVisibleGuildNavigationButton()) return false;
+        tabContainer.appendChild(createGuildReturnTab(referenceTab, model.returnLabel, capturedSessionId));
+
+        if (this._shrineTabCleanup) this._shrineTabCleanup();
+        this._shrineTabCleanup = watchNativeTabExit(tabContainer, () => {
+            marketplaceSession.end(capturedSessionId);
+        });
+        return true;
     }
 
     initialize() {
@@ -293,13 +333,13 @@ class GuildCreditValue {
                 tr.style.cssText = `border-bottom:1px solid rgba(255,255,255,0.05); color:${isTop ? '#4ade80' : '#e0e0e0'};`;
                 const rate = row.creditCount === 1 ? `${row.itemCount} → 1` : `${row.itemCount} → ${row.creditCount}`;
                 tr.innerHTML = `
-                    <td style="padding:4px 6px; text-align:left;">${row.name}</td>
-                    <td style="padding:4px 6px; text-align:center; color:#9ca3af;">${rate}</td>
-                    <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.sellPrice ? formatKMB(row.sellPrice) : '–'}</td>
-                    <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buyPrice ? formatKMB(row.buyPrice) : '–'}</td>
-                    <td style="padding:4px 6px; text-align:right; ${sortKey === 'bid' ? 'color:#9ca3af;' : `font-weight:${isTop ? '700' : '400'};`}">${row.sellGPC ? formatKMB(row.sellGPC) : '–'}</td>
-                    <td style="padding:4px 6px; text-align:right; ${sortKey === 'ask' ? 'color:#9ca3af;' : `font-weight:${isTop ? '700' : '400'};`}">${row.buyGPC ? formatKMB(row.buyGPC) : '–'}</td>
-                `;
+                <td style="padding:4px 6px; text-align:left;">${row.name}</td>
+                <td style="padding:4px 6px; text-align:center; color:#9ca3af;">${rate}</td>
+                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.sellPrice ? formatKMB(row.sellPrice) : '–'}</td>
+                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buyPrice ? formatKMB(row.buyPrice) : '–'}</td>
+                <td style="padding:4px 6px; text-align:right; ${sortKey === 'bid' ? 'color:#9ca3af;' : `font-weight:${isTop ? '700' : '400'};`}">${row.sellGPC ? formatKMB(row.sellGPC) : '–'}</td>
+                <td style="padding:4px 6px; text-align:right; ${sortKey === 'ask' ? 'color:#9ca3af;' : `font-weight:${isTop ? '700' : '400'};`}">${row.buyGPC ? formatKMB(row.buyGPC) : '–'}</td>
+            `;
                 tbody.appendChild(tr);
             });
             return tbody;
@@ -435,11 +475,11 @@ class GuildCreditValue {
         // Collapsible header
         const header = document.createElement('div');
         header.style.cssText = `
-            display:flex; justify-content:space-between; align-items:center;
-            padding:5px 6px; background:rgba(255,255,255,0.04); border-radius:4px;
-            cursor:pointer; font-size:11px; color:#9ca3af; user-select:none;
-            border:1px solid rgba(255,255,255,0.08); margin-bottom:4px;
-        `;
+        display:flex; justify-content:space-between; align-items:center;
+        padding:5px 6px; background:rgba(255,255,255,0.04); border-radius:4px;
+        cursor:pointer; font-size:11px; color:#9ca3af; user-select:none;
+        border:1px solid rgba(255,255,255,0.08); margin-bottom:4px;
+    `;
         const headerTitle = document.createElement('span');
         headerTitle.textContent = 'Shrine Upgrade Planner';
         const headerArrow = document.createElement('span');
@@ -544,9 +584,9 @@ class GuildCreditValue {
                 input.max = String(capLevel);
                 input.value = String(currentLevel);
                 input.style.cssText = `
-                    width:52px; padding:2px 4px; background:#1a1a2e; border:1px solid #374151;
-                    border-radius:3px; color:#e0e0e0; font-size:11px; text-align:center;
-                `;
+                width:52px; padding:2px 4px; background:#1a1a2e; border:1px solid #374151;
+                border-radius:3px; color:#e0e0e0; font-size:11px; text-align:center;
+            `;
                 input.addEventListener('input', recalculate);
 
                 const capLabel = document.createElement('span');
@@ -599,9 +639,9 @@ class GuildCreditValue {
         const advisor = document.createElement('div');
         advisor.className = 'mwi-exchange-advisor';
         advisor.style.cssText = `
-            margin-top:8px; padding:8px 10px; border-radius:6px; font-size:12px;
-            border:1px solid rgba(255,255,255,0.1); background:rgba(0,0,0,0.2);
-        `;
+        margin-top:8px; padding:8px 10px; border-radius:6px; font-size:12px;
+        border:1px solid rgba(255,255,255,0.1); background:rgba(0,0,0,0.2);
+    `;
 
         if (!selectedItemName) {
             // No item selected yet
@@ -653,24 +693,24 @@ class GuildCreditValue {
 
         advisor.style.borderColor = creditDiff > 0 ? 'rgba(74,222,128,0.3)' : 'rgba(255,107,107,0.3)';
         advisor.innerHTML = `
-            <div style="color:#9ca3af; margin-bottom:6px; font-size:11px;">Sell → rebuy best item (2% tax)</div>
-            <div style="display:flex; justify-content:space-between; margin-bottom:3px;">
-                <span style="color:#aaa;">Direct exchange</span>
-                <span style="color:#e0e0e0; font-weight:600;">${directCredits.toLocaleString()} credits</span>
-            </div>
-            <div style="display:flex; justify-content:space-between; margin-bottom:3px;">
-                <span style="color:#aaa;">Sell proceeds (after tax)</span>
-                <span style="color:#e0e0e0;">${formatKMB(net)}</span>
-            </div>
-            <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
-                <span style="color:#aaa;">Buy <b style="color:#e0e0e0;">${bestRow.name}</b> → credits</span>
-                <span style="color:#e0e0e0; font-weight:600;">${bestCredits.toLocaleString()} credits</span>
-            </div>
-            <div style="display:flex; justify-content:space-between; border-top:1px solid rgba(255,255,255,0.1); padding-top:6px;">
-                <span style="color:#aaa;">Difference</span>
-                <span style="color:${diffColor}; font-weight:700;">${diffSign}${creditDiff.toLocaleString()} credits ${diffLabel}</span>
-            </div>
-        `;
+        <div style="color:#9ca3af; margin-bottom:6px; font-size:11px;">Sell → rebuy best item (2% tax)</div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:3px;">
+            <span style="color:#aaa;">Direct exchange</span>
+            <span style="color:#e0e0e0; font-weight:600;">${directCredits.toLocaleString()} credits</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:3px;">
+            <span style="color:#aaa;">Sell proceeds (after tax)</span>
+            <span style="color:#e0e0e0;">${formatKMB(net)}</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+            <span style="color:#aaa;">Buy <b style="color:#e0e0e0;">${bestRow.name}</b> → credits</span>
+            <span style="color:#e0e0e0; font-weight:600;">${bestCredits.toLocaleString()} credits</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; border-top:1px solid rgba(255,255,255,0.1); padding-top:6px;">
+            <span style="color:#aaa;">Difference</span>
+            <span style="color:${diffColor}; font-weight:700;">${diffSign}${creditDiff.toLocaleString()} credits ${diffLabel}</span>
+        </div>
+    `;
 
         modalEl.querySelector(`.${CSS_CLASS}`)?.insertAdjacentElement('afterend', advisor);
     }
@@ -687,11 +727,11 @@ class GuildCreditValue {
         const copyBtn = document.createElement('button');
         copyBtn.className = 'mwi-trial-copy-btn';
         copyBtn.style.cssText = `
-            width:100%; padding:8px 12px; margin-bottom:6px;
-            background:linear-gradient(180deg,rgba(91,141,239,0.2) 0%,rgba(91,141,239,0.1) 100%);
-            color:#fff; border:1px solid rgba(91,141,239,0.4); border-radius:6px;
-            cursor:pointer; font-size:12px; font-weight:600;
-        `;
+        width:100%; padding:8px 12px; margin-bottom:6px;
+        background:linear-gradient(180deg,rgba(91,141,239,0.2) 0%,rgba(91,141,239,0.1) 100%);
+        color:#fff; border:1px solid rgba(91,141,239,0.4); border-radius:6px;
+        cursor:pointer; font-size:12px; font-weight:600;
+    `;
         copyBtn.textContent = 'Copy List';
         copyBtn.addEventListener('mouseenter', () => {
             copyBtn.style.background = 'linear-gradient(180deg,rgba(91,141,239,0.35) 0%,rgba(91,141,239,0.25) 100%)';
@@ -699,18 +739,21 @@ class GuildCreditValue {
         copyBtn.addEventListener('mouseleave', () => {
             copyBtn.style.background = 'linear-gradient(180deg,rgba(91,141,239,0.2) 0%,rgba(91,141,239,0.1) 100%)';
         });
-        copyBtn.addEventListener('click', () => {
+        copyBtn.addEventListener('click', async () => {
             const names = Array.from(memberList.querySelectorAll('[class*="GuildPanel_memberName"]'))
                 .map((el) => el.textContent.trim())
                 .filter(Boolean)
                 .join('\n');
             if (!names) return;
-            navigator.clipboard.writeText(names).then(() => {
+            try {
+                await navigator.clipboard.writeText(names);
                 copyBtn.textContent = 'Copied!';
                 setTimeout(() => {
                     copyBtn.textContent = 'Copy List';
                 }, 1500);
-            });
+            } catch (error) {
+                console.error('[GuildCreditValue] Failed to copy member list:', error);
+            }
         });
 
         buttonsContainer.insertAdjacentElement('beforebegin', copyBtn);
@@ -729,6 +772,11 @@ class GuildCreditValue {
 
         const gameData = dataManager.getInitClientData();
         if (!gameData) return;
+
+        // Preserve the shrine's native domain label while normalising textContent's
+        // camel-case concatenation: ForceCombatLevel -> Force Combat Level and
+        // SpiritSkillingLevel -> Spirit Skilling Level.
+        const shrineReturnLabel = normalizeGuildShrineReturnLabel(modalEl.textContent);
 
         const topConversions = buildTopConversions(gameData.itemDetailMap, 3);
         // Still need cheapest sell/buy for the credit row's own cost columns
@@ -817,13 +865,13 @@ class GuildCreditValue {
                 const tr = document.createElement('tr');
                 tr.style.cssText = 'border-bottom:1px solid rgba(255,255,255,0.05); color:#e0e0e0;';
                 tr.innerHTML = `
-                    <td style="padding:4px 6px; text-align:left;">${row.itemName}</td>
-                    <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.effectiveRequired.toLocaleString()}${row.owned > 0 ? ` <span style="color:#6b7280;font-size:10px;">(own ${row.owned.toLocaleString()})</span>` : ''}</td>
-                    <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.sellEach ? formatKMB(row.sellEach) : '–'}</td>
-                    <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buyEach ? formatKMB(row.buyEach) : '–'}</td>
-                    <td style="padding:4px 6px; text-align:right;">${row.sellSub ? formatKMB(row.sellSub) : '–'}</td>
-                    <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buySub ? formatKMB(row.buySub) : '–'}</td>
-                `;
+                <td style="padding:4px 6px; text-align:left;">${row.itemName}</td>
+                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.effectiveRequired.toLocaleString()}${row.owned > 0 ? ` <span style="color:#6b7280;font-size:10px;">(own ${row.owned.toLocaleString()})</span>` : ''}</td>
+                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.sellEach ? formatKMB(row.sellEach) : '–'}</td>
+                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buyEach ? formatKMB(row.buyEach) : '–'}</td>
+                <td style="padding:4px 6px; text-align:right;">${row.sellSub ? formatKMB(row.sellSub) : '–'}</td>
+                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buySub ? formatKMB(row.buySub) : '–'}</td>
+            `;
                 tbody.appendChild(tr);
 
                 if (row.isCredit && row.creditHrid) {
@@ -848,13 +896,13 @@ class GuildCreditValue {
                         const askStyle = `color:${sortKey === 'bid' ? '#6b7280' : isTop ? '#4ade80' : '#9ca3af'}; font-weight:${sortKey === 'ask' && isTop ? '600' : '400'};`;
                         const bidStyle = `color:${sortKey === 'ask' ? '#6b7280' : isTop ? '#4ade80' : '#9ca3af'}; font-weight:${sortKey === 'bid' && isTop ? '600' : '400'};`;
                         subTr.innerHTML = `
-                            <td style="padding:2px 6px 2px 16px; text-align:left; color:${nameColor};">${rankPrefix} ${opt.name}</td>
-                            <td style="padding:2px 6px; text-align:right; color:${nameColor};">${qtyNeeded.toLocaleString()}</td>
-                            <td style="padding:2px 6px; text-align:right; color:#6b7280;">${opt.askPrice ? formatKMB(opt.askPrice) : '–'}</td>
-                            <td style="padding:2px 6px; text-align:right; color:#6b7280;">${opt.bidPrice ? formatKMB(opt.bidPrice) : '–'}</td>
-                            <td style="padding:2px 6px; text-align:right; ${askStyle}">${askTotal ? formatKMB(askTotal) : '–'}</td>
-                            <td style="padding:2px 6px; text-align:right; ${bidStyle}">${bidTotal ? formatKMB(bidTotal) : '–'}</td>
-                        `;
+                        <td style="padding:2px 6px 2px 16px; text-align:left; color:${nameColor};">${rankPrefix} ${opt.name}</td>
+                        <td style="padding:2px 6px; text-align:right; color:${nameColor};">${qtyNeeded.toLocaleString()}</td>
+                        <td style="padding:2px 6px; text-align:right; color:#6b7280;">${opt.askPrice ? formatKMB(opt.askPrice) : '–'}</td>
+                        <td style="padding:2px 6px; text-align:right; color:#6b7280;">${opt.bidPrice ? formatKMB(opt.bidPrice) : '–'}</td>
+                        <td style="padding:2px 6px; text-align:right; ${askStyle}">${askTotal ? formatKMB(askTotal) : '–'}</td>
+                        <td style="padding:2px 6px; text-align:right; ${bidStyle}">${bidTotal ? formatKMB(bidTotal) : '–'}</td>
+                    `;
                         tbody.appendChild(subTr);
                     });
                 }
@@ -863,10 +911,10 @@ class GuildCreditValue {
             const totalRow = document.createElement('tr');
             totalRow.style.cssText = 'border-top:1px solid rgba(255,255,255,0.2); color:#4ade80; font-weight:700;';
             totalRow.innerHTML = `
-                <td style="padding:5px 6px;" colspan="4">Total</td>
-                <td style="padding:5px 6px; text-align:right;">${totalSell > 0 ? formatKMB(totalSell) : '–'}${!allSellPriced ? '*' : ''}</td>
-                <td style="padding:5px 6px; text-align:right;">${totalBuy > 0 ? formatKMB(totalBuy) : '–'}${!allBuyPriced ? '*' : ''}</td>
-            `;
+            <td style="padding:5px 6px;" colspan="4">Total</td>
+            <td style="padding:5px 6px; text-align:right;">${totalSell > 0 ? formatKMB(totalSell) : '–'}${!allSellPriced ? '*' : ''}</td>
+            <td style="padding:5px 6px; text-align:right;">${totalBuy > 0 ? formatKMB(totalBuy) : '–'}${!allBuyPriced ? '*' : ''}</td>
+        `;
             tbody.appendChild(totalRow);
             return tbody;
         };
@@ -964,12 +1012,13 @@ class GuildCreditValue {
 
         if (missingMats.length > 0) {
             const missingBtn = document.createElement('button');
+            missingBtn.type = 'button';
             missingBtn.style.cssText = `
-                width:100%; padding:8px 12px; margin-top:8px;
-                background:linear-gradient(180deg,rgba(91,141,239,0.2) 0%,rgba(91,141,239,0.1) 100%);
-                color:#fff; border:1px solid rgba(91,141,239,0.4); border-radius:6px;
-                cursor:pointer; font-size:12px; font-weight:600;
-            `;
+            width:100%; padding:8px 12px; margin-top:8px;
+            background:linear-gradient(180deg,rgba(91,141,239,0.2) 0%,rgba(91,141,239,0.1) 100%);
+            color:#fff; border:1px solid rgba(91,141,239,0.4); border-radius:6px;
+            cursor:pointer; font-size:12px; font-weight:600;
+        `;
             missingBtn.textContent = 'Missing Mats Marketplace';
             missingBtn.addEventListener('mouseenter', () => {
                 missingBtn.style.background =
@@ -980,189 +1029,187 @@ class GuildCreditValue {
                     'linear-gradient(180deg,rgba(91,141,239,0.2) 0%,rgba(91,141,239,0.1) 100%)';
             });
             missingBtn.addEventListener('click', async () => {
-                // Claim session BEFORE first await
-                const sessionId = marketplaceSession.start({
-                    owner: MARKETPLACE_OWNER.GUILD,
-                    onEnd: () => this.teardownGuildMarketplaceSession(),
-                });
-                this._guildSessionId = sessionId;
-
-                // Open the Marketplace (navigate to the first missing material's page)
-                navigateToMarketplace(missingMats[0].itemHrid, 0);
-
-                // Wait for the marketplace tablist to render
-                let tabsContainer = null;
-                let referenceTab = null;
-                for (let i = 0; i < 20; i++) {
-                    await new Promise((r) => setTimeout(r, 100));
-                    tabsContainer = document.querySelector('.MuiTabs-flexContainer[role="tablist"]');
-                    referenceTab = tabsContainer
-                        ? Array.from(tabsContainer.children).find((btn) => btn.textContent.includes('My Listings'))
-                        : null;
-                    if (referenceTab) break;
-                }
-                if (!referenceTab) {
-                    this.teardownGuildMarketplaceSession();
-                    return;
-                }
-                if (!marketplaceSession.isActive(sessionId)) return;
-
-                // Allow tabs to wrap and make the scroller visible
-                const scroller = tabsContainer.closest('[class*="MuiTabs-scroller"]');
-                const muiRoot = scroller?.closest('[class*="MuiTabs-root"]');
-                tabsContainer.style.flexWrap = 'wrap';
-                if (scroller) scroller.style.overflow = 'visible';
-                if (muiRoot) muiRoot.style.height = 'auto';
-
-                // Remove any existing guild and shrine tabs before inserting new ones
-                removeMaterialTabsForOwner(MARKETPLACE_OWNER.GUILD);
-                document.querySelectorAll('[data-mwi-shrine-tab="true"]').forEach((el) => el.remove());
-
-                this._guildActiveWorkflowModel = {
-                    sessionId,
-                    materials: missingMats.map((m) => ({ ...m })),
-                };
-
-                // Arm autofill
-                this.autofillManager.startSession({ sessionId });
-
-                for (const mat of missingMats) {
-                    const capturedMat = mat;
-                    const tab = createMaterialTab(
-                        mat,
-                        referenceTab,
-                        (_e, m) => {
-                            const model = this._guildActiveWorkflowModel;
-                            const entry = model?.materials.find((e) => e.itemHrid === capturedMat.itemHrid);
-                            const armed = this.autofillManager.arm({
-                                sessionId,
-                                itemHrid: m.itemHrid,
-                                enhancementLevel: 0,
-                                modalMode: 'buy',
-                                quantityProvider: () => entry?.missing ?? 0,
-                            });
-                            if (!armed) return;
-                            navigateToMarketplace(m.itemHrid, 0);
-                        },
-                        MARKETPLACE_OWNER.GUILD
-                    );
-                    tab.setAttribute('data-required-quantity', mat.required.toString());
-                    tab.setAttribute('data-item-name', mat.itemName);
-                    tabsContainer.appendChild(tab);
-                }
-
-                // Add Return tab that navigates back to guild
-                const guildButton = document
-                    .querySelector('svg[aria-label="navigationBar.guild"]')
-                    ?.closest('[class*="NavigationBar_nav"]');
-                if (guildButton) {
-                    const returnTab = referenceTab.cloneNode(true);
-                    returnTab.setAttribute('data-mwi-custom-tab', 'true');
-                    returnTab.setAttribute('data-mwi-tab-owner', MARKETPLACE_OWNER.GUILD);
-                    returnTab.classList.remove('Mui-selected');
-                    returnTab.setAttribute('aria-selected', 'false');
-                    returnTab.setAttribute('tabindex', '-1');
-                    const badgeSpan = returnTab.querySelector('[class*="TabsComponent_badge"]');
-                    if (badgeSpan) {
-                        badgeSpan.innerHTML =
-                            '<div style="text-align:center;"><div>↩ Return</div><div style="font-size:0.75em;color:#60a5fa;">Guild</div></div>';
-                    }
-                    returnTab.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        this.teardownGuildMarketplaceSession();
-                        guildButton.click();
+                let sessionId = null;
+                try {
+                    // Claim session BEFORE first await
+                    sessionId = marketplaceSession.start({
+                        owner: MARKETPLACE_OWNER.GUILD,
+                        onEnd: () => this.teardownGuildMarketplaceSession(),
                     });
-                    tabsContainer.appendChild(returnTab);
-                }
+                    this._guildSessionId = sessionId;
 
-                // Arm and navigate to first missing material automatically.
-                if (!marketplaceSession.isActive(sessionId)) return;
-                const firstMat = missingMats[0];
-                if (firstMat) {
-                    const firstEntry = this._guildActiveWorkflowModel?.materials.find(
-                        (e) => e.itemHrid === firstMat.itemHrid
-                    );
-                    const armed = this.autofillManager.arm({
+                    // Open the Marketplace (navigate to the first missing material's page)
+                    if (!navigateToMarketplace(missingMats[0].itemHrid, 0)) {
+                        marketplaceSession.end(sessionId);
+                        return;
+                    }
+
+                    // Wait for the marketplace tablist to render
+                    let tabsContainer = null;
+                    let referenceTab = null;
+                    for (let i = 0; i < 20; i++) {
+                        if (!marketplaceSession.isActive(sessionId)) return;
+                        await new Promise((r) => setTimeout(r, 100));
+                        if (!marketplaceSession.isActive(sessionId)) return;
+                        tabsContainer = getVisibleMarketplaceTabContainer();
+                        referenceTab = tabsContainer
+                            ? Array.from(tabsContainer.children).find((btn) => btn.textContent.includes('My Listings'))
+                            : null;
+                        if (referenceTab) break;
+                    }
+                    if (!referenceTab) {
+                        marketplaceSession.end(sessionId);
+                        return;
+                    }
+                    if (!marketplaceSession.isActive(sessionId)) return;
+
+                    // Allow tabs to wrap and make the scroller visible
+                    const scroller = tabsContainer.closest('[class*="MuiTabs-scroller"]');
+                    const muiRoot = scroller?.closest('[class*="MuiTabs-root"]');
+                    tabsContainer.style.flexWrap = 'wrap';
+                    if (scroller) scroller.style.overflow = 'visible';
+                    if (muiRoot) muiRoot.style.height = 'auto';
+
+                    // Remove any existing guild and shrine tabs before inserting new ones
+                    removeMaterialTabsForOwner(MARKETPLACE_OWNER.GUILD);
+                    document.querySelectorAll('[data-mwi-shrine-tab="true"]').forEach((el) => el.remove());
+
+                    this._guildActiveWorkflowModel = {
                         sessionId,
-                        itemHrid: firstMat.itemHrid,
-                        enhancementLevel: 0,
-                        modalMode: 'buy',
-                        quantityProvider: () => firstEntry?.missing ?? 0,
-                    });
-                    if (armed) {
-                        navigateToMarketplace(firstMat.itemHrid, 0);
-                    } else {
-                        this.teardownGuildMarketplaceSession();
+                        materials: missingMats.map((m) => ({ ...m })),
+                        returnLabel: shrineReturnLabel,
+                    };
+
+                    // Arm autofill
+                    this.autofillManager.startSession({ sessionId });
+
+                    for (const mat of missingMats) {
+                        const capturedMat = mat;
+                        const tab = createMaterialTab(
+                            mat,
+                            referenceTab,
+                            (_e, m) => {
+                                if (!marketplaceSession.isActive(sessionId)) return;
+                                const model = this._guildActiveWorkflowModel;
+                                const entry = model?.materials.find((e) => e.itemHrid === capturedMat.itemHrid);
+                                const armed = this.autofillManager.arm({
+                                    sessionId,
+                                    itemHrid: m.itemHrid,
+                                    enhancementLevel: 0,
+                                    modalMode: 'buy',
+                                    quantityProvider: () => entry?.missing ?? 0,
+                                });
+                                if (!armed || !navigateToMarketplace(m.itemHrid, 0)) marketplaceSession.end(sessionId);
+                            },
+                            MARKETPLACE_OWNER.GUILD
+                        );
+                        tab.setAttribute('data-required-quantity', mat.required.toString());
+                        tab.setAttribute('data-item-name', mat.itemName);
+                        tabsContainer.appendChild(tab);
+                    }
+
+                    // Add Return tab that resolves the live Guild navigation control at click time.
+                    if (!getVisibleGuildNavigationButton()) {
+                        marketplaceSession.end(sessionId);
                         return;
+                    }
+                    tabsContainer.appendChild(
+                        createGuildReturnTab(referenceTab, this._guildActiveWorkflowModel?.returnLabel, sessionId)
+                    );
+
+                    if (this._shrineTabCleanup) this._shrineTabCleanup();
+                    this._shrineTabCleanup = watchNativeTabExit(tabsContainer, () => {
+                        marketplaceSession.end(sessionId);
+                    });
+
+                    // Arm and navigate to first missing material automatically.
+                    if (!marketplaceSession.isActive(sessionId)) return;
+                    const firstMat = missingMats[0];
+                    if (firstMat) {
+                        const firstEntry = this._guildActiveWorkflowModel?.materials.find(
+                            (e) => e.itemHrid === firstMat.itemHrid
+                        );
+                        const armed = this.autofillManager.arm({
+                            sessionId,
+                            itemHrid: firstMat.itemHrid,
+                            enhancementLevel: 0,
+                            modalMode: 'buy',
+                            quantityProvider: () => firstEntry?.missing ?? 0,
+                        });
+                        if (!armed || !navigateToMarketplace(firstMat.itemHrid, 0)) {
+                            marketplaceSession.end(sessionId);
+                            return;
+                        }
+                    }
+
+                    // Watch for inventory/market changes and update shrine tabs accordingly
+                    const inventoryUpdateHandler = () => {
+                        if (!marketplaceSession.isActive(sessionId)) {
+                            dataManager.off('items_updated', inventoryUpdateHandler);
+                            this._guildInventoryHandler = null;
+                            return;
+                        }
+
+                        const inventory = dataManager.getInventory() || [];
+                        const model = this._guildActiveWorkflowModel;
+                        if (!model || model.sessionId !== sessionId) return;
+
+                        let anyRemaining = false;
+                        for (const material of model.materials) {
+                            const have = inventory
+                                .filter(
+                                    (item) =>
+                                        item.itemHrid === material.itemHrid &&
+                                        item.itemLocationHrid === '/item_locations/inventory'
+                                )
+                                .reduce((sum, item) => sum + (item.count || 0), 0);
+                            material.missing = Math.max(0, material.required - have);
+                            if (material.missing > 0) anyRemaining = true;
+                        }
+
+                        const shrineTabs = document.querySelectorAll(
+                            `[data-mwi-tab-owner="${MARKETPLACE_OWNER.GUILD}"][data-required-quantity]`
+                        );
+                        for (const tab of shrineTabs) {
+                            const material = model.materials.find(
+                                (entry) => entry.itemHrid === tab.getAttribute('data-item-hrid')
+                            );
+                            if (material) updateTabBadge(tab, material);
+                        }
+
+                        if (!anyRemaining) {
+                            dataManager.off('items_updated', inventoryUpdateHandler);
+                            this._guildInventoryHandler = null;
+                        }
+                    };
+
+                    dataManager.on('items_updated', inventoryUpdateHandler);
+                    this._guildInventoryHandler = inventoryUpdateHandler;
+
+                    // Watch for tab disappearance; reinject on React remount or tear down on panel exit
+                    const capturedSessionId = sessionId;
+                    this._guildCleanupObserver = setupMarketplaceCleanupObserver({
+                        owner: MARKETPLACE_OWNER.GUILD,
+                        invalidStateGraceMs: MARKETPLACE_REMOUNT_GRACE_MS,
+                        onTabsGone: () => {
+                            if (!marketplaceSession.isActive(capturedSessionId)) return;
+                            const visibleContainer = getVisibleMarketplaceTabContainer();
+                            if (
+                                visibleContainer &&
+                                isMarketplaceMarketListingsSelected(visibleContainer) &&
+                                this._reinjectGuildMarketplaceTabs(visibleContainer, capturedSessionId)
+                            ) {
+                                return;
+                            }
+                            marketplaceSession.end(capturedSessionId);
+                        },
+                    });
+                } catch (error) {
+                    console.error('[GuildCreditValue] Missing-materials workflow failed:', error);
+                    if (sessionId !== null && marketplaceSession.isActive(sessionId)) {
+                        marketplaceSession.end(sessionId);
                     }
                 }
-
-                // Watch for inventory/market changes and update shrine tabs accordingly
-                const shrineTabs = Array.from(
-                    document.querySelectorAll(
-                        `[data-mwi-tab-owner="${MARKETPLACE_OWNER.GUILD}"][data-required-quantity]`
-                    )
-                );
-                const inventoryUpdateHandler = () => {
-                    if (!marketplaceSession.isActive(sessionId)) {
-                        dataManager.off('items_updated', inventoryUpdateHandler);
-                        this._guildInventoryHandler = null;
-                        return;
-                    }
-
-                    const inventory = dataManager.getInventory();
-                    let anyRemaining = false;
-
-                    for (const tab of shrineTabs) {
-                        if (!tab.isConnected) continue;
-                        const itemHrid = tab.getAttribute('data-item-hrid');
-                        const required = parseInt(tab.getAttribute('data-required-quantity') || '0', 10);
-                        const itemName = tab.getAttribute('data-item-name') || '';
-                        const have = inventory
-                            .filter(
-                                (i) => i.itemHrid === itemHrid && i.itemLocationHrid === '/item_locations/inventory'
-                            )
-                            .reduce((sum, i) => sum + (i.count || 0), 0);
-                        const missing = Math.max(0, required - have);
-
-                        if (missing === 0) {
-                            tab.remove();
-                        } else {
-                            updateTabBadge(tab, { itemHrid, itemName, missing, required, isTradeable: true });
-                            anyRemaining = true;
-                        }
-
-                        // Keep the retained model live so reinjection uses current quantities
-                        if (this._guildActiveWorkflowModel) {
-                            const entry = this._guildActiveWorkflowModel.materials.find((m) => m.itemHrid === itemHrid);
-                            if (entry) entry.missing = missing;
-                        }
-                    }
-
-                    if (!anyRemaining) {
-                        dataManager.off('items_updated', inventoryUpdateHandler);
-                        this._guildInventoryHandler = null;
-                    }
-                };
-
-                dataManager.on('items_updated', inventoryUpdateHandler);
-                this._guildInventoryHandler = inventoryUpdateHandler;
-
-                // Watch for tab disappearance; reinject on React remount or tear down on panel exit
-                const capturedSessionId = sessionId;
-                this._guildCleanupObserver = setupMarketplaceCleanupObserver({
-                    owner: MARKETPLACE_OWNER.GUILD,
-                    onTabsGone: () => {
-                        if (!marketplaceSession.isActive(capturedSessionId)) return;
-                        const visibleContainer = getVisibleMarketplaceTabContainer();
-                        if (visibleContainer) {
-                            this._reinjectGuildMarketplaceTabs(visibleContainer, capturedSessionId);
-                        } else {
-                            this.teardownGuildMarketplaceSession();
-                        }
-                    },
-                });
             });
             wrapper.appendChild(missingBtn);
         }
@@ -1204,7 +1251,9 @@ class GuildCreditValue {
     }
 
     cleanup() {
-        this.teardownGuildMarketplaceSession();
+        const sessionId = this._guildSessionId ?? this._guildActiveWorkflowModel?.sessionId ?? null;
+        if (sessionId !== null && marketplaceSession.isActive(sessionId)) marketplaceSession.end(sessionId);
+        else this.teardownGuildMarketplaceSession();
         this.unregisterObservers.forEach((fn) => fn());
         this.unregisterObservers = [];
         if (this._shrineTabCleanup) {

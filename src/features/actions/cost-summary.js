@@ -13,6 +13,7 @@ import { calculateMaterialRequirements } from '../../utils/material-calculator.j
 import { getItemPrice, formatPrice } from '../../utils/market-data.js';
 import { computeBestCraftingPlan } from '../../features/crafting-plan/crafting-plan-calculator.js';
 import { getActionHridFromName } from '../../utils/game-lookups.js';
+import { getOrCreateProductionToolsBlock, normalizeProductionToolsBlock } from './production-tools-layout.js';
 
 const UI_ID = 'mwi-cost-summary';
 
@@ -23,13 +24,6 @@ const PRODUCTION_TYPES = [
     '/action_types/crafting',
     '/action_types/tailoring',
 ];
-
-const PRICING_MODE_LABELS = {
-    conservative: 'Buy: Ask / Sell: Bid',
-    hybrid: 'Buy: Ask / Sell: Ask',
-    optimistic: 'Buy: Bid / Sell: Ask',
-    patientBuy: 'Buy: Bid / Sell: Bid',
-};
 
 let domObserverUnregister = null;
 let processedPanels = new WeakSet();
@@ -100,22 +94,22 @@ function updatePanel(panel, value) {
 }
 
 function insertBlock(panel, block) {
-    const budgetCalc = panel.querySelector('#mwi-budget-calculator');
-    const missingMatsBtn = panel.querySelector('#mwi-missing-mats-button');
-    const itemRequirements = panel.querySelector('[class*="SkillActionDetail_itemRequirements"]');
-
-    if (budgetCalc) {
-        budgetCalc.parentNode.insertBefore(block, budgetCalc);
-    } else if (missingMatsBtn) {
-        missingMatsBtn.parentNode.insertBefore(block, missingMatsBtn.nextSibling);
-    } else if (itemRequirements) {
-        itemRequirements.parentNode.insertBefore(block, itemRequirements.nextSibling);
-    } else {
-        panel.appendChild(block);
+    const toolsBlock = getOrCreateProductionToolsBlock(panel);
+    if (toolsBlock) {
+        block.style.order = '2';
+        toolsBlock.appendChild(block);
+        normalizeProductionToolsBlock(panel);
+        return;
     }
+
+    const missingMatsButton = panel.querySelector('#mwi-missing-mats-button');
+    const itemRequirements = panel.querySelector('[class*="SkillActionDetail_itemRequirements"]');
+    if (missingMatsButton?.parentElement) missingMatsButton.after(block);
+    else if (itemRequirements?.parentElement) itemRequirements.after(block);
+    else panel.appendChild(block);
 }
 
-function buildBlock(actionHrid, numActions, outputHrid, outputCount) {
+export function buildBlock(actionHrid, numActions, outputHrid, outputCount) {
     const materials = calculateMaterialRequirements(actionHrid, numActions, true);
 
     let directCost = 0;
@@ -124,8 +118,13 @@ function buildBlock(actionHrid, numActions, outputHrid, outputCount) {
     let missingComplete = true;
 
     for (const mat of materials) {
-        if (!mat.isTradeable) continue;
-        const unitPrice = getItemPrice(mat.itemHrid, { context: 'profit', side: 'buy' });
+        let unitPrice = null;
+        if (mat.itemHrid === '/items/coin') {
+            unitPrice = 1;
+        } else if (mat.isTradeable) {
+            unitPrice = getItemPrice(mat.itemHrid, { mode: 'ask', side: 'buy' });
+        }
+
         if (unitPrice === null) {
             if (mat.required > 0) directComplete = false;
             if (mat.missing > 0) missingComplete = false;
@@ -138,8 +137,7 @@ function buildBlock(actionHrid, numActions, outputHrid, outputCount) {
     let planCost = null;
     if (outputHrid) {
         try {
-            const pricingMode = config.getSetting('profitCalc_pricingMode') || 'hybrid';
-            const plan = computeBestCraftingPlan(outputHrid, outputCount, pricingMode);
+            const plan = computeBestCraftingPlan(outputHrid, outputCount, 'ask');
             if (plan && plan.totalCost !== Infinity && plan.totalCost !== null) {
                 planCost = plan.totalCost;
             }
@@ -150,32 +148,28 @@ function buildBlock(actionHrid, numActions, outputHrid, outputCount) {
 
     let marketCost = null;
     if (outputHrid) {
-        const unitSellPrice = getItemPrice(outputHrid, { context: 'profit', side: 'sell' });
+        const unitSellPrice = getItemPrice(outputHrid, { mode: 'ask', side: 'buy' });
         if (unitSellPrice !== null) {
             marketCost = unitSellPrice * outputCount;
         }
     }
 
-    const pricingMode = config.getSetting('profitCalc_pricingMode') || 'hybrid';
-    const pricingLabel = PRICING_MODE_LABELS[pricingMode] || pricingMode;
-
     return renderBlock({
-        directCost,
+        directCost: directComplete || directCost > 0 ? directCost : null,
         directComplete,
-        missingCost,
+        missingCost: missingComplete || missingCost > 0 ? missingCost : null,
         missingComplete,
         planCost,
         marketCost,
-        pricingLabel,
     });
 }
 
-function renderBlock({ directCost, directComplete, missingCost, missingComplete, planCost, marketCost, pricingLabel }) {
+export function renderBlock({ directCost, directComplete, missingCost, missingComplete, planCost, marketCost }) {
     const container = document.createElement('div');
     container.id = UI_ID;
     container.style.cssText = `
-        margin: 8px 0 16px 0;
-        padding: 10px 14px;
+        margin: 0;
+        padding: 8px 14px;
         background: linear-gradient(180deg, rgba(91, 141, 239, 0.12) 0%, rgba(91, 141, 239, 0.05) 100%);
         border: 1px solid rgba(91, 141, 239, 0.3);
         border-radius: 8px;
@@ -200,17 +194,6 @@ function renderBlock({ directCost, directComplete, missingCost, missingComplete,
     container.appendChild(renderLine('Best crafting plan', planCost));
     container.appendChild(renderLine('Finished item market', marketCost));
 
-    const footer = document.createElement('div');
-    footer.textContent = `Pricing: ${pricingLabel}`;
-    footer.style.cssText = `
-        margin-top: 6px;
-        padding-top: 6px;
-        border-top: 1px solid rgba(91, 141, 239, 0.2);
-        font-size: 11px;
-        color: #94a3b8;
-    `;
-    container.appendChild(footer);
-
     return container;
 }
 
@@ -226,7 +209,7 @@ function renderLine(label, value, partial = false) {
     labelEl.textContent = label;
     labelEl.style.color = '#cbd5e1';
     const valueEl = document.createElement('span');
-    if (value === null || value === undefined || value === 0) {
+    if (value === null || value === undefined) {
         valueEl.textContent = '—';
         valueEl.style.color = '#64748b';
     } else {

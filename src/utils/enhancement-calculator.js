@@ -122,6 +122,9 @@ export function calculateEnhancement(params) {
     if (targetLevel < 1 || targetLevel > 20) {
         throw new Error('Target level must be between 1 and 20');
     }
+    if (!Number.isInteger(startLevel) || startLevel < 0 || startLevel >= targetLevel) {
+        throw new Error('Start level must be an integer between 0 and target level - 1');
+    }
     if (protectFrom < 0 || protectFrom > targetLevel) {
         throw new Error('Protection level must be between 0 and target level');
     }
@@ -133,29 +136,39 @@ export function calculateEnhancement(params) {
         itemLevel,
     });
 
-    // Build Markov Chain transition matrix (20×20)
-    const markov = math.zeros(20, 20);
+    // States are enhancement levels 0..targetLevel inclusive. A target of +20
+    // therefore needs 21 states; the previous fixed 20×20 matrix wrote outside
+    // its bounds at the top level.
+    const markov = math.zeros(targetLevel + 1, targetLevel + 1);
 
     for (let i = 0; i < targetLevel; i++) {
         const baseSuccessRate = BASE_SUCCESS_RATES[i] / 100.0;
-        const successChance = baseSuccessRate * successMultiplier;
+        const successChance = Math.max(0, Math.min(1, baseSuccessRate * successMultiplier));
 
         // Where do we go on failure?
         // Protection only applies when protectFrom > 0 AND we're at or above that level
         const failureDestination = protectFrom > 0 && i >= protectFrom ? i - 1 : 0;
 
         if (blessedTea) {
-            // Blessed Tea: 1% base chance to jump +2, scaled by guzzling bonus
-            // Remaining success chance goes to +1 (after accounting for skip chance)
-            const skipChance = successChance * 0.01 * guzzlingBonus;
-            const remainingSuccess = successChance * (1 - 0.01 * guzzlingBonus);
+            // Blessed Tea: 1% base chance to jump +2, scaled by guzzling bonus.
+            // Reaching or overshooting the requested target is the same absorbing
+            // completion. At target - 1 both success branches therefore merge.
+            const skipRatio = Math.max(0, Math.min(1, 0.01 * guzzlingBonus));
+            const skipChance = successChance * skipRatio;
+            const remainingSuccess = successChance - skipChance;
+            const normalDestination = Math.min(targetLevel, i + 1);
+            const skipDestination = Math.min(targetLevel, i + 2);
 
-            markov.set([i, i + 2], skipChance);
-            markov.set([i, i + 1], remainingSuccess);
+            if (normalDestination === skipDestination) {
+                markov.set([i, normalDestination], successChance);
+            } else {
+                markov.set([i, skipDestination], skipChance);
+                markov.set([i, normalDestination], remainingSuccess);
+            }
             markov.set([i, failureDestination], 1 - successChance);
         } else {
-            // Normal: Success goes to +1, failure goes to destination
-            markov.set([i, i + 1], successChance);
+            // Normal: Success goes to +1, failure goes to destination.
+            markov.set([i, Math.min(targetLevel, i + 1)], successChance);
             markov.set([i, failureDestination], 1.0 - successChance);
         }
     }
@@ -170,10 +183,11 @@ export function calculateEnhancement(params) {
     const I = math.identity(targetLevel);
     const M = math.inv(math.subtract(I, Q));
 
-    // Expected attempts from startLevel to target
-    // Sum all elements in startLevel row of M from startLevel to targetLevel
+    // Expected attempts from startLevel to target. A failure can send an
+    // already-enhanced item below its starting level (usually back to +0), so
+    // every transient state must be counted, not only startLevel..targetLevel.
     let attempts = 0;
-    for (let i = startLevel; i < targetLevel; i++) {
+    for (let i = 0; i < targetLevel; i++) {
         attempts += M.get([startLevel, i]);
     }
 

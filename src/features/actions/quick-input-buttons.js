@@ -24,6 +24,7 @@ import { calculateExperienceMultiplier } from '../../utils/experience-parser.js'
 import { setReactInputValue } from '../../utils/react-input.js';
 import { calculateExpPerHour, calculateMultiLevelProgress } from '../../utils/experience-calculator.js';
 import { createCollapsibleSection } from '../../utils/ui-components.js';
+import { compactActionPanelSection } from './production-tools-layout.js';
 import { calculateActionsPerHour, calculateEffectiveActionsPerHour } from '../../utils/profit-helpers.js';
 import { getActionHridFromName } from '../../utils/game-lookups.js';
 import { MIN_ACTION_TIME_SECONDS } from '../../utils/profit-constants.js';
@@ -1446,12 +1447,14 @@ class QuickInputButtons {
             const summary = `${timeReadable(singleLevel.timeNeeded)} to Level ${nextLevel}`;
 
             // Create collapsible section
-            return createCollapsibleSection(
-                '📈',
-                'Level Progress',
-                summary,
-                content,
-                false // Collapsed by default
+            return compactActionPanelSection(
+                createCollapsibleSection(
+                    '📈',
+                    'Level Progress',
+                    summary,
+                    content,
+                    false // Collapsed by default
+                )
             );
         } catch (error) {
             console.error('[Toolasha] Error creating level progress section:', error);

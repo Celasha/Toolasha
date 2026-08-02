@@ -4,20 +4,24 @@
  * Appears in Item Dictionary when viewing ability books
  */
 
+import marketAPI from '../../api/marketplace.js';
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
-import marketAPI from '../../api/marketplace.js';
-import { numberFormatter, formatKMB } from '../../utils/formatters.js';
-import dom from '../../utils/dom.js';
 import domObserver from '../../core/dom-observer.js';
-import { navigateToMarketplace } from '../../utils/marketplace-tabs.js';
-import { createAutofillManager, readMarketplaceItemIdentity } from '../../utils/marketplace-autofill.js';
 import { marketplaceSession, MARKETPLACE_OWNER } from '../../core/marketplace-session.js';
+import dom from '../../utils/dom.js';
+import { numberFormatter, formatKMB } from '../../utils/formatters.js';
+import {
+    navigateToMarketplace,
+    getVisibleMarketplaceTabContainer,
+    watchNativeTabExit,
+} from '../../utils/marketplace-tabs.js';
+import { createAutofillManager, readMarketplaceRuntimeState } from '../../utils/marketplace-autofill.js';
 
 /**
  * AbilityBookCalculator class handles ability book calculations in Item Dictionary
  */
-class AbilityBookCalculator {
+export class AbilityBookCalculator {
     constructor() {
         this.unregisterObserver = null; // Unregister function from centralized observer
         this.isActive = false;
@@ -26,6 +30,7 @@ class AbilityBookCalculator {
         this._abilityBookSessionId = null;
         this._abilityBookExpiryTimer = null;
         this._abilityBookNativeTabListener = null;
+        this._abilityBookVisibilityInterval = null;
     }
 
     /**
@@ -40,17 +45,24 @@ class AbilityBookCalculator {
             this._abilityBookNativeTabListener();
             this._abilityBookNativeTabListener = null;
         }
+        if (this._abilityBookVisibilityInterval) {
+            clearInterval(this._abilityBookVisibilityInterval);
+            this._abilityBookVisibilityInterval = null;
+        }
+        const sessionId = this._abilityBookSessionId;
         this._abilityBookSessionId = null;
+        this.autofillManager.exitSession(sessionId);
     }
 
     /**
      * Navigate the marketplace to the given item, polling until it resolves
      * @param {string} itemHrid - Item HRID to navigate to
+     * @param {number} sessionId - Captured one-shot session token
      * @returns {Promise<boolean>} True if navigation succeeded within deadline
      */
-    async navigateAbilityBookToItem(itemHrid) {
+    async navigateAbilityBookToItem(itemHrid, sessionId) {
         // Use the fiber game object to navigate
-        navigateToMarketplace(itemHrid, 0);
+        if (!navigateToMarketplace(itemHrid, 0)) return false;
 
         const deadline = 3000;
         const interval = 100;
@@ -58,10 +70,67 @@ class AbilityBookCalculator {
         while (elapsed < deadline) {
             await new Promise((r) => setTimeout(r, interval));
             elapsed += interval;
-            const identity = readMarketplaceItemIdentity();
-            if (identity?.itemHrid === itemHrid) return true;
+            if (!marketplaceSession.isActive(sessionId) || this._abilityBookSessionId !== sessionId) return false;
+
+            // Install native-tab cancellation as soon as the live Marketplace tablist exists,
+            // not only after item identity converges. This closes the brief pre-identity race
+            // where the user could leave the workflow before the exact order book was detected.
+            const tabsContainer = getVisibleMarketplaceTabContainer();
+            if (tabsContainer && !this._abilityBookNativeTabListener) {
+                this._abilityBookNativeTabListener = watchNativeTabExit(tabsContainer, () => {
+                    marketplaceSession.end(sessionId);
+                });
+            }
+
+            const state = readMarketplaceRuntimeState();
+            if (
+                tabsContainer &&
+                state?.marketTabKey === 'MarketListings' &&
+                state?.marketListingsView === 'OrderBook' &&
+                state?.itemHrid === itemHrid &&
+                state?.enhancementLevel === 0 &&
+                state?.isSell === false
+            ) {
+                this.startAbilityBookVisibilityMonitor(sessionId, itemHrid);
+                return true;
+            }
         }
         return false;
+    }
+
+    /**
+     * End the one-shot workflow promptly if Marketplace is closed before autofill.
+     * Allows brief React remount gaps but does not leave ownership armed for 30 seconds.
+     * @param {number|null} sessionId
+     * @param {string} itemHrid
+     */
+    startAbilityBookVisibilityMonitor(sessionId, itemHrid) {
+        if (sessionId === null || this._abilityBookVisibilityInterval) return;
+
+        let consecutiveMisses = 0;
+        this._abilityBookVisibilityInterval = setInterval(() => {
+            if (!marketplaceSession.isActive(sessionId)) {
+                clearInterval(this._abilityBookVisibilityInterval);
+                this._abilityBookVisibilityInterval = null;
+                return;
+            }
+
+            const state = readMarketplaceRuntimeState();
+            const stillOnTarget =
+                getVisibleMarketplaceTabContainer() &&
+                state?.marketTabKey === 'MarketListings' &&
+                state?.marketListingsView === 'OrderBook' &&
+                state?.itemHrid === itemHrid &&
+                state?.enhancementLevel === 0 &&
+                state?.isSell === false;
+            if (stillOnTarget) {
+                consecutiveMisses = 0;
+                return;
+            }
+
+            consecutiveMisses++;
+            if (consecutiveMisses >= 3) marketplaceSession.end(sessionId);
+        }, 200);
     }
 
     /**
@@ -307,7 +376,7 @@ class AbilityBookCalculator {
                 `;
             } else {
                 currentBooks = 0;
-                display.innerHTML = '<span style="color: ${config.COLOR_LOSS};">Invalid target level</span>';
+                display.innerHTML = `<span style="color: ${config.COLOR_LOSS};">Invalid target level</span>`;
             }
         };
 
@@ -316,6 +385,7 @@ class AbilityBookCalculator {
 
         // Buy on Marketplace button
         const buyButton = document.createElement('button');
+        buyButton.type = 'button';
         buyButton.textContent = 'Buy on Marketplace';
         buyButton.style.cssText = `
             margin-top: 8px;
@@ -327,36 +397,41 @@ class AbilityBookCalculator {
             border-radius: 3px;
             cursor: pointer;
         `;
-        buyButton.addEventListener('click', () => {
-            if (currentBooks > 0) {
+        buyButton.addEventListener('click', async () => {
+            if (currentBooks <= 0) return;
+
+            let sessionId = null;
+            try {
                 const quantity = Math.ceil(currentBooks);
-                const sessionId = marketplaceSession.start({
+                sessionId = marketplaceSession.start({
                     owner: MARKETPLACE_OWNER.ABILITY_BOOK,
                     consumeOnFill: true,
                     onEnd: () => this.teardownAbilityBookSession(),
                 });
                 this._abilityBookSessionId = sessionId;
-                this.autofillManager.startSession({
+                this.autofillManager.startSession({ sessionId });
+                const armed = this.autofillManager.arm({
+                    sessionId,
                     itemHrid,
                     enhancementLevel: 0,
-                    sessionId,
+                    modalMode: 'buy',
                     quantityProvider: () => quantity,
                 });
+                if (!armed) {
+                    marketplaceSession.end(sessionId);
+                    return;
+                }
 
-                // 30-second expiry timer
                 this._abilityBookExpiryTimer = setTimeout(() => {
                     this._abilityBookExpiryTimer = null;
-                    if (marketplaceSession.isActive(sessionId)) {
-                        marketplaceSession.end(sessionId);
-                    }
+                    if (marketplaceSession.isActive(sessionId)) marketplaceSession.end(sessionId);
                 }, 30000);
 
-                // Navigate with 3s failure detection
-                this.navigateAbilityBookToItem(itemHrid).then((success) => {
-                    if (!success && marketplaceSession.isActive(sessionId)) {
-                        marketplaceSession.end(sessionId);
-                    }
-                });
+                const success = await this.navigateAbilityBookToItem(itemHrid, sessionId);
+                if (!success && marketplaceSession.isActive(sessionId)) marketplaceSession.end(sessionId);
+            } catch (error) {
+                console.error('[AbilityBookCalculator] Marketplace workflow failed:', error);
+                if (sessionId !== null && marketplaceSession.isActive(sessionId)) marketplaceSession.end(sessionId);
             }
         });
         calculatorDiv.appendChild(buyButton);
@@ -399,7 +474,9 @@ class AbilityBookCalculator {
      * Disable the feature
      */
     disable() {
-        this.teardownAbilityBookSession();
+        const sessionId = this._abilityBookSessionId;
+        if (sessionId !== null && marketplaceSession.isActive(sessionId)) marketplaceSession.end(sessionId);
+        else this.teardownAbilityBookSession();
         if (this.unregisterObserver) {
             this.unregisterObserver();
             this.unregisterObserver = null;

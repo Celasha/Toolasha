@@ -49,6 +49,28 @@ This approach traverses the React fiber tree to find game methods without depend
 3. **Early returns in switch statements**: Use variable assignment instead of returning directly in switch cases
 4. **Unreachable code after return**: Lint will catch console.logs after return statements
 
+## MWI Development References
+
+The authoritative MWI client and game-data references live in `~/Downloads/MWIClaude`.
+
+**At the start of each session** (and whenever new MWI references are added), read:
+
+1. `~/Downloads/MWIClaude/MWI_Export__LLM_Development_Instructions.md`
+2. `~/Downloads/MWIClaude/reference/mwi/REFERENCE_STATUS.md`
+
+**Available references:**
+
+- Client Code: `~/Downloads/MWIClaude/reference/mwi/client_code/current/`
+- Game Reference: `~/Downloads/MWIClaude/reference/mwi/game_reference/current/MWI_Game_Reference.json`
+
+**When the user says new MWI references were added**, run `~/Downloads/MWIClaude/update_mwi_references.sh`,
+validate the results, and report the new build fingerprint, game version, and any coverage or
+schema changes.
+
+**Request a fresh Runtime/DOM Snapshot** when a task depends on the current game UI, open modal,
+selected item or action, React component state, or available class-instance methods. Specify
+exactly which page to open and which state to reproduce before the snapshot is taken.
+
 ## Technical Details
 
 For code style, architecture patterns, build commands, and technical guidelines, see:

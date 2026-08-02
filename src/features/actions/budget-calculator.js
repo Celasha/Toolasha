@@ -13,6 +13,7 @@ import { formatKMB, formatWithSeparator } from '../../utils/formatters.js';
 import { setReactInputValue } from '../../utils/react-input.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { getActionHridFromName } from '../../utils/game-lookups.js';
+import { getOrCreateProductionToolsBlock, normalizeProductionToolsBlock } from './production-tools-layout.js';
 
 const PRODUCTION_TYPES = [
     '/action_types/brewing',
@@ -325,20 +326,19 @@ class BudgetCalculator {
         const ui = this._createUI(panel);
 
         const position = () => {
-            const existing = panel.querySelector(`#${UI_ID}`);
-            const missingMatsBtn = panel.querySelector('#mwi-missing-mats-button');
-            const itemRequirements = panel.querySelector('[class*="SkillActionDetail_itemRequirements"]');
-            const anchor = missingMatsBtn || itemRequirements;
-            if (!anchor) return;
-
-            if (existing) {
-                // Already present — ensure it's right after anchor
-                if (existing.previousSibling !== anchor) {
-                    anchor.parentNode.insertBefore(existing, anchor.nextSibling);
-                }
-            } else {
-                anchor.parentNode.insertBefore(ui, anchor.nextSibling);
+            const existing = panel.querySelector(`#${UI_ID}`) || ui;
+            const toolsBlock = getOrCreateProductionToolsBlock(panel);
+            if (toolsBlock) {
+                existing.style.order = '3';
+                if (existing.parentElement !== toolsBlock) toolsBlock.appendChild(existing);
+                normalizeProductionToolsBlock(panel);
+                return;
             }
+
+            const missingMatsButton = panel.querySelector('#mwi-missing-mats-button');
+            const itemRequirements = panel.querySelector('[class*="SkillActionDetail_itemRequirements"]');
+            const anchor = missingMatsButton || itemRequirements;
+            if (anchor?.parentElement && existing.parentElement !== anchor.parentElement) anchor.after(existing);
         };
 
         position();
@@ -346,11 +346,13 @@ class BudgetCalculator {
         // Re-position whenever the panel's children change (e.g. missing mats button recreated)
         const obs = new MutationObserver((mutations) => {
             const relevant = mutations.some((m) =>
-                [...m.addedNodes, ...m.removedNodes].some((n) => n.id === 'mwi-missing-mats-button' || n.id === UI_ID)
+                [...m.addedNodes, ...m.removedNodes].some(
+                    (n) => n.id === 'mwi-missing-mats-button' || n.id === UI_ID || n.id === 'mwi-production-tools-block'
+                )
             );
             if (relevant) position();
         });
-        obs.observe(panel, { childList: true, subtree: false });
+        obs.observe(panel, { childList: true, subtree: true });
         this.panelObservers.set(panel, obs);
     }
 

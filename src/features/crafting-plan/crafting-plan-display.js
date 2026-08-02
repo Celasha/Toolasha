@@ -20,11 +20,16 @@ import {
     setupMarketplaceCleanupObserver,
     navigateToMarketplace,
     updateTabBadge,
+    watchNativeTabExit,
+    clickMarketplaceNavigationButton,
+    MARKETPLACE_REMOUNT_GRACE_MS,
+    isMarketplaceMarketListingsSelected,
 } from '../../utils/marketplace-tabs.js';
 import { createAutofillManager } from '../../utils/marketplace-autofill.js';
 import { calculateActionStats } from '../../utils/action-calculator.js';
 import { calculateEfficiencyMultiplier } from '../../utils/efficiency.js';
 import { calculateExpPerHour } from '../../utils/experience-calculator.js';
+import { compactActionPanelSection } from '../actions/production-tools-layout.js';
 
 const UI_ID = 'mwi-crafting-plan';
 
@@ -36,6 +41,7 @@ const PRICING_MODES = [
 ];
 const craftingPlanTabs = [];
 let cleanupObserver = null;
+let nativeTabExitCleanup = null;
 const autofillManager = createAutofillManager('CraftingPlan');
 let activeWorkflowModel = null;
 let craftingPlanSessionId = null;
@@ -80,7 +86,7 @@ function getPrimaryOutput(actionDetail) {
  * @returns {string}
  */
 function getPricingMode() {
-    return config.getSetting('profitCalc_pricingMode') || 'ask';
+    return config.getSettingValue('profitCalc_pricingMode', 'hybrid');
 }
 
 /**
@@ -186,7 +192,7 @@ function buildPlanUI(actionHrid, onToggle, defaultOpen = false) {
     const noProcessing = config.getSetting('actionPanel_craftingPlanNoProcessing');
     const taskMode = config.getSetting('actionPanel_craftingPlanTaskMode');
     const timeCostEnabled = config.getSetting('actionPanel_craftingPlanTimeCost');
-    const goldPerHour = config.getSetting('actionPanel_craftingPlanGoldPerHour') || 0;
+    const goldPerHour = Number(config.getSettingValue('actionPanel_craftingPlanGoldPerHour', 0)) || 0;
     let plan;
     try {
         plan = computeBestCraftingPlan(
@@ -260,7 +266,7 @@ function buildPlanUI(actionHrid, onToggle, defaultOpen = false) {
     pricingBtn.addEventListener('click', () => {
         const idx = PRICING_MODES.findIndex((m) => m.value === mode);
         const next = PRICING_MODES[(idx + 1) % PRICING_MODES.length];
-        config.setSetting('profitCalc_pricingMode', next.value);
+        config.setSettingValue('profitCalc_pricingMode', next.value);
         if (onToggle) onToggle();
     });
     pricingRow.appendChild(pricingLabel);
@@ -376,7 +382,7 @@ function buildPlanUI(actionHrid, onToggle, defaultOpen = false) {
         if (onToggle) onToggle();
     });
     goldInput.addEventListener('change', () => {
-        config.setSetting('actionPanel_craftingPlanGoldPerHour', parseInt(goldInput.value) || 0);
+        config.setSettingValue('actionPanel_craftingPlanGoldPerHour', parseInt(goldInput.value) || 0);
         if (onToggle) onToggle();
     });
 
@@ -390,7 +396,7 @@ function buildPlanUI(actionHrid, onToggle, defaultOpen = false) {
         const section = createCollapsibleSection('', 'Best Crafting Plan', costText, content, defaultOpen, 0);
         section.id = UI_ID;
         section.className = 'mwi-crafting-plan-section';
-        return section;
+        return compactActionPanelSection(section);
     }
 
     // === Shopping List (what to buy) ===
@@ -433,6 +439,7 @@ function buildPlanUI(actionHrid, onToggle, defaultOpen = false) {
 
         // === Buy Missing Materials button ===
         const buyButton = document.createElement('button');
+        buyButton.type = 'button';
         buyButton.textContent = 'Buy Missing Materials';
         buyButton.style.cssText = `
             width: 100%; margin-top: 6px; padding: 6px;
@@ -441,100 +448,139 @@ function buildPlanUI(actionHrid, onToggle, defaultOpen = false) {
             color: white; cursor: pointer; font-size: 0.85em;
         `;
         buyButton.addEventListener('click', async () => {
-            const panel = buyButton.closest('[class*="SkillActionDetail_skillActionDetail"]');
-            const inputField = findActionInput(panel);
-            const numActions = parseInt(inputField?.value) || 1;
-            const outputCount = output.count || 1;
-            const totalQty = numActions * outputCount;
-            const inventory = dataManager.getInventory() || [];
+            let capturedSessionId = null;
+            try {
+                const panel = buyButton.closest('[class*="SkillActionDetail_skillActionDetail"]');
+                const inputField = findActionInput(panel);
+                const numActions = parseInt(inputField?.value) || 1;
+                const outputCount = output.count || 1;
+                const totalQty = numActions * outputCount;
+                const inventory = dataManager.getInventory() || [];
 
-            const missingMaterials = [];
-            for (const [itemHrid, item] of buyItems) {
-                const needed = Math.ceil(item.quantity * totalQty);
-                const have = inventory
-                    .filter((i) => i.itemHrid === itemHrid && !i.enhancementLevel)
-                    .reduce((sum, i) => sum + (i.count || 0), 0);
-                const missing = Math.max(0, needed - have);
-                const itemDetails = dataManager.getItemDetails(itemHrid);
-                const isTradeable = itemDetails?.isTradable !== false;
-                if (missing > 0 && isTradeable) {
-                    missingMaterials.push({
-                        itemHrid,
-                        itemName: item.itemName,
-                        missing,
-                        required: needed,
-                        isTradeable,
-                    });
+                const missingMaterials = [];
+                for (const [itemHrid, item] of buyItems) {
+                    const needed = Math.ceil(item.quantity * totalQty);
+                    const have = inventory
+                        .filter(
+                            (inventoryItem) =>
+                                inventoryItem.itemHrid === itemHrid &&
+                                inventoryItem.itemLocationHrid === '/item_locations/inventory' &&
+                                !inventoryItem.enhancementLevel
+                        )
+                        .reduce((sum, i) => sum + (i.count || 0), 0);
+                    const missing = Math.max(0, needed - have);
+                    const itemDetails = dataManager.getItemDetails(itemHrid);
+                    const isTradeable = itemDetails?.isTradable === true;
+                    if (missing > 0 && isTradeable) {
+                        missingMaterials.push({
+                            itemHrid,
+                            itemName: item.itemName,
+                            missing,
+                            required: needed,
+                            isTradeable,
+                        });
+                    }
                 }
-            }
 
-            if (missingMaterials.length === 0) return;
+                if (missingMaterials.length === 0) return;
 
-            // Claim session BEFORE first await
-            craftingPlanSessionId = marketplaceSession.start({
-                owner: MARKETPLACE_OWNER.CRAFTING_PLAN,
-                onEnd: teardownCraftingPlanMarketplaceSession,
-            });
-
-            const success = await openCraftingPlanMarketplace();
-            if (!success) {
-                teardownCraftingPlanMarketplaceSession();
-                return;
-            }
-
-            if (!marketplaceSession.isActive(craftingPlanSessionId)) return;
-
-            activeWorkflowModel = {
-                sessionId: craftingPlanSessionId,
-                materials: missingMaterials.map((m) => ({ ...m })),
-                returnContext: { actionHrid, numActions },
-            };
-
-            autofillManager.startSession({ sessionId: craftingPlanSessionId });
-
-            await new Promise((resolve) => setTimeout(resolve, 200));
-            createCraftingPlanTabs(missingMaterials);
-
-            // Activate the first material automatically (same as manual tab click).
-            if (missingMaterials.length > 0 && marketplaceSession.isActive(craftingPlanSessionId)) {
-                const firstMat = missingMaterials[0];
-                const firstTab = craftingPlanTabs[0] ?? null;
-                const tabRef = { tab: firstTab };
-                const armed = autofillManager.arm({
-                    sessionId: craftingPlanSessionId,
-                    itemHrid: firstMat.itemHrid,
-                    enhancementLevel: 0,
-                    modalMode: 'buy',
-                    quantityProvider: () => parseInt(tabRef.tab?.getAttribute('data-missing-quantity') || '0', 10),
+                // Claim session before the first await.
+                capturedSessionId = marketplaceSession.start({
+                    owner: MARKETPLACE_OWNER.CRAFTING_PLAN,
+                    onEnd: teardownCraftingPlanMarketplaceSession,
                 });
-                if (armed) {
-                    navigateToMarketplace(firstMat.itemHrid, 0);
-                } else {
-                    teardownCraftingPlanMarketplaceSession();
+                craftingPlanSessionId = capturedSessionId;
+
+                const success = await openCraftingPlanMarketplace(capturedSessionId);
+                if (!success) {
+                    marketplaceSession.end(capturedSessionId);
                     return;
                 }
-            }
+                if (!marketplaceSession.isActive(capturedSessionId)) return;
 
-            // Inventory listener to update tab badges when inventory changes
-            if (inventoryUpdateHandler) {
-                dataManager.off('items_updated', inventoryUpdateHandler);
-            }
-            inventoryUpdateHandler = () => {
-                if (!marketplaceSession.isActive(craftingPlanSessionId)) return;
-                const currentInventory = dataManager.getInventory() || [];
-                if (!activeWorkflowModel) return;
-                for (let i = 0; i < activeWorkflowModel.materials.length; i++) {
-                    const mat = activeWorkflowModel.materials[i];
-                    const needed = mat.required;
-                    const have = currentInventory
-                        .filter((inv) => inv.itemHrid === mat.itemHrid && !inv.enhancementLevel)
-                        .reduce((sum, inv) => sum + (inv.count || 0), 0);
-                    mat.missing = Math.max(0, needed - have);
-                    const tab = craftingPlanTabs[i];
-                    if (tab) updateTabBadge(tab, mat);
+                activeWorkflowModel = {
+                    sessionId: capturedSessionId,
+                    materials: missingMaterials.map((material) => ({ ...material })),
+                    returnContext: { actionHrid, numActions },
+                };
+                autofillManager.startSession({ sessionId: capturedSessionId });
+
+                await new Promise((resolve) => setTimeout(resolve, 200));
+                if (!marketplaceSession.isActive(capturedSessionId)) return;
+                if (!createCraftingPlanTabs(activeWorkflowModel.materials, null, capturedSessionId)) {
+                    marketplaceSession.end(capturedSessionId);
+                    return;
                 }
-            };
-            dataManager.on('items_updated', inventoryUpdateHandler);
+
+                const firstMaterial = activeWorkflowModel.materials.find(
+                    (material) => material.isTradeable !== false && material.missing > 0
+                );
+                if (!firstMaterial) {
+                    marketplaceSession.end(capturedSessionId);
+                    return;
+                }
+
+                const armed = autofillManager.arm({
+                    sessionId: capturedSessionId,
+                    itemHrid: firstMaterial.itemHrid,
+                    enhancementLevel: 0,
+                    modalMode: 'buy',
+                    quantityProvider: () => {
+                        const model = activeWorkflowModel;
+                        if (model?.sessionId !== capturedSessionId) return 0;
+                        return model.materials.find((entry) => entry.itemHrid === firstMaterial.itemHrid)?.missing ?? 0;
+                    },
+                });
+                if (!armed) {
+                    marketplaceSession.end(capturedSessionId);
+                    return;
+                }
+                if (!navigateToMarketplace(firstMaterial.itemHrid, 0)) {
+                    marketplaceSession.end(capturedSessionId);
+                    return;
+                }
+
+                if (inventoryUpdateHandler) dataManager.off('items_updated', inventoryUpdateHandler);
+                inventoryUpdateHandler = () => {
+                    const model = activeWorkflowModel;
+                    if (
+                        !model ||
+                        model.sessionId !== capturedSessionId ||
+                        !marketplaceSession.isActive(capturedSessionId)
+                    ) {
+                        return;
+                    }
+
+                    const currentInventory = dataManager.getInventory() || [];
+                    for (const material of model.materials) {
+                        const have = currentInventory
+                            .filter(
+                                (inventoryItem) =>
+                                    inventoryItem.itemHrid === material.itemHrid &&
+                                    inventoryItem.itemLocationHrid === '/item_locations/inventory' &&
+                                    !inventoryItem.enhancementLevel
+                            )
+                            .reduce((sum, item) => sum + (item.count || 0), 0);
+                        material.missing = Math.max(0, material.required - have);
+                    }
+
+                    const connectedTabs = document.querySelectorAll(
+                        `[data-mwi-custom-tab][data-mwi-tab-owner="${MARKETPLACE_OWNER.CRAFTING_PLAN}"][data-item-hrid]`
+                    );
+                    for (const tab of connectedTabs) {
+                        const material = model.materials.find(
+                            (entry) => entry.itemHrid === tab.getAttribute('data-item-hrid')
+                        );
+                        if (material) updateTabBadge(tab, material);
+                    }
+                };
+                dataManager.on('items_updated', inventoryUpdateHandler);
+            } catch (error) {
+                console.error('[CraftingPlan] Missing-materials workflow failed:', error);
+                if (capturedSessionId !== null && marketplaceSession.isActive(capturedSessionId)) {
+                    marketplaceSession.end(capturedSessionId);
+                }
+            }
         });
         content.appendChild(buyButton);
     }
@@ -619,6 +665,7 @@ function buildPlanUI(actionHrid, onToggle, defaultOpen = false) {
     const section = createCollapsibleSection('', 'Best Crafting Plan', costText, content, defaultOpen, 0);
     section.id = UI_ID;
     section.className = 'mwi-crafting-plan-section';
+    compactActionPanelSection(section);
 
     return section;
 }
@@ -627,23 +674,12 @@ function buildPlanUI(actionHrid, onToggle, defaultOpen = false) {
  * Navigate to the marketplace and wait for the tablist to appear.
  * @returns {Promise<boolean>} True if navigation succeeded
  */
-async function openCraftingPlanMarketplace() {
-    const navButtons = document.querySelectorAll('[class*="NavigationBar_nav"]');
-    const marketplaceButton = Array.from(navButtons).find((nav) => {
-        const svg = nav.querySelector('svg[aria-label="navigationBar.marketplace"]');
-        return svg !== null;
-    });
-    if (!marketplaceButton) return false;
-    marketplaceButton.click();
+async function openCraftingPlanMarketplace(sessionId) {
+    if (!marketplaceSession.isActive(sessionId) || !clickMarketplaceNavigationButton()) return false;
 
-    for (let i = 0; i < 50; i++) {
-        const tabsContainer = document.querySelector('.MuiTabs-flexContainer[role="tablist"]');
-        if (tabsContainer) {
-            const hasMarketListings = Array.from(tabsContainer.children).some((btn) =>
-                btn.textContent.includes('Market Listings')
-            );
-            if (hasMarketListings) return true;
-        }
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+        if (!marketplaceSession.isActive(sessionId)) return false;
+        if (getVisibleMarketplaceTabContainer()) return true;
         await new Promise((resolve) => setTimeout(resolve, 100));
     }
     return false;
@@ -653,6 +689,7 @@ async function openCraftingPlanMarketplace() {
  * Idempotent teardown for the crafting plan marketplace session.
  */
 function teardownCraftingPlanMarketplaceSession() {
+    const sessionId = craftingPlanSessionId ?? activeWorkflowModel?.sessionId ?? null;
     removeMaterialTabsForOwner(MARKETPLACE_OWNER.CRAFTING_PLAN);
     craftingPlanTabs.length = 0;
 
@@ -660,132 +697,151 @@ function teardownCraftingPlanMarketplaceSession() {
         dataManager.off('items_updated', inventoryUpdateHandler);
         inventoryUpdateHandler = null;
     }
+    cleanupObserver?.();
+    cleanupObserver = null;
+    nativeTabExitCleanup?.();
+    nativeTabExitCleanup = null;
 
-    if (cleanupObserver) {
-        cleanupObserver();
-        cleanupObserver = null;
-    }
-
-    autofillManager.exitSession(craftingPlanSessionId);
+    autofillManager.exitSession(sessionId);
     craftingPlanSessionId = null;
     activeWorkflowModel = null;
 }
 
-/**
- * Rebuild crafting plan material tabs from the stored workflow model.
- * @param {HTMLElement} tabContainer
- */
-function reinjectCraftingPlanMarketplaceTabs(tabContainer) {
-    if (!activeWorkflowModel) return;
-    createCraftingPlanTabs(activeWorkflowModel.materials, tabContainer);
+function getGameObject() {
+    const root = document.getElementById('root');
+    const rootFiber = root?._reactRootContainer?.current || root?._reactRootContainer?._internalRoot?.current;
+    if (!rootFiber) return null;
+
+    const stack = [rootFiber];
+    while (stack.length > 0) {
+        const fiber = stack.pop();
+        if (typeof fiber?.stateNode?.handleGoToAction === 'function') return fiber.stateNode;
+        if (fiber?.sibling) stack.push(fiber.sibling);
+        if (fiber?.child) stack.push(fiber.child);
+    }
+    return null;
 }
 
-/**
- * Create marketplace tabs for crafting plan shopping list materials.
- * @param {Array} missingMaterials - Array of { itemHrid, itemName, missing, required, isTradeable }
- * @param {HTMLElement} [tabsContainer] - Optional pre-resolved container
- */
-function createCraftingPlanTabs(missingMaterials, tabsContainer) {
-    if (!tabsContainer) {
-        tabsContainer = getVisibleMarketplaceTabContainer();
+function createCraftingPlanReturnTab(referenceTab, returnContext, sessionId) {
+    const actionDetail = dataManager.getActionDetails(returnContext.actionHrid);
+    const actionName = actionDetail?.name || returnContext.actionHrid.split('/').pop();
+    const displayName = `${actionName} (×${formatWithSeparator(returnContext.numActions)})`;
+
+    const tab = referenceTab.cloneNode(true);
+    tab.setAttribute('data-mwi-custom-tab', 'true');
+    tab.setAttribute('data-mwi-tab-owner', MARKETPLACE_OWNER.CRAFTING_PLAN);
+    // A custom tab must not duplicate the native tab/panel identity.
+    tab.removeAttribute('id');
+    tab.removeAttribute('aria-controls');
+    tab.removeAttribute('data-item-hrid');
+    tab.removeAttribute('data-missing-quantity');
+    tab.classList.remove('Mui-selected');
+    tab.setAttribute('aria-selected', 'false');
+    tab.setAttribute('tabindex', '-1');
+    tab.setAttribute('aria-disabled', 'false');
+    tab.style.cursor = 'pointer';
+    tab.style.opacity = '1';
+
+    const badge = tab.querySelector('[class*="TabsComponent_badge"]');
+    if (badge) {
+        badge.innerHTML = `
+            <div style="text-align: center;">
+                <div>↩ Return</div>
+                <div style="font-size: 0.75em; color: #60a5fa;">${displayName}</div>
+            </div>
+        `;
     }
-    if (!tabsContainer) return;
+
+    tab.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!marketplaceSession.isActive(sessionId)) return;
+        const game = getGameObject();
+        if (!game) {
+            marketplaceSession.end(sessionId);
+            return;
+        }
+        try {
+            game.handleGoToAction(returnContext.actionHrid, returnContext.numActions || undefined);
+        } catch (error) {
+            console.error('[CraftingPlan] Return navigation failed:', error);
+        } finally {
+            marketplaceSession.end(sessionId);
+        }
+    });
+    return tab;
+}
+
+function reinjectCraftingPlanMarketplaceTabs(tabContainer) {
+    const model = activeWorkflowModel;
+    if (!model || !marketplaceSession.isActive(model.sessionId)) return false;
+    return createCraftingPlanTabs(model.materials, tabContainer, model.sessionId);
+}
+
+function createCraftingPlanTabs(missingMaterials, tabsContainer = null, sessionId = craftingPlanSessionId) {
+    const container = tabsContainer || getVisibleMarketplaceTabContainer();
+    if (!container || !marketplaceSession.isActive(sessionId)) return false;
 
     removeMaterialTabsForOwner(MARKETPLACE_OWNER.CRAFTING_PLAN);
     craftingPlanTabs.length = 0;
 
-    const referenceTab = Array.from(tabsContainer.children).find((btn) => btn.textContent.includes('My Listings'));
-    if (!referenceTab) return;
+    const referenceTab = Array.from(container.children).find((tab) => tab.textContent.includes('My Listings'));
+    if (!referenceTab) return false;
+    container.style.flexWrap = 'wrap';
 
-    tabsContainer.style.flexWrap = 'wrap';
+    nativeTabExitCleanup?.();
+    nativeTabExitCleanup = watchNativeTabExit(container, () => marketplaceSession.end(sessionId));
 
     for (const material of missingMaterials) {
         const tabRef = { tab: null };
-        const sessionIdForTab = craftingPlanSessionId;
-        const matHrid = material.itemHrid;
         const handler = () => {
+            if (!marketplaceSession.isActive(sessionId)) return;
+            const liveMissing = Number.parseInt(tabRef.tab?.getAttribute('data-missing-quantity') || '0', 10);
+            if (!Number.isFinite(liveMissing) || liveMissing <= 0 || material.isTradeable === false) return;
             const armed = autofillManager.arm({
-                sessionId: sessionIdForTab,
-                itemHrid: matHrid,
+                sessionId,
+                itemHrid: material.itemHrid,
                 enhancementLevel: 0,
                 modalMode: 'buy',
-                quantityProvider: () => parseInt(tabRef.tab?.getAttribute('data-missing-quantity') || '0', 10),
+                quantityProvider: () => {
+                    const model = activeWorkflowModel;
+                    if (model?.sessionId !== sessionId) return 0;
+                    return model.materials.find((entry) => entry.itemHrid === material.itemHrid)?.missing ?? 0;
+                },
             });
-            if (!armed) return;
-            navigateToMarketplace(matHrid, 0);
+            if (!armed || !navigateToMarketplace(material.itemHrid, 0)) marketplaceSession.end(sessionId);
         };
         const tab = createMaterialTab(material, referenceTab, handler, MARKETPLACE_OWNER.CRAFTING_PLAN);
         tabRef.tab = tab;
-        tabsContainer.appendChild(tab);
+        container.appendChild(tab);
         craftingPlanTabs.push(tab);
     }
 
-    // Return tab — navigate back to the crafting plan action
     if (activeWorkflowModel?.returnContext) {
-        const { actionHrid, numActions } = activeWorkflowModel.returnContext;
-        const actionDetail = dataManager.getInitClientData()?.actionDetailMap?.[actionHrid];
-        const actionName = actionDetail?.name || actionHrid;
-
-        const returnTabMaterial = {
-            itemHrid: actionHrid,
-            itemName: `↩ ${actionName} ×${numActions}`,
-            missing: 0,
-            required: numActions,
-            isTradeable: true,
-        };
-        const returnTab = createMaterialTab(
-            returnTabMaterial,
-            referenceTab,
-            () => {
-                // Navigate back to the crafting panel action
-                const panels = document.querySelectorAll('[class*="SkillActionDetail_skillActionDetail"]');
-                for (const panel of panels) {
-                    const nameEl = panel.querySelector('[class*="SkillActionDetail_name"]');
-                    if (!nameEl) continue;
-                    const panelActionName = Array.from(nameEl.childNodes)
-                        .filter((n) => n.nodeType === Node.TEXT_NODE)
-                        .map((n) => n.textContent)
-                        .join('')
-                        .trim();
-                    if (panelActionName === actionName) {
-                        const inputField = findActionInput(panel);
-                        if (inputField) {
-                            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-                                window.HTMLInputElement.prototype,
-                                'value'
-                            ).set;
-                            nativeInputValueSetter.call(inputField, String(numActions));
-                            inputField.dispatchEvent(new Event('input', { bubbles: true }));
-                        }
-                        panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        break;
-                    }
-                }
-            },
-            MARKETPLACE_OWNER.CRAFTING_PLAN
-        );
-        tabsContainer.appendChild(returnTab);
+        const returnTab = createCraftingPlanReturnTab(referenceTab, activeWorkflowModel.returnContext, sessionId);
+        container.appendChild(returnTab);
         craftingPlanTabs.push(returnTab);
     }
 
-    if (!cleanupObserver) {
-        cleanupObserver = setupMarketplaceCleanupObserver({
-            owner: MARKETPLACE_OWNER.CRAFTING_PLAN,
-            onTabsGone: () => {
-                if (!marketplaceSession.isActive(craftingPlanSessionId)) {
-                    teardownCraftingPlanMarketplaceSession();
-                    return;
-                }
-                const visibleContainer = getVisibleMarketplaceTabContainer();
-                if (visibleContainer) {
-                    // Marketplace is still visible but tabs are gone — reinject
-                    reinjectCraftingPlanMarketplaceTabs(visibleContainer);
-                } else {
-                    teardownCraftingPlanMarketplaceSession();
-                }
-            },
-        });
-    }
+    cleanupObserver?.();
+    cleanupObserver = setupMarketplaceCleanupObserver({
+        owner: MARKETPLACE_OWNER.CRAFTING_PLAN,
+        invalidStateGraceMs: MARKETPLACE_REMOUNT_GRACE_MS,
+        onTabsGone: () => {
+            if (!marketplaceSession.isActive(sessionId)) return;
+            const visibleContainer = getVisibleMarketplaceTabContainer();
+            if (
+                visibleContainer &&
+                isMarketplaceMarketListingsSelected(visibleContainer) &&
+                reinjectCraftingPlanMarketplaceTabs(visibleContainer)
+            ) {
+                return;
+            }
+            marketplaceSession.end(sessionId);
+        },
+    });
+
+    return true;
 }
 
 class CraftingPlanDisplay {
@@ -878,7 +934,9 @@ class CraftingPlanDisplay {
     }
 
     disable() {
-        teardownCraftingPlanMarketplaceSession();
+        const sessionId = craftingPlanSessionId ?? activeWorkflowModel?.sessionId ?? null;
+        if (sessionId !== null && marketplaceSession.isActive(sessionId)) marketplaceSession.end(sessionId);
+        else teardownCraftingPlanMarketplaceSession();
 
         this.unregisterHandlers.forEach((fn) => fn());
         this.unregisterHandlers = [];

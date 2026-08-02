@@ -12,6 +12,7 @@ import { calculateGatheringProfit } from './gathering-profit.js';
 import { calculateProductionProfit } from './production-profit.js';
 import { formatWithSeparator, formatPercentage, formatLargeNumber } from '../../utils/formatters.js';
 import { createCollapsibleSection } from '../../utils/ui-components.js';
+import { compactActionPanelSection } from './production-tools-layout.js';
 import { findActionInput, attachInputListeners } from '../../utils/action-panel-helper.js';
 import {
     calculateProfitPerAction,
@@ -534,7 +535,9 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
     }
 
     // Create main profit section
-    const profitSection = createCollapsibleSection('💰', 'Profitability', summary, topLevelContent, false, 0);
+    const profitSection = compactActionPanelSection(
+        createCollapsibleSection('💰', 'Profitability', summary, topLevelContent, false, 0)
+    );
     profitSection.id = 'mwi-foraging-profit';
     profitSection.setAttribute('data-mwi-profit-display', 'true');
     profitSection.dataset.mwiActionHrid = actionHrid;
@@ -1163,7 +1166,9 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
     }
 
     // Create main profit section
-    const profitSection = createCollapsibleSection('💰', 'Profitability', summary, topLevelContent, false, 0);
+    const profitSection = compactActionPanelSection(
+        createCollapsibleSection('💰', 'Profitability', summary, topLevelContent, false, 0)
+    );
     profitSection.id = 'mwi-production-profit';
     profitSection.setAttribute('data-mwi-profit-display', 'true');
     profitSection.dataset.mwiActionHrid = actionHrid;
