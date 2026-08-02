@@ -1739,11 +1739,13 @@ describe('arm() — atomic target generations', () => {
     });
 });
 
-// ─── Disarm matrix — every rejected modal invalidates the target ─────────────
+// ─── Disarm matrix — every rejection prevents a later fill ─────────────────────
 
 describe('Disarm matrix — every rejection prevents a later fill', () => {
     beforeEach(freshSession);
+    beforeEach(() => vi.useFakeTimers());
     afterEach(() => {
+        vi.useRealTimers();
         document.body.innerHTML = '';
     });
 
@@ -1775,45 +1777,47 @@ describe('Disarm matrix — every rejection prevents a later fill', () => {
         return mgr;
     }
 
-    function expectLaterModalNotFilled(mgr, firstModal, laterState = {}) {
+    async function expectLaterModalNotFilled(mgr, firstModal, laterState = {}) {
         _capturedModalCallback(firstModal);
+        // Advance past the 500 ms polling window so the first modal's poll clears the target.
+        await vi.advanceTimersByTimeAsync(600);
         _capturedModalCallback(setupModal(laterState));
         expect(document.querySelector('input').value).toBe('');
         mgr.cleanup();
     }
 
-    test('wrong item disarms', () => {
+    test('wrong item disarms', async () => {
         const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
         const mgr = createArmedManager(id);
-        expectLaterModalNotFilled(mgr, setupModal({ itemHrid: '/items/coal' }));
+        await expectLaterModalNotFilled(mgr, setupModal({ itemHrid: '/items/coal' }));
         marketplaceSession.end(id);
     });
 
-    test('wrong enhancement disarms', () => {
+    test('wrong enhancement disarms', async () => {
         const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
         const mgr = createArmedManager(id, 3);
-        expectLaterModalNotFilled(mgr, setupModal({ enhancementLevel: 1 }), { enhancementLevel: 3 });
+        await expectLaterModalNotFilled(mgr, setupModal({ enhancementLevel: 1 }), { enhancementLevel: 3 });
         marketplaceSession.end(id);
     });
 
-    test('Sell mode disarms', () => {
+    test('Sell mode disarms', async () => {
         const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
         const mgr = createArmedManager(id);
-        expectLaterModalNotFilled(mgr, setupModal({ isSell: true }));
+        await expectLaterModalNotFilled(mgr, setupModal({ isSell: true }));
         marketplaceSession.end(id);
     });
 
-    test('missing runtime component disarms', () => {
+    test('missing runtime component disarms', async () => {
         const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
         const mgr = createArmedManager(id);
-        expectLaterModalNotFilled(mgr, setupModal({}, { withFiber: false }));
+        await expectLaterModalNotFilled(mgr, setupModal({}, { withFiber: false }));
         marketplaceSession.end(id);
     });
 
-    test('ambiguous runtime component disarms', () => {
+    test('ambiguous runtime component disarms', async () => {
         const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
         const mgr = createArmedManager(id);
-        expectLaterModalNotFilled(
+        await expectLaterModalNotFilled(
             mgr,
             setupModal(
                 {},
@@ -1825,38 +1829,38 @@ describe('Disarm matrix — every rejection prevents a later fill', () => {
         marketplaceSession.end(id);
     });
 
-    test('missing quantity input disarms', () => {
+    test('missing quantity input disarms', async () => {
         const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
         const mgr = createArmedManager(id);
-        expectLaterModalNotFilled(mgr, setupModal({}, { numInputs: 0 }));
+        await expectLaterModalNotFilled(mgr, setupModal({}, { numInputs: 0 }));
         marketplaceSession.end(id);
     });
 
-    test('multiple quantity inputs disarm', () => {
+    test('multiple quantity inputs disarm', async () => {
         const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
         const mgr = createArmedManager(id);
-        expectLaterModalNotFilled(mgr, setupModal({}, { numInputs: 2 }));
+        await expectLaterModalNotFilled(mgr, setupModal({}, { numInputs: 2 }));
         marketplaceSession.end(id);
     });
 
-    test('unsupported market tab disarms', () => {
+    test('unsupported market tab disarms', async () => {
         const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
         const mgr = createArmedManager(id);
-        expectLaterModalNotFilled(mgr, setupModal({ marketTabKey: 'MyListings' }));
+        await expectLaterModalNotFilled(mgr, setupModal({ marketTabKey: 'MyListings' }));
         marketplaceSession.end(id);
     });
 
-    test('unsupported market view disarms', () => {
+    test('unsupported market view disarms', async () => {
         const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
         const mgr = createArmedManager(id);
-        expectLaterModalNotFilled(mgr, setupModal({ marketListingsView: 'History' }));
+        await expectLaterModalNotFilled(mgr, setupModal({ marketListingsView: 'History' }));
         marketplaceSession.end(id);
     });
 
-    test('malformed runtime enhancement disarms', () => {
+    test('malformed runtime enhancement disarms', async () => {
         const id = marketplaceSession.start({ owner: MARKETPLACE_OWNER.ACTIONS });
         const mgr = createArmedManager(id);
-        expectLaterModalNotFilled(mgr, setupModal({ enhancementLevel: '0' }));
+        await expectLaterModalNotFilled(mgr, setupModal({ enhancementLevel: '0' }));
         marketplaceSession.end(id);
     });
 });

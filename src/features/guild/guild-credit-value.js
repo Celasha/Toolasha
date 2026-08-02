@@ -151,10 +151,21 @@ class GuildCreditValue {
         if (muiRoot) muiRoot.style.height = 'auto';
 
         for (const mat of model.materials) {
+            const capturedMat = mat;
             const tab = createMaterialTab(
                 mat,
                 referenceTab,
                 (_e, m) => {
+                    const currentModel = this._guildActiveWorkflowModel;
+                    const entry = currentModel?.materials.find((e) => e.itemHrid === capturedMat.itemHrid);
+                    const armed = this.autofillManager.arm({
+                        sessionId: capturedSessionId,
+                        itemHrid: m.itemHrid,
+                        enhancementLevel: 0,
+                        modalMode: 'buy',
+                        quantityProvider: () => entry?.missing ?? 0,
+                    });
+                    if (!armed) return;
                     navigateToMarketplace(m.itemHrid, 0);
                 },
                 MARKETPLACE_OWNER.GUILD
@@ -976,6 +987,7 @@ class GuildCreditValue {
                 });
                 this._guildSessionId = sessionId;
 
+                // Open the Marketplace (navigate to the first missing material's page)
                 navigateToMarketplace(missingMats[0].itemHrid, 0);
 
                 // Wait for the marketplace tablist to render
@@ -1015,10 +1027,21 @@ class GuildCreditValue {
                 this.autofillManager.startSession({ sessionId });
 
                 for (const mat of missingMats) {
+                    const capturedMat = mat;
                     const tab = createMaterialTab(
                         mat,
                         referenceTab,
                         (_e, m) => {
+                            const model = this._guildActiveWorkflowModel;
+                            const entry = model?.materials.find((e) => e.itemHrid === capturedMat.itemHrid);
+                            const armed = this.autofillManager.arm({
+                                sessionId,
+                                itemHrid: m.itemHrid,
+                                enhancementLevel: 0,
+                                modalMode: 'buy',
+                                quantityProvider: () => entry?.missing ?? 0,
+                            });
+                            if (!armed) return;
                             navigateToMarketplace(m.itemHrid, 0);
                         },
                         MARKETPLACE_OWNER.GUILD
@@ -1051,6 +1074,28 @@ class GuildCreditValue {
                         guildButton.click();
                     });
                     tabsContainer.appendChild(returnTab);
+                }
+
+                // Arm and navigate to first missing material automatically.
+                if (!marketplaceSession.isActive(sessionId)) return;
+                const firstMat = missingMats[0];
+                if (firstMat) {
+                    const firstEntry = this._guildActiveWorkflowModel?.materials.find(
+                        (e) => e.itemHrid === firstMat.itemHrid
+                    );
+                    const armed = this.autofillManager.arm({
+                        sessionId,
+                        itemHrid: firstMat.itemHrid,
+                        enhancementLevel: 0,
+                        modalMode: 'buy',
+                        quantityProvider: () => firstEntry?.missing ?? 0,
+                    });
+                    if (armed) {
+                        navigateToMarketplace(firstMat.itemHrid, 0);
+                    } else {
+                        this.teardownGuildMarketplaceSession();
+                        return;
+                    }
                 }
 
                 // Watch for inventory/market changes and update shrine tabs accordingly

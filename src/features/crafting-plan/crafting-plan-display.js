@@ -495,6 +495,26 @@ function buildPlanUI(actionHrid, onToggle, defaultOpen = false) {
             await new Promise((resolve) => setTimeout(resolve, 200));
             createCraftingPlanTabs(missingMaterials);
 
+            // Activate the first material automatically (same as manual tab click).
+            if (missingMaterials.length > 0 && marketplaceSession.isActive(craftingPlanSessionId)) {
+                const firstMat = missingMaterials[0];
+                const firstTab = craftingPlanTabs[0] ?? null;
+                const tabRef = { tab: firstTab };
+                const armed = autofillManager.arm({
+                    sessionId: craftingPlanSessionId,
+                    itemHrid: firstMat.itemHrid,
+                    enhancementLevel: 0,
+                    modalMode: 'buy',
+                    quantityProvider: () => parseInt(tabRef.tab?.getAttribute('data-missing-quantity') || '0', 10),
+                });
+                if (armed) {
+                    navigateToMarketplace(firstMat.itemHrid, 0);
+                } else {
+                    teardownCraftingPlanMarketplaceSession();
+                    return;
+                }
+            }
+
             // Inventory listener to update tab badges when inventory changes
             if (inventoryUpdateHandler) {
                 dataManager.off('items_updated', inventoryUpdateHandler);

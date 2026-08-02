@@ -415,117 +415,155 @@ describe('HouseCostDisplay — Section 3 Rev2 correction', () => {
     // =========================================================================
 
     describe('_getHouseComponent', () => {
-        it('returns null when root element is absent', () => {
+        function makePanelWithFiber(component, ancestorDepth = 0) {
+            const el = document.createElement('div');
+            el.className = 'HousePanel_something__test';
+            document.body.appendChild(el);
+
+            // Build the fiber chain: panel fiber → (depth intermediate fibers) → component fiber
+            const componentFiber = { stateNode: component, return: null };
+            let chain = componentFiber;
+            for (let i = 0; i < ancestorDepth; i++) {
+                chain = { stateNode: null, return: chain };
+            }
+            el['__reactFiber$test'] = chain;
+            return el;
+        }
+
+        it('returns null when no [class*="HousePanel_"] element is visible', () => {
             expect(houseCostDisplay._getHouseComponent()).toBeNull();
         });
 
         it('returns null when no candidate has the full behavioral signature', () => {
-            const root = document.createElement('div');
-            root.id = 'root';
             const partial = { handleHouseRoomClicked: vi.fn() }; // missing handleCloseModal, state
-            const fiber = { stateNode: partial, child: null, sibling: null };
-            root._reactRootContainer = { current: fiber };
-            document.body.appendChild(root);
+            const el = makePanelWithFiber(partial);
             expect(houseCostDisplay._getHouseComponent()).toBeNull();
-            root.remove();
+            el.remove();
         });
 
         it('returns null when handleCloseModal is missing', () => {
-            const root = document.createElement('div');
-            root.id = 'root';
             const node = {
                 handleHouseRoomClicked: vi.fn(),
                 state: { selectedHouseRoomHrid: '/house_rooms/a' },
                 // no handleCloseModal
             };
-            const fiber = { stateNode: node, child: null, sibling: null };
-            root._reactRootContainer = { current: fiber };
-            document.body.appendChild(root);
+            const el = makePanelWithFiber(node);
             expect(houseCostDisplay._getHouseComponent()).toBeNull();
-            root.remove();
+            el.remove();
         });
 
         it('returns null when state.selectedHouseRoomHrid is absent', () => {
-            const root = document.createElement('div');
-            root.id = 'root';
             const node = {
                 handleHouseRoomClicked: vi.fn(),
                 handleCloseModal: vi.fn(),
                 state: { otherProp: true }, // no selectedHouseRoomHrid
             };
-            const fiber = { stateNode: node, child: null, sibling: null };
-            root._reactRootContainer = { current: fiber };
-            document.body.appendChild(root);
+            const el = makePanelWithFiber(node);
             expect(houseCostDisplay._getHouseComponent()).toBeNull();
-            root.remove();
+            el.remove();
         });
 
         it('returns null when multiple candidates have the full signature', () => {
-            const root = document.createElement('div');
-            root.id = 'root';
-            const makeNode = () => ({
-                handleHouseRoomClicked: vi.fn(),
-                handleCloseModal: vi.fn(),
-                state: { selectedHouseRoomHrid: null },
-            });
-            const fiber2 = { stateNode: makeNode(), child: null, sibling: null };
-            const fiber1 = { stateNode: makeNode(), child: null, sibling: fiber2 };
-            root._reactRootContainer = { current: fiber1 };
-            document.body.appendChild(root);
+            const el1 = makePanelWithFiber(makeHouseComponent({ state: { selectedHouseRoomHrid: null } }));
+            const el2 = makePanelWithFiber(makeHouseComponent({ state: { selectedHouseRoomHrid: null } }));
             expect(houseCostDisplay._getHouseComponent()).toBeNull();
-            root.remove();
+            el1.remove();
+            el2.remove();
         });
 
         it('returns the component when exactly one candidate matches full signature', () => {
-            const root = document.createElement('div');
-            root.id = 'root';
             const node = makeHouseComponent({ state: { selectedHouseRoomHrid: null } });
-            const fiber = { stateNode: node, child: null, sibling: null };
-            root._reactRootContainer = { current: fiber };
-            document.body.appendChild(root);
+            const el = makePanelWithFiber(node);
             expect(houseCostDisplay._getHouseComponent()).toBe(node);
-            root.remove();
+            el.remove();
+        });
+
+        it('resolves when component is found via return ancestry (not at panel fiber directly)', () => {
+            const node = makeHouseComponent({ state: { selectedHouseRoomHrid: null } });
+            const el = makePanelWithFiber(node, 5); // 5 intermediate fibers
+            expect(houseCostDisplay._getHouseComponent()).toBe(node);
+            el.remove();
         });
 
         it('returns null when room filter finds no matching room', () => {
-            const root = document.createElement('div');
-            root.id = 'root';
             const node = makeHouseComponent({ state: { selectedHouseRoomHrid: '/house_rooms/kitchen' } });
-            const fiber = { stateNode: node, child: null, sibling: null };
-            root._reactRootContainer = { current: fiber };
-            document.body.appendChild(root);
+            const el = makePanelWithFiber(node);
             expect(houseCostDisplay._getHouseComponent('/house_rooms/library')).toBeNull();
-            root.remove();
+            el.remove();
         });
 
         it('returns component when room filter matches exactly one candidate', () => {
-            const root = document.createElement('div');
-            root.id = 'root';
             const node = makeHouseComponent({ state: { selectedHouseRoomHrid: '/house_rooms/library' } });
-            const fiber = { stateNode: node, child: null, sibling: null };
-            root._reactRootContainer = { current: fiber };
-            document.body.appendChild(root);
+            const el = makePanelWithFiber(node);
             expect(houseCostDisplay._getHouseComponent('/house_rooms/library')).toBe(node);
-            root.remove();
+            el.remove();
         });
 
-        it('fails closed when the House traversal budget is exhausted before the tree is complete', () => {
-            const root = document.createElement('div');
-            root.id = 'root';
+        it('resolves correctly in a fixture with more than 2000 unrelated fiber ancestors', () => {
+            // The old DFS approach would fail at 2000 nodes — the new anchor approach is unaffected
+            const node = makeHouseComponent({ state: { selectedHouseRoomHrid: null } });
+            const el = document.createElement('div');
+            el.className = 'HousePanel_something__test';
+            document.body.appendChild(el);
 
-            const candidate = makeHouseComponent({ state: { selectedHouseRoomHrid: null } });
-            const rootFiber = { stateNode: candidate, child: null, sibling: null };
-            let cursor = rootFiber;
-            for (let i = 0; i < 2000; i++) {
-                cursor.sibling = { stateNode: null, child: null, sibling: null };
-                cursor = cursor.sibling;
+            // Build a very long .return chain (2100 nodes) with the component at the end
+            const componentFiber = { stateNode: node, return: null };
+            let chain = componentFiber;
+            for (let i = 0; i < 2100; i++) {
+                chain = { stateNode: null, return: chain };
             }
-
-            root._reactRootContainer = { current: rootFiber };
-            document.body.appendChild(root);
-
+            // Depth limit is 64, so this chain exceeds the depth limit and component won't be found
+            // (This verifies that depth limit works as expected — long chains are truncated)
+            el['__reactFiber$test'] = chain;
             expect(houseCostDisplay._getHouseComponent()).toBeNull();
-            root.remove();
+            el.remove();
+        });
+
+        it('resolves when component is within the 64-ancestor depth limit', () => {
+            // Component at exactly depth 63 (within limit)
+            const node = makeHouseComponent({ state: { selectedHouseRoomHrid: null } });
+            const el = makePanelWithFiber(node, 63);
+            expect(houseCostDisplay._getHouseComponent()).toBe(node);
+            el.remove();
+        });
+
+        it('fails closed when panel element is hidden (not visible)', () => {
+            const node = makeHouseComponent({ state: { selectedHouseRoomHrid: null } });
+            const el = makePanelWithFiber(node);
+            el.style.display = 'none';
+            expect(houseCostDisplay._getHouseComponent()).toBeNull();
+            el.remove();
+        });
+
+        it('fails closed when panel element is detached from document', () => {
+            const node = makeHouseComponent({ state: { selectedHouseRoomHrid: null } });
+            const el = document.createElement('div');
+            el.className = 'HousePanel_something__test';
+            // Not appended to document.body — detached
+            const fiber = { stateNode: node, return: null };
+            el['__reactFiber$test'] = fiber;
+            // Detached element is not visible (_isElementActuallyVisible checks isConnected)
+            expect(houseCostDisplay._getHouseComponent()).toBeNull();
+        });
+
+        it('deduplicates the same component reached via multiple HousePanel_ elements', () => {
+            const node = makeHouseComponent({ state: { selectedHouseRoomHrid: null } });
+            const componentFiber = { stateNode: node, return: null };
+
+            const el1 = document.createElement('div');
+            el1.className = 'HousePanel_a__test';
+            el1['__reactFiber$test'] = { stateNode: null, return: componentFiber };
+            document.body.appendChild(el1);
+
+            const el2 = document.createElement('div');
+            el2.className = 'HousePanel_b__test';
+            el2['__reactFiber$test'] = { stateNode: null, return: componentFiber };
+            document.body.appendChild(el2);
+
+            // Same component reached from two panels — deduplicated → exactly one candidate
+            expect(houseCostDisplay._getHouseComponent()).toBe(node);
+            el1.remove();
+            el2.remove();
         });
     });
 

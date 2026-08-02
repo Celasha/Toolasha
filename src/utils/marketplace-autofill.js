@@ -296,70 +296,105 @@ export function createAutofillManager(observerId) {
         invalidateTarget();
     }
 
-    function handleBuyModal(modal) {
+    async function handleBuyModal(modal) {
         const target = activeTarget;
         if (!target) return;
 
-        if (activeSessionId !== target.sessionId || !marketplaceSession.isActive(target.sessionId)) {
-            clearTargetIfCurrent(target);
-            return;
+        const capturedGeneration = target.generation;
+
+        const POLL_STEP_MS = 50;
+        const POLL_MAX_MS = 500;
+        let elapsed = 0;
+
+        while (elapsed <= POLL_MAX_MS) {
+            // Re-arm or session replacement during polling stops this attempt.
+            if (!activeTarget || activeTarget.generation !== capturedGeneration) return;
+
+            // Modal must still be connected.
+            if (!modal.isConnected) return;
+
+            // Session must still be active.
+            if (activeSessionId !== target.sessionId || !marketplaceSession.isActive(target.sessionId)) {
+                clearTargetIfCurrent(target);
+                return;
+            }
+
+            const runtimeState = readMarketplaceRuntimeState();
+
+            // Definitive contradiction: non-null itemHrid that differs from target.
+            if (runtimeState && runtimeState.itemHrid !== null && runtimeState.itemHrid !== target.itemHrid) {
+                clearTargetIfCurrent(target);
+                return;
+            }
+
+            // Check full convergence.
+            const converged =
+                runtimeState &&
+                runtimeState.isSell === false &&
+                runtimeState.marketTabKey === 'MarketListings' &&
+                runtimeState.marketListingsView === 'OrderBook' &&
+                runtimeState.itemHrid === target.itemHrid &&
+                runtimeState.enhancementLevel === target.enhancementLevel;
+
+            if (converged) {
+                const quantityInput = findQuantityInput(modal);
+                if (quantityInput) {
+                    // Re-check generation and session immediately before writing.
+                    if (!activeTarget || activeTarget.generation !== capturedGeneration) return;
+                    if (activeSessionId !== target.sessionId || !marketplaceSession.isActive(target.sessionId)) {
+                        clearTargetIfCurrent(target);
+                        return;
+                    }
+                    if (!quantityInput.isConnected || !modal.contains(quantityInput)) {
+                        clearTargetIfCurrent(target);
+                        return;
+                    }
+
+                    let quantity;
+                    try {
+                        quantity = target.quantityProvider();
+                    } catch (error) {
+                        console.error('[MarketplaceAutofill] quantityProvider failed:', error);
+                        clearTargetIfCurrent(target);
+                        return;
+                    }
+
+                    if (typeof quantity !== 'number' || !Number.isFinite(quantity) || quantity <= 0) {
+                        clearTargetIfCurrent(target);
+                        return;
+                    }
+
+                    // Final generation/session check after synchronous provider call.
+                    if (!activeTarget || activeTarget.generation !== capturedGeneration) return;
+                    if (activeSessionId !== target.sessionId || !marketplaceSession.isActive(target.sessionId)) {
+                        clearTargetIfCurrent(target);
+                        return;
+                    }
+
+                    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                        window.HTMLInputElement.prototype,
+                        'value'
+                    )?.set;
+                    if (typeof nativeInputValueSetter !== 'function') {
+                        clearTargetIfCurrent(target);
+                        return;
+                    }
+
+                    nativeInputValueSetter.call(quantityInput, quantity.toString());
+                    quantityInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    marketplaceSession.consume(target.sessionId);
+                    return;
+                }
+            }
+
+            if (elapsed >= POLL_MAX_MS) break;
+
+            await new Promise((resolve) => setTimeout(resolve, POLL_STEP_MS));
+            elapsed += POLL_STEP_MS;
         }
 
-        const runtimeState = readMarketplaceRuntimeState();
-        if (
-            !runtimeState ||
-            runtimeState.isSell !== false ||
-            runtimeState.marketTabKey !== 'MarketListings' ||
-            runtimeState.marketListingsView !== 'OrderBook' ||
-            runtimeState.itemHrid !== target.itemHrid ||
-            runtimeState.enhancementLevel !== target.enhancementLevel
-        ) {
-            clearTargetIfCurrent(target);
-            return;
-        }
-
-        const quantityInput = findQuantityInput(modal);
-        if (!quantityInput) {
-            clearTargetIfCurrent(target);
-            return;
-        }
-
-        let quantity;
-        try {
-            quantity = target.quantityProvider();
-        } catch (error) {
-            console.error('[MarketplaceAutofill] quantityProvider failed:', error);
-            clearTargetIfCurrent(target);
-            return;
-        }
-
-        if (typeof quantity !== 'number' || !Number.isFinite(quantity) || quantity <= 0) {
-            clearTargetIfCurrent(target);
-            return;
-        }
-
-        // The provider may synchronously re-arm, exit, or replace the session.
-        // Recheck the captured generation and token immediately before writing.
-        if (activeTarget !== target || activeTarget.generation !== target.generation) return;
-        if (activeSessionId !== target.sessionId || !marketplaceSession.isActive(target.sessionId)) {
-            clearTargetIfCurrent(target);
-            return;
-        }
-
-        if (!quantityInput.isConnected || !modal.contains(quantityInput)) {
-            clearTargetIfCurrent(target);
-            return;
-        }
-
-        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
-        if (typeof nativeInputValueSetter !== 'function') {
-            clearTargetIfCurrent(target);
-            return;
-        }
-
-        nativeInputValueSetter.call(quantityInput, quantity.toString());
-        quantityInput.dispatchEvent(new Event('input', { bubbles: true }));
-        marketplaceSession.consume(target.sessionId);
+        // Timed out without convergence — clear to prevent stale fill of a later modal.
+        clearTargetIfCurrent(target);
     }
 
     return {

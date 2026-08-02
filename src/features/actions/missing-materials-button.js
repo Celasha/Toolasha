@@ -217,13 +217,17 @@ function updateButtonForPanel(panel, value) {
     // Create and insert button with actionHrid and numActions for live updates
     const button = createMissingMaterialsButton(missingMaterials, actionHrid, numActions, disabled);
 
-    // Find insertion point (beneath item requirements field)
+    // Find insertion point: walk up from itemRequirements to find the direct child of panel.
     const itemRequirements = panel.querySelector('.SkillActionDetail_itemRequirements__3SPnA');
     if (itemRequirements) {
-        itemRequirements.parentNode.insertBefore(button, itemRequirements.nextSibling);
+        const anchor = findPanelLevelAncestor(itemRequirements, panel);
+        if (anchor) {
+            anchor.after(button);
+        } else {
+            panel.appendChild(button);
+        }
     } else {
-        // Fallback: insert at top of panel
-        panel.insertBefore(button, panel.firstChild);
+        panel.appendChild(button);
     }
 
     // Don't manipulate modal styling - let the game handle it
@@ -446,10 +450,15 @@ function updateEnhancementButton(panel) {
         strategyInfo
     );
 
-    // Find insertion point
+    // Find insertion point: walk up from itemRequirements to find the direct child of panel.
     const itemRequirements = panel.querySelector('.SkillActionDetail_itemRequirements__3SPnA');
     if (itemRequirements) {
-        itemRequirements.parentNode.insertBefore(button, itemRequirements.nextSibling);
+        const anchor = findPanelLevelAncestor(itemRequirements, panel);
+        if (anchor) {
+            anchor.after(button);
+        } else {
+            panel.appendChild(button);
+        }
     } else {
         const enhancementStats = panel.querySelector('#mwi-enhancement-stats');
         if (enhancementStats) {
@@ -621,6 +630,28 @@ async function handleEnhancementMissingMaterialsClick(
         createMissingMaterialTabs(freshMaterials, strategyInfo, capturedSessionId);
     }
 
+    // Activate the first tradeable missing material automatically (same as manual tab click).
+    const firstMaterial = freshMaterials.find((m) => m.isTradeable !== false && m.missing > 0);
+    if (firstMaterial) {
+        const firstTab = currentMaterialsTabs.find(
+            (t) => t.getAttribute && t.getAttribute('data-item-hrid') === firstMaterial.itemHrid
+        );
+        const tabRef = { tab: firstTab ?? null };
+        const armed = autofillManager.arm({
+            sessionId: capturedSessionId,
+            itemHrid: firstMaterial.itemHrid,
+            enhancementLevel: 0,
+            modalMode: 'buy',
+            quantityProvider: () => parseInt(tabRef.tab?.getAttribute('data-missing-quantity') || '0', 10),
+        });
+        if (armed) {
+            navigateToMarketplace(firstMaterial.itemHrid, 0);
+        } else {
+            teardownActionsMarketplaceSession();
+            return;
+        }
+    }
+
     // Setup inventory listener for live updates
     setupInventoryListener();
 }
@@ -744,6 +775,28 @@ async function handleMissingMaterialsClick(actionHrid, numActions) {
         createMissingMaterialTabs(freshMaterials, null, capturedSessionId);
     }
 
+    // Activate the first tradeable missing material automatically (same as manual tab click).
+    const firstMaterial = freshMaterials.find((m) => m.isTradeable !== false && m.missing > 0);
+    if (firstMaterial) {
+        const firstTab = currentMaterialsTabs.find(
+            (t) => t.getAttribute && t.getAttribute('data-item-hrid') === firstMaterial.itemHrid
+        );
+        const tabRef = { tab: firstTab ?? null };
+        const armed = autofillManager.arm({
+            sessionId: capturedSessionId,
+            itemHrid: firstMaterial.itemHrid,
+            enhancementLevel: 0,
+            modalMode: 'buy',
+            quantityProvider: () => parseInt(tabRef.tab?.getAttribute('data-missing-quantity') || '0', 10),
+        });
+        if (armed) {
+            navigateToMarketplace(firstMaterial.itemHrid, 0);
+        } else {
+            teardownActionsMarketplaceSession();
+            return;
+        }
+    }
+
     // Setup inventory listener for live updates
     setupInventoryListener();
 }
@@ -801,6 +854,20 @@ async function waitForMarketplace() {
 
     console.error('[MissingMats] Marketplace did not open within timeout');
     return false;
+}
+
+/**
+ * Walk up from element until we find a direct child of panel, or null if not found.
+ * @param {HTMLElement} element
+ * @param {HTMLElement} panel
+ * @returns {HTMLElement|null}
+ */
+function findPanelLevelAncestor(element, panel) {
+    let current = element;
+    while (current && current.parentElement !== panel) {
+        current = current.parentElement;
+    }
+    return current;
 }
 
 /**

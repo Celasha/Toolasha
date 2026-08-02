@@ -659,7 +659,31 @@ class HouseCostDisplay {
             return;
         }
 
-        // 10. Per-session cleanup observer — ends the captured Core token on overlay close
+        // 10. Arm and navigate to the first tradeable missing material automatically.
+        const firstMaterial = missingMaterials.find((m) => m.isTradeable !== false && (m.missing ?? 0) > 0);
+        if (firstMaterial) {
+            const capturedItemHrid = firstMaterial.itemHrid;
+            const armed = this.autofillManager.arm({
+                sessionId,
+                itemHrid: firstMaterial.itemHrid,
+                enhancementLevel: firstMaterial.enhancementLevel ?? 0,
+                modalMode: 'buy',
+                quantityProvider: () => {
+                    const model = this.activeWorkflowModel;
+                    if (model?.sessionId !== sessionId) return 0;
+                    const entry = model.materials.find((e) => e.itemHrid === capturedItemHrid);
+                    return entry?.missing ?? 0;
+                },
+            });
+            if (armed) {
+                navigateToMarketplace(firstMaterial.itemHrid, firstMaterial.enhancementLevel ?? 0);
+            } else {
+                this.exitHouseMarketplaceSession(sessionId);
+                return;
+            }
+        }
+
+        // 11. Per-session cleanup observer — ends the captured Core token on overlay close
         this.cleanupObserver = setupMarketplaceCleanupObserver({
             owner: MARKETPLACE_OWNER.HOUSE,
             onTabsGone: () => {
@@ -1003,44 +1027,50 @@ class HouseCostDisplay {
 
     /**
      * Find the single House component in the fiber tree using the full behavioral signature.
+     * Anchors from visible [class*="HousePanel_"] elements and walks .return ancestry (≤64 depth).
      * Optionally filters to a component whose state.selectedHouseRoomHrid matches capturedRoomHrid.
      * Requires exactly one candidate (fail-closed on zero or multiple).
      * @param {string|null} capturedRoomHrid - If non-null, additionally require state match
      * @returns {Object|null}
      */
     _getHouseComponent(capturedRoomHrid = null) {
-        const rootEl = document.getElementById('root');
-        const rootFiber = rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
-        if (!rootFiber) return null;
+        const REACT_FIBER_PREFIXES_LOCAL = ['__reactFiber$', '__reactInternalInstance$'];
+        const panels = Array.from(document.querySelectorAll('[class*="HousePanel_"]')).filter((el) =>
+            this._isElementActuallyVisible(el)
+        );
+        if (panels.length === 0) return null;
 
+        const seen = new Set();
         const candidates = [];
-        const stack = [rootFiber];
-        let visited = 0;
 
-        while (stack.length > 0 && visited < 2000) {
-            const fiber = stack.pop();
-            visited++;
-            if (!fiber) continue;
+        for (const panel of panels) {
+            const fiberKey = Object.getOwnPropertyNames(panel).find((k) =>
+                REACT_FIBER_PREFIXES_LOCAL.some((p) => k.startsWith(p))
+            );
+            if (!fiberKey) continue;
 
-            const node = fiber.stateNode;
-            if (
-                node &&
-                typeof node.handleHouseRoomClicked === 'function' &&
-                typeof node.handleCloseModal === 'function' &&
-                node.state &&
-                Object.prototype.hasOwnProperty.call(node.state, 'selectedHouseRoomHrid')
-            ) {
-                if (capturedRoomHrid === null || node.state.selectedHouseRoomHrid === capturedRoomHrid) {
-                    candidates.push(node);
+            let fiber = panel[fiberKey];
+            let depth = 0;
+
+            while (fiber && depth < 64) {
+                const node = fiber.stateNode;
+                if (
+                    node &&
+                    !seen.has(node) &&
+                    typeof node.handleHouseRoomClicked === 'function' &&
+                    typeof node.handleCloseModal === 'function' &&
+                    node.state &&
+                    Object.prototype.hasOwnProperty.call(node.state, 'selectedHouseRoomHrid')
+                ) {
+                    if (capturedRoomHrid === null || node.state.selectedHouseRoomHrid === capturedRoomHrid) {
+                        seen.add(node);
+                        candidates.push(node);
+                    }
                 }
+                fiber = fiber.return;
+                depth++;
             }
-
-            if (fiber.sibling) stack.push(fiber.sibling);
-            if (fiber.child) stack.push(fiber.child);
         }
-
-        // A truncated traversal cannot prove that no second candidate exists.
-        if (stack.length > 0) return null;
 
         return candidates.length === 1 ? candidates[0] : null;
     }
