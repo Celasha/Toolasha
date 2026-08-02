@@ -25,11 +25,11 @@ jobs:
             # Build and upload assets if a release was created
             - name: Checkout code
               if: ${{ steps.release.outputs.release_created }}
-              uses: actions/checkout@v4
+              uses: actions/checkout@v6
 
             - name: Setup Node.js
               if: ${{ steps.release.outputs.release_created }}
-              uses: actions/setup-node@v4
+              uses: actions/setup-node@v6
               with:
                   node-version: '20'
                   cache: 'npm'
