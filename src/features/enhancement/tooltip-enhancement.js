@@ -16,6 +16,8 @@ import dataManager from '../../core/data-manager.js';
 import { formatLargeNumber, numberFormatter, formatKMB, isAbbreviationEnabled } from '../../utils/formatters.js';
 import { getItemPrice, getItemPrices } from '../../utils/market-data.js';
 import { parseArtisanBonus, getDrinkConcentration } from '../../utils/tea-parser.js';
+import { parseItemCount } from '../../utils/number-parser.js';
+import { MARKET_TAX } from '../../utils/profit-constants.js';
 import marketAPI from '../../api/marketplace.js';
 
 const _costCache = new Map();
@@ -727,6 +729,20 @@ function mirrorFib(n) {
 }
 
 /**
+ * Calculate the minimum sell price needed to cover total cost plus a target hourly rate
+ * for time spent, optionally accounting for the marketplace seller tax.
+ * @param {number} totalCost - Total cost to reach the enhancement level (one side: ask or bid)
+ * @param {number} totalTimeSeconds - Total time spent enhancing, in seconds
+ * @param {number} hourlyRate - Target coins/hour for time spent
+ * @param {boolean} includeTax - Whether to gross up for the marketplace seller tax
+ * @returns {number} Minimum sell price
+ */
+export function calculateMinimumSellPrice(totalCost, totalTimeSeconds, hourlyRate, includeTax) {
+    const breakeven = totalCost + hourlyRate * (totalTimeSeconds / 3600);
+    return includeTax ? breakeven / (1 - MARKET_TAX) : breakeven;
+}
+
+/**
  * Build HTML for enhancement tooltip section
  * @param {Object} enhancementData - Enhancement analysis from calculateEnhancementPath()
  * @returns {string} HTML string
@@ -784,12 +800,14 @@ export function buildEnhancementTooltipHTML(enhancementData) {
     html += '<th style="padding: 2px 4px; text-align: right;">Bid</th>';
     html += '</tr>';
 
+    // Hoisted so both branches can populate them and the minimum-sell section below can read them
+    let totalAsk = 0;
+    let totalBid = 0;
+
     // Check if using mirror optimization
     if (optimalStrategy.usedMirror && optimalStrategy.consumedItems && optimalStrategy.consumedItems.length > 0) {
         // Mirror-optimized breakdown
         // Calculate totals for mirror path
-        let totalAsk = 0;
-        let totalBid = 0;
 
         // Consumed items (enhanced items at specific levels)
         const sortedConsumed = [...optimalStrategy.consumedItems]
@@ -861,8 +879,8 @@ export function buildEnhancementTooltipHTML(enhancementData) {
         // Traditional (non-mirror) breakdown
         // Calculate totals
         let totalCount = 1; // Base item counts as 1
-        let totalAsk = optimalStrategy.baseAskPrice || optimalStrategy.baseCost;
-        let totalBid = optimalStrategy.baseBidPrice || optimalStrategy.baseCost;
+        totalAsk = optimalStrategy.baseAskPrice || optimalStrategy.baseCost;
+        totalBid = optimalStrategy.baseBidPrice || optimalStrategy.baseCost;
 
         const rows = [];
 
@@ -976,6 +994,34 @@ export function buildEnhancementTooltipHTML(enhancementData) {
     }
     if (totalExpectedXP !== null && totalExpectedXP > 0) {
         html += '<div>Total XP: ~' + formatLargeNumber(totalExpectedXP) + '</div>';
+    }
+
+    // Target hourly rate / minimum sell price (only shown when a rate is configured)
+    const hourlyRate = parseItemCount(config.getSetting('itemTooltip_enhancingHourlyRate'), 0);
+    if (hourlyRate > 0) {
+        const includeTax = config.getSetting('itemTooltip_enhancingHourlyRateTax');
+        const minSellAsk = calculateMinimumSellPrice(totalAsk, optimalStrategy.totalTime, hourlyRate, includeTax);
+        const minSellBid = calculateMinimumSellPrice(totalBid, optimalStrategy.totalTime, hourlyRate, includeTax);
+
+        const enhancedPrices = getItemPrices(itemHrid, targetLevel);
+        const askColor =
+            enhancedPrices?.ask > 0
+                ? enhancedPrices.ask >= minSellAsk
+                    ? config.COLOR_TOOLTIP_PROFIT
+                    : config.COLOR_TOOLTIP_LOSS
+                : '';
+        const bidColor =
+            enhancedPrices?.bid > 0
+                ? enhancedPrices.bid >= minSellBid
+                    ? config.COLOR_TOOLTIP_PROFIT
+                    : config.COLOR_TOOLTIP_LOSS
+                : '';
+
+        html += '<div style="margin-top: 4px;">Your rate: ' + formatKMB(hourlyRate) + '/hr</div>';
+        html += '<div>Minimum sell: ';
+        html += `<span${askColor ? ` style="color: ${askColor};"` : ''}>${formatKMB(minSellAsk)}</span>(ask)/`;
+        html += `<span${bidColor ? ` style="color: ${bidColor};"` : ''}>${formatKMB(minSellBid)}</span>(bid)`;
+        html += '</div>';
     }
 
     html += '</div>'; // Close margin-left div
