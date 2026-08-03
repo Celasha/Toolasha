@@ -997,7 +997,7 @@ export function buildEnhancementTooltipHTML(enhancementData) {
     }
 
     // Target hourly rate / minimum sell price (only shown when a rate is configured)
-    const hourlyRate = parseItemCount(config.getSetting('itemTooltip_enhancingHourlyRate'), 0);
+    const hourlyRate = parseItemCount(config.getSettingValue('itemTooltip_enhancingHourlyRate', ''), 0);
     if (hourlyRate > 0) {
         const includeTax = config.getSetting('itemTooltip_enhancingHourlyRateTax');
         const minSellAsk = calculateMinimumSellPrice(totalAsk, optimalStrategy.totalTime, hourlyRate, includeTax);
