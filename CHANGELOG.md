@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.87.0](https://github.com/Celasha/Toolasha/compare/v2.86.0...v2.87.0) (2026-08-03)
+
+
+### Features
+
+* add target hourly rate and minimum sell price to enhancement tooltips ([c3a286b](https://github.com/Celasha/Toolasha/commit/c3a286bff82a4444a195609fc5b93009f6819731))
+
+
+### Bug Fixes
+
+* guard against infinite sort loop when Pinned Actions is disabled ([47b6ede](https://github.com/Celasha/Toolasha/commit/47b6edeac7f115ee0208ba668595506428cc7c80))
+* guard against infinite sort loop when Pinned Actions is disabled ([2a838e3](https://github.com/Celasha/Toolasha/commit/2a838e3d4e2f3ea7680265fabbb926f0306f57ff))
+* read enhancing hourly rate via getSettingValue, not getSetting ([a2f3644](https://github.com/Celasha/Toolasha/commit/a2f36445be75a92ff10f02201cbd62e235ce7abf))
+* resolve all 7 pre-existing lint warnings ([7fbff82](https://github.com/Celasha/Toolasha/commit/7fbff825ee1d41a424d2e71c010fe0d8fc5fd38b))
+* resolve all 7 pre-existing lint warnings ([92f5501](https://github.com/Celasha/Toolasha/commit/92f5501a31c9326c4a7876b8b94fafc5d4f8e710))
+
 ## [2.86.0](https://github.com/Celasha/Toolasha/compare/v2.85.1...v2.86.0) (2026-08-03)
 
 ### Features
