@@ -1,12 +1,98 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.85.1
+ * Version: 2.86.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (dataManager, config, domObserver, enhancementConfig_js, enhancementCalculator_js, profitConstants_js, formatters_js, marketAPI, domObserverHelpers_js, bonusRevenueCalculator_js, marketData_js, efficiency_js, profitHelpers_js, profitCalculator, uiComponents_js, actionPanelHelper_js, webSocketHook, storage, dom_js, timerRegistry_js, teaParser_js, alchemyProfitCalculator, actionCalculator_js, cleanupRegistry_js, buffParser_js, equipmentParser_js, experienceParser_js, reactInput_js, experienceCalculator_js, materialCalculator_js, expectedValueCalculator) {
+(function (dataManager, config, domObserver, enhancementConfig_js, enhancementCalculator_js, profitConstants_js, formatters_js, marketAPI, domObserverHelpers_js, bonusRevenueCalculator_js, marketData_js, efficiency_js, profitHelpers_js, profitCalculator, uiComponents_js, actionPanelHelper_js, webSocketHook, storage, dom_js, timerRegistry_js, teaParser_js, alchemyProfitCalculator, actionCalculator_js, cleanupRegistry_js, buffParser_js, equipmentParser_js, experienceParser_js, reactInput_js, experienceCalculator_js, materialCalculator_js, marketplaceSession_js, expectedValueCalculator) {
     'use strict';
+
+    /**
+     * Inline XP/hour display helpers for Alchemy and Enhancing action panels.
+     *
+     * The game renders the native Experience row with the
+     * SkillActionDetail_expOnSuccess class. Toolasha appends one compact rate to
+     * that exact row, preserving the native amount and XP icon.
+     */
+
+
+    const INLINE_RATE_SELECTOR = '[data-mwi-inline-xp-rate]';
+
+    /**
+     * Find the native Experience row owned by an Alchemy or Enhancing component.
+     * @param {HTMLElement} panel
+     * @returns {HTMLElement|null}
+     */
+    function findNativeExperienceRow(panel) {
+        if (!panel) return null;
+
+        const rows = Array.from(panel.querySelectorAll('[class*="SkillActionDetail_expOnSuccess"]')).filter(
+            (row) => row.isConnected
+        );
+
+        return rows.length === 1 ? rows[0] : null;
+    }
+
+    /**
+     * Render or update an inline XP/hour value after the native Experience value.
+     * @param {HTMLElement} panel
+     * @param {number} xpPerHour
+     * @param {{ approximate?: boolean, owner: string }} options
+     * @returns {HTMLElement|null}
+     */
+    function renderInlineXpRate(panel, xpPerHour, { approximate = false, owner } = {}) {
+        const existing = panel?.querySelector(`${INLINE_RATE_SELECTOR}[data-mwi-inline-xp-owner="${owner || ''}"]`);
+
+        if (!Number.isFinite(xpPerHour) || xpPerHour <= 0) {
+            existing?.remove();
+            return null;
+        }
+
+        const experienceRow = findNativeExperienceRow(panel);
+        if (!experienceRow) {
+            existing?.remove();
+            return null;
+        }
+
+        // A React rerender can replace the native row while leaving a stale Toolasha
+        // node elsewhere in the panel. Always keep exactly one node on the live row.
+        panel.querySelectorAll(`${INLINE_RATE_SELECTOR}[data-mwi-inline-xp-owner="${owner || ''}"]`).forEach((node) => {
+            if (node.parentElement !== experienceRow) node.remove();
+        });
+
+        const rate =
+            experienceRow.querySelector(`${INLINE_RATE_SELECTOR}[data-mwi-inline-xp-owner="${owner || ''}"]`) ||
+            document.createElement('span');
+
+        rate.setAttribute('data-mwi-inline-xp-rate', 'true');
+        rate.setAttribute('data-mwi-inline-xp-owner', owner || '');
+        rate.style.cssText = `
+        margin-left: 6px;
+        color: ${config.COLOR_XP_RATE};
+        white-space: nowrap;
+        font-size: 0.95em;
+    `;
+
+        const roundedRate = Math.round(xpPerHour);
+        rate.textContent = `· ${approximate ? '~' : ''}${formatters_js.formatKMB3Digits(roundedRate)} XP/hr`;
+        rate.title = `${approximate ? 'Expected: ' : ''}${formatters_js.formatWithSeparator(roundedRate)} XP/hr`;
+        rate.setAttribute('aria-label', rate.title);
+
+        if (!rate.isConnected) experienceRow.appendChild(rate);
+        return rate;
+    }
+
+    /**
+     * Remove an inline rate owned by one feature.
+     * @param {HTMLElement|Document} root
+     * @param {string} owner
+     */
+    function removeInlineXpRate(root, owner) {
+        root?.querySelectorAll?.(`${INLINE_RATE_SELECTOR}[data-mwi-inline-xp-owner="${owner}"]`).forEach((node) => {
+            node.remove();
+        });
+    }
 
     /**
      * Enhancement Display
@@ -26,6 +112,105 @@
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
         }).format(num);
+    }
+
+    /**
+     * Read the currently selected enhancement target directly from the native UI.
+     * @param {HTMLElement} panel
+     * @returns {number|null}
+     */
+    function getEnhancementTargetLevelFromUI(panel) {
+        const directInput = panel?.querySelector('[class*="enhancingMaxLevelInputContainer"] input');
+        const input =
+            directInput ||
+            Array.from(panel?.querySelectorAll('*') || [])
+                .find((element) => element.children.length === 0 && element.textContent.trim() === 'Target Level')
+                ?.parentElement?.querySelector('input[type="number"], input[type="text"]');
+
+        const targetLevel = Number.parseInt(input?.value || '', 10);
+        return Number.isFinite(targetLevel) ? Math.max(1, Math.min(20, targetLevel)) : null;
+    }
+
+    /**
+     * Read the enhancement level of the item selected in the native primary-item slot.
+     * @param {HTMLElement} panel
+     * @returns {number}
+     */
+    function getSelectedEnhancementLevelFromUI(panel) {
+        const primaryContainer = panel?.querySelector('[class*="primaryItemSelectorContainer"]');
+        const itemName = primaryContainer?.querySelector('[class*="Item_name"]')?.textContent?.trim() || '';
+        const match = itemName.match(/\+(\d+)$/);
+        return match ? Math.max(0, Math.min(19, Number.parseInt(match[1], 10))) : 0;
+    }
+
+    /**
+     * Calculate expected Enhancing XP across the Markov visit counts for a target path.
+     * Shared by the inline current-selection rate and the detailed per-target table.
+     * @param {Object} calculation
+     * @param {number} targetLevel
+     * @param {number} wisdomDecimal
+     * @param {number} itemLevel
+     * @returns {number}
+     */
+    function calculateExpectedEnhancementXp(calculation, targetLevel, wisdomDecimal, itemLevel) {
+        if (!calculation?.visitCounts || !Array.isArray(calculation.successRates)) return 0;
+
+        let totalXP = 0;
+        // Rebuilding after a failed attempt can visit levels below the item's
+        // starting enhancement. Those attempts still grant XP and must be included.
+        for (let level = 0; level < targetLevel; level++) {
+            const visits = Number(calculation.visitCounts[level]) || 0;
+            const successRate = (Number(calculation.successRates[level]?.actualRate) || 0) / 100;
+            const enhancementMultiplier = level === 0 ? 1 : level + 1;
+            // MWI client: 1.4 × Wisdom × (enhancementLevel + 1) × (10 + itemLevel).
+            // Keep the raw decimal value; the native Experience row also displays one decimal.
+            const successXP = 1.4 * (1 + wisdomDecimal) * enhancementMultiplier * (10 + itemLevel);
+            const failureXP = successXP * 0.1;
+            totalXP += visits * (successRate * successXP + (1 - successRate) * failureXP);
+        }
+        return totalXP;
+    }
+
+    /**
+     * Calculate the expected XP/hour for the exact target and protection settings
+     * currently selected in the Enhancing panel.
+     * @param {HTMLElement} panel
+     * @param {Object} params
+     * @param {Object} itemDetails
+     * @param {number} perActionTime
+     * @returns {number}
+     */
+    function calculateSelectedEnhancementXpPerHour(panel, params, itemDetails, perActionTime) {
+        const targetLevel = getEnhancementTargetLevelFromUI(panel);
+        const startLevel = getSelectedEnhancementLevelFromUI(panel);
+        if (!targetLevel || targetLevel <= startLevel || !Number.isFinite(perActionTime) || perActionTime <= 0) {
+            return 0;
+        }
+
+        const protectFromLevel = getProtectFromLevelFromUI(panel);
+        const effectiveProtectFrom = protectFromLevel >= 2 && protectFromLevel < targetLevel ? protectFromLevel : 0;
+        const itemLevel = itemDetails.itemLevel || 1;
+        const enhancementXpItemLevel = Number(itemDetails.itemLevel) || 0;
+        const wisdomDecimal = (params.experienceBonus || 0) / 100;
+
+        const calculation = enhancementCalculator_js.calculateEnhancement({
+            enhancingLevel: params.enhancingLevel,
+            houseLevel: params.houseLevel,
+            toolBonus: params.toolBonus,
+            speedBonus: params.speedBonus,
+            itemLevel,
+            targetLevel,
+            startLevel,
+            protectFrom: effectiveProtectFrom,
+            blessedTea: params.teas.blessed,
+            guzzlingBonus: params.guzzlingBonus,
+        });
+
+        const totalTime = perActionTime * calculation.attempts;
+        if (!calculation.visitCounts || totalTime <= 0) return 0;
+
+        const totalXP = calculateExpectedEnhancementXp(calculation, targetLevel, wisdomDecimal, enhancementXpItemLevel);
+        return totalXP > 0 ? (totalXP / totalTime) * 3600 : 0;
     }
 
     /**
@@ -85,6 +270,7 @@
                 if (existing) {
                     existing.remove();
                 }
+                removeInlineXpRate(panel, 'enhancing');
                 return;
             }
 
@@ -92,8 +278,10 @@
             const gameData = dataManager.getInitClientData();
 
             // Get item details directly (itemHrid is passed from panel observer)
-            const itemDetails = gameData.itemDetailMap[itemHrid];
+            const itemDetails = gameData?.itemDetailMap?.[itemHrid];
             if (!itemDetails) {
+                panel.querySelector('#mwi-enhancement-stats')?.remove();
+                removeInlineXpRate(panel, 'enhancing');
                 return;
             }
 
@@ -150,6 +338,11 @@
             );
             injectDisplay(panel, html);
 
+            renderInlineXpRate(panel, calculateSelectedEnhancementXpPerHour(panel, params, itemDetails, perActionTime), {
+                approximate: true,
+                owner: 'enhancing',
+            });
+
             // Attach mode toggle button handler
             const modeToggleBtn = panel.querySelector('#mwi-enhance-mode-toggle');
             if (modeToggleBtn) {
@@ -160,6 +353,8 @@
                 });
             }
         } catch (error) {
+            panel?.querySelector?.('#mwi-enhancement-stats')?.remove();
+            removeInlineXpRate(panel, 'enhancing');
             console.error('[Toolasha] ❌ Error displaying enhancement stats:', error);
             console.error('[Toolasha] Error stack:', error.stack);
         }
@@ -187,7 +382,7 @@
         const lines = [];
         const gameData = dataManager.getInitClientData();
         const itemLevel = itemDetails.itemLevel || 1;
-        const xpBaseLevel = itemDetails.level || itemDetails.equipmentDetail?.levelRequirements?.[0]?.level || 0;
+        const enhancementXpItemLevel = Number(itemDetails.itemLevel) || 0;
         const wisdomDecimal = params.experienceBonus / 100;
 
         lines.push('<div style="margin-top: 12px; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px;">');
@@ -277,18 +472,9 @@
             // Override time with buff-map-based per-action time (authoritative source)
             const totalTime = perActionTime * calc.attempts;
 
-            // Calculate XP/hr for this target level
-            let totalXP = 0;
-            if (calc.visitCounts && totalTime > 0) {
-                for (let i = 0; i < level; i++) {
-                    const visits = calc.visitCounts[i];
-                    const successRate = calc.successRates[i].actualRate / 100;
-                    const enhMult = i === 0 ? 1.0 : i + 1;
-                    const successXP = Math.floor(1.4 * (1 + wisdomDecimal) * enhMult * (10 + xpBaseLevel));
-                    const failXP = Math.floor(successXP * 0.1);
-                    totalXP += visits * (successRate * successXP + (1 - successRate) * failXP);
-                }
-            }
+            // Calculate XP/hr for this target level through the same shared expected-XP path
+            // used by the compact current-selection display.
+            const totalXP = calculateExpectedEnhancementXp(calc, level, wisdomDecimal, enhancementXpItemLevel);
             const xpPerHour = totalTime > 0 ? Math.round((totalXP / totalTime) * 3600) : 0;
 
             costData.push({
@@ -1582,6 +1768,96 @@
     }
 
     /**
+     * Shared layout anchor for Toolasha controls injected into production action panels.
+     * Keeps the native Requires label/value pair intact and adds one real full-width grid row.
+     */
+
+    const TOOLS_BLOCK_ID = 'mwi-production-tools-block';
+
+    /**
+     * Return the shared full-width Toolasha block immediately after the native Requires row.
+     * @param {HTMLElement} panel
+     * @returns {HTMLElement|null}
+     */
+    function getOrCreateProductionToolsBlock(panel) {
+        if (!panel) return null;
+
+        const itemRequirements = panel.querySelector('[class*="SkillActionDetail_itemRequirements"]');
+        const valueCell = itemRequirements?.closest('[class*="SkillActionDetail_value"]');
+        const infoGrid = valueCell?.parentElement;
+        if (!itemRequirements || !valueCell || !infoGrid?.matches('[class*="SkillActionDetail_info"]')) return null;
+
+        let block = panel.querySelector(`#${TOOLS_BLOCK_ID}`);
+        if (!block) {
+            block = document.createElement('div');
+            block.id = TOOLS_BLOCK_ID;
+        }
+
+        block.style.cssText = `
+        grid-column: 1 / -1;
+        width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+    `;
+
+        if (block.parentElement !== infoGrid || block.previousElementSibling !== valueCell) {
+            infoGrid.insertBefore(block, valueCell.nextSibling);
+        }
+
+        return block;
+    }
+
+    /**
+     * Move all companion controls into the shared row in deterministic order.
+     * @param {HTMLElement} panel
+     * @returns {HTMLElement|null}
+     */
+    function normalizeProductionToolsBlock(panel) {
+        const block = getOrCreateProductionToolsBlock(panel);
+        if (!block) return null;
+
+        const entries = [
+            { selector: '#mwi-missing-mats-button', order: 1, margin: '0' },
+            { selector: '#mwi-cost-summary', order: 2, margin: '0' },
+            { selector: '#mwi-budget-calculator', order: 3, margin: '0 0 8px 0' },
+        ];
+
+        for (const entry of entries) {
+            const element = panel.querySelector(entry.selector);
+            if (!element) continue;
+            element.style.order = String(entry.order);
+            element.style.width = '100%';
+            element.style.maxWidth = '100%';
+            element.style.minWidth = '0';
+            element.style.boxSizing = 'border-box';
+            element.style.margin = entry.margin;
+            if (element.parentElement !== block) block.appendChild(element);
+        }
+
+        return block;
+    }
+
+    /**
+     * Apply a slightly denser rhythm to adjacent top-level action-panel sections.
+     * @param {HTMLElement|null} section
+     * @returns {HTMLElement|null}
+     */
+    function compactActionPanelSection(section) {
+        if (!section) return section;
+        section.style.marginTop = '5px';
+        section.style.marginBottom = '5px';
+        const header = section.querySelector(':scope > .mwi-section-header');
+        if (header) header.style.padding = '3px 0';
+        return section;
+    }
+
+    /**
      * Loadout Snapshot
      *
      * Listens for `loadouts_updated` WebSocket messages to capture all loadout configurations
@@ -2532,7 +2808,9 @@
         }
 
         // Create main profit section
-        const profitSection = uiComponents_js.createCollapsibleSection('💰', 'Profitability', summary, topLevelContent, false, 0);
+        const profitSection = compactActionPanelSection(
+            uiComponents_js.createCollapsibleSection('💰', 'Profitability', summary, topLevelContent, false, 0)
+        );
         profitSection.id = 'mwi-foraging-profit';
         profitSection.setAttribute('data-mwi-profit-display', 'true');
         profitSection.dataset.mwiActionHrid = actionHrid;
@@ -3161,7 +3439,9 @@
         }
 
         // Create main profit section
-        const profitSection = uiComponents_js.createCollapsibleSection('💰', 'Profitability', summary, topLevelContent, false, 0);
+        const profitSection = compactActionPanelSection(
+            uiComponents_js.createCollapsibleSection('💰', 'Profitability', summary, topLevelContent, false, 0)
+        );
         profitSection.id = 'mwi-production-profit';
         profitSection.setAttribute('data-mwi-profit-display', 'true');
         profitSection.dataset.mwiActionHrid = actionHrid;
@@ -6240,7 +6520,7 @@
 
     /**
      * Debounced update tracker for enhancement calculations
-     * Maps itemHrid to timeout ID
+     * Maps panel elements to timeout IDs so item changes cancel stale calculations
      */
     const updateTimeouts = new Map();
     const timerRegistry$1 = timerRegistry_js.createTimerRegistry();
@@ -6251,7 +6531,9 @@
     let itemsUpdatedDebounceTimer = null;
     let consumablesUpdatedDebounceTimer = null;
     const DEBOUNCE_DELAY = 300; // 300ms debounce for event handlers
-    const observedEnhancingPanels = new WeakSet();
+    let observedEnhancingPanels = new WeakSet();
+    let observedEnhancingInputs = new WeakSet();
+    let autoProtectTargetInputs = new WeakSet();
     let itemsUpdatedHandler = null;
     let consumablesUpdatedHandler = null;
 
@@ -6261,20 +6543,24 @@
      * @param {string} itemHrid - Item HRID
      */
     function triggerEnhancementUpdate(panel, itemHrid) {
-        // Clear existing timeout for this item
-        if (updateTimeouts.has(itemHrid)) {
-            clearTimeout(updateTimeouts.get(itemHrid));
+        if (updateTimeouts.has(panel)) {
+            clearTimeout(updateTimeouts.get(panel));
         }
 
-        // Set new timeout
         const timeoutId = setTimeout(async () => {
-            await displayEnhancementStats(panel, itemHrid);
-            updateTimeouts.delete(itemHrid);
-        }, 500); // Wait 500ms after last change
+            updateTimeouts.delete(panel);
+            const liveItemHrid = panel.dataset.mwiItemHrid;
+            if (!panel.isConnected || !liveItemHrid || liveItemHrid !== itemHrid) return;
+
+            try {
+                await displayEnhancementStats(panel, liveItemHrid);
+            } catch (error) {
+                console.error('[PanelObserver] Failed to refresh enhancement display:', error);
+            }
+        }, 150);
 
         timerRegistry$1.registerTimeout(timeoutId);
-
-        updateTimeouts.set(itemHrid, timeoutId);
+        updateTimeouts.set(panel, timeoutId);
     }
 
     /**
@@ -6478,10 +6764,31 @@
                         handleEnhancingPanel(panel);
                     }
 
-                    if (addedNode.tagName === 'INPUT' && (addedNode.type === 'number' || addedNode.type === 'text')) {
+                    if (
+                        Array.from(addedNode.classList || []).some((name) =>
+                            name.includes('SkillActionDetail_expOnSuccess')
+                        ) ||
+                        addedNode.querySelector?.('[class*="SkillActionDetail_expOnSuccess"]')
+                    ) {
+                        const itemHrid = panel.dataset.mwiItemHrid;
+                        if (itemHrid) triggerEnhancementUpdate(panel, itemHrid);
+                    }
+
+                    const addedInputs = [];
+                    if (addedNode.matches?.('input[type="number"], input[type="text"]')) {
+                        addedInputs.push(addedNode);
+                    }
+                    addedNode
+                        .querySelectorAll?.('input[type="number"], input[type="text"]')
+                        .forEach((input) => addedInputs.push(input));
+
+                    if (addedInputs.length > 0) {
+                        addedInputs.forEach((input) => addInputListener(input, panel));
+                        setupTargetAutoProtectListener(panel);
+
                         const itemHrid = panel.dataset.mwiItemHrid;
                         if (itemHrid) {
-                            addInputListener(addedNode, panel, itemHrid);
+                            triggerEnhancementUpdate(panel, itemHrid);
                         }
                     }
                 });
@@ -6660,9 +6967,8 @@
     /**
      * Watch the protection item slot for changes and auto-fill protect-from level.
      * @param {HTMLElement} panel
-     * @param {string} itemHrid
      */
-    function setupProtectionSlotObserver(panel, itemHrid) {
+    function setupProtectionSlotObserver(panel) {
         if (panel.dataset.mwiProtectObserverAdded) return;
         panel.dataset.mwiProtectObserverAdded = 'true';
 
@@ -6676,7 +6982,8 @@
                 clearTimeout(debounceTimer);
                 debounceTimer = setTimeout(() => {
                     if (config.getSetting('enhanceSim_autoProtectFrom')) {
-                        autoFillProtectFrom(panel, itemHrid);
+                        const liveItemHrid = panel.dataset.mwiItemHrid;
+                        if (liveItemHrid) autoFillProtectFrom(panel, liveItemHrid);
                     }
                 }, 300);
             },
@@ -6691,6 +6998,16 @@
     async function handleEnhancingPanel(panel) {
         if (!panel) return;
 
+        const clearEnhancingDisplay = ({ clearItem = false } = {}) => {
+            panel.querySelector('#mwi-enhancement-stats')?.remove();
+            removeInlineXpRate(panel, 'enhancing');
+
+            if (clearItem) {
+                delete panel.dataset.mwiItemHrid;
+                delete panel.dataset.mwiAutoTargetFilledFor;
+            }
+        };
+
         // Set up tab click listeners (only once per panel)
         if (!panel.dataset.mwiTabListenersAdded) {
             setupTabClickListeners(panel);
@@ -6699,17 +7016,15 @@
 
         // Only show calculator on "Enhance" tab, not "Current Action" tab
         if (!isEnhanceTabActive(panel)) {
-            // Remove calculator if it exists
-            const existingDisplay = panel.querySelector('#mwi-enhancement-stats');
-            if (existingDisplay) {
-                existingDisplay.remove();
-            }
+            clearEnhancingDisplay();
             return;
         }
 
         // Find the output element that shows the enhanced item
         const outputsSection = panel.querySelector(SELECTORS.ENHANCING_OUTPUT);
         if (!outputsSection) {
+            // The output subtree can remount briefly; avoid discarding a valid selection.
+            clearEnhancingDisplay();
             return;
         }
 
@@ -6717,24 +7032,22 @@
         // When no item is selected, the outputs section exists but has no item icon
         const itemIcon = outputsSection.querySelector('svg[role="img"], img');
         if (!itemIcon) {
-            // No item icon = no item selected, don't show calculator
-            // Remove existing calculator display if present
-            const existingDisplay = panel.querySelector('#mwi-enhancement-stats');
-            if (existingDisplay) {
-                existingDisplay.remove();
-            }
+            // No item icon = no item selected, don't show calculator.
+            clearEnhancingDisplay({ clearItem: true });
             return;
         }
 
         // Get the item name from the Item_name element (without +1)
         const itemNameElement = outputsSection.querySelector(SELECTORS.ITEM_NAME);
         if (!itemNameElement) {
+            clearEnhancingDisplay();
             return;
         }
 
         const itemName = itemNameElement.textContent.trim();
 
         if (!itemName) {
+            clearEnhancingDisplay();
             return;
         }
 
@@ -6743,12 +7056,16 @@
         const itemHrid = getItemHridFromName(itemName);
 
         if (!itemHrid) {
+            clearEnhancingDisplay();
             return;
         }
 
         // Get item details
         const itemDetails = gameData.itemDetailMap[itemHrid];
-        if (!itemDetails) return;
+        if (!itemDetails) {
+            clearEnhancingDisplay();
+            return;
+        }
 
         // Store itemHrid on panel for later reference (when new inputs are added)
         panel.dataset.mwiItemHrid = itemHrid;
@@ -6777,7 +7094,7 @@
         }
 
         // Set up protection slot observer (checks setting internally on each change)
-        setupProtectionSlotObserver(panel, itemHrid);
+        setupProtectionSlotObserver(panel);
 
         // Auto-fill optimal protect-from level on initial load if setting is enabled
         if (config.getSetting('enhanceSim_autoProtectFrom')) {
@@ -6787,6 +7104,7 @@
         // Double-check tab state right before rendering (safety check for race conditions)
         if (!isEnhanceTabActive(panel)) {
             // Current Action tab became active during processing, don't render
+            clearEnhancingDisplay();
             return;
         }
 
@@ -6794,23 +7112,10 @@
         await displayEnhancementStats(panel, itemHrid);
 
         // Set up observers for Target Level and Protect From Level inputs
-        setupInputObservers(panel, itemHrid);
+        setupInputObservers(panel);
 
-        // Re-trigger auto-fill when target level changes (handles race where target level loads after initial auto-fill)
-        if (!panel.dataset.mwiAutoProtectTargetListenerAdded) {
-            panel.dataset.mwiAutoProtectTargetListenerAdded = 'true';
-            const targetLabels = Array.from(panel.querySelectorAll('*')).filter(
-                (el) => el.textContent.trim() === 'Target Level' && el.children.length === 0
-            );
-            const targetInput = targetLabels[0]?.parentElement?.querySelector('input[type="number"], input[type="text"]');
-            if (targetInput) {
-                targetInput.addEventListener('change', () => {
-                    if (config.getSetting('enhanceSim_autoProtectFrom')) {
-                        autoFillProtectFrom(panel, panel.dataset.mwiItemHrid);
-                    }
-                });
-            }
-        }
+        // Re-trigger auto-fill when target level changes. Inputs can remount, so bind per element.
+        setupTargetAutoProtectListener(panel);
     }
 
     /**
@@ -6854,10 +7159,9 @@
                     const existingDisplay = panel.querySelector('#mwi-enhancement-stats');
 
                     if (!isEnhanceActive) {
-                        // Current Action tab clicked - remove calculator
-                        if (existingDisplay) {
-                            existingDisplay.remove();
-                        }
+                        // Current Action tab clicked - remove calculator and inline rate.
+                        if (existingDisplay) existingDisplay.remove();
+                        removeInlineXpRate(panel, 'enhancing');
                     } else {
                         // Enhance tab clicked - show calculator if item is selected
                         const itemHrid = panel.dataset.mwiItemHrid;
@@ -6873,18 +7177,41 @@
     }
 
     /**
+     * Bind the target-level listener that recalculates the optimal protect-from level.
+     * React may replace the input without remounting the whole enhancing panel.
+     * @param {HTMLElement} panel - Enhancing panel element
+     */
+    function setupTargetAutoProtectListener(panel) {
+        const targetLabels = Array.from(panel.querySelectorAll('*')).filter(
+            (el) => el.textContent.trim() === 'Target Level' && el.children.length === 0
+        );
+        const targetInput = targetLabels[0]?.parentElement?.querySelector('input[type="number"], input[type="text"]');
+        if (!targetInput || autoProtectTargetInputs.has(targetInput)) return;
+
+        autoProtectTargetInputs.add(targetInput);
+        targetInput.addEventListener('change', () => {
+            const liveItemHrid = panel.dataset.mwiItemHrid;
+            if (liveItemHrid && config.getSetting('enhanceSim_autoProtectFrom')) {
+                autoFillProtectFrom(panel, liveItemHrid);
+            }
+        });
+    }
+
+    /**
      * Add input listener to a single input element
      * @param {HTMLInputElement} input - Input element
      * @param {HTMLElement} panel - Enhancing panel element
-     * @param {string} itemHrid - Item HRID
      */
-    function addInputListener(input, panel, itemHrid) {
-        // Handler that triggers the shared debounced update
+    function addInputListener(input, panel) {
+        if (observedEnhancingInputs.has(input)) return;
+        observedEnhancingInputs.add(input);
+
+        // Read the live item from the panel because the selected item can change without remounting the inputs.
         const handleInputChange = () => {
-            triggerEnhancementUpdate(panel, itemHrid);
+            const liveItemHrid = panel.dataset.mwiItemHrid;
+            if (liveItemHrid) triggerEnhancementUpdate(panel, liveItemHrid);
         };
 
-        // Add change listeners
         input.addEventListener('input', handleInputChange);
         input.addEventListener('change', handleInputChange);
     }
@@ -6893,15 +7220,14 @@
      * Set up observers for Target Level and Protect From Level inputs
      * Re-calculates enhancement stats when user changes these values
      * @param {HTMLElement} panel - Enhancing panel element
-     * @param {string} itemHrid - Item HRID
      */
-    function setupInputObservers(panel, itemHrid) {
+    function setupInputObservers(panel) {
         // Find all input elements in the panel
         const inputs = panel.querySelectorAll('input[type="number"], input[type="text"]');
 
         // Add listeners to all existing inputs
         inputs.forEach((input) => {
-            addInputListener(input, panel, itemHrid);
+            addInputListener(input, panel);
         });
     }
 
@@ -8996,9 +9322,17 @@
                         limitType = `material:${alchItemHrid}`;
                     }
 
-                    if (actionDetails.coinCost && actionDetails.coinCost > 0) {
+                    let alchemyCoinCost = 0;
+                    if (actionDetails.hrid?.includes('decompose') || actionDetails.hrid?.includes('unrefine')) {
+                        const itemLevel = alchItemDetails?.itemLevel || 1;
+                        alchemyCoinCost = (10 + itemLevel) * 5 * bulkMultiplier;
+                    } else if (actionDetails.hrid?.includes('transmute')) {
+                        const sellPrice = alchItemDetails?.sellPrice || 0;
+                        alchemyCoinCost = Math.max(50, Math.floor(sellPrice / 5)) * bulkMultiplier;
+                    }
+                    if (alchemyCoinCost > 0) {
                         const availableGold = byHrid['/items/coin'] || 0;
-                        const maxFromGold = Math.floor(availableGold / actionDetails.coinCost);
+                        const maxFromGold = Math.floor(availableGold / alchemyCoinCost);
                         if (maxFromGold < minLimit) {
                             minLimit = maxFromGold;
                             limitType = 'gold';
@@ -11492,12 +11826,14 @@
                 const summary = `${formatters_js.timeReadable(singleLevel.timeNeeded)} to Level ${nextLevel}`;
 
                 // Create collapsible section
-                return uiComponents_js.createCollapsibleSection(
-                    '📈',
-                    'Level Progress',
-                    summary,
-                    content,
-                    false // Collapsed by default
+                return compactActionPanelSection(
+                    uiComponents_js.createCollapsibleSection(
+                        '📈',
+                        'Level Progress',
+                        summary,
+                        content,
+                        false // Collapsed by default
+                    )
                 );
             } catch (error) {
                 console.error('[Toolasha] Error creating level progress section:', error);
@@ -13874,197 +14210,436 @@
 
     /**
      * Marketplace Buy Modal Autofill Utility
-     * Provides shared functionality for auto-filling quantity in marketplace buy modals
-     * Used by missing materials features (actions, houses, etc.)
+     * Session-aware autofill manager.  Each consumer calls createAutofillManager() to get
+     * an instance, then drives it with startSession / arm / exitSession.
+     *
+     * Exported helpers:
+     *   readMarketplaceRuntimeState()  — reads live Marketplace React component state via fiber
+     *   readMarketplaceItemIdentity()  — @deprecated, DOM-based; absent selector in current client
+     *   createAutofillManager(observerId)
      */
 
+    const MARKETPLACE_STATE_KEYS = ['marketTabKey', 'marketListingsView', 'itemHrid', 'enhancementLevel', 'isSell'];
+    const REACT_FIBER_PREFIXES = ['__reactFiber$', '__reactInternalInstance$'];
+    const MAX_REACT_TREE_FIBERS = 50000;
+    const MAX_REACT_OWNER_DEPTH = 256;
 
-    /**
-     * Find the quantity input in the buy modal
-     * For equipment items, there are multiple number inputs (enhancement level + quantity)
-     * We need to find the correct one by checking parent containers for label text
-     * @param {HTMLElement} modal - Modal container element
-     * @returns {HTMLInputElement|null} Quantity input element or null
-     */
-    function findQuantityInput(modal) {
-        // Get all number inputs in the modal
-        const allInputs = Array.from(modal.querySelectorAll('input[type="number"]'));
+    function hasMarketplaceStateSignature(state) {
+        return state && typeof state === 'object' && MARKETPLACE_STATE_KEYS.every((key) => key in state);
+    }
 
-        if (allInputs.length === 0) {
+    function isElementVisible(element) {
+        if (!element || element.nodeType !== 1 || !element.isConnected) return false;
+
+        for (let current = element; current; current = current.parentElement) {
+            if (current.hidden || current.getAttribute('aria-hidden') === 'true') return false;
+            const style = window.getComputedStyle(current);
+            if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    function getReactRootFiber() {
+        const rootElement = document.getElementById('root');
+        const rootContainer = rootElement?._reactRootContainer;
+        return rootContainer?.current || rootContainer?._internalRoot?.current || null;
+    }
+
+    function findReactFiberFromRoot(element) {
+        const rootFiber = getReactRootFiber();
+        if (!rootFiber || !element) return null;
+
+        const stack = [rootFiber];
+        const visited = new Set();
+        let matchedFiber = null;
+
+        while (stack.length > 0) {
+            const fiber = stack.pop();
+            if (!fiber || visited.has(fiber)) continue;
+            visited.add(fiber);
+
+            if (visited.size > MAX_REACT_TREE_FIBERS) return null;
+
+            if (fiber.stateNode === element) {
+                if (matchedFiber && matchedFiber !== fiber) return null;
+                matchedFiber = fiber;
+            }
+
+            if (fiber.sibling) stack.push(fiber.sibling);
+            if (fiber.child) stack.push(fiber.child);
+        }
+
+        return matchedFiber;
+    }
+
+    function getReactFiberFromElement(element) {
+        if (!element) return null;
+
+        const directFibers = new Set(
+            Object.getOwnPropertyNames(element)
+                .filter((key) => REACT_FIBER_PREFIXES.some((prefix) => key.startsWith(prefix)))
+                .map((key) => element[key])
+                .filter(Boolean)
+        );
+        if (directFibers.size > 1) return null;
+        if (directFibers.size === 1) return directFibers.values().next().value;
+
+        // Current MWI builds no longer expose __reactFiber$ keys on DOM nodes.
+        // Resolve the exact host fiber from the public React root instead.
+        return findReactFiberFromRoot(element);
+    }
+
+    function normalizeMarketplaceState(state) {
+        if (!hasMarketplaceStateSignature(state)) return null;
+        if (typeof state.marketTabKey !== 'string' || typeof state.marketListingsView !== 'string') return null;
+        if (state.itemHrid !== null && (typeof state.itemHrid !== 'string' || !state.itemHrid)) return null;
+        if (!Number.isInteger(state.enhancementLevel) || state.enhancementLevel < 0) return null;
+        if (typeof state.isSell !== 'boolean') return null;
+        if (state.showPostListing !== undefined && typeof state.showPostListing !== 'boolean') return null;
+        if (state.isPostNewListing !== undefined && typeof state.isPostNewListing !== 'boolean') return null;
+        if (state.isInstantOrder !== undefined && typeof state.isInstantOrder !== 'boolean') return null;
+        if (
+            state.enhancementLevelInput !== undefined &&
+            (!Number.isInteger(state.enhancementLevelInput) || state.enhancementLevelInput < 0)
+        ) {
             return null;
         }
 
-        if (allInputs.length === 1) {
-            // Only one input - must be quantity
-            return allInputs[0];
-        }
-
-        // Multiple inputs - identify by checking CLOSEST parent first
-        // Strategy 1: Check each parent level individually, prioritizing closer parents
-        // This prevents matching on the outermost container that has all text
-        for (let level = 0; level < 4; level++) {
-            for (let i = 0; i < allInputs.length; i++) {
-                const input = allInputs[i];
-                let parent = input.parentElement;
-
-                // Navigate to the specific level
-                for (let j = 0; j < level && parent; j++) {
-                    parent = parent.parentElement;
-                }
-
-                if (!parent) continue;
-
-                const text = parent.textContent;
-
-                // At this specific level, check if it contains "Quantity" but NOT "Enhancement Level"
-                if (text.includes('Quantity') && !text.includes('Enhancement Level')) {
-                    return input;
-                }
-            }
-        }
-
-        // Strategy 2: Exclude inputs that have "Enhancement Level" in close parents (level 0-2)
-        for (let i = 0; i < allInputs.length; i++) {
-            const input = allInputs[i];
-            let parent = input.parentElement;
-            let isEnhancementInput = false;
-
-            // Check only the first 3 levels (not the outermost container)
-            for (let j = 0; j < 3 && parent; j++) {
-                const text = parent.textContent;
-
-                if (text.includes('Enhancement Level') && !text.includes('Quantity')) {
-                    isEnhancementInput = true;
-                    break;
-                }
-
-                parent = parent.parentElement;
-            }
-
-            if (!isEnhancementInput) {
-                return input;
-            }
-        }
-
-        // Fallback: Return first input and log warning
-        console.warn('[MarketplaceAutofill] Could not definitively identify quantity input, using first input');
-        return allInputs[0];
+        return {
+            marketTabKey: state.marketTabKey,
+            marketListingsView: state.marketListingsView,
+            itemHrid: state.itemHrid,
+            enhancementLevel: state.enhancementLevel,
+            enhancementLevelInput: state.enhancementLevelInput,
+            isSell: state.isSell,
+            showPostListing: state.showPostListing,
+            isPostNewListing: state.isPostNewListing,
+            isInstantOrder: state.isInstantOrder,
+            quantityInput: state.quantityInput,
+            priceInput: state.priceInput,
+        };
     }
 
     /**
-     * Handle buy modal appearance and auto-fill quantity if available
-     * @param {HTMLElement} modal - Modal container element
-     * @param {number|null} activeQuantity - Static quantity to auto-fill (null if using pending fn)
-     * @param {Function|null} pendingCalculation - Lazy fn that returns current quantity (takes priority)
+     * Read the live Marketplace React component state from the unique visible Marketplace panel.
+     * The selected component must be on that panel host fiber's bounded return ancestry.
+     *
+     * @returns {{ marketTabKey: string, marketListingsView: string, itemHrid: string|null,
+     *             enhancementLevel: number, enhancementLevelInput: number|undefined, isSell: boolean,
+     *             showPostListing: boolean|undefined, isPostNewListing: boolean|undefined,
+     *             isInstantOrder: boolean|undefined, quantityInput: *, priceInput: * }|null}
      */
-    function handleBuyModal(modal, activeQuantity, pendingCalculation) {
-        // Resolve quantity: prefer lazy recalculation over stored static value
-        const quantity = pendingCalculation ? pendingCalculation() : activeQuantity;
+    function getMarketplaceRuntimeComponentFromElement(element) {
+        let fiber = getReactFiberFromElement(element);
+        let depth = 0;
+        const candidates = [];
+        const seen = new Set();
 
-        // Check if we have a quantity to fill
-        if (!quantity || quantity <= 0) {
-            return;
+        while (fiber && depth < MAX_REACT_OWNER_DEPTH) {
+            const stateNode = fiber.stateNode;
+            if (
+                stateNode &&
+                !seen.has(stateNode) &&
+                typeof stateNode.setState === 'function' &&
+                typeof stateNode.handleQuantityInputChanged === 'function' &&
+                hasMarketplaceStateSignature(stateNode.state)
+            ) {
+                seen.add(stateNode);
+                candidates.push(stateNode);
+            }
+            fiber = fiber.return;
+            depth += 1;
         }
 
-        // Check if this is a "Buy Now" modal
-        const header = modal.querySelector('div[class*="MarketplacePanel_header"]');
-        if (!header) {
-            return;
-        }
-
-        const headerText = header.textContent.trim();
-        if (!headerText.includes('Buy Now') && !headerText.includes('Buy Listing')) {
-            return;
-        }
-
-        // Find the quantity input - need to be specific to avoid enhancement level input
-        const quantityInput = findQuantityInput(modal);
-        if (!quantityInput) {
-            return;
-        }
-
-        // Set the quantity value
-        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-        nativeInputValueSetter.call(quantityInput, quantity.toString());
-
-        // Trigger input event to notify React
-        const inputEvent = new Event('input', { bubbles: true });
-        quantityInput.dispatchEvent(inputEvent);
+        // Fail closed when the ancestry is unexpectedly deeper than the bound or
+        // contains more than one Marketplace-like owner. The quantity input must
+        // identify one exact live component before we write to a controlled input.
+        if (fiber || candidates.length !== 1) return null;
+        return candidates[0];
     }
 
     /**
-     * Create an autofill manager instance
-     * Manages storing quantity to autofill and observing buy modals
-     * @param {string} observerId - Unique ID for this observer (e.g., 'MissingMats-Actions')
-     * @returns {Object} Autofill manager with methods: setQuantity, setPendingCalculation, clearQuantity, initialize, cleanup
+     * Read Marketplace state from the exact DOM element that belongs to the live component.
+     * @param {HTMLElement} element
+     * @returns {ReturnType<typeof normalizeMarketplaceState>}
+     */
+    function readMarketplaceRuntimeStateFromElement(element) {
+        return normalizeMarketplaceState(getMarketplaceRuntimeComponentFromElement(element)?.state);
+    }
+
+    /**
+     * Create an autofill manager instance for one marketplace workflow owner.
+     *
+     * Lifecycle:
+     *   initialize()      — call once at feature startup; installs the buy-modal observer
+     *   startSession(opts) — claim a session slot by sessionId
+     *   arm(opts)         — atomically set target; only 'buy' modalMode is accepted
+     *   setItem()         — @deprecated, use arm()
+     *   setQuantityProvider() — @deprecated, use arm()
+     *   exitSession(sessionId) — disarm without ending the marketplace session token
+     *   cleanup()         — call on feature disable; removes observer
+     *
+     * @param {string} observerId
+     * @returns {Object}
      */
     function createAutofillManager(observerId) {
-        let activeQuantity = null;
-        let pendingCalculation = null;
         let observerUnregister = null;
+        let activeSessionId = null;
+        let targetGeneration = 0;
+        let activeTarget = null;
+        let legacyDraft = null;
+        const modalRetryTimers = new Set();
+        const filledModalGenerations = new WeakMap();
+
+        function clearRetryTimers() {
+            for (const timer of modalRetryTimers) clearTimeout(timer);
+            modalRetryTimers.clear();
+        }
+
+        function invalidateTarget() {
+            clearRetryTimers();
+            targetGeneration += 1;
+            activeTarget = null;
+            legacyDraft = null;
+        }
+
+        function isValidItemHrid(itemHrid) {
+            return typeof itemHrid === 'string' && itemHrid.startsWith('/items/') && itemHrid.length > 7;
+        }
+
+        function isValidEnhancementLevel(enhancementLevel) {
+            return Number.isInteger(enhancementLevel) && enhancementLevel >= 0;
+        }
+
+        function startSession({
+            itemHrid = null,
+            enhancementLevel = 0,
+            sessionId = null,
+            quantityProvider = null,
+            modalMode = 'buy',
+        } = {}) {
+            activeSessionId = marketplaceSession_js.marketplaceSession.isActive(sessionId) ? sessionId : null;
+            invalidateTarget();
+
+            if (activeSessionId !== null && (itemHrid !== null || quantityProvider !== null)) {
+                arm({ sessionId, itemHrid, enhancementLevel, modalMode, quantityProvider });
+            }
+        }
+
+        function arm(opts = {}) {
+            const { sessionId, itemHrid = null, enhancementLevel = 0, modalMode = 'buy', quantityProvider } = opts || {};
+
+            if (sessionId !== activeSessionId) return false;
+            if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) {
+                activeSessionId = null;
+                invalidateTarget();
+                return false;
+            }
+
+            if (
+                modalMode !== 'buy' ||
+                !isValidItemHrid(itemHrid) ||
+                !isValidEnhancementLevel(enhancementLevel) ||
+                typeof quantityProvider !== 'function'
+            ) {
+                invalidateTarget();
+                return false;
+            }
+
+            activeTarget = Object.freeze({
+                generation: ++targetGeneration,
+                sessionId,
+                itemHrid,
+                enhancementLevel,
+                modalMode,
+                quantityProvider,
+            });
+            legacyDraft = null;
+            return true;
+        }
+
+        /** @deprecated Use arm(). */
+        function setItem(itemHrid, enhancementLevel = 0, sessionId) {
+            if (sessionId === undefined) {
+                invalidateTarget();
+                return false;
+            }
+            if (sessionId !== activeSessionId) return false;
+            if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) {
+                activeSessionId = null;
+                invalidateTarget();
+                return false;
+            }
+            if (!isValidItemHrid(itemHrid) || !isValidEnhancementLevel(enhancementLevel)) {
+                invalidateTarget();
+                return false;
+            }
+
+            invalidateTarget();
+            legacyDraft = Object.freeze({ sessionId, itemHrid, enhancementLevel });
+            return true;
+        }
+
+        /** @deprecated Use arm(). */
+        function setQuantityProvider(quantityProvider, sessionId) {
+            if (sessionId === undefined) {
+                invalidateTarget();
+                return false;
+            }
+            if (sessionId !== activeSessionId) return false;
+            if (!legacyDraft || legacyDraft.sessionId !== sessionId) {
+                invalidateTarget();
+                return false;
+            }
+
+            return arm({
+                sessionId,
+                itemHrid: legacyDraft.itemHrid,
+                enhancementLevel: legacyDraft.enhancementLevel,
+                modalMode: 'buy',
+                quantityProvider,
+            });
+        }
+
+        function exitSession(sessionId) {
+            if (sessionId !== undefined && sessionId !== activeSessionId) return;
+            activeSessionId = null;
+            invalidateTarget();
+        }
+
+        function findWorkingQuantityInput(modal) {
+            const structuralInputs = Array.from(
+                modal.querySelectorAll('[class*="MarketplacePanel_quantityInputs"] input[type="number"]')
+            );
+            if (structuralInputs.length === 1) return structuralInputs[0];
+            if (structuralInputs.length > 1) return null;
+
+            const allInputs = Array.from(modal.querySelectorAll('input[type="number"]'));
+            if (allInputs.length === 1) return allInputs[0];
+
+            const labeled = allInputs.filter((input) => {
+                let parent = input.parentElement;
+                for (let depth = 0; parent && depth < 4; depth += 1) {
+                    const text = parent.textContent || '';
+                    if (text.includes('Enhancement Level') && !text.includes('Quantity')) return false;
+                    if (text.includes('Quantity') && !text.includes('Enhancement Level')) return true;
+                    parent = parent.parentElement;
+                }
+                return false;
+            });
+            return labeled.length === 1 ? labeled[0] : null;
+        }
+
+        function isVisibleBuyModal(modal) {
+            if (!modal || !modal.isConnected || !isElementVisible(modal)) return false;
+            const header = modal.querySelector('[class*="MarketplacePanel_header"]');
+            if (!header) return false;
+            const text = header.textContent?.trim() || '';
+            return text.includes('Buy Now') || text.includes('Buy Listing');
+        }
+
+        function resolveQuantity(target) {
+            try {
+                const quantity = target.quantityProvider();
+                return typeof quantity === 'number' && Number.isFinite(quantity) && quantity > 0 ? Math.trunc(quantity) : 0;
+            } catch (error) {
+                console.error('[MarketplaceAutofill] quantityProvider failed:', error);
+                return 0;
+            }
+        }
+
+        function targetMatchesInput(target, quantityInput) {
+            const state = readMarketplaceRuntimeStateFromElement(quantityInput);
+            return (
+                state?.marketTabKey === 'MarketListings' &&
+                state?.marketListingsView === 'OrderBook' &&
+                state?.showPostListing === true &&
+                state?.isPostNewListing === false &&
+                state?.isSell === false &&
+                state?.isInstantOrder === true &&
+                state?.itemHrid === target.itemHrid &&
+                state?.enhancementLevel === target.enhancementLevel &&
+                state?.enhancementLevelInput === target.enhancementLevel
+            );
+        }
+
+        function fillVerifiedModal(modal, target) {
+            if (!target || activeTarget !== target) return false;
+            if (activeSessionId !== target.sessionId || !marketplaceSession_js.marketplaceSession.isActive(target.sessionId)) return false;
+            if (!isVisibleBuyModal(modal)) return false;
+            const quantityInput = findWorkingQuantityInput(modal);
+            if (!quantityInput || !targetMatchesInput(target, quantityInput)) return false;
+
+            const quantity = resolveQuantity(target);
+            if (quantity <= 0) return false;
+
+            const previousFill = filledModalGenerations.get(modal);
+            if (
+                previousFill?.generation === target.generation &&
+                previousFill.input === quantityInput &&
+                previousFill.quantity === quantity &&
+                Number(quantityInput.value) === quantity
+            ) {
+                return true;
+            }
+
+            // Re-check ownership after the provider call, immediately before the proven write path.
+            if (activeTarget !== target || activeSessionId !== target.sessionId) return false;
+            if (!marketplaceSession_js.marketplaceSession.isActive(target.sessionId) || !targetMatchesInput(target, quantityInput)) return false;
+
+            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+            if (typeof nativeInputValueSetter !== 'function') return false;
+
+            nativeInputValueSetter.call(quantityInput, quantity.toString());
+            quantityInput.dispatchEvent(new Event('input', { bubbles: true }));
+            filledModalGenerations.set(modal, { generation: target.generation, input: quantityInput, quantity });
+            marketplaceSession_js.marketplaceSession.consume(target.sessionId);
+            return true;
+        }
+
+        function handleObservedModal(modal) {
+            const target = activeTarget;
+            if (!target || !modal) return;
+
+            // The Marketplace modal can mount before its owning React component has
+            // converged on the selected item. Retry this observed modal for a bounded
+            // 1.5-second window, but keep the verified workflow target armed afterward
+            // so an unrelated or retained modal cannot destroy the next exact Buy fill.
+            const delays = [0, 25, 75, 150, 300, 500, 750, 1000, 1500];
+            delays.forEach((delay) => {
+                const timer = setTimeout(() => {
+                    modalRetryTimers.delete(timer);
+                    if (!activeTarget || activeTarget.generation !== target.generation) return;
+                    if (fillVerifiedModal(modal, target)) {
+                        clearRetryTimers();
+                    }
+                    // Keep the verified target armed after a bounded miss. A retained or unrelated
+                    // modal must not destroy the workflow; the next exact Buy modal can still fill.
+                }, delay);
+                modalRetryTimers.add(timer);
+            });
+        }
 
         return {
-            /**
-             * Set a static quantity to auto-fill in the next buy modal
-             * @param {number} quantity - Quantity to auto-fill
-             */
-            setQuantity(quantity) {
-                activeQuantity = quantity;
-                pendingCalculation = null;
-            },
-
-            /**
-             * Set a lazy calculation function that is called each time a buy modal opens.
-             * Takes priority over setQuantity — quantity is recomputed fresh on every modal open,
-             * so subsequent purchases within the same session always autofill the remaining needed amount.
-             * @param {Function} fn - Function returning the current quantity to fill
-             */
-            setPendingCalculation(fn) {
-                pendingCalculation = fn;
-                activeQuantity = null;
-            },
-
-            /**
-             * Clear the stored quantity (cancel autofill)
-             */
-            clearQuantity() {
-                activeQuantity = null;
-                pendingCalculation = null;
-            },
-
-            /**
-             * Get the current active quantity
-             * @returns {number|null} Current quantity or null
-             */
-            getQuantity() {
-                return pendingCalculation ? pendingCalculation() : activeQuantity;
-            },
-
-            /**
-             * Initialize buy modal observer
-             * Sets up watching for buy modals to appear and auto-fills them
-             */
             initialize() {
-                observerUnregister = domObserver.onClass(observerId, 'Modal_modalContainer', (modal) => {
-                    handleBuyModal(modal, activeQuantity, pendingCalculation);
-                    // Clear static quantity after use (one-shot) — pendingCalculation persists intentionally
-                    if (activeQuantity !== null && !pendingCalculation) {
-                        activeQuantity = null;
-                    }
-                });
+                if (observerUnregister) observerUnregister();
+                observerUnregister = domObserver.onClass(observerId, 'Modal_modalContainer', handleObservedModal);
             },
-
-            /**
-             * Cleanup observer
-             * Stops watching for buy modals and clears quantity
-             */
+            startSession,
+            arm,
+            setItem,
+            setQuantityProvider,
+            exitSession,
             cleanup() {
                 if (observerUnregister) {
                     observerUnregister();
                     observerUnregister = null;
                 }
-                activeQuantity = null;
-                pendingCalculation = null;
+                activeSessionId = null;
+                invalidateTarget();
             },
         };
     }
@@ -14076,6 +14651,96 @@
      */
 
 
+    const MARKETPLACE_REMOUNT_GRACE_MS = 350;
+
+    /**
+     * Return true only when an element and all element ancestors are actually visible.
+     * @param {HTMLElement} element
+     * @returns {boolean}
+     */
+    function isElementActuallyVisible(element) {
+        if (!element || element.nodeType !== 1 || !element.isConnected) return false;
+
+        for (let current = element; current; current = current.parentElement) {
+            if (current.hidden || current.getAttribute('aria-hidden') === 'true') return false;
+            const style = window.getComputedStyle(current);
+            if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Get the unique visible Marketplace native tab container.
+     * Hidden retained panels and ambiguous duplicate visible panels fail closed.
+     * @returns {HTMLElement|null}
+     */
+    function getVisibleMarketplaceTabContainer() {
+        const candidates = new Set();
+
+        for (const panel of document.querySelectorAll('[class*="MarketplacePanel_marketplacePanel"]')) {
+            if (!isElementActuallyVisible(panel)) continue;
+
+            for (const tabsContainer of panel.querySelectorAll('.MuiTabs-flexContainer[role="tablist"]')) {
+                if (!isElementActuallyVisible(tabsContainer)) continue;
+                const hasNativeTab = Array.from(tabsContainer.children).some((tab) => {
+                    const text = tab.textContent || '';
+                    return text.includes('Market Listings') || text.includes('My Listings');
+                });
+                if (hasNativeTab) candidates.add(tabsContainer);
+            }
+        }
+
+        return candidates.size === 1 ? candidates.values().next().value : null;
+    }
+
+    /**
+     * Return true only when the unique selected native tab is Market Listings.
+     * Programmatic/native navigation to My Listings must terminate custom workflows,
+     * even if React temporarily retains the custom tab nodes.
+     * @param {HTMLElement|null} tabContainer
+     * @returns {boolean}
+     */
+    function isMarketplaceMarketListingsSelected(tabContainer = getVisibleMarketplaceTabContainer()) {
+        if (!tabContainer || !isElementActuallyVisible(tabContainer)) return false;
+
+        const selectedNativeTabs = Array.from(tabContainer.children).filter((tab) => {
+            if (tab.getAttribute('role') !== 'tab') return false;
+            if (tab.hasAttribute('data-mwi-custom-tab') || tab.hasAttribute('data-mwi-shrine-tab')) return false;
+            return tab.getAttribute('aria-selected') === 'true' || tab.classList.contains('Mui-selected');
+        });
+
+        return selectedNativeTabs.length === 1 && selectedNativeTabs[0].textContent.includes('Market Listings');
+    }
+
+    /**
+     * Click the unique visible native Marketplace navigation button.
+     * @returns {boolean} True when a button was found and clicked
+     */
+    function clickMarketplaceNavigationButton() {
+        const icons = Array.from(document.querySelectorAll('svg[aria-label="navigationBar.marketplace"]')).filter(
+            isElementActuallyVisible
+        );
+        const buttons = new Set();
+
+        for (const icon of icons) {
+            const button = icon.closest('[class*="NavigationBar_nav__"]');
+            if (button && isElementActuallyVisible(button)) buttons.add(button);
+        }
+
+        if (buttons.size !== 1) return false;
+        buttons.values().next().value.click();
+        return true;
+    }
+
+    /**
+     * Remove all custom material tabs that belong to a specific owner.
+     * @param {string} owner - MARKETPLACE_OWNER constant
+     */
+    function removeMaterialTabsForOwner(owner) {
+        document.querySelectorAll(`[data-mwi-custom-tab][data-mwi-tab-owner="${owner}"]`).forEach((el) => el.remove());
+    }
+
     /**
      * Create a custom material tab for the marketplace
      * @param {Object} material - Material data object
@@ -14086,16 +14751,23 @@
      * @param {boolean} material.isTradeable - Whether item can be traded
      * @param {HTMLElement} referenceTab - Tab element to clone structure from
      * @param {Function} onClickCallback - Callback when tab is clicked, receives (e, material)
+     * @param {string} [owner] - MARKETPLACE_OWNER constant for scoped removal
      * @returns {HTMLElement} Created tab element
      */
-    function createMaterialTab(material, referenceTab, onClickCallback) {
+    function createMaterialTab(material, referenceTab, onClickCallback, owner) {
         // Clone reference tab structure
         const tab = referenceTab.cloneNode(true);
+        const forceActionable = material.forceActionable === true;
 
         // Mark as custom tab for later identification
         tab.setAttribute('data-mwi-custom-tab', 'true');
+        // A cloned native tab must not duplicate the native tab/panel identity.
+        tab.removeAttribute('id');
+        tab.removeAttribute('aria-controls');
         tab.setAttribute('data-item-hrid', material.itemHrid);
         tab.setAttribute('data-missing-quantity', material.missing.toString());
+        if (forceActionable) tab.setAttribute('data-mwi-force-actionable', 'true');
+        if (owner) tab.setAttribute('data-mwi-tab-owner', owner);
 
         // Color coding:
         // - Red: Missing materials (missing > 0)
@@ -14136,10 +14808,15 @@
         `;
         }
 
-        // Gray out if not tradeable
-        if (!material.isTradeable) {
-            tab.style.opacity = '0.5';
+        // Disable non-tradeable and already-complete tabs.
+        if (!material.isTradeable || (material.missing <= 0 && !forceActionable)) {
+            tab.style.opacity = material.isTradeable ? '0.7' : '0.5';
             tab.style.cursor = 'not-allowed';
+            tab.setAttribute('aria-disabled', 'true');
+        } else {
+            tab.style.opacity = '1';
+            tab.style.cursor = 'pointer';
+            tab.setAttribute('aria-disabled', 'false');
         }
 
         // Remove selected state
@@ -14152,59 +14829,192 @@
             e.preventDefault();
             e.stopPropagation();
 
-            if (!material.isTradeable) {
-                // Not tradeable - do nothing
+            const currentMissing = Number.parseInt(tab.getAttribute('data-missing-quantity') || '0', 10);
+            if (!material.isTradeable || (!forceActionable && (!Number.isFinite(currentMissing) || currentMissing <= 0))) {
                 return;
             }
 
-            // Call the provided callback
-            if (onClickCallback) {
-                onClickCallback(e, material);
-            }
+            if (onClickCallback) onClickCallback(e, material);
         });
 
         return tab;
     }
 
     /**
-     * Remove all custom material tabs from the marketplace
+     * Update the badge content and quantity attribute on an existing material tab
+     * @param {HTMLElement} tab - Tab element created by createMaterialTab
+     * @param {Object} material - Updated material data
+     * @param {string} material.itemName - Display name
+     * @param {number} material.missing - Current missing quantity
+     * @param {number} [material.required] - Total required quantity
+     * @param {boolean} material.isTradeable - Whether tradeable
+     * @param {number} [material.queued] - Queued quantity
      */
-    function removeMaterialTabs() {
-        const customTabs = document.querySelectorAll('[data-mwi-custom-tab="true"]');
-        customTabs.forEach((tab) => tab.remove());
+    function updateTabBadge(tab, material) {
+        const badgeSpan = tab.querySelector('[class*="TabsComponent_badge"]');
+        if (!badgeSpan) return;
+
+        let statusColor;
+        let statusText;
+
+        if (!material.isTradeable) {
+            statusColor = '#888888';
+            statusText = 'Not Tradeable';
+        } else if (material.missing > 0) {
+            statusColor = '#ef4444';
+            const queuedText = material.queued > 0 ? ` (${formatters_js.formatWithSeparator(material.queued)} Q'd)` : '';
+            statusText = `Missing: ${formatters_js.formatWithSeparator(material.missing)}${queuedText}`;
+        } else {
+            statusColor = '#4ade80';
+            statusText = `Sufficient (${formatters_js.formatWithSeparator(material.required)})`;
+        }
+
+        const titleCaseName = material.itemName
+            .split(' ')
+            .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+            .join(' ');
+
+        badgeSpan.innerHTML = `
+        <div style="text-align: center;">
+            <div>${titleCaseName}</div>
+            <div style="font-size: 0.75em; color: ${statusColor};">
+                ${statusText}
+            </div>
+        </div>
+    `;
+
+        tab.setAttribute('data-missing-quantity', material.missing.toString());
+
+        const forceActionable = tab.getAttribute('data-mwi-force-actionable') === 'true';
+        if (!material.isTradeable || (material.missing <= 0 && !forceActionable)) {
+            tab.style.opacity = material.isTradeable ? '0.7' : '0.5';
+            tab.style.cursor = 'not-allowed';
+            tab.setAttribute('aria-disabled', 'true');
+        } else {
+            tab.style.opacity = '1';
+            tab.style.cursor = 'pointer';
+            tab.setAttribute('aria-disabled', 'false');
+        }
     }
 
     /**
-     * Setup marketplace cleanup observer
-     * Watches for marketplace panel removal and calls cleanup callback
-     * @param {Function} onCleanup - Callback when marketplace closes, receives no args
-     * @param {Array} tabsArray - Array reference to track tabs (will be checked for length)
-     * @returns {Function} Unregister function to stop observing
+     * Setup marketplace cleanup observer.
+     * Uses MutationObserver for prompt close/remount detection, with polling as a fallback.
+     *
+     * Accepts either the legacy call signature:
+     *   setupMarketplaceCleanupObserver(onCleanup, tabsArray)
+     *
+     * Or a new single-object signature:
+     *   setupMarketplaceCleanupObserver({ owner, onTabsGone, invalidStateGraceMs })
+     *   where onTabsGone is called when the owner's tabs are missing from the current
+     *   unique visible Marketplace tablist or the marketplace panel becomes hidden.
+     *   invalidStateGraceMs optionally tolerates a brief React remount gap.
+     *
+     * @param {Function|Object} onCleanupOrOpts
+     * @param {Array} [tabsArray]
+     * @returns {Function} Unregister function
      */
-    function setupMarketplaceCleanupObserver(onCleanup, tabsArray) {
+    function setupMarketplaceCleanupObserver(onCleanupOrOpts, tabsArray) {
+        let owner = null;
+        let onTabsGone = null;
+        let legacyTabsArray = null;
+        let invalidStateGraceMs = 0;
+
+        if (typeof onCleanupOrOpts === 'function') {
+            // Legacy signature
+            onTabsGone = onCleanupOrOpts;
+            legacyTabsArray = tabsArray;
+        } else {
+            owner = onCleanupOrOpts?.owner || null;
+            onTabsGone = onCleanupOrOpts?.onTabsGone || null;
+            invalidStateGraceMs = Math.max(0, Number(onCleanupOrOpts?.invalidStateGraceMs) || 0);
+        }
+
         let pollInterval = null;
+        let mutationObserver = null;
+        let invalidStateTimer = null;
+        let isStopped = false;
+        let invalidStateNotified = false;
 
-        function poll() {
-            if (!tabsArray || tabsArray.length === 0) return;
+        function hasValidState() {
+            const visibleContainer = getVisibleMarketplaceTabContainer();
+            if (!visibleContainer) return false;
 
-            // If custom tabs were removed from DOM, clean up
-            const hasCustomTabsInDOM = tabsArray.some((tab) => document.body.contains(tab));
-            if (!hasCustomTabsInDOM) {
-                if (onCleanup) onCleanup();
+            if (owner) {
+                if (!isMarketplaceMarketListingsSelected(visibleContainer)) return false;
+                // Only tabs inside the CURRENT unique visible Marketplace tablist count.
+                // Hidden retained panels must not mask a React remount that wiped the live tabs.
+                const ownerTabs = Array.from(
+                    visibleContainer.querySelectorAll(`[data-mwi-custom-tab][data-mwi-tab-owner="${owner}"][role="tab"]`)
+                );
+                return ownerTabs.some((tab) => tab.isConnected && isElementActuallyVisible(tab));
+            }
+
+            if (legacyTabsArray) {
+                if (legacyTabsArray.length === 0) return true;
+                return legacyTabsArray.some((tab) => document.body.contains(tab));
+            }
+
+            return true;
+        }
+
+        function clearInvalidStateTimer() {
+            if (!invalidStateTimer) return;
+            clearTimeout(invalidStateTimer);
+            invalidStateTimer = null;
+        }
+
+        function notifyInvalidState() {
+            if (invalidStateNotified || invalidStateTimer || !onTabsGone) return;
+
+            if (invalidStateGraceMs <= 0) {
+                invalidStateNotified = true;
+                onTabsGone();
                 return;
             }
 
-            // If marketplace panel is hidden (navigated away), clean up
-            const marketplacePanel = document.querySelector('.MarketplacePanel_marketplacePanel__21b7o');
-            const subPanelContainer = marketplacePanel?.closest('.MainPanel_subPanelContainer__1i-H9');
-            if (subPanelContainer && getComputedStyle(subPanelContainer).display === 'none') {
-                if (onCleanup) onCleanup();
+            invalidStateTimer = setTimeout(() => {
+                invalidStateTimer = null;
+                if (isStopped || invalidStateNotified || hasValidState()) return;
+                invalidStateNotified = true;
+                onTabsGone();
+            }, invalidStateGraceMs);
+        }
+
+        function poll() {
+            if (isStopped) return;
+
+            if (!hasValidState()) {
+                notifyInvalidState();
+                return;
             }
+
+            clearInvalidStateTimer();
+            invalidStateNotified = false;
+        }
+
+        if (document.body && typeof MutationObserver === 'function') {
+            mutationObserver = new MutationObserver(poll);
+            mutationObserver.observe(document.body, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                // React changes native tab selection through aria-selected/class without
+                // necessarily mutating children. Observe both so native-tab exits are prompt
+                // even when navigation was triggered programmatically rather than by a click.
+                attributeFilter: ['style', 'hidden', 'aria-hidden', 'aria-selected', 'class'],
+            });
         }
 
         pollInterval = setInterval(poll, 1000);
 
         return () => {
+            isStopped = true;
+            clearInvalidStateTimer();
+            if (mutationObserver) {
+                mutationObserver.disconnect();
+                mutationObserver = null;
+            }
             if (pollInterval) {
                 clearInterval(pollInterval);
                 pollInterval = null;
@@ -14216,31 +15026,57 @@
      * Get game object via React fiber
      * @returns {Object|null} Game component instance
      */
-    function getGameObject$2() {
+    function getGameObject$3() {
         const rootEl = document.getElementById('root');
         const rootFiber = rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
         if (!rootFiber) return null;
 
-        function find(fiber) {
-            if (!fiber) return null;
-            if (fiber.stateNode?.handleGoToMarketplace) return fiber.stateNode;
-            return find(fiber.child) || find(fiber.sibling);
+        const stack = [rootFiber];
+        while (stack.length > 0) {
+            const fiber = stack.pop();
+            if (typeof fiber?.stateNode?.handleGoToMarketplace === 'function') return fiber.stateNode;
+            if (fiber?.sibling) stack.push(fiber.sibling);
+            if (fiber?.child) stack.push(fiber.child);
         }
+        return null;
+    }
 
-        return find(rootFiber);
+    /**
+     * Watch for a native Marketplace tab click and call onExit when it occurs.
+     * Uses a delegated click listener — does not fire on initial aria-selected DOM state.
+     *
+     * Resolves nested click targets (e.g. a span or icon inside the tab) via closest('[role="tab"]').
+     * Only fires when the resolved tab belongs to tabContainer and is not a Toolasha custom tab.
+     *
+     * @param {HTMLElement} tabContainer - The MuiTabs-flexContainer[role="tablist"] element
+     * @param {Function} onExit - Called when a native tab is clicked
+     * @returns {Function} Cleanup function that removes the exact delegated listener
+     */
+    function watchNativeTabExit(tabContainer, onExit) {
+        function handleClick(e) {
+            const origin = typeof e.target?.closest === 'function' ? e.target : e.target?.parentElement;
+            const target = origin?.closest('[role="tab"]');
+            if (!target || !tabContainer.contains(target)) return;
+            if (target.hasAttribute('data-mwi-custom-tab') || target.hasAttribute('data-mwi-shrine-tab')) return;
+            onExit();
+        }
+        tabContainer.addEventListener('click', handleClick, { capture: true });
+        return () => tabContainer.removeEventListener('click', handleClick, { capture: true });
     }
 
     /**
      * Navigate to marketplace for a specific item
      * @param {string} itemHrid - Item HRID to navigate to
      * @param {number} enhancementLevel - Enhancement level (default 0)
+     * @returns {boolean} True when the native Marketplace handler was invoked
      */
     function navigateToMarketplace(itemHrid, enhancementLevel = 0) {
-        const game = getGameObject$2();
+        const game = getGameObject$3();
         if (game?.handleGoToMarketplace) {
             game.handleGoToMarketplace(itemHrid, enhancementLevel);
+            return true;
         }
-        // Silently fail if game API unavailable - feature still provides value without auto-navigation
+        return false;
     }
 
     /**
@@ -14253,15 +15089,16 @@
      * Module-level state
      */
     let cleanupObserver$1 = null;
-    const currentMaterialsTabs = [];
+    let nativeTabExitCleanup$1 = null;
     let domObserverUnregister$1 = null;
     let enhancementDomObserverUnregister = null;
     let processedPanels$1 = new WeakSet();
     let processedEnhancingPanels = new WeakSet();
-    let inventoryUpdateHandler = null;
-    let storedActionHrid = null;
-    let storedNumActions = 0;
-    let storedEnhancementContext = null;
+    const enhancingPanelWatchers = new Map();
+    let inventoryUpdateHandler$1 = null;
+    let activeWorkflowModel$1 = null;
+    let actionsSessionId = null;
+    let enhancingReturnGeneration = 0;
     const timerRegistry = timerRegistry_js.createTimerRegistry();
     const autofillManager$1 = createAutofillManager('MissingMats-Actions');
 
@@ -14285,7 +15122,6 @@
      * Initialize missing materials button feature
      */
     function initialize$1() {
-        cleanupObserver$1 = setupMarketplaceCleanupObserver(handleMarketplaceCleanup, currentMaterialsTabs);
         autofillManager$1.initialize();
 
         // Watch for production action panels appearing
@@ -14311,6 +15147,14 @@
      * Cleanup function
      */
     function cleanup$1() {
+        enhancingReturnGeneration += 1;
+        const activeSessionId = actionsSessionId ?? activeWorkflowModel$1?.sessionId ?? null;
+        if (activeSessionId !== null && marketplaceSession_js.marketplaceSession.isActive(activeSessionId)) {
+            marketplaceSession_js.marketplaceSession.end(activeSessionId);
+        } else {
+            teardownActionsMarketplaceSession();
+        }
+
         if (domObserverUnregister$1) {
             domObserverUnregister$1();
             domObserverUnregister$1 = null;
@@ -14331,6 +15175,11 @@
 
         // Remove any existing custom tabs
         handleMarketplaceCleanup();
+
+        for (const unwatchPanel of enhancingPanelWatchers.values()) {
+            unwatchPanel();
+        }
+        enhancingPanelWatchers.clear();
 
         // Clear processed panels
         processedPanels$1 = new WeakSet();
@@ -14385,11 +15234,10 @@
     function updateButtonForPanel(panel, value) {
         const numActions = parseInt(value) || 0;
 
-        // Remove existing button
+        // Recreate only the button. The shared production tools block remains in
+        // place so Cost Summary and Budget Calculator do not jump during input updates.
         const existingButton = panel.querySelector('#mwi-missing-mats-button');
-        if (existingButton) {
-            existingButton.remove();
-        }
+        if (existingButton) existingButton.remove();
 
         // Check setting early
         if (!config.getSetting('actions_missingMaterialsButton')) {
@@ -14429,25 +15277,37 @@
             const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
             const accountForQueue = !ignoreQueue; // Invert: ignoreQueue=false means accountForQueue=true
             missingMaterials = materialCalculator_js.calculateMaterialRequirements(actionHrid, numActions, accountForQueue);
-            if (missingMaterials.length === 0) {
-                disabled = true;
+            disabled = !missingMaterials.some((material) => material.isTradeable !== false && Number(material.missing) > 0);
+        }
+
+        // Create and insert button with actionHrid and numActions for live updates.
+        const button = createMissingMaterialsButton(missingMaterials, actionHrid, numActions, disabled);
+        button.style.boxSizing = 'border-box';
+        button.style.width = '100%';
+        button.style.maxWidth = '100%';
+        button.style.minWidth = '0';
+        button.style.margin = '0';
+        button.style.order = '1';
+
+        // Production uses a native two-column info grid. Keep the Requires label/value pair
+        // untouched, then inject ONE Toolasha row spanning both columns. The Missing Mats
+        // button, Cost Summary and Budget Calculator all live in this row, so they share the
+        // same width and can never overlap the following native rows.
+        const toolsBlock = getOrCreateProductionToolsBlock(panel);
+        if (toolsBlock) {
+            toolsBlock.appendChild(button);
+            normalizeProductionToolsBlock(panel);
+        } else {
+            const costSummary = panel.querySelector('#mwi-cost-summary');
+            const budgetCalculator = panel.querySelector('#mwi-budget-calculator');
+            if (costSummary?.parentElement) {
+                costSummary.parentElement.insertBefore(button, costSummary);
+            } else if (budgetCalculator?.parentElement) {
+                budgetCalculator.parentElement.insertBefore(button, budgetCalculator);
+            } else {
+                panel.prepend(button);
             }
         }
-
-        // Create and insert button with actionHrid and numActions for live updates
-        const button = createMissingMaterialsButton(missingMaterials, actionHrid, numActions, disabled);
-
-        // Find insertion point (beneath item requirements field)
-        const itemRequirements = panel.querySelector('.SkillActionDetail_itemRequirements__3SPnA');
-        if (itemRequirements) {
-            itemRequirements.parentNode.insertBefore(button, itemRequirements.nextSibling);
-        } else {
-            // Fallback: insert at top of panel
-            panel.insertBefore(button, panel.firstChild);
-        }
-
-        // Don't manipulate modal styling - let the game handle it
-        // The modal will scroll naturally if content overflows
     }
 
     /**
@@ -14489,18 +15349,35 @@
             return;
         }
 
+        // Drop observers retained for detached React panels before tracking a remount.
+        for (const [trackedPanel, unwatchPanel] of enhancingPanelWatchers) {
+            if (trackedPanel.isConnected) continue;
+            unwatchPanel();
+            enhancingPanelWatchers.delete(trackedPanel);
+        }
+
         processedEnhancingPanels.add(panel);
 
-        // Watch for changes (item swap, level change, protection change) with debounce
-        domObserverHelpers_js.createMutationWatcher(
+        // Watch for changes (item swap, level change, protection change) with debounce.
+        // Track the exact native observer so feature disable/re-enable cannot leave a stale
+        // watcher attached to an already-processed Enhancing panel.
+        const unwatchPanel = domObserverHelpers_js.createMutationWatcher(
             panel,
             (mutations) => {
-                // Ignore mutations caused by our own button insertion/removal
-                const isOwnButton = mutations.every((m) => {
+                // Ignore every mutation caused by the injected button itself. In particular,
+                // its hover style changes must not schedule a replacement between mouseenter
+                // and click, which made the Enhancing button appear enabled but act as a no-op.
+                const isOwnButtonMutation = mutations.every((m) => {
+                    const targetElement = m.target?.nodeType === Node.ELEMENT_NODE ? m.target : m.target?.parentElement;
+                    if (targetElement?.closest?.('#mwi-missing-mats-button')) return true;
+
                     const nodes = [...m.addedNodes, ...m.removedNodes];
-                    return nodes.length > 0 && nodes.every((n) => n.id === 'mwi-missing-mats-button');
+                    return (
+                        nodes.length > 0 &&
+                        nodes.every((n) => n?.nodeType !== Node.ELEMENT_NODE || n.id === 'mwi-missing-mats-button')
+                    );
                 });
-                if (isOwnButton) return;
+                if (isOwnButtonMutation) return;
 
                 if (enhancementDebounceTimeout) {
                     clearTimeout(enhancementDebounceTimeout);
@@ -14508,13 +15385,157 @@
                 enhancementDebounceTimeout = setTimeout(() => {
                     enhancementDebounceTimeout = null;
                     updateEnhancementButton(panel);
-                }, 500);
+                }, 60);
             },
             { childList: true, subtree: true, attributes: true }
         );
+        enhancingPanelWatchers.set(panel, unwatchPanel);
 
-        // Initial button creation (delay to let panel-observer set mwiItemHrid first)
-        setTimeout(() => updateEnhancementButton(panel), 600);
+        // Create as soon as the panel observer provides the item HRID. Polling briefly
+        // avoids the visible one-second pop-in while remaining safe during item switches.
+        const tryInitialButton = (attempt = 0) => {
+            if (!panel.isConnected) {
+                enhancingPanelWatchers.get(panel)?.();
+                enhancingPanelWatchers.delete(panel);
+                return;
+            }
+            updateEnhancementButton(panel);
+            if (!panel.querySelector('#mwi-missing-mats-button') && attempt < 20) {
+                const retryTimer = setTimeout(() => tryInitialButton(attempt + 1), 50);
+                timerRegistry.registerTimeout(retryTimer);
+            }
+        };
+        const initialTimer = setTimeout(() => tryInitialButton(0), 0);
+        timerRegistry.registerTimeout(initialTimer);
+    }
+
+    /**
+     * Resolve the live SkillActionDetail class that owns the visible Enhancing component.
+     * @param {HTMLElement} panel
+     * @returns {Object|null}
+     */
+    function isEnhancingActionComponent(node) {
+        if (
+            !node ||
+            typeof node.setState !== 'function' ||
+            typeof node.getPrimaryItem !== 'function' ||
+            typeof node.getSecondaryItem !== 'function' ||
+            typeof node.selectEnhancingItemHandler !== 'function' ||
+            !node.state ||
+            !Object.prototype.hasOwnProperty.call(node.state, 'primaryItemHash') ||
+            !Object.prototype.hasOwnProperty.call(node.state, 'enhancingMaxLevel')
+        ) {
+            return false;
+        }
+
+        const actionHrid = node.props?.actionDetail?.hrid || node.state?.actionDetail?.hrid;
+        return !actionHrid || actionHrid === '/actions/enhancing/enhance';
+    }
+
+    function getEnhancingActionComponent(panel) {
+        // Different renders attach the useful fiber key to different descendants.
+        // Probe concrete controls first, then use a bounded unique root-tree fallback.
+        const anchors = panel
+            ? [panel, ...panel.querySelectorAll('input, select, button, [class*="SkillActionDetail_item"]')]
+            : [];
+        const visitedFibers = new Set();
+        const anchoredMatches = new Set();
+
+        for (const anchor of anchors) {
+            let fiber = getReactFiberFromElement(anchor);
+            let depth = 0;
+            while (fiber && depth < 160) {
+                if (visitedFibers.has(fiber)) break;
+                visitedFibers.add(fiber);
+                if (isEnhancingActionComponent(fiber.stateNode)) anchoredMatches.add(fiber.stateNode);
+                fiber = fiber.return;
+                depth += 1;
+            }
+        }
+
+        if (anchoredMatches.size === 1) return anchoredMatches.values().next().value;
+        if (anchoredMatches.size > 1) return null;
+
+        const rootEl = document.getElementById('root');
+        const rootFiber = rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
+        if (!rootFiber) return null;
+
+        const stack = [rootFiber];
+        const matches = new Set();
+        let visited = 0;
+        while (stack.length > 0 && visited < 25000) {
+            const fiber = stack.pop();
+            if (!fiber) continue;
+            visited += 1;
+            if (isEnhancingActionComponent(fiber.stateNode)) matches.add(fiber.stateNode);
+            if (fiber.sibling) stack.push(fiber.sibling);
+            if (fiber.child) stack.push(fiber.child);
+        }
+
+        return matches.size === 1 ? matches.values().next().value : null;
+    }
+
+    function buildInventoryItemHash(itemHrid, enhancementLevel = 0) {
+        const characterId = dataManager.getCurrentCharacterId();
+        if (!characterId || !itemHrid) return null;
+        return `${characterId}::/item_locations/inventory::${itemHrid}::${Number(enhancementLevel) || 0}`;
+    }
+
+    function getEnhancingLoadoutValueFromUI(panel) {
+        const root = panel?.closest('[class*="SkillActionDetail_skillActionDetail"]') || panel;
+        if (!root) return 0;
+        const selects = Array.from(root.querySelectorAll('select'));
+        const loadoutSelect = selects.find((select) => {
+            const contextText = select.parentElement?.parentElement?.textContent || select.parentElement?.textContent || '';
+            return /Loadout/i.test(contextText) && select.id !== 'enhancementDropdown';
+        });
+        return loadoutSelect?.value ?? null;
+    }
+
+    /**
+     * Capture the exact Enhancing selection and controls for Return. If the React
+     * owner cannot be resolved at click time, derive stable item hashes from the
+     * already-known item/level context instead of disabling Return entirely.
+     * @param {HTMLElement} panel
+     * @param {Object} fallback
+     * @returns {Object|null}
+     */
+    function captureEnhancingReturnState(panel, fallback = {}) {
+        const component = getEnhancingActionComponent(panel);
+        const state = component?.state || {};
+        const primaryItemHash = state.primaryItemHash || buildInventoryItemHash(fallback.itemHrid, fallback.startLevel);
+        if (!primaryItemHash) return null;
+
+        const hasFallbackProtection = Object.prototype.hasOwnProperty.call(fallback, 'protectionItemHrid');
+        const secondaryItemHash = hasFallbackProtection
+            ? fallback.protectionItemHrid
+                ? buildInventoryItemHash(fallback.protectionItemHrid, 0)
+                : null
+            : (state.secondaryItemHash ?? null);
+        const hasFallbackRepeat = Object.prototype.hasOwnProperty.call(fallback, 'repeatCount');
+        const fallbackHasMaxCount = hasFallbackRepeat && fallback.repeatCount !== null;
+        const liveLoadoutValue = getEnhancingLoadoutValueFromUI(panel);
+
+        return Object.freeze({
+            primaryItemHash,
+            secondaryItemHash,
+            // The focused Target/Protection/Repeat inputs can contain a newer value than
+            // React state until blur. Prefer the values read directly from the live UI.
+            enhancingMaxLevel: fallback.targetLevel ?? state.enhancingMaxLevel ?? 0,
+            protectionMinLevel: fallback.protectFromLevel ?? state.protectionMinLevel ?? 0,
+            hasMaxCount: hasFallbackRepeat ? fallbackHasMaxCount : (state.hasMaxCount ?? false),
+            maxActionCount: hasFallbackRepeat
+                ? fallbackHasMaxCount
+                    ? Number(fallback.repeatCount) || 1
+                    : 0
+                : (state.maxActionCount ?? 0),
+            maxActionCountInput: hasFallbackRepeat
+                ? fallbackHasMaxCount
+                    ? String(Number(fallback.repeatCount) || 1)
+                    : '∞'
+                : (state.maxActionCountInput ?? '∞'),
+            selectedCharacterLoadoutId: liveLoadoutValue ?? state.selectedCharacterLoadoutId ?? 0,
+        });
     }
 
     /**
@@ -14523,34 +15544,32 @@
      * @returns {number} Current enhancement level (0-19)
      */
     function getCurrentEnhancementLevel(panel) {
-        // Try action queue first
-        const currentActions = dataManager.getCurrentActions();
-        const enhancingAction = currentActions.find((a) => a.actionHrid === '/actions/enhancing/enhance');
-        if (enhancingAction?.primaryItemHash) {
-            const parts = enhancingAction.primaryItemHash.split('::');
-            const lastPart = parts[parts.length - 1];
-            if (lastPart && !lastPart.startsWith('/')) {
-                const parsed = parseInt(lastPart, 10);
-                if (!isNaN(parsed)) return parsed;
-            }
+        const parseItemHashLevel = (itemHash) => {
+            if (!itemHash) return null;
+            const parts = itemHash.split('::');
+            const parsed = Number.parseInt(parts.at(-1), 10);
+            return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+        };
+
+        // Prefer the exact visible Enhancing component over the global action queue.
+        // The queue can contain a different item from the one currently selected in the panel.
+        const componentLevel = parseItemHashLevel(getEnhancingActionComponent(panel)?.state?.primaryItemHash);
+        if (componentLevel !== null) return componentLevel;
+
+        // Fallback: read the selected item label from the current panel.
+        const selectedNames = panel.querySelectorAll('[class*="SkillActionDetail_item"] [class*="Item_name"]');
+        for (const selectedName of selectedNames) {
+            const levelMatch = selectedName.textContent.trim().match(/\+(\d+)$/);
+            if (levelMatch) return Number.parseInt(levelMatch[1], 10);
         }
 
-        // Fallback: read from DOM text (e.g., "Dairyhand's Top +5")
-        const inputItems = panel.querySelectorAll('.SkillActionDetail_item__2vEAz .Item_name__2C42x');
-        if (inputItems.length > 0) {
-            const inputName = inputItems[0].textContent.trim();
-            const levelMatch = inputName.match(/\+(\d+)$/);
-            if (levelMatch) return parseInt(levelMatch[1], 10);
-        }
-
-        return 0;
+        // Last resort: use the active Enhancing queue item when the panel has not finished mounting.
+        const enhancingAction = dataManager
+            .getCurrentActions()
+            .find((action) => action.actionHrid === '/actions/enhancing/enhance');
+        return parseItemHashLevel(enhancingAction?.primaryItemHash) ?? 0;
     }
 
-    /**
-     * Get target enhancement level from UI input
-     * @param {HTMLElement} panel - Enhancing panel element
-     * @returns {number|null} Target level (1-20) or null if not found
-     */
     /**
      * Get repeat count from enhancement panel UI
      * @param {HTMLElement} panel - Enhancing panel element
@@ -14648,7 +15667,9 @@
             repeatCount
         );
 
-        const disabled = missingMaterials.length === 0;
+        const disabled = !missingMaterials.some(
+            (material) => material.isTradeable !== false && Number(material.missing) > 0
+        );
 
         // Create button
         const strategyInfo = autoProtection
@@ -14663,20 +15684,25 @@
             resolvedProtectFrom,
             repeatCount,
             disabled,
-            strategyInfo
+            strategyInfo,
+            panel
         );
 
-        // Find insertion point
-        const itemRequirements = panel.querySelector('.SkillActionDetail_itemRequirements__3SPnA');
-        if (itemRequirements) {
-            itemRequirements.parentNode.insertBefore(button, itemRequirements.nextSibling);
+        // The Enhancing component is a two-column flex layout. A panel-level sibling
+        // becomes a third off-screen column. Keep the button inside the visible info column.
+        button.style.boxSizing = 'border-box';
+        button.style.width = '100%';
+        button.style.maxWidth = '360px';
+        button.style.alignSelf = 'flex-start';
+
+        const infoColumn = panel.querySelector('[class*="SkillActionDetail_info"]');
+        const costsSection = infoColumn?.querySelector('[class*="SkillActionDetail_costs"]');
+        if (costsSection?.parentElement) {
+            costsSection.after(button);
+        } else if (infoColumn) {
+            infoColumn.prepend(button);
         } else {
-            const enhancementStats = panel.querySelector('#mwi-enhancement-stats');
-            if (enhancementStats) {
-                enhancementStats.parentNode.insertBefore(button, enhancementStats);
-            } else {
-                panel.appendChild(button);
-            }
+            panel.prepend(button);
         }
     }
 
@@ -14700,28 +15726,30 @@
         protectFromLevel,
         repeatCount,
         disabled,
-        strategyInfo
+        strategyInfo,
+        panel
     ) {
         const button = document.createElement('button');
         button.id = 'mwi-missing-mats-button';
+        button.type = 'button';
         button.textContent = 'Missing Mats Marketplace';
         button.disabled = disabled;
         button.style.cssText = `
-        width: 100%;
-        padding: 10px 16px;
-        margin: 8px 0 16px 0;
-        background: linear-gradient(180deg, rgba(91, 141, 239, 0.2) 0%, rgba(91, 141, 239, 0.1) 100%);
-        color: #ffffff;
-        border: 1px solid rgba(91, 141, 239, 0.4);
-        border-radius: 8px;
-        cursor: ${disabled ? 'default' : 'pointer'};
-        font-size: 14px;
-        font-weight: 600;
-        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-        transition: all 0.2s ease;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-        opacity: ${disabled ? '0.45' : '1'};
-    `;
+    width: 100%;
+    padding: 10px 16px;
+    margin: 8px 0 16px 0;
+    background: linear-gradient(180deg, rgba(91, 141, 239, 0.2) 0%, rgba(91, 141, 239, 0.1) 100%);
+    color: #ffffff;
+    border: 1px solid rgba(91, 141, 239, 0.4);
+    border-radius: 8px;
+    cursor: ${disabled ? 'default' : 'pointer'};
+    font-size: 14px;
+    font-weight: 600;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    opacity: ${disabled ? '0.45' : '1'};
+`;
 
         if (!disabled) {
             button.addEventListener('mouseenter', () => {
@@ -14738,16 +15766,83 @@
                 button.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.2)';
             });
 
-            button.addEventListener('click', async () => {
-                await handleEnhancementMissingMaterialsClick(
+            let activationStarted = false;
+            const activate = async () => {
+                if (activationStarted) return;
+                activationStarted = true;
+
+                // Read every editable control directly before navigation. A focused input
+                // may not have committed its value to React state yet, and the blur caused by
+                // clicking the button can remount the button before the normal click fires.
+                const liveTargetLevel = getTargetLevelFromUI(panel) ?? targetLevel;
+                const liveProtectionItemHrid = getProtectionItemFromUI(panel);
+                const liveProtectFromLevel = getProtectFromLevelFromUI(panel);
+                const liveRepeatCount = getRepeatCountFromUI(panel);
+
+                let liveResolvedProtectionItem = liveProtectionItemHrid;
+                let liveResolvedProtectFrom = liveProtectFromLevel;
+                let liveStrategyInfo = null;
+                if (liveProtectFromLevel === 0) {
+                    const enhancingConfig = enhancementConfig_js.getEnhancingParams();
+                    const pathResult = calculateEnhancementPath(itemHrid, liveTargetLevel, enhancingConfig);
+                    if (pathResult?.optimalStrategy) {
+                        liveResolvedProtectFrom = pathResult.optimalStrategy.protectFrom;
+                        liveResolvedProtectionItem =
+                            pathResult.optimalStrategy.protectionItemHrid || liveProtectionItemHrid;
+                        liveStrategyInfo = {
+                            protectFrom: liveResolvedProtectFrom,
+                            protectionItemHrid: liveResolvedProtectionItem,
+                        };
+                    }
+                }
+
+                const enhancingReturnState = captureEnhancingReturnState(panel, {
                     itemHrid,
                     startLevel,
-                    targetLevel,
-                    protectionItemHrid,
-                    protectFromLevel,
-                    repeatCount,
-                    strategyInfo
-                );
+                    targetLevel: liveTargetLevel,
+                    protectionItemHrid: liveResolvedProtectionItem,
+                    protectFromLevel: liveResolvedProtectFrom,
+                    repeatCount: liveRepeatCount,
+                });
+
+                try {
+                    await handleEnhancementMissingMaterialsClick(
+                        itemHrid,
+                        startLevel,
+                        liveTargetLevel,
+                        liveResolvedProtectionItem,
+                        liveResolvedProtectFrom,
+                        liveRepeatCount,
+                        liveStrategyInfo || strategyInfo,
+                        enhancingReturnState
+                    );
+                } catch (error) {
+                    console.error('[MissingMats] Enhancing workflow failed:', error);
+                    const sessionId = actionsSessionId ?? activeWorkflowModel$1?.sessionId ?? null;
+                    if (sessionId !== null && marketplaceSession_js.marketplaceSession.isActive(sessionId)) marketplaceSession_js.marketplaceSession.end(sessionId);
+                } finally {
+                    // A successful workflow keeps the ACTIONS session active and the source
+                    // panel is normally unmounted. A fail-closed navigation/identity path ends
+                    // the session; if React kept this button mounted, allow a clean retry.
+                    const active = marketplaceSession_js.marketplaceSession.getActive();
+                    if (active?.owner !== marketplaceSession_js.MARKETPLACE_OWNER.ACTIONS) {
+                        activationStarted = false;
+                    }
+                }
+            };
+
+            // Start on pointerdown, before the focused Target Level input blurs and causes
+            // React to replace this button. Keyboard activation continues through click.
+            button.addEventListener('pointerdown', (event) => {
+                if (event.button !== 0) return;
+                event.preventDefault();
+                event.stopPropagation();
+                void activate();
+            });
+            button.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                void activate();
             });
         }
 
@@ -14770,25 +15865,29 @@
         protectionItemHrid,
         protectFromLevel,
         repeatCount,
-        strategyInfo
+        strategyInfo,
+        enhancingReturnState
     ) {
-        // Store context for live updates (already resolved values)
-        storedEnhancementContext = {
-            itemHrid,
-            startLevel,
-            targetLevel,
-            protectionItemHrid,
-            protectFromLevel,
-            repeatCount,
-            strategyInfo,
-        };
-        storedActionHrid = null;
-        storedNumActions = 0;
+        // Starting any new ACTIONS workflow invalidates an older asynchronous Enhancing Return.
+        enhancingReturnGeneration += 1;
+
+        // Claim session ownership BEFORE first await
+        const capturedSessionId = marketplaceSession_js.marketplaceSession.start({
+            owner: marketplaceSession_js.MARKETPLACE_OWNER.ACTIONS,
+            onEnd: teardownActionsMarketplaceSession,
+        });
+        actionsSessionId = capturedSessionId;
 
         // Navigate to marketplace
-        const success = await openMarketplacePage();
+        const success = await openMarketplacePage(capturedSessionId);
         if (!success) {
             console.error('[MissingMats] Failed to navigate to marketplace');
+            marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+            return;
+        }
+
+        // Guard: verify session still active after navigation
+        if (!marketplaceSession_js.marketplaceSession.isActive(capturedSessionId)) {
             return;
         }
 
@@ -14797,6 +15896,11 @@
             const delayTimeout = setTimeout(resolve, 200);
             timerRegistry.registerTimeout(delayTimeout);
         });
+
+        // Guard again after the extra delay
+        if (!marketplaceSession_js.marketplaceSession.isActive(capturedSessionId)) {
+            return;
+        }
 
         // Recalculate materials fresh (inventory may have changed since button was rendered)
         const freshMaterials = materialCalculator_js.calculateEnhancementMaterialRequirements(
@@ -14808,8 +15912,56 @@
             repeatCount
         );
 
-        // Create custom tabs
-        createMissingMaterialTabs(freshMaterials, strategyInfo);
+        // Set activeWorkflowModel AFTER startSession
+        autofillManager$1.startSession({ sessionId: capturedSessionId, quantityProvider: null });
+        activeWorkflowModel$1 = {
+            sessionId: capturedSessionId,
+            materials: freshMaterials.map((m) => ({ ...m })),
+            returnContext: {
+                actionHrid: null,
+                numActions: 0,
+                enhancementContext: {
+                    itemHrid,
+                    startLevel,
+                    targetLevel,
+                    protectionItemHrid,
+                    protectFromLevel,
+                    repeatCount,
+                    strategyInfo,
+                    restoreState: enhancingReturnState,
+                },
+            },
+        };
+
+        // Create custom tabs in the unique visible Marketplace tablist.
+        if (!createMissingMaterialTabs(freshMaterials, strategyInfo, capturedSessionId)) {
+            marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+            return;
+        }
+        setupActionsCleanupObserver();
+
+        // Activate the first tradeable missing material automatically (same as manual tab click).
+        const firstMaterial = freshMaterials.find((m) => m.isTradeable !== false && m.missing > 0);
+        if (!firstMaterial) {
+            marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+            return;
+        }
+
+        const armed = autofillManager$1.arm({
+            sessionId: capturedSessionId,
+            itemHrid: firstMaterial.itemHrid,
+            enhancementLevel: 0,
+            modalMode: 'buy',
+            quantityProvider: () => {
+                const model = activeWorkflowModel$1;
+                if (model?.sessionId !== capturedSessionId) return 0;
+                return model.materials.find((entry) => entry.itemHrid === firstMaterial.itemHrid)?.missing ?? 0;
+            },
+        });
+        if (!armed || !navigateToMarketplace(firstMaterial.itemHrid, 0)) {
+            marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+            return;
+        }
 
         // Setup inventory listener for live updates
         setupInventoryListener();
@@ -14826,25 +15978,26 @@
     function createMissingMaterialsButton(missingMaterials, actionHrid, numActions, disabled = false) {
         const button = document.createElement('button');
         button.id = 'mwi-missing-mats-button';
+        button.type = 'button';
         button.textContent = 'Missing Mats Marketplace';
         button.disabled = disabled;
         button.title = disabled && numActions <= 0 ? 'Enter a quantity to check missing materials' : '';
         button.style.cssText = `
-        width: 100%;
-        padding: 10px 16px;
-        margin: 8px 0 16px 0;
-        background: linear-gradient(180deg, rgba(91, 141, 239, 0.2) 0%, rgba(91, 141, 239, 0.1) 100%);
-        color: #ffffff;
-        border: 1px solid rgba(91, 141, 239, 0.4);
-        border-radius: 8px;
-        cursor: ${disabled ? 'default' : 'pointer'};
-        font-size: 14px;
-        font-weight: 600;
-        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-        transition: all 0.2s ease;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-        opacity: ${disabled ? '0.45' : '1'};
-    `;
+    width: 100%;
+    padding: 10px 16px;
+    margin: 8px 0 16px 0;
+    background: linear-gradient(180deg, rgba(91, 141, 239, 0.2) 0%, rgba(91, 141, 239, 0.1) 100%);
+    color: #ffffff;
+    border: 1px solid rgba(91, 141, 239, 0.4);
+    border-radius: 8px;
+    cursor: ${disabled ? 'default' : 'pointer'};
+    font-size: 14px;
+    font-weight: 600;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    opacity: ${disabled ? '0.45' : '1'};
+`;
 
         if (!disabled) {
             // Hover effect
@@ -14864,7 +16017,13 @@
 
             // Click handler
             button.addEventListener('click', async () => {
-                await handleMissingMaterialsClick(actionHrid, numActions);
+                try {
+                    await handleMissingMaterialsClick(actionHrid, numActions);
+                } catch (error) {
+                    console.error('[MissingMats] Production workflow failed:', error);
+                    const sessionId = actionsSessionId ?? activeWorkflowModel$1?.sessionId ?? null;
+                    if (sessionId !== null && marketplaceSession_js.marketplaceSession.isActive(sessionId)) marketplaceSession_js.marketplaceSession.end(sessionId);
+                }
             });
         }
 
@@ -14878,15 +16037,26 @@
      * @param {number} numActions - Number of actions for recalculating materials
      */
     async function handleMissingMaterialsClick(actionHrid, numActions) {
-        // Store context for live updates
-        storedActionHrid = actionHrid;
-        storedNumActions = numActions;
-        storedEnhancementContext = null;
+        // Starting any new ACTIONS workflow invalidates an older asynchronous Enhancing Return.
+        enhancingReturnGeneration += 1;
+
+        // Claim session ownership BEFORE first await
+        const capturedSessionId = marketplaceSession_js.marketplaceSession.start({
+            owner: marketplaceSession_js.MARKETPLACE_OWNER.ACTIONS,
+            onEnd: teardownActionsMarketplaceSession,
+        });
+        actionsSessionId = capturedSessionId;
 
         // Navigate to marketplace
-        const success = await openMarketplacePage();
+        const success = await openMarketplacePage(capturedSessionId);
         if (!success) {
             console.error('[MissingMats] Failed to navigate to marketplace');
+            marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+            return;
+        }
+
+        // Guard: verify session still active after navigation
+        if (!marketplaceSession_js.marketplaceSession.isActive(capturedSessionId)) {
             return;
         }
 
@@ -14896,13 +16066,57 @@
             timerRegistry.registerTimeout(delayTimeout);
         });
 
+        // Guard again after the extra delay
+        if (!marketplaceSession_js.marketplaceSession.isActive(capturedSessionId)) {
+            return;
+        }
+
         // Recalculate materials fresh (inventory may have changed since button was rendered)
         const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
         const accountForQueue = !ignoreQueue;
         const freshMaterials = materialCalculator_js.calculateMaterialRequirements(actionHrid, numActions, accountForQueue);
 
-        // Create custom tabs
-        createMissingMaterialTabs(freshMaterials);
+        // Set activeWorkflowModel AFTER startSession
+        autofillManager$1.startSession({ sessionId: capturedSessionId, quantityProvider: null });
+        activeWorkflowModel$1 = {
+            sessionId: capturedSessionId,
+            materials: freshMaterials.map((m) => ({ ...m })),
+            returnContext: {
+                actionHrid,
+                numActions,
+                enhancementContext: null,
+            },
+        };
+
+        // Create custom tabs in the unique visible Marketplace tablist.
+        if (!createMissingMaterialTabs(freshMaterials, null, capturedSessionId)) {
+            marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+            return;
+        }
+        setupActionsCleanupObserver();
+
+        // Activate the first tradeable missing material automatically (same as manual tab click).
+        const firstMaterial = freshMaterials.find((m) => m.isTradeable !== false && m.missing > 0);
+        if (!firstMaterial) {
+            marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+            return;
+        }
+
+        const armed = autofillManager$1.arm({
+            sessionId: capturedSessionId,
+            itemHrid: firstMaterial.itemHrid,
+            enhancementLevel: 0,
+            modalMode: 'buy',
+            quantityProvider: () => {
+                const model = activeWorkflowModel$1;
+                if (model?.sessionId !== capturedSessionId) return 0;
+                return model.materials.find((entry) => entry.itemHrid === firstMaterial.itemHrid)?.missing ?? 0;
+            },
+        });
+        if (!armed || !navigateToMarketplace(firstMaterial.itemHrid, 0)) {
+            marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+            return;
+        }
 
         // Setup inventory listener for live updates
         setupInventoryListener();
@@ -14912,45 +16126,26 @@
      * Navigate to marketplace by simulating click on navbar
      * @returns {Promise<boolean>} True if successful
      */
-    async function openMarketplacePage() {
-        // Find marketplace navbar button
-        const navButtons = document.querySelectorAll('.NavigationBar_nav__3uuUl');
-        const marketplaceButton = Array.from(navButtons).find((nav) => {
-            const svg = nav.querySelector('svg[aria-label="navigationBar.marketplace"]');
-            return svg !== null;
-        });
-
-        if (!marketplaceButton) {
+    async function openMarketplacePage(sessionId) {
+        if (!marketplaceSession_js.marketplaceSession.isActive(sessionId) || !clickMarketplaceNavigationButton()) {
             console.error('[MissingMats] Marketplace navbar button not found');
             return false;
         }
-
-        // Simulate click
-        marketplaceButton.click();
-
-        // Wait for marketplace panel to appear
-        return await waitForMarketplace();
+        return await waitForMarketplace(sessionId);
     }
 
     /**
      * Wait for marketplace panel to appear
      * @returns {Promise<boolean>} True if marketplace appeared within timeout
      */
-    async function waitForMarketplace() {
+    async function waitForMarketplace(sessionId) {
         const maxAttempts = 50;
         const delayMs = 100;
 
         for (let i = 0; i < maxAttempts; i++) {
-            // Check for marketplace panel by looking for tabs container
-            const tabsContainer = document.querySelector('.MuiTabs-flexContainer[role="tablist"]');
-            if (tabsContainer) {
-                // Verify it's the marketplace tabs (has "Market Listings" tab)
-                const hasMarketListings = Array.from(tabsContainer.children).some((btn) =>
-                    btn.textContent.includes('Market Listings')
-                );
-                if (hasMarketListings) {
-                    return true;
-                }
+            if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) return false;
+            if (getVisibleMarketplaceTabContainer()) {
+                return true;
             }
 
             await new Promise((resolve) => {
@@ -14967,16 +16162,27 @@
      * Build the click handler for a material tab.
      * Defined outside the loop to satisfy the no-loop-func lint rule.
      * @param {{ tab: HTMLElement|null }} tabRef - Holder updated to the tab element after creation
+     * @param {number} sessionId - The marketplaceSession token for this workflow
      * @returns {Function}
      */
-    function makeMaterialClickHandler(tabRef) {
+    function makeMaterialClickHandler(tabRef, sessionId) {
         return (_e, mat) => {
-            // Read the current missing quantity from the tab's data attribute,
-            // which is kept up-to-date by the inventory listener.
-            autofillManager$1.setPendingCalculation(() => {
-                return parseInt(tabRef.tab?.getAttribute('data-missing-quantity') || '0', 10);
+            if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) return;
+            const liveMissing = parseInt(tabRef.tab?.getAttribute('data-missing-quantity') || '0', 10);
+            if (!Number.isFinite(liveMissing) || liveMissing <= 0 || mat.isTradeable === false) return;
+
+            const armed = autofillManager$1.arm({
+                sessionId,
+                itemHrid: mat.itemHrid,
+                enhancementLevel: 0,
+                modalMode: 'buy',
+                quantityProvider: () => {
+                    const model = activeWorkflowModel$1;
+                    if (model?.sessionId !== sessionId) return 0;
+                    return model.materials.find((entry) => entry.itemHrid === mat.itemHrid)?.missing ?? 0;
+                },
             });
-            navigateToMarketplace(mat.itemHrid, 0);
+            if (!armed || !navigateToMarketplace(mat.itemHrid, 0)) marketplaceSession_js.marketplaceSession.end(sessionId);
         };
     }
 
@@ -14989,14 +16195,14 @@
         const indicator = document.createElement('div');
         indicator.setAttribute('data-mwi-custom-tab', 'true');
         indicator.style.cssText = `
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        padding: 6px 12px;
-        font-size: 12px;
-        color: #aaa;
-        white-space: nowrap;
-    `;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    color: #aaa;
+    white-space: nowrap;
+`;
 
         if (strategyInfo.protectFrom === 0) {
             indicator.textContent = 'No protection needed';
@@ -15028,34 +16234,36 @@
      * Get game object via React fiber tree traversal
      * @returns {Object|null} Game component instance
      */
-    function getGameObject$1() {
+    function getGameObject$2() {
         const rootEl = document.getElementById('root');
         const rootFiber = rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
         if (!rootFiber) return null;
 
-        function find(fiber) {
-            if (!fiber) return null;
-            if (fiber.stateNode?.handleGoToAction) return fiber.stateNode;
-            return find(fiber.child) || find(fiber.sibling);
+        const stack = [rootFiber];
+        while (stack.length > 0) {
+            const fiber = stack.pop();
+            if (typeof fiber?.stateNode?.handleGoToAction === 'function') return fiber.stateNode;
+            if (fiber?.sibling) stack.push(fiber.sibling);
+            if (fiber?.child) stack.push(fiber.child);
         }
-
-        return find(rootFiber);
+        return null;
     }
 
     /**
      * Create a "Return to Action" tab for navigating back after buying materials
      * @param {HTMLElement} referenceTab - Tab element to clone structure from
-     * @returns {HTMLElement|null} Return tab element, or null if no stored context
+     * @param {Object} returnContext - Return context from activeWorkflowModel
+     * @returns {HTMLElement|null} Return tab element, or null if no context
      */
-    function createReturnTab(referenceTab) {
+    function createReturnTab(referenceTab, returnContext) {
         let displayName;
 
-        if (storedActionHrid) {
-            const details = dataManager.getActionDetails(storedActionHrid);
-            displayName = details?.name || storedActionHrid.split('/').pop();
-            if (storedNumActions > 0) displayName += ` (\u00d7${formatters_js.formatWithSeparator(storedNumActions)})`;
-        } else if (storedEnhancementContext) {
-            const ctx = storedEnhancementContext;
+        if (returnContext?.actionHrid) {
+            const details = dataManager.getActionDetails(returnContext.actionHrid);
+            displayName = details?.name || returnContext.actionHrid.split('/').pop();
+            if (returnContext.numActions > 0) displayName += ` (\u00d7${formatters_js.formatWithSeparator(returnContext.numActions)})`;
+        } else if (returnContext?.enhancementContext) {
+            const ctx = returnContext.enhancementContext;
             const itemName = dataManager.getItemDetails(ctx.itemHrid)?.name || '...';
             displayName = `${itemName} +${ctx.startLevel}\u2192+${ctx.targetLevel}`;
         } else {
@@ -15064,6 +16272,10 @@
 
         const tab = referenceTab.cloneNode(true);
         tab.setAttribute('data-mwi-custom-tab', 'true');
+        tab.setAttribute('data-mwi-tab-owner', marketplaceSession_js.MARKETPLACE_OWNER.ACTIONS);
+        // A custom tab must not duplicate the native tab/panel identity.
+        tab.removeAttribute('id');
+        tab.removeAttribute('aria-controls');
         tab.classList.remove('Mui-selected');
         tab.setAttribute('aria-selected', 'false');
         tab.setAttribute('tabindex', '-1');
@@ -15071,156 +16283,342 @@
         const badgeSpan = tab.querySelector('[class*="TabsComponent_badge"]');
         if (badgeSpan) {
             badgeSpan.innerHTML = `
-            <div style="text-align: center;">
-                <div>\u21a9 Return</div>
-                <div style="font-size: 0.75em; color: #60a5fa;">${displayName}</div>
-            </div>
-        `;
+        <div style="text-align: center;">
+            <div>\u21a9 Return</div>
+            <div style="font-size: 0.75em; color: #60a5fa;">${displayName}</div>
+        </div>
+    `;
         }
 
-        tab.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            handleReturnToAction();
+        tab.addEventListener('click', async (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            try {
+                await handleReturnToAction();
+            } catch (error) {
+                console.error('[MissingMats] Return workflow failed:', error);
+                const sessionId = actionsSessionId ?? activeWorkflowModel$1?.sessionId ?? null;
+                if (sessionId !== null) marketplaceSession_js.marketplaceSession.end(sessionId);
+            }
         });
 
         return tab;
     }
 
     /**
+     * Return restoration may continue after the Marketplace session ends normally,
+     * because leaving Marketplace synchronously tears down that session. It must stop,
+     * however, when a newer Return starts or another Marketplace owner takes control.
+     * @param {number} generation
+     * @param {number|null} capturedSessionId
+     * @returns {boolean}
+     */
+    function shouldAbortEnhancingReturn(generation, capturedSessionId) {
+        if (generation !== enhancingReturnGeneration) return true;
+        const active = marketplaceSession_js.marketplaceSession.getActive();
+        return Boolean(active && active.sessionId !== capturedSessionId);
+    }
+
+    /**
      * Navigate back to the stored action and restore input values
      */
     async function handleReturnToAction() {
-        const game = getGameObject$1();
-        if (!game) return;
-
-        if (storedActionHrid) {
-            game.handleGoToAction(storedActionHrid);
-        } else if (storedEnhancementContext) {
-            game.handleChangeNavTarget('enhancing');
-        } else {
+        const capturedSessionId = activeWorkflowModel$1?.sessionId ?? null;
+        const returnGeneration = ++enhancingReturnGeneration;
+        const game = getGameObject$2();
+        if (!game) {
+            console.error('[MissingMats] Return could not resolve the game navigation component');
+            if (capturedSessionId !== null) marketplaceSession_js.marketplaceSession.end(capturedSessionId);
             return;
         }
 
-        // Restore input value for production actions — poll for the input to appear
-        if (storedActionHrid && storedNumActions > 0) {
-            const maxAttempts = 20;
-            for (let i = 0; i < maxAttempts; i++) {
-                await new Promise((resolve) => {
-                    const t = setTimeout(resolve, 100);
-                    timerRegistry.registerTimeout(t);
-                });
+        // Snapshot locally because leaving Marketplace may synchronously tear down
+        // activeWorkflowModel through the cleanup observer.
+        const returnContext = activeWorkflowModel$1?.returnContext;
+        if (!returnContext) {
+            console.error('[MissingMats] Return context is no longer available');
+            if (capturedSessionId !== null) marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+            return;
+        }
 
-                const input =
-                    document.querySelector('[class*="maxActionCountInput"] input') ||
-                    document.querySelector('[class*="SkillActionDetail_skillActionDetail"] input[type="number"]');
-                if (input) {
-                    reactInput_js.setReactInputValue(input, storedNumActions);
-                    break;
+        if (returnContext.actionHrid) {
+            // The native override restores both the exact action and its count.
+            game.handleGoToAction(returnContext.actionHrid, returnContext.numActions || undefined);
+            if (capturedSessionId !== null) marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+            return;
+        }
+
+        const ctx = returnContext.enhancementContext;
+        if (!ctx) {
+            console.error('[MissingMats] Return context does not contain an action or enhancement target');
+            if (capturedSessionId !== null) marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+            return;
+        }
+
+        const restore =
+            ctx.restoreState ||
+            Object.freeze({
+                primaryItemHash: buildInventoryItemHash(ctx.itemHrid, ctx.startLevel),
+                secondaryItemHash: ctx.protectionItemHrid ? buildInventoryItemHash(ctx.protectionItemHrid, 0) : null,
+                enhancingMaxLevel: ctx.targetLevel,
+                protectionMinLevel: ctx.protectFromLevel || 0,
+                hasMaxCount: ctx.repeatCount !== null && ctx.repeatCount !== undefined,
+                maxActionCount: ctx.repeatCount ?? 0,
+                maxActionCountInput: ctx.repeatCount == null ? '∞' : String(ctx.repeatCount),
+                selectedCharacterLoadoutId: 0,
+            });
+        if (!restore?.primaryItemHash) {
+            console.error('[MissingMats] Enhancing Return could not derive the selected item hash');
+            if (capturedSessionId !== null) marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+            return;
+        }
+
+        // Use the game's own item-navigation flow. handleEnhanceItem sets the internal
+        // Enhancing override and the freshly mounted action component consumes it via
+        // selectEnhancingItemHandler. Directly committing the whole state before this
+        // native override settled was being reset by componentDidUpdate/getInitState.
+        if (typeof game.handleEnhanceItem === 'function') {
+            game.handleEnhanceItem(restore.primaryItemHash);
+        } else if (typeof game.handleGoToNavTarget === 'function') {
+            game.handleGoToNavTarget('enhancing');
+        } else {
+            console.error('[MissingMats] Enhancing Return could not navigate back');
+            if (capturedSessionId !== null) marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+            return;
+        }
+
+        let restoredComponent = null;
+        for (let attempt = 0; attempt < 120; attempt++) {
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            if (shouldAbortEnhancingReturn(returnGeneration, capturedSessionId)) return;
+
+            const panels = Array.from(document.querySelectorAll('[class*="SkillActionDetail_enhancingComponent"]')).filter(
+                (panel) => panel.isConnected && isElementActuallyVisible(panel)
+            );
+            if (panels.length !== 1) continue;
+
+            const component = getEnhancingActionComponent(panels[0]);
+            if (!component) continue;
+
+            // The native GamePage override is transient. If the first render missed it,
+            // invoke the component's own selector once the exact component is available.
+            if (component.state?.primaryItemHash !== restore.primaryItemHash) {
+                try {
+                    component.selectEnhancingItemHandler(restore.primaryItemHash);
+                } catch (error) {
+                    console.error('[MissingMats] Enhancing primary-item restore failed:', error);
+                }
+                continue;
+            }
+
+            restoredComponent = component;
+            break;
+        }
+
+        if (!restoredComponent) {
+            console.error('[MissingMats] Enhancing Return could not restore the selected item');
+            if (capturedSessionId !== null) marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+            return;
+        }
+
+        const component = restoredComponent;
+        if (shouldAbortEnhancingReturn(returnGeneration, capturedSessionId)) return;
+
+        try {
+            // Restore protection only after the primary item is stable, because the native
+            // selector validates and may clear protection whenever the primary item changes.
+            if (restore.secondaryItemHash) {
+                component.selectProtectionItemHandler(restore.secondaryItemHash);
+                for (let i = 0; i < 40; i++) {
+                    if ((component.state?.secondaryItemHash ?? null) === restore.secondaryItemHash) break;
+                    await new Promise((resolve) => setTimeout(resolve, 25));
+                    if (shouldAbortEnhancingReturn(returnGeneration, capturedSessionId)) return;
+                }
+            } else if (typeof component.removeProtectionItemHandler === 'function') {
+                component.removeProtectionItemHandler();
+            }
+
+            component.enhancingMaxLevelChanged({ target: { value: String(restore.enhancingMaxLevel) } });
+            component.protectionMinLevelChanged({
+                target: { value: String(restore.secondaryItemHash ? restore.protectionMinLevel || 0 : 0) },
+            });
+
+            if (restore.hasMaxCount) {
+                component.maxActionCountChanged({
+                    target: { value: String(restore.maxActionCountInput ?? restore.maxActionCount ?? 1) },
+                });
+            } else {
+                component.unlimitedActionCountClicked();
+            }
+
+            component.loadoutSelected({ target: { value: restore.selectedCharacterLoadoutId ?? 0 } });
+
+            // Wait for the native handlers' setState calls and verify every captured field.
+            for (let attempt = 0; attempt < 80; attempt++) {
+                await new Promise((resolve) => setTimeout(resolve, 25));
+                if (shouldAbortEnhancingReturn(returnGeneration, capturedSessionId)) return;
+                const state = component.state || {};
+                const restored =
+                    state.primaryItemHash === restore.primaryItemHash &&
+                    (state.secondaryItemHash ?? null) === (restore.secondaryItemHash ?? null) &&
+                    Number(state.enhancingMaxLevel) === Number(restore.enhancingMaxLevel) &&
+                    Number(state.protectionMinLevel || 0) ===
+                        Number(restore.secondaryItemHash ? restore.protectionMinLevel || 0 : 0) &&
+                    Boolean(state.hasMaxCount) === Boolean(restore.hasMaxCount) &&
+                    (!restore.hasMaxCount || Number(state.maxActionCount) === Number(restore.maxActionCount || 0)) &&
+                    String(state.selectedCharacterLoadoutId ?? 0) === String(restore.selectedCharacterLoadoutId ?? 0);
+
+                if (restored) {
+                    if (capturedSessionId !== null) marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+                    return;
                 }
             }
+        } catch (error) {
+            console.error('[MissingMats] Enhancing native restore failed:', error);
         }
+
+        console.error('[MissingMats] Enhancing Return could not restore all captured controls');
+        if (capturedSessionId !== null) marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+    }
+
+    /**
+     * Set up (or re-establish) the marketplace cleanup observer for the ACTIONS owner.
+     * Safe to call multiple times — stops any existing observer before creating a new one.
+     */
+    function setupActionsCleanupObserver() {
+        if (cleanupObserver$1) {
+            cleanupObserver$1();
+            cleanupObserver$1 = null;
+        }
+        cleanupObserver$1 = setupMarketplaceCleanupObserver({
+            owner: marketplaceSession_js.MARKETPLACE_OWNER.ACTIONS,
+            invalidStateGraceMs: MARKETPLACE_REMOUNT_GRACE_MS,
+            onTabsGone: () => {
+                const capturedSessionId = activeWorkflowModel$1?.sessionId ?? null;
+                if (capturedSessionId !== null && !marketplaceSession_js.marketplaceSession.isActive(capturedSessionId)) return;
+                const tabContainer = getVisibleMarketplaceTabContainer();
+                if (
+                    tabContainer &&
+                    isMarketplaceMarketListingsSelected(tabContainer) &&
+                    reinjectActionsMarketplaceTabs(tabContainer)
+                ) {
+                    return;
+                }
+                if (capturedSessionId !== null) marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+            },
+        });
+    }
+
+    /**
+     * Idempotent teardown for the ACTIONS marketplace session.
+     * Cleans up tabs, inventory listener, cleanup observer, autofill session, and workflow model.
+     * Does NOT touch storedActionHrid / storedNumActions / storedEnhancementContext (Return context).
+     */
+    function teardownActionsMarketplaceSession() {
+        removeMaterialTabsForOwner(marketplaceSession_js.MARKETPLACE_OWNER.ACTIONS);
+
+        if (inventoryUpdateHandler$1) {
+            dataManager.off('items_updated', inventoryUpdateHandler$1);
+            inventoryUpdateHandler$1 = null;
+        }
+
+        if (cleanupObserver$1) {
+            cleanupObserver$1();
+            cleanupObserver$1 = null;
+        }
+
+        if (nativeTabExitCleanup$1) {
+            nativeTabExitCleanup$1();
+            nativeTabExitCleanup$1 = null;
+        }
+
+        const sessionIdToExit = actionsSessionId ?? activeWorkflowModel$1?.sessionId ?? null;
+        autofillManager$1.exitSession(sessionIdToExit);
+
+        actionsSessionId = null;
+        activeWorkflowModel$1 = null;
+    }
+
+    /**
+     * Rebuild ACTIONS marketplace tabs from the current activeWorkflowModel.
+     * Called when the cleanup observer detects that our tabs disappeared but the
+     * marketplace panel is still visible (e.g. a React re-render wiped them).
+     * @param {HTMLElement} tabContainer
+     */
+    function reinjectActionsMarketplaceTabs(tabContainer) {
+        const model = activeWorkflowModel$1;
+        if (!model || !marketplaceSession_js.marketplaceSession.isActive(model.sessionId)) return false;
+        const strategyInfo = model.returnContext?.enhancementContext?.strategyInfo ?? null;
+        return createMissingMaterialTabs(model.materials, strategyInfo, model.sessionId, tabContainer);
     }
 
     /**
      * Create custom tabs for missing materials
      * @param {Array} missingMaterials - Array of missing material objects
      * @param {Object|null} strategyInfo - Auto-calculated protection strategy info
+     * @param {number} sessionId - The marketplaceSession token for this workflow
      */
-    function createMissingMaterialTabs(missingMaterials, strategyInfo = null) {
-        const tabsContainer = document.querySelector('.MuiTabs-flexContainer[role="tablist"]');
-
-        if (!tabsContainer) {
-            console.error('[MissingMats] Tabs container not found');
-            return;
+    function createMissingMaterialTabs(missingMaterials, strategyInfo = null, sessionId = null, tabContainer = null) {
+        const tabsContainer = tabContainer || getVisibleMarketplaceTabContainer();
+        if (!tabsContainer || !marketplaceSession_js.marketplaceSession.isActive(sessionId)) {
+            console.error('[MissingMats] Visible Marketplace tabs container not found');
+            return false;
         }
 
-        // Remove any existing custom tabs first (preserve stored context — we're recreating, not leaving)
-        removeMaterialTabs();
-        currentMaterialsTabs.length = 0;
+        removeMaterialTabsForOwner(marketplaceSession_js.MARKETPLACE_OWNER.ACTIONS);
 
-        // Get reference tab for cloning (use "My Listings" as template)
         const referenceTab = Array.from(tabsContainer.children).find((btn) => btn.textContent.includes('My Listings'));
-
         if (!referenceTab) {
             console.error('[MissingMats] Reference tab not found');
-            return;
+            return false;
         }
 
-        // Enable flex wrapping for multiple rows (like game's native tabs)
-        if (tabsContainer) {
-            tabsContainer.style.flexWrap = 'wrap';
-        }
+        tabsContainer.style.flexWrap = 'wrap';
 
-        // Use event delegation on tabs container to clear quantity when regular tabs are clicked
-        // This avoids memory leaks from adding listeners to each tab repeatedly
-        if (!tabsContainer.hasAttribute('data-mwi-delegated-listener')) {
-            tabsContainer.setAttribute('data-mwi-delegated-listener', 'true');
-            tabsContainer.addEventListener('click', (e) => {
-                // Check if clicked element is a regular tab (not our custom tab)
-                const clickedTab = e.target.closest('button');
-                if (clickedTab && !clickedTab.hasAttribute('data-mwi-custom-tab')) {
-                    autofillManager$1.clearQuantity();
-                }
-            });
-        }
+        nativeTabExitCleanup$1?.();
+        nativeTabExitCleanup$1 = watchNativeTabExit(tabsContainer, () => {
+            marketplaceSession_js.marketplaceSession.end(sessionId);
+        });
 
-        // Create tab for each missing material
-        currentMaterialsTabs.length = 0; // Clear without reassigning (preserves observer reference)
-
-        // Add strategy indicator if auto-calculated
         if (strategyInfo) {
             const indicator = createStrategyIndicator(strategyInfo);
+            indicator.setAttribute('data-mwi-tab-owner', marketplaceSession_js.MARKETPLACE_OWNER.ACTIONS);
             tabsContainer.appendChild(indicator);
-            currentMaterialsTabs.push(indicator);
         }
 
         for (const material of missingMaterials) {
             const tabRef = { tab: null };
-            const handler = makeMaterialClickHandler(tabRef);
-            const tab = createMaterialTab(material, referenceTab, handler);
+            const handler = makeMaterialClickHandler(tabRef, sessionId);
+            const tab = createMaterialTab(material, referenceTab, handler, marketplaceSession_js.MARKETPLACE_OWNER.ACTIONS);
             tabRef.tab = tab;
             tabsContainer.appendChild(tab);
-            currentMaterialsTabs.push(tab);
         }
 
-        // Add "Return to Action" tab at the end
-        const returnTab = createReturnTab(referenceTab);
+        const returnContext = activeWorkflowModel$1?.returnContext ?? null;
+        const returnTab = createReturnTab(referenceTab, returnContext);
         if (returnTab) {
             tabsContainer.appendChild(returnTab);
-            currentMaterialsTabs.push(returnTab);
         }
+
+        return true;
     }
 
     /**
      * Setup inventory listener for live tab updates
-     * Listens for inventory changes via websocket and updates tabs accordingly
+     * Listens for inventory changes via dataManager and updates tabs accordingly
      */
     function setupInventoryListener() {
         // Remove existing listener if any
-        if (inventoryUpdateHandler) {
-            webSocketHook.off('*', inventoryUpdateHandler);
+        if (inventoryUpdateHandler$1) {
+            dataManager.off('items_updated', inventoryUpdateHandler$1);
         }
 
         // Create new listener that watches for inventory-related messages
-        inventoryUpdateHandler = (data) => {
-            // Check if this message might affect inventory
-            // Common message types that update inventory:
-            // - item_added, item_removed, items_updated
-            // - market_buy_complete, market_sell_complete
-            // - Or any message with inventory field
-            if (
-                data.type?.includes('item') ||
-                data.type?.includes('inventory') ||
-                data.type?.includes('market') ||
-                data.inventory ||
-                data.characterItems
-            ) {
-                updateTabsOnInventoryChange();
-            }
+        inventoryUpdateHandler$1 = () => {
+            updateTabsOnInventoryChange();
         };
 
-        webSocketHook.on('*', inventoryUpdateHandler);
+        dataManager.on('items_updated', inventoryUpdateHandler$1);
     }
 
     /**
@@ -15228,16 +16626,11 @@
      * Recalculates materials and updates badge display
      */
     function updateTabsOnInventoryChange() {
-        // Check if tabs still exist
-        if (currentMaterialsTabs.length === 0) {
-            return;
-        }
-
         let updatedMaterials;
 
-        if (storedEnhancementContext) {
+        if (activeWorkflowModel$1?.returnContext?.enhancementContext) {
             // Enhancement mode
-            const ctx = storedEnhancementContext;
+            const ctx = activeWorkflowModel$1.returnContext.enhancementContext;
             updatedMaterials = materialCalculator_js.calculateEnhancementMaterialRequirements(
                 ctx.itemHrid,
                 ctx.startLevel,
@@ -15246,84 +16639,37 @@
                 ctx.protectFromLevel,
                 ctx.repeatCount
             );
-        } else if (storedActionHrid && storedNumActions > 0) {
+        } else if (activeWorkflowModel$1?.returnContext?.actionHrid && activeWorkflowModel$1.returnContext.numActions > 0) {
             // Production mode
             const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
             const accountForQueue = !ignoreQueue;
-            updatedMaterials = materialCalculator_js.calculateMaterialRequirements(storedActionHrid, storedNumActions, accountForQueue);
+            updatedMaterials = materialCalculator_js.calculateMaterialRequirements(
+                activeWorkflowModel$1.returnContext.actionHrid,
+                activeWorkflowModel$1.returnContext.numActions,
+                accountForQueue
+            );
         } else {
             return;
         }
 
-        // Update each existing tab
-        currentMaterialsTabs.forEach((tab) => {
-            const itemHrid = tab.getAttribute('data-item-hrid');
-            const material = updatedMaterials.find((m) => m.itemHrid === itemHrid);
-
-            if (material) {
-                updateTabBadge(tab, material);
-            }
-        });
-    }
-
-    /**
-     * Update a single tab's badge with new material data
-     * @param {HTMLElement} tab - Tab element to update
-     * @param {Object} material - Material object with updated counts
-     */
-    function updateTabBadge(tab, material) {
-        const badgeSpan = tab.querySelector('[class*="TabsComponent_badge"]');
-        if (!badgeSpan) {
-            return;
+        if (!activeWorkflowModel$1) return;
+        const updatedByHrid = new Map(updatedMaterials.map((material) => [material.itemHrid, material]));
+        for (const modelEntry of activeWorkflowModel$1.materials) {
+            const updated = updatedByHrid.get(modelEntry.itemHrid);
+            if (updated) Object.assign(modelEntry, updated);
+            else modelEntry.missing = 0;
         }
 
-        // Color coding:
-        // - Red: Missing materials (missing > 0)
-        // - Green: Sufficient materials (missing = 0)
-        // - Gray: Not tradeable
-        let statusColor;
-        let statusText;
-
-        if (!material.isTradeable) {
-            statusColor = '#888888'; // Gray - not tradeable
-            statusText = 'Not Tradeable';
-        } else if (material.missing > 0) {
-            statusColor = '#ef4444'; // Red - missing materials
-            // Show queued amount if any materials are reserved by queue
-            const queuedText = material.queued > 0 ? ` (${formatters_js.formatWithSeparator(material.queued)} Q'd)` : '';
-            statusText = `Missing: ${formatters_js.formatWithSeparator(material.missing)}${queuedText}`;
-        } else {
-            statusColor = '#4ade80'; // Green - sufficient materials
-            statusText = `Sufficient (${formatters_js.formatWithSeparator(material.required)})`;
-        }
-
-        // Title case: capitalize first letter of each word
-        const titleCaseName = material.itemName
-            .split(' ')
-            .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-            .join(' ');
-
-        // Update badge HTML
-        badgeSpan.innerHTML = `
-        <div style="text-align: center;">
-            <div>${titleCaseName}</div>
-            <div style="font-size: 0.75em; color: ${statusColor};">
-                ${statusText}
-            </div>
-        </div>
-    `;
-
-        // Keep data-missing-quantity in sync so the click handler autofills the current amount
-        tab.setAttribute('data-missing-quantity', material.missing.toString());
-
-        // Update tab styling based on state
-        if (!material.isTradeable) {
-            tab.style.opacity = '0.5';
-            tab.style.cursor = 'not-allowed';
-        } else {
-            tab.style.opacity = '1';
-            tab.style.cursor = 'pointer';
-            tab.title = '';
+        const connectedTabs = Array.from(
+            document.querySelectorAll(
+                `[data-mwi-custom-tab][data-mwi-tab-owner="${marketplaceSession_js.MARKETPLACE_OWNER.ACTIONS}"][data-item-hrid]`
+            )
+        );
+        for (const tab of connectedTabs) {
+            const material = activeWorkflowModel$1.materials.find(
+                (entry) => entry.itemHrid === tab.getAttribute('data-item-hrid')
+            );
+            if (material) updateTabBadge(tab, material);
         }
     }
 
@@ -15332,20 +16678,12 @@
      * Called by the marketplace cleanup observer
      */
     function handleMarketplaceCleanup() {
-        removeMaterialTabs();
-        currentMaterialsTabs.length = 0; // Clear without reassigning (preserves observer reference)
-
-        // Clean up inventory listener
-        if (inventoryUpdateHandler) {
-            webSocketHook.off('*', inventoryUpdateHandler);
-            inventoryUpdateHandler = null;
+        const sessionId = actionsSessionId ?? activeWorkflowModel$1?.sessionId ?? null;
+        if (sessionId !== null && marketplaceSession_js.marketplaceSession.isActive(sessionId)) {
+            marketplaceSession_js.marketplaceSession.end(sessionId);
+            return;
         }
-
-        // Clear stored context — only when genuinely leaving the marketplace
-        storedActionHrid = null;
-        storedNumActions = 0;
-        storedEnhancementContext = null;
-        autofillManager$1.clearQuantity();
+        teardownActionsMarketplaceSession();
     }
 
     var missingMaterialsButton = {
@@ -15671,20 +17009,19 @@
             const ui = this._createUI(panel);
 
             const position = () => {
-                const existing = panel.querySelector(`#${UI_ID$2}`);
-                const missingMatsBtn = panel.querySelector('#mwi-missing-mats-button');
-                const itemRequirements = panel.querySelector('[class*="SkillActionDetail_itemRequirements"]');
-                const anchor = missingMatsBtn || itemRequirements;
-                if (!anchor) return;
-
-                if (existing) {
-                    // Already present — ensure it's right after anchor
-                    if (existing.previousSibling !== anchor) {
-                        anchor.parentNode.insertBefore(existing, anchor.nextSibling);
-                    }
-                } else {
-                    anchor.parentNode.insertBefore(ui, anchor.nextSibling);
+                const existing = panel.querySelector(`#${UI_ID$2}`) || ui;
+                const toolsBlock = getOrCreateProductionToolsBlock(panel);
+                if (toolsBlock) {
+                    existing.style.order = '3';
+                    if (existing.parentElement !== toolsBlock) toolsBlock.appendChild(existing);
+                    normalizeProductionToolsBlock(panel);
+                    return;
                 }
+
+                const missingMatsButton = panel.querySelector('#mwi-missing-mats-button');
+                const itemRequirements = panel.querySelector('[class*="SkillActionDetail_itemRequirements"]');
+                const anchor = missingMatsButton || itemRequirements;
+                if (anchor?.parentElement && existing.parentElement !== anchor.parentElement) anchor.after(existing);
             };
 
             position();
@@ -15692,11 +17029,13 @@
             // Re-position whenever the panel's children change (e.g. missing mats button recreated)
             const obs = new MutationObserver((mutations) => {
                 const relevant = mutations.some((m) =>
-                    [...m.addedNodes, ...m.removedNodes].some((n) => n.id === 'mwi-missing-mats-button' || n.id === UI_ID$2)
+                    [...m.addedNodes, ...m.removedNodes].some(
+                        (n) => n.id === 'mwi-missing-mats-button' || n.id === UI_ID$2 || n.id === 'mwi-production-tools-block'
+                    )
                 );
                 if (relevant) position();
             });
-            obs.observe(panel, { childList: true, subtree: false });
+            obs.observe(panel, { childList: true, subtree: true });
             this.panelObservers.set(panel, obs);
         }
 
@@ -16225,13 +17564,6 @@
         '/action_types/tailoring',
     ];
 
-    const PRICING_MODE_LABELS = {
-        conservative: 'Buy: Ask / Sell: Bid',
-        hybrid: 'Buy: Ask / Sell: Ask',
-        optimistic: 'Buy: Bid / Sell: Ask',
-        patientBuy: 'Buy: Bid / Sell: Bid',
-    };
-
     let domObserverUnregister = null;
     let processedPanels = new WeakSet();
 
@@ -16301,19 +17633,19 @@
     }
 
     function insertBlock(panel, block) {
-        const budgetCalc = panel.querySelector('#mwi-budget-calculator');
-        const missingMatsBtn = panel.querySelector('#mwi-missing-mats-button');
-        const itemRequirements = panel.querySelector('[class*="SkillActionDetail_itemRequirements"]');
-
-        if (budgetCalc) {
-            budgetCalc.parentNode.insertBefore(block, budgetCalc);
-        } else if (missingMatsBtn) {
-            missingMatsBtn.parentNode.insertBefore(block, missingMatsBtn.nextSibling);
-        } else if (itemRequirements) {
-            itemRequirements.parentNode.insertBefore(block, itemRequirements.nextSibling);
-        } else {
-            panel.appendChild(block);
+        const toolsBlock = getOrCreateProductionToolsBlock(panel);
+        if (toolsBlock) {
+            block.style.order = '2';
+            toolsBlock.appendChild(block);
+            normalizeProductionToolsBlock(panel);
+            return;
         }
+
+        const missingMatsButton = panel.querySelector('#mwi-missing-mats-button');
+        const itemRequirements = panel.querySelector('[class*="SkillActionDetail_itemRequirements"]');
+        if (missingMatsButton?.parentElement) missingMatsButton.after(block);
+        else if (itemRequirements?.parentElement) itemRequirements.after(block);
+        else panel.appendChild(block);
     }
 
     function buildBlock(actionHrid, numActions, outputHrid, outputCount) {
@@ -16325,8 +17657,13 @@
         let missingComplete = true;
 
         for (const mat of materials) {
-            if (!mat.isTradeable) continue;
-            const unitPrice = marketData_js.getItemPrice(mat.itemHrid, { context: 'profit', side: 'buy' });
+            let unitPrice = null;
+            if (mat.itemHrid === '/items/coin') {
+                unitPrice = 1;
+            } else if (mat.isTradeable) {
+                unitPrice = marketData_js.getItemPrice(mat.itemHrid, { mode: 'ask', side: 'buy' });
+            }
+
             if (unitPrice === null) {
                 if (mat.required > 0) directComplete = false;
                 if (mat.missing > 0) missingComplete = false;
@@ -16339,8 +17676,7 @@
         let planCost = null;
         if (outputHrid) {
             try {
-                const pricingMode = config.getSetting('profitCalc_pricingMode') || 'hybrid';
-                const plan = computeBestCraftingPlan(outputHrid, outputCount, pricingMode);
+                const plan = computeBestCraftingPlan(outputHrid, outputCount, 'ask');
                 if (plan && plan.totalCost !== Infinity && plan.totalCost !== null) {
                     planCost = plan.totalCost;
                 }
@@ -16351,32 +17687,28 @@
 
         let marketCost = null;
         if (outputHrid) {
-            const unitSellPrice = marketData_js.getItemPrice(outputHrid, { context: 'profit', side: 'sell' });
+            const unitSellPrice = marketData_js.getItemPrice(outputHrid, { mode: 'ask', side: 'buy' });
             if (unitSellPrice !== null) {
                 marketCost = unitSellPrice * outputCount;
             }
         }
 
-        const pricingMode = config.getSetting('profitCalc_pricingMode') || 'hybrid';
-        const pricingLabel = PRICING_MODE_LABELS[pricingMode] || pricingMode;
-
         return renderBlock({
-            directCost,
+            directCost: directComplete || directCost > 0 ? directCost : null,
             directComplete,
-            missingCost,
+            missingCost: missingComplete || missingCost > 0 ? missingCost : null,
             missingComplete,
             planCost,
             marketCost,
-            pricingLabel,
         });
     }
 
-    function renderBlock({ directCost, directComplete, missingCost, missingComplete, planCost, marketCost, pricingLabel }) {
+    function renderBlock({ directCost, directComplete, missingCost, missingComplete, planCost, marketCost }) {
         const container = document.createElement('div');
         container.id = UI_ID$1;
         container.style.cssText = `
-        margin: 8px 0 16px 0;
-        padding: 10px 14px;
+        margin: 0;
+        padding: 8px 14px;
         background: linear-gradient(180deg, rgba(91, 141, 239, 0.12) 0%, rgba(91, 141, 239, 0.05) 100%);
         border: 1px solid rgba(91, 141, 239, 0.3);
         border-radius: 8px;
@@ -16401,17 +17733,6 @@
         container.appendChild(renderLine('Best crafting plan', planCost));
         container.appendChild(renderLine('Finished item market', marketCost));
 
-        const footer = document.createElement('div');
-        footer.textContent = `Pricing: ${pricingLabel}`;
-        footer.style.cssText = `
-        margin-top: 6px;
-        padding-top: 6px;
-        border-top: 1px solid rgba(91, 141, 239, 0.2);
-        font-size: 11px;
-        color: #94a3b8;
-    `;
-        container.appendChild(footer);
-
         return container;
     }
 
@@ -16427,7 +17748,7 @@
         labelEl.textContent = label;
         labelEl.style.color = '#cbd5e1';
         const valueEl = document.createElement('span');
-        if (value === null || value === undefined || value === 0) {
+        if (value === null || value === undefined) {
             valueEl.textContent = '—';
             valueEl.style.color = '#64748b';
         } else {
@@ -16463,9 +17784,12 @@
         { value: 'optimistic', label: 'Patient Buy / Patient Sell' },
         { value: 'patientBuy', label: 'Patient Buy' },
     ];
-    const craftingPlanTabs = [];
     let cleanupObserver = null;
+    let nativeTabExitCleanup = null;
     const autofillManager = createAutofillManager('CraftingPlan');
+    let activeWorkflowModel = null;
+    let craftingPlanSessionId = null;
+    let inventoryUpdateHandler = null;
 
     const PRODUCTION_TYPES$1 = [
         '/action_types/brewing',
@@ -16506,7 +17830,7 @@
      * @returns {string}
      */
     function getPricingMode() {
-        return config.getSetting('profitCalc_pricingMode') || 'ask';
+        return config.getSettingValue('profitCalc_pricingMode', 'hybrid');
     }
 
     /**
@@ -16612,7 +17936,7 @@
         const noProcessing = config.getSetting('actionPanel_craftingPlanNoProcessing');
         const taskMode = config.getSetting('actionPanel_craftingPlanTaskMode');
         const timeCostEnabled = config.getSetting('actionPanel_craftingPlanTimeCost');
-        const goldPerHour = config.getSetting('actionPanel_craftingPlanGoldPerHour') || 0;
+        const goldPerHour = Number(config.getSettingValue('actionPanel_craftingPlanGoldPerHour', 0)) || 0;
         let plan;
         try {
             plan = computeBestCraftingPlan(
@@ -16686,7 +18010,7 @@
         pricingBtn.addEventListener('click', () => {
             const idx = PRICING_MODES.findIndex((m) => m.value === mode);
             const next = PRICING_MODES[(idx + 1) % PRICING_MODES.length];
-            config.setSetting('profitCalc_pricingMode', next.value);
+            config.setSettingValue('profitCalc_pricingMode', next.value);
             if (onToggle) onToggle();
         });
         pricingRow.appendChild(pricingLabel);
@@ -16802,7 +18126,7 @@
             if (onToggle) onToggle();
         });
         goldInput.addEventListener('change', () => {
-            config.setSetting('actionPanel_craftingPlanGoldPerHour', parseInt(goldInput.value) || 0);
+            config.setSettingValue('actionPanel_craftingPlanGoldPerHour', parseInt(goldInput.value) || 0);
             if (onToggle) onToggle();
         });
 
@@ -16816,7 +18140,7 @@
             const section = uiComponents_js.createCollapsibleSection('', 'Best Crafting Plan', costText, content, defaultOpen, 0);
             section.id = UI_ID;
             section.className = 'mwi-crafting-plan-section';
-            return section;
+            return compactActionPanelSection(section);
         }
 
         // === Shopping List (what to buy) ===
@@ -16859,6 +18183,7 @@
 
             // === Buy Missing Materials button ===
             const buyButton = document.createElement('button');
+            buyButton.type = 'button';
             buyButton.textContent = 'Buy Missing Materials';
             buyButton.style.cssText = `
             width: 100%; margin-top: 6px; padding: 6px;
@@ -16867,58 +18192,139 @@
             color: white; cursor: pointer; font-size: 0.85em;
         `;
             buyButton.addEventListener('click', async () => {
-                const panel = buyButton.closest('[class*="SkillActionDetail_skillActionDetail"]');
-                const inputField = actionPanelHelper_js.findActionInput(panel);
-                const numActions = parseInt(inputField?.value) || 1;
-                const outputCount = output.count || 1;
-                const totalQty = numActions * outputCount;
-                const inventory = dataManager.getInventory() || [];
+                let capturedSessionId = null;
+                try {
+                    const panel = buyButton.closest('[class*="SkillActionDetail_skillActionDetail"]');
+                    const inputField = actionPanelHelper_js.findActionInput(panel);
+                    const numActions = parseInt(inputField?.value) || 1;
+                    const outputCount = output.count || 1;
+                    const totalQty = numActions * outputCount;
+                    const inventory = dataManager.getInventory() || [];
 
-                const missingMaterials = [];
-                for (const [itemHrid, item] of buyItems) {
-                    const needed = Math.ceil(item.quantity * totalQty);
-                    const have = inventory
-                        .filter((i) => i.itemHrid === itemHrid && !i.enhancementLevel)
-                        .reduce((sum, i) => sum + (i.count || 0), 0);
-                    const missing = Math.max(0, needed - have);
-                    const itemDetails = dataManager.getItemDetails(itemHrid);
-                    const isTradeable = itemDetails?.isTradable !== false;
-                    if (missing > 0 && isTradeable) {
-                        missingMaterials.push({
-                            itemHrid,
-                            itemName: item.itemName,
-                            missing,
-                            required: needed,
-                            isTradeable,
-                        });
+                    const missingMaterials = [];
+                    for (const [itemHrid, item] of buyItems) {
+                        const needed = Math.ceil(item.quantity * totalQty);
+                        const have = inventory
+                            .filter(
+                                (inventoryItem) =>
+                                    inventoryItem.itemHrid === itemHrid &&
+                                    inventoryItem.itemLocationHrid === '/item_locations/inventory' &&
+                                    !inventoryItem.enhancementLevel
+                            )
+                            .reduce((sum, i) => sum + (i.count || 0), 0);
+                        const missing = Math.max(0, needed - have);
+                        const itemDetails = dataManager.getItemDetails(itemHrid);
+                        const isTradeable = itemDetails?.isTradable === true;
+                        if (missing > 0 && isTradeable) {
+                            missingMaterials.push({
+                                itemHrid,
+                                itemName: item.itemName,
+                                missing,
+                                required: needed,
+                                isTradeable,
+                            });
+                        }
                     }
-                }
 
-                if (missingMaterials.length === 0) return;
+                    if (missingMaterials.length === 0) return;
 
-                // Navigate to marketplace via navbar click
-                const navButtons = document.querySelectorAll('.NavigationBar_nav__3uuUl');
-                const marketplaceButton = Array.from(navButtons).find((nav) => {
-                    const svg = nav.querySelector('svg[aria-label="navigationBar.marketplace"]');
-                    return svg !== null;
-                });
-                if (!marketplaceButton) return;
-                marketplaceButton.click();
+                    // Claim session before the first await.
+                    capturedSessionId = marketplaceSession_js.marketplaceSession.start({
+                        owner: marketplaceSession_js.MARKETPLACE_OWNER.CRAFTING_PLAN,
+                        onEnd: teardownCraftingPlanMarketplaceSession,
+                    });
+                    craftingPlanSessionId = capturedSessionId;
 
-                // Wait for marketplace to appear
-                for (let i = 0; i < 50; i++) {
-                    const tabsContainer = document.querySelector('.MuiTabs-flexContainer[role="tablist"]');
-                    if (tabsContainer) {
-                        const hasMarketListings = Array.from(tabsContainer.children).some((btn) =>
-                            btn.textContent.includes('Market Listings')
+                    const success = await openCraftingPlanMarketplace(capturedSessionId);
+                    if (!success) {
+                        marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+                        return;
+                    }
+                    if (!marketplaceSession_js.marketplaceSession.isActive(capturedSessionId)) return;
+
+                    activeWorkflowModel = {
+                        sessionId: capturedSessionId,
+                        materials: missingMaterials.map((material) => ({ ...material })),
+                        returnContext: { actionHrid, numActions },
+                    };
+                    autofillManager.startSession({ sessionId: capturedSessionId });
+
+                    await new Promise((resolve) => setTimeout(resolve, 200));
+                    if (!marketplaceSession_js.marketplaceSession.isActive(capturedSessionId)) return;
+                    if (!createCraftingPlanTabs(activeWorkflowModel.materials, null, capturedSessionId)) {
+                        marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+                        return;
+                    }
+
+                    const firstMaterial = activeWorkflowModel.materials.find(
+                        (material) => material.isTradeable !== false && material.missing > 0
+                    );
+                    if (!firstMaterial) {
+                        marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+                        return;
+                    }
+
+                    const armed = autofillManager.arm({
+                        sessionId: capturedSessionId,
+                        itemHrid: firstMaterial.itemHrid,
+                        enhancementLevel: 0,
+                        modalMode: 'buy',
+                        quantityProvider: () => {
+                            const model = activeWorkflowModel;
+                            if (model?.sessionId !== capturedSessionId) return 0;
+                            return model.materials.find((entry) => entry.itemHrid === firstMaterial.itemHrid)?.missing ?? 0;
+                        },
+                    });
+                    if (!armed) {
+                        marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+                        return;
+                    }
+                    if (!navigateToMarketplace(firstMaterial.itemHrid, 0)) {
+                        marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+                        return;
+                    }
+
+                    if (inventoryUpdateHandler) dataManager.off('items_updated', inventoryUpdateHandler);
+                    inventoryUpdateHandler = () => {
+                        const model = activeWorkflowModel;
+                        if (
+                            !model ||
+                            model.sessionId !== capturedSessionId ||
+                            !marketplaceSession_js.marketplaceSession.isActive(capturedSessionId)
+                        ) {
+                            return;
+                        }
+
+                        const currentInventory = dataManager.getInventory() || [];
+                        for (const material of model.materials) {
+                            const have = currentInventory
+                                .filter(
+                                    (inventoryItem) =>
+                                        inventoryItem.itemHrid === material.itemHrid &&
+                                        inventoryItem.itemLocationHrid === '/item_locations/inventory' &&
+                                        !inventoryItem.enhancementLevel
+                                )
+                                .reduce((sum, item) => sum + (item.count || 0), 0);
+                            material.missing = Math.max(0, material.required - have);
+                        }
+
+                        const connectedTabs = document.querySelectorAll(
+                            `[data-mwi-custom-tab][data-mwi-tab-owner="${marketplaceSession_js.MARKETPLACE_OWNER.CRAFTING_PLAN}"][data-item-hrid]`
                         );
-                        if (hasMarketListings) break;
+                        for (const tab of connectedTabs) {
+                            const material = model.materials.find(
+                                (entry) => entry.itemHrid === tab.getAttribute('data-item-hrid')
+                            );
+                            if (material) updateTabBadge(tab, material);
+                        }
+                    };
+                    dataManager.on('items_updated', inventoryUpdateHandler);
+                } catch (error) {
+                    console.error('[CraftingPlan] Missing-materials workflow failed:', error);
+                    if (capturedSessionId !== null && marketplaceSession_js.marketplaceSession.isActive(capturedSessionId)) {
+                        marketplaceSession_js.marketplaceSession.end(capturedSessionId);
                     }
-                    await new Promise((resolve) => setTimeout(resolve, 100));
                 }
-
-                await new Promise((resolve) => setTimeout(resolve, 200));
-                createCraftingPlanTabs(missingMaterials);
             });
             content.appendChild(buyButton);
         }
@@ -17003,45 +18409,179 @@
         const section = uiComponents_js.createCollapsibleSection('', 'Best Crafting Plan', costText, content, defaultOpen, 0);
         section.id = UI_ID;
         section.className = 'mwi-crafting-plan-section';
+        compactActionPanelSection(section);
 
         return section;
     }
 
     /**
-     * Create marketplace tabs for crafting plan shopping list materials.
-     * @param {Array} missingMaterials - Array of { itemHrid, itemName, missing, required, isTradeable }
+     * Navigate to the marketplace and wait for the tablist to appear.
+     * @returns {Promise<boolean>} True if navigation succeeded
      */
-    function createCraftingPlanTabs(missingMaterials) {
-        const tabsContainer = document.querySelector('.MuiTabs-flexContainer[role="tablist"]');
-        if (!tabsContainer) return;
+    async function openCraftingPlanMarketplace(sessionId) {
+        if (!marketplaceSession_js.marketplaceSession.isActive(sessionId) || !clickMarketplaceNavigationButton()) return false;
 
-        removeMaterialTabs();
-        craftingPlanTabs.length = 0;
+        for (let attempt = 0; attempt < 50; attempt += 1) {
+            if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) return false;
+            if (getVisibleMarketplaceTabContainer()) return true;
+            await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        return false;
+    }
 
-        const referenceTab = Array.from(tabsContainer.children).find((btn) => btn.textContent.includes('My Listings'));
-        if (!referenceTab) return;
+    /**
+     * Idempotent teardown for the crafting plan marketplace session.
+     */
+    function teardownCraftingPlanMarketplaceSession() {
+        const sessionId = craftingPlanSessionId ?? activeWorkflowModel?.sessionId ?? null;
+        removeMaterialTabsForOwner(marketplaceSession_js.MARKETPLACE_OWNER.CRAFTING_PLAN);
 
-        tabsContainer.style.flexWrap = 'wrap';
+        if (inventoryUpdateHandler) {
+            dataManager.off('items_updated', inventoryUpdateHandler);
+            inventoryUpdateHandler = null;
+        }
+        cleanupObserver?.();
+        cleanupObserver = null;
+        nativeTabExitCleanup?.();
+        nativeTabExitCleanup = null;
+
+        autofillManager.exitSession(sessionId);
+        craftingPlanSessionId = null;
+        activeWorkflowModel = null;
+    }
+
+    function getGameObject$1() {
+        const root = document.getElementById('root');
+        const rootFiber = root?._reactRootContainer?.current || root?._reactRootContainer?._internalRoot?.current;
+        if (!rootFiber) return null;
+
+        const stack = [rootFiber];
+        while (stack.length > 0) {
+            const fiber = stack.pop();
+            if (typeof fiber?.stateNode?.handleGoToAction === 'function') return fiber.stateNode;
+            if (fiber?.sibling) stack.push(fiber.sibling);
+            if (fiber?.child) stack.push(fiber.child);
+        }
+        return null;
+    }
+
+    function createCraftingPlanReturnTab(referenceTab, returnContext, sessionId) {
+        const actionDetail = dataManager.getActionDetails(returnContext.actionHrid);
+        const actionName = actionDetail?.name || returnContext.actionHrid.split('/').pop();
+        const displayName = `${actionName} (×${formatters_js.formatWithSeparator(returnContext.numActions)})`;
+
+        const tab = referenceTab.cloneNode(true);
+        tab.setAttribute('data-mwi-custom-tab', 'true');
+        tab.setAttribute('data-mwi-tab-owner', marketplaceSession_js.MARKETPLACE_OWNER.CRAFTING_PLAN);
+        // A custom tab must not duplicate the native tab/panel identity.
+        tab.removeAttribute('id');
+        tab.removeAttribute('aria-controls');
+        tab.removeAttribute('data-item-hrid');
+        tab.removeAttribute('data-missing-quantity');
+        tab.classList.remove('Mui-selected');
+        tab.setAttribute('aria-selected', 'false');
+        tab.setAttribute('tabindex', '-1');
+        tab.setAttribute('aria-disabled', 'false');
+        tab.style.cursor = 'pointer';
+        tab.style.opacity = '1';
+
+        const badge = tab.querySelector('[class*="TabsComponent_badge"]');
+        if (badge) {
+            badge.innerHTML = `
+            <div style="text-align: center;">
+                <div>↩ Return</div>
+                <div style="font-size: 0.75em; color: #60a5fa;">${displayName}</div>
+            </div>
+        `;
+        }
+
+        tab.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) return;
+            const game = getGameObject$1();
+            if (!game) {
+                marketplaceSession_js.marketplaceSession.end(sessionId);
+                return;
+            }
+            try {
+                game.handleGoToAction(returnContext.actionHrid, returnContext.numActions || undefined);
+            } catch (error) {
+                console.error('[CraftingPlan] Return navigation failed:', error);
+            } finally {
+                marketplaceSession_js.marketplaceSession.end(sessionId);
+            }
+        });
+        return tab;
+    }
+
+    function reinjectCraftingPlanMarketplaceTabs(tabContainer) {
+        const model = activeWorkflowModel;
+        if (!model || !marketplaceSession_js.marketplaceSession.isActive(model.sessionId)) return false;
+        return createCraftingPlanTabs(model.materials, tabContainer, model.sessionId);
+    }
+
+    function createCraftingPlanTabs(missingMaterials, tabsContainer = null, sessionId = craftingPlanSessionId) {
+        const container = tabsContainer || getVisibleMarketplaceTabContainer();
+        if (!container || !marketplaceSession_js.marketplaceSession.isActive(sessionId)) return false;
+
+        removeMaterialTabsForOwner(marketplaceSession_js.MARKETPLACE_OWNER.CRAFTING_PLAN);
+
+        const referenceTab = Array.from(container.children).find((tab) => tab.textContent.includes('My Listings'));
+        if (!referenceTab) return false;
+        container.style.flexWrap = 'wrap';
+
+        nativeTabExitCleanup?.();
+        nativeTabExitCleanup = watchNativeTabExit(container, () => marketplaceSession_js.marketplaceSession.end(sessionId));
 
         for (const material of missingMaterials) {
             const tabRef = { tab: null };
             const handler = () => {
-                autofillManager.setPendingCalculation(() => {
-                    return parseInt(tabRef.tab?.getAttribute('data-missing-quantity') || '0', 10);
+                if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) return;
+                const liveMissing = Number.parseInt(tabRef.tab?.getAttribute('data-missing-quantity') || '0', 10);
+                if (!Number.isFinite(liveMissing) || liveMissing <= 0 || material.isTradeable === false) return;
+                const armed = autofillManager.arm({
+                    sessionId,
+                    itemHrid: material.itemHrid,
+                    enhancementLevel: 0,
+                    modalMode: 'buy',
+                    quantityProvider: () => {
+                        const model = activeWorkflowModel;
+                        if (model?.sessionId !== sessionId) return 0;
+                        return model.materials.find((entry) => entry.itemHrid === material.itemHrid)?.missing ?? 0;
+                    },
                 });
-                navigateToMarketplace(material.itemHrid, 0);
+                if (!armed || !navigateToMarketplace(material.itemHrid, 0)) marketplaceSession_js.marketplaceSession.end(sessionId);
             };
-            const tab = createMaterialTab(material, referenceTab, handler);
+            const tab = createMaterialTab(material, referenceTab, handler, marketplaceSession_js.MARKETPLACE_OWNER.CRAFTING_PLAN);
             tabRef.tab = tab;
-            tabsContainer.appendChild(tab);
-            craftingPlanTabs.push(tab);
+            container.appendChild(tab);
         }
 
-        if (!cleanupObserver) {
-            cleanupObserver = setupMarketplaceCleanupObserver(() => {
-                craftingPlanTabs.length = 0;
-            }, craftingPlanTabs);
+        if (activeWorkflowModel?.returnContext) {
+            const returnTab = createCraftingPlanReturnTab(referenceTab, activeWorkflowModel.returnContext, sessionId);
+            container.appendChild(returnTab);
         }
+
+        cleanupObserver?.();
+        cleanupObserver = setupMarketplaceCleanupObserver({
+            owner: marketplaceSession_js.MARKETPLACE_OWNER.CRAFTING_PLAN,
+            invalidStateGraceMs: MARKETPLACE_REMOUNT_GRACE_MS,
+            onTabsGone: () => {
+                if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) return;
+                const visibleContainer = getVisibleMarketplaceTabContainer();
+                if (
+                    visibleContainer &&
+                    isMarketplaceMarketListingsSelected(visibleContainer) &&
+                    reinjectCraftingPlanMarketplaceTabs(visibleContainer)
+                ) {
+                    return;
+                }
+                marketplaceSession_js.marketplaceSession.end(sessionId);
+            },
+        });
+
+        return true;
     }
 
     class CraftingPlanDisplay {
@@ -17134,6 +18674,10 @@
         }
 
         disable() {
+            const sessionId = craftingPlanSessionId ?? activeWorkflowModel?.sessionId ?? null;
+            if (sessionId !== null && marketplaceSession_js.marketplaceSession.isActive(sessionId)) marketplaceSession_js.marketplaceSession.end(sessionId);
+            else teardownCraftingPlanMarketplaceSession();
+
             this.unregisterHandlers.forEach((fn) => fn());
             this.unregisterHandlers = [];
 
@@ -22466,6 +24010,7 @@
             this.sectionExpanded = new Map(); // Persistent expand/collapse state across rebuilds
             this.cachedInputField = null; // Cache input field since it gets removed when action starts
             this._alchemyTargetLevel = null;
+            this.inlineXpPerHour = 0;
         }
 
         /**
@@ -22606,6 +24151,7 @@
                                     (className.includes('SkillActionDetail_itemRequirements') ||
                                         className.includes('SkillActionDetail_alchemyOutput') ||
                                         className.includes('SkillActionDetail_primaryItemSelectorContainer') ||
+                                        className.includes('SkillActionDetail_expOnSuccess') ||
                                         className.includes('SkillActionDetail_instructions'))
                                 ) {
                                     triggerUpdate();
@@ -22663,6 +24209,11 @@
                 const fingerprint = alchemyProfit.getStateFingerprint();
                 if (fingerprint !== this.lastFingerprint) {
                     this.handleAlchemyPanelUpdate(alchemyComponent);
+                } else if (this.inlineXpPerHour > 0) {
+                    // React can replace only the native Experience row while leaving
+                    // Toolasha's collapsible sections mounted. Reattach the cached
+                    // rate even when the underlying calculation fingerprint is unchanged.
+                    renderInlineXpRate(alchemyComponent, this.inlineXpPerHour, { owner: 'alchemy' });
                 }
             }
         }
@@ -23353,7 +24904,9 @@
             topLevelContent.appendChild(detailedBreakdownSection);
 
             // Create main profit section
-            const profitSection = this.createTrackedCollapsible('💰', 'Profitability', summary, topLevelContent, false, 0);
+            const profitSection = compactActionPanelSection(
+                this.createTrackedCollapsible('💰', 'Profitability', summary, topLevelContent, false, 0)
+            );
             profitSection.id = 'mwi-alchemy-profit';
             profitSection.classList.add('mwi-alchemy-profit');
             profitSection.setAttribute('data-mwi-profit-display', 'true');
@@ -23395,6 +24948,10 @@
                     container.appendChild(levelProgressSection);
                 }
             }
+
+            const alchemyPanel = container.closest('[class*="SkillActionDetail_alchemyComponent"]') || container;
+            this.inlineXpPerHour = this.calculateAlchemyXpPerHour(actionType, itemHrid, profitData);
+            renderInlineXpRate(alchemyPanel, this.inlineXpPerHour, { owner: 'alchemy' });
 
             this.displayElement = profitSection;
         }
@@ -23445,6 +25002,29 @@
 
             // Expected value = (success rate × full XP) + (failure rate × 10% XP)
             return successRate * successXP + (1 - successRate) * failureXP;
+        }
+
+        /**
+         * Calculate the exact same XP/hour value used by the Level Progress section.
+         * Keeping one helper prevents the compact inline number from drifting from
+         * the detailed breakdown.
+         * @param {string} actionType
+         * @param {string} itemHrid
+         * @param {Object} profitData
+         * @returns {number}
+         */
+        calculateAlchemyXpPerHour(actionType, itemHrid, profitData) {
+            if (!actionType || !itemHrid || !profitData) return 0;
+
+            const xpPerAction = this.calculateAlchemyXPPerAction(actionType, itemHrid, profitData.successRate);
+            const actionTime = Number(profitData.actionTime);
+            if (!Number.isFinite(xpPerAction) || xpPerAction <= 0 || !Number.isFinite(actionTime) || actionTime <= 0) {
+                return 0;
+            }
+
+            const actionsPerHourBase = profitHelpers_js.calculateActionsPerHour(actionTime);
+            const efficiencyMultiplier = 1 + (Number(profitData.efficiency) || 0);
+            return actionsPerHourBase * efficiencyMultiplier * xpPerAction;
         }
 
         /**
@@ -23643,8 +25223,7 @@
                 const timeNeeded = baseActionsNeeded * actionTime;
 
                 // Calculate rates
-                const actionsPerHourBase = profitHelpers_js.calculateActionsPerHour(actionTime);
-                const xpPerHour = actionsPerHourBase * efficiencyMultiplier * xpPerAction;
+                const xpPerHour = this.calculateAlchemyXpPerHour(actionType, itemHrid, profitData);
                 const xpPerDay = xpPerHour * 24;
 
                 const content = document.createElement('div');
@@ -23811,7 +25390,9 @@
                 // Create summary for collapsed view
                 const summary = `${formatters_js.timeReadable(timeNeeded)} to Level ${nextLevel}`;
 
-                return this.createTrackedCollapsible('📈', 'Level Progress', summary, content, false);
+                return compactActionPanelSection(
+                    this.createTrackedCollapsible('📈', 'Level Progress', summary, content, false)
+                );
             } catch (error) {
                 console.error('[AlchemyProfitDisplay] Error creating level progress section:', error);
                 return null;
@@ -23822,6 +25403,9 @@
          * Remove profit display
          */
         removeDisplay() {
+            removeInlineXpRate(document, 'alchemy');
+            this.inlineXpPerHour = 0;
+
             // Remove profitability section
             if (this.displayElement && this.displayElement.parentNode) {
                 this.displayElement.remove();
@@ -26604,4 +28188,4 @@
 
     console.log('[Toolasha] Actions library loaded');
 
-})(Toolasha.Core.dataManager, Toolasha.Core.config, Toolasha.Core.domObserver, Toolasha.Utils.enhancementConfig, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.profitConstants, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.efficiency, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.uiComponents, Toolasha.Utils.actionPanelHelper, Toolasha.Core.webSocketHook, Toolasha.Core.storage, Toolasha.Utils.dom, Toolasha.Utils.timerRegistry, Toolasha.Utils.teaParser, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.actionCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.experienceParser, Toolasha.Utils.reactInput, Toolasha.Utils.experienceCalculator, Toolasha.Utils.materialCalculator, Toolasha.Market.expectedValueCalculator);
+})(Toolasha.Core.dataManager, Toolasha.Core.config, Toolasha.Core.domObserver, Toolasha.Utils.enhancementConfig, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.profitConstants, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.efficiency, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.uiComponents, Toolasha.Utils.actionPanelHelper, Toolasha.Core.webSocketHook, Toolasha.Core.storage, Toolasha.Utils.dom, Toolasha.Utils.timerRegistry, Toolasha.Utils.teaParser, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.actionCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.experienceParser, Toolasha.Utils.reactInput, Toolasha.Utils.experienceCalculator, Toolasha.Utils.materialCalculator, Toolasha.Core, Toolasha.Market.expectedValueCalculator);

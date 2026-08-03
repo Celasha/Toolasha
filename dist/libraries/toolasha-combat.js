@@ -1,11 +1,11 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.85.1
+ * Version: 2.86.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, webSocketHook, storage, timerRegistry_js, domObserverHelpers_js, formatters_js, marketAPI, expectedValueCalculator, reactInput_js, profitHelpers_js, marketData_js, enhancementCalculator_js, enhancementConfig_js, teaParser_js, abilityCostCalculator_js, equipmentParser_js, dom, houseCostCalculator_js) {
+(function (config, dataManager, domObserver, webSocketHook, storage, timerRegistry_js, domObserverHelpers_js, formatters_js, marketAPI, expectedValueCalculator, reactInput_js, profitHelpers_js, marketData_js, enhancementCalculator_js, enhancementConfig_js, teaParser_js, abilityCostCalculator_js, equipmentParser_js, marketplaceSession_js, dom, houseCostCalculator_js) {
     'use strict';
 
     /**
@@ -24552,6 +24552,47 @@
 
 
     /**
+     * Return true only when an element and all element ancestors are actually visible.
+     * @param {HTMLElement} element
+     * @returns {boolean}
+     */
+    function isElementActuallyVisible(element) {
+        if (!element || element.nodeType !== 1 || !element.isConnected) return false;
+
+        for (let current = element; current; current = current.parentElement) {
+            if (current.hidden || current.getAttribute('aria-hidden') === 'true') return false;
+            const style = window.getComputedStyle(current);
+            if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Get the unique visible Marketplace native tab container.
+     * Hidden retained panels and ambiguous duplicate visible panels fail closed.
+     * @returns {HTMLElement|null}
+     */
+    function getVisibleMarketplaceTabContainer() {
+        const candidates = new Set();
+
+        for (const panel of document.querySelectorAll('[class*="MarketplacePanel_marketplacePanel"]')) {
+            if (!isElementActuallyVisible(panel)) continue;
+
+            for (const tabsContainer of panel.querySelectorAll('.MuiTabs-flexContainer[role="tablist"]')) {
+                if (!isElementActuallyVisible(tabsContainer)) continue;
+                const hasNativeTab = Array.from(tabsContainer.children).some((tab) => {
+                    const text = tab.textContent || '';
+                    return text.includes('Market Listings') || text.includes('My Listings');
+                });
+                if (hasNativeTab) candidates.add(tabsContainer);
+            }
+        }
+
+        return candidates.size === 1 ? candidates.values().next().value : null;
+    }
+
+    /**
      * Get game object via React fiber
      * @returns {Object|null} Game component instance
      */
@@ -24560,221 +24601,494 @@
         const rootFiber = rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
         if (!rootFiber) return null;
 
-        function find(fiber) {
-            if (!fiber) return null;
-            if (fiber.stateNode?.handleGoToMarketplace) return fiber.stateNode;
-            return find(fiber.child) || find(fiber.sibling);
+        const stack = [rootFiber];
+        while (stack.length > 0) {
+            const fiber = stack.pop();
+            if (typeof fiber?.stateNode?.handleGoToMarketplace === 'function') return fiber.stateNode;
+            if (fiber?.sibling) stack.push(fiber.sibling);
+            if (fiber?.child) stack.push(fiber.child);
         }
+        return null;
+    }
 
-        return find(rootFiber);
+    /**
+     * Watch for a native Marketplace tab click and call onExit when it occurs.
+     * Uses a delegated click listener — does not fire on initial aria-selected DOM state.
+     *
+     * Resolves nested click targets (e.g. a span or icon inside the tab) via closest('[role="tab"]').
+     * Only fires when the resolved tab belongs to tabContainer and is not a Toolasha custom tab.
+     *
+     * @param {HTMLElement} tabContainer - The MuiTabs-flexContainer[role="tablist"] element
+     * @param {Function} onExit - Called when a native tab is clicked
+     * @returns {Function} Cleanup function that removes the exact delegated listener
+     */
+    function watchNativeTabExit(tabContainer, onExit) {
+        function handleClick(e) {
+            const origin = typeof e.target?.closest === 'function' ? e.target : e.target?.parentElement;
+            const target = origin?.closest('[role="tab"]');
+            if (!target || !tabContainer.contains(target)) return;
+            if (target.hasAttribute('data-mwi-custom-tab') || target.hasAttribute('data-mwi-shrine-tab')) return;
+            onExit();
+        }
+        tabContainer.addEventListener('click', handleClick, { capture: true });
+        return () => tabContainer.removeEventListener('click', handleClick, { capture: true });
     }
 
     /**
      * Navigate to marketplace for a specific item
      * @param {string} itemHrid - Item HRID to navigate to
      * @param {number} enhancementLevel - Enhancement level (default 0)
+     * @returns {boolean} True when the native Marketplace handler was invoked
      */
     function navigateToMarketplace(itemHrid, enhancementLevel = 0) {
         const game = getGameObject();
         if (game?.handleGoToMarketplace) {
             game.handleGoToMarketplace(itemHrid, enhancementLevel);
+            return true;
         }
-        // Silently fail if game API unavailable - feature still provides value without auto-navigation
+        return false;
     }
 
     /**
      * Marketplace Buy Modal Autofill Utility
-     * Provides shared functionality for auto-filling quantity in marketplace buy modals
-     * Used by missing materials features (actions, houses, etc.)
+     * Session-aware autofill manager.  Each consumer calls createAutofillManager() to get
+     * an instance, then drives it with startSession / arm / exitSession.
+     *
+     * Exported helpers:
+     *   readMarketplaceRuntimeState()  — reads live Marketplace React component state via fiber
+     *   readMarketplaceItemIdentity()  — @deprecated, DOM-based; absent selector in current client
+     *   createAutofillManager(observerId)
      */
 
 
-    /**
-     * Find the quantity input in the buy modal
-     * For equipment items, there are multiple number inputs (enhancement level + quantity)
-     * We need to find the correct one by checking parent containers for label text
-     * @param {HTMLElement} modal - Modal container element
-     * @returns {HTMLInputElement|null} Quantity input element or null
-     */
-    function findQuantityInput(modal) {
-        // Get all number inputs in the modal
-        const allInputs = Array.from(modal.querySelectorAll('input[type="number"]'));
+    const MARKETPLACE_PANEL_SELECTOR = '[class*="MarketplacePanel_marketplacePanel"]';
+    const MARKETPLACE_STATE_KEYS = ['marketTabKey', 'marketListingsView', 'itemHrid', 'enhancementLevel', 'isSell'];
+    const REACT_FIBER_PREFIXES = ['__reactFiber$', '__reactInternalInstance$'];
+    const MAX_REACT_TREE_FIBERS = 50000;
+    const MAX_REACT_OWNER_DEPTH = 256;
 
-        if (allInputs.length === 0) {
+    function hasMarketplaceStateSignature(state) {
+        return state && typeof state === 'object' && MARKETPLACE_STATE_KEYS.every((key) => key in state);
+    }
+
+    function isElementVisible(element) {
+        if (!element || element.nodeType !== 1 || !element.isConnected) return false;
+
+        for (let current = element; current; current = current.parentElement) {
+            if (current.hidden || current.getAttribute('aria-hidden') === 'true') return false;
+            const style = window.getComputedStyle(current);
+            if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    function getReactRootFiber() {
+        const rootElement = document.getElementById('root');
+        const rootContainer = rootElement?._reactRootContainer;
+        return rootContainer?.current || rootContainer?._internalRoot?.current || null;
+    }
+
+    function findReactFiberFromRoot(element) {
+        const rootFiber = getReactRootFiber();
+        if (!rootFiber || !element) return null;
+
+        const stack = [rootFiber];
+        const visited = new Set();
+        let matchedFiber = null;
+
+        while (stack.length > 0) {
+            const fiber = stack.pop();
+            if (!fiber || visited.has(fiber)) continue;
+            visited.add(fiber);
+
+            if (visited.size > MAX_REACT_TREE_FIBERS) return null;
+
+            if (fiber.stateNode === element) {
+                if (matchedFiber && matchedFiber !== fiber) return null;
+                matchedFiber = fiber;
+            }
+
+            if (fiber.sibling) stack.push(fiber.sibling);
+            if (fiber.child) stack.push(fiber.child);
+        }
+
+        return matchedFiber;
+    }
+
+    function getReactFiberFromElement(element) {
+        if (!element) return null;
+
+        const directFibers = new Set(
+            Object.getOwnPropertyNames(element)
+                .filter((key) => REACT_FIBER_PREFIXES.some((prefix) => key.startsWith(prefix)))
+                .map((key) => element[key])
+                .filter(Boolean)
+        );
+        if (directFibers.size > 1) return null;
+        if (directFibers.size === 1) return directFibers.values().next().value;
+
+        // Current MWI builds no longer expose __reactFiber$ keys on DOM nodes.
+        // Resolve the exact host fiber from the public React root instead.
+        return findReactFiberFromRoot(element);
+    }
+
+    function normalizeMarketplaceState(state) {
+        if (!hasMarketplaceStateSignature(state)) return null;
+        if (typeof state.marketTabKey !== 'string' || typeof state.marketListingsView !== 'string') return null;
+        if (state.itemHrid !== null && (typeof state.itemHrid !== 'string' || !state.itemHrid)) return null;
+        if (!Number.isInteger(state.enhancementLevel) || state.enhancementLevel < 0) return null;
+        if (typeof state.isSell !== 'boolean') return null;
+        if (state.showPostListing !== undefined && typeof state.showPostListing !== 'boolean') return null;
+        if (state.isPostNewListing !== undefined && typeof state.isPostNewListing !== 'boolean') return null;
+        if (state.isInstantOrder !== undefined && typeof state.isInstantOrder !== 'boolean') return null;
+        if (
+            state.enhancementLevelInput !== undefined &&
+            (!Number.isInteger(state.enhancementLevelInput) || state.enhancementLevelInput < 0)
+        ) {
             return null;
         }
 
-        if (allInputs.length === 1) {
-            // Only one input - must be quantity
-            return allInputs[0];
-        }
-
-        // Multiple inputs - identify by checking CLOSEST parent first
-        // Strategy 1: Check each parent level individually, prioritizing closer parents
-        // This prevents matching on the outermost container that has all text
-        for (let level = 0; level < 4; level++) {
-            for (let i = 0; i < allInputs.length; i++) {
-                const input = allInputs[i];
-                let parent = input.parentElement;
-
-                // Navigate to the specific level
-                for (let j = 0; j < level && parent; j++) {
-                    parent = parent.parentElement;
-                }
-
-                if (!parent) continue;
-
-                const text = parent.textContent;
-
-                // At this specific level, check if it contains "Quantity" but NOT "Enhancement Level"
-                if (text.includes('Quantity') && !text.includes('Enhancement Level')) {
-                    return input;
-                }
-            }
-        }
-
-        // Strategy 2: Exclude inputs that have "Enhancement Level" in close parents (level 0-2)
-        for (let i = 0; i < allInputs.length; i++) {
-            const input = allInputs[i];
-            let parent = input.parentElement;
-            let isEnhancementInput = false;
-
-            // Check only the first 3 levels (not the outermost container)
-            for (let j = 0; j < 3 && parent; j++) {
-                const text = parent.textContent;
-
-                if (text.includes('Enhancement Level') && !text.includes('Quantity')) {
-                    isEnhancementInput = true;
-                    break;
-                }
-
-                parent = parent.parentElement;
-            }
-
-            if (!isEnhancementInput) {
-                return input;
-            }
-        }
-
-        // Fallback: Return first input and log warning
-        console.warn('[MarketplaceAutofill] Could not definitively identify quantity input, using first input');
-        return allInputs[0];
+        return {
+            marketTabKey: state.marketTabKey,
+            marketListingsView: state.marketListingsView,
+            itemHrid: state.itemHrid,
+            enhancementLevel: state.enhancementLevel,
+            enhancementLevelInput: state.enhancementLevelInput,
+            isSell: state.isSell,
+            showPostListing: state.showPostListing,
+            isPostNewListing: state.isPostNewListing,
+            isInstantOrder: state.isInstantOrder,
+            quantityInput: state.quantityInput,
+            priceInput: state.priceInput,
+        };
     }
 
     /**
-     * Handle buy modal appearance and auto-fill quantity if available
-     * @param {HTMLElement} modal - Modal container element
-     * @param {number|null} activeQuantity - Static quantity to auto-fill (null if using pending fn)
-     * @param {Function|null} pendingCalculation - Lazy fn that returns current quantity (takes priority)
+     * Read the live Marketplace React component state from the unique visible Marketplace panel.
+     * The selected component must be on that panel host fiber's bounded return ancestry.
+     *
+     * @returns {{ marketTabKey: string, marketListingsView: string, itemHrid: string|null,
+     *             enhancementLevel: number, enhancementLevelInput: number|undefined, isSell: boolean,
+     *             showPostListing: boolean|undefined, isPostNewListing: boolean|undefined,
+     *             isInstantOrder: boolean|undefined, quantityInput: *, priceInput: * }|null}
      */
-    function handleBuyModal(modal, activeQuantity, pendingCalculation) {
-        // Resolve quantity: prefer lazy recalculation over stored static value
-        const quantity = pendingCalculation ? pendingCalculation() : activeQuantity;
+    function getMarketplaceRuntimeComponentFromElement(element) {
+        let fiber = getReactFiberFromElement(element);
+        let depth = 0;
+        const candidates = [];
+        const seen = new Set();
 
-        // Check if we have a quantity to fill
-        if (!quantity || quantity <= 0) {
-            return;
+        while (fiber && depth < MAX_REACT_OWNER_DEPTH) {
+            const stateNode = fiber.stateNode;
+            if (
+                stateNode &&
+                !seen.has(stateNode) &&
+                typeof stateNode.setState === 'function' &&
+                typeof stateNode.handleQuantityInputChanged === 'function' &&
+                hasMarketplaceStateSignature(stateNode.state)
+            ) {
+                seen.add(stateNode);
+                candidates.push(stateNode);
+            }
+            fiber = fiber.return;
+            depth += 1;
         }
 
-        // Check if this is a "Buy Now" modal
-        const header = modal.querySelector('div[class*="MarketplacePanel_header"]');
-        if (!header) {
-            return;
-        }
-
-        const headerText = header.textContent.trim();
-        if (!headerText.includes('Buy Now') && !headerText.includes('Buy Listing')) {
-            return;
-        }
-
-        // Find the quantity input - need to be specific to avoid enhancement level input
-        const quantityInput = findQuantityInput(modal);
-        if (!quantityInput) {
-            return;
-        }
-
-        // Set the quantity value
-        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-        nativeInputValueSetter.call(quantityInput, quantity.toString());
-
-        // Trigger input event to notify React
-        const inputEvent = new Event('input', { bubbles: true });
-        quantityInput.dispatchEvent(inputEvent);
+        // Fail closed when the ancestry is unexpectedly deeper than the bound or
+        // contains more than one Marketplace-like owner. The quantity input must
+        // identify one exact live component before we write to a controlled input.
+        if (fiber || candidates.length !== 1) return null;
+        return candidates[0];
     }
 
     /**
-     * Create an autofill manager instance
-     * Manages storing quantity to autofill and observing buy modals
-     * @param {string} observerId - Unique ID for this observer (e.g., 'MissingMats-Actions')
-     * @returns {Object} Autofill manager with methods: setQuantity, setPendingCalculation, clearQuantity, initialize, cleanup
+     * Read Marketplace state from the exact DOM element that belongs to the live component.
+     * @param {HTMLElement} element
+     * @returns {ReturnType<typeof normalizeMarketplaceState>}
+     */
+    function readMarketplaceRuntimeStateFromElement(element) {
+        return normalizeMarketplaceState(getMarketplaceRuntimeComponentFromElement(element)?.state);
+    }
+
+    function readMarketplaceRuntimeState() {
+        const visiblePanels = Array.from(document.querySelectorAll(MARKETPLACE_PANEL_SELECTOR)).filter(isElementVisible);
+        if (visiblePanels.length !== 1) return null;
+        return readMarketplaceRuntimeStateFromElement(visiblePanels[0]);
+    }
+
+    /**
+     * Create an autofill manager instance for one marketplace workflow owner.
+     *
+     * Lifecycle:
+     *   initialize()      — call once at feature startup; installs the buy-modal observer
+     *   startSession(opts) — claim a session slot by sessionId
+     *   arm(opts)         — atomically set target; only 'buy' modalMode is accepted
+     *   setItem()         — @deprecated, use arm()
+     *   setQuantityProvider() — @deprecated, use arm()
+     *   exitSession(sessionId) — disarm without ending the marketplace session token
+     *   cleanup()         — call on feature disable; removes observer
+     *
+     * @param {string} observerId
+     * @returns {Object}
      */
     function createAutofillManager(observerId) {
-        let activeQuantity = null;
-        let pendingCalculation = null;
         let observerUnregister = null;
+        let activeSessionId = null;
+        let targetGeneration = 0;
+        let activeTarget = null;
+        let legacyDraft = null;
+        const modalRetryTimers = new Set();
+        const filledModalGenerations = new WeakMap();
+
+        function clearRetryTimers() {
+            for (const timer of modalRetryTimers) clearTimeout(timer);
+            modalRetryTimers.clear();
+        }
+
+        function invalidateTarget() {
+            clearRetryTimers();
+            targetGeneration += 1;
+            activeTarget = null;
+            legacyDraft = null;
+        }
+
+        function isValidItemHrid(itemHrid) {
+            return typeof itemHrid === 'string' && itemHrid.startsWith('/items/') && itemHrid.length > 7;
+        }
+
+        function isValidEnhancementLevel(enhancementLevel) {
+            return Number.isInteger(enhancementLevel) && enhancementLevel >= 0;
+        }
+
+        function startSession({
+            itemHrid = null,
+            enhancementLevel = 0,
+            sessionId = null,
+            quantityProvider = null,
+            modalMode = 'buy',
+        } = {}) {
+            activeSessionId = marketplaceSession_js.marketplaceSession.isActive(sessionId) ? sessionId : null;
+            invalidateTarget();
+
+            if (activeSessionId !== null && (itemHrid !== null || quantityProvider !== null)) {
+                arm({ sessionId, itemHrid, enhancementLevel, modalMode, quantityProvider });
+            }
+        }
+
+        function arm(opts = {}) {
+            const { sessionId, itemHrid = null, enhancementLevel = 0, modalMode = 'buy', quantityProvider } = opts || {};
+
+            if (sessionId !== activeSessionId) return false;
+            if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) {
+                activeSessionId = null;
+                invalidateTarget();
+                return false;
+            }
+
+            if (
+                modalMode !== 'buy' ||
+                !isValidItemHrid(itemHrid) ||
+                !isValidEnhancementLevel(enhancementLevel) ||
+                typeof quantityProvider !== 'function'
+            ) {
+                invalidateTarget();
+                return false;
+            }
+
+            activeTarget = Object.freeze({
+                generation: ++targetGeneration,
+                sessionId,
+                itemHrid,
+                enhancementLevel,
+                modalMode,
+                quantityProvider,
+            });
+            legacyDraft = null;
+            return true;
+        }
+
+        /** @deprecated Use arm(). */
+        function setItem(itemHrid, enhancementLevel = 0, sessionId) {
+            if (sessionId === undefined) {
+                invalidateTarget();
+                return false;
+            }
+            if (sessionId !== activeSessionId) return false;
+            if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) {
+                activeSessionId = null;
+                invalidateTarget();
+                return false;
+            }
+            if (!isValidItemHrid(itemHrid) || !isValidEnhancementLevel(enhancementLevel)) {
+                invalidateTarget();
+                return false;
+            }
+
+            invalidateTarget();
+            legacyDraft = Object.freeze({ sessionId, itemHrid, enhancementLevel });
+            return true;
+        }
+
+        /** @deprecated Use arm(). */
+        function setQuantityProvider(quantityProvider, sessionId) {
+            if (sessionId === undefined) {
+                invalidateTarget();
+                return false;
+            }
+            if (sessionId !== activeSessionId) return false;
+            if (!legacyDraft || legacyDraft.sessionId !== sessionId) {
+                invalidateTarget();
+                return false;
+            }
+
+            return arm({
+                sessionId,
+                itemHrid: legacyDraft.itemHrid,
+                enhancementLevel: legacyDraft.enhancementLevel,
+                modalMode: 'buy',
+                quantityProvider,
+            });
+        }
+
+        function exitSession(sessionId) {
+            if (sessionId !== undefined && sessionId !== activeSessionId) return;
+            activeSessionId = null;
+            invalidateTarget();
+        }
+
+        function findWorkingQuantityInput(modal) {
+            const structuralInputs = Array.from(
+                modal.querySelectorAll('[class*="MarketplacePanel_quantityInputs"] input[type="number"]')
+            );
+            if (structuralInputs.length === 1) return structuralInputs[0];
+            if (structuralInputs.length > 1) return null;
+
+            const allInputs = Array.from(modal.querySelectorAll('input[type="number"]'));
+            if (allInputs.length === 1) return allInputs[0];
+
+            const labeled = allInputs.filter((input) => {
+                let parent = input.parentElement;
+                for (let depth = 0; parent && depth < 4; depth += 1) {
+                    const text = parent.textContent || '';
+                    if (text.includes('Enhancement Level') && !text.includes('Quantity')) return false;
+                    if (text.includes('Quantity') && !text.includes('Enhancement Level')) return true;
+                    parent = parent.parentElement;
+                }
+                return false;
+            });
+            return labeled.length === 1 ? labeled[0] : null;
+        }
+
+        function isVisibleBuyModal(modal) {
+            if (!modal || !modal.isConnected || !isElementVisible(modal)) return false;
+            const header = modal.querySelector('[class*="MarketplacePanel_header"]');
+            if (!header) return false;
+            const text = header.textContent?.trim() || '';
+            return text.includes('Buy Now') || text.includes('Buy Listing');
+        }
+
+        function resolveQuantity(target) {
+            try {
+                const quantity = target.quantityProvider();
+                return typeof quantity === 'number' && Number.isFinite(quantity) && quantity > 0 ? Math.trunc(quantity) : 0;
+            } catch (error) {
+                console.error('[MarketplaceAutofill] quantityProvider failed:', error);
+                return 0;
+            }
+        }
+
+        function targetMatchesInput(target, quantityInput) {
+            const state = readMarketplaceRuntimeStateFromElement(quantityInput);
+            return (
+                state?.marketTabKey === 'MarketListings' &&
+                state?.marketListingsView === 'OrderBook' &&
+                state?.showPostListing === true &&
+                state?.isPostNewListing === false &&
+                state?.isSell === false &&
+                state?.isInstantOrder === true &&
+                state?.itemHrid === target.itemHrid &&
+                state?.enhancementLevel === target.enhancementLevel &&
+                state?.enhancementLevelInput === target.enhancementLevel
+            );
+        }
+
+        function fillVerifiedModal(modal, target) {
+            if (!target || activeTarget !== target) return false;
+            if (activeSessionId !== target.sessionId || !marketplaceSession_js.marketplaceSession.isActive(target.sessionId)) return false;
+            if (!isVisibleBuyModal(modal)) return false;
+            const quantityInput = findWorkingQuantityInput(modal);
+            if (!quantityInput || !targetMatchesInput(target, quantityInput)) return false;
+
+            const quantity = resolveQuantity(target);
+            if (quantity <= 0) return false;
+
+            const previousFill = filledModalGenerations.get(modal);
+            if (
+                previousFill?.generation === target.generation &&
+                previousFill.input === quantityInput &&
+                previousFill.quantity === quantity &&
+                Number(quantityInput.value) === quantity
+            ) {
+                return true;
+            }
+
+            // Re-check ownership after the provider call, immediately before the proven write path.
+            if (activeTarget !== target || activeSessionId !== target.sessionId) return false;
+            if (!marketplaceSession_js.marketplaceSession.isActive(target.sessionId) || !targetMatchesInput(target, quantityInput)) return false;
+
+            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+            if (typeof nativeInputValueSetter !== 'function') return false;
+
+            nativeInputValueSetter.call(quantityInput, quantity.toString());
+            quantityInput.dispatchEvent(new Event('input', { bubbles: true }));
+            filledModalGenerations.set(modal, { generation: target.generation, input: quantityInput, quantity });
+            marketplaceSession_js.marketplaceSession.consume(target.sessionId);
+            return true;
+        }
+
+        function handleObservedModal(modal) {
+            const target = activeTarget;
+            if (!target || !modal) return;
+
+            // The Marketplace modal can mount before its owning React component has
+            // converged on the selected item. Retry this observed modal for a bounded
+            // 1.5-second window, but keep the verified workflow target armed afterward
+            // so an unrelated or retained modal cannot destroy the next exact Buy fill.
+            const delays = [0, 25, 75, 150, 300, 500, 750, 1000, 1500];
+            delays.forEach((delay) => {
+                const timer = setTimeout(() => {
+                    modalRetryTimers.delete(timer);
+                    if (!activeTarget || activeTarget.generation !== target.generation) return;
+                    if (fillVerifiedModal(modal, target)) {
+                        clearRetryTimers();
+                    }
+                    // Keep the verified target armed after a bounded miss. A retained or unrelated
+                    // modal must not destroy the workflow; the next exact Buy modal can still fill.
+                }, delay);
+                modalRetryTimers.add(timer);
+            });
+        }
 
         return {
-            /**
-             * Set a static quantity to auto-fill in the next buy modal
-             * @param {number} quantity - Quantity to auto-fill
-             */
-            setQuantity(quantity) {
-                activeQuantity = quantity;
-                pendingCalculation = null;
-            },
-
-            /**
-             * Set a lazy calculation function that is called each time a buy modal opens.
-             * Takes priority over setQuantity — quantity is recomputed fresh on every modal open,
-             * so subsequent purchases within the same session always autofill the remaining needed amount.
-             * @param {Function} fn - Function returning the current quantity to fill
-             */
-            setPendingCalculation(fn) {
-                pendingCalculation = fn;
-                activeQuantity = null;
-            },
-
-            /**
-             * Clear the stored quantity (cancel autofill)
-             */
-            clearQuantity() {
-                activeQuantity = null;
-                pendingCalculation = null;
-            },
-
-            /**
-             * Get the current active quantity
-             * @returns {number|null} Current quantity or null
-             */
-            getQuantity() {
-                return pendingCalculation ? pendingCalculation() : activeQuantity;
-            },
-
-            /**
-             * Initialize buy modal observer
-             * Sets up watching for buy modals to appear and auto-fills them
-             */
             initialize() {
-                observerUnregister = domObserver.onClass(observerId, 'Modal_modalContainer', (modal) => {
-                    handleBuyModal(modal, activeQuantity, pendingCalculation);
-                    // Clear static quantity after use (one-shot) — pendingCalculation persists intentionally
-                    if (activeQuantity !== null && !pendingCalculation) {
-                        activeQuantity = null;
-                    }
-                });
+                if (observerUnregister) observerUnregister();
+                observerUnregister = domObserver.onClass(observerId, 'Modal_modalContainer', handleObservedModal);
             },
-
-            /**
-             * Cleanup observer
-             * Stops watching for buy modals and clears quantity
-             */
+            startSession,
+            arm,
+            setItem,
+            setQuantityProvider,
+            exitSession,
             cleanup() {
                 if (observerUnregister) {
                     observerUnregister();
                     observerUnregister = null;
                 }
-                activeQuantity = null;
-                pendingCalculation = null;
+                activeSessionId = null;
+                invalidateTarget();
             },
         };
     }
@@ -24795,6 +25109,110 @@
             this.isActive = false;
             this.isInitialized = false;
             this.autofillManager = createAutofillManager('AbilityBookCalculator');
+            this._abilityBookSessionId = null;
+            this._abilityBookExpiryTimer = null;
+            this._abilityBookNativeTabListener = null;
+            this._abilityBookVisibilityInterval = null;
+        }
+
+        /**
+         * Idempotent teardown of the ability book marketplace session
+         */
+        teardownAbilityBookSession() {
+            if (this._abilityBookExpiryTimer) {
+                clearTimeout(this._abilityBookExpiryTimer);
+                this._abilityBookExpiryTimer = null;
+            }
+            if (this._abilityBookNativeTabListener) {
+                this._abilityBookNativeTabListener();
+                this._abilityBookNativeTabListener = null;
+            }
+            if (this._abilityBookVisibilityInterval) {
+                clearInterval(this._abilityBookVisibilityInterval);
+                this._abilityBookVisibilityInterval = null;
+            }
+            const sessionId = this._abilityBookSessionId;
+            this._abilityBookSessionId = null;
+            this.autofillManager.exitSession(sessionId);
+        }
+
+        /**
+         * Navigate the marketplace to the given item, polling until it resolves
+         * @param {string} itemHrid - Item HRID to navigate to
+         * @param {number} sessionId - Captured one-shot session token
+         * @returns {Promise<boolean>} True if navigation succeeded within deadline
+         */
+        async navigateAbilityBookToItem(itemHrid, sessionId) {
+            // Use the fiber game object to navigate
+            if (!navigateToMarketplace(itemHrid, 0)) return false;
+
+            const deadline = 3000;
+            const interval = 100;
+            let elapsed = 0;
+            while (elapsed < deadline) {
+                await new Promise((r) => setTimeout(r, interval));
+                elapsed += interval;
+                if (!marketplaceSession_js.marketplaceSession.isActive(sessionId) || this._abilityBookSessionId !== sessionId) return false;
+
+                // Install native-tab cancellation as soon as the live Marketplace tablist exists,
+                // not only after item identity converges. This closes the brief pre-identity race
+                // where the user could leave the workflow before the exact order book was detected.
+                const tabsContainer = getVisibleMarketplaceTabContainer();
+                if (tabsContainer && !this._abilityBookNativeTabListener) {
+                    this._abilityBookNativeTabListener = watchNativeTabExit(tabsContainer, () => {
+                        marketplaceSession_js.marketplaceSession.end(sessionId);
+                    });
+                }
+
+                const state = readMarketplaceRuntimeState();
+                if (
+                    tabsContainer &&
+                    state?.marketTabKey === 'MarketListings' &&
+                    state?.marketListingsView === 'OrderBook' &&
+                    state?.itemHrid === itemHrid &&
+                    state?.enhancementLevel === 0 &&
+                    state?.isSell === false
+                ) {
+                    this.startAbilityBookVisibilityMonitor(sessionId, itemHrid);
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /**
+         * End the one-shot workflow promptly if Marketplace is closed before autofill.
+         * Allows brief React remount gaps but does not leave ownership armed for 30 seconds.
+         * @param {number|null} sessionId
+         * @param {string} itemHrid
+         */
+        startAbilityBookVisibilityMonitor(sessionId, itemHrid) {
+            if (sessionId === null || this._abilityBookVisibilityInterval) return;
+
+            let consecutiveMisses = 0;
+            this._abilityBookVisibilityInterval = setInterval(() => {
+                if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) {
+                    clearInterval(this._abilityBookVisibilityInterval);
+                    this._abilityBookVisibilityInterval = null;
+                    return;
+                }
+
+                const state = readMarketplaceRuntimeState();
+                const stillOnTarget =
+                    getVisibleMarketplaceTabContainer() &&
+                    state?.marketTabKey === 'MarketListings' &&
+                    state?.marketListingsView === 'OrderBook' &&
+                    state?.itemHrid === itemHrid &&
+                    state?.enhancementLevel === 0 &&
+                    state?.isSell === false;
+                if (stillOnTarget) {
+                    consecutiveMisses = 0;
+                    return;
+                }
+
+                consecutiveMisses++;
+                if (consecutiveMisses >= 3) marketplaceSession_js.marketplaceSession.end(sessionId);
+            }, 200);
         }
 
         /**
@@ -25040,7 +25458,7 @@
                 `;
                 } else {
                     currentBooks = 0;
-                    display.innerHTML = '<span style="color: ${config.COLOR_LOSS};">Invalid target level</span>';
+                    display.innerHTML = `<span style="color: ${config.COLOR_LOSS};">Invalid target level</span>`;
                 }
             };
 
@@ -25049,6 +25467,7 @@
 
             // Buy on Marketplace button
             const buyButton = document.createElement('button');
+            buyButton.type = 'button';
             buyButton.textContent = 'Buy on Marketplace';
             buyButton.style.cssText = `
             margin-top: 8px;
@@ -25060,10 +25479,41 @@
             border-radius: 3px;
             cursor: pointer;
         `;
-            buyButton.addEventListener('click', () => {
-                if (currentBooks > 0) {
-                    this.autofillManager.setQuantity(Math.ceil(currentBooks));
-                    navigateToMarketplace(itemHrid);
+            buyButton.addEventListener('click', async () => {
+                if (currentBooks <= 0) return;
+
+                let sessionId = null;
+                try {
+                    const quantity = Math.ceil(currentBooks);
+                    sessionId = marketplaceSession_js.marketplaceSession.start({
+                        owner: marketplaceSession_js.MARKETPLACE_OWNER.ABILITY_BOOK,
+                        consumeOnFill: true,
+                        onEnd: () => this.teardownAbilityBookSession(),
+                    });
+                    this._abilityBookSessionId = sessionId;
+                    this.autofillManager.startSession({ sessionId });
+                    const armed = this.autofillManager.arm({
+                        sessionId,
+                        itemHrid,
+                        enhancementLevel: 0,
+                        modalMode: 'buy',
+                        quantityProvider: () => quantity,
+                    });
+                    if (!armed) {
+                        marketplaceSession_js.marketplaceSession.end(sessionId);
+                        return;
+                    }
+
+                    this._abilityBookExpiryTimer = setTimeout(() => {
+                        this._abilityBookExpiryTimer = null;
+                        if (marketplaceSession_js.marketplaceSession.isActive(sessionId)) marketplaceSession_js.marketplaceSession.end(sessionId);
+                    }, 30000);
+
+                    const success = await this.navigateAbilityBookToItem(itemHrid, sessionId);
+                    if (!success && marketplaceSession_js.marketplaceSession.isActive(sessionId)) marketplaceSession_js.marketplaceSession.end(sessionId);
+                } catch (error) {
+                    console.error('[AbilityBookCalculator] Marketplace workflow failed:', error);
+                    if (sessionId !== null && marketplaceSession_js.marketplaceSession.isActive(sessionId)) marketplaceSession_js.marketplaceSession.end(sessionId);
                 }
             });
             calculatorDiv.appendChild(buyButton);
@@ -25106,6 +25556,9 @@
          * Disable the feature
          */
         disable() {
+            const sessionId = this._abilityBookSessionId;
+            if (sessionId !== null && marketplaceSession_js.marketplaceSession.isActive(sessionId)) marketplaceSession_js.marketplaceSession.end(sessionId);
+            else this.teardownAbilityBookSession();
             if (this.unregisterObserver) {
                 this.unregisterObserver();
                 this.unregisterObserver = null;
@@ -28227,4 +28680,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] Combat library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.webSocketHook, Toolasha.Core.storage, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.reactInput, Toolasha.Utils.profitHelpers, Toolasha.Utils.marketData, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.teaParser, Toolasha.Utils.abilityCalc, Toolasha.Utils.equipmentParser, Toolasha.Utils.dom, Toolasha.Utils.houseCostCalculator);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.webSocketHook, Toolasha.Core.storage, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.reactInput, Toolasha.Utils.profitHelpers, Toolasha.Utils.marketData, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.teaParser, Toolasha.Utils.abilityCalc, Toolasha.Utils.equipmentParser, Toolasha.Core, Toolasha.Utils.dom, Toolasha.Utils.houseCostCalculator);
