@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.86.0
+ * Version: 2.87.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -21212,7 +21212,7 @@ ${starCSS}
                                     .map((item) => (item.type === 'variable' ? item.key : (item.value ?? '')))
                                     .join('');
                             }
-                        } catch (e) {
+                        } catch {
                             /* leave as-is */
                         }
                     }

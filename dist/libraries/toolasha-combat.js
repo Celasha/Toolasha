@@ -1,11 +1,11 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.86.0
+ * Version: 2.87.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, webSocketHook, storage, timerRegistry_js, domObserverHelpers_js, formatters_js, marketAPI, expectedValueCalculator, reactInput_js, profitHelpers_js, marketData_js, enhancementCalculator_js, enhancementConfig_js, teaParser_js, abilityCostCalculator_js, equipmentParser_js, marketplaceSession_js, dom, houseCostCalculator_js) {
+(function (config, dataManager, domObserver, webSocketHook, storage, timerRegistry_js, domObserverHelpers_js, formatters_js, marketAPI, expectedValueCalculator, reactInput_js, profitHelpers_js, marketData_js, enhancementCalculator_js, enhancementConfig_js, teaParser_js, profitConstants_js, abilityCostCalculator_js, equipmentParser_js, marketplaceSession_js, dom, houseCostCalculator_js) {
     'use strict';
 
     /**
@@ -28680,4 +28680,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] Combat library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.webSocketHook, Toolasha.Core.storage, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.reactInput, Toolasha.Utils.profitHelpers, Toolasha.Utils.marketData, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.teaParser, Toolasha.Utils.abilityCalc, Toolasha.Utils.equipmentParser, Toolasha.Core, Toolasha.Utils.dom, Toolasha.Utils.houseCostCalculator);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.webSocketHook, Toolasha.Core.storage, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.reactInput, Toolasha.Utils.profitHelpers, Toolasha.Utils.marketData, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Utils.abilityCalc, Toolasha.Utils.equipmentParser, Toolasha.Core, Toolasha.Utils.dom, Toolasha.Utils.houseCostCalculator);
