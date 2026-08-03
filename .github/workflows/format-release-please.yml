@@ -24,9 +24,9 @@ jobs:
 
             - name: Guard against internal registry URLs in lockfile
               run: |
-                  if grep -q 'npm.apple.com' package-lock.json; then
-                      echo "::error::package-lock.json contains npm.apple.com resolved URLs, which are unreachable from GitHub-hosted runners. Regenerate the lockfile against the public registry (see .github/workflows/ci.yml history for the fix)."
-                      grep -n 'npm.apple.com' package-lock.json
+                  if grep -q 'apple\.com' package-lock.json; then
+                      echo "::error::package-lock.json contains an internal apple.com registry/artifactory URL, which is unreachable from GitHub-hosted runners. Regenerate the lockfile against the public registry (see .github/workflows/ci.yml history for the fix)."
+                      grep -n 'apple\.com' package-lock.json
                       exit 1
                   fi
 
