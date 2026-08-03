@@ -22,11 +22,42 @@ jobs:
             - name: Setup Node.js
               uses: actions/setup-node@v6
               with:
-                  node-version: '20'
+                  node-version: '20.20.2'
                   cache: 'npm'
 
             - name: Install dependencies
-              run: npm ci
+              run: |
+                  verify_install() {
+                      [ -x node_modules/.bin/prettier ] && npm ls --depth=0 >/dev/null 2>&1
+                  }
+
+                  npm ci
+                  if verify_install; then
+                      echo "Install verified (attempt 1)."
+                      exit 0
+                  fi
+
+                  echo "::warning::npm ci left an incomplete install (missing prettier binary or npm ls failed) — retrying once."
+                  rm -rf node_modules
+                  npm ci
+                  if verify_install; then
+                      echo "Install verified (attempt 2)."
+                      exit 0
+                  fi
+
+                  echo "::error::npm ci install still incomplete after retry."
+                  npm ls --depth=0 || true
+                  ls -la node_modules/.bin/prettier || true
+
+                  latest_log=$(ls -t "$HOME"/.npm/_logs/*-debug-0.log 2>/dev/null | head -1)
+                  if [ -n "$latest_log" ]; then
+                      echo "::group::npm debug log ($latest_log)"
+                      cat "$latest_log"
+                      echo "::endgroup::"
+                  else
+                      echo "No npm debug log found."
+                  fi
+                  exit 1
 
             - name: Run ESLint
               run: npm run lint
