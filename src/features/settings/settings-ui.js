@@ -570,7 +570,7 @@ class SettingsUI {
                                 .map((item) => (item.type === 'variable' ? item.key : (item.value ?? '')))
                                 .join('');
                         }
-                    } catch (e) {
+                    } catch {
                         /* leave as-is */
                     }
                 }

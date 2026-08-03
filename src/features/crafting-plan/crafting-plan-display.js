@@ -794,6 +794,10 @@ function createCraftingPlanTabs(missingMaterials, tabsContainer = null, sessionI
 
     for (const material of missingMaterials) {
         const tabRef = { tab: null };
+        // activeWorkflowModel (read inside quantityProvider below) is module-level state,
+        // not a per-iteration loop variable — this intentionally reads its live value when
+        // the quantity provider is invoked later, not a stale snapshot from loop creation.
+        // eslint-disable-next-line no-loop-func
         const handler = () => {
             if (!marketplaceSession.isActive(sessionId)) return;
             const liveMissing = Number.parseInt(tabRef.tab?.getAttribute('data-missing-quantity') || '0', 10);

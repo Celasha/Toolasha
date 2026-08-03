@@ -24,7 +24,6 @@ describe('DOMObserver debounce', () => {
     });
 
     test('retains O(1) state under 100,000 continuous events', () => {
-        const callback = vi.fn();
         const nodes = [];
         for (let i = 0; i < 100000; i++) {
             nodes.push({ id: i });
