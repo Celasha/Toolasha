@@ -206,6 +206,21 @@ class MaxProduceable {
             return;
         }
 
+        // Pin feature is off (no pin element ever created), but the display already
+        // exists — this is a sort-triggered re-insertion, not a fresh panel. Re-register
+        // and return without calling triggerSort() again, or every re-insertion would
+        // append a duplicate display and re-trigger the sort, looping forever.
+        if (existingDisplay) {
+            this.actionElements.set(actionPanel, {
+                actionHrid,
+                displayElement: existingDisplay,
+                pinElement: null,
+            });
+            this.scheduleStatsLayoutSync(actionPanel, existingDisplay);
+            this.getResizeObserver().observe(existingDisplay);
+            return;
+        }
+
         // Make sure the action panel has relative positioning
         if (actionPanel.style.position !== 'relative' && actionPanel.style.position !== 'absolute') {
             actionPanel.style.position = 'relative';
