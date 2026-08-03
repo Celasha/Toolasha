@@ -249,21 +249,6 @@ function setupCharacterSwitchHandler() {
 }
 
 /**
- * Get feature instance from imported module
- * @param {string} key - Feature key
- * @returns {Object|null} Feature instance or null
- * @private
- */
-function getFeatureInstance(key) {
-    const feature = getFeature(key);
-    if (!feature) {
-        return null;
-    }
-
-    return feature.module || feature;
-}
-
-/**
  * Retry initialization for specific features
  * @param {Array<Object>} failedFeatures - Array of failed feature objects
  * @returns {Promise<void>}

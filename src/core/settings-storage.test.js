@@ -16,38 +16,9 @@ vi.mock('./storage.js', () => ({
     },
 }));
 
-async function makeStorage(currentCharId, knownIds) {
-    vi.resetModules();
-    Object.keys(storageData).forEach((k) => delete storageData[k]);
-    storageData['known_character_ids'] = knownIds;
-
-    const { default: storage } = await import('./storage.js');
-    storage.getJSON.mockImplementation(async (key, _area, defaultValue) => storageData[key] ?? defaultValue);
-    storage.setJSON.mockImplementation(async (key, value) => {
-        storageData[key] = value;
-    });
-
-    const { SettingsStorage } = await import('./settings-storage.js');
-    const s = new SettingsStorage();
-    if (currentCharId !== null) s.setCharacterId(currentCharId);
-    return { s, storage };
-}
-
-// settings-storage.js exports the singleton by default; we need the class for isolated instances
-// so we re-export it as a named export in a compatible way via dynamic import with a class wrapper test.
-// Instead, instantiate through the module's default export factory pattern by reaching the class directly.
-// Since the file exports a singleton, we test via importSettings on the singleton after patching its state.
-
-async function makeInstance(currentCharId, knownCharacterObjects) {
-    vi.resetModules();
-    Object.keys(storageData).forEach((k) => delete storageData[k]);
-    storageData['known_character_ids'] = knownCharacterObjects;
-
-    const mod = await import('./settings-storage.js');
-    const instance = mod.default;
-    instance.currentCharacterId = currentCharId !== null ? String(currentCharId) : null;
-    return instance;
-}
+// settings-storage.js exports a singleton. We test via importSettings on that singleton
+// after patching its state directly (currentCharacterId, storageData), rather than
+// instantiating the class in isolation.
 
 describe('SettingsStorage.importSettings — character isolation', () => {
     beforeEach(() => {

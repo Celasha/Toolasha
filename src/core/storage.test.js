@@ -86,8 +86,9 @@ describe('Storage write durability (TLA-007)', () => {
         expect(goodDb._store['myKey']).toBe('hello');
 
         const result = await writePromise;
-        // Original promise resolves false (first attempt failed); flush resolves pending resolvers
-        // The important invariant is that the value made it to disk.
+        // The failed first attempt requeues without resolving; the original resolver is
+        // carried over and only settled once flushAll's retry actually succeeds.
+        expect(result).toBe(true);
         expect(goodDb._store['myKey']).toBe('hello');
     });
 
