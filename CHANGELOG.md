@@ -2,27 +2,24 @@
 
 ## [2.86.0](https://github.com/Celasha/Toolasha/compare/v2.85.1...v2.86.0) (2026-08-03)
 
-
 ### Features
 
-* section 1 — core/runtime foundation for TLA-001 autofill rework ([aae3773](https://github.com/Celasha/Toolasha/commit/aae377313ef8b9fec5d785ab8ef699c077994621))
-* section 2 — migrate Actions and Crafting Plan material clicks to atomic arm() ([f00d032](https://github.com/Celasha/Toolasha/commit/f00d032d97413c41539d8e5cbb3097a3b5729385))
-* section 3 — fix House marketplace lifecycle and Return flow ([30b8d5a](https://github.com/Celasha/Toolasha/commit/30b8d5a337d9d2591cdad7bdf49a765b86b6cbc8))
-* tla-001 — marketplace autofill migrated to atomic arm() api with session enforcement ([5244784](https://github.com/Celasha/Toolasha/commit/524478483cad21d8399195c5001d2569eea8e4f9))
-
+- section 1 — core/runtime foundation for TLA-001 autofill rework ([aae3773](https://github.com/Celasha/Toolasha/commit/aae377313ef8b9fec5d785ab8ef699c077994621))
+- section 2 — migrate Actions and Crafting Plan material clicks to atomic arm() ([f00d032](https://github.com/Celasha/Toolasha/commit/f00d032d97413c41539d8e5cbb3097a3b5729385))
+- section 3 — fix House marketplace lifecycle and Return flow ([30b8d5a](https://github.com/Celasha/Toolasha/commit/30b8d5a337d9d2591cdad7bdf49a765b86b6cbc8))
+- tla-001 — marketplace autofill migrated to atomic arm() api with session enforcement ([5244784](https://github.com/Celasha/Toolasha/commit/524478483cad21d8399195c5001d2569eea8e4f9))
 
 ### Bug Fixes
 
-* add autofill convergence poll, first-material arm, house resolver, layout anchor ([e766b26](https://github.com/Celasha/Toolasha/commit/e766b26d141c644764f37317cd22aab04f90029a))
-* enforce single-owner marketplace sessions to prevent stale writes and orphaned tabs (TLA-001) ([ae6daef](https://github.com/Celasha/Toolasha/commit/ae6daefdb90b4aebfdfeb8e39541a3eabaaa39a1))
-* include coin cost in alchemy mat limit calculation ([71a8fb8](https://github.com/Celasha/Toolasha/commit/71a8fb873cf2c87d8f8afe09cd55777712d1048e))
-* overhaul guild idle detection and split into Online-Idle and Offline lists ([2a83b14](https://github.com/Celasha/Toolasha/commit/2a83b1451919047f1d233623b31244233d039698))
-* run lint-and-build on every pull_request, not just after format sync ([#612](https://github.com/Celasha/Toolasha/issues/612)) ([cac16b4](https://github.com/Celasha/Toolasha/commit/cac16b4dd76b45184c9af297f68aa34dc44a3a12))
-
+- add autofill convergence poll, first-material arm, house resolver, layout anchor ([e766b26](https://github.com/Celasha/Toolasha/commit/e766b26d141c644764f37317cd22aab04f90029a))
+- enforce single-owner marketplace sessions to prevent stale writes and orphaned tabs (TLA-001) ([ae6daef](https://github.com/Celasha/Toolasha/commit/ae6daefdb90b4aebfdfeb8e39541a3eabaaa39a1))
+- include coin cost in alchemy mat limit calculation ([71a8fb8](https://github.com/Celasha/Toolasha/commit/71a8fb873cf2c87d8f8afe09cd55777712d1048e))
+- overhaul guild idle detection and split into Online-Idle and Offline lists ([2a83b14](https://github.com/Celasha/Toolasha/commit/2a83b1451919047f1d233623b31244233d039698))
+- run lint-and-build on every pull_request, not just after format sync ([#612](https://github.com/Celasha/Toolasha/issues/612)) ([cac16b4](https://github.com/Celasha/Toolasha/commit/cac16b4dd76b45184c9af297f68aa34dc44a3a12))
 
 ### Continuous Integration
 
-* harden format-release-please install against incomplete npm ci ([#611](https://github.com/Celasha/Toolasha/issues/611)) ([fb2c800](https://github.com/Celasha/Toolasha/commit/fb2c800be0797445164dfd9208d02f101a3e93c0))
+- harden format-release-please install against incomplete npm ci ([#611](https://github.com/Celasha/Toolasha/issues/611)) ([fb2c800](https://github.com/Celasha/Toolasha/commit/fb2c800be0797445164dfd9208d02f101a3e93c0))
 
 ## [2.85.1](https://github.com/Celasha/Toolasha/compare/v2.85.0...v2.85.1) (2026-07-30)
 
