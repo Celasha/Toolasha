@@ -82,6 +82,7 @@ class InventoryCountDisplay {
         this.isInitialized = false;
         this.DEBOUNCE_DELAY = 300;
         this.debounceTimer = null;
+        this.settingChangeHandler = null;
     }
 
     initialize() {
@@ -89,13 +90,14 @@ class InventoryCountDisplay {
 
         this.isInitialized = true;
 
-        config.onSettingChange('inventoryCountDisplay', (enabled) => {
+        this.settingChangeHandler = (enabled) => {
             if (enabled) {
                 this._enable();
             } else {
                 this._disable();
             }
-        });
+        };
+        config.onSettingChange('inventoryCountDisplay', this.settingChangeHandler);
 
         if (config.getSetting('inventoryCountDisplay', true)) {
             this._enable();
@@ -121,6 +123,11 @@ class InventoryCountDisplay {
     }
 
     _disable() {
+        if (this.debounceTimer) {
+            clearTimeout(this.debounceTimer);
+            this.debounceTimer = null;
+        }
+
         this.unregisterObservers.forEach((fn) => fn());
         this.unregisterObservers = [];
 
@@ -317,6 +324,10 @@ class InventoryCountDisplay {
 
     disable() {
         this._disable();
+        if (this.settingChangeHandler) {
+            config.offSettingChange('inventoryCountDisplay', this.settingChangeHandler);
+            this.settingChangeHandler = null;
+        }
         this.isInitialized = false;
     }
 }

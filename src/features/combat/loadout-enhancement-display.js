@@ -110,36 +110,54 @@ function removeOverlays() {
 }
 
 let unregisterHandler = null;
+let settingChangeHandler = null;
 
-function initialize() {
-    if (!config.getSetting('loadoutEnhancementDisplay')) return;
+function enable() {
+    if (!unregisterHandler) {
+        unregisterHandler = domObserver.register(
+            'LoadoutEnhancementDisplay',
+            () => {
+                annotateLoadout();
+            },
+            { debounce: true, debounceDelay: 200 }
+        );
+    }
 
-    unregisterHandler = domObserver.register(
-        'LoadoutEnhancementDisplay',
-        () => {
-            annotateLoadout();
-        },
-        { debounce: true, debounceDelay: 200 }
-    );
-
-    // Run immediately for any already-open loadout
+    // Run immediately for any already-open loadout.
     annotateLoadout();
-
-    config.onSettingChange('loadoutEnhancementDisplay', (enabled) => {
-        if (enabled) {
-            annotateLoadout();
-        } else {
-            removeOverlays();
-        }
-    });
 }
 
-function cleanup() {
+function deactivate() {
     if (unregisterHandler) {
         unregisterHandler();
         unregisterHandler = null;
     }
     removeOverlays();
+}
+
+function initialize() {
+    if (!settingChangeHandler) {
+        settingChangeHandler = (enabled) => {
+            if (enabled) {
+                enable();
+            } else {
+                deactivate();
+            }
+        };
+        config.onSettingChange('loadoutEnhancementDisplay', settingChangeHandler);
+    }
+
+    if (config.getSetting('loadoutEnhancementDisplay')) {
+        enable();
+    }
+}
+
+function cleanup() {
+    deactivate();
+    if (settingChangeHandler) {
+        config.offSettingChange('loadoutEnhancementDisplay', settingChangeHandler);
+        settingChangeHandler = null;
+    }
 }
 
 export default {

@@ -21,6 +21,7 @@ class CombatStatsUI {
         this.isInitialized = false;
         this.observer = null;
         this.popup = null;
+        this.settingChangeHandler = null;
     }
 
     /**
@@ -34,13 +35,14 @@ class CombatStatsUI {
         this.isInitialized = true;
 
         // Setup setting listener
-        config.onSettingChange('combatStats', (enabled) => {
+        this.settingChangeHandler = (enabled) => {
             if (enabled) {
                 this.injectButton();
             } else {
                 this.removeButton();
             }
-        });
+        };
+        config.onSettingChange('combatStats', this.settingChangeHandler);
 
         // Start observing for Combat panel
         this.startObserver();
@@ -1213,6 +1215,11 @@ class CombatStatsUI {
      * Cleanup
      */
     cleanup() {
+        if (this.settingChangeHandler) {
+            config.offSettingChange('combatStats', this.settingChangeHandler);
+            this.settingChangeHandler = null;
+        }
+
         if (this.observer) {
             this.observer.disconnect();
             this.observer = null;

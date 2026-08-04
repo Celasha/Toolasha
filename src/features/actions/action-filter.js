@@ -28,6 +28,9 @@ class ActionFilter {
         this._updateModeBtn = null;
         this._updateCraftBtn = null;
         this._updateSortBtn = null;
+        this.pricingModeHandler = null;
+        this.craftUpgradeHandler = null;
+        this.unregisterSortModeHandler = null;
     }
 
     /**
@@ -48,13 +51,17 @@ class ActionFilter {
         this.unregisterHandlers.push(unregisterTitleObserver);
 
         // Re-update button labels when config finishes loading from storage
-        config.onSettingChange('profitCalc_pricingMode', () => {
+        this.pricingModeHandler = () => {
             if (this._updateModeBtn) this._updateModeBtn();
-        });
-        config.onSettingChange('profitCalc_craftUpgradeItems', () => {
+        };
+        config.onSettingChange('profitCalc_pricingMode', this.pricingModeHandler);
+
+        this.craftUpgradeHandler = () => {
             if (this._updateCraftBtn) this._updateCraftBtn();
-        });
-        actionPanelSort.onSortModeChange(() => {
+        };
+        config.onSettingChange('profitCalc_craftUpgradeItems', this.craftUpgradeHandler);
+
+        this.unregisterSortModeHandler = actionPanelSort.onSortModeChange(() => {
             if (this._updateSortBtn) this._updateSortBtn();
         });
 
@@ -554,6 +561,19 @@ class ActionFilter {
         // Unregister observers
         this.unregisterHandlers.forEach((unregister) => unregister());
         this.unregisterHandlers = [];
+
+        if (this.pricingModeHandler) {
+            config.offSettingChange('profitCalc_pricingMode', this.pricingModeHandler);
+            this.pricingModeHandler = null;
+        }
+        if (this.craftUpgradeHandler) {
+            config.offSettingChange('profitCalc_craftUpgradeItems', this.craftUpgradeHandler);
+            this.craftUpgradeHandler = null;
+        }
+        if (this.unregisterSortModeHandler) {
+            this.unregisterSortModeHandler();
+            this.unregisterSortModeHandler = null;
+        }
 
         // Clear filter
         this.clearFilter();

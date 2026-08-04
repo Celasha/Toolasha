@@ -483,6 +483,7 @@ class CollectionFilters {
         this.sortMode = 'default'; // 'default' | 'items-needed' | 'gold-cost' | 'time-to-next-tier'
         this.catsObserver = null;
         this.itemActionCache = null;
+        this.characterInitializedHandler = null;
     }
 
     // -------------------------------------------------------------------------
@@ -557,7 +558,7 @@ class CollectionFilters {
         }
 
         // Reload data on character switch
-        dataManager.on('character_initialized', async () => {
+        this.characterInitializedHandler = async () => {
             await this._load();
             // Re-apply flags to any currently visible Collections panel
             const panelEl = document.querySelector(
@@ -567,10 +568,16 @@ class CollectionFilters {
             if (panelEl) {
                 this._rerenderPanel(panelEl);
             }
-        });
+        };
+        dataManager.on('character_initialized', this.characterInitializedHandler);
     }
 
     disable() {
+        if (this.characterInitializedHandler) {
+            dataManager.off('character_initialized', this.characterInitializedHandler);
+            this.characterInitializedHandler = null;
+        }
+
         this.unregisterHandlers.forEach((fn) => fn());
         this.unregisterHandlers = [];
         this.isInitialized = false;

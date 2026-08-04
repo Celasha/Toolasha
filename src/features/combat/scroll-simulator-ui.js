@@ -318,6 +318,8 @@ class ScrollSimPopup {
 }
 
 const popup = new ScrollSimPopup();
+let unregisterObserver = null;
+let settingChangeHandler = null;
 
 // ─── Loadout panel button ───────────────────────────────────────
 
@@ -349,19 +351,46 @@ function injectButton(navButtons) {
 
 // ─── Public API ─────────────────────────────────────────────────
 
-function initialize() {
-    domObserver.onClass('ScrollSimulatorUI', 'LoadoutsPanel_buttonsContainer', (node) => {
-        const panel = node.closest('[class*="LoadoutsPanel_selectedLoadout"]') || node.parentElement;
-        const navButtons = panel?.querySelector('[class*="LoadoutsPanel_navButtons"]');
-        if (navButtons) injectButton(navButtons);
-    });
+function enable() {
+    if (!unregisterObserver) {
+        unregisterObserver = domObserver.onClass('ScrollSimulatorUI', 'LoadoutsPanel_buttonsContainer', (node) => {
+            const panel = node.closest('[class*="LoadoutsPanel_selectedLoadout"]') || node.parentElement;
+            const navButtons = panel?.querySelector('[class*="LoadoutsPanel_navButtons"]');
+            if (navButtons) injectButton(navButtons);
+        });
+    }
 
-    config.onSettingChange('simulateScrollEffects', (enabled) => {
-        if (!enabled) {
-            document.getElementById(BUTTON_ID)?.remove();
-            popup.close();
-        }
-    });
+    // Handle an already-open loadout panel when the setting is enabled live.
+    const navButtons = document.querySelector(
+        '[class*="LoadoutsPanel_selectedLoadout"] [class*="LoadoutsPanel_navButtons"]'
+    );
+    if (navButtons) injectButton(navButtons);
+}
+
+function deactivate() {
+    if (unregisterObserver) {
+        unregisterObserver();
+        unregisterObserver = null;
+    }
+    document.getElementById(BUTTON_ID)?.remove();
+    popup.close();
+}
+
+function initialize() {
+    if (!settingChangeHandler) {
+        settingChangeHandler = (enabled) => {
+            if (enabled) {
+                enable();
+            } else {
+                deactivate();
+            }
+        };
+        config.onSettingChange('simulateScrollEffects', settingChangeHandler);
+    }
+
+    if (config.getSetting('simulateScrollEffects')) {
+        enable();
+    }
 }
 
 /**
@@ -372,8 +401,11 @@ function openDefaultsPopup() {
 }
 
 function disable() {
-    document.getElementById(BUTTON_ID)?.remove();
-    popup.close();
+    deactivate();
+    if (settingChangeHandler) {
+        config.offSettingChange('simulateScrollEffects', settingChangeHandler);
+        settingChangeHandler = null;
+    }
 }
 
 export default {

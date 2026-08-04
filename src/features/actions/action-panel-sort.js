@@ -168,7 +168,14 @@ class ActionPanelSort {
     }
 
     onSortModeChange(callback) {
-        this.sortModeListeners.push(callback);
+        if (!this.sortModeListeners.includes(callback)) {
+            this.sortModeListeners.push(callback);
+        }
+
+        return () => {
+            const index = this.sortModeListeners.indexOf(callback);
+            if (index !== -1) this.sortModeListeners.splice(index, 1);
+        };
     }
 
     _notifySortModeListeners() {

@@ -18,6 +18,7 @@ class TradeHistoryDisplay {
         this.currentOrderBookData = null;
         this.isInitialized = false;
         this.needsPriceDataRetry = false; // Track if we need to retry due to missing price data
+        this.comparisonModeHandler = null;
     }
 
     /**
@@ -42,13 +43,16 @@ class TradeHistoryDisplay {
      * Setup setting change listener to refresh display when comparison mode changes
      */
     setupSettingListener() {
-        config.onSettingChange('market_tradeHistoryComparisonMode', () => {
+        if (this.comparisonModeHandler) return;
+
+        this.comparisonModeHandler = () => {
             // Refresh display if currently viewing an item
             if (this.currentItemHrid) {
                 const history = tradeHistory.getHistory(this.currentItemHrid, this.currentEnhancementLevel);
                 this.updateDisplay(null, history);
             }
-        });
+        };
+        config.onSettingChange('market_tradeHistoryComparisonMode', this.comparisonModeHandler);
     }
 
     /**
@@ -296,6 +300,11 @@ class TradeHistoryDisplay {
      * Disable the display
      */
     disable() {
+        if (this.comparisonModeHandler) {
+            config.offSettingChange('market_tradeHistoryComparisonMode', this.comparisonModeHandler);
+            this.comparisonModeHandler = null;
+        }
+
         if (this.unregisterObserver) {
             this.unregisterObserver();
             this.unregisterObserver = null;

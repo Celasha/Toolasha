@@ -29,6 +29,10 @@ class QueueMonitorUI {
         this.isDragging = false;
         this.dragOffset = { x: 0, y: 0 };
         this._expandedChars = new Set();
+        this._dragHeader = null;
+        this._dragMouseDownHandler = null;
+        this._dragMouseMoveHandler = null;
+        this._dragMouseUpHandler = null;
     }
 
     /**
@@ -57,6 +61,7 @@ class QueueMonitorUI {
      */
     disable() {
         this.timers.clearAll();
+        this._removeDragHandlers();
         if (this._boundOnInit) {
             dataManager.off('character_initialized', this._boundOnInit);
             this._boundOnInit = null;
@@ -148,7 +153,10 @@ class QueueMonitorUI {
      * @param {HTMLElement} header
      */
     _setupDrag(header) {
-        const onMouseDown = (e) => {
+        this._removeDragHandlers();
+
+        this._dragHeader = header;
+        this._dragMouseDownHandler = (e) => {
             if (e.target.tagName === 'BUTTON') return;
             this.isDragging = true;
             this.dragOffset.x = e.clientX - this.panel.getBoundingClientRect().left;
@@ -157,7 +165,7 @@ class QueueMonitorUI {
             e.preventDefault();
         };
 
-        const onMouseMove = (e) => {
+        this._dragMouseMoveHandler = (e) => {
             if (!this.isDragging) return;
             const x = e.clientX - this.dragOffset.x;
             const y = e.clientY - this.dragOffset.y;
@@ -167,16 +175,34 @@ class QueueMonitorUI {
             this.panel.style.bottom = 'auto';
         };
 
-        const onMouseUp = () => {
+        this._dragMouseUpHandler = () => {
             if (this.isDragging) {
                 this.isDragging = false;
                 header.style.cursor = 'grab';
             }
         };
 
-        header.addEventListener('mousedown', onMouseDown);
-        document.addEventListener('mousemove', onMouseMove);
-        document.addEventListener('mouseup', onMouseUp);
+        header.addEventListener('mousedown', this._dragMouseDownHandler);
+        document.addEventListener('mousemove', this._dragMouseMoveHandler);
+        document.addEventListener('mouseup', this._dragMouseUpHandler);
+    }
+
+    _removeDragHandlers() {
+        if (this._dragHeader && this._dragMouseDownHandler) {
+            this._dragHeader.removeEventListener('mousedown', this._dragMouseDownHandler);
+        }
+        if (this._dragMouseMoveHandler) {
+            document.removeEventListener('mousemove', this._dragMouseMoveHandler);
+        }
+        if (this._dragMouseUpHandler) {
+            document.removeEventListener('mouseup', this._dragMouseUpHandler);
+        }
+
+        this._dragHeader = null;
+        this._dragMouseDownHandler = null;
+        this._dragMouseMoveHandler = null;
+        this._dragMouseUpHandler = null;
+        this.isDragging = false;
     }
 
     /**

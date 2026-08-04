@@ -21,6 +21,7 @@ class DungeonTrackerUIInteractions {
         // Store drag handlers for cleanup
         this.dragMoveHandler = null;
         this.dragUpHandler = null;
+        this.keyboardShortcutHandler = null;
     }
 
     /**
@@ -487,13 +488,18 @@ class DungeonTrackerUIInteractions {
      * Ctrl+Shift+D to reset dungeon tracker to default position
      */
     setupKeyboardShortcut() {
-        document.addEventListener('keydown', (e) => {
+        if (this.keyboardShortcutHandler) {
+            document.removeEventListener('keydown', this.keyboardShortcutHandler);
+        }
+
+        this.keyboardShortcutHandler = (e) => {
             // Ctrl+Shift+D - Reset dungeon tracker position
             if (e.ctrlKey && e.shiftKey && e.key === 'D') {
                 e.preventDefault();
                 this.resetPosition();
             }
-        });
+        };
+        document.addEventListener('keydown', this.keyboardShortcutHandler);
     }
 
     /**
@@ -558,6 +564,10 @@ class DungeonTrackerUIInteractions {
         if (this.dragUpHandler) {
             document.removeEventListener('mouseup', this.dragUpHandler);
             this.dragUpHandler = null;
+        }
+        if (this.keyboardShortcutHandler) {
+            document.removeEventListener('keydown', this.keyboardShortcutHandler);
+            this.keyboardShortcutHandler = null;
         }
 
         this.timerRegistry.clearAll();

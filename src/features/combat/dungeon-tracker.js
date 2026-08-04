@@ -235,9 +235,10 @@ class DungeonTracker {
         const checkTimeout = setTimeout(() => this.checkForActiveDungeon(), 1000);
         this.timerRegistry.registerTimeout(checkTimeout);
 
-        dataManager.on('character_switching', () => {
+        this.handlers.characterSwitching = () => {
             this.cleanup();
-        });
+        };
+        dataManager.on('character_switching', this.handlers.characterSwitching);
     }
 
     /**
@@ -1287,6 +1288,11 @@ class DungeonTracker {
      * Cleanup for character switching
      */
     async cleanup() {
+        if (this.handlers.characterSwitching) {
+            dataManager.off('character_switching', this.handlers.characterSwitching);
+            this.handlers.characterSwitching = null;
+        }
+
         if (this.handlers.newBattle) {
             webSocketHook.off('new_battle', this.handlers.newBattle);
             this.handlers.newBattle = null;
