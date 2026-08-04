@@ -94,3 +94,48 @@ describe('DataManager', () => {
         });
     });
 });
+
+describe('DataManager event listener snapshots', () => {
+    test('character switching calls every listener when listeners remove themselves', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const calls = [];
+
+        const first = () => {
+            calls.push('first');
+            dataManager.off('character_switching', first);
+        };
+        const second = () => {
+            calls.push('second');
+            dataManager.off('character_switching', second);
+        };
+        const third = () => {
+            calls.push('third');
+            dataManager.off('character_switching', third);
+        };
+
+        dataManager.on('character_switching', first);
+        dataManager.on('character_switching', second);
+        dataManager.on('character_switching', third);
+
+        dataManager.emit('character_switching', {});
+
+        expect(calls).toEqual(['first', 'second', 'third']);
+    });
+
+    test('deferred events use the listener set that existed when emit was called', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const first = vi.fn();
+        const late = vi.fn();
+
+        dataManager.on('snapshot_test', first);
+        dataManager.emit('snapshot_test', { id: 1 });
+        dataManager.off('snapshot_test', first);
+        dataManager.on('snapshot_test', late);
+
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(first).toHaveBeenCalledWith({ id: 1 });
+        expect(late).not.toHaveBeenCalled();
+        dataManager.off('snapshot_test', late);
+    });
+});

@@ -63,3 +63,48 @@ describe('WebSocket hook — native listener semantics preserved', () => {
         expect(spy).not.toHaveBeenCalled();
     });
 });
+
+describe('WebSocket hook — dispatch snapshots', () => {
+    let webSocketHook;
+
+    beforeEach(async () => {
+        vi.resetModules();
+        const mod = await import('./websocket.js');
+        webSocketHook = mod.default;
+    });
+
+    test('all message handlers run when earlier handlers unregister during dispatch', () => {
+        const calls = [];
+        const first = () => {
+            calls.push('first');
+            webSocketHook.off('snapshot_dispatch', first);
+        };
+        const second = () => {
+            calls.push('second');
+            webSocketHook.off('snapshot_dispatch', second);
+        };
+        const third = () => calls.push('third');
+
+        webSocketHook.on('snapshot_dispatch', first);
+        webSocketHook.on('snapshot_dispatch', second);
+        webSocketHook.on('snapshot_dispatch', third);
+        webSocketHook.processMessage(JSON.stringify({ type: 'snapshot_dispatch', value: 1 }));
+
+        expect(calls).toEqual(['first', 'second', 'third']);
+    });
+
+    test('all socket lifecycle handlers run when an earlier handler unregisters', () => {
+        const calls = [];
+        const first = () => {
+            calls.push('first');
+            webSocketHook.offSocketEvent('snapshot_open', first);
+        };
+        const second = () => calls.push('second');
+
+        webSocketHook.onSocketEvent('snapshot_open', first);
+        webSocketHook.onSocketEvent('snapshot_open', second);
+        webSocketHook.emitSocketEvent('snapshot_open', {}, {});
+
+        expect(calls).toEqual(['first', 'second']);
+    });
+});

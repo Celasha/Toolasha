@@ -1081,7 +1081,11 @@ class DataManager {
      * @param {*} data - Event data
      */
     emit(event, data) {
-        const listeners = this.eventListeners.get(event) || [];
+        // Snapshot at emit time. Lifecycle listeners commonly unregister themselves
+        // during character_switching; iterating the live array would shift entries and
+        // deterministically skip the next cleanup handler. Deferred events must also not
+        // be delivered to listeners that subscribed after the event was emitted.
+        const listeners = [...(this.eventListeners.get(event) || [])];
 
         // Only character_switching must run immediately (cleanup phase)
         // character_switched can be deferred - it just schedules re-init anyway
