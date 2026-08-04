@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.87.1](https://github.com/Celasha/Toolasha/compare/v2.87.0...v2.87.1) (2026-08-04)
+
+
+### Bug Fixes
+
+* complete feature resource teardown ([421e29a](https://github.com/Celasha/Toolasha/commit/421e29a954bb496d534b88dc9913815cc4dcfdc0))
+* snapshot lifecycle dispatch listeners ([03204a5](https://github.com/Celasha/Toolasha/commit/03204a5145bb3c2be6b83c6f1f89cac87c9812ed))
+
+
+### Performance Improvements
+
+* throttle action countdown updates ([8026ebb](https://github.com/Celasha/Toolasha/commit/8026ebb105246de8306af7c2b24af5894e3daec4))
+
 ## [2.87.0](https://github.com/Celasha/Toolasha/compare/v2.86.0...v2.87.0) (2026-08-03)
 
 ### Features
