@@ -8,17 +8,23 @@ import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import dataManager from '../../core/data-manager.js';
 
+const UPDATE_INTERVAL_MS = 100; // Display precision is 0.1s; faster updates only add style/DOM work.
+
 class ActionCountdown {
     constructor() {
         this.initialized = false;
         this.rafId = null;
         this.textEl = null;
+        this.spanEl = null;
         this.fillBar = null;
         this.totalTime = null;
         this.unregisterObserver = null;
         this.actionCompletedHandler = null;
         this.lastCompletedAt = null;
         this.settingChangeHandler = null;
+        this.lastFrameUpdate = 0;
+        this.parseTimeout = null;
+        this.tickHandler = (timestamp) => this._tick(timestamp);
     }
 
     initialize() {
@@ -55,6 +61,7 @@ class ActionCountdown {
 
     _onProgressBarText(textEl) {
         this.textEl = textEl;
+        this.spanEl = textEl.querySelector('span');
         this.fillBar = null;
         this._parseTotalTime();
         this._startLoop();
@@ -62,9 +69,17 @@ class ActionCountdown {
 
     _parseTotalTime() {
         if (!this.textEl) return;
-        const span = this.textEl.querySelector('span');
+        const span = this.spanEl?.isConnected ? this.spanEl : this.textEl.querySelector('span');
         if (!span) return;
-        const val = parseFloat(span.textContent);
+        this.spanEl = span;
+
+        const values = span.textContent.match(/\d+(?:\.\d+)?/g);
+        if (!values?.length) return;
+
+        // When the span already contains our own "remaining / total" rendering,
+        // the final value is the duration. Parsing the first value would gradually
+        // shrink totalTime after every action completion.
+        const val = Number(values.length > 1 ? values[values.length - 1] : values[0]);
         if (!isNaN(val) && val > 0) {
             this.totalTime = val;
         }
@@ -72,7 +87,11 @@ class ActionCountdown {
 
     _onActionCompleted() {
         this.lastCompletedAt = Date.now();
-        setTimeout(() => this._parseTotalTime(), 50);
+        if (this.parseTimeout) clearTimeout(this.parseTimeout);
+        this.parseTimeout = setTimeout(() => {
+            this.parseTimeout = null;
+            this._parseTotalTime();
+        }, 50);
     }
 
     /**
@@ -98,24 +117,39 @@ class ActionCountdown {
     }
 
     _startLoop() {
-        if (this.rafId) return;
-        this._tick();
+        if (this.rafId !== null) return;
+        this.lastFrameUpdate = 0;
+        this.rafId = requestAnimationFrame(this.tickHandler);
     }
 
     _stopLoop() {
-        if (this.rafId) {
+        if (this.rafId !== null) {
             cancelAnimationFrame(this.rafId);
             this.rafId = null;
         }
+        this.lastFrameUpdate = 0;
     }
 
-    _tick() {
-        this.rafId = requestAnimationFrame(() => this._tick());
+    _tick(timestamp) {
+        this.rafId = null;
 
-        if (!this.textEl || !this.textEl.isConnected || !this.totalTime) return;
+        // A removed progress bar cannot become useful again. Stop completely and
+        // let the central DOM observer restart the loop for the replacement element.
+        if (!this.textEl || !this.textEl.isConnected) return;
 
-        const span = this.textEl.querySelector('span');
+        this.rafId = requestAnimationFrame(this.tickHandler);
+
+        if (timestamp - this.lastFrameUpdate < UPDATE_INTERVAL_MS) return;
+        this.lastFrameUpdate = timestamp;
+
+        if (!this.totalTime) {
+            this._parseTotalTime();
+            if (!this.totalTime) return;
+        }
+
+        const span = this.spanEl?.isConnected ? this.spanEl : this.textEl.querySelector('span');
         if (!span) return;
+        this.spanEl = span;
 
         if (!this.fillBar || !this.fillBar.isConnected) {
             this.fillBar = this._findFillBar();
@@ -153,8 +187,12 @@ class ActionCountdown {
 
     disable() {
         this._stopLoop();
+        if (this.parseTimeout) {
+            clearTimeout(this.parseTimeout);
+            this.parseTimeout = null;
+        }
         if (this.textEl && this.totalTime) {
-            const span = this.textEl.querySelector('span');
+            const span = this.spanEl?.isConnected ? this.spanEl : this.textEl.querySelector('span');
             if (span) {
                 span.textContent = this.totalTime.toFixed(1) + 's';
             }
@@ -168,6 +206,7 @@ class ActionCountdown {
             this.unregisterObserver = null;
         }
         this.textEl = null;
+        this.spanEl = null;
         this.fillBar = null;
         this.totalTime = null;
         this.lastCompletedAt = null;
