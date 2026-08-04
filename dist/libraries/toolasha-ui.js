@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.87.0
+ * Version: 2.87.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2378,6 +2378,7 @@ ${starCSS}
             this.sortMode = 'default'; // 'default' | 'items-needed' | 'gold-cost' | 'time-to-next-tier'
             this.catsObserver = null;
             this.itemActionCache = null;
+            this.characterInitializedHandler = null;
         }
 
         // -------------------------------------------------------------------------
@@ -2452,7 +2453,7 @@ ${starCSS}
             }
 
             // Reload data on character switch
-            dataManager.on('character_initialized', async () => {
+            this.characterInitializedHandler = async () => {
                 await this._load();
                 // Re-apply flags to any currently visible Collections panel
                 const panelEl = document.querySelector(
@@ -2462,10 +2463,16 @@ ${starCSS}
                 if (panelEl) {
                     this._rerenderPanel(panelEl);
                 }
-            });
+            };
+            dataManager.on('character_initialized', this.characterInitializedHandler);
         }
 
         disable() {
+            if (this.characterInitializedHandler) {
+                dataManager.off('character_initialized', this.characterInitializedHandler);
+                this.characterInitializedHandler = null;
+            }
+
             this.unregisterHandlers.forEach((fn) => fn());
             this.unregisterHandlers = [];
             this.isInitialized = false;
@@ -19942,6 +19949,8 @@ ${starCSS}
     }
 
     const popup = new ScrollSimPopup();
+    let unregisterObserver = null;
+    let settingChangeHandler$1 = null;
 
     // ─── Loadout panel button ───────────────────────────────────────
 
@@ -19973,19 +19982,46 @@ ${starCSS}
 
     // ─── Public API ─────────────────────────────────────────────────
 
-    function initialize() {
-        domObserver.onClass('ScrollSimulatorUI', 'LoadoutsPanel_buttonsContainer', (node) => {
-            const panel = node.closest('[class*="LoadoutsPanel_selectedLoadout"]') || node.parentElement;
-            const navButtons = panel?.querySelector('[class*="LoadoutsPanel_navButtons"]');
-            if (navButtons) injectButton(navButtons);
-        });
+    function enable() {
+        if (!unregisterObserver) {
+            unregisterObserver = domObserver.onClass('ScrollSimulatorUI', 'LoadoutsPanel_buttonsContainer', (node) => {
+                const panel = node.closest('[class*="LoadoutsPanel_selectedLoadout"]') || node.parentElement;
+                const navButtons = panel?.querySelector('[class*="LoadoutsPanel_navButtons"]');
+                if (navButtons) injectButton(navButtons);
+            });
+        }
 
-        config.onSettingChange('simulateScrollEffects', (enabled) => {
-            if (!enabled) {
-                document.getElementById(BUTTON_ID)?.remove();
-                popup.close();
-            }
-        });
+        // Handle an already-open loadout panel when the setting is enabled live.
+        const navButtons = document.querySelector(
+            '[class*="LoadoutsPanel_selectedLoadout"] [class*="LoadoutsPanel_navButtons"]'
+        );
+        if (navButtons) injectButton(navButtons);
+    }
+
+    function deactivate() {
+        if (unregisterObserver) {
+            unregisterObserver();
+            unregisterObserver = null;
+        }
+        document.getElementById(BUTTON_ID)?.remove();
+        popup.close();
+    }
+
+    function initialize() {
+        if (!settingChangeHandler$1) {
+            settingChangeHandler$1 = (enabled) => {
+                if (enabled) {
+                    enable();
+                } else {
+                    deactivate();
+                }
+            };
+            config.onSettingChange('simulateScrollEffects', settingChangeHandler$1);
+        }
+
+        if (config.getSetting('simulateScrollEffects')) {
+            enable();
+        }
     }
 
     /**
@@ -19996,8 +20032,11 @@ ${starCSS}
     }
 
     function disable() {
-        document.getElementById(BUTTON_ID)?.remove();
-        popup.close();
+        deactivate();
+        if (settingChangeHandler$1) {
+            config.offSettingChange('simulateScrollEffects', settingChangeHandler$1);
+            settingChangeHandler$1 = null;
+        }
     }
 
     var scrollSimulatorUI = {
@@ -29468,7 +29507,14 @@ ${starCSS}
         }
 
         onSortModeChange(callback) {
-            this.sortModeListeners.push(callback);
+            if (!this.sortModeListeners.includes(callback)) {
+                this.sortModeListeners.push(callback);
+            }
+
+            return () => {
+                const index = this.sortModeListeners.indexOf(callback);
+                if (index !== -1) this.sortModeListeners.splice(index, 1);
+            };
         }
 
         _notifySortModeListeners() {
@@ -37434,6 +37480,10 @@ ${starCSS}
             this.isDragging = false;
             this.dragOffset = { x: 0, y: 0 };
             this._expandedChars = new Set();
+            this._dragHeader = null;
+            this._dragMouseDownHandler = null;
+            this._dragMouseMoveHandler = null;
+            this._dragMouseUpHandler = null;
         }
 
         /**
@@ -37462,6 +37512,7 @@ ${starCSS}
          */
         disable() {
             this.timers.clearAll();
+            this._removeDragHandlers();
             if (this._boundOnInit) {
                 dataManager.off('character_initialized', this._boundOnInit);
                 this._boundOnInit = null;
@@ -37553,7 +37604,10 @@ ${starCSS}
          * @param {HTMLElement} header
          */
         _setupDrag(header) {
-            const onMouseDown = (e) => {
+            this._removeDragHandlers();
+
+            this._dragHeader = header;
+            this._dragMouseDownHandler = (e) => {
                 if (e.target.tagName === 'BUTTON') return;
                 this.isDragging = true;
                 this.dragOffset.x = e.clientX - this.panel.getBoundingClientRect().left;
@@ -37562,7 +37616,7 @@ ${starCSS}
                 e.preventDefault();
             };
 
-            const onMouseMove = (e) => {
+            this._dragMouseMoveHandler = (e) => {
                 if (!this.isDragging) return;
                 const x = e.clientX - this.dragOffset.x;
                 const y = e.clientY - this.dragOffset.y;
@@ -37572,16 +37626,34 @@ ${starCSS}
                 this.panel.style.bottom = 'auto';
             };
 
-            const onMouseUp = () => {
+            this._dragMouseUpHandler = () => {
                 if (this.isDragging) {
                     this.isDragging = false;
                     header.style.cursor = 'grab';
                 }
             };
 
-            header.addEventListener('mousedown', onMouseDown);
-            document.addEventListener('mousemove', onMouseMove);
-            document.addEventListener('mouseup', onMouseUp);
+            header.addEventListener('mousedown', this._dragMouseDownHandler);
+            document.addEventListener('mousemove', this._dragMouseMoveHandler);
+            document.addEventListener('mouseup', this._dragMouseUpHandler);
+        }
+
+        _removeDragHandlers() {
+            if (this._dragHeader && this._dragMouseDownHandler) {
+                this._dragHeader.removeEventListener('mousedown', this._dragMouseDownHandler);
+            }
+            if (this._dragMouseMoveHandler) {
+                document.removeEventListener('mousemove', this._dragMouseMoveHandler);
+            }
+            if (this._dragMouseUpHandler) {
+                document.removeEventListener('mouseup', this._dragMouseUpHandler);
+            }
+
+            this._dragHeader = null;
+            this._dragMouseDownHandler = null;
+            this._dragMouseMoveHandler = null;
+            this._dragMouseUpHandler = null;
+            this.isDragging = false;
         }
 
         /**

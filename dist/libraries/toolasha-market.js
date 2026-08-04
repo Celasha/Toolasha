@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.87.0
+ * Version: 2.87.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -14698,6 +14698,7 @@ self.onmessage = function (e) {
             this.currentOrderBookData = null;
             this.isInitialized = false;
             this.needsPriceDataRetry = false; // Track if we need to retry due to missing price data
+            this.comparisonModeHandler = null;
         }
 
         /**
@@ -14722,13 +14723,16 @@ self.onmessage = function (e) {
          * Setup setting change listener to refresh display when comparison mode changes
          */
         setupSettingListener() {
-            config.onSettingChange('market_tradeHistoryComparisonMode', () => {
+            if (this.comparisonModeHandler) return;
+
+            this.comparisonModeHandler = () => {
                 // Refresh display if currently viewing an item
                 if (this.currentItemHrid) {
                     const history = tradeHistory.getHistory(this.currentItemHrid, this.currentEnhancementLevel);
                     this.updateDisplay(null, history);
                 }
-            });
+            };
+            config.onSettingChange('market_tradeHistoryComparisonMode', this.comparisonModeHandler);
         }
 
         /**
@@ -14976,6 +14980,11 @@ self.onmessage = function (e) {
          * Disable the display
          */
         disable() {
+            if (this.comparisonModeHandler) {
+                config.offSettingChange('market_tradeHistoryComparisonMode', this.comparisonModeHandler);
+                this.comparisonModeHandler = null;
+            }
+
             if (this.unregisterObserver) {
                 this.unregisterObserver();
                 this.unregisterObserver = null;
@@ -24606,9 +24615,11 @@ self.onmessage = function (e) {
 
     class TooltipObserver {
         constructor() {
-            this.subscribers = new Map(); // name -> callback
+            this.subscribers = new Map(); // name -> { callback, notifyClose }
             this.unregisterObserver = null;
             this.isInitialized = false;
+            this.activeRemovalObservers = new Set();
+            this.observedElements = new WeakSet();
         }
 
         /**
@@ -24631,10 +24642,15 @@ self.onmessage = function (e) {
         /**
          * Subscribe to tooltip appearance events
          * @param {string} name - Unique subscriber name
-         * @param {Function} callback - Function(element) to call when tooltip appears
+         * @param {Function} callback - Function(element, eventType) to call when tooltip appears
+         * @param {Object} options - Subscription options
+         * @param {boolean} options.notifyClose - Observe and report tooltip removal (default false)
          */
-        subscribe(name, callback) {
-            this.subscribers.set(name, callback);
+        subscribe(name, callback, options = {}) {
+            this.subscribers.set(name, {
+                callback,
+                notifyClose: options.notifyClose === true,
+            });
 
             // Auto-initialize if first subscriber
             if (!this.isInitialized) {
@@ -24649,8 +24665,9 @@ self.onmessage = function (e) {
         unsubscribe(name) {
             this.subscribers.delete(name);
 
-            // If no subscribers left, could optionally stop observing
-            // For now, keep observer active for simplicity
+            if (this.subscribers.size === 0) {
+                this.disable();
+            }
         }
 
         /**
@@ -24659,37 +24676,45 @@ self.onmessage = function (e) {
          * @private
          */
         notifySubscribers(element) {
-            // Set up observer to detect when this specific tooltip is removed
-            const removalObserver = new MutationObserver((mutations) => {
-                for (const mutation of mutations) {
-                    for (const removedNode of mutation.removedNodes) {
-                        if (removedNode === element) {
-                            // Notify subscribers that tooltip closed
-                            for (const [name, callback] of this.subscribers.entries()) {
-                                try {
-                                    callback(element, 'closed');
-                                } catch (error) {
-                                    console.error(`[TooltipObserver] Error in subscriber "${name}" (close):`, error);
-                                }
-                            }
-                            removalObserver.disconnect();
-                            return;
-                        }
-                    }
-                }
-            });
+            const needsCloseNotification = Array.from(this.subscribers.values()).some(
+                (subscriber) => subscriber.notifyClose
+            );
 
-            // Watch the parent for removal of this tooltip
-            if (element.parentNode) {
-                removalObserver.observe(element.parentNode, {
-                    childList: true,
-                });
+            // Current production subscribers only need open notifications. Avoid creating
+            // one MutationObserver per transient tooltip unless close events are requested.
+            if (needsCloseNotification && !this.observedElements.has(element)) {
+                const observationRoot = document.body || element.parentNode;
+                if (observationRoot) {
+                    this.observedElements.add(element);
+                    const removalObserver = new MutationObserver(() => {
+                        if (element.isConnected) return;
+
+                        for (const [name, subscriber] of this.subscribers.entries()) {
+                            if (!subscriber.notifyClose) continue;
+                            try {
+                                subscriber.callback(element, 'closed');
+                            } catch (error) {
+                                console.error(`[TooltipObserver] Error in subscriber "${name}" (close):`, error);
+                            }
+                        }
+
+                        removalObserver.disconnect();
+                        this.activeRemovalObservers.delete(removalObserver);
+                        this.observedElements.delete(element);
+                    });
+
+                    this.activeRemovalObservers.add(removalObserver);
+                    removalObserver.observe(observationRoot, {
+                        childList: true,
+                        subtree: true,
+                    });
+                }
             }
 
             // Notify subscribers that tooltip opened
-            for (const [name, callback] of this.subscribers.entries()) {
+            for (const [name, subscriber] of this.subscribers.entries()) {
                 try {
-                    callback(element, 'opened');
+                    subscriber.callback(element, 'opened');
                 } catch (error) {
                     console.error(`[TooltipObserver] Error in subscriber "${name}" (open):`, error);
                 }
@@ -24704,6 +24729,11 @@ self.onmessage = function (e) {
                 this.unregisterObserver();
                 this.unregisterObserver = null;
             }
+            for (const observer of this.activeRemovalObservers) {
+                observer.disconnect();
+            }
+            this.activeRemovalObservers.clear();
+            this.observedElements = new WeakSet();
             this.subscribers.clear();
             this.isInitialized = false;
         }

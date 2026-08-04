@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.87.0
+ * Version: 2.87.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -442,36 +442,54 @@
     }
 
     let unregisterHandler = null;
+    let settingChangeHandler$1 = null;
 
-    function initialize$3() {
-        if (!config.getSetting('loadoutEnhancementDisplay')) return;
+    function enable$1() {
+        if (!unregisterHandler) {
+            unregisterHandler = domObserver.register(
+                'LoadoutEnhancementDisplay',
+                () => {
+                    annotateLoadout();
+                },
+                { debounce: true, debounceDelay: 200 }
+            );
+        }
 
-        unregisterHandler = domObserver.register(
-            'LoadoutEnhancementDisplay',
-            () => {
-                annotateLoadout();
-            },
-            { debounce: true, debounceDelay: 200 }
-        );
-
-        // Run immediately for any already-open loadout
+        // Run immediately for any already-open loadout.
         annotateLoadout();
-
-        config.onSettingChange('loadoutEnhancementDisplay', (enabled) => {
-            if (enabled) {
-                annotateLoadout();
-            } else {
-                removeOverlays();
-            }
-        });
     }
 
-    function cleanup$1() {
+    function deactivate$1() {
         if (unregisterHandler) {
             unregisterHandler();
             unregisterHandler = null;
         }
         removeOverlays();
+    }
+
+    function initialize$3() {
+        if (!settingChangeHandler$1) {
+            settingChangeHandler$1 = (enabled) => {
+                if (enabled) {
+                    enable$1();
+                } else {
+                    deactivate$1();
+                }
+            };
+            config.onSettingChange('loadoutEnhancementDisplay', settingChangeHandler$1);
+        }
+
+        if (config.getSetting('loadoutEnhancementDisplay')) {
+            enable$1();
+        }
+    }
+
+    function cleanup$1() {
+        deactivate$1();
+        if (settingChangeHandler$1) {
+            config.offSettingChange('loadoutEnhancementDisplay', settingChangeHandler$1);
+            settingChangeHandler$1 = null;
+        }
     }
 
     var loadoutEnhancementDisplay = {
@@ -1289,6 +1307,8 @@
     }
 
     const popup = new ScrollSimPopup();
+    let unregisterObserver = null;
+    let settingChangeHandler = null;
 
     // ─── Loadout panel button ───────────────────────────────────────
 
@@ -1320,19 +1340,46 @@
 
     // ─── Public API ─────────────────────────────────────────────────
 
-    function initialize$2() {
-        domObserver.onClass('ScrollSimulatorUI', 'LoadoutsPanel_buttonsContainer', (node) => {
-            const panel = node.closest('[class*="LoadoutsPanel_selectedLoadout"]') || node.parentElement;
-            const navButtons = panel?.querySelector('[class*="LoadoutsPanel_navButtons"]');
-            if (navButtons) injectButton(navButtons);
-        });
+    function enable() {
+        if (!unregisterObserver) {
+            unregisterObserver = domObserver.onClass('ScrollSimulatorUI', 'LoadoutsPanel_buttonsContainer', (node) => {
+                const panel = node.closest('[class*="LoadoutsPanel_selectedLoadout"]') || node.parentElement;
+                const navButtons = panel?.querySelector('[class*="LoadoutsPanel_navButtons"]');
+                if (navButtons) injectButton(navButtons);
+            });
+        }
 
-        config.onSettingChange('simulateScrollEffects', (enabled) => {
-            if (!enabled) {
-                document.getElementById(BUTTON_ID)?.remove();
-                popup.close();
-            }
-        });
+        // Handle an already-open loadout panel when the setting is enabled live.
+        const navButtons = document.querySelector(
+            '[class*="LoadoutsPanel_selectedLoadout"] [class*="LoadoutsPanel_navButtons"]'
+        );
+        if (navButtons) injectButton(navButtons);
+    }
+
+    function deactivate() {
+        if (unregisterObserver) {
+            unregisterObserver();
+            unregisterObserver = null;
+        }
+        document.getElementById(BUTTON_ID)?.remove();
+        popup.close();
+    }
+
+    function initialize$2() {
+        if (!settingChangeHandler) {
+            settingChangeHandler = (enabled) => {
+                if (enabled) {
+                    enable();
+                } else {
+                    deactivate();
+                }
+            };
+            config.onSettingChange('simulateScrollEffects', settingChangeHandler);
+        }
+
+        if (config.getSetting('simulateScrollEffects')) {
+            enable();
+        }
     }
 
     /**
@@ -1343,8 +1390,11 @@
     }
 
     function disable$1() {
-        document.getElementById(BUTTON_ID)?.remove();
-        popup.close();
+        deactivate();
+        if (settingChangeHandler) {
+            config.offSettingChange('simulateScrollEffects', settingChangeHandler);
+            settingChangeHandler = null;
+        }
     }
 
     var scrollSimulatorUI = {
@@ -2066,9 +2116,10 @@
             const checkTimeout = setTimeout(() => this.checkForActiveDungeon(), 1000);
             this.timerRegistry.registerTimeout(checkTimeout);
 
-            dataManager.on('character_switching', () => {
+            this.handlers.characterSwitching = () => {
                 this.cleanup();
-            });
+            };
+            dataManager.on('character_switching', this.handlers.characterSwitching);
         }
 
         /**
@@ -3112,6 +3163,11 @@
          * Cleanup for character switching
          */
         async cleanup() {
+            if (this.handlers.characterSwitching) {
+                dataManager.off('character_switching', this.handlers.characterSwitching);
+                this.handlers.characterSwitching = null;
+            }
+
             if (this.handlers.newBattle) {
                 webSocketHook.off('new_battle', this.handlers.newBattle);
                 this.handlers.newBattle = null;
@@ -3363,6 +3419,7 @@
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
             this.tabClickHandlers = new Map(); // Store tab click handlers for cleanup
             this._pendingAnnotateTimeout = null; // Debounce timer for annotateAllMessages
+            this.characterSwitchingHandler = null;
         }
 
         /**
@@ -3375,9 +3432,10 @@
             // Wait for chat to be available
             this.waitForChat();
 
-            dataManager.on('character_switching', () => {
+            this.characterSwitchingHandler = () => {
                 this.cleanup();
-            });
+            };
+            dataManager.on('character_switching', this.characterSwitchingHandler);
         }
 
         /**
@@ -4197,6 +4255,11 @@
          * Cleanup for character switching
          */
         cleanup() {
+            if (this.characterSwitchingHandler) {
+                dataManager.off('character_switching', this.characterSwitchingHandler);
+                this.characterSwitchingHandler = null;
+            }
+
             // Disconnect MutationObserver
             if (this.observer) {
                 this.observer();
@@ -5153,6 +5216,7 @@
             // Store drag handlers for cleanup
             this.dragMoveHandler = null;
             this.dragUpHandler = null;
+            this.keyboardShortcutHandler = null;
         }
 
         /**
@@ -5619,13 +5683,18 @@
          * Ctrl+Shift+D to reset dungeon tracker to default position
          */
         setupKeyboardShortcut() {
-            document.addEventListener('keydown', (e) => {
+            if (this.keyboardShortcutHandler) {
+                document.removeEventListener('keydown', this.keyboardShortcutHandler);
+            }
+
+            this.keyboardShortcutHandler = (e) => {
                 // Ctrl+Shift+D - Reset dungeon tracker position
                 if (e.ctrlKey && e.shiftKey && e.key === 'D') {
                     e.preventDefault();
                     this.resetPosition();
                 }
-            });
+            };
+            document.addEventListener('keydown', this.keyboardShortcutHandler);
         }
 
         /**
@@ -5690,6 +5759,10 @@
             if (this.dragUpHandler) {
                 document.removeEventListener('mouseup', this.dragUpHandler);
                 this.dragUpHandler = null;
+            }
+            if (this.keyboardShortcutHandler) {
+                document.removeEventListener('keydown', this.keyboardShortcutHandler);
+                this.keyboardShortcutHandler = null;
             }
 
             this.timerRegistry.clearAll();
@@ -23302,6 +23375,7 @@
             this.isInitialized = false;
             this.observer = null;
             this.popup = null;
+            this.settingChangeHandler = null;
         }
 
         /**
@@ -23315,13 +23389,14 @@
             this.isInitialized = true;
 
             // Setup setting listener
-            config.onSettingChange('combatStats', (enabled) => {
+            this.settingChangeHandler = (enabled) => {
                 if (enabled) {
                     this.injectButton();
                 } else {
                     this.removeButton();
                 }
-            });
+            };
+            config.onSettingChange('combatStats', this.settingChangeHandler);
 
             // Start observing for Combat panel
             this.startObserver();
@@ -24494,6 +24569,11 @@
          * Cleanup
          */
         cleanup() {
+            if (this.settingChangeHandler) {
+                config.offSettingChange('combatStats', this.settingChangeHandler);
+                this.settingChangeHandler = null;
+            }
+
             if (this.observer) {
                 this.observer.disconnect();
                 this.observer = null;

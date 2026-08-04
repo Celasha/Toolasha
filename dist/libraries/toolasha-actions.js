@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.87.0
+ * Version: 2.87.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4908,7 +4908,14 @@
         }
 
         onSortModeChange(callback) {
-            this.sortModeListeners.push(callback);
+            if (!this.sortModeListeners.includes(callback)) {
+                this.sortModeListeners.push(callback);
+            }
+
+            return () => {
+                const index = this.sortModeListeners.indexOf(callback);
+                if (index !== -1) this.sortModeListeners.splice(index, 1);
+            };
         }
 
         _notifySortModeListeners() {
@@ -5163,6 +5170,9 @@
             this._updateModeBtn = null;
             this._updateCraftBtn = null;
             this._updateSortBtn = null;
+            this.pricingModeHandler = null;
+            this.craftUpgradeHandler = null;
+            this.unregisterSortModeHandler = null;
         }
 
         /**
@@ -5183,13 +5193,17 @@
             this.unregisterHandlers.push(unregisterTitleObserver);
 
             // Re-update button labels when config finishes loading from storage
-            config.onSettingChange('profitCalc_pricingMode', () => {
+            this.pricingModeHandler = () => {
                 if (this._updateModeBtn) this._updateModeBtn();
-            });
-            config.onSettingChange('profitCalc_craftUpgradeItems', () => {
+            };
+            config.onSettingChange('profitCalc_pricingMode', this.pricingModeHandler);
+
+            this.craftUpgradeHandler = () => {
                 if (this._updateCraftBtn) this._updateCraftBtn();
-            });
-            actionPanelSort.onSortModeChange(() => {
+            };
+            config.onSettingChange('profitCalc_craftUpgradeItems', this.craftUpgradeHandler);
+
+            this.unregisterSortModeHandler = actionPanelSort.onSortModeChange(() => {
                 if (this._updateSortBtn) this._updateSortBtn();
             });
 
@@ -5689,6 +5703,19 @@
             // Unregister observers
             this.unregisterHandlers.forEach((unregister) => unregister());
             this.unregisterHandlers = [];
+
+            if (this.pricingModeHandler) {
+                config.offSettingChange('profitCalc_pricingMode', this.pricingModeHandler);
+                this.pricingModeHandler = null;
+            }
+            if (this.craftUpgradeHandler) {
+                config.offSettingChange('profitCalc_craftUpgradeItems', this.craftUpgradeHandler);
+                this.craftUpgradeHandler = null;
+            }
+            if (this.unregisterSortModeHandler) {
+                this.unregisterSortModeHandler();
+                this.unregisterSortModeHandler = null;
+            }
 
             // Clear filter
             this.clearFilter();
@@ -7240,9 +7267,11 @@
 
     class TooltipObserver {
         constructor() {
-            this.subscribers = new Map(); // name -> callback
+            this.subscribers = new Map(); // name -> { callback, notifyClose }
             this.unregisterObserver = null;
             this.isInitialized = false;
+            this.activeRemovalObservers = new Set();
+            this.observedElements = new WeakSet();
         }
 
         /**
@@ -7265,10 +7294,15 @@
         /**
          * Subscribe to tooltip appearance events
          * @param {string} name - Unique subscriber name
-         * @param {Function} callback - Function(element) to call when tooltip appears
+         * @param {Function} callback - Function(element, eventType) to call when tooltip appears
+         * @param {Object} options - Subscription options
+         * @param {boolean} options.notifyClose - Observe and report tooltip removal (default false)
          */
-        subscribe(name, callback) {
-            this.subscribers.set(name, callback);
+        subscribe(name, callback, options = {}) {
+            this.subscribers.set(name, {
+                callback,
+                notifyClose: options.notifyClose === true,
+            });
 
             // Auto-initialize if first subscriber
             if (!this.isInitialized) {
@@ -7283,8 +7317,9 @@
         unsubscribe(name) {
             this.subscribers.delete(name);
 
-            // If no subscribers left, could optionally stop observing
-            // For now, keep observer active for simplicity
+            if (this.subscribers.size === 0) {
+                this.disable();
+            }
         }
 
         /**
@@ -7293,37 +7328,45 @@
          * @private
          */
         notifySubscribers(element) {
-            // Set up observer to detect when this specific tooltip is removed
-            const removalObserver = new MutationObserver((mutations) => {
-                for (const mutation of mutations) {
-                    for (const removedNode of mutation.removedNodes) {
-                        if (removedNode === element) {
-                            // Notify subscribers that tooltip closed
-                            for (const [name, callback] of this.subscribers.entries()) {
-                                try {
-                                    callback(element, 'closed');
-                                } catch (error) {
-                                    console.error(`[TooltipObserver] Error in subscriber "${name}" (close):`, error);
-                                }
-                            }
-                            removalObserver.disconnect();
-                            return;
-                        }
-                    }
-                }
-            });
+            const needsCloseNotification = Array.from(this.subscribers.values()).some(
+                (subscriber) => subscriber.notifyClose
+            );
 
-            // Watch the parent for removal of this tooltip
-            if (element.parentNode) {
-                removalObserver.observe(element.parentNode, {
-                    childList: true,
-                });
+            // Current production subscribers only need open notifications. Avoid creating
+            // one MutationObserver per transient tooltip unless close events are requested.
+            if (needsCloseNotification && !this.observedElements.has(element)) {
+                const observationRoot = document.body || element.parentNode;
+                if (observationRoot) {
+                    this.observedElements.add(element);
+                    const removalObserver = new MutationObserver(() => {
+                        if (element.isConnected) return;
+
+                        for (const [name, subscriber] of this.subscribers.entries()) {
+                            if (!subscriber.notifyClose) continue;
+                            try {
+                                subscriber.callback(element, 'closed');
+                            } catch (error) {
+                                console.error(`[TooltipObserver] Error in subscriber "${name}" (close):`, error);
+                            }
+                        }
+
+                        removalObserver.disconnect();
+                        this.activeRemovalObservers.delete(removalObserver);
+                        this.observedElements.delete(element);
+                    });
+
+                    this.activeRemovalObservers.add(removalObserver);
+                    removalObserver.observe(observationRoot, {
+                        childList: true,
+                        subtree: true,
+                    });
+                }
             }
 
             // Notify subscribers that tooltip opened
-            for (const [name, callback] of this.subscribers.entries()) {
+            for (const [name, subscriber] of this.subscribers.entries()) {
                 try {
-                    callback(element, 'opened');
+                    subscriber.callback(element, 'opened');
                 } catch (error) {
                     console.error(`[TooltipObserver] Error in subscriber "${name}" (open):`, error);
                 }
@@ -7338,6 +7381,11 @@
                 this.unregisterObserver();
                 this.unregisterObserver = null;
             }
+            for (const observer of this.activeRemovalObservers) {
+                observer.disconnect();
+            }
+            this.activeRemovalObservers.clear();
+            this.observedElements = new WeakSet();
             this.subscribers.clear();
             this.isInitialized = false;
         }
@@ -10228,17 +10276,23 @@
      */
 
 
+    const UPDATE_INTERVAL_MS = 100; // Display precision is 0.1s; faster updates only add style/DOM work.
+
     class ActionCountdown {
         constructor() {
             this.initialized = false;
             this.rafId = null;
             this.textEl = null;
+            this.spanEl = null;
             this.fillBar = null;
             this.totalTime = null;
             this.unregisterObserver = null;
             this.actionCompletedHandler = null;
             this.lastCompletedAt = null;
             this.settingChangeHandler = null;
+            this.lastFrameUpdate = 0;
+            this.parseTimeout = null;
+            this.tickHandler = (timestamp) => this._tick(timestamp);
         }
 
         initialize() {
@@ -10275,6 +10329,7 @@
 
         _onProgressBarText(textEl) {
             this.textEl = textEl;
+            this.spanEl = textEl.querySelector('span');
             this.fillBar = null;
             this._parseTotalTime();
             this._startLoop();
@@ -10282,9 +10337,17 @@
 
         _parseTotalTime() {
             if (!this.textEl) return;
-            const span = this.textEl.querySelector('span');
+            const span = this.spanEl?.isConnected ? this.spanEl : this.textEl.querySelector('span');
             if (!span) return;
-            const val = parseFloat(span.textContent);
+            this.spanEl = span;
+
+            const values = span.textContent.match(/\d+(?:\.\d+)?/g);
+            if (!values?.length) return;
+
+            // When the span already contains our own "remaining / total" rendering,
+            // the final value is the duration. Parsing the first value would gradually
+            // shrink totalTime after every action completion.
+            const val = Number(values.length > 1 ? values[values.length - 1] : values[0]);
             if (!isNaN(val) && val > 0) {
                 this.totalTime = val;
             }
@@ -10292,7 +10355,11 @@
 
         _onActionCompleted() {
             this.lastCompletedAt = Date.now();
-            setTimeout(() => this._parseTotalTime(), 50);
+            if (this.parseTimeout) clearTimeout(this.parseTimeout);
+            this.parseTimeout = setTimeout(() => {
+                this.parseTimeout = null;
+                this._parseTotalTime();
+            }, 50);
         }
 
         /**
@@ -10318,24 +10385,39 @@
         }
 
         _startLoop() {
-            if (this.rafId) return;
-            this._tick();
+            if (this.rafId !== null) return;
+            this.lastFrameUpdate = 0;
+            this.rafId = requestAnimationFrame(this.tickHandler);
         }
 
         _stopLoop() {
-            if (this.rafId) {
+            if (this.rafId !== null) {
                 cancelAnimationFrame(this.rafId);
                 this.rafId = null;
             }
+            this.lastFrameUpdate = 0;
         }
 
-        _tick() {
-            this.rafId = requestAnimationFrame(() => this._tick());
+        _tick(timestamp) {
+            this.rafId = null;
 
-            if (!this.textEl || !this.textEl.isConnected || !this.totalTime) return;
+            // A removed progress bar cannot become useful again. Stop completely and
+            // let the central DOM observer restart the loop for the replacement element.
+            if (!this.textEl || !this.textEl.isConnected) return;
 
-            const span = this.textEl.querySelector('span');
+            this.rafId = requestAnimationFrame(this.tickHandler);
+
+            if (timestamp - this.lastFrameUpdate < UPDATE_INTERVAL_MS) return;
+            this.lastFrameUpdate = timestamp;
+
+            if (!this.totalTime) {
+                this._parseTotalTime();
+                if (!this.totalTime) return;
+            }
+
+            const span = this.spanEl?.isConnected ? this.spanEl : this.textEl.querySelector('span');
             if (!span) return;
+            this.spanEl = span;
 
             if (!this.fillBar || !this.fillBar.isConnected) {
                 this.fillBar = this._findFillBar();
@@ -10373,8 +10455,12 @@
 
         disable() {
             this._stopLoop();
+            if (this.parseTimeout) {
+                clearTimeout(this.parseTimeout);
+                this.parseTimeout = null;
+            }
             if (this.textEl && this.totalTime) {
-                const span = this.textEl.querySelector('span');
+                const span = this.spanEl?.isConnected ? this.spanEl : this.textEl.querySelector('span');
                 if (span) {
                     span.textContent = this.totalTime.toFixed(1) + 's';
                 }
@@ -10388,6 +10474,7 @@
                 this.unregisterObserver = null;
             }
             this.textEl = null;
+            this.spanEl = null;
             this.fillBar = null;
             this.totalTime = null;
             this.lastCompletedAt = null;
@@ -22266,6 +22353,7 @@
             this.isInitialized = false;
             this.DEBOUNCE_DELAY = 300;
             this.debounceTimer = null;
+            this.settingChangeHandler = null;
         }
 
         initialize() {
@@ -22273,13 +22361,14 @@
 
             this.isInitialized = true;
 
-            config.onSettingChange('inventoryCountDisplay', (enabled) => {
+            this.settingChangeHandler = (enabled) => {
                 if (enabled) {
                     this._enable();
                 } else {
                     this._disable();
                 }
-            });
+            };
+            config.onSettingChange('inventoryCountDisplay', this.settingChangeHandler);
 
             if (config.getSetting('inventoryCountDisplay', true)) {
                 this._enable();
@@ -22305,6 +22394,11 @@
         }
 
         _disable() {
+            if (this.debounceTimer) {
+                clearTimeout(this.debounceTimer);
+                this.debounceTimer = null;
+            }
+
             this.unregisterObservers.forEach((fn) => fn());
             this.unregisterObservers = [];
 
@@ -22501,6 +22595,10 @@
 
         disable() {
             this._disable();
+            if (this.settingChangeHandler) {
+                config.offSettingChange('inventoryCountDisplay', this.settingChangeHandler);
+                this.settingChangeHandler = null;
+            }
             this.isInitialized = false;
         }
     }
