@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.87.1
+ * Version: 2.87.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -11987,6 +11987,8 @@
          * @param {HTMLElement} detailPanel - The action detail panel element
          */
         attachToActionPanel(detailPanel) {
+            this.pruneDisconnectedInputs();
+
             // Find the input box using utility
             const inputBox = actionPanelHelper_js.findActionInput(detailPanel);
             if (!inputBox) {
@@ -12010,6 +12012,17 @@
             actionPanelHelper_js.performInitialUpdate(inputBox, () => {
                 this.updateOutputTotals(detailPanel, inputBox);
             });
+        }
+
+        /**
+         * Release listeners and panel closures for inputs whose panels were unmounted.
+         */
+        pruneDisconnectedInputs() {
+            for (const [inputBox, cleanup] of this.observedInputs) {
+                if (inputBox.isConnected) continue;
+                cleanup();
+                this.observedInputs.delete(inputBox);
+            }
         }
 
         /**
@@ -17086,6 +17099,8 @@
         }
 
         _processActionPanels() {
+            this._pruneDisconnectedPanels();
+
             document.querySelectorAll('[class*="SkillActionDetail_skillActionDetail"]').forEach((panel) => {
                 if (this.processedPanels.has(panel)) return;
 
@@ -17100,6 +17115,17 @@
                 this.processedPanels.add(panel);
                 this._attachToPanel(panel);
             });
+        }
+
+        /**
+         * Disconnect observers whose action panels have been unmounted.
+         */
+        _pruneDisconnectedPanels() {
+            for (const [panel, observer] of this.panelObservers) {
+                if (panel.isConnected) continue;
+                observer.disconnect();
+                this.panelObservers.delete(panel);
+            }
         }
 
         /**
@@ -22436,6 +22462,11 @@
             const outputHrid = getPrimaryOutputHrid(actionDetails);
             if (!outputHrid) return;
 
+            const registered = this.tileElements.get(actionPanel);
+            if (registered?.outputHrid === outputHrid && registered.span?.isConnected) {
+                return;
+            }
+
             let span = actionPanel.querySelector('.mwi-inv-count-tile');
             if (span && span.dataset.outputHrid !== outputHrid) {
                 // Output changed — clean up stale span
@@ -22604,7 +22635,6 @@
     }
 
     const inventoryCountDisplay = new InventoryCountDisplay();
-
     var inventoryCountDisplay$1 = {
         name: 'Inventory Count Display',
         initialize: () => inventoryCountDisplay.initialize(),

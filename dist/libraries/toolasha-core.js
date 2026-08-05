@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.87.1
+ * Version: 2.87.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4144,7 +4144,7 @@
         }
 
         emit(event, data) {
-            const listeners = this.eventListeners.get(event) || [];
+            const listeners = [...(this.eventListeners.get(event) || [])];
             for (const listener of listeners) {
                 try {
                     listener(data);
@@ -6576,6 +6576,7 @@
         GUILD: 'GUILD',
         ABILITY_BOOK: 'ABILITY_BOOK',
         SELL_QUEUE: 'SELL_QUEUE',
+        SHORTCUTS: 'SHORTCUTS',
     });
 
     class MarketplaceSessionService {

@@ -1,11 +1,11 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.87.1
+ * Version: 2.87.2
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, enhancementCalculator_js, formatters_js, marketData_js, teaParser_js, profitConstants_js, profitHelpers_js, buffParser_js, equipmentParser_js, actionCalculator_js, tokenValuation_js, enhancementConfig_js, dom, materialCalculator_js, timerRegistry_js, storage, cleanupRegistry_js, domObserverHelpers_js, enhancementMultipliers_js, reactInput_js, marketplaceSession_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js) {
+(function (config, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, enhancementCalculator_js, formatters_js, marketData_js, teaParser_js, profitConstants_js, profitHelpers_js, buffParser_js, equipmentParser_js, actionCalculator_js, tokenValuation_js, enhancementConfig_js, dom, materialCalculator_js, timerRegistry_js, storage, cleanupRegistry_js, domObserverHelpers_js, enhancementMultipliers_js, marketplaceSession_js, reactInput_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js) {
     'use strict';
 
     function _interopNamespaceDefault(e) {
@@ -15135,6 +15135,154 @@ self.onmessage = function (e) {
     const networkAlert = new NetworkAlert();
 
     /**
+     * Marketplace Buy Modal Autofill Utility
+     * Session-aware autofill manager.  Each consumer calls createAutofillManager() to get
+     * an instance, then drives it with startSession / arm / exitSession.
+     *
+     * Exported helpers:
+     *   readMarketplaceRuntimeState()  — reads live Marketplace React component state via fiber
+     *   readMarketplaceItemIdentity()  — @deprecated, DOM-based; absent selector in current client
+     *   createAutofillManager(observerId)
+     */
+
+    const MARKETPLACE_STATE_KEYS = ['marketTabKey', 'marketListingsView', 'itemHrid', 'enhancementLevel', 'isSell'];
+    const REACT_FIBER_PREFIXES = ['__reactFiber$', '__reactInternalInstance$'];
+    const MAX_REACT_TREE_FIBERS = 50000;
+    const MAX_REACT_OWNER_DEPTH = 256;
+
+    function hasMarketplaceStateSignature(state) {
+        return state && typeof state === 'object' && MARKETPLACE_STATE_KEYS.every((key) => key in state);
+    }
+
+    function getReactRootFiber() {
+        const rootElement = document.getElementById('root');
+        const rootContainer = rootElement?._reactRootContainer;
+        return rootContainer?.current || rootContainer?._internalRoot?.current || null;
+    }
+
+    function findReactFiberFromRoot(element) {
+        const rootFiber = getReactRootFiber();
+        if (!rootFiber || !element) return null;
+
+        const stack = [rootFiber];
+        const visited = new Set();
+        let matchedFiber = null;
+
+        while (stack.length > 0) {
+            const fiber = stack.pop();
+            if (!fiber || visited.has(fiber)) continue;
+            visited.add(fiber);
+
+            if (visited.size > MAX_REACT_TREE_FIBERS) return null;
+
+            if (fiber.stateNode === element) {
+                if (matchedFiber && matchedFiber !== fiber) return null;
+                matchedFiber = fiber;
+            }
+
+            if (fiber.sibling) stack.push(fiber.sibling);
+            if (fiber.child) stack.push(fiber.child);
+        }
+
+        return matchedFiber;
+    }
+
+    function getReactFiberFromElement(element) {
+        if (!element) return null;
+
+        const directFibers = new Set(
+            Object.getOwnPropertyNames(element)
+                .filter((key) => REACT_FIBER_PREFIXES.some((prefix) => key.startsWith(prefix)))
+                .map((key) => element[key])
+                .filter(Boolean)
+        );
+        if (directFibers.size > 1) return null;
+        if (directFibers.size === 1) return directFibers.values().next().value;
+
+        // Current MWI builds no longer expose __reactFiber$ keys on DOM nodes.
+        // Resolve the exact host fiber from the public React root instead.
+        return findReactFiberFromRoot(element);
+    }
+
+    function normalizeMarketplaceState(state) {
+        if (!hasMarketplaceStateSignature(state)) return null;
+        if (typeof state.marketTabKey !== 'string' || typeof state.marketListingsView !== 'string') return null;
+        if (state.itemHrid !== null && (typeof state.itemHrid !== 'string' || !state.itemHrid)) return null;
+        if (!Number.isInteger(state.enhancementLevel) || state.enhancementLevel < 0) return null;
+        if (typeof state.isSell !== 'boolean') return null;
+        if (state.showPostListing !== undefined && typeof state.showPostListing !== 'boolean') return null;
+        if (state.isPostNewListing !== undefined && typeof state.isPostNewListing !== 'boolean') return null;
+        if (state.isInstantOrder !== undefined && typeof state.isInstantOrder !== 'boolean') return null;
+        if (
+            state.enhancementLevelInput !== undefined &&
+            (!Number.isInteger(state.enhancementLevelInput) || state.enhancementLevelInput < 0)
+        ) {
+            return null;
+        }
+
+        return {
+            marketTabKey: state.marketTabKey,
+            marketListingsView: state.marketListingsView,
+            itemHrid: state.itemHrid,
+            enhancementLevel: state.enhancementLevel,
+            enhancementLevelInput: state.enhancementLevelInput,
+            isSell: state.isSell,
+            showPostListing: state.showPostListing,
+            isPostNewListing: state.isPostNewListing,
+            isInstantOrder: state.isInstantOrder,
+            quantityInput: state.quantityInput,
+            priceInput: state.priceInput,
+        };
+    }
+
+    /**
+     * Read the live Marketplace React component state from the unique visible Marketplace panel.
+     * The selected component must be on that panel host fiber's bounded return ancestry.
+     *
+     * @returns {{ marketTabKey: string, marketListingsView: string, itemHrid: string|null,
+     *             enhancementLevel: number, enhancementLevelInput: number|undefined, isSell: boolean,
+     *             showPostListing: boolean|undefined, isPostNewListing: boolean|undefined,
+     *             isInstantOrder: boolean|undefined, quantityInput: *, priceInput: * }|null}
+     */
+    function getMarketplaceRuntimeComponentFromElement(element) {
+        let fiber = getReactFiberFromElement(element);
+        let depth = 0;
+        const candidates = [];
+        const seen = new Set();
+
+        while (fiber && depth < MAX_REACT_OWNER_DEPTH) {
+            const stateNode = fiber.stateNode;
+            if (
+                stateNode &&
+                !seen.has(stateNode) &&
+                typeof stateNode.setState === 'function' &&
+                typeof stateNode.handleQuantityInputChanged === 'function' &&
+                hasMarketplaceStateSignature(stateNode.state)
+            ) {
+                seen.add(stateNode);
+                candidates.push(stateNode);
+            }
+            fiber = fiber.return;
+            depth += 1;
+        }
+
+        // Fail closed when the ancestry is unexpectedly deeper than the bound or
+        // contains more than one Marketplace-like owner. The quantity input must
+        // identify one exact live component before we write to a controlled input.
+        if (fiber || candidates.length !== 1) return null;
+        return candidates[0];
+    }
+
+    /**
+     * Read Marketplace state from the exact DOM element that belongs to the live component.
+     * @param {HTMLElement} element
+     * @returns {ReturnType<typeof normalizeMarketplaceState>}
+     */
+    function readMarketplaceRuntimeStateFromElement(element) {
+        return normalizeMarketplaceState(getMarketplaceRuntimeComponentFromElement(element)?.state);
+    }
+
+    /**
      * Marketplace Shortcuts Module
      * Adds a "Marketplace Action" dropdown to the inventory item submenu
      * with quick actions: Sell Now, Buy Now, New Sell Listing, New Buy Listing
@@ -15154,7 +15302,9 @@ self.onmessage = function (e) {
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
             this.itemNameToHridCache = null;
             this.closeHandler = null;
-            this.pendingQuantity = null;
+            this.pendingAutofill = null;
+            this.pendingAutofillWriteTimers = new Set();
+            this.pendingAutofillExpiryTimer = null;
             this.addMode = false;
         }
 
@@ -15183,6 +15333,21 @@ self.onmessage = function (e) {
                 this.focusQuantityInput(modal);
             });
             this.unregisterHandlers.push(unregisterModal);
+
+            this.closeHandler = () => this.closeAllDropdowns();
+            document.addEventListener('click', this.closeHandler);
+        }
+
+        /**
+         * Close every currently-rendered Marketplace shortcut dropdown.
+         */
+        closeAllDropdowns() {
+            document.querySelectorAll('.mwi-marketplace-dropdown').forEach((wrapper) => {
+                const panel = wrapper.querySelector('.mwi-marketplace-dropdown-panel');
+                if (panel) panel.style.display = 'none';
+                const chevron = wrapper.querySelector('.mwi-mp-chevron');
+                if (chevron) chevron.style.transform = '';
+            });
         }
 
         /**
@@ -15371,13 +15536,118 @@ self.onmessage = function (e) {
                 if (chevron) chevron.style.transform = open ? 'rotate(180deg)' : '';
             });
 
-            // Close on outside click
-            this.closeHandler = () => closePanel();
-            document.addEventListener('click', this.closeHandler);
-
             wrapper.appendChild(toggle);
             wrapper.appendChild(panel);
             return wrapper;
+        }
+
+        /**
+         * Clear local state for the active shortcut autofill without touching another owner's session.
+         * @param {number|null} [sessionId]
+         */
+        clearPendingAutofill(sessionId = null) {
+            if (sessionId !== null && this.pendingAutofill && this.pendingAutofill.sessionId !== sessionId) return;
+
+            for (const timer of this.pendingAutofillWriteTimers) {
+                clearTimeout(timer);
+            }
+            this.pendingAutofillWriteTimers.clear();
+            if (this.pendingAutofillExpiryTimer !== null) {
+                clearTimeout(this.pendingAutofillExpiryTimer);
+                this.pendingAutofillExpiryTimer = null;
+            }
+            this.pendingAutofill = null;
+        }
+
+        /**
+         * End the currently-owned shortcut session, if any.
+         */
+        endPendingAutofill() {
+            const sessionId = this.pendingAutofill?.sessionId ?? null;
+            if (sessionId !== null && marketplaceSession_js.marketplaceSession.isActive(sessionId)) {
+                marketplaceSession_js.marketplaceSession.end(sessionId);
+                return;
+            }
+            this.clearPendingAutofill(sessionId);
+        }
+
+        /**
+         * Claim exclusive marketplace ownership for one shortcut quantity autofill.
+         * @param {{ quantity: number, itemHrid: string, enhancementLevel: number, actionType: string }} target
+         */
+        startPendingAutofill(target) {
+            let sessionId = null;
+            sessionId = marketplaceSession_js.marketplaceSession.start({
+                owner: marketplaceSession_js.MARKETPLACE_OWNER.SHORTCUTS,
+                onEnd: () => this.clearPendingAutofill(sessionId),
+            });
+
+            this.pendingAutofill = Object.freeze({ ...target, sessionId });
+            this.pendingAutofillExpiryTimer = setTimeout(() => {
+                marketplaceSession_js.marketplaceSession.end(sessionId);
+            }, 10000);
+        }
+
+        /**
+         * Update the expected modal type while preserving the same owned session.
+         * Used when an unavailable instant order falls back to a new listing.
+         * @param {string} actionType
+         */
+        retargetPendingAutofill(actionType) {
+            const current = this.pendingAutofill;
+            if (!current || !marketplaceSession_js.marketplaceSession.isActive(current.sessionId)) return;
+            this.pendingAutofill = Object.freeze({ ...current, actionType });
+        }
+
+        /**
+         * Get the expected marketplace modal state for a shortcut action.
+         * @param {string} actionType
+         * @returns {Object|null}
+         */
+        getPendingAutofillMode(actionType) {
+            return (
+                {
+                    buy: { header: 'Buy Now', isSell: false, isPostNewListing: false, isInstantOrder: true },
+                    sell: { header: 'Sell Now', isSell: true, isPostNewListing: false, isInstantOrder: true },
+                    'buy-listing': {
+                        header: 'Buy Listing',
+                        isSell: false,
+                        isPostNewListing: true,
+                        isInstantOrder: false,
+                    },
+                    'sell-listing': {
+                        header: 'Sell Listing',
+                        isSell: true,
+                        isPostNewListing: true,
+                        isInstantOrder: false,
+                    },
+                }[actionType] || null
+            );
+        }
+
+        /**
+         * Verify that a live marketplace modal belongs to the exact shortcut target.
+         * @param {HTMLElement} modal
+         * @param {HTMLInputElement} quantityInput
+         * @param {Object} target
+         * @returns {boolean}
+         */
+        matchesPendingAutofill(modal, quantityInput, target) {
+            const expected = this.getPendingAutofillMode(target.actionType);
+            if (!expected || !modal?.isConnected || !quantityInput?.isConnected) return false;
+
+            const headerText = modal.querySelector('div[class*="MarketplacePanel_header"]')?.textContent?.trim() || '';
+            if (headerText !== expected.header) return false;
+
+            const state = readMarketplaceRuntimeStateFromElement(quantityInput);
+            if (!state) return false;
+            if (state.marketTabKey !== 'MarketListings' || state.marketListingsView !== 'OrderBook') return false;
+            if (state.itemHrid !== target.itemHrid || state.enhancementLevel !== target.enhancementLevel) return false;
+            if (state.enhancementLevelInput !== target.enhancementLevel) return false;
+            if (state.isSell !== expected.isSell) return false;
+            if (state.showPostListing !== true) return false;
+            if (state.isPostNewListing !== expected.isPostNewListing) return false;
+            return state.isInstantOrder === expected.isInstantOrder;
         }
 
         /**
@@ -15387,17 +15657,18 @@ self.onmessage = function (e) {
          * @param {number} enhancementLevel - Enhancement level (0 for base items)
          */
         async executeAction(actionType, itemHrid, enhancementLevel = 0) {
+            this.endPendingAutofill();
+
             // Read quantity from item submenu input before navigating away
+            let quantity = 0;
             const amountInput = document.querySelector('[class*="Item_amountInputContainer"] input[type="number"]');
             if (amountInput) {
-                const qty = parseInt(amountInput.value, 10);
-                if (qty > 0) {
-                    this.pendingQuantity = qty;
-                }
+                const captured = parseInt(amountInput.value, 10);
+                if (captured > 0) quantity = captured;
             }
 
             // If no quantity was captured, default to inventory count for sell actions
-            if (!this.pendingQuantity && (actionType === 'sell' || actionType === 'sell-listing')) {
+            if (quantity <= 0 && (actionType === 'sell' || actionType === 'sell-listing')) {
                 const inventory = dataManager.characterItems || [];
                 const match = inventory.find(
                     (item) =>
@@ -15405,16 +15676,19 @@ self.onmessage = function (e) {
                         (item.enhancementLevel || 0) === enhancementLevel &&
                         item.itemLocationHrid === '/item_locations/inventory'
                 );
-                if (match && match.count > 0) {
-                    this.pendingQuantity = match.count;
-                }
+                if (match && match.count > 0) quantity = match.count;
             }
 
+            this.startPendingAutofill({ quantity, itemHrid, enhancementLevel, actionType });
+
             // Navigate to marketplace for this item
-            navigateToMarketplace(itemHrid, enhancementLevel);
+            if (!navigateToMarketplace(itemHrid, enhancementLevel)) {
+                this.endPendingAutofill();
+                return;
+            }
 
             // Wait for the marketplace panel to render
-            await new Promise((r) => setTimeout(r, 300));
+            await new Promise((resolve) => setTimeout(resolve, 300));
 
             try {
                 switch (actionType) {
@@ -15434,8 +15708,10 @@ self.onmessage = function (e) {
             } catch {
                 // Instant sell/buy failed (no matching orders) — fall back to listing form
                 if (actionType === 'sell') {
+                    this.retargetPendingAutofill('sell-listing');
                     await this.clickListingButton('+ New Sell Listing', 'Button_sell').catch(() => {});
                 } else if (actionType === 'buy') {
+                    this.retargetPendingAutofill('buy-listing');
                     await this.clickListingButton('+ New Buy Listing', 'Button_buy').catch(() => {});
                 }
             }
@@ -15516,31 +15792,41 @@ self.onmessage = function (e) {
          * @param {HTMLElement} modal - Modal container element
          */
         autofillQuantity(modal) {
-            if (!this.pendingQuantity) return;
+            const target = this.pendingAutofill;
+            if (!target) return;
+            if (!marketplaceSession_js.marketplaceSession.isActive(target.sessionId)) {
+                this.clearPendingAutofill(target.sessionId);
+                return;
+            }
 
-            // Check if this is a marketplace action modal (Sell Now, Buy Now, or listing form)
-            const header = modal.querySelector('div[class*="MarketplacePanel_header"]');
-            if (!header) return;
+            const expected = this.getPendingAutofillMode(target.actionType);
+            const headerText = modal.querySelector('div[class*="MarketplacePanel_header"]')?.textContent?.trim() || '';
+            if (!expected || headerText !== expected.header) return;
 
-            const headerText = header.textContent.trim();
-            const isMarketplaceModal =
-                headerText.includes('Buy Now') ||
-                headerText.includes('Buy Listing') ||
-                headerText.includes('Sell Now') ||
-                headerText.includes('Sell Listing');
-            if (!isMarketplaceModal) return;
+            // Prefer the newest matching modal if React replaces the modal during convergence.
+            for (const timer of this.pendingAutofillWriteTimers) clearTimeout(timer);
+            this.pendingAutofillWriteTimers.clear();
 
-            // Delay to run after auto-click-max which fires synchronously on modal appearance
-            const qty = this.pendingQuantity;
-            this.pendingQuantity = null;
+            const delays = [100, 250, 500, 1000, 1500];
+            for (const delay of delays) {
+                const timer = setTimeout(() => {
+                    this.pendingAutofillWriteTimers.delete(timer);
+                    if (this.pendingAutofill !== target || !marketplaceSession_js.marketplaceSession.isActive(target.sessionId)) return;
 
-            setTimeout(() => {
-                const quantityInput = this.findQuantityInput(modal);
-                if (!quantityInput) return;
+                    const currentInput = this.findQuantityInput(modal);
+                    if (!currentInput || !this.matchesPendingAutofill(modal, currentInput, target)) return;
 
-                nativeInputValueSetter.call(quantityInput, qty.toString());
-                quantityInput.dispatchEvent(new Event('input', { bubbles: true }));
-            }, 100);
+                    if (target.quantity > 0) {
+                        nativeInputValueSetter.call(currentInput, target.quantity.toString());
+                        currentInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+
+                    for (const pendingTimer of this.pendingAutofillWriteTimers) clearTimeout(pendingTimer);
+                    this.pendingAutofillWriteTimers.clear();
+                    marketplaceSession_js.marketplaceSession.end(target.sessionId);
+                }, delay);
+                this.pendingAutofillWriteTimers.add(timer);
+            }
         }
 
         /**
@@ -15911,6 +16197,7 @@ self.onmessage = function (e) {
                 this.closeHandler = null;
             }
 
+            this.endPendingAutofill();
             this.timerRegistry.clearAll();
 
             document.querySelectorAll('.mwi-marketplace-dropdown').forEach((el) => el.remove());
@@ -16556,7 +16843,7 @@ self.onmessage = function (e) {
         }
 
         emit(event, data) {
-            const listeners = this.eventListeners.get(event) || [];
+            const listeners = [...(this.eventListeners.get(event) || [])];
             for (const listener of listeners) {
                 try {
                     listener(data);
@@ -28821,4 +29108,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] Market library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.tokenValuation, Toolasha.Utils.enhancementConfig, Toolasha.Utils.dom, Toolasha.Utils.materialCalculator, Toolasha.Utils.timerRegistry, Toolasha.Core.storage, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Utils.reactInput, Toolasha.Core, Toolasha.Core.webSocketHook, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.tokenValuation, Toolasha.Utils.enhancementConfig, Toolasha.Utils.dom, Toolasha.Utils.materialCalculator, Toolasha.Utils.timerRegistry, Toolasha.Core.storage, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Core, Toolasha.Utils.reactInput, Toolasha.Core.webSocketHook, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator);
