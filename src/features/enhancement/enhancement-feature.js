@@ -8,9 +8,10 @@ import enhancementTracker from './enhancement-tracker.js';
 import enhancementUI from './enhancement-ui.js';
 import { setupEnhancementHandlers, cleanupEnhancementHandlers } from './enhancement-handlers.js';
 
-class EnhancementFeature {
+export class EnhancementFeature {
     constructor() {
         this.isInitialized = false;
+        this.lifecycleGeneration = 0;
     }
 
     /**
@@ -21,10 +22,18 @@ class EnhancementFeature {
             return;
         }
 
+        const generation = ++this.lifecycleGeneration;
         this.isInitialized = true;
 
         // Initialize tracker (async)
         await enhancementTracker.initialize();
+
+        if (generation !== this.lifecycleGeneration || !enhancementTracker.isInitialized) {
+            if (generation === this.lifecycleGeneration) {
+                this.isInitialized = false;
+            }
+            return;
+        }
 
         // Setup WebSocket handlers
         setupEnhancementHandlers();
@@ -37,6 +46,8 @@ class EnhancementFeature {
      * Cleanup all enhancement components
      */
     disable() {
+        this.lifecycleGeneration += 1;
+
         // Cleanup WebSocket handlers
         cleanupEnhancementHandlers();
 

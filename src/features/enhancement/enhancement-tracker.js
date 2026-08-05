@@ -20,17 +20,20 @@ import {
     validateSession,
     SessionState,
 } from './enhancement-session.js';
-import { saveSessions, loadSessions, saveCurrentSessionId, loadCurrentSessionId } from './enhancement-storage.js';
+import { loadEnhancementState, saveSessions, saveCurrentSessionId } from './enhancement-storage.js';
 import { calculateEnhancementPredictions } from './enhancement-xp.js';
 
 /**
  * EnhancementTracker class manages enhancement tracking sessions
  */
-class EnhancementTracker {
+export class EnhancementTracker {
     constructor() {
         this.sessions = {}; // All sessions (keyed by session ID)
         this.currentSessionId = null; // Currently active session ID
         this.isInitialized = false;
+        this.isInitializing = false;
+        this.characterId = null;
+        this.lifecycleGeneration = 0;
         this.pendingSessionStart = false; // Start new session on next action_completed regardless of currentCount
     }
 
@@ -39,7 +42,7 @@ class EnhancementTracker {
      * @returns {Promise<void>}
      */
     async initialize() {
-        if (this.isInitialized) {
+        if (this.isInitialized || this.isInitializing) {
             return;
         }
 
@@ -47,28 +50,68 @@ class EnhancementTracker {
             return;
         }
 
-        try {
-            // Load sessions from storage
-            this.sessions = await loadSessions();
-            this.currentSessionId = await loadCurrentSessionId();
+        const characterId = dataManager.getCurrentCharacterId();
+        if (!characterId) {
+            return;
+        }
 
-            // Validate current session still exists
-            if (this.currentSessionId && !this.sessions[this.currentSessionId]) {
-                this.currentSessionId = null;
-                await saveCurrentSessionId(null);
+        const generation = ++this.lifecycleGeneration;
+        this.isInitializing = true;
+
+        try {
+            const { sessions: loadedSessions, currentSessionId: loadedCurrentSessionId } =
+                await loadEnhancementState(characterId);
+
+            if (
+                generation !== this.lifecycleGeneration ||
+                dataManager.getCurrentCharacterId() !== characterId ||
+                dataManager.getIsCharacterSwitching?.()
+            ) {
+                return;
             }
 
-            // Validate all loaded sessions
-            for (const [sessionId, session] of Object.entries(this.sessions)) {
+            const sessions = { ...loadedSessions };
+            for (const [sessionId, session] of Object.entries(sessions)) {
                 if (!validateSession(session)) {
-                    delete this.sessions[sessionId];
+                    delete sessions[sessionId];
                 }
             }
 
+            const currentSessionId =
+                loadedCurrentSessionId && sessions[loadedCurrentSessionId] ? loadedCurrentSessionId : null;
+
+            this.sessions = sessions;
+            this.currentSessionId = currentSessionId;
+            this.characterId = characterId;
             this.isInitialized = true;
+
+            if (loadedCurrentSessionId && !currentSessionId) {
+                await saveCurrentSessionId(null, characterId);
+            }
         } catch (error) {
             console.error('[EnhancementTracker] Failed to initialize:', error);
+        } finally {
+            if (generation === this.lifecycleGeneration) {
+                this.isInitializing = false;
+            }
         }
+    }
+
+    /**
+     * Capture the active character lifecycle and session collection for an async write.
+     * @returns {{characterId: string, generation: number, sessions: Object}|null} Persistence context
+     * @private
+     */
+    _captureContext() {
+        if (!this.isInitialized || !this.characterId) {
+            return null;
+        }
+
+        return {
+            characterId: this.characterId,
+            generation: this.lifecycleGeneration,
+            sessions: this.sessions,
+        };
     }
 
     /**
@@ -80,6 +123,11 @@ class EnhancementTracker {
      * @returns {Promise<string>} New session ID
      */
     async startSession(itemHrid, startLevel, targetLevel, protectFrom = 0) {
+        const context = this._captureContext();
+        if (!context) {
+            return null;
+        }
+
         const gameData = dataManager.getInitClientData();
         if (!gameData) {
             throw new Error('Game data not available');
@@ -101,12 +149,14 @@ class EnhancementTracker {
         session.predictions = predictions;
 
         // Store session
-        this.sessions[session.id] = session;
+        context.sessions[session.id] = session;
         this.currentSessionId = session.id;
 
         // Save to storage
-        await saveSessions(this.sessions);
-        await saveCurrentSessionId(session.id);
+        await Promise.all([
+            saveSessions(context.sessions, context.characterId),
+            saveCurrentSessionId(session.id, context.characterId),
+        ]);
 
         return session.id;
     }
@@ -135,11 +185,12 @@ class EnhancementTracker {
      * @returns {Promise<boolean>} True if resumed successfully
      */
     async resumeSession(sessionId) {
-        if (!this.sessions[sessionId]) {
+        const context = this._captureContext();
+        if (!context || !context.sessions[sessionId]) {
             return false;
         }
 
-        const session = this.sessions[sessionId];
+        const session = context.sessions[sessionId];
 
         // Can only resume tracking sessions
         if (session.state !== SessionState.TRACKING) {
@@ -147,7 +198,7 @@ class EnhancementTracker {
         }
 
         this.currentSessionId = sessionId;
-        await saveCurrentSessionId(sessionId);
+        await saveCurrentSessionId(sessionId, context.characterId);
 
         return true;
     }
@@ -175,11 +226,12 @@ class EnhancementTracker {
      * @returns {Promise<boolean>} True if extended successfully
      */
     async extendSessionTarget(sessionId, newTargetLevel) {
-        if (!this.sessions[sessionId]) {
+        const context = this._captureContext();
+        if (!context || !context.sessions[sessionId]) {
             return false;
         }
 
-        const session = this.sessions[sessionId];
+        const session = context.sessions[sessionId];
 
         // Can only extend completed sessions
         if (session.state !== SessionState.COMPLETED) {
@@ -200,8 +252,10 @@ class EnhancementTracker {
             session.predictions = predictions;
         }
 
-        await saveSessions(this.sessions);
-        await saveCurrentSessionId(sessionId);
+        await Promise.all([
+            saveSessions(context.sessions, context.characterId),
+            saveCurrentSessionId(sessionId, context.characterId),
+        ]);
 
         return true;
     }
@@ -220,17 +274,22 @@ class EnhancementTracker {
      * @returns {Promise<void>}
      */
     async finalizeCurrentSession() {
-        const session = this.getCurrentSession();
+        const context = this._captureContext();
+        if (!context) {
+            return;
+        }
+
+        const session = context.sessions[this.currentSessionId];
         if (!session) {
             return;
         }
 
         finalizeSession(session);
-        await saveSessions(this.sessions);
-
-        // Clear current session
         this.currentSessionId = null;
-        await saveCurrentSessionId(null);
+        await Promise.all([
+            saveSessions(context.sessions, context.characterId),
+            saveCurrentSessionId(null, context.characterId),
+        ]);
     }
 
     /**
@@ -240,18 +299,30 @@ class EnhancementTracker {
      * @returns {Promise<void>}
      */
     async recordSuccess(previousLevel, newLevel) {
-        const session = this.getCurrentSession();
+        const context = this._captureContext();
+        if (!context) {
+            return;
+        }
+
+        const session = context.sessions[this.currentSessionId];
         if (!session) {
             return;
         }
 
         recordSuccess(session, previousLevel, newLevel);
-        await saveSessions(this.sessions);
 
         // Check if target reached
         if (session.state === SessionState.COMPLETED) {
             this.currentSessionId = null;
-            await saveCurrentSessionId(null);
+        }
+
+        if (session.state === SessionState.COMPLETED) {
+            await Promise.all([
+                saveSessions(context.sessions, context.characterId),
+                saveCurrentSessionId(null, context.characterId),
+            ]);
+        } else {
+            await saveSessions(context.sessions, context.characterId);
         }
     }
 
@@ -262,13 +333,18 @@ class EnhancementTracker {
      * @returns {Promise<void>}
      */
     async recordFailure(previousLevel, newLevel) {
-        const session = this.getCurrentSession();
+        const context = this._captureContext();
+        if (!context) {
+            return;
+        }
+
+        const session = context.sessions[this.currentSessionId];
         if (!session) {
             return;
         }
 
         recordFailure(session, previousLevel, newLevel);
-        await saveSessions(this.sessions);
+        await saveSessions(context.sessions, context.characterId);
     }
 
     /**
@@ -278,7 +354,10 @@ class EnhancementTracker {
      * @returns {Promise<void>}
      */
     async trackMaterialCost(itemHrid, count) {
-        const session = this.getCurrentSession();
+        const context = this._captureContext();
+        if (!context) return;
+
+        const session = context.sessions[this.currentSessionId];
         if (!session) return;
 
         // Get market price
@@ -286,7 +365,7 @@ class EnhancementTracker {
         const unitCost = priceData ? priceData.ask || priceData.bid || 0 : 0;
 
         addMaterialCost(session, itemHrid, count, unitCost);
-        await saveSessions(this.sessions);
+        await saveSessions(context.sessions, context.characterId);
     }
 
     /**
@@ -295,11 +374,14 @@ class EnhancementTracker {
      * @returns {Promise<void>}
      */
     async trackCoinCost(amount) {
-        const session = this.getCurrentSession();
+        const context = this._captureContext();
+        if (!context) return;
+
+        const session = context.sessions[this.currentSessionId];
         if (!session) return;
 
         addCoinCost(session, amount);
-        await saveSessions(this.sessions);
+        await saveSessions(context.sessions, context.characterId);
     }
 
     /**
@@ -309,11 +391,14 @@ class EnhancementTracker {
      * @returns {Promise<void>}
      */
     async trackProtectionCost(protectionItemHrid, cost) {
-        const session = this.getCurrentSession();
+        const context = this._captureContext();
+        if (!context) return;
+
+        const session = context.sessions[this.currentSessionId];
         if (!session) return;
 
         addProtectionCost(session, protectionItemHrid, cost);
-        await saveSessions(this.sessions);
+        await saveSessions(context.sessions, context.characterId);
     }
 
     /**
@@ -338,7 +423,10 @@ class EnhancementTracker {
      * @returns {Promise<void>}
      */
     async saveSessions() {
-        await saveSessions(this.sessions);
+        const context = this._captureContext();
+        if (!context) return;
+
+        await saveSessions(context.sessions, context.characterId);
     }
 
     /**
@@ -354,21 +442,32 @@ class EnhancementTracker {
      * @returns {Promise<void>}
      */
     async clearSessions() {
-        this.sessions = {};
+        const context = this._captureContext();
+        if (!context) return;
+
+        const clearedSessions = {};
+        this.sessions = clearedSessions;
         this.currentSessionId = null;
         this.pendingSessionStart = true;
-        await saveSessions(this.sessions);
-        await saveCurrentSessionId(null);
+        await Promise.all([
+            saveSessions(clearedSessions, context.characterId),
+            saveCurrentSessionId(null, context.characterId),
+        ]);
     }
 
     /**
      * Disable and cleanup
      */
     disable() {
+        this.lifecycleGeneration += 1;
+
         // Clear in-memory session data (will be reloaded from storage on next init)
         this.sessions = {};
         this.currentSessionId = null;
         this.isInitialized = false;
+        this.isInitializing = false;
+        this.characterId = null;
+        this.pendingSessionStart = false;
     }
 }
 
