@@ -54,6 +54,22 @@ describe('ConnectionState', () => {
         expect(connectionState.getState()).toBe('reconnecting');
     });
 
+    test('uses a listener snapshot when a listener removes itself during dispatch', async () => {
+        const { default: connectionState } = await import('./connection-state.js');
+        const calls = [];
+        const first = () => {
+            calls.push('first');
+            connectionState.off('disconnected', first);
+        };
+        const second = () => calls.push('second');
+        connectionState.on('disconnected', first);
+        connectionState.on('disconnected', second);
+
+        socketHandlers.get('close')({ code: 1006 });
+
+        expect(calls).toEqual(['first', 'second']);
+    });
+
     test('emits disconnected on socket close', async () => {
         // Arrange
         const { default: connectionState } = await import('./connection-state.js');

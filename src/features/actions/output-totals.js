@@ -60,6 +60,8 @@ class OutputTotals {
      * @param {HTMLElement} detailPanel - The action detail panel element
      */
     attachToActionPanel(detailPanel) {
+        this.pruneDisconnectedInputs();
+
         // Find the input box using utility
         const inputBox = findActionInput(detailPanel);
         if (!inputBox) {
@@ -83,6 +85,17 @@ class OutputTotals {
         performInitialUpdate(inputBox, () => {
             this.updateOutputTotals(detailPanel, inputBox);
         });
+    }
+
+    /**
+     * Release listeners and panel closures for inputs whose panels were unmounted.
+     */
+    pruneDisconnectedInputs() {
+        for (const [inputBox, cleanup] of this.observedInputs) {
+            if (inputBox.isConnected) continue;
+            cleanup();
+            this.observedInputs.delete(inputBox);
+        }
     }
 
     /**
@@ -390,4 +403,5 @@ class OutputTotals {
 
 const outputTotals = new OutputTotals();
 
+export { OutputTotals };
 export default outputTotals;

@@ -150,7 +150,7 @@ class ConnectionState {
     }
 
     emit(event, data) {
-        const listeners = this.eventListeners.get(event) || [];
+        const listeners = [...(this.eventListeners.get(event) || [])];
         for (const listener of listeners) {
             try {
                 listener(data);

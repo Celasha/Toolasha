@@ -55,6 +55,21 @@ class MarketplaceShortcuts {
             this.focusQuantityInput(modal);
         });
         this.unregisterHandlers.push(unregisterModal);
+
+        this.closeHandler = () => this.closeAllDropdowns();
+        document.addEventListener('click', this.closeHandler);
+    }
+
+    /**
+     * Close every currently-rendered Marketplace shortcut dropdown.
+     */
+    closeAllDropdowns() {
+        document.querySelectorAll('.mwi-marketplace-dropdown').forEach((wrapper) => {
+            const panel = wrapper.querySelector('.mwi-marketplace-dropdown-panel');
+            if (panel) panel.style.display = 'none';
+            const chevron = wrapper.querySelector('.mwi-mp-chevron');
+            if (chevron) chevron.style.transform = '';
+        });
     }
 
     /**
@@ -242,10 +257,6 @@ class MarketplaceShortcuts {
             const chevron = toggle.querySelector('.mwi-mp-chevron');
             if (chevron) chevron.style.transform = open ? 'rotate(180deg)' : '';
         });
-
-        // Close on outside click
-        this.closeHandler = () => closePanel();
-        document.addEventListener('click', this.closeHandler);
 
         wrapper.appendChild(toggle);
         wrapper.appendChild(panel);
@@ -795,6 +806,8 @@ class MarketplaceShortcuts {
 }
 
 const marketplaceShortcuts = new MarketplaceShortcuts();
+
+export { MarketplaceShortcuts };
 
 // Auto-initialize (always enabled feature)
 marketplaceShortcuts.initialize();

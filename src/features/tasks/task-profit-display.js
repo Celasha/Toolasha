@@ -19,7 +19,6 @@ import {
     calculateEffectiveActionsPerHour,
     calculateActionsPerHour,
 } from '../../utils/profit-helpers.js';
-import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { calculateActionStats } from '../../utils/action-calculator.js';
 import { debugEquipmentSpeedBonuses, parseEquipmentSpeedBonuses } from '../../utils/equipment-parser.js';
 import { MIN_ACTION_TIME_SECONDS } from '../../utils/profit-constants.js';
@@ -386,9 +385,35 @@ class TaskProfitDisplay {
         this.pendingTaskNodes = new Set(); // Track task nodes waiting for data
         this.eventListeners = new WeakMap(); // Store listeners for cleanup
         this.isInitialized = false;
-        this.timerRegistry = createTimerRegistry();
+        this.pendingTimeouts = new Set();
         this.marketDataInitPromise = null; // Guard against duplicate market data inits
         this._simQueue = Promise.resolve();
+    }
+
+    /**
+     * Schedule a timeout owned by this feature and remove it from the registry
+     * as soon as it fires. This keeps the registry bounded during long sessions.
+     * @param {Function} callback
+     * @param {number} delay
+     * @returns {number}
+     */
+    _scheduleTimeout(callback, delay) {
+        const timeoutId = setTimeout(() => {
+            this.pendingTimeouts.delete(timeoutId);
+            callback();
+        }, delay);
+        this.pendingTimeouts.add(timeoutId);
+        return timeoutId;
+    }
+
+    /**
+     * Cancel all feature-owned timeouts.
+     */
+    _clearPendingTimeouts() {
+        for (const timeoutId of this.pendingTimeouts) {
+            clearTimeout(timeoutId);
+        }
+        this.pendingTimeouts.clear();
     }
 
     /**
@@ -510,10 +535,9 @@ class TaskProfitDisplay {
             if (!data.endCharacterQuests) return;
 
             // Wait for game to update DOM before recalculating profits
-            const updateTimeout = setTimeout(() => {
+            this._scheduleTimeout(() => {
                 this.updateTaskProfits();
             }, 250);
-            this.timerRegistry.registerTimeout(updateTimeout);
         };
 
         webSocketHook.on('quests_updated', questsHandler);
@@ -524,10 +548,9 @@ class TaskProfitDisplay {
 
         // Listen for action queue changes to update queued indicators
         const actionsHandler = () => {
-            const indicatorTimeout = setTimeout(() => {
+            this._scheduleTimeout(() => {
                 this.updateQueuedIndicators();
             }, 250);
-            this.timerRegistry.registerTimeout(indicatorTimeout);
         };
 
         dataManager.on('actions_updated', actionsHandler);
@@ -538,8 +561,7 @@ class TaskProfitDisplay {
 
         // Refresh materials badges when inventory changes
         const materialsHandler = () => {
-            const materialsTimeout = setTimeout(() => refreshMaterialsBadges(), 250);
-            this.timerRegistry.registerTimeout(materialsTimeout);
+            this._scheduleTimeout(() => refreshMaterialsBadges(), 250);
         };
 
         dataManager.on('items_updated', materialsHandler);
@@ -580,8 +602,7 @@ class TaskProfitDisplay {
         // Watch for individual tasks appearing
         const unregisterTask = domObserver.onClass('TaskProfitDisplay-Task', 'RandomTask_randomTask', (taskNode) => {
             this._setupTaskNode(taskNode);
-            const queuedTimeout = setTimeout(() => this.updateQueuedIndicators(), 150);
-            this.timerRegistry.registerTimeout(queuedTimeout);
+            this._scheduleTimeout(() => this.updateQueuedIndicators(), 150);
         });
         this.unregisterHandlers.push(unregisterTask);
 
@@ -599,8 +620,7 @@ class TaskProfitDisplay {
      */
     _setupTaskNode(taskNode) {
         // Small delay to let task data settle
-        const taskTimeout = setTimeout(() => this.updateTaskProfits(), 100);
-        this.timerRegistry.registerTimeout(taskTimeout);
+        this._scheduleTimeout(() => this.updateTaskProfits(), 100);
 
         // Merge duplicate task Go buttons: sum goalCount - currentCount across all
         // in-progress tasks with the same actionHrid/monsterHrid and overwrite the input
@@ -733,7 +753,7 @@ class TaskProfitDisplay {
         const pendingNodes = Array.from(this.pendingTaskNodes);
         this.pendingTaskNodes.clear();
 
-        this.timerRegistry.clearAll();
+        this._clearPendingTimeouts();
 
         for (const taskNode of pendingNodes) {
             // Check if node still exists in DOM
@@ -2350,6 +2370,8 @@ class TaskProfitDisplay {
             this.marketDataRetryHandler = null;
         }
 
+        this._clearPendingTimeouts();
+
         // Clear pending tasks
         this.pendingTaskNodes.clear();
 
@@ -2376,5 +2398,10 @@ class TaskProfitDisplay {
 const taskProfitDisplay = new TaskProfitDisplay();
 taskProfitDisplay.setupSettingListener();
 
-export { calculateTaskCompletionSeconds, calculateTaskEfficiencyRating, getRelativeEfficiencyGradientColor };
+export {
+    TaskProfitDisplay,
+    calculateTaskCompletionSeconds,
+    calculateTaskEfficiencyRating,
+    getRelativeEfficiencyGradientColor,
+};
 export default taskProfitDisplay;

@@ -301,6 +301,8 @@ class BudgetCalculator {
     }
 
     _processActionPanels() {
+        this._pruneDisconnectedPanels();
+
         document.querySelectorAll('[class*="SkillActionDetail_skillActionDetail"]').forEach((panel) => {
             if (this.processedPanels.has(panel)) return;
 
@@ -315,6 +317,17 @@ class BudgetCalculator {
             this.processedPanels.add(panel);
             this._attachToPanel(panel);
         });
+    }
+
+    /**
+     * Disconnect observers whose action panels have been unmounted.
+     */
+    _pruneDisconnectedPanels() {
+        for (const [panel, observer] of this.panelObservers) {
+            if (panel.isConnected) continue;
+            observer.disconnect();
+            this.panelObservers.delete(panel);
+        }
     }
 
     /**
@@ -485,4 +498,6 @@ class BudgetCalculator {
 }
 
 const budgetCalculator = new BudgetCalculator();
+
+export { BudgetCalculator };
 export default budgetCalculator;

@@ -165,6 +165,11 @@ class InventoryCountDisplay {
         const outputHrid = getPrimaryOutputHrid(actionDetails);
         if (!outputHrid) return;
 
+        const registered = this.tileElements.get(actionPanel);
+        if (registered?.outputHrid === outputHrid && registered.span?.isConnected) {
+            return;
+        }
+
         let span = actionPanel.querySelector('.mwi-inv-count-tile');
         if (span && span.dataset.outputHrid !== outputHrid) {
             // Output changed — clean up stale span
@@ -334,6 +339,7 @@ class InventoryCountDisplay {
 
 const inventoryCountDisplay = new InventoryCountDisplay();
 
+export { InventoryCountDisplay };
 export default {
     name: 'Inventory Count Display',
     initialize: () => inventoryCountDisplay.initialize(),

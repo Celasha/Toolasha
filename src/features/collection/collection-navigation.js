@@ -40,6 +40,7 @@ class CollectionNavigation {
         this.itemNameToHridCache = null;
         this.itemNameToHridCacheSource = null;
         this.panelObserver = null;
+        this.tileClickHandlers = new Map();
     }
 
     initialize() {
@@ -93,6 +94,12 @@ class CollectionNavigation {
             this.panelObserver();
             this.panelObserver = null;
         }
+        for (const [tile, { handler, originalCursor }] of this.tileClickHandlers) {
+            tile.removeEventListener('click', handler);
+            delete tile.dataset.mwiCollectionNav;
+            tile.style.cursor = originalCursor;
+        }
+        this.tileClickHandlers.clear();
         this.isInitialized = false;
     }
 
@@ -124,6 +131,17 @@ class CollectionNavigation {
     }
 
     /**
+     * Drop strong references to collection tiles that were unmounted.
+     */
+    pruneDetachedTileHandlers() {
+        for (const [tile, { handler }] of this.tileClickHandlers) {
+            if (tile.isConnected) continue;
+            tile.removeEventListener('click', handler);
+            this.tileClickHandlers.delete(tile);
+        }
+    }
+
+    /**
      * Attach click listener to uncollected (gray) tiles
      * @param {Element} tile
      */
@@ -137,15 +155,15 @@ class CollectionNavigation {
             }
         }
 
+        this.pruneDetachedTileHandlers();
+
         // Avoid duplicate listeners
-        if (targetTile.dataset.mwiCollectionNav) {
+        if (this.tileClickHandlers.has(targetTile)) {
             return;
         }
-        targetTile.dataset.mwiCollectionNav = 'true';
 
-        targetTile.style.cursor = 'pointer';
-
-        targetTile.addEventListener('click', (event) => {
+        const originalCursor = targetTile.style.cursor;
+        const handler = (event) => {
             event.stopPropagation();
 
             const itemHrid = this.extractHridFromTile(targetTile);
@@ -154,7 +172,12 @@ class CollectionNavigation {
             }
 
             this.showPopover(targetTile, itemHrid);
-        });
+        };
+
+        targetTile.dataset.mwiCollectionNav = 'true';
+        targetTile.style.cursor = 'pointer';
+        targetTile.addEventListener('click', handler);
+        this.tileClickHandlers.set(targetTile, { handler, originalCursor });
     }
 
     /**
@@ -389,6 +412,7 @@ class CollectionNavigation {
 
 const collectionNavigation = new CollectionNavigation();
 
+export { CollectionNavigation };
 export default {
     initialize: () => collectionNavigation.initialize(),
     disable: () => collectionNavigation.disable(),
