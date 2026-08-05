@@ -178,6 +178,24 @@ describe('marketplace-autofill', () => {
         manager.cleanup();
     });
 
+    test('fills the exact matching New Buy Listing modal', () => {
+        const { manager, sessionId } = startManager({ quantityProvider: () => 900 });
+        const component = makeMarketplaceComponent({
+            isPostNewListing: true,
+            isInstantOrder: false,
+        });
+        const { modal, input } = makeBuyModal(component, { title: 'Buy Listing' });
+        const inputEvents = vi.fn();
+        input.addEventListener('input', inputEvents);
+
+        emitModal(modal);
+
+        expect(input.value).toBe('900');
+        expect(inputEvents).toHaveBeenCalledTimes(1);
+        expect(marketplaceSession.isActive(sessionId)).toBe(true);
+        manager.cleanup();
+    });
+
     test('does not fill a modal for a different item and keeps the exact target armed', () => {
         const { manager } = startManager({ quantityProvider: () => 865 });
         const component = makeMarketplaceComponent({ itemHrid: '/items/verdant_milk' });
@@ -200,8 +218,8 @@ describe('marketplace-autofill', () => {
         ['wrong selected enhancement level', { enhancementLevel: 1 }],
         ['wrong modal enhancement level', { enhancementLevelInput: 1 }],
         ['closed post-listing modal state', { showPostListing: false }],
-        ['new listing state', { isPostNewListing: true }],
-        ['non-instant order state', { isInstantOrder: false }],
+        ['inconsistent instant new-listing state', { isPostNewListing: true, isInstantOrder: true }],
+        ['inconsistent non-instant existing-order state', { isPostNewListing: false, isInstantOrder: false }],
         ['wrong Marketplace view', { marketListingsView: 'ItemGrid' }],
     ])('rejects %s', (_label, stateOverride) => {
         const { manager } = startManager();
