@@ -222,6 +222,7 @@ function makeMarketplaceComponent() {
 }
 
 function resetInstanceState() {
+    houseCostDisplay.currentModalContent = null;
     houseCostDisplay._houseSessionId = null;
     houseCostDisplay._nativeTabExitCleanup = null;
     houseCostDisplay._houseReturnGeneration = 0;
@@ -455,6 +456,51 @@ describe('HouseCostDisplay — Section 3 Rev2 correction', () => {
             p['__reactFiber$abc'] = chain;
 
             expect(houseCostDisplay._getMarketplaceComponent()).toBeNull();
+        });
+    });
+
+    // =========================================================================
+    // _getLiveHouseRoomLevel
+    // =========================================================================
+
+    describe('_getLiveHouseRoomLevel', () => {
+        it('prefers the live House component level over a stale DataManager cache', () => {
+            const component = makeHouseComponent({
+                props: {
+                    characterHouseRoomDict: {
+                        '/house_rooms/library': { houseRoomHrid: '/house_rooms/library', level: 4 },
+                    },
+                },
+            });
+            const getHouseSpy = vi.spyOn(houseCostDisplay, '_getHouseComponent').mockReturnValue(component);
+
+            expect(houseCostDisplay._getLiveHouseRoomLevel('/house_rooms/library')).toBe(4);
+            getHouseSpy.mockRestore();
+        });
+
+        it('falls back to the calculator cache when the live owner is unavailable', () => {
+            const getHouseSpy = vi.spyOn(houseCostDisplay, '_getHouseComponent').mockReturnValue(null);
+
+            expect(houseCostDisplay._getLiveHouseRoomLevel('/house_rooms/library')).toBe(3);
+            getHouseSpy.mockRestore();
+        });
+
+        it('anchors the live modal before resolving its room level', async () => {
+            const modalContent = document.createElement('div');
+            const costsSection = document.createElement('div');
+            modalContent.appendChild(costsSection);
+            document.body.appendChild(modalContent);
+
+            const levelSpy = vi.spyOn(houseCostDisplay, '_getLiveHouseRoomLevel').mockImplementation(() => {
+                expect(houseCostDisplay.currentModalContent).toBe(modalContent);
+                return 2;
+            });
+            const compactSpy = vi.spyOn(houseCostDisplay, 'addCompactToLevel').mockResolvedValue();
+
+            await houseCostDisplay.addCostColumn(costsSection, '/house_rooms/library', modalContent);
+
+            expect(levelSpy).toHaveBeenCalledWith('/house_rooms/library');
+            expect(compactSpy).toHaveBeenCalledWith(costsSection, '/house_rooms/library', 2);
         });
     });
 
@@ -1117,6 +1163,36 @@ describe('HouseCostDisplay — Section 3 Rev2 correction', () => {
 
             expect(callOrder.indexOf('closeMarket')).toBeLessThan(callOrder.indexOf('roomClick'));
             vi.useRealTimers();
+        });
+
+        it('waits for a freshly remounted House owner before reopening the room', async () => {
+            houseCostDisplay._houseSessionId = 9;
+            mockIsActive.mockReturnValue(true);
+
+            vi.spyOn(houseCostDisplay, '_getMarketplaceComponent').mockReturnValue(makeMarketplaceComponent());
+            const freshHouse = makeHouseComponent({ state: { selectedHouseRoomHrid: null } });
+            const getHouseSpy = vi
+                .spyOn(houseCostDisplay, '_getHouseComponent')
+                .mockReturnValueOnce(null)
+                .mockReturnValue(freshHouse);
+
+            const dropdown = makeConnectedDropdown(['5']);
+            houseCostDisplay._cumulativeState = {
+                houseRoomHrid: '/house_rooms/library',
+                dropdown,
+                costContainer: makeConnectedCostContainer(),
+            };
+            freshHouse.handleHouseRoomClicked.mockImplementation((hrid) => {
+                freshHouse.state.selectedHouseRoomHrid = hrid;
+            });
+            houseCostDisplay._pollUntil = vi.fn(async (predicate) => Boolean(predicate()));
+
+            await houseCostDisplay._handleHouseReturn(makeReturnContext());
+
+            expect(getHouseSpy).toHaveBeenCalledTimes(2);
+            expect(freshHouse.handleHouseRoomClicked).toHaveBeenCalledWith('/house_rooms/library');
+            expect(dropdown.value).toBe('5');
+            expect(mockEnd).toHaveBeenCalledWith(9);
         });
 
         it('a stale rejected Return does not advance generation or cancel current work', async () => {
