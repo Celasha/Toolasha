@@ -73,22 +73,21 @@ class DOMObserver {
      * @private
      */
     debouncedCallback(handler, node, mutation) {
-        const handlerName = handler.name;
         const delay = handler.debounceDelay || this.DEFAULT_DEBOUNCE_DELAY;
 
         // Overwrite with the latest node/mutation — only the last one is ever used
-        this.debouncedLatest.set(handlerName, { node, mutation });
+        this.debouncedLatest.set(handler, { node, mutation });
 
         // Clear existing timer
-        if (this.debounceTimers.has(handlerName)) {
-            clearTimeout(this.debounceTimers.get(handlerName));
+        if (this.debounceTimers.has(handler)) {
+            clearTimeout(this.debounceTimers.get(handler));
         }
 
         // Set new timer
         const timer = setTimeout(() => {
-            const latest = this.debouncedLatest.get(handlerName);
-            this.debouncedLatest.delete(handlerName);
-            this.debounceTimers.delete(handlerName);
+            const latest = this.debouncedLatest.get(handler);
+            this.debouncedLatest.delete(handler);
+            this.debounceTimers.delete(handler);
 
             if (latest) {
                 if (performanceMonitor.enabled) {
@@ -101,7 +100,7 @@ class DOMObserver {
             }
         }, delay);
 
-        this.debounceTimers.set(handlerName, timer);
+        this.debounceTimers.set(handler, timer);
     }
 
     /**
@@ -146,10 +145,10 @@ class DOMObserver {
                 this.handlers.splice(index, 1);
 
                 // Clean up any pending debounced callbacks
-                if (this.debounceTimers.has(name)) {
-                    clearTimeout(this.debounceTimers.get(name));
-                    this.debounceTimers.delete(name);
-                    this.debouncedLatest.delete(name);
+                if (this.debounceTimers.has(handler)) {
+                    clearTimeout(this.debounceTimers.get(handler));
+                    this.debounceTimers.delete(handler);
+                    this.debouncedLatest.delete(handler);
                 }
             }
         };

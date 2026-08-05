@@ -1055,7 +1055,10 @@ class DataManager {
         if (!this.eventListeners.has(event)) {
             this.eventListeners.set(event, []);
         }
-        this.eventListeners.get(event).push(callback);
+        const listeners = this.eventListeners.get(event);
+        if (!listeners.includes(callback)) {
+            listeners.push(callback);
+        }
     }
 
     /**

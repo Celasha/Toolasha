@@ -24,6 +24,17 @@ beforeEach(() => {
 });
 
 describe('ConnectionState', () => {
+    test('does not register the same callback reference twice', async () => {
+        const { default: connectionState } = await import('./connection-state.js');
+        const onDisconnected = vi.fn();
+        connectionState.on('disconnected', onDisconnected);
+        connectionState.on('disconnected', onDisconnected);
+
+        socketHandlers.get('close')({ code: 1006 });
+
+        expect(onDisconnected).toHaveBeenCalledTimes(1);
+    });
+
     test('transitions to connected on init_character_data', async () => {
         // Arrange
         const { default: connectionState } = await import('./connection-state.js');

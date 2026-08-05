@@ -96,6 +96,20 @@ describe('DataManager', () => {
 });
 
 describe('DataManager event listener snapshots', () => {
+    test('does not register the same callback reference twice', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const listener = vi.fn();
+
+        dataManager.on('dedup_test', listener);
+        dataManager.on('dedup_test', listener);
+        dataManager.emit('dedup_test', {});
+
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(listener).toHaveBeenCalledTimes(1);
+        dataManager.off('dedup_test', listener);
+    });
+
     test('character switching calls every listener when listeners remove themselves', async () => {
         const { default: dataManager } = await import('./data-manager.js');
         const calls = [];

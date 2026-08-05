@@ -89,8 +89,26 @@ describe('DOMObserver debounce', () => {
         vi.runAllTimers();
 
         expect(callback).not.toHaveBeenCalled();
-        expect(domObserver.debouncedLatest.has('cancel-test')).toBe(false);
-        expect(domObserver.debounceTimers.has('cancel-test')).toBe(false);
+        expect(domObserver.debouncedLatest.has(handler)).toBe(false);
+        expect(domObserver.debounceTimers.has(handler)).toBe(false);
+    });
+
+    test('same-named handlers maintain independent debounce state', () => {
+        const cbA = vi.fn();
+        const cbB = vi.fn();
+        const handlerA = { name: 'shared-name', debounce: true, debounceDelay: 50, callback: cbA };
+        const handlerB = { name: 'shared-name', debounce: true, debounceDelay: 50, callback: cbB };
+
+        domObserver.debouncedCallback(handlerA, { id: 'a' }, {});
+        domObserver.debouncedCallback(handlerB, { id: 'b' }, {});
+
+        expect(domObserver.debounceTimers.size).toBe(2);
+        expect(domObserver.debouncedLatest.size).toBe(2);
+
+        vi.runAllTimers();
+
+        expect(cbA).toHaveBeenCalledWith({ id: 'a' }, {});
+        expect(cbB).toHaveBeenCalledWith({ id: 'b' }, {});
     });
 
     test('stop() clears all pending debounce state', () => {
