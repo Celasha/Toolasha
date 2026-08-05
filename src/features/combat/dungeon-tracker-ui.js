@@ -31,7 +31,6 @@ class DungeonTrackerUI {
 
         // Callback references for cleanup
         this.dungeonUpdateHandler = null;
-        this.characterSwitchingHandler = null;
     }
 
     /**
@@ -93,13 +92,6 @@ class DungeonTrackerUI {
 
         // Start update loop (updates current wave time every second)
         this.startUpdateLoop();
-
-        // Store listener reference for cleanup
-        this.characterSwitchingHandler = () => {
-            this.cleanup();
-        };
-
-        dataManager.on('character_switching', this.characterSwitchingHandler);
     }
 
     /**
@@ -685,11 +677,6 @@ class DungeonTrackerUI {
         if (this.dungeonUpdateHandler) {
             dungeonTracker.offUpdate(this.dungeonUpdateHandler);
             this.dungeonUpdateHandler = null;
-        }
-
-        if (this.characterSwitchingHandler) {
-            dataManager.off('character_switching', this.characterSwitchingHandler);
-            this.characterSwitchingHandler = null;
         }
 
         // Clear update interval

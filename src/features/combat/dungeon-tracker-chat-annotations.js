@@ -7,7 +7,6 @@
 import dungeonTrackerStorage from './dungeon-tracker-storage.js';
 import dungeonTracker from './dungeon-tracker.js';
 import config from '../../core/config.js';
-import dataManager from '../../core/data-manager.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 
@@ -23,7 +22,6 @@ class DungeonTrackerChatAnnotations {
         this.timerRegistry = createTimerRegistry();
         this.tabClickHandlers = new Map(); // Store tab click handlers for cleanup
         this._pendingAnnotateTimeout = null; // Debounce timer for annotateAllMessages
-        this.characterSwitchingHandler = null;
     }
 
     /**
@@ -35,11 +33,6 @@ class DungeonTrackerChatAnnotations {
 
         // Wait for chat to be available
         this.waitForChat();
-
-        this.characterSwitchingHandler = () => {
-            this.cleanup();
-        };
-        dataManager.on('character_switching', this.characterSwitchingHandler);
     }
 
     /**
@@ -863,11 +856,6 @@ class DungeonTrackerChatAnnotations {
      * Cleanup for character switching
      */
     cleanup() {
-        if (this.characterSwitchingHandler) {
-            dataManager.off('character_switching', this.characterSwitchingHandler);
-            this.characterSwitchingHandler = null;
-        }
-
         // Disconnect MutationObserver
         if (this.observer) {
             this.observer();

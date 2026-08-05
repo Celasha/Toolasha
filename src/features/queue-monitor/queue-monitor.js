@@ -13,17 +13,17 @@ let settingChangeHandler = null;
 export default {
     name: 'Queue Monitor',
 
-    initialize: () => {
+    initialize: async () => {
         // Always init snapshot listener (must survive setting toggles)
         queueSnapshot.initialize();
 
         if (config.getSetting('queueMonitor')) {
-            queueMonitorUI.initialize();
+            await queueMonitorUI.initialize();
         }
 
         settingChangeHandler = (enabled) => {
             if (enabled) {
-                queueMonitorUI.initialize();
+                void queueMonitorUI.initialize();
             } else {
                 queueMonitorUI.disable();
             }

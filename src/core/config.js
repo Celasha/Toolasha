@@ -430,9 +430,11 @@ class Config {
 
     /**
      * Load settings from storage (async)
+     * @param {Object} options - Loading options
+     * @param {boolean} options.notifyChanges - Fire setting callbacks for changed values
      * @returns {Promise<void>}
      */
-    async loadSettings() {
+    async loadSettings({ notifyChanges = true } = {}) {
         // Set character ID in settings storage for per-character settings
         const characterId = dataManager.getCurrentCharacterId();
 
@@ -450,15 +452,19 @@ class Config {
         // Load settings from settings-storage (which uses settings-schema as source of truth)
         this.settingsMap = await settingsStorage.loadSettings();
 
-        // Fire change callbacks for settings that differ from what was previously loaded
-        for (const key of Object.keys(this.settingChangeCallbacks)) {
-            const prev = previousMap[key];
-            const curr = this.settingsMap[key];
-            if (!prev || !curr) continue;
-            const prevVal = prev.hasOwnProperty('value') ? prev.value : prev.isTrue;
-            const currVal = curr.hasOwnProperty('value') ? curr.value : curr.isTrue;
-            if (prevVal !== currVal) {
-                for (const cb of this.settingChangeCallbacks[key]) cb(currVal);
+        if (notifyChanges) {
+            // Fire change callbacks for settings that differ from what was previously loaded.
+            // Character switches intentionally suppress these callbacks because the feature
+            // registry performs a full cleanup/reinitialize cycle with the new settings.
+            for (const key of Object.keys(this.settingChangeCallbacks)) {
+                const prev = previousMap[key];
+                const curr = this.settingsMap[key];
+                if (!prev || !curr) continue;
+                const prevVal = prev.hasOwnProperty('value') ? prev.value : prev.isTrue;
+                const currVal = curr.hasOwnProperty('value') ? curr.value : curr.isTrue;
+                if (prevVal !== currVal) {
+                    for (const cb of this.settingChangeCallbacks[key]) cb(currVal);
+                }
             }
         }
     }

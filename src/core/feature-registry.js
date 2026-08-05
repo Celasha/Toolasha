@@ -218,12 +218,6 @@ function setupCharacterSwitchHandler() {
 
         reinitScheduled = true;
 
-        // Force cleanup of dungeon tracker UI (safety measure)
-        const dungeonTrackerFeature = getFeature('dungeonTrackerUI');
-        if (dungeonTrackerFeature && typeof dungeonTrackerFeature.cleanup === 'function') {
-            dungeonTrackerFeature.cleanup();
-        }
-
         try {
             // Wait for cleanup to complete (with safety timeout)
             if (cleanupPromise) {
@@ -232,7 +226,7 @@ function setupCharacterSwitchHandler() {
 
             // CRITICAL: Load settings BEFORE any feature initialization
             // This ensures all features see the new character's settings
-            await config.loadSettings();
+            await config.loadSettings({ notifyChanges: false });
             config.applyColorSettings();
 
             // Small delay to ensure game state is stable

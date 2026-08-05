@@ -20,7 +20,7 @@ const ACCENT = '#4a9eff';
 const ACCENT_BORDER = 'rgba(74, 158, 255, 0.5)';
 const ACCENT_BG = 'rgba(74, 158, 255, 0.12)';
 
-class QueueMonitorUI {
+export class QueueMonitorUI {
     constructor() {
         this.panel = null;
         this.bodyEl = null;
@@ -33,33 +33,66 @@ class QueueMonitorUI {
         this._dragMouseDownHandler = null;
         this._dragMouseMoveHandler = null;
         this._dragMouseUpHandler = null;
+        this._boundOnInit = null;
+        this.isInitialized = false;
+        this.isInitializing = false;
+        this.lifecycleGeneration = 0;
     }
 
     /**
      * Initialize the UI
      */
     async initialize() {
-        // Load collapse state
-        this.collapsed = await storage.get('queueMonitor_collapsed', 'settings', false);
+        if (this.isInitialized || this.isInitializing) {
+            return;
+        }
 
-        this._buildPanel();
-        this._updateDisplay();
+        const generation = ++this.lifecycleGeneration;
+        this.isInitializing = true;
 
-        // Refresh display periodically
-        this.timers.registerInterval(setInterval(() => this._updateDisplay(), UPDATE_INTERVAL));
+        try {
+            // Load collapse state
+            const collapsed = await storage.get('queueMonitor_collapsed', 'settings', false);
 
-        // Also refresh when switching characters (new snapshot available after re-init)
-        this._boundOnInit = () => {
-            // Delay slightly to allow snapshot to be saved
-            setTimeout(() => this._updateDisplay(), 500);
-        };
-        dataManager.on('character_initialized', this._boundOnInit);
+            if (generation !== this.lifecycleGeneration) {
+                return;
+            }
+
+            this.collapsed = collapsed;
+
+            this._buildPanel();
+            this._updateDisplay();
+
+            // Refresh display periodically
+            this.timers.registerInterval(setInterval(() => this._updateDisplay(), UPDATE_INTERVAL));
+
+            // Also refresh when switching characters (new snapshot available after re-init)
+            this._boundOnInit = () => {
+                // Delay slightly to allow snapshot to be saved
+                const refreshTimeout = setTimeout(() => {
+                    if (generation === this.lifecycleGeneration && this.isInitialized) {
+                        this._updateDisplay();
+                    }
+                }, 500);
+                this.timers.registerTimeout(refreshTimeout);
+            };
+            dataManager.on('character_initialized', this._boundOnInit);
+
+            this.isInitialized = true;
+        } finally {
+            if (generation === this.lifecycleGeneration) {
+                this.isInitializing = false;
+            }
+        }
     }
 
     /**
      * Disable and clean up
      */
     disable() {
+        this.lifecycleGeneration += 1;
+        this.isInitialized = false;
+        this.isInitializing = false;
         this.timers.clearAll();
         this._removeDragHandlers();
         if (this._boundOnInit) {
@@ -71,6 +104,7 @@ class QueueMonitorUI {
             this.panel.remove();
             this.panel = null;
         }
+        this.bodyEl = null;
     }
 
     /**
