@@ -23,6 +23,7 @@ function getLoadoutSnapshot() {
     return window.Toolasha?.Combat?.loadoutSnapshot || loadoutSnapshotLocal;
 }
 import { formatKMB } from '../../../utils/formatters.js';
+import { areInjectedLayoutElementsAttached, mutationTouchesCustomTabsLayout } from './custom-tabs-layout-guards.js';
 import {
     loadConfig,
     saveConfig,
@@ -833,8 +834,7 @@ export default class CustomTabsUI {
     _applyLayoutSync(invContainer) {
         // Compare BEFORE assignment — otherwise isSameNode is always true
         const isSameNode = invContainer === this._invContainer;
-        const injectedStillPresent =
-            this._injectedEls.length > 0 && this._injectedEls[0].parentElement === invContainer;
+        const injectedStillPresent = areInjectedLayoutElementsAttached(this._injectedEls, invContainer);
         let needsFullRebuild = !isSameNode || !injectedStillPresent;
 
         this._invContainer = invContainer;
@@ -919,15 +919,8 @@ export default class CustomTabsUI {
             this._observedContainer = invContainer;
             this._tileObserver = new MutationObserver((mutations) => {
                 if (!this._isActive) return;
-                const hasTileChange = mutations.some((m) =>
-                    [...m.addedNodes, ...m.removedNodes].some(
-                        (n) =>
-                            n.nodeType === Node.ELEMENT_NODE &&
-                            (n.className?.includes?.('Item_itemContainer') ||
-                                n.querySelector?.('[class*="Item_itemContainer"]'))
-                    )
-                );
-                if (hasTileChange) this._applyLayoutSync(invContainer);
+                const hasRelevantChange = mutations.some(mutationTouchesCustomTabsLayout);
+                if (hasRelevantChange) this._applyLayoutSync(invContainer);
             });
             this._tileObserver.observe(invContainer, { childList: true, subtree: true });
         }
