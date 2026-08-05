@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.87.3](https://github.com/Celasha/Toolasha/compare/v2.87.2...v2.87.3) (2026-08-05)
+
+### Bug Fixes
+
+- deduplicate listeners and debounce by handler identity ([6022ce7](https://github.com/Celasha/Toolasha/commit/6022ce73ccede49ad57ee111c9645d175ffc2105))
+- harden character switch lifecycle ownership ([4834312](https://github.com/Celasha/Toolasha/commit/48343123c042a19adebf19e35bebd888dfa8269d))
+- scope enhancement history by character ([f44926a](https://github.com/Celasha/Toolasha/commit/f44926a5a180353d71fde912694b0b6910932103))
+
 ## [2.87.2](https://github.com/Celasha/Toolasha/compare/v2.87.1...v2.87.2) (2026-08-05)
 
 ### Bug Fixes
