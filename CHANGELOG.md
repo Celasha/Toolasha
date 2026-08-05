@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.87.2](https://github.com/Celasha/Toolasha/compare/v2.87.1...v2.87.2) (2026-08-05)
+
+
+### Bug Fixes
+
+* bind marketplace shortcuts to owned sessions ([5254eb6](https://github.com/Celasha/Toolasha/commit/5254eb6544076f69aaa9496f1dabfac59cccd6f4))
+* bound feature lifecycle resources ([ab4a2b4](https://github.com/Celasha/Toolasha/commit/ab4a2b4076bacc8a398f1f139dcba72484cb8564))
+* scope combat stats persistence by character ([7acd80e](https://github.com/Celasha/Toolasha/commit/7acd80ead09f957ec9ca24c8c44d155b14224616))
+
 ## [2.87.1](https://github.com/Celasha/Toolasha/compare/v2.87.0...v2.87.1) (2026-08-04)
 
 ### Bug Fixes
