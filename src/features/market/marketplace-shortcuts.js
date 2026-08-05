@@ -7,9 +7,11 @@
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
+import { marketplaceSession, MARKETPLACE_OWNER } from '../../core/marketplace-session.js';
 import { navigateToMarketplace } from '../../utils/marketplace-tabs.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { setReactInputValue } from '../../utils/react-input.js';
+import { readMarketplaceRuntimeStateFromElement } from '../../utils/marketplace-autofill.js';
 import estimatedListingAge from './estimated-listing-age.js';
 import { formatRelativeTime, formatWithSeparator } from '../../utils/formatters.js';
 
@@ -26,7 +28,9 @@ class MarketplaceShortcuts {
         this.timerRegistry = createTimerRegistry();
         this.itemNameToHridCache = null;
         this.closeHandler = null;
-        this.pendingQuantity = null;
+        this.pendingAutofill = null;
+        this.pendingAutofillWriteTimers = new Set();
+        this.pendingAutofillExpiryTimer = null;
         this.addMode = false;
     }
 
@@ -264,23 +268,133 @@ class MarketplaceShortcuts {
     }
 
     /**
+     * Clear local state for the active shortcut autofill without touching another owner's session.
+     * @param {number|null} [sessionId]
+     */
+    clearPendingAutofill(sessionId = null) {
+        if (sessionId !== null && this.pendingAutofill && this.pendingAutofill.sessionId !== sessionId) return;
+
+        for (const timer of this.pendingAutofillWriteTimers) {
+            clearTimeout(timer);
+        }
+        this.pendingAutofillWriteTimers.clear();
+        if (this.pendingAutofillExpiryTimer !== null) {
+            clearTimeout(this.pendingAutofillExpiryTimer);
+            this.pendingAutofillExpiryTimer = null;
+        }
+        this.pendingAutofill = null;
+    }
+
+    /**
+     * End the currently-owned shortcut session, if any.
+     */
+    endPendingAutofill() {
+        const sessionId = this.pendingAutofill?.sessionId ?? null;
+        if (sessionId !== null && marketplaceSession.isActive(sessionId)) {
+            marketplaceSession.end(sessionId);
+            return;
+        }
+        this.clearPendingAutofill(sessionId);
+    }
+
+    /**
+     * Claim exclusive marketplace ownership for one shortcut quantity autofill.
+     * @param {{ quantity: number, itemHrid: string, enhancementLevel: number, actionType: string }} target
+     */
+    startPendingAutofill(target) {
+        let sessionId = null;
+        sessionId = marketplaceSession.start({
+            owner: MARKETPLACE_OWNER.SHORTCUTS,
+            onEnd: () => this.clearPendingAutofill(sessionId),
+        });
+
+        this.pendingAutofill = Object.freeze({ ...target, sessionId });
+        this.pendingAutofillExpiryTimer = setTimeout(() => {
+            marketplaceSession.end(sessionId);
+        }, 10000);
+    }
+
+    /**
+     * Update the expected modal type while preserving the same owned session.
+     * Used when an unavailable instant order falls back to a new listing.
+     * @param {string} actionType
+     */
+    retargetPendingAutofill(actionType) {
+        const current = this.pendingAutofill;
+        if (!current || !marketplaceSession.isActive(current.sessionId)) return;
+        this.pendingAutofill = Object.freeze({ ...current, actionType });
+    }
+
+    /**
+     * Get the expected marketplace modal state for a shortcut action.
+     * @param {string} actionType
+     * @returns {Object|null}
+     */
+    getPendingAutofillMode(actionType) {
+        return (
+            {
+                buy: { header: 'Buy Now', isSell: false, isPostNewListing: false, isInstantOrder: true },
+                sell: { header: 'Sell Now', isSell: true, isPostNewListing: false, isInstantOrder: true },
+                'buy-listing': {
+                    header: 'Buy Listing',
+                    isSell: false,
+                    isPostNewListing: true,
+                    isInstantOrder: false,
+                },
+                'sell-listing': {
+                    header: 'Sell Listing',
+                    isSell: true,
+                    isPostNewListing: true,
+                    isInstantOrder: false,
+                },
+            }[actionType] || null
+        );
+    }
+
+    /**
+     * Verify that a live marketplace modal belongs to the exact shortcut target.
+     * @param {HTMLElement} modal
+     * @param {HTMLInputElement} quantityInput
+     * @param {Object} target
+     * @returns {boolean}
+     */
+    matchesPendingAutofill(modal, quantityInput, target) {
+        const expected = this.getPendingAutofillMode(target.actionType);
+        if (!expected || !modal?.isConnected || !quantityInput?.isConnected) return false;
+
+        const headerText = modal.querySelector('div[class*="MarketplacePanel_header"]')?.textContent?.trim() || '';
+        if (headerText !== expected.header) return false;
+
+        const state = readMarketplaceRuntimeStateFromElement(quantityInput);
+        if (!state) return false;
+        if (state.marketTabKey !== 'MarketListings' || state.marketListingsView !== 'OrderBook') return false;
+        if (state.itemHrid !== target.itemHrid || state.enhancementLevel !== target.enhancementLevel) return false;
+        if (state.enhancementLevelInput !== target.enhancementLevel) return false;
+        if (state.isSell !== expected.isSell) return false;
+        if (state.showPostListing !== true) return false;
+        if (state.isPostNewListing !== expected.isPostNewListing) return false;
+        return state.isInstantOrder === expected.isInstantOrder;
+    }
+
+    /**
      * Execute a marketplace action
      * @param {string} actionType - 'sell', 'buy', 'sell-listing', 'buy-listing'
      * @param {string} itemHrid - Item HRID
      * @param {number} enhancementLevel - Enhancement level (0 for base items)
      */
     async executeAction(actionType, itemHrid, enhancementLevel = 0) {
+        this.endPendingAutofill();
+
         // Read quantity from item submenu input before navigating away
+        let quantity = 0;
         const amountInput = document.querySelector('[class*="Item_amountInputContainer"] input[type="number"]');
         if (amountInput) {
-            const qty = parseInt(amountInput.value, 10);
-            if (qty > 0) {
-                this.pendingQuantity = qty;
-            }
+            const captured = parseInt(amountInput.value, 10);
+            if (captured > 0) quantity = captured;
         }
 
         // If no quantity was captured, default to inventory count for sell actions
-        if (!this.pendingQuantity && (actionType === 'sell' || actionType === 'sell-listing')) {
+        if (quantity <= 0 && (actionType === 'sell' || actionType === 'sell-listing')) {
             const inventory = dataManager.characterItems || [];
             const match = inventory.find(
                 (item) =>
@@ -288,16 +402,19 @@ class MarketplaceShortcuts {
                     (item.enhancementLevel || 0) === enhancementLevel &&
                     item.itemLocationHrid === '/item_locations/inventory'
             );
-            if (match && match.count > 0) {
-                this.pendingQuantity = match.count;
-            }
+            if (match && match.count > 0) quantity = match.count;
         }
 
+        this.startPendingAutofill({ quantity, itemHrid, enhancementLevel, actionType });
+
         // Navigate to marketplace for this item
-        navigateToMarketplace(itemHrid, enhancementLevel);
+        if (!navigateToMarketplace(itemHrid, enhancementLevel)) {
+            this.endPendingAutofill();
+            return;
+        }
 
         // Wait for the marketplace panel to render
-        await new Promise((r) => setTimeout(r, 300));
+        await new Promise((resolve) => setTimeout(resolve, 300));
 
         try {
             switch (actionType) {
@@ -317,8 +434,10 @@ class MarketplaceShortcuts {
         } catch {
             // Instant sell/buy failed (no matching orders) — fall back to listing form
             if (actionType === 'sell') {
+                this.retargetPendingAutofill('sell-listing');
                 await this.clickListingButton('+ New Sell Listing', 'Button_sell').catch(() => {});
             } else if (actionType === 'buy') {
+                this.retargetPendingAutofill('buy-listing');
                 await this.clickListingButton('+ New Buy Listing', 'Button_buy').catch(() => {});
             }
         }
@@ -399,31 +518,41 @@ class MarketplaceShortcuts {
      * @param {HTMLElement} modal - Modal container element
      */
     autofillQuantity(modal) {
-        if (!this.pendingQuantity) return;
+        const target = this.pendingAutofill;
+        if (!target) return;
+        if (!marketplaceSession.isActive(target.sessionId)) {
+            this.clearPendingAutofill(target.sessionId);
+            return;
+        }
 
-        // Check if this is a marketplace action modal (Sell Now, Buy Now, or listing form)
-        const header = modal.querySelector('div[class*="MarketplacePanel_header"]');
-        if (!header) return;
+        const expected = this.getPendingAutofillMode(target.actionType);
+        const headerText = modal.querySelector('div[class*="MarketplacePanel_header"]')?.textContent?.trim() || '';
+        if (!expected || headerText !== expected.header) return;
 
-        const headerText = header.textContent.trim();
-        const isMarketplaceModal =
-            headerText.includes('Buy Now') ||
-            headerText.includes('Buy Listing') ||
-            headerText.includes('Sell Now') ||
-            headerText.includes('Sell Listing');
-        if (!isMarketplaceModal) return;
+        // Prefer the newest matching modal if React replaces the modal during convergence.
+        for (const timer of this.pendingAutofillWriteTimers) clearTimeout(timer);
+        this.pendingAutofillWriteTimers.clear();
 
-        // Delay to run after auto-click-max which fires synchronously on modal appearance
-        const qty = this.pendingQuantity;
-        this.pendingQuantity = null;
+        const delays = [100, 250, 500, 1000, 1500];
+        for (const delay of delays) {
+            const timer = setTimeout(() => {
+                this.pendingAutofillWriteTimers.delete(timer);
+                if (this.pendingAutofill !== target || !marketplaceSession.isActive(target.sessionId)) return;
 
-        setTimeout(() => {
-            const quantityInput = this.findQuantityInput(modal);
-            if (!quantityInput) return;
+                const currentInput = this.findQuantityInput(modal);
+                if (!currentInput || !this.matchesPendingAutofill(modal, currentInput, target)) return;
 
-            nativeInputValueSetter.call(quantityInput, qty.toString());
-            quantityInput.dispatchEvent(new Event('input', { bubbles: true }));
-        }, 100);
+                if (target.quantity > 0) {
+                    nativeInputValueSetter.call(currentInput, target.quantity.toString());
+                    currentInput.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+
+                for (const pendingTimer of this.pendingAutofillWriteTimers) clearTimeout(pendingTimer);
+                this.pendingAutofillWriteTimers.clear();
+                marketplaceSession.end(target.sessionId);
+            }, delay);
+            this.pendingAutofillWriteTimers.add(timer);
+        }
     }
 
     /**
@@ -794,6 +923,7 @@ class MarketplaceShortcuts {
             this.closeHandler = null;
         }
 
+        this.endPendingAutofill();
         this.timerRegistry.clearAll();
 
         document.querySelectorAll('.mwi-marketplace-dropdown').forEach((el) => el.remove());
