@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.87.2
+ * Version: 2.87.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -16734,7 +16734,10 @@ self.onmessage = function (e) {
             if (!this.eventListeners.has(event)) {
                 this.eventListeners.set(event, []);
             }
-            this.eventListeners.get(event).push(callback);
+            const listeners = this.eventListeners.get(event);
+            if (!listeners.includes(callback)) {
+                listeners.push(callback);
+            }
         }
 
         /**

@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.87.2
+ * Version: 2.87.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4035,7 +4035,10 @@
             if (!this.eventListeners.has(event)) {
                 this.eventListeners.set(event, []);
             }
-            this.eventListeners.get(event).push(callback);
+            const listeners = this.eventListeners.get(event);
+            if (!listeners.includes(callback)) {
+                listeners.push(callback);
+            }
         }
 
         /**
@@ -5282,7 +5285,10 @@
             if (!this.eventListeners.has(event)) {
                 this.eventListeners.set(event, []);
             }
-            this.eventListeners.get(event).push(callback);
+            const listeners = this.eventListeners.get(event);
+            if (!listeners.includes(callback)) {
+                listeners.push(callback);
+            }
         }
 
         /**
@@ -5773,9 +5779,11 @@
 
         /**
          * Load settings from storage (async)
+         * @param {Object} options - Loading options
+         * @param {boolean} options.notifyChanges - Fire setting callbacks for changed values
          * @returns {Promise<void>}
          */
-        async loadSettings() {
+        async loadSettings({ notifyChanges = true } = {}) {
             // Set character ID in settings storage for per-character settings
             const characterId = dataManager.getCurrentCharacterId();
 
@@ -5793,15 +5801,19 @@
             // Load settings from settings-storage (which uses settings-schema as source of truth)
             this.settingsMap = await settingsStorage.loadSettings();
 
-            // Fire change callbacks for settings that differ from what was previously loaded
-            for (const key of Object.keys(this.settingChangeCallbacks)) {
-                const prev = previousMap[key];
-                const curr = this.settingsMap[key];
-                if (!prev || !curr) continue;
-                const prevVal = prev.hasOwnProperty('value') ? prev.value : prev.isTrue;
-                const currVal = curr.hasOwnProperty('value') ? curr.value : curr.isTrue;
-                if (prevVal !== currVal) {
-                    for (const cb of this.settingChangeCallbacks[key]) cb(currVal);
+            if (notifyChanges) {
+                // Fire change callbacks for settings that differ from what was previously loaded.
+                // Character switches intentionally suppress these callbacks because the feature
+                // registry performs a full cleanup/reinitialize cycle with the new settings.
+                for (const key of Object.keys(this.settingChangeCallbacks)) {
+                    const prev = previousMap[key];
+                    const curr = this.settingsMap[key];
+                    if (!prev || !curr) continue;
+                    const prevVal = prev.hasOwnProperty('value') ? prev.value : prev.isTrue;
+                    const currVal = curr.hasOwnProperty('value') ? curr.value : curr.isTrue;
+                    if (prevVal !== currVal) {
+                        for (const cb of this.settingChangeCallbacks[key]) cb(currVal);
+                    }
                 }
             }
         }
@@ -6416,22 +6428,21 @@
          * @private
          */
         debouncedCallback(handler, node, mutation) {
-            const handlerName = handler.name;
             const delay = handler.debounceDelay || this.DEFAULT_DEBOUNCE_DELAY;
 
             // Overwrite with the latest node/mutation — only the last one is ever used
-            this.debouncedLatest.set(handlerName, { node, mutation });
+            this.debouncedLatest.set(handler, { node, mutation });
 
             // Clear existing timer
-            if (this.debounceTimers.has(handlerName)) {
-                clearTimeout(this.debounceTimers.get(handlerName));
+            if (this.debounceTimers.has(handler)) {
+                clearTimeout(this.debounceTimers.get(handler));
             }
 
             // Set new timer
             const timer = setTimeout(() => {
-                const latest = this.debouncedLatest.get(handlerName);
-                this.debouncedLatest.delete(handlerName);
-                this.debounceTimers.delete(handlerName);
+                const latest = this.debouncedLatest.get(handler);
+                this.debouncedLatest.delete(handler);
+                this.debounceTimers.delete(handler);
 
                 if (latest) {
                     if (performanceMonitor.enabled) {
@@ -6444,7 +6455,7 @@
                 }
             }, delay);
 
-            this.debounceTimers.set(handlerName, timer);
+            this.debounceTimers.set(handler, timer);
         }
 
         /**
@@ -6489,10 +6500,10 @@
                     this.handlers.splice(index, 1);
 
                     // Clean up any pending debounced callbacks
-                    if (this.debounceTimers.has(name)) {
-                        clearTimeout(this.debounceTimers.get(name));
-                        this.debounceTimers.delete(name);
-                        this.debouncedLatest.delete(name);
+                    if (this.debounceTimers.has(handler)) {
+                        clearTimeout(this.debounceTimers.get(handler));
+                        this.debounceTimers.delete(handler);
+                        this.debouncedLatest.delete(handler);
                     }
                 }
             };
@@ -6909,12 +6920,6 @@
 
             reinitScheduled = true;
 
-            // Force cleanup of dungeon tracker UI (safety measure)
-            const dungeonTrackerFeature = getFeature('dungeonTrackerUI');
-            if (dungeonTrackerFeature && typeof dungeonTrackerFeature.cleanup === 'function') {
-                dungeonTrackerFeature.cleanup();
-            }
-
             try {
                 // Wait for cleanup to complete (with safety timeout)
                 if (cleanupPromise) {
@@ -6923,7 +6928,7 @@
 
                 // CRITICAL: Load settings BEFORE any feature initialization
                 // This ensures all features see the new character's settings
-                await config.loadSettings();
+                await config.loadSettings({ notifyChanges: false });
                 config.applyColorSettings();
 
                 // Small delay to ensure game state is stable

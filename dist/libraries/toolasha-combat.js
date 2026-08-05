@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.87.2
+ * Version: 2.87.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2115,11 +2115,6 @@
             // Check for active dungeon on page load and try to restore state
             const checkTimeout = setTimeout(() => this.checkForActiveDungeon(), 1000);
             this.timerRegistry.registerTimeout(checkTimeout);
-
-            this.handlers.characterSwitching = () => {
-                this.cleanup();
-            };
-            dataManager.on('character_switching', this.handlers.characterSwitching);
         }
 
         /**
@@ -3163,11 +3158,6 @@
          * Cleanup for character switching
          */
         async cleanup() {
-            if (this.handlers.characterSwitching) {
-                dataManager.off('character_switching', this.handlers.characterSwitching);
-                this.handlers.characterSwitching = null;
-            }
-
             if (this.handlers.newBattle) {
                 webSocketHook.off('new_battle', this.handlers.newBattle);
                 this.handlers.newBattle = null;
@@ -3419,7 +3409,6 @@
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
             this.tabClickHandlers = new Map(); // Store tab click handlers for cleanup
             this._pendingAnnotateTimeout = null; // Debounce timer for annotateAllMessages
-            this.characterSwitchingHandler = null;
         }
 
         /**
@@ -3431,11 +3420,6 @@
 
             // Wait for chat to be available
             this.waitForChat();
-
-            this.characterSwitchingHandler = () => {
-                this.cleanup();
-            };
-            dataManager.on('character_switching', this.characterSwitchingHandler);
         }
 
         /**
@@ -4255,11 +4239,6 @@
          * Cleanup for character switching
          */
         cleanup() {
-            if (this.characterSwitchingHandler) {
-                dataManager.off('character_switching', this.characterSwitchingHandler);
-                this.characterSwitchingHandler = null;
-            }
-
             // Disconnect MutationObserver
             if (this.observer) {
                 this.observer();
@@ -5791,7 +5770,6 @@
 
             // Callback references for cleanup
             this.dungeonUpdateHandler = null;
-            this.characterSwitchingHandler = null;
         }
 
         /**
@@ -5853,13 +5831,6 @@
 
             // Start update loop (updates current wave time every second)
             this.startUpdateLoop();
-
-            // Store listener reference for cleanup
-            this.characterSwitchingHandler = () => {
-                this.cleanup();
-            };
-
-            dataManager.on('character_switching', this.characterSwitchingHandler);
         }
 
         /**
@@ -6445,11 +6416,6 @@
             if (this.dungeonUpdateHandler) {
                 dungeonTracker.offUpdate(this.dungeonUpdateHandler);
                 this.dungeonUpdateHandler = null;
-            }
-
-            if (this.characterSwitchingHandler) {
-                dataManager.off('character_switching', this.characterSwitchingHandler);
-                this.characterSwitchingHandler = null;
             }
 
             // Clear update interval

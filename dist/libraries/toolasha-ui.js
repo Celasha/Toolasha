@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.87.2
+ * Version: 2.87.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1090,7 +1090,7 @@
      */
 
 
-    const STORAGE_KEY$5 = 'modalPositions3';
+    const STORAGE_KEY$4 = 'modalPositions3';
     const STORE_NAME$5 = 'settings';
 
     class DraggableModals {
@@ -1105,7 +1105,7 @@
             if (this.initialized) return;
             if (!config.getSetting('draggableModals', true)) return;
 
-            this.offsets = (await storage.get(STORAGE_KEY$5, STORE_NAME$5, {})) || {};
+            this.offsets = (await storage.get(STORAGE_KEY$4, STORE_NAME$5, {})) || {};
 
             // Watch Modal_modalContent — unique to the inner dialog content element.
             // Its parentElement is Modal_modal (the box we apply transform to).
@@ -1198,7 +1198,7 @@
                 const dx = isNaN(t.m41) ? 0 : t.m41;
                 const dy = isNaN(t.m42) ? 0 : t.m42;
                 this.offsets[title] = { dx, dy };
-                storage.set(STORAGE_KEY$5, this.offsets, STORE_NAME$5);
+                storage.set(STORAGE_KEY$4, this.offsets, STORE_NAME$5);
             };
 
             bar.addEventListener('mousedown', onMouseDown);
@@ -20657,7 +20657,7 @@ ${starCSS}
      */
 
 
-    const STORAGE_KEY$4 = 'Toolasha_customPriceOverrides';
+    const STORAGE_KEY$3 = 'Toolasha_customPriceOverrides';
 
     /** @type {Object|null} In-memory cache of overrides */
     let overridesCache = null;
@@ -20668,7 +20668,7 @@ ${starCSS}
      */
     async function loadOverrides() {
         if (overridesCache === null) {
-            overridesCache = (await storage.getJSON(STORAGE_KEY$4, 'settings', {})) || {};
+            overridesCache = (await storage.getJSON(STORAGE_KEY$3, 'settings', {})) || {};
         }
         return overridesCache;
     }
@@ -20721,7 +20721,7 @@ ${starCSS}
         }
 
         overridesCache = overrides;
-        await storage.setJSON(STORAGE_KEY$4, overrides, 'settings', true);
+        await storage.setJSON(STORAGE_KEY$3, overrides, 'settings', true);
     }
 
     /**
@@ -20734,7 +20734,7 @@ ${starCSS}
         const key = `${itemHrid}:${enhancementLevel}`;
         delete overrides[key];
         overridesCache = overrides;
-        await storage.setJSON(STORAGE_KEY$4, overrides, 'settings', true);
+        await storage.setJSON(STORAGE_KEY$3, overrides, 'settings', true);
     }
 
     /**
@@ -24144,7 +24144,7 @@ ${starCSS}
 
     const TRANSMUTE_ACTION_HRID = '/actions/alchemy/transmute';
     const COIN_ITEM_HRID$2 = '/items/coin';
-    const STORAGE_KEY$3 = 'transmuteSessions';
+    const STORAGE_KEY$2 = 'transmuteSessions';
     const STORAGE_STORE$3 = 'alchemyHistory';
 
     class TransmuteHistoryTracker {
@@ -24161,7 +24161,7 @@ ${starCSS}
         }
 
         getStorageKey() {
-            return this.characterId ? `${STORAGE_KEY$3}_${this.characterId}` : STORAGE_KEY$3;
+            return this.characterId ? `${STORAGE_KEY$2}_${this.characterId}` : STORAGE_KEY$2;
         }
 
         /**
@@ -25869,7 +25869,7 @@ ${starCSS}
     const COIN_ITEM_HRID$1 = '/items/coin';
     const CATALYST_OF_COINIFICATION_HRID$1 = '/items/catalyst_of_coinification';
     const PRIME_CATALYST_HRID$3 = '/items/prime_catalyst';
-    const STORAGE_KEY$2 = 'coinifySessions';
+    const STORAGE_KEY$1 = 'coinifySessions';
     const STORAGE_STORE$2 = 'alchemyHistory';
 
     class CoinifyHistoryTracker {
@@ -25886,7 +25886,7 @@ ${starCSS}
         }
 
         getStorageKey() {
-            return this.characterId ? `${STORAGE_KEY$2}_${this.characterId}` : STORAGE_KEY$2;
+            return this.characterId ? `${STORAGE_KEY$1}_${this.characterId}` : STORAGE_KEY$1;
         }
 
         /**
@@ -27553,7 +27553,7 @@ ${starCSS}
     const CATALYST_OF_DECOMPOSITION_HRID$1 = '/items/catalyst_of_decomposition';
     const PRIME_CATALYST_HRID$1 = '/items/prime_catalyst';
     const COIN_ITEM_HRID = '/items/coin';
-    const STORAGE_KEY$1 = 'decomposeSessions';
+    const STORAGE_KEY = 'decomposeSessions';
     const STORAGE_STORE$1 = 'alchemyHistory';
 
     class DecomposeHistoryTracker {
@@ -27570,7 +27570,7 @@ ${starCSS}
         }
 
         getStorageKey() {
-            return this.characterId ? `${STORAGE_KEY$1}_${this.characterId}` : STORAGE_KEY$1;
+            return this.characterId ? `${STORAGE_KEY}_${this.characterId}` : STORAGE_KEY;
         }
 
         /**
@@ -30760,64 +30760,119 @@ ${starCSS}
 
     /**
      * Enhancement Tracker Storage
-     * Handles persistence of enhancement sessions using IndexedDB
+     * Handles character-scoped persistence of enhancement sessions using IndexedDB.
      */
 
 
-    const STORAGE_KEY = 'enhancementTracker_sessions';
-    const CURRENT_SESSION_KEY = 'enhancementTracker_currentSession';
-    const STORAGE_STORE = 'settings'; // Use existing 'settings' store
+    const LEGACY_SESSIONS_KEY = 'enhancementTracker_sessions';
+    const LEGACY_CURRENT_SESSION_KEY = 'enhancementTracker_currentSession';
+    const STORAGE_STORE = 'settings';
+    const STORAGE_MISSING = Symbol('enhancement-storage-missing');
 
     /**
-     * Save all sessions to storage
+     * Get a character-scoped enhancement storage key.
+     * @param {string} baseKey - Legacy base key
+     * @param {string} characterId - Character ID
+     * @returns {string} Scoped storage key
+     */
+    function getCharacterStorageKey(baseKey, characterId) {
+        return `${baseKey}:${characterId}`;
+    }
+
+    /**
+     * Load the complete enhancement state for a character. If the character has no
+     * scoped state yet, legacy unscoped data is migrated once to that character.
+     * @param {string} characterId - Active character ID
+     * @returns {Promise<{sessions: Object, currentSessionId: string|null}>} Persisted state
+     */
+    async function loadEnhancementState(characterId) {
+        if (!characterId) {
+            return { sessions: {}, currentSessionId: null };
+        }
+
+        const sessionsKey = getCharacterStorageKey(LEGACY_SESSIONS_KEY, characterId);
+        const currentSessionKey = getCharacterStorageKey(LEGACY_CURRENT_SESSION_KEY, characterId);
+        const scopedSessions = await storage.getJSON(sessionsKey, STORAGE_STORE, STORAGE_MISSING);
+
+        if (scopedSessions !== STORAGE_MISSING) {
+            const currentSessionId = await storage.get(currentSessionKey, STORAGE_STORE, null);
+
+            // Scoped sessions are the migration-complete marker. Any remaining legacy
+            // keys are stale leftovers and must not be inherited by another character.
+            const legacySessions = await storage.getJSON(LEGACY_SESSIONS_KEY, STORAGE_STORE, STORAGE_MISSING);
+            if (legacySessions !== STORAGE_MISSING) {
+                await storage.delete(LEGACY_SESSIONS_KEY, STORAGE_STORE);
+                await storage.delete(LEGACY_CURRENT_SESSION_KEY, STORAGE_STORE);
+            }
+
+            return {
+                sessions: scopedSessions || {},
+                currentSessionId: currentSessionId || null,
+            };
+        }
+
+        const legacySessions = await storage.getJSON(LEGACY_SESSIONS_KEY, STORAGE_STORE, STORAGE_MISSING);
+        if (legacySessions === STORAGE_MISSING) {
+            return { sessions: {}, currentSessionId: null };
+        }
+
+        const sessions = legacySessions || {};
+        const legacyCurrentSessionId = await storage.get(LEGACY_CURRENT_SESSION_KEY, STORAGE_STORE, null);
+        const currentSessionId = legacyCurrentSessionId && sessions[legacyCurrentSessionId] ? legacyCurrentSessionId : null;
+
+        // Write the active pointer first so an interrupted migration can be retried safely
+        // while the scoped sessions key remains the migration-complete marker.
+        const currentSessionSaved = await storage.set(currentSessionKey, currentSessionId, STORAGE_STORE, true);
+        if (!currentSessionSaved) {
+            console.error('[EnhancementStorage] Legacy migration could not save the scoped current session');
+            return { sessions, currentSessionId };
+        }
+
+        const sessionsSaved = await storage.setJSON(sessionsKey, sessions, STORAGE_STORE, true);
+        if (!sessionsSaved) {
+            console.error('[EnhancementStorage] Legacy migration could not save the scoped sessions');
+            return { sessions, currentSessionId };
+        }
+
+        await storage.delete(LEGACY_SESSIONS_KEY, STORAGE_STORE);
+        await storage.delete(LEGACY_CURRENT_SESSION_KEY, STORAGE_STORE);
+
+        return { sessions, currentSessionId };
+    }
+
+    /**
+     * Save all sessions to storage.
      * @param {Object} sessions - Sessions object (keyed by session ID)
-     * @returns {Promise<void>}
+     * @param {string} characterId - Character ID owning the sessions
+     * @returns {Promise<boolean>} Success status
      */
-    async function saveSessions(sessions) {
+    async function saveSessions(sessions, characterId) {
+        if (!characterId) return false;
+
         try {
-            await storage.setJSON(STORAGE_KEY, sessions, STORAGE_STORE, true); // immediate=true for rapid updates
+            const key = getCharacterStorageKey(LEGACY_SESSIONS_KEY, characterId);
+            return await storage.setJSON(key, sessions, STORAGE_STORE, true);
         } catch (error) {
-            throw error;
+            console.error('[EnhancementStorage] Failed to save sessions:', error);
+            return false;
         }
     }
 
     /**
-     * Load all sessions from storage
-     * @returns {Promise<Object>} Sessions object (keyed by session ID)
-     */
-    async function loadSessions() {
-        try {
-            const sessions = await storage.getJSON(STORAGE_KEY, STORAGE_STORE, {});
-            return sessions;
-        } catch (error) {
-            console.error('[EnhancementStorage] Failed to load sessions:', error);
-            return {};
-        }
-    }
-
-    /**
-     * Save current session ID
+     * Save current session ID.
      * @param {string|null} sessionId - Current session ID (null if no active session)
-     * @returns {Promise<void>}
+     * @param {string} characterId - Character ID owning the session
+     * @returns {Promise<boolean>} Success status
      */
-    async function saveCurrentSessionId(sessionId) {
+    async function saveCurrentSessionId(sessionId, characterId) {
+        if (!characterId) return false;
+
         try {
-            await storage.set(CURRENT_SESSION_KEY, sessionId, STORAGE_STORE, true); // immediate=true for rapid updates
+            const key = getCharacterStorageKey(LEGACY_CURRENT_SESSION_KEY, characterId);
+            return await storage.set(key, sessionId, STORAGE_STORE, true);
         } catch (error) {
             console.error('[EnhancementStorage] Failed to save current session ID:', error);
-        }
-    }
-
-    /**
-     * Load current session ID
-     * @returns {Promise<string|null>} Current session ID or null
-     */
-    async function loadCurrentSessionId() {
-        try {
-            return await storage.get(CURRENT_SESSION_KEY, STORAGE_STORE, null);
-        } catch (error) {
-            console.error('[EnhancementStorage] Failed to load current session ID:', error);
-            return null;
+            return false;
         }
     }
 
@@ -31113,6 +31168,9 @@ ${starCSS}
             this.sessions = {}; // All sessions (keyed by session ID)
             this.currentSessionId = null; // Currently active session ID
             this.isInitialized = false;
+            this.isInitializing = false;
+            this.characterId = null;
+            this.lifecycleGeneration = 0;
             this.pendingSessionStart = false; // Start new session on next action_completed regardless of currentCount
         }
 
@@ -31121,7 +31179,7 @@ ${starCSS}
          * @returns {Promise<void>}
          */
         async initialize() {
-            if (this.isInitialized) {
+            if (this.isInitialized || this.isInitializing) {
                 return;
             }
 
@@ -31129,28 +31187,68 @@ ${starCSS}
                 return;
             }
 
-            try {
-                // Load sessions from storage
-                this.sessions = await loadSessions();
-                this.currentSessionId = await loadCurrentSessionId();
+            const characterId = dataManager.getCurrentCharacterId();
+            if (!characterId) {
+                return;
+            }
 
-                // Validate current session still exists
-                if (this.currentSessionId && !this.sessions[this.currentSessionId]) {
-                    this.currentSessionId = null;
-                    await saveCurrentSessionId(null);
+            const generation = ++this.lifecycleGeneration;
+            this.isInitializing = true;
+
+            try {
+                const { sessions: loadedSessions, currentSessionId: loadedCurrentSessionId } =
+                    await loadEnhancementState(characterId);
+
+                if (
+                    generation !== this.lifecycleGeneration ||
+                    dataManager.getCurrentCharacterId() !== characterId ||
+                    dataManager.getIsCharacterSwitching?.()
+                ) {
+                    return;
                 }
 
-                // Validate all loaded sessions
-                for (const [sessionId, session] of Object.entries(this.sessions)) {
+                const sessions = { ...loadedSessions };
+                for (const [sessionId, session] of Object.entries(sessions)) {
                     if (!validateSession(session)) {
-                        delete this.sessions[sessionId];
+                        delete sessions[sessionId];
                     }
                 }
 
+                const currentSessionId =
+                    loadedCurrentSessionId && sessions[loadedCurrentSessionId] ? loadedCurrentSessionId : null;
+
+                this.sessions = sessions;
+                this.currentSessionId = currentSessionId;
+                this.characterId = characterId;
                 this.isInitialized = true;
+
+                if (loadedCurrentSessionId && !currentSessionId) {
+                    await saveCurrentSessionId(null, characterId);
+                }
             } catch (error) {
                 console.error('[EnhancementTracker] Failed to initialize:', error);
+            } finally {
+                if (generation === this.lifecycleGeneration) {
+                    this.isInitializing = false;
+                }
             }
+        }
+
+        /**
+         * Capture the active character lifecycle and session collection for an async write.
+         * @returns {{characterId: string, generation: number, sessions: Object}|null} Persistence context
+         * @private
+         */
+        _captureContext() {
+            if (!this.isInitialized || !this.characterId) {
+                return null;
+            }
+
+            return {
+                characterId: this.characterId,
+                generation: this.lifecycleGeneration,
+                sessions: this.sessions,
+            };
         }
 
         /**
@@ -31162,6 +31260,11 @@ ${starCSS}
          * @returns {Promise<string>} New session ID
          */
         async startSession(itemHrid, startLevel, targetLevel, protectFrom = 0) {
+            const context = this._captureContext();
+            if (!context) {
+                return null;
+            }
+
             const gameData = dataManager.getInitClientData();
             if (!gameData) {
                 throw new Error('Game data not available');
@@ -31183,12 +31286,14 @@ ${starCSS}
             session.predictions = predictions;
 
             // Store session
-            this.sessions[session.id] = session;
+            context.sessions[session.id] = session;
             this.currentSessionId = session.id;
 
             // Save to storage
-            await saveSessions(this.sessions);
-            await saveCurrentSessionId(session.id);
+            await Promise.all([
+                saveSessions(context.sessions, context.characterId),
+                saveCurrentSessionId(session.id, context.characterId),
+            ]);
 
             return session.id;
         }
@@ -31217,11 +31322,12 @@ ${starCSS}
          * @returns {Promise<boolean>} True if resumed successfully
          */
         async resumeSession(sessionId) {
-            if (!this.sessions[sessionId]) {
+            const context = this._captureContext();
+            if (!context || !context.sessions[sessionId]) {
                 return false;
             }
 
-            const session = this.sessions[sessionId];
+            const session = context.sessions[sessionId];
 
             // Can only resume tracking sessions
             if (session.state !== SessionState.TRACKING) {
@@ -31229,7 +31335,7 @@ ${starCSS}
             }
 
             this.currentSessionId = sessionId;
-            await saveCurrentSessionId(sessionId);
+            await saveCurrentSessionId(sessionId, context.characterId);
 
             return true;
         }
@@ -31257,11 +31363,12 @@ ${starCSS}
          * @returns {Promise<boolean>} True if extended successfully
          */
         async extendSessionTarget(sessionId, newTargetLevel) {
-            if (!this.sessions[sessionId]) {
+            const context = this._captureContext();
+            if (!context || !context.sessions[sessionId]) {
                 return false;
             }
 
-            const session = this.sessions[sessionId];
+            const session = context.sessions[sessionId];
 
             // Can only extend completed sessions
             if (session.state !== SessionState.COMPLETED) {
@@ -31282,8 +31389,10 @@ ${starCSS}
                 session.predictions = predictions;
             }
 
-            await saveSessions(this.sessions);
-            await saveCurrentSessionId(sessionId);
+            await Promise.all([
+                saveSessions(context.sessions, context.characterId),
+                saveCurrentSessionId(sessionId, context.characterId),
+            ]);
 
             return true;
         }
@@ -31302,17 +31411,22 @@ ${starCSS}
          * @returns {Promise<void>}
          */
         async finalizeCurrentSession() {
-            const session = this.getCurrentSession();
+            const context = this._captureContext();
+            if (!context) {
+                return;
+            }
+
+            const session = context.sessions[this.currentSessionId];
             if (!session) {
                 return;
             }
 
             finalizeSession(session);
-            await saveSessions(this.sessions);
-
-            // Clear current session
             this.currentSessionId = null;
-            await saveCurrentSessionId(null);
+            await Promise.all([
+                saveSessions(context.sessions, context.characterId),
+                saveCurrentSessionId(null, context.characterId),
+            ]);
         }
 
         /**
@@ -31322,18 +31436,30 @@ ${starCSS}
          * @returns {Promise<void>}
          */
         async recordSuccess(previousLevel, newLevel) {
-            const session = this.getCurrentSession();
+            const context = this._captureContext();
+            if (!context) {
+                return;
+            }
+
+            const session = context.sessions[this.currentSessionId];
             if (!session) {
                 return;
             }
 
             recordSuccess(session, previousLevel, newLevel);
-            await saveSessions(this.sessions);
 
             // Check if target reached
             if (session.state === SessionState.COMPLETED) {
                 this.currentSessionId = null;
-                await saveCurrentSessionId(null);
+            }
+
+            if (session.state === SessionState.COMPLETED) {
+                await Promise.all([
+                    saveSessions(context.sessions, context.characterId),
+                    saveCurrentSessionId(null, context.characterId),
+                ]);
+            } else {
+                await saveSessions(context.sessions, context.characterId);
             }
         }
 
@@ -31344,13 +31470,18 @@ ${starCSS}
          * @returns {Promise<void>}
          */
         async recordFailure(previousLevel, newLevel) {
-            const session = this.getCurrentSession();
+            const context = this._captureContext();
+            if (!context) {
+                return;
+            }
+
+            const session = context.sessions[this.currentSessionId];
             if (!session) {
                 return;
             }
 
             recordFailure(session, previousLevel, newLevel);
-            await saveSessions(this.sessions);
+            await saveSessions(context.sessions, context.characterId);
         }
 
         /**
@@ -31360,7 +31491,10 @@ ${starCSS}
          * @returns {Promise<void>}
          */
         async trackMaterialCost(itemHrid, count) {
-            const session = this.getCurrentSession();
+            const context = this._captureContext();
+            if (!context) return;
+
+            const session = context.sessions[this.currentSessionId];
             if (!session) return;
 
             // Get market price
@@ -31368,7 +31502,7 @@ ${starCSS}
             const unitCost = priceData ? priceData.ask || priceData.bid || 0 : 0;
 
             addMaterialCost(session, itemHrid, count, unitCost);
-            await saveSessions(this.sessions);
+            await saveSessions(context.sessions, context.characterId);
         }
 
         /**
@@ -31377,11 +31511,14 @@ ${starCSS}
          * @returns {Promise<void>}
          */
         async trackCoinCost(amount) {
-            const session = this.getCurrentSession();
+            const context = this._captureContext();
+            if (!context) return;
+
+            const session = context.sessions[this.currentSessionId];
             if (!session) return;
 
             addCoinCost(session, amount);
-            await saveSessions(this.sessions);
+            await saveSessions(context.sessions, context.characterId);
         }
 
         /**
@@ -31391,11 +31528,14 @@ ${starCSS}
          * @returns {Promise<void>}
          */
         async trackProtectionCost(protectionItemHrid, cost) {
-            const session = this.getCurrentSession();
+            const context = this._captureContext();
+            if (!context) return;
+
+            const session = context.sessions[this.currentSessionId];
             if (!session) return;
 
             addProtectionCost(session, protectionItemHrid, cost);
-            await saveSessions(this.sessions);
+            await saveSessions(context.sessions, context.characterId);
         }
 
         /**
@@ -31420,7 +31560,10 @@ ${starCSS}
          * @returns {Promise<void>}
          */
         async saveSessions() {
-            await saveSessions(this.sessions);
+            const context = this._captureContext();
+            if (!context) return;
+
+            await saveSessions(context.sessions, context.characterId);
         }
 
         /**
@@ -31436,21 +31579,32 @@ ${starCSS}
          * @returns {Promise<void>}
          */
         async clearSessions() {
-            this.sessions = {};
+            const context = this._captureContext();
+            if (!context) return;
+
+            const clearedSessions = {};
+            this.sessions = clearedSessions;
             this.currentSessionId = null;
             this.pendingSessionStart = true;
-            await saveSessions(this.sessions);
-            await saveCurrentSessionId(null);
+            await Promise.all([
+                saveSessions(clearedSessions, context.characterId),
+                saveCurrentSessionId(null, context.characterId),
+            ]);
         }
 
         /**
          * Disable and cleanup
          */
         disable() {
+            this.lifecycleGeneration += 1;
+
             // Clear in-memory session data (will be reloaded from storage on next init)
             this.sessions = {};
             this.currentSessionId = null;
             this.isInitialized = false;
+            this.isInitializing = false;
+            this.characterId = null;
+            this.pendingSessionStart = false;
         }
     }
 
@@ -33090,6 +33244,7 @@ ${starCSS}
     class EnhancementFeature {
         constructor() {
             this.isInitialized = false;
+            this.lifecycleGeneration = 0;
         }
 
         /**
@@ -33100,10 +33255,18 @@ ${starCSS}
                 return;
             }
 
+            const generation = ++this.lifecycleGeneration;
             this.isInitialized = true;
 
             // Initialize tracker (async)
             await enhancementTracker.initialize();
+
+            if (generation !== this.lifecycleGeneration || !enhancementTracker.isInitialized) {
+                if (generation === this.lifecycleGeneration) {
+                    this.isInitialized = false;
+                }
+                return;
+            }
 
             // Setup WebSocket handlers
             setupEnhancementHandlers();
@@ -33116,6 +33279,8 @@ ${starCSS}
          * Cleanup all enhancement components
          */
         disable() {
+            this.lifecycleGeneration += 1;
+
             // Cleanup WebSocket handlers
             cleanupEnhancementHandlers();
 
@@ -37529,33 +37694,66 @@ ${starCSS}
             this._dragMouseDownHandler = null;
             this._dragMouseMoveHandler = null;
             this._dragMouseUpHandler = null;
+            this._boundOnInit = null;
+            this.isInitialized = false;
+            this.isInitializing = false;
+            this.lifecycleGeneration = 0;
         }
 
         /**
          * Initialize the UI
          */
         async initialize() {
-            // Load collapse state
-            this.collapsed = await storage.get('queueMonitor_collapsed', 'settings', false);
+            if (this.isInitialized || this.isInitializing) {
+                return;
+            }
 
-            this._buildPanel();
-            this._updateDisplay();
+            const generation = ++this.lifecycleGeneration;
+            this.isInitializing = true;
 
-            // Refresh display periodically
-            this.timers.registerInterval(setInterval(() => this._updateDisplay(), UPDATE_INTERVAL));
+            try {
+                // Load collapse state
+                const collapsed = await storage.get('queueMonitor_collapsed', 'settings', false);
 
-            // Also refresh when switching characters (new snapshot available after re-init)
-            this._boundOnInit = () => {
-                // Delay slightly to allow snapshot to be saved
-                setTimeout(() => this._updateDisplay(), 500);
-            };
-            dataManager.on('character_initialized', this._boundOnInit);
+                if (generation !== this.lifecycleGeneration) {
+                    return;
+                }
+
+                this.collapsed = collapsed;
+
+                this._buildPanel();
+                this._updateDisplay();
+
+                // Refresh display periodically
+                this.timers.registerInterval(setInterval(() => this._updateDisplay(), UPDATE_INTERVAL));
+
+                // Also refresh when switching characters (new snapshot available after re-init)
+                this._boundOnInit = () => {
+                    // Delay slightly to allow snapshot to be saved
+                    const refreshTimeout = setTimeout(() => {
+                        if (generation === this.lifecycleGeneration && this.isInitialized) {
+                            this._updateDisplay();
+                        }
+                    }, 500);
+                    this.timers.registerTimeout(refreshTimeout);
+                };
+                dataManager.on('character_initialized', this._boundOnInit);
+
+                this.isInitialized = true;
+            } finally {
+                if (generation === this.lifecycleGeneration) {
+                    this.isInitializing = false;
+                }
+            }
         }
 
         /**
          * Disable and clean up
          */
         disable() {
+            this.lifecycleGeneration += 1;
+            this.isInitialized = false;
+            this.isInitializing = false;
             this.timers.clearAll();
             this._removeDragHandlers();
             if (this._boundOnInit) {
@@ -37567,6 +37765,7 @@ ${starCSS}
                 this.panel.remove();
                 this.panel = null;
             }
+            this.bodyEl = null;
         }
 
         /**
@@ -37836,17 +38035,17 @@ ${starCSS}
     var queueMonitor = {
         name: 'Queue Monitor',
 
-        initialize: () => {
+        initialize: async () => {
             // Always init snapshot listener (must survive setting toggles)
             queueSnapshot.initialize();
 
             if (config.getSetting('queueMonitor')) {
-                queueMonitorUI.initialize();
+                await queueMonitorUI.initialize();
             }
 
             settingChangeHandler = (enabled) => {
                 if (enabled) {
-                    queueMonitorUI.initialize();
+                    void queueMonitorUI.initialize();
                 } else {
                     queueMonitorUI.disable();
                 }
