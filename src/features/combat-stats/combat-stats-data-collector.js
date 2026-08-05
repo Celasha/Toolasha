@@ -7,6 +7,15 @@ import webSocketHook from '../../core/websocket.js';
 import storage from '../../core/storage.js';
 import dataManager from '../../core/data-manager.js';
 
+const COMBAT_STATS_STORE = 'combatStats';
+const LEGACY_STORAGE_KEYS = Object.freeze({
+    consumableTracker: 'consumableTracker',
+    partyConsumableTrackers: 'partyConsumableTrackers',
+    partyConsumableSnapshots: 'partyConsumableSnapshots',
+    latestCombatRun: 'latestCombatRun',
+});
+const STORAGE_MISSING = Symbol('storage-missing');
+
 class CombatStatsDataCollector {
     constructor() {
         this.isInitialized = false;
@@ -14,21 +23,49 @@ class CombatStatsDataCollector {
         this.consumableEventHandler = null;
         this.latestCombatData = null;
         this.currentBattleId = null;
+        this.characterId = null;
+        this.lifecycleGeneration = 0;
 
-        // Consumable tracking state for current player (persisted to storage like MCS)
-        this.consumableTracker = {
-            actualConsumed: {}, // { itemHrid: count }
-            defaultConsumed: {}, // { itemHrid: baselineCount }
-            inventoryAmount: {}, // { itemHrid: currentCount }
-            startTime: null, // When tracking started
-            lastUpdate: null, // Last consumption event timestamp
-            lastEventByItem: {}, // { itemHrid: timestamp } - for deduplication
+        this._resetTrackingState();
+    }
+
+    _createConsumableTracker(startTime = null) {
+        return {
+            actualConsumed: {},
+            defaultConsumed: {},
+            inventoryAmount: {},
+            startTime,
+            lastUpdate: null,
+            lastEventByItem: {},
         };
+    }
 
-        // Party member consumable tracking (MCS-style)
-        this.partyConsumableTrackers = {}; // { playerName: tracker }
-        this.partyConsumableSnapshots = {}; // { playerName: { itemHrid: previousCount } }
-        this.partyLastKnownConsumables = {}; // { playerName: { itemHrid: { itemHrid, lastSeenCount } } }
+    _resetTrackingState(startTime = null) {
+        this.consumableTracker = this._createConsumableTracker(startTime);
+        this.partyConsumableTrackers = {};
+        this.partyConsumableSnapshots = {};
+        this.partyLastKnownConsumables = {};
+    }
+
+    _getStorageKey(baseKey, characterId = this.characterId) {
+        return characterId ? `${baseKey}:${characterId}` : baseKey;
+    }
+
+    async _loadCharacterScopedValue(baseKey, defaultValue, characterId = this.characterId) {
+        const scopedKey = this._getStorageKey(baseKey, characterId);
+        if (scopedKey === baseKey) {
+            return storage.getJSON(baseKey, COMBAT_STATS_STORE, defaultValue);
+        }
+
+        const scoped = await storage.getJSON(scopedKey, COMBAT_STATS_STORE, STORAGE_MISSING);
+        if (scoped !== STORAGE_MISSING) return scoped;
+
+        const legacy = await storage.getJSON(baseKey, COMBAT_STATS_STORE, STORAGE_MISSING);
+        if (legacy === STORAGE_MISSING) return defaultValue;
+
+        await storage.setJSON(scopedKey, legacy, COMBAT_STATS_STORE, true);
+        await storage.delete(baseKey, COMBAT_STATS_STORE);
+        return legacy;
     }
 
     /**
@@ -40,13 +77,16 @@ class CombatStatsDataCollector {
         }
 
         this.isInitialized = true;
+        this.characterId = dataManager.getCurrentCharacterId();
+        const generation = ++this.lifecycleGeneration;
 
-        // Load persisted tracking state from storage (MCS-style)
-        await this.loadConsumableTracking();
+        // Load only the active character's persisted tracking state.
+        await this.loadConsumableTracking(this.characterId);
+        if (generation !== this.lifecycleGeneration || !this.isInitialized) return;
 
         // Store handler references for cleanup
-        this.newBattleHandler = (data) => this.onNewBattle(data);
-        this.consumableEventHandler = (data) => this.onConsumableUsed(data);
+        this.newBattleHandler = (data) => this.onNewBattle(data, generation);
+        this.consumableEventHandler = (data) => this.onConsumableUsed(data, generation);
 
         // Listen for new_battle messages (fires during combat, continuously updated)
         webSocketHook.on('new_battle', this.newBattleHandler);
@@ -117,10 +157,16 @@ class CombatStatsDataCollector {
     /**
      * Load consumable tracking state from storage
      */
-    async loadConsumableTracking() {
+    async loadConsumableTracking(characterId = this.characterId) {
         try {
+            this._resetTrackingState();
+
             // Load current player tracker
-            const saved = await storage.getJSON('consumableTracker', 'combatStats', null);
+            const saved = await this._loadCharacterScopedValue(
+                LEGACY_STORAGE_KEYS.consumableTracker,
+                null,
+                characterId
+            );
             if (saved) {
                 // Restore tracking state
                 this.consumableTracker.actualConsumed = saved.actualConsumed || {};
@@ -138,7 +184,11 @@ class CombatStatsDataCollector {
             }
 
             // Load party member trackers (MCS-style)
-            const savedPartyTrackers = await storage.getJSON('partyConsumableTrackers', 'combatStats', null);
+            const savedPartyTrackers = await this._loadCharacterScopedValue(
+                LEGACY_STORAGE_KEYS.partyConsumableTrackers,
+                null,
+                characterId
+            );
             if (savedPartyTrackers) {
                 const now = Date.now();
                 this.partyConsumableTrackers = {};
@@ -162,7 +212,11 @@ class CombatStatsDataCollector {
             }
 
             // Load party snapshots
-            const savedSnapshots = await storage.getJSON('partyConsumableSnapshots', 'combatStats', null);
+            const savedSnapshots = await this._loadCharacterScopedValue(
+                LEGACY_STORAGE_KEYS.partyConsumableSnapshots,
+                null,
+                characterId
+            );
             if (savedSnapshots) {
                 this.partyConsumableSnapshots = savedSnapshots;
             }
@@ -194,11 +248,14 @@ class CombatStatsDataCollector {
     /**
      * Save consumable tracking state to storage
      */
-    async saveConsumableTracking() {
+    async saveConsumableTracking(characterId = this.characterId, generation = this.lifecycleGeneration) {
         try {
+            if (generation !== this.lifecycleGeneration) return;
             const MAX_WINDOW_MS = 24 * 60 * 60 * 1000;
+            const consumableTrackerKey = this._getStorageKey(LEGACY_STORAGE_KEYS.consumableTracker, characterId);
+            const partyTrackersKey = this._getStorageKey(LEGACY_STORAGE_KEYS.partyConsumableTrackers, characterId);
+            const partySnapshotsKey = this._getStorageKey(LEGACY_STORAGE_KEYS.partyConsumableSnapshots, characterId);
 
-            // Save current player tracker
             const rawElapsedMs = this.consumableTracker.startTime ? Date.now() - this.consumableTracker.startTime : 0;
             const { counts: cappedActual, elapsedMs: cappedElapsed } = this.capToWindow(
                 this.consumableTracker.actualConsumed,
@@ -210,46 +267,48 @@ class CombatStatsDataCollector {
                 rawElapsedMs,
                 MAX_WINDOW_MS
             );
-            const toSave = {
+            const trackerToSave = {
                 actualConsumed: cappedActual,
                 defaultConsumed: cappedDefault,
-                inventoryAmount: this.consumableTracker.inventoryAmount,
+                inventoryAmount: { ...this.consumableTracker.inventoryAmount },
                 lastUpdate: this.consumableTracker.lastUpdate,
                 elapsedMs: cappedElapsed,
                 saveTimestamp: Date.now(),
             };
-            await storage.setJSON('consumableTracker', toSave, 'combatStats');
 
-            // Save party member trackers (MCS-style)
             const partyTrackersToSave = {};
             Object.keys(this.partyConsumableTrackers).forEach((playerName) => {
                 const tracker = this.partyConsumableTrackers[playerName];
-                if (tracker && tracker.actualConsumed && tracker.defaultConsumed && tracker.inventoryAmount) {
-                    const rawPartyElapsedMs = tracker.startTime ? Date.now() - tracker.startTime : 0;
-                    const { counts: pCappedActual, elapsedMs: pCappedElapsed } = this.capToWindow(
-                        tracker.actualConsumed,
-                        rawPartyElapsedMs,
-                        MAX_WINDOW_MS
-                    );
-                    const { counts: pCappedDefault } = this.capToWindow(
-                        tracker.defaultConsumed,
-                        rawPartyElapsedMs,
-                        MAX_WINDOW_MS
-                    );
-                    partyTrackersToSave[playerName] = {
-                        actualConsumed: pCappedActual,
-                        defaultConsumed: pCappedDefault,
-                        inventoryAmount: tracker.inventoryAmount || {},
-                        elapsedMs: pCappedElapsed,
-                        lastUpdate: tracker.lastUpdate || null,
-                        saveTimestamp: Date.now(),
-                    };
-                }
-            });
-            await storage.setJSON('partyConsumableTrackers', partyTrackersToSave, 'combatStats');
+                if (!tracker?.actualConsumed || !tracker.defaultConsumed || !tracker.inventoryAmount) return;
 
-            // Save party snapshots
-            await storage.setJSON('partyConsumableSnapshots', this.partyConsumableSnapshots, 'combatStats');
+                const rawPartyElapsedMs = tracker.startTime ? Date.now() - tracker.startTime : 0;
+                const { counts: pCappedActual, elapsedMs: pCappedElapsed } = this.capToWindow(
+                    tracker.actualConsumed,
+                    rawPartyElapsedMs,
+                    MAX_WINDOW_MS
+                );
+                const { counts: pCappedDefault } = this.capToWindow(
+                    tracker.defaultConsumed,
+                    rawPartyElapsedMs,
+                    MAX_WINDOW_MS
+                );
+                partyTrackersToSave[playerName] = {
+                    actualConsumed: pCappedActual,
+                    defaultConsumed: pCappedDefault,
+                    inventoryAmount: { ...tracker.inventoryAmount },
+                    elapsedMs: pCappedElapsed,
+                    lastUpdate: tracker.lastUpdate || null,
+                    saveTimestamp: Date.now(),
+                };
+            });
+            const partySnapshotsToSave = structuredClone(this.partyConsumableSnapshots);
+
+            if (generation !== this.lifecycleGeneration) return;
+            await storage.setJSON(consumableTrackerKey, trackerToSave, COMBAT_STATS_STORE);
+            if (generation !== this.lifecycleGeneration) return;
+            await storage.setJSON(partyTrackersKey, partyTrackersToSave, COMBAT_STATS_STORE);
+            if (generation !== this.lifecycleGeneration) return;
+            await storage.setJSON(partySnapshotsKey, partySnapshotsToSave, COMBAT_STATS_STORE);
         } catch (error) {
             console.error('[Combat Stats] Error saving consumable tracking:', error);
         }
@@ -258,22 +317,27 @@ class CombatStatsDataCollector {
     /**
      * Reset consumable tracking (for new combat session)
      */
-    async resetConsumableTracking() {
-        this.consumableTracker = {
-            actualConsumed: {},
-            defaultConsumed: {},
-            inventoryAmount: {},
-            startTime: Date.now(),
-            lastUpdate: null,
-            lastEventByItem: {},
-        };
-        this.partyConsumableTrackers = {};
-        this.partyConsumableSnapshots = {};
-        this.partyLastKnownConsumables = {};
-        // Fire-and-forget: don't await debounced writes so callers aren't blocked
-        storage.setJSON('consumableTracker', null, 'combatStats');
-        storage.setJSON('partyConsumableTrackers', null, 'combatStats');
-        storage.setJSON('partyConsumableSnapshots', null, 'combatStats');
+    async resetConsumableTracking(characterId = this.characterId) {
+        this._resetTrackingState(Date.now());
+        void Promise.all([
+            storage.setJSON(
+                this._getStorageKey(LEGACY_STORAGE_KEYS.consumableTracker, characterId),
+                null,
+                COMBAT_STATS_STORE
+            ),
+            storage.setJSON(
+                this._getStorageKey(LEGACY_STORAGE_KEYS.partyConsumableTrackers, characterId),
+                null,
+                COMBAT_STATS_STORE
+            ),
+            storage.setJSON(
+                this._getStorageKey(LEGACY_STORAGE_KEYS.partyConsumableSnapshots, characterId),
+                null,
+                COMBAT_STATS_STORE
+            ),
+        ]).catch((error) => {
+            console.error('[Combat Stats] Error clearing consumable tracking:', error);
+        });
     }
 
     /**
@@ -281,8 +345,9 @@ class CombatStatsDataCollector {
      * NOTE: This event only fires for the CURRENT PLAYER (solo tracking)
      * @param {Object} data - Consumable update data
      */
-    async onConsumableUsed(data) {
+    async onConsumableUsed(data, generation = this.lifecycleGeneration) {
         try {
+            if (generation !== this.lifecycleGeneration || !this.isInitialized) return;
             // Skip ability consumptions
             const itemHrid = data.consumable?.itemHrid;
             if (!itemHrid || itemHrid.includes('/ability/')) {
@@ -324,7 +389,7 @@ class CombatStatsDataCollector {
             }
 
             // Persist after each consumption (MCS-style)
-            await this.saveConsumableTracking();
+            await this.saveConsumableTracking(this.characterId, generation);
         } catch (error) {
             console.error('[Combat Stats] Error processing consumable event:', error);
         }
@@ -334,8 +399,10 @@ class CombatStatsDataCollector {
      * Handle new_battle message (fires during combat)
      * @param {Object} data - new_battle message data
      */
-    async onNewBattle(data) {
+    async onNewBattle(data, generation = this.lifecycleGeneration) {
         try {
+            if (generation !== this.lifecycleGeneration || !this.isInitialized) return;
+            const characterId = this.characterId;
             // Only process if we have players data
             if (!data.players || data.players.length === 0) {
                 return;
@@ -359,7 +426,8 @@ class CombatStatsDataCollector {
                 (elapsedSeconds > 0 && durationSeconds < elapsedSeconds);
 
             if (shouldResetTracking) {
-                this.resetConsumableTracking();
+                await this.resetConsumableTracking(characterId);
+                if (generation !== this.lifecycleGeneration) return;
             }
 
             // Update current battle ID
@@ -487,10 +555,7 @@ class CombatStatsDataCollector {
                 }
             });
 
-            // Persist party tracking data
-            await this.saveConsumableTracking();
-
-            // Extract combat data
+            // Extract combat data. Tracking state is persisted once at the end of this update.
             const combatData = {
                 timestamp: Date.now(),
                 battleId: battleId,
@@ -609,10 +674,15 @@ class CombatStatsDataCollector {
             this.latestCombatData = combatData;
 
             // Store in IndexedDB
-            await storage.setJSON('latestCombatRun', combatData, 'combatStats');
+            if (generation !== this.lifecycleGeneration) return;
+            await storage.setJSON(
+                this._getStorageKey(LEGACY_STORAGE_KEYS.latestCombatRun, characterId),
+                combatData,
+                COMBAT_STATS_STORE
+            );
 
             // Also save tracking state periodically
-            await this.saveConsumableTracking();
+            await this.saveConsumableTracking(characterId, generation);
         } catch (error) {
             console.error('[Combat Stats] Error collecting combat data:', error);
         }
@@ -630,11 +700,9 @@ class CombatStatsDataCollector {
      * Load latest combat data from storage
      * @returns {Promise<Object|null>} Latest combat data
      */
-    async loadLatestData() {
-        const data = await storage.getJSON('latestCombatRun', 'combatStats', null);
-        if (data) {
-            this.latestCombatData = data;
-        }
+    async loadLatestData(characterId = this.characterId) {
+        const data = await this._loadCharacterScopedValue(LEGACY_STORAGE_KEYS.latestCombatRun, null, characterId);
+        this.latestCombatData = data || null;
         return data;
     }
 
@@ -642,6 +710,8 @@ class CombatStatsDataCollector {
      * Cleanup
      */
     cleanup() {
+        this.lifecycleGeneration += 1;
+
         if (this.newBattleHandler) {
             webSocketHook.off('new_battle', this.newBattleHandler);
             this.newBattleHandler = null;
@@ -661,4 +731,5 @@ class CombatStatsDataCollector {
 
 const combatStatsDataCollector = new CombatStatsDataCollector();
 
+export { CombatStatsDataCollector };
 export default combatStatsDataCollector;
