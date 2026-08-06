@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.87.3
+ * Version: 2.87.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -25335,6 +25335,43 @@ self.onmessage = function (e) {
     const inventoryCategoryTotals = new InventoryCategoryTotals();
 
     /**
+     * Return true only when every Toolasha-owned layout node is still attached to
+     * the current Inventory container.
+     * @param {Element[]} injectedElements
+     * @param {Element|null} inventoryContainer
+     * @returns {boolean}
+     */
+    function areInjectedLayoutElementsAttached(injectedElements, inventoryContainer) {
+        return (
+            Boolean(inventoryContainer) &&
+            injectedElements.length > 0 &&
+            injectedElements.every((element) => element?.parentElement === inventoryContainer)
+        );
+    }
+
+    const RELEVANT_LAYOUT_SELECTOR = [
+        '[class*="Item_itemContainer"]',
+        '.toolasha-ct-topbar',
+        '.toolasha-ct-section-header',
+        '.toolasha-ct-unorg-header',
+        '.toolasha-ct-empty',
+        '.toolasha-ct-linebreak',
+    ].join(', ');
+
+    /**
+     * Return true when a mutation added or removed an inventory tile or one of the
+     * Toolasha-owned layout nodes whose loss requires a layout integrity pass.
+     * @param {MutationRecord} mutation
+     * @returns {boolean}
+     */
+    function mutationTouchesCustomTabsLayout(mutation) {
+        return [...mutation.addedNodes, ...mutation.removedNodes].some((node) => {
+            if (node?.nodeType !== 1) return false;
+            return Boolean(node.matches?.(RELEVANT_LAYOUT_SELECTOR) || node.querySelector?.(RELEVANT_LAYOUT_SELECTOR));
+        });
+    }
+
+    /**
      * Custom Inventory Tabs — Data Module
      * Manages tab configuration storage and CRUD operations.
      * All mutating helpers return new objects (never mutate in place).
@@ -26688,8 +26725,7 @@ self.onmessage = function (e) {
         _applyLayoutSync(invContainer) {
             // Compare BEFORE assignment — otherwise isSameNode is always true
             const isSameNode = invContainer === this._invContainer;
-            const injectedStillPresent =
-                this._injectedEls.length > 0 && this._injectedEls[0].parentElement === invContainer;
+            const injectedStillPresent = areInjectedLayoutElementsAttached(this._injectedEls, invContainer);
             let needsFullRebuild = !isSameNode || !injectedStillPresent;
 
             this._invContainer = invContainer;
@@ -26774,15 +26810,8 @@ self.onmessage = function (e) {
                 this._observedContainer = invContainer;
                 this._tileObserver = new MutationObserver((mutations) => {
                     if (!this._isActive) return;
-                    const hasTileChange = mutations.some((m) =>
-                        [...m.addedNodes, ...m.removedNodes].some(
-                            (n) =>
-                                n.nodeType === Node.ELEMENT_NODE &&
-                                (n.className?.includes?.('Item_itemContainer') ||
-                                    n.querySelector?.('[class*="Item_itemContainer"]'))
-                        )
-                    );
-                    if (hasTileChange) this._applyLayoutSync(invContainer);
+                    const hasRelevantChange = mutations.some(mutationTouchesCustomTabsLayout);
+                    if (hasRelevantChange) this._applyLayoutSync(invContainer);
                 });
                 this._tileObserver.observe(invContainer, { childList: true, subtree: true });
             }

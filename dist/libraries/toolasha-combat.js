@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.87.3
+ * Version: 2.87.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -25118,13 +25118,18 @@
 
         function targetMatchesInput(target, quantityInput) {
             const state = readMarketplaceRuntimeStateFromElement(quantityInput);
+            // MWI uses two exact buy forms: an instant order from an existing ask and
+            // a patient New Buy Listing. Reject mixed flag states rather than widening
+            // the verified write path to every post-listing modal.
+            const isInstantBuy = state?.isPostNewListing === false && state?.isInstantOrder === true;
+            const isNewBuyListing = state?.isPostNewListing === true && state?.isInstantOrder === false;
+
             return (
                 state?.marketTabKey === 'MarketListings' &&
                 state?.marketListingsView === 'OrderBook' &&
                 state?.showPostListing === true &&
-                state?.isPostNewListing === false &&
                 state?.isSell === false &&
-                state?.isInstantOrder === true &&
+                (isInstantBuy || isNewBuyListing) &&
                 state?.itemHrid === target.itemHrid &&
                 state?.enhancementLevel === target.enhancementLevel &&
                 state?.enhancementLevelInput === target.enhancementLevel

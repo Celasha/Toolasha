@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.87.3
+ * Version: 2.87.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -14074,6 +14074,22 @@
      */
 
 
+    /**
+     * Build the compact requirement status shown below a material.
+     * Queue reservation is shown once beside Required because Missing already includes it.
+     * @param {Object} material
+     * @param {number} material.required
+     * @param {number} material.missing
+     * @param {number} [material.queued]
+     * @returns {string}
+     */
+    function formatRequiredMaterialStatus(material) {
+        const queuedText = material.queued > 0 ? ` (${formatters_js.numberFormatter(material.queued)} Q'd)` : '';
+        let text = `Required: ${formatters_js.numberFormatter(material.required)}${queuedText}`;
+        if (material.missing > 0) text += ` | Missing: ${formatters_js.numberFormatter(material.missing)}`;
+        return text;
+    }
+
     class RequiredMaterials {
         constructor() {
             this.initialized = false;
@@ -14209,13 +14225,9 @@
                         text = `Required: ${placeholderLabel}`;
                         displaySpan.style.color = '';
                     } else {
-                        const queuedText = material.queued > 0 ? ` (${formatters_js.numberFormatter(material.queued)} Q'd)` : '';
-                        text = `Required: ${formatters_js.numberFormatter(material.required)}${queuedText}`;
+                        text = formatRequiredMaterialStatus(material);
 
                         if (material.missing > 0) {
-                            const missingQueuedText =
-                                material.queued > 0 ? ` (${formatters_js.numberFormatter(material.queued)} Q'd)` : '';
-                            text += ` || Missing: ${formatters_js.numberFormatter(material.missing)}${missingQueuedText}`;
                             displaySpan.style.color = config.COLOR_LOSS; // Missing materials
                         } else {
                             displaySpan.style.color = config.COLOR_PROFIT; // Sufficient materials
@@ -14263,12 +14275,9 @@
                     text = `Required: ${placeholderLabel}`;
                     displaySpan.style.color = '';
                 } else {
-                    const queuedText = material.queued > 0 ? ` (${formatters_js.numberFormatter(material.queued)} Q'd)` : '';
-                    text = `Required: ${formatters_js.numberFormatter(material.required)}${queuedText}`;
+                    text = formatRequiredMaterialStatus(material);
 
                     if (material.missing > 0) {
-                        const missingQueuedText = material.queued > 0 ? ` (${formatters_js.numberFormatter(material.queued)} Q'd)` : '';
-                        text += ` || Missing: ${formatters_js.numberFormatter(material.missing)}${missingQueuedText}`;
                         displaySpan.style.color = config.COLOR_LOSS; // Missing materials
                     } else {
                         displaySpan.style.color = config.COLOR_PROFIT; // Sufficient materials
@@ -14668,13 +14677,18 @@
 
         function targetMatchesInput(target, quantityInput) {
             const state = readMarketplaceRuntimeStateFromElement(quantityInput);
+            // MWI uses two exact buy forms: an instant order from an existing ask and
+            // a patient New Buy Listing. Reject mixed flag states rather than widening
+            // the verified write path to every post-listing modal.
+            const isInstantBuy = state?.isPostNewListing === false && state?.isInstantOrder === true;
+            const isNewBuyListing = state?.isPostNewListing === true && state?.isInstantOrder === false;
+
             return (
                 state?.marketTabKey === 'MarketListings' &&
                 state?.marketListingsView === 'OrderBook' &&
                 state?.showPostListing === true &&
-                state?.isPostNewListing === false &&
                 state?.isSell === false &&
-                state?.isInstantOrder === true &&
+                (isInstantBuy || isNewBuyListing) &&
                 state?.itemHrid === target.itemHrid &&
                 state?.enhancementLevel === target.enhancementLevel &&
                 state?.enhancementLevelInput === target.enhancementLevel
@@ -18042,6 +18056,77 @@
     }
 
     /**
+     * Calculate timing and XP metrics for every craft step in the plan.
+     * The returned total is the same value rendered as `Total craft time` in the
+     * expanded plan and reused in the collapsed summary.
+     * @param {Array} craftSteps
+     * @returns {{ steps: Array, totalCraftSeconds: number, totalXP: number }}
+     */
+    function calculateCraftingPlanMetrics(craftSteps) {
+        const gameData = dataManager.getInitClientData();
+        const skills = dataManager.getSkills();
+        const equipment = dataManager.getEquipment();
+        let totalCraftSeconds = 0;
+        let totalXP = 0;
+
+        const steps = craftSteps.map((step) => {
+            let totalSeconds = 0;
+            let expPerHour = 0;
+
+            if (step.actionHrid) {
+                const actionDetails = gameData?.actionDetailMap?.[step.actionHrid];
+                if (actionDetails) {
+                    const stats = actionCalculator_js.calculateActionStats(actionDetails, {
+                        skills,
+                        equipment,
+                        itemDetailMap: gameData.itemDetailMap,
+                    });
+                    const efficiencyMultiplier = efficiency_js.calculateEfficiencyMultiplier(stats.totalEfficiency);
+                    const calculatedSeconds = (stats.actionTime * step.actionsNeeded) / efficiencyMultiplier;
+                    if (Number.isFinite(calculatedSeconds) && calculatedSeconds > 0) {
+                        totalSeconds = calculatedSeconds;
+                        totalCraftSeconds += calculatedSeconds;
+                    }
+                }
+
+                const expData = experienceCalculator_js.calculateExpPerHour(step.actionHrid);
+                if (expData?.expPerHour > 0 && expData.actionsPerHour > 0) {
+                    const xpPerAction = expData.expPerHour / expData.actionsPerHour;
+                    totalXP += xpPerAction * step.actionsNeeded;
+                    expPerHour = expData.expPerHour;
+                }
+            }
+
+            return { ...step, totalSeconds, expPerHour };
+        });
+
+        return { steps, totalCraftSeconds, totalXP };
+    }
+
+    /**
+     * Format a total plan duration without leading zero-hour padding.
+     * @param {number} totalCraftSeconds
+     * @returns {string|null}
+     */
+    function formatTotalCraftTime(totalCraftSeconds) {
+        if (!Number.isFinite(totalCraftSeconds) || totalCraftSeconds <= 0) return null;
+        return formatters_js.timeReadable(totalCraftSeconds).replace(/^0h 0?/, '');
+    }
+
+    /**
+     * Format the collapsed Best Crafting Plan summary.
+     * Cost is per item (`ea` = each); time is the total for every craft step.
+     * @param {Object} plan
+     * @param {number} totalCraftSeconds
+     * @returns {string}
+     */
+    function formatCraftingPlanSummary(plan, totalCraftSeconds = 0) {
+        const cost = plan.unitCost === Infinity ? '?' : `${formatters_js.formatKMB(Math.round(plan.unitCost))}/ea`;
+        const totalTime = formatTotalCraftTime(totalCraftSeconds);
+        return totalTime ? `${cost} · ${totalTime}` : cost;
+    }
+
+    /**
      * Build the full crafting plan UI for an action.
      * @param {string} actionHrid
      * @param {Function} [onToggle] - Callback when buy-intermediates toggle changes
@@ -18087,6 +18172,13 @@
 
         // Don't show if item has no production recipe (true raw material)
         if (plan.craftCost === null) return null;
+
+        const craftSteps = [];
+        collectCraftSteps(plan, craftSteps);
+        const craftMetrics =
+            plan.strategy === 'craft' && craftSteps.length > 0
+                ? calculateCraftingPlanMetrics(craftSteps)
+                : { steps: [], totalCraftSeconds: 0, totalXP: 0 };
 
         // Build content
         const content = document.createElement('div');
@@ -18264,7 +18356,7 @@
 
         // Only show breakdown if crafting is the optimal strategy
         if (plan.strategy !== 'craft' || plan.children.length === 0) {
-            const costText = plan.unitCost === Infinity ? '?' : `${formatters_js.formatKMB(Math.round(plan.unitCost))}/ea`;
+            const costText = formatCraftingPlanSummary(plan, craftMetrics.totalCraftSeconds);
             const section = uiComponents_js.createCollapsibleSection('', 'Best Crafting Plan', costText, content, defaultOpen, 0);
             section.id = UI_ID;
             section.className = 'mwi-crafting-plan-section';
@@ -18458,10 +18550,7 @@
         }
 
         // === Crafting Steps (what to craft, in order) ===
-        const craftSteps = [];
-        collectCraftSteps(plan, craftSteps);
-
-        if (craftSteps.length > 0) {
+        if (craftMetrics.steps.length > 0) {
             const divider2 = document.createElement('div');
             divider2.style.cssText = 'border-top: 1px solid var(--border-color, #333); margin: 6px 0;';
             content.appendChild(divider2);
@@ -18475,47 +18564,21 @@
             stepsHeader.textContent = 'Crafting Steps';
             content.appendChild(stepsHeader);
 
-            const gameData = dataManager.getInitClientData();
-            const skills = dataManager.getSkills();
-            const equipment = dataManager.getEquipment();
-            let totalCraftSeconds = 0;
-            let totalXP = 0;
-
-            for (let i = 0; i < craftSteps.length; i++) {
-                const step = craftSteps[i];
+            for (let i = 0; i < craftMetrics.steps.length; i++) {
+                const step = craftMetrics.steps[i];
                 const qty = formatters_js.formatWithSeparator(step.quantity);
-                let timeStr = '';
-                let xpStr = '';
-                if (step.actionHrid) {
-                    const actionDetails = gameData?.actionDetailMap?.[step.actionHrid];
-                    if (actionDetails) {
-                        const stats = actionCalculator_js.calculateActionStats(actionDetails, {
-                            skills,
-                            equipment,
-                            itemDetailMap: gameData.itemDetailMap,
-                        });
-                        const effMultiplier = efficiency_js.calculateEfficiencyMultiplier(stats.totalEfficiency);
-                        const totalSeconds = (stats.actionTime * step.actionsNeeded) / effMultiplier;
-                        totalCraftSeconds += totalSeconds;
-                        timeStr = ` (${formatters_js.timeReadable(totalSeconds)}`;
-                    }
-                    const expData = experienceCalculator_js.calculateExpPerHour(step.actionHrid);
-                    if (expData?.expPerHour > 0 && expData.actionsPerHour > 0) {
-                        const xpPerAction = expData.expPerHour / expData.actionsPerHour;
-                        totalXP += xpPerAction * step.actionsNeeded;
-                        xpStr = ` · ${formatters_js.formatKMB(expData.expPerHour)} xp/hr`;
-                    }
-                    if (timeStr) {
-                        timeStr += `${xpStr})`;
-                    } else if (xpStr) {
-                        timeStr = ` (${xpStr.slice(3)})`;
-                    }
+                let timeStr = step.totalSeconds > 0 ? ` (${formatters_js.timeReadable(step.totalSeconds)}` : '';
+                const xpStr = step.expPerHour > 0 ? ` · ${formatters_js.formatKMB(step.expPerHour)} xp/hr` : '';
+                if (timeStr) {
+                    timeStr += `${xpStr})`;
+                } else if (xpStr) {
+                    timeStr = ` (${xpStr.slice(3)})`;
                 }
                 content.appendChild(createRow(`${i + 1}. ${step.itemName}`, `x${qty}${timeStr}`));
             }
 
-            if (totalCraftSeconds > 0) {
-                const totalTimeRow = createRow('Total craft time', formatters_js.timeReadable(totalCraftSeconds), {
+            if (craftMetrics.totalCraftSeconds > 0) {
+                const totalTimeRow = createRow('Total craft time', formatters_js.timeReadable(craftMetrics.totalCraftSeconds), {
                     leftColor: 'var(--text-color-primary, #fff)',
                 });
                 totalTimeRow.style.borderTop = '1px solid var(--border-color, #333)';
@@ -18524,16 +18587,16 @@
                 content.appendChild(totalTimeRow);
             }
 
-            if (totalXP > 0) {
+            if (craftMetrics.totalXP > 0) {
                 content.appendChild(
-                    createRow('Total XP', formatters_js.formatKMB(Math.round(totalXP)), {
+                    createRow('Total XP', formatters_js.formatKMB(Math.round(craftMetrics.totalXP)), {
                         leftColor: 'var(--text-color-primary, #fff)',
                     })
                 );
             }
         }
 
-        const costText = plan.unitCost === Infinity ? '?' : `${formatters_js.formatKMB(Math.round(plan.unitCost))}/ea`;
+        const costText = formatCraftingPlanSummary(plan, craftMetrics.totalCraftSeconds);
         const section = uiComponents_js.createCollapsibleSection('', 'Best Crafting Plan', costText, content, defaultOpen, 0);
         section.id = UI_ID;
         section.className = 'mwi-crafting-plan-section';

@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.87.3
+ * Version: 2.87.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -17436,13 +17436,18 @@ ${starCSS}
 
         function targetMatchesInput(target, quantityInput) {
             const state = readMarketplaceRuntimeStateFromElement(quantityInput);
+            // MWI uses two exact buy forms: an instant order from an existing ask and
+            // a patient New Buy Listing. Reject mixed flag states rather than widening
+            // the verified write path to every post-listing modal.
+            const isInstantBuy = state?.isPostNewListing === false && state?.isInstantOrder === true;
+            const isNewBuyListing = state?.isPostNewListing === true && state?.isInstantOrder === false;
+
             return (
                 state?.marketTabKey === 'MarketListings' &&
                 state?.marketListingsView === 'OrderBook' &&
                 state?.showPostListing === true &&
-                state?.isPostNewListing === false &&
                 state?.isSell === false &&
-                state?.isInstantOrder === true &&
+                (isInstantBuy || isNewBuyListing) &&
                 state?.itemHrid === target.itemHrid &&
                 state?.enhancementLevel === target.enhancementLevel &&
                 state?.enhancementLevelInput === target.enhancementLevel
@@ -18055,6 +18060,20 @@ ${starCSS}
         }
 
         /**
+         * Resolve the room level from the same live House component that renders the modal.
+         * The DataManager cache remains a fallback for startup/test states, but must not
+         * override newer React props after an upgrade message or panel remount.
+         * @param {string} houseRoomHrid
+         * @returns {number}
+         */
+        _getLiveHouseRoomLevel(houseRoomHrid) {
+            const houseComponent = this._getHouseComponent(houseRoomHrid);
+            const liveLevel = houseComponent?.props?.characterHouseRoomDict?.[houseRoomHrid]?.level;
+            if (Number.isInteger(liveLevel) && liveLevel >= 0) return liveLevel;
+            return houseCostCalculator.getCurrentRoomLevel(houseRoomHrid);
+        }
+
+        /**
          * Augment native costs section with market pricing
          * @param {Element} costsSection - The native HousePanel_costs element
          * @param {string} houseRoomHrid - House room HRID
@@ -18062,8 +18081,9 @@ ${starCSS}
          */
         async addCostColumn(costsSection, houseRoomHrid, modalContent) {
             this.removeExistingColumn(modalContent);
+            this.currentModalContent = modalContent;
 
-            const currentLevel = houseCostCalculator.getCurrentRoomLevel(houseRoomHrid);
+            const currentLevel = this._getLiveHouseRoomLevel(houseRoomHrid);
 
             if (currentLevel >= 8) {
                 return;
@@ -18071,7 +18091,6 @@ ${starCSS}
 
             try {
                 await this.addCompactToLevel(costsSection, houseRoomHrid, currentLevel);
-                this.currentModalContent = modalContent;
             } catch {
                 // Silently fail - augmentation is optional
             }
@@ -19127,16 +19146,30 @@ ${starCSS}
                 return;
             }
 
-            // Reopen the saved House room through its visible native tile. A bounded
-            // component fallback supports modal-based retained clients without scanning the root.
-            if (!this._openHouseRoomByHrid(houseRoomHrid)) {
-                fallbackHouseComponent = fallbackHouseComponent || this._getHouseComponent();
-                if (!fallbackHouseComponent || typeof fallbackHouseComponent.handleHouseRoomClicked !== 'function') {
-                    console.error('[HouseCostDisplay] Return: could not open the saved House room');
-                    this.exitHouseMarketplaceSession(capturedSessionId);
-                    return;
-                }
+            // Restore through the freshly mounted visible House React owner. Restoring a
+            // previous main-nav target can remount the House panel (notably while combat is
+            // active), so a stale pre-Marketplace tile/component must never receive the click.
+            fallbackHouseComponent = this._getHouseComponent();
+            if (!fallbackHouseComponent) {
+                await this._pollUntil(
+                    () => {
+                        fallbackHouseComponent = this._getHouseComponent();
+                        return Boolean(fallbackHouseComponent);
+                    },
+                    2000,
+                    50
+                );
+            }
+
+            if (this._houseReturnGeneration !== generation) return;
+            if (capturedSessionId !== this._houseSessionId || !marketplaceSession_js.marketplaceSession.isActive(capturedSessionId)) return;
+
+            if (fallbackHouseComponent && typeof fallbackHouseComponent.handleHouseRoomClicked === 'function') {
                 fallbackHouseComponent.handleHouseRoomClicked(houseRoomHrid);
+            } else if (!this._openHouseRoomByHrid(houseRoomHrid)) {
+                console.error('[HouseCostDisplay] Return: could not open the saved House room');
+                this.exitHouseMarketplaceSession(capturedSessionId);
+                return;
             }
 
             // Bounded wait: freshly connected exact-room Toolasha target control
@@ -19285,7 +19318,7 @@ ${starCSS}
                 return;
             }
 
-            const newLevel = houseCostCalculator.getCurrentRoomLevel(houseRoomHrid);
+            const newLevel = this._getLiveHouseRoomLevel(houseRoomHrid);
             if (newLevel >= 8) {
                 costContainer.innerHTML = '';
                 this._cumulativeState = null;
