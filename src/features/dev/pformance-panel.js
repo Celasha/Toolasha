@@ -221,7 +221,9 @@ class PFormancePanel {
 
         for (const [name, snap] of snapshots) {
             if (name.startsWith('init:')) {
-                initEntries.push({ name: name.slice(5), totalMs: snap.duration });
+                const key = name.slice(5);
+                if (!config.isFeatureEnabled(key)) continue;
+                initEntries.push({ name: key, totalMs: snap.duration });
             }
         }
 

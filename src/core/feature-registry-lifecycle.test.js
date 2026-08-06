@@ -28,7 +28,7 @@ vi.mock('./data-manager.js', () => ({
 }));
 
 vi.mock('../utils/performance-monitor.js', () => ({
-    default: { snapshot: vi.fn() },
+    default: { snapshot: vi.fn(), clearSnapshot: vi.fn() },
 }));
 
 vi.mock('./marketplace-session.js', () => ({

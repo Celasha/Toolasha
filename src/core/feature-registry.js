@@ -81,6 +81,7 @@ async function cleanupFeatures() {
 
         const instance = featureInstances.get(feature.key);
         featureInstances.delete(feature.key);
+        performanceMonitor.clearSnapshot(`init:${feature.key}`);
 
         try {
             const featureModule = feature.module || feature;

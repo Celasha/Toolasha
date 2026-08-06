@@ -145,6 +145,14 @@ class PerformanceMonitor {
     }
 
     /**
+     * Remove a single snapshot measurement, e.g. when a feature is torn down
+     * @param {string} name - Metric name
+     */
+    clearSnapshot(name) {
+        this.snapshots.delete(name);
+    }
+
+    /**
      * Clear all measurements
      */
     reset() {
