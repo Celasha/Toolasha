@@ -10,6 +10,22 @@ import { calculateMaterialRequirements, isArtisanTeaOutOfStock } from '../../uti
 import { findActionInput, attachInputListeners, performInitialUpdate } from '../../utils/action-panel-helper.js';
 import { getActionHridFromName } from '../../utils/game-lookups.js';
 
+/**
+ * Build the compact requirement status shown below a material.
+ * Queue reservation is shown once beside Required because Missing already includes it.
+ * @param {Object} material
+ * @param {number} material.required
+ * @param {number} material.missing
+ * @param {number} [material.queued]
+ * @returns {string}
+ */
+export function formatRequiredMaterialStatus(material) {
+    const queuedText = material.queued > 0 ? ` (${numberFormatter(material.queued)} Q'd)` : '';
+    let text = `Required: ${numberFormatter(material.required)}${queuedText}`;
+    if (material.missing > 0) text += ` | Missing: ${numberFormatter(material.missing)}`;
+    return text;
+}
+
 class RequiredMaterials {
     constructor() {
         this.initialized = false;
@@ -145,13 +161,9 @@ class RequiredMaterials {
                     text = `Required: ${placeholderLabel}`;
                     displaySpan.style.color = '';
                 } else {
-                    const queuedText = material.queued > 0 ? ` (${numberFormatter(material.queued)} Q'd)` : '';
-                    text = `Required: ${numberFormatter(material.required)}${queuedText}`;
+                    text = formatRequiredMaterialStatus(material);
 
                     if (material.missing > 0) {
-                        const missingQueuedText =
-                            material.queued > 0 ? ` (${numberFormatter(material.queued)} Q'd)` : '';
-                        text += ` || Missing: ${numberFormatter(material.missing)}${missingQueuedText}`;
                         displaySpan.style.color = config.COLOR_LOSS; // Missing materials
                     } else {
                         displaySpan.style.color = config.COLOR_PROFIT; // Sufficient materials
@@ -199,12 +211,9 @@ class RequiredMaterials {
                 text = `Required: ${placeholderLabel}`;
                 displaySpan.style.color = '';
             } else {
-                const queuedText = material.queued > 0 ? ` (${numberFormatter(material.queued)} Q'd)` : '';
-                text = `Required: ${numberFormatter(material.required)}${queuedText}`;
+                text = formatRequiredMaterialStatus(material);
 
                 if (material.missing > 0) {
-                    const missingQueuedText = material.queued > 0 ? ` (${numberFormatter(material.queued)} Q'd)` : '';
-                    text += ` || Missing: ${numberFormatter(material.missing)}${missingQueuedText}`;
                     displaySpan.style.color = config.COLOR_LOSS; // Missing materials
                 } else {
                     displaySpan.style.color = config.COLOR_PROFIT; // Sufficient materials

@@ -103,6 +103,20 @@ class HouseCostDisplay {
     }
 
     /**
+     * Resolve the room level from the same live House component that renders the modal.
+     * The DataManager cache remains a fallback for startup/test states, but must not
+     * override newer React props after an upgrade message or panel remount.
+     * @param {string} houseRoomHrid
+     * @returns {number}
+     */
+    _getLiveHouseRoomLevel(houseRoomHrid) {
+        const houseComponent = this._getHouseComponent(houseRoomHrid);
+        const liveLevel = houseComponent?.props?.characterHouseRoomDict?.[houseRoomHrid]?.level;
+        if (Number.isInteger(liveLevel) && liveLevel >= 0) return liveLevel;
+        return houseCostCalculator.getCurrentRoomLevel(houseRoomHrid);
+    }
+
+    /**
      * Augment native costs section with market pricing
      * @param {Element} costsSection - The native HousePanel_costs element
      * @param {string} houseRoomHrid - House room HRID
@@ -110,8 +124,9 @@ class HouseCostDisplay {
      */
     async addCostColumn(costsSection, houseRoomHrid, modalContent) {
         this.removeExistingColumn(modalContent);
+        this.currentModalContent = modalContent;
 
-        const currentLevel = houseCostCalculator.getCurrentRoomLevel(houseRoomHrid);
+        const currentLevel = this._getLiveHouseRoomLevel(houseRoomHrid);
 
         if (currentLevel >= 8) {
             return;
@@ -119,7 +134,6 @@ class HouseCostDisplay {
 
         try {
             await this.addCompactToLevel(costsSection, houseRoomHrid, currentLevel);
-            this.currentModalContent = modalContent;
         } catch {
             // Silently fail - augmentation is optional
         }
@@ -1175,16 +1189,30 @@ class HouseCostDisplay {
             return;
         }
 
-        // Reopen the saved House room through its visible native tile. A bounded
-        // component fallback supports modal-based retained clients without scanning the root.
-        if (!this._openHouseRoomByHrid(houseRoomHrid)) {
-            fallbackHouseComponent = fallbackHouseComponent || this._getHouseComponent();
-            if (!fallbackHouseComponent || typeof fallbackHouseComponent.handleHouseRoomClicked !== 'function') {
-                console.error('[HouseCostDisplay] Return: could not open the saved House room');
-                this.exitHouseMarketplaceSession(capturedSessionId);
-                return;
-            }
+        // Restore through the freshly mounted visible House React owner. Restoring a
+        // previous main-nav target can remount the House panel (notably while combat is
+        // active), so a stale pre-Marketplace tile/component must never receive the click.
+        fallbackHouseComponent = this._getHouseComponent();
+        if (!fallbackHouseComponent) {
+            await this._pollUntil(
+                () => {
+                    fallbackHouseComponent = this._getHouseComponent();
+                    return Boolean(fallbackHouseComponent);
+                },
+                2000,
+                50
+            );
+        }
+
+        if (this._houseReturnGeneration !== generation) return;
+        if (capturedSessionId !== this._houseSessionId || !marketplaceSession.isActive(capturedSessionId)) return;
+
+        if (fallbackHouseComponent && typeof fallbackHouseComponent.handleHouseRoomClicked === 'function') {
             fallbackHouseComponent.handleHouseRoomClicked(houseRoomHrid);
+        } else if (!this._openHouseRoomByHrid(houseRoomHrid)) {
+            console.error('[HouseCostDisplay] Return: could not open the saved House room');
+            this.exitHouseMarketplaceSession(capturedSessionId);
+            return;
         }
 
         // Bounded wait: freshly connected exact-room Toolasha target control
@@ -1333,7 +1361,7 @@ class HouseCostDisplay {
             return;
         }
 
-        const newLevel = houseCostCalculator.getCurrentRoomLevel(houseRoomHrid);
+        const newLevel = this._getLiveHouseRoomLevel(houseRoomHrid);
         if (newLevel >= 8) {
             costContainer.innerHTML = '';
             this._cumulativeState = null;
