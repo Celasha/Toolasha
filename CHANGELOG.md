@@ -2,13 +2,12 @@
 
 ## [2.87.4](https://github.com/Celasha/Toolasha/compare/v2.87.3...v2.87.4) (2026-08-06)
 
-
 ### Bug Fixes
 
-* align House costs and Return with live state ([3143289](https://github.com/Celasha/Toolasha/commit/31432893b20972dcce478fa8f75a9b6016a56a0a))
-* restore custom inventory and crafting summaries ([79cc798](https://github.com/Celasha/Toolasha/commit/79cc79829d847354648281744c24685150fafa28))
-* restore queue-aware missing mats buying ([5eab17f](https://github.com/Celasha/Toolasha/commit/5eab17fefd43957484eeda97382a8753a6f6c9e3))
-* TLA-014 — restore queue-aware missing mats, House live-state alignment, custom inventory/crafting summaries ([137d2b8](https://github.com/Celasha/Toolasha/commit/137d2b873926c4e9aa1fa14c2e87efb3560d62ee))
+- align House costs and Return with live state ([3143289](https://github.com/Celasha/Toolasha/commit/31432893b20972dcce478fa8f75a9b6016a56a0a))
+- restore custom inventory and crafting summaries ([79cc798](https://github.com/Celasha/Toolasha/commit/79cc79829d847354648281744c24685150fafa28))
+- restore queue-aware missing mats buying ([5eab17f](https://github.com/Celasha/Toolasha/commit/5eab17fefd43957484eeda97382a8753a6f6c9e3))
+- TLA-014 — restore queue-aware missing mats, House live-state alignment, custom inventory/crafting summaries ([137d2b8](https://github.com/Celasha/Toolasha/commit/137d2b873926c4e9aa1fa14c2e87efb3560d62ee))
 
 ## [2.87.3](https://github.com/Celasha/Toolasha/compare/v2.87.2...v2.87.3) (2026-08-05)
 
