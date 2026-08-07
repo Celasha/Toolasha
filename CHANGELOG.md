@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.87.6](https://github.com/Celasha/Toolasha/compare/v2.87.5...v2.87.6) (2026-08-07)
+
+### Bug Fixes
+
+- action-name observer hang + character-cleanup lifecycle hardening ([1d574fc](https://github.com/Celasha/Toolasha/commit/1d574fc3adb400feb8d2995e116695c9e0dbd2d2))
+- start character cleanup synchronously ([d5d78dd](https://github.com/Celasha/Toolasha/commit/d5d78dde317d4b4e89af43cf1de1f18eca216667))
+- stop action-name observer from looping on its own DOM edits ([31ca04f](https://github.com/Celasha/Toolasha/commit/31ca04fe299c47f62786131c96beaa71a82c3c3c))
+
 ## [2.87.5](https://github.com/Celasha/Toolasha/compare/v2.87.4...v2.87.5) (2026-08-07)
 
 ### Bug Fixes
