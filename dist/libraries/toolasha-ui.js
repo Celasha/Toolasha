@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.87.4
+ * Version: 2.87.5
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -20520,7 +20520,9 @@ ${starCSS}
 
             for (const [name, snap] of snapshots) {
                 if (name.startsWith('init:')) {
-                    initEntries.push({ name: name.slice(5), totalMs: snap.duration });
+                    const key = name.slice(5);
+                    if (!config.isFeatureEnabled(key)) continue;
+                    initEntries.push({ name: key, totalMs: snap.duration });
                 }
             }
 
@@ -37722,6 +37724,7 @@ ${starCSS}
             this.collapsed = false;
             this.isDragging = false;
             this.dragOffset = { x: 0, y: 0 };
+            this._savedPosition = null;
             this._expandedChars = new Set();
             this._dragHeader = null;
             this._dragMouseDownHandler = null;
@@ -37753,6 +37756,15 @@ ${starCSS}
                 }
 
                 this.collapsed = collapsed;
+
+                // Load remembered position
+                const savedPosition = await storage.get('queueMonitor_position', 'settings', null);
+
+                if (generation !== this.lifecycleGeneration) {
+                    return;
+                }
+
+                this._savedPosition = this._sanitizePosition(savedPosition);
 
                 this._buildPanel();
                 this._updateDisplay();
@@ -37861,6 +37873,14 @@ ${starCSS}
             this.panel.appendChild(this.bodyEl);
             document.body.appendChild(this.panel);
 
+            if (this._savedPosition) {
+                const { left, top } = this._clampPosition(this._savedPosition.left, this._savedPosition.top);
+                this.panel.style.left = `${left}px`;
+                this.panel.style.top = `${top}px`;
+                this.panel.style.right = 'auto';
+                this.panel.style.bottom = 'auto';
+            }
+
             registerFloatingPanel(this.panel);
 
             // Bring to front on click
@@ -37907,6 +37927,9 @@ ${starCSS}
                 if (this.isDragging) {
                     this.isDragging = false;
                     header.style.cursor = 'grab';
+
+                    const rect = this.panel.getBoundingClientRect();
+                    storage.set('queueMonitor_position', { left: rect.left, top: rect.top }, 'settings');
                 }
             };
 
@@ -37931,6 +37954,33 @@ ${starCSS}
             this._dragMouseMoveHandler = null;
             this._dragMouseUpHandler = null;
             this.isDragging = false;
+        }
+
+        /**
+         * Validate a position value loaded from storage
+         * @param {*} pos
+         * @returns {{left: number, top: number} | null}
+         */
+        _sanitizePosition(pos) {
+            if (!pos || typeof pos !== 'object') return null;
+            if (!Number.isFinite(pos.left) || !Number.isFinite(pos.top)) return null;
+            return { left: pos.left, top: pos.top };
+        }
+
+        /**
+         * Keep a restored position within the current viewport
+         * @param {number} left
+         * @param {number} top
+         * @returns {{left: number, top: number}}
+         */
+        _clampPosition(left, top) {
+            const margin = 40;
+            const maxLeft = Math.max(0, window.innerWidth - margin);
+            const maxTop = Math.max(0, window.innerHeight - margin);
+            return {
+                left: Math.min(Math.max(0, left), maxLeft),
+                top: Math.min(Math.max(0, top), maxTop),
+            };
         }
 
         /**

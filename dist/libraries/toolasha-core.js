@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.87.4
+ * Version: 2.87.5
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6344,6 +6344,14 @@
         }
 
         /**
+         * Remove a single snapshot measurement, e.g. when a feature is torn down
+         * @param {string} name - Metric name
+         */
+        clearSnapshot(name) {
+            this.snapshots.delete(name);
+        }
+
+        /**
          * Clear all measurements
          */
         reset() {
@@ -6724,17 +6732,23 @@
 
     /**
      * Initialize all enabled features
+     * @param {Object} [options] - Optional lifecycle guard
+     * @param {Function} [options.shouldContinue] - Returns false when initialization has become stale
      * @returns {Promise<void>}
      */
-    async function initializeFeatures() {
+    async function initializeFeatures({ shouldContinue = () => true } = {}) {
         // Block feature initialization during character switch
-        if (dataManager.getIsCharacterSwitching()) {
+        if (dataManager.getIsCharacterSwitching() || !shouldContinue()) {
             return;
         }
 
         const errors = [];
 
         for (const feature of featureRegistry) {
+            if (!shouldContinue()) {
+                break;
+            }
+
             try {
                 const isEnabled = feature.customCheck ? feature.customCheck() : config.isFeatureEnabled(feature.key);
 
@@ -6783,6 +6797,7 @@
 
             const instance = featureInstances.get(feature.key);
             featureInstances.delete(feature.key);
+            performanceMonitor.clearSnapshot(`init:${feature.key}`);
 
             try {
                 const featureModule = feature.module || feature;
@@ -6885,62 +6900,91 @@
      * Re-initializes all features when character switches
      */
     function setupCharacterSwitchHandler() {
-        // Promise that resolves when cleanup is complete
-        let cleanupPromise = null;
-        let reinitScheduled = false;
+        // Character switch lifecycle work is serialized through one queue. A monotonic
+        // generation lets stale reinits stop when a newer switch arrives (A → B → A).
+        // This prevents both dropped switch events and late cleanup from touching the
+        // newest character's freshly initialized features.
+        let lifecycleGeneration = 0;
+        let lifecycleQueue = Promise.resolve();
+
+        const enqueueLifecycleTask = (label, task) => {
+            lifecycleQueue = lifecycleQueue
+                .catch((error) => {
+                    console.error('[FeatureRegistry] Previous lifecycle task failed:', error);
+                })
+                .then(task)
+                .catch((error) => {
+                    console.error(`[FeatureRegistry] ${label} lifecycle task failed:`, error);
+                });
+
+            return lifecycleQueue;
+        };
 
         // Handle character_switching event (cleanup phase)
-        dataManager.on('character_switching', async (_data) => {
-            cleanupPromise = (async () => {
-                try {
-                    // Clear config cache IMMEDIATELY to prevent stale settings
-                    if (config && typeof config.clearSettingsCache === 'function') {
-                        config.clearSettingsCache();
-                    }
+        dataManager.on('character_switching', (_data) => {
+            lifecycleGeneration += 1;
 
-                    // End any active marketplace session before features clean up
-                    marketplaceSession.endAll();
-                    marketplaceSession.clearAllMarketplaceUI();
+            // Clear config cache immediately, before any asynchronous cleanup starts,
+            // so code still running from the departing character cannot read its settings.
+            if (config && typeof config.clearSettingsCache === 'function') {
+                config.clearSettingsCache();
+            }
 
-                    await cleanupFeatures();
-                } catch (error) {
-                    console.error('[FeatureRegistry] Error during character switch cleanup:', error);
-                }
-            })();
+            return enqueueLifecycleTask('character cleanup', async () => {
+                // End any active marketplace session before features clean up.
+                marketplaceSession.endAll();
+                marketplaceSession.clearAllMarketplaceUI();
 
-            await cleanupPromise;
+                await cleanupFeatures();
+            });
         });
 
         // Handle character_switched event (re-initialization phase)
-        dataManager.on('character_switched', async (_data) => {
-            // Prevent multiple overlapping reinits
-            if (reinitScheduled) {
-                return;
-            }
+        dataManager.on('character_switched', (data) => {
+            const generation = lifecycleGeneration;
+            const targetCharacterId = data?.newId ? String(data.newId) : null;
 
-            reinitScheduled = true;
+            const isCurrentGeneration = () => {
+                if (generation !== lifecycleGeneration) {
+                    return false;
+                }
 
-            try {
-                // Wait for cleanup to complete (with safety timeout)
-                if (cleanupPromise) {
-                    await Promise.race([cleanupPromise, new Promise((resolve) => setTimeout(resolve, 500))]);
+                const currentCharacterId = dataManager.getCurrentCharacterId?.();
+                if (targetCharacterId && currentCharacterId != null) {
+                    return String(currentCharacterId) === targetCharacterId;
+                }
+
+                return true;
+            };
+
+            return enqueueLifecycleTask('character reinitialization', async () => {
+                // A newer switch may have arrived while this task waited in the queue.
+                if (!isCurrentGeneration()) {
+                    return;
                 }
 
                 // CRITICAL: Load settings BEFORE any feature initialization
                 // This ensures all features see the new character's settings
                 await config.loadSettings({ notifyChanges: false });
+
+                // Loading IndexedDB can take long enough for another character switch.
+                // Never apply or initialize settings that no longer belong to the active character.
+                if (!isCurrentGeneration()) {
+                    return;
+                }
+
                 config.applyColorSettings();
 
                 // Small delay to ensure game state is stable
                 await new Promise((resolve) => setTimeout(resolve, 50));
 
+                if (!isCurrentGeneration()) {
+                    return;
+                }
+
                 // Now re-initialize all features with fresh settings
-                await initializeFeatures();
-            } catch (error) {
-                console.error('[FeatureRegistry] Error during feature reinitialization:', error);
-            } finally {
-                reinitScheduled = false;
-            }
+                await initializeFeatures({ shouldContinue: isCurrentGeneration });
+            });
         });
     }
 
