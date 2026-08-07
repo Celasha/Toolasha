@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.87.5
+ * Version: 2.87.6
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6930,12 +6930,22 @@
                 config.clearSettingsCache();
             }
 
-            return enqueueLifecycleTask('character cleanup', async () => {
-                // End any active marketplace session before features clean up.
-                marketplaceSession.endAll();
-                marketplaceSession.clearAllMarketplaceUI();
+            // IMPORTANT: start teardown synchronously in the character_switching callback.
+            // Toolasha observes init_character_data from the MessageEvent.data getter, so
+            // deferring cleanup to a Promise job allows the game to consume the new-character
+            // payload while departing-character DOM handlers are still live. That can make
+            // those handlers touch transition UI such as the offline-rewards modal.
+            //
+            // cleanupFeatures() executes all synchronous cleanup hooks before its first await;
+            // the returned Promise still represents any async teardown. We feed only that
+            // completion into the serialized queue, preserving the A → B → A ownership fix
+            // without moving teardown out of the critical switch phase.
+            marketplaceSession.endAll();
+            marketplaceSession.clearAllMarketplaceUI();
+            const cleanupPromise = cleanupFeatures();
 
-                await cleanupFeatures();
+            return enqueueLifecycleTask('character cleanup', async () => {
+                await cleanupPromise;
             });
         });
 

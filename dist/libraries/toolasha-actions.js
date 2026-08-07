@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.87.5
+ * Version: 2.87.6
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8166,10 +8166,23 @@
          * @param {HTMLElement} actionNameElement - The action name DOM element
          */
         setupActionNameObserver(actionNameElement) {
+            // Disconnect any previous observer first. Without this, a duplicate/leaked
+            // observer can end up watching the same element (this is called both from the
+            // persistent Header_actionName class watcher and from waitForActionPanel, which
+            // can both fire for the same element during a character switch) — see the
+            // isSelfInflictedMutation comment below for why that leak matters.
+            if (this.actionNameObserver) {
+                this.actionNameObserver();
+                this.actionNameObserver = null;
+            }
+
             // Watch for text content changes in the action name element
             this.actionNameObserver = domObserverHelpers_js.createMutationWatcher(
                 actionNameElement,
-                () => {
+                (mutations) => {
+                    if (this.isSelfInflictedMutation(mutations)) {
+                        return;
+                    }
                     this.updateDisplay();
                 },
                 {
@@ -8178,6 +8191,32 @@
                     subtree: true,
                 }
             );
+        }
+
+        /**
+         * True when every mutation in a batch is solely the addition/removal of our own
+         * `.mwi-appended-stats` marker span. updateDisplay() already disconnects the observer
+         * before touching the DOM and reconnects afterward, but if a second observer ever ends
+         * up watching the same element (e.g. a leaked/duplicate one), it would otherwise see our
+         * own edit, call updateDisplay() again, which re-edits the marker, which the leaked
+         * observer sees again — an endless remove/reappend cycle with no external cause needed.
+         * Filtering these out here makes the observer safe even if such a duplicate exists.
+         * @param {MutationRecord[]} mutations
+         * @returns {boolean}
+         */
+        isSelfInflictedMutation(mutations) {
+            return mutations.every((mutation) => {
+                if (mutation.type !== 'childList') {
+                    return false;
+                }
+                const nodes = [...mutation.addedNodes, ...mutation.removedNodes];
+                if (nodes.length === 0) {
+                    return false;
+                }
+                return nodes.every(
+                    (node) => node.nodeType === Node.ELEMENT_NODE && node.classList?.contains('mwi-appended-stats')
+                );
+            });
         }
 
         /**
@@ -8762,7 +8801,10 @@
 
             this.actionNameObserver = domObserverHelpers_js.createMutationWatcher(
                 actionNameElement,
-                () => {
+                (mutations) => {
+                    if (this.isSelfInflictedMutation(mutations)) {
+                        return;
+                    }
                     this.updateDisplay();
                 },
                 {
