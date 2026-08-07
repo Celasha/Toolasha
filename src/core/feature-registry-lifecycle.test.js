@@ -91,6 +91,40 @@ describe('FeatureRegistry character-switch lifecycle ownership', () => {
         expect(mocks.loadSettings).toHaveBeenCalledWith({ notifyChanges: false });
     });
 
+    test('starts departing-character cleanup synchronously before the switch callback returns', async () => {
+        const registry = (await import('./feature-registry.js')).default;
+        const cleanupGate = createDeferred();
+        const featureModule = {
+            initialize: vi.fn(),
+            cleanup: vi.fn(() => cleanupGate.promise),
+        };
+
+        registry.replaceFeatures([
+            {
+                key: 'itemCountDisplay',
+                name: 'Item Count Display',
+                module: featureModule,
+                initialize: featureModule.initialize,
+            },
+        ]);
+        await registry.initializeFeatures();
+        registry.setupCharacterSwitchHandler();
+
+        mocks.currentCharacterId = 'b';
+        const switching = mocks.handlers.get('character_switching')({ oldId: 'a', newId: 'b' });
+
+        // This assertion intentionally happens before yielding to Promise jobs.
+        // The game's WebSocket handler must not be allowed to process the new
+        // character while old feature cleanup is still waiting to start.
+        expect(mocks.clearSettingsCache).toHaveBeenCalledTimes(1);
+        expect(mocks.endAll).toHaveBeenCalledTimes(1);
+        expect(mocks.clearAllMarketplaceUI).toHaveBeenCalledTimes(1);
+        expect(featureModule.cleanup).toHaveBeenCalledTimes(1);
+
+        cleanupGate.resolve();
+        await switching;
+    });
+
     test('coalesces rapid A → B → A switches to the latest character', async () => {
         const registry = (await import('./feature-registry.js')).default;
         const cleanupGate = createDeferred();
