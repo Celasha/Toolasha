@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     applyColorSettings: vi.fn(),
     endAll: vi.fn(),
     clearAllMarketplaceUI: vi.fn(),
+    currentCharacterId: 'a',
 }));
 
 vi.mock('./config.js', () => ({
@@ -23,6 +24,7 @@ vi.mock('./config.js', () => ({
 vi.mock('./data-manager.js', () => ({
     default: {
         getIsCharacterSwitching: vi.fn(() => false),
+        getCurrentCharacterId: vi.fn(() => mocks.currentCharacterId),
         on: vi.fn((event, handler) => mocks.handlers.set(event, handler)),
     },
 }));
@@ -38,11 +40,21 @@ vi.mock('./marketplace-session.js', () => ({
     },
 }));
 
+function createDeferred() {
+    let resolve;
+    const promise = new Promise((resolver) => {
+        resolve = resolver;
+    });
+    return { promise, resolve };
+}
+
 beforeEach(() => {
     vi.useFakeTimers();
     vi.resetModules();
     vi.clearAllMocks();
     mocks.handlers.clear();
+    mocks.currentCharacterId = 'a';
+    mocks.loadSettings.mockImplementation(async () => {});
 });
 
 afterEach(() => {
@@ -68,6 +80,7 @@ describe('FeatureRegistry character-switch lifecycle ownership', () => {
         await registry.initializeFeatures();
         registry.setupCharacterSwitchHandler();
 
+        mocks.currentCharacterId = 'b';
         await mocks.handlers.get('character_switching')({ oldId: 'a', newId: 'b' });
         const switched = mocks.handlers.get('character_switched')({ oldId: 'a', newId: 'b' });
         await vi.advanceTimersByTimeAsync(50);
@@ -76,6 +89,120 @@ describe('FeatureRegistry character-switch lifecycle ownership', () => {
         expect(featureModule.cleanup).toHaveBeenCalledTimes(1);
         expect(featureModule.initialize).toHaveBeenCalledTimes(2);
         expect(mocks.loadSettings).toHaveBeenCalledWith({ notifyChanges: false });
+    });
+
+    test('coalesces rapid A → B → A switches to the latest character', async () => {
+        const registry = (await import('./feature-registry.js')).default;
+        const cleanupGate = createDeferred();
+        const initializedFor = [];
+        const featureModule = {
+            initialize: vi.fn(() => initializedFor.push(mocks.currentCharacterId)),
+            cleanup: vi.fn(() => cleanupGate.promise),
+        };
+
+        registry.replaceFeatures([
+            {
+                key: 'itemCountDisplay',
+                name: 'Item Count Display',
+                module: featureModule,
+                initialize: featureModule.initialize,
+            },
+        ]);
+        await registry.initializeFeatures();
+        registry.setupCharacterSwitchHandler();
+
+        mocks.currentCharacterId = 'b';
+        mocks.handlers.get('character_switching')({ oldId: 'a', newId: 'b' });
+        mocks.handlers.get('character_switched')({ oldId: 'a', newId: 'b' });
+
+        mocks.currentCharacterId = 'a';
+        mocks.handlers.get('character_switching')({ oldId: 'b', newId: 'a' });
+        const finalSwitch = mocks.handlers.get('character_switched')({ oldId: 'b', newId: 'a' });
+
+        cleanupGate.resolve();
+        await vi.advanceTimersByTimeAsync(50);
+        await finalSwitch;
+
+        expect(featureModule.cleanup).toHaveBeenCalledTimes(1);
+        expect(featureModule.initialize).toHaveBeenCalledTimes(2);
+        expect(initializedFor).toEqual(['a', 'a']);
+        expect(mocks.loadSettings).toHaveBeenCalledTimes(1);
+        expect(mocks.applyColorSettings).toHaveBeenCalledTimes(1);
+    });
+
+    test('does not initialize new-character features before slow cleanup completes', async () => {
+        const registry = (await import('./feature-registry.js')).default;
+        const cleanupGate = createDeferred();
+        const featureModule = {
+            initialize: vi.fn(),
+            cleanup: vi.fn(() => cleanupGate.promise),
+        };
+
+        registry.replaceFeatures([
+            {
+                key: 'itemCountDisplay',
+                name: 'Item Count Display',
+                module: featureModule,
+                initialize: featureModule.initialize,
+            },
+        ]);
+        await registry.initializeFeatures();
+        registry.setupCharacterSwitchHandler();
+
+        mocks.currentCharacterId = 'b';
+        mocks.handlers.get('character_switching')({ oldId: 'a', newId: 'b' });
+        const switched = mocks.handlers.get('character_switched')({ oldId: 'a', newId: 'b' });
+
+        await vi.advanceTimersByTimeAsync(550);
+        expect(mocks.loadSettings).not.toHaveBeenCalled();
+        expect(featureModule.initialize).toHaveBeenCalledTimes(1);
+
+        cleanupGate.resolve();
+        await vi.advanceTimersByTimeAsync(50);
+        await switched;
+
+        expect(mocks.loadSettings).toHaveBeenCalledTimes(1);
+        expect(featureModule.initialize).toHaveBeenCalledTimes(2);
+    });
+
+    test('abandons settings loaded for a character that becomes stale mid-load', async () => {
+        const registry = (await import('./feature-registry.js')).default;
+        const firstLoadGate = createDeferred();
+        const initializedFor = [];
+        const featureModule = {
+            initialize: vi.fn(() => initializedFor.push(mocks.currentCharacterId)),
+            cleanup: vi.fn(),
+        };
+        mocks.loadSettings.mockImplementationOnce(() => firstLoadGate.promise).mockImplementationOnce(async () => {});
+
+        registry.replaceFeatures([
+            {
+                key: 'itemCountDisplay',
+                name: 'Item Count Display',
+                module: featureModule,
+                initialize: featureModule.initialize,
+            },
+        ]);
+        await registry.initializeFeatures();
+        registry.setupCharacterSwitchHandler();
+
+        mocks.currentCharacterId = 'b';
+        mocks.handlers.get('character_switching')({ oldId: 'a', newId: 'b' });
+        mocks.handlers.get('character_switched')({ oldId: 'a', newId: 'b' });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(mocks.loadSettings).toHaveBeenCalledTimes(1);
+
+        mocks.currentCharacterId = 'a';
+        mocks.handlers.get('character_switching')({ oldId: 'b', newId: 'a' });
+        const finalSwitch = mocks.handlers.get('character_switched')({ oldId: 'b', newId: 'a' });
+
+        firstLoadGate.resolve();
+        await vi.advanceTimersByTimeAsync(50);
+        await finalSwitch;
+
+        expect(mocks.loadSettings).toHaveBeenCalledTimes(2);
+        expect(mocks.applyColorSettings).toHaveBeenCalledTimes(1);
+        expect(initializedFor).toEqual(['a', 'a']);
     });
 
     test('dungeon modules do not own additional character_switching cleanup listeners', () => {
