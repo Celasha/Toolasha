@@ -2,13 +2,12 @@
 
 ## [2.87.5](https://github.com/Celasha/Toolasha/compare/v2.87.4...v2.87.5) (2026-08-07)
 
-
 ### Bug Fixes
 
-* clear stale feature-init cost from PFormance panel on teardown ([462680f](https://github.com/Celasha/Toolasha/commit/462680fdfc82d0b4b89359a80a56e8b6fc3566a9))
-* remember Queue Monitor panel position across refreshes ([cdb9163](https://github.com/Celasha/Toolasha/commit/cdb91635b7a463cd307c10d6708e81e89f54e5bb))
-* serialize character switch reinitialization ([0e97bb8](https://github.com/Celasha/Toolasha/commit/0e97bb8997d42dc2fc21edb4a779f394c55bb2a1))
-* serialize character switch reinitialization ([9a216e4](https://github.com/Celasha/Toolasha/commit/9a216e4b183d527b027089dc8fdac00d56ada201))
+- clear stale feature-init cost from PFormance panel on teardown ([462680f](https://github.com/Celasha/Toolasha/commit/462680fdfc82d0b4b89359a80a56e8b6fc3566a9))
+- remember Queue Monitor panel position across refreshes ([cdb9163](https://github.com/Celasha/Toolasha/commit/cdb91635b7a463cd307c10d6708e81e89f54e5bb))
+- serialize character switch reinitialization ([0e97bb8](https://github.com/Celasha/Toolasha/commit/0e97bb8997d42dc2fc21edb4a779f394c55bb2a1))
+- serialize character switch reinitialization ([9a216e4](https://github.com/Celasha/Toolasha/commit/9a216e4b183d527b027089dc8fdac00d56ada201))
 
 ## [2.87.4](https://github.com/Celasha/Toolasha/compare/v2.87.3...v2.87.4) (2026-08-06)
 
