@@ -176,6 +176,7 @@ vi.mock('../../utils/formatters.js', () => ({
 }));
 
 import dataManager from '../../core/data-manager.js';
+import houseCostCalculator from './house-cost-calculator.js';
 import houseCostDisplay from './house-cost-display.js';
 
 // ---------------------------------------------------------------------------
@@ -231,6 +232,8 @@ function resetInstanceState() {
     houseCostDisplay.cleanupObserver = null;
     houseCostDisplay._cumulativeState = null;
     houseCostDisplay._costContext = null;
+    houseCostDisplay._cumulativeRenderGeneration = 0;
+    houseCostDisplay._cumulativeRenderGenerations = new WeakMap();
 }
 
 function makeConnectedDropdown(values = ['4', '5', '6']) {
@@ -268,6 +271,107 @@ describe('HouseCostDisplay — Section 3 Rev2 correction', () => {
 
     afterEach(() => {
         document.body.innerHTML = '';
+    });
+
+    // =========================================================================
+    // updateCompactCumulativeDisplay — overlapping async refreshes
+    // =========================================================================
+
+    describe('updateCompactCumulativeDisplay — overlapping async refreshes', () => {
+        function deferred() {
+            let resolve;
+            const promise = new Promise((res) => {
+                resolve = res;
+            });
+            return { promise, resolve };
+        }
+
+        function costData(totalValue) {
+            return { coins: 500000, materials: [], totalValue };
+        }
+
+        afterEach(() => {
+            houseCostDisplay.getMissingMaterials.mockRestore?.();
+            houseCostDisplay._getLiveHouseRoomLevel.mockRestore?.();
+        });
+
+        it('collapses an eight-request refresh burst into one rendered block', async () => {
+            const container = makeConnectedCostContainer();
+            const requests = Array.from({ length: 8 }, () => deferred());
+            for (const request of requests) {
+                houseCostCalculator.calculateCumulativeCost.mockImplementationOnce(() => request.promise);
+            }
+            vi.spyOn(houseCostDisplay, 'getMissingMaterials').mockReturnValue([makeMaterial()]);
+
+            const renders = requests.map(() =>
+                houseCostDisplay.updateCompactCumulativeDisplay(container, '/house_rooms/garden', 0, 1)
+            );
+
+            for (const request of requests) {
+                request.resolve(costData(734000));
+            }
+            await Promise.all(renders);
+
+            expect(container.children).toHaveLength(3);
+            expect(container.textContent.match(/Total Market Value:/g)).toHaveLength(1);
+            expect(container.querySelectorAll('button')).toHaveLength(1);
+            expect(container.textContent).toContain('Total Market Value: 734000');
+        });
+
+        it('keeps the latest requested render when an older calculation resolves last', async () => {
+            const container = makeConnectedCostContainer();
+            const older = deferred();
+            const newer = deferred();
+            houseCostCalculator.calculateCumulativeCost
+                .mockImplementationOnce(() => older.promise)
+                .mockImplementationOnce(() => newer.promise);
+            vi.spyOn(houseCostDisplay, 'getMissingMaterials').mockReturnValue([]);
+
+            const olderRender = houseCostDisplay.updateCompactCumulativeDisplay(container, '/house_rooms/garden', 0, 1);
+            const newerRender = houseCostDisplay.updateCompactCumulativeDisplay(container, '/house_rooms/garden', 0, 2);
+
+            newer.resolve(costData(222000));
+            await newerRender;
+            expect(container.textContent).toContain('Total Market Value: 222000');
+
+            older.resolve(costData(111000));
+            await olderRender;
+
+            expect(container.textContent).toContain('Total Market Value: 222000');
+            expect(container.textContent).not.toContain('Total Market Value: 111000');
+            expect(container.textContent.match(/Total Market Value:/g)).toHaveLength(1);
+        });
+
+        it('does not let a stale pending render resurrect a display cleared by a room-completed refresh', async () => {
+            // _onHouseRoomUpdated's max-level branch clears the container directly (the room
+            // reached its cap, so there is nothing left to show) and must invalidate any
+            // updateCompactCumulativeDisplay call already in flight for that same container —
+            // otherwise the older calculation resolving afterward would repopulate a display
+            // that the user has already been told is complete.
+            const container = makeConnectedCostContainer();
+            const dropdown = makeConnectedDropdown(['4', '5']);
+            houseCostDisplay._cumulativeState = {
+                costContainer: container,
+                houseRoomHrid: '/house_rooms/garden',
+                currentLevel: 3,
+                dropdown,
+            };
+            const pending = deferred();
+            houseCostCalculator.calculateCumulativeCost.mockImplementationOnce(() => pending.promise);
+            vi.spyOn(houseCostDisplay, 'getMissingMaterials').mockReturnValue([]);
+
+            const staleRender = houseCostDisplay.updateCompactCumulativeDisplay(container, '/house_rooms/garden', 3, 4);
+
+            vi.spyOn(houseCostDisplay, '_getLiveHouseRoomLevel').mockReturnValue(8);
+            await houseCostDisplay._onHouseRoomUpdated();
+            expect(container.children).toHaveLength(0);
+
+            pending.resolve(costData(999000));
+            await staleRender;
+
+            expect(container.children).toHaveLength(0);
+            expect(container.textContent).not.toContain('Total Market Value: 999000');
+        });
     });
 
     describe('getMissingMaterials', () => {

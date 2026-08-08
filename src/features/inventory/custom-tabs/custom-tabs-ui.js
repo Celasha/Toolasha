@@ -532,7 +532,7 @@ export default class CustomTabsUI {
         this._expandedSearchHrids = null; // Set of base hrids expanded in the item picker
         this._isApplying = false; // Guard against concurrent _applyLayout calls
         this._needsAnotherPass = false; // Deferred layout re-run flag
-        this._lastRebuildTileCount = 0; // Tile count at last full rebuild (detects inventory changes)
+        this._lastRebuildComposition = null; // Sorted tile-identity signature at last full rebuild
         this._actionBtnsEl = null; // +Tab/Export/Import appended to sort controls row on Toolasha tab
         this._tileObserver = null; // MutationObserver for instant tile visibility on React swaps
         this._observedContainer = null; // Container currently being observed by _tileObserver
@@ -825,6 +825,51 @@ export default class CustomTabsUI {
     }
 
     /**
+     * Build an order-independent signature of the current tile set's identities (hrid,
+     * including enhancement level). A plain tile count misses a production event that swaps
+     * one identity for another while the total tile count stays the same — e.g. the last unit
+     * of a material is consumed while a new output item appears — which can leave stale
+     * header/layout state on the lightweight path. Comparing this signature across passes
+     * catches that case.
+     * @param {NodeListOf<Element>|Element[]} allTiles
+     * @returns {string}
+     */
+    _computeTileComposition(allTiles) {
+        const identities = [];
+        for (const tile of allTiles) {
+            identities.push(this._getHridFromTile(tile) || '?');
+        }
+        identities.sort();
+        return identities.join('|');
+    }
+
+    /**
+     * True when the current tileMap contains at least one inventory tile not assigned to any
+     * custom tab. Mirrors the per-tile, enhancement-aware filtering used when building the
+     * Unorganized bucket (see _injectUnorganized / _updateTileVisibility), without mutating
+     * tileMap or the DOM.
+     * @param {Map} tileMap
+     * @returns {boolean}
+     */
+    _hasUnassignedTiles(tileMap) {
+        const assignedSet = getAssignedItemSet(this._config);
+        for (const [hrid, tiles] of tileMap) {
+            if (/\+\d+$/.test(hrid)) {
+                if (!assignedSet.has(hrid) && tiles.length > 0) return true;
+            } else {
+                if (assignedSet.has(hrid)) continue;
+                for (const tile of tiles) {
+                    const enhEl = tile.querySelector('[class*="Item_enhancementLevel"]');
+                    const level = enhEl ? parseInt(enhEl.textContent.trim().replace('+', ''), 10) : 0;
+                    const tileHrid = level > 0 ? `${hrid}+${level}` : hrid;
+                    if (!assignedSet.has(tileHrid)) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
      * Synchronous layout pass — applies CSS order and visibility to all tiles.
      * Extracted from _applyLayout so it can also be called from a MutationObserver
      * callback (which fires before the browser paints, eliminating flicker when
@@ -864,16 +909,35 @@ export default class CustomTabsUI {
             delete tile.dataset.toolashaTabId;
         }
 
-        // Force full rebuild when tile count OR config item count changed — the lightweight path
-        // reuses stale header order values that don't have enough order-space
-        // for new tiles, causing items to visually cascade into wrong sections.
+        // Force full rebuild when tile identity/composition OR config item count changed — the
+        // lightweight path reuses stale header order values that don't have enough order-space
+        // for new tiles, causing items to visually cascade into wrong sections. A signature over
+        // each tile's hrid (including enhancement level) — not just the tile count — is required
+        // because a production event can replace one identity with another (e.g. a material's
+        // last unit is consumed while a new output item appears) while the total tile count stays
+        // the same; a count-only check would miss that and leave stale header/layout state.
         const configItemCount = this._getTotalConfigItemCount();
+        const composition = this._computeTileComposition(allTiles);
         if (
             !needsFullRebuild &&
-            (allTiles.length !== this._lastRebuildTileCount || configItemCount !== this._lastRebuildConfigItemCount)
+            (composition !== this._lastRebuildComposition || configItemCount !== this._lastRebuildConfigItemCount)
         ) {
             needsFullRebuild = true;
             this._removeInjectedEls();
+        }
+
+        // Self-heal: whenever Unorganized should be shown, its header must be present exactly
+        // when unassigned tiles exist. If some other path (a leaked mutation, a partial DOM
+        // reconciliation) leaves the header missing while unassigned tiles remain — or leaves it
+        // present with nothing unassigned — the lightweight path can't fix that on its own,
+        // since it only re-applies visibility using headers that already exist. Force a full
+        // rebuild instead of trusting historical rebuild state.
+        if (!needsFullRebuild && config.getSettingValue('inventoryTabs_showUnorganized')) {
+            const hasUnorgHeader = Boolean(invContainer.querySelector('.toolasha-ct-unorg-header'));
+            if (hasUnorgHeader !== this._hasUnassignedTiles(tileMap)) {
+                needsFullRebuild = true;
+                this._removeInjectedEls();
+            }
         }
 
         if (needsFullRebuild) {
@@ -903,7 +967,7 @@ export default class CustomTabsUI {
                 orderCounter = this._injectUnorganized(invContainer, tileMap, orderCounter);
             }
 
-            this._lastRebuildTileCount = allTiles.length;
+            this._lastRebuildComposition = composition;
             this._lastRebuildConfigItemCount = configItemCount;
         } else {
             // Lightweight update: headers already exist, just re-apply tile order/visibility
