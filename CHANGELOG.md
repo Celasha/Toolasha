@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.87.7](https://github.com/Celasha/Toolasha/compare/v2.87.6...v2.87.7) (2026-08-08)
+
+### Bug Fixes
+
+- Custom Tabs Unorganized self-heal + House cumulative render race ([f4eee5b](https://github.com/Celasha/Toolasha/commit/f4eee5b76f9f33303728f6cc2e76072fb60e835f))
+- guard overlapping House cumulative renders ([4ca1220](https://github.com/Celasha/Toolasha/commit/4ca12206424822ddf4b88295b765c922551d2955))
+- self-heal Custom Inventory Tabs Unorganized bucket and fix same-count invalidation ([302e28e](https://github.com/Celasha/Toolasha/commit/302e28e9f365796b686df91ad46b0d42337f33d7))
+
 ## [2.87.6](https://github.com/Celasha/Toolasha/compare/v2.87.5...v2.87.6) (2026-08-07)
 
 ### Bug Fixes
