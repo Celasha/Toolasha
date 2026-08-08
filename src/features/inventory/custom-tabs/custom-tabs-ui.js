@@ -816,6 +816,44 @@ export default class CustomTabsUI {
     }
 
     /**
+     * Collect inventory tiles not assigned to any custom tab, grouped by the tileMap key each
+     * group was found under. A single physical enhanced tile is registered in tileMap under
+     * both its base hrid and its enhanced hrid (see _buildTileMap), so without deduplication a
+     * still-unassigned enhanced tile can be counted/processed twice — once via each key. A
+     * shared seenTiles set ensures each physical DOM tile element is included at most once,
+     * regardless of how many tileMap keys still reference it.
+     * @param {Map} tileMap
+     * @returns {Array<{hrid: string, tiles: HTMLElement[]}>}
+     */
+    _collectUnassignedTileEntries(tileMap) {
+        const assignedSet = getAssignedItemSet(this._config);
+        const seenTiles = new Set();
+        const entries = [];
+        for (const [hrid, tiles] of tileMap) {
+            if (assignedSet.has(hrid)) continue;
+            let fresh;
+            if (/\+\d+$/.test(hrid)) {
+                // Enhanced key still in tileMap means it wasn't claimed by a tab requesting that
+                // exact level.
+                fresh = tiles.filter((tile) => !seenTiles.has(tile));
+            } else {
+                // Base key: filter per-tile so only tiles whose specific enhancement level is
+                // assigned are excluded.
+                fresh = tiles.filter((tile) => {
+                    if (seenTiles.has(tile)) return false;
+                    const enhEl = tile.querySelector('[class*="Item_enhancementLevel"]');
+                    const level = enhEl ? parseInt(enhEl.textContent.trim().replace('+', ''), 10) : 0;
+                    const tileHrid = level > 0 ? `${hrid}+${level}` : hrid;
+                    return !assignedSet.has(tileHrid);
+                });
+            }
+            for (const tile of fresh) seenTiles.add(tile);
+            if (fresh.length > 0) entries.push({ hrid, tiles: fresh });
+        }
+        return entries;
+    }
+
+    /**
      * Count total items across all tabs (recursively) for rebuild detection.
      * @returns {number}
      */
@@ -1055,27 +1093,7 @@ export default class CustomTabsUI {
         const unorgHeader = invContainer.querySelector('.toolasha-ct-unorg-header');
         if (unorgHeader && this._unorgOpen) {
             const unorgOrder = parseInt(unorgHeader.style.order, 10);
-            const assignedSet = getAssignedItemSet(this._config);
-            const unorgTiles = [];
-            for (const [hrid, tiles] of tileMap) {
-                if (/\+\d+$/.test(hrid)) {
-                    // Enhanced key still in tileMap means it wasn't claimed —
-                    // only skip if the exact enhanced hrid is assigned to a tab.
-                    if (!assignedSet.has(hrid)) {
-                        for (const tile of tiles) unorgTiles.push(tile);
-                    }
-                } else {
-                    // Base key: skip if base hrid is assigned; otherwise filter per-tile
-                    // so only tiles whose specific enhancement level is assigned are excluded
-                    if (assignedSet.has(hrid)) continue;
-                    for (const tile of tiles) {
-                        const enhEl = tile.querySelector('[class*="Item_enhancementLevel"]');
-                        const level = enhEl ? parseInt(enhEl.textContent.trim().replace('+', ''), 10) : 0;
-                        const tileHrid = level > 0 ? `${hrid}+${level}` : hrid;
-                        if (!assignedSet.has(tileHrid)) unorgTiles.push(tile);
-                    }
-                }
-            }
+            const unorgTiles = this._collectUnassignedTileEntries(tileMap).flatMap(({ tiles }) => tiles);
             this._assignTileOrders(unorgTiles, unorgOrder + 1, '');
         }
     }
@@ -1901,31 +1919,7 @@ export default class CustomTabsUI {
      * @returns {number} updated orderCounter
      */
     _injectUnorganized(invContainer, tileMap, orderCounter) {
-        const assignedSet = getAssignedItemSet(this._config);
-        const remainingEntries = [];
-        for (const [hrid, tiles] of tileMap) {
-            if (/\+\d+$/.test(hrid)) {
-                // Enhanced key still in tileMap means it wasn't claimed by the base tab
-                // (reserved for a specific enhanced-hrid tab that doesn't exist).
-                // Only skip if the exact enhanced hrid is assigned to a tab.
-                if (!assignedSet.has(hrid)) {
-                    remainingEntries.push({ hrid, tiles });
-                }
-            } else {
-                // Base key: skip if base hrid is assigned; otherwise filter per-tile
-                // so only tiles whose specific enhancement level is assigned are excluded
-                if (assignedSet.has(hrid)) continue;
-                const unassignedTiles = tiles.filter((tile) => {
-                    const enhEl = tile.querySelector('[class*="Item_enhancementLevel"]');
-                    const level = enhEl ? parseInt(enhEl.textContent.trim().replace('+', ''), 10) : 0;
-                    const tileHrid = level > 0 ? `${hrid}+${level}` : hrid;
-                    return !assignedSet.has(tileHrid);
-                });
-                if (unassignedTiles.length > 0) {
-                    remainingEntries.push({ hrid, tiles: unassignedTiles });
-                }
-            }
-        }
+        const remainingEntries = this._collectUnassignedTileEntries(tileMap);
         if (remainingEntries.length === 0) return orderCounter;
 
         const totalTiles = remainingEntries.reduce((sum, e) => sum + e.tiles.length, 0);
