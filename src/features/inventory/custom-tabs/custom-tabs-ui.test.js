@@ -201,16 +201,57 @@ describe('CustomTabsUI layout invalidation', () => {
         ui._applyLayoutSync(container);
 
         expect(rebuildSpy).toHaveBeenCalled();
-        // Note: the Unorganized header's displayed count for an enhanced, still-unassigned tile
-        // is a separate pre-existing defect (unrelated to this fix) — _buildTileMap registers an
-        // enhanced tile under both its base and enhanced hrid keys, so _injectUnorganized's
-        // remaining-entries loop double-counts it. What this test asserts, and what this fix is
-        // responsible for, is that the identity change is detected and triggers a rebuild (not a
-        // stale lightweight update) so the tile is at least present and visible under Unorganized.
         const header = container.querySelector('.toolasha-ct-unorg-header');
         expect(header).not.toBeNull();
+        expect(header.textContent).toContain('Unorganized (1)');
         const swordTile = container.querySelector('svg[aria-label="Sword"]').closest('.Item_itemContainer_abc');
         expect(swordTile.classList.contains('toolasha-ct-visible')).toBe(true);
+    });
+
+    test('a single unassigned enhanced physical tile is counted once in Unorganized, not once per key', () => {
+        // _buildTileMap registers one physical enhanced tile under BOTH its base hrid
+        // ('/items/sword') and its enhanced hrid ('/items/sword+3') keys — same DOM element,
+        // two map entries. _injectUnorganized iterates every tileMap entry and pushes tiles from
+        // each one into remainingEntries without deduplicating by tile identity, so a single
+        // unassigned enhanced tile can be counted/processed twice: once via its base key, once
+        // via its enhanced key.
+        const container = makeInvContainer([makeTile('Sword', 3)]);
+        ui._applyLayoutSync(container);
+
+        const header = container.querySelector('.toolasha-ct-unorg-header');
+        expect(header).not.toBeNull();
+        // There is exactly one physical tile in the DOM — the header must say so.
+        expect(header.textContent).toContain('Unorganized (1)');
+        expect(container.querySelectorAll('.toolasha-ct-visible').length).toBe(1);
+    });
+
+    test('an enhanced tile assigned to a tab by its exact enhanced hrid does not leak into Unorganized', () => {
+        const container = makeInvContainer([makeTile('Sword', 3), makeTile('Milk')]);
+        ui._config = {
+            version: 1,
+            tabs: [{ id: 'tab-1', name: 'Weapons', color: null, open: true, items: ['/items/sword+3'], children: [] }],
+            selectedTabId: null,
+        };
+        ui._applyLayoutSync(container);
+
+        const header = container.querySelector('.toolasha-ct-unorg-header');
+        expect(header).not.toBeNull();
+        // Only Milk is unassigned; the +3 Sword belongs to the Weapons tab.
+        expect(header.textContent).toContain('Unorganized (1)');
+        const swordTile = container.querySelector('svg[aria-label="Sword"]').closest('.Item_itemContainer_abc');
+        expect(swordTile.dataset.toolashaTabId).toBe('tab-1');
+        const milkTile = container.querySelector('svg[aria-label="Milk"]').closest('.Item_itemContainer_abc');
+        expect(milkTile.classList.contains('toolasha-ct-visible')).toBe(true);
+    });
+
+    test('a mix of enhanced and unenhanced unassigned tiles all count correctly with no double-count', () => {
+        const container = makeInvContainer([makeTile('Sword', 3), makeTile('Milk'), makeTile('Egg')]);
+        ui._applyLayoutSync(container);
+
+        const header = container.querySelector('.toolasha-ct-unorg-header');
+        expect(header).not.toBeNull();
+        expect(header.textContent).toContain('Unorganized (3)');
+        expect(container.querySelectorAll('.toolasha-ct-visible').length).toBe(3);
     });
 
     test('new unassigned item becomes visible under Unorganized with a correct count', () => {
