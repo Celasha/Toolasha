@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.87.6
+ * Version: 2.87.7
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -26423,7 +26423,7 @@ self.onmessage = function (e) {
             this._expandedSearchHrids = null; // Set of base hrids expanded in the item picker
             this._isApplying = false; // Guard against concurrent _applyLayout calls
             this._needsAnotherPass = false; // Deferred layout re-run flag
-            this._lastRebuildTileCount = 0; // Tile count at last full rebuild (detects inventory changes)
+            this._lastRebuildComposition = null; // Sorted tile-identity signature at last full rebuild
             this._actionBtnsEl = null; // +Tab/Export/Import appended to sort controls row on Toolasha tab
             this._tileObserver = null; // MutationObserver for instant tile visibility on React swaps
             this._observedContainer = null; // Container currently being observed by _tileObserver
@@ -26707,12 +26707,95 @@ self.onmessage = function (e) {
         }
 
         /**
+         * Collect inventory tiles not assigned to any custom tab, grouped by the tileMap key each
+         * group was found under. A single physical enhanced tile is registered in tileMap under
+         * both its base hrid and its enhanced hrid (see _buildTileMap), so without deduplication a
+         * still-unassigned enhanced tile can be counted/processed twice — once via each key. A
+         * shared seenTiles set ensures each physical DOM tile element is included at most once,
+         * regardless of how many tileMap keys still reference it.
+         * @param {Map} tileMap
+         * @returns {Array<{hrid: string, tiles: HTMLElement[]}>}
+         */
+        _collectUnassignedTileEntries(tileMap) {
+            const assignedSet = getAssignedItemSet(this._config);
+            const seenTiles = new Set();
+            const entries = [];
+            for (const [hrid, tiles] of tileMap) {
+                if (assignedSet.has(hrid)) continue;
+                let fresh;
+                if (/\+\d+$/.test(hrid)) {
+                    // Enhanced key still in tileMap means it wasn't claimed by a tab requesting that
+                    // exact level.
+                    fresh = tiles.filter((tile) => !seenTiles.has(tile));
+                } else {
+                    // Base key: filter per-tile so only tiles whose specific enhancement level is
+                    // assigned are excluded.
+                    fresh = tiles.filter((tile) => {
+                        if (seenTiles.has(tile)) return false;
+                        const enhEl = tile.querySelector('[class*="Item_enhancementLevel"]');
+                        const level = enhEl ? parseInt(enhEl.textContent.trim().replace('+', ''), 10) : 0;
+                        const tileHrid = level > 0 ? `${hrid}+${level}` : hrid;
+                        return !assignedSet.has(tileHrid);
+                    });
+                }
+                for (const tile of fresh) seenTiles.add(tile);
+                if (fresh.length > 0) entries.push({ hrid, tiles: fresh });
+            }
+            return entries;
+        }
+
+        /**
          * Count total items across all tabs (recursively) for rebuild detection.
          * @returns {number}
          */
         _getTotalConfigItemCount() {
             const countTab = (tab) => (tab.items?.length || 0) + (tab.children || []).reduce((s, c) => s + countTab(c), 0);
             return (this._config?.tabs || []).reduce((s, t) => s + countTab(t), 0);
+        }
+
+        /**
+         * Build an order-independent signature of the current tile set's identities (hrid,
+         * including enhancement level). A plain tile count misses a production event that swaps
+         * one identity for another while the total tile count stays the same — e.g. the last unit
+         * of a material is consumed while a new output item appears — which can leave stale
+         * header/layout state on the lightweight path. Comparing this signature across passes
+         * catches that case.
+         * @param {NodeListOf<Element>|Element[]} allTiles
+         * @returns {string}
+         */
+        _computeTileComposition(allTiles) {
+            const identities = [];
+            for (const tile of allTiles) {
+                identities.push(this._getHridFromTile(tile) || '?');
+            }
+            identities.sort();
+            return identities.join('|');
+        }
+
+        /**
+         * True when the current tileMap contains at least one inventory tile not assigned to any
+         * custom tab. Mirrors the per-tile, enhancement-aware filtering used when building the
+         * Unorganized bucket (see _injectUnorganized / _updateTileVisibility), without mutating
+         * tileMap or the DOM.
+         * @param {Map} tileMap
+         * @returns {boolean}
+         */
+        _hasUnassignedTiles(tileMap) {
+            const assignedSet = getAssignedItemSet(this._config);
+            for (const [hrid, tiles] of tileMap) {
+                if (/\+\d+$/.test(hrid)) {
+                    if (!assignedSet.has(hrid) && tiles.length > 0) return true;
+                } else {
+                    if (assignedSet.has(hrid)) continue;
+                    for (const tile of tiles) {
+                        const enhEl = tile.querySelector('[class*="Item_enhancementLevel"]');
+                        const level = enhEl ? parseInt(enhEl.textContent.trim().replace('+', ''), 10) : 0;
+                        const tileHrid = level > 0 ? `${hrid}+${level}` : hrid;
+                        if (!assignedSet.has(tileHrid)) return true;
+                    }
+                }
+            }
+            return false;
         }
 
         /**
@@ -26755,16 +26838,35 @@ self.onmessage = function (e) {
                 delete tile.dataset.toolashaTabId;
             }
 
-            // Force full rebuild when tile count OR config item count changed — the lightweight path
-            // reuses stale header order values that don't have enough order-space
-            // for new tiles, causing items to visually cascade into wrong sections.
+            // Force full rebuild when tile identity/composition OR config item count changed — the
+            // lightweight path reuses stale header order values that don't have enough order-space
+            // for new tiles, causing items to visually cascade into wrong sections. A signature over
+            // each tile's hrid (including enhancement level) — not just the tile count — is required
+            // because a production event can replace one identity with another (e.g. a material's
+            // last unit is consumed while a new output item appears) while the total tile count stays
+            // the same; a count-only check would miss that and leave stale header/layout state.
             const configItemCount = this._getTotalConfigItemCount();
+            const composition = this._computeTileComposition(allTiles);
             if (
                 !needsFullRebuild &&
-                (allTiles.length !== this._lastRebuildTileCount || configItemCount !== this._lastRebuildConfigItemCount)
+                (composition !== this._lastRebuildComposition || configItemCount !== this._lastRebuildConfigItemCount)
             ) {
                 needsFullRebuild = true;
                 this._removeInjectedEls();
+            }
+
+            // Self-heal: whenever Unorganized should be shown, its header must be present exactly
+            // when unassigned tiles exist. If some other path (a leaked mutation, a partial DOM
+            // reconciliation) leaves the header missing while unassigned tiles remain — or leaves it
+            // present with nothing unassigned — the lightweight path can't fix that on its own,
+            // since it only re-applies visibility using headers that already exist. Force a full
+            // rebuild instead of trusting historical rebuild state.
+            if (!needsFullRebuild && config.getSettingValue('inventoryTabs_showUnorganized')) {
+                const hasUnorgHeader = Boolean(invContainer.querySelector('.toolasha-ct-unorg-header'));
+                if (hasUnorgHeader !== this._hasUnassignedTiles(tileMap)) {
+                    needsFullRebuild = true;
+                    this._removeInjectedEls();
+                }
             }
 
             if (needsFullRebuild) {
@@ -26794,7 +26896,7 @@ self.onmessage = function (e) {
                     orderCounter = this._injectUnorganized(invContainer, tileMap, orderCounter);
                 }
 
-                this._lastRebuildTileCount = allTiles.length;
+                this._lastRebuildComposition = composition;
                 this._lastRebuildConfigItemCount = configItemCount;
             } else {
                 // Lightweight update: headers already exist, just re-apply tile order/visibility
@@ -26882,27 +26984,7 @@ self.onmessage = function (e) {
             const unorgHeader = invContainer.querySelector('.toolasha-ct-unorg-header');
             if (unorgHeader && this._unorgOpen) {
                 const unorgOrder = parseInt(unorgHeader.style.order, 10);
-                const assignedSet = getAssignedItemSet(this._config);
-                const unorgTiles = [];
-                for (const [hrid, tiles] of tileMap) {
-                    if (/\+\d+$/.test(hrid)) {
-                        // Enhanced key still in tileMap means it wasn't claimed —
-                        // only skip if the exact enhanced hrid is assigned to a tab.
-                        if (!assignedSet.has(hrid)) {
-                            for (const tile of tiles) unorgTiles.push(tile);
-                        }
-                    } else {
-                        // Base key: skip if base hrid is assigned; otherwise filter per-tile
-                        // so only tiles whose specific enhancement level is assigned are excluded
-                        if (assignedSet.has(hrid)) continue;
-                        for (const tile of tiles) {
-                            const enhEl = tile.querySelector('[class*="Item_enhancementLevel"]');
-                            const level = enhEl ? parseInt(enhEl.textContent.trim().replace('+', ''), 10) : 0;
-                            const tileHrid = level > 0 ? `${hrid}+${level}` : hrid;
-                            if (!assignedSet.has(tileHrid)) unorgTiles.push(tile);
-                        }
-                    }
-                }
+                const unorgTiles = this._collectUnassignedTileEntries(tileMap).flatMap(({ tiles }) => tiles);
                 this._assignTileOrders(unorgTiles, unorgOrder + 1, '');
             }
         }
@@ -27726,31 +27808,7 @@ self.onmessage = function (e) {
          * @returns {number} updated orderCounter
          */
         _injectUnorganized(invContainer, tileMap, orderCounter) {
-            const assignedSet = getAssignedItemSet(this._config);
-            const remainingEntries = [];
-            for (const [hrid, tiles] of tileMap) {
-                if (/\+\d+$/.test(hrid)) {
-                    // Enhanced key still in tileMap means it wasn't claimed by the base tab
-                    // (reserved for a specific enhanced-hrid tab that doesn't exist).
-                    // Only skip if the exact enhanced hrid is assigned to a tab.
-                    if (!assignedSet.has(hrid)) {
-                        remainingEntries.push({ hrid, tiles });
-                    }
-                } else {
-                    // Base key: skip if base hrid is assigned; otherwise filter per-tile
-                    // so only tiles whose specific enhancement level is assigned are excluded
-                    if (assignedSet.has(hrid)) continue;
-                    const unassignedTiles = tiles.filter((tile) => {
-                        const enhEl = tile.querySelector('[class*="Item_enhancementLevel"]');
-                        const level = enhEl ? parseInt(enhEl.textContent.trim().replace('+', ''), 10) : 0;
-                        const tileHrid = level > 0 ? `${hrid}+${level}` : hrid;
-                        return !assignedSet.has(tileHrid);
-                    });
-                    if (unassignedTiles.length > 0) {
-                        remainingEntries.push({ hrid, tiles: unassignedTiles });
-                    }
-                }
-            }
+            const remainingEntries = this._collectUnassignedTileEntries(tileMap);
             if (remainingEntries.length === 0) return orderCounter;
 
             const totalTiles = remainingEntries.reduce((sum, e) => sum + e.tiles.length, 0);
