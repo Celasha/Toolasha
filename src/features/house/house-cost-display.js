@@ -60,6 +60,8 @@ class HouseCostDisplay {
         this._houseSessionId = null;
         this._nativeTabExitCleanup = null;
         this._houseReturnGeneration = 0;
+        this._cumulativeRenderGeneration = 0;
+        this._cumulativeRenderGenerations = new WeakMap();
         this.activeWorkflowModel = null;
     }
 
@@ -373,9 +375,15 @@ class HouseCostDisplay {
      * @param {number} targetLevel - Target level
      */
     async updateCompactCumulativeDisplay(container, houseRoomHrid, currentLevel, targetLevel) {
-        container.innerHTML = '';
+        const renderGeneration = ++this._cumulativeRenderGeneration;
+        this._cumulativeRenderGenerations.set(container, renderGeneration);
+        container.replaceChildren();
 
         const costData = await houseCostCalculator.calculateCumulativeCost(houseRoomHrid, currentLevel, targetLevel);
+
+        if (this._cumulativeRenderGenerations.get(container) !== renderGeneration) {
+            return;
+        }
 
         const materialsList = document.createElement('div');
         materialsList.style.cssText = `
@@ -396,7 +404,7 @@ class HouseCostDisplay {
             this.appendMaterialRow(materialsList, material);
         }
 
-        container.appendChild(materialsList);
+        const renderNodes = [materialsList];
 
         const totalDiv = document.createElement('div');
         totalDiv.style.cssText = `
@@ -409,13 +417,18 @@ class HouseCostDisplay {
         text-align: center;
     `;
         totalDiv.textContent = `Total Market Value: ${coinFormatter(costData.totalValue)}`;
-        container.appendChild(totalDiv);
+        renderNodes.push(totalDiv);
 
         const missingMaterials = this.getMissingMaterials(costData);
         if (missingMaterials.length > 0) {
-            const button = this.createMissingMaterialsButton(missingMaterials);
-            container.appendChild(button);
+            renderNodes.push(this.createMissingMaterialsButton(missingMaterials));
         }
+
+        // Commit the completed render atomically. Concurrent refreshes may overlap while
+        // market prices are awaited, but only the latest request for this container may
+        // replace its contents. This prevents duplicate material/total/button blocks and
+        // prevents an older calculation from overwriting a newer one.
+        container.replaceChildren(...renderNodes);
     }
 
     /**
@@ -1363,6 +1376,7 @@ class HouseCostDisplay {
 
         const newLevel = this._getLiveHouseRoomLevel(houseRoomHrid);
         if (newLevel >= 8) {
+            this._cumulativeRenderGenerations.set(costContainer, ++this._cumulativeRenderGeneration);
             costContainer.innerHTML = '';
             this._cumulativeState = null;
             this._costContext = null;
@@ -1374,6 +1388,7 @@ class HouseCostDisplay {
         }
 
         if (dropdown.options.length === 0) {
+            this._cumulativeRenderGenerations.set(costContainer, ++this._cumulativeRenderGeneration);
             costContainer.innerHTML = '';
             this._cumulativeState = null;
             this._costContext = null;
@@ -1462,6 +1477,8 @@ class HouseCostDisplay {
 
         this._cumulativeState = null;
         this._costContext = null;
+        this._cumulativeRenderGeneration++;
+        this._cumulativeRenderGenerations = new WeakMap();
 
         this.autofillManager.cleanup();
         this.timerRegistry.clearAll();
