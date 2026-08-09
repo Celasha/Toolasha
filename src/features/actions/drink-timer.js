@@ -18,8 +18,22 @@ class DrinkTimer {
         this.observers = [];
     }
 
+    /**
+     * Setup setting change listener (always active, even when feature is disabled)
+     */
+    setupSettingListener() {
+        config.onSettingChange('drinkTimer', (enabled) => {
+            if (enabled) {
+                this.initialize();
+            } else {
+                this.cleanup();
+            }
+        });
+    }
+
     initialize() {
         if (this.initialized) return;
+        if (!config.getSetting('drinkTimer')) return;
 
         const unregister = domObserver.onClass(
             'DrinkTimer',
@@ -149,6 +163,7 @@ class DrinkTimer {
 }
 
 const drinkTimer = new DrinkTimer();
+drinkTimer.setupSettingListener();
 
 export default {
     name: 'Drink Timer',
