@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.87.9](https://github.com/Celasha/Toolasha/compare/v2.87.8...v2.87.9) (2026-08-09)
+
+
+### Bug Fixes
+
+* resync Action Filter pricing mode/profit displays after character switch ([06f5f23](https://github.com/Celasha/Toolasha/commit/06f5f23b278ae7fe118049f87cdc1f0fc0467627))
+* resync Action Filter pricing mode/profit displays after character switch ([3513dd9](https://github.com/Celasha/Toolasha/commit/3513dd98540c13c6b339689c638650c0193a9623))
+
 ## [2.87.8](https://github.com/Celasha/Toolasha/compare/v2.87.7...v2.87.8) (2026-08-09)
 
 ### Bug Fixes
