@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.87.7
+ * Version: 2.87.8
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -24103,8 +24103,22 @@
             this.observers = [];
         }
 
+        /**
+         * Setup setting change listener (always active, even when feature is disabled)
+         */
+        setupSettingListener() {
+            config.onSettingChange('drinkTimer', (enabled) => {
+                if (enabled) {
+                    this.initialize();
+                } else {
+                    this.cleanup();
+                }
+            });
+        }
+
         initialize() {
             if (this.initialized) return;
+            if (!config.getSetting('drinkTimer')) return;
 
             const unregister = domObserver.onClass(
                 'DrinkTimer',
@@ -24234,6 +24248,7 @@
     }
 
     const drinkTimer = new DrinkTimer();
+    drinkTimer.setupSettingListener();
 
     var drinkTimer$1 = {
         name: 'Drink Timer',

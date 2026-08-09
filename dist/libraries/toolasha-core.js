@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.87.7
+ * Version: 2.87.8
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2098,6 +2098,13 @@
                     label: 'Skill books: Show books needed to reach target level (in the ability book item dictionary window)',
                     type: 'checkbox',
                     default: true,
+                },
+                drinkTimer: {
+                    id: 'drinkTimer',
+                    label: 'Drink timer: Show remaining tea time in consumables box',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Displays remaining drink supply time and queue coverage under the consumables slots on Gathering/Production, Alchemy, and Enhancing action panels.',
                 },
                 drinkTimer_warningThreshold: {
                     id: 'drinkTimer_warningThreshold',
