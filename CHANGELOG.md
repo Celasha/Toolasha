@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.87.8](https://github.com/Celasha/Toolasha/compare/v2.87.7...v2.87.8) (2026-08-09)
+
+
+### Bug Fixes
+
+* add missing settings checkbox to disable the Drink Timer display ([031271a](https://github.com/Celasha/Toolasha/commit/031271a491d6c3335561d1afad6eacccfa9a4a0d))
+* add missing settings checkbox to disable the Drink Timer display ([c90456a](https://github.com/Celasha/Toolasha/commit/c90456a473dd2961f993e19b64460714fd7bc652))
+
 ## [2.87.7](https://github.com/Celasha/Toolasha/compare/v2.87.6...v2.87.7) (2026-08-08)
 
 ### Bug Fixes
