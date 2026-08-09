@@ -1480,6 +1480,13 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: true,
             },
+            drinkTimer: {
+                id: 'drinkTimer',
+                label: 'Drink timer: Show remaining tea time in consumables box',
+                type: 'checkbox',
+                default: true,
+                help: 'Displays remaining drink supply time and queue coverage under the consumables slots on Gathering/Production, Alchemy, and Enhancing action panels.',
+            },
             drinkTimer_warningThreshold: {
                 id: 'drinkTimer_warningThreshold',
                 label: 'Drink timer: warning threshold (hours)',
