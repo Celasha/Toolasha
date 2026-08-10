@@ -2,10 +2,9 @@
 
 ## [2.87.10](https://github.com/Celasha/Toolasha/compare/v2.87.9...v2.87.10) (2026-08-10)
 
-
 ### Bug Fixes
 
-* heal Custom Tabs action buttons when the sort-controls row is removed ([#632](https://github.com/Celasha/Toolasha/issues/632)) ([d4ed942](https://github.com/Celasha/Toolasha/commit/d4ed9427a6ad8167259c2a57364ac035b45432a2))
+- heal Custom Tabs action buttons when the sort-controls row is removed ([#632](https://github.com/Celasha/Toolasha/issues/632)) ([d4ed942](https://github.com/Celasha/Toolasha/commit/d4ed9427a6ad8167259c2a57364ac035b45432a2))
 
 ## [2.87.9](https://github.com/Celasha/Toolasha/compare/v2.87.8...v2.87.9) (2026-08-09)
 
