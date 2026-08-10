@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.87.8
+ * Version: 2.87.9
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5172,6 +5172,7 @@
             this._updateSortBtn = null;
             this.pricingModeHandler = null;
             this.craftUpgradeHandler = null;
+            this.settingsLoadedHandler = null;
             this.unregisterSortModeHandler = null;
         }
 
@@ -5202,6 +5203,19 @@
                 if (this._updateCraftBtn) this._updateCraftBtn();
             };
             config.onSettingChange('profitCalc_craftUpgradeItems', this.craftUpgradeHandler);
+
+            // Character switches load the new character's settings with per-setting
+            // onSettingChange callbacks suppressed (the feature registry fully reinitializes
+            // regular features instead). This filter is persistent infrastructure outside that
+            // lifecycle (see Actions.initActionPanelObserver), so it resyncs its own mode/craft
+            // labels and any already-rendered profit sections once settings actually finish
+            // loading, regardless of that suppression.
+            this.settingsLoadedHandler = () => {
+                if (this._updateModeBtn) this._updateModeBtn();
+                if (this._updateCraftBtn) this._updateCraftBtn();
+                this._refreshProfitDisplays();
+            };
+            config.onSettingsLoaded(this.settingsLoadedHandler);
 
             this.unregisterSortModeHandler = actionPanelSort.onSortModeChange(() => {
                 if (this._updateSortBtn) this._updateSortBtn();
@@ -5711,6 +5725,10 @@
             if (this.craftUpgradeHandler) {
                 config.offSettingChange('profitCalc_craftUpgradeItems', this.craftUpgradeHandler);
                 this.craftUpgradeHandler = null;
+            }
+            if (this.settingsLoadedHandler) {
+                config.offSettingsLoaded(this.settingsLoadedHandler);
+                this.settingsLoadedHandler = null;
             }
             if (this.unregisterSortModeHandler) {
                 this.unregisterSortModeHandler();

@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.87.8
+ * Version: 2.87.9
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5425,6 +5425,13 @@
             // Map of setting keys to callback functions
             this.settingChangeCallbacks = {};
 
+            // Callbacks fired whenever loadSettings() repopulates settingsMap from storage,
+            // regardless of the notifyChanges option. Long-lived infrastructure that is not
+            // torn down/reinitialized by the feature registry (e.g. the persistent Action
+            // Filter) uses this to resynchronize after a character switch, where per-setting
+            // onSettingChange callbacks are intentionally suppressed.
+            this.settingsLoadedCallbacks = [];
+
             // Feature toggles with metadata for future UI
             this.features = {
                 // Market Features
@@ -5823,6 +5830,11 @@
                     }
                 }
             }
+
+            // Fire regardless of notifyChanges: this signals settingsMap has been repopulated
+            // from storage, which persistent infrastructure needs even when per-setting change
+            // callbacks are intentionally suppressed (e.g. character switch reinitialization).
+            for (const cb of this.settingsLoadedCallbacks) cb();
         }
 
         /**
@@ -5982,6 +5994,24 @@
             if (this.settingChangeCallbacks[key]) {
                 this.settingChangeCallbacks[key] = this.settingChangeCallbacks[key].filter((cb) => cb !== callback);
             }
+        }
+
+        /**
+         * Register a callback to be called whenever loadSettings() repopulates settingsMap from
+         * storage, regardless of the notifyChanges option. Intended for long-lived infrastructure
+         * that is not torn down/reinitialized by the feature registry on character switch.
+         * @param {Function} callback - Callback function, called with no arguments
+         */
+        onSettingsLoaded(callback) {
+            this.settingsLoadedCallbacks.push(callback);
+        }
+
+        /**
+         * Unregister a specific callback registered via onSettingsLoaded
+         * @param {Function} callback - The exact callback reference to remove
+         */
+        offSettingsLoaded(callback) {
+            this.settingsLoadedCallbacks = this.settingsLoadedCallbacks.filter((cb) => cb !== callback);
         }
 
         /**
