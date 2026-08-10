@@ -4,17 +4,32 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     showUnorganized: true,
+    // Simulates config.settingsMap lacking 'inventoryTabs_showUnorganized' entirely — e.g. the
+    // window between config.clearSettingsCache() and the next successful config.loadSettings()
+    // during a character switch. Real Config.getSettingValue(key, defaultValue) returns
+    // defaultValue verbatim when settingsMap[key] is absent; it has no schema-default fallback
+    // the way getSetting() does.
+    showUnorganizedCacheEmpty: false,
     tileGap: 4,
 }));
 
 vi.mock('../../../core/config.js', () => ({
     default: {
         getSettingValue: vi.fn((key, fallback) => {
-            if (key === 'inventoryTabs_showUnorganized') return mocks.showUnorganized;
+            if (key === 'inventoryTabs_showUnorganized') {
+                return mocks.showUnorganizedCacheEmpty ? fallback : mocks.showUnorganized;
+            }
             if (key === 'inventoryTabs_tileGap') return mocks.tileGap;
             return fallback;
         }),
-        getSetting: vi.fn(() => false),
+        getSetting: vi.fn((key) => {
+            // getSetting() has a schema-default fallback for boolean settings in real
+            // production code, so — unlike the getSettingValue() branch above — it is
+            // deliberately NOT affected by showUnorganizedCacheEmpty here: that's the whole
+            // point of the fix this file's cache-empty-window tests verify.
+            if (key === 'inventoryTabs_showUnorganized') return mocks.showUnorganized;
+            return false;
+        }),
         onSettingChange: vi.fn(),
         offSettingChange: vi.fn(),
     },
@@ -106,6 +121,7 @@ describe('CustomTabsUI layout invalidation', () => {
     beforeEach(() => {
         document.body.innerHTML = '';
         mocks.showUnorganized = true;
+        mocks.showUnorganizedCacheEmpty = false;
         mocks.tileGap = 4;
         ui = new CustomTabsUI();
         ui._config = { version: 1, tabs: [], selectedTabId: null };
@@ -328,6 +344,48 @@ describe('CustomTabsUI layout invalidation', () => {
         ui._applyLayoutSync(container);
 
         expect(rebuildSpy).not.toHaveBeenCalled();
+    });
+
+    test('Unorganized still appears on a full rebuild that runs while the config cache is empty (2.87.9 recurrence)', () => {
+        // Reproduces the confirmed 2.87.9 mechanism: config.clearSettingsCache() (fired during
+        // character-switching, and again by an independent settings-ui.js character_initialized
+        // listener that never repairs it) synchronously empties config.settingsMap.
+        // custom-tabs-ui.js reads inventoryTabs_showUnorganized via getSettingValue() with NO
+        // default argument at both call sites, so while settingsMap lacks the key it resolves
+        // to whatever the caller passed as fallback (undefined here) — falsy — even though the
+        // checkbox's schema default is true. getSetting() has a schema-fallback for exactly this
+        // case; getSettingValue() does not, and that's the gap this exercises.
+        mocks.showUnorganizedCacheEmpty = true;
+
+        const container = makeInvContainer([makeTile('Milk')]);
+        ui._applyLayoutSync(container);
+
+        const header = container.querySelector('.toolasha-ct-unorg-header');
+        expect(header).not.toBeNull();
+        expect(header.textContent).toContain('Unorganized (1)');
+        const milkTile = container.querySelector('svg[aria-label="Milk"]').closest('.Item_itemContainer_abc');
+        expect(milkTile.classList.contains('toolasha-ct-visible')).toBe(true);
+    });
+
+    test('the Unorganized self-heal invariant on the lightweight path is not defeated by a config-cache-empty window', () => {
+        // Exercises the OTHER getSettingValue('inventoryTabs_showUnorganized') call site — the
+        // self-heal check gating a lightweight-path rebuild — not the full-rebuild injection
+        // call site covered above.
+        const container = makeInvContainer([makeTile('Milk'), makeTile('Egg')]);
+        ui._applyLayoutSync(container);
+        expect(container.querySelector('.toolasha-ct-unorg-header').textContent).toContain('Unorganized (2)');
+
+        // Assign Milk to a tab (membership change, no composition/count change) at the exact
+        // moment the config cache happens to be empty.
+        ui._config = {
+            version: 1,
+            tabs: [{ id: 'tab-1', name: 'Food', color: null, open: true, items: ['/items/milk'], children: [] }],
+            selectedTabId: null,
+        };
+        mocks.showUnorganizedCacheEmpty = true;
+        ui._applyLayoutSync(container);
+
+        expect(container.querySelector('.toolasha-ct-unorg-header').textContent).toContain('Unorganized (1)');
     });
 });
 
