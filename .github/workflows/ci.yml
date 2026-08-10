@@ -6,15 +6,119 @@ on:
     pull_request:
         branches: [main]
 
+permissions:
+    contents: read
+
 jobs:
+    # Release Please opens/updates its PR with a raw commit: versions bumped in some files,
+    # changelog not yet reformatted. This job syncs versions and formats that commit before
+    # lint-and-build validates anything, so the Prettier check never runs against Release
+    # Please's raw, pre-format commit. If it pushes a fix, that push triggers a fresh run of this
+    # same workflow; lint-and-build below skips itself on THIS run (see its `if`) and the fresh
+    # run — now with nothing left to sync — runs the full validation exactly once.
+    format-release-notes:
+        if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'release-please--')
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+            pull-requests: write
+        outputs:
+            pushed: ${{ steps.commit.outputs.pushed }}
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v6
+              with:
+                  ref: ${{ github.head_ref }}
+                  token: ${{ secrets.PAT }}
+
+            - name: Guard against internal registry URLs in lockfile
+              run: |
+                  if grep -q 'apple\.com' package-lock.json; then
+                      echo "::error::package-lock.json contains an internal apple.com registry/artifactory URL, which is unreachable from GitHub-hosted runners. Regenerate the lockfile against the public registry (see .github/workflows/ci.yml history for the fix)."
+                      grep -n 'apple\.com' package-lock.json
+                      exit 1
+                  fi
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v6
+              with:
+                  node-version: '20.20.2'
+                  cache: 'npm'
+
+            - name: Install dependencies
+              run: |
+                  verify_install() {
+                      [ -x node_modules/.bin/prettier ] && npm ls --depth=0 >/dev/null 2>&1
+                  }
+
+                  npm ci
+                  if verify_install; then
+                      echo "Install verified (attempt 1)."
+                      exit 0
+                  fi
+
+                  echo "::warning::npm ci left an incomplete install (missing prettier binary or npm ls failed) — retrying once."
+                  rm -rf node_modules
+                  npm ci
+                  if verify_install; then
+                      echo "Install verified (attempt 2)."
+                      exit 0
+                  fi
+
+                  echo "::error::npm ci install still incomplete after retry."
+                  npm ls --depth=0 || true
+                  ls -la node_modules/.bin/prettier || true
+
+                  latest_log=$(ls -t "$HOME"/.npm/_logs/*-debug-0.log 2>/dev/null | head -1)
+                  if [ -n "$latest_log" ]; then
+                      echo "::group::npm debug log ($latest_log)"
+                      cat "$latest_log"
+                      echo "::endgroup::"
+                  else
+                      echo "No npm debug log found."
+                  fi
+                  exit 1
+
+            - name: Sync version across files
+              run: npm run version:sync
+
+            - name: Run formatting
+              run: npm run format
+
+            - name: Commit formatted changes
+              id: commit
+              run: |
+                  if git diff --quiet; then
+                    echo "No formatting changes to commit."
+                    echo "pushed=false" >> "$GITHUB_OUTPUT"
+                    exit 0
+                  fi
+
+                  git config user.name "github-actions[bot]"
+                  git config user.email "github-actions[bot]@users.noreply.github.com"
+                  git add -A
+                  git commit -m "chore: sync version and format release notes"
+                  git push
+                  echo "pushed=true" >> "$GITHUB_OUTPUT"
+
     lint-and-build:
-        # Run CI when:
+        needs: format-release-notes
+        # Run when:
         # - push: normal commits (not release-please's release commits)
-        # - pull_request: always. head_commit is a push-event-only field and is
-        #   undefined on pull_request payloads, so it must not gate this trigger.
+        # - pull_request: always, EXCEPT the expected pre-format instant of a Release Please PR
+        #   where format-release-notes just pushed a fix for this same PR (outputs.pushed ==
+        #   'true') — that push triggers a fresh run which lands here with pushed == 'false' and
+        #   runs the full check against the final, already-formatted content.
+        # `always()` is required so that a *skipped* format-release-notes job (any PR that isn't
+        # a Release Please branch, or any push event) does not skip this job too by default.
+        # head_commit is a push-event-only field and is undefined on pull_request payloads, so it
+        # must not gate the pull_request branch of this condition.
         if: >
-            github.event_name == 'pull_request' ||
-            (github.event_name == 'push' && !startsWith(github.event.head_commit.message, 'chore(main): release'))
+            always() &&
+            needs.format-release-notes.result != 'failure' &&
+            needs.format-release-notes.outputs.pushed != 'true' &&
+            (github.event_name == 'pull_request' ||
+            (github.event_name == 'push' && !startsWith(github.event.head_commit.message, 'chore(main): release')))
         runs-on: ubuntu-latest
         steps:
             - name: Checkout code
