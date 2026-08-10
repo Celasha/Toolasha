@@ -918,7 +918,17 @@ export default class CustomTabsUI {
         // Compare BEFORE assignment — otherwise isSameNode is always true
         const isSameNode = invContainer === this._invContainer;
         const injectedStillPresent = areInjectedLayoutElementsAttached(this._injectedEls, invContainer);
-        let needsFullRebuild = !isSameNode || !injectedStillPresent;
+        // The action buttons (+Tab/Export/Import/Expand All/Collapse All) can be merged into a
+        // foreign container (.mwi-inventory-sort-controls, owned by the separate InventorySort
+        // feature — see _injectActionButtons) instead of a standalone topbar. When merged, they
+        // are never added to _injectedEls, so areInjectedLayoutElementsAttached() above cannot
+        // see their removal. If InventorySort tears down that container (e.g. toggling "Sort
+        // inventory items by value" off), the buttons disappear with it and nothing else here
+        // would notice, since tile identity/composition/config are all unchanged. Only treat
+        // this as a problem once a real injection has happened (_actionBtnsEl set) and then gone
+        // missing — before the first injection, or in a mocked-out test, there is nothing to heal.
+        const actionButtonsMissing = Boolean(this._actionBtnsEl) && !this._actionBtnsEl.isConnected;
+        let needsFullRebuild = !isSameNode || !injectedStillPresent || actionButtonsMissing;
 
         this._invContainer = invContainer;
 
