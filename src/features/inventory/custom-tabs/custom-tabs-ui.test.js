@@ -330,3 +330,66 @@ describe('CustomTabsUI layout invalidation', () => {
         expect(rebuildSpy).not.toHaveBeenCalled();
     });
 });
+
+describe('CustomTabsUI action buttons survive removal of the piggybacked sort-controls row', () => {
+    let ui;
+
+    beforeEach(() => {
+        document.body.innerHTML = '';
+        mocks.showUnorganized = true;
+        mocks.tileGap = 4;
+        ui = new CustomTabsUI();
+        ui._config = { version: 1, tabs: [], selectedTabId: null };
+        // Real _injectActionButtons() runs in this describe block (not mocked out), since the
+        // bug lives inside it. Only bypass DOM lookups unrelated to the button-injection path.
+        vi.spyOn(ui, '_findContentContainer').mockReturnValue(null);
+    });
+
+    afterEach(() => {
+        ui._tileObserver?.disconnect();
+    });
+
+    function makeSortControls() {
+        const sortControls = document.createElement('div');
+        sortControls.className = 'mwi-inventory-sort-controls';
+        document.body.appendChild(sortControls);
+        return sortControls;
+    }
+
+    test('action buttons are appended into an existing sort-controls row instead of a standalone topbar', () => {
+        makeSortControls();
+        const container = makeInvContainer([makeTile('Milk')]);
+
+        ui._applyLayoutSync(container);
+
+        const actionBtns = document.querySelector('.toolasha-ct-action-btns');
+        expect(actionBtns).not.toBeNull();
+        expect(actionBtns.parentElement.className).toBe('mwi-inventory-sort-controls');
+        // No fallback topbar was created inside the inventory container.
+        expect(container.querySelector('.toolasha-ct-topbar')).toBeNull();
+    });
+
+    test('removing the sort-controls row (e.g. toggling "Sort inventory items by value" off) does not permanently delete the tab action buttons', () => {
+        // Reproduces the reported bug: inventory-sort.js's disable() removes the whole
+        // .mwi-inventory-sort-controls element it owns, with no awareness that Custom Tabs
+        // piggybacked its +Tab/Export/Import/Expand All/Collapse All buttons inside it.
+        // Because _injectActionButtons() returns null when it merges into that row,
+        // _applyLayoutSync's dirty-check (_injectedEls / areInjectedLayoutElementsAttached)
+        // never learns the buttons exist, so it can't detect they went missing and never
+        // re-injects them on the next layout pass.
+        const sortControls = makeSortControls();
+        const container = makeInvContainer([makeTile('Milk')]);
+        ui._applyLayoutSync(container);
+        expect(document.querySelector('.toolasha-ct-action-btns')).not.toBeNull();
+
+        // Simulate InventorySort.disable() tearing down the row it owns.
+        sortControls.remove();
+        expect(document.querySelector('.toolasha-ct-action-btns')).toBeNull();
+
+        // The next layout pass (e.g. the items_updated → _applyLayout path, or the
+        // MutationObserver-driven _applyLayoutSync path) must restore the buttons.
+        ui._applyLayoutSync(container);
+
+        expect(document.querySelector('.toolasha-ct-action-btns')).not.toBeNull();
+    });
+});
