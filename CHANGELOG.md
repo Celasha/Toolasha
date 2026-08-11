@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.87.11](https://github.com/Celasha/Toolasha/compare/v2.87.10...v2.87.11) (2026-08-10)
+
+### Bug Fixes
+
+- eliminate false-failure CI runs on Release Please pull requests ([#634](https://github.com/Celasha/Toolasha/issues/634)) ([3eee84c](https://github.com/Celasha/Toolasha/commit/3eee84c30194f03253bb1290b81eee8fc6d74001))
+- keep Unorganized visible when the config cache is empty mid-layout-pass ([#636](https://github.com/Celasha/Toolasha/issues/636)) ([288fd43](https://github.com/Celasha/Toolasha/commit/288fd434354d0a88a49d356b9c0ab70c5bb1328f))
+
 ## [2.87.10](https://github.com/Celasha/Toolasha/compare/v2.87.9...v2.87.10) (2026-08-10)
 
 ### Bug Fixes
