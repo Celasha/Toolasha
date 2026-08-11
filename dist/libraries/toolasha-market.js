@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.87.10
+ * Version: 2.87.11
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -26871,7 +26871,14 @@ self.onmessage = function (e) {
             // present with nothing unassigned — the lightweight path can't fix that on its own,
             // since it only re-applies visibility using headers that already exist. Force a full
             // rebuild instead of trusting historical rebuild state.
-            if (!needsFullRebuild && config.getSettingValue('inventoryTabs_showUnorganized')) {
+            // getSetting() (not getSettingValue()) is required here: it has a schema-default
+            // fallback for boolean checkbox settings, so a config-cache-empty window (e.g. between
+            // clearSettingsCache() and the next successful loadSettings() during a character
+            // switch) still resolves to this setting's true schema default instead of a falsy
+            // "missing key" value. getSettingValue() has no such fallback, and previously returning
+            // it here (or below) is what let a decisive rebuild permanently miss the Unorganized
+            // header/self-heal on 2.87.9.
+            if (!needsFullRebuild && config.getSetting('inventoryTabs_showUnorganized')) {
                 const hasUnorgHeader = Boolean(invContainer.querySelector('.toolasha-ct-unorg-header'));
                 if (hasUnorgHeader !== this._hasUnassignedTiles(tileMap)) {
                     needsFullRebuild = true;
@@ -26902,7 +26909,7 @@ self.onmessage = function (e) {
                     orderCounter = this._injectAccordionHeaders(invContainer, this._config.tabs, 0, tileMap, orderCounter);
                 }
 
-                if (config.getSettingValue('inventoryTabs_showUnorganized')) {
+                if (config.getSetting('inventoryTabs_showUnorganized')) {
                     orderCounter = this._injectUnorganized(invContainer, tileMap, orderCounter);
                 }
 
