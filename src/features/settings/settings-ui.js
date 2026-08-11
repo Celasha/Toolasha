@@ -131,8 +131,19 @@ class SettingsUI {
         this.currentSettings = {};
         this.isInjecting = false;
 
-        // Clear config cache
-        this.config.clearSettingsCache();
+        // Intentionally does NOT call config.clearSettingsCache() here. This method runs from
+        // the character_initialized listener (see initialize() below), independently of and
+        // unsynchronized with feature-registry.js's authoritative character-switch lifecycle,
+        // which owns clearing the cache on character_switching and reloading it on
+        // character_switched. A second, uncoordinated clearSettingsCache() call from this path
+        // has no reload of its own to repair it, and — depending on whether config.loadSettings()
+        // happens to resolve via a real async storage round trip or a microtask-only fast path
+        // (e.g. storage.js's !this.db fallback during a dropped IndexedDB connection) — could
+        // land after feature-registry's reload has already repopulated settingsMap, wiping it
+        // back to {} with nothing left to restore it. This module's own DOM rebuild
+        // (injectSettingsTab()) already re-reads fresh settings via settingsStorage.loadSettings()
+        // independent of config.settingsMap, so clearing config's cache here was never required
+        // for this module's own correctness — only feature-registry.js should own that cache.
     }
 
     /**
