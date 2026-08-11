@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.87.12](https://github.com/Celasha/Toolasha/compare/v2.87.11...v2.87.12) (2026-08-11)
+
+
+### Bug Fixes
+
+* remove settings-ui unsynchronized character-switch cache clear ([15a2c7d](https://github.com/Celasha/Toolasha/commit/15a2c7dc695ec5d63070b63f9eca7e4035ac8d40))
+
 ## [2.87.11](https://github.com/Celasha/Toolasha/compare/v2.87.10...v2.87.11) (2026-08-10)
 
 ### Bug Fixes
