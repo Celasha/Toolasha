@@ -2,15 +2,13 @@
 
 ## [2.88.0](https://github.com/Celasha/Toolasha/compare/v2.87.12...v2.88.0) (2026-08-12)
 
-
 ### Features
 
-* add Risk of Ruin calculator for chests, alchemy, and enhancing ([#639](https://github.com/Celasha/Toolasha/issues/639)) ([0cb5f1e](https://github.com/Celasha/Toolasha/commit/0cb5f1e77b961a5f2d619802cb8cd2c14be71ce5))
-
+- add Risk of Ruin calculator for chests, alchemy, and enhancing ([#639](https://github.com/Celasha/Toolasha/issues/639)) ([0cb5f1e](https://github.com/Celasha/Toolasha/commit/0cb5f1e77b961a5f2d619802cb8cd2c14be71ce5))
 
 ### Bug Fixes
 
-* polish Risk of Ruin calculator based on in-game testing ([#641](https://github.com/Celasha/Toolasha/issues/641)) ([c89c94c](https://github.com/Celasha/Toolasha/commit/c89c94c38b54594733f70b79fdd52cc5e08e83f6))
+- polish Risk of Ruin calculator based on in-game testing ([#641](https://github.com/Celasha/Toolasha/issues/641)) ([c89c94c](https://github.com/Celasha/Toolasha/commit/c89c94c38b54594733f70b79fdd52cc5e08e83f6))
 
 ## [2.87.12](https://github.com/Celasha/Toolasha/compare/v2.87.11...v2.87.12) (2026-08-11)
 
