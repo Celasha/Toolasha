@@ -45,7 +45,7 @@ const CHEST_HRIDS = [
 ];
 
 function getCoinBalance() {
-    const coin = dataManager.getCharacterItems()?.find((item) => item.itemHrid === '/items/coin');
+    const coin = dataManager.getInventory()?.find((item) => item.itemHrid === '/items/coin');
     return coin?.count || 0;
 }
 
