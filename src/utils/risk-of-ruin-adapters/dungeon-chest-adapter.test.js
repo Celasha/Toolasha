@@ -33,7 +33,7 @@ vi.mock('../../features/combat-sim/combat-sim-adapter.js', () => ({
     },
 }));
 
-const { getChestOpenCost, getChestCostBreakdown, drawChestPayout, buildDungeonChestModel } =
+const { getChestOpenCost, getChestCostBreakdown, getMinimumGuaranteedPayout, drawChestPayout, buildDungeonChestModel } =
     await import('./dungeon-chest-adapter.js');
 const { createSeededRng } = await import('../risk-of-ruin-engine.js');
 
@@ -189,6 +189,49 @@ describe('drawChestPayout', () => {
     });
 });
 
+describe('getMinimumGuaranteedPayout', () => {
+    test('sums only the dropRate === 1 entries, at their minimum count', () => {
+        initData.openableLootDropMap['/items/test_chest'] = [
+            { itemHrid: '/items/guaranteed_a', dropRate: 1, minCount: 400, maxCount: 800 },
+            { itemHrid: '/items/guaranteed_b', dropRate: 1, minCount: 250, maxCount: 500 },
+            { itemHrid: '/items/rare_bonus', dropRate: 0.05, minCount: 2000, maxCount: 4000 },
+        ];
+        itemDetails['/items/guaranteed_a'] = { isTradable: true };
+        itemDetails['/items/guaranteed_b'] = { isTradable: true };
+        itemDetails['/items/rare_bonus'] = { isTradable: true };
+        dropPrices['/items/guaranteed_a'] = 10;
+        dropPrices['/items/guaranteed_b'] = 20;
+        dropPrices['/items/rare_bonus'] = 1;
+
+        // 400*10*0.98 + 250*20*0.98 = 3920 + 4900 = 8820 - the 5% bonus entry never counts,
+        // even though its own minCount*price (2000) looks bigger than either guaranteed entry.
+        expect(getMinimumGuaranteedPayout('/items/test_chest')).toBeCloseTo(8820, 6);
+    });
+
+    test('is 0 when no drop is guaranteed', () => {
+        initData.openableLootDropMap['/items/test_chest'] = [
+            { itemHrid: '/items/widget', dropRate: 0.5, minCount: 100, maxCount: 100 },
+        ];
+        itemDetails['/items/widget'] = { isTradable: true };
+        dropPrices['/items/widget'] = 10;
+
+        expect(getMinimumGuaranteedPayout('/items/test_chest')).toBe(0);
+    });
+
+    test('does not tax guaranteed coin drops', () => {
+        initData.openableLootDropMap['/items/test_chest'] = [
+            { itemHrid: COIN_HRID, dropRate: 1, minCount: 500, maxCount: 1000 },
+        ];
+        dropPrices[COIN_HRID] = 1;
+
+        expect(getMinimumGuaranteedPayout('/items/test_chest')).toBe(500);
+    });
+
+    test('returns 0 for an unknown container', () => {
+        expect(getMinimumGuaranteedPayout('/items/unknown_chest')).toBe(0);
+    });
+});
+
 describe('buildDungeonChestModel', () => {
     test('exposes cost, maxSinglePossibleLoss, and an empirical outcome distribution summing to 1', () => {
         marketPrices['/items/chimerical_entry_key'] = { ask: 1000, bid: 900 };
@@ -201,11 +244,50 @@ describe('buildDungeonChestModel', () => {
 
         const model = buildDungeonChestModel('/items/chimerical_chest', { sampleSize: 1000, rngSeed: 5 });
 
+        // No guaranteed (dropRate === 1) drop here, so the floor is genuinely 0 and the max
+        // single-action loss is the full open cost.
         expect(model.cost).toBe(3000);
+        expect(model.minimumGuaranteedPayout).toBe(0);
         expect(model.maxSinglePossibleLoss).toBe(3000);
         expect(model.outcomeDistribution).toHaveLength(1000);
         const totalProb = model.outcomeDistribution.reduce((sum, o) => sum + o.prob, 0);
         expect(totalProb).toBeCloseTo(1, 10);
+    });
+
+    test('reduces maxSinglePossibleLoss by the guaranteed minimum payout, like a real chest', () => {
+        marketPrices['/items/chimerical_entry_key'] = { ask: 1000, bid: 900 };
+        marketPrices['/items/chimerical_chest_key'] = { ask: 2000, bid: 1800 };
+        initData.openableLootDropMap['/items/chimerical_chest'] = [
+            { itemHrid: '/items/chimerical_essence', dropRate: 1, minCount: 400, maxCount: 800 },
+            { itemHrid: '/items/rare_bonus', dropRate: 0.05, minCount: 2000, maxCount: 4000 },
+        ];
+        itemDetails['/items/chimerical_essence'] = { isTradable: true };
+        itemDetails['/items/rare_bonus'] = { isTradable: true };
+        dropPrices['/items/chimerical_essence'] = 5;
+        dropPrices['/items/rare_bonus'] = 1;
+
+        const model = buildDungeonChestModel('/items/chimerical_chest', { sampleSize: 100, rngSeed: 5 });
+
+        // cost = 3000; guaranteed payout = 400 * 5 * 0.98 = 1960; max loss = 3000 - 1960 = 1040
+        expect(model.cost).toBe(3000);
+        expect(model.minimumGuaranteedPayout).toBeCloseTo(1960, 6);
+        expect(model.maxSinglePossibleLoss).toBeCloseTo(1040, 6);
+    });
+
+    test('clamps maxSinglePossibleLoss at 0 when the guaranteed payout alone covers the cost', () => {
+        marketPrices['/items/chimerical_chest_key'] = { ask: 500, bid: 500 };
+        initData.openableLootDropMap['/items/chimerical_refinement_chest'] = [
+            { itemHrid: '/items/widget', dropRate: 1, minCount: 2, maxCount: 2 },
+        ];
+        itemDetails['/items/widget'] = { isTradable: true };
+        dropPrices['/items/widget'] = 1000;
+
+        const model = buildDungeonChestModel('/items/chimerical_refinement_chest', { sampleSize: 10 });
+
+        // cost = 500; guaranteed payout = 2 * 1000 * 0.98 = 1960, which exceeds cost
+        expect(model.cost).toBe(500);
+        expect(model.minimumGuaranteedPayout).toBeCloseTo(1960, 6);
+        expect(model.maxSinglePossibleLoss).toBe(0);
     });
 
     test('stepFn deducts cost and adds the realized payout for one open', () => {

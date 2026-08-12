@@ -381,6 +381,7 @@ class RiskOfRuinUI {
                 mode: 'chest',
                 costBreakdown: getChestCostBreakdown(hrid),
                 dropBreakdown: expectedValueCalculator.getDropBreakdown(hrid),
+                minimumGuaranteedPayout: chestModel.minimumGuaranteedPayout,
             };
         } else if (mode === 'alchemy') {
             const name = this.panel.querySelector('#mwi-ror-item').value;
@@ -539,7 +540,12 @@ class RiskOfRuinUI {
         container.insertAdjacentHTML('beforeend', html);
     }
 
-    _chestDetailsHTML({ costBreakdown, dropBreakdown }, startingBalance, maxSinglePossibleLoss, minActions) {
+    _chestDetailsHTML(
+        { costBreakdown, dropBreakdown, minimumGuaranteedPayout },
+        startingBalance,
+        maxSinglePossibleLoss,
+        minActions
+    ) {
         const rows = [];
         if (costBreakdown.entryKey) {
             rows.push(
@@ -553,16 +559,22 @@ class RiskOfRuinUI {
         }
         rows.push(`<div><strong>Total cost per open:</strong> ${fmtGold(costBreakdown.total)}</div>`);
         rows.push(
-            `<div style="margin-top:6px;"><strong>Max single-action loss:</strong> ${fmtGold(maxSinglePossibleLoss)} ` +
-                `(the lowest possible payout from one open is 0, so the worst case is losing the full open cost)</div>`
+            `<div style="margin-top:6px;">Guaranteed minimum payout per open: ${fmtGold(minimumGuaranteedPayout)} ` +
+                `(the sum of every drop table entry with a 100% drop rate, at its minimum count — a real chest ` +
+                `always drops at least this much, it is never actually 0)</div>`
+        );
+        rows.push(
+            `<div><strong>Max single-action loss:</strong> ${fmtGold(maxSinglePossibleLoss)} ` +
+                `= cost − guaranteed minimum payout = ${fmtGold(costBreakdown.total)} − ${fmtGold(minimumGuaranteedPayout)}</div>`
         );
         rows.push(this._riskFormulaLine(startingBalance, maxSinglePossibleLoss, minActions));
 
+        const totalEV = dropBreakdown.reduce((sum, drop) => sum + drop.expectedValue, 0);
         const dropRows = dropBreakdown
             .map(
                 (drop) =>
                     `<tr>
-                        <td style="padding:2px 6px;">${drop.itemName}</td>
+                        <td style="padding:2px 6px;">${drop.itemName}${drop.dropRate === 1 ? ' (guaranteed)' : ''}</td>
                         <td style="padding:2px 6px; text-align:right;">${formatPercentage(drop.dropRate, 2)}</td>
                         <td style="padding:2px 6px; text-align:right;">${drop.avgCount}</td>
                         <td style="padding:2px 6px; text-align:right;">${drop.hasPriceData ? fmtGold(drop.priceEach) : '—'}</td>
@@ -579,6 +591,10 @@ class RiskOfRuinUI {
                     `<table style="width:100%; border-collapse:collapse; font-size:11px;">
                         <tr style="color:#888;"><th style="text-align:left;">Item</th><th>Drop rate</th><th>Avg count</th><th>Price</th><th>EV</th></tr>
                         ${dropRows}
+                        <tr style="border-top:1px solid #444; font-weight:600;">
+                            <td style="padding:2px 6px;" colspan="4">Total EV per open</td>
+                            <td style="padding:2px 6px; text-align:right;">${fmtGold(totalEV)}</td>
+                        </tr>
                     </table>`,
                     true
                 )
@@ -611,16 +627,21 @@ class RiskOfRuinUI {
         rows.push(`<div><strong>Max single-action loss:</strong> ${fmtGold(maxSinglePossibleLoss)}</div>`);
         rows.push(this._riskFormulaLine(startingBalance, maxSinglePossibleLoss, minActions));
 
+        // dropRevenues' own revenuePerAttempt is already scaled by successRate (the overall
+        // per-attempt expected revenue); divide back out to the "given success" value so each
+        // row - and its sum - lines up with outputValueGivenSuccess shown above.
+        let totalGivenSuccess = 0;
         const dropRows = breakdown.dropRevenues
-            .map(
-                (drop) =>
-                    `<tr>
+            .map((drop) => {
+                const evGivenSuccess = drop.revenuePerAttempt / breakdown.successRate;
+                totalGivenSuccess += evGivenSuccess;
+                return `<tr>
                         <td style="padding:2px 6px;">${dataManager.getItemDetails(drop.itemHrid)?.name || drop.itemHrid}${drop.isSelfReturn ? ' (self-return)' : ''}</td>
                         <td style="padding:2px 6px; text-align:right;">${formatPercentage(drop.dropRate, 2)}</td>
                         <td style="padding:2px 6px; text-align:right;">${fmtGold(drop.price)}</td>
-                        <td style="padding:2px 6px; text-align:right;">${fmtGold(drop.revenuePerAttempt)}</td>
-                    </tr>`
-            )
+                        <td style="padding:2px 6px; text-align:right;">${fmtGold(evGivenSuccess)}</td>
+                    </tr>`;
+            })
             .join('');
 
         return this._wrapDetails(
@@ -629,8 +650,12 @@ class RiskOfRuinUI {
                 this._wrapDetails(
                     `Output drops (${breakdown.dropRevenues.length} items)`,
                     `<table style="width:100%; border-collapse:collapse; font-size:11px;">
-                        <tr style="color:#888;"><th style="text-align:left;">Item</th><th>Drop rate</th><th>Price</th><th>Revenue given success</th></tr>
+                        <tr style="color:#888;"><th style="text-align:left;">Item</th><th>Drop rate</th><th>Price</th><th>EV given success</th></tr>
                         ${dropRows}
+                        <tr style="border-top:1px solid #444; font-weight:600;">
+                            <td style="padding:2px 6px;" colspan="3">Total EV given success</td>
+                            <td style="padding:2px 6px; text-align:right;">${fmtGold(totalGivenSuccess)}</td>
+                        </tr>
                     </table>`,
                     true
                 )
