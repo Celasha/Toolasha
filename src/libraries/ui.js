@@ -68,6 +68,9 @@ import alchemyActionProtection from '../features/alchemy/alchemy-action-protecti
 import enhancementFeature from '../features/enhancement/enhancement-feature.js';
 import xphCalculator from '../features/enhancement/xph-calculator.js';
 
+// Risk of Ruin
+import riskOfRuinUI from '../features/risk-of-ruin/risk-of-ruin-ui.js';
+
 // Guild
 import guildXPTracker from '../features/guild/guild-xp-tracker.js';
 import guildXPDisplay from '../features/guild/guild-xp-display.js';
@@ -136,6 +139,7 @@ toolashaRoot.UI = {
     alchemyActionProtection,
     enhancementFeature,
     xphCalculator,
+    riskOfRuinUI,
     guildXPTracker,
     guildXPDisplay,
     guildCreditValue,

@@ -30,7 +30,13 @@ vi.mock('../../utils/market-data.js', () => ({
     getItemPrices: () => ({ ask: 400_000_000, bid: 390_000_000 }),
 }));
 
-const { buildEnhancementTooltipHTML, calculateMinimumSellPrice } = await import('./tooltip-enhancement.js');
+const marketPrices = {};
+vi.mock('../../api/marketplace.js', () => ({
+    default: { getPrice: (itemHrid) => marketPrices[itemHrid], on: () => {} },
+}));
+
+const { buildEnhancementTooltipHTML, calculateMinimumSellPrice, calculatePerAttemptMaterialCost } =
+    await import('./tooltip-enhancement.js');
 
 function makeEnhancementData(overrides = {}) {
     return {
@@ -122,5 +128,49 @@ describe('calculateMinimumSellPrice', () => {
     test('returns just the total cost when no time has elapsed', () => {
         const result = calculateMinimumSellPrice(5_000_000, 0, 10_000_000, false);
         expect(result).toBe(5_000_000);
+    });
+});
+
+describe('calculatePerAttemptMaterialCost', () => {
+    beforeEach(() => {
+        for (const key of Object.keys(marketPrices)) delete marketPrices[key];
+    });
+
+    test('sums coin line items 1:1 and priced materials at ask, marking hasCost true', () => {
+        marketPrices['/items/enhancing_essence'] = { ask: 1000, bid: 900 };
+        const itemDetails = {
+            enhancementCosts: [
+                { itemHrid: '/items/coin', count: 5000 },
+                { itemHrid: '/items/enhancing_essence', count: 3 },
+            ],
+        };
+
+        const result = calculatePerAttemptMaterialCost(itemDetails);
+
+        expect(result.cost).toBe(5000 + 3 * 1000);
+        expect(result.hasCost).toBe(true);
+        expect(result.costPartial).toBe(false);
+    });
+
+    test('flags costPartial when a material has no ask price, without discarding priced materials', () => {
+        marketPrices['/items/priced_material'] = { ask: 200, bid: 150 };
+        const itemDetails = {
+            enhancementCosts: [
+                { itemHrid: '/items/priced_material', count: 2 },
+                { itemHrid: '/items/unpriced_material', count: 1 },
+            ],
+        };
+
+        const result = calculatePerAttemptMaterialCost(itemDetails);
+
+        expect(result.cost).toBe(400);
+        expect(result.hasCost).toBe(true);
+        expect(result.costPartial).toBe(true);
+    });
+
+    test('returns a zero-cost, non-partial result when there are no enhancement costs', () => {
+        const result = calculatePerAttemptMaterialCost({ enhancementCosts: [] });
+
+        expect(result).toEqual({ cost: 0, hasCost: false, costPartial: false });
     });
 });

@@ -6,14 +6,13 @@
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import dataManager from '../../core/data-manager.js';
-import marketAPI from '../../api/marketplace.js';
 import { calculateEnhancement } from '../../utils/enhancement-calculator.js';
 import { calculateSuccessXP, calculateFailureXP } from './enhancement-xp.js';
 import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import { formatKMB, formatWithSeparator } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } from '../../utils/panel-z-index.js';
-import { getCheapestProtectionPrice } from './tooltip-enhancement.js';
+import { getCheapestProtectionPrice, calculatePerAttemptMaterialCost } from './tooltip-enhancement.js';
 
 const PANEL_ID = 'mwi-xph-calc-panel';
 const BTN_CLASS = 'mwi-xph-calc-btn';
@@ -65,28 +64,11 @@ function calculateItemXPH(itemHrid, itemDetails, maxLevel, protectFrom, params) 
     const xph = Math.round((totalXP / calc.totalTime) * 3600);
 
     // Material cost calculation
-    let materialCost = 0;
-    let costPartial = false;
-    let allMissing = true;
+    const perAttempt = calculatePerAttemptMaterialCost(itemDetails);
+    const materialCost = perAttempt.cost * calc.attempts;
+    let costPartial = perAttempt.costPartial;
+    const hasCost = perAttempt.hasCost;
 
-    if (itemDetails.enhancementCosts?.length) {
-        for (const cost of itemDetails.enhancementCosts) {
-            if (cost.itemHrid === '/items/coin') {
-                materialCost += cost.count * calc.attempts;
-                allMissing = false;
-                continue;
-            }
-            const price = marketAPI.getPrice(cost.itemHrid);
-            if (price?.ask > 0) {
-                materialCost += cost.count * price.ask * calc.attempts;
-                allMissing = false;
-            } else {
-                costPartial = true;
-            }
-        }
-    }
-
-    const hasCost = !allMissing;
     let goldPerXP = hasCost ? materialCost / totalXP : null;
     let costPerHour = hasCost ? goldPerXP * xph : null;
 
