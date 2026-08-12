@@ -33,7 +33,8 @@ vi.mock('../../features/combat-sim/combat-sim-adapter.js', () => ({
     },
 }));
 
-const { getChestOpenCost, drawChestPayout, buildDungeonChestModel } = await import('./dungeon-chest-adapter.js');
+const { getChestOpenCost, getChestCostBreakdown, drawChestPayout, buildDungeonChestModel } =
+    await import('./dungeon-chest-adapter.js');
 const { createSeededRng } = await import('../risk-of-ruin-engine.js');
 
 const COIN_HRID = '/items/coin';
@@ -74,6 +75,46 @@ describe('getChestOpenCost', () => {
 
     test('is zero for a chest with no known key mapping', () => {
         expect(getChestOpenCost('/items/unmapped_chest')).toBe(0);
+    });
+});
+
+describe('getChestCostBreakdown', () => {
+    test('breaks a regular chest down into entry key + chest key line items', () => {
+        marketPrices['/items/chimerical_entry_key'] = { ask: 1000, bid: 900 };
+        marketPrices['/items/chimerical_chest_key'] = { ask: 2000, bid: 1800 };
+        itemDetails['/items/chimerical_entry_key'] = { name: 'Chimerical Entry Key' };
+        itemDetails['/items/chimerical_chest_key'] = { name: 'Chimerical Chest Key' };
+
+        const breakdown = getChestCostBreakdown('/items/chimerical_chest');
+
+        expect(breakdown).toEqual({
+            entryKey: { hrid: '/items/chimerical_entry_key', name: 'Chimerical Entry Key', price: 1000 },
+            chestKey: { hrid: '/items/chimerical_chest_key', name: 'Chimerical Chest Key', price: 2000 },
+            total: 3000,
+        });
+    });
+
+    test('has a null entryKey for refinement chests', () => {
+        marketPrices['/items/chimerical_chest_key'] = { ask: 2000, bid: 1800 };
+        itemDetails['/items/chimerical_chest_key'] = { name: 'Chimerical Chest Key' };
+
+        const breakdown = getChestCostBreakdown('/items/chimerical_refinement_chest');
+
+        expect(breakdown.entryKey).toBeNull();
+        expect(breakdown.chestKey).toEqual({
+            hrid: '/items/chimerical_chest_key',
+            name: 'Chimerical Chest Key',
+            price: 2000,
+        });
+        expect(breakdown.total).toBe(2000);
+    });
+
+    test('falls back to the hrid as a name when item details are unavailable', () => {
+        marketPrices['/items/chimerical_chest_key'] = { ask: 2000, bid: 1800 };
+
+        const breakdown = getChestCostBreakdown('/items/chimerical_refinement_chest');
+
+        expect(breakdown.chestKey.name).toBe('/items/chimerical_chest_key');
     });
 });
 

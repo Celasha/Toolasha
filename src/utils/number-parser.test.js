@@ -6,11 +6,13 @@ describe('parseItemCount', () => {
         test('parses large integer', () => expect(parseItemCount('1000000')).toBe(1000000));
     });
 
-    describe('K/M/B suffixes', () => {
+    describe('K/M/B/T suffixes', () => {
         test('parses K suffix', () => expect(parseItemCount('1.5K')).toBe(1500));
         test('parses M suffix', () => expect(parseItemCount('2M')).toBe(2000000));
         test('parses B suffix', () => expect(parseItemCount('1.2B')).toBe(1200000000));
+        test('parses T suffix', () => expect(parseItemCount('1.2T')).toBe(1200000000000));
         test('parses lowercase k', () => expect(parseItemCount('1.5k')).toBe(1500));
+        test('parses lowercase t', () => expect(parseItemCount('3t')).toBe(3000000000000));
     });
 
     describe('comma as thousands separator', () => {

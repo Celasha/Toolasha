@@ -10,6 +10,7 @@ import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import { formatWithSeparator, formatPercentage } from '../../utils/formatters.js';
+import { parseItemCount } from '../../utils/number-parser.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } from '../../utils/panel-z-index.js';
 import {
@@ -20,7 +21,11 @@ import {
     findPeakExposureStep,
 } from '../../utils/risk-of-ruin-engine.js';
 import { simulateRuinAsync } from '../../utils/risk-of-ruin-worker-manager.js';
-import { buildDungeonChestModel } from '../../utils/risk-of-ruin-adapters/dungeon-chest-adapter.js';
+import expectedValueCalculator from '../market/expected-value-calculator.js';
+import {
+    buildDungeonChestModel,
+    getChestCostBreakdown,
+} from '../../utils/risk-of-ruin-adapters/dungeon-chest-adapter.js';
 import { buildAlchemyTransmuteModel } from '../../utils/risk-of-ruin-adapters/alchemy-adapter.js';
 import { buildEnhancementModel } from '../../utils/risk-of-ruin-adapters/enhancement-adapter.js';
 
@@ -46,6 +51,15 @@ function getCoinBalance() {
 
 function getTrialCount() {
     return parseInt(config.getSettingValue('riskOfRuin_trials')) || 10000;
+}
+
+/**
+ * Format a gold amount with thousands separators, rounded to a whole number.
+ * @param {number} amount
+ * @returns {string}
+ */
+function fmtGold(amount) {
+    return formatWithSeparator(Math.round(amount));
 }
 
 class RiskOfRuinUI {
@@ -183,7 +197,7 @@ class RiskOfRuinUI {
             <div id="mwi-ror-mode-inputs"></div>
 
             <label style="${labelStyle} margin-top:10px;">Starting gold</label>
-            <input id="mwi-ror-bankroll" type="number" min="0" step="1" style="${inputStyle} margin-bottom:10px;">
+            <input id="mwi-ror-bankroll" type="text" inputmode="decimal" placeholder="e.g. 5m, 1.2b" style="${inputStyle} margin-bottom:10px;">
 
             <button id="mwi-ror-run" style="
                 width: 100%;
@@ -281,12 +295,15 @@ class RiskOfRuinUI {
     _refillBankroll() {
         const bankrollInput = this.panel.querySelector('#mwi-ror-bankroll');
         if (bankrollInput && !bankrollInput.dataset.userEdited) {
-            bankrollInput.value = getCoinBalance();
+            bankrollInput.value = fmtGold(getCoinBalance());
         }
         if (bankrollInput && !bankrollInput.dataset.wired) {
             bankrollInput.dataset.wired = 'true';
             bankrollInput.addEventListener('input', () => {
                 bankrollInput.dataset.userEdited = 'true';
+            });
+            bankrollInput.addEventListener('blur', () => {
+                bankrollInput.value = fmtGold(parseItemCount(bankrollInput.value, 0));
             });
         }
     }
@@ -336,13 +353,14 @@ class RiskOfRuinUI {
         const status = this.panel.querySelector('#mwi-ror-status');
         const results = this.panel.querySelector('#mwi-ror-results');
         const mode = this.panel.querySelector('#mwi-ror-mode').value;
-        const startingBalance = parseFloat(this.panel.querySelector('#mwi-ror-bankroll').value) || 0;
+        const startingBalance = parseItemCount(this.panel.querySelector('#mwi-ror-bankroll').value, 0);
         const trials = getTrialCount();
         const rngSeed = Math.floor(Math.random() * 2 ** 31);
 
         let simModel;
         let lundberg;
         let maxSinglePossibleLoss;
+        let detailInfo;
 
         if (mode === 'chest') {
             const hrid = this.panel.querySelector('#mwi-ror-chest').value;
@@ -359,6 +377,11 @@ class RiskOfRuinUI {
                 targetActionCount,
             };
             lundberg = lundbergBound({ startingBalance, outcomeDistribution: chestModel.outcomeDistribution });
+            detailInfo = {
+                mode: 'chest',
+                costBreakdown: getChestCostBreakdown(hrid),
+                dropBreakdown: expectedValueCalculator.getDropBreakdown(hrid),
+            };
         } else if (mode === 'alchemy') {
             const name = this.panel.querySelector('#mwi-ror-item').value;
             const hrid = this._resolveItemHrid(name, 'mwi-ror-transmute-items');
@@ -379,6 +402,7 @@ class RiskOfRuinUI {
                 targetActionCount,
             };
             lundberg = lundbergBound({ startingBalance, outcomeDistribution: alchemyModel.outcomeDistribution });
+            detailInfo = { mode: 'alchemy', breakdown: alchemyModel.breakdown };
         } else {
             const name = this.panel.querySelector('#mwi-ror-item').value;
             const hrid = this._resolveItemHrid(name, 'mwi-ror-enhance-items');
@@ -423,16 +447,25 @@ class RiskOfRuinUI {
                 startingBalance,
                 perStepDistributions: enhancementModel.perLevelOutcomeDistributions,
             });
+            detailInfo = {
+                mode: 'enhancement',
+                perLevelOutcomeDistributions: enhancementModel.perLevelOutcomeDistributions,
+                costPerAttempt: enhancementModel.costPerAttempt,
+                protectionCostOnFailure: enhancementModel.protectionCostOnFailure,
+                startLevel,
+                targetLevel,
+            };
         }
 
         const simResult = await simulateRuinAsync(simModel);
-        this._renderResults(results, simResult, lundberg, maxSinglePossibleLoss, startingBalance);
-        status.textContent = `${trials.toLocaleString()} trials simulated.`;
+        const minActions = minActionsForNonZeroRisk(startingBalance, maxSinglePossibleLoss);
+        this._renderResults(results, simResult, lundberg, minActions);
+        this._renderDetails(results, detailInfo, startingBalance, maxSinglePossibleLoss, minActions);
+        status.textContent = `${formatWithSeparator(trials)} trials simulated.`;
     }
 
-    _renderResults(container, simResult, lundberg, maxSinglePossibleLoss, startingBalance) {
+    _renderResults(container, simResult, lundberg, minActions) {
         const ci = wilsonConfidenceInterval(simResult.ruinCount, simResult.trials);
-        const minActions = minActionsForNonZeroRisk(startingBalance, maxSinglePossibleLoss);
         const peakStep = findPeakExposureStep(simResult.ruinStepCounts);
 
         const lines = [];
@@ -465,7 +498,7 @@ class RiskOfRuinUI {
 
         if (simResult.meanStepsToRuin !== null) {
             lines.push(
-                `<strong>Average actions before ruin (when it occurs):</strong> ${simResult.meanStepsToRuin.toFixed(1)}`
+                `<strong>Average actions before ruin (when it occurs):</strong> ${formatWithSeparator(Math.round(simResult.meanStepsToRuin * 10) / 10)}`
             );
         }
 
@@ -478,6 +511,188 @@ class RiskOfRuinUI {
         }
 
         container.innerHTML = lines.map((line) => `<div style="margin-bottom:6px;">${line}</div>`).join('');
+    }
+
+    /**
+     * Formula line spelling out exactly how "risk becomes possible at action N" was derived,
+     * so the number in the summary above isn't a black box.
+     */
+    _riskFormulaLine(startingBalance, maxSinglePossibleLoss, minActions) {
+        if (!Number.isFinite(minActions)) {
+            return `<div>No single action can ever lose money here, so risk never becomes possible.</div>`;
+        }
+        return (
+            `<div><strong>Risk becomes possible at action</strong> = ⌈starting gold ÷ max single-action loss⌉ ` +
+            `= ⌈${fmtGold(startingBalance)} ÷ ${fmtGold(maxSinglePossibleLoss)}⌉ = ${formatWithSeparator(minActions)}</div>`
+        );
+    }
+
+    _renderDetails(container, detailInfo, startingBalance, maxSinglePossibleLoss, minActions) {
+        let html;
+        if (detailInfo.mode === 'chest') {
+            html = this._chestDetailsHTML(detailInfo, startingBalance, maxSinglePossibleLoss, minActions);
+        } else if (detailInfo.mode === 'alchemy') {
+            html = this._alchemyDetailsHTML(detailInfo, startingBalance, maxSinglePossibleLoss, minActions);
+        } else {
+            html = this._enhancementDetailsHTML(detailInfo, startingBalance, maxSinglePossibleLoss, minActions);
+        }
+        container.insertAdjacentHTML('beforeend', html);
+    }
+
+    _chestDetailsHTML({ costBreakdown, dropBreakdown }, startingBalance, maxSinglePossibleLoss, minActions) {
+        const rows = [];
+        if (costBreakdown.entryKey) {
+            rows.push(
+                `<div>Entry key (${costBreakdown.entryKey.name}): ${fmtGold(costBreakdown.entryKey.price)}</div>`
+            );
+        }
+        if (costBreakdown.chestKey) {
+            rows.push(
+                `<div>Chest key (${costBreakdown.chestKey.name}): ${fmtGold(costBreakdown.chestKey.price)}</div>`
+            );
+        }
+        rows.push(`<div><strong>Total cost per open:</strong> ${fmtGold(costBreakdown.total)}</div>`);
+        rows.push(
+            `<div style="margin-top:6px;"><strong>Max single-action loss:</strong> ${fmtGold(maxSinglePossibleLoss)} ` +
+                `(the lowest possible payout from one open is 0, so the worst case is losing the full open cost)</div>`
+        );
+        rows.push(this._riskFormulaLine(startingBalance, maxSinglePossibleLoss, minActions));
+
+        const dropRows = dropBreakdown
+            .map(
+                (drop) =>
+                    `<tr>
+                        <td style="padding:2px 6px;">${drop.itemName}</td>
+                        <td style="padding:2px 6px; text-align:right;">${formatPercentage(drop.dropRate, 2)}</td>
+                        <td style="padding:2px 6px; text-align:right;">${drop.avgCount}</td>
+                        <td style="padding:2px 6px; text-align:right;">${drop.hasPriceData ? fmtGold(drop.priceEach) : '—'}</td>
+                        <td style="padding:2px 6px; text-align:right;">${fmtGold(drop.expectedValue)}</td>
+                    </tr>`
+            )
+            .join('');
+
+        return this._wrapDetails(
+            'Cost & risk details',
+            rows.join('') +
+                this._wrapDetails(
+                    `Drop table (${dropBreakdown.length} items)`,
+                    `<table style="width:100%; border-collapse:collapse; font-size:11px;">
+                        <tr style="color:#888;"><th style="text-align:left;">Item</th><th>Drop rate</th><th>Avg count</th><th>Price</th><th>EV</th></tr>
+                        ${dropRows}
+                    </table>`,
+                    true
+                )
+        );
+    }
+
+    _alchemyDetailsHTML({ breakdown }, startingBalance, maxSinglePossibleLoss, minActions) {
+        const catalystName = breakdown.catalystHrid ? dataManager.getItemDetails(breakdown.catalystHrid)?.name : null;
+
+        const rows = [
+            `<div>Success rate: ${formatPercentage(breakdown.successRate, 2)}</div>`,
+            `<div>Material cost (paid every attempt): ${fmtGold(breakdown.materialCost)}</div>`,
+        ];
+        if (breakdown.coinCost > 0) {
+            rows.push(`<div>Coin cost (paid every attempt): ${fmtGold(breakdown.coinCost)}</div>`);
+        }
+        rows.push(
+            catalystName
+                ? `<div>Catalyst (${catalystName}, paid only on success): ${fmtGold(breakdown.catalystCostOnSuccess)}</div>`
+                : `<div>No catalyst used.</div>`
+        );
+        rows.push(`<div>Output value if successful: ${fmtGold(breakdown.outputValueGivenSuccess)}</div>`);
+        if (breakdown.selfReturnGivenSuccess > 0) {
+            rows.push(`<div>Self-return value if successful: ${fmtGold(breakdown.selfReturnGivenSuccess)}</div>`);
+        }
+        rows.push(
+            `<div style="margin-top:6px;"><strong>Net on success:</strong> ${fmtGold(breakdown.netOnSuccess)}</div>`
+        );
+        rows.push(`<div><strong>Net on failure:</strong> ${fmtGold(breakdown.netOnFail)}</div>`);
+        rows.push(`<div><strong>Max single-action loss:</strong> ${fmtGold(maxSinglePossibleLoss)}</div>`);
+        rows.push(this._riskFormulaLine(startingBalance, maxSinglePossibleLoss, minActions));
+
+        const dropRows = breakdown.dropRevenues
+            .map(
+                (drop) =>
+                    `<tr>
+                        <td style="padding:2px 6px;">${dataManager.getItemDetails(drop.itemHrid)?.name || drop.itemHrid}${drop.isSelfReturn ? ' (self-return)' : ''}</td>
+                        <td style="padding:2px 6px; text-align:right;">${formatPercentage(drop.dropRate, 2)}</td>
+                        <td style="padding:2px 6px; text-align:right;">${fmtGold(drop.price)}</td>
+                        <td style="padding:2px 6px; text-align:right;">${fmtGold(drop.revenuePerAttempt)}</td>
+                    </tr>`
+            )
+            .join('');
+
+        return this._wrapDetails(
+            'Cost & risk details',
+            rows.join('') +
+                this._wrapDetails(
+                    `Output drops (${breakdown.dropRevenues.length} items)`,
+                    `<table style="width:100%; border-collapse:collapse; font-size:11px;">
+                        <tr style="color:#888;"><th style="text-align:left;">Item</th><th>Drop rate</th><th>Price</th><th>Revenue given success</th></tr>
+                        ${dropRows}
+                    </table>`,
+                    true
+                )
+        );
+    }
+
+    _enhancementDetailsHTML(
+        { perLevelOutcomeDistributions, costPerAttempt, protectionCostOnFailure, startLevel, targetLevel },
+        startingBalance,
+        maxSinglePossibleLoss,
+        minActions
+    ) {
+        const rows = perLevelOutcomeDistributions
+            .map((outcomes, level) => {
+                const [failure] = outcomes;
+                const successRate = 1 - failure.prob;
+                const isProtected = failure.net !== -costPerAttempt;
+                return `<tr>
+                    <td style="padding:2px 6px;">+${level} → +${level + 1}</td>
+                    <td style="padding:2px 6px; text-align:right;">${formatPercentage(successRate, 2)}</td>
+                    <td style="padding:2px 6px; text-align:right;">${fmtGold(costPerAttempt)}</td>
+                    <td style="padding:2px 6px; text-align:right;">+${failure.nextLevel}</td>
+                    <td style="padding:2px 6px; text-align:right;">${isProtected ? fmtGold(protectionCostOnFailure) : '—'}</td>
+                </tr>`;
+            })
+            .join('');
+
+        const rows2 = [
+            `<div><strong>Cost per attempt (materials, every attempt):</strong> ${fmtGold(costPerAttempt)}</div>`,
+        ];
+        if (protectionCostOnFailure > 0) {
+            rows2.push(
+                `<div><strong>Protection cost (charged only on a protected failure):</strong> ${fmtGold(protectionCostOnFailure)}</div>`
+            );
+        }
+        rows2.push(
+            `<div style="margin-top:6px;"><strong>Max single-action loss:</strong> ${fmtGold(maxSinglePossibleLoss)} ` +
+                `(worst case: an attempt fails at a protected level)</div>`
+        );
+        rows2.push(this._riskFormulaLine(startingBalance, maxSinglePossibleLoss, minActions));
+
+        return this._wrapDetails(
+            `Cost & risk details (levels +${startLevel} to +${targetLevel})`,
+            rows2.join('') +
+                this._wrapDetails(
+                    `Per-level success rates & costs (${perLevelOutcomeDistributions.length} levels)`,
+                    `<table style="width:100%; border-collapse:collapse; font-size:11px;">
+                        <tr style="color:#888;"><th style="text-align:left;">Attempt</th><th>Success</th><th>Cost</th><th>Fail →</th><th>Protection cost</th></tr>
+                        ${rows}
+                    </table>`,
+                    true
+                )
+        );
+    }
+
+    _wrapDetails(summary, innerHTML, nested = false) {
+        const margin = nested ? 'margin-top:6px;' : 'margin-top:10px; border-top:1px solid #333; padding-top:8px;';
+        const summaryColor = nested ? '#aaa' : '#e05c5c';
+        return `<details style="${margin}">
+            <summary style="cursor:pointer; color:${summaryColor}; font-weight:600; font-size:${nested ? '11px' : '12px'};">${summary}</summary>
+            <div style="margin-top:8px; padding-left:4px;">${innerHTML}</div>
+        </details>`;
     }
 
     disable() {

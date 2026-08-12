@@ -56,6 +56,42 @@ export function getChestOpenCost(containerHrid) {
 }
 
 /**
+ * Breaks getChestOpenCost() down into its individual key line items, for display in a
+ * cost-transparency UI.
+ * @param {string} containerHrid
+ * @returns {{
+ *   entryKey: {hrid: string, name: string, price: number}|null,
+ *   chestKey: {hrid: string, name: string, price: number}|null,
+ *   total: number,
+ * }}
+ */
+export function getChestCostBreakdown(containerHrid) {
+    const entryKeyHrid = DUNGEON_ENTRY_KEYS[containerHrid];
+    const chestKeyHrid = DUNGEON_CHEST_KEYS[containerHrid];
+
+    const entryKey = entryKeyHrid
+        ? {
+              hrid: entryKeyHrid,
+              name: dataManager.getItemDetails(entryKeyHrid)?.name || entryKeyHrid,
+              price: getKeyPrice(entryKeyHrid),
+          }
+        : null;
+    const chestKey = chestKeyHrid
+        ? {
+              hrid: chestKeyHrid,
+              name: dataManager.getItemDetails(chestKeyHrid)?.name || chestKeyHrid,
+              price: getKeyPrice(chestKeyHrid),
+          }
+        : null;
+
+    return {
+        entryKey,
+        chestKey,
+        total: (entryKey?.price || 0) + (chestKey?.price || 0),
+    };
+}
+
+/**
  * Draw one realized payout value for opening the given chest once. Prices each triggered drop
  * the same way expected-value-calculator.js's getDropBreakdown() prices its average — tax-aware
  * sell side, with coin/cowbell/dungeon-token/nested-container special cases handled by

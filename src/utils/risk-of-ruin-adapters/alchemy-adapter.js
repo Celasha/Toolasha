@@ -30,6 +30,18 @@ import { drawFromDistribution } from '../risk-of-ruin-engine.js';
  *   maxSinglePossibleLoss: number,
  *   outcomeDistribution: Array<{prob: number, net: number}>,
  *   stepFn: function(state: Object, rng: function(): number): Object,
+ *   breakdown: {
+ *     successRate: number,
+ *     materialCost: number,
+ *     coinCost: number,
+ *     catalystHrid: string|null,
+ *     catalystCostOnSuccess: number,
+ *     outputValueGivenSuccess: number,
+ *     selfReturnGivenSuccess: number,
+ *     netOnSuccess: number,
+ *     netOnFail: number,
+ *     dropRevenues: Array,
+ *   },
  * }|null} null if the item isn't transmutable or has no usable market/success-rate data.
  */
 export function buildAlchemyTransmuteModel(itemHrid, { useLiveSetup = false } = {}) {
@@ -55,5 +67,17 @@ export function buildAlchemyTransmuteModel(itemHrid, { useLiveSetup = false } = 
         maxSinglePossibleLoss: Math.max(0, -netOnSuccess, -netOnFail),
         outcomeDistribution,
         stepFn: (state, rng) => ({ balance: state.balance + drawFromDistribution(outcomeDistribution, rng).net }),
+        breakdown: {
+            successRate: profit.successRate,
+            materialCost: profit.grossMaterialCost,
+            coinCost,
+            catalystHrid: profit.catalystPrice ? profit.catalystCost?.itemHrid || null : null,
+            catalystCostOnSuccess,
+            outputValueGivenSuccess,
+            selfReturnGivenSuccess,
+            netOnSuccess,
+            netOnFail,
+            dropRevenues: profit.dropRevenues || [],
+        },
     };
 }

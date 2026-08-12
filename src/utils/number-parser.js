@@ -7,7 +7,7 @@
  * Parse item count from text
  * Handles various formats including:
  * - Plain numbers: "100", "1000"
- * - K/M suffixes: "1.5K", "2M"
+ * - K/M/B/T suffixes: "1.5K", "2M", "3B", "1.2T"
  * - International formats with separators: "1,000", "1 000", "1.000"
  * - Mixed decimal formats: "1.234,56" (European) or "1,234.56" (US)
  * - Prefixed formats: "x5", "Amount: 1000", "Amount: 1 000"
@@ -74,14 +74,16 @@ export function parseItemCount(text, defaultValue = 1) {
     // Remove remaining whitespace separators
     text = text.replace(/\s/g, '');
 
-    // Handle K/M/B suffixes (must end with the suffix letter)
-    if (/\d[kmb]$/.test(text)) {
+    // Handle K/M/B/T suffixes (must end with the suffix letter)
+    if (/\d[kmbt]$/.test(text)) {
         if (text.endsWith('k')) {
             return parseFloat(text) * 1000;
         } else if (text.endsWith('m')) {
             return parseFloat(text) * 1000000;
         } else if (text.endsWith('b')) {
             return parseFloat(text) * 1000000000;
+        } else if (text.endsWith('t')) {
+            return parseFloat(text) * 1000000000000;
         }
     }
 

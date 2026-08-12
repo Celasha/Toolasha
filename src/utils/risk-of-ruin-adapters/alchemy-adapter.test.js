@@ -88,4 +88,27 @@ describe('buildAlchemyTransmuteModel', () => {
         const failState = model.stepFn({ balance: 10000 }, () => 0.99);
         expect(failState.balance).toBe(10000 - 1000);
     });
+
+    test('exposes a breakdown with the individual cost/payout components for a details UI', () => {
+        mockProfit = baseProfit({
+            catalystPrice: 200,
+            catalystCost: { itemHrid: '/items/prime_catalyst' },
+            requirementCosts: [{ itemHrid: '/items/coin', costPerAction: 50 }],
+            dropRevenues: [{ itemHrid: '/items/output_item', revenuePerAttempt: 600 }],
+        });
+        const model = buildAlchemyTransmuteModel('/items/widget');
+
+        expect(model.breakdown).toEqual({
+            successRate: 0.5,
+            materialCost: 1000,
+            coinCost: 50,
+            catalystHrid: '/items/prime_catalyst',
+            catalystCostOnSuccess: 200,
+            outputValueGivenSuccess: 600,
+            selfReturnGivenSuccess: 0,
+            netOnSuccess: -1000 - 50 - 200 + 600,
+            netOnFail: -1050,
+            dropRevenues: [{ itemHrid: '/items/output_item', revenuePerAttempt: 600 }],
+        });
+    });
 });
