@@ -12,6 +12,11 @@
  *   for a large enough sample size, and the only form that's plain structured-clone-safe data
  *   a Web Worker can consume without access to dataManager/marketAPI/expectedValueCalculator).
  * - The Lundberg bound, which needs a discrete outcome-distribution input.
+ *
+ * Every real dungeon chest has at least one dropRate === 1 entry (essence + tokens on regular
+ * chests, a refinement shard on refinement chests), so the payout floor is never actually 0 —
+ * getMinimumGuaranteedPayout() computes that floor from the drop table directly rather than
+ * assuming it.
  */
 
 import dataManager from '../../core/data-manager.js';
@@ -56,6 +61,62 @@ export function getChestOpenCost(containerHrid) {
 }
 
 /**
+ * Breaks getChestOpenCost() down into its individual key line items, for display in a
+ * cost-transparency UI.
+ * @param {string} containerHrid
+ * @returns {{
+ *   entryKey: {hrid: string, name: string, price: number}|null,
+ *   chestKey: {hrid: string, name: string, price: number}|null,
+ *   total: number,
+ * }}
+ */
+export function getChestCostBreakdown(containerHrid) {
+    const entryKeyHrid = DUNGEON_ENTRY_KEYS[containerHrid];
+    const chestKeyHrid = DUNGEON_CHEST_KEYS[containerHrid];
+
+    const entryKey = entryKeyHrid
+        ? {
+              hrid: entryKeyHrid,
+              name: dataManager.getItemDetails(entryKeyHrid)?.name || entryKeyHrid,
+              price: getKeyPrice(entryKeyHrid),
+          }
+        : null;
+    const chestKey = chestKeyHrid
+        ? {
+              hrid: chestKeyHrid,
+              name: dataManager.getItemDetails(chestKeyHrid)?.name || chestKeyHrid,
+              price: getKeyPrice(chestKeyHrid),
+          }
+        : null;
+
+    return {
+        entryKey,
+        chestKey,
+        total: (entryKey?.price || 0) + (chestKey?.price || 0),
+    };
+}
+
+/**
+ * Price a realized drop (a specific item + count that has already been determined to occur),
+ * applying the same coin/tradeable/tax rules expected-value-calculator.js uses.
+ * @param {string} itemHrid
+ * @param {number} count
+ * @returns {number|null} Gold value, or null if no price data is available for this item.
+ */
+function priceRealizedDrop(itemHrid, count) {
+    if (count <= 0) return 0;
+
+    const price = expectedValueCalculator.getDropPrice(itemHrid);
+    if (price === null) return null;
+
+    if (itemHrid === COIN_HRID) return count * price;
+
+    const itemDetails = dataManager.getItemDetails(itemHrid);
+    const canBeSold = itemDetails?.isTradable !== false;
+    return canBeSold ? calculatePriceAfterTax(count * price) : count * price;
+}
+
+/**
  * Draw one realized payout value for opening the given chest once. Prices each triggered drop
  * the same way expected-value-calculator.js's getDropBreakdown() prices its average — tax-aware
  * sell side, with coin/cowbell/dungeon-token/nested-container special cases handled by
@@ -78,19 +139,31 @@ export function drawChestPayout(containerHrid, rng) {
         const maxCount = drop.maxCount || 0;
         if (minCount <= 0 && maxCount <= 0) continue;
         const count = minCount + Math.floor(rng() * (maxCount - minCount + 1));
-        if (count <= 0) continue;
 
-        const price = expectedValueCalculator.getDropPrice(drop.itemHrid);
-        if (price === null) continue;
+        payout += priceRealizedDrop(drop.itemHrid, count) || 0;
+    }
 
-        if (drop.itemHrid === COIN_HRID) {
-            payout += count * price;
-            continue;
-        }
+    return payout;
+}
 
-        const itemDetails = dataManager.getItemDetails(drop.itemHrid);
-        const canBeSold = itemDetails?.isTradable !== false;
-        payout += canBeSold ? calculatePriceAfterTax(count * price) : count * price;
+/**
+ * The lowest payout a single chest open can ever produce: the sum of every drop table entry
+ * that's guaranteed (dropRate === 1) at its minimum count, since a real chest's guaranteed
+ * drops (essence + tokens on regular chests, a refinement shard on refinement chests) mean the
+ * true floor is never 0 — every drop entry with dropRate < 1 is assumed to whiff in the
+ * worst case, but the dropRate === 1 entries always fire.
+ * @param {string} containerHrid
+ * @returns {number}
+ */
+export function getMinimumGuaranteedPayout(containerHrid) {
+    const initData = dataManager.getInitClientData();
+    const dropTable = initData?.openableLootDropMap?.[containerHrid];
+    if (!dropTable) return 0;
+
+    let payout = 0;
+    for (const drop of dropTable) {
+        if (drop.dropRate !== 1) continue;
+        payout += priceRealizedDrop(drop.itemHrid, drop.minCount || 0) || 0;
     }
 
     return payout;
@@ -107,6 +180,7 @@ export function drawChestPayout(containerHrid, rng) {
  * @param {number} [options.rngSeed] - Seed for the empirical sample.
  * @returns {{
  *   cost: number,
+ *   minimumGuaranteedPayout: number,
  *   maxSinglePossibleLoss: number,
  *   stepFn: function(state: Object, rng: function(): number): Object,
  *   outcomeDistribution: Array<{prob: number, net: number}>,
@@ -117,6 +191,7 @@ export function buildDungeonChestModel(
     { sampleSize = DEFAULT_EMPIRICAL_SAMPLE_SIZE, rngSeed = 1 } = {}
 ) {
     const cost = getChestOpenCost(containerHrid);
+    const minimumGuaranteedPayout = getMinimumGuaranteedPayout(containerHrid);
 
     const sampleRng = createSeededRng(rngSeed);
     const outcomeDistribution = [];
@@ -127,7 +202,8 @@ export function buildDungeonChestModel(
 
     return {
         cost,
-        maxSinglePossibleLoss: cost,
+        minimumGuaranteedPayout,
+        maxSinglePossibleLoss: Math.max(0, cost - minimumGuaranteedPayout),
         stepFn: (state, rng) => ({ balance: state.balance + drawFromDistribution(outcomeDistribution, rng).net }),
         outcomeDistribution,
     };
