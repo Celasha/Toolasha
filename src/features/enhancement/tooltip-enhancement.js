@@ -702,6 +702,41 @@ export function getCheapestProtectionPrice(itemHrid) {
 }
 
 /**
+ * Calculate the gold cost of a single enhancement attempt's consumed materials (ask-side
+ * market price), including any direct coin line item in enhancementCosts. Materials are
+ * consumed on every attempt regardless of success/failure, and this cost is the same at every
+ * enhancement level (enhancementCosts is not level-indexed).
+ * @param {Object} itemDetails - Item details containing enhancementCosts.
+ * @returns {{cost: number, hasCost: boolean, costPartial: boolean}}
+ */
+export function calculatePerAttemptMaterialCost(itemDetails) {
+    let cost = 0;
+    let hasCost = false;
+    let costPartial = false;
+
+    if (!itemDetails.enhancementCosts?.length) {
+        return { cost: 0, hasCost: false, costPartial: false };
+    }
+
+    for (const material of itemDetails.enhancementCosts) {
+        if (material.itemHrid === '/items/coin') {
+            cost += material.count;
+            hasCost = true;
+            continue;
+        }
+        const price = marketAPI.getPrice(material.itemHrid);
+        if (price?.ask > 0) {
+            cost += material.count * price.ask;
+            hasCost = true;
+        } else {
+            costPartial = true;
+        }
+    }
+
+    return { cost, hasCost, costPartial };
+}
+
+/**
  * Fibonacci calculation for item quantities (from Enhancelator)
  * @private
  */

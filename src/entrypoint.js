@@ -682,6 +682,13 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'riskOfRuin',
+            name: 'Risk of Ruin Calculator',
+            category: 'Risk of Ruin',
+            module: UI.riskOfRuinUI,
+            async: false,
+        },
+        {
             key: 'guildXPTracker',
             name: 'Guild XP Tracker',
             category: 'Guild',

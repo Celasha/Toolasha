@@ -978,7 +978,7 @@ export function calculateExpectedDrops(simResult, gameData, playerHrid = 'player
 }
 
 // Maps dungeon chest HRIDs to their required entry key HRIDs
-const DUNGEON_ENTRY_KEYS = {
+export const DUNGEON_ENTRY_KEYS = {
     '/items/chimerical_chest': '/items/chimerical_entry_key',
     '/items/sinister_chest': '/items/sinister_entry_key',
     '/items/enchanted_chest': '/items/enchanted_entry_key',
@@ -986,7 +986,7 @@ const DUNGEON_ENTRY_KEYS = {
 };
 
 // Maps dungeon chest HRIDs (regular + refinement) to their chest key HRIDs
-const DUNGEON_CHEST_KEYS = {
+export const DUNGEON_CHEST_KEYS = {
     '/items/chimerical_chest': '/items/chimerical_chest_key',
     '/items/sinister_chest': '/items/sinister_chest_key',
     '/items/enchanted_chest': '/items/enchanted_chest_key',
