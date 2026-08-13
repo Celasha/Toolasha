@@ -69,6 +69,20 @@ class RiskOfRuinUI {
         this.dragOffset = { x: 0, y: 0 };
     }
 
+    /**
+     * Setup setting change listener (always active, even when feature is disabled) so toggling
+     * "Enable Risk of Ruin calculator" in Settings takes effect immediately, with no refresh.
+     */
+    setupSettingListener() {
+        config.onSettingChange('riskOfRuin', (enabled) => {
+            if (enabled) {
+                this.initialize();
+            } else {
+                this.disable();
+            }
+        });
+    }
+
     initialize() {
         if (this.isInitialized) return;
         if (!config.getSetting('riskOfRuin')) return;
@@ -745,4 +759,5 @@ class RiskOfRuinUI {
 }
 
 const riskOfRuinUI = new RiskOfRuinUI();
+riskOfRuinUI.setupSettingListener();
 export default riskOfRuinUI;
