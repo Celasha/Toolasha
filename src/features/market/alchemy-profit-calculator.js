@@ -441,6 +441,74 @@ class AlchemyProfitCalculator {
     }
 
     /**
+     * Compute one specific, caller-chosen catalyst combination (no live tea/profit search) —
+     * for callers that need a forced "none" / type-specific / prime catalyst rather than
+     * whichever combo is most profitable or whatever the live action panel has equipped.
+     * Live tea bonus is still applied, matching _bestCatalystCombo's "with tea" combos.
+     * @param {Object} params - Same shape as _bestCatalystCombo, plus:
+     * @param {'none'|'typeSpecific'|'prime'} params.catalystChoice
+     * @returns {Object} Same shape as _bestCatalystCombo/_liveSetupCombo's return value.
+     */
+    _forcedCatalystCombo({
+        actionType,
+        baseSuccessRate,
+        actionsPerHour,
+        efficiencyDecimal,
+        actionTime,
+        alchemyBonusRevenue,
+        computeNetProfit,
+        computeTeaCost,
+        levelPenalty = 0,
+        teaBonusOverride = null,
+        catalystChoice = 'none',
+    }) {
+        const liveTeaBonus = teaBonusOverride !== null ? teaBonusOverride : getAlchemySuccessBonus();
+
+        let catalystBonus = 0;
+        let catalystHrid = null;
+        let catalystPrice = 0;
+
+        if (catalystChoice === 'typeSpecific') {
+            catalystBonus = CATALYST_BONUSES.typeSpecific;
+            catalystHrid = CATALYST_HRIDS[actionType];
+        } else if (catalystChoice === 'prime') {
+            catalystBonus = CATALYST_BONUSES.prime;
+            catalystHrid = CATALYST_HRIDS.prime;
+        }
+        if (catalystHrid) {
+            catalystPrice = getItemPrice(catalystHrid, { context: 'profit', side: 'buy' }) ?? 0;
+        }
+
+        const successRateBreakdown = this.calculateSuccessRateBreakdown(
+            baseSuccessRate,
+            catalystBonus,
+            liveTeaBonus,
+            levelPenalty
+        );
+        const successRate = successRateBreakdown.total;
+        const catalystCostPerAttempt = catalystPrice * successRate;
+        const catalystCostPerHour = catalystCostPerAttempt * actionsPerHour;
+        const teaCostPerHour = liveTeaBonus > 0 ? computeTeaCost(liveTeaBonus) : 0;
+        const netProfitPerAttempt = computeNetProfit(successRate) - catalystCostPerAttempt;
+        const profitPerSecond = (netProfitPerAttempt * (1 + efficiencyDecimal)) / actionTime;
+        const profitPerHour = profitPerSecond * SECONDS_PER_HOUR + alchemyBonusRevenue - teaCostPerHour;
+
+        return {
+            catalystBonus,
+            catalystHrid,
+            catalystPrice,
+            teaBonus: liveTeaBonus,
+            successRateBreakdown,
+            successRate,
+            catalystCostPerAttempt,
+            catalystCostPerHour,
+            teaCostPerHour,
+            netProfitPerAttempt,
+            profitPerHour,
+        };
+    }
+
+    /**
      * @param {string} itemHrid - Item HRID
      * @param {number} enhancementLevel - Enhancement level (default 0)
      * @returns {Object|null} Detailed profit data or null if not coinifiable
@@ -1008,9 +1076,14 @@ class AlchemyProfitCalculator {
     /**
      * Calculate Transmute profit for an item with full detailed breakdown
      * @param {string} itemHrid - Item HRID
+     * @param {boolean} [useLiveSetup] - Read the live action panel's catalyst/tea instead of
+     *   searching for the best combination. Ignored when catalystChoice is given.
+     * @param {number|null} [teaBonusOverride]
+     * @param {'none'|'typeSpecific'|'prime'|null} [catalystChoice] - Force a specific catalyst
+     *   instead of searching for the best one or reading the live panel.
      * @returns {Object|null} Profit data or null if not transmutable
      */
-    calculateTransmuteProfit(itemHrid, useLiveSetup = false, teaBonusOverride = null) {
+    calculateTransmuteProfit(itemHrid, useLiveSetup = false, teaBonusOverride = null, catalystChoice = null) {
         try {
             const gameData = dataManager.getInitClientData();
             const itemDetails = dataManager.getItemDetails(itemHrid);
@@ -1166,9 +1239,14 @@ class AlchemyProfitCalculator {
                 getItemPrice: (hrid) => getItemPrice(hrid, { context: 'profit', side: 'buy' }),
             });
 
-            // Find the best catalyst+tea combination (tooltip) or use live setup (action page).
+            // Force a specific catalyst if the caller asked for one; otherwise find the best
+            // catalyst+tea combination (tooltip) or use live setup (action page).
             // Note: selfReturnValue depends on successRate so it must be computed inside the combo loop.
-            const _comboFn = useLiveSetup ? this._liveSetupCombo.bind(this) : this._bestCatalystCombo.bind(this);
+            const _comboFn = catalystChoice
+                ? this._forcedCatalystCombo.bind(this)
+                : useLiveSetup
+                  ? this._liveSetupCombo.bind(this)
+                  : this._bestCatalystCombo.bind(this);
             const combo = _comboFn({
                 actionType: 'transmute',
                 baseSuccessRate,
@@ -1184,6 +1262,7 @@ class AlchemyProfitCalculator {
                 computeTeaCost: () => teaCostData.totalCostPerHour,
                 levelPenalty,
                 teaBonusOverride,
+                catalystChoice,
             });
 
             const {
