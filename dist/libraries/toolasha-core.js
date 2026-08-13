@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.87.12
+ * Version: 2.88.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1543,6 +1543,27 @@
                     label: 'Enhancement XPH: Default protect from level (0 = no protection)',
                     type: 'text',
                     default: '0',
+                },
+            },
+        },
+
+        riskOfRuin: {
+            title: 'Risk of Ruin',
+            icon: '🎲',
+            settings: {
+                riskOfRuin: {
+                    id: 'riskOfRuin',
+                    label: 'Enable Risk of Ruin calculator',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Adds a standalone calculator estimating the chance of hitting 0 gold before reaching a target number of dungeon chests, alchemy Transmute actions, or an enhancement level.',
+                },
+                riskOfRuin_trials: {
+                    id: 'riskOfRuin_trials',
+                    label: 'Risk of Ruin: Monte Carlo trial count',
+                    type: 'text',
+                    default: '10000',
+                    help: 'Higher trial counts give a more precise probability estimate at the cost of a slower calculation.',
                 },
             },
         },
