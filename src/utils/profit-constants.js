@@ -4,9 +4,9 @@
  */
 
 /**
- * Marketplace tax rate (2%)
+ * Marketplace tax rate (5%)
  */
-export const MARKET_TAX = 0.02;
+export const MARKET_TAX = 0.05;
 
 /**
  * Bag of 10 Cowbells item HRID (subject to 18% market tax)

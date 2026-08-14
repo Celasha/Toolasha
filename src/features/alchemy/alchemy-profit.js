@@ -691,7 +691,7 @@ class AlchemyProfit {
                 const priceData = marketAPI.getPrice(result.itemHrid, 0);
                 if (priceData) {
                     const price = priceType === 'ask' ? priceData.ask : priceData.bid;
-                    totalValue += calculatePriceAfterTax(price * result.amount); // 2% market tax
+                    totalValue += calculatePriceAfterTax(price * result.amount); // market tax
                 }
             }
         }
@@ -704,7 +704,7 @@ class AlchemyProfit {
         const essencePriceData = marketAPI.getPrice('/items/enhancing_essence', 0);
         if (essencePriceData) {
             const essencePrice = priceType === 'ask' ? essencePriceData.ask : essencePriceData.bid;
-            totalValue += calculatePriceAfterTax(essencePrice * essenceAmount); // 2% market tax
+            totalValue += calculatePriceAfterTax(essencePrice * essenceAmount); // market tax
         }
 
         return totalValue;

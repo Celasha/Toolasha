@@ -521,7 +521,7 @@ export const settingsGroups = {
                 label: 'Show effective (after-tax) prices',
                 type: 'checkbox',
                 default: false,
-                help: 'Shows what you actually receive after the 2% marketplace tax next to ask/bid prices in item tooltips',
+                help: 'Shows what you actually receive after the 5% marketplace tax next to ask/bid prices in item tooltips',
             },
             itemTooltip_enhancingHourlyRate: {
                 id: 'itemTooltip_enhancingHourlyRate',
@@ -535,7 +535,7 @@ export const settingsGroups = {
                 label: 'Include marketplace tax in minimum sell price',
                 type: 'checkbox',
                 default: false,
-                help: 'Accounts for the 2% marketplace seller tax so listing at minimum sell still nets your target rate after tax',
+                help: 'Accounts for the 5% marketplace seller tax so listing at minimum sell still nets your target rate after tax',
             },
             itemTooltip_artisanPrices: {
                 id: 'itemTooltip_artisanPrices',
@@ -2130,7 +2130,7 @@ export const settingsGroups = {
                 label: 'Guild Shop: Show exchange advisor (sell → rebuy comparison)',
                 type: 'checkbox',
                 default: true,
-                help: 'When the selected item is not the cheapest option, shows whether selling it and rebuying the best item would yield more credits (accounts for 2% seller tax).',
+                help: 'When the selected item is not the cheapest option, shows whether selling it and rebuying the best item would yield more credits (accounts for 5% seller tax).',
             },
             guildShrineUpgradePlanner: {
                 id: 'guildShrineUpgradePlanner',

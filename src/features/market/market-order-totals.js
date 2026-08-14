@@ -11,6 +11,7 @@ import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
 import { formatKMB } from '../../utils/formatters.js';
+import { MARKET_TAX, COWBELL_BAG_HRID, COWBELL_BAG_TAX } from '../../utils/profit-constants.js';
 
 class MarketOrderTotals {
     constructor() {
@@ -113,7 +114,7 @@ class MarketOrderTotals {
                     continue;
                 }
 
-                const tax = listing.itemHrid === '/items/bag_of_10_cowbells' ? 0.82 : 0.98;
+                const tax = listing.itemHrid === COWBELL_BAG_HRID ? 1 - COWBELL_BAG_TAX : 1 - MARKET_TAX;
                 const remainingQuantity = Math.max(0, listing.orderQuantity - listing.filledQuantity);
 
                 if (remainingQuantity > 0) {

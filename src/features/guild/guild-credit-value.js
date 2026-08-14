@@ -28,6 +28,7 @@ import {
 } from '../../utils/marketplace-tabs.js';
 import { createAutofillManager } from '../../utils/marketplace-autofill.js';
 import { normalizeGuildShrineReturnLabel } from './guild-marketplace-label.js';
+import { MARKET_TAX } from '../../utils/profit-constants.js';
 
 function getVisibleGuildNavigationButton() {
     const buttons = new Set();
@@ -667,7 +668,7 @@ class GuildCreditValue {
         }
 
         // Calculate sell → rebuy scenario
-        const SELLER_TAX = 0.02;
+        const SELLER_TAX = MARKET_TAX;
         const sellPrice = selectedRow.buyPrice; // bid price = what market will buy at
         const directCredits = batches * selectedRow.creditCount;
 
@@ -693,7 +694,7 @@ class GuildCreditValue {
 
         advisor.style.borderColor = creditDiff > 0 ? 'rgba(74,222,128,0.3)' : 'rgba(255,107,107,0.3)';
         advisor.innerHTML = `
-        <div style="color:#9ca3af; margin-bottom:6px; font-size:11px;">Sell → rebuy best item (2% tax)</div>
+        <div style="color:#9ca3af; margin-bottom:6px; font-size:11px;">Sell → rebuy best item (${SELLER_TAX * 100}% tax)</div>
         <div style="display:flex; justify-content:space-between; margin-bottom:3px;">
             <span style="color:#aaa;">Direct exchange</span>
             <span style="color:#e0e0e0; font-weight:600;">${directCredits.toLocaleString()} credits</span>

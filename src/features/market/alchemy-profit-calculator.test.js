@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
+import { MARKET_TAX } from '../../utils/profit-constants.js';
 
 const marketPrices = {};
 
@@ -164,8 +165,8 @@ describe('calculateDecomposeProfit', () => {
 
         const outputDrop = profit.dropRevenues.find((d) => d.itemHrid === OUTPUT_HRID);
         expect(outputDrop.count).toBe(20); // 10 × 2, not 10
-        // afterTax(500) × 20 × successRate(0.6) = 490 × 20 × 0.6
-        expect(outputDrop.revenuePerAttempt).toBeCloseTo(490 * 20 * 0.6, 8);
+        // afterTax(500) × 20 × successRate(0.6)
+        expect(outputDrop.revenuePerAttempt).toBeCloseTo(500 * (1 - MARKET_TAX) * 20 * 0.6, 8);
     });
 
     test('bulkMultiplier of 1 leaves cost and output unscaled (regular equipment/items)', () => {

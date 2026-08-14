@@ -1,4 +1,5 @@
 import { describe, expect, test, vi, beforeEach } from 'vitest';
+import { MARKET_TAX } from '../profit-constants.js';
 
 const initData = { openableLootDropMap: {} };
 const itemDetails = {};
@@ -127,7 +128,7 @@ describe('drawChestPayout', () => {
         dropPrices['/items/widget'] = 100;
 
         const payout = drawChestPayout('/items/test_chest', fixedRng(0));
-        expect(payout).toBeCloseTo(5 * 100 * 0.98, 6);
+        expect(payout).toBeCloseTo(5 * 100 * (1 - MARKET_TAX), 6);
     });
 
     test('does not tax coin drops', () => {
@@ -203,9 +204,10 @@ describe('getMinimumGuaranteedPayout', () => {
         dropPrices['/items/guaranteed_b'] = 20;
         dropPrices['/items/rare_bonus'] = 1;
 
-        // 400*10*0.98 + 250*20*0.98 = 3920 + 4900 = 8820 - the 5% bonus entry never counts,
-        // even though its own minCount*price (2000) looks bigger than either guaranteed entry.
-        expect(getMinimumGuaranteedPayout('/items/test_chest')).toBeCloseTo(8820, 6);
+        // 400*10*(1-MARKET_TAX) + 250*20*(1-MARKET_TAX) = 3800 + 4750 = 8550 - the 5% bonus entry
+        // never counts, even though its own minCount*price (2000) looks bigger than either
+        // guaranteed entry.
+        expect(getMinimumGuaranteedPayout('/items/test_chest')).toBeCloseTo(8550, 6);
     });
 
     test('is 0 when no drop is guaranteed', () => {
@@ -268,10 +270,10 @@ describe('buildDungeonChestModel', () => {
 
         const model = buildDungeonChestModel('/items/chimerical_chest', { sampleSize: 100, rngSeed: 5 });
 
-        // cost = 3000; guaranteed payout = 400 * 5 * 0.98 = 1960; max loss = 3000 - 1960 = 1040
+        // cost = 3000; guaranteed payout = 400 * 5 * (1-MARKET_TAX) = 1900; max loss = 3000 - 1900 = 1100
         expect(model.cost).toBe(3000);
-        expect(model.minimumGuaranteedPayout).toBeCloseTo(1960, 6);
-        expect(model.maxSinglePossibleLoss).toBeCloseTo(1040, 6);
+        expect(model.minimumGuaranteedPayout).toBeCloseTo(1900, 6);
+        expect(model.maxSinglePossibleLoss).toBeCloseTo(1100, 6);
     });
 
     test('clamps maxSinglePossibleLoss at 0 when the guaranteed payout alone covers the cost', () => {
@@ -284,9 +286,9 @@ describe('buildDungeonChestModel', () => {
 
         const model = buildDungeonChestModel('/items/chimerical_refinement_chest', { sampleSize: 10 });
 
-        // cost = 500; guaranteed payout = 2 * 1000 * 0.98 = 1960, which exceeds cost
+        // cost = 500; guaranteed payout = 2 * 1000 * (1-MARKET_TAX) = 1900, which exceeds cost
         expect(model.cost).toBe(500);
-        expect(model.minimumGuaranteedPayout).toBeCloseTo(1960, 6);
+        expect(model.minimumGuaranteedPayout).toBeCloseTo(1900, 6);
         expect(model.maxSinglePossibleLoss).toBe(0);
     });
 
@@ -302,7 +304,7 @@ describe('buildDungeonChestModel', () => {
         const nextState = model.stepFn({ balance: 10000 }, fixedRng(0));
 
         // cost = 500 (chest key only, no entry key for a refinement chest)
-        // payout = 2 * 1000 * 0.98 = 1960
-        expect(nextState.balance).toBeCloseTo(10000 - 500 + 1960, 6);
+        // payout = 2 * 1000 * (1-MARKET_TAX) = 1900
+        expect(nextState.balance).toBeCloseTo(10000 - 500 + 1900, 6);
     });
 });

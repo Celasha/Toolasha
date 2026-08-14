@@ -3,6 +3,7 @@
  */
 
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { MARKET_TAX } from '../../utils/profit-constants.js';
 
 const settingsMap = {};
 
@@ -108,10 +109,10 @@ describe('calculateMinimumSellPrice', () => {
         expect(result).toBe(15_000_000);
     });
 
-    test('grosses up by the 2% marketplace tax when included', () => {
+    test('grosses up by the marketplace tax when included', () => {
         const breakeven = 15_000_000;
         const result = calculateMinimumSellPrice(5_000_000, 3600, 10_000_000, true);
-        expect(result).toBeCloseTo(breakeven / 0.98, 5);
+        expect(result).toBeCloseTo(breakeven / (1 - MARKET_TAX), 5);
     });
 
     test('scales the rate contribution by fractional hours', () => {

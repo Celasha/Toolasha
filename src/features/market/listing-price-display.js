@@ -15,6 +15,7 @@ import estimatedListingAge from './estimated-listing-age.js';
 import { coinFormatter, formatKMB, formatRelativeTime } from '../../utils/formatters.js';
 import { calculatePriceAfterTax } from '../../utils/profit-helpers.js';
 import { createCleanupRegistry } from '../../utils/cleanup-registry.js';
+import { MARKET_TAX, COWBELL_BAG_HRID, COWBELL_BAG_TAX } from '../../utils/profit-constants.js';
 
 /**
  * Create a styled table cell for the listings table.
@@ -968,7 +969,7 @@ class ListingPriceDisplay {
         if (filledQuantity === orderQuantity) {
             return isSell ? unclaimedCoinCount : unclaimedItemCount * price;
         }
-        const taxRate = isSell ? (itemHrid === '/items/bag_of_10_cowbells' ? 0.18 : 0.02) : 0;
+        const taxRate = isSell ? (itemHrid === COWBELL_BAG_HRID ? COWBELL_BAG_TAX : MARKET_TAX) : 0;
         return (orderQuantity - filledQuantity) * Math.floor(calculatePriceAfterTax(price, taxRate));
     }
 

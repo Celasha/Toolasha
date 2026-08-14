@@ -7,7 +7,7 @@
  * - Equipment speed bonuses
  * - Efficiency buffs (level, house, tea, equipment)
  * - Gourmet tea bonus items (production skills only)
- * - Market tax (2%)
+ * - Market tax
  */
 
 import dataManager from '../../core/data-manager.js';
@@ -308,7 +308,7 @@ export async function calculateGatheringProfit(actionHrid) {
         processingConversions.some((conversion) => conversion.missingPrice) ||
         (bonusRevenue?.hasMissingPrices ?? false);
 
-    // Calculate market tax (2% of gross revenue)
+    // Calculate market tax (percentage of gross revenue)
     const marketTax = revenuePerHour * MARKET_TAX;
 
     // Calculate net profit (revenue - market tax - drink costs)

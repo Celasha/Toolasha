@@ -315,13 +315,13 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
     const marketTaxLine = document.createElement('div');
     marketTaxLine.style.marginLeft = '8px';
     const marketTaxLabel = marketTaxMissing ? '-- ⚠' : `${formatLargeNumber(marketTax)}/hr`;
-    marketTaxLine.textContent = `• Market Tax: 2% of revenue → ${marketTaxLabel}`;
+    marketTaxLine.textContent = `• Market Tax: ${MARKET_TAX * 100}% of revenue → ${marketTaxLabel}`;
     marketTaxContent.appendChild(marketTaxLine);
 
     const marketTaxHeader = marketTaxMissing ? '-- ⚠' : `${formatLargeNumber(marketTax)}/hr`;
     const marketTaxSection = createCollapsibleSection(
         '',
-        `Market Tax: ${marketTaxHeader} (2%)`,
+        `Market Tax: ${marketTaxHeader} (${MARKET_TAX * 100}%)`,
         null,
         marketTaxContent,
         false,
@@ -723,7 +723,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
             profitData.gourmetBonusItems * profitData.outputPrice +
             bonusRevenueTotal * efficiencyMultiplier
     );
-    // Calculate market tax (2% of revenue)
+    // Calculate market tax (percentage of revenue)
     const marketTax = Math.round(revenue * MARKET_TAX);
     const costs = Math.round(profitData.materialCostPerHour + profitData.totalTeaCostPerHour + marketTax);
     const summary = netMissing
@@ -933,13 +933,13 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
         : marketTaxEstimated
           ? `${formatLargeNumber(marketTax)}/hr ⚠`
           : `${formatLargeNumber(marketTax)}/hr`;
-    marketTaxLine.textContent = `• Market Tax: 2% of revenue → ${marketTaxLabel}`;
+    marketTaxLine.textContent = `• Market Tax: ${MARKET_TAX * 100}% of revenue → ${marketTaxLabel}`;
     marketTaxContent.appendChild(marketTaxLine);
 
     const marketTaxHeader = marketTaxLabel;
     const marketTaxSection = createCollapsibleSection(
         '',
-        `Market Tax: ${marketTaxHeader} (2%)`,
+        `Market Tax: ${marketTaxHeader} (${MARKET_TAX * 100}%)`,
         null,
         marketTaxContent,
         false,
@@ -1504,12 +1504,12 @@ function buildGatheringPerActionBreakdown(profitData) {
     const marketTaxLine = document.createElement('div');
     marketTaxLine.style.marginLeft = '8px';
     const marketTaxLabel = formatMissingLabel(marketTaxMissing, `${formatPerAction(marketTaxPerAction)}/action`);
-    marketTaxLine.textContent = `• Market Tax: 2% of revenue → ${marketTaxLabel}`;
+    marketTaxLine.textContent = `• Market Tax: ${MARKET_TAX * 100}% of revenue → ${marketTaxLabel}`;
     marketTaxContent.appendChild(marketTaxLine);
 
     const marketTaxSection = createCollapsibleSection(
         '',
-        `Market Tax: ${marketTaxLabel} (2%)`,
+        `Market Tax: ${marketTaxLabel} (${MARKET_TAX * 100}%)`,
         null,
         marketTaxContent,
         false,
@@ -1794,12 +1794,12 @@ function buildProductionPerActionBreakdown(profitData) {
         : marketTaxEstimated
           ? `${formatPerAction(marketTaxPerAction)}/action ⚠`
           : `${formatPerAction(marketTaxPerAction)}/action`;
-    marketTaxLine.textContent = `• Market Tax: 2% of revenue → ${marketTaxLabel}`;
+    marketTaxLine.textContent = `• Market Tax: ${MARKET_TAX * 100}% of revenue → ${marketTaxLabel}`;
     marketTaxContent.appendChild(marketTaxLine);
 
     const marketTaxSection = createCollapsibleSection(
         '',
-        `Market Tax: ${marketTaxLabel} (2%)`,
+        `Market Tax: ${marketTaxLabel} (${MARKET_TAX * 100}%)`,
         null,
         marketTaxContent,
         false,
@@ -2100,13 +2100,13 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
     const marketTaxLine = document.createElement('div');
     marketTaxLine.style.marginLeft = '8px';
     const marketTaxLabel = marketTaxMissing ? '-- ⚠' : formatLargeNumber(totalMarketTax);
-    marketTaxLine.textContent = `• Market Tax: 2% of revenue → ${marketTaxLabel}`;
+    marketTaxLine.textContent = `• Market Tax: ${MARKET_TAX * 100}% of revenue → ${marketTaxLabel}`;
     marketTaxContent.appendChild(marketTaxLine);
 
     const marketTaxHeader = marketTaxMissing ? '-- ⚠' : formatLargeNumber(totalMarketTax);
     const marketTaxSection = createCollapsibleSection(
         '',
-        `Market Tax: ${marketTaxHeader} (2%)`,
+        `Market Tax: ${marketTaxHeader} (${MARKET_TAX * 100}%)`,
         null,
         marketTaxContent,
         false,
@@ -2407,13 +2407,13 @@ function buildProductionActionsBreakdown(profitData, actionsCount) {
         : marketTaxEstimated
           ? `${formatLargeNumber(totalMarketTax)} ⚠`
           : formatLargeNumber(totalMarketTax);
-    marketTaxLine.textContent = `• Market Tax: 2% of revenue → ${marketTaxLabel}`;
+    marketTaxLine.textContent = `• Market Tax: ${MARKET_TAX * 100}% of revenue → ${marketTaxLabel}`;
     marketTaxContent.appendChild(marketTaxLine);
 
     const marketTaxHeader = marketTaxLabel;
     const marketTaxSection = createCollapsibleSection(
         '',
-        `Market Tax: ${marketTaxHeader} (2%)`,
+        `Market Tax: ${marketTaxHeader} (${MARKET_TAX * 100}%)`,
         null,
         marketTaxContent,
         false,
