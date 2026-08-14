@@ -2,10 +2,9 @@
 
 ## [2.88.1](https://github.com/Celasha/Toolasha/compare/v2.88.0...v2.88.1) (2026-08-14)
 
-
 ### Bug Fixes
 
-* Risk of Ruin catalyst modeling, live toggle, and marketplace auto-click-max ([#642](https://github.com/Celasha/Toolasha/issues/642)) ([222af26](https://github.com/Celasha/Toolasha/commit/222af26776b86a41583378efe4cd5f0b39dfb27f))
+- Risk of Ruin catalyst modeling, live toggle, and marketplace auto-click-max ([#642](https://github.com/Celasha/Toolasha/issues/642)) ([222af26](https://github.com/Celasha/Toolasha/commit/222af26776b86a41583378efe4cd5f0b39dfb27f))
 
 ## [2.88.0](https://github.com/Celasha/Toolasha/compare/v2.87.12...v2.88.0) (2026-08-12)
 
