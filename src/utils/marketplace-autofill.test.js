@@ -68,13 +68,13 @@ function attachReactRootComponent(element, component) {
     });
 }
 
-function makeBuyModal(component, { title = 'Buy Now', quantity = '1' } = {}) {
+function makeBuyModal(component, { title = 'Buy Now', quantity = '1', inputType = 'number' } = {}) {
     const modal = document.createElement('div');
     modal.className = 'Modal_modalContainer__test';
     modal.innerHTML = `
         <div class="MarketplacePanel_header__test">${title}</div>
         <div class="MarketplacePanel_quantityInputs__test">
-            <input type="number" value="${quantity}">
+            <input type="${inputType}" value="${quantity}">
         </div>
     `;
     document.body.appendChild(modal);
@@ -191,6 +191,23 @@ describe('marketplace-autofill', () => {
         emitModal(modal);
 
         expect(input.value).toBe('900');
+        expect(inputEvents).toHaveBeenCalledTimes(1);
+        expect(marketplaceSession.isActive(sessionId)).toBe(true);
+        manager.cleanup();
+    });
+
+    test('fills a Buy modal whose quantity input is type="text" (current game markup)', () => {
+        // The marketplace update switched this field from type="number" to type="text" to
+        // support typed compact values like "5k" - the quantity input must still be found.
+        const { manager, sessionId } = startManager({ quantityProvider: () => 2400 });
+        const component = makeMarketplaceComponent();
+        const { modal, input } = makeBuyModal(component, { inputType: 'text' });
+        const inputEvents = vi.fn();
+        input.addEventListener('input', inputEvents);
+
+        emitModal(modal);
+
+        expect(input.value).toBe('2400');
         expect(inputEvents).toHaveBeenCalledTimes(1);
         expect(marketplaceSession.isActive(sessionId)).toBe(true);
         manager.cleanup();
