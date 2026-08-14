@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import dataManager from '../../core/data-manager.js';
 import { marketplaceSession, MARKETPLACE_OWNER } from '../../core/marketplace-session.js';
 import { MarketplaceShortcuts } from './marketplace-shortcuts.js';
 
@@ -67,6 +68,7 @@ afterEach(() => {
     vi.useRealTimers();
     document.body.innerHTML = '';
     vi.restoreAllMocks();
+    dataManager.characterItems = null;
 });
 
 describe('MarketplaceShortcuts dropdown lifecycle', () => {
@@ -252,5 +254,83 @@ describe('MarketplaceShortcuts session-owned quantity autofill', () => {
         expect(input.value).toBe('1');
         expect(feature.pendingAutofill).toBeNull();
         expect(marketplaceSession.getActive()).toBeNull();
+    });
+});
+
+function makeOrderModal(title = 'Buy Now') {
+    const modal = document.createElement('div');
+    modal.className = 'Modal_modalContainer__test';
+    modal.innerHTML = `
+        <div class="MarketplacePanel_header__test">${title}</div>
+        <div class="MarketplacePanel_modalContent__test">
+            <div class="MarketplacePanel_inputContainer__test">
+                <div class="MarketplacePanel_priceInputs__test">
+                    <div class="MarketplacePanel_buttonContainer__test"><button>Min</button></div>
+                    <div class="MarketplacePanel_buttonContainer__test"><button>-</button></div>
+                    <div class="MarketplacePanel_priceDisplay__test">3,340</div>
+                    <div class="MarketplacePanel_buttonContainer__test"><button>+</button></div>
+                    <div class="MarketplacePanel_buttonContainer__test"><button>Max</button></div>
+                </div>
+            </div>
+            <div class="MarketplacePanel_inputContainer__test">
+                <div class="MarketplacePanel_quantityInputs__test">
+                    <div class="MarketplacePanel_buttonContainer__test"><button>1</button></div>
+                    <input type="text" value="1">
+                    <div class="MarketplacePanel_buttonContainer__test"><button>Max</button></div>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    return { modal, quantityInput: modal.querySelector('input') };
+}
+
+describe('MarketplaceShortcuts quick-input and multiplier buttons', () => {
+    // The marketplace update switched the quantity field from type="number" to type="text"
+    // (to support typed compact values like "5k"); these buttons must still find it.
+    test('injectQuickInputButtons adds preset buttons when the quantity input is type="text"', () => {
+        const feature = new MarketplaceShortcuts();
+        const { modal } = makeOrderModal();
+
+        feature.injectQuickInputButtons(modal);
+        vi.advanceTimersByTime(150);
+
+        const row = modal.querySelector('.mwi-mp-quick-input');
+        expect(row).not.toBeNull();
+        expect(row.querySelectorAll('.mwi-quick-input-btn')).toHaveLength(3);
+    });
+
+    test('injectMultiplierButtons adds ÷2/×2 to the quantity row when its input is type="text"', () => {
+        const feature = new MarketplaceShortcuts();
+        const { modal } = makeOrderModal();
+
+        feature.injectMultiplierButtons(modal);
+        vi.advanceTimersByTime(100);
+
+        const buttons = Array.from(modal.querySelectorAll('.mwi-mp-multiplier button')).map((b) => b.textContent);
+        expect(buttons).toEqual(expect.arrayContaining(['÷2', '×2']));
+    });
+
+    test('injectOwnedCount reads an enhancement level typed as type="text"', () => {
+        dataManager.characterItems = [
+            { itemHrid: '/items/cheese', enhancementLevel: 0, count: 5, itemLocationHrid: '/item_locations/inventory' },
+            { itemHrid: '/items/cheese', enhancementLevel: 5, count: 3, itemLocationHrid: '/item_locations/inventory' },
+        ];
+        const feature = new MarketplaceShortcuts();
+        const { modal } = makeOrderModal();
+        modal.insertAdjacentHTML('afterbegin', '<svg><use href="#cheese"></use></svg>');
+        modal.insertAdjacentHTML(
+            'beforeend',
+            '<div class="MarketplacePanel_inputContainer__test">' +
+                '<div>Enhancement Level<input type="text" value="5"></div>' +
+                '</div>'
+        );
+
+        feature.injectOwnedCount(modal);
+        vi.advanceTimersByTime(100);
+
+        const ownedEl = modal.querySelector('.mwi-owned-count');
+        expect(ownedEl).not.toBeNull();
+        expect(ownedEl.textContent).toContain('3');
     });
 });
