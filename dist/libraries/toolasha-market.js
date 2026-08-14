@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.88.2
+ * Version: 2.88.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -16094,9 +16094,10 @@ self.onmessage = function (e) {
                 const itemSlug = idMatch[1];
                 const itemHrid = `/items/${itemSlug}`;
 
-                // Determine enhancement level from modal (if present)
+                // Determine enhancement level from modal (if present). Same type="text"
+                // staleness as the quantity field elsewhere in this file - match both types.
                 let enhancementLevel = 0;
-                const allInputs = modal.querySelectorAll('input[type="number"]');
+                const allInputs = modal.querySelectorAll('input[type="number"], input[type="text"]');
                 for (const input of allInputs) {
                     const parent = input.closest('div');
                     if (parent?.textContent?.includes('Enhancement Level')) {
@@ -16142,7 +16143,9 @@ self.onmessage = function (e) {
          * @returns {HTMLInputElement|null} Quantity input element or null
          */
         findQuantityInput(modal) {
-            const allInputs = Array.from(modal.querySelectorAll('input[type="number"]'));
+            // The marketplace update switched this field from type="number" to type="text"
+            // (to support typed compact values like "5k"), so match both types.
+            const allInputs = Array.from(modal.querySelectorAll('input[type="number"], input[type="text"]'));
 
             if (allInputs.length === 0) return null;
             if (allInputs.length === 1) return allInputs[0];
@@ -16229,7 +16232,7 @@ self.onmessage = function (e) {
                 for (const row of [priceRow, quantityRow]) {
                     if (!row) continue;
 
-                    const input = row.querySelector('input[type="number"]');
+                    const input = row.querySelector('input[type="number"], input[type="text"]');
                     if (!input) continue;
 
                     const buttonContainers = row.querySelectorAll('div[class*="MarketplacePanel_buttonContainer"]');
