@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.88.3](https://github.com/Celasha/Toolasha/compare/v2.88.2...v2.88.3) (2026-08-14)
+
+
+### Bug Fixes
+
+* marketplace quick-input, multiplier, and owned-count buttons stopped finding text-type inputs ([1f9175c](https://github.com/Celasha/Toolasha/commit/1f9175c73950999fcb8e905a32b557d8d6fd3329))
+
 ## [2.88.2](https://github.com/Celasha/Toolasha/compare/v2.88.1...v2.88.2) (2026-08-14)
 
 ### Bug Fixes
