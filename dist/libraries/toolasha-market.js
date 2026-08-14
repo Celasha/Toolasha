@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.88.3
+ * Version: 2.88.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1398,7 +1398,7 @@
             const outputPriceEstimated = outputPriceMissing && craftingFallback > 0;
             const outputPrice = outputPriceMissing ? craftingFallback : rawOutputPrice;
 
-            // Apply market tax (2% tax on sales)
+            // Apply market tax on sales
             const priceAfterTax = profitHelpers_js.calculatePriceAfterTax(outputPrice);
 
             // Cost per item (without efficiency scaling)
@@ -1433,7 +1433,7 @@
             // Apply efficiency multiplier to bonus revenue (efficiency repeats the action, including bonus rolls)
             const efficiencyBoostedBonusRevenue = (bonusRevenue?.totalBonusRevenue || 0) * efficiencyMultiplier;
 
-            // Calculate market tax (2% of gross revenue including bonus revenue)
+            // Calculate market tax (percentage of gross revenue including bonus revenue)
             const marketTax = (revenuePerHour + efficiencyBoostedBonusRevenue) * profitConstants_js.MARKET_TAX;
 
             // Total costs per hour (materials + teas + market tax)
@@ -1471,7 +1471,7 @@
                 outputPrice, // Output price before tax (bid or ask based on mode)
                 outputPriceMissing,
                 outputPriceEstimated, // True when outputPriceMissing but crafting cost fallback resolved a price
-                priceAfterTax, // Output price after 2% tax (bid or ask based on mode)
+                priceAfterTax, // Output price after market tax (bid or ask based on mode)
                 revenuePerHour,
                 profitPerItem,
                 profitPerHour,
@@ -2101,7 +2101,7 @@ self.onmessage = function (e) {
     class ExpectedValueCalculator {
         constructor() {
             // Constants
-            this.MARKET_TAX = 0.02; // 2% marketplace tax
+            this.MARKET_TAX = profitConstants_js.MARKET_TAX;
             this.CONVERGENCE_ITERATIONS = 4; // Nested container convergence
 
             // Cache for container EVs
@@ -3332,10 +3332,14 @@ self.onmessage = function (e) {
                 const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, gameData.itemDetailMap);
 
                 // Get input cost (market price of the item being decomposed)
-                const inputPrice = marketData_js.getItemPrice(itemHrid, { context: 'profit', side: 'buy', enhancementLevel });
-                if (inputPrice === null) {
+                // Some items (e.g. Holy Milk) consume multiple copies per action - bulkMultiplier
+                // scales both the input consumed and the base decompose outputs received.
+                const bulkMultiplier = itemDetails.alchemyDetail?.bulkMultiplier || 1;
+                const pricePerItem = marketData_js.getItemPrice(itemHrid, { context: 'profit', side: 'buy', enhancementLevel });
+                if (pricePerItem === null) {
                     return null; // No market data
                 }
+                const inputPrice = pricePerItem * bulkMultiplier;
 
                 // Calculate output value
                 let outputValue = 0;
@@ -3346,12 +3350,13 @@ self.onmessage = function (e) {
                     const outputPrice = marketData_js.getItemPrice(output.itemHrid, { context: 'profit', side: 'sell' });
                     if (outputPrice !== null) {
                         const afterTax = profitHelpers_js.calculatePriceAfterTax(outputPrice);
-                        const dropValue = afterTax * output.count;
+                        const outputCount = output.count * bulkMultiplier;
+                        const dropValue = afterTax * outputCount;
                         outputValue += dropValue;
 
                         dropDetails.push({
                             itemHrid: output.itemHrid,
-                            count: output.count,
+                            count: outputCount,
                             price: outputPrice,
                             afterTax,
                             isEssence: false,
@@ -3446,8 +3451,8 @@ self.onmessage = function (e) {
                 const requirementCosts = [
                     {
                         itemHrid,
-                        count: 1,
-                        price: inputPrice,
+                        count: bulkMultiplier,
+                        price: pricePerItem,
                         costPerAction: inputPrice,
                         costPerHour: inputPrice * actionsPerHourWithEfficiency,
                         enhancementLevel: enhancementLevel || 0,
@@ -3941,7 +3946,7 @@ self.onmessage = function (e) {
      * - Equipment speed bonuses
      * - Efficiency buffs (level, house, tea, equipment)
      * - Gourmet tea bonus items (production skills only)
-     * - Market tax (2%)
+     * - Market tax
      */
 
 
@@ -4229,7 +4234,7 @@ self.onmessage = function (e) {
             processingConversions.some((conversion) => conversion.missingPrice) ||
             (bonusRevenue?.hasMissingPrices ?? false);
 
-        // Calculate market tax (2% of gross revenue)
+        // Calculate market tax (percentage of gross revenue)
         const marketTax = revenuePerHour * profitConstants_js.MARKET_TAX;
 
         // Calculate net profit (revenue - market tax - drink costs)
@@ -9391,7 +9396,7 @@ self.onmessage = function (e) {
             if (filledQuantity === orderQuantity) {
                 return isSell ? unclaimedCoinCount : unclaimedItemCount * price;
             }
-            const taxRate = isSell ? (itemHrid === '/items/bag_of_10_cowbells' ? 0.18 : 0.02) : 0;
+            const taxRate = isSell ? (itemHrid === profitConstants_js.COWBELL_BAG_HRID ? profitConstants_js.COWBELL_BAG_TAX : profitConstants_js.MARKET_TAX) : 0;
             return (orderQuantity - filledQuantity) * Math.floor(profitHelpers_js.calculatePriceAfterTax(price, taxRate));
         }
 
@@ -10044,7 +10049,7 @@ self.onmessage = function (e) {
                         continue;
                     }
 
-                    const tax = listing.itemHrid === '/items/bag_of_10_cowbells' ? 0.82 : 0.98;
+                    const tax = listing.itemHrid === profitConstants_js.COWBELL_BAG_HRID ? 1 - profitConstants_js.COWBELL_BAG_TAX : 1 - profitConstants_js.MARKET_TAX;
                     const remainingQuantity = Math.max(0, listing.orderQuantity - listing.filledQuantity);
 
                     if (remainingQuantity > 0) {
@@ -18876,8 +18881,8 @@ self.onmessage = function (e) {
 
             if (listing.isSell) {
                 // Selling: value is locked in listing + unclaimed coins
-                // Apply marketplace fee (2% for normal items, 18% for cowbells)
-                const fee = listing.itemHrid === '/items/bag_of_10_cowbells' ? 0.18 : 0.02;
+                // Apply marketplace fee (normal items vs. cowbells)
+                const fee = listing.itemHrid === profitConstants_js.COWBELL_BAG_HRID ? profitConstants_js.COWBELL_BAG_TAX : profitConstants_js.MARKET_TAX;
 
                 const value = await calculateItemValue(
                     { itemHrid: listing.itemHrid, enhancementLevel, count: quantity },

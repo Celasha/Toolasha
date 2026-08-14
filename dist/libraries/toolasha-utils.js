@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.88.3
+ * Version: 2.88.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2087,9 +2087,9 @@
      */
 
     /**
-     * Marketplace tax rate (2%)
+     * Marketplace tax rate (5%)
      */
-    const MARKET_TAX = 0.02;
+    const MARKET_TAX = 0.05;
 
     /**
      * Bag of 10 Cowbells item HRID (subject to 18% market tax)
@@ -3378,11 +3378,11 @@
     /**
      * Calculate price after marketplace tax
      * @param {number} price - Price before tax
-     * @param {number} [taxRate=MARKET_TAX] - Tax rate (e.g., 0.02 for 2%)
+     * @param {number} [taxRate=MARKET_TAX] - Tax rate (e.g., 0.05 for 5%)
      * @returns {number} Price after tax deduction
      *
      * @example
-     * calculatePriceAfterTax(100) // Returns 98
+     * calculatePriceAfterTax(100) // Returns 95
      */
     function calculatePriceAfterTax(price, taxRate = MARKET_TAX) {
         return price * (1 - taxRate);
@@ -4863,7 +4863,7 @@ self.onmessage = function (e) {
     class ExpectedValueCalculator {
         constructor() {
             // Constants
-            this.MARKET_TAX = 0.02; // 2% marketplace tax
+            this.MARKET_TAX = MARKET_TAX;
             this.CONVERGENCE_ITERATIONS = 4; // Nested container convergence
 
             // Cache for container EVs

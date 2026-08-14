@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.88.3
+ * Version: 2.88.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1131,6 +1131,26 @@
             modalBox.style.transform = `translate(${dx}px, ${dy}px)`;
         }
 
+        /**
+         * Clamp an offset so the modal box (at its natural, untransformed rect) stays
+         * reachable on-screen - the drag bar sits at its top edge, so keeping the top
+         * within the viewport and a horizontal margin visible is enough to always be
+         * able to grab it again.
+         * @param {{left: number, top: number, width: number}} naturalRect
+         */
+        _clampOffset(naturalRect, dx, dy) {
+            const minVisible = 60;
+            const barHeight = 30;
+
+            const top = naturalRect.top + dy;
+            const clampedTop = Math.max(0, Math.min(top, window.innerHeight - barHeight));
+
+            const left = naturalRect.left + dx;
+            const clampedLeft = Math.min(Math.max(left, minVisible - naturalRect.width), window.innerWidth - minVisible);
+
+            return { dx: clampedLeft - naturalRect.left, dy: clampedTop - naturalRect.top };
+        }
+
         _makeDraggable(modalBox, contentEl) {
             const title = this._getTitle(contentEl);
 
@@ -1154,11 +1174,18 @@
             bar.textContent = '· · · · ·';
             contentEl.insertBefore(bar, contentEl.firstChild);
 
-            // Apply saved offset
+            // Apply saved offset, self-healing (and re-saving) it if it would place the
+            // modal off-screen - fixes a modal type stuck off-screen from a past drag.
             if (this.offsets[title]) {
                 requestAnimationFrame(() => {
+                    const naturalRect = modalBox.getBoundingClientRect();
                     const { dx, dy } = this.offsets[title];
-                    this._applyTransform(modalBox, dx, dy);
+                    const clamped = this._clampOffset(naturalRect, dx, dy);
+                    this._applyTransform(modalBox, clamped.dx, clamped.dy);
+                    if (clamped.dx !== dx || clamped.dy !== dy) {
+                        this.offsets[title] = clamped;
+                        storage.set(STORAGE_KEY$4, this.offsets, STORE_NAME$5);
+                    }
                 });
             }
 
@@ -1167,6 +1194,7 @@
             let startMouseY = 0;
             let startDx = 0;
             let startDy = 0;
+            let naturalRect = null;
 
             const onMouseDown = (e) => {
                 if (e.button !== 0) return;
@@ -1178,14 +1206,18 @@
                 startDx = isNaN(t.m41) ? 0 : t.m41;
                 startDy = isNaN(t.m42) ? 0 : t.m42;
 
+                const rect = modalBox.getBoundingClientRect();
+                naturalRect = { left: rect.left - startDx, top: rect.top - startDy, width: rect.width };
+
                 bar.style.cursor = 'grabbing';
                 e.preventDefault();
             };
 
             const onMouseMove = (e) => {
                 if (!dragging) return;
-                const dx = startDx + (e.clientX - startMouseX);
-                const dy = startDy + (e.clientY - startMouseY);
+                const rawDx = startDx + (e.clientX - startMouseX);
+                const rawDy = startDy + (e.clientY - startMouseY);
+                const { dx, dy } = this._clampOffset(naturalRect, rawDx, rawDy);
                 this._applyTransform(modalBox, dx, dy);
             };
 
@@ -5711,7 +5743,7 @@ ${starCSS}
      * - Equipment speed bonuses
      * - Efficiency buffs (level, house, tea, equipment)
      * - Gourmet tea bonus items (production skills only)
-     * - Market tax (2%)
+     * - Market tax
      */
 
 
@@ -5999,7 +6031,7 @@ ${starCSS}
             processingConversions.some((conversion) => conversion.missingPrice) ||
             (bonusRevenue?.hasMissingPrices ?? false);
 
-        // Calculate market tax (2% of gross revenue)
+        // Calculate market tax (percentage of gross revenue)
         const marketTax = revenuePerHour * profitConstants_js.MARKET_TAX;
 
         // Calculate net profit (revenue - market tax - drink costs)
@@ -16104,9 +16136,6 @@ ${starCSS}
             // Skip if already processed
             if (this.processedLogs.has(lootElem)) return;
 
-            // Mark as processed
-            this.processedLogs.add(lootElem);
-
             // Extract divs
             const divs = lootElem.querySelectorAll('div');
             if (divs.length < 3) return;
@@ -16116,7 +16145,11 @@ ${starCSS}
 
             // Extract log data
             const logData = this.extractLogData(lootElem, secondDiv);
+            // Don't mark as processed until matching data is actually found - the WS payload for
+            // a live entry can lag behind its DOM node appearing, and this node won't be re-added
+            // to the DOM later for us to retry on.
             if (!logData) return;
+            this.processedLogs.add(lootElem);
 
             // Skip enhancement actions
             if (logData.actionHrid === '/actions/enhancing/enhance') return;
@@ -38235,7 +38268,7 @@ self.onmessage = function (e) {
             }
 
             // Calculate sell → rebuy scenario
-            const SELLER_TAX = 0.02;
+            const SELLER_TAX = profitConstants_js.MARKET_TAX;
             const sellPrice = selectedRow.buyPrice; // bid price = what market will buy at
             const directCredits = batches * selectedRow.creditCount;
 
@@ -38261,7 +38294,7 @@ self.onmessage = function (e) {
 
             advisor.style.borderColor = creditDiff > 0 ? 'rgba(74,222,128,0.3)' : 'rgba(255,107,107,0.3)';
             advisor.innerHTML = `
-        <div style="color:#9ca3af; margin-bottom:6px; font-size:11px;">Sell → rebuy best item (2% tax)</div>
+        <div style="color:#9ca3af; margin-bottom:6px; font-size:11px;">Sell → rebuy best item (${SELLER_TAX * 100}% tax)</div>
         <div style="display:flex; justify-content:space-between; margin-bottom:3px;">
             <span style="color:#aaa;">Direct exchange</span>
             <span style="color:#e0e0e0; font-weight:600;">${directCredits.toLocaleString()} credits</span>
