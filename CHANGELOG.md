@@ -2,10 +2,9 @@
 
 ## [2.88.2](https://github.com/Celasha/Toolasha/compare/v2.88.1...v2.88.2) (2026-08-14)
 
-
 ### Bug Fixes
 
-* marketplace autofill quantity input matches type="text", not just type="number" ([20b4786](https://github.com/Celasha/Toolasha/commit/20b4786506503d94f34dc5408e27892cfaf5e449))
+- marketplace autofill quantity input matches type="text", not just type="number" ([20b4786](https://github.com/Celasha/Toolasha/commit/20b4786506503d94f34dc5408e27892cfaf5e449))
 
 ## [2.88.1](https://github.com/Celasha/Toolasha/compare/v2.88.0...v2.88.1) (2026-08-14)
 
