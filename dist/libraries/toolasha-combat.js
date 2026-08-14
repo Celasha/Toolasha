@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.88.1
+ * Version: 2.88.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -25076,13 +25076,18 @@
         }
 
         function findWorkingQuantityInput(modal) {
+            // The marketplace update switched this field from a native number input to a text
+            // input (to support typed compact values like "5k"), so match both types.
             const structuralInputs = Array.from(
-                modal.querySelectorAll('[class*="MarketplacePanel_quantityInputs"] input[type="number"]')
+                modal.querySelectorAll(
+                    '[class*="MarketplacePanel_quantityInputs"] input[type="number"], ' +
+                        '[class*="MarketplacePanel_quantityInputs"] input[type="text"]'
+                )
             );
             if (structuralInputs.length === 1) return structuralInputs[0];
             if (structuralInputs.length > 1) return null;
 
-            const allInputs = Array.from(modal.querySelectorAll('input[type="number"]'));
+            const allInputs = Array.from(modal.querySelectorAll('input[type="number"], input[type="text"]'));
             if (allInputs.length === 1) return allInputs[0];
 
             const labeled = allInputs.filter((input) => {
