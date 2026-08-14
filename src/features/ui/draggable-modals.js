@@ -64,6 +64,26 @@ class DraggableModals {
         modalBox.style.transform = `translate(${dx}px, ${dy}px)`;
     }
 
+    /**
+     * Clamp an offset so the modal box (at its natural, untransformed rect) stays
+     * reachable on-screen - the drag bar sits at its top edge, so keeping the top
+     * within the viewport and a horizontal margin visible is enough to always be
+     * able to grab it again.
+     * @param {{left: number, top: number, width: number}} naturalRect
+     */
+    _clampOffset(naturalRect, dx, dy) {
+        const minVisible = 60;
+        const barHeight = 30;
+
+        const top = naturalRect.top + dy;
+        const clampedTop = Math.max(0, Math.min(top, window.innerHeight - barHeight));
+
+        const left = naturalRect.left + dx;
+        const clampedLeft = Math.min(Math.max(left, minVisible - naturalRect.width), window.innerWidth - minVisible);
+
+        return { dx: clampedLeft - naturalRect.left, dy: clampedTop - naturalRect.top };
+    }
+
     _makeDraggable(modalBox, contentEl) {
         const title = this._getTitle(contentEl);
 
@@ -87,11 +107,18 @@ class DraggableModals {
         bar.textContent = '· · · · ·';
         contentEl.insertBefore(bar, contentEl.firstChild);
 
-        // Apply saved offset
+        // Apply saved offset, self-healing (and re-saving) it if it would place the
+        // modal off-screen - fixes a modal type stuck off-screen from a past drag.
         if (this.offsets[title]) {
             requestAnimationFrame(() => {
+                const naturalRect = modalBox.getBoundingClientRect();
                 const { dx, dy } = this.offsets[title];
-                this._applyTransform(modalBox, dx, dy);
+                const clamped = this._clampOffset(naturalRect, dx, dy);
+                this._applyTransform(modalBox, clamped.dx, clamped.dy);
+                if (clamped.dx !== dx || clamped.dy !== dy) {
+                    this.offsets[title] = clamped;
+                    storage.set(STORAGE_KEY, this.offsets, STORE_NAME);
+                }
             });
         }
 
@@ -100,6 +127,7 @@ class DraggableModals {
         let startMouseY = 0;
         let startDx = 0;
         let startDy = 0;
+        let naturalRect = null;
 
         const onMouseDown = (e) => {
             if (e.button !== 0) return;
@@ -111,14 +139,18 @@ class DraggableModals {
             startDx = isNaN(t.m41) ? 0 : t.m41;
             startDy = isNaN(t.m42) ? 0 : t.m42;
 
+            const rect = modalBox.getBoundingClientRect();
+            naturalRect = { left: rect.left - startDx, top: rect.top - startDy, width: rect.width };
+
             bar.style.cursor = 'grabbing';
             e.preventDefault();
         };
 
         const onMouseMove = (e) => {
             if (!dragging) return;
-            const dx = startDx + (e.clientX - startMouseX);
-            const dy = startDy + (e.clientY - startMouseY);
+            const rawDx = startDx + (e.clientX - startMouseX);
+            const rawDy = startDy + (e.clientY - startMouseY);
+            const { dx, dy } = this._clampOffset(naturalRect, rawDx, rawDy);
             this._applyTransform(modalBox, dx, dy);
         };
 
@@ -171,6 +203,8 @@ class DraggableModals {
 }
 
 const draggableModals = new DraggableModals();
+
+export { DraggableModals };
 
 export default {
     name: 'Draggable Modals',
