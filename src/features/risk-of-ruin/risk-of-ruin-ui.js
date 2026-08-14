@@ -14,8 +14,6 @@ import { parseItemCount } from '../../utils/number-parser.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } from '../../utils/panel-z-index.js';
 import {
-    lundbergBound,
-    lundbergBoundVarying,
     wilsonConfidenceInterval,
     minActionsForNonZeroRisk,
     findPeakExposureStep,
@@ -69,6 +67,20 @@ class RiskOfRuinUI {
         this.panel = null;
         this.isDragging = false;
         this.dragOffset = { x: 0, y: 0 };
+    }
+
+    /**
+     * Setup setting change listener (always active, even when feature is disabled) so toggling
+     * "Enable Risk of Ruin calculator" in Settings takes effect immediately, with no refresh.
+     */
+    setupSettingListener() {
+        config.onSettingChange('riskOfRuin', (enabled) => {
+            if (enabled) {
+                this.initialize();
+            } else {
+                this.disable();
+            }
+        });
     }
 
     initialize() {
@@ -237,6 +249,13 @@ class RiskOfRuinUI {
             container.innerHTML = `
                 <label style="${labelStyle}">Item to Transmute</label>
                 <input id="mwi-ror-item" list="mwi-ror-transmute-items" style="${inputStyle}" placeholder="Start typing an item name...">
+                <label style="${labelStyle}">Catalyst</label>
+                <select id="mwi-ror-catalyst" style="${inputStyle}">
+                    <option value="best">Best available (auto)</option>
+                    <option value="none">None</option>
+                    <option value="typeSpecific">Type-specific catalyst</option>
+                    <option value="prime">Prime catalyst</option>
+                </select>
                 <label style="${labelStyle}">Actions to attempt</label>
                 <input id="mwi-ror-target" type="number" min="1" step="1" value="100" style="${inputStyle}">
             `;
@@ -358,7 +377,6 @@ class RiskOfRuinUI {
         const rngSeed = Math.floor(Math.random() * 2 ** 31);
 
         let simModel;
-        let lundberg;
         let maxSinglePossibleLoss;
         let detailInfo;
 
@@ -376,7 +394,6 @@ class RiskOfRuinUI {
                 outcomeDistribution: chestModel.outcomeDistribution,
                 targetActionCount,
             };
-            lundberg = lundbergBound({ startingBalance, outcomeDistribution: chestModel.outcomeDistribution });
             detailInfo = {
                 mode: 'chest',
                 costBreakdown: getChestCostBreakdown(hrid),
@@ -387,7 +404,9 @@ class RiskOfRuinUI {
             const name = this.panel.querySelector('#mwi-ror-item').value;
             const hrid = this._resolveItemHrid(name, 'mwi-ror-transmute-items');
             const targetActionCount = parseInt(this.panel.querySelector('#mwi-ror-target').value) || 0;
-            const alchemyModel = hrid ? buildAlchemyTransmuteModel(hrid) : null;
+            const catalystSelection = this.panel.querySelector('#mwi-ror-catalyst').value;
+            const catalystChoice = catalystSelection === 'best' ? null : catalystSelection;
+            const alchemyModel = hrid ? buildAlchemyTransmuteModel(hrid, { catalystChoice }) : null;
             if (!alchemyModel) {
                 status.textContent = 'Enter a valid transmutable item name.';
                 return;
@@ -402,7 +421,6 @@ class RiskOfRuinUI {
                 outcomeDistribution: alchemyModel.outcomeDistribution,
                 targetActionCount,
             };
-            lundberg = lundbergBound({ startingBalance, outcomeDistribution: alchemyModel.outcomeDistribution });
             detailInfo = { mode: 'alchemy', breakdown: alchemyModel.breakdown };
         } else {
             const name = this.panel.querySelector('#mwi-ror-item').value;
@@ -444,10 +462,6 @@ class RiskOfRuinUI {
                 targetLevel,
                 startLevel,
             };
-            lundberg = lundbergBoundVarying({
-                startingBalance,
-                perStepDistributions: enhancementModel.perLevelOutcomeDistributions,
-            });
             detailInfo = {
                 mode: 'enhancement',
                 perLevelOutcomeDistributions: enhancementModel.perLevelOutcomeDistributions,
@@ -460,12 +474,12 @@ class RiskOfRuinUI {
 
         const simResult = await simulateRuinAsync(simModel);
         const minActions = minActionsForNonZeroRisk(startingBalance, maxSinglePossibleLoss);
-        this._renderResults(results, simResult, lundberg, minActions);
+        this._renderResults(results, simResult, minActions);
         this._renderDetails(results, detailInfo, startingBalance, maxSinglePossibleLoss, minActions);
         status.textContent = `${formatWithSeparator(trials)} trials simulated.`;
     }
 
-    _renderResults(container, simResult, lundberg, minActions) {
+    _renderResults(container, simResult, minActions) {
         const ci = wilsonConfidenceInterval(simResult.ruinCount, simResult.trials);
         const peakStep = findPeakExposureStep(simResult.ruinStepCounts);
 
@@ -474,16 +488,6 @@ class RiskOfRuinUI {
             `<strong>Ruin probability:</strong> ${formatPercentage(simResult.ruinProbability, 2)} ` +
                 `(95% CI: ${formatPercentage(ci.low, 2)} – ${formatPercentage(ci.high, 2)})`
         );
-
-        if (lundberg.meaningful) {
-            lines.push(`<strong>Lundberg upper bound:</strong> ≤ ${formatPercentage(Math.min(1, lundberg.bound), 2)}`);
-        } else {
-            lines.push(
-                `<strong>Lundberg upper bound:</strong> not meaningful — this setup does not have ` +
-                    `positive expected gold gain per action, so the closed-form bound is trivial. ` +
-                    `Only the Monte Carlo estimate above applies.`
-            );
-        }
 
         lines.push(
             `<strong>Risk becomes possible at action:</strong> ` +
@@ -616,49 +620,71 @@ class RiskOfRuinUI {
                 ? `<div>Catalyst (${catalystName}, paid only on success): ${fmtGold(breakdown.catalystCostOnSuccess)}</div>`
                 : `<div>No catalyst used.</div>`
         );
-        rows.push(`<div>Output value if successful: ${fmtGold(breakdown.outputValueGivenSuccess)}</div>`);
-        if (breakdown.selfReturnGivenSuccess > 0) {
-            rows.push(`<div>Self-return value if successful: ${fmtGold(breakdown.selfReturnGivenSuccess)}</div>`);
-        }
         rows.push(
-            `<div style="margin-top:6px;"><strong>Net on success:</strong> ${fmtGold(breakdown.netOnSuccess)}</div>`
+            `<div style="margin-top:6px;">The output drop table (below) is a single mutually-exclusive roll ` +
+                `<em>given success</em> — each branch is its own separate outcome, not averaged together, so a ` +
+                `rare high-value branch's real tail risk shows up in the simulation instead of being smoothed away.</div>`
         );
         rows.push(`<div><strong>Net on failure:</strong> ${fmtGold(breakdown.netOnFail)}</div>`);
         rows.push(`<div><strong>Max single-action loss:</strong> ${fmtGold(maxSinglePossibleLoss)}</div>`);
         rows.push(this._riskFormulaLine(startingBalance, maxSinglePossibleLoss, minActions));
 
-        // dropRevenues' own revenuePerAttempt is already scaled by successRate (the overall
-        // per-attempt expected revenue); divide back out to the "given success" value so each
-        // row - and its sum - lines up with outputValueGivenSuccess shown above.
-        let totalGivenSuccess = 0;
-        const dropRows = breakdown.dropRevenues
-            .map((drop) => {
-                const evGivenSuccess = drop.revenuePerAttempt / breakdown.successRate;
-                totalGivenSuccess += evGivenSuccess;
-                return `<tr>
-                        <td style="padding:2px 6px;">${dataManager.getItemDetails(drop.itemHrid)?.name || drop.itemHrid}${drop.isSelfReturn ? ' (self-return)' : ''}</td>
-                        <td style="padding:2px 6px; text-align:right;">${formatPercentage(drop.dropRate, 2)}</td>
-                        <td style="padding:2px 6px; text-align:right;">${fmtGold(drop.price)}</td>
-                        <td style="padding:2px 6px; text-align:right;">${fmtGold(evGivenSuccess)}</td>
-                    </tr>`;
-            })
+        const mainRows = breakdown.mainBranches
+            .map(
+                (branch) =>
+                    `<tr>
+                        <td style="padding:2px 6px;">${dataManager.getItemDetails(branch.itemHrid)?.name || branch.itemHrid}${branch.isSelfReturn ? ' (self-return)' : ''}</td>
+                        <td style="padding:2px 6px; text-align:right;">${formatPercentage(breakdown.successRate * branch.dropRate, 2)}</td>
+                        <td style="padding:2px 6px; text-align:right;">${fmtGold(branch.payout)}</td>
+                    </tr>`
+            )
             .join('');
+        const mainCoverage = breakdown.mainBranches.reduce((sum, b) => sum + b.dropRate, 0);
+        const failRow = `<tr>
+                        <td style="padding:2px 6px;">(failure)</td>
+                        <td style="padding:2px 6px; text-align:right;">${formatPercentage(1 - breakdown.successRate, 2)}</td>
+                        <td style="padding:2px 6px; text-align:right;">${fmtGold(0)}</td>
+                    </tr>`;
+        const gapNote =
+            mainCoverage < 0.999
+                ? `<div style="color:#c98; margin-top:4px; font-size:11px;">${formatPercentage(1 - mainCoverage, 1)} of the success-branch probability has no market price data and is treated as a 0-payout outcome (never inflated with a guess).</div>`
+                : '';
+
+        const bonusRows = breakdown.bonusDrops
+            .map(
+                (bonus) =>
+                    `<tr>
+                        <td style="padding:2px 6px;">${dataManager.getItemDetails(bonus.itemHrid)?.name || bonus.itemHrid}</td>
+                        <td style="padding:2px 6px; text-align:right;">${formatPercentage(bonus.dropRate, 2)}</td>
+                        <td style="padding:2px 6px; text-align:right;">${fmtGold(bonus.payout)}</td>
+                    </tr>`
+            )
+            .join('');
+        const bonusSection = breakdown.bonusDrops.length
+            ? this._wrapDetails(
+                  `Bonus drops (${breakdown.bonusDrops.length}, independent of success/fail)`,
+                  `<table style="width:100%; border-collapse:collapse; font-size:11px;">
+                        <tr style="color:#888;"><th style="text-align:left;">Item</th><th>Chance per attempt</th><th>Payout if hit</th></tr>
+                        ${bonusRows}
+                    </table>`,
+                  true
+              )
+            : '';
 
         return this._wrapDetails(
             'Cost & risk details',
             rows.join('') +
                 this._wrapDetails(
-                    `Output drops (${breakdown.dropRevenues.length} items)`,
+                    `Output drop table (${breakdown.mainBranches.length} branches, one roll given success)`,
                     `<table style="width:100%; border-collapse:collapse; font-size:11px;">
-                        <tr style="color:#888;"><th style="text-align:left;">Item</th><th>Drop rate</th><th>Price</th><th>EV given success</th></tr>
-                        ${dropRows}
-                        <tr style="border-top:1px solid #444; font-weight:600;">
-                            <td style="padding:2px 6px;" colspan="3">Total EV given success</td>
-                            <td style="padding:2px 6px; text-align:right;">${fmtGold(totalGivenSuccess)}</td>
-                        </tr>
-                    </table>`,
+                        <tr style="color:#888;"><th style="text-align:left;">Outcome</th><th>Chance per attempt</th><th>Payout if hit</th></tr>
+                        ${failRow}
+                        ${mainRows}
+                    </table>
+                    ${gapNote}`,
                     true
-                )
+                ) +
+                bonusSection
         );
     }
 
@@ -733,4 +759,5 @@ class RiskOfRuinUI {
 }
 
 const riskOfRuinUI = new RiskOfRuinUI();
+riskOfRuinUI.setupSettingListener();
 export default riskOfRuinUI;
