@@ -101,9 +101,6 @@ class LootLogStats {
         // Skip if already processed
         if (this.processedLogs.has(lootElem)) return;
 
-        // Mark as processed
-        this.processedLogs.add(lootElem);
-
         // Extract divs
         const divs = lootElem.querySelectorAll('div');
         if (divs.length < 3) return;
@@ -113,7 +110,11 @@ class LootLogStats {
 
         // Extract log data
         const logData = this.extractLogData(lootElem, secondDiv);
+        // Don't mark as processed until matching data is actually found - the WS payload for
+        // a live entry can lag behind its DOM node appearing, and this node won't be re-added
+        // to the DOM later for us to retry on.
         if (!logData) return;
+        this.processedLogs.add(lootElem);
 
         // Skip enhancement actions
         if (logData.actionHrid === '/actions/enhancing/enhance') return;
