@@ -84,8 +84,15 @@ class AutoClickMax {
             return;
         }
 
+        // Sell Listing dialogs have two "Max" buttons since the marketplace update added a
+        // tradable-range price row (Min/-/+/Max) ahead of the quantity row (1/Max) in DOM
+        // order. Scope the search to the quantity row so this only ever maxes quantity, never
+        // price - matching auto-fill-price.js's own container-scoping for the price row.
+        const quantityContainer = modal.querySelector('div[class*="MarketplacePanel_quantityInputs"]');
+        const searchRoot = quantityContainer || modal;
+
         // Find Max button (Sell Listing) or All button (Sell Now)
-        const allButtons = modal.querySelectorAll('button');
+        const allButtons = searchRoot.querySelectorAll('button');
         const maxButton = Array.from(allButtons).find((btn) => {
             const text = btn.textContent.trim();
             return text === 'Max' || text === 'All';
