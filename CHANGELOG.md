@@ -2,13 +2,12 @@
 
 ## [2.88.4](https://github.com/Celasha/Toolasha/compare/v2.88.3...v2.88.4) (2026-08-14)
 
-
 ### Bug Fixes
 
-* apply bulkMultiplier to decompose material cost and output ([40acb6f](https://github.com/Celasha/Toolasha/commit/40acb6f4c7a126134e4c2bf551d6c46c768755d0))
-* clamp draggable modal position so it can't be dragged fully off-screen ([96a9d8d](https://github.com/Celasha/Toolasha/commit/96a9d8dea82327e27322bceac877a1d88accc280))
-* retry live loot log entries until matching data is found ([6bc7bb9](https://github.com/Celasha/Toolasha/commit/6bc7bb9a79e93ea15fa50a5fc78318fe0420d848))
-* update marketplace tax from 2% to 5% ([f864e8b](https://github.com/Celasha/Toolasha/commit/f864e8bde42a2b33b09cf1b157237edae2bf67a9))
+- apply bulkMultiplier to decompose material cost and output ([40acb6f](https://github.com/Celasha/Toolasha/commit/40acb6f4c7a126134e4c2bf551d6c46c768755d0))
+- clamp draggable modal position so it can't be dragged fully off-screen ([96a9d8d](https://github.com/Celasha/Toolasha/commit/96a9d8dea82327e27322bceac877a1d88accc280))
+- retry live loot log entries until matching data is found ([6bc7bb9](https://github.com/Celasha/Toolasha/commit/6bc7bb9a79e93ea15fa50a5fc78318fe0420d848))
+- update marketplace tax from 2% to 5% ([f864e8b](https://github.com/Celasha/Toolasha/commit/f864e8bde42a2b33b09cf1b157237edae2bf67a9))
 
 ## [2.88.3](https://github.com/Celasha/Toolasha/compare/v2.88.2...v2.88.3) (2026-08-14)
 
