@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.88.0
+ * Version: 2.88.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -34125,111 +34125,6 @@ ${starCSS}
     }
 
     /**
-     * Expected net gold change per action for a discrete outcome distribution.
-     * @param {Array<{prob: number, net: number}>} outcomeDistribution
-     * @returns {number}
-     */
-    function expectedNetPerAction(outcomeDistribution) {
-        return outcomeDistribution.reduce((sum, o) => sum + o.prob * o.net, 0);
-    }
-
-    function outcomeMgf(outcomeDistribution, r) {
-        return outcomeDistribution.reduce((sum, o) => sum + o.prob * Math.exp(-r * o.net), 0);
-    }
-
-    /**
-     * Solve E[e^(-R*X)] = 1 for the positive adjustment coefficient R, where X is the per-action
-     * net gold change. Only exists when the distribution has positive expected drift (a "safety
-     * loading"); returns null otherwise, since the classical Lundberg bound is not meaningful
-     * without positive drift (it would be trivially ~1).
-     * @param {Array<{prob: number, net: number}>} outcomeDistribution
-     * @returns {number|null}
-     */
-    function findAdjustmentCoefficient(outcomeDistribution) {
-        if (expectedNetPerAction(outcomeDistribution) <= 0) return null;
-
-        // f(R) = mgf(R) - 1. f(0) = 0 and f'(0) = -E[X] < 0, so f dips negative just above 0 then
-        // rises back through 0 at the adjustment coefficient (as long as a loss outcome exists).
-        let lower = 1e-9;
-        let guard = 0;
-        while (outcomeMgf(outcomeDistribution, lower) - 1 >= 0 && guard < 20) {
-            lower *= 10;
-            guard += 1;
-        }
-
-        let upper = Math.max(lower * 2, 1e-8);
-        guard = 0;
-        while (outcomeMgf(outcomeDistribution, upper) - 1 <= 0 && guard < 200) {
-            upper *= 2;
-            guard += 1;
-        }
-        if (outcomeMgf(outcomeDistribution, upper) - 1 <= 0) return null;
-
-        for (let i = 0; i < 100; i++) {
-            const mid = (lower + upper) / 2;
-            if (outcomeMgf(outcomeDistribution, mid) - 1 > 0) {
-                upper = mid;
-            } else {
-                lower = mid;
-            }
-        }
-        return (lower + upper) / 2;
-    }
-
-    /**
-     * Closed-form upper bound on ruin probability for an i.i.d. per-action distribution (chests,
-     * alchemy Transmute). This bounds infinite-horizon ruin, which is itself an upper bound on our
-     * finite-horizon question ("ruin before N actions" <= "ruin ever") — always a valid but
-     * conservative bound, never an exact match to the Monte Carlo estimate.
-     * @param {Object} params
-     * @param {number} params.startingBalance
-     * @param {Array<{prob: number, net: number}>} params.outcomeDistribution
-     * @returns {{bound: number, meaningful: boolean, adjustmentCoefficient: number|null}}
-     */
-    function lundbergBound({ startingBalance, outcomeDistribution }) {
-        const adjustmentCoefficient = findAdjustmentCoefficient(outcomeDistribution);
-        if (adjustmentCoefficient === null) {
-            return { bound: 1, meaningful: false, adjustmentCoefficient: null };
-        }
-        return {
-            bound: Math.exp(-adjustmentCoefficient * startingBalance),
-            meaningful: true,
-            adjustmentCoefficient,
-        };
-    }
-
-    /**
-     * Approximate closed-form upper bound for a per-action distribution that varies by position
-     * (enhancing: success rate and cost both change per level). The classical inequality assumes
-     * i.i.d. increments, which doesn't strictly hold here — this is a documented approximation,
-     * not a proven tight bound. It uses the single least-favorable level's distribution (the one
-     * with the smallest adjustment coefficient, i.e. the most conservative/largest resulting bound)
-     * as a stand-in for the whole walk.
-     * @param {Object} params
-     * @param {number} params.startingBalance
-     * @param {Array<Array<{prob: number, net: number}>>} params.perStepDistributions
-     * @returns {{bound: number, meaningful: boolean, adjustmentCoefficient: number|null}}
-     */
-    function lundbergBoundVarying({ startingBalance, perStepDistributions }) {
-        let worstCoefficient = null;
-        for (const distribution of perStepDistributions) {
-            const coefficient = findAdjustmentCoefficient(distribution);
-            if (coefficient === null) continue;
-            if (worstCoefficient === null || coefficient < worstCoefficient) {
-                worstCoefficient = coefficient;
-            }
-        }
-        if (worstCoefficient === null) {
-            return { bound: 1, meaningful: false, adjustmentCoefficient: null };
-        }
-        return {
-            bound: Math.exp(-worstCoefficient * startingBalance),
-            meaningful: true,
-            adjustmentCoefficient: worstCoefficient,
-        };
-    }
-
-    /**
      * Worker Pool Manager
      * Manages a pool of Web Workers for parallel task execution
      */
@@ -34835,28 +34730,116 @@ self.onmessage = function (e) {
     /**
      * Alchemy Transmute Risk-of-Ruin Adapter
      *
-     * Builds a two-outcome-per-attempt cost/payout model for a Transmute action, from
+     * Builds the exact per-attempt cost/payout model for a Transmute action, from
      * alchemyProfitCalculator.calculateTransmuteProfit() — the same per-attempt economics
      * (material cost net of self-return, catalyst cost, output drop-table EV, success rate) the
      * live action panel and best-item ranking already use, not a re-derived approximation.
      *
-     * Catalyst is consumed only on success (per alchemy-profit-display.js's own label: "consumed
-     * only on success"), so it is charged only in the success branch. Materials — including any
-     * direct coin cost — are consumed on every attempt regardless of outcome.
+     * A real transmute's output drop table (itemDetails.alchemyDetail.transmuteDropTable) is a
+     * MUTUALLY EXCLUSIVE categorical roll GIVEN success — its dropRates sum to exactly 1.0 (e.g.
+     * Sunstone: 25% star fragment, 30% moonstone, 44.9% self-return, 0.1% philosopher's stone,
+     * confirmed against the live game reference data). Collapsing that into one blended "average
+     * success value" would discard exactly the variance a risk calculator needs — a 0.1% chance of
+     * a huge hit is a very different risk shape than its smoothed mean — so every branch is kept as
+     * its own separate outcome. Every transmutable item's drop table has at most a few (2-10 in
+     * practice) branches, so the exact cross product with the independent essence/rare bonus-drop
+     * layer (below) is always small; no sampling is needed here, unlike the chest adapter.
      *
-     * calculateTransmuteProfit() itself blends the success/fail split together into hourly EVs
-     * (e.g. catalystCostPerHour, selfReturnValue are already scaled by successRate). This adapter
-     * un-blends those back into the two discrete branches a single attempt can land in, using only
-     * the function's public return fields — no private internals are touched.
+     * Alongside that categorical roll, calculateTransmuteProfit() also reports two bonus drops
+     * (Alchemy Essence, an Artisan's Crate) that are independent per-attempt Bernoulli events
+     * occurring regardless of whether the transmute itself succeeds or fails ("not affected by
+     * success rate" — see alchemy-profit-display.js and calculateAlchemyBonusDrops()'s own
+     * actionsPerHour-based, successRate-independent rate calculation).
+     *
+     * Catalyst is consumed only on success (per alchemy-profit-display.js's own label: "consumed
+     * only on success"), so it is charged on every success branch, never on failure. Materials —
+     * including any direct coin cost — are consumed on every attempt regardless of outcome.
      */
 
 
     /**
-     * Build the two-outcome risk-of-ruin model for repeatedly Transmuting one item.
+     * Recover the per-occurrence payout for one categorical drop-table branch (excluding the
+     * essence/rare bonus layer, handled separately), un-scaling calculateTransmuteProfit()'s
+     * successRate-blended revenuePerAttempt/selfReturnValue fields back to "value if this branch
+     * is the one that happens".
+     */
+    function mainBranchPayout(drop, profit) {
+        if (drop.dropRate <= 0) return 0;
+        if (drop.isSelfReturn) {
+            // selfReturnValue = inputPrice * selfReturnRate(=drop.dropRate) * successRate * selfReturnCount
+            return profit.selfReturnValue / (profit.successRate * drop.dropRate);
+        }
+        // revenuePerAttempt = (afterTaxPrice * avgCount * bulkMultiplier) * dropRate * successRate
+        return drop.revenuePerAttempt / (profit.successRate * drop.dropRate);
+    }
+
+    /**
+     * Build the exact per-attempt outcome distribution: failure, plus one branch per categorical
+     * drop-table entry (each independently crossed with the essence/rare bonus-drop Bernoulli
+     * layer, since that layer applies regardless of success/failure).
+     * @returns {Array<{prob: number, net: number}>}
+     */
+    function buildOutcomeDistribution(profit, attemptCost, catalystCostOnSuccess) {
+        const dropRevenues = profit.dropRevenues || [];
+        const mainDrops = dropRevenues.filter((d) => !d.isEssence && !d.isRare);
+        const bonusDrops = dropRevenues.filter((d) => d.isEssence || d.isRare);
+
+        const mainBranches = [{ prob: 1 - profit.successRate, payout: 0, isSuccess: false }];
+        let coveredDropRate = 0;
+        for (const drop of mainDrops) {
+            if (!(drop.dropRate > 0)) continue;
+            coveredDropRate += drop.dropRate;
+            mainBranches.push({
+                prob: profit.successRate * drop.dropRate,
+                payout: mainBranchPayout(drop, profit),
+                isSuccess: true,
+            });
+        }
+        // A drop-table entry the calculator couldn't price (getItemPrice returned null) is silently
+        // dropped upstream, leaving a gap in dropRate coverage. Fold that residual probability mass
+        // into a zero-payout branch rather than losing it — conservative (never invents a value),
+        // and keeps probabilities summing to exactly 1.
+        const residualDropRate = Math.max(0, 1 - coveredDropRate);
+        if (residualDropRate > 0) {
+            mainBranches.push({ prob: profit.successRate * residualDropRate, payout: 0, isSuccess: true });
+        }
+
+        // Essence/rare bonus drops are independent per-attempt Bernoulli events, unaffected by
+        // success/failure - cross every combination of them into its own outcome.
+        let bonusOutcomes = [{ prob: 1, payout: 0 }];
+        for (const bonus of bonusDrops) {
+            if (!(bonus.dropRate > 0)) continue;
+            const hitPayout = bonus.revenuePerAttempt / bonus.dropRate;
+            const next = [];
+            for (const outcome of bonusOutcomes) {
+                next.push({ prob: outcome.prob * (1 - bonus.dropRate), payout: outcome.payout });
+                next.push({ prob: outcome.prob * bonus.dropRate, payout: outcome.payout + hitPayout });
+            }
+            bonusOutcomes = next;
+        }
+
+        const outcomeDistribution = [];
+        for (const main of mainBranches) {
+            const cost = attemptCost + (main.isSuccess ? catalystCostOnSuccess : 0);
+            for (const bonus of bonusOutcomes) {
+                const prob = main.prob * bonus.prob;
+                if (prob <= 0) continue;
+                outcomeDistribution.push({ prob, net: -cost + main.payout + bonus.payout });
+            }
+        }
+
+        return outcomeDistribution;
+    }
+
+    /**
+     * Build the exact per-attempt risk-of-ruin model for repeatedly Transmuting one item.
      * @param {string} itemHrid - Item being transmuted.
      * @param {Object} [options]
      * @param {boolean} [options.useLiveSetup] - Use the currently-open action panel's live
-     *   catalyst/tea selection instead of the automatically-best combination.
+     *   catalyst/tea selection instead of the automatically-best combination. Ignored when
+     *   catalystChoice is given.
+     * @param {'none'|'typeSpecific'|'prime'|null} [options.catalystChoice] - Force a specific
+     *   catalyst instead of searching for the best one or reading the live panel.
      * @returns {{
      *   cost: number,
      *   maxSinglePossibleLoss: number,
@@ -34868,35 +34851,40 @@ self.onmessage = function (e) {
      *     coinCost: number,
      *     catalystHrid: string|null,
      *     catalystCostOnSuccess: number,
-     *     outputValueGivenSuccess: number,
-     *     selfReturnGivenSuccess: number,
-     *     netOnSuccess: number,
      *     netOnFail: number,
-     *     dropRevenues: Array,
+     *     mainBranches: Array<{itemHrid: string, dropRate: number, payout: number, isSelfReturn: boolean}>,
+     *     bonusDrops: Array<{itemHrid: string, dropRate: number, payout: number}>,
      *   },
      * }|null} null if the item isn't transmutable or has no usable market/success-rate data.
      */
-    function buildAlchemyTransmuteModel(itemHrid, { useLiveSetup = false } = {}) {
-        const profit = alchemyProfitCalculator.calculateTransmuteProfit(itemHrid, useLiveSetup);
+    function buildAlchemyTransmuteModel(itemHrid, { useLiveSetup = false, catalystChoice = null } = {}) {
+        const profit = alchemyProfitCalculator.calculateTransmuteProfit(itemHrid, useLiveSetup, null, catalystChoice);
         if (!profit || !(profit.successRate > 0)) return null;
 
         const coinCost = profit.requirementCosts.find((r) => r.itemHrid === '/items/coin')?.costPerAction ?? 0;
         const attemptCost = profit.grossMaterialCost + coinCost;
         const catalystCostOnSuccess = profit.catalystPrice || 0;
-        const outputValueGivenSuccess = profit.incomePerAttempt / profit.successRate;
-        const selfReturnGivenSuccess = profit.selfReturnValue / profit.successRate;
-
-        const netOnSuccess = -attemptCost - catalystCostOnSuccess + outputValueGivenSuccess + selfReturnGivenSuccess;
         const netOnFail = -attemptCost;
 
-        const outcomeDistribution = [
-            { prob: profit.successRate, net: netOnSuccess },
-            { prob: 1 - profit.successRate, net: netOnFail },
-        ];
+        const outcomeDistribution = buildOutcomeDistribution(profit, attemptCost, catalystCostOnSuccess);
+        const maxSinglePossibleLoss = Math.max(0, ...outcomeDistribution.map((o) => -o.net));
+
+        const dropRevenues = profit.dropRevenues || [];
+        const mainBranches = dropRevenues
+            .filter((d) => !d.isEssence && !d.isRare && d.dropRate > 0)
+            .map((d) => ({
+                itemHrid: d.itemHrid,
+                dropRate: d.dropRate,
+                payout: mainBranchPayout(d, profit),
+                isSelfReturn: d.isSelfReturn || false,
+            }));
+        const bonusDrops = dropRevenues
+            .filter((d) => (d.isEssence || d.isRare) && d.dropRate > 0)
+            .map((d) => ({ itemHrid: d.itemHrid, dropRate: d.dropRate, payout: d.revenuePerAttempt / d.dropRate }));
 
         return {
             cost: attemptCost,
-            maxSinglePossibleLoss: Math.max(0, -netOnSuccess, -netOnFail),
+            maxSinglePossibleLoss,
             outcomeDistribution,
             stepFn: (state, rng) => ({ balance: state.balance + drawFromDistribution(outcomeDistribution, rng).net }),
             breakdown: {
@@ -34905,11 +34893,9 @@ self.onmessage = function (e) {
                 coinCost,
                 catalystHrid: profit.catalystPrice ? profit.catalystCost?.itemHrid || null : null,
                 catalystCostOnSuccess,
-                outputValueGivenSuccess,
-                selfReturnGivenSuccess,
-                netOnSuccess,
                 netOnFail,
-                dropRevenues: profit.dropRevenues || [],
+                mainBranches,
+                bonusDrops,
             },
         };
     }
@@ -35091,6 +35077,20 @@ self.onmessage = function (e) {
             this.dragOffset = { x: 0, y: 0 };
         }
 
+        /**
+         * Setup setting change listener (always active, even when feature is disabled) so toggling
+         * "Enable Risk of Ruin calculator" in Settings takes effect immediately, with no refresh.
+         */
+        setupSettingListener() {
+            config.onSettingChange('riskOfRuin', (enabled) => {
+                if (enabled) {
+                    this.initialize();
+                } else {
+                    this.disable();
+                }
+            });
+        }
+
         initialize() {
             if (this.isInitialized) return;
             if (!config.getSetting('riskOfRuin')) return;
@@ -35257,6 +35257,13 @@ self.onmessage = function (e) {
                 container.innerHTML = `
                 <label style="${labelStyle}">Item to Transmute</label>
                 <input id="mwi-ror-item" list="mwi-ror-transmute-items" style="${inputStyle}" placeholder="Start typing an item name...">
+                <label style="${labelStyle}">Catalyst</label>
+                <select id="mwi-ror-catalyst" style="${inputStyle}">
+                    <option value="best">Best available (auto)</option>
+                    <option value="none">None</option>
+                    <option value="typeSpecific">Type-specific catalyst</option>
+                    <option value="prime">Prime catalyst</option>
+                </select>
                 <label style="${labelStyle}">Actions to attempt</label>
                 <input id="mwi-ror-target" type="number" min="1" step="1" value="100" style="${inputStyle}">
             `;
@@ -35378,7 +35385,6 @@ self.onmessage = function (e) {
             const rngSeed = Math.floor(Math.random() * 2 ** 31);
 
             let simModel;
-            let lundberg;
             let maxSinglePossibleLoss;
             let detailInfo;
 
@@ -35396,7 +35402,6 @@ self.onmessage = function (e) {
                     outcomeDistribution: chestModel.outcomeDistribution,
                     targetActionCount,
                 };
-                lundberg = lundbergBound({ startingBalance, outcomeDistribution: chestModel.outcomeDistribution });
                 detailInfo = {
                     mode: 'chest',
                     costBreakdown: getChestCostBreakdown(hrid),
@@ -35407,7 +35412,9 @@ self.onmessage = function (e) {
                 const name = this.panel.querySelector('#mwi-ror-item').value;
                 const hrid = this._resolveItemHrid(name, 'mwi-ror-transmute-items');
                 const targetActionCount = parseInt(this.panel.querySelector('#mwi-ror-target').value) || 0;
-                const alchemyModel = hrid ? buildAlchemyTransmuteModel(hrid) : null;
+                const catalystSelection = this.panel.querySelector('#mwi-ror-catalyst').value;
+                const catalystChoice = catalystSelection === 'best' ? null : catalystSelection;
+                const alchemyModel = hrid ? buildAlchemyTransmuteModel(hrid, { catalystChoice }) : null;
                 if (!alchemyModel) {
                     status.textContent = 'Enter a valid transmutable item name.';
                     return;
@@ -35422,7 +35429,6 @@ self.onmessage = function (e) {
                     outcomeDistribution: alchemyModel.outcomeDistribution,
                     targetActionCount,
                 };
-                lundberg = lundbergBound({ startingBalance, outcomeDistribution: alchemyModel.outcomeDistribution });
                 detailInfo = { mode: 'alchemy', breakdown: alchemyModel.breakdown };
             } else {
                 const name = this.panel.querySelector('#mwi-ror-item').value;
@@ -35464,10 +35470,6 @@ self.onmessage = function (e) {
                     targetLevel,
                     startLevel,
                 };
-                lundberg = lundbergBoundVarying({
-                    startingBalance,
-                    perStepDistributions: enhancementModel.perLevelOutcomeDistributions,
-                });
                 detailInfo = {
                     mode: 'enhancement',
                     perLevelOutcomeDistributions: enhancementModel.perLevelOutcomeDistributions,
@@ -35480,12 +35482,12 @@ self.onmessage = function (e) {
 
             const simResult = await simulateRuinAsync(simModel);
             const minActions = minActionsForNonZeroRisk(startingBalance, maxSinglePossibleLoss);
-            this._renderResults(results, simResult, lundberg, minActions);
+            this._renderResults(results, simResult, minActions);
             this._renderDetails(results, detailInfo, startingBalance, maxSinglePossibleLoss, minActions);
             status.textContent = `${formatters_js.formatWithSeparator(trials)} trials simulated.`;
         }
 
-        _renderResults(container, simResult, lundberg, minActions) {
+        _renderResults(container, simResult, minActions) {
             const ci = wilsonConfidenceInterval(simResult.ruinCount, simResult.trials);
             const peakStep = findPeakExposureStep(simResult.ruinStepCounts);
 
@@ -35494,16 +35496,6 @@ self.onmessage = function (e) {
                 `<strong>Ruin probability:</strong> ${formatters_js.formatPercentage(simResult.ruinProbability, 2)} ` +
                     `(95% CI: ${formatters_js.formatPercentage(ci.low, 2)} – ${formatters_js.formatPercentage(ci.high, 2)})`
             );
-
-            if (lundberg.meaningful) {
-                lines.push(`<strong>Lundberg upper bound:</strong> ≤ ${formatters_js.formatPercentage(Math.min(1, lundberg.bound), 2)}`);
-            } else {
-                lines.push(
-                    `<strong>Lundberg upper bound:</strong> not meaningful — this setup does not have ` +
-                        `positive expected gold gain per action, so the closed-form bound is trivial. ` +
-                        `Only the Monte Carlo estimate above applies.`
-                );
-            }
 
             lines.push(
                 `<strong>Risk becomes possible at action:</strong> ` +
@@ -35636,49 +35628,71 @@ self.onmessage = function (e) {
                     ? `<div>Catalyst (${catalystName}, paid only on success): ${fmtGold(breakdown.catalystCostOnSuccess)}</div>`
                     : `<div>No catalyst used.</div>`
             );
-            rows.push(`<div>Output value if successful: ${fmtGold(breakdown.outputValueGivenSuccess)}</div>`);
-            if (breakdown.selfReturnGivenSuccess > 0) {
-                rows.push(`<div>Self-return value if successful: ${fmtGold(breakdown.selfReturnGivenSuccess)}</div>`);
-            }
             rows.push(
-                `<div style="margin-top:6px;"><strong>Net on success:</strong> ${fmtGold(breakdown.netOnSuccess)}</div>`
+                `<div style="margin-top:6px;">The output drop table (below) is a single mutually-exclusive roll ` +
+                    `<em>given success</em> — each branch is its own separate outcome, not averaged together, so a ` +
+                    `rare high-value branch's real tail risk shows up in the simulation instead of being smoothed away.</div>`
             );
             rows.push(`<div><strong>Net on failure:</strong> ${fmtGold(breakdown.netOnFail)}</div>`);
             rows.push(`<div><strong>Max single-action loss:</strong> ${fmtGold(maxSinglePossibleLoss)}</div>`);
             rows.push(this._riskFormulaLine(startingBalance, maxSinglePossibleLoss, minActions));
 
-            // dropRevenues' own revenuePerAttempt is already scaled by successRate (the overall
-            // per-attempt expected revenue); divide back out to the "given success" value so each
-            // row - and its sum - lines up with outputValueGivenSuccess shown above.
-            let totalGivenSuccess = 0;
-            const dropRows = breakdown.dropRevenues
-                .map((drop) => {
-                    const evGivenSuccess = drop.revenuePerAttempt / breakdown.successRate;
-                    totalGivenSuccess += evGivenSuccess;
-                    return `<tr>
-                        <td style="padding:2px 6px;">${dataManager.getItemDetails(drop.itemHrid)?.name || drop.itemHrid}${drop.isSelfReturn ? ' (self-return)' : ''}</td>
-                        <td style="padding:2px 6px; text-align:right;">${formatters_js.formatPercentage(drop.dropRate, 2)}</td>
-                        <td style="padding:2px 6px; text-align:right;">${fmtGold(drop.price)}</td>
-                        <td style="padding:2px 6px; text-align:right;">${fmtGold(evGivenSuccess)}</td>
-                    </tr>`;
-                })
+            const mainRows = breakdown.mainBranches
+                .map(
+                    (branch) =>
+                        `<tr>
+                        <td style="padding:2px 6px;">${dataManager.getItemDetails(branch.itemHrid)?.name || branch.itemHrid}${branch.isSelfReturn ? ' (self-return)' : ''}</td>
+                        <td style="padding:2px 6px; text-align:right;">${formatters_js.formatPercentage(breakdown.successRate * branch.dropRate, 2)}</td>
+                        <td style="padding:2px 6px; text-align:right;">${fmtGold(branch.payout)}</td>
+                    </tr>`
+                )
                 .join('');
+            const mainCoverage = breakdown.mainBranches.reduce((sum, b) => sum + b.dropRate, 0);
+            const failRow = `<tr>
+                        <td style="padding:2px 6px;">(failure)</td>
+                        <td style="padding:2px 6px; text-align:right;">${formatters_js.formatPercentage(1 - breakdown.successRate, 2)}</td>
+                        <td style="padding:2px 6px; text-align:right;">${fmtGold(0)}</td>
+                    </tr>`;
+            const gapNote =
+                mainCoverage < 0.999
+                    ? `<div style="color:#c98; margin-top:4px; font-size:11px;">${formatters_js.formatPercentage(1 - mainCoverage, 1)} of the success-branch probability has no market price data and is treated as a 0-payout outcome (never inflated with a guess).</div>`
+                    : '';
+
+            const bonusRows = breakdown.bonusDrops
+                .map(
+                    (bonus) =>
+                        `<tr>
+                        <td style="padding:2px 6px;">${dataManager.getItemDetails(bonus.itemHrid)?.name || bonus.itemHrid}</td>
+                        <td style="padding:2px 6px; text-align:right;">${formatters_js.formatPercentage(bonus.dropRate, 2)}</td>
+                        <td style="padding:2px 6px; text-align:right;">${fmtGold(bonus.payout)}</td>
+                    </tr>`
+                )
+                .join('');
+            const bonusSection = breakdown.bonusDrops.length
+                ? this._wrapDetails(
+                      `Bonus drops (${breakdown.bonusDrops.length}, independent of success/fail)`,
+                      `<table style="width:100%; border-collapse:collapse; font-size:11px;">
+                        <tr style="color:#888;"><th style="text-align:left;">Item</th><th>Chance per attempt</th><th>Payout if hit</th></tr>
+                        ${bonusRows}
+                    </table>`,
+                      true
+                  )
+                : '';
 
             return this._wrapDetails(
                 'Cost & risk details',
                 rows.join('') +
                     this._wrapDetails(
-                        `Output drops (${breakdown.dropRevenues.length} items)`,
+                        `Output drop table (${breakdown.mainBranches.length} branches, one roll given success)`,
                         `<table style="width:100%; border-collapse:collapse; font-size:11px;">
-                        <tr style="color:#888;"><th style="text-align:left;">Item</th><th>Drop rate</th><th>Price</th><th>EV given success</th></tr>
-                        ${dropRows}
-                        <tr style="border-top:1px solid #444; font-weight:600;">
-                            <td style="padding:2px 6px;" colspan="3">Total EV given success</td>
-                            <td style="padding:2px 6px; text-align:right;">${fmtGold(totalGivenSuccess)}</td>
-                        </tr>
-                    </table>`,
+                        <tr style="color:#888;"><th style="text-align:left;">Outcome</th><th>Chance per attempt</th><th>Payout if hit</th></tr>
+                        ${failRow}
+                        ${mainRows}
+                    </table>
+                    ${gapNote}`,
                         true
-                    )
+                    ) +
+                    bonusSection
             );
         }
 
@@ -35753,6 +35767,7 @@ self.onmessage = function (e) {
     }
 
     const riskOfRuinUI = new RiskOfRuinUI();
+    riskOfRuinUI.setupSettingListener();
 
     /**
      * Guild XP Tracker

@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.88.0
+ * Version: 2.88.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2935,6 +2935,74 @@ self.onmessage = function (e) {
         }
 
         /**
+         * Compute one specific, caller-chosen catalyst combination (no live tea/profit search) —
+         * for callers that need a forced "none" / type-specific / prime catalyst rather than
+         * whichever combo is most profitable or whatever the live action panel has equipped.
+         * Live tea bonus is still applied, matching _bestCatalystCombo's "with tea" combos.
+         * @param {Object} params - Same shape as _bestCatalystCombo, plus:
+         * @param {'none'|'typeSpecific'|'prime'} params.catalystChoice
+         * @returns {Object} Same shape as _bestCatalystCombo/_liveSetupCombo's return value.
+         */
+        _forcedCatalystCombo({
+            actionType,
+            baseSuccessRate,
+            actionsPerHour,
+            efficiencyDecimal,
+            actionTime,
+            alchemyBonusRevenue,
+            computeNetProfit,
+            computeTeaCost,
+            levelPenalty = 0,
+            teaBonusOverride = null,
+            catalystChoice = 'none',
+        }) {
+            const liveTeaBonus = teaBonusOverride !== null ? teaBonusOverride : buffParser_js.getAlchemySuccessBonus();
+
+            let catalystBonus = 0;
+            let catalystHrid = null;
+            let catalystPrice = 0;
+
+            if (catalystChoice === 'typeSpecific') {
+                catalystBonus = CATALYST_BONUSES.typeSpecific;
+                catalystHrid = CATALYST_HRIDS[actionType];
+            } else if (catalystChoice === 'prime') {
+                catalystBonus = CATALYST_BONUSES.prime;
+                catalystHrid = CATALYST_HRIDS.prime;
+            }
+            if (catalystHrid) {
+                catalystPrice = marketData_js.getItemPrice(catalystHrid, { context: 'profit', side: 'buy' }) ?? 0;
+            }
+
+            const successRateBreakdown = this.calculateSuccessRateBreakdown(
+                baseSuccessRate,
+                catalystBonus,
+                liveTeaBonus,
+                levelPenalty
+            );
+            const successRate = successRateBreakdown.total;
+            const catalystCostPerAttempt = catalystPrice * successRate;
+            const catalystCostPerHour = catalystCostPerAttempt * actionsPerHour;
+            const teaCostPerHour = liveTeaBonus > 0 ? computeTeaCost(liveTeaBonus) : 0;
+            const netProfitPerAttempt = computeNetProfit(successRate) - catalystCostPerAttempt;
+            const profitPerSecond = (netProfitPerAttempt * (1 + efficiencyDecimal)) / actionTime;
+            const profitPerHour = profitPerSecond * profitConstants_js.SECONDS_PER_HOUR + alchemyBonusRevenue - teaCostPerHour;
+
+            return {
+                catalystBonus,
+                catalystHrid,
+                catalystPrice,
+                teaBonus: liveTeaBonus,
+                successRateBreakdown,
+                successRate,
+                catalystCostPerAttempt,
+                catalystCostPerHour,
+                teaCostPerHour,
+                netProfitPerAttempt,
+                profitPerHour,
+            };
+        }
+
+        /**
          * @param {string} itemHrid - Item HRID
          * @param {number} enhancementLevel - Enhancement level (default 0)
          * @returns {Object|null} Detailed profit data or null if not coinifiable
@@ -3493,9 +3561,14 @@ self.onmessage = function (e) {
         /**
          * Calculate Transmute profit for an item with full detailed breakdown
          * @param {string} itemHrid - Item HRID
+         * @param {boolean} [useLiveSetup] - Read the live action panel's catalyst/tea instead of
+         *   searching for the best combination. Ignored when catalystChoice is given.
+         * @param {number|null} [teaBonusOverride]
+         * @param {'none'|'typeSpecific'|'prime'|null} [catalystChoice] - Force a specific catalyst
+         *   instead of searching for the best one or reading the live panel.
          * @returns {Object|null} Profit data or null if not transmutable
          */
-        calculateTransmuteProfit(itemHrid, useLiveSetup = false, teaBonusOverride = null) {
+        calculateTransmuteProfit(itemHrid, useLiveSetup = false, teaBonusOverride = null, catalystChoice = null) {
             try {
                 const gameData = dataManager.getInitClientData();
                 const itemDetails = dataManager.getItemDetails(itemHrid);
@@ -3651,9 +3724,14 @@ self.onmessage = function (e) {
                     getItemPrice: (hrid) => marketData_js.getItemPrice(hrid, { context: 'profit', side: 'buy' }),
                 });
 
-                // Find the best catalyst+tea combination (tooltip) or use live setup (action page).
+                // Force a specific catalyst if the caller asked for one; otherwise find the best
+                // catalyst+tea combination (tooltip) or use live setup (action page).
                 // Note: selfReturnValue depends on successRate so it must be computed inside the combo loop.
-                const _comboFn = useLiveSetup ? this._liveSetupCombo.bind(this) : this._bestCatalystCombo.bind(this);
+                const _comboFn = catalystChoice
+                    ? this._forcedCatalystCombo.bind(this)
+                    : useLiveSetup
+                      ? this._liveSetupCombo.bind(this)
+                      : this._bestCatalystCombo.bind(this);
                 const combo = _comboFn({
                     actionType: 'transmute',
                     baseSuccessRate,
@@ -3669,6 +3747,7 @@ self.onmessage = function (e) {
                     computeTeaCost: () => teaCostData.totalCostPerHour,
                     levelPenalty,
                     teaBonusOverride,
+                    catalystChoice,
                 });
 
                 const {
@@ -7095,8 +7174,15 @@ self.onmessage = function (e) {
                 return;
             }
 
+            // Sell Listing dialogs have two "Max" buttons since the marketplace update added a
+            // tradable-range price row (Min/-/+/Max) ahead of the quantity row (1/Max) in DOM
+            // order. Scope the search to the quantity row so this only ever maxes quantity, never
+            // price - matching auto-fill-price.js's own container-scoping for the price row.
+            const quantityContainer = modal.querySelector('div[class*="MarketplacePanel_quantityInputs"]');
+            const searchRoot = quantityContainer || modal;
+
             // Find Max button (Sell Listing) or All button (Sell Now)
-            const allButtons = modal.querySelectorAll('button');
+            const allButtons = searchRoot.querySelectorAll('button');
             const maxButton = Array.from(allButtons).find((btn) => {
                 const text = btn.textContent.trim();
                 return text === 'Max' || text === 'All';
