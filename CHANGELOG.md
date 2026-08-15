@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.89.0](https://github.com/Celasha/Toolasha/compare/v2.88.5...v2.89.0) (2026-08-15)
+
+
+### Features
+
+* add optimal bankroll share + market sell-depth cap to Risk of Ruin ([90293a5](https://github.com/Celasha/Toolasha/commit/90293a5927bf19b01b8b727ee7a7d7cefcb02a76))
+
+
+### Bug Fixes
+
+* resolve inventory item HRIDs by icon sprite instead of display name ([067f3ac](https://github.com/Celasha/Toolasha/commit/067f3ac7f8ae76403151e555be2c87bbe0233a12))
+
 ## [2.88.5](https://github.com/Celasha/Toolasha/compare/v2.88.4...v2.88.5) (2026-08-15)
 
 ### Bug Fixes
