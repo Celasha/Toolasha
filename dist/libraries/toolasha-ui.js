@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.88.4
+ * Version: 2.88.5
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -16082,9 +16082,11 @@ ${starCSS}
             });
 
             // Watch for loot log elements in DOM
-            const unregisterObserver = domObserver.onClass('LootLogStats', 'LootLogPanel_actionLoot__32gl_', (element) =>
-                this.processLootLogElement(element)
-            );
+            const unregisterObserver = domObserver.onClass('LootLogStats', 'LootLogPanel_actionLoot__32gl_', (element) => {
+                const allElements = document.querySelectorAll('.LootLogPanel_actionLoot__32gl_');
+                const index = Array.prototype.indexOf.call(allElements, element);
+                this.processLootLogElement(element, index, allElements.length);
+            });
             this.unregisterHandlers.push(unregisterObserver);
 
             // Watch for loot log container to inject historical entries
@@ -16118,7 +16120,9 @@ ${starCSS}
             // Process existing loot log elements after short delay
             const timeout = setTimeout(() => {
                 const lootLogElements = document.querySelectorAll('.LootLogPanel_actionLoot__32gl_');
-                lootLogElements.forEach((element) => this.processLootLogElement(element));
+                lootLogElements.forEach((element, index) =>
+                    this.processLootLogElement(element, index, lootLogElements.length)
+                );
 
                 if (this.historyEnabled) {
                     this.renderHistoricalEntries();
@@ -16131,10 +16135,14 @@ ${starCSS}
         /**
          * Process a single loot log DOM element
          * @param {HTMLElement} lootElem - Loot log element
+         * @param {number} index - Position of this element among all currently rendered loot log rows
+         *   (0 = topmost/newest), matching the native panel's render order
+         * @param {number} totalCount - Total number of loot log rows currently rendered
          */
-        processLootLogElement(lootElem) {
+        processLootLogElement(lootElem, index, totalCount) {
             // Skip if already processed
             if (this.processedLogs.has(lootElem)) return;
+            if (index == null || index < 0) return;
 
             // Extract divs
             const divs = lootElem.querySelectorAll('div');
@@ -16144,7 +16152,7 @@ ${starCSS}
             const thirdDiv = divs[2]; // Duration
 
             // Extract log data
-            const logData = this.extractLogData(lootElem, secondDiv);
+            const logData = this.extractLogData(index, totalCount);
             // Don't mark as processed until matching data is actually found - the WS payload for
             // a live entry can lag behind its DOM node appearing, and this node won't be re-added
             // to the DOM later for us to retry on.
@@ -16162,63 +16170,31 @@ ${starCSS}
         }
 
         /**
-         * Extract log data from DOM element
-         * @param {HTMLElement} lootElem - Loot log element
-         * @param {HTMLElement} secondDiv - Second div containing timestamps
+         * Resolve the loot log entry matching a rendered DOM row by position.
+         *
+         * The native panel renders one row per `lootLog` array entry, newest first (i.e. the
+         * reverse of array order), with no filtering - so a row's position among its siblings maps
+         * directly to an array index. This avoids reverse-parsing the displayed, locale-formatted
+         * date string (which previously only recognized a handful of hardcoded locale formats and
+         * silently failed to match for any other locale/browser).
+         *
+         * @param {number} index - Row position (0 = topmost/newest)
+         * @param {number} totalCount - Total rendered rows at the time `index` was computed
          * @returns {Object|null} Log data object or null if extraction fails
          */
-        extractLogData(lootElem, secondDiv) {
+        extractLogData(index, totalCount) {
             if (!this.currentLootLogData || !Array.isArray(this.currentLootLogData)) {
                 return null;
             }
 
-            // Extract start time from DOM
-            const textContent = secondDiv.textContent;
-            let utcISOString = '';
-
-            // Try multiple date formats
-            const matchCN = textContent.match(/(\d{4}\/\d{1,2}\/\d{1,2} \d{1,2}:\d{2}:\d{2})/);
-            const matchEN = textContent.match(/(\d{1,2}\/\d{1,2}\/\d{4}, \d{1,2}:\d{2}:\d{2} (AM|PM))/i);
-            const matchDE = textContent.match(/(\d{1,2}\.\d{1,2}\.\d{4}, \d{1,2}:\d{2}:\d{2})/);
-
-            if (matchCN) {
-                const localTimeStr = matchCN[1].trim();
-                const [y, m, d, h, min, s] = localTimeStr.match(/\d+/g).map(Number);
-                const localDate = new Date(y, m - 1, d, h, min, s);
-                utcISOString = localDate.toISOString().slice(0, 19);
-            } else if (matchEN) {
-                const localTimeStr = matchEN[1].trim();
-                const localDate = new Date(localTimeStr);
-                if (!isNaN(localDate)) {
-                    utcISOString = localDate.toISOString().slice(0, 19);
-                } else {
-                    return null;
-                }
-            } else if (matchDE) {
-                const localTimeStr = matchDE[1].trim();
-                const [datePart, timePart] = localTimeStr.split(', ');
-                const [day, month, year] = datePart.split('.').map(Number);
-                const [hours, minutes, seconds] = timePart.split(':').map(Number);
-                const localDate = new Date(year, month - 1, day, hours, minutes, seconds);
-                utcISOString = localDate.toISOString().slice(0, 19);
-            } else {
+            // Only trust the position mapping when the rendered row count matches the current data
+            // length - if they differ, the DOM is mid-update, so skip and retry on the next pass.
+            if (totalCount !== this.currentLootLogData.length) {
                 return null;
             }
 
-            // Find matching log data
-            const getLogStartTimeSec = (logObj) => {
-                return logObj && logObj.startTime ? logObj.startTime.slice(0, 19) : '';
-            };
-
-            let log = null;
-            for (const logObj of this.currentLootLogData) {
-                if (getLogStartTimeSec(logObj) === utcISOString) {
-                    log = logObj;
-                    break;
-                }
-            }
-
-            return log;
+            const arrayIndex = this.currentLootLogData.length - 1 - index;
+            return this.currentLootLogData[arrayIndex] || null;
         }
 
         /**
