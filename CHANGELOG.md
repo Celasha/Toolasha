@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.88.5](https://github.com/Celasha/Toolasha/compare/v2.88.4...v2.88.5) (2026-08-15)
+
+
+### Bug Fixes
+
+* match loot log DOM rows to WebSocket data by position, not locale text ([815fc1c](https://github.com/Celasha/Toolasha/commit/815fc1caeb74b871b27a17296d81c5097ca3428f))
+
 ## [2.88.4](https://github.com/Celasha/Toolasha/compare/v2.88.3...v2.88.4) (2026-08-14)
 
 ### Bug Fixes
