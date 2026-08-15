@@ -38,7 +38,6 @@ class InventoryBadgeManager {
         this.inventoryLookupCache = null; // Cached inventory lookup map
         this.inventoryLookupCacheTime = 0; // Timestamp when cache was built
         this.INVENTORY_CACHE_TTL = 500; // 500ms cache lifetime
-        this.nameToHridMap = null; // Reverse lookup: item name -> HRID (built once, lazy)
     }
 
     /**
@@ -312,17 +311,13 @@ class InventoryBadgeManager {
         ]);
 
         for (const itemElem of itemElems) {
-            // Get item HRID from SVG aria-label
-            const svg = itemElem.querySelector('svg');
-            if (!svg) continue;
-
-            const itemName = svg.getAttribute('aria-label');
-            if (!itemName) continue;
-
-            // Find item HRID
-            const itemHrid = this.findItemHrid(itemName, gameData);
+            // Get item HRID from the icon's <use> sprite reference, not the translatable
+            // aria-label - the label is rendered in whatever language the player has selected
+            // in-game, while the sprite href is a stable internal asset ID (e.g. #radiant_fiber),
+            // so this works regardless of locale.
+            const itemHrid = this.getItemHridFromContainer(itemElem);
             if (!itemHrid) {
-                console.warn('[InventoryBadgeManager] Could not find HRID for item:', itemName);
+                console.warn('[InventoryBadgeManager] Could not find HRID for item container:', itemElem);
                 continue;
             }
 
@@ -562,56 +557,18 @@ class InventoryBadgeManager {
     }
 
     /**
-     * Find item HRID from item name
-     * @param {string} itemName - Item display name
-     * @param {Object} gameData - Game data
-     * @returns {string|null} Item HRID
+     * Get an item's HRID from its inventory container's icon sprite reference — locale
+     * independent, unlike the translatable aria-label text.
+     * @param {HTMLElement} itemContainer - Inventory item container element
+     * @returns {string|null} Item HRID or null
      */
-    /**
-     * Build reverse lookup map from item name to HRID
-     * Built once on first use, cached thereafter
-     * @param {Object} gameData - Game data
-     */
-    buildNameToHridMap(gameData) {
-        if (this.nameToHridMap) {
-            return; // Already built
-        }
+    getItemHridFromContainer(itemContainer) {
+        const useElement = itemContainer.querySelector('svg use');
+        if (!useElement) return null;
 
-        this.nameToHridMap = new Map();
-
-        if (!gameData || !gameData.itemDetailMap) {
-            console.warn('[InventoryBadgeManager] Cannot build name lookup: missing itemDetailMap');
-            return;
-        }
-
-        // Build reverse lookup: name -> HRID (one-time O(n) operation)
-        for (const [hrid, item] of Object.entries(gameData.itemDetailMap)) {
-            if (item.name) {
-                this.nameToHridMap.set(item.name, hrid);
-                // Add ★ ↔ (R) variants so both display formats resolve
-                if (item.name.includes('(R)')) {
-                    this.nameToHridMap.set(item.name.replace(/\s*\(R\)/, ' ★'), hrid);
-                } else if (item.name.includes('★')) {
-                    this.nameToHridMap.set(item.name.replace(/\s*★/, ' (R)'), hrid);
-                }
-            }
-        }
-    }
-
-    /**
-     * Find item HRID by name (optimized with reverse lookup map)
-     * @param {string} itemName - Item name
-     * @param {Object} gameData - Game data
-     * @returns {string|null} Item HRID or null if not found
-     */
-    findItemHrid(itemName, gameData) {
-        // Build map on first use (lazy initialization)
-        if (!this.nameToHridMap) {
-            this.buildNameToHridMap(gameData);
-        }
-
-        // O(1) lookup
-        return this.nameToHridMap.get(itemName) || null;
+        const href = useElement.getAttribute('href');
+        const match = href?.match(/#(.+)$/);
+        return match ? `/items/${match[1]}` : null;
     }
 
     /**
