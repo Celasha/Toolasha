@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.88.5
+ * Version: 2.89.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -34538,6 +34538,90 @@ self.onmessage = function (e) {
     }
 
     /**
+     * Optimal Bankroll Share
+     *
+     * Second-order (mean-variance) Kelly approximation for how much of the current bankroll is safe
+     * to commit to a batch of actionCount i.i.d. risky actions (dungeon chests, alchemy Transmute),
+     * reusing the per-action net-value outcome distribution the Risk of Ruin adapters already build.
+     *
+     * This is a quick closed-form estimate, not a substitute for the Monte Carlo ruin probability
+     * elsewhere in the panel — the quadratic approximation can overstate the safe size for skewed,
+     * fat-tailed payout distributions (the same class of distribution risk-of-ruin-engine.js's own
+     * Lundberg bound is careful to caveat). Not meaningful for enhancement: that activity has no
+     * revenue distribution to size a bet against, only a pure cost sink toward a fixed goal — callers
+     * should skip this module for that mode and rely on the ruin probability alone.
+     */
+
+    /**
+     * Mean and variance of the per-action gross return multiple R = 1 + net/costPerAction, derived
+     * from a discrete outcome distribution of { prob, net } entries (net = revenue after tax, minus
+     * cost — already computed by the chest/alchemy risk-of-ruin adapters).
+     * @param {Array<{prob: number, net: number}>} outcomeDistribution
+     * @param {number} costPerAction
+     * @returns {{meanR: number, varianceR: number}}
+     */
+    function calculateReturnStats(outcomeDistribution, costPerAction) {
+        if (!(costPerAction > 0) || !outcomeDistribution?.length) {
+            return { meanR: 0, varianceR: 0 };
+        }
+
+        const rValues = outcomeDistribution.map((o) => ({ prob: o.prob, r: 1 + o.net / costPerAction }));
+        const meanR = rValues.reduce((sum, o) => sum + o.prob * o.r, 0);
+        const varianceR = rValues.reduce((sum, o) => sum + o.prob * (o.r - meanR) ** 2, 0);
+        return { meanR, varianceR };
+    }
+
+    /**
+     * Second-order Kelly approximation: fraction of bankroll optimal to allocate across actionCount
+     * i.i.d. actions, given the batch's aggregate return statistics. Clamped to [0, 1] — a
+     * non-positive edge recommends committing nothing, and this never recommends more than the full
+     * bankroll (no leverage).
+     * @param {Object} params
+     * @param {number} params.actionCount
+     * @param {number} params.meanR
+     * @param {number} params.varianceR
+     * @returns {number} fstar, in [0, 1]
+     */
+    function calculateOptimalBankrollFraction({ actionCount, meanR, varianceR }) {
+        if (!(varianceR > 0) || !(actionCount > 0) || meanR <= 1) return 0;
+        const fstar = (actionCount * (meanR - 1)) / varianceR;
+        return Math.min(1, Math.max(0, fstar));
+    }
+
+    /**
+     * Combines the above into the figures a UI displays: the safe bankroll fraction/amount for the
+     * chosen batch size, and whether the activity has positive edge at all.
+     * @param {Object} params
+     * @param {Array<{prob: number, net: number}>} params.outcomeDistribution
+     * @param {number} params.costPerAction
+     * @param {number} params.actionCount
+     * @param {number} params.bankroll
+     * @returns {{
+     *   meanR: number,
+     *   varianceR: number,
+     *   fstar: number,
+     *   recommendedCommit: number,
+     *   recommendedActionCount: number,
+     *   hasEdge: boolean,
+     * }}
+     */
+    function calculateOptimalCommit({ outcomeDistribution, costPerAction, actionCount, bankroll }) {
+        const { meanR, varianceR } = calculateReturnStats(outcomeDistribution, costPerAction);
+        const fstar = calculateOptimalBankrollFraction({ actionCount, meanR, varianceR });
+        const recommendedCommit = fstar * (bankroll || 0);
+        const recommendedActionCount = costPerAction > 0 ? Math.floor(recommendedCommit / costPerAction) : 0;
+
+        return {
+            meanR,
+            varianceR,
+            fstar,
+            recommendedCommit,
+            recommendedActionCount,
+            hasEdge: meanR > 1,
+        };
+    }
+
+    /**
      * Dungeon Chest Risk-of-Ruin Adapter
      *
      * Builds a per-open cost/payout model for a dungeon chest, for the risk-of-ruin engine.
@@ -34866,8 +34950,8 @@ self.onmessage = function (e) {
      *     catalystHrid: string|null,
      *     catalystCostOnSuccess: number,
      *     netOnFail: number,
-     *     mainBranches: Array<{itemHrid: string, dropRate: number, payout: number, isSelfReturn: boolean}>,
-     *     bonusDrops: Array<{itemHrid: string, dropRate: number, payout: number}>,
+     *     mainBranches: Array<{itemHrid: string, dropRate: number, count: number, payout: number, isSelfReturn: boolean}>,
+     *     bonusDrops: Array<{itemHrid: string, dropRate: number, count: number, payout: number}>,
      *   },
      * }|null} null if the item isn't transmutable or has no usable market/success-rate data.
      */
@@ -34889,12 +34973,18 @@ self.onmessage = function (e) {
             .map((d) => ({
                 itemHrid: d.itemHrid,
                 dropRate: d.dropRate,
+                count: d.count,
                 payout: mainBranchPayout(d, profit),
                 isSelfReturn: d.isSelfReturn || false,
             }));
         const bonusDrops = dropRevenues
             .filter((d) => (d.isEssence || d.isRare) && d.dropRate > 0)
-            .map((d) => ({ itemHrid: d.itemHrid, dropRate: d.dropRate, payout: d.revenuePerAttempt / d.dropRate }));
+            .map((d) => ({
+                itemHrid: d.itemHrid,
+                dropRate: d.dropRate,
+                count: d.count,
+                payout: d.revenuePerAttempt / d.dropRate,
+            }));
 
         return {
             cost: attemptCost,
@@ -35089,6 +35179,10 @@ self.onmessage = function (e) {
             this.panel = null;
             this.isDragging = false;
             this.dragOffset = { x: 0, y: 0 };
+            // Last computed cost-per-action + per-item output quantities, for market-depth-cap.js's
+            // live order-book widget to read — null whenever the last run had no revenue distribution
+            // to key off (enhancement mode, or no successful run yet).
+            this.lastDepthCapContext = null;
         }
 
         /**
@@ -35375,6 +35469,16 @@ self.onmessage = function (e) {
             });
         }
 
+        /**
+         * The last computed cost-per-action + per-item output quantities, for market-depth-cap.js to
+         * check the currently-viewed marketplace item against. Null when the last run was enhancement
+         * mode (no revenue distribution to key off) or nothing has been calculated yet.
+         * @returns {{costPerAction: number, items: Array<{itemHrid: string, quantityPerAction: number}>}|null}
+         */
+        getDepthCapContext() {
+            return this.lastDepthCapContext;
+        }
+
         _run() {
             const status = this.panel.querySelector('#mwi-ror-status');
             const results = this.panel.querySelector('#mwi-ror-results');
@@ -35401,6 +35505,8 @@ self.onmessage = function (e) {
             let simModel;
             let maxSinglePossibleLoss;
             let detailInfo;
+            let optimalCommit = null;
+            this.lastDepthCapContext = null;
 
             if (mode === 'chest') {
                 const hrid = this.panel.querySelector('#mwi-ror-chest').value;
@@ -35416,12 +35522,25 @@ self.onmessage = function (e) {
                     outcomeDistribution: chestModel.outcomeDistribution,
                     targetActionCount,
                 };
+                const dropBreakdown = expectedValueCalculator.getDropBreakdown(hrid);
                 detailInfo = {
                     mode: 'chest',
                     costBreakdown: getChestCostBreakdown(hrid),
-                    dropBreakdown: expectedValueCalculator.getDropBreakdown(hrid),
+                    dropBreakdown,
                     minimumGuaranteedPayout: chestModel.minimumGuaranteedPayout,
                 };
+                this.lastDepthCapContext = {
+                    costPerAction: chestModel.cost,
+                    items: dropBreakdown
+                        .filter((d) => d.dropRate > 0 && d.avgCount > 0)
+                        .map((d) => ({ itemHrid: d.itemHrid, quantityPerAction: d.avgCount * d.dropRate })),
+                };
+                optimalCommit = calculateOptimalCommit({
+                    outcomeDistribution: chestModel.outcomeDistribution,
+                    costPerAction: chestModel.cost,
+                    actionCount: targetActionCount,
+                    bankroll: startingBalance,
+                });
             } else if (mode === 'alchemy') {
                 const name = this.panel.querySelector('#mwi-ror-item').value;
                 const hrid = this._resolveItemHrid(name, 'mwi-ror-transmute-items');
@@ -35444,6 +35563,16 @@ self.onmessage = function (e) {
                     targetActionCount,
                 };
                 detailInfo = { mode: 'alchemy', breakdown: alchemyModel.breakdown };
+                this.lastDepthCapContext = {
+                    costPerAction: alchemyModel.cost,
+                    items: this._alchemyDepthCapItems(alchemyModel.breakdown),
+                };
+                optimalCommit = calculateOptimalCommit({
+                    outcomeDistribution: alchemyModel.outcomeDistribution,
+                    costPerAction: alchemyModel.cost,
+                    actionCount: targetActionCount,
+                    bankroll: startingBalance,
+                });
             } else {
                 const name = this.panel.querySelector('#mwi-ror-item').value;
                 const hrid = this._resolveItemHrid(name, 'mwi-ror-enhance-items');
@@ -35497,8 +35626,73 @@ self.onmessage = function (e) {
             const simResult = await simulateRuinAsync(simModel);
             const minActions = minActionsForNonZeroRisk(startingBalance, maxSinglePossibleLoss);
             this._renderResults(results, simResult, minActions);
+            if (optimalCommit) {
+                this._renderOptimalCommit(results, optimalCommit);
+            } else {
+                results.insertAdjacentHTML(
+                    'beforeend',
+                    `<div style="margin-top:10px; margin-bottom:6px; color:#888; font-size:11px;">
+                    Optimal share of cash to commit: not applicable — enhancing has no revenue
+                    distribution to size a bet against, only a fixed cost toward the target level.
+                    Use the ruin probability above instead.
+                </div>`
+                );
+            }
             this._renderDetails(results, detailInfo, startingBalance, maxSinglePossibleLoss, minActions);
             status.textContent = `${formatters_js.formatWithSeparator(trials)} trials simulated.`;
+        }
+
+        /**
+         * Recover the raw per-attempt output quantity for each item a Transmute attempt can produce,
+         * for market-depth-cap.js — main branches are conditional on success (successRate * dropRate),
+         * bonus drops (essence/rare) are independent per-attempt Bernoulli events already unconditional.
+         * @param {Object} breakdown - alchemyModel.breakdown from buildAlchemyTransmuteModel().
+         * @returns {Array<{itemHrid: string, quantityPerAction: number}>}
+         */
+        _alchemyDepthCapItems(breakdown) {
+            const items = [];
+            for (const branch of breakdown.mainBranches) {
+                if (branch.isSelfReturn || !(branch.count > 0)) continue;
+                items.push({
+                    itemHrid: branch.itemHrid,
+                    quantityPerAction: breakdown.successRate * branch.dropRate * branch.count,
+                });
+            }
+            for (const bonus of breakdown.bonusDrops) {
+                if (!(bonus.count > 0)) continue;
+                items.push({ itemHrid: bonus.itemHrid, quantityPerAction: bonus.dropRate * bonus.count });
+            }
+            return items;
+        }
+
+        /**
+         * Renders the closed-form "optimal share of cash to commit" figures (see
+         * utils/optimal-bankroll-share.js) — a quick variance-based cap, separate from and shown
+         * alongside the Monte Carlo ruin probability above.
+         */
+        _renderOptimalCommit(container, optimalCommit) {
+            if (!optimalCommit.hasEdge) {
+                container.insertAdjacentHTML(
+                    'beforeend',
+                    `<div style="margin-top:10px; margin-bottom:6px; color:#c98;">
+                    <strong>Optimal share of cash to commit:</strong> 0% — this setup has no positive
+                    expected edge (E[R] ≤ 1), so sizing a bet against its variance isn't meaningful here.
+                </div>`
+                );
+                return;
+            }
+
+            container.insertAdjacentHTML(
+                'beforeend',
+                `<div style="margin-top:10px;">
+                <strong>Optimal share of cash to commit:</strong> ${formatters_js.formatPercentage(optimalCommit.fstar, 1)} of bankroll
+                (${fmtGold(optimalCommit.recommendedCommit)} ≈ ${formatters_js.formatWithSeparator(optimalCommit.recommendedActionCount)} actions)
+            </div>
+            <div style="color:#888; font-size:11px; margin-bottom:6px;">
+                Variance-based cap only — ignores the downward price pressure from selling your own output.
+                Open the item's order book in-game to see the market-depth check for that.
+            </div>`
+            );
         }
 
         _renderResults(container, simResult, minActions) {

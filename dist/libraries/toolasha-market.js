@@ -1,11 +1,11 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.88.5
+ * Version: 2.89.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, enhancementCalculator_js, formatters_js, marketData_js, teaParser_js, profitConstants_js, profitHelpers_js, buffParser_js, equipmentParser_js, actionCalculator_js, tokenValuation_js, enhancementConfig_js, dom, materialCalculator_js, timerRegistry_js, storage, cleanupRegistry_js, domObserverHelpers_js, enhancementMultipliers_js, marketplaceSession_js, reactInput_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js) {
+(function (config, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, enhancementCalculator_js, formatters_js, marketData_js, teaParser_js, profitConstants_js, profitHelpers_js, buffParser_js, equipmentParser_js, actionCalculator_js, tokenValuation_js, enhancementConfig_js, dom, materialCalculator_js, timerRegistry_js, storage, cleanupRegistry_js, webSocketHook, domObserverHelpers_js, enhancementMultipliers_js, marketplaceSession_js, reactInput_js, abilityCostCalculator_js, houseCostCalculator_js) {
     'use strict';
 
     function _interopNamespaceDefault(e) {
@@ -811,6 +811,41 @@
             price: cheapestPrice === Infinity ? 0 : cheapestPrice,
             itemHrid: cheapestItemHrid,
         };
+    }
+
+    /**
+     * Calculate the gold cost of a single enhancement attempt's consumed materials (ask-side
+     * market price), including any direct coin line item in enhancementCosts. Materials are
+     * consumed on every attempt regardless of success/failure, and this cost is the same at every
+     * enhancement level (enhancementCosts is not level-indexed).
+     * @param {Object} itemDetails - Item details containing enhancementCosts.
+     * @returns {{cost: number, hasCost: boolean, costPartial: boolean}}
+     */
+    function calculatePerAttemptMaterialCost(itemDetails) {
+        let cost = 0;
+        let hasCost = false;
+        let costPartial = false;
+
+        if (!itemDetails.enhancementCosts?.length) {
+            return { cost: 0, hasCost: false, costPartial: false };
+        }
+
+        for (const material of itemDetails.enhancementCosts) {
+            if (material.itemHrid === '/items/coin') {
+                cost += material.count;
+                hasCost = true;
+                continue;
+            }
+            const price = marketAPI.getPrice(material.itemHrid);
+            if (price?.ask > 0) {
+                cost += material.count * price.ask;
+                hasCost = true;
+            } else {
+                costPartial = true;
+            }
+        }
+
+        return { cost, hasCost, costPartial };
     }
 
     /**
@@ -1941,10 +1976,10 @@
 
 
     // Worker pool instance
-    let workerPool$1 = null;
+    let workerPool$2 = null;
 
     // Worker script as inline string
-    const WORKER_SCRIPT$1 = `
+    const WORKER_SCRIPT$2 = `
 // Cache for EV calculation results
 const evCache = new Map();
 
@@ -2042,20 +2077,20 @@ self.onmessage = function (e) {
     /**
      * Get or create the worker pool instance
      */
-    async function getWorkerPool$1() {
-        if (workerPool$1) {
-            return workerPool$1;
+    async function getWorkerPool$2() {
+        if (workerPool$2) {
+            return workerPool$2;
         }
 
         try {
             // Create worker blob from inline script
-            const blob = new Blob([WORKER_SCRIPT$1], { type: 'application/javascript' });
+            const blob = new Blob([WORKER_SCRIPT$2], { type: 'application/javascript' });
 
             // Initialize worker pool with 2-4 workers
-            workerPool$1 = new WorkerPool(blob);
-            await workerPool$1.initialize();
+            workerPool$2 = new WorkerPool(blob);
+            await workerPool$2.initialize();
 
-            return workerPool$1;
+            return workerPool$2;
         } catch (error) {
             throw error;
         }
@@ -2067,7 +2102,7 @@ self.onmessage = function (e) {
      * @returns {Promise<Array>} Array of {containerHrid, ev} results
      */
     async function calculateEVBatch(containers) {
-        const pool = await getWorkerPool$1();
+        const pool = await getWorkerPool$2();
 
         // Split containers into chunks for parallel processing
         const chunkSize = Math.ceil(containers.length / pool.getStats().poolSize);
@@ -9939,6 +9974,2372 @@ self.onmessage = function (e) {
     const queueLengthEstimator = new QueueLengthEstimator();
 
     /**
+     * Floating Panel Z-Index Manager
+     * Manages bring-to-front ordering for persistent floating panels.
+     * All panels are capped below config.Z_FLOATING_PANEL + 99 (1199)
+     * so they never cross the game's MUI modal layer (~1300).
+     */
+
+
+    const panels = new Set();
+
+    /**
+     * Register a floating panel element for z-index management
+     * @param {HTMLElement} el - The panel element
+     */
+    function registerFloatingPanel(el) {
+        panels.add(el);
+    }
+
+    /**
+     * Unregister a floating panel element
+     * @param {HTMLElement} el - The panel element
+     */
+    function unregisterFloatingPanel(el) {
+        panels.delete(el);
+    }
+
+    /**
+     * Bring a panel to the front among all registered panels,
+     * without exceeding config.Z_FLOATING_PANEL + 99.
+     * @param {HTMLElement} el - The panel to bring forward
+     */
+    function bringPanelToFront(el) {
+        const base = config.Z_FLOATING_PANEL;
+        const cap = base + 99;
+
+        let maxZ = base;
+        for (const p of panels) {
+            const z = parseInt(p.style.zIndex) || base;
+            if (z > maxZ) maxZ = z;
+        }
+
+        const next = maxZ + 1;
+        if (next > cap) {
+            // Overflow — reassign all from base upward, put el last
+            let i = base;
+            for (const p of panels) {
+                if (p !== el) p.style.zIndex = String(i++);
+            }
+            el.style.zIndex = String(i);
+        } else {
+            el.style.zIndex = String(next);
+        }
+    }
+
+    /**
+     * Risk of Ruin Engine
+     *
+     * Pure statistical core for "how likely am I to hit 0 gold before reaching my target?".
+     * Has zero knowledge of chests/alchemy/enhancing — callers (adapters) supply a per-action
+     * outcome generator (stepFn) and a target-reached check (isTargetReached); everything here
+     * operates on plain { balance, ...custom } state objects.
+     *
+     * Two independent estimates are provided:
+     * - simulateRuin(): Monte Carlo point estimate + confidence interval.
+     * - lundbergBound() / lundbergBoundVarying(): closed-form upper bound (Lundberg inequality).
+     */
+
+    /**
+     * Deterministic PRNG (mulberry32) so simulations are reproducible for a given seed.
+     * @param {number} seed
+     * @returns {function(): number} Generator of floats in [0, 1)
+     */
+    function createSeededRng(seed) {
+        let a = seed >>> 0;
+        return function () {
+            a |= 0;
+            a = (a + 0x6d2b79f5) | 0;
+            let t = Math.imul(a ^ (a >>> 15), 1 | a);
+            t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+    }
+
+    /**
+     * Draw a random outcome from a discrete distribution of { prob, ...payload } entries.
+     * Probabilities need not sum to exactly 1 (floating point); the last entry catches the remainder.
+     * @param {Array<{prob: number}>} distribution
+     * @param {function(): number} rng
+     * @returns {Object} The chosen entry
+     */
+    function drawFromDistribution(distribution, rng) {
+        const roll = rng();
+        let cumulative = 0;
+        for (let i = 0; i < distribution.length; i++) {
+            cumulative += distribution[i].prob;
+            if (roll < cumulative || i === distribution.length - 1) {
+                return distribution[i];
+            }
+        }
+        return distribution[distribution.length - 1];
+    }
+
+    /**
+     * Wilson score confidence interval for a binomial proportion — more reliable than the Wald
+     * interval when the estimated probability is near 0 or 1, which is the common case here.
+     * @param {number} successCount
+     * @param {number} trials
+     * @param {number} [z] - Z-score (1.96 = 95% CI)
+     * @returns {{low: number, high: number}}
+     */
+    function wilsonConfidenceInterval(successCount, trials, z = 1.96) {
+        if (trials === 0) return { low: 0, high: 1 };
+        const p = successCount / trials;
+        const z2 = z * z;
+        const denom = 1 + z2 / trials;
+        const center = p + z2 / (2 * trials);
+        const margin = z * Math.sqrt((p * (1 - p)) / trials + z2 / (4 * trials * trials));
+        return {
+            low: Math.max(0, (center - margin) / denom),
+            high: Math.min(1, (center + margin) / denom),
+        };
+    }
+
+    /**
+     * The last action count at which ruin is still analytically impossible, computed from the
+     * worst single-action loss rather than simulated — cheap and exact, no trials needed.
+     * @param {number} startingBalance
+     * @param {number} maxSinglePossibleLoss - Largest possible net loss from one action.
+     * @returns {number} First action count at which risk becomes non-zero (Infinity if it never can).
+     */
+    function minActionsForNonZeroRisk(startingBalance, maxSinglePossibleLoss) {
+        if (maxSinglePossibleLoss <= 0) return Infinity;
+        return Math.ceil(startingBalance / maxSinglePossibleLoss);
+    }
+
+    /**
+     * The action index at which trials most often actually went bust, read directly off the
+     * ruin-step histogram produced by simulateRuin() — no extra simulation required.
+     * @param {number[]} ruinStepCounts
+     * @returns {number|null} Step index of peak exposure, or null if no trial ever ruined.
+     */
+    function findPeakExposureStep(ruinStepCounts) {
+        let peakStep = null;
+        let peakCount = 0;
+        for (let step = 0; step < ruinStepCounts.length; step++) {
+            const count = ruinStepCounts[step] || 0;
+            if (count > peakCount) {
+                peakCount = count;
+                peakStep = step;
+            }
+        }
+        return peakStep;
+    }
+
+    /**
+     * Risk of Ruin Worker Manager
+     * Runs Monte Carlo trial batches off the main thread via a worker pool.
+     *
+     * Benchmarked need: an unprotected/huge-balance enhancement scenario where every trial runs to
+     * the step cap took ~6s synchronously on the main thread for 20000 trials — a real freeze risk,
+     * not a speculative one. Splitting trials across workers keeps the tab responsive.
+     *
+     * Both risk-of-ruin adapter shapes reduce to one of two plain, structured-clone-safe models:
+     * - 'fixedOutcome' (chests, alchemy): a flat per-action {prob, net} outcome list, walked for a
+     *   fixed number of actions.
+     * - 'levelWalk' (enhancing): a per-level {prob, nextLevel, net} outcome list, walked until a
+     *   target level is reached.
+     * Each worker re-implements risk-of-ruin-engine.js's createSeededRng/drawFromDistribution/
+     * simulateRuin core inline (the same duplication tradeoff ev-worker-manager.js and
+     * enhancement-worker-manager.js already accept, since a Blob-URL worker can't import this
+     * project's ES modules) — kept deliberately tiny and mirrored closely so the two stay in sync.
+     */
+
+
+    let workerPool$1 = null;
+
+    // Inline copy of createSeededRng/drawFromDistribution/runFixedOutcomeTrials/runLevelWalkTrials/
+    // runBatch above, since a Blob-URL worker can't import this project's ES modules — the same
+    // duplication tradeoff ev-worker-manager.js and enhancement-worker-manager.js already accept.
+    // Keep this manually in sync with the exported functions above; risk-of-ruin-worker-manager.test.js
+    // exercises the real exported versions, not this string.
+    const WORKER_SCRIPT$1 = `
+function createSeededRng(seed) {
+    let a = seed >>> 0;
+    return function () {
+        a |= 0;
+        a = (a + 0x6d2b79f5) | 0;
+        let t = Math.imul(a ^ (a >>> 15), 1 | a);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+function drawFromDistribution(distribution, rng) {
+    const roll = rng();
+    let cumulative = 0;
+    for (let i = 0; i < distribution.length; i++) {
+        cumulative += distribution[i].prob;
+        if (roll < cumulative || i === distribution.length - 1) return distribution[i];
+    }
+    return distribution[distribution.length - 1];
+}
+
+function runFixedOutcomeTrials(model, rng) {
+    const { startingBalance, trials, maxSteps, outcomeDistribution, targetActionCount } = model;
+    let ruinCount = 0;
+    let totalRuinSteps = 0;
+    let undecidedCount = 0;
+    const ruinStepCounts = [];
+
+    for (let trial = 0; trial < trials; trial++) {
+        let balance = startingBalance;
+        let step = 0;
+        let ruined = false;
+
+        while (step < maxSteps && step < targetActionCount) {
+            balance += drawFromDistribution(outcomeDistribution, rng).net;
+            step += 1;
+            if (balance <= 0) {
+                ruined = true;
+                break;
+            }
+        }
+
+        if (ruined) {
+            ruinCount += 1;
+            totalRuinSteps += step;
+            ruinStepCounts[step] = (ruinStepCounts[step] || 0) + 1;
+        } else if (step < targetActionCount) {
+            undecidedCount += 1;
+        }
+    }
+
+    return { ruinCount, trials, totalRuinSteps, undecidedCount, ruinStepCounts };
+}
+
+function runLevelWalkTrials(model, rng) {
+    const { startingBalance, trials, maxSteps, perLevelOutcomeDistributions, targetLevel, startLevel } = model;
+    let ruinCount = 0;
+    let totalRuinSteps = 0;
+    let undecidedCount = 0;
+    const ruinStepCounts = [];
+
+    for (let trial = 0; trial < trials; trial++) {
+        let balance = startingBalance;
+        let level = startLevel;
+        let step = 0;
+        let ruined = false;
+
+        while (step < maxSteps && level < targetLevel) {
+            const chosen = drawFromDistribution(perLevelOutcomeDistributions[level], rng);
+            balance += chosen.net;
+            level = chosen.nextLevel;
+            step += 1;
+            if (balance <= 0) {
+                ruined = true;
+                break;
+            }
+        }
+
+        if (ruined) {
+            ruinCount += 1;
+            totalRuinSteps += step;
+            ruinStepCounts[step] = (ruinStepCounts[step] || 0) + 1;
+        } else if (level < targetLevel) {
+            undecidedCount += 1;
+        }
+    }
+
+    return { ruinCount, trials, totalRuinSteps, undecidedCount, ruinStepCounts };
+}
+
+function runBatch(model) {
+    if (model.startingBalance <= 0) {
+        return { ruinCount: model.trials, trials: model.trials, totalRuinSteps: 0, undecidedCount: 0, ruinStepCounts: [0] };
+    }
+    const rng = createSeededRng(model.rngSeed);
+    return model.type === 'levelWalk' ? runLevelWalkTrials(model, rng) : runFixedOutcomeTrials(model, rng);
+}
+
+self.onmessage = function (e) {
+    const { taskId, data } = e.data;
+    try {
+        self.postMessage({ taskId, result: runBatch(data.model) });
+    } catch (error) {
+        self.postMessage({ taskId, error: error.message || String(error) });
+    }
+};
+`;
+
+    async function getWorkerPool$1() {
+        if (workerPool$1) return workerPool$1;
+
+        const blob = new Blob([WORKER_SCRIPT$1], { type: 'application/javascript' });
+        workerPool$1 = new WorkerPool(blob);
+        await workerPool$1.initialize();
+        return workerPool$1;
+    }
+
+    /**
+     * Split a Monte Carlo model's trial count into per-worker chunks, each with a distinct rngSeed
+     * derived from the base seed so chunks don't sample identically.
+     * @param {Object} model
+     * @param {number} poolSize
+     * @returns {Array<{model: Object}>} Task list ready for WorkerPool#executeAll.
+     */
+    function buildChunkTasks(model, poolSize) {
+        const chunkCount = Math.min(poolSize, model.trials) || 1;
+        const baseChunkSize = Math.floor(model.trials / chunkCount);
+        const remainder = model.trials % chunkCount;
+
+        const tasks = [];
+        for (let i = 0; i < chunkCount; i++) {
+            const chunkTrials = baseChunkSize + (i < remainder ? 1 : 0);
+            if (chunkTrials <= 0) continue;
+            tasks.push({ model: { ...model, trials: chunkTrials, rngSeed: (model.rngSeed || 1) + i * 104729 } });
+        }
+        return tasks;
+    }
+
+    /**
+     * Merge per-chunk trial results back into the same shape risk-of-ruin-engine.js's
+     * simulateRuin() returns.
+     * @param {Array<{ruinCount: number, trials: number, totalRuinSteps: number, undecidedCount: number, ruinStepCounts: number[]}>} chunkResults
+     * @returns {{ruinProbability: number, ruinCount: number, trials: number, ruinStepCounts: number[], meanStepsToRuin: number|null, undecidedCount: number}}
+     */
+    function mergeRuinChunks(chunkResults) {
+        let ruinCount = 0;
+        let trials = 0;
+        let totalRuinSteps = 0;
+        let undecidedCount = 0;
+        const ruinStepCounts = [];
+
+        for (const chunk of chunkResults) {
+            ruinCount += chunk.ruinCount;
+            trials += chunk.trials;
+            totalRuinSteps += chunk.totalRuinSteps;
+            undecidedCount += chunk.undecidedCount;
+            for (let step = 0; step < chunk.ruinStepCounts.length; step++) {
+                const count = chunk.ruinStepCounts[step];
+                if (!count) continue;
+                ruinStepCounts[step] = (ruinStepCounts[step] || 0) + count;
+            }
+        }
+
+        return {
+            ruinProbability: ruinCount / trials,
+            ruinCount,
+            trials,
+            ruinStepCounts,
+            meanStepsToRuin: ruinCount > 0 ? totalRuinSteps / ruinCount : null,
+            undecidedCount,
+        };
+    }
+
+    /**
+     * Run a Monte Carlo ruin simulation split across the worker pool.
+     * @param {Object} model - { startingBalance, trials, maxSteps, rngSeed, type, ...type-specific fields }
+     * @returns {Promise<{ruinProbability: number, ruinCount: number, trials: number, ruinStepCounts: number[], meanStepsToRuin: number|null, undecidedCount: number}>}
+     */
+    async function simulateRuinAsync(model) {
+        const pool = await getWorkerPool$1();
+        const tasks = buildChunkTasks(model, pool.getStats().poolSize);
+        const chunkResults = await pool.executeAll(tasks);
+        return mergeRuinChunks(chunkResults);
+    }
+
+    /**
+     * Optimal Bankroll Share
+     *
+     * Second-order (mean-variance) Kelly approximation for how much of the current bankroll is safe
+     * to commit to a batch of actionCount i.i.d. risky actions (dungeon chests, alchemy Transmute),
+     * reusing the per-action net-value outcome distribution the Risk of Ruin adapters already build.
+     *
+     * This is a quick closed-form estimate, not a substitute for the Monte Carlo ruin probability
+     * elsewhere in the panel — the quadratic approximation can overstate the safe size for skewed,
+     * fat-tailed payout distributions (the same class of distribution risk-of-ruin-engine.js's own
+     * Lundberg bound is careful to caveat). Not meaningful for enhancement: that activity has no
+     * revenue distribution to size a bet against, only a pure cost sink toward a fixed goal — callers
+     * should skip this module for that mode and rely on the ruin probability alone.
+     */
+
+    /**
+     * Mean and variance of the per-action gross return multiple R = 1 + net/costPerAction, derived
+     * from a discrete outcome distribution of { prob, net } entries (net = revenue after tax, minus
+     * cost — already computed by the chest/alchemy risk-of-ruin adapters).
+     * @param {Array<{prob: number, net: number}>} outcomeDistribution
+     * @param {number} costPerAction
+     * @returns {{meanR: number, varianceR: number}}
+     */
+    function calculateReturnStats(outcomeDistribution, costPerAction) {
+        if (!(costPerAction > 0) || !outcomeDistribution?.length) {
+            return { meanR: 0, varianceR: 0 };
+        }
+
+        const rValues = outcomeDistribution.map((o) => ({ prob: o.prob, r: 1 + o.net / costPerAction }));
+        const meanR = rValues.reduce((sum, o) => sum + o.prob * o.r, 0);
+        const varianceR = rValues.reduce((sum, o) => sum + o.prob * (o.r - meanR) ** 2, 0);
+        return { meanR, varianceR };
+    }
+
+    /**
+     * Second-order Kelly approximation: fraction of bankroll optimal to allocate across actionCount
+     * i.i.d. actions, given the batch's aggregate return statistics. Clamped to [0, 1] — a
+     * non-positive edge recommends committing nothing, and this never recommends more than the full
+     * bankroll (no leverage).
+     * @param {Object} params
+     * @param {number} params.actionCount
+     * @param {number} params.meanR
+     * @param {number} params.varianceR
+     * @returns {number} fstar, in [0, 1]
+     */
+    function calculateOptimalBankrollFraction({ actionCount, meanR, varianceR }) {
+        if (!(varianceR > 0) || !(actionCount > 0) || meanR <= 1) return 0;
+        const fstar = (actionCount * (meanR - 1)) / varianceR;
+        return Math.min(1, Math.max(0, fstar));
+    }
+
+    /**
+     * Combines the above into the figures a UI displays: the safe bankroll fraction/amount for the
+     * chosen batch size, and whether the activity has positive edge at all.
+     * @param {Object} params
+     * @param {Array<{prob: number, net: number}>} params.outcomeDistribution
+     * @param {number} params.costPerAction
+     * @param {number} params.actionCount
+     * @param {number} params.bankroll
+     * @returns {{
+     *   meanR: number,
+     *   varianceR: number,
+     *   fstar: number,
+     *   recommendedCommit: number,
+     *   recommendedActionCount: number,
+     *   hasEdge: boolean,
+     * }}
+     */
+    function calculateOptimalCommit({ outcomeDistribution, costPerAction, actionCount, bankroll }) {
+        const { meanR, varianceR } = calculateReturnStats(outcomeDistribution, costPerAction);
+        const fstar = calculateOptimalBankrollFraction({ actionCount, meanR, varianceR });
+        const recommendedCommit = fstar * (bankroll || 0);
+        const recommendedActionCount = costPerAction > 0 ? Math.floor(recommendedCommit / costPerAction) : 0;
+
+        return {
+            meanR,
+            varianceR,
+            fstar,
+            recommendedCommit,
+            recommendedActionCount,
+            hasEdge: meanR > 1,
+        };
+    }
+
+    /**
+     * Loadout Snapshot
+     *
+     * Listens for `loadouts_updated` WebSocket messages to capture all loadout configurations
+     * (equipment, abilities, consumables, enhancement levels) in real time.
+     *
+     * Stored snapshots are used by profit calculators to apply the correct tool/equipment
+     * bonuses for a skill even when that loadout is not currently equipped.
+     *
+     * Skill matching: the loadout's actionTypeHrid (e.g. "/action_types/brewing") is compared
+     * to the action type of the profit calculation. An "All Skills" loadout (empty actionTypeHrid)
+     * is used as a fallback when no skill-specific snapshot is found.
+     *
+     * Priority: skill default > all skills default > skill non-default > all skills non-default
+     */
+
+
+    const STORAGE_KEY_PREFIX$1 = 'loadout_snapshots';
+
+    /**
+     * Returns the active WebSocket hook instance.
+     * In the multi-bundle production build each library bundles its own copy of websocket.js,
+     * but only the Core library's instance has install() called on it.
+     * Prefer window.Toolasha.Core.webSocketHook so listeners actually receive messages.
+     * Falls back to the bundled copy for the dev standalone build (single bundle, one instance).
+     */
+    function getWebSocketHook() {
+        return (typeof window !== 'undefined' && window.Toolasha?.Core?.webSocketHook) || webSocketHook;
+    }
+
+    /**
+     * Get character-scoped storage key.
+     * @returns {string}
+     */
+    function getStorageKey$2() {
+        const charId = dataManager.getCurrentCharacterId() || 'default';
+        return `${STORAGE_KEY_PREFIX$1}_${charId}`;
+    }
+
+    /**
+     * Parse a wearable hash string into itemLocationHrid, itemHrid, and enhancementLevel.
+     * Format: "characterId::/item_locations/location::/items/item_hrid::enhancementLevel"
+     * Empty string means no item in that slot.
+     * @param {string} itemLocationHrid - The equipment slot key (e.g. "/item_locations/body")
+     * @param {string} wearableHash - The wearable hash value
+     * @returns {{ itemLocationHrid: string, itemHrid: string, enhancementLevel: number }|null}
+     */
+    function parseWearable(itemLocationHrid, wearableHash) {
+        if (!wearableHash) return null;
+
+        const parts = wearableHash.split('::');
+        const itemHrid = parts.find((p) => p.startsWith('/items/'));
+        if (!itemHrid) return null;
+
+        const lastPart = parts[parts.length - 1];
+        const enhancementLevel = !lastPart.startsWith('/') ? parseInt(lastPart, 10) || 0 : 0;
+
+        return { itemLocationHrid, itemHrid, enhancementLevel };
+    }
+
+    /**
+     * Convert a server loadout object into our snapshot format.
+     * @param {Object} loadout - A loadout entry from characterLoadoutMap
+     * @returns {Object} snapshot
+     */
+    function buildSnapshot(loadout) {
+        // Parse equipment from wearableMap
+        const equipment = [];
+        for (const [locationHrid, hash] of Object.entries(loadout.wearableMap || {})) {
+            const parsed = parseWearable(locationHrid, hash);
+            if (parsed) equipment.push(parsed);
+        }
+
+        // Parse drinks
+        const drinks = (loadout.drinkItemHrids || []).map((hrid) => ({
+            itemHrid: hrid || '',
+        }));
+
+        // Parse food
+        const food = (loadout.foodItemHrids || []).map((hrid) => ({
+            itemHrid: hrid || '',
+        }));
+
+        // Parse abilities
+        const abilities = [];
+        for (const [slot, hrid] of Object.entries(loadout.abilityMap || {})) {
+            if (hrid) abilities.push({ abilityHrid: hrid, slot: parseInt(slot, 10) });
+        }
+
+        return {
+            name: loadout.name,
+            actionTypeHrid: loadout.actionTypeHrid || '',
+            isDefault: !!loadout.isDefault,
+            useExactEnhancement: loadout.useExactEnhancement ?? false,
+            ordinal: loadout.ordinal || 0,
+            equipment,
+            abilities,
+            food,
+            drinks,
+            abilityCombatTriggersMap: loadout.abilityCombatTriggersMap || {},
+            consumableCombatTriggersMap: loadout.consumableCombatTriggersMap || {},
+            savedAt: Date.now(),
+        };
+    }
+
+    class LoadoutSnapshot {
+        constructor() {
+            this.snapshots = {}; // In-memory cache: { [loadoutName]: snapshot }
+            this.characterInitializedHandler = null;
+            this.updateListeners = [];
+            this.isInitialized = false;
+
+            // Register WebSocket handler at module load time so in-session loadout
+            // changes are captured whenever loadouts_updated fires.
+            this.loadoutsUpdatedHandler = (data) => this._onLoadoutsUpdated(data);
+            getWebSocketHook().on('loadouts_updated', this.loadoutsUpdatedHandler);
+        }
+
+        /**
+         * Register a callback to be called whenever snapshots are updated.
+         * @param {Function} fn
+         */
+        onUpdate(fn) {
+            this.updateListeners.push(fn);
+        }
+
+        /**
+         * Remove a previously registered update callback.
+         * @param {Function} fn
+         */
+        offUpdate(fn) {
+            this.updateListeners = this.updateListeners.filter((l) => l !== fn);
+        }
+
+        _emitUpdate() {
+            this.updateListeners.forEach((fn) => fn());
+        }
+
+        async initialize() {
+            if (this.isInitialized) return;
+            this.isInitialized = true;
+
+            // Re-register WS handler if it was cleared by disable()
+            if (!this.loadoutsUpdatedHandler) {
+                this.loadoutsUpdatedHandler = (data) => this._onLoadoutsUpdated(data);
+                getWebSocketHook().on('loadouts_updated', this.loadoutsUpdatedHandler);
+            }
+
+            // Load from storage — loadouts_updated only fires when the user visits the loadouts
+            // UI, so storage is always the source of snapshots at startup.
+            if (Object.keys(this.snapshots).length === 0) {
+                const storageKey = getStorageKey$2();
+                // NOTE: getCurrentCharacterId() may be null at this point (before init_character_data
+                // arrives), so getStorageKey() may return 'loadout_snapshots_default'. We will reload
+                // from the correct key once character_initialized fires.
+                this.snapshots = (await storage.getJSON(storageKey, 'settings', null)) || {};
+
+                // Fallback for Steam users: if storage is also empty, bootstrap from
+                // the characterLoadoutMap embedded in init_character_data (already in dataManager).
+                if (Object.keys(this.snapshots).length === 0) {
+                    const characterLoadoutMap = dataManager.characterData?.characterLoadoutMap;
+                    if (characterLoadoutMap && Object.keys(characterLoadoutMap).length > 0) {
+                        this._onLoadoutsUpdated({ characterLoadoutMap });
+                    }
+                }
+            }
+
+            // Reload from the correct character-scoped key once character data is available
+            this.characterInitializedHandler = async () => {
+                const storageKey = getStorageKey$2();
+                const fresh = (await storage.getJSON(storageKey, 'settings', null)) || {};
+                if (Object.keys(fresh).length > 0) {
+                    this.snapshots = fresh;
+                    this._emitUpdate();
+                }
+            };
+            dataManager.on('character_initialized', this.characterInitializedHandler);
+        }
+
+        /**
+         * Handle a loadouts_updated WebSocket message.
+         * Replaces all snapshots with the server's current state.
+         * @param {Object} data - The WebSocket message payload
+         */
+        _onLoadoutsUpdated(data) {
+            const loadoutMap = data.characterLoadoutMap;
+            if (!loadoutMap) {
+                console.warn('[LoadoutSnapshot] loadouts_updated received but no characterLoadoutMap');
+                return;
+            }
+
+            const newSnapshots = {};
+            for (const [id, loadout] of Object.entries(loadoutMap)) {
+                if (!loadout.name) continue;
+                newSnapshots[id] = buildSnapshot(loadout);
+            }
+
+            this.snapshots = newSnapshots;
+            storage.setJSON(getStorageKey$2(), this.snapshots, 'settings');
+            this._emitUpdate();
+        }
+
+        /**
+         * Update a snapshot equipment item's enhancement level.
+         * Used when the highest owned enhancement of a loadout item changes (up or down).
+         * @param {string} itemHrid - Base item HRID (e.g. "/items/sword")
+         * @param {number} newLevel - New enhancement level (highest currently owned)
+         * @returns {boolean} True if any snapshot was updated
+         */
+        updateEnhancementLevel(itemHrid, newLevel) {
+            let changed = false;
+            for (const snapshot of Object.values(this.snapshots)) {
+                // Exact-mode snapshots intentionally hold a frozen level — never auto-update them.
+                if (snapshot.useExactEnhancement) continue;
+                for (const eq of snapshot.equipment || []) {
+                    if (eq.itemHrid === itemHrid && eq.enhancementLevel !== newLevel) {
+                        eq.enhancementLevel = newLevel;
+                        snapshot.savedAt = Date.now();
+                        changed = true;
+                    }
+                }
+            }
+            if (changed) {
+                storage.setJSON(getStorageKey$2(), this.snapshots, 'settings');
+                this._emitUpdate();
+            }
+            return changed;
+        }
+
+        /**
+         * Find the best snapshot for a given action type.
+         * Priority: skill default > all skills default > skill non-default > all skills non-default
+         * @param {string} actionTypeHrid - e.g. "/action_types/brewing"
+         * @returns {Object|null} snapshot entry or null
+         */
+        _findSnapshot(actionTypeHrid) {
+            if (!config.getSetting('loadoutSnapshot')) return null;
+
+            let skillDefault = null;
+            let allSkillsDefault = null;
+            let skillNonDefault = null;
+            let allSkillsNonDefault = null;
+
+            for (const snapshot of Object.values(this.snapshots)) {
+                if (snapshot.actionTypeHrid === actionTypeHrid) {
+                    if (snapshot.isDefault) {
+                        skillDefault = snapshot;
+                    } else {
+                        skillNonDefault = snapshot;
+                    }
+                } else if (snapshot.actionTypeHrid === '') {
+                    if (snapshot.isDefault) {
+                        allSkillsDefault = snapshot;
+                    } else {
+                        allSkillsNonDefault = snapshot;
+                    }
+                }
+            }
+
+            return skillDefault || allSkillsDefault || skillNonDefault || allSkillsNonDefault || null;
+        }
+
+        /**
+         * Get a Map<itemLocationHrid, item> for the best loadout snapshot matching the given
+         * action type. Returns null if no snapshot exists or the feature is disabled.
+         * The returned Map has the same format as dataManager.getEquipment().
+         * @param {string} actionTypeHrid
+         * @returns {Map<string, Object>|null}
+         */
+        getSnapshotForSkill(actionTypeHrid) {
+            const snapshot = this._findSnapshot(actionTypeHrid);
+            if (!snapshot || !snapshot.equipment?.length) return null;
+            return new Map(snapshot.equipment.map((e) => [e.itemLocationHrid, e]));
+        }
+
+        /**
+         * Get the drink slots array for the best loadout snapshot matching the given
+         * action type. Returns null if no snapshot exists or the feature is disabled.
+         * The returned array has the same format as dataManager.getActionDrinkSlots().
+         * @param {string} actionTypeHrid
+         * @returns {Array<{itemHrid: string}>|null}
+         */
+        getSnapshotDrinksForSkill(actionTypeHrid) {
+            const snapshot = this._findSnapshot(actionTypeHrid);
+            if (!snapshot) return null;
+            // Filter out empty slots so callers get only actual items
+            const filled = (snapshot.drinks || []).filter((d) => d.itemHrid);
+            return filled.length > 0 ? filled : null;
+        }
+
+        /**
+         * Get all saved loadout snapshots as a flat array.
+         * @returns {Array<Object>} Array of snapshot objects
+         */
+        getAllSnapshots() {
+            return Object.values(this.snapshots).sort((a, b) => a.ordinal - b.ordinal);
+        }
+
+        /**
+         * Get the name and default status of the saved loadout being used for a given action type.
+         * Returns an object with name and isDefault, or null if no snapshot exists or feature is disabled.
+         * @param {string} actionTypeHrid
+         * @returns {{ name: string, isDefault: boolean }|null}
+         */
+        getSnapshotInfoForSkill(actionTypeHrid) {
+            const snapshot = this._findSnapshot(actionTypeHrid);
+            if (!snapshot) return null;
+            return { name: snapshot.name, isDefault: !!snapshot.isDefault };
+        }
+
+        disable() {
+            if (this.loadoutsUpdatedHandler) {
+                getWebSocketHook().off('loadouts_updated', this.loadoutsUpdatedHandler);
+                this.loadoutsUpdatedHandler = null;
+            }
+
+            if (this.characterInitializedHandler) {
+                dataManager.off('character_initialized', this.characterInitializedHandler);
+                this.characterInitializedHandler = null;
+            }
+
+            this.updateListeners = [];
+            this.isInitialized = false;
+        }
+    }
+
+    const loadoutSnapshot = new LoadoutSnapshot();
+
+    /**
+     * Combat Simulator Adapter
+     * Bridges Toolasha's live data to the combat sim engine.
+     *
+     * Extracts game data maps, builds player DTOs, and provides
+     * combat zone metadata for the simulation UI.
+     */
+
+
+    // Maps dungeon chest HRIDs to their required entry key HRIDs
+    const DUNGEON_ENTRY_KEYS = {
+        '/items/chimerical_chest': '/items/chimerical_entry_key',
+        '/items/sinister_chest': '/items/sinister_entry_key',
+        '/items/enchanted_chest': '/items/enchanted_entry_key',
+        '/items/pirate_chest': '/items/pirate_entry_key',
+    };
+
+    // Maps dungeon chest HRIDs (regular + refinement) to their chest key HRIDs
+    const DUNGEON_CHEST_KEYS = {
+        '/items/chimerical_chest': '/items/chimerical_chest_key',
+        '/items/sinister_chest': '/items/sinister_chest_key',
+        '/items/enchanted_chest': '/items/enchanted_chest_key',
+        '/items/pirate_chest': '/items/pirate_chest_key',
+        '/items/chimerical_refinement_chest': '/items/chimerical_chest_key',
+        '/items/sinister_refinement_chest': '/items/sinister_chest_key',
+        '/items/enchanted_refinement_chest': '/items/enchanted_chest_key',
+        '/items/pirate_refinement_chest': '/items/pirate_chest_key',
+    };
+
+    /**
+     * Dungeon Chest Risk-of-Ruin Adapter
+     *
+     * Builds a per-open cost/payout model for a dungeon chest, for the risk-of-ruin engine.
+     *
+     * A single chest open's payout is the SUM of many independent per-drop-entry
+     * Bernoulli(dropRate) x Uniform(minCount, maxCount) draws (openableLootDropMap) - not one
+     * categorical pick. The exact combined distribution has combinatorially many outcomes and
+     * isn't enumerable in closed form, so a large empirical sample of realized payouts (drawn via
+     * drawChestPayout) stands in as the outcome distribution for both:
+     * - The Monte Carlo simulation itself (a bootstrap resample of the true distribution, valid
+     *   for a large enough sample size, and the only form that's plain structured-clone-safe data
+     *   a Web Worker can consume without access to dataManager/marketAPI/expectedValueCalculator).
+     * - The Lundberg bound, which needs a discrete outcome-distribution input.
+     *
+     * Every real dungeon chest has at least one dropRate === 1 entry (essence + tokens on regular
+     * chests, a refinement shard on refinement chests), so the payout floor is never actually 0 —
+     * getMinimumGuaranteedPayout() computes that floor from the drop table directly rather than
+     * assuming it.
+     */
+
+
+    const COIN_HRID = '/items/coin';
+    const DEFAULT_EMPIRICAL_SAMPLE_SIZE = 5000;
+
+    function getKeyPricingMode() {
+        return config.getSettingValue('profitCalc_keyPricingMode') || 'ask';
+    }
+
+    function getKeyPrice(keyHrid) {
+        const priceData = marketAPI.getPrice(keyHrid);
+        if (!priceData) return 0;
+        const priceKey = getKeyPricingMode();
+        return priceData[priceKey] ?? priceData.ask ?? 0;
+    }
+
+    /**
+     * Gold cost to open one chest: entry key (regular, non-refinement chests only) + chest key,
+     * priced via the existing profitCalc_keyPricingMode setting — the same model
+     * combat-stats-calculator.js's calculateKeyCosts() already uses.
+     * @param {string} containerHrid
+     * @returns {number}
+     */
+    function getChestOpenCost(containerHrid) {
+        let cost = 0;
+
+        const entryKeyHrid = DUNGEON_ENTRY_KEYS[containerHrid];
+        if (entryKeyHrid) cost += getKeyPrice(entryKeyHrid);
+
+        const chestKeyHrid = DUNGEON_CHEST_KEYS[containerHrid];
+        if (chestKeyHrid) cost += getKeyPrice(chestKeyHrid);
+
+        return cost;
+    }
+
+    /**
+     * Breaks getChestOpenCost() down into its individual key line items, for display in a
+     * cost-transparency UI.
+     * @param {string} containerHrid
+     * @returns {{
+     *   entryKey: {hrid: string, name: string, price: number}|null,
+     *   chestKey: {hrid: string, name: string, price: number}|null,
+     *   total: number,
+     * }}
+     */
+    function getChestCostBreakdown(containerHrid) {
+        const entryKeyHrid = DUNGEON_ENTRY_KEYS[containerHrid];
+        const chestKeyHrid = DUNGEON_CHEST_KEYS[containerHrid];
+
+        const entryKey = entryKeyHrid
+            ? {
+                  hrid: entryKeyHrid,
+                  name: dataManager.getItemDetails(entryKeyHrid)?.name || entryKeyHrid,
+                  price: getKeyPrice(entryKeyHrid),
+              }
+            : null;
+        const chestKey = chestKeyHrid
+            ? {
+                  hrid: chestKeyHrid,
+                  name: dataManager.getItemDetails(chestKeyHrid)?.name || chestKeyHrid,
+                  price: getKeyPrice(chestKeyHrid),
+              }
+            : null;
+
+        return {
+            entryKey,
+            chestKey,
+            total: (entryKey?.price || 0) + (chestKey?.price || 0),
+        };
+    }
+
+    /**
+     * Price a realized drop (a specific item + count that has already been determined to occur),
+     * applying the same coin/tradeable/tax rules expected-value-calculator.js uses.
+     * @param {string} itemHrid
+     * @param {number} count
+     * @returns {number|null} Gold value, or null if no price data is available for this item.
+     */
+    function priceRealizedDrop(itemHrid, count) {
+        if (count <= 0) return 0;
+
+        const price = expectedValueCalculator.getDropPrice(itemHrid);
+        if (price === null) return null;
+
+        if (itemHrid === COIN_HRID) return count * price;
+
+        const itemDetails = dataManager.getItemDetails(itemHrid);
+        const canBeSold = itemDetails?.isTradable !== false;
+        return canBeSold ? profitHelpers_js.calculatePriceAfterTax(count * price) : count * price;
+    }
+
+    /**
+     * Draw one realized payout value for opening the given chest once. Prices each triggered drop
+     * the same way expected-value-calculator.js's getDropBreakdown() prices its average — tax-aware
+     * sell side, with coin/cowbell/dungeon-token/nested-container special cases handled by
+     * getDropPrice() — but against the actually-realized random count, not the average.
+     * @param {string} containerHrid
+     * @param {function(): number} rng
+     * @returns {number}
+     */
+    function drawChestPayout(containerHrid, rng) {
+        const initData = dataManager.getInitClientData();
+        const dropTable = initData?.openableLootDropMap?.[containerHrid];
+        if (!dropTable) return 0;
+
+        let payout = 0;
+        for (const drop of dropTable) {
+            const dropRate = drop.dropRate || 0;
+            if (dropRate <= 0 || rng() >= dropRate) continue;
+
+            const minCount = drop.minCount || 0;
+            const maxCount = drop.maxCount || 0;
+            if (minCount <= 0 && maxCount <= 0) continue;
+            const count = minCount + Math.floor(rng() * (maxCount - minCount + 1));
+
+            payout += priceRealizedDrop(drop.itemHrid, count) || 0;
+        }
+
+        return payout;
+    }
+
+    /**
+     * The lowest payout a single chest open can ever produce: the sum of every drop table entry
+     * that's guaranteed (dropRate === 1) at its minimum count, since a real chest's guaranteed
+     * drops (essence + tokens on regular chests, a refinement shard on refinement chests) mean the
+     * true floor is never 0 — every drop entry with dropRate < 1 is assumed to whiff in the
+     * worst case, but the dropRate === 1 entries always fire.
+     * @param {string} containerHrid
+     * @returns {number}
+     */
+    function getMinimumGuaranteedPayout(containerHrid) {
+        const initData = dataManager.getInitClientData();
+        const dropTable = initData?.openableLootDropMap?.[containerHrid];
+        if (!dropTable) return 0;
+
+        let payout = 0;
+        for (const drop of dropTable) {
+            if (drop.dropRate !== 1) continue;
+            payout += priceRealizedDrop(drop.itemHrid, drop.minCount || 0) || 0;
+        }
+
+        return payout;
+    }
+
+    /**
+     * Build the full risk-of-ruin model for repeatedly opening one chest type. The Monte Carlo
+     * simulation draws from the same empirical outcomeDistribution used for the Lundberg bound,
+     * rather than re-running drawChestPayout() live every step (see module docblock for why).
+     * @param {string} containerHrid
+     * @param {Object} [options]
+     * @param {number} [options.sampleSize] - Empirical sample count backing both the simulation and
+     *   the Lundberg bound.
+     * @param {number} [options.rngSeed] - Seed for the empirical sample.
+     * @returns {{
+     *   cost: number,
+     *   minimumGuaranteedPayout: number,
+     *   maxSinglePossibleLoss: number,
+     *   stepFn: function(state: Object, rng: function(): number): Object,
+     *   outcomeDistribution: Array<{prob: number, net: number}>,
+     * }}
+     */
+    function buildDungeonChestModel(
+        containerHrid,
+        { sampleSize = DEFAULT_EMPIRICAL_SAMPLE_SIZE, rngSeed = 1 } = {}
+    ) {
+        const cost = getChestOpenCost(containerHrid);
+        const minimumGuaranteedPayout = getMinimumGuaranteedPayout(containerHrid);
+
+        const sampleRng = createSeededRng(rngSeed);
+        const outcomeDistribution = [];
+        for (let i = 0; i < sampleSize; i++) {
+            const payout = drawChestPayout(containerHrid, sampleRng);
+            outcomeDistribution.push({ prob: 1 / sampleSize, net: payout - cost });
+        }
+
+        return {
+            cost,
+            minimumGuaranteedPayout,
+            maxSinglePossibleLoss: Math.max(0, cost - minimumGuaranteedPayout),
+            stepFn: (state, rng) => ({ balance: state.balance + drawFromDistribution(outcomeDistribution, rng).net }),
+            outcomeDistribution,
+        };
+    }
+
+    /**
+     * Alchemy Transmute Risk-of-Ruin Adapter
+     *
+     * Builds the exact per-attempt cost/payout model for a Transmute action, from
+     * alchemyProfitCalculator.calculateTransmuteProfit() — the same per-attempt economics
+     * (material cost net of self-return, catalyst cost, output drop-table EV, success rate) the
+     * live action panel and best-item ranking already use, not a re-derived approximation.
+     *
+     * A real transmute's output drop table (itemDetails.alchemyDetail.transmuteDropTable) is a
+     * MUTUALLY EXCLUSIVE categorical roll GIVEN success — its dropRates sum to exactly 1.0 (e.g.
+     * Sunstone: 25% star fragment, 30% moonstone, 44.9% self-return, 0.1% philosopher's stone,
+     * confirmed against the live game reference data). Collapsing that into one blended "average
+     * success value" would discard exactly the variance a risk calculator needs — a 0.1% chance of
+     * a huge hit is a very different risk shape than its smoothed mean — so every branch is kept as
+     * its own separate outcome. Every transmutable item's drop table has at most a few (2-10 in
+     * practice) branches, so the exact cross product with the independent essence/rare bonus-drop
+     * layer (below) is always small; no sampling is needed here, unlike the chest adapter.
+     *
+     * Alongside that categorical roll, calculateTransmuteProfit() also reports two bonus drops
+     * (Alchemy Essence, an Artisan's Crate) that are independent per-attempt Bernoulli events
+     * occurring regardless of whether the transmute itself succeeds or fails ("not affected by
+     * success rate" — see alchemy-profit-display.js and calculateAlchemyBonusDrops()'s own
+     * actionsPerHour-based, successRate-independent rate calculation).
+     *
+     * Catalyst is consumed only on success (per alchemy-profit-display.js's own label: "consumed
+     * only on success"), so it is charged on every success branch, never on failure. Materials —
+     * including any direct coin cost — are consumed on every attempt regardless of outcome.
+     */
+
+
+    /**
+     * Recover the per-occurrence payout for one categorical drop-table branch (excluding the
+     * essence/rare bonus layer, handled separately), un-scaling calculateTransmuteProfit()'s
+     * successRate-blended revenuePerAttempt/selfReturnValue fields back to "value if this branch
+     * is the one that happens".
+     */
+    function mainBranchPayout(drop, profit) {
+        if (drop.dropRate <= 0) return 0;
+        if (drop.isSelfReturn) {
+            // selfReturnValue = inputPrice * selfReturnRate(=drop.dropRate) * successRate * selfReturnCount
+            return profit.selfReturnValue / (profit.successRate * drop.dropRate);
+        }
+        // revenuePerAttempt = (afterTaxPrice * avgCount * bulkMultiplier) * dropRate * successRate
+        return drop.revenuePerAttempt / (profit.successRate * drop.dropRate);
+    }
+
+    /**
+     * Build the exact per-attempt outcome distribution: failure, plus one branch per categorical
+     * drop-table entry (each independently crossed with the essence/rare bonus-drop Bernoulli
+     * layer, since that layer applies regardless of success/failure).
+     * @returns {Array<{prob: number, net: number}>}
+     */
+    function buildOutcomeDistribution(profit, attemptCost, catalystCostOnSuccess) {
+        const dropRevenues = profit.dropRevenues || [];
+        const mainDrops = dropRevenues.filter((d) => !d.isEssence && !d.isRare);
+        const bonusDrops = dropRevenues.filter((d) => d.isEssence || d.isRare);
+
+        const mainBranches = [{ prob: 1 - profit.successRate, payout: 0, isSuccess: false }];
+        let coveredDropRate = 0;
+        for (const drop of mainDrops) {
+            if (!(drop.dropRate > 0)) continue;
+            coveredDropRate += drop.dropRate;
+            mainBranches.push({
+                prob: profit.successRate * drop.dropRate,
+                payout: mainBranchPayout(drop, profit),
+                isSuccess: true,
+            });
+        }
+        // A drop-table entry the calculator couldn't price (getItemPrice returned null) is silently
+        // dropped upstream, leaving a gap in dropRate coverage. Fold that residual probability mass
+        // into a zero-payout branch rather than losing it — conservative (never invents a value),
+        // and keeps probabilities summing to exactly 1.
+        const residualDropRate = Math.max(0, 1 - coveredDropRate);
+        if (residualDropRate > 0) {
+            mainBranches.push({ prob: profit.successRate * residualDropRate, payout: 0, isSuccess: true });
+        }
+
+        // Essence/rare bonus drops are independent per-attempt Bernoulli events, unaffected by
+        // success/failure - cross every combination of them into its own outcome.
+        let bonusOutcomes = [{ prob: 1, payout: 0 }];
+        for (const bonus of bonusDrops) {
+            if (!(bonus.dropRate > 0)) continue;
+            const hitPayout = bonus.revenuePerAttempt / bonus.dropRate;
+            const next = [];
+            for (const outcome of bonusOutcomes) {
+                next.push({ prob: outcome.prob * (1 - bonus.dropRate), payout: outcome.payout });
+                next.push({ prob: outcome.prob * bonus.dropRate, payout: outcome.payout + hitPayout });
+            }
+            bonusOutcomes = next;
+        }
+
+        const outcomeDistribution = [];
+        for (const main of mainBranches) {
+            const cost = attemptCost + (main.isSuccess ? catalystCostOnSuccess : 0);
+            for (const bonus of bonusOutcomes) {
+                const prob = main.prob * bonus.prob;
+                if (prob <= 0) continue;
+                outcomeDistribution.push({ prob, net: -cost + main.payout + bonus.payout });
+            }
+        }
+
+        return outcomeDistribution;
+    }
+
+    /**
+     * Build the exact per-attempt risk-of-ruin model for repeatedly Transmuting one item.
+     * @param {string} itemHrid - Item being transmuted.
+     * @param {Object} [options]
+     * @param {boolean} [options.useLiveSetup] - Use the currently-open action panel's live
+     *   catalyst/tea selection instead of the automatically-best combination. Ignored when
+     *   catalystChoice is given.
+     * @param {'none'|'typeSpecific'|'prime'|null} [options.catalystChoice] - Force a specific
+     *   catalyst instead of searching for the best one or reading the live panel.
+     * @returns {{
+     *   cost: number,
+     *   maxSinglePossibleLoss: number,
+     *   outcomeDistribution: Array<{prob: number, net: number}>,
+     *   stepFn: function(state: Object, rng: function(): number): Object,
+     *   breakdown: {
+     *     successRate: number,
+     *     materialCost: number,
+     *     coinCost: number,
+     *     catalystHrid: string|null,
+     *     catalystCostOnSuccess: number,
+     *     netOnFail: number,
+     *     mainBranches: Array<{itemHrid: string, dropRate: number, count: number, payout: number, isSelfReturn: boolean}>,
+     *     bonusDrops: Array<{itemHrid: string, dropRate: number, count: number, payout: number}>,
+     *   },
+     * }|null} null if the item isn't transmutable or has no usable market/success-rate data.
+     */
+    function buildAlchemyTransmuteModel(itemHrid, { useLiveSetup = false, catalystChoice = null } = {}) {
+        const profit = alchemyProfitCalculator.calculateTransmuteProfit(itemHrid, useLiveSetup, null, catalystChoice);
+        if (!profit || !(profit.successRate > 0)) return null;
+
+        const coinCost = profit.requirementCosts.find((r) => r.itemHrid === '/items/coin')?.costPerAction ?? 0;
+        const attemptCost = profit.grossMaterialCost + coinCost;
+        const catalystCostOnSuccess = profit.catalystPrice || 0;
+        const netOnFail = -attemptCost;
+
+        const outcomeDistribution = buildOutcomeDistribution(profit, attemptCost, catalystCostOnSuccess);
+        const maxSinglePossibleLoss = Math.max(0, ...outcomeDistribution.map((o) => -o.net));
+
+        const dropRevenues = profit.dropRevenues || [];
+        const mainBranches = dropRevenues
+            .filter((d) => !d.isEssence && !d.isRare && d.dropRate > 0)
+            .map((d) => ({
+                itemHrid: d.itemHrid,
+                dropRate: d.dropRate,
+                count: d.count,
+                payout: mainBranchPayout(d, profit),
+                isSelfReturn: d.isSelfReturn || false,
+            }));
+        const bonusDrops = dropRevenues
+            .filter((d) => (d.isEssence || d.isRare) && d.dropRate > 0)
+            .map((d) => ({
+                itemHrid: d.itemHrid,
+                dropRate: d.dropRate,
+                count: d.count,
+                payout: d.revenuePerAttempt / d.dropRate,
+            }));
+
+        return {
+            cost: attemptCost,
+            maxSinglePossibleLoss,
+            outcomeDistribution,
+            stepFn: (state, rng) => ({ balance: state.balance + drawFromDistribution(outcomeDistribution, rng).net }),
+            breakdown: {
+                successRate: profit.successRate,
+                materialCost: profit.grossMaterialCost,
+                coinCost,
+                catalystHrid: profit.catalystPrice ? profit.catalystCost?.itemHrid || null : null,
+                catalystCostOnSuccess,
+                netOnFail,
+                mainBranches,
+                bonusDrops,
+            },
+        };
+    }
+
+    /**
+     * Enhancement Risk-of-Ruin Adapter
+     *
+     * Walks the same per-level success-rate / failure-destination / blessed-tea-skip transition
+     * model as calculateEnhancement()'s exact Markov chain (src/utils/enhancement-calculator.js),
+     * but as a step-by-step Monte Carlo walk against a gold balance instead of a closed-form
+     * expectation. Every attempt costs materials (calculatePerAttemptMaterialCost, same value at
+     * every level) regardless of outcome, plus a protection-item cost specifically when a
+     * protected attempt fails.
+     *
+     * Unlike chests/alchemy, enhancing has no monetary payout branch at all — every outcome is a
+     * pure cost, there is no "success revenue" modeled here (the target level itself is the goal,
+     * not a resale value). That means the expected per-attempt gold change is always negative, so
+     * the Lundberg bound is never meaningful for this mode (findAdjustmentCoefficient always
+     * returns null) — only the Monte Carlo estimate applies. This is the correct, expected
+     * behavior of a pure-cost process, not a defect; callers must surface it as such rather than
+     * treating a `meaningful: false` result as broken.
+     */
+
+
+    /**
+     * Build the per-level outcome list a single attempt at enhancement level `i` can produce,
+     * mirroring calculateEnhancement()'s markov.set(...) transitions exactly.
+     * @returns {Array<{prob: number, nextLevel: number, net: number}>}
+     */
+    function buildLevelOutcomes({
+        i,
+        successChance,
+        targetLevel,
+        protectFrom,
+        blessedTea,
+        skipRatio,
+        costPerAttempt,
+        protectionCostOnFailure,
+    }) {
+        const isProtected = protectFrom > 0 && i >= protectFrom;
+        const failureDestination = isProtected ? i - 1 : 0;
+        const failureNet = -(costPerAttempt + (isProtected ? protectionCostOnFailure : 0));
+
+        const outcomes = [{ prob: 1 - successChance, nextLevel: failureDestination, net: failureNet }];
+
+        if (blessedTea) {
+            const skipChance = successChance * skipRatio;
+            const remainingSuccess = successChance - skipChance;
+            const normalDestination = Math.min(targetLevel, i + 1);
+            const skipDestination = Math.min(targetLevel, i + 2);
+
+            if (normalDestination === skipDestination) {
+                outcomes.push({ prob: successChance, nextLevel: normalDestination, net: -costPerAttempt });
+            } else {
+                outcomes.push({ prob: remainingSuccess, nextLevel: normalDestination, net: -costPerAttempt });
+                outcomes.push({ prob: skipChance, nextLevel: skipDestination, net: -costPerAttempt });
+            }
+        } else {
+            outcomes.push({ prob: successChance, nextLevel: Math.min(targetLevel, i + 1), net: -costPerAttempt });
+        }
+
+        return outcomes;
+    }
+
+    /**
+     * Build the level-by-level risk-of-ruin model for enhancing one item to a target level.
+     * @param {string} itemHrid - Item being enhanced.
+     * @param {Object} params - Same shape as calculateEnhancement()'s params (enhancingLevel,
+     *   toolBonus, itemLevel, targetLevel, startLevel, protectFrom, blessedTea, guzzlingBonus, ...).
+     * @returns {{
+     *   costPerAttempt: number,
+     *   protectionCostOnFailure: number,
+     *   maxSinglePossibleLoss: number,
+     *   perLevelOutcomeDistributions: Array<Array<{prob: number, net: number}>>,
+     *   stepFn: function(state: Object, rng: function(): number): Object,
+     *   isTargetReached: function(state: Object): boolean,
+     *   initialState: {level: number},
+     * }|null} null if the item/params are invalid or have no usable cost data.
+     */
+    function buildEnhancementModel(itemHrid, params) {
+        const itemDetails = dataManager.getItemDetails(itemHrid);
+        if (!itemDetails) return null;
+
+        const { targetLevel, startLevel = 0, protectFrom = 0, blessedTea = false, guzzlingBonus = 1.0 } = params;
+
+        let calc;
+        try {
+            calc = enhancementCalculator_js.calculateEnhancement(params);
+        } catch {
+            return null;
+        }
+        if (!calc?.successRates?.length) return null;
+
+        const perAttemptMaterial = calculatePerAttemptMaterialCost(itemDetails);
+        const costPerAttempt = perAttemptMaterial.cost;
+
+        let protectionCostOnFailure = 0;
+        if (protectFrom > 0) {
+            protectionCostOnFailure = getCheapestProtectionPrice(itemHrid)?.price || 0;
+        }
+
+        const skipRatio = blessedTea ? Math.max(0, Math.min(1, 0.01 * guzzlingBonus)) : 0;
+
+        const perLevelOutcomeDistributions = calc.successRates.map(({ actualRate }, i) =>
+            buildLevelOutcomes({
+                i,
+                successChance: Math.max(0, Math.min(1, actualRate / 100)),
+                targetLevel,
+                protectFrom,
+                blessedTea,
+                skipRatio,
+                costPerAttempt,
+                protectionCostOnFailure,
+            })
+        );
+
+        return {
+            costPerAttempt,
+            protectionCostOnFailure,
+            maxSinglePossibleLoss: costPerAttempt + protectionCostOnFailure,
+            perLevelOutcomeDistributions,
+            stepFn: (state, rng) => {
+                const chosen = drawFromDistribution(perLevelOutcomeDistributions[state.level], rng);
+                return { balance: state.balance + chosen.net, level: chosen.nextLevel };
+            },
+            isTargetReached: (state) => state.level >= targetLevel,
+            initialState: { level: startLevel },
+        };
+    }
+
+    /**
+     * Risk of Ruin Calculator UI
+     *
+     * Standalone floating panel (same pattern as XPHCalculator) answering "how likely am I to hit
+     * 0 gold before reaching my target?" for three activities: opening dungeon chests, running
+     * Transmute alchemy actions, and enhancing an item to a target level.
+     */
+
+
+    const PANEL_ID = 'mwi-risk-of-ruin-panel';
+    const LAUNCHER_ID = 'mwi-risk-of-ruin-launcher';
+    const MAX_STEPS = 20000;
+
+    const CHEST_HRIDS = [
+        '/items/chimerical_chest',
+        '/items/chimerical_refinement_chest',
+        '/items/sinister_chest',
+        '/items/sinister_refinement_chest',
+        '/items/enchanted_chest',
+        '/items/enchanted_refinement_chest',
+        '/items/pirate_chest',
+        '/items/pirate_refinement_chest',
+    ];
+
+    function getCoinBalance() {
+        const coin = dataManager.getInventory()?.find((item) => item.itemHrid === '/items/coin');
+        return coin?.count || 0;
+    }
+
+    function getTrialCount() {
+        return parseInt(config.getSettingValue('riskOfRuin_trials')) || 10000;
+    }
+
+    /**
+     * Format a gold amount with thousands separators, rounded to a whole number.
+     * @param {number} amount
+     * @returns {string}
+     */
+    function fmtGold(amount) {
+        return formatters_js.formatWithSeparator(Math.round(amount));
+    }
+
+    class RiskOfRuinUI {
+        constructor() {
+            this.isInitialized = false;
+            this.timerRegistry = timerRegistry_js.createTimerRegistry();
+            this.panel = null;
+            this.isDragging = false;
+            this.dragOffset = { x: 0, y: 0 };
+            // Last computed cost-per-action + per-item output quantities, for market-depth-cap.js's
+            // live order-book widget to read — null whenever the last run had no revenue distribution
+            // to key off (enhancement mode, or no successful run yet).
+            this.lastDepthCapContext = null;
+        }
+
+        /**
+         * Setup setting change listener (always active, even when feature is disabled) so toggling
+         * "Enable Risk of Ruin calculator" in Settings takes effect immediately, with no refresh.
+         */
+        setupSettingListener() {
+            config.onSettingChange('riskOfRuin', (enabled) => {
+                if (enabled) {
+                    this.initialize();
+                } else {
+                    this.disable();
+                }
+            });
+        }
+
+        initialize() {
+            if (this.isInitialized) return;
+            if (!config.getSetting('riskOfRuin')) return;
+
+            this.isInitialized = true;
+            this._buildPanel();
+            this._buildLauncher();
+        }
+
+        _buildLauncher() {
+            const btn = document.createElement('button');
+            btn.id = LAUNCHER_ID;
+            btn.textContent = 'Risk of Ruin';
+            btn.style.cssText = `
+            position: fixed;
+            bottom: 12px;
+            right: 12px;
+            z-index: ${config.Z_FLOATING_PANEL};
+            background: linear-gradient(180deg, rgba(200,60,60,0.25) 0%, rgba(200,60,60,0.12) 100%);
+            color: #e0e0e0;
+            border: 1px solid rgba(200,60,60,0.5);
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+        `;
+            btn.addEventListener('click', () => this._toggle());
+            document.body.appendChild(btn);
+        }
+
+        _toggle() {
+            if (!this.panel) return;
+            const visible = this.panel.style.display !== 'none';
+            this.panel.style.display = visible ? 'none' : 'flex';
+            if (!visible) {
+                bringPanelToFront(this.panel);
+                this._refillBankroll();
+            }
+        }
+
+        _buildPanel() {
+            this.panel = document.createElement('div');
+            this.panel.id = PANEL_ID;
+            this.panel.style.cssText = `
+            position: fixed;
+            top: 60px;
+            right: 60px;
+            z-index: ${config.Z_FLOATING_PANEL};
+            background: rgba(10, 10, 20, 0.97);
+            border: 2px solid rgba(200, 60, 60, 0.5);
+            border-radius: 10px;
+            width: 460px;
+            max-height: 620px;
+            display: none;
+            flex-direction: column;
+            font-family: 'Segoe UI', sans-serif;
+            color: #e0e0e0;
+            font-size: 13px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+        `;
+
+            const header = document.createElement('div');
+            header.style.cssText = `
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 14px;
+            cursor: grab;
+            background: rgba(200,60,60,0.12);
+            border-bottom: 1px solid rgba(200,60,60,0.3);
+            border-radius: 8px 8px 0 0;
+            flex-shrink: 0;
+        `;
+            header.innerHTML = `
+            <span style="font-weight:700; font-size:14px; color:#e05c5c;">Risk of Ruin Calculator</span>
+            <button id="mwi-ror-close" style="
+                background:none; border:none; color:#aaa; font-size:22px;
+                cursor:pointer; padding:0; line-height:1;">×</button>
+        `;
+            this._setupDrag(header);
+
+            const body = document.createElement('div');
+            body.style.cssText = 'overflow-y: auto; flex: 1; padding: 12px 14px;';
+            body.innerHTML = this._bodyHTML();
+
+            const status = document.createElement('div');
+            status.id = 'mwi-ror-status';
+            status.style.cssText =
+                'padding:6px 14px; color:#555; font-size:11px; border-top:1px solid #1a1a1a; flex-shrink:0; text-align:center;';
+            status.textContent = 'Choose a mode, set your target, and click Calculate.';
+
+            this.panel.appendChild(header);
+            this.panel.appendChild(body);
+            this.panel.appendChild(status);
+            document.body.appendChild(this.panel);
+            registerFloatingPanel(this.panel);
+
+            this.panel.querySelector('#mwi-ror-close').addEventListener('click', () => {
+                this.panel.style.display = 'none';
+            });
+            this.panel.addEventListener('mousedown', () => bringPanelToFront(this.panel));
+
+            this.panel.querySelector('#mwi-ror-mode').addEventListener('change', () => this._renderModeInputs());
+            this.panel.querySelector('#mwi-ror-run').addEventListener('click', () => this._run());
+
+            this._populateItemLists();
+            this._renderModeInputs();
+        }
+
+        _bodyHTML() {
+            const labelStyle = 'color:#888; font-size:12px; display:block; margin-bottom:2px;';
+            const inputStyle =
+                'width:100%; background:#1a1a2e; color:#e0e0e0; border:1px solid #444; border-radius:4px; padding:5px 8px; font-size:12px; box-sizing:border-box;';
+
+            return `
+            <label style="${labelStyle}">Mode</label>
+            <select id="mwi-ror-mode" style="${inputStyle} margin-bottom:10px;">
+                <option value="chest">Dungeon Chest</option>
+                <option value="alchemy">Alchemy (Transmute)</option>
+                <option value="enhancement">Enhancing</option>
+            </select>
+
+            <div id="mwi-ror-mode-inputs"></div>
+
+            <label style="${labelStyle} margin-top:10px;">Starting gold</label>
+            <input id="mwi-ror-bankroll" type="text" inputmode="decimal" placeholder="e.g. 5m, 1.2b" style="${inputStyle} margin-bottom:10px;">
+
+            <button id="mwi-ror-run" style="
+                width: 100%;
+                background: rgba(200,60,60,0.2);
+                color: #e05c5c;
+                border: 1px solid rgba(200,60,60,0.4);
+                border-radius: 6px;
+                padding: 8px 14px;
+                font-size: 13px;
+                font-weight: 600;
+                cursor: pointer;
+                margin-bottom: 10px;">Calculate</button>
+
+            <div id="mwi-ror-results" style="font-size:12px; line-height:1.6;"></div>
+        `;
+        }
+
+        _renderModeInputs() {
+            const mode = this.panel.querySelector('#mwi-ror-mode').value;
+            const container = this.panel.querySelector('#mwi-ror-mode-inputs');
+            const labelStyle = 'color:#888; font-size:12px; display:block; margin-bottom:2px;';
+            const inputStyle =
+                'width:100%; background:#1a1a2e; color:#e0e0e0; border:1px solid #444; border-radius:4px; padding:5px 8px; font-size:12px; box-sizing:border-box; margin-bottom:10px;';
+
+            if (mode === 'chest') {
+                const options = CHEST_HRIDS.map((hrid) => {
+                    const name = dataManager.getItemDetails(hrid)?.name || hrid;
+                    return `<option value="${hrid}">${name}</option>`;
+                }).join('');
+                container.innerHTML = `
+                <label style="${labelStyle}">Chest type</label>
+                <select id="mwi-ror-chest" style="${inputStyle}">${options}</select>
+                <label style="${labelStyle}">Chests to open</label>
+                <input id="mwi-ror-target" type="number" min="1" step="1" value="100" style="${inputStyle}">
+            `;
+            } else if (mode === 'alchemy') {
+                container.innerHTML = `
+                <label style="${labelStyle}">Item to Transmute</label>
+                <input id="mwi-ror-item" list="mwi-ror-transmute-items" style="${inputStyle}" placeholder="Start typing an item name...">
+                <label style="${labelStyle}">Catalyst</label>
+                <select id="mwi-ror-catalyst" style="${inputStyle}">
+                    <option value="best">Best available (auto)</option>
+                    <option value="none">None</option>
+                    <option value="typeSpecific">Type-specific catalyst</option>
+                    <option value="prime">Prime catalyst</option>
+                </select>
+                <label style="${labelStyle}">Actions to attempt</label>
+                <input id="mwi-ror-target" type="number" min="1" step="1" value="100" style="${inputStyle}">
+            `;
+            } else {
+                container.innerHTML = `
+                <label style="${labelStyle}">Item to enhance</label>
+                <input id="mwi-ror-item" list="mwi-ror-enhance-items" style="${inputStyle}" placeholder="Start typing an item name...">
+                <label style="${labelStyle}">Target level</label>
+                <input id="mwi-ror-target" type="number" min="1" max="20" step="1" value="10" style="${inputStyle}">
+                <label style="${labelStyle}">Start level</label>
+                <input id="mwi-ror-start-level" type="number" min="0" max="19" step="1" value="0" style="${inputStyle}">
+                <label style="${labelStyle}">Protect from level (0 = never)</label>
+                <input id="mwi-ror-protect-from" type="number" min="0" max="19" step="1" value="0" style="${inputStyle}">
+            `;
+            }
+        }
+
+        _populateItemLists() {
+            const gameData = dataManager.getInitClientData();
+            if (!gameData?.itemDetailMap) return;
+
+            const transmuteList = document.createElement('datalist');
+            transmuteList.id = 'mwi-ror-transmute-items';
+            const enhanceList = document.createElement('datalist');
+            enhanceList.id = 'mwi-ror-enhance-items';
+
+            for (const [hrid, details] of Object.entries(gameData.itemDetailMap)) {
+                if (details.alchemyDetail?.transmuteDropTable?.length) {
+                    const option = document.createElement('option');
+                    option.value = details.name;
+                    option.dataset.hrid = hrid;
+                    transmuteList.appendChild(option);
+                }
+                if (details.enhancementCosts?.length) {
+                    const option = document.createElement('option');
+                    option.value = details.name;
+                    option.dataset.hrid = hrid;
+                    enhanceList.appendChild(option);
+                }
+            }
+
+            this.panel.appendChild(transmuteList);
+            this.panel.appendChild(enhanceList);
+        }
+
+        _resolveItemHrid(name, datalistId) {
+            const gameData = dataManager.getInitClientData();
+            if (!gameData?.itemDetailMap) return null;
+            if (gameData.itemDetailMap[name]) return name;
+
+            const datalist = this.panel.querySelector(`#${datalistId}`);
+            const option = Array.from(datalist?.options || []).find((o) => o.value === name);
+            return option?.dataset.hrid || null;
+        }
+
+        _refillBankroll() {
+            const bankrollInput = this.panel.querySelector('#mwi-ror-bankroll');
+            if (bankrollInput && !bankrollInput.dataset.userEdited) {
+                bankrollInput.value = fmtGold(getCoinBalance());
+            }
+            if (bankrollInput && !bankrollInput.dataset.wired) {
+                bankrollInput.dataset.wired = 'true';
+                bankrollInput.addEventListener('input', () => {
+                    bankrollInput.dataset.userEdited = 'true';
+                });
+                bankrollInput.addEventListener('blur', () => {
+                    bankrollInput.value = fmtGold(parseItemCount(bankrollInput.value, 0));
+                });
+            }
+        }
+
+        _setupDrag(header) {
+            header.addEventListener('mousedown', (e) => {
+                if (e.target.id === 'mwi-ror-close') return;
+                this.isDragging = true;
+                header.style.cursor = 'grabbing';
+                const rect = this.panel.getBoundingClientRect();
+                this.dragOffset = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+                bringPanelToFront(this.panel);
+
+                const onMove = (ev) => {
+                    if (!this.isDragging) return;
+                    this.panel.style.left = `${ev.clientX - this.dragOffset.x}px`;
+                    this.panel.style.top = `${ev.clientY - this.dragOffset.y}px`;
+                    this.panel.style.right = 'auto';
+                };
+                const onUp = () => {
+                    this.isDragging = false;
+                    header.style.cursor = 'grab';
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                };
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            });
+        }
+
+        /**
+         * The last computed cost-per-action + per-item output quantities, for market-depth-cap.js to
+         * check the currently-viewed marketplace item against. Null when the last run was enhancement
+         * mode (no revenue distribution to key off) or nothing has been calculated yet.
+         * @returns {{costPerAction: number, items: Array<{itemHrid: string, quantityPerAction: number}>}|null}
+         */
+        getDepthCapContext() {
+            return this.lastDepthCapContext;
+        }
+
+        _run() {
+            const status = this.panel.querySelector('#mwi-ror-status');
+            const results = this.panel.querySelector('#mwi-ror-results');
+            status.textContent = 'Calculating…';
+            results.innerHTML = '';
+
+            const t = setTimeout(() => {
+                this._compute().catch((err) => {
+                    console.error('[RiskOfRuinUI] Calculation failed:', err);
+                    status.textContent = 'Error during calculation.';
+                });
+            }, 10);
+            this.timerRegistry.registerTimeout(t);
+        }
+
+        async _compute() {
+            const status = this.panel.querySelector('#mwi-ror-status');
+            const results = this.panel.querySelector('#mwi-ror-results');
+            const mode = this.panel.querySelector('#mwi-ror-mode').value;
+            const startingBalance = parseItemCount(this.panel.querySelector('#mwi-ror-bankroll').value, 0);
+            const trials = getTrialCount();
+            const rngSeed = Math.floor(Math.random() * 2 ** 31);
+
+            let simModel;
+            let maxSinglePossibleLoss;
+            let detailInfo;
+            let optimalCommit = null;
+            this.lastDepthCapContext = null;
+
+            if (mode === 'chest') {
+                const hrid = this.panel.querySelector('#mwi-ror-chest').value;
+                const targetActionCount = parseInt(this.panel.querySelector('#mwi-ror-target').value) || 0;
+                const chestModel = buildDungeonChestModel(hrid);
+                maxSinglePossibleLoss = chestModel.maxSinglePossibleLoss;
+                simModel = {
+                    type: 'fixedOutcome',
+                    startingBalance,
+                    trials,
+                    maxSteps: MAX_STEPS,
+                    rngSeed,
+                    outcomeDistribution: chestModel.outcomeDistribution,
+                    targetActionCount,
+                };
+                const dropBreakdown = expectedValueCalculator.getDropBreakdown(hrid);
+                detailInfo = {
+                    mode: 'chest',
+                    costBreakdown: getChestCostBreakdown(hrid),
+                    dropBreakdown,
+                    minimumGuaranteedPayout: chestModel.minimumGuaranteedPayout,
+                };
+                this.lastDepthCapContext = {
+                    costPerAction: chestModel.cost,
+                    items: dropBreakdown
+                        .filter((d) => d.dropRate > 0 && d.avgCount > 0)
+                        .map((d) => ({ itemHrid: d.itemHrid, quantityPerAction: d.avgCount * d.dropRate })),
+                };
+                optimalCommit = calculateOptimalCommit({
+                    outcomeDistribution: chestModel.outcomeDistribution,
+                    costPerAction: chestModel.cost,
+                    actionCount: targetActionCount,
+                    bankroll: startingBalance,
+                });
+            } else if (mode === 'alchemy') {
+                const name = this.panel.querySelector('#mwi-ror-item').value;
+                const hrid = this._resolveItemHrid(name, 'mwi-ror-transmute-items');
+                const targetActionCount = parseInt(this.panel.querySelector('#mwi-ror-target').value) || 0;
+                const catalystSelection = this.panel.querySelector('#mwi-ror-catalyst').value;
+                const catalystChoice = catalystSelection === 'best' ? null : catalystSelection;
+                const alchemyModel = hrid ? buildAlchemyTransmuteModel(hrid, { catalystChoice }) : null;
+                if (!alchemyModel) {
+                    status.textContent = 'Enter a valid transmutable item name.';
+                    return;
+                }
+                maxSinglePossibleLoss = alchemyModel.maxSinglePossibleLoss;
+                simModel = {
+                    type: 'fixedOutcome',
+                    startingBalance,
+                    trials,
+                    maxSteps: MAX_STEPS,
+                    rngSeed,
+                    outcomeDistribution: alchemyModel.outcomeDistribution,
+                    targetActionCount,
+                };
+                detailInfo = { mode: 'alchemy', breakdown: alchemyModel.breakdown };
+                this.lastDepthCapContext = {
+                    costPerAction: alchemyModel.cost,
+                    items: this._alchemyDepthCapItems(alchemyModel.breakdown),
+                };
+                optimalCommit = calculateOptimalCommit({
+                    outcomeDistribution: alchemyModel.outcomeDistribution,
+                    costPerAction: alchemyModel.cost,
+                    actionCount: targetActionCount,
+                    bankroll: startingBalance,
+                });
+            } else {
+                const name = this.panel.querySelector('#mwi-ror-item').value;
+                const hrid = this._resolveItemHrid(name, 'mwi-ror-enhance-items');
+                const targetLevel = parseInt(this.panel.querySelector('#mwi-ror-target').value) || 0;
+                const startLevel = parseInt(this.panel.querySelector('#mwi-ror-start-level').value) || 0;
+                const protectFrom = parseInt(this.panel.querySelector('#mwi-ror-protect-from').value) || 0;
+                const itemDetails = hrid ? dataManager.getItemDetails(hrid) : null;
+                if (!itemDetails) {
+                    status.textContent = 'Enter a valid enhanceable item name.';
+                    return;
+                }
+
+                const enhancingParams = enhancementConfig_js.getEnhancingParams();
+                const enhancementModel = buildEnhancementModel(hrid, {
+                    enhancingLevel: enhancingParams.enhancingLevel,
+                    houseLevel: enhancingParams.houseLevel,
+                    toolBonus: enhancingParams.toolBonus,
+                    speedBonus: enhancingParams.speedBonus,
+                    itemLevel: itemDetails.itemLevel || 1,
+                    targetLevel,
+                    startLevel,
+                    protectFrom,
+                    blessedTea: enhancingParams.teas.blessed,
+                    guzzlingBonus: enhancingParams.guzzlingBonus,
+                });
+                if (!enhancementModel) {
+                    status.textContent = 'Could not build an enhancement model for these parameters.';
+                    return;
+                }
+                maxSinglePossibleLoss = enhancementModel.maxSinglePossibleLoss;
+                simModel = {
+                    type: 'levelWalk',
+                    startingBalance,
+                    trials,
+                    maxSteps: MAX_STEPS,
+                    rngSeed,
+                    perLevelOutcomeDistributions: enhancementModel.perLevelOutcomeDistributions,
+                    targetLevel,
+                    startLevel,
+                };
+                detailInfo = {
+                    mode: 'enhancement',
+                    perLevelOutcomeDistributions: enhancementModel.perLevelOutcomeDistributions,
+                    costPerAttempt: enhancementModel.costPerAttempt,
+                    protectionCostOnFailure: enhancementModel.protectionCostOnFailure,
+                    startLevel,
+                    targetLevel,
+                };
+            }
+
+            const simResult = await simulateRuinAsync(simModel);
+            const minActions = minActionsForNonZeroRisk(startingBalance, maxSinglePossibleLoss);
+            this._renderResults(results, simResult, minActions);
+            if (optimalCommit) {
+                this._renderOptimalCommit(results, optimalCommit);
+            } else {
+                results.insertAdjacentHTML(
+                    'beforeend',
+                    `<div style="margin-top:10px; margin-bottom:6px; color:#888; font-size:11px;">
+                    Optimal share of cash to commit: not applicable — enhancing has no revenue
+                    distribution to size a bet against, only a fixed cost toward the target level.
+                    Use the ruin probability above instead.
+                </div>`
+                );
+            }
+            this._renderDetails(results, detailInfo, startingBalance, maxSinglePossibleLoss, minActions);
+            status.textContent = `${formatters_js.formatWithSeparator(trials)} trials simulated.`;
+        }
+
+        /**
+         * Recover the raw per-attempt output quantity for each item a Transmute attempt can produce,
+         * for market-depth-cap.js — main branches are conditional on success (successRate * dropRate),
+         * bonus drops (essence/rare) are independent per-attempt Bernoulli events already unconditional.
+         * @param {Object} breakdown - alchemyModel.breakdown from buildAlchemyTransmuteModel().
+         * @returns {Array<{itemHrid: string, quantityPerAction: number}>}
+         */
+        _alchemyDepthCapItems(breakdown) {
+            const items = [];
+            for (const branch of breakdown.mainBranches) {
+                if (branch.isSelfReturn || !(branch.count > 0)) continue;
+                items.push({
+                    itemHrid: branch.itemHrid,
+                    quantityPerAction: breakdown.successRate * branch.dropRate * branch.count,
+                });
+            }
+            for (const bonus of breakdown.bonusDrops) {
+                if (!(bonus.count > 0)) continue;
+                items.push({ itemHrid: bonus.itemHrid, quantityPerAction: bonus.dropRate * bonus.count });
+            }
+            return items;
+        }
+
+        /**
+         * Renders the closed-form "optimal share of cash to commit" figures (see
+         * utils/optimal-bankroll-share.js) — a quick variance-based cap, separate from and shown
+         * alongside the Monte Carlo ruin probability above.
+         */
+        _renderOptimalCommit(container, optimalCommit) {
+            if (!optimalCommit.hasEdge) {
+                container.insertAdjacentHTML(
+                    'beforeend',
+                    `<div style="margin-top:10px; margin-bottom:6px; color:#c98;">
+                    <strong>Optimal share of cash to commit:</strong> 0% — this setup has no positive
+                    expected edge (E[R] ≤ 1), so sizing a bet against its variance isn't meaningful here.
+                </div>`
+                );
+                return;
+            }
+
+            container.insertAdjacentHTML(
+                'beforeend',
+                `<div style="margin-top:10px;">
+                <strong>Optimal share of cash to commit:</strong> ${formatters_js.formatPercentage(optimalCommit.fstar, 1)} of bankroll
+                (${fmtGold(optimalCommit.recommendedCommit)} ≈ ${formatters_js.formatWithSeparator(optimalCommit.recommendedActionCount)} actions)
+            </div>
+            <div style="color:#888; font-size:11px; margin-bottom:6px;">
+                Variance-based cap only — ignores the downward price pressure from selling your own output.
+                Open the item's order book in-game to see the market-depth check for that.
+            </div>`
+            );
+        }
+
+        _renderResults(container, simResult, minActions) {
+            const ci = wilsonConfidenceInterval(simResult.ruinCount, simResult.trials);
+            const peakStep = findPeakExposureStep(simResult.ruinStepCounts);
+
+            const lines = [];
+            lines.push(
+                `<strong>Ruin probability:</strong> ${formatters_js.formatPercentage(simResult.ruinProbability, 2)} ` +
+                    `(95% CI: ${formatters_js.formatPercentage(ci.low, 2)} – ${formatters_js.formatPercentage(ci.high, 2)})`
+            );
+
+            lines.push(
+                `<strong>Risk becomes possible at action:</strong> ` +
+                    (Number.isFinite(minActions)
+                        ? formatters_js.formatWithSeparator(minActions)
+                        : 'never (no single action can lose money)')
+            );
+
+            lines.push(
+                `<strong>Peak ruin exposure at action:</strong> ` +
+                    (peakStep !== null ? formatters_js.formatWithSeparator(peakStep) : 'no ruin occurred in the simulation')
+            );
+
+            if (simResult.meanStepsToRuin !== null) {
+                lines.push(
+                    `<strong>Average actions before ruin (when it occurs):</strong> ${formatters_js.formatWithSeparator(Math.round(simResult.meanStepsToRuin * 10) / 10)}`
+                );
+            }
+
+            if (simResult.undecidedCount > 0) {
+                lines.push(
+                    `<span style="color:#c98;">${formatters_js.formatWithSeparator(simResult.undecidedCount)} of ${formatters_js.formatWithSeparator(simResult.trials)} ` +
+                        `trials neither ruined nor reached the target within the simulation's step cap — ` +
+                        `the result may be imprecise for this very long-horizon scenario.</span>`
+                );
+            }
+
+            container.innerHTML = lines.map((line) => `<div style="margin-bottom:6px;">${line}</div>`).join('');
+        }
+
+        /**
+         * Formula line spelling out exactly how "risk becomes possible at action N" was derived,
+         * so the number in the summary above isn't a black box.
+         */
+        _riskFormulaLine(startingBalance, maxSinglePossibleLoss, minActions) {
+            if (!Number.isFinite(minActions)) {
+                return `<div>No single action can ever lose money here, so risk never becomes possible.</div>`;
+            }
+            return (
+                `<div><strong>Risk becomes possible at action</strong> = ⌈starting gold ÷ max single-action loss⌉ ` +
+                `= ⌈${fmtGold(startingBalance)} ÷ ${fmtGold(maxSinglePossibleLoss)}⌉ = ${formatters_js.formatWithSeparator(minActions)}</div>`
+            );
+        }
+
+        _renderDetails(container, detailInfo, startingBalance, maxSinglePossibleLoss, minActions) {
+            let html;
+            if (detailInfo.mode === 'chest') {
+                html = this._chestDetailsHTML(detailInfo, startingBalance, maxSinglePossibleLoss, minActions);
+            } else if (detailInfo.mode === 'alchemy') {
+                html = this._alchemyDetailsHTML(detailInfo, startingBalance, maxSinglePossibleLoss, minActions);
+            } else {
+                html = this._enhancementDetailsHTML(detailInfo, startingBalance, maxSinglePossibleLoss, minActions);
+            }
+            container.insertAdjacentHTML('beforeend', html);
+        }
+
+        _chestDetailsHTML(
+            { costBreakdown, dropBreakdown, minimumGuaranteedPayout },
+            startingBalance,
+            maxSinglePossibleLoss,
+            minActions
+        ) {
+            const rows = [];
+            if (costBreakdown.entryKey) {
+                rows.push(
+                    `<div>Entry key (${costBreakdown.entryKey.name}): ${fmtGold(costBreakdown.entryKey.price)}</div>`
+                );
+            }
+            if (costBreakdown.chestKey) {
+                rows.push(
+                    `<div>Chest key (${costBreakdown.chestKey.name}): ${fmtGold(costBreakdown.chestKey.price)}</div>`
+                );
+            }
+            rows.push(`<div><strong>Total cost per open:</strong> ${fmtGold(costBreakdown.total)}</div>`);
+            rows.push(
+                `<div style="margin-top:6px;">Guaranteed minimum payout per open: ${fmtGold(minimumGuaranteedPayout)} ` +
+                    `(the sum of every drop table entry with a 100% drop rate, at its minimum count — a real chest ` +
+                    `always drops at least this much, it is never actually 0)</div>`
+            );
+            rows.push(
+                `<div><strong>Max single-action loss:</strong> ${fmtGold(maxSinglePossibleLoss)} ` +
+                    `= cost − guaranteed minimum payout = ${fmtGold(costBreakdown.total)} − ${fmtGold(minimumGuaranteedPayout)}</div>`
+            );
+            rows.push(this._riskFormulaLine(startingBalance, maxSinglePossibleLoss, minActions));
+
+            const totalEV = dropBreakdown.reduce((sum, drop) => sum + drop.expectedValue, 0);
+            const dropRows = dropBreakdown
+                .map(
+                    (drop) =>
+                        `<tr>
+                        <td style="padding:2px 6px;">${drop.itemName}${drop.dropRate === 1 ? ' (guaranteed)' : ''}</td>
+                        <td style="padding:2px 6px; text-align:right;">${formatters_js.formatPercentage(drop.dropRate, 2)}</td>
+                        <td style="padding:2px 6px; text-align:right;">${drop.avgCount}</td>
+                        <td style="padding:2px 6px; text-align:right;">${drop.hasPriceData ? fmtGold(drop.priceEach) : '—'}</td>
+                        <td style="padding:2px 6px; text-align:right;">${fmtGold(drop.expectedValue)}</td>
+                    </tr>`
+                )
+                .join('');
+
+            return this._wrapDetails(
+                'Cost & risk details',
+                rows.join('') +
+                    this._wrapDetails(
+                        `Drop table (${dropBreakdown.length} items)`,
+                        `<table style="width:100%; border-collapse:collapse; font-size:11px;">
+                        <tr style="color:#888;"><th style="text-align:left;">Item</th><th>Drop rate</th><th>Avg count</th><th>Price</th><th>EV</th></tr>
+                        ${dropRows}
+                        <tr style="border-top:1px solid #444; font-weight:600;">
+                            <td style="padding:2px 6px;" colspan="4">Total EV per open</td>
+                            <td style="padding:2px 6px; text-align:right;">${fmtGold(totalEV)}</td>
+                        </tr>
+                    </table>`,
+                        true
+                    )
+            );
+        }
+
+        _alchemyDetailsHTML({ breakdown }, startingBalance, maxSinglePossibleLoss, minActions) {
+            const catalystName = breakdown.catalystHrid ? dataManager.getItemDetails(breakdown.catalystHrid)?.name : null;
+
+            const rows = [
+                `<div>Success rate: ${formatters_js.formatPercentage(breakdown.successRate, 2)}</div>`,
+                `<div>Material cost (paid every attempt): ${fmtGold(breakdown.materialCost)}</div>`,
+            ];
+            if (breakdown.coinCost > 0) {
+                rows.push(`<div>Coin cost (paid every attempt): ${fmtGold(breakdown.coinCost)}</div>`);
+            }
+            rows.push(
+                catalystName
+                    ? `<div>Catalyst (${catalystName}, paid only on success): ${fmtGold(breakdown.catalystCostOnSuccess)}</div>`
+                    : `<div>No catalyst used.</div>`
+            );
+            rows.push(
+                `<div style="margin-top:6px;">The output drop table (below) is a single mutually-exclusive roll ` +
+                    `<em>given success</em> — each branch is its own separate outcome, not averaged together, so a ` +
+                    `rare high-value branch's real tail risk shows up in the simulation instead of being smoothed away.</div>`
+            );
+            rows.push(`<div><strong>Net on failure:</strong> ${fmtGold(breakdown.netOnFail)}</div>`);
+            rows.push(`<div><strong>Max single-action loss:</strong> ${fmtGold(maxSinglePossibleLoss)}</div>`);
+            rows.push(this._riskFormulaLine(startingBalance, maxSinglePossibleLoss, minActions));
+
+            const mainRows = breakdown.mainBranches
+                .map(
+                    (branch) =>
+                        `<tr>
+                        <td style="padding:2px 6px;">${dataManager.getItemDetails(branch.itemHrid)?.name || branch.itemHrid}${branch.isSelfReturn ? ' (self-return)' : ''}</td>
+                        <td style="padding:2px 6px; text-align:right;">${formatters_js.formatPercentage(breakdown.successRate * branch.dropRate, 2)}</td>
+                        <td style="padding:2px 6px; text-align:right;">${fmtGold(branch.payout)}</td>
+                    </tr>`
+                )
+                .join('');
+            const mainCoverage = breakdown.mainBranches.reduce((sum, b) => sum + b.dropRate, 0);
+            const failRow = `<tr>
+                        <td style="padding:2px 6px;">(failure)</td>
+                        <td style="padding:2px 6px; text-align:right;">${formatters_js.formatPercentage(1 - breakdown.successRate, 2)}</td>
+                        <td style="padding:2px 6px; text-align:right;">${fmtGold(0)}</td>
+                    </tr>`;
+            const gapNote =
+                mainCoverage < 0.999
+                    ? `<div style="color:#c98; margin-top:4px; font-size:11px;">${formatters_js.formatPercentage(1 - mainCoverage, 1)} of the success-branch probability has no market price data and is treated as a 0-payout outcome (never inflated with a guess).</div>`
+                    : '';
+
+            const bonusRows = breakdown.bonusDrops
+                .map(
+                    (bonus) =>
+                        `<tr>
+                        <td style="padding:2px 6px;">${dataManager.getItemDetails(bonus.itemHrid)?.name || bonus.itemHrid}</td>
+                        <td style="padding:2px 6px; text-align:right;">${formatters_js.formatPercentage(bonus.dropRate, 2)}</td>
+                        <td style="padding:2px 6px; text-align:right;">${fmtGold(bonus.payout)}</td>
+                    </tr>`
+                )
+                .join('');
+            const bonusSection = breakdown.bonusDrops.length
+                ? this._wrapDetails(
+                      `Bonus drops (${breakdown.bonusDrops.length}, independent of success/fail)`,
+                      `<table style="width:100%; border-collapse:collapse; font-size:11px;">
+                        <tr style="color:#888;"><th style="text-align:left;">Item</th><th>Chance per attempt</th><th>Payout if hit</th></tr>
+                        ${bonusRows}
+                    </table>`,
+                      true
+                  )
+                : '';
+
+            return this._wrapDetails(
+                'Cost & risk details',
+                rows.join('') +
+                    this._wrapDetails(
+                        `Output drop table (${breakdown.mainBranches.length} branches, one roll given success)`,
+                        `<table style="width:100%; border-collapse:collapse; font-size:11px;">
+                        <tr style="color:#888;"><th style="text-align:left;">Outcome</th><th>Chance per attempt</th><th>Payout if hit</th></tr>
+                        ${failRow}
+                        ${mainRows}
+                    </table>
+                    ${gapNote}`,
+                        true
+                    ) +
+                    bonusSection
+            );
+        }
+
+        _enhancementDetailsHTML(
+            { perLevelOutcomeDistributions, costPerAttempt, protectionCostOnFailure, startLevel, targetLevel },
+            startingBalance,
+            maxSinglePossibleLoss,
+            minActions
+        ) {
+            const rows = perLevelOutcomeDistributions
+                .map((outcomes, level) => {
+                    const [failure] = outcomes;
+                    const successRate = 1 - failure.prob;
+                    const isProtected = failure.net !== -costPerAttempt;
+                    return `<tr>
+                    <td style="padding:2px 6px;">+${level} → +${level + 1}</td>
+                    <td style="padding:2px 6px; text-align:right;">${formatters_js.formatPercentage(successRate, 2)}</td>
+                    <td style="padding:2px 6px; text-align:right;">${fmtGold(costPerAttempt)}</td>
+                    <td style="padding:2px 6px; text-align:right;">+${failure.nextLevel}</td>
+                    <td style="padding:2px 6px; text-align:right;">${isProtected ? fmtGold(protectionCostOnFailure) : '—'}</td>
+                </tr>`;
+                })
+                .join('');
+
+            const rows2 = [
+                `<div><strong>Cost per attempt (materials, every attempt):</strong> ${fmtGold(costPerAttempt)}</div>`,
+            ];
+            if (protectionCostOnFailure > 0) {
+                rows2.push(
+                    `<div><strong>Protection cost (charged only on a protected failure):</strong> ${fmtGold(protectionCostOnFailure)}</div>`
+                );
+            }
+            rows2.push(
+                `<div style="margin-top:6px;"><strong>Max single-action loss:</strong> ${fmtGold(maxSinglePossibleLoss)} ` +
+                    `(worst case: an attempt fails at a protected level)</div>`
+            );
+            rows2.push(this._riskFormulaLine(startingBalance, maxSinglePossibleLoss, minActions));
+
+            return this._wrapDetails(
+                `Cost & risk details (levels +${startLevel} to +${targetLevel})`,
+                rows2.join('') +
+                    this._wrapDetails(
+                        `Per-level success rates & costs (${perLevelOutcomeDistributions.length} levels)`,
+                        `<table style="width:100%; border-collapse:collapse; font-size:11px;">
+                        <tr style="color:#888;"><th style="text-align:left;">Attempt</th><th>Success</th><th>Cost</th><th>Fail →</th><th>Protection cost</th></tr>
+                        ${rows}
+                    </table>`,
+                        true
+                    )
+            );
+        }
+
+        _wrapDetails(summary, innerHTML, nested = false) {
+            const margin = nested ? 'margin-top:6px;' : 'margin-top:10px; border-top:1px solid #333; padding-top:8px;';
+            const summaryColor = nested ? '#aaa' : '#e05c5c';
+            return `<details style="${margin}">
+            <summary style="cursor:pointer; color:${summaryColor}; font-weight:600; font-size:${nested ? '11px' : '12px'};">${summary}</summary>
+            <div style="margin-top:8px; padding-left:4px;">${innerHTML}</div>
+        </details>`;
+        }
+
+        disable() {
+            this.timerRegistry.clearAll();
+            if (this.panel) {
+                unregisterFloatingPanel(this.panel);
+                this.panel.remove();
+                this.panel = null;
+            }
+            document.getElementById(LAUNCHER_ID)?.remove();
+            this.isInitialized = false;
+        }
+    }
+
+    const riskOfRuinUI = new RiskOfRuinUI();
+    riskOfRuinUI.setupSettingListener();
+
+    /**
+     * Market Depth Cap
+     *
+     * Live widget shown on the native marketplace order-book panel: given the last cost-per-action
+     * and per-item output quantities computed by the Risk of Ruin calculator (dungeon chests, alchemy
+     * Transmute — see risk-of-ruin-ui.js's getDepthCapContext()), estimates how many actions' worth
+     * of the currently-viewed item the visible bid depth can absorb before the marginal sale price
+     * drops below what that action costs to perform.
+     *
+     * Two hard limitations, both surfaced in the tooltip rather than hidden:
+     * - This only ever sees the resting bid listings the game has already sent for whichever item's
+     *   order book is currently open in-game — there is no on-demand fetch for an arbitrary item, so
+     *   this widget is silent everywhere else.
+     * - Per the 8/13/2026 marketplace update, items now trade within a tradable range (roughly
+     *   +-10-20%) around an estimated market value, and no data anywhere in the game's WebSocket
+     *   protocol exposes that range's actual floor. A large sell-off can hit that floor and start
+     *   queuing with an estimated delay well before this estimate suggests — this widget has no way
+     *   to detect or account for that, and never claims to.
+     */
+
+
+    /**
+     * Walk resting bid listings (sorted best-to-worst, as the game sends them) to find how many
+     * actions' worth of one item's expected output the visible book can absorb before the marginal
+     * unit's price drops below the threshold needed to still clear costPerAction.
+     * @param {Object} params
+     * @param {Array<{price: number, quantity: number}>} params.bids
+     * @param {number} params.costPerAction
+     * @param {number} params.quantityPerAction - Expected units of this item per action.
+     * @param {number} [params.marketTax]
+     * @returns {{
+     *   nstar: number,
+     *   cumulativeQuantity: number,
+     *   thresholdPrice: number|null,
+     *   hitBookEnd: boolean,
+     * }} hitBookEnd is true when every visible bid still cleared cost — the real cap may be higher
+     *   than shown, since resting bids beyond the visible book aren't known.
+     */
+    function calculateDepthCap({ bids, costPerAction, quantityPerAction, marketTax = profitConstants_js.MARKET_TAX }) {
+        if (!(quantityPerAction > 0) || !(costPerAction > 0) || !bids?.length) {
+            return { nstar: 0, cumulativeQuantity: 0, thresholdPrice: null, hitBookEnd: false };
+        }
+
+        const thresholdPrice = costPerAction / ((1 - marketTax) * quantityPerAction);
+        let cumulativeQuantity = 0;
+        let hitBookEnd = true;
+        for (const listing of bids) {
+            if (listing.price < thresholdPrice) {
+                hitBookEnd = false;
+                break;
+            }
+            cumulativeQuantity += listing.quantity;
+        }
+
+        return {
+            nstar: Math.floor(cumulativeQuantity / quantityPerAction),
+            cumulativeQuantity,
+            thresholdPrice,
+            hitBookEnd,
+        };
+    }
+
+    class MarketDepthCap {
+        constructor() {
+            this.isInitialized = false;
+            this.cleanupRegistry = cleanupRegistry_js.createCleanupRegistry();
+            this.orderBooksCache = {}; // itemHrid -> { data: marketItemOrderBooks, lastUpdated }
+        }
+
+        initialize() {
+            if (this.isInitialized) return;
+            if (!config.getSetting('market_depthCapEnabled')) return;
+
+            this.isInitialized = true;
+            this.setupWebSocketListener();
+            this.setupObserver();
+        }
+
+        setupWebSocketListener() {
+            const handler = (data) => {
+                if (!data.marketItemOrderBooks) return;
+                const itemHrid = data.marketItemOrderBooks.itemHrid;
+                if (itemHrid) {
+                    this.orderBooksCache[itemHrid] = { data: data.marketItemOrderBooks, lastUpdated: Date.now() };
+                }
+
+                document.querySelectorAll('.mwi-depth-cap-set').forEach((el) => el.classList.remove('mwi-depth-cap-set'));
+                document
+                    .querySelectorAll('[class*="MarketplacePanel_orderBooksContainer"]')
+                    .forEach((container) => this.processOrderBook(container));
+            };
+
+            dataManager.on('market_item_order_books_updated', handler);
+            this.cleanupRegistry.registerCleanup(() => dataManager.off('market_item_order_books_updated', handler));
+        }
+
+        setupObserver() {
+            const unregister = domObserver.onClass(
+                'MarketDepthCap',
+                'MarketplacePanel_orderBooksContainer',
+                (container) => {
+                    this.processOrderBook(container);
+                }
+            );
+            this.cleanupRegistry.registerCleanup(unregister);
+        }
+
+        /**
+         * @param {HTMLElement} _container - Order book container (unused - we query directly, same
+         *   as queue-length-estimator.js).
+         */
+        processOrderBook(_container) {
+            const buttonContainer = document.querySelector('.MarketplacePanel_newListingButtonsContainer__1MhKJ');
+            if (!buttonContainer) return;
+            if (buttonContainer.classList.contains('mwi-depth-cap-set')) return;
+
+            const itemHrid = this.getCurrentItemHrid();
+            if (!itemHrid) return;
+
+            const depthContext = riskOfRuinUI.getDepthCapContext();
+            const item = depthContext?.items.find((i) => i.itemHrid === itemHrid);
+            const cached = this.orderBooksCache[itemHrid];
+            if (!depthContext || !item || !cached) return;
+
+            const enhancementLevel = this.getCurrentEnhancementLevel();
+            const orderBookAtLevel = cached.data.orderBooks?.[enhancementLevel];
+            const bids = orderBookAtLevel?.bids;
+            if (!bids?.length) return;
+
+            buttonContainer.classList.add('mwi-depth-cap-set');
+
+            const result = calculateDepthCap({
+                bids,
+                costPerAction: depthContext.costPerAction,
+                quantityPerAction: item.quantityPerAction,
+            });
+
+            this.renderDepthCap(buttonContainer, result);
+        }
+
+        renderDepthCap(buttonContainer, result) {
+            const existing = buttonContainer.querySelector('.mwi-depth-cap');
+            if (existing) existing.remove();
+            if (result.nstar <= 0) return;
+
+            const el = document.createElement('div');
+            el.classList.add('mwi-depth-cap');
+            el.style.fontSize = '0.95rem';
+            el.style.textAlign = 'center';
+            el.style.color = '#60a5fa';
+
+            const prefix = result.hitBookEnd ? 'at least ' : '~';
+            el.textContent = `Sell depth: ${prefix}${formatters_js.formatWithSeparator(result.nstar)} actions`;
+            el.title =
+                (result.hitBookEnd
+                    ? 'Every visible resting bid still clears cost — the true cap may be higher than shown. '
+                    : 'Estimated number of actions worth of this item the visible order book can absorb before the ' +
+                      'marginal sale price drops below cost. ') +
+                "Ignores the marketplace's tradable range floor (not exposed in game data), so a large sell-off " +
+                'may hit that floor and queue with a delay before this estimate suggests.';
+
+            buttonContainer.insertBefore(el, buttonContainer.lastChild);
+        }
+
+        /**
+         * @returns {string|null} Item HRID currently open in the order book panel.
+         */
+        getCurrentItemHrid() {
+            const currentItemElement = document.querySelector('.MarketplacePanel_currentItem__3ercC');
+            const useElement = currentItemElement?.querySelector('use');
+            const href = useElement?.href?.baseVal;
+            return href ? '/items/' + href.split('#')[1] : null;
+        }
+
+        /**
+         * @returns {number} Enhancement level currently selected (0 for non-equipment).
+         */
+        getCurrentEnhancementLevel() {
+            const currentItemElement = document.querySelector('.MarketplacePanel_currentItem__3ercC');
+            const enhancementElement = currentItemElement?.querySelector('[class*="Item_enhancementLevel"]');
+            const match = enhancementElement?.textContent.match(/\+(\d+)/);
+            return match ? parseInt(match[1], 10) : 0;
+        }
+
+        clearDisplays() {
+            document.querySelectorAll('.mwi-depth-cap-set').forEach((el) => el.classList.remove('mwi-depth-cap-set'));
+            document.querySelectorAll('.mwi-depth-cap').forEach((el) => el.remove());
+        }
+
+        disable() {
+            this.clearDisplays();
+            this.cleanupRegistry.cleanupAll();
+            this.isInitialized = false;
+        }
+
+        cleanup() {
+            this.disable();
+        }
+    }
+
+    const marketDepthCap = new MarketDepthCap();
+
+    /**
      * Market Order Totals Module
      *
      * Displays market listing totals in the header area:
@@ -17707,7 +20108,7 @@ self.onmessage = function (e) {
      */
 
 
-    const STORAGE_KEY_PREFIX$1 = 'networth_exclusions';
+    const STORAGE_KEY_PREFIX = 'networth_exclusions';
 
     /** @type {Array<{type: string, value: string}>|null} In-memory cache */
     let cache = null;
@@ -17716,9 +20117,9 @@ self.onmessage = function (e) {
      * Get the character-scoped storage key.
      * @returns {string}
      */
-    function getStorageKey$2() {
+    function getStorageKey$1() {
         const charId = dataManager.getCurrentCharacterId() || 'default';
-        return `${STORAGE_KEY_PREFIX$1}_${charId}`;
+        return `${STORAGE_KEY_PREFIX}_${charId}`;
     }
 
     /**
@@ -17727,7 +20128,7 @@ self.onmessage = function (e) {
      */
     async function loadExclusions() {
         if (cache === null) {
-            cache = (await storage.getJSON(getStorageKey$2(), 'settings', [])) || [];
+            cache = (await storage.getJSON(getStorageKey$1(), 'settings', [])) || [];
         }
         return cache;
     }
@@ -17771,7 +20172,7 @@ self.onmessage = function (e) {
             list.push({ type, value });
             cache = list;
             // Fire-and-forget: persist in background so the UI updates instantly
-            storage.setJSON(getStorageKey$2(), list, 'settings');
+            storage.setJSON(getStorageKey$1(), list, 'settings');
         }
     }
 
@@ -17788,7 +20189,7 @@ self.onmessage = function (e) {
             list.splice(idx, 1);
             cache = list;
             // Fire-and-forget: persist in background so the UI updates instantly
-            storage.setJSON(getStorageKey$2(), list, 'settings');
+            storage.setJSON(getStorageKey$1(), list, 'settings');
         }
     }
 
@@ -17798,336 +20199,8 @@ self.onmessage = function (e) {
      */
     async function clearExclusions() {
         cache = [];
-        storage.setJSON(getStorageKey$2(), [], 'settings');
+        storage.setJSON(getStorageKey$1(), [], 'settings');
     }
-
-    /**
-     * Loadout Snapshot
-     *
-     * Listens for `loadouts_updated` WebSocket messages to capture all loadout configurations
-     * (equipment, abilities, consumables, enhancement levels) in real time.
-     *
-     * Stored snapshots are used by profit calculators to apply the correct tool/equipment
-     * bonuses for a skill even when that loadout is not currently equipped.
-     *
-     * Skill matching: the loadout's actionTypeHrid (e.g. "/action_types/brewing") is compared
-     * to the action type of the profit calculation. An "All Skills" loadout (empty actionTypeHrid)
-     * is used as a fallback when no skill-specific snapshot is found.
-     *
-     * Priority: skill default > all skills default > skill non-default > all skills non-default
-     */
-
-
-    const STORAGE_KEY_PREFIX = 'loadout_snapshots';
-
-    /**
-     * Returns the active WebSocket hook instance.
-     * In the multi-bundle production build each library bundles its own copy of websocket.js,
-     * but only the Core library's instance has install() called on it.
-     * Prefer window.Toolasha.Core.webSocketHook so listeners actually receive messages.
-     * Falls back to the bundled copy for the dev standalone build (single bundle, one instance).
-     */
-    function getWebSocketHook() {
-        return (typeof window !== 'undefined' && window.Toolasha?.Core?.webSocketHook) || webSocketHook;
-    }
-
-    /**
-     * Get character-scoped storage key.
-     * @returns {string}
-     */
-    function getStorageKey$1() {
-        const charId = dataManager.getCurrentCharacterId() || 'default';
-        return `${STORAGE_KEY_PREFIX}_${charId}`;
-    }
-
-    /**
-     * Parse a wearable hash string into itemLocationHrid, itemHrid, and enhancementLevel.
-     * Format: "characterId::/item_locations/location::/items/item_hrid::enhancementLevel"
-     * Empty string means no item in that slot.
-     * @param {string} itemLocationHrid - The equipment slot key (e.g. "/item_locations/body")
-     * @param {string} wearableHash - The wearable hash value
-     * @returns {{ itemLocationHrid: string, itemHrid: string, enhancementLevel: number }|null}
-     */
-    function parseWearable(itemLocationHrid, wearableHash) {
-        if (!wearableHash) return null;
-
-        const parts = wearableHash.split('::');
-        const itemHrid = parts.find((p) => p.startsWith('/items/'));
-        if (!itemHrid) return null;
-
-        const lastPart = parts[parts.length - 1];
-        const enhancementLevel = !lastPart.startsWith('/') ? parseInt(lastPart, 10) || 0 : 0;
-
-        return { itemLocationHrid, itemHrid, enhancementLevel };
-    }
-
-    /**
-     * Convert a server loadout object into our snapshot format.
-     * @param {Object} loadout - A loadout entry from characterLoadoutMap
-     * @returns {Object} snapshot
-     */
-    function buildSnapshot(loadout) {
-        // Parse equipment from wearableMap
-        const equipment = [];
-        for (const [locationHrid, hash] of Object.entries(loadout.wearableMap || {})) {
-            const parsed = parseWearable(locationHrid, hash);
-            if (parsed) equipment.push(parsed);
-        }
-
-        // Parse drinks
-        const drinks = (loadout.drinkItemHrids || []).map((hrid) => ({
-            itemHrid: hrid || '',
-        }));
-
-        // Parse food
-        const food = (loadout.foodItemHrids || []).map((hrid) => ({
-            itemHrid: hrid || '',
-        }));
-
-        // Parse abilities
-        const abilities = [];
-        for (const [slot, hrid] of Object.entries(loadout.abilityMap || {})) {
-            if (hrid) abilities.push({ abilityHrid: hrid, slot: parseInt(slot, 10) });
-        }
-
-        return {
-            name: loadout.name,
-            actionTypeHrid: loadout.actionTypeHrid || '',
-            isDefault: !!loadout.isDefault,
-            useExactEnhancement: loadout.useExactEnhancement ?? false,
-            ordinal: loadout.ordinal || 0,
-            equipment,
-            abilities,
-            food,
-            drinks,
-            abilityCombatTriggersMap: loadout.abilityCombatTriggersMap || {},
-            consumableCombatTriggersMap: loadout.consumableCombatTriggersMap || {},
-            savedAt: Date.now(),
-        };
-    }
-
-    class LoadoutSnapshot {
-        constructor() {
-            this.snapshots = {}; // In-memory cache: { [loadoutName]: snapshot }
-            this.characterInitializedHandler = null;
-            this.updateListeners = [];
-            this.isInitialized = false;
-
-            // Register WebSocket handler at module load time so in-session loadout
-            // changes are captured whenever loadouts_updated fires.
-            this.loadoutsUpdatedHandler = (data) => this._onLoadoutsUpdated(data);
-            getWebSocketHook().on('loadouts_updated', this.loadoutsUpdatedHandler);
-        }
-
-        /**
-         * Register a callback to be called whenever snapshots are updated.
-         * @param {Function} fn
-         */
-        onUpdate(fn) {
-            this.updateListeners.push(fn);
-        }
-
-        /**
-         * Remove a previously registered update callback.
-         * @param {Function} fn
-         */
-        offUpdate(fn) {
-            this.updateListeners = this.updateListeners.filter((l) => l !== fn);
-        }
-
-        _emitUpdate() {
-            this.updateListeners.forEach((fn) => fn());
-        }
-
-        async initialize() {
-            if (this.isInitialized) return;
-            this.isInitialized = true;
-
-            // Re-register WS handler if it was cleared by disable()
-            if (!this.loadoutsUpdatedHandler) {
-                this.loadoutsUpdatedHandler = (data) => this._onLoadoutsUpdated(data);
-                getWebSocketHook().on('loadouts_updated', this.loadoutsUpdatedHandler);
-            }
-
-            // Load from storage — loadouts_updated only fires when the user visits the loadouts
-            // UI, so storage is always the source of snapshots at startup.
-            if (Object.keys(this.snapshots).length === 0) {
-                const storageKey = getStorageKey$1();
-                // NOTE: getCurrentCharacterId() may be null at this point (before init_character_data
-                // arrives), so getStorageKey() may return 'loadout_snapshots_default'. We will reload
-                // from the correct key once character_initialized fires.
-                this.snapshots = (await storage.getJSON(storageKey, 'settings', null)) || {};
-
-                // Fallback for Steam users: if storage is also empty, bootstrap from
-                // the characterLoadoutMap embedded in init_character_data (already in dataManager).
-                if (Object.keys(this.snapshots).length === 0) {
-                    const characterLoadoutMap = dataManager.characterData?.characterLoadoutMap;
-                    if (characterLoadoutMap && Object.keys(characterLoadoutMap).length > 0) {
-                        this._onLoadoutsUpdated({ characterLoadoutMap });
-                    }
-                }
-            }
-
-            // Reload from the correct character-scoped key once character data is available
-            this.characterInitializedHandler = async () => {
-                const storageKey = getStorageKey$1();
-                const fresh = (await storage.getJSON(storageKey, 'settings', null)) || {};
-                if (Object.keys(fresh).length > 0) {
-                    this.snapshots = fresh;
-                    this._emitUpdate();
-                }
-            };
-            dataManager.on('character_initialized', this.characterInitializedHandler);
-        }
-
-        /**
-         * Handle a loadouts_updated WebSocket message.
-         * Replaces all snapshots with the server's current state.
-         * @param {Object} data - The WebSocket message payload
-         */
-        _onLoadoutsUpdated(data) {
-            const loadoutMap = data.characterLoadoutMap;
-            if (!loadoutMap) {
-                console.warn('[LoadoutSnapshot] loadouts_updated received but no characterLoadoutMap');
-                return;
-            }
-
-            const newSnapshots = {};
-            for (const [id, loadout] of Object.entries(loadoutMap)) {
-                if (!loadout.name) continue;
-                newSnapshots[id] = buildSnapshot(loadout);
-            }
-
-            this.snapshots = newSnapshots;
-            storage.setJSON(getStorageKey$1(), this.snapshots, 'settings');
-            this._emitUpdate();
-        }
-
-        /**
-         * Update a snapshot equipment item's enhancement level.
-         * Used when the highest owned enhancement of a loadout item changes (up or down).
-         * @param {string} itemHrid - Base item HRID (e.g. "/items/sword")
-         * @param {number} newLevel - New enhancement level (highest currently owned)
-         * @returns {boolean} True if any snapshot was updated
-         */
-        updateEnhancementLevel(itemHrid, newLevel) {
-            let changed = false;
-            for (const snapshot of Object.values(this.snapshots)) {
-                // Exact-mode snapshots intentionally hold a frozen level — never auto-update them.
-                if (snapshot.useExactEnhancement) continue;
-                for (const eq of snapshot.equipment || []) {
-                    if (eq.itemHrid === itemHrid && eq.enhancementLevel !== newLevel) {
-                        eq.enhancementLevel = newLevel;
-                        snapshot.savedAt = Date.now();
-                        changed = true;
-                    }
-                }
-            }
-            if (changed) {
-                storage.setJSON(getStorageKey$1(), this.snapshots, 'settings');
-                this._emitUpdate();
-            }
-            return changed;
-        }
-
-        /**
-         * Find the best snapshot for a given action type.
-         * Priority: skill default > all skills default > skill non-default > all skills non-default
-         * @param {string} actionTypeHrid - e.g. "/action_types/brewing"
-         * @returns {Object|null} snapshot entry or null
-         */
-        _findSnapshot(actionTypeHrid) {
-            if (!config.getSetting('loadoutSnapshot')) return null;
-
-            let skillDefault = null;
-            let allSkillsDefault = null;
-            let skillNonDefault = null;
-            let allSkillsNonDefault = null;
-
-            for (const snapshot of Object.values(this.snapshots)) {
-                if (snapshot.actionTypeHrid === actionTypeHrid) {
-                    if (snapshot.isDefault) {
-                        skillDefault = snapshot;
-                    } else {
-                        skillNonDefault = snapshot;
-                    }
-                } else if (snapshot.actionTypeHrid === '') {
-                    if (snapshot.isDefault) {
-                        allSkillsDefault = snapshot;
-                    } else {
-                        allSkillsNonDefault = snapshot;
-                    }
-                }
-            }
-
-            return skillDefault || allSkillsDefault || skillNonDefault || allSkillsNonDefault || null;
-        }
-
-        /**
-         * Get a Map<itemLocationHrid, item> for the best loadout snapshot matching the given
-         * action type. Returns null if no snapshot exists or the feature is disabled.
-         * The returned Map has the same format as dataManager.getEquipment().
-         * @param {string} actionTypeHrid
-         * @returns {Map<string, Object>|null}
-         */
-        getSnapshotForSkill(actionTypeHrid) {
-            const snapshot = this._findSnapshot(actionTypeHrid);
-            if (!snapshot || !snapshot.equipment?.length) return null;
-            return new Map(snapshot.equipment.map((e) => [e.itemLocationHrid, e]));
-        }
-
-        /**
-         * Get the drink slots array for the best loadout snapshot matching the given
-         * action type. Returns null if no snapshot exists or the feature is disabled.
-         * The returned array has the same format as dataManager.getActionDrinkSlots().
-         * @param {string} actionTypeHrid
-         * @returns {Array<{itemHrid: string}>|null}
-         */
-        getSnapshotDrinksForSkill(actionTypeHrid) {
-            const snapshot = this._findSnapshot(actionTypeHrid);
-            if (!snapshot) return null;
-            // Filter out empty slots so callers get only actual items
-            const filled = (snapshot.drinks || []).filter((d) => d.itemHrid);
-            return filled.length > 0 ? filled : null;
-        }
-
-        /**
-         * Get all saved loadout snapshots as a flat array.
-         * @returns {Array<Object>} Array of snapshot objects
-         */
-        getAllSnapshots() {
-            return Object.values(this.snapshots).sort((a, b) => a.ordinal - b.ordinal);
-        }
-
-        /**
-         * Get the name and default status of the saved loadout being used for a given action type.
-         * Returns an object with name and isDefault, or null if no snapshot exists or feature is disabled.
-         * @param {string} actionTypeHrid
-         * @returns {{ name: string, isDefault: boolean }|null}
-         */
-        getSnapshotInfoForSkill(actionTypeHrid) {
-            const snapshot = this._findSnapshot(actionTypeHrid);
-            if (!snapshot) return null;
-            return { name: snapshot.name, isDefault: !!snapshot.isDefault };
-        }
-
-        disable() {
-            if (this.loadoutsUpdatedHandler) {
-                getWebSocketHook().off('loadouts_updated', this.loadoutsUpdatedHandler);
-                this.loadoutsUpdatedHandler = null;
-            }
-
-            if (this.characterInitializedHandler) {
-                dataManager.off('character_initialized', this.characterInitializedHandler);
-                this.characterInitializedHandler = null;
-            }
-
-            this.updateListeners = [];
-            this.isInitialized = false;
-        }
-    }
-
-    const loadoutSnapshot = new LoadoutSnapshot();
 
     /**
      * Networth Calculator
@@ -20941,60 +23014,6 @@ self.onmessage = function (e) {
     const networthHistoryChart = new NetworthHistoryChart();
 
     /**
-     * Floating Panel Z-Index Manager
-     * Manages bring-to-front ordering for persistent floating panels.
-     * All panels are capped below config.Z_FLOATING_PANEL + 99 (1199)
-     * so they never cross the game's MUI modal layer (~1300).
-     */
-
-
-    const panels = new Set();
-
-    /**
-     * Register a floating panel element for z-index management
-     * @param {HTMLElement} el - The panel element
-     */
-    function registerFloatingPanel(el) {
-        panels.add(el);
-    }
-
-    /**
-     * Unregister a floating panel element
-     * @param {HTMLElement} el - The panel element
-     */
-    function unregisterFloatingPanel(el) {
-        panels.delete(el);
-    }
-
-    /**
-     * Bring a panel to the front among all registered panels,
-     * without exceeding config.Z_FLOATING_PANEL + 99.
-     * @param {HTMLElement} el - The panel to bring forward
-     */
-    function bringPanelToFront(el) {
-        const base = config.Z_FLOATING_PANEL;
-        const cap = base + 99;
-
-        let maxZ = base;
-        for (const p of panels) {
-            const z = parseInt(p.style.zIndex) || base;
-            if (z > maxZ) maxZ = z;
-        }
-
-        const next = maxZ + 1;
-        if (next > cap) {
-            // Overflow — reassign all from base upward, put el last
-            let i = base;
-            for (const p of panels) {
-                if (p !== el) p.style.zIndex = String(i++);
-            }
-            el.style.zIndex = String(i);
-        } else {
-            el.style.zIndex = String(next);
-        }
-    }
-
-    /**
      * Networth Exclusion Popup
      * Draggable modal for managing net worth exclusions.
      * Shows current exclusions as removable chips and a searchable list of all excludable entries.
@@ -23098,7 +25117,6 @@ self.onmessage = function (e) {
             this.inventoryLookupCache = null; // Cached inventory lookup map
             this.inventoryLookupCacheTime = 0; // Timestamp when cache was built
             this.INVENTORY_CACHE_TTL = 500; // 500ms cache lifetime
-            this.nameToHridMap = null; // Reverse lookup: item name -> HRID (built once, lazy)
         }
 
         /**
@@ -23372,17 +25390,13 @@ self.onmessage = function (e) {
             ]);
 
             for (const itemElem of itemElems) {
-                // Get item HRID from SVG aria-label
-                const svg = itemElem.querySelector('svg');
-                if (!svg) continue;
-
-                const itemName = svg.getAttribute('aria-label');
-                if (!itemName) continue;
-
-                // Find item HRID
-                const itemHrid = this.findItemHrid(itemName, gameData);
+                // Get item HRID from the icon's <use> sprite reference, not the translatable
+                // aria-label - the label is rendered in whatever language the player has selected
+                // in-game, while the sprite href is a stable internal asset ID (e.g. #radiant_fiber),
+                // so this works regardless of locale.
+                const itemHrid = this.getItemHridFromContainer(itemElem);
                 if (!itemHrid) {
-                    console.warn('[InventoryBadgeManager] Could not find HRID for item:', itemName);
+                    console.warn('[InventoryBadgeManager] Could not find HRID for item container:', itemElem);
                     continue;
                 }
 
@@ -23622,56 +25636,18 @@ self.onmessage = function (e) {
         }
 
         /**
-         * Find item HRID from item name
-         * @param {string} itemName - Item display name
-         * @param {Object} gameData - Game data
-         * @returns {string|null} Item HRID
+         * Get an item's HRID from its inventory container's icon sprite reference — locale
+         * independent, unlike the translatable aria-label text.
+         * @param {HTMLElement} itemContainer - Inventory item container element
+         * @returns {string|null} Item HRID or null
          */
-        /**
-         * Build reverse lookup map from item name to HRID
-         * Built once on first use, cached thereafter
-         * @param {Object} gameData - Game data
-         */
-        buildNameToHridMap(gameData) {
-            if (this.nameToHridMap) {
-                return; // Already built
-            }
+        getItemHridFromContainer(itemContainer) {
+            const useElement = itemContainer.querySelector('svg use');
+            if (!useElement) return null;
 
-            this.nameToHridMap = new Map();
-
-            if (!gameData || !gameData.itemDetailMap) {
-                console.warn('[InventoryBadgeManager] Cannot build name lookup: missing itemDetailMap');
-                return;
-            }
-
-            // Build reverse lookup: name -> HRID (one-time O(n) operation)
-            for (const [hrid, item] of Object.entries(gameData.itemDetailMap)) {
-                if (item.name) {
-                    this.nameToHridMap.set(item.name, hrid);
-                    // Add ★ ↔ (R) variants so both display formats resolve
-                    if (item.name.includes('(R)')) {
-                        this.nameToHridMap.set(item.name.replace(/\s*\(R\)/, ' ★'), hrid);
-                    } else if (item.name.includes('★')) {
-                        this.nameToHridMap.set(item.name.replace(/\s*★/, ' (R)'), hrid);
-                    }
-                }
-            }
-        }
-
-        /**
-         * Find item HRID by name (optimized with reverse lookup map)
-         * @param {string} itemName - Item name
-         * @param {Object} gameData - Game data
-         * @returns {string|null} Item HRID or null if not found
-         */
-        findItemHrid(itemName, gameData) {
-            // Build map on first use (lazy initialization)
-            if (!this.nameToHridMap) {
-                this.buildNameToHridMap(gameData);
-            }
-
-            // O(1) lookup
-            return this.nameToHridMap.get(itemName) || null;
+            const href = useElement.getAttribute('href');
+            const match = href?.match(/#(.+)$/);
+            return match ? `/items/${match[1]}` : null;
         }
 
         /**
@@ -29287,6 +31263,7 @@ self.onmessage = function (e) {
         listingPriceDisplay,
         estimatedListingAge,
         queueLengthEstimator,
+        marketDepthCap,
         marketOrderTotals,
         marketHistoryViewer,
         listingRefreshNavigator,
@@ -29311,4 +31288,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] Market library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.tokenValuation, Toolasha.Utils.enhancementConfig, Toolasha.Utils.dom, Toolasha.Utils.materialCalculator, Toolasha.Utils.timerRegistry, Toolasha.Core.storage, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Core, Toolasha.Utils.reactInput, Toolasha.Core.webSocketHook, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.tokenValuation, Toolasha.Utils.enhancementConfig, Toolasha.Utils.dom, Toolasha.Utils.materialCalculator, Toolasha.Utils.timerRegistry, Toolasha.Core.storage, Toolasha.Utils.cleanupRegistry, Toolasha.Core.webSocketHook, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Core, Toolasha.Utils.reactInput, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator);
