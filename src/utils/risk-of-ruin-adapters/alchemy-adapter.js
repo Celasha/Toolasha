@@ -125,8 +125,8 @@ function buildOutcomeDistribution(profit, attemptCost, catalystCostOnSuccess) {
  *     catalystHrid: string|null,
  *     catalystCostOnSuccess: number,
  *     netOnFail: number,
- *     mainBranches: Array<{itemHrid: string, dropRate: number, payout: number, isSelfReturn: boolean}>,
- *     bonusDrops: Array<{itemHrid: string, dropRate: number, payout: number}>,
+ *     mainBranches: Array<{itemHrid: string, dropRate: number, count: number, payout: number, isSelfReturn: boolean}>,
+ *     bonusDrops: Array<{itemHrid: string, dropRate: number, count: number, payout: number}>,
  *   },
  * }|null} null if the item isn't transmutable or has no usable market/success-rate data.
  */
@@ -148,12 +148,18 @@ export function buildAlchemyTransmuteModel(itemHrid, { useLiveSetup = false, cat
         .map((d) => ({
             itemHrid: d.itemHrid,
             dropRate: d.dropRate,
+            count: d.count,
             payout: mainBranchPayout(d, profit),
             isSelfReturn: d.isSelfReturn || false,
         }));
     const bonusDrops = dropRevenues
         .filter((d) => (d.isEssence || d.isRare) && d.dropRate > 0)
-        .map((d) => ({ itemHrid: d.itemHrid, dropRate: d.dropRate, payout: d.revenuePerAttempt / d.dropRate }));
+        .map((d) => ({
+            itemHrid: d.itemHrid,
+            dropRate: d.dropRate,
+            count: d.count,
+            payout: d.revenuePerAttempt / d.dropRate,
+        }));
 
     return {
         cost: attemptCost,

@@ -1197,6 +1197,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Displays total quantity at best price below Buy/Sell buttons. Estimated values (20+ orders at same price) are shown in a different color.',
             },
+            market_depthCapEnabled: {
+                id: 'market_depthCapEnabled',
+                label: 'Market: Show sell depth cap (Risk of Ruin)',
+                type: 'checkbox',
+                default: true,
+                help: "Shows how many actions worth of the currently-viewed item the order book can profitably absorb, based on the last Risk of Ruin calculation. Ignores the marketplace's tradable range floor, which isn't exposed in game data.",
+            },
             market_milkywayMarketLink: {
                 id: 'market_milkywayMarketLink',
                 label: 'Market: Show MilkyWay Market link',

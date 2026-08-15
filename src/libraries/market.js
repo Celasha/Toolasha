@@ -17,6 +17,7 @@ import itemCountDisplay from '../features/market/item-count-display.js';
 import listingPriceDisplay from '../features/market/listing-price-display.js';
 import estimatedListingAge from '../features/market/estimated-listing-age.js';
 import queueLengthEstimator from '../features/market/queue-length-estimator.js';
+import marketDepthCap from '../features/market/market-depth-cap.js';
 import marketOrderTotals from '../features/market/market-order-totals.js';
 import marketHistoryViewer from '../features/market/market-history-viewer.js';
 import listingRefreshNavigator from '../features/market/listing-refresh-navigator.js';
@@ -62,6 +63,7 @@ toolashaRoot.Market = {
     listingPriceDisplay,
     estimatedListingAge,
     queueLengthEstimator,
+    marketDepthCap,
     marketOrderTotals,
     marketHistoryViewer,
     listingRefreshNavigator,
