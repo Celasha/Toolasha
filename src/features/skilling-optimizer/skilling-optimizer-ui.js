@@ -1153,56 +1153,57 @@ class SkillingSimulatorUI {
             document.querySelector('use[href*="items_sprite"]')?.getAttribute('href')?.split('#')[0] ?? null;
 
         if (loadoutEntry) {
-            // Per-breakpoint view: one row per enhancement level where the user has something to gain
-            let prevItemHrid = null;
-            let anyVisible = false;
-            for (const entry of slotData.progression) {
-                if (!entry.itemHrid) {
-                    prevItemHrid = null;
-                    continue;
-                }
-                const xpDelta = entry.xpScore - xpBaseline;
-                const goldDelta = entry.goldScore - goldBaseline;
-                if (xpDelta <= 0 && goldDelta <= 0) {
-                    prevItemHrid = entry.itemHrid;
-                    continue;
-                }
-                anyVisible = true;
+            // Single-line "current → suggested" comparison, matching the Combat Sim Upgrade
+            // Advisor's convention - find the first breakpoint where switching has a real gain.
+            const suggestedEntry = slotData.progression.find((entry) => {
+                if (!entry.itemHrid) return false;
+                return entry.xpScore - xpBaseline > 0 || entry.goldScore - goldBaseline > 0;
+            });
 
-                const entryRow = document.createElement('div');
-                entryRow.style.cssText = 'display: flex; align-items: baseline; gap: 8px; padding: 1px 0 1px 6px;';
-
-                const bpSpan = document.createElement('span');
-                bpSpan.style.cssText =
-                    'font-size: 10px; color: rgba(255,255,255,0.35); flex-shrink: 0; min-width: 32px;';
-                bpSpan.textContent = `+${entry.breakpoint}`;
-                entryRow.appendChild(bpSpan);
-
-                const isRepeat = entry.itemHrid === prevItemHrid;
-                const isDifferentFromLoadout = entry.itemHrid !== loadoutItemHrid;
-                const nameColor = isRepeat
-                    ? 'rgba(255,255,255,0.3)'
-                    : isDifferentFromLoadout
-                      ? config.COLOR_ACCENT
-                      : 'rgba(255,255,255,0.85)';
-                const nameSpan = document.createElement('span');
-                nameSpan.style.cssText = `font-size: 12px; color: ${nameColor}; font-weight: ${!isRepeat && isDifferentFromLoadout ? '600' : '400'};`;
-                nameSpan.textContent = entry.itemName;
-                entryRow.appendChild(nameSpan);
-
-                const gainEl = this._makeGainEl(entry.xpScore, xpBaseline, entry.goldScore, goldBaseline, spriteUrl);
-                if (gainEl) entryRow.appendChild(gainEl);
-
-                row.appendChild(entryRow);
-                prevItemHrid = entry.itemHrid;
-                break; // only show the immediate next step
-            }
-            if (!anyVisible) {
+            if (!suggestedEntry) {
                 const none = document.createElement('div');
                 none.style.cssText =
                     'padding: 1px 0 1px 6px; font-size: 11px; color: rgba(255,255,255,0.25); font-style: italic;';
                 none.textContent = 'Already at optimal enhancement';
                 row.appendChild(none);
+            } else {
+                const entryRow = document.createElement('div');
+                entryRow.style.cssText =
+                    'display: flex; align-items: baseline; gap: 6px; padding: 1px 0 1px 6px; flex-wrap: wrap;';
+
+                const sameBaseItem = suggestedEntry.itemHrid === loadoutItemHrid;
+                const fromSpan = document.createElement('span');
+                fromSpan.style.cssText = 'font-size: 12px; color: rgba(255,255,255,0.5);';
+                fromSpan.textContent = loadoutItemHrid
+                    ? sameBaseItem
+                        ? `${suggestedEntry.itemName} +${loadoutEntry.enhancementLevel}`
+                        : `${this._getItemName(loadoutItemHrid) || loadoutItemHrid} +${loadoutEntry.enhancementLevel}`
+                    : 'Empty';
+                entryRow.appendChild(fromSpan);
+
+                const arrow = document.createElement('span');
+                arrow.style.cssText = 'font-size: 12px; color: rgba(255,255,255,0.35);';
+                arrow.textContent = '→';
+                entryRow.appendChild(arrow);
+
+                const nameSpan = document.createElement('span');
+                nameSpan.style.cssText = `font-size: 12px; color: ${config.COLOR_ACCENT}; font-weight: 600;`;
+                nameSpan.textContent = sameBaseItem
+                    ? `+${suggestedEntry.enhancementLevel}`
+                    : `${suggestedEntry.itemName} +${suggestedEntry.enhancementLevel}`;
+                this._applyRefinedTooltip(nameSpan, suggestedEntry.itemHrid);
+                entryRow.appendChild(nameSpan);
+
+                const gainEl = this._makeGainEl(
+                    suggestedEntry.xpScore,
+                    xpBaseline,
+                    suggestedEntry.goldScore,
+                    goldBaseline,
+                    spriteUrl
+                );
+                if (gainEl) entryRow.appendChild(gainEl);
+
+                row.appendChild(entryRow);
             }
         } else {
             // Grouped tier view (no compare selected): collapse same-item runs into one row
@@ -1216,12 +1217,13 @@ class SkillingSimulatorUI {
                 range.style.cssText =
                     'font-size: 10px; color: rgba(255,255,255,0.35); flex-shrink: 0; min-width: 56px;';
                 const isLast = i === tiers.length - 1;
-                range.textContent = isLast ? `+${tier.fromBp}+` : `+${tier.fromBp} – +${tier.toBp}`;
+                range.textContent = isLast ? `+${tier.fromLevel}+` : `+${tier.fromLevel} – +${tier.toLevel}`;
                 tierRow.appendChild(range);
 
                 const name = document.createElement('span');
                 name.style.cssText = `font-size: 12px; color: ${i === 0 ? 'rgba(255,255,255,0.85)' : config.COLOR_ACCENT}; font-weight: ${i > 0 ? '600' : '400'};`;
                 name.textContent = tier.itemName;
+                this._applyRefinedTooltip(name, tier.itemHrid);
                 tierRow.appendChild(name);
 
                 const gainEl = this._makeGainEl(tier.xpScore, xpBaseline, tier.goldScore, goldBaseline, spriteUrl);
@@ -1232,6 +1234,22 @@ class SkillingSimulatorUI {
         }
 
         container.appendChild(row);
+    }
+
+    /**
+     * Refined items (name ending in ★) have higher base stats than their non-refined
+     * counterparts, so a lower enhancement level can legitimately beat a higher-level
+     * non-refined item - flag that with a tooltip rather than leaving the star unexplained.
+     * @param {HTMLElement} nameEl
+     * @param {string|null} itemHrid
+     */
+    _applyRefinedTooltip(nameEl, itemHrid) {
+        if (!itemHrid?.includes('_refined')) return;
+        nameEl.title =
+            'Refined item: has higher base stats than its non-refined counterpart, so a lower ' +
+            'enhancement level can still outperform a higher-level non-refined item.';
+        nameEl.style.cursor = 'help';
+        nameEl.style.borderBottom = '1px dotted rgba(255,255,255,0.35)';
     }
 
     _makeGainEl(xpScore, xpBaseline, goldScore, goldBaseline, spriteUrl) {
@@ -1292,14 +1310,14 @@ class SkillingSimulatorUI {
                 current = {
                     itemHrid: entry.itemHrid,
                     itemName: entry.itemName,
-                    fromBp: entry.breakpoint,
-                    toBp: entry.breakpoint,
+                    fromLevel: entry.enhancementLevel,
+                    toLevel: entry.enhancementLevel,
                     score: entry.score,
                     xpScore: entry.xpScore,
                     goldScore: entry.goldScore,
                 };
             } else {
-                current.toBp = entry.breakpoint;
+                current.toLevel = entry.enhancementLevel;
             }
         }
         if (current) tiers.push(current);
