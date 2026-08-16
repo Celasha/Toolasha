@@ -9,6 +9,7 @@ import config from '../../core/config.js';
 import { formatLargeNumber } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
+import { getSkillHridFromIconHref } from '../../utils/game-lookups.js';
 
 class RemainingXP {
     constructor() {
@@ -128,37 +129,34 @@ class RemainingXP {
      */
     addRemainingXP(progressBar) {
         try {
-            // Try to find skill name - handle both navigation bar and combat skill displays
-            let skillName = null;
+            // Try to find the skill's icon sprite href - handle both navigation bar and combat
+            // skill displays. The sprite fragment (last hrid segment) is locale-independent,
+            // unlike the adjacent NavigationBar_label text.
+            let skillHref = null;
 
             // Check if we're in a sub-skills container (combat skills)
             const subSkillsContainer = progressBar.closest('[class*="NavigationBar_subSkills"]');
 
             if (subSkillsContainer) {
-                // We're in combat sub-skills - look for label in immediate parent structure
-                // The label should be in a sibling or nearby element, not in the parent navigationLink
+                // We're in combat sub-skills - look for the icon in immediate parent structure
+                // The icon should be in a sibling or nearby element, not in the parent navigationLink
                 const navContainer = progressBar.closest('[class*="NavigationBar_nav"]');
                 if (navContainer) {
-                    const skillNameElement = navContainer.querySelector('[class*="NavigationBar_label"]');
-                    if (skillNameElement) {
-                        skillName = skillNameElement.textContent.trim();
-                    }
+                    skillHref = navContainer.querySelector('svg use')?.getAttribute('href') || null;
                 }
             } else {
                 // Regular skill (not a sub-skill) - use standard navigation link approach
                 const navLink = progressBar.closest('[class*="NavigationBar_navigationLink"]');
                 if (navLink) {
-                    const skillNameElement = navLink.querySelector('[class*="NavigationBar_label"]');
-                    if (skillNameElement) {
-                        skillName = skillNameElement.textContent.trim();
-                    }
+                    skillHref = navLink.querySelector('svg use')?.getAttribute('href') || null;
                 }
             }
 
-            if (!skillName) return;
+            const skillHrid = getSkillHridFromIconHref(skillHref);
+            if (!skillHrid) return;
 
             // Calculate remaining XP for this skill using progress bar width (like XP percentage does)
-            const remainingXP = this.calculateRemainingXPFromProgressBar(progressBar, skillName);
+            const remainingXP = this.calculateRemainingXPFromProgressBar(progressBar, skillHrid);
             if (remainingXP === null) return;
 
             // Find the progress bar container (parent of the progress bar)
@@ -201,13 +199,10 @@ class RemainingXP {
     /**
      * Calculate remaining XP from progress bar width (real-time, like XP percentage)
      * @param {HTMLElement} progressBar - The progress bar element
-     * @param {string} skillName - The skill name (e.g., "Milking", "Combat")
+     * @param {string} skillHrid - The skill's HRID (e.g., "/skills/milking")
      * @returns {number|null} Remaining XP or null if unavailable
      */
-    calculateRemainingXPFromProgressBar(progressBar, skillName) {
-        // Convert skill name to HRID
-        const skillHrid = `/skills/${skillName.toLowerCase()}`;
-
+    calculateRemainingXPFromProgressBar(progressBar, skillHrid) {
         // Get character skills data for level info
         const characterData = dataManager.characterData;
         if (!characterData || !characterData.characterSkills) {

@@ -11,7 +11,7 @@ import { marketplaceSession, MARKETPLACE_OWNER } from '../../core/marketplace-se
 import { computeBestCraftingPlan } from './crafting-plan-calculator.js';
 import { createCollapsibleSection } from '../../utils/ui-components.js';
 import { formatKMB, formatWithSeparator, timeReadable } from '../../utils/formatters.js';
-import { getActionHridFromName } from '../../utils/game-lookups.js';
+import { getActionHridFromName, getActionHridFromFiber } from '../../utils/game-lookups.js';
 import { findActionInput } from '../../utils/action-panel-helper.js';
 import {
     createMaterialTab,
@@ -61,6 +61,11 @@ const PRODUCTION_TYPES = [
  * @returns {string|null}
  */
 function getActionHridFromPanel(panel) {
+    // The detail modal renders no hrid-keyed icon of its own, unlike the tile list - resolve
+    // via the component's own React props first, falling back to the translated name text.
+    const hridFromFiber = getActionHridFromFiber(panel);
+    if (hridFromFiber) return hridFromFiber;
+
     const nameEl = panel.querySelector('[class*="SkillActionDetail_name"]');
     if (!nameEl) return null;
     const actionName = Array.from(nameEl.childNodes)

@@ -26,7 +26,7 @@ import { calculateExpPerHour, calculateMultiLevelProgress } from '../../utils/ex
 import { createCollapsibleSection } from '../../utils/ui-components.js';
 import { compactActionPanelSection } from './production-tools-layout.js';
 import { calculateActionsPerHour, calculateEffectiveActionsPerHour } from '../../utils/profit-helpers.js';
-import { getActionHridFromName } from '../../utils/game-lookups.js';
+import { getActionHridFromName, getActionHridFromFiber } from '../../utils/game-lookups.js';
 import { MIN_ACTION_TIME_SECONDS } from '../../utils/profit-constants.js';
 import { createCleanupRegistry } from '../../utils/cleanup-registry.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
@@ -240,7 +240,7 @@ class QuickInputButtons {
             const currentName = nameEl?.textContent?.trim();
             const currentDetails =
                 currentName && currentName !== actionDetails.name
-                    ? this.getActionDetailsByName(currentName, gameData) || actionDetails
+                    ? this.getActionDetailsByName(currentName, gameData, panel) || actionDetails
                     : actionDetails;
             const maxValue = this.calculateMaxValue(panel, currentDetails, gameData);
             if (maxValue === '∞' || maxValue > 0) {
@@ -332,7 +332,7 @@ class QuickInputButtons {
             }
 
             const actionName = currentActionName;
-            actionDetails = this.getActionDetailsByName(actionName, gameData);
+            actionDetails = this.getActionDetailsByName(actionName, gameData, panel);
             if (!actionDetails) {
                 console.warn('[Quick Input Buttons] No action details found for:', actionName);
                 return;
@@ -848,10 +848,13 @@ class QuickInputButtons {
      * Get action details by name
      * @param {string} actionName - Display name of the action
      * @param {Object} gameData - Cached game data from dataManager
+     * @param {HTMLElement} [panel] - Detail modal panel, for locale-independent resolution
      * @returns {Object|null} Action details or null if not found
      */
-    getActionDetailsByName(actionName, gameData) {
-        const hrid = getActionHridFromName(actionName);
+    getActionDetailsByName(actionName, gameData, panel = null) {
+        // The detail modal renders no hrid-keyed icon of its own, unlike the tile list -
+        // resolve via the component's own React props first, falling back to the name text.
+        const hrid = (panel && getActionHridFromFiber(panel)) || getActionHridFromName(actionName);
         if (!hrid) {
             return null;
         }

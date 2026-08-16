@@ -32,7 +32,7 @@ import { getProtectionItemFromUI, getProtectFromLevelFromUI } from './enhancemen
 import { calculateEnhancementPath } from '../enhancement/tooltip-enhancement.js';
 import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
-import { getActionHridFromName } from '../../utils/game-lookups.js';
+import { getActionHridFromName, getActionHridFromFiber } from '../../utils/game-lookups.js';
 import { getOrCreateProductionToolsBlock, normalizeProductionToolsBlock } from './production-tools-layout.js';
 
 /**
@@ -267,6 +267,13 @@ function updateButtonForPanel(panel, value) {
  * @returns {string|null} Action HRID or null
  */
 function getActionHridFromPanel(panel) {
+    // The detail modal renders no hrid-keyed icon of its own, unlike the tile list - resolve
+    // via the component's own React props first, falling back to the translated name text.
+    const hridFromFiber = getActionHridFromFiber(panel);
+    if (hridFromFiber) {
+        return hridFromFiber;
+    }
+
     // Get action name from panel
     const actionNameElement = panel.querySelector('[class*="SkillActionDetail_name"]');
     if (!actionNameElement) {

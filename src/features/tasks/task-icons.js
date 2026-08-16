@@ -11,7 +11,7 @@ import webSocketHook from '../../core/websocket.js';
 import taskIconFilters from './task-icon-filters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import assetManifest from '../../utils/asset-manifest.js';
-import { getActionHridFromName } from '../../utils/game-lookups.js';
+import { getActionHridFromName, getQuestFromTaskCard } from '../../utils/game-lookups.js';
 
 class TaskIcons {
     constructor() {
@@ -372,14 +372,22 @@ class TaskIcons {
     /**
      * Find action HRID by display name
      */
-    findActionHrid(actionName) {
-        return getActionHridFromName(actionName);
+    findActionHrid(actionName, taskCard = null) {
+        // Resolve via the card's own quest data first - locale-independent, unlike matching
+        // the card's translated task text used as a fallback below.
+        const questActionHrid = taskCard ? getQuestFromTaskCard(taskCard)?.actionHrid : null;
+        return questActionHrid || getActionHridFromName(actionName);
     }
 
     /**
      * Find monster HRID by display name
      */
-    findMonsterHrid(monsterName) {
+    findMonsterHrid(monsterName, taskCard = null) {
+        // Resolve via the card's own quest data first - locale-independent, unlike matching
+        // the card's translated task text used as a fallback below.
+        const questMonsterHrid = taskCard ? getQuestFromTaskCard(taskCard)?.monsterHrid : null;
+        if (questMonsterHrid) return questMonsterHrid;
+
         // Strip zone tier suffix (e.g., "Grizzly BearZ8" → "Grizzly Bear")
         // Format is: MonsterNameZ# where # is the zone index
         const cleanName = monsterName.replace(/Z\d+$/, '').trim();
@@ -397,7 +405,7 @@ class TaskIcons {
      * Add action icon to task card
      */
     addActionIcon(taskCard, taskInfo) {
-        const actionHrid = this.findActionHrid(taskInfo.taskName);
+        const actionHrid = this.findActionHrid(taskInfo.taskName, taskCard);
         if (!actionHrid) {
             return;
         }
@@ -446,7 +454,7 @@ class TaskIcons {
      * Add monster icon to task card
      */
     async addMonsterIcon(taskCard, taskInfo) {
-        const monsterHrid = this.findMonsterHrid(taskInfo.taskName);
+        const monsterHrid = this.findMonsterHrid(taskInfo.taskName, taskCard);
         if (!monsterHrid) {
             return;
         }

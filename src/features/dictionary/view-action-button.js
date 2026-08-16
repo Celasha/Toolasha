@@ -8,7 +8,12 @@ import { navigateToItem, findActionForItem } from '../../utils/item-navigation.j
 import { setReactInputValue } from '../../utils/react-input.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { calculateMaterialRequirements } from '../../utils/material-calculator.js';
-import { getActionHridFromName, getItemHridFromName } from '../../utils/game-lookups.js';
+import {
+    getActionHridFromName,
+    getItemHridFromName,
+    getActionHridFromFiber,
+    getItemHridFromIconHref,
+} from '../../utils/game-lookups.js';
 
 /**
  * ViewActionButton class manages action button in Item Dictionary
@@ -67,7 +72,10 @@ class ViewActionButton {
         if (!nameEl) return;
 
         const itemName = nameEl.textContent.trim();
-        const itemHrid = getItemHridFromName(itemName);
+        // Resolve via the popup's own icon sprite href first - locale-independent, unlike the
+        // translated item name text used as a fallback below.
+        const useEl = actionMenu.querySelector('svg use');
+        const itemHrid = getItemHridFromIconHref(useEl?.getAttribute('href')) || getItemHridFromName(itemName);
         if (!itemHrid) return;
 
         const actionInfo = findActionForItem(itemHrid);
@@ -108,8 +116,11 @@ class ViewActionButton {
         // Get item name from title
         const itemName = titleElem.textContent.trim();
 
-        // Look up item HRID from display name (handles ★ ↔ (R) refined variants)
-        const itemHrid = getItemHridFromName(itemName);
+        // Resolve via the modal's own icon sprite href first - locale-independent, unlike the
+        // translated title text used as a fallback below.
+        const modalScope = titleElem.closest('[class*="ItemDictionary_modalContent"]') || document;
+        const useEl = modalScope.querySelector('svg use');
+        const itemHrid = getItemHridFromIconHref(useEl?.getAttribute('href')) || getItemHridFromName(itemName);
         if (!itemHrid) return;
 
         // Check if this item has an associated action
@@ -256,8 +267,9 @@ class ViewActionButton {
             .join('')
             .trim();
 
-        // Resolve action HRID from name
-        const actionHrid = getActionHridFromName(actionName);
+        // The detail modal renders no hrid-keyed icon of its own, unlike the tile list -
+        // resolve via the component's own React props first, falling back to the name text.
+        const actionHrid = getActionHridFromFiber(nameEl) || getActionHridFromName(actionName);
         if (!actionHrid) return null;
 
         // Read current numActions from the count input

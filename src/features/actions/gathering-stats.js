@@ -13,7 +13,7 @@ import actionFilter from './action-filter.js';
 import { calculateGatheringProfit } from './gathering-profit.js';
 import { formatKMB } from '../../utils/formatters.js';
 import { calculateExpPerHour } from '../../utils/experience-calculator.js';
-import { getActionHridFromName } from '../../utils/game-lookups.js';
+import { getActionHridFromName, getActionHridFromIconHref } from '../../utils/game-lookups.js';
 
 class GatheringStats {
     constructor() {
@@ -210,6 +210,14 @@ class GatheringStats {
      * @returns {string|null} Action HRID or null
      */
     getActionHridFromPanel(actionPanel) {
+        // Resolve via the tile's icon sprite href first - locale-independent, unlike the
+        // translated action name text used as a fallback below.
+        const useEl = actionPanel.querySelector('svg use');
+        const hridFromIcon = getActionHridFromIconHref(useEl?.getAttribute('href'));
+        if (hridFromIcon) {
+            return hridFromIcon;
+        }
+
         // Try to find action name from panel
         const nameElement = actionPanel.querySelector('div[class*="SkillAction_name"]');
 

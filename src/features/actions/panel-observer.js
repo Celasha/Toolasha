@@ -19,7 +19,12 @@ import { getOriginalText } from '../../utils/dom.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import actionFilter from './action-filter.js';
-import { getActionHridFromName, getItemHridFromName } from '../../utils/game-lookups.js';
+import {
+    getActionHridFromName,
+    getItemHridFromName,
+    getActionHridFromFiber,
+    getItemHridFromIconHref,
+} from '../../utils/game-lookups.js';
 import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import { calculateEnhancementPath } from '../enhancement/tooltip-enhancement.js';
 
@@ -374,7 +379,9 @@ async function handleActionPanel(panel) {
     }
 
     const actionName = getOriginalText(actionNameElement);
-    const actionHrid = getActionHridFromName(actionName);
+    // The detail modal renders no hrid-keyed icon of its own, unlike the tile list - resolve
+    // via the component's own React props first, falling back to the translated name text.
+    const actionHrid = getActionHridFromFiber(panel) || getActionHridFromName(actionName);
 
     if (!actionHrid) {
         return;
@@ -587,9 +594,11 @@ async function handleEnhancingPanel(panel) {
         return;
     }
 
-    // Find the item HRID from the name
+    // Resolve via the item's icon sprite href first - locale-independent, unlike the
+    // translated item name text used as a fallback below.
     const gameData = dataManager.getInitClientData();
-    const itemHrid = getItemHridFromName(itemName);
+    const useEl = outputsSection.querySelector('svg use');
+    const itemHrid = getItemHridFromIconHref(useEl?.getAttribute('href')) || getItemHridFromName(itemName);
 
     if (!itemHrid) {
         clearEnhancingDisplay();

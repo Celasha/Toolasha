@@ -12,7 +12,7 @@ import { findActionInput, attachInputListeners, performInitialUpdate } from '../
 import { calculateMaterialRequirements } from '../../utils/material-calculator.js';
 import { getItemPrice, formatPrice } from '../../utils/market-data.js';
 import { computeBestCraftingPlan } from '../../features/crafting-plan/crafting-plan-calculator.js';
-import { getActionHridFromName } from '../../utils/game-lookups.js';
+import { getActionHridFromName, getActionHridFromFiber } from '../../utils/game-lookups.js';
 import { getOrCreateProductionToolsBlock, normalizeProductionToolsBlock } from './production-tools-layout.js';
 
 const UI_ID = 'mwi-cost-summary';
@@ -57,6 +57,11 @@ function processActionPanels() {
 }
 
 function getActionHridFromPanel(panel) {
+    // The detail modal renders no hrid-keyed icon of its own, unlike the tile list - resolve
+    // via the component's own React props first, falling back to the translated name text.
+    const hridFromFiber = getActionHridFromFiber(panel);
+    if (hridFromFiber) return hridFromFiber;
+
     const nameEl = panel.querySelector('[class*="SkillActionDetail_name"]');
     if (!nameEl) return null;
     const actionName = Array.from(nameEl.childNodes)

@@ -12,7 +12,7 @@ import { calculateMaterialRequirements } from '../../utils/material-calculator.j
 import { formatKMB, formatWithSeparator } from '../../utils/formatters.js';
 import { setReactInputValue } from '../../utils/react-input.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
-import { getActionHridFromName } from '../../utils/game-lookups.js';
+import { getActionHridFromName, getActionHridFromFiber } from '../../utils/game-lookups.js';
 import { getOrCreateProductionToolsBlock, normalizeProductionToolsBlock } from './production-tools-layout.js';
 
 const PRODUCTION_TYPES = [
@@ -45,6 +45,11 @@ function parseKMB(str) {
  * @returns {string|null}
  */
 function getActionHridFromPanel(panel) {
+    // The detail modal renders no hrid-keyed icon of its own, unlike the tile list - resolve
+    // via the component's own React props first, falling back to the translated name text.
+    const hridFromFiber = getActionHridFromFiber(panel);
+    if (hridFromFiber) return hridFromFiber;
+
     const nameEl = panel.querySelector('[class*="SkillActionDetail_name"]');
     if (!nameEl) return null;
     const actionName = Array.from(nameEl.childNodes)

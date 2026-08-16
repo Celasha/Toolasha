@@ -8,7 +8,7 @@ import domObserver from '../../core/dom-observer.js';
 import { numberFormatter } from '../../utils/formatters.js';
 import { calculateMaterialRequirements, isArtisanTeaOutOfStock } from '../../utils/material-calculator.js';
 import { findActionInput, attachInputListeners, performInitialUpdate } from '../../utils/action-panel-helper.js';
-import { getActionHridFromName } from '../../utils/game-lookups.js';
+import { getActionHridFromName, getActionHridFromFiber } from '../../utils/game-lookups.js';
 
 /**
  * Build the compact requirement status shown below a material.
@@ -235,6 +235,13 @@ class RequiredMaterials {
      * @returns {string|null} Action HRID or null
      */
     getActionHridFromPanel(panel) {
+        // The detail modal renders no hrid-keyed icon of its own, unlike the tile list -
+        // resolve via the component's own React props first, falling back to the name text.
+        const hridFromFiber = getActionHridFromFiber(panel);
+        if (hridFromFiber) {
+            return hridFromFiber;
+        }
+
         // Get action name from panel
         const actionNameElement = panel.querySelector('[class*="SkillActionDetail_name"]');
         if (!actionNameElement) {

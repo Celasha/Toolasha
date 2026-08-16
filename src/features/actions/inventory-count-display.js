@@ -9,7 +9,7 @@ import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
 import { formatKMB } from '../../utils/formatters.js';
-import { getActionHridFromName } from '../../utils/game-lookups.js';
+import { getActionHridFromName, getActionHridFromIconHref, getActionHridFromFiber } from '../../utils/game-lookups.js';
 
 const GATHERING_TYPES = ['/action_types/foraging', '/action_types/woodcutting', '/action_types/milking'];
 const PRODUCTION_TYPES = [
@@ -245,8 +245,9 @@ class InventoryCountDisplay {
         const nameEl = panel.querySelector('[class*="SkillActionDetail_name"]');
         if (!nameEl) return;
 
-        const actionName = nameEl.textContent.trim();
-        const actionHrid = getActionHridFromName(actionName);
+        // The detail modal renders no hrid-keyed icon of its own, unlike the tile list -
+        // resolve via the component's own React props first, falling back to the name text.
+        const actionHrid = getActionHridFromFiber(panel) || getActionHridFromName(nameEl.textContent.trim());
         if (!actionHrid) return;
 
         const actionDetails = dataManager.getActionDetails(actionHrid);
@@ -317,6 +318,12 @@ class InventoryCountDisplay {
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     _getActionHridFromTile(actionPanel) {
+        // Resolve via the tile's icon sprite href first - locale-independent, unlike the
+        // translated action name text used as a fallback below.
+        const useEl = actionPanel.querySelector('svg use');
+        const hridFromIcon = getActionHridFromIconHref(useEl?.getAttribute('href'));
+        if (hridFromIcon) return hridFromIcon;
+
         const nameEl = actionPanel.querySelector('[class*="SkillAction_name"]');
         if (!nameEl) return null;
         const name = Array.from(nameEl.childNodes)
