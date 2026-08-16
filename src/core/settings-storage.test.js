@@ -175,3 +175,64 @@ describe('SettingsStorage.importSettings — character isolation', () => {
         expect(writtenKeys).not.toContain('script_settingsMap_333333');
     });
 });
+
+describe('SettingsStorage.syncSettingsToAllCharacters — task data copy', () => {
+    beforeEach(() => {
+        vi.resetModules();
+        Object.keys(storageData).forEach((k) => delete storageData[k]);
+    });
+
+    test('copies protected-task list and auto-reroll targets to selected characters', async () => {
+        storageData['known_character_ids'] = [
+            { id: '111111', name: 'Alice' },
+            { id: '222222', name: 'Bob' },
+        ];
+        storageData['taskProtectedHrids_111111'] = ['/monsters/a', '/monsters/b'];
+        storageData['taskAutoRerollHrids_111111'] = ['/actions/gathering/x'];
+
+        const mod = await import('./settings-storage.js');
+        const s = mod.default;
+        s.currentCharacterId = '111111';
+
+        const count = await s.syncSettingsToAllCharacters({ some: 'setting' }, ['222222']);
+
+        expect(count).toBe(1);
+        expect(storageData['taskProtectedHrids_222222']).toEqual(['/monsters/a', '/monsters/b']);
+        expect(storageData['taskAutoRerollHrids_222222']).toEqual(['/actions/gathering/x']);
+        expect(storageData['script_settingsMap_222222']).toEqual({ some: 'setting' });
+    });
+
+    test('does not write task keys the current character has none of', async () => {
+        storageData['known_character_ids'] = [
+            { id: '111111', name: 'Alice' },
+            { id: '222222', name: 'Bob' },
+        ];
+        // No taskProtectedHrids_111111 / taskAutoRerollHrids_111111 set.
+
+        const mod = await import('./settings-storage.js');
+        const s = mod.default;
+        s.currentCharacterId = '111111';
+
+        await s.syncSettingsToAllCharacters({}, ['222222']);
+
+        expect(storageData['taskProtectedHrids_222222']).toBeUndefined();
+        expect(storageData['taskAutoRerollHrids_222222']).toBeUndefined();
+    });
+
+    test('never writes task keys back onto the current character', async () => {
+        storageData['known_character_ids'] = [
+            { id: '111111', name: 'Alice' },
+            { id: '222222', name: 'Bob' },
+        ];
+        storageData['taskProtectedHrids_111111'] = ['/monsters/a'];
+
+        const mod = await import('./settings-storage.js');
+        const s = mod.default;
+        s.currentCharacterId = '111111';
+
+        await s.syncSettingsToAllCharacters({}, ['111111', '222222']);
+
+        expect(storageData['taskProtectedHrids_111111']).toEqual(['/monsters/a']);
+        expect(storageData['taskProtectedHrids_222222']).toEqual(['/monsters/a']);
+    });
+});
