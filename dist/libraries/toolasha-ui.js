@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.89.0
+ * Version: 2.89.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -21736,7 +21736,7 @@ ${starCSS}
 
             // Sync button (at top - most important)
             const syncBtn = document.createElement('button');
-            syncBtn.textContent = 'Copy Settings to All Characters';
+            syncBtn.textContent = 'Copy Settings to Other Characters';
             syncBtn.className = 'toolasha-utility-button toolasha-sync-button';
             syncBtn.addEventListener('click', () => this.handleSync());
 

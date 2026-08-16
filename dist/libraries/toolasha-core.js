@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.89.0
+ * Version: 2.89.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -3058,6 +3058,10 @@
      */
 
 
+    // Task-related storage keys that are scoped per-character by a `_<charId>` suffix, outside
+    // the main schema settings blob (see task-reroll-protection.js / task-auto-reroll.js).
+    const TASK_CHARACTER_SCOPED_PREFIXES = ['taskProtectedHrids', 'taskAutoRerollHrids'];
+
     class SettingsStorage {
         constructor() {
             this.storageKey = 'script_settingsMap'; // Legacy global key (used as template)
@@ -3270,6 +3274,8 @@
 
         /**
          * Sync current settings to a specified subset of characters.
+         * Also copies task-related per-character data (protected task list, auto-reroll
+         * targets) from the current character, since those live outside the settings blob.
          * @param {Object} settings - Current settings to copy
          * @param {string[]} targetIds - IDs to sync to (omit to sync to all others)
          * @returns {Promise<number>} Number of characters synced
@@ -3282,10 +3288,23 @@
                 ? knownCharacters.filter((c) => targetIds.includes(c.id))
                 : knownCharacters.filter((c) => c.id !== this.currentCharacterId);
 
+            const taskScopedValues = await Promise.all(
+                TASK_CHARACTER_SCOPED_PREFIXES.map((prefix) =>
+                    storage.getJSON(`${prefix}_${this.currentCharacterId}`, this.storageArea, null)
+                )
+            );
+
             for (const character of targets) {
                 if (character.id === this.currentCharacterId) continue;
                 const characterKey = `${this.storageKey}_${character.id}`;
                 await storage.setJSON(characterKey, settings, this.storageArea, true);
+
+                for (let i = 0; i < TASK_CHARACTER_SCOPED_PREFIXES.length; i++) {
+                    if (taskScopedValues[i] === null) continue;
+                    const targetKey = `${TASK_CHARACTER_SCOPED_PREFIXES[i]}_${character.id}`;
+                    await storage.setJSON(targetKey, taskScopedValues[i], this.storageArea, true);
+                }
+
                 syncedCount++;
             }
 
