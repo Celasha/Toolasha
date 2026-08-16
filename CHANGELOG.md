@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.89.1](https://github.com/Celasha/Toolasha/compare/v2.89.0...v2.89.1) (2026-08-16)
+
+### Bug Fixes
+
+- correct refined-item breakpoint labels and layout in Skilling Optimizer ([17e2efb](https://github.com/Celasha/Toolasha/commit/17e2efb6b73573fc445b957374ecdbeef1a54f56))
+- include task protection/reroll data in character settings sync ([05c995a](https://github.com/Celasha/Toolasha/commit/05c995aaed38589a5ce36401e161856e05f38d8d))
+
 ## [2.89.0](https://github.com/Celasha/Toolasha/compare/v2.88.5...v2.89.0) (2026-08-15)
 
 ### Features
