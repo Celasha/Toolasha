@@ -74,11 +74,18 @@ function buildLevelOutcomes({
  *   costPerAttempt: number,
  *   protectionCostOnFailure: number,
  *   maxSinglePossibleLoss: number,
+ *   expectedAttempts: number,
+ *   expectedProtectionCount: number,
+ *   expectedTotalCost: number,
  *   perLevelOutcomeDistributions: Array<Array<{prob: number, net: number}>>,
  *   stepFn: function(state: Object, rng: function(): number): Object,
  *   isTargetReached: function(state: Object): boolean,
  *   initialState: {level: number},
- * }|null} null if the item/params are invalid or have no usable cost data.
+ * }|null} null if the item/params are invalid or have no usable cost data. expectedTotalCost is
+ *   the closed-form expected gold spend from startLevel to targetLevel (attempts * costPerAttempt
+ *   + protectionCount * protectionCostOnFailure) — the natural costPerAction for a depth-cap
+ *   check against the resulting item, since exactly one item at targetLevel is produced per
+ *   completed run.
  */
 export function buildEnhancementModel(itemHrid, params) {
     const itemDetails = dataManager.getItemDetails(itemHrid);
@@ -121,6 +128,9 @@ export function buildEnhancementModel(itemHrid, params) {
         costPerAttempt,
         protectionCostOnFailure,
         maxSinglePossibleLoss: costPerAttempt + protectionCostOnFailure,
+        expectedAttempts: calc.attempts,
+        expectedProtectionCount: calc.protectionCount,
+        expectedTotalCost: calc.attempts * costPerAttempt + calc.protectionCount * protectionCostOnFailure,
         perLevelOutcomeDistributions,
         stepFn: (state, rng) => {
             const chosen = drawFromDistribution(perLevelOutcomeDistributions[state.level], rng);
