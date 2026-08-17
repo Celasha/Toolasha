@@ -23,6 +23,9 @@ const BREAKPOINTS_JEWELRY = [5, 7, 10, 12, 13, 14, 15, 16, 17, 18, 19, 20];
 const BREAKPOINTS_BACK = [3, 5, 7, 10, 12, 13, 14, 15, 16, 17, 18, 19, 20];
 const BREAKPOINTS_REFINED = [10, 12, 13, 14, 15, 16, 17, 18, 19, 20];
 
+/** Maximum house room level */
+const HOUSE_ROOM_MAX_LEVEL = 8;
+
 const JEWELRY_SLOTS = new Set(['/equipment_types/earrings', '/equipment_types/ring', '/equipment_types/neck']);
 
 /**
@@ -585,7 +588,7 @@ function findBestOffHand(gameData, damageStyle, maxItemLevel) {
  * Generate upgrade candidates for a player's equipment and/or abilities.
  * @param {Object} playerDTO - Player DTO with equipment
  * @param {Object} gameData - Game data from buildGameDataPayload()
- * @param {string} [mode='equipment'] - 'equipment' or 'abilities'
+ * @param {string} [mode='equipment'] - 'equipment', 'ability_level', 'ability_swap', or 'house'
  * @param {number} [abilityTargetLevel=0] - Target level or increment for ability upgrades
  * @param {string} [abilityLevelType='increment'] - 'increment' (add N levels) or 'target' (absolute level)
  * @returns {Array} Candidates: [{slot, currentHrid, currentLevel, upgradeHrid, upgradeLevel, description, type}]
@@ -905,6 +908,25 @@ export function generateCandidates(
                 }
             }
         }
+    } else if (mode === 'house') {
+        const houseRoomDetailMap = gameData.houseRoomDetailMap || {};
+
+        for (const [hrid, room] of Object.entries(houseRoomDetailMap)) {
+            const currentLevel = playerDTO.houseRooms?.[hrid] || 0;
+            if (currentLevel >= HOUSE_ROOM_MAX_LEVEL) continue;
+
+            const targetLevel = currentLevel + 1;
+            const roomName = room.name || hrid.split('/').pop();
+            candidates.push({
+                slot: `house_${hrid}`,
+                currentHrid: hrid,
+                currentLevel,
+                upgradeHrid: hrid,
+                upgradeLevel: targetLevel,
+                description: `${roomName} Lv${currentLevel} → Lv${targetLevel}`,
+                type: 'house',
+            });
+        }
     }
 
     return candidates;
@@ -968,6 +990,21 @@ export function calculateUpgradeCost(candidate, gameData) {
             gameData,
             { slot: candidate.slot }
         );
+    }
+
+    if (candidate.type === 'house') {
+        const roomData = gameData.houseRoomDetailMap?.[candidate.currentHrid];
+        const levelCosts = roomData?.upgradeCostsMap?.[candidate.upgradeLevel] || [];
+
+        let total = 0;
+        for (const item of levelCosts) {
+            if (item.itemHrid === '/items/coin') {
+                total += item.count;
+            } else {
+                total += resolveItemPrice(item.itemHrid, { side: 'buy' }).price * item.count;
+            }
+        }
+        return total;
     }
 
     // Tier upgrade: buy new item at same enhancement - sell current item
@@ -1060,6 +1097,9 @@ export async function runUpgradeAnalysis(params, onProgress, options = {}) {
                 level: candidate.upgradeLevel,
                 triggers: null,
             };
+        } else if (candidate.slot.startsWith('house_')) {
+            // House room upgrade
+            modifiedDTOs[playerIndex].houseRooms[candidate.currentHrid] = candidate.upgradeLevel;
         } else {
             // Equipment upgrade
             modifiedDTOs[playerIndex].equipment[candidate.slot] = {
