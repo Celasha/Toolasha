@@ -579,7 +579,9 @@ class RiskOfRuinUI {
             </div>
             <div style="color:#888; font-size:11px; margin-bottom:6px;">
                 Variance-based cap only — ignores the downward price pressure from selling your own output.
-                Open the item's order book in-game to see the market-depth check for that.
+                Toolasha shows an automatic "Sell depth" estimate on the item's order book screen when it
+                applies (Chest/Transmute modes only, after running a calculation) — eyeball the book yourself
+                for Enhancement or if no estimate appears.
             </div>`
         );
     }
@@ -595,7 +597,7 @@ class RiskOfRuinUI {
         );
 
         lines.push(
-            `<strong>Risk becomes possible at action:</strong> ` +
+            `<strong>Ruin becomes possible at action:</strong> ` +
                 (Number.isFinite(minActions)
                     ? formatWithSeparator(minActions)
                     : 'never (no single action can lose money)')
@@ -624,15 +626,15 @@ class RiskOfRuinUI {
     }
 
     /**
-     * Formula line spelling out exactly how "risk becomes possible at action N" was derived,
+     * Formula line spelling out exactly how "ruin becomes possible at action N" was derived,
      * so the number in the summary above isn't a black box.
      */
     _riskFormulaLine(startingBalance, maxSinglePossibleLoss, minActions) {
         if (!Number.isFinite(minActions)) {
-            return `<div>No single action can ever lose money here, so risk never becomes possible.</div>`;
+            return `<div>No single action can ever lose money here, so ruin never becomes possible.</div>`;
         }
         return (
-            `<div><strong>Risk becomes possible at action</strong> = ⌈starting gold ÷ max single-action loss⌉ ` +
+            `<div><strong>Ruin becomes possible at action</strong> = ⌈starting gold ÷ max single-action loss⌉ ` +
             `= ⌈${fmtGold(startingBalance)} ÷ ${fmtGold(maxSinglePossibleLoss)}⌉ = ${formatWithSeparator(minActions)}</div>`
         );
     }
