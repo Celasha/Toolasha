@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.89.1
+ * Version: 2.90.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -35073,11 +35073,18 @@ self.onmessage = function (e) {
      *   costPerAttempt: number,
      *   protectionCostOnFailure: number,
      *   maxSinglePossibleLoss: number,
+     *   expectedAttempts: number,
+     *   expectedProtectionCount: number,
+     *   expectedTotalCost: number,
      *   perLevelOutcomeDistributions: Array<Array<{prob: number, net: number}>>,
      *   stepFn: function(state: Object, rng: function(): number): Object,
      *   isTargetReached: function(state: Object): boolean,
      *   initialState: {level: number},
-     * }|null} null if the item/params are invalid or have no usable cost data.
+     * }|null} null if the item/params are invalid or have no usable cost data. expectedTotalCost is
+     *   the closed-form expected gold spend from startLevel to targetLevel (attempts * costPerAttempt
+     *   + protectionCount * protectionCostOnFailure) — the natural costPerAction for a depth-cap
+     *   check against the resulting item, since exactly one item at targetLevel is produced per
+     *   completed run.
      */
     function buildEnhancementModel(itemHrid, params) {
         const itemDetails = dataManager.getItemDetails(itemHrid);
@@ -35120,6 +35127,9 @@ self.onmessage = function (e) {
             costPerAttempt,
             protectionCostOnFailure,
             maxSinglePossibleLoss: costPerAttempt + protectionCostOnFailure,
+            expectedAttempts: calc.attempts,
+            expectedProtectionCount: calc.protectionCount,
+            expectedTotalCost: calc.attempts * costPerAttempt + calc.protectionCount * protectionCostOnFailure,
             perLevelOutcomeDistributions,
             stepFn: (state, rng) => {
                 const chosen = drawFromDistribution(perLevelOutcomeDistributions[state.level], rng);
@@ -35471,8 +35481,8 @@ self.onmessage = function (e) {
 
         /**
          * The last computed cost-per-action + per-item output quantities, for market-depth-cap.js to
-         * check the currently-viewed marketplace item against. Null when the last run was enhancement
-         * mode (no revenue distribution to key off) or nothing has been calculated yet.
+         * check the currently-viewed marketplace item against. Null when the enhanced item is
+         * untradeable, or nothing has been calculated yet.
          * @returns {{costPerAction: number, items: Array<{itemHrid: string, quantityPerAction: number}>}|null}
          */
         getDepthCapContext() {
@@ -35567,6 +35577,7 @@ self.onmessage = function (e) {
                     costPerAction: alchemyModel.cost,
                     items: this._alchemyDepthCapItems(alchemyModel.breakdown),
                 };
+                detailInfo.untrackedOutputs = this._findUntrackedAlchemyOutputs(hrid, alchemyModel.breakdown);
                 optimalCommit = calculateOptimalCommit({
                     outcomeDistribution: alchemyModel.outcomeDistribution,
                     costPerAction: alchemyModel.cost,
@@ -35621,6 +35632,14 @@ self.onmessage = function (e) {
                     startLevel,
                     targetLevel,
                 };
+                if (itemDetails.isTradable !== false) {
+                    this.lastDepthCapContext = {
+                        costPerAction: enhancementModel.expectedTotalCost,
+                        items: [{ itemHrid: hrid, quantityPerAction: 1 }],
+                    };
+                } else {
+                    detailInfo.untradeableOutput = itemDetails.name || hrid.split('/').pop();
+                }
             }
 
             const simResult = await simulateRuinAsync(simModel);
@@ -35638,6 +35657,7 @@ self.onmessage = function (e) {
                 </div>`
                 );
             }
+            this._renderDepthCapTrackingNote(results, detailInfo);
             this._renderDetails(results, detailInfo, startingBalance, maxSinglePossibleLoss, minActions);
             status.textContent = `${formatters_js.formatWithSeparator(trials)} trials simulated.`;
         }
@@ -35666,6 +35686,27 @@ self.onmessage = function (e) {
         }
 
         /**
+         * Possible Transmute outputs whose sell price couldn't be resolved when the profit calc ran,
+         * so they were silently excluded from breakdown.mainBranches and therefore aren't covered by
+         * the "Sell depth" widget — surfaced here so that gap is visible rather than looking
+         * identical to "the depth-cap feature isn't working."
+         * @param {string} hrid - Item being transmuted.
+         * @param {Object} breakdown - alchemyModel.breakdown from buildAlchemyTransmuteModel().
+         * @returns {string[]} Display names of untracked possible outputs.
+         */
+        _findUntrackedAlchemyOutputs(hrid, breakdown) {
+            const rawTable = dataManager.getItemDetails(hrid)?.alchemyDetail?.transmuteDropTable || [];
+            const trackedHrids = new Set(breakdown.mainBranches.map((b) => b.itemHrid));
+
+            const untracked = [];
+            for (const drop of rawTable) {
+                if (!(drop.dropRate > 0) || drop.itemHrid === hrid || trackedHrids.has(drop.itemHrid)) continue;
+                untracked.push(dataManager.getItemDetails(drop.itemHrid)?.name || drop.itemHrid.split('/').pop());
+            }
+            return untracked;
+        }
+
+        /**
          * Renders the closed-form "optimal share of cash to commit" figures (see
          * utils/optimal-bankroll-share.js) — a quick variance-based cap, separate from and shown
          * alongside the Monte Carlo ruin probability above.
@@ -35690,9 +35731,46 @@ self.onmessage = function (e) {
             </div>
             <div style="color:#888; font-size:11px; margin-bottom:6px;">
                 Variance-based cap only — ignores the downward price pressure from selling your own output.
-                Open the item's order book in-game to see the market-depth check for that.
+                Toolasha shows an automatic "Sell depth" estimate on each tracked output's marketplace
+                order-book page, but only once you've opened that item's page in-game this session — see
+                which outputs are tracked below.
             </div>`
             );
+        }
+
+        /**
+         * Surfaces which items lastDepthCapContext is actually tracking for the "Sell depth" widget,
+         * plus any possible outputs that couldn't be tracked (untradeable, or no sell price available
+         * to check against) — without this, a missing widget on the marketplace page is indistinguishable
+         * from "the feature isn't working."
+         */
+        _renderDepthCapTrackingNote(container, detailInfo) {
+            const ctx = this.lastDepthCapContext;
+            let html = '';
+
+            if (ctx?.items?.length) {
+                const names = ctx.items.map(
+                    (i) => dataManager.getItemDetails(i.itemHrid)?.name || i.itemHrid.split('/').pop()
+                );
+                html += `<div style="color:#888; font-size:11px; margin-bottom:6px;">
+                Tracking "Sell depth" for: ${names.join(', ')} — open that item's order-book page in the
+                marketplace to see the estimate.
+            </div>`;
+            }
+
+            if (detailInfo.untrackedOutputs?.length) {
+                html += `<div style="color:#c98; font-size:11px; margin-bottom:6px;">
+                Not tracked (no current sell price available to check against): ${detailInfo.untrackedOutputs.join(', ')}.
+            </div>`;
+            }
+
+            if (detailInfo.untradeableOutput) {
+                html += `<div style="color:#888; font-size:11px; margin-bottom:6px;">
+                ${detailInfo.untradeableOutput} is untradeable, so no "Sell depth" check applies.
+            </div>`;
+            }
+
+            if (html) container.insertAdjacentHTML('beforeend', html);
         }
 
         _renderResults(container, simResult, minActions) {
@@ -35706,7 +35784,7 @@ self.onmessage = function (e) {
             );
 
             lines.push(
-                `<strong>Risk becomes possible at action:</strong> ` +
+                `<strong>Ruin becomes possible at action:</strong> ` +
                     (Number.isFinite(minActions)
                         ? formatters_js.formatWithSeparator(minActions)
                         : 'never (no single action can lose money)')
@@ -35735,15 +35813,15 @@ self.onmessage = function (e) {
         }
 
         /**
-         * Formula line spelling out exactly how "risk becomes possible at action N" was derived,
+         * Formula line spelling out exactly how "ruin becomes possible at action N" was derived,
          * so the number in the summary above isn't a black box.
          */
         _riskFormulaLine(startingBalance, maxSinglePossibleLoss, minActions) {
             if (!Number.isFinite(minActions)) {
-                return `<div>No single action can ever lose money here, so risk never becomes possible.</div>`;
+                return `<div>No single action can ever lose money here, so ruin never becomes possible.</div>`;
             }
             return (
-                `<div><strong>Risk becomes possible at action</strong> = ⌈starting gold ÷ max single-action loss⌉ ` +
+                `<div><strong>Ruin becomes possible at action</strong> = ⌈starting gold ÷ max single-action loss⌉ ` +
                 `= ⌈${fmtGold(startingBalance)} ÷ ${fmtGold(maxSinglePossibleLoss)}⌉ = ${formatters_js.formatWithSeparator(minActions)}</div>`
             );
         }
