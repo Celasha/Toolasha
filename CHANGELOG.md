@@ -2,16 +2,14 @@
 
 ## [2.90.0](https://github.com/Celasha/Toolasha/compare/v2.89.1...v2.90.0) (2026-08-18)
 
-
 ### Features
 
-* add House Rooms mode to combat sim Upgrade Advisor ([16a7501](https://github.com/Celasha/Toolasha/commit/16a75019ffe457ee4ddd2b3967f62f301df558fb))
-
+- add House Rooms mode to combat sim Upgrade Advisor ([16a7501](https://github.com/Celasha/Toolasha/commit/16a75019ffe457ee4ddd2b3967f62f301df558fb))
 
 ### Bug Fixes
 
-* correct risk-of-ruin panel wording and clarify depth-cap tooltip ([904070c](https://github.com/Celasha/Toolasha/commit/904070c749785a64bb786ac8384369138ee70a51))
-* extend sell-depth tracking to Enhancement and surface tracked/dropped outputs ([a9800f7](https://github.com/Celasha/Toolasha/commit/a9800f71756ebcb63ba8ad28fc12f35a1ac83779))
+- correct risk-of-ruin panel wording and clarify depth-cap tooltip ([904070c](https://github.com/Celasha/Toolasha/commit/904070c749785a64bb786ac8384369138ee70a51))
+- extend sell-depth tracking to Enhancement and surface tracked/dropped outputs ([a9800f7](https://github.com/Celasha/Toolasha/commit/a9800f71756ebcb63ba8ad28fc12f35a1ac83779))
 
 ## [2.89.1](https://github.com/Celasha/Toolasha/compare/v2.89.0...v2.89.1) (2026-08-16)
 
