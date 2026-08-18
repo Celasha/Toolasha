@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.90.1](https://github.com/Celasha/Toolasha/compare/v2.90.0...v2.90.1) (2026-08-18)
+
+
+### Bug Fixes
+
+* show DPS to 3 decimal places in combat sim Results and Compare tabs ([d3c9cc0](https://github.com/Celasha/Toolasha/commit/d3c9cc095b8c2fd43fc8e5539585c6dc1d1ad356))
+
 ## [2.90.0](https://github.com/Celasha/Toolasha/compare/v2.89.1...v2.90.0) (2026-08-18)
 
 ### Features
