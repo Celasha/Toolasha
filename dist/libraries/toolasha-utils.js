@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.90.0
+ * Version: 2.90.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -116,13 +116,17 @@
     /**
      * Format a number with thousand separators based on locale
      * @param {number} num - The number to format
+     * @param {number} [decimals] - Fixed number of decimal places (omit for locale default, integers)
      * @returns {string} Formatted number with separators
      *
      * @example
      * formatWithSeparator(1000000) // "1,000,000" (US locale)
+     * formatWithSeparator(1234.5, 3) // "1,234.500" (US locale)
      */
-    function formatWithSeparator(num) {
-        return new Intl.NumberFormat().format(num);
+    function formatWithSeparator(num, decimals) {
+        const options =
+            decimals !== undefined ? { minimumFractionDigits: decimals, maximumFractionDigits: decimals } : undefined;
+        return new Intl.NumberFormat(undefined, options).format(num);
     }
 
     /**
