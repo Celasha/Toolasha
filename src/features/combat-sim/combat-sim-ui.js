@@ -3230,6 +3230,10 @@ class CombatSimUI {
                 if (Math.abs(val) < 0.5) return '—';
                 return (val >= 0 ? '+' : '') + formatKMB(val);
             };
+            const fmtDpsDelta = (val) => {
+                if (Math.abs(val) < 0.0005) return '—';
+                return (val >= 0 ? '+' : '') + formatWithSeparator(val, 3);
+            };
             const fmtDeltaSmall = (val) => {
                 if (Math.abs(val) < 0.01) return '—';
                 return (val >= 0 ? '+' : '') + val.toFixed(1);
@@ -3243,8 +3247,8 @@ class CombatSimUI {
                     <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:8px; font-size:11px;">
                         <div>
                             <div style="color:#888;">DPS</div>
-                            <div style="color:#e0e0e0;">${formatKMB(r.metrics.dps)}</div>
-                            <div style="color:${deltaColor(dpsValueDelta)};">${fmtDelta(dpsValueDelta)} (${r.deltas.dps >= 0 ? '+' : ''}${r.deltas.dps.toFixed(2)}%)</div>
+                            <div style="color:#e0e0e0;">${formatWithSeparator(r.metrics.dps, 3)}</div>
+                            <div style="color:${deltaColor(dpsValueDelta)};">${fmtDpsDelta(dpsValueDelta)} (${r.deltas.dps >= 0 ? '+' : ''}${r.deltas.dps.toFixed(2)}%)</div>
                         </div>
                         <div>
                             <div style="color:#888;">EXP/hr</div>
@@ -3268,7 +3272,7 @@ class CombatSimUI {
                         </div>
                     </div>
                     <div style="margin-top:6px; color:#666; font-size:10px;">
-                        Baseline: DPS ${formatKMB(results.baseline.dps)} | EXP ${formatKMB(results.baseline.xpPerHour)} | Profit ${formatKMB(results.baseline.profitPerHour)} | EPH ${results.baseline.encountersPerHour.toFixed(1)} | DPH ${results.baseline.deathsPerHour.toFixed(1)}
+                        Baseline: DPS ${formatWithSeparator(results.baseline.dps, 3)} | EXP ${formatKMB(results.baseline.xpPerHour)} | Profit ${formatKMB(results.baseline.profitPerHour)} | EPH ${results.baseline.encountersPerHour.toFixed(1)} | DPH ${results.baseline.deathsPerHour.toFixed(1)}
                     </div>
                 </td>
             </tr>`;
