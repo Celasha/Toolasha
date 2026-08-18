@@ -1848,7 +1848,7 @@ class CombatSimUI {
             const dpsLabel = numberOfPlayers > 1 ? 'Party DPS' : 'DPS';
             html += `<div style="${rowStyle}">`;
             html += `<span style="${labelStyle}">${dpsLabel}</span>`;
-            html += `<span style="${valueStyle}">${formatWithSeparator(Math.round(partyDps))}${this._formatDelta(partyDps, prevPartyDps)}</span>`;
+            html += `<span style="${valueStyle}">${formatWithSeparator(partyDps, 3)}${this._formatDelta(partyDps, prevPartyDps, true, false, 3)}</span>`;
             html += '</div>';
 
             if (numberOfPlayers > 1) {
@@ -1860,7 +1860,7 @@ class CombatSimUI {
                     }
                     html += `<div style="${rowStyle}">`;
                     html += `<span style="color:#888; padding-left:12px;">${name}</span>`;
-                    html += `<span style="${valueStyle}">${formatWithSeparator(Math.round(playerDps))}${this._formatDelta(playerDps, prevPlayerDps)}</span>`;
+                    html += `<span style="${valueStyle}">${formatWithSeparator(playerDps, 3)}${this._formatDelta(playerDps, prevPlayerDps, true, false, 3)}</span>`;
                     html += '</div>';
                 }
             }
@@ -2651,7 +2651,7 @@ class CombatSimUI {
             '</td>';
         html +=
             '<td style="text-align:right; padding:2px 4px; color:#e0e0e0;">' +
-            (baseM ? formatWithSeparator(Math.round(baseM.dps)) : '—') +
+            (baseM ? formatWithSeparator(baseM.dps, 3) : '—') +
             '</td>';
         html +=
             '<td style="text-align:right; padding:2px 4px; color:' +
@@ -2682,7 +2682,7 @@ class CombatSimUI {
             const profitColor = m?.profitPerHr >= 0 ? '#7ec87e' : '#ff6b6b';
 
             const ephDelta = baseM && m ? this._formatDelta(m.encountersPerHr, baseM.encountersPerHr, true) : '';
-            const dpsDelta = baseM && m ? this._formatDelta(m.dps, baseM.dps, true) : '';
+            const dpsDelta = baseM && m ? this._formatDelta(m.dps, baseM.dps, true, false, 3) : '';
             const profitDelta = baseM && m ? this._formatDelta(m.profitPerHr, baseM.profitPerHr, true, true) : '';
             const xpDelta = baseM && m ? this._formatDelta(m.totalXpPerHr, baseM.totalXpPerHr, true) : '';
 
@@ -2700,7 +2700,7 @@ class CombatSimUI {
                 '</td>';
             html +=
                 '<td style="text-align:right; padding:2px 4px; color:#e0e0e0;">' +
-                (m ? formatWithSeparator(Math.round(m.dps)) : '—') +
+                (m ? formatWithSeparator(m.dps, 3) : '—') +
                 dpsDelta +
                 '</td>';
             html +=
@@ -2770,14 +2770,15 @@ class CombatSimUI {
      * @returns {string} HTML span or empty string
      * @private
      */
-    _formatDelta(current, previous, higherIsBetter = true, useKMB = false) {
+    _formatDelta(current, previous, higherIsBetter = true, useKMB = false, decimals = 0) {
         if (previous === null || previous === undefined) return '';
         const delta = current - previous;
-        if (Math.abs(delta) < 0.5) return '';
+        if (Math.abs(delta) < 0.5 / 10 ** decimals) return '';
         const isPositive = higherIsBetter ? delta > 0 : delta < 0;
         const color = isPositive ? '#7ec87e' : '#ff6b6b';
         const sign = delta > 0 ? '+' : '';
-        const formatted = useKMB ? formatKMB(Math.round(delta)) : formatWithSeparator(Math.round(delta));
+        const roundedDelta = Math.round(delta * 10 ** decimals) / 10 ** decimals;
+        const formatted = useKMB ? formatKMB(roundedDelta) : formatWithSeparator(roundedDelta, decimals || undefined);
         return ` <span style="color:${color}; font-size:11px;">(${sign}${formatted})</span>`;
     }
 

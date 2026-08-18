@@ -107,13 +107,17 @@ export function timeReadable(sec) {
 /**
  * Format a number with thousand separators based on locale
  * @param {number} num - The number to format
+ * @param {number} [decimals] - Fixed number of decimal places (omit for locale default, integers)
  * @returns {string} Formatted number with separators
  *
  * @example
  * formatWithSeparator(1000000) // "1,000,000" (US locale)
+ * formatWithSeparator(1234.5, 3) // "1,234.500" (US locale)
  */
-export function formatWithSeparator(num) {
-    return new Intl.NumberFormat().format(num);
+export function formatWithSeparator(num, decimals) {
+    const options =
+        decimals !== undefined ? { minimumFractionDigits: decimals, maximumFractionDigits: decimals } : undefined;
+    return new Intl.NumberFormat(undefined, options).format(num);
 }
 
 /**
