@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.90.1
+ * Version: 2.90.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -20167,6 +20167,10 @@
                     if (Math.abs(val) < 0.5) return '—';
                     return (val >= 0 ? '+' : '') + formatters_js.formatKMB(val);
                 };
+                const fmtDpsDelta = (val) => {
+                    if (Math.abs(val) < 0.0005) return '—';
+                    return (val >= 0 ? '+' : '') + formatters_js.formatWithSeparator(val, 3);
+                };
                 const fmtDeltaSmall = (val) => {
                     if (Math.abs(val) < 0.01) return '—';
                     return (val >= 0 ? '+' : '') + val.toFixed(1);
@@ -20180,8 +20184,8 @@
                     <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:8px; font-size:11px;">
                         <div>
                             <div style="color:#888;">DPS</div>
-                            <div style="color:#e0e0e0;">${formatters_js.formatKMB(r.metrics.dps)}</div>
-                            <div style="color:${deltaColor(dpsValueDelta)};">${fmtDelta(dpsValueDelta)} (${r.deltas.dps >= 0 ? '+' : ''}${r.deltas.dps.toFixed(2)}%)</div>
+                            <div style="color:#e0e0e0;">${formatters_js.formatWithSeparator(r.metrics.dps, 3)}</div>
+                            <div style="color:${deltaColor(dpsValueDelta)};">${fmtDpsDelta(dpsValueDelta)} (${r.deltas.dps >= 0 ? '+' : ''}${r.deltas.dps.toFixed(2)}%)</div>
                         </div>
                         <div>
                             <div style="color:#888;">EXP/hr</div>
@@ -20205,7 +20209,7 @@
                         </div>
                     </div>
                     <div style="margin-top:6px; color:#666; font-size:10px;">
-                        Baseline: DPS ${formatters_js.formatKMB(results.baseline.dps)} | EXP ${formatters_js.formatKMB(results.baseline.xpPerHour)} | Profit ${formatters_js.formatKMB(results.baseline.profitPerHour)} | EPH ${results.baseline.encountersPerHour.toFixed(1)} | DPH ${results.baseline.deathsPerHour.toFixed(1)}
+                        Baseline: DPS ${formatters_js.formatWithSeparator(results.baseline.dps, 3)} | EXP ${formatters_js.formatKMB(results.baseline.xpPerHour)} | Profit ${formatters_js.formatKMB(results.baseline.profitPerHour)} | EPH ${results.baseline.encountersPerHour.toFixed(1)} | DPH ${results.baseline.deathsPerHour.toFixed(1)}
                     </div>
                 </td>
             </tr>`;
