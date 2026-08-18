@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.90.2](https://github.com/Celasha/Toolasha/compare/v2.90.1...v2.90.2) (2026-08-18)
+
+### Bug Fixes
+
+- show DPS to 3 decimal places in Upgrade Advisor detail rows ([2cb527b](https://github.com/Celasha/Toolasha/commit/2cb527b653b90abf079d1d2327abd86d5056139c))
+
 ## [2.90.1](https://github.com/Celasha/Toolasha/compare/v2.90.0...v2.90.1) (2026-08-18)
 
 ### Bug Fixes
