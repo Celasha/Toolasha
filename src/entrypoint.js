@@ -366,6 +366,13 @@ function registerFeatures() {
         { key: 'zoneIndices', name: 'Zone Indices', category: 'Combat', module: Combat.zoneIndices, async: false },
         { key: 'combatScore', name: 'Combat Score', category: 'Profile', module: Combat.combatScore, async: false },
         {
+            key: 'eliteAchievementReminder',
+            name: 'Elite Achievement Reminder',
+            category: 'Profile',
+            module: Combat.eliteAchievementReminder,
+            async: false,
+        },
+        {
             key: 'characterCardButton',
             name: 'Character Card Button',
             category: 'Profile',

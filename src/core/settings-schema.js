@@ -1557,6 +1557,20 @@ export const settingsGroups = {
                 default: true,
                 help: 'Adds button to open character sheet in external viewer',
             },
+            eliteAchievementReminder: {
+                id: 'eliteAchievementReminder',
+                label: 'Profile panel: Show Elite achievement reminder icon',
+                type: 'checkbox',
+                default: true,
+                help: "Shows a ✉️ icon next to a player's name if they haven't completed Elite achievements; click to pre-fill a whisper.",
+            },
+            eliteAchievementReminderMessage: {
+                id: 'eliteAchievementReminderMessage',
+                label: 'Elite achievement reminder: whisper message',
+                type: 'text',
+                default: 'Be Elite. Do your Elite achievements.',
+                help: 'Message pre-filled into chat when the Elite achievement reminder icon is clicked.',
+            },
             dungeonTracker: {
                 id: 'dungeonTracker',
                 label: 'Dungeon Tracker: Real-time progress tracking',
