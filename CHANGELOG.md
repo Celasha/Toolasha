@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.90.3](https://github.com/Celasha/Toolasha/compare/v2.90.2...v2.90.3) (2026-08-19)
+
+### Bug Fixes
+
+- correct misleading "on return" wording for Combat Summary setting ([871b249](https://github.com/Celasha/Toolasha/commit/871b249e1d7c84f0e2995ccaf1aecbdf31e139e5))
+- don't drop equipped items lacking a count when resolving highest-owned enhancement level ([b29a78c](https://github.com/Celasha/Toolasha/commit/b29a78ce47ec483db55365f618da64d8d159a25b))
+- refresh queue-aware production panel displays on actions_updated ([#654](https://github.com/Celasha/Toolasha/issues/654)) ([3cd9c2c](https://github.com/Celasha/Toolasha/commit/3cd9c2cb06bae188ea6496d3699775d9f5819a3d))
+- replace per-item Refresh with a Next/Back cycling flow across My Listings ([a48dff1](https://github.com/Celasha/Toolasha/commit/a48dff19c10cff010752b5cb1b632744ae7fc065))
+
 ## [2.90.2](https://github.com/Celasha/Toolasha/compare/v2.90.1...v2.90.2) (2026-08-18)
 
 ### Bug Fixes
