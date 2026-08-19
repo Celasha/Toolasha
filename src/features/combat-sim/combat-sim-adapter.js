@@ -787,7 +787,7 @@ export function applyLoadoutSnapshotToDTO(dto, snapshotName, gameData) {
     const characterData = dataManager.characterData;
     const maxEnhancementByItem = new Map();
     for (const item of characterData?.characterItems || []) {
-        if (!item?.itemHrid || !(item.count > 0)) continue;
+        if (!item?.itemHrid || item.count === 0) continue;
         const level = item.enhancementLevel || 0;
         const existing = maxEnhancementByItem.get(item.itemHrid);
         if (existing === undefined || level > existing) {
