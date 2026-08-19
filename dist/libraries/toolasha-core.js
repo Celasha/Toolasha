@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.90.2
+ * Version: 2.90.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1702,10 +1702,12 @@
                 },
                 market_listingRefreshNavigator: {
                     id: 'market_listingRefreshNavigator',
-                    label: 'Market: Show Refresh Next button on My Listings',
+                    label: 'Market: Show Refresh/Next buttons for cycling My Listings',
                     type: 'checkbox',
                     default: true,
-                    help: 'Adds a "Refresh Next" button next to the Market History tab that cycles through your listings, navigating to each item\'s order book one at a time',
+                    help:
+                        'Adds a "Refresh" button on My Listings that opens your first listing\'s order book, then a ' +
+                        '"Next" button on each listing\'s page to move to the next one, ending in "Back to My Listings"',
                 },
                 market_tradeHistory: {
                     id: 'market_tradeHistory',
@@ -2174,6 +2176,20 @@
                     default: true,
                     help: 'Adds button to open character sheet in external viewer',
                 },
+                eliteAchievementReminder: {
+                    id: 'eliteAchievementReminder',
+                    label: 'Profile panel: Show Elite achievement reminder icon',
+                    type: 'checkbox',
+                    default: true,
+                    help: "Shows a ✉️ icon next to a player's name if they haven't completed Elite achievements; click to pre-fill a whisper.",
+                },
+                eliteAchievementReminderMessage: {
+                    id: 'eliteAchievementReminderMessage',
+                    label: 'Elite achievement reminder: whisper message',
+                    type: 'text',
+                    default: 'Be Elite. Do your Elite achievements.',
+                    help: 'Message pre-filled into chat when the Elite achievement reminder icon is clicked.',
+                },
                 dungeonTracker: {
                     id: 'dungeonTracker',
                     label: 'Dungeon Tracker: Real-time progress tracking',
@@ -2252,10 +2268,12 @@
                 },
                 combatSummary: {
                     id: 'combatSummary',
-                    label: 'Combat Summary: Show detailed statistics on return',
+                    label: 'Combat Summary: Add rate stats to Battle Info panel',
                     type: 'checkbox',
                     default: true,
-                    help: 'Displays encounters/hour, revenue, experience rates when returning from combat',
+                    help:
+                        'Adds encounters/hour, revenue, and experience rates to the Battle Info panel for the ' +
+                        'currently-viewed unit',
                 },
                 combatSim: {
                     id: 'combatSim',
@@ -5556,7 +5574,7 @@
                     enabled: true,
                     name: 'Listing Refresh Navigator',
                     category: 'Market',
-                    description: 'Cycles through My Listings navigating to each order book one at a time',
+                    description: 'Refresh on My Listings, then Next/Back to My Listings on each order-book page',
                     settingKey: 'market_listingRefreshNavigator',
                 },
                 market_showPhiloCalculator: {

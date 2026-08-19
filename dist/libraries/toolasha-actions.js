@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.90.2
+ * Version: 2.90.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -14155,6 +14155,7 @@
             this.initialized = false;
             this.observers = [];
             this.processedPanels = new WeakSet();
+            this.actionsUpdatedHandler = null;
         }
 
         initialize() {
@@ -14167,6 +14168,13 @@
                 () => this.processActionPanels()
             );
             this.observers.push(unregister);
+
+            // Refresh the queue-aware Q'd/Missing text when the finite action queue changes
+            // (add/remove), since the calculation reads dataManager.getCurrentActions() but nothing
+            // else invalidates an already-rendered panel.
+            this.actionsUpdatedHandler = () =>
+                actionPanelHelper_js.refreshActionPanels((panel, value) => this.updateRequiredMaterials(panel, value));
+            dataManager.on('actions_updated', this.actionsUpdatedHandler);
 
             // Process existing panels
             this.processActionPanels();
@@ -14379,6 +14387,11 @@
             this.observers.forEach((unregister) => unregister());
             this.observers = [];
             this.processedPanels = new WeakSet();
+
+            if (this.actionsUpdatedHandler) {
+                dataManager.off('actions_updated', this.actionsUpdatedHandler);
+                this.actionsUpdatedHandler = null;
+            }
 
             document.querySelectorAll('.mwi-required-materials').forEach((el) => el.remove());
 
@@ -15293,6 +15306,7 @@
     let activeWorkflowModel$1 = null;
     let actionsSessionId = null;
     let enhancingReturnGeneration = 0;
+    let actionsUpdatedHandler$1 = null;
     const timerRegistry = timerRegistry_js.createTimerRegistry();
     const autofillManager$1 = createAutofillManager('MissingMats-Actions');
 
@@ -15332,6 +15346,15 @@
             (panel) => processEnhancingPanel(panel)
         );
 
+        // Refresh the queue-aware button state when the finite action queue changes (add/remove),
+        // since the calculation reads dataManager.getCurrentActions() but nothing else invalidates
+        // an already-rendered panel.
+        if (actionsUpdatedHandler$1) {
+            dataManager.off('actions_updated', actionsUpdatedHandler$1);
+        }
+        actionsUpdatedHandler$1 = () => actionPanelHelper_js.refreshActionPanels((panel, value) => updateButtonForPanel(panel, value));
+        dataManager.on('actions_updated', actionsUpdatedHandler$1);
+
         // Process existing panels
         processActionPanels$1();
         processExistingEnhancingPanels();
@@ -15357,6 +15380,11 @@
         if (enhancementDomObserverUnregister) {
             enhancementDomObserverUnregister();
             enhancementDomObserverUnregister = null;
+        }
+
+        if (actionsUpdatedHandler$1) {
+            dataManager.off('actions_updated', actionsUpdatedHandler$1);
+            actionsUpdatedHandler$1 = null;
         }
 
         // Disconnect marketplace cleanup observer
@@ -17773,11 +17801,22 @@
 
     let domObserverUnregister = null;
     let processedPanels = new WeakSet();
+    let actionsUpdatedHandler = null;
 
     function initialize() {
         domObserverUnregister = domObserver.onClass('CostSummary-ActionPanel', 'SkillActionDetail_skillActionDetail', () =>
             processActionPanels()
         );
+
+        // Refresh Missing direct mats when the finite action queue changes (add/remove), since the
+        // calculation reads dataManager.getCurrentActions() but nothing else invalidates an
+        // already-rendered panel.
+        if (actionsUpdatedHandler) {
+            dataManager.off('actions_updated', actionsUpdatedHandler);
+        }
+        actionsUpdatedHandler = () => actionPanelHelper_js.refreshActionPanels((panel, value) => updatePanel(panel, value));
+        dataManager.on('actions_updated', actionsUpdatedHandler);
+
         processActionPanels();
     }
 
@@ -17785,6 +17824,10 @@
         if (domObserverUnregister) {
             domObserverUnregister();
             domObserverUnregister = null;
+        }
+        if (actionsUpdatedHandler) {
+            dataManager.off('actions_updated', actionsUpdatedHandler);
+            actionsUpdatedHandler = null;
         }
         document.querySelectorAll(`#${UI_ID$1}`).forEach((el) => el.remove());
         processedPanels = new WeakSet();

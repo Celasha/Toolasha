@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.90.2
+ * Version: 2.90.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -15992,10 +15992,31 @@ self.onmessage = function (e) {
     }
 
     /**
+     * Navigate back to the native "My Listings" tab from a specific listing's order-book page.
+     * @returns {boolean} True when the tab was found and clicked.
+     */
+    function navigateToMyListings() {
+        const tabContainer = getVisibleMarketplaceTabContainer();
+        if (!tabContainer) return false;
+
+        const tab = Array.from(tabContainer.children).find((el) => {
+            if (el.getAttribute('role') !== 'tab') return false;
+            if (el.hasAttribute('data-mwi-custom-tab') || el.hasAttribute('data-mwi-shrine-tab')) return false;
+            return el.textContent.includes('My Listings');
+        });
+
+        if (!tab) return false;
+        tab.click();
+        return true;
+    }
+
+    /**
      * Listing Refresh Navigator
      *
-     * Adds a "Refresh Next" button next to "Upgrade Capacity" on the My Listings page.
-     * Each click navigates to the next listing's order book, cycling through all listings.
+     * Adds a "Refresh" button next to "Upgrade Capacity" on the My Listings page that starts a
+     * cycling session through all listings. From there, listing-next-navigator.js exposes a
+     * "Next"/"Back to My Listings" button on each listing's order-book page, so the rest of the
+     * cycle never needs to come back through this table — opening a listing already refreshes it.
      *
      * Depends on listing-price-display.js stamping row.dataset.itemHrid / listingId.
      */
@@ -16003,14 +16024,14 @@ self.onmessage = function (e) {
 
     const LISTING_COUNT_SEL = '[class*="MarketplacePanel_listingCount"]';
     const TABLE_SEL = '[class*="MarketplacePanel_myListingsTable"]';
-    const BTN_CLASS = 'Button_button__1Fe9z Button_small__3fqC7';
+    const BTN_CLASS$1 = 'Button_button__1Fe9z Button_small__3fqC7';
 
     class ListingRefreshNavigator {
         constructor() {
             this.isInitialized = false;
-            this.lastListingId = null;
             this.watcher = null;
             this.refreshBtn = null;
+            this.session = null; // { items: [{itemHrid, enhancementLevel, listingId}], currentIndex }
         }
 
         initialize() {
@@ -16040,9 +16061,9 @@ self.onmessage = function (e) {
 
                 const btn = document.createElement('button');
                 btn.type = 'button';
-                btn.className = BTN_CLASS;
-                btn.textContent = 'Refresh Next';
-                btn.addEventListener('click', () => this._refreshNext());
+                btn.className = BTN_CLASS$1;
+                btn.textContent = 'Refresh';
+                btn.addEventListener('click', () => this._startSession());
 
                 const upgradeBtn = Array.from(countContainer.querySelectorAll('button')).find((b) =>
                     b.textContent.includes('Upgrade Capacity')
@@ -16067,34 +16088,64 @@ self.onmessage = function (e) {
             ensureButton();
         }
 
-        _refreshNext() {
+        _startSession() {
             const table = document.querySelector(TABLE_SEL);
             if (!table) return;
 
             const rows = Array.from(table.querySelectorAll('tbody tr'));
             if (rows.length === 0) return;
 
+            const items = rows.map((row) => ({
+                itemHrid: row.dataset.itemHrid,
+                enhancementLevel: parseInt(row.dataset.enhancementLevel || '0', 10),
+                listingId: row.dataset.listingId || null,
+            }));
+
             let startIndex = 0;
-            if (this.lastListingId !== null) {
-                const lastIdx = rows.findIndex((row) => row.dataset.listingId === this.lastListingId);
-                if (lastIdx !== -1) {
-                    startIndex = (lastIdx + 1) % rows.length;
-                }
+            const lastListingId = this.session?.items[this.session.currentIndex]?.listingId;
+            if (lastListingId != null) {
+                const lastIdx = items.findIndex((item) => item.listingId === lastListingId);
+                if (lastIdx !== -1) startIndex = (lastIdx + 1) % items.length;
             }
 
-            const row = rows[startIndex];
-            const itemHrid = row.dataset.itemHrid;
-            const enhancementLevel = parseInt(row.dataset.enhancementLevel || '0', 10);
+            this.session = { items, currentIndex: startIndex };
+            this._navigateToCurrent();
+        }
 
-            if (!itemHrid) return;
+        _navigateToCurrent() {
+            const item = this.session?.items[this.session.currentIndex];
+            if (!item?.itemHrid) return;
+            navigateToMarketplace(item.itemHrid, item.enhancementLevel);
+        }
 
-            this.lastListingId = row.dataset.listingId || null;
+        /**
+         * @returns {{current: {itemHrid: string, enhancementLevel: number, listingId: string|null},
+         *   index: number, total: number, isLast: boolean}|null} Null when no session is active.
+         */
+        getSessionProgress() {
+            if (!this.session) return null;
+            const { items, currentIndex } = this.session;
+            return {
+                current: items[currentIndex],
+                index: currentIndex,
+                total: items.length,
+                isLast: currentIndex >= items.length - 1,
+            };
+        }
 
-            if (this.refreshBtn) {
-                this.refreshBtn.textContent = `Refresh Next (${startIndex + 1}/${rows.length})`;
-            }
+        /**
+         * Advance the active session to the next listing and navigate to it.
+         * @returns {boolean} True when advanced; false when there is no session or already at the end.
+         */
+        advanceSession() {
+            if (!this.session || this.session.currentIndex >= this.session.items.length - 1) return false;
+            this.session.currentIndex += 1;
+            this._navigateToCurrent();
+            return true;
+        }
 
-            navigateToMarketplace(itemHrid, enhancementLevel);
+        endSession() {
+            this.session = null;
         }
 
         cleanup() {
@@ -16106,12 +16157,162 @@ self.onmessage = function (e) {
                 this.refreshBtn.remove();
                 this.refreshBtn = null;
             }
-            this.lastListingId = null;
+            this.session = null;
             this.isInitialized = false;
         }
     }
 
     const listingRefreshNavigator = new ListingRefreshNavigator();
+
+    /**
+     * Listing Next Navigator
+     *
+     * On a listing's order-book page opened via listing-refresh-navigator's "Refresh" session,
+     * replaces the native "Refresh" button with a "Next"/"Back to My Listings" button so a user can
+     * cycle through every listing without returning to the My Listings table between each one.
+     * Opening a listing's page already re-fetches its order book, so the native per-item Refresh
+     * button is redundant while a session is active — it's only hidden while the currently-open
+     * item matches the session's current listing, and restored otherwise.
+     */
+
+
+    const CONTAINER_SEL = '[class*="MarketplacePanel_marketNavButtonContainer"]';
+    const CURRENT_ITEM_SEL = '[class*="MarketplacePanel_currentItem"]';
+    const BTN_CLASS = 'Button_button__1Fe9z Button_small__3fqC7';
+    const NEXT_BTN_ID = 'mwi-listing-next-btn';
+
+    class ListingNextNavigator {
+        constructor() {
+            this.isInitialized = false;
+            this.watcher = null;
+            this.nextBtn = null;
+            this.nativeRefreshBtn = null;
+        }
+
+        initialize() {
+            if (this.isInitialized) return;
+            if (!config.getSetting('market_listingRefreshNavigator')) return;
+            this.isInitialized = true;
+            this._watch();
+        }
+
+        _watch() {
+            const update = () => this._update();
+
+            if (!this.watcher) {
+                this.watcher = domObserverHelpers_js.createMutationWatcher(document.body, update, {
+                    childList: true,
+                    subtree: true,
+                });
+            }
+
+            update();
+        }
+
+        /**
+         * @returns {{itemHrid: string, enhancementLevel: number}|null} Item currently open in the
+         *   order-book panel, read from the DOM (same approach as market-depth-cap.js).
+         */
+        _getCurrentItem() {
+            const currentItemEl = document.querySelector(CURRENT_ITEM_SEL);
+            const useElement = currentItemEl?.querySelector('use');
+            const href = useElement?.href?.baseVal;
+            const itemHrid = href ? '/items/' + href.split('#')[1] : null;
+            if (!itemHrid) return null;
+
+            const enhancementEl = currentItemEl.querySelector('[class*="Item_enhancementLevel"]');
+            const match = enhancementEl?.textContent.match(/\+(\d+)/);
+            const enhancementLevel = match ? parseInt(match[1], 10) : 0;
+
+            return { itemHrid, enhancementLevel };
+        }
+
+        _restore() {
+            if (this.nativeRefreshBtn) {
+                this.nativeRefreshBtn.style.display = '';
+                this.nativeRefreshBtn = null;
+            }
+            if (this.nextBtn && document.body.contains(this.nextBtn)) {
+                this.nextBtn.remove();
+            }
+            this.nextBtn = null;
+        }
+
+        _update() {
+            const progress = listingRefreshNavigator.getSessionProgress();
+            const container = document.querySelector(CONTAINER_SEL);
+
+            if (!progress || !container) {
+                this._restore();
+                return;
+            }
+
+            const currentItem = this._getCurrentItem();
+            const matches =
+                currentItem &&
+                currentItem.itemHrid === progress.current.itemHrid &&
+                currentItem.enhancementLevel === progress.current.enhancementLevel;
+
+            if (!matches) {
+                this._restore();
+                return;
+            }
+
+            if (this.nextBtn && !document.body.contains(this.nextBtn)) {
+                this.nextBtn = null;
+            }
+            if (this.nativeRefreshBtn && !document.body.contains(this.nativeRefreshBtn)) {
+                this.nativeRefreshBtn = null;
+            }
+
+            if (!this.nativeRefreshBtn) {
+                const found = Array.from(container.querySelectorAll('button')).find(
+                    (b) => b.id !== NEXT_BTN_ID && b.textContent.trim() === 'Refresh'
+                );
+                if (found) {
+                    found.style.display = 'none';
+                    this.nativeRefreshBtn = found;
+                }
+            }
+
+            if (!this.nextBtn) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.id = NEXT_BTN_ID;
+                btn.className = BTN_CLASS;
+                btn.addEventListener('click', () => this._handleClick());
+                container.appendChild(btn);
+                this.nextBtn = btn;
+            }
+
+            const label = progress.isLast ? 'Back to My Listings' : `Next (${progress.index + 1}/${progress.total})`;
+            this.nextBtn.textContent = label;
+        }
+
+        _handleClick() {
+            const progress = listingRefreshNavigator.getSessionProgress();
+            if (!progress) return;
+
+            if (progress.isLast) {
+                listingRefreshNavigator.endSession();
+                this._restore();
+                navigateToMyListings();
+            } else {
+                listingRefreshNavigator.advanceSession();
+            }
+        }
+
+        cleanup() {
+            if (this.watcher) {
+                this.watcher();
+                this.watcher = null;
+            }
+            this._restore();
+            this.isInitialized = false;
+        }
+    }
+
+    const listingNextNavigator = new ListingNextNavigator();
 
     /**
      * Philosopher's Stone Transmutation Calculator
@@ -31345,6 +31546,7 @@ self.onmessage = function (e) {
         marketOrderTotals,
         marketHistoryViewer,
         listingRefreshNavigator,
+        listingNextNavigator,
         philoCalculator,
         tradeHistory,
         tradeHistoryDisplay,

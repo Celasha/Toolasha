@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.90.2
+ * Version: 2.90.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6142,11 +6142,28 @@ self.onmessage = function (e) {
         return false;
     }
 
+    /**
+     * Re-run updateCallback for every currently-mounted action panel using its existing input
+     * value. For data events (e.g. dataManager's 'actions_updated') that invalidate a panel's
+     * queue-aware calculation without the input itself changing, so the visible display doesn't
+     * wait for an incidental click/edit/remount to catch up.
+     * @param {Function} updateCallback - (panel, value) => void, same shape passed to attachInputListeners
+     */
+    function refreshActionPanels(updateCallback) {
+        const panels = document.querySelectorAll('[class*="SkillActionDetail_skillActionDetail"]');
+        panels.forEach((panel) => {
+            const inputField = findActionInput(panel);
+            if (!inputField) return;
+            updateCallback(panel, inputField.value);
+        });
+    }
+
     var actionPanelHelper = /*#__PURE__*/Object.freeze({
         __proto__: null,
         attachInputListeners: attachInputListeners,
         findActionInput: findActionInput,
-        performInitialUpdate: performInitialUpdate
+        performInitialUpdate: performInitialUpdate,
+        refreshActionPanels: refreshActionPanels
     });
 
     /**

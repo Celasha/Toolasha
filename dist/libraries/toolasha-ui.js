@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.90.2
+ * Version: 2.90.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7748,7 +7748,7 @@ ${starCSS}
         const characterData = dataManager.characterData;
         const maxEnhancementByItem = new Map();
         for (const item of characterData?.characterItems || []) {
-            if (!item?.itemHrid || !(item.count > 0)) continue;
+            if (!item?.itemHrid || item.count === 0) continue;
             const level = item.enhancementLevel || 0;
             const existing = maxEnhancementByItem.get(item.itemHrid);
             if (existing === undefined || level > existing) {
