@@ -21,6 +21,7 @@ import marketDepthCap from '../features/market/market-depth-cap.js';
 import marketOrderTotals from '../features/market/market-order-totals.js';
 import marketHistoryViewer from '../features/market/market-history-viewer.js';
 import listingRefreshNavigator from '../features/market/listing-refresh-navigator.js';
+import listingNextNavigator from '../features/market/listing-next-navigator.js';
 import philoCalculator from '../features/market/philo-calculator.js';
 import tradeHistory from '../features/market/trade-history.js';
 import tradeHistoryDisplay from '../features/market/trade-history-display.js';
@@ -67,6 +68,7 @@ toolashaRoot.Market = {
     marketOrderTotals,
     marketHistoryViewer,
     listingRefreshNavigator,
+    listingNextNavigator,
     philoCalculator,
     tradeHistory,
     tradeHistoryDisplay,

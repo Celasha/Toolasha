@@ -153,7 +153,7 @@ class Config {
                 enabled: true,
                 name: 'Listing Refresh Navigator',
                 category: 'Market',
-                description: 'Cycles through My Listings navigating to each order book one at a time',
+                description: 'Refresh on My Listings, then Next/Back to My Listings on each order-book page',
                 settingKey: 'market_listingRefreshNavigator',
             },
             market_showPhiloCalculator: {
