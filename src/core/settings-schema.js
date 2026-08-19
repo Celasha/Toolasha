@@ -1261,6 +1261,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'When enabled, uses crafting cost instead of market price for upgrade items if cheaper, and factors crafting time into profit/hr calculations.',
             },
+            offlineProgressEconomics: {
+                id: 'offlineProgressEconomics',
+                label: 'Offline Progress: Show Revenue/Cost/Profit summary',
+                type: 'checkbox',
+                default: true,
+                help: 'Adds a Revenue/Cost/Profit summary (with per-day projections) to the native Welcome Back modal, using your Pricing & Profit settings.',
+            },
         },
     },
 

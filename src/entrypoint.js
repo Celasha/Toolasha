@@ -179,6 +179,13 @@ function registerFeatures() {
         },
         { key: 'networth', name: 'Net Worth', category: 'Economy', module: Market.networthFeature, async: false },
         {
+            key: 'offlineProgressEconomics',
+            name: 'Offline Progress Economics',
+            category: 'Economy',
+            module: Market.offlineProgressEconomics,
+            async: false,
+        },
+        {
             key: 'inventoryBadgeManager',
             name: 'Inventory Badge Manager',
             category: 'Inventory',
