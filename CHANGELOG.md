@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.91.0](https://github.com/Celasha/Toolasha/compare/v2.90.3...v2.91.0) (2026-08-19)
+
+
+### Features
+
+* add Elite achievement reminder icon on player profiles ([7b32924](https://github.com/Celasha/Toolasha/commit/7b32924abab34591f643cb4812040c4e02a3af4e))
+
 ## [2.90.3](https://github.com/Celasha/Toolasha/compare/v2.90.2...v2.90.3) (2026-08-19)
 
 ### Bug Fixes
