@@ -2,15 +2,13 @@
 
 ## [2.92.0](https://github.com/Celasha/Toolasha/compare/v2.91.0...v2.92.0) (2026-08-19)
 
-
 ### Features
 
-* add offline progress economics ([3983d74](https://github.com/Celasha/Toolasha/commit/3983d74e2279c971da43bdea0f5d2507da9ef201))
-
+- add offline progress economics ([3983d74](https://github.com/Celasha/Toolasha/commit/3983d74e2279c971da43bdea0f5d2507da9ef201))
 
 ### Bug Fixes
 
-* fix late-subscription miss and layout in Offline Economics ([3c04271](https://github.com/Celasha/Toolasha/commit/3c042715e138edf2e716ebc4e2a0c3c8d9de6219))
+- fix late-subscription miss and layout in Offline Economics ([3c04271](https://github.com/Celasha/Toolasha/commit/3c042715e138edf2e716ebc4e2a0c3c8d9de6219))
 
 ## [2.91.0](https://github.com/Celasha/Toolasha/compare/v2.90.3...v2.91.0) (2026-08-19)
 
