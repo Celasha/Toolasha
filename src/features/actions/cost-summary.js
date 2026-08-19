@@ -8,7 +8,12 @@
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
-import { findActionInput, attachInputListeners, performInitialUpdate } from '../../utils/action-panel-helper.js';
+import {
+    findActionInput,
+    attachInputListeners,
+    performInitialUpdate,
+    refreshActionPanels,
+} from '../../utils/action-panel-helper.js';
 import { calculateMaterialRequirements } from '../../utils/material-calculator.js';
 import { getItemPrice, formatPrice } from '../../utils/market-data.js';
 import { computeBestCraftingPlan } from '../../features/crafting-plan/crafting-plan-calculator.js';
@@ -27,11 +32,22 @@ const PRODUCTION_TYPES = [
 
 let domObserverUnregister = null;
 let processedPanels = new WeakSet();
+let actionsUpdatedHandler = null;
 
 export function initialize() {
     domObserverUnregister = domObserver.onClass('CostSummary-ActionPanel', 'SkillActionDetail_skillActionDetail', () =>
         processActionPanels()
     );
+
+    // Refresh Missing direct mats when the finite action queue changes (add/remove), since the
+    // calculation reads dataManager.getCurrentActions() but nothing else invalidates an
+    // already-rendered panel.
+    if (actionsUpdatedHandler) {
+        dataManager.off('actions_updated', actionsUpdatedHandler);
+    }
+    actionsUpdatedHandler = () => refreshActionPanels((panel, value) => updatePanel(panel, value));
+    dataManager.on('actions_updated', actionsUpdatedHandler);
+
     processActionPanels();
 }
 
@@ -39,6 +55,10 @@ export function cleanup() {
     if (domObserverUnregister) {
         domObserverUnregister();
         domObserverUnregister = null;
+    }
+    if (actionsUpdatedHandler) {
+        dataManager.off('actions_updated', actionsUpdatedHandler);
+        actionsUpdatedHandler = null;
     }
     document.querySelectorAll(`#${UI_ID}`).forEach((el) => el.remove());
     processedPanels = new WeakSet();

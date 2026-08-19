@@ -7,7 +7,12 @@ import dataManager from '../../core/data-manager.js';
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import { marketplaceSession, MARKETPLACE_OWNER } from '../../core/marketplace-session.js';
-import { findActionInput, attachInputListeners, performInitialUpdate } from '../../utils/action-panel-helper.js';
+import {
+    findActionInput,
+    attachInputListeners,
+    performInitialUpdate,
+    refreshActionPanels,
+} from '../../utils/action-panel-helper.js';
 import {
     calculateMaterialRequirements,
     calculateEnhancementMaterialRequirements,
@@ -50,6 +55,7 @@ let inventoryUpdateHandler = null;
 let activeWorkflowModel = null;
 let actionsSessionId = null;
 let enhancingReturnGeneration = 0;
+let actionsUpdatedHandler = null;
 const timerRegistry = createTimerRegistry();
 const autofillManager = createAutofillManager('MissingMats-Actions');
 
@@ -89,6 +95,15 @@ export function initialize() {
         (panel) => processEnhancingPanel(panel)
     );
 
+    // Refresh the queue-aware button state when the finite action queue changes (add/remove),
+    // since the calculation reads dataManager.getCurrentActions() but nothing else invalidates
+    // an already-rendered panel.
+    if (actionsUpdatedHandler) {
+        dataManager.off('actions_updated', actionsUpdatedHandler);
+    }
+    actionsUpdatedHandler = () => refreshActionPanels((panel, value) => updateButtonForPanel(panel, value));
+    dataManager.on('actions_updated', actionsUpdatedHandler);
+
     // Process existing panels
     processActionPanels();
     processExistingEnhancingPanels();
@@ -114,6 +129,11 @@ export function cleanup() {
     if (enhancementDomObserverUnregister) {
         enhancementDomObserverUnregister();
         enhancementDomObserverUnregister = null;
+    }
+
+    if (actionsUpdatedHandler) {
+        dataManager.off('actions_updated', actionsUpdatedHandler);
+        actionsUpdatedHandler = null;
     }
 
     // Disconnect marketplace cleanup observer

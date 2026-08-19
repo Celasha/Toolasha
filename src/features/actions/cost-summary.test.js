@@ -1,30 +1,45 @@
 // @vitest-environment jsdom
 
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-const { mockGetItemPrice, mockComputeBestCraftingPlan, mockCalculateMaterialRequirements } = vi.hoisted(() => ({
-    mockGetItemPrice: vi.fn(),
-    mockComputeBestCraftingPlan: vi.fn(),
-    mockCalculateMaterialRequirements: vi.fn(),
-}));
+const { mockGetItemPrice, mockComputeBestCraftingPlan, mockCalculateMaterialRequirements, fakeDataManager } =
+    vi.hoisted(() => {
+        const listeners = new Map();
+        return {
+            mockGetItemPrice: vi.fn(),
+            mockComputeBestCraftingPlan: vi.fn(),
+            mockCalculateMaterialRequirements: vi.fn(),
+            fakeDataManager: {
+                on: (event, handler) => {
+                    if (!listeners.has(event)) listeners.set(event, new Set());
+                    listeners.get(event).add(handler);
+                },
+                off: (event, handler) => {
+                    listeners.get(event)?.delete(handler);
+                },
+                emit: (event, data) => {
+                    for (const handler of Array.from(listeners.get(event) || [])) handler(data);
+                },
+                listenerCount: (event) => listeners.get(event)?.size || 0,
+                getInitClientData: vi.fn(() => null),
+            },
+        };
+    });
 
 vi.mock('../../core/config.js', () => ({
     default: { getSetting: vi.fn(() => true) },
 }));
 
-vi.mock('../../core/data-manager.js', () => ({
-    default: { getInitClientData: vi.fn(() => null) },
-}));
+vi.mock('../../core/data-manager.js', () => ({ default: fakeDataManager }));
 
 vi.mock('../../core/dom-observer.js', () => ({
     default: { onClass: vi.fn(() => vi.fn()) },
 }));
 
-vi.mock('../../utils/action-panel-helper.js', () => ({
-    findActionInput: vi.fn(),
-    attachInputListeners: vi.fn(),
-    performInitialUpdate: vi.fn(),
-}));
+vi.mock('../../utils/action-panel-helper.js', async () => {
+    const actual = await vi.importActual('../../utils/action-panel-helper.js');
+    return actual;
+});
 
 vi.mock('../../utils/material-calculator.js', () => ({
     calculateMaterialRequirements: mockCalculateMaterialRequirements,
@@ -40,10 +55,10 @@ vi.mock('../../features/crafting-plan/crafting-plan-calculator.js', () => ({
 }));
 
 vi.mock('../../utils/game-lookups.js', () => ({
-    getActionHridFromName: vi.fn(),
+    getActionHridFromName: vi.fn(() => '/actions/crafting/sword'),
 }));
 
-import { buildBlock, renderBlock } from './cost-summary.js';
+import costSummary, { buildBlock, renderBlock } from './cost-summary.js';
 
 function readRows(block) {
     return Array.from(block.children)
@@ -145,5 +160,73 @@ describe('cost-summary', () => {
         expect(rows[1]).toEqual(['Missing direct mats', '—']);
         expect(mockGetItemPrice).toHaveBeenCalledWith('/items/unpriced', { mode: 'ask', side: 'buy' });
         expect(mockGetItemPrice).toHaveBeenCalledWith('/items/output', { mode: 'ask', side: 'buy' });
+    });
+});
+
+function buildPanel(inputValue) {
+    document.body.innerHTML = `
+        <div class="SkillActionDetail_skillActionDetail_abc">
+            <div class="SkillActionDetail_name_xyz">Craft Sword</div>
+            <div class="maxActionCountInput_123"><input value="${inputValue}" /></div>
+        </div>
+    `;
+    return document.querySelector('.SkillActionDetail_skillActionDetail_abc');
+}
+
+describe('cost-summary — queue-change refresh', () => {
+    beforeEach(() => {
+        document.body.innerHTML = '';
+        mockGetItemPrice.mockReset();
+        mockComputeBestCraftingPlan.mockReset();
+        mockCalculateMaterialRequirements.mockReset();
+        mockGetItemPrice.mockReturnValue(5);
+        fakeDataManager.getInitClientData.mockReturnValue({
+            actionDetailMap: {
+                '/actions/crafting/sword': {
+                    type: '/action_types/crafting',
+                    inputItems: [{ itemHrid: '/items/log', count: 1 }],
+                    outputItems: [],
+                },
+            },
+        });
+    });
+
+    afterEach(() => {
+        costSummary.cleanup();
+        document.body.innerHTML = '';
+    });
+
+    test('Missing direct mats refreshes when the finite action queue changes', () => {
+        mockCalculateMaterialRequirements.mockReturnValue([
+            { itemHrid: '/items/log', required: 10, missing: 0, isTradeable: true },
+        ]);
+
+        buildPanel('5');
+        costSummary.initialize();
+
+        let rows = readRows(document.querySelector('#mwi-cost-summary'));
+        expect(rows[1]).toEqual(['Missing direct mats', '0']);
+
+        mockCalculateMaterialRequirements.mockReturnValue([
+            { itemHrid: '/items/log', required: 10, missing: 4, isTradeable: true },
+        ]);
+        fakeDataManager.emit('actions_updated', { endCharacterActions: [] });
+
+        rows = readRows(document.querySelector('#mwi-cost-summary'));
+        expect(rows[1]).toEqual(['Missing direct mats', '20']);
+    });
+
+    test('initialize -> cleanup -> initialize registers exactly one actions_updated listener', () => {
+        mockCalculateMaterialRequirements.mockReturnValue([
+            { itemHrid: '/items/log', required: 10, missing: 0, isTradeable: true },
+        ]);
+
+        buildPanel('5');
+        costSummary.initialize();
+        costSummary.cleanup();
+        buildPanel('5');
+        costSummary.initialize();
+
+        expect(fakeDataManager.listenerCount('actions_updated')).toBe(1);
     });
 });
