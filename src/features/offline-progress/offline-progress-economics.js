@@ -16,6 +16,16 @@ const UI_ID = 'mwi-offline-economics';
 const MODAL_ANCHOR_CLASS = 'OfflineProgressModal_offlineProgress';
 const MODAL_CONTENT_CLASS = 'OfflineProgressModal_modalContent';
 
+const SOURCE_LABELS = {
+    coin: 'Coin face value',
+    cowbell: 'Cowbell valuation',
+    dungeonToken: 'Dungeon Token shop value',
+    expectedValue: 'Expected Value',
+    custom: 'Custom price override',
+    market: 'Market price',
+    taskToken: 'Task Token shop value',
+};
+
 class OfflineProgressEconomics {
     constructor() {
         this.isActive = false;
@@ -60,6 +70,20 @@ class OfflineProgressEconomics {
         this.domObserverUnregister = domObserver.onClass('OfflineProgressEconomics', MODAL_CONTENT_CLASS, (node) =>
             this.processModalNode(node)
         );
+
+        // Toolasha's own feature initialization is itself triggered from inside the very first
+        // character_initialized event (see entrypoint.js), so by the time this runs, that one-time
+        // event - the one carrying the actual Welcome Back offline data - has already fired and
+        // won't fire again this session. dataManager cached the raw payload synchronously in its
+        // own early-registered handler regardless, so catch up on it directly here.
+        if (dataManager.characterData) {
+            this.handleCharacterInitialized(dataManager.characterData);
+        }
+
+        // The native modal itself renders from that same event, so for the same reason it is
+        // very likely already mounted by now - domObserver.onClass only reacts to *future*
+        // insertions, so scan for an already-present modal too.
+        document.querySelectorAll(`[class*="${MODAL_CONTENT_CLASS}"]`).forEach((node) => this.processModalNode(node));
 
         this.isActive = true;
     }
@@ -228,6 +252,10 @@ export function buildBlock(economics) {
     const container = document.createElement('div');
     container.id = UI_ID;
     container.style.cssText = `
+        align-self: stretch;
+        justify-self: stretch;
+        width: 100%;
+        box-sizing: border-box;
         margin: 8px 0;
         padding: 8px 14px;
         background: linear-gradient(180deg, rgba(91, 141, 239, 0.12) 0%, rgba(91, 141, 239, 0.05) 100%);
@@ -250,32 +278,127 @@ export function buildBlock(economics) {
     `;
     container.appendChild(header);
 
-    container.appendChild(renderRow('Revenue', economics.revenue, economics.revenuePerDay, 'sell'));
-    container.appendChild(renderRow('Cost', economics.cost, economics.costPerDay, 'buy'));
-    container.appendChild(renderRow('Profit', economics.profit, economics.profitPerDay, null));
+    container.appendChild(
+        renderRow(
+            'Revenue',
+            economics.revenue,
+            economics.revenuePerDay,
+            'sell',
+            economics.lines.filter((line) => line.side === 'sell').sort((a, b) => b.totalValue - a.totalValue),
+            economics.unvaluedItems
+                .filter((item) => item.offlineCount > 0)
+                .sort((a, b) => b.offlineCount - a.offlineCount)
+        )
+    );
+    container.appendChild(
+        renderRow(
+            'Cost',
+            economics.cost,
+            economics.costPerDay,
+            'buy',
+            economics.lines.filter((line) => line.side === 'buy').sort((a, b) => b.totalValue - a.totalValue),
+            economics.unvaluedItems
+                .filter((item) => item.offlineCount < 0)
+                .sort((a, b) => a.offlineCount - b.offlineCount)
+        )
+    );
+    container.appendChild(renderRow('Profit', economics.profit, economics.profitPerDay, null, null, null));
 
     return container;
 }
 
 /**
- * Render one Revenue/Cost/Profit row: label, total, per-day.
+ * Resolve a display name for an item, falling back to its HRID tail when game data isn't
+ * available yet.
+ * @param {string} itemHrid - Item HRID
+ * @returns {string} Display name
+ */
+function getItemDisplayName(itemHrid) {
+    const details = dataManager.getItemDetails(itemHrid);
+    return details?.name || itemHrid.split('/').pop();
+}
+
+/**
+ * Build one valued line-item detail row.
+ * @param {Object} line - A line entry from calculateOfflineEconomics's `lines`
+ * @returns {Element} Detail row element
+ */
+function buildLineDetail(line) {
+    const row = document.createElement('div');
+    row.style.cssText = `
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        margin-left: 10px;
+        font-size: 0.8rem;
+        color: ${config.COLOR_TEXT_SECONDARY};
+    `;
+
+    const name = getItemDisplayName(line.itemHrid);
+    const label = document.createElement('span');
+    label.textContent = `${line.quantity}x ${name}${line.enhancementLevel > 0 ? ` +${line.enhancementLevel}` : ''}`;
+    label.title = SOURCE_LABELS[line.source] || line.source;
+
+    const value = document.createElement('span');
+    value.textContent = formatPrice(line.totalValue, { decimals: 1 });
+    value.style.fontVariantNumeric = 'tabular-nums';
+
+    row.appendChild(label);
+    row.appendChild(value);
+    return row;
+}
+
+/**
+ * Build one unvalued-item detail row (never shown as a fake zero).
+ * @param {Object} item - An entry from calculateOfflineEconomics's `unvaluedItems`
+ * @returns {Element} Detail row element
+ */
+function buildUnvaluedDetail(item) {
+    const row = document.createElement('div');
+    row.style.cssText = `
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        margin-left: 10px;
+        font-size: 0.8rem;
+        color: ${config.COLOR_WARNING};
+    `;
+
+    const name = getItemDisplayName(item.itemHrid);
+    row.textContent = `${Math.abs(item.offlineCount)}x ${name}${
+        item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : ''
+    } - no price data`;
+
+    return row;
+}
+
+/**
+ * Render one Revenue/Cost/Profit row: label, total, per-day, and - when line items are
+ * available - a click-to-expand breakdown of the items behind that total.
  * @param {string} label - Row label
  * @param {number} value - Total value
  * @param {number|null} perDay - Per-day value, or null if the offline window was zero/invalid
  * @param {'sell'|'buy'|null} side - Which side this row values, for the per-side pricing tooltip
- * @returns {Element} Row element
+ * @param {Array|null} lines - Valued line items for this side, or null for a non-expandable row
+ * @param {Array|null} unvaluedItems - Unvalued items for this side, or null for a non-expandable row
+ * @returns {Element} Row wrapper element
  */
-function renderRow(label, value, perDay, side) {
+function renderRow(label, value, perDay, side, lines, unvaluedItems) {
+    const wrapper = document.createElement('div');
+
+    const hasDetails = (lines && lines.length > 0) || (unvaluedItems && unvaluedItems.length > 0);
+
     const row = document.createElement('div');
     row.style.cssText = `
         display: flex;
         justify-content: space-between;
         align-items: baseline;
         line-height: 1.5;
+        ${hasDetails ? 'cursor: pointer;' : ''}
     `;
 
     const labelEl = document.createElement('span');
-    labelEl.textContent = label;
+    labelEl.textContent = hasDetails ? `+ ${label}` : label;
     labelEl.style.color = '#cbd5e1';
     if (side) {
         const mode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
@@ -291,7 +414,24 @@ function renderRow(label, value, perDay, side) {
 
     row.appendChild(labelEl);
     row.appendChild(valueEl);
-    return row;
+    wrapper.appendChild(row);
+
+    if (hasDetails) {
+        const details = document.createElement('div');
+        details.className = 'mwi-offline-economics-details';
+        details.style.cssText = 'display: none; margin: 4px 0 2px;';
+        for (const line of lines) details.appendChild(buildLineDetail(line));
+        for (const item of unvaluedItems) details.appendChild(buildUnvaluedDetail(item));
+        wrapper.appendChild(details);
+
+        row.addEventListener('click', () => {
+            const isCollapsed = details.style.display === 'none';
+            details.style.display = isCollapsed ? 'block' : 'none';
+            labelEl.textContent = `${isCollapsed ? '-' : '+'} ${label}`;
+        });
+    }
+
+    return wrapper;
 }
 
 const offlineProgressEconomics = new OfflineProgressEconomics();
