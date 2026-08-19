@@ -1,6 +1,6 @@
 /**
  * Combat Summary Module
- * Shows detailed statistics when returning from combat
+ * Adds rate stats (encounters/hour, revenue, experience) to the Battle Info panel
  */
 
 import config from '../../core/config.js';

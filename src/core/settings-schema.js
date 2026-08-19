@@ -1635,10 +1635,12 @@ export const settingsGroups = {
             },
             combatSummary: {
                 id: 'combatSummary',
-                label: 'Combat Summary: Show detailed statistics on return',
+                label: 'Combat Summary: Add rate stats to Battle Info panel',
                 type: 'checkbox',
                 default: true,
-                help: 'Displays encounters/hour, revenue, experience rates when returning from combat',
+                help:
+                    'Adds encounters/hour, revenue, and experience rates to the Battle Info panel for the ' +
+                    'currently-viewed unit',
             },
             combatSim: {
                 id: 'combatSim',
