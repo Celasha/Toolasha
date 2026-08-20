@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.91.0
+ * Version: 2.92.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5089,45 +5089,105 @@ self.onmessage = function (e) {
         }
 
         /**
-         * Get price for a drop item
-         * Handles special cases (Coin, Cowbell, Dungeon Tokens, nested containers)
+         * Resolve a sell-side economic value for an item, applying the same special-case rules
+         * (Coin, Cowbell, dungeon tokens, cached container EV, ordinary market item) used for drop
+         * valuation, plus metadata describing the source and whether market tax still needs to be
+         * applied by the caller. Callers valuing an actual sale (e.g. drop valuation, offline gains)
+         * should apply `calculatePriceAfterTax` when `needsTax` is true and the item is tradeable.
          * @param {string} itemHrid - Item HRID
-         * @returns {number|null} Price or null if unavailable
+         * @param {number} [enhancementLevel=0] - Enhancement level (ignored for special currencies)
+         * @returns {{value: number, source: string, needsTax: boolean}|null} Resolved value or null
          */
-        getDropPrice(itemHrid) {
-            // Special case: Coin (face value = 1)
+        resolveSellSideValue(itemHrid, enhancementLevel = 0) {
+            // Special case: Coin (face value = 1, never taxed)
             if (itemHrid === this.COIN_HRID) {
-                return 1;
+                return { value: 1, source: 'coin', needsTax: false };
             }
 
             // Special case: Cowbell (use bag price ÷ 10, with 18% tax)
             if (itemHrid === this.COWBELL_HRID) {
                 if (!config.getSetting('expectedValue_includeCowbells')) {
-                    return 0;
+                    return { value: 0, source: 'cowbell', needsTax: false };
                 }
                 // Get Cowbell Bag price using profit context (sell side - you're selling the bag)
                 const bagValue = getItemPrice(this.COWBELL_BAG_HRID, { context: 'profit', side: 'sell' }) || 0;
 
                 if (bagValue > 0) {
                     // Apply 18% market tax (Cowbell Bag only), then divide by 10
-                    return calculatePriceAfterTax(bagValue, 0.18) / 10;
+                    return { value: calculatePriceAfterTax(bagValue, 0.18) / 10, source: 'cowbell', needsTax: false };
                 }
                 return null; // No bag price available
             }
 
             // Special case: Dungeon Tokens (calculate value from shop items)
             if (this.DUNGEON_TOKENS.includes(itemHrid)) {
-                return calculateDungeonTokenValue(itemHrid, 'profitCalc_pricingMode', 'expectedValue_respectPricingMode');
+                const value = calculateDungeonTokenValue(
+                    itemHrid,
+                    'profitCalc_pricingMode',
+                    'expectedValue_respectPricingMode'
+                );
+                return value !== null ? { value, source: 'dungeonToken', needsTax: false } : null;
             }
 
-            // Check if this is a nested container (use cached EV)
+            // Check if this is a nested container (use cached EV, already tax-adjusted per-drop)
             if (this.containerCache.has(itemHrid)) {
-                return this.containerCache.get(itemHrid);
+                return { value: this.containerCache.get(itemHrid), source: 'expectedValue', needsTax: false };
             }
 
             // Regular market item - get price based on pricing mode (sell side - you're selling drops)
-            const dropPrice = getItemPrice(itemHrid, { enhancementLevel: 0, context: 'profit', side: 'sell' });
-            return dropPrice > 0 ? dropPrice : null;
+            const dropPrice = getItemPrice(itemHrid, { enhancementLevel, context: 'profit', side: 'sell' });
+            if (!(dropPrice > 0)) return null;
+            const hasOverride = getCustomPrice(itemHrid, enhancementLevel, 'sell') !== null;
+            return { value: dropPrice, source: hasOverride ? 'custom' : 'market', needsTax: true };
+        }
+
+        /**
+         * Resolve a buy-side economic value for an item - the mirror of `resolveSellSideValue` for
+         * valuing something being consumed/lost rather than gained. Never taxed (buying, not
+         * selling). Openable containers are valued at their ordinary buy price here, not their
+         * expected value - consuming a container means losing/re-buying it, not opening it.
+         * @param {string} itemHrid - Item HRID
+         * @param {number} [enhancementLevel=0] - Enhancement level (ignored for special currencies)
+         * @returns {{value: number, source: string}|null} Resolved value or null
+         */
+        resolveBuySideValue(itemHrid, enhancementLevel = 0) {
+            if (itemHrid === this.COIN_HRID) {
+                return { value: 1, source: 'coin' };
+            }
+
+            if (itemHrid === this.COWBELL_HRID) {
+                if (!config.getSetting('expectedValue_includeCowbells')) {
+                    return { value: 0, source: 'cowbell' };
+                }
+                const bagValue = getItemPrice(this.COWBELL_BAG_HRID, { context: 'profit', side: 'buy' }) || 0;
+                return bagValue > 0 ? { value: bagValue / 10, source: 'cowbell' } : null;
+            }
+
+            if (this.DUNGEON_TOKENS.includes(itemHrid)) {
+                const value = calculateDungeonTokenValue(
+                    itemHrid,
+                    'profitCalc_pricingMode',
+                    'expectedValue_respectPricingMode'
+                );
+                return value !== null ? { value, source: 'dungeonToken' } : null;
+            }
+
+            // Ordinary market item (including a consumed openable - valued as a purchase, not an
+            // opening) - get price based on pricing mode (buy side - you're re-acquiring this)
+            const buyPrice = getItemPrice(itemHrid, { enhancementLevel, context: 'profit', side: 'buy' });
+            if (!(buyPrice > 0)) return null;
+            const hasOverride = getCustomPrice(itemHrid, enhancementLevel, 'buy') !== null;
+            return { value: buyPrice, source: hasOverride ? 'custom' : 'market' };
+        }
+
+        /**
+         * Get price for a drop item
+         * Handles special cases (Coin, Cowbell, Dungeon Tokens, nested containers)
+         * @param {string} itemHrid - Item HRID
+         * @returns {number|null} Price or null if unavailable
+         */
+        getDropPrice(itemHrid) {
+            return this.resolveSellSideValue(itemHrid)?.value ?? null;
         }
 
         /**

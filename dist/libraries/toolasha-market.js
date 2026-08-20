@@ -1,11 +1,11 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.91.0
+ * Version: 2.92.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, enhancementCalculator_js, formatters_js, marketData_js, teaParser_js, profitConstants_js, profitHelpers_js, buffParser_js, equipmentParser_js, actionCalculator_js, tokenValuation_js, enhancementConfig_js, dom, materialCalculator_js, timerRegistry_js, storage, cleanupRegistry_js, webSocketHook, domObserverHelpers_js, enhancementMultipliers_js, marketplaceSession_js, reactInput_js, abilityCostCalculator_js, houseCostCalculator_js) {
+(function (config, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, enhancementCalculator_js, formatters_js, marketData_js, teaParser_js, profitConstants_js, profitHelpers_js, buffParser_js, equipmentParser_js, actionCalculator_js, tokenValuation_js, storage, enhancementConfig_js, dom, materialCalculator_js, timerRegistry_js, cleanupRegistry_js, webSocketHook, domObserverHelpers_js, enhancementMultipliers_js, marketplaceSession_js, reactInput_js, abilityCostCalculator_js, houseCostCalculator_js) {
     'use strict';
 
     function _interopNamespaceDefault(e) {
@@ -1784,6 +1784,63 @@
     const profitCalculator = new ProfitCalculator();
 
     /**
+     * Custom Price Overrides
+     * Manages user-defined buy/sell price overrides for profit calculations.
+     * Overrides are stored in IndexedDB and cached in memory.
+     */
+
+
+    const STORAGE_KEY$1 = 'Toolasha_customPriceOverrides';
+
+    /** @type {Object|null} In-memory cache of overrides */
+    let overridesCache = null;
+
+    /**
+     * Load overrides from storage into cache
+     * @returns {Promise<Object>} The overrides object
+     */
+    async function loadOverrides() {
+        if (overridesCache === null) {
+            overridesCache = (await storage.getJSON(STORAGE_KEY$1, 'settings', {})) || {};
+        }
+        return overridesCache;
+    }
+
+    /**
+     * Get all custom price overrides
+     * @returns {Object} The overrides object (may be empty if not yet loaded)
+     */
+    function getCustomPriceOverrides() {
+        if (overridesCache === null) {
+            // Trigger async load but return empty for now
+            loadOverrides();
+            return {};
+        }
+        return overridesCache;
+    }
+
+    /**
+     * Get a custom price for a specific item, enhancement level, and transaction side.
+     * @param {string} itemHrid - Item HRID
+     * @param {number} enhancementLevel - Enhancement level (default 0)
+     * @param {string} side - Transaction side ('buy' or 'sell')
+     * @returns {number|null} Custom price or null if no override exists
+     */
+    function getCustomPrice(itemHrid, enhancementLevel = 0, side = 'sell') {
+        const overrides = getCustomPriceOverrides();
+        const key = `${itemHrid}:${enhancementLevel}`;
+        const override = overrides[key];
+        if (!override) {
+            return null;
+        }
+        const price = override[side];
+        if (price === undefined || price === null || price === '') {
+            return null;
+        }
+        return price;
+    }
+
+    /**
      * Worker Pool Manager
      * Manages a pool of Web Workers for parallel task execution
      */
@@ -2358,45 +2415,105 @@ self.onmessage = function (e) {
         }
 
         /**
-         * Get price for a drop item
-         * Handles special cases (Coin, Cowbell, Dungeon Tokens, nested containers)
+         * Resolve a sell-side economic value for an item, applying the same special-case rules
+         * (Coin, Cowbell, dungeon tokens, cached container EV, ordinary market item) used for drop
+         * valuation, plus metadata describing the source and whether market tax still needs to be
+         * applied by the caller. Callers valuing an actual sale (e.g. drop valuation, offline gains)
+         * should apply `calculatePriceAfterTax` when `needsTax` is true and the item is tradeable.
          * @param {string} itemHrid - Item HRID
-         * @returns {number|null} Price or null if unavailable
+         * @param {number} [enhancementLevel=0] - Enhancement level (ignored for special currencies)
+         * @returns {{value: number, source: string, needsTax: boolean}|null} Resolved value or null
          */
-        getDropPrice(itemHrid) {
-            // Special case: Coin (face value = 1)
+        resolveSellSideValue(itemHrid, enhancementLevel = 0) {
+            // Special case: Coin (face value = 1, never taxed)
             if (itemHrid === this.COIN_HRID) {
-                return 1;
+                return { value: 1, source: 'coin', needsTax: false };
             }
 
             // Special case: Cowbell (use bag price ÷ 10, with 18% tax)
             if (itemHrid === this.COWBELL_HRID) {
                 if (!config.getSetting('expectedValue_includeCowbells')) {
-                    return 0;
+                    return { value: 0, source: 'cowbell', needsTax: false };
                 }
                 // Get Cowbell Bag price using profit context (sell side - you're selling the bag)
                 const bagValue = marketData_js.getItemPrice(this.COWBELL_BAG_HRID, { context: 'profit', side: 'sell' }) || 0;
 
                 if (bagValue > 0) {
                     // Apply 18% market tax (Cowbell Bag only), then divide by 10
-                    return profitHelpers_js.calculatePriceAfterTax(bagValue, 0.18) / 10;
+                    return { value: profitHelpers_js.calculatePriceAfterTax(bagValue, 0.18) / 10, source: 'cowbell', needsTax: false };
                 }
                 return null; // No bag price available
             }
 
             // Special case: Dungeon Tokens (calculate value from shop items)
             if (this.DUNGEON_TOKENS.includes(itemHrid)) {
-                return tokenValuation_js.calculateDungeonTokenValue(itemHrid, 'profitCalc_pricingMode', 'expectedValue_respectPricingMode');
+                const value = tokenValuation_js.calculateDungeonTokenValue(
+                    itemHrid,
+                    'profitCalc_pricingMode',
+                    'expectedValue_respectPricingMode'
+                );
+                return value !== null ? { value, source: 'dungeonToken', needsTax: false } : null;
             }
 
-            // Check if this is a nested container (use cached EV)
+            // Check if this is a nested container (use cached EV, already tax-adjusted per-drop)
             if (this.containerCache.has(itemHrid)) {
-                return this.containerCache.get(itemHrid);
+                return { value: this.containerCache.get(itemHrid), source: 'expectedValue', needsTax: false };
             }
 
             // Regular market item - get price based on pricing mode (sell side - you're selling drops)
-            const dropPrice = marketData_js.getItemPrice(itemHrid, { enhancementLevel: 0, context: 'profit', side: 'sell' });
-            return dropPrice > 0 ? dropPrice : null;
+            const dropPrice = marketData_js.getItemPrice(itemHrid, { enhancementLevel, context: 'profit', side: 'sell' });
+            if (!(dropPrice > 0)) return null;
+            const hasOverride = getCustomPrice(itemHrid, enhancementLevel, 'sell') !== null;
+            return { value: dropPrice, source: hasOverride ? 'custom' : 'market', needsTax: true };
+        }
+
+        /**
+         * Resolve a buy-side economic value for an item - the mirror of `resolveSellSideValue` for
+         * valuing something being consumed/lost rather than gained. Never taxed (buying, not
+         * selling). Openable containers are valued at their ordinary buy price here, not their
+         * expected value - consuming a container means losing/re-buying it, not opening it.
+         * @param {string} itemHrid - Item HRID
+         * @param {number} [enhancementLevel=0] - Enhancement level (ignored for special currencies)
+         * @returns {{value: number, source: string}|null} Resolved value or null
+         */
+        resolveBuySideValue(itemHrid, enhancementLevel = 0) {
+            if (itemHrid === this.COIN_HRID) {
+                return { value: 1, source: 'coin' };
+            }
+
+            if (itemHrid === this.COWBELL_HRID) {
+                if (!config.getSetting('expectedValue_includeCowbells')) {
+                    return { value: 0, source: 'cowbell' };
+                }
+                const bagValue = marketData_js.getItemPrice(this.COWBELL_BAG_HRID, { context: 'profit', side: 'buy' }) || 0;
+                return bagValue > 0 ? { value: bagValue / 10, source: 'cowbell' } : null;
+            }
+
+            if (this.DUNGEON_TOKENS.includes(itemHrid)) {
+                const value = tokenValuation_js.calculateDungeonTokenValue(
+                    itemHrid,
+                    'profitCalc_pricingMode',
+                    'expectedValue_respectPricingMode'
+                );
+                return value !== null ? { value, source: 'dungeonToken' } : null;
+            }
+
+            // Ordinary market item (including a consumed openable - valued as a purchase, not an
+            // opening) - get price based on pricing mode (buy side - you're re-acquiring this)
+            const buyPrice = marketData_js.getItemPrice(itemHrid, { enhancementLevel, context: 'profit', side: 'buy' });
+            if (!(buyPrice > 0)) return null;
+            const hasOverride = getCustomPrice(itemHrid, enhancementLevel, 'buy') !== null;
+            return { value: buyPrice, source: hasOverride ? 'custom' : 'market' };
+        }
+
+        /**
+         * Get price for a drop item
+         * Handles special cases (Coin, Cowbell, Dungeon Tokens, nested containers)
+         * @param {string} itemHrid - Item HRID
+         * @returns {number|null} Price or null if unavailable
+         */
+        getDropPrice(itemHrid) {
+            return this.resolveSellSideValue(itemHrid)?.value ?? null;
         }
 
         /**
@@ -25370,6 +25487,549 @@ self.onmessage = function (e) {
     const networthFeature = new NetworthFeature();
 
     /**
+     * Offline Economics Calculator
+     * Values the Revenue/Cost/Profit of a Welcome Back offline session using Toolasha's existing
+     * pricing-mode-aware valuation stack, so results stay consistent with every other profit number
+     * shown elsewhere in Toolasha.
+     */
+
+
+    const TASK_TOKEN_HRID = '/items/task_token';
+
+    /**
+     * Resolve one item's unit economic value for a given transaction side.
+     * @param {string} itemHrid - Item HRID
+     * @param {number} enhancementLevel - Enhancement level
+     * @param {'sell'|'buy'} side - 'sell' for a gained item, 'buy' for a consumed item
+     * @param {Object|null} itemDetails - dataManager.getItemDetails(itemHrid) result
+     * @returns {{value: number, source: string}|null} Resolved unit value or null if unavailable
+     */
+    function resolveUnitValue(itemHrid, enhancementLevel, side, itemDetails) {
+        if (itemHrid === TASK_TOKEN_HRID) {
+            const tokenData = calculateTaskTokenValue();
+            if (tokenData.error || !(tokenData.tokenValue > 0)) return null;
+            return { value: tokenData.tokenValue, source: 'taskToken' };
+        }
+
+        if (side === 'sell') {
+            const resolved = expectedValueCalculator.resolveSellSideValue(itemHrid, enhancementLevel);
+            if (!resolved) return null;
+            const value =
+                resolved.needsTax && itemDetails?.isTradable !== false
+                    ? profitHelpers_js.calculatePriceAfterTax(resolved.value, profitConstants_js.MARKET_TAX)
+                    : resolved.value;
+            return { value, source: resolved.source };
+        }
+
+        const resolved = expectedValueCalculator.resolveBuySideValue(itemHrid, enhancementLevel);
+        return resolved ? { value: resolved.value, source: resolved.source } : null;
+    }
+
+    /**
+     * Calculate the economic result of a Welcome Back offline session.
+     * @param {Object} params
+     * @param {Array<{itemHrid: string, enhancementLevel?: number, offlineCount: number}>} params.offlineItems
+     *   - Signed offline item deltas: positive offlineCount = gained, negative = consumed
+     * @param {string} params.currentTimestamp - ISO timestamp from the init_character_data payload
+     * @param {string} params.lastOfflineTime - ISO timestamp the character went offline (character.lastOfflineTime)
+     * @returns {Object} { revenue, cost, profit, revenuePerDay, costPerDay, profitPerDay,
+     *   durationSeconds, isPartial, unvaluedItems, lines }
+     */
+    function calculateOfflineEconomics({ offlineItems, currentTimestamp, lastOfflineTime }) {
+        let revenue = 0;
+        let cost = 0;
+        let isPartial = false;
+        const unvaluedItems = [];
+        const lines = [];
+
+        for (const item of offlineItems || []) {
+            const { itemHrid, offlineCount } = item;
+            const enhancementLevel = item.enhancementLevel || 0;
+            if (!itemHrid || !offlineCount) continue;
+
+            const side = offlineCount > 0 ? 'sell' : 'buy';
+            const quantity = Math.abs(offlineCount);
+            const itemDetails = dataManager.getItemDetails(itemHrid);
+
+            const resolved = resolveUnitValue(itemHrid, enhancementLevel, side, itemDetails);
+            if (!resolved) {
+                isPartial = true;
+                unvaluedItems.push({ itemHrid, enhancementLevel, offlineCount });
+                continue;
+            }
+
+            const totalValue = resolved.value * quantity;
+            if (side === 'sell') {
+                revenue += totalValue;
+            } else {
+                cost += totalValue;
+            }
+
+            lines.push({
+                itemHrid,
+                enhancementLevel,
+                quantity,
+                side,
+                unitValue: resolved.value,
+                totalValue,
+                source: resolved.source,
+            });
+        }
+
+        const profit = revenue - cost;
+
+        const durationMs = new Date(currentTimestamp).getTime() - new Date(lastOfflineTime).getTime();
+        const durationSeconds = durationMs > 0 ? durationMs / 1000 : 0;
+        const perDay = (value) => (durationSeconds > 0 ? (value * 86400) / durationSeconds : null);
+
+        return {
+            revenue,
+            cost,
+            profit,
+            revenuePerDay: perDay(revenue),
+            costPerDay: perDay(cost),
+            profitPerDay: perDay(profit),
+            durationSeconds,
+            isPartial,
+            unvaluedItems,
+            lines,
+        };
+    }
+
+    /**
+     * Offline Progress Economics
+     * Adds a compact Revenue / Cost / Profit summary (+ per-day projections) to the native
+     * Welcome Back / Offline Progress modal, reusing Toolasha's existing pricing-mode-aware
+     * valuation stack so the numbers stay consistent with every other profit figure in Toolasha.
+     */
+
+
+    const UI_ID = 'mwi-offline-economics';
+    const MODAL_ANCHOR_CLASS = 'OfflineProgressModal_offlineProgress';
+    const MODAL_CONTENT_CLASS = 'OfflineProgressModal_modalContent';
+
+    const SOURCE_LABELS = {
+        coin: 'Coin face value',
+        cowbell: 'Cowbell valuation',
+        dungeonToken: 'Dungeon Token shop value',
+        expectedValue: 'Expected Value',
+        custom: 'Custom price override',
+        market: 'Market price',
+        taskToken: 'Task Token shop value',
+    };
+
+    class OfflineProgressEconomics {
+        constructor() {
+            this.isActive = false;
+            this.isInitialized = false;
+            this.characterInitializedHandler = null;
+            this.characterSwitchingHandler = null;
+            this.domObserverUnregister = null;
+            this.processedModals = new WeakSet();
+            this.currentOfflineData = null;
+            this.currentBlock = null;
+            this.pricingModeChangeHandler = null;
+        }
+
+        /**
+         * Setup settings listener for feature toggle
+         */
+        setupSettingListener() {
+            config.onSettingChange('offlineProgressEconomics', (value) => {
+                if (value) {
+                    this.initialize();
+                } else {
+                    this.disable();
+                }
+            });
+        }
+
+        /**
+         * Initialize the feature
+         */
+        initialize() {
+            if (this.isInitialized) return;
+            if (!config.getSetting('offlineProgressEconomics')) return;
+
+            this.isInitialized = true;
+
+            this.characterInitializedHandler = (data) => this.handleCharacterInitialized(data);
+            dataManager.on('character_initialized', this.characterInitializedHandler);
+
+            this.characterSwitchingHandler = () => this.handleCharacterSwitching();
+            dataManager.on('character_switching', this.characterSwitchingHandler);
+
+            this.domObserverUnregister = domObserver.onClass('OfflineProgressEconomics', MODAL_CONTENT_CLASS, (node) =>
+                this.processModalNode(node)
+            );
+
+            // Toolasha's own feature initialization is itself triggered from inside the very first
+            // character_initialized event (see entrypoint.js), so by the time this runs, that one-time
+            // event - the one carrying the actual Welcome Back offline data - has already fired and
+            // won't fire again this session. dataManager cached the raw payload synchronously in its
+            // own early-registered handler regardless, so catch up on it directly here.
+            if (dataManager.characterData) {
+                this.handleCharacterInitialized(dataManager.characterData);
+            }
+
+            // The native modal itself renders from that same event, so for the same reason it is
+            // very likely already mounted by now - domObserver.onClass only reacts to *future*
+            // insertions, so scan for an already-present modal too.
+            document.querySelectorAll(`[class*="${MODAL_CONTENT_CLASS}"]`).forEach((node) => this.processModalNode(node));
+
+            this.isActive = true;
+        }
+
+        /**
+         * Cache the current offline session's data for the next time the modal mounts.
+         * @param {Object} data - Full character_initialized payload
+         */
+        handleCharacterInitialized(data) {
+            if (!config.getSetting('offlineProgressEconomics')) return;
+
+            const offlineItems = data?.offlineItems || [];
+            if (offlineItems.length === 0) {
+                this.currentOfflineData = null;
+                return;
+            }
+
+            this.currentOfflineData = {
+                offlineItems,
+                currentTimestamp: data.currentTimestamp,
+                lastOfflineTime: data.character?.lastOfflineTime,
+            };
+        }
+
+        /**
+         * Clear cached offline data and any injected block so a character switch never shows
+         * stale, previous-character economics.
+         */
+        handleCharacterSwitching() {
+            this.currentOfflineData = null;
+            this.teardownBlock();
+        }
+
+        /**
+         * Process a newly-appeared OfflineProgressModal_modalContent node (idempotent).
+         * @param {Element} node - The matched modal content element
+         */
+        processModalNode(node) {
+            if (this.processedModals.has(node)) return;
+            if (!this.currentOfflineData) return;
+
+            this.processedModals.add(node);
+            this.renderBlock(node);
+        }
+
+        /**
+         * Compute economics and inject the summary block right after the native duration line.
+         * @param {Element} modalContentNode - OfflineProgressModal_modalContent element
+         */
+        renderBlock(modalContentNode) {
+            const anchor = modalContentNode.querySelector(`[class*="${MODAL_ANCHOR_CLASS}"]`);
+            const wrapper = anchor?.parentElement;
+            if (!wrapper) return;
+
+            this.teardownBlock();
+
+            const economics = calculateOfflineEconomics(this.currentOfflineData);
+            const block = buildBlock(economics);
+            wrapper.after(block);
+            this.currentBlock = block;
+
+            this.pricingModeChangeHandler = () => this.recompute();
+            config.onSettingChange('profitCalc_pricingMode', this.pricingModeChangeHandler);
+
+            this.setupCleanupObserver(modalContentNode);
+        }
+
+        /**
+         * Recompute economics and re-render the block in place (e.g. on a pricing mode change).
+         */
+        recompute() {
+            if (!this.currentOfflineData || !this.currentBlock) return;
+            const economics = calculateOfflineEconomics(this.currentOfflineData);
+            const newBlock = buildBlock(economics);
+            this.currentBlock.replaceWith(newBlock);
+            this.currentBlock = newBlock;
+        }
+
+        /**
+         * Tear down the injected block once the native modal closes.
+         * @param {Element} modal - OfflineProgressModal_modalContent element
+         */
+        setupCleanupObserver(modal) {
+            if (!document.body) return;
+
+            const cleanupObserver = domObserverHelpers_js.createMutationWatcher(
+                document.body,
+                () => {
+                    if (!document.body.contains(modal)) {
+                        this.teardownBlock();
+                        cleanupObserver();
+                    }
+                },
+                { childList: true, subtree: true }
+            );
+        }
+
+        /**
+         * Remove the injected block and unsubscribe its pricing-mode listener.
+         */
+        teardownBlock() {
+            if (this.pricingModeChangeHandler) {
+                config.offSettingChange('profitCalc_pricingMode', this.pricingModeChangeHandler);
+                this.pricingModeChangeHandler = null;
+            }
+            if (this.currentBlock) {
+                this.currentBlock.remove();
+                this.currentBlock = null;
+            }
+        }
+
+        /**
+         * Disable the feature
+         */
+        disable() {
+            if (this.characterInitializedHandler) {
+                dataManager.off('character_initialized', this.characterInitializedHandler);
+                this.characterInitializedHandler = null;
+            }
+            if (this.characterSwitchingHandler) {
+                dataManager.off('character_switching', this.characterSwitchingHandler);
+                this.characterSwitchingHandler = null;
+            }
+            if (this.domObserverUnregister) {
+                this.domObserverUnregister();
+                this.domObserverUnregister = null;
+            }
+
+            this.teardownBlock();
+            this.currentOfflineData = null;
+            this.processedModals = new WeakSet();
+
+            this.isActive = false;
+            this.isInitialized = false;
+        }
+    }
+
+    /**
+     * Build the tooltip text for the block heading: active pricing mode, plus a partial-valuation
+     * note naming which items could not be valued.
+     * @param {Object} economics - calculateOfflineEconomics result
+     * @returns {string} Tooltip text
+     */
+    function buildHeadingTooltip(economics) {
+        const mode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
+        let tooltip = `Pricing mode: ${config.getPricingModeLabel(mode)}`;
+
+        if (economics.isPartial) {
+            const names = economics.unvaluedItems.map((item) => {
+                const details = dataManager.getItemDetails(item.itemHrid);
+                return details?.name || item.itemHrid.split('/').pop();
+            });
+            const count = economics.unvaluedItems.length;
+            tooltip += ` | Partial - ${count} item${count === 1 ? '' : 's'} could not be valued: ${names.join(', ')}`;
+        }
+
+        return tooltip;
+    }
+
+    /**
+     * Build the compact Revenue / Cost / Profit block.
+     * @param {Object} economics - calculateOfflineEconomics result
+     * @returns {Element} Block element
+     */
+    function buildBlock(economics) {
+        const container = document.createElement('div');
+        container.id = UI_ID;
+        container.style.cssText = `
+        align-self: stretch;
+        justify-self: stretch;
+        width: 100%;
+        box-sizing: border-box;
+        margin: 8px 0;
+        padding: 8px 14px;
+        background: linear-gradient(180deg, rgba(91, 141, 239, 0.12) 0%, rgba(91, 141, 239, 0.05) 100%);
+        border: 1px solid rgba(91, 141, 239, 0.3);
+        border-radius: 8px;
+        color: #ffffff;
+        font-size: 13px;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+    `;
+
+        const header = document.createElement('div');
+        header.textContent = economics.isPartial ? 'Offline Economics *' : 'Offline Economics';
+        header.title = buildHeadingTooltip(economics);
+        header.style.cssText = `
+        font-size: 13px;
+        font-weight: 600;
+        margin-bottom: 6px;
+        color: #93c5fd;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    `;
+        container.appendChild(header);
+
+        container.appendChild(
+            renderRow(
+                'Revenue',
+                economics.revenue,
+                economics.revenuePerDay,
+                'sell',
+                economics.lines.filter((line) => line.side === 'sell').sort((a, b) => b.totalValue - a.totalValue),
+                economics.unvaluedItems
+                    .filter((item) => item.offlineCount > 0)
+                    .sort((a, b) => b.offlineCount - a.offlineCount)
+            )
+        );
+        container.appendChild(
+            renderRow(
+                'Cost',
+                economics.cost,
+                economics.costPerDay,
+                'buy',
+                economics.lines.filter((line) => line.side === 'buy').sort((a, b) => b.totalValue - a.totalValue),
+                economics.unvaluedItems
+                    .filter((item) => item.offlineCount < 0)
+                    .sort((a, b) => a.offlineCount - b.offlineCount)
+            )
+        );
+        container.appendChild(renderRow('Profit', economics.profit, economics.profitPerDay, null, null, null));
+
+        return container;
+    }
+
+    /**
+     * Resolve a display name for an item, falling back to its HRID tail when game data isn't
+     * available yet.
+     * @param {string} itemHrid - Item HRID
+     * @returns {string} Display name
+     */
+    function getItemDisplayName(itemHrid) {
+        const details = dataManager.getItemDetails(itemHrid);
+        return details?.name || itemHrid.split('/').pop();
+    }
+
+    /**
+     * Build one valued line-item detail row.
+     * @param {Object} line - A line entry from calculateOfflineEconomics's `lines`
+     * @returns {Element} Detail row element
+     */
+    function buildLineDetail(line) {
+        const row = document.createElement('div');
+        row.style.cssText = `
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        margin-left: 10px;
+        font-size: 0.8rem;
+        color: ${config.COLOR_TEXT_SECONDARY};
+    `;
+
+        const name = getItemDisplayName(line.itemHrid);
+        const label = document.createElement('span');
+        label.textContent = `${line.quantity}x ${name}${line.enhancementLevel > 0 ? ` +${line.enhancementLevel}` : ''}`;
+        label.title = SOURCE_LABELS[line.source] || line.source;
+
+        const value = document.createElement('span');
+        value.textContent = marketData_js.formatPrice(line.totalValue, { decimals: 1 });
+        value.style.fontVariantNumeric = 'tabular-nums';
+
+        row.appendChild(label);
+        row.appendChild(value);
+        return row;
+    }
+
+    /**
+     * Build one unvalued-item detail row (never shown as a fake zero).
+     * @param {Object} item - An entry from calculateOfflineEconomics's `unvaluedItems`
+     * @returns {Element} Detail row element
+     */
+    function buildUnvaluedDetail(item) {
+        const row = document.createElement('div');
+        row.style.cssText = `
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        margin-left: 10px;
+        font-size: 0.8rem;
+        color: ${config.COLOR_WARNING};
+    `;
+
+        const name = getItemDisplayName(item.itemHrid);
+        row.textContent = `${Math.abs(item.offlineCount)}x ${name}${
+        item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : ''
+    } - no price data`;
+
+        return row;
+    }
+
+    /**
+     * Render one Revenue/Cost/Profit row: label, total, per-day, and - when line items are
+     * available - a click-to-expand breakdown of the items behind that total.
+     * @param {string} label - Row label
+     * @param {number} value - Total value
+     * @param {number|null} perDay - Per-day value, or null if the offline window was zero/invalid
+     * @param {'sell'|'buy'|null} side - Which side this row values, for the per-side pricing tooltip
+     * @param {Array|null} lines - Valued line items for this side, or null for a non-expandable row
+     * @param {Array|null} unvaluedItems - Unvalued items for this side, or null for a non-expandable row
+     * @returns {Element} Row wrapper element
+     */
+    function renderRow(label, value, perDay, side, lines, unvaluedItems) {
+        const wrapper = document.createElement('div');
+
+        const hasDetails = (lines && lines.length > 0) || (unvaluedItems && unvaluedItems.length > 0);
+
+        const row = document.createElement('div');
+        row.style.cssText = `
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        line-height: 1.5;
+        ${hasDetails ? 'cursor: pointer;' : ''}
+    `;
+
+        const labelEl = document.createElement('span');
+        labelEl.textContent = hasDetails ? `+ ${label}` : label;
+        labelEl.style.color = '#cbd5e1';
+        if (side) {
+            const mode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
+            labelEl.title = `${config.getPricingModeLabel(mode)} (${side === 'sell' ? 'Sell' : 'Buy'} side)`;
+        }
+
+        const valueEl = document.createElement('span');
+        const sign = value > 0 && label === 'Profit' ? '+' : '';
+        const perDayText = perDay !== null ? ` (${sign}${marketData_js.formatPrice(perDay, { decimals: 1 })}/day)` : '';
+        valueEl.textContent = `${sign}${marketData_js.formatPrice(value, { decimals: 1 })}${perDayText}`;
+        valueEl.style.color = '#e2e8f0';
+        valueEl.style.fontVariantNumeric = 'tabular-nums';
+
+        row.appendChild(labelEl);
+        row.appendChild(valueEl);
+        wrapper.appendChild(row);
+
+        if (hasDetails) {
+            const details = document.createElement('div');
+            details.className = 'mwi-offline-economics-details';
+            details.style.cssText = 'display: none; margin: 4px 0 2px;';
+            for (const line of lines) details.appendChild(buildLineDetail(line));
+            for (const item of unvaluedItems) details.appendChild(buildUnvaluedDetail(item));
+            wrapper.appendChild(details);
+
+            row.addEventListener('click', () => {
+                const isCollapsed = details.style.display === 'none';
+                details.style.display = isCollapsed ? 'block' : 'none';
+                labelEl.textContent = `${isCollapsed ? '-' : '+'} ${label}`;
+            });
+        }
+
+        return wrapper;
+    }
+
+    const offlineProgressEconomics = new OfflineProgressEconomics();
+    offlineProgressEconomics.setupSettingListener();
+
+    /**
      * Inventory Badge Manager
      * Centralized management for all inventory item badges
      * Prevents race conditions with React re-renders by coordinating all badge rendering
@@ -31554,6 +32214,7 @@ self.onmessage = function (e) {
         profitCalculator,
         alchemyProfitCalculator,
         networthFeature,
+        offlineProgressEconomics,
         inventoryBadgeManager,
         inventorySort,
         inventoryBadgePrices,
@@ -31568,4 +32229,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] Market library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.tokenValuation, Toolasha.Utils.enhancementConfig, Toolasha.Utils.dom, Toolasha.Utils.materialCalculator, Toolasha.Utils.timerRegistry, Toolasha.Core.storage, Toolasha.Utils.cleanupRegistry, Toolasha.Core.webSocketHook, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Core, Toolasha.Utils.reactInput, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.tokenValuation, Toolasha.Core.storage, Toolasha.Utils.enhancementConfig, Toolasha.Utils.dom, Toolasha.Utils.materialCalculator, Toolasha.Utils.timerRegistry, Toolasha.Utils.cleanupRegistry, Toolasha.Core.webSocketHook, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Core, Toolasha.Utils.reactInput, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator);
