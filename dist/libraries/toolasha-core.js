@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.92.0
+ * Version: 2.93.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2375,6 +2375,13 @@
                     default: true,
                     help: 'Adds a Statistics button to the Combat panel showing income, profit, consumable costs, EXP, and drop details',
                 },
+                combatStats_runwayWarningThreshold: {
+                    id: 'combatStats_runwayWarningThreshold',
+                    label: 'Combat Statistics: consumable runway warning threshold (hours)',
+                    type: 'number',
+                    default: 12,
+                    help: 'Send a browser notification when a combat consumable is projected to run out within this many hours. Set to 0 to disable.',
+                },
                 combatStatsChatMessage: {
                     id: 'combatStatsChatMessage',
                     label: 'Combat Statistics: Chat message format',
@@ -2652,6 +2659,13 @@
                     label: 'Left sidebar: Show skill XP percentages',
                     type: 'checkbox',
                     default: true,
+                },
+                combatLevelProgress: {
+                    id: 'combatLevelProgress',
+                    label: 'Left sidebar: Show precise Combat Level progress',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Shows weighted progress toward the next Combat Level (e.g. 94.80) next to the native Combat Level. Display-only - never changes the native integer level shown by the game.',
                 },
                 itemIconLevel: {
                     id: 'itemIconLevel',
@@ -5716,6 +5730,13 @@
                     category: 'UI',
                     description: 'Shows XP progress percentage in left sidebar',
                     settingKey: 'expPercentage',
+                },
+                combatLevelProgress: {
+                    enabled: true,
+                    name: 'Precise Combat Level Progress',
+                    category: 'UI',
+                    description: 'Shows weighted progress toward the next Combat Level in left sidebar',
+                    settingKey: 'combatLevelProgress',
                 },
                 largeNumberFormatting: {
                     enabled: true,

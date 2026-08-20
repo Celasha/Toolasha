@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.92.0
+ * Version: 2.93.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -633,6 +633,247 @@
     const skillExperiencePercentage = new SkillExperiencePercentage();
 
     skillExperiencePercentage.setupSettingListener();
+
+    /**
+     * Combat Level Progress Calculator
+     * Derives a continuous (fractional) Combat Level for display purposes only.
+     *
+     * MWI's native player Combat Level is an integer, computed as:
+     *   raw = 0.1 * (Stamina + Intelligence + Attack + Defense + max(Melee, Ranged, Magic))
+     *       + 0.5 * max(Attack, Defense, Melee, Ranged, Magic)
+     *   nativeCombatLevel = floor(raw)
+     *
+     * This module applies the same weighting to fractional skill levels (integer level + XP
+     * progress toward the next level) to produce a "weighted progress toward the next level"
+     * score, e.g. 94.80. This value must never replace or contradict the native integer level -
+     * see clampDisplayCombatLevel().
+     */
+
+    const COMBAT_SKILL_HRIDS = {
+        stamina: '/skills/stamina',
+        intelligence: '/skills/intelligence',
+        attack: '/skills/attack',
+        defense: '/skills/defense',
+        melee: '/skills/melee',
+        ranged: '/skills/ranged',
+        magic: '/skills/magic',
+    };
+
+    /**
+     * Fractional skill level: integer level + XP progress toward the next level, clamped to
+     * [level, level + 1). Falls back to the plain integer level if the table has no next-level
+     * entry (max level) or the table is unavailable.
+     * @param {number} level - Native integer skill level
+     * @param {number} experience - Current skill XP
+     * @param {Array<number>|undefined} levelExperienceTable - Native level -> XP table
+     * @returns {number}
+     */
+    function calculateFractionalSkillLevel(level, experience, levelExperienceTable) {
+        const currentThreshold = levelExperienceTable?.[level];
+        const nextThreshold = levelExperienceTable?.[level + 1];
+
+        if (
+            typeof currentThreshold !== 'number' ||
+            typeof nextThreshold !== 'number' ||
+            nextThreshold <= currentThreshold
+        ) {
+            return level;
+        }
+
+        const progress = (experience - currentThreshold) / (nextThreshold - currentThreshold);
+        return level + Math.min(Math.max(progress, 0), 0.999999999);
+    }
+
+    /**
+     * Apply MWI's native Combat Level weighting to a set of skill levels (integer or fractional -
+     * the formula is identical either way).
+     * @param {{stamina: number, intelligence: number, attack: number, defense: number, melee: number, ranged: number, magic: number}} levels
+     * @returns {number}
+     */
+    function calculateWeightedCombatScore(levels) {
+        const { stamina, intelligence, attack, defense, melee, ranged, magic } = levels;
+        const combatStyleMax = Math.max(melee, ranged, magic);
+        const primaryMax = Math.max(attack, defense, melee, ranged, magic);
+        return 0.1 * (stamina + intelligence + attack + defense + combatStyleMax) + 0.5 * primaryMax;
+    }
+
+    /**
+     * Clamp a continuous combat score for display so it never contradicts the native integer
+     * Combat Level: bounded to [nativeLevel, nativeLevel + 0.99], truncated (never rounded) to
+     * two decimals so a value like N.995 displays as N.99, not N+1.00.
+     * @param {number} continuousScore
+     * @param {number} nativeCombatLevel
+     * @returns {number}
+     */
+    function clampDisplayCombatLevel(continuousScore, nativeCombatLevel) {
+        const clamped = Math.min(Math.max(continuousScore, nativeCombatLevel), nativeCombatLevel + 0.99);
+        return Math.floor(clamped * 100) / 100;
+    }
+
+    /**
+     * Compute the precise (continuous, display-only) Combat Level for a set of live skills.
+     * @param {Array<{skillHrid: string, level: number, experience: number}>|null} skills - dataManager.getSkills() shape
+     * @param {Array<number>|undefined} levelExperienceTable - Native level -> XP table
+     * @returns {{nativeCombatLevel: number, preciseValue: number}|null} null if required skill/table data is missing
+     */
+    function calculatePreciseCombatLevel(skills, levelExperienceTable) {
+        if (!skills || !levelExperienceTable) return null;
+
+        const skillByHrid = {};
+        for (const skill of skills) {
+            skillByHrid[skill.skillHrid] = skill;
+        }
+
+        const integerLevels = {};
+        const fractionalLevels = {};
+        for (const [key, hrid] of Object.entries(COMBAT_SKILL_HRIDS)) {
+            const skill = skillByHrid[hrid];
+            if (!skill || typeof skill.level !== 'number') return null;
+            integerLevels[key] = skill.level;
+            fractionalLevels[key] = calculateFractionalSkillLevel(skill.level, skill.experience, levelExperienceTable);
+        }
+
+        const nativeCombatLevel = Math.floor(calculateWeightedCombatScore(integerLevels));
+        const continuousScore = calculateWeightedCombatScore(fractionalLevels);
+        const preciseValue = clampDisplayCombatLevel(continuousScore, nativeCombatLevel);
+
+        return { nativeCombatLevel, preciseValue };
+    }
+
+    /**
+     * Combat Level Progress Display
+     * Shows a continuous "weighted progress toward the next level" number next to the
+     * persistent Combat entry in the left sidebar, e.g. 94.80 next to the native 94.
+     *
+     * Display-only: never replaces or feeds into combatDetails.combatLevel or any
+     * gameplay-affecting calculation (Combat Sim, Labyrinth, party requirements, etc.).
+     */
+
+
+    const CSS_CLASS$1 = 'mwi-combat-level-precise';
+
+    class CombatLevelProgress {
+        constructor() {
+            this.isInitialized = false;
+            this.unregisterHandlers = [];
+            this.boundUpdate = null;
+        }
+
+        /**
+         * Setup settings listener (always active, even when the feature is disabled)
+         */
+        setupSettingListener() {
+            config.onSettingChange('combatLevelProgress', (enabled) => {
+                if (enabled) {
+                    this.initialize();
+                } else {
+                    this.disable();
+                }
+            });
+        }
+
+        /**
+         * Initialize the display
+         */
+        initialize() {
+            if (!config.isFeatureEnabled('combatLevelProgress')) {
+                return;
+            }
+
+            if (this.isInitialized) {
+                return;
+            }
+
+            this.isInitialized = true;
+
+            this.boundUpdate = () => this.update();
+            dataManager.on('character_initialized', this.boundUpdate);
+            dataManager.on('action_completed', this.boundUpdate);
+            dataManager.on('skills_updated', this.boundUpdate);
+
+            const unregister = domObserver.onClass('CombatLevelProgress', 'NavigationBar_navigationBar__', () =>
+                this.update()
+            );
+            this.unregisterHandlers.push(unregister);
+
+            this.update();
+        }
+
+        /**
+         * Find the persistent Combat nav row via its icon's stable aria-label - never by
+         * position/index, which would break if the sidebar's item order ever changes.
+         * @returns {Element|null}
+         */
+        findCombatNavRow() {
+            const icon = document.querySelector('svg[aria-label="navigationBar.combat"]');
+            return icon?.closest('[class*="NavigationBar_nav__"]') || null;
+        }
+
+        /**
+         * Recompute and render (or clear) the precise Combat Level companion span
+         */
+        update() {
+            const navRow = this.findCombatNavRow();
+            if (!navRow) {
+                return;
+            }
+
+            const textContainer = navRow.querySelector('[class*="NavigationBar_textContainer"]');
+            if (!textContainer) {
+                return;
+            }
+
+            const skills = dataManager.getSkills();
+            const levelExperienceTable = dataManager.getInitClientData()?.levelExperienceTable;
+            const result = calculatePreciseCombatLevel(skills, levelExperienceTable);
+
+            if (!result) {
+                textContainer.querySelector(`.${CSS_CLASS$1}`)?.remove();
+                return;
+            }
+
+            const levelSpan = textContainer.querySelector('[class*="NavigationBar_level"]');
+            if (!levelSpan) {
+                return;
+            }
+
+            // Appended as a child of the native level span (never overwriting its own "150" text
+            // node) rather than a flex sibling, so it reads flush as one number ("150.49") instead
+            // of picking up the textContainer's flex gap between label/level as visible whitespace.
+            let span = levelSpan.querySelector(`.${CSS_CLASS$1}`);
+            if (!span) {
+                span = document.createElement('span');
+                span.className = CSS_CLASS$1;
+                levelSpan.appendChild(span);
+            }
+
+            const decimalText = result.preciseValue.toFixed(2).split('.')[1];
+            span.textContent = `.${decimalText}`;
+            span.title = `Native Combat Level: ${result.nativeCombatLevel} · weighted progress toward the next level`;
+        }
+
+        /**
+         * Disable the feature
+         */
+        disable() {
+            this.unregisterHandlers.forEach((fn) => fn());
+            this.unregisterHandlers = [];
+
+            if (this.boundUpdate) {
+                dataManager.off('character_initialized', this.boundUpdate);
+                dataManager.off('action_completed', this.boundUpdate);
+                dataManager.off('skills_updated', this.boundUpdate);
+                this.boundUpdate = null;
+            }
+
+            document.querySelectorAll(`.${CSS_CLASS$1}`).forEach((el) => el.remove());
+            this.isInitialized = false;
+        }
+    }
+
+    const combatLevelProgress = new CombatLevelProgress();
+
+    combatLevelProgress.setupSettingListener();
 
     /**
      * External Links
@@ -7597,6 +7838,24 @@ ${starCSS}
     }
 
     /**
+     * Calculate the level-gap debuff for one party member given their combat level and the party's
+     * highest combat level. Shared by Combat Sim (simulated party loadouts) and Combat Stats
+     * (real live encounters) so both agree on the exact same 1.2-ratio rule.
+     * @param {number} combatLevel - This player's combat level
+     * @param {number} maxCombatLevel - The party's highest combat level
+     * @returns {number} Debuff as a negative decimal (0 = no debuff, e.g. -0.3 = -30%)
+     */
+    function calculateLevelGapDebuff(combatLevel, maxCombatLevel) {
+        const ratio = maxCombatLevel / combatLevel;
+        if (ratio <= 1.2) {
+            return 0;
+        }
+        const maxDebuff = 0.9;
+        const levelPercent = Math.floor((ratio - 1.2) * 100) / 100;
+        return -1 * Math.min(maxDebuff, 3 * levelPercent);
+    }
+
+    /**
      * Calculate combat level for level gap debuff.
      * @param {Object} dto - Player DTO
      * @returns {number} Combat level
@@ -7687,22 +7946,11 @@ ${starCSS}
 
         // Calculate level gap debuff
         if (players.length > 1) {
-            let maxCombatLevel = 0;
-            const levels = players.map((p) => {
-                const level = calcCombatLevel(p);
-                maxCombatLevel = Math.max(maxCombatLevel, level);
-                return level;
-            });
+            const levels = players.map((p) => calcCombatLevel(p));
+            const maxCombatLevel = Math.max(...levels);
 
             for (let i = 0; i < players.length; i++) {
-                const ratio = maxCombatLevel / levels[i];
-                if (ratio > 1.2) {
-                    const maxDebuff = 0.9;
-                    const levelPercent = Math.floor((ratio - 1.2) * 100) / 100;
-                    players[i].debuffOnLevelGap = -1 * Math.min(maxDebuff, 3 * levelPercent);
-                } else {
-                    players[i].debuffOnLevelGap = 0;
-                }
+                players[i].debuffOnLevelGap = calculateLevelGapDebuff(levels[i], maxCombatLevel);
             }
         }
 
@@ -30564,6 +30812,7 @@ ${starCSS}
             totalAttempts: 0,
             totalSuccesses: 0,
             totalFailures: 0,
+            totalBlessed: 0, // Successes that jumped +2 or more levels (Blessed Tea)
             totalXP: 0, // Total XP gained from enhancements
             longestSuccessStreak: 0,
             longestFailureStreak: 0,
@@ -30587,6 +30836,7 @@ ${starCSS}
             session.attemptsPerLevel[level] = {
                 success: 0,
                 fail: 0,
+                blessed: 0,
                 successRate: 0,
             };
         }
@@ -30610,8 +30860,10 @@ ${starCSS}
      * @param {Object} session - Session object
      * @param {number} previousLevel - Level before enhancement (level that succeeded)
      * @param {number} newLevel - New level after success
+     * @param {boolean} wasBlessed - Whether this success jumped +2 or more levels (Blessed Tea).
+     *   A subtype of success, not counted as an additional attempt/success on top of it.
      */
-    function recordSuccess(session, previousLevel, newLevel) {
+    function recordSuccess(session, previousLevel, newLevel, wasBlessed = false) {
         // Initialize tracking if needed for the level that succeeded
         initializeLevelTracking(session, previousLevel);
 
@@ -30619,6 +30871,11 @@ ${starCSS}
         session.attemptsPerLevel[previousLevel].success++;
         session.totalAttempts++;
         session.totalSuccesses++;
+
+        if (wasBlessed) {
+            session.attemptsPerLevel[previousLevel].blessed++;
+            session.totalBlessed++;
+        }
 
         // Update success rate for this level
         updateSuccessRate(session, previousLevel);
@@ -30855,6 +31112,26 @@ ${starCSS}
         if (session.totalCost < 0 || session.coinCost < 0 || session.protectionCost < 0) return false;
 
         return true;
+    }
+
+    /**
+     * Normalize a session loaded from storage so older sessions (persisted before Blessed
+     * tracking existed) read with an explicit 0 instead of undefined. Mutates in place.
+     * @param {Object} session - Session object
+     * @returns {Object} The same session, normalized
+     */
+    function normalizeSession(session) {
+        if (typeof session.totalBlessed !== 'number') {
+            session.totalBlessed = 0;
+        }
+
+        for (const levelData of Object.values(session.attemptsPerLevel || {})) {
+            if (typeof levelData.blessed !== 'number') {
+                levelData.blessed = 0;
+            }
+        }
+
+        return session;
     }
 
     /**
@@ -31310,6 +31587,8 @@ ${starCSS}
                 for (const [sessionId, session] of Object.entries(sessions)) {
                     if (!validateSession(session)) {
                         delete sessions[sessionId];
+                    } else {
+                        normalizeSession(session);
                     }
                 }
 
@@ -31532,9 +31811,10 @@ ${starCSS}
          * Record a successful enhancement attempt
          * @param {number} previousLevel - Level before success
          * @param {number} newLevel - New level after success
+         * @param {boolean} wasBlessed - Whether this success jumped +2 or more levels (Blessed Tea)
          * @returns {Promise<void>}
          */
-        async recordSuccess(previousLevel, newLevel) {
+        async recordSuccess(previousLevel, newLevel, wasBlessed = false) {
             const context = this._captureContext();
             if (!context) {
                 return;
@@ -31545,7 +31825,7 @@ ${starCSS}
                 return;
             }
 
-            recordSuccess(session, previousLevel, newLevel);
+            recordSuccess(session, previousLevel, newLevel, wasBlessed);
 
             // Check if target reached
             if (session.state === SessionState.COMPLETED) {
@@ -32511,8 +32791,8 @@ ${starCSS}
             // Calculate stats
             const totalAttempts = session.totalAttempts;
             const totalSuccess = session.totalSuccesses;
-            session.totalFailures;
-            totalAttempts > 0 ? formatters_js.formatPercentage(totalSuccess / totalAttempts, 1) : '0.0%';
+            const totalFailure = session.totalFailures;
+            const totalBlessed = session.totalBlessed || 0;
 
             const duration = getSessionDuration(session);
             const durationText = this.formatDuration(duration);
@@ -32552,15 +32832,12 @@ ${starCSS}
             // Summary stats
             html += `
             <div style="margin-top: 8px;">
-                <div style="display: flex; justify-content: space-between; font-size: 13px;">
-                    <div>
-                        <span>Total Attempts:</span>
-                        <strong> ${totalAttempts}</strong>
-                    </div>
-                    <div>
-                        <span>Prots Used:</span>
-                        <strong> ${session.protectionCount || 0}</strong>
-                    </div>
+                <div style="font-size: 13px;">
+                    Attempts ${totalAttempts} · Successes ${totalSuccess} · Blessed ${totalBlessed} · Failures ${totalFailure}
+                </div>
+                <div style="font-size: 13px; margin-top: 4px;">
+                    <span>Prots Used:</span>
+                    <strong> ${session.protectionCount || 0}</strong>
                 </div>
             </div>`;
 
@@ -32656,7 +32933,7 @@ ${starCSS}
 
             let rows = '';
             for (const level of levels) {
-                const levelData = session.attemptsPerLevel[level] || { success: 0, fail: 0, successRate: 0 };
+                const levelData = session.attemptsPerLevel[level] || { success: 0, fail: 0, blessed: 0, successRate: 0 };
                 const rate = formatters_js.formatPercentage(levelData.successRate, 1);
                 const isCurrent = level === session.currentLevel;
 
@@ -32669,10 +32946,14 @@ ${starCSS}
             `
                     : '';
 
+                const blessedCount = levelData.blessed || 0;
+                const blessedSuffix =
+                    blessedCount > 0 ? ` <span style="color: ${STYLE.colors.accent};">(${blessedCount}✦)</span>` : '';
+
                 rows += `
                 <tr style="${rowStyle}">
                     <td style="${compactCellStyle} text-align: center;">${level}</td>
-                    <td style="${compactCellStyle} text-align: right;">${levelData.success}</td>
+                    <td style="${compactCellStyle} text-align: right;">${levelData.success}${blessedSuffix}</td>
                     <td style="${compactCellStyle} text-align: right;">${levelData.fail}</td>
                     <td style="${compactCellStyle} text-align: right;">${rate}</td>
                 </tr>
@@ -33285,7 +33566,7 @@ ${starCSS}
             const protectedFailure = previousLevel > 0 && newLevel === previousLevel && protectionItemHrid !== null;
             const wasFailure = levelDecreased || failedAtZero || protectedFailure;
 
-            const _wasBlessed = wasSuccess && newLevel - previousLevel >= 2; // Blessed tea detection
+            const wasBlessed = wasSuccess && newLevel - previousLevel >= 2; // Blessed tea detection
 
             // Update lastAttempt BEFORE recording (so next attempt compares correctly)
             currentSession.lastAttempt = {
@@ -33302,7 +33583,7 @@ ${starCSS}
                     const xpGain = calculateSuccessXP(previousLevel, itemHrid);
                     currentSession.totalXP += xpGain;
 
-                    await enhancementTracker.recordSuccess(previousLevel, newLevel);
+                    await enhancementTracker.recordSuccess(previousLevel, newLevel, wasBlessed);
                     enhancementUI.scheduleUpdate(); // Update UI after success
 
                     // Check if we've reached target
@@ -36254,13 +36535,106 @@ self.onmessage = function (e) {
     function calcTimeToLevel(currentXP, xpPerHour) {
         if (xpPerHour <= 0) return null;
 
-        const nextLvlIndex = LEVEL_EXPERIENCE_TABLE.findIndex((xp) => currentXP <= xp);
+        // Strict `<` (not `<=`) so that landing exactly on a threshold (just leveled up) finds the
+        // NEXT level's threshold instead of returning the just-reached one, which has 0 XP remaining.
+        const nextLvlIndex = LEVEL_EXPERIENCE_TABLE.findIndex((xp) => currentXP < xp);
         if (nextLvlIndex < 0) return null;
 
         const xpTillLevel = LEVEL_EXPERIENCE_TABLE[nextLvlIndex] - currentXP;
         if (xpTillLevel <= 0) return null;
 
         return (xpTillLevel / xpPerHour) * 3600000;
+    }
+
+    // ─── Next level-earned member slot (+1) ──────────────────────────────────────
+    // MWI grants +1 base member slot every GUILD_LEVELS_PER_MAX_MEMBER guild levels
+    // (Guild Hall capacity is a separate, independent bonus and is not modeled here).
+
+    const GUILD_LEVELS_PER_MAX_MEMBER = 3;
+    // A rate is only trusted as "stable" once the two sample points span at least this fraction
+    // of the window they were drawn from — two points a few minutes apart inside a 24h window
+    // would otherwise extrapolate to a wildly misleading hourly rate.
+    const MIN_STABLE_SAMPLE_FRACTION = 0.25;
+
+    /**
+     * The next guild level that adds a level-earned +1 member slot.
+     * @param {number} guildLevel - Current guild level
+     * @returns {number} Target level (always > guildLevel, even if guildLevel is itself a boundary)
+     */
+    function calcNextMemberSlotLevel(guildLevel) {
+        return GUILD_LEVELS_PER_MAX_MEMBER * (Math.floor(guildLevel / GUILD_LEVELS_PER_MAX_MEMBER) + 1);
+    }
+
+    /**
+     * XP remaining to reach a target level via the native levelExperienceTable (indexed by level).
+     * @param {number} currentXP
+     * @param {number} targetLevel
+     * @param {Array<number>|undefined} levelExperienceTable
+     * @returns {number|null} null if the table has no entry for targetLevel
+     */
+    function calcXPRemainingForLevel(currentXP, targetLevel, levelExperienceTable) {
+        const targetXP = levelExperienceTable?.[targetLevel];
+        if (typeof targetXP !== 'number') return null;
+        return Math.max(0, targetXP - currentXP);
+    }
+
+    /**
+     * XP/hr rate over a window, but only if backed by a meaningfully-elapsed sample span —
+     * not just two points that happen to both fall inside the window.
+     * @param {Array<{t: number, xp: number}>} arr
+     * @param {number} windowMs
+     * @returns {number|null}
+     */
+    function calcStableRate(arr, windowMs) {
+        const inWindow = inLastInterval$1(arr, windowMs);
+        if (inWindow.length < 2) return null;
+
+        const span = inWindow[inWindow.length - 1].t - inWindow[0].t;
+        if (span < windowMs * MIN_STABLE_SAMPLE_FRACTION) return null;
+
+        return calcXPH$1(inWindow[0], inWindow[inWindow.length - 1]);
+    }
+
+    /**
+     * Resolve the best stable XP/hr rate: prefer a stable 24h rate, then a stable 1h rate.
+     * @param {Array<{t: number, xp: number}>} arr
+     * @returns {{rate: number, basis: '24h'|'1h'}|null}
+     */
+    function resolveStableRate(arr) {
+        const daily = calcStableRate(arr, WINDOW_1D$1);
+        if (daily !== null) return { rate: daily, basis: '24h' };
+
+        const hourly = calcStableRate(arr, WINDOW_1H$1);
+        if (hourly !== null) return { rate: hourly, basis: '1h' };
+
+        return null;
+    }
+
+    /**
+     * Compute ETA info for the next level-earned (+1) guild member slot.
+     * @param {number} guildLevel - Current guild level
+     * @param {number} currentXP - Current guild XP
+     * @param {Array<{t: number, xp: number}>} xpHistory - Guild XP history
+     * @param {Array<number>|undefined} levelExperienceTable - Native level->XP table
+     * @returns {null|{targetLevel: number, xpRemaining: number, status: 'ok'|'zero-rate'|'collecting-data', etaMs?: number, rateBasis?: '24h'|'1h', rateValue?: number}}
+     */
+    function calcNextMemberSlotETA(guildLevel, currentXP, xpHistory, levelExperienceTable) {
+        if (typeof guildLevel !== 'number' || typeof currentXP !== 'number') return null;
+
+        const targetLevel = calcNextMemberSlotLevel(guildLevel);
+        const xpRemaining = calcXPRemainingForLevel(currentXP, targetLevel, levelExperienceTable);
+        if (xpRemaining === null) return null;
+
+        const rateResult = resolveStableRate(xpHistory || []);
+        if (!rateResult) {
+            return { targetLevel, xpRemaining, status: 'collecting-data' };
+        }
+        if (rateResult.rate <= 0) {
+            return { targetLevel, xpRemaining, status: 'zero-rate', rateBasis: rateResult.basis };
+        }
+
+        const etaMs = (xpRemaining / rateResult.rate) * 3600000;
+        return { targetLevel, xpRemaining, status: 'ok', etaMs, rateBasis: rateResult.basis, rateValue: rateResult.rate };
     }
 
     // ─── Tracker class ──────────────────────────────────────────────────────────
@@ -36270,6 +36644,7 @@ self.onmessage = function (e) {
             this.initialized = false;
             this.ownGuildName = null;
             this.ownGuildID = null;
+            this.ownGuildLevel = null;
             this.guildCreatedAt = null;
             this.guildType = null;
             this.currentWeekStartAt = null;
@@ -36326,6 +36701,7 @@ self.onmessage = function (e) {
             const guildName = guild.name;
             const guildXP = guild.experience;
             this.ownGuildName = guildName;
+            this.ownGuildLevel = typeof guild.level === 'number' ? guild.level : null;
             this.guildCreatedAt = guild.createdAt;
             this.guildType = guild.guildType || null;
             this.currentWeekStartAt = guild.currentWeekStartAt || null;
@@ -36398,6 +36774,7 @@ self.onmessage = function (e) {
 
             const name = guild.name;
             this.ownGuildName = name;
+            this.ownGuildLevel = typeof guild.level === 'number' ? guild.level : this.ownGuildLevel;
             this.guildCreatedAt = guild.createdAt;
             this.guildType = guild.guildType || this.guildType;
             this.currentWeekStartAt = guild.currentWeekStartAt || this.currentWeekStartAt;
@@ -36634,6 +37011,29 @@ self.onmessage = function (e) {
         }
 
         /**
+         * Get ETA info for the next level-earned (+1) guild member slot.
+         * Only available for the player's own guild, since level is only tracked for that guild.
+         * @param {string} guildName
+         * @returns {null|{targetLevel: number, xpRemaining: number, status: 'ok'|'zero-rate'|'collecting-data', etaMs?: number, rateBasis?: '24h'|'1h', rateValue?: number}}
+         */
+        getNextMemberSlotETA(guildName) {
+            if (guildName !== this.ownGuildName || this.ownGuildLevel === null) return null;
+
+            const currentXP = this.getCurrentGuildXP(guildName);
+            if (currentXP === null) return null;
+
+            const levelExperienceTable = dataManager.getInitClientData()?.levelExperienceTable;
+            if (!levelExperienceTable) return null;
+
+            return calcNextMemberSlotETA(
+                this.ownGuildLevel,
+                currentXP,
+                this.guildXPHistory[guildName],
+                levelExperienceTable
+            );
+        }
+
+        /**
          * Reset member XP history for the current guild.
          * Used to clear corrupted data (e.g., after a guild switch).
          */
@@ -36654,6 +37054,7 @@ self.onmessage = function (e) {
 
             this.ownGuildName = null;
             this.ownGuildID = null;
+            this.ownGuildLevel = null;
             this.guildCreatedAt = null;
             this.guildXPHistory = {};
             this.memberXPHistory = {};
@@ -37177,18 +37578,49 @@ self.onmessage = function (e) {
 
             // Time to level
             const timeToLevel = guildXPTracker.getTimeToLevel(guildName);
-            if (timeToLevel !== null) {
-                const ttlHTML = `<div class="${CSS_PREFIX$1}" style="color: var(--color-space-300); font-size: 13px;">${formatTimeLeft(timeToLevel)}</div>`;
+            const nextSlotHTML = this._buildNextMemberSlotHTML(guildXPTracker.getNextMemberSlotETA(guildName));
+            if (timeToLevel !== null || nextSlotHTML) {
+                const ttlHTML =
+                    timeToLevel !== null
+                        ? `<div class="${CSS_PREFIX$1}" style="color: var(--color-space-300); font-size: 13px;">${formatTimeLeft(timeToLevel)}</div>`
+                        : '';
                 // Find the "Exp to Next Level" data block and append
                 const dataBlocks = dataGridEl.querySelectorAll('.GuildPanel_dataBlock__3qVhK');
                 for (const block of dataBlocks) {
                     const label = block.querySelector('.GuildPanel_label__-A63g');
                     if (label && label.textContent.includes('Exp to')) {
-                        block.insertAdjacentHTML('beforeend', ttlHTML);
+                        block.insertAdjacentHTML('beforeend', ttlHTML + nextSlotHTML);
                         break;
                     }
                 }
             }
+        }
+
+        /**
+         * Build the "Next Guild Level Slot (+1)" line HTML from tracker ETA info.
+         * Deliberately never claims to predict Guild Hall capacity increases - only the
+         * level-earned +1 base slot, which is the only thing this data can prove.
+         * @param {null|{targetLevel: number, xpRemaining: number, status: string, etaMs?: number, rateBasis?: string, rateValue?: number}} slotEta
+         * @returns {string} HTML, or '' if unavailable
+         */
+        _buildNextMemberSlotHTML(slotEta) {
+            if (!slotEta) return '';
+
+            let etaText;
+            let tooltip = '';
+            if (slotEta.status === 'ok') {
+                etaText = formatTimeLeft(slotEta.etaMs);
+                tooltip = `ETA based on ${slotEta.rateBasis} average: ${fNum(slotEta.rateValue)} XP/h`;
+            } else if (slotEta.status === 'zero-rate') {
+                etaText = 'no recent gains';
+                tooltip = `No guild XP gained in the last ${slotEta.rateBasis === '24h' ? '24 hours' : 'hour'}`;
+            } else {
+                etaText = 'collecting data';
+            }
+
+            return `<div class="${CSS_PREFIX$1}" style="color: var(--color-space-300); font-size: 13px; margin-top: 4px;"${tooltip ? ` title="${tooltip}"` : ''}>
+            <span style="color: #9ca3af;">Next Guild Level Slot (+1):</span> Lv ${slotEta.targetLevel} · ${fNum(slotEta.xpRemaining)} XP remaining · ${etaText}
+        </div>`;
         }
 
         _buildIdleHTML() {
@@ -40266,6 +40698,7 @@ self.onmessage = function (e) {
         equipmentLevelDisplay,
         alchemyItemDimming,
         skillExperiencePercentage,
+        combatLevelProgress,
         externalLinks,
         hideLabyrinthBadge,
         hideGuildBadge,

@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.92.0
+ * Version: 2.93.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8127,6 +8127,24 @@
     }
 
     /**
+     * Calculate the level-gap debuff for one party member given their combat level and the party's
+     * highest combat level. Shared by Combat Sim (simulated party loadouts) and Combat Stats
+     * (real live encounters) so both agree on the exact same 1.2-ratio rule.
+     * @param {number} combatLevel - This player's combat level
+     * @param {number} maxCombatLevel - The party's highest combat level
+     * @returns {number} Debuff as a negative decimal (0 = no debuff, e.g. -0.3 = -30%)
+     */
+    function calculateLevelGapDebuff(combatLevel, maxCombatLevel) {
+        const ratio = maxCombatLevel / combatLevel;
+        if (ratio <= 1.2) {
+            return 0;
+        }
+        const maxDebuff = 0.9;
+        const levelPercent = Math.floor((ratio - 1.2) * 100) / 100;
+        return -1 * Math.min(maxDebuff, 3 * levelPercent);
+    }
+
+    /**
      * Calculate combat level for level gap debuff.
      * @param {Object} dto - Player DTO
      * @returns {number} Combat level
@@ -8217,22 +8235,11 @@
 
         // Calculate level gap debuff
         if (players.length > 1) {
-            let maxCombatLevel = 0;
-            const levels = players.map((p) => {
-                const level = calcCombatLevel(p);
-                maxCombatLevel = Math.max(maxCombatLevel, level);
-                return level;
-            });
+            const levels = players.map((p) => calcCombatLevel(p));
+            const maxCombatLevel = Math.max(...levels);
 
             for (let i = 0; i < players.length; i++) {
-                const ratio = maxCombatLevel / levels[i];
-                if (ratio > 1.2) {
-                    const maxDebuff = 0.9;
-                    const levelPercent = Math.floor((ratio - 1.2) * 100) / 100;
-                    players[i].debuffOnLevelGap = -1 * Math.min(maxDebuff, 3 * levelPercent);
-                } else {
-                    players[i].debuffOnLevelGap = 0;
-                }
+                players[i].debuffOnLevelGap = calculateLevelGapDebuff(levels[i], maxCombatLevel);
             }
         }
 
@@ -22236,6 +22243,171 @@
     const labSim = new LabSim();
 
     /**
+     * Expected Loot Tracker
+     * Accumulates real completed-encounter monster kill counts (regular zones) and dungeon
+     * completions for the current zone, then feeds the exact same canonical drop-math helper
+     * Combat Sim uses (`calculateExpectedDrops`) so Actual and Expected never disagree because of
+     * duplicated formulas.
+     */
+
+
+    class ExpectedLootTracker {
+        constructor() {
+            this.reset();
+        }
+
+        /**
+         * Clear all accumulated state (new zone, new session, or character switch)
+         */
+        reset() {
+            this.zoneHrid = null;
+            this.isDungeon = false;
+            this.deaths = {};
+            this.dungeonsCompleted = 0;
+            this.completedEncounterCount = 0;
+            this.trackingStartTime = null;
+            this.latest = {
+                difficultyTier: 0,
+                numberOfPlayers: 1,
+                dropRateMultiplier: 1,
+                rareFindMultiplier: 1,
+                combatDropQuantity: 0,
+                debuffOnLevelGap: 0,
+            };
+        }
+
+        /**
+         * Reset tracked state if the active zone/action changed, so Actual and Expected always
+         * cover the same sample window (never mixing kills from a previous zone into this one).
+         * @param {string} zoneHrid - Current action HRID
+         * @param {boolean} isDungeon - Whether the current zone is a dungeon
+         */
+        _syncZone(zoneHrid, isDungeon) {
+            if (this.zoneHrid !== null && (this.zoneHrid !== zoneHrid || this.isDungeon !== isDungeon)) {
+                this.reset();
+            }
+            this.zoneHrid = zoneHrid;
+            this.isDungeon = isDungeon;
+        }
+
+        /**
+         * Record one completed regular-zone encounter (never the currently-active one).
+         * @param {Object} params - Completed encounter data
+         * @param {string} params.zoneHrid - Current action HRID
+         * @param {Array<string>} params.monsterHrids - Monster HRIDs present in the completed encounter
+         * @param {number} params.difficultyTier - Zone difficulty tier
+         * @param {number} params.numberOfPlayers - Party size
+         * @param {number} params.dropRateMultiplier - Live Combat Drop Rate multiplier (1 = no bonus)
+         * @param {number} params.rareFindMultiplier - Live Combat Rare Find multiplier (1 = no bonus)
+         * @param {number} params.combatDropQuantity - Live Combat Drop Quantity bonus (0 = no bonus)
+         * @param {number} params.debuffOnLevelGap - Level-gap debuff (negative or 0)
+         */
+        recordCompletedEncounter({
+            zoneHrid,
+            monsterHrids,
+            difficultyTier,
+            numberOfPlayers,
+            dropRateMultiplier,
+            rareFindMultiplier,
+            combatDropQuantity,
+            debuffOnLevelGap,
+        }) {
+            this._syncZone(zoneHrid, false);
+            if (this.trackingStartTime === null) {
+                this.trackingStartTime = Date.now();
+            }
+
+            for (const monsterHrid of monsterHrids) {
+                this.deaths[monsterHrid] = (this.deaths[monsterHrid] || 0) + 1;
+            }
+            this.completedEncounterCount += 1;
+
+            this.latest = {
+                difficultyTier,
+                numberOfPlayers,
+                dropRateMultiplier,
+                rareFindMultiplier,
+                combatDropQuantity,
+                debuffOnLevelGap,
+            };
+        }
+
+        /**
+         * Record one completed dungeon run (completion rewards only, never per-monster drops).
+         * @param {Object} params - Completed dungeon data
+         * @param {string} params.zoneHrid - Dungeon action HRID
+         * @param {number} params.difficultyTier - Dungeon tier
+         * @param {number} params.numberOfPlayers - Party size at completion
+         * @param {number} params.combatDropQuantity - Live Combat Drop Quantity bonus (0 = no bonus)
+         */
+        recordDungeonCompletion({ zoneHrid, difficultyTier, numberOfPlayers, combatDropQuantity }) {
+            this._syncZone(zoneHrid, true);
+            if (this.trackingStartTime === null) {
+                this.trackingStartTime = Date.now();
+            }
+
+            this.dungeonsCompleted += 1;
+            this.completedEncounterCount += 1;
+            this.latest = { ...this.latest, difficultyTier, numberOfPlayers, combatDropQuantity };
+        }
+
+        /**
+         * @returns {boolean} True once at least one encounter/dungeon run has completed
+         */
+        hasData() {
+            return this.completedEncounterCount > 0;
+        }
+
+        /**
+         * @returns {number} Number of completed encounters/dungeon runs contributing to the sample
+         */
+        getSampleSize() {
+            return this.completedEncounterCount;
+        }
+
+        /**
+         * Real wall-clock time actually covered by the accumulated sample - NOT the whole combat
+         * session's duration, which may have started long before this tracker began observing
+         * (e.g. the script attached mid-fight). Using the session duration here would silently
+         * understate the expected daily rate by whatever ratio the two windows differ by.
+         * @returns {number} Seconds since the first completed encounter/dungeon run in this sample
+         */
+        getElapsedSeconds() {
+            if (this.trackingStartTime === null) {
+                return 0;
+            }
+            return Math.max(0, (Date.now() - this.trackingStartTime) / 1000);
+        }
+
+        /**
+         * Compute expected drops for everything accumulated so far, using the exact same helper
+         * Combat Sim uses for simulated runs.
+         * @param {Object} gameData - `dataManager.getInitClientData()` result (combatMonsterDetailMap/actionDetailMap)
+         * @returns {Map<string, number>} itemHrid -> expected total drop count
+         */
+        getExpectedDrops(gameData) {
+            if (!this.hasData()) {
+                return new Map();
+            }
+
+            const simResult = {
+                isDungeon: this.isDungeon,
+                zoneName: this.zoneHrid,
+                deaths: this.deaths,
+                dungeonsCompleted: this.dungeonsCompleted,
+                numberOfPlayers: this.latest.numberOfPlayers || 1,
+                difficultyTier: this.latest.difficultyTier || 0,
+                dropRateMultiplier: { player1: this.latest.dropRateMultiplier || 1 },
+                rareFindMultiplier: { player1: this.latest.rareFindMultiplier || 1 },
+                combatDropQuantity: { player1: this.latest.combatDropQuantity || 0 },
+                debuffOnLevelGap: { player1: this.latest.debuffOnLevelGap || 0 },
+            };
+
+            return calculateExpectedDrops(simResult, gameData, 'player1');
+        }
+    }
+
+    /**
      * Combat Statistics Data Collector
      * Listens for new_battle WebSocket messages and stores combat data
      */
@@ -22250,6 +22422,23 @@
     });
     const STORAGE_MISSING = Symbol('storage-missing');
 
+    /**
+     * Sum a `totalLootMap`-shaped object by real item HRID. The map's own object keys are opaque
+     * composite strings (`{characterId}::{itemLocationHrid}::{itemHrid}::{enhancementLevel}`), NOT
+     * the item HRID itself - the real HRID lives on each entry's own `.itemHrid` field, exactly like
+     * `calculateIncome()` already reads it in `combat-stats-calculator.js`.
+     * @param {Object} lootMap - `totalLootMap`-shaped object
+     * @returns {Object} Map of itemHrid -> total count
+     */
+    function sumLootByItemHrid(lootMap) {
+        const totals = {};
+        for (const loot of Object.values(lootMap || {})) {
+            if (!loot?.itemHrid) continue;
+            totals[loot.itemHrid] = (totals[loot.itemHrid] || 0) + loot.count;
+        }
+        return totals;
+    }
+
     class CombatStatsDataCollector {
         constructor() {
             this.isInitialized = false;
@@ -22259,6 +22448,15 @@
             this.currentBattleId = null;
             this.characterId = null;
             this.lifecycleGeneration = 0;
+            this.wasBelowRunwayThreshold = {};
+            this.runwayNotificationPermissionGranted = false;
+            this.timerRegistry = timerRegistry_js.createTimerRegistry();
+            this.pendingEncounter = null;
+            this.latestSelfCombatDropQuantity = 0;
+            this.actualLootSnapshot = null;
+            this.trackedZoneKey = null;
+            this.expectedLootTracker = new ExpectedLootTracker();
+            this.dungeonCompletionHandler = null;
 
             this._resetTrackingState();
         }
@@ -22318,6 +22516,9 @@
             await this.loadConsumableTracking(this.characterId);
             if (generation !== this.lifecycleGeneration || !this.isInitialized) return;
 
+            await this.requestRunwayNotificationPermission();
+            if (generation !== this.lifecycleGeneration || !this.isInitialized) return;
+
             // Store handler references for cleanup
             this.newBattleHandler = (data) => this.onNewBattle(data, generation);
             this.consumableEventHandler = (data) => this.onConsumableUsed(data, generation);
@@ -22327,6 +22528,104 @@
 
             // Listen for battle_consumable_ability_updated (fires on each consumable use)
             webSocketHook.on('battle_consumable_ability_updated', this.consumableEventHandler);
+
+            // Reuse dungeon-tracker's own proven completion signal instead of re-deriving one
+            this.dungeonCompletionHandler = (_current, completedRun) => {
+                if (generation !== this.lifecycleGeneration) return;
+                if (completedRun) {
+                    this.expectedLootTracker.recordDungeonCompletion({
+                        zoneHrid: completedRun.dungeonHrid,
+                        difficultyTier: completedRun.tier || 0,
+                        numberOfPlayers: Object.keys(completedRun.keyCountsMap || {}).length || 1,
+                        combatDropQuantity: this.latestSelfCombatDropQuantity,
+                    });
+                }
+            };
+            dungeonTracker.onUpdate(this.dungeonCompletionHandler);
+        }
+
+        /**
+         * Request browser notification permission for the consumable runway warning
+         */
+        async requestRunwayNotificationPermission() {
+            if (typeof Notification === 'undefined') {
+                return;
+            }
+
+            if (Notification.permission === 'granted') {
+                this.runwayNotificationPermissionGranted = true;
+                return;
+            }
+
+            if (Notification.permission !== 'denied') {
+                try {
+                    const permission = await Notification.requestPermission();
+                    this.runwayNotificationPermissionGranted = permission === 'granted';
+                } catch (error) {
+                    console.warn('[Combat Stats] Runway notification permission request failed:', error);
+                }
+            }
+        }
+
+        /**
+         * Check the current player's runway against the configured warning threshold and fire a
+         * one-shot browser notification on a threshold crossing (never for party members).
+         * @param {string} itemHrid - Item HRID
+         * @param {number} timeToZeroSeconds - Seconds until this item's inventory reaches zero
+         */
+        checkRunwayWarning(itemHrid, timeToZeroSeconds) {
+            const thresholdHours = config.getSettingValue('combatStats_runwayWarningThreshold', 12);
+            if (!thresholdHours || thresholdHours <= 0) {
+                this.wasBelowRunwayThreshold[itemHrid] = false;
+                return;
+            }
+
+            const thresholdSeconds = thresholdHours * 3600;
+            const isBelow = timeToZeroSeconds < thresholdSeconds;
+
+            if (isBelow && !this.wasBelowRunwayThreshold[itemHrid]) {
+                this.sendRunwayWarning(itemHrid, timeToZeroSeconds);
+            }
+
+            this.wasBelowRunwayThreshold[itemHrid] = isBelow;
+        }
+
+        /**
+         * Send the low-supply browser notification for a single consumable
+         * @param {string} itemHrid - Item HRID
+         * @param {number} timeToZeroSeconds - Seconds until this item's inventory reaches zero
+         */
+        sendRunwayWarning(itemHrid, timeToZeroSeconds) {
+            try {
+                if (!this.runwayNotificationPermissionGranted || typeof Notification === 'undefined') {
+                    return;
+                }
+
+                const itemName = dataManager.getItemDetails(itemHrid)?.name || itemHrid;
+                const hours = Math.max(0, timeToZeroSeconds) / 3600;
+                const hoursLabel = hours < 1 ? `${Math.round(hours * 60)}m` : `${hours.toFixed(1)}h`;
+
+                const notification = new Notification('Milky Way Idle', {
+                    body: `${itemName} is running low: ~${hoursLabel} remaining`,
+                    icon: 'https://www.milkywayidle.com/favicon.ico',
+                    tag: `combat-consumable-runway-${itemHrid}`,
+                    requireInteraction: false,
+                });
+
+                notification.onclick = () => {
+                    window.focus();
+                    notification.close();
+                };
+
+                notification.onerror = (error) => {
+                    console.error('[Combat Stats] Runway notification error:', error);
+                };
+
+                const closeTimeout = setTimeout(() => notification.close(), 5000);
+                this.timerRegistry.registerTimeout(closeTimeout);
+            } catch (error) {
+                console.error('[Combat Stats] Failed to send runway notification:', error);
+            }
         }
 
         /**
@@ -22630,6 +22929,124 @@
         }
 
         /**
+         * Resolve the currently active combat zone/action, if any.
+         * @returns {{zoneHrid: string, isDungeon: boolean, difficultyTier: number}|null} Zone info or null
+         */
+        getCurrentZoneInfo() {
+            const actions = dataManager.getCurrentActions();
+            const combatAction = actions.find(
+                (action) => action.actionHrid?.startsWith('/actions/combat/') && !action.isDone
+            );
+            if (!combatAction) {
+                return null;
+            }
+
+            const actionDetails = dataManager.getActionDetails(combatAction.actionHrid);
+            return {
+                zoneHrid: combatAction.actionHrid,
+                isDungeon: actionDetails?.combatZoneInfo?.isDungeon === true,
+                difficultyTier: combatAction.difficultyTier || 0,
+            };
+        }
+
+        /**
+         * Treat the previously-snapshotted battle as one completed regular-zone encounter (never the
+         * currently-active one), then snapshot this battle's monster composition and live multipliers
+         * for the next call. Dungeons are handled separately via `dungeonTracker.onUpdate` - no
+         * per-monster tracking happens while the current zone is a dungeon.
+         *
+         * Also snapshots the current player's total loot the moment tracking starts, so "Actual" for
+         * the comparison can be measured over the exact same window as "Expected" - reusing the
+         * session-wide `totalLootMap` directly would compare a short Expected sample against a much
+         * longer Actual window (e.g. the script attaching mid-fight), silently mis-scaling the result.
+         * @param {Object} data - new_battle message data
+         * @param {string} currentCharacterId - The current player's character ID
+         */
+        processExpectedLoot(data, currentCharacterId) {
+            const selfPlayer = data.players.find((player) => player?.character?.id === currentCharacterId);
+            this.latestSelfCombatDropQuantity = selfPlayer?.combatDetails?.combatStats?.combatDropQuantity || 0;
+
+            const zoneInfo = this.getCurrentZoneInfo();
+            if (!zoneInfo || zoneInfo.isDungeon) {
+                this.pendingEncounter = null;
+                this.actualLootSnapshot = null;
+                this.trackedZoneKey = null;
+                return;
+            }
+
+            const zoneKey = `${zoneInfo.zoneHrid}:${zoneInfo.isDungeon}`;
+            if (this.trackedZoneKey !== null && this.trackedZoneKey !== zoneKey) {
+                // Zone changed - the expected-loot tracker resets internally for the same reason;
+                // the actual-loot snapshot must reset in lockstep or it would diff against a stale
+                // baseline from the previous zone.
+                this.pendingEncounter = null;
+                this.actualLootSnapshot = null;
+            }
+            this.trackedZoneKey = zoneKey;
+
+            if (this.actualLootSnapshot === null) {
+                this.actualLootSnapshot = sumLootByItemHrid(selfPlayer?.totalLootMap);
+            }
+
+            if (this.pendingEncounter) {
+                this.expectedLootTracker.recordCompletedEncounter(this.pendingEncounter);
+            }
+
+            const levels = data.players
+                .map((player) => player?.combatDetails?.combatLevel)
+                .filter((level) => typeof level === 'number');
+            const maxCombatLevel = levels.length > 0 ? Math.max(...levels) : 0;
+            const selfCombatLevel = selfPlayer?.combatDetails?.combatLevel;
+            const debuffOnLevelGap =
+                typeof selfCombatLevel === 'number' && maxCombatLevel > 0
+                    ? calculateLevelGapDebuff(selfCombatLevel, maxCombatLevel)
+                    : 0;
+
+            const monsterHrids = (data.monsters || []).map((monster) => monster?.hrid).filter(Boolean);
+            const dropRateBonus = selfPlayer?.combatDetails?.combatStats?.combatDropRate || 0;
+            const rareFindBonus = selfPlayer?.combatDetails?.combatStats?.combatRareFind || 0;
+
+            this.pendingEncounter = {
+                zoneHrid: zoneInfo.zoneHrid,
+                monsterHrids,
+                difficultyTier: zoneInfo.difficultyTier,
+                numberOfPlayers: data.players.length,
+                dropRateMultiplier: 1 + dropRateBonus,
+                rareFindMultiplier: 1 + rareFindBonus,
+                combatDropQuantity: this.latestSelfCombatDropQuantity,
+                debuffOnLevelGap,
+            };
+        }
+
+        /**
+         * Actual loot the current player has gained since the expected-loot tracking window started
+         * (never the whole combat session), so Actual and Expected in the RNG Delta comparison always
+         * cover the exact same sample.
+         * @returns {Array<{itemHrid: string, count: number}>} Items gained since tracking started
+         */
+        getActualLootSinceTrackingStarted() {
+            if (!this.actualLootSnapshot || !this.latestCombatData) {
+                return [];
+            }
+
+            const selfPlayer = this.latestCombatData.players.find((player) => player.isCurrentPlayer);
+            if (!selfPlayer) {
+                return [];
+            }
+
+            const currentTotals = sumLootByItemHrid(selfPlayer.loot);
+            const items = [];
+            for (const [itemHrid, currentCount] of Object.entries(currentTotals)) {
+                const startCount = this.actualLootSnapshot[itemHrid] || 0;
+                const gained = currentCount - startCount;
+                if (gained > 0) {
+                    items.push({ itemHrid, count: gained });
+                }
+            }
+            return items;
+        }
+
+        /**
          * Handle new_battle message (fires during combat)
          * @param {Object} data - new_battle message data
          */
@@ -22662,6 +23079,10 @@
                 if (shouldResetTracking) {
                     await this.resetConsumableTracking(characterId);
                     if (generation !== this.lifecycleGeneration) return;
+                    this.pendingEncounter = null;
+                    this.actualLootSnapshot = null;
+                    this.trackedZoneKey = null;
+                    this.expectedLootTracker.reset();
                 }
 
                 // Update current battle ID
@@ -22669,6 +23090,8 @@
 
                 // Get current character ID to identify which player is the current user
                 const currentCharacterId = dataManager.getCurrentCharacterId();
+
+                this.processExpectedLoot(data, currentCharacterId);
 
                 // Track party member consumables via inventory snapshots (MCS-style)
                 const currentPartyMembers = new Set();
@@ -22825,7 +23248,9 @@
                                         this.getDefaultConsumed(consumable.itemHrid);
                                     trackingElapsed = elapsedSeconds;
                                     inventoryAmount =
-                                        this.consumableTracker.inventoryAmount[consumable.itemHrid] || consumable.count;
+                                        this.consumableTracker.inventoryAmount[consumable.itemHrid] !== undefined
+                                            ? this.consumableTracker.inventoryAmount[consumable.itemHrid]
+                                            : consumable.count;
                                 } else {
                                     // Party member: use snapshot-based tracking (MCS-style)
                                     const playerName = player.character.name;
@@ -22838,7 +23263,9 @@
                                             this.getDefaultConsumed(consumable.itemHrid);
                                         trackingElapsed = this.calcElapsedSeconds(partyTracker);
                                         inventoryAmount =
-                                            partyTracker.inventoryAmount[consumable.itemHrid] || consumable.count;
+                                            partyTracker.inventoryAmount[consumable.itemHrid] !== undefined
+                                                ? partyTracker.inventoryAmount[consumable.itemHrid]
+                                                : consumable.count;
                                     } else {
                                         // Fallback if tracker not initialized yet
                                         actualConsumed = 0;
@@ -22870,6 +23297,10 @@
                                 const timeToZeroSeconds =
                                     consumptionRate > 0 ? inventoryAmount / consumptionRate : Infinity;
 
+                                if (isCurrentPlayer) {
+                                    this.checkRunwayWarning(consumable.itemHrid, timeToZeroSeconds);
+                                }
+
                                 const consumableData = {
                                     itemHrid: consumable.itemHrid,
                                     currentCount: consumable.count,
@@ -22894,6 +23325,7 @@
                             experience: player.totalSkillExperienceMap || {},
                             deathCount: player.deathCount || 0,
                             consumables: consumablesWithConsumed,
+                            combatLevel: player.combatDetails?.combatLevel || null,
                             combatStats: {
                                 combatDropQuantity: player.combatDetails?.combatStats?.combatDropQuantity || 0,
                                 combatDropRate: player.combatDetails?.combatStats?.combatDropRate || 0,
@@ -22956,9 +23388,22 @@
                 this.consumableEventHandler = null;
             }
 
+            if (this.dungeonCompletionHandler) {
+                dungeonTracker.offUpdate(this.dungeonCompletionHandler);
+                this.dungeonCompletionHandler = null;
+            }
+
             this.isInitialized = false;
             this.latestCombatData = null;
             this.currentBattleId = null;
+            this.wasBelowRunwayThreshold = {};
+            this.runwayNotificationPermissionGranted = false;
+            this.timerRegistry.clearAll();
+            this.pendingEncounter = null;
+            this.latestSelfCombatDropQuantity = 0;
+            this.actualLootSnapshot = null;
+            this.trackedZoneKey = null;
+            this.expectedLootTracker.reset();
             // Note: Don't reset consumableTracker here - it's persisted
         }
     }
@@ -23077,6 +23522,38 @@
         }
 
         return { isDungeonRun, breakdown };
+    }
+
+    /**
+     * Value a list of items using the exact same valuation semantics for every caller, so Actual
+     * and Expected revenue never disagree because of two different pricing paths. Missing valuation
+     * is never treated as a silent zero - the caller is told the total is partial instead.
+     * @param {Array<{itemHrid: string, count: number, enhancementLevel?: number}>} items - Items to value
+     * @returns {{revenue: number, isPartial: boolean, unvaluedItemHrids: Array<string>}} Valuation result
+     */
+    function calculateValuedRevenue(items) {
+        let revenue = 0;
+        let isPartial = false;
+        const unvaluedItemHrids = [];
+
+        for (const item of items || []) {
+            if (!item?.count) continue;
+
+            const resolved = expectedValueCalculator.resolveSellSideValue(item.itemHrid, item.enhancementLevel || 0);
+            if (!resolved) {
+                isPartial = true;
+                unvaluedItemHrids.push(item.itemHrid);
+                continue;
+            }
+
+            const itemDetails = dataManager.getItemDetails(item.itemHrid);
+            const canBeSold = itemDetails?.isTradable !== false;
+            const unitValue = resolved.needsTax && canBeSold ? profitHelpers_js.calculatePriceAfterTax(resolved.value) : resolved.value;
+
+            revenue += unitValue * item.count;
+        }
+
+        return { revenue, isPartial, unvaluedItemHrids };
     }
 
     /**
@@ -23208,8 +23685,8 @@
                 defaultConsumed: consumable.defaultConsumed || 0,
                 consumptionRate: consumable.consumptionRate,
                 elapsedSeconds: consumable.elapsedSeconds || 0,
-                inventoryAmount: consumable.inventoryAmount || consumable.currentCount,
-                timeToZeroSeconds: consumable.timeToZeroSeconds || Infinity,
+                inventoryAmount: consumable.inventoryAmount ?? consumable.currentCount,
+                timeToZeroSeconds: consumable.timeToZeroSeconds ?? Infinity,
             });
         }
 
@@ -23305,9 +23782,14 @@
      * Calculate all statistics for a player
      * @param {Object} playerData - Player data from combat data
      * @param {number|null} durationSeconds - Combat duration in seconds (from DOM or null)
+     * @param {Object|null} expectedLootData - `{ expectedDropsMap, sampleSize, elapsedSeconds,
+     *   actualLootSinceTracking }` for the current player only (Combat Sim's canonical drop math has
+     *   no meaningful "expected" concept for a party member Toolasha did not simulate); null/omitted
+     *   for every other player. `elapsedSeconds` is the tracker's own observed window, NOT the combat
+     *   session duration; `actualLootSinceTracking` is loot gained only during that same window.
      * @returns {Object} Calculated statistics
      */
-    function calculatePlayerStats(playerData, durationSeconds = null) {
+    function calculatePlayerStats(playerData, durationSeconds = null, expectedLootData = null) {
         // Calculate income
         const income = calculateIncome(playerData.loot);
         const incomeBreakdownData = calculateIncomeBreakdown(playerData.loot);
@@ -23352,6 +23834,59 @@
         // Format loot list
         const lootList = formatLootList(playerData.loot);
 
+        // First consumable projected to run out (finite runway only - never Infinity/unknown)
+        const finiteRunwayItems = consumableBreakdown.filter((item) => Number.isFinite(item.timeToZeroSeconds));
+        const firstToRunOut =
+            finiteRunwayItems.length > 0
+                ? finiteRunwayItems.reduce((soonest, item) =>
+                      item.timeToZeroSeconds < soonest.timeToZeroSeconds ? item : soonest
+                  )
+                : null;
+
+        // Actual vs Expected loot / RNG Delta - current player only, and only once at least one
+        // encounter has completed (never fabricated from zero completed samples)
+        let actualVsExpected = null;
+        if (expectedLootData && expectedLootData.sampleSize > 0 && expectedLootData.elapsedSeconds > 0) {
+            // Both sides must cover the exact same window. Reusing the session-wide totalLootMap for
+            // "Actual" would compare a short Expected sample against a much longer Actual window
+            // (e.g. the script attaching mid-fight), silently mis-scaling the result - so Actual here
+            // is the loot gained only since the expected-loot tracker itself started observing.
+            const actualItems = expectedLootData.actualLootSinceTracking || [];
+            const expectedItems = Array.from(expectedLootData.expectedDropsMap || [], ([itemHrid, count]) => ({
+                itemHrid,
+                count,
+            }));
+
+            const actualValuation = calculateValuedRevenue(actualItems);
+            const expectedValuation = calculateValuedRevenue(expectedItems);
+
+            // Both sides share the same elapsed-time denominator, since both now cover the same window.
+            const actualRevenuePerDay = calculateDailyRate(actualValuation.revenue, expectedLootData.elapsedSeconds);
+            const expectedRevenuePerDay = calculateDailyRate(expectedValuation.revenue, expectedLootData.elapsedSeconds);
+            const rngDeltaValue = actualRevenuePerDay - expectedRevenuePerDay;
+            const rngDeltaPercent = expectedRevenuePerDay !== 0 ? (rngDeltaValue / expectedRevenuePerDay) * 100 : 0;
+
+            // Scale per-item quantities to the same /day basis as the headline figures above, so the
+            // expandable table's rows actually sum to the headline Loot Luck delta instead of showing
+            // raw window-total counts against a daily-rate summary.
+            const dailyScale = 86400 / expectedLootData.elapsedSeconds;
+            const scaleToDaily = (items) => items.map((item) => ({ ...item, count: item.count * dailyScale }));
+
+            actualVsExpected = {
+                actualRevenuePerDay,
+                expectedRevenuePerDay,
+                rngDeltaValue,
+                rngDeltaPercent,
+                actualProfitPerDay: actualRevenuePerDay - dailyConsumableCosts - dailyKeyCosts,
+                expectedProfitPerDay: expectedRevenuePerDay - dailyConsumableCosts - dailyKeyCosts,
+                sampleSize: expectedLootData.sampleSize,
+                elapsedSeconds: expectedLootData.elapsedSeconds,
+                isPartial: actualValuation.isPartial || expectedValuation.isPartial,
+                unvaluedItemHrids: [...actualValuation.unvaluedItemHrids, ...expectedValuation.unvaluedItemHrids],
+                itemDeltas: buildItemDeltas(scaleToDaily(actualItems), scaleToDaily(expectedItems)),
+            };
+        }
+
         return {
             name: playerData.name,
             income: {
@@ -23365,6 +23900,7 @@
             consumableCosts,
             consumableBreakdown,
             dailyConsumableCosts,
+            firstToRunOut,
             keyCosts,
             dailyKeyCosts,
             keyBreakdown,
@@ -23380,16 +23916,54 @@
             incomeBreakdown: incomeBreakdownData.breakdown,
             isDungeonRun: incomeBreakdownData.isDungeonRun,
             duration,
+            actualVsExpected,
         };
+    }
+
+    /**
+     * Build a per-item Actual/Expected/Delta table, sorted by value delta (not percent) so
+     * ultra-rare tiny expectations never dominate the table.
+     * @param {Array<{itemHrid: string, count: number}>} actualItems - Actual loot items
+     * @param {Array<{itemHrid: string, count: number}>} expectedItems - Expected drop items
+     * @returns {Array<{itemHrid: string, itemName: string, actualCount: number, expectedCount: number, valueDelta: number}>}
+     */
+    function buildItemDeltas(actualItems, expectedItems) {
+        const actualCounts = new Map(actualItems.map((item) => [item.itemHrid, item.count]));
+        const expectedCounts = new Map(expectedItems.map((item) => [item.itemHrid, item.count]));
+        const allItemHrids = new Set([...actualCounts.keys(), ...expectedCounts.keys()]);
+
+        const rows = [];
+        for (const itemHrid of allItemHrids) {
+            const actualCount = actualCounts.get(itemHrid) || 0;
+            const expectedCount = expectedCounts.get(itemHrid) || 0;
+            const resolved = expectedValueCalculator.resolveSellSideValue(itemHrid);
+            if (!resolved) continue;
+
+            const itemDetails = dataManager.getItemDetails(itemHrid);
+            const canBeSold = itemDetails?.isTradable !== false;
+            const unitValue = resolved.needsTax && canBeSold ? profitHelpers_js.calculatePriceAfterTax(resolved.value) : resolved.value;
+
+            rows.push({
+                itemHrid,
+                itemName: itemDetails?.name || itemHrid,
+                actualCount,
+                expectedCount,
+                valueDelta: (actualCount - expectedCount) * unitValue,
+            });
+        }
+
+        rows.sort((a, b) => Math.abs(b.valueDelta) - Math.abs(a.valueDelta));
+        return rows;
     }
 
     /**
      * Calculate statistics for all players
      * @param {Object} combatData - Combat data from data collector
      * @param {number|null} durationSeconds - Combat duration in seconds (from DOM or null)
+     * @param {Object|null} expectedLootData - `{ expectedDropsMap, sampleSize, elapsedSeconds, actualLootSinceTracking }` for the current player
      * @returns {Array} Array of player statistics
      */
-    function calculateAllPlayerStats(combatData, durationSeconds = null) {
+    function calculateAllPlayerStats(combatData, durationSeconds = null, expectedLootData = null) {
         if (!combatData || !combatData.players) {
             return [];
         }
@@ -23400,7 +23974,7 @@
         const encountersPerHour = duration > 0 ? (3600 * (battleId - 1)) / duration : 0;
 
         return combatData.players.map((player) => {
-            const stats = calculatePlayerStats(player, durationSeconds);
+            const stats = calculatePlayerStats(player, durationSeconds, player.isCurrentPlayer ? expectedLootData : null);
             // Add EPH and formatted duration to each player's stats
             stats.encountersPerHour = encountersPerHour;
             stats.durationFormatted = formatDuration(duration);
@@ -23451,6 +24025,105 @@
      * Injects button and displays statistics popup
      */
 
+
+    const YEAR_SECONDS = 365 * 86400;
+
+    /**
+     * Format a consumable's remaining runway for display. Capped at >1y - beyond that the estimate
+     * is both unreadable and, given how thin the underlying sample usually is, not meaningfully more
+     * precise than "a long time". Use `formatRunwayExact` for the uncapped value in a tooltip.
+     * @param {number} seconds - Seconds until inventory reaches zero (Infinity if rate is 0/unknown)
+     * @returns {string} Formatted runway string
+     */
+    function formatRunway(seconds) {
+        if (!Number.isFinite(seconds)) {
+            return 'No usage observed';
+        }
+        if (seconds <= 0) {
+            return 'Out now';
+        }
+        if (seconds >= YEAR_SECONDS) {
+            return '>1y';
+        }
+        if (seconds < 3600) {
+            return `~${Math.ceil(seconds / 60)}m`;
+        }
+        if (seconds < 86400) {
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            return m > 0 ? `~${h}h ${m}m` : `~${h}h`;
+        }
+        const d = Math.floor(seconds / 86400);
+        const h = Math.floor((seconds % 86400) / 3600);
+        return h > 0 ? `~${d}d ${h}h` : `~${d}d`;
+    }
+
+    /**
+     * Uncapped exact runway string, for use as a tooltip alongside the capped `formatRunway` text.
+     * @param {number} seconds - Seconds until inventory reaches zero (Infinity if rate is 0/unknown)
+     * @returns {string} Formatted runway string, never capped at >1y
+     */
+    function formatRunwayExact(seconds) {
+        if (!Number.isFinite(seconds) || seconds <= 0) {
+            return formatRunway(seconds);
+        }
+        const d = Math.floor(seconds / 86400);
+        const h = Math.floor((seconds % 86400) / 3600);
+        if (d === 0) {
+            return formatRunway(seconds);
+        }
+        return h > 0 ? `~${d}d ${h}h` : `~${d}d`;
+    }
+
+    /**
+     * Format an item quantity with adaptive decimal precision so a small non-zero expected/actual
+     * count (common for rare drops over a short sample) never silently rounds down to a misleading
+     * "0". Larger quantities fall back to the existing K/M/B or separator formatting.
+     * @param {number} num - Quantity to format
+     * @param {Function} formatNum - The card's existing whole-number formatter (K/M/B or separator)
+     * @returns {string} Formatted quantity string
+     */
+    function formatQuantity(num, formatNum) {
+        if (!Number.isFinite(num)) {
+            return '0';
+        }
+        // Whole numbers (e.g. an already-rounded consumedPerDay) print as plain integers regardless
+        // of magnitude - only genuinely fractional quantities get adaptive decimal precision.
+        if (Math.abs(num - Math.round(num)) < 1e-6) {
+            return formatNum(Math.round(num));
+        }
+        const abs = Math.abs(num);
+        if (abs < 0.01) {
+            return num > 0 ? '<0.01' : '>-0.01';
+        }
+        if (abs < 1) {
+            return num.toFixed(2);
+        }
+        if (abs < 10) {
+            return num.toFixed(1);
+        }
+        return formatNum(num);
+    }
+
+    /**
+     * Color a runway value by urgency: red when already out, amber when below the configured warning
+     * threshold, muted gray otherwise (multi-day estimates should stay subtle, not alarming).
+     * @param {number} seconds - Seconds until inventory reaches zero (Infinity if rate is 0/unknown)
+     * @returns {string} CSS color
+     */
+    function getRunwayColor(seconds) {
+        if (!Number.isFinite(seconds)) {
+            return '#888';
+        }
+        if (seconds <= 0) {
+            return '#ff6b6b';
+        }
+        const thresholdHours = config.getSettingValue('combatStats_runwayWarningThreshold', 12);
+        if (thresholdHours > 0 && seconds < thresholdHours * 3600) {
+            return '#f0a830';
+        }
+        return '#888';
+    }
 
     class CombatStatsUI {
         constructor() {
@@ -23713,7 +24386,16 @@
             }
 
             // Calculate statistics
-            const playerStats = calculateAllPlayerStats(combatData, durationSeconds);
+            const expectedLootTracker = combatStatsDataCollector.expectedLootTracker;
+            const expectedLootData = expectedLootTracker?.hasData()
+                ? {
+                      expectedDropsMap: expectedLootTracker.getExpectedDrops(dataManager.getInitClientData() || {}),
+                      sampleSize: expectedLootTracker.getSampleSize(),
+                      elapsedSeconds: expectedLootTracker.getElapsedSeconds(),
+                      actualLootSinceTracking: combatStatsDataCollector.getActualLootSinceTrackingStarted(),
+                  }
+                : null;
+            const playerStats = calculateAllPlayerStats(combatData, durationSeconds, expectedLootData);
 
             // Create and show popup
             this.createPopup(playerStats);
@@ -24003,6 +24685,14 @@
                     breakdown: stats.consumableBreakdown,
                     isDaily: true,
                 },
+                {
+                    label: 'Lowest runway',
+                    value: stats.firstToRunOut
+                        ? `${stats.firstToRunOut.itemName} · ${formatRunway(stats.firstToRunOut.timeToZeroSeconds)}`
+                        : 'No usage observed',
+                    color: stats.firstToRunOut ? getRunwayColor(stats.firstToRunOut.timeToZeroSeconds) : undefined,
+                    title: stats.firstToRunOut ? formatRunwayExact(stats.firstToRunOut.timeToZeroSeconds) : undefined,
+                },
                 ...(stats.keyBreakdown && stats.keyBreakdown.length > 0
                     ? [
                           {
@@ -24031,6 +24721,45 @@
                     value: `${formatNum(stats.dailyProfit[priceKey])}/d`,
                     color: stats.dailyProfit[priceKey] >= 0 ? '#51cf66' : '#ff6b6b',
                 },
+                ...(stats.actualVsExpected
+                    ? (() => {
+                          const sampleHeading = `Loot RNG sample · ${formatNum(stats.actualVsExpected.sampleSize)} encounters · ${formatRunway(stats.actualVsExpected.elapsedSeconds)}`;
+                          return [
+                              {
+                                  label: 'Actual Rate',
+                                  value: `${formatNum(stats.actualVsExpected.actualRevenuePerDay)}/d`,
+                                  group: 'actualVsExpected',
+                                  groupLabel: sampleHeading,
+                              },
+                              {
+                                  label: 'Expected Rate',
+                                  value: `${formatNum(stats.actualVsExpected.expectedRevenuePerDay)}/d`,
+                                  group: 'actualVsExpected',
+                              },
+                              {
+                                  label: 'Loot Luck',
+                                  value: `${formatNum(stats.actualVsExpected.rngDeltaValue)} (${stats.actualVsExpected.rngDeltaPercent >= 0 ? '+' : ''}${stats.actualVsExpected.rngDeltaPercent.toFixed(1)}%)${stats.actualVsExpected.isPartial ? ' *' : ''}`,
+                                  color: stats.actualVsExpected.rngDeltaValue >= 0 ? '#51cf66' : '#ff6b6b',
+                                  expandable: true,
+                                  itemDeltas: stats.actualVsExpected.itemDeltas,
+                                  unvaluedItemHrids: stats.actualVsExpected.unvaluedItemHrids,
+                                  group: 'actualVsExpected',
+                              },
+                              {
+                                  label: 'Actual Profit/day',
+                                  value: `${formatNum(stats.actualVsExpected.actualProfitPerDay)}/d`,
+                                  color: stats.actualVsExpected.actualProfitPerDay >= 0 ? '#51cf66' : '#ff6b6b',
+                                  group: 'actualVsExpected',
+                              },
+                              {
+                                  label: 'Expected Profit/day',
+                                  value: `${formatNum(stats.actualVsExpected.expectedProfitPerDay)}/d`,
+                                  color: stats.actualVsExpected.expectedProfitPerDay >= 0 ? '#51cf66' : '#ff6b6b',
+                                  group: 'actualVsExpected',
+                              },
+                          ];
+                      })()
+                    : []),
                 { label: 'Total EXP', value: formatNum(stats.totalExp) },
                 { label: 'EXP/hour', value: `${formatNum(stats.expPerHour)}/h` },
                 { label: 'Death Count', value: `${stats.deathCount}` },
@@ -24040,11 +24769,42 @@
             const statsContainer = document.createElement('div');
             statsContainer.style.cssText = 'margin-bottom: 15px;';
 
+            let currentGroupKey = null;
+            let groupWrapper = null;
+
             for (const row of statsRows) {
+                if (row.group !== currentGroupKey) {
+                    currentGroupKey = row.group;
+                    if (row.group) {
+                        groupWrapper = document.createElement('div');
+                        groupWrapper.style.cssText = `
+                        margin: 8px 0;
+                        padding: 8px 10px;
+                        border: 1px solid #4a4a4a;
+                        border-radius: 6px;
+                        background: rgba(255, 255, 255, 0.03);
+                    `;
+                        const groupHeading = document.createElement('div');
+                        groupHeading.textContent = row.groupLabel || 'Recent sample';
+                        groupHeading.style.cssText = `
+                        font-size: 11px;
+                        color: #888;
+                        margin-bottom: 6px;
+                        font-style: italic;
+                    `;
+                        groupWrapper.appendChild(groupHeading);
+                        statsContainer.appendChild(groupWrapper);
+                    } else {
+                        groupWrapper = null;
+                    }
+                }
+                const targetContainer = groupWrapper || statsContainer;
+
                 const rowDiv = document.createElement('div');
                 rowDiv.style.cssText = `
                 display: flex;
                 justify-content: space-between;
+                gap: 8px;
                 margin-bottom: 5px;
                 font-size: 14px;
             `;
@@ -24056,6 +24816,9 @@
                 const value = document.createElement('span');
                 value.textContent = row.value;
                 value.style.color = row.color || textColor;
+                if (row.title) {
+                    value.title = row.title;
+                }
 
                 // Add expandable indicator if applicable
                 if (row.expandable) {
@@ -24083,7 +24846,65 @@
                             font-size: 13px;
                         `;
 
-                            if (row.incomeBreakdown) {
+                            if (row.itemDeltas) {
+                                const header = document.createElement('div');
+                                header.style.cssText = `
+                                display: grid;
+                                grid-template-columns: 2fr 1fr 1fr 1fr;
+                                gap: 10px;
+                                font-weight: bold;
+                                margin-bottom: 5px;
+                                padding-bottom: 5px;
+                                border-bottom: 1px solid #4a4a4a;
+                                color: ${textColor};
+                            `;
+                                header.innerHTML = `
+                                <span>Item</span>
+                                <span style="text-align: right;">Actual/d</span>
+                                <span style="text-align: right;">Expected/d</span>
+                                <span style="text-align: right;">Value Δ</span>
+                            `;
+                                breakdownDiv.appendChild(header);
+
+                                if (row.itemDeltas.length === 0) {
+                                    const emptyNote = document.createElement('div');
+                                    emptyNote.style.color = '#888';
+                                    emptyNote.textContent = 'No valued items yet';
+                                    breakdownDiv.appendChild(emptyNote);
+                                }
+
+                                for (const item of row.itemDeltas) {
+                                    const itemRow = document.createElement('div');
+                                    itemRow.style.cssText = `
+                                    display: grid;
+                                    grid-template-columns: 2fr 1fr 1fr 1fr;
+                                    gap: 10px;
+                                    margin-bottom: 3px;
+                                    color: ${textColor};
+                                `;
+                                    const deltaColor = item.valueDelta >= 0 ? '#51cf66' : '#ff6b6b';
+                                    itemRow.innerHTML = `
+                                    <span>${item.itemName}</span>
+                                    <span style="text-align: right;">${formatQuantity(item.actualCount, formatNum)}</span>
+                                    <span style="text-align: right;">${formatQuantity(item.expectedCount, formatNum)}</span>
+                                    <span style="text-align: right; color: ${deltaColor};">${formatNum(item.valueDelta)}</span>
+                                `;
+                                    breakdownDiv.appendChild(itemRow);
+                                }
+
+                                if (row.unvaluedItemHrids && row.unvaluedItemHrids.length > 0) {
+                                    const partialNote = document.createElement('div');
+                                    partialNote.style.cssText = `
+                                    margin-top: 8px;
+                                    padding-top: 8px;
+                                    border-top: 1px solid #3a3a3a;
+                                    font-size: 11px;
+                                    color: #f0a830;
+                                `;
+                                    partialNote.textContent = `⚠ Partial - could not value ${row.unvaluedItemHrids.length} item(s)`;
+                                    breakdownDiv.appendChild(partialNote);
+                                }
+                            } else if (row.incomeBreakdown) {
                                 // Pricing mode label
                                 const pricingMode = config.getSettingValue('profitCalc_pricingMode') || 'hybrid';
                                 const pricingNote = document.createElement('div');
@@ -24302,11 +25123,24 @@
 
                                     itemRow.innerHTML = `
                                     <span>${item.itemName}</span>
-                                    <span style="text-align: right;">${formatNum(displayQty)}</span>
+                                    <span style="text-align: right;">${formatQuantity(displayQty, formatNum)}</span>
                                     <span style="text-align: right;">${formatNum(displayPrice)}</span>
                                     <span style="text-align: right; color: #ff6b6b;">${formatNum(displayCost)}</span>
                                 `;
                                     breakdownDiv.appendChild(itemRow);
+
+                                    if (!row.isDaily && item.timeToZeroSeconds !== undefined) {
+                                        const remainingRow = document.createElement('div');
+                                        remainingRow.style.cssText = `
+                                        font-size: 11px;
+                                        color: ${getRunwayColor(item.timeToZeroSeconds)};
+                                        margin-top: -2px;
+                                        margin-bottom: 3px;
+                                    `;
+                                        remainingRow.textContent = `Remaining: ${formatRunway(item.timeToZeroSeconds)}`;
+                                        remainingRow.title = formatRunwayExact(item.timeToZeroSeconds);
+                                        breakdownDiv.appendChild(remainingRow);
+                                    }
                                 }
 
                                 // Add total row
@@ -24390,7 +25224,7 @@
 
                 rowDiv.appendChild(label);
                 rowDiv.appendChild(value);
-                statsContainer.appendChild(rowDiv);
+                targetContainer.appendChild(rowDiv);
             }
 
             // Drop list
