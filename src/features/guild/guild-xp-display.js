@@ -325,18 +325,49 @@ class GuildXPDisplay {
 
         // Time to level
         const timeToLevel = guildXPTracker.getTimeToLevel(guildName);
-        if (timeToLevel !== null) {
-            const ttlHTML = `<div class="${CSS_PREFIX}" style="color: var(--color-space-300); font-size: 13px;">${formatTimeLeft(timeToLevel)}</div>`;
+        const nextSlotHTML = this._buildNextMemberSlotHTML(guildXPTracker.getNextMemberSlotETA(guildName));
+        if (timeToLevel !== null || nextSlotHTML) {
+            const ttlHTML =
+                timeToLevel !== null
+                    ? `<div class="${CSS_PREFIX}" style="color: var(--color-space-300); font-size: 13px;">${formatTimeLeft(timeToLevel)}</div>`
+                    : '';
             // Find the "Exp to Next Level" data block and append
             const dataBlocks = dataGridEl.querySelectorAll('.GuildPanel_dataBlock__3qVhK');
             for (const block of dataBlocks) {
                 const label = block.querySelector('.GuildPanel_label__-A63g');
                 if (label && label.textContent.includes('Exp to')) {
-                    block.insertAdjacentHTML('beforeend', ttlHTML);
+                    block.insertAdjacentHTML('beforeend', ttlHTML + nextSlotHTML);
                     break;
                 }
             }
         }
+    }
+
+    /**
+     * Build the "Next Guild Level Slot (+1)" line HTML from tracker ETA info.
+     * Deliberately never claims to predict Guild Hall capacity increases - only the
+     * level-earned +1 base slot, which is the only thing this data can prove.
+     * @param {null|{targetLevel: number, xpRemaining: number, status: string, etaMs?: number, rateBasis?: string, rateValue?: number}} slotEta
+     * @returns {string} HTML, or '' if unavailable
+     */
+    _buildNextMemberSlotHTML(slotEta) {
+        if (!slotEta) return '';
+
+        let etaText;
+        let tooltip = '';
+        if (slotEta.status === 'ok') {
+            etaText = formatTimeLeft(slotEta.etaMs);
+            tooltip = `ETA based on ${slotEta.rateBasis} average: ${fNum(slotEta.rateValue)} XP/h`;
+        } else if (slotEta.status === 'zero-rate') {
+            etaText = 'no recent gains';
+            tooltip = `No guild XP gained in the last ${slotEta.rateBasis === '24h' ? '24 hours' : 'hour'}`;
+        } else {
+            etaText = 'collecting data';
+        }
+
+        return `<div class="${CSS_PREFIX}" style="color: var(--color-space-300); font-size: 13px; margin-top: 4px;"${tooltip ? ` title="${tooltip}"` : ''}>
+            <span style="color: #9ca3af;">Next Guild Level Slot (+1):</span> Lv ${slotEta.targetLevel} · ${fNum(slotEta.xpRemaining)} XP remaining · ${etaText}
+        </div>`;
     }
 
     _buildIdleHTML() {

@@ -201,13 +201,106 @@ function calcStats(arr) {
 function calcTimeToLevel(currentXP, xpPerHour) {
     if (xpPerHour <= 0) return null;
 
-    const nextLvlIndex = LEVEL_EXPERIENCE_TABLE.findIndex((xp) => currentXP <= xp);
+    // Strict `<` (not `<=`) so that landing exactly on a threshold (just leveled up) finds the
+    // NEXT level's threshold instead of returning the just-reached one, which has 0 XP remaining.
+    const nextLvlIndex = LEVEL_EXPERIENCE_TABLE.findIndex((xp) => currentXP < xp);
     if (nextLvlIndex < 0) return null;
 
     const xpTillLevel = LEVEL_EXPERIENCE_TABLE[nextLvlIndex] - currentXP;
     if (xpTillLevel <= 0) return null;
 
     return (xpTillLevel / xpPerHour) * 3600000;
+}
+
+// ─── Next level-earned member slot (+1) ──────────────────────────────────────
+// MWI grants +1 base member slot every GUILD_LEVELS_PER_MAX_MEMBER guild levels
+// (Guild Hall capacity is a separate, independent bonus and is not modeled here).
+
+const GUILD_LEVELS_PER_MAX_MEMBER = 3;
+// A rate is only trusted as "stable" once the two sample points span at least this fraction
+// of the window they were drawn from — two points a few minutes apart inside a 24h window
+// would otherwise extrapolate to a wildly misleading hourly rate.
+const MIN_STABLE_SAMPLE_FRACTION = 0.25;
+
+/**
+ * The next guild level that adds a level-earned +1 member slot.
+ * @param {number} guildLevel - Current guild level
+ * @returns {number} Target level (always > guildLevel, even if guildLevel is itself a boundary)
+ */
+function calcNextMemberSlotLevel(guildLevel) {
+    return GUILD_LEVELS_PER_MAX_MEMBER * (Math.floor(guildLevel / GUILD_LEVELS_PER_MAX_MEMBER) + 1);
+}
+
+/**
+ * XP remaining to reach a target level via the native levelExperienceTable (indexed by level).
+ * @param {number} currentXP
+ * @param {number} targetLevel
+ * @param {Array<number>|undefined} levelExperienceTable
+ * @returns {number|null} null if the table has no entry for targetLevel
+ */
+function calcXPRemainingForLevel(currentXP, targetLevel, levelExperienceTable) {
+    const targetXP = levelExperienceTable?.[targetLevel];
+    if (typeof targetXP !== 'number') return null;
+    return Math.max(0, targetXP - currentXP);
+}
+
+/**
+ * XP/hr rate over a window, but only if backed by a meaningfully-elapsed sample span —
+ * not just two points that happen to both fall inside the window.
+ * @param {Array<{t: number, xp: number}>} arr
+ * @param {number} windowMs
+ * @returns {number|null}
+ */
+function calcStableRate(arr, windowMs) {
+    const inWindow = inLastInterval(arr, windowMs);
+    if (inWindow.length < 2) return null;
+
+    const span = inWindow[inWindow.length - 1].t - inWindow[0].t;
+    if (span < windowMs * MIN_STABLE_SAMPLE_FRACTION) return null;
+
+    return calcXPH(inWindow[0], inWindow[inWindow.length - 1]);
+}
+
+/**
+ * Resolve the best stable XP/hr rate: prefer a stable 24h rate, then a stable 1h rate.
+ * @param {Array<{t: number, xp: number}>} arr
+ * @returns {{rate: number, basis: '24h'|'1h'}|null}
+ */
+function resolveStableRate(arr) {
+    const daily = calcStableRate(arr, WINDOW_1D);
+    if (daily !== null) return { rate: daily, basis: '24h' };
+
+    const hourly = calcStableRate(arr, WINDOW_1H);
+    if (hourly !== null) return { rate: hourly, basis: '1h' };
+
+    return null;
+}
+
+/**
+ * Compute ETA info for the next level-earned (+1) guild member slot.
+ * @param {number} guildLevel - Current guild level
+ * @param {number} currentXP - Current guild XP
+ * @param {Array<{t: number, xp: number}>} xpHistory - Guild XP history
+ * @param {Array<number>|undefined} levelExperienceTable - Native level->XP table
+ * @returns {null|{targetLevel: number, xpRemaining: number, status: 'ok'|'zero-rate'|'collecting-data', etaMs?: number, rateBasis?: '24h'|'1h', rateValue?: number}}
+ */
+function calcNextMemberSlotETA(guildLevel, currentXP, xpHistory, levelExperienceTable) {
+    if (typeof guildLevel !== 'number' || typeof currentXP !== 'number') return null;
+
+    const targetLevel = calcNextMemberSlotLevel(guildLevel);
+    const xpRemaining = calcXPRemainingForLevel(currentXP, targetLevel, levelExperienceTable);
+    if (xpRemaining === null) return null;
+
+    const rateResult = resolveStableRate(xpHistory || []);
+    if (!rateResult) {
+        return { targetLevel, xpRemaining, status: 'collecting-data' };
+    }
+    if (rateResult.rate <= 0) {
+        return { targetLevel, xpRemaining, status: 'zero-rate', rateBasis: rateResult.basis };
+    }
+
+    const etaMs = (xpRemaining / rateResult.rate) * 3600000;
+    return { targetLevel, xpRemaining, status: 'ok', etaMs, rateBasis: rateResult.basis, rateValue: rateResult.rate };
 }
 
 // ─── Tracker class ──────────────────────────────────────────────────────────
@@ -217,6 +310,7 @@ class GuildXPTracker {
         this.initialized = false;
         this.ownGuildName = null;
         this.ownGuildID = null;
+        this.ownGuildLevel = null;
         this.guildCreatedAt = null;
         this.guildType = null;
         this.currentWeekStartAt = null;
@@ -273,6 +367,7 @@ class GuildXPTracker {
         const guildName = guild.name;
         const guildXP = guild.experience;
         this.ownGuildName = guildName;
+        this.ownGuildLevel = typeof guild.level === 'number' ? guild.level : null;
         this.guildCreatedAt = guild.createdAt;
         this.guildType = guild.guildType || null;
         this.currentWeekStartAt = guild.currentWeekStartAt || null;
@@ -345,6 +440,7 @@ class GuildXPTracker {
 
         const name = guild.name;
         this.ownGuildName = name;
+        this.ownGuildLevel = typeof guild.level === 'number' ? guild.level : this.ownGuildLevel;
         this.guildCreatedAt = guild.createdAt;
         this.guildType = guild.guildType || this.guildType;
         this.currentWeekStartAt = guild.currentWeekStartAt || this.currentWeekStartAt;
@@ -581,6 +677,29 @@ class GuildXPTracker {
     }
 
     /**
+     * Get ETA info for the next level-earned (+1) guild member slot.
+     * Only available for the player's own guild, since level is only tracked for that guild.
+     * @param {string} guildName
+     * @returns {null|{targetLevel: number, xpRemaining: number, status: 'ok'|'zero-rate'|'collecting-data', etaMs?: number, rateBasis?: '24h'|'1h', rateValue?: number}}
+     */
+    getNextMemberSlotETA(guildName) {
+        if (guildName !== this.ownGuildName || this.ownGuildLevel === null) return null;
+
+        const currentXP = this.getCurrentGuildXP(guildName);
+        if (currentXP === null) return null;
+
+        const levelExperienceTable = dataManager.getInitClientData()?.levelExperienceTable;
+        if (!levelExperienceTable) return null;
+
+        return calcNextMemberSlotETA(
+            this.ownGuildLevel,
+            currentXP,
+            this.guildXPHistory[guildName],
+            levelExperienceTable
+        );
+    }
+
+    /**
      * Reset member XP history for the current guild.
      * Used to clear corrupted data (e.g., after a guild switch).
      */
@@ -601,6 +720,7 @@ class GuildXPTracker {
 
         this.ownGuildName = null;
         this.ownGuildID = null;
+        this.ownGuildLevel = null;
         this.guildCreatedAt = null;
         this.guildXPHistory = {};
         this.memberXPHistory = {};
@@ -618,4 +738,12 @@ export default {
     resetMemberData: () => guildXPTracker.resetMemberData(),
 };
 
-export { guildXPTracker };
+export {
+    guildXPTracker,
+    calcTimeToLevel,
+    calcNextMemberSlotLevel,
+    calcXPRemainingForLevel,
+    calcStableRate,
+    resolveStableRate,
+    calcNextMemberSlotETA,
+};
