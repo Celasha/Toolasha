@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.93.0](https://github.com/Celasha/Toolasha/compare/v2.92.0...v2.93.0) (2026-08-20)
+
+
+### Features
+
+* add Actual vs Expected Loot RNG delta to Combat Stats ([5a14493](https://github.com/Celasha/Toolasha/commit/5a14493a11c533d7a7e0027bf255a3ce34bfec47))
+* add blessed enhancement success tracking ([7e667cc](https://github.com/Celasha/Toolasha/commit/7e667cca9470005dae8911f3555a47979aed3d15))
+* add consumable runway tracking and low-supply warnings to Combat Stats ([24b976e](https://github.com/Celasha/Toolasha/commit/24b976e893b574e1531f696233d1dd6980f21540))
+* add guild level slot eta ([1dc5e3d](https://github.com/Celasha/Toolasha/commit/1dc5e3da6231755ab1a8ca6d9cc61b5191c6c4d9))
+* add precise Combat Level progress display ([14a039f](https://github.com/Celasha/Toolasha/commit/14a039f20b745390975b6cf597f7d005728c5893))
+
+
+### Bug Fixes
+
+* correct Actual loot valuation and polish Combat Stats RNG/runway display ([6601773](https://github.com/Celasha/Toolasha/commit/6601773d813429cb58e6e3096c2171079eb32256))
+* scale Expected Revenue against its own observed window, not the whole combat session ([dd70661](https://github.com/Celasha/Toolasha/commit/dd70661d3ba8003a65ae7b98e6808978b60d3897))
+* skip the outside-tradable-range separator row in Age column indexing ([df0a3fe](https://github.com/Celasha/Toolasha/commit/df0a3fee919c08877451f8753512dd886bfadd5f))
+
 ## [2.92.0](https://github.com/Celasha/Toolasha/compare/v2.91.0...v2.92.0) (2026-08-19)
 
 ### Features
