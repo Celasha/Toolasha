@@ -510,6 +510,13 @@ function registerFeatures() {
             module: UI.skillExperiencePercentage,
             async: false,
         },
+        {
+            key: 'combatLevelProgress',
+            name: 'Precise Combat Level Progress',
+            category: 'UI',
+            module: UI.combatLevelProgress,
+            async: false,
+        },
         { key: 'externalLinks', name: 'External Links', category: 'UI', module: UI.externalLinks, async: false },
         {
             key: 'hideLabyrinthBadge',

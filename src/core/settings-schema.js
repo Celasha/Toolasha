@@ -2041,6 +2041,13 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: true,
             },
+            combatLevelProgress: {
+                id: 'combatLevelProgress',
+                label: 'Left sidebar: Show precise Combat Level progress',
+                type: 'checkbox',
+                default: true,
+                help: 'Shows weighted progress toward the next Combat Level (e.g. 94.80) next to the native Combat Level. Display-only - never changes the native integer level shown by the game.',
+            },
             itemIconLevel: {
                 id: 'itemIconLevel',
                 label: 'Bottom left corner of icons: Show equipment level',

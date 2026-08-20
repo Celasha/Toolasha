@@ -9,6 +9,7 @@
 import equipmentLevelDisplay from '../features/ui/equipment-level-display.js';
 import alchemyItemDimming from '../features/ui/alchemy-item-dimming.js';
 import skillExperiencePercentage from '../features/ui/skill-experience-percentage.js';
+import combatLevelProgress from '../features/ui/combat-level-progress.js';
 import externalLinks from '../features/ui/external-links.js';
 import hideLabyrinthBadge from '../features/ui/hide-labyrinth-badge.js';
 import hideGuildBadge from '../features/ui/hide-guild-badge.js';
@@ -101,6 +102,7 @@ toolashaRoot.UI = {
     equipmentLevelDisplay,
     alchemyItemDimming,
     skillExperiencePercentage,
+    combatLevelProgress,
     externalLinks,
     hideLabyrinthBadge,
     hideGuildBadge,

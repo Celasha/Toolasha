@@ -289,6 +289,13 @@ class Config {
                 description: 'Shows XP progress percentage in left sidebar',
                 settingKey: 'expPercentage',
             },
+            combatLevelProgress: {
+                enabled: true,
+                name: 'Precise Combat Level Progress',
+                category: 'UI',
+                description: 'Shows weighted progress toward the next Combat Level in left sidebar',
+                settingKey: 'combatLevelProgress',
+            },
             largeNumberFormatting: {
                 enabled: true,
                 name: 'Use K/M/B Number Formatting',
