@@ -2,18 +2,29 @@
  * Tests for EstimatedListingAge.parsePrice (TLA-008)
  */
 
+/* @vitest-environment jsdom */
+
 import { describe, test, expect, vi } from 'vitest';
 
 vi.mock('../../core/data-manager.js', () => ({
     default: { on: vi.fn(), off: vi.fn(), getMarketListings: vi.fn(() => []) },
 }));
 vi.mock('../../core/dom-observer.js', () => ({ default: { onClass: vi.fn(() => () => {}) } }));
-vi.mock('../../core/config.js', () => ({ default: { getSetting: vi.fn(() => false), onSettingChange: vi.fn() } }));
+vi.mock('../../core/config.js', () => ({
+    default: {
+        getSetting: vi.fn(() => false),
+        getSettingValue: vi.fn(() => 'datetime'),
+        onSettingChange: vi.fn(),
+    },
+}));
 vi.mock('../../core/storage.js', () => ({
     default: { get: vi.fn(), set: vi.fn(), getJSON: vi.fn(), setJSON: vi.fn() },
 }));
 vi.mock('../../api/marketplace.js', () => ({ default: { fetch: vi.fn() } }));
-vi.mock('../../utils/formatters.js', () => ({ formatRelativeTime: vi.fn(), formatDateTime: vi.fn() }));
+vi.mock('../../utils/formatters.js', () => ({
+    formatRelativeTime: vi.fn(() => 'RELATIVE'),
+    formatDateTime: vi.fn(() => 'FORMATTED_DATE'),
+}));
 
 const { default: estimatedListingAge } = await import('./estimated-listing-age.js');
 
@@ -99,5 +110,85 @@ describe('EstimatedListingAge — call-site null guards', () => {
         const zeroPriceListing = { price: 0, orderQuantity: 1, filledQuantity: 0 };
         const wouldFalselyMatch = price !== null && Math.abs(zeroPriceListing.price - price) < 0.01;
         expect(wouldFalselyMatch).toBe(false);
+    });
+});
+
+describe('EstimatedListingAge.addAgeColumn — outside-tradable-range separator row', () => {
+    // MWI's "Outside current tradable range" grouping row is a real <tr> in the order book
+    // table, but has no corresponding entry in the order book's asks/bids array. Positional
+    // indexing that does not skip it consumes a real listing's age for the separator row and
+    // shifts every row after it out of alignment.
+    function buildOrderBookTables() {
+        const container = document.createElement('div');
+        container.className = 'MarketplacePanel_orderBooksContainer__B4YE-';
+
+        const sellContainer = document.createElement('div');
+        sellContainer.className = 'MarketplacePanel_orderBookTableContainer__hUu-X';
+        sellContainer.innerHTML = `
+            <table class="MarketplacePanel_orderBookTable__3zzrv">
+                <thead><tr><th>Quantity</th><th>Ask Price</th><th>Action</th></tr></thead>
+                <tbody></tbody>
+            </table>
+        `;
+
+        const buyContainer = document.createElement('div');
+        buyContainer.className = 'MarketplacePanel_orderBookTableContainer__hUu-X';
+        buyContainer.innerHTML = `
+            <table class="MarketplacePanel_orderBookTable__3zzrv">
+                <thead><tr><th>Quantity</th><th>Bid Price</th><th>Action</th></tr></thead>
+                <tbody>
+                    <tr class="undefined MarketplacePanel_outsideRangeSeparator__2R5KA">
+                        <td><div class="MarketplacePanel_separatorContent__10KVk">Outside current tradable range</div></td>
+                    </tr>
+                    <tr class="undefined MarketplacePanel_outsideRange__GPKFQ">
+                        <td><div class="MarketplacePanel_mine__3aG9I"></div>1</td>
+                        <td><div class="MarketplacePanel_price__hIzrY"><span>29M</span></div></td>
+                        <td><div class="MarketplacePanel_actionButtonContainer__3l7Li"><button>Sell</button></div></td>
+                    </tr>
+                </tbody>
+            </table>
+        `;
+
+        container.appendChild(sellContainer);
+        container.appendChild(buyContainer);
+        document.body.appendChild(container);
+
+        return buyContainer.querySelector('table');
+    }
+
+    test('the separator row does not steal the real listing age, and the real row is not left as an ellipsis', () => {
+        const buyTable = buildOrderBookTables();
+
+        estimatedListingAge.currentItemHrid = '/items/test_item';
+        estimatedListingAge.orderBooksCache['/items/test_item'] = {
+            lastUpdated: Date.now(),
+            data: {
+                orderBooks: {
+                    0: {
+                        asks: [],
+                        bids: [{ listingId: 999888777, price: 29000000, createdTimestamp: null }],
+                    },
+                },
+            },
+        };
+
+        estimatedListingAge.addAgeColumn(buyTable);
+
+        const rows = buyTable.querySelectorAll('tbody tr');
+        const separatorRow = rows[0];
+        const listingRow = rows[1];
+
+        const separatorAgeCell = separatorRow.querySelector('.mwi-estimated-age-cell');
+        const listingAgeCell = listingRow.querySelector('.mwi-estimated-age-cell');
+
+        expect(separatorAgeCell).not.toBeNull();
+        expect(separatorAgeCell.textContent.trim()).toBe('');
+
+        expect(listingAgeCell).not.toBeNull();
+        expect(listingAgeCell.textContent).not.toBe('· · ·');
+        expect(listingAgeCell.textContent).toContain('~');
+
+        document.body.innerHTML = '';
+        delete estimatedListingAge.orderBooksCache['/items/test_item'];
     });
 });

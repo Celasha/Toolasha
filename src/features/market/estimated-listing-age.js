@@ -648,6 +648,15 @@ class EstimatedListingAge {
             const cell = document.createElement('td');
             cell.classList.add('mwi-estimated-age-cell');
 
+            // MWI's "Outside current tradable range" grouping row is a real <tr> with no
+            // corresponding order-book listing entry. Skip it without consuming an index,
+            // otherwise it steals the next real listing's age and every row after it shifts
+            // out of alignment.
+            if (row.matches('[class*="MarketplacePanel_outsideRangeSeparator"]')) {
+                row.appendChild(cell);
+                return;
+            }
+
             if (index < listings.length) {
                 // Top 20 listings from order book (use positional indexing like RWI)
                 const listing = listings[index];
