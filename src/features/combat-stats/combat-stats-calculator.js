@@ -7,6 +7,7 @@ import marketAPI from '../../api/marketplace.js';
 import dataManager from '../../core/data-manager.js';
 import config from '../../core/config.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
+import { calculatePriceAfterTax } from '../../utils/profit-helpers.js';
 
 // Maps regular dungeon chest HRIDs to their required entry key HRIDs (1:1 relationship)
 const DUNGEON_CHEST_KEYS = {
@@ -114,6 +115,38 @@ export function calculateIncomeBreakdown(lootMap) {
     }
 
     return { isDungeonRun, breakdown };
+}
+
+/**
+ * Value a list of items using the exact same valuation semantics for every caller, so Actual
+ * and Expected revenue never disagree because of two different pricing paths. Missing valuation
+ * is never treated as a silent zero - the caller is told the total is partial instead.
+ * @param {Array<{itemHrid: string, count: number, enhancementLevel?: number}>} items - Items to value
+ * @returns {{revenue: number, isPartial: boolean, unvaluedItemHrids: Array<string>}} Valuation result
+ */
+export function calculateValuedRevenue(items) {
+    let revenue = 0;
+    let isPartial = false;
+    const unvaluedItemHrids = [];
+
+    for (const item of items || []) {
+        if (!item?.count) continue;
+
+        const resolved = expectedValueCalculator.resolveSellSideValue(item.itemHrid, item.enhancementLevel || 0);
+        if (!resolved) {
+            isPartial = true;
+            unvaluedItemHrids.push(item.itemHrid);
+            continue;
+        }
+
+        const itemDetails = dataManager.getItemDetails(item.itemHrid);
+        const canBeSold = itemDetails?.isTradable !== false;
+        const unitValue = resolved.needsTax && canBeSold ? calculatePriceAfterTax(resolved.value) : resolved.value;
+
+        revenue += unitValue * item.count;
+    }
+
+    return { revenue, isPartial, unvaluedItemHrids };
 }
 
 /**
@@ -342,9 +375,12 @@ export function formatLootList(lootMap) {
  * Calculate all statistics for a player
  * @param {Object} playerData - Player data from combat data
  * @param {number|null} durationSeconds - Combat duration in seconds (from DOM or null)
+ * @param {Object|null} expectedLootData - `{ expectedDropsMap, sampleSize }` for the current
+ *   player only (Combat Sim's canonical drop math has no meaningful "expected" concept for a
+ *   party member Toolasha did not simulate); null/omitted for every other player.
  * @returns {Object} Calculated statistics
  */
-export function calculatePlayerStats(playerData, durationSeconds = null) {
+export function calculatePlayerStats(playerData, durationSeconds = null, expectedLootData = null) {
     // Calculate income
     const income = calculateIncome(playerData.loot);
     const incomeBreakdownData = calculateIncomeBreakdown(playerData.loot);
@@ -398,6 +434,38 @@ export function calculatePlayerStats(playerData, durationSeconds = null) {
               )
             : null;
 
+    // Actual vs Expected loot / RNG Delta - current player only, and only once at least one
+    // encounter has completed (never fabricated from zero completed samples)
+    let actualVsExpected = null;
+    if (expectedLootData && expectedLootData.sampleSize > 0 && duration > 0) {
+        const actualItems = Object.values(playerData.loot || {});
+        const expectedItems = Array.from(expectedLootData.expectedDropsMap || [], ([itemHrid, count]) => ({
+            itemHrid,
+            count,
+        }));
+
+        const actualValuation = calculateValuedRevenue(actualItems);
+        const expectedValuation = calculateValuedRevenue(expectedItems);
+
+        const actualRevenuePerDay = calculateDailyRate(actualValuation.revenue, duration);
+        const expectedRevenuePerDay = calculateDailyRate(expectedValuation.revenue, duration);
+        const rngDeltaValue = actualRevenuePerDay - expectedRevenuePerDay;
+        const rngDeltaPercent = expectedRevenuePerDay !== 0 ? (rngDeltaValue / expectedRevenuePerDay) * 100 : 0;
+
+        actualVsExpected = {
+            actualRevenuePerDay,
+            expectedRevenuePerDay,
+            rngDeltaValue,
+            rngDeltaPercent,
+            actualProfitPerDay: actualRevenuePerDay - dailyConsumableCosts - dailyKeyCosts,
+            expectedProfitPerDay: expectedRevenuePerDay - dailyConsumableCosts - dailyKeyCosts,
+            sampleSize: expectedLootData.sampleSize,
+            isPartial: actualValuation.isPartial || expectedValuation.isPartial,
+            unvaluedItemHrids: [...actualValuation.unvaluedItemHrids, ...expectedValuation.unvaluedItemHrids],
+            itemDeltas: buildItemDeltas(actualItems, expectedItems),
+        };
+    }
+
     return {
         name: playerData.name,
         income: {
@@ -427,16 +495,54 @@ export function calculatePlayerStats(playerData, durationSeconds = null) {
         incomeBreakdown: incomeBreakdownData.breakdown,
         isDungeonRun: incomeBreakdownData.isDungeonRun,
         duration,
+        actualVsExpected,
     };
+}
+
+/**
+ * Build a per-item Actual/Expected/Delta table, sorted by value delta (not percent) so
+ * ultra-rare tiny expectations never dominate the table.
+ * @param {Array<{itemHrid: string, count: number}>} actualItems - Actual loot items
+ * @param {Array<{itemHrid: string, count: number}>} expectedItems - Expected drop items
+ * @returns {Array<{itemHrid: string, itemName: string, actualCount: number, expectedCount: number, valueDelta: number}>}
+ */
+function buildItemDeltas(actualItems, expectedItems) {
+    const actualCounts = new Map(actualItems.map((item) => [item.itemHrid, item.count]));
+    const expectedCounts = new Map(expectedItems.map((item) => [item.itemHrid, item.count]));
+    const allItemHrids = new Set([...actualCounts.keys(), ...expectedCounts.keys()]);
+
+    const rows = [];
+    for (const itemHrid of allItemHrids) {
+        const actualCount = actualCounts.get(itemHrid) || 0;
+        const expectedCount = expectedCounts.get(itemHrid) || 0;
+        const resolved = expectedValueCalculator.resolveSellSideValue(itemHrid);
+        if (!resolved) continue;
+
+        const itemDetails = dataManager.getItemDetails(itemHrid);
+        const canBeSold = itemDetails?.isTradable !== false;
+        const unitValue = resolved.needsTax && canBeSold ? calculatePriceAfterTax(resolved.value) : resolved.value;
+
+        rows.push({
+            itemHrid,
+            itemName: itemDetails?.name || itemHrid,
+            actualCount,
+            expectedCount,
+            valueDelta: (actualCount - expectedCount) * unitValue,
+        });
+    }
+
+    rows.sort((a, b) => Math.abs(b.valueDelta) - Math.abs(a.valueDelta));
+    return rows;
 }
 
 /**
  * Calculate statistics for all players
  * @param {Object} combatData - Combat data from data collector
  * @param {number|null} durationSeconds - Combat duration in seconds (from DOM or null)
+ * @param {Object|null} expectedLootData - `{ expectedDropsMap, sampleSize }` for the current player
  * @returns {Array} Array of player statistics
  */
-export function calculateAllPlayerStats(combatData, durationSeconds = null) {
+export function calculateAllPlayerStats(combatData, durationSeconds = null, expectedLootData = null) {
     if (!combatData || !combatData.players) {
         return [];
     }
@@ -447,7 +553,7 @@ export function calculateAllPlayerStats(combatData, durationSeconds = null) {
     const encountersPerHour = duration > 0 ? (3600 * (battleId - 1)) / duration : 0;
 
     return combatData.players.map((player) => {
-        const stats = calculatePlayerStats(player, durationSeconds);
+        const stats = calculatePlayerStats(player, durationSeconds, player.isCurrentPlayer ? expectedLootData : null);
         // Add EPH and formatted duration to each player's stats
         stats.encountersPerHour = encountersPerHour;
         stats.durationFormatted = formatDuration(duration);

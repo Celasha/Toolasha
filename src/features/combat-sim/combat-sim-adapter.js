@@ -541,6 +541,24 @@ function buildPartyMemberDTO(profile, clientData, battleData) {
 }
 
 /**
+ * Calculate the level-gap debuff for one party member given their combat level and the party's
+ * highest combat level. Shared by Combat Sim (simulated party loadouts) and Combat Stats
+ * (real live encounters) so both agree on the exact same 1.2-ratio rule.
+ * @param {number} combatLevel - This player's combat level
+ * @param {number} maxCombatLevel - The party's highest combat level
+ * @returns {number} Debuff as a negative decimal (0 = no debuff, e.g. -0.3 = -30%)
+ */
+export function calculateLevelGapDebuff(combatLevel, maxCombatLevel) {
+    const ratio = maxCombatLevel / combatLevel;
+    if (ratio <= 1.2) {
+        return 0;
+    }
+    const maxDebuff = 0.9;
+    const levelPercent = Math.floor((ratio - 1.2) * 100) / 100;
+    return -1 * Math.min(maxDebuff, 3 * levelPercent);
+}
+
+/**
  * Calculate combat level for level gap debuff.
  * @param {Object} dto - Player DTO
  * @returns {number} Combat level
@@ -631,22 +649,11 @@ export async function buildAllPlayerDTOs() {
 
     // Calculate level gap debuff
     if (players.length > 1) {
-        let maxCombatLevel = 0;
-        const levels = players.map((p) => {
-            const level = calcCombatLevel(p);
-            maxCombatLevel = Math.max(maxCombatLevel, level);
-            return level;
-        });
+        const levels = players.map((p) => calcCombatLevel(p));
+        const maxCombatLevel = Math.max(...levels);
 
         for (let i = 0; i < players.length; i++) {
-            const ratio = maxCombatLevel / levels[i];
-            if (ratio > 1.2) {
-                const maxDebuff = 0.9;
-                const levelPercent = Math.floor((ratio - 1.2) * 100) / 100;
-                players[i].debuffOnLevelGap = -1 * Math.min(maxDebuff, 3 * levelPercent);
-            } else {
-                players[i].debuffOnLevelGap = 0;
-            }
+            players[i].debuffOnLevelGap = calculateLevelGapDebuff(levels[i], maxCombatLevel);
         }
     }
 

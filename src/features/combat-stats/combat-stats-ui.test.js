@@ -1,9 +1,10 @@
 import { describe, expect, test, vi } from 'vitest';
 
 vi.mock('../../core/config.js', () => ({ default: { getSettingValue: vi.fn(), onSettingChange: vi.fn() } }));
-vi.mock('../../api/marketplace.js', () => ({ default: {} }));
+vi.mock('../../core/data-manager.js', () => ({ default: { getInitClientData: vi.fn(() => ({})) } }));
+vi.mock('../../api/marketplace.js', () => ({ default: { on: vi.fn(), getPrice: vi.fn() } }));
 vi.mock('./combat-stats-data-collector.js', () => ({ default: {} }));
-vi.mock('../market/expected-value-calculator.js', () => ({ default: {} }));
+vi.mock('../market/expected-value-calculator.js', () => ({ default: { resolveSellSideValue: vi.fn(() => null) } }));
 
 import { formatRunway } from './combat-stats-ui.js';
 

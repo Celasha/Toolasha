@@ -8,6 +8,9 @@ import storage from '../../core/storage.js';
 import dataManager from '../../core/data-manager.js';
 import config from '../../core/config.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import { calculateLevelGapDebuff } from '../combat-sim/combat-sim-adapter.js';
+import dungeonTracker from '../combat/dungeon-tracker.js';
+import ExpectedLootTracker from './expected-loot-tracker.js';
 
 const COMBAT_STATS_STORE = 'combatStats';
 const LEGACY_STORAGE_KEYS = Object.freeze({
@@ -30,6 +33,10 @@ class CombatStatsDataCollector {
         this.wasBelowRunwayThreshold = {};
         this.runwayNotificationPermissionGranted = false;
         this.timerRegistry = createTimerRegistry();
+        this.pendingEncounter = null;
+        this.latestSelfCombatDropQuantity = 0;
+        this.expectedLootTracker = new ExpectedLootTracker();
+        this.dungeonCompletionHandler = null;
 
         this._resetTrackingState();
     }
@@ -101,6 +108,20 @@ class CombatStatsDataCollector {
 
         // Listen for battle_consumable_ability_updated (fires on each consumable use)
         webSocketHook.on('battle_consumable_ability_updated', this.consumableEventHandler);
+
+        // Reuse dungeon-tracker's own proven completion signal instead of re-deriving one
+        this.dungeonCompletionHandler = (_current, completedRun) => {
+            if (generation !== this.lifecycleGeneration) return;
+            if (completedRun) {
+                this.expectedLootTracker.recordDungeonCompletion({
+                    zoneHrid: completedRun.dungeonHrid,
+                    difficultyTier: completedRun.tier || 0,
+                    numberOfPlayers: Object.keys(completedRun.keyCountsMap || {}).length || 1,
+                    combatDropQuantity: this.latestSelfCombatDropQuantity,
+                });
+            }
+        };
+        dungeonTracker.onUpdate(this.dungeonCompletionHandler);
     }
 
     /**
@@ -488,6 +509,75 @@ class CombatStatsDataCollector {
     }
 
     /**
+     * Resolve the currently active combat zone/action, if any.
+     * @returns {{zoneHrid: string, isDungeon: boolean, difficultyTier: number}|null} Zone info or null
+     */
+    getCurrentZoneInfo() {
+        const actions = dataManager.getCurrentActions();
+        const combatAction = actions.find(
+            (action) => action.actionHrid?.startsWith('/actions/combat/') && !action.isDone
+        );
+        if (!combatAction) {
+            return null;
+        }
+
+        const actionDetails = dataManager.getActionDetails(combatAction.actionHrid);
+        return {
+            zoneHrid: combatAction.actionHrid,
+            isDungeon: actionDetails?.combatZoneInfo?.isDungeon === true,
+            difficultyTier: combatAction.difficultyTier || 0,
+        };
+    }
+
+    /**
+     * Treat the previously-snapshotted battle as one completed regular-zone encounter (never the
+     * currently-active one), then snapshot this battle's monster composition and live multipliers
+     * for the next call. Dungeons are handled separately via `dungeonTracker.onUpdate` - no
+     * per-monster tracking happens while the current zone is a dungeon.
+     * @param {Object} data - new_battle message data
+     * @param {string} currentCharacterId - The current player's character ID
+     */
+    processExpectedLoot(data, currentCharacterId) {
+        const selfPlayer = data.players.find((player) => player?.character?.id === currentCharacterId);
+        this.latestSelfCombatDropQuantity = selfPlayer?.combatDetails?.combatStats?.combatDropQuantity || 0;
+
+        const zoneInfo = this.getCurrentZoneInfo();
+        if (!zoneInfo || zoneInfo.isDungeon) {
+            this.pendingEncounter = null;
+            return;
+        }
+
+        if (this.pendingEncounter) {
+            this.expectedLootTracker.recordCompletedEncounter(this.pendingEncounter);
+        }
+
+        const levels = data.players
+            .map((player) => player?.combatDetails?.combatLevel)
+            .filter((level) => typeof level === 'number');
+        const maxCombatLevel = levels.length > 0 ? Math.max(...levels) : 0;
+        const selfCombatLevel = selfPlayer?.combatDetails?.combatLevel;
+        const debuffOnLevelGap =
+            typeof selfCombatLevel === 'number' && maxCombatLevel > 0
+                ? calculateLevelGapDebuff(selfCombatLevel, maxCombatLevel)
+                : 0;
+
+        const monsterHrids = (data.monsters || []).map((monster) => monster?.hrid).filter(Boolean);
+        const dropRateBonus = selfPlayer?.combatDetails?.combatStats?.combatDropRate || 0;
+        const rareFindBonus = selfPlayer?.combatDetails?.combatStats?.combatRareFind || 0;
+
+        this.pendingEncounter = {
+            zoneHrid: zoneInfo.zoneHrid,
+            monsterHrids,
+            difficultyTier: zoneInfo.difficultyTier,
+            numberOfPlayers: data.players.length,
+            dropRateMultiplier: 1 + dropRateBonus,
+            rareFindMultiplier: 1 + rareFindBonus,
+            combatDropQuantity: this.latestSelfCombatDropQuantity,
+            debuffOnLevelGap,
+        };
+    }
+
+    /**
      * Handle new_battle message (fires during combat)
      * @param {Object} data - new_battle message data
      */
@@ -520,6 +610,8 @@ class CombatStatsDataCollector {
             if (shouldResetTracking) {
                 await this.resetConsumableTracking(characterId);
                 if (generation !== this.lifecycleGeneration) return;
+                this.pendingEncounter = null;
+                this.expectedLootTracker.reset();
             }
 
             // Update current battle ID
@@ -527,6 +619,8 @@ class CombatStatsDataCollector {
 
             // Get current character ID to identify which player is the current user
             const currentCharacterId = dataManager.getCurrentCharacterId();
+
+            this.processExpectedLoot(data, currentCharacterId);
 
             // Track party member consumables via inventory snapshots (MCS-style)
             const currentPartyMembers = new Set();
@@ -760,6 +854,7 @@ class CombatStatsDataCollector {
                         experience: player.totalSkillExperienceMap || {},
                         deathCount: player.deathCount || 0,
                         consumables: consumablesWithConsumed,
+                        combatLevel: player.combatDetails?.combatLevel || null,
                         combatStats: {
                             combatDropQuantity: player.combatDetails?.combatStats?.combatDropQuantity || 0,
                             combatDropRate: player.combatDetails?.combatStats?.combatDropRate || 0,
@@ -822,12 +917,20 @@ class CombatStatsDataCollector {
             this.consumableEventHandler = null;
         }
 
+        if (this.dungeonCompletionHandler) {
+            dungeonTracker.offUpdate(this.dungeonCompletionHandler);
+            this.dungeonCompletionHandler = null;
+        }
+
         this.isInitialized = false;
         this.latestCombatData = null;
         this.currentBattleId = null;
         this.wasBelowRunwayThreshold = {};
         this.runwayNotificationPermissionGranted = false;
         this.timerRegistry.clearAll();
+        this.pendingEncounter = null;
+        this.latestSelfCombatDropQuantity = 0;
+        this.expectedLootTracker.reset();
         // Note: Don't reset consumableTracker here - it's persisted
     }
 }

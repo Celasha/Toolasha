@@ -28,6 +28,8 @@ vi.mock('../../core/data-manager.js', () => ({
     default: {
         getCurrentCharacterId: vi.fn(() => mocks.currentCharacterId),
         getItemDetails: vi.fn((itemHrid) => ({ name: itemHrid.split('/').pop() })),
+        getCurrentActions: vi.fn(() => []),
+        getActionDetails: vi.fn(() => null),
     },
 }));
 
@@ -44,7 +46,20 @@ vi.mock('../../core/config.js', () => ({
     },
 }));
 
+vi.mock('../combat-sim/combat-sim-adapter.js', () => ({
+    calculateLevelGapDebuff: vi.fn(() => 0),
+}));
+
+vi.mock('../combat/dungeon-tracker.js', () => ({
+    default: {
+        onUpdate: vi.fn(),
+        offUpdate: vi.fn(),
+    },
+}));
+
 import storage from '../../core/storage.js';
+import dataManager from '../../core/data-manager.js';
+import dungeonTracker from '../combat/dungeon-tracker.js';
 import { CombatStatsDataCollector } from './combat-stats-data-collector.js';
 
 beforeEach(() => {
@@ -274,5 +289,171 @@ describe('CombatStatsDataCollector runway warning', () => {
         );
 
         expect(globalThis.Notification).not.toHaveBeenCalled();
+    });
+});
+
+describe('CombatStatsDataCollector expected-loot integration', () => {
+    function regularZoneAction(zoneHrid = '/actions/combat/rat', difficultyTier = 0) {
+        return { actionHrid: zoneHrid, isDone: false, difficultyTier };
+    }
+
+    function battlePayload({ battleId, monsterHrids, combatLevel = 100, combatStats = {} }) {
+        return {
+            battleId,
+            combatStartTime: new Date().toISOString(),
+            monsters: monsterHrids.map((hrid) => ({ hrid })),
+            players: [
+                {
+                    character: { id: 'character-a', name: 'Self' },
+                    combatConsumables: [],
+                    totalLootMap: {},
+                    totalSkillExperienceMap: {},
+                    combatDetails: { combatLevel, combatStats },
+                },
+            ],
+        };
+    }
+
+    async function makeInitializedCollector() {
+        const collector = new CombatStatsDataCollector();
+        collector.isInitialized = true;
+        collector.characterId = 'character-a';
+        mocks.currentCharacterId = 'character-a';
+        return collector;
+    }
+
+    test('only the previous (completed) battle contributes kills - the active encounter is excluded', async () => {
+        dataManager.getCurrentActions.mockReturnValue([regularZoneAction()]);
+        dataManager.getActionDetails.mockReturnValue({ combatZoneInfo: { isDungeon: false } });
+        const collector = await makeInitializedCollector();
+
+        await collector.onNewBattle(
+            battlePayload({ battleId: 1, monsterHrids: ['/monsters/rat', '/monsters/rat'] }),
+            collector.lifecycleGeneration
+        );
+        // The rats from battle 1 are not yet "completed" - no new battle has started after them.
+        expect(collector.expectedLootTracker.hasData()).toBe(false);
+
+        await collector.onNewBattle(
+            battlePayload({ battleId: 2, monsterHrids: ['/monsters/rat'] }),
+            collector.lifecycleGeneration
+        );
+        // Battle 1's rats are now completed (battle 2 started); battle 2's own rat is still active.
+        expect(collector.expectedLootTracker.deaths['/monsters/rat']).toBe(2);
+        expect(collector.expectedLootTracker.getSampleSize()).toBe(1);
+    });
+
+    test('accumulates monster composition across several completed encounters in the same zone', async () => {
+        dataManager.getCurrentActions.mockReturnValue([regularZoneAction()]);
+        dataManager.getActionDetails.mockReturnValue({ combatZoneInfo: { isDungeon: false } });
+        const collector = await makeInitializedCollector();
+
+        await collector.onNewBattle(
+            battlePayload({ battleId: 1, monsterHrids: ['/monsters/rat'] }),
+            collector.lifecycleGeneration
+        );
+        await collector.onNewBattle(
+            battlePayload({ battleId: 2, monsterHrids: ['/monsters/rat'] }),
+            collector.lifecycleGeneration
+        );
+        await collector.onNewBattle(
+            battlePayload({ battleId: 3, monsterHrids: ['/monsters/rat'] }),
+            collector.lifecycleGeneration
+        );
+
+        expect(collector.expectedLootTracker.deaths['/monsters/rat']).toBe(2);
+        expect(collector.expectedLootTracker.getSampleSize()).toBe(2);
+    });
+
+    test('never tracks per-monster composition while the active zone is a dungeon', async () => {
+        dataManager.getCurrentActions.mockReturnValue([regularZoneAction('/actions/combat/chimerical_den')]);
+        dataManager.getActionDetails.mockReturnValue({ combatZoneInfo: { isDungeon: true } });
+        const collector = await makeInitializedCollector();
+
+        await collector.onNewBattle(
+            battlePayload({ battleId: 1, monsterHrids: ['/monsters/rat'] }),
+            collector.lifecycleGeneration
+        );
+        await collector.onNewBattle(
+            battlePayload({ battleId: 2, monsterHrids: ['/monsters/rat'] }),
+            collector.lifecycleGeneration
+        );
+
+        expect(collector.expectedLootTracker.hasData()).toBe(false);
+        expect(collector.pendingEncounter).toBeNull();
+    });
+
+    test('a session reset (battleId decreasing) clears accumulated expected-loot state', async () => {
+        dataManager.getCurrentActions.mockReturnValue([regularZoneAction()]);
+        dataManager.getActionDetails.mockReturnValue({ combatZoneInfo: { isDungeon: false } });
+        const collector = await makeInitializedCollector();
+
+        await collector.onNewBattle(
+            battlePayload({ battleId: 5, monsterHrids: ['/monsters/rat'] }),
+            collector.lifecycleGeneration
+        );
+        await collector.onNewBattle(
+            battlePayload({ battleId: 6, monsterHrids: ['/monsters/rat'] }),
+            collector.lifecycleGeneration
+        );
+        expect(collector.expectedLootTracker.hasData()).toBe(true);
+
+        // New session: battleId drops back to 1
+        await collector.onNewBattle(
+            battlePayload({ battleId: 1, monsterHrids: ['/monsters/rat'] }),
+            collector.lifecycleGeneration
+        );
+
+        expect(collector.expectedLootTracker.hasData()).toBe(false);
+        expect(collector.pendingEncounter).not.toBeNull(); // this battle's own snapshot for the next completion
+    });
+
+    test('cleanup resets the expected-loot tracker and pending encounter (no cross-character leakage)', async () => {
+        dataManager.getCurrentActions.mockReturnValue([regularZoneAction()]);
+        dataManager.getActionDetails.mockReturnValue({ combatZoneInfo: { isDungeon: false } });
+        const collector = await makeInitializedCollector();
+
+        await collector.onNewBattle(
+            battlePayload({ battleId: 1, monsterHrids: ['/monsters/rat'] }),
+            collector.lifecycleGeneration
+        );
+        await collector.onNewBattle(
+            battlePayload({ battleId: 2, monsterHrids: ['/monsters/rat'] }),
+            collector.lifecycleGeneration
+        );
+        expect(collector.expectedLootTracker.hasData()).toBe(true);
+
+        collector.cleanup();
+
+        expect(collector.expectedLootTracker.hasData()).toBe(false);
+        expect(collector.pendingEncounter).toBeNull();
+    });
+
+    test('dungeon completions are recorded via the shared dungeonTracker completion signal, not re-derived', async () => {
+        const collector = new CombatStatsDataCollector();
+        await collector.initialize();
+
+        const onUpdateHandler = dungeonTracker.onUpdate.mock.calls[0][0];
+        collector.latestSelfCombatDropQuantity = 0.1;
+
+        onUpdateHandler(null, {
+            dungeonHrid: '/actions/combat/chimerical_den',
+            tier: 2,
+            keyCountsMap: { Self: 3, Ally: 3 },
+        });
+
+        expect(collector.expectedLootTracker.dungeonsCompleted).toBe(1);
+        expect(collector.expectedLootTracker.isDungeon).toBe(true);
+        expect(collector.expectedLootTracker.zoneHrid).toBe('/actions/combat/chimerical_den');
+    });
+
+    test('an in-progress dungeon run (no completedRun yet) does not record a completion', async () => {
+        const collector = new CombatStatsDataCollector();
+        await collector.initialize();
+
+        const onUpdateHandler = dungeonTracker.onUpdate.mock.calls[0][0];
+        onUpdateHandler({ dungeonHrid: '/actions/combat/chimerical_den', currentWave: 3 }, null);
+
+        expect(collector.expectedLootTracker.hasData()).toBe(false);
     });
 });

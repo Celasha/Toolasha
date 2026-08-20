@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 vi.mock('../../api/marketplace.js', () => ({
     default: {
         getPrice: vi.fn(() => ({ ask: 500, bid: 400 })),
+        on: vi.fn(),
     },
 }));
 
@@ -24,10 +25,13 @@ vi.mock('../market/expected-value-calculator.js', () => ({
         getCachedValue: vi.fn(() => null),
         calculateSingleContainer: vi.fn(() => null),
         calculateExpectedValue: vi.fn(() => null),
+        resolveSellSideValue: vi.fn(() => null),
     },
 }));
 
-import { calculateConsumableCosts, calculatePlayerStats } from './combat-stats-calculator.js';
+import { calculateConsumableCosts, calculatePlayerStats, calculateValuedRevenue } from './combat-stats-calculator.js';
+import expectedValueCalculator from '../market/expected-value-calculator.js';
+import dataManager from '../../core/data-manager.js';
 
 describe('calculateConsumableCosts - timeToZeroSeconds zero-safe fallback', () => {
     beforeEach(() => {
@@ -180,5 +184,133 @@ describe('calculatePlayerStats - firstToRunOut', () => {
 
         expect(stats.firstToRunOut.itemHrid).toBe('/items/yogurt');
         expect(stats.firstToRunOut.timeToZeroSeconds).toBe(0);
+    });
+});
+
+describe('calculateValuedRevenue - shared Actual/Expected valuation semantics', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        expectedValueCalculator.resolveSellSideValue.mockReset();
+        dataManager.getItemDetails.mockReset().mockReturnValue({ name: 'Test Item', isTradable: true });
+    });
+
+    test('applies market tax when the resolver says needsTax is true', () => {
+        expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 100, source: 'market', needsTax: true });
+
+        const { revenue } = calculateValuedRevenue([{ itemHrid: '/items/log', count: 10 }]);
+
+        expect(revenue).toBeCloseTo(100 * 0.95 * 10, 5); // MARKET_TAX = 0.05
+    });
+
+    test('does not apply tax for an openable valued via Expected Value (needsTax false)', () => {
+        expectedValueCalculator.resolveSellSideValue.mockReturnValue({
+            value: 5000,
+            source: 'expectedValue',
+            needsTax: false,
+        });
+
+        const { revenue } = calculateValuedRevenue([{ itemHrid: '/items/chimerical_chest', count: 2 }]);
+
+        expect(revenue).toBe(10000);
+    });
+
+    test('does not apply tax to a non-tradable item even when needsTax is true', () => {
+        dataManager.getItemDetails.mockReturnValue({ name: 'Test Item', isTradable: false });
+        expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 100, source: 'market', needsTax: true });
+
+        const { revenue } = calculateValuedRevenue([{ itemHrid: '/items/log', count: 10 }]);
+
+        expect(revenue).toBe(1000);
+    });
+
+    test('marks the result partial and lists the item when valuation is unavailable, never treating it as a silent zero', () => {
+        expectedValueCalculator.resolveSellSideValue.mockImplementation((itemHrid) =>
+            itemHrid === '/items/known' ? { value: 10, source: 'market', needsTax: false } : null
+        );
+
+        const { revenue, isPartial, unvaluedItemHrids } = calculateValuedRevenue([
+            { itemHrid: '/items/known', count: 5 },
+            { itemHrid: '/items/unknown', count: 3 },
+        ]);
+
+        expect(revenue).toBe(50);
+        expect(isPartial).toBe(true);
+        expect(unvaluedItemHrids).toEqual(['/items/unknown']);
+    });
+
+    test('is not partial when every item resolves successfully', () => {
+        expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 10, source: 'market', needsTax: false });
+
+        const { isPartial, unvaluedItemHrids } = calculateValuedRevenue([{ itemHrid: '/items/known', count: 1 }]);
+
+        expect(isPartial).toBe(false);
+        expect(unvaluedItemHrids).toEqual([]);
+    });
+
+    test('skips zero/falsy-count items without querying valuation', () => {
+        calculateValuedRevenue([{ itemHrid: '/items/log', count: 0 }]);
+
+        expect(expectedValueCalculator.resolveSellSideValue).not.toHaveBeenCalled();
+    });
+});
+
+describe('calculatePlayerStats - actualVsExpected (RNG Delta)', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 100, source: 'market', needsTax: false });
+        dataManager.getItemDetails.mockReturnValue({ name: 'Test Item', isTradable: true });
+    });
+
+    function basePlayerData(loot = {}) {
+        return { name: 'Self', loot, experience: {}, deathCount: 0, consumables: [] };
+    }
+
+    test('is null when no expected-loot data is supplied (party members, or no completed encounters)', () => {
+        const stats = calculatePlayerStats(basePlayerData(), 3600, null);
+        expect(stats.actualVsExpected).toBeNull();
+    });
+
+    test('is null when the sample size is zero (no fabricated economics from zero completed encounters)', () => {
+        const stats = calculatePlayerStats(basePlayerData(), 3600, {
+            expectedDropsMap: new Map(),
+            sampleSize: 0,
+        });
+        expect(stats.actualVsExpected).toBeNull();
+    });
+
+    test('computes a positive RNG delta when actual loot outvalues expected loot', () => {
+        const stats = calculatePlayerStats(
+            basePlayerData({ '/items/log': { itemHrid: '/items/log', count: 20 } }),
+            3600,
+            { expectedDropsMap: new Map([['/items/log', 10]]), sampleSize: 5 }
+        );
+
+        expect(stats.actualVsExpected.rngDeltaValue).toBeGreaterThan(0);
+        expect(stats.actualVsExpected.sampleSize).toBe(5);
+    });
+
+    test('sorts the item delta table by absolute value delta, not percent', () => {
+        expectedValueCalculator.resolveSellSideValue.mockImplementation((itemHrid) => {
+            if (itemHrid === '/items/rare_tiny') return { value: 1000000, source: 'market', needsTax: false };
+            return { value: 1, source: 'market', needsTax: false };
+        });
+
+        const stats = calculatePlayerStats(
+            basePlayerData({
+                '/items/common_bulk': { itemHrid: '/items/common_bulk', count: 1000 },
+                '/items/rare_tiny': { itemHrid: '/items/rare_tiny', count: 1 },
+            }),
+            3600,
+            {
+                expectedDropsMap: new Map([
+                    ['/items/common_bulk', 500],
+                    ['/items/rare_tiny', 0.001],
+                ]),
+                sampleSize: 5,
+            }
+        );
+
+        // common_bulk delta = (1000-500)*1 = 500; rare_tiny delta = (1-0.001)*1e6 ~= 999000 - bigger, sorts first
+        expect(stats.actualVsExpected.itemDeltas[0].itemHrid).toBe('/items/rare_tiny');
     });
 });

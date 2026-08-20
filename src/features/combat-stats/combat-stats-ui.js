@@ -4,6 +4,7 @@
  */
 
 import config from '../../core/config.js';
+import dataManager from '../../core/data-manager.js';
 import marketAPI from '../../api/marketplace.js';
 import combatStatsDataCollector from './combat-stats-data-collector.js';
 import { calculateAllPlayerStats } from './combat-stats-calculator.js';
@@ -302,7 +303,14 @@ class CombatStatsUI {
         }
 
         // Calculate statistics
-        const playerStats = calculateAllPlayerStats(combatData, durationSeconds);
+        const expectedLootTracker = combatStatsDataCollector.expectedLootTracker;
+        const expectedLootData = expectedLootTracker?.hasData()
+            ? {
+                  expectedDropsMap: expectedLootTracker.getExpectedDrops(dataManager.getInitClientData() || {}),
+                  sampleSize: expectedLootTracker.getSampleSize(),
+              }
+            : null;
+        const playerStats = calculateAllPlayerStats(combatData, durationSeconds, expectedLootData);
 
         // Create and show popup
         this.createPopup(playerStats);
@@ -626,6 +634,40 @@ class CombatStatsUI {
                 value: `${formatNum(stats.dailyProfit[priceKey])}/d`,
                 color: stats.dailyProfit[priceKey] >= 0 ? '#51cf66' : '#ff6b6b',
             },
+            ...(stats.actualVsExpected
+                ? [
+                      {
+                          label: 'Actual Income/day',
+                          value: formatNum(stats.actualVsExpected.actualRevenuePerDay),
+                      },
+                      {
+                          label: 'Expected Income/day',
+                          value: formatNum(stats.actualVsExpected.expectedRevenuePerDay),
+                      },
+                      {
+                          label: 'RNG Delta',
+                          value: `${formatNum(stats.actualVsExpected.rngDeltaValue)} (${stats.actualVsExpected.rngDeltaPercent >= 0 ? '+' : ''}${stats.actualVsExpected.rngDeltaPercent.toFixed(1)}%)${stats.actualVsExpected.isPartial ? ' *' : ''}`,
+                          color: stats.actualVsExpected.rngDeltaValue >= 0 ? '#51cf66' : '#ff6b6b',
+                          expandable: true,
+                          itemDeltas: stats.actualVsExpected.itemDeltas,
+                          unvaluedItemHrids: stats.actualVsExpected.unvaluedItemHrids,
+                      },
+                      {
+                          label: 'Actual Profit/day',
+                          value: `${formatNum(stats.actualVsExpected.actualProfitPerDay)}/d`,
+                          color: stats.actualVsExpected.actualProfitPerDay >= 0 ? '#51cf66' : '#ff6b6b',
+                      },
+                      {
+                          label: 'Expected Profit/day',
+                          value: `${formatNum(stats.actualVsExpected.expectedProfitPerDay)}/d`,
+                          color: stats.actualVsExpected.expectedProfitPerDay >= 0 ? '#51cf66' : '#ff6b6b',
+                      },
+                      {
+                          label: 'Completed encounters',
+                          value: formatNum(stats.actualVsExpected.sampleSize),
+                      },
+                  ]
+                : []),
             { label: 'Total EXP', value: formatNum(stats.totalExp) },
             { label: 'EXP/hour', value: `${formatNum(stats.expPerHour)}/h` },
             { label: 'Death Count', value: `${stats.deathCount}` },
@@ -678,7 +720,65 @@ class CombatStatsUI {
                             font-size: 13px;
                         `;
 
-                        if (row.incomeBreakdown) {
+                        if (row.itemDeltas) {
+                            const header = document.createElement('div');
+                            header.style.cssText = `
+                                display: grid;
+                                grid-template-columns: 2fr 1fr 1fr 1fr;
+                                gap: 10px;
+                                font-weight: bold;
+                                margin-bottom: 5px;
+                                padding-bottom: 5px;
+                                border-bottom: 1px solid #4a4a4a;
+                                color: ${textColor};
+                            `;
+                            header.innerHTML = `
+                                <span>Item</span>
+                                <span style="text-align: right;">Actual</span>
+                                <span style="text-align: right;">Expected</span>
+                                <span style="text-align: right;">Delta</span>
+                            `;
+                            breakdownDiv.appendChild(header);
+
+                            if (row.itemDeltas.length === 0) {
+                                const emptyNote = document.createElement('div');
+                                emptyNote.style.color = '#888';
+                                emptyNote.textContent = 'No valued items yet';
+                                breakdownDiv.appendChild(emptyNote);
+                            }
+
+                            for (const item of row.itemDeltas) {
+                                const itemRow = document.createElement('div');
+                                itemRow.style.cssText = `
+                                    display: grid;
+                                    grid-template-columns: 2fr 1fr 1fr 1fr;
+                                    gap: 10px;
+                                    margin-bottom: 3px;
+                                    color: ${textColor};
+                                `;
+                                const deltaColor = item.valueDelta >= 0 ? '#51cf66' : '#ff6b6b';
+                                itemRow.innerHTML = `
+                                    <span>${item.itemName}</span>
+                                    <span style="text-align: right;">${formatNumDecimals(item.actualCount)}</span>
+                                    <span style="text-align: right;">${formatNumDecimals(item.expectedCount)}</span>
+                                    <span style="text-align: right; color: ${deltaColor};">${formatNum(item.valueDelta)}</span>
+                                `;
+                                breakdownDiv.appendChild(itemRow);
+                            }
+
+                            if (row.unvaluedItemHrids && row.unvaluedItemHrids.length > 0) {
+                                const partialNote = document.createElement('div');
+                                partialNote.style.cssText = `
+                                    margin-top: 8px;
+                                    padding-top: 8px;
+                                    border-top: 1px solid #3a3a3a;
+                                    font-size: 11px;
+                                    color: #f0a830;
+                                `;
+                                partialNote.textContent = `⚠ Partial - could not value ${row.unvaluedItemHrids.length} item(s)`;
+                                breakdownDiv.appendChild(partialNote);
+                            }
+                        } else if (row.incomeBreakdown) {
                             // Pricing mode label
                             const pricingMode = config.getSettingValue('profitCalc_pricingMode') || 'hybrid';
                             const pricingNote = document.createElement('div');
