@@ -375,9 +375,10 @@ export function formatLootList(lootMap) {
  * Calculate all statistics for a player
  * @param {Object} playerData - Player data from combat data
  * @param {number|null} durationSeconds - Combat duration in seconds (from DOM or null)
- * @param {Object|null} expectedLootData - `{ expectedDropsMap, sampleSize }` for the current
- *   player only (Combat Sim's canonical drop math has no meaningful "expected" concept for a
- *   party member Toolasha did not simulate); null/omitted for every other player.
+ * @param {Object|null} expectedLootData - `{ expectedDropsMap, sampleSize, elapsedSeconds }` for
+ *   the current player only (Combat Sim's canonical drop math has no meaningful "expected"
+ *   concept for a party member Toolasha did not simulate); null/omitted for every other player.
+ *   `elapsedSeconds` is the tracker's own observed window, NOT the combat session duration.
  * @returns {Object} Calculated statistics
  */
 export function calculatePlayerStats(playerData, durationSeconds = null, expectedLootData = null) {
@@ -437,7 +438,7 @@ export function calculatePlayerStats(playerData, durationSeconds = null, expecte
     // Actual vs Expected loot / RNG Delta - current player only, and only once at least one
     // encounter has completed (never fabricated from zero completed samples)
     let actualVsExpected = null;
-    if (expectedLootData && expectedLootData.sampleSize > 0 && duration > 0) {
+    if (expectedLootData && expectedLootData.sampleSize > 0 && duration > 0 && expectedLootData.elapsedSeconds > 0) {
         const actualItems = Object.values(playerData.loot || {});
         const expectedItems = Array.from(expectedLootData.expectedDropsMap || [], ([itemHrid, count]) => ({
             itemHrid,
@@ -447,8 +448,12 @@ export function calculatePlayerStats(playerData, durationSeconds = null, expecte
         const actualValuation = calculateValuedRevenue(actualItems);
         const expectedValuation = calculateValuedRevenue(expectedItems);
 
+        // Actual scales against the whole combat session's duration; Expected must scale against
+        // only the wall-clock time this tracker actually observed - the two windows can differ
+        // enormously (e.g. the script attached mid-session), and using the wrong denominator for
+        // either side would silently mis-scale the daily rate by that ratio.
         const actualRevenuePerDay = calculateDailyRate(actualValuation.revenue, duration);
-        const expectedRevenuePerDay = calculateDailyRate(expectedValuation.revenue, duration);
+        const expectedRevenuePerDay = calculateDailyRate(expectedValuation.revenue, expectedLootData.elapsedSeconds);
         const rngDeltaValue = actualRevenuePerDay - expectedRevenuePerDay;
         const rngDeltaPercent = expectedRevenuePerDay !== 0 ? (rngDeltaValue / expectedRevenuePerDay) * 100 : 0;
 
@@ -539,7 +544,7 @@ function buildItemDeltas(actualItems, expectedItems) {
  * Calculate statistics for all players
  * @param {Object} combatData - Combat data from data collector
  * @param {number|null} durationSeconds - Combat duration in seconds (from DOM or null)
- * @param {Object|null} expectedLootData - `{ expectedDropsMap, sampleSize }` for the current player
+ * @param {Object|null} expectedLootData - `{ expectedDropsMap, sampleSize, elapsedSeconds }` for the current player
  * @returns {Array} Array of player statistics
  */
 export function calculateAllPlayerStats(combatData, durationSeconds = null, expectedLootData = null) {

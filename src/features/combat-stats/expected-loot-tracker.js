@@ -22,6 +22,7 @@ class ExpectedLootTracker {
         this.deaths = {};
         this.dungeonsCompleted = 0;
         this.completedEncounterCount = 0;
+        this.trackingStartTime = null;
         this.latest = {
             difficultyTier: 0,
             numberOfPlayers: 1,
@@ -69,6 +70,9 @@ class ExpectedLootTracker {
         debuffOnLevelGap,
     }) {
         this._syncZone(zoneHrid, false);
+        if (this.trackingStartTime === null) {
+            this.trackingStartTime = Date.now();
+        }
 
         for (const monsterHrid of monsterHrids) {
             this.deaths[monsterHrid] = (this.deaths[monsterHrid] || 0) + 1;
@@ -95,6 +99,9 @@ class ExpectedLootTracker {
      */
     recordDungeonCompletion({ zoneHrid, difficultyTier, numberOfPlayers, combatDropQuantity }) {
         this._syncZone(zoneHrid, true);
+        if (this.trackingStartTime === null) {
+            this.trackingStartTime = Date.now();
+        }
 
         this.dungeonsCompleted += 1;
         this.completedEncounterCount += 1;
@@ -113,6 +120,20 @@ class ExpectedLootTracker {
      */
     getSampleSize() {
         return this.completedEncounterCount;
+    }
+
+    /**
+     * Real wall-clock time actually covered by the accumulated sample - NOT the whole combat
+     * session's duration, which may have started long before this tracker began observing
+     * (e.g. the script attached mid-fight). Using the session duration here would silently
+     * understate the expected daily rate by whatever ratio the two windows differ by.
+     * @returns {number} Seconds since the first completed encounter/dungeon run in this sample
+     */
+    getElapsedSeconds() {
+        if (this.trackingStartTime === null) {
+            return 0;
+        }
+        return Math.max(0, (Date.now() - this.trackingStartTime) / 1000);
     }
 
     /**

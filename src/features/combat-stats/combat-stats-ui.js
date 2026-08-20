@@ -308,6 +308,7 @@ class CombatStatsUI {
             ? {
                   expectedDropsMap: expectedLootTracker.getExpectedDrops(dataManager.getInitClientData() || {}),
                   sampleSize: expectedLootTracker.getSampleSize(),
+                  elapsedSeconds: expectedLootTracker.getElapsedSeconds(),
               }
             : null;
         const playerStats = calculateAllPlayerStats(combatData, durationSeconds, expectedLootData);

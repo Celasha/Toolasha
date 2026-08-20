@@ -192,4 +192,55 @@ describe('ExpectedLootTracker', () => {
         expect(tracker.dungeonsCompleted).toBe(0);
         expect(tracker.zoneHrid).toBeNull();
     });
+
+    test('getElapsedSeconds is 0 before any encounter completes', () => {
+        expect(tracker.getElapsedSeconds()).toBe(0);
+    });
+
+    test('getElapsedSeconds tracks time since the FIRST completed encounter, not the whole session', () => {
+        tracker.recordCompletedEncounter({
+            zoneHrid: '/actions/combat/rat',
+            monsterHrids: ['/monsters/rat'],
+            difficultyTier: 0,
+            numberOfPlayers: 1,
+            dropRateMultiplier: 1,
+            rareFindMultiplier: 1,
+            combatDropQuantity: 0,
+            debuffOnLevelGap: 0,
+        });
+
+        const firstElapsed = tracker.getElapsedSeconds();
+        expect(firstElapsed).toBeGreaterThanOrEqual(0);
+
+        tracker.recordCompletedEncounter({
+            zoneHrid: '/actions/combat/rat',
+            monsterHrids: ['/monsters/rat'],
+            difficultyTier: 0,
+            numberOfPlayers: 1,
+            dropRateMultiplier: 1,
+            rareFindMultiplier: 1,
+            combatDropQuantity: 0,
+            debuffOnLevelGap: 0,
+        });
+
+        // A second recorded encounter must not reset the tracking start time.
+        expect(tracker.getElapsedSeconds()).toBeGreaterThanOrEqual(firstElapsed);
+    });
+
+    test('reset() clears getElapsedSeconds back to 0', () => {
+        tracker.recordCompletedEncounter({
+            zoneHrid: '/actions/combat/rat',
+            monsterHrids: ['/monsters/rat'],
+            difficultyTier: 0,
+            numberOfPlayers: 1,
+            dropRateMultiplier: 1,
+            rareFindMultiplier: 1,
+            combatDropQuantity: 0,
+            debuffOnLevelGap: 0,
+        });
+
+        tracker.reset();
+
+        expect(tracker.getElapsedSeconds()).toBe(0);
+    });
 });

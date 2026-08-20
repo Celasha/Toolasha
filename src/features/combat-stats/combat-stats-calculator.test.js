@@ -282,11 +282,38 @@ describe('calculatePlayerStats - actualVsExpected (RNG Delta)', () => {
         const stats = calculatePlayerStats(
             basePlayerData({ '/items/log': { itemHrid: '/items/log', count: 20 } }),
             3600,
-            { expectedDropsMap: new Map([['/items/log', 10]]), sampleSize: 5 }
+            { expectedDropsMap: new Map([['/items/log', 10]]), sampleSize: 5, elapsedSeconds: 3600 }
         );
 
         expect(stats.actualVsExpected.rngDeltaValue).toBeGreaterThan(0);
         expect(stats.actualVsExpected.sampleSize).toBe(5);
+    });
+
+    test('is null when elapsedSeconds is zero (tracker never actually observed a time window)', () => {
+        const stats = calculatePlayerStats(
+            basePlayerData({ '/items/log': { itemHrid: '/items/log', count: 20 } }),
+            3600,
+            { expectedDropsMap: new Map([['/items/log', 10]]), sampleSize: 5, elapsedSeconds: 0 }
+        );
+
+        expect(stats.actualVsExpected).toBeNull();
+    });
+
+    test('scales Expected Revenue/day against the tracker own observed window, not the whole combat session duration', () => {
+        // The combat session has been running for 10 hours (e.g. the script attached mid-fight),
+        // but the expected-loot tracker has only actually observed 60 seconds of that. Using the
+        // session duration as the denominator would understate the expected daily rate ~600x.
+        const sessionDurationSeconds = 10 * 3600;
+        const trackerElapsedSeconds = 60;
+
+        const stats = calculatePlayerStats(
+            basePlayerData({ '/items/log': { itemHrid: '/items/log', count: 1 } }),
+            sessionDurationSeconds,
+            { expectedDropsMap: new Map([['/items/log', 1]]), sampleSize: 1, elapsedSeconds: trackerElapsedSeconds }
+        );
+
+        // 1 unit * value 100, scaled to a full day from a 60-second window: 100 * 86400/60 = 144000
+        expect(stats.actualVsExpected.expectedRevenuePerDay).toBeCloseTo(144000, 0);
     });
 
     test('sorts the item delta table by absolute value delta, not percent', () => {
@@ -307,6 +334,7 @@ describe('calculatePlayerStats - actualVsExpected (RNG Delta)', () => {
                     ['/items/rare_tiny', 0.001],
                 ]),
                 sampleSize: 5,
+                elapsedSeconds: 3600,
             }
         );
 
