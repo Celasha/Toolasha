@@ -445,7 +445,7 @@ async function handleEnhancementResult(action, _data) {
         const protectedFailure = previousLevel > 0 && newLevel === previousLevel && protectionItemHrid !== null;
         const wasFailure = levelDecreased || failedAtZero || protectedFailure;
 
-        const _wasBlessed = wasSuccess && newLevel - previousLevel >= 2; // Blessed tea detection
+        const wasBlessed = wasSuccess && newLevel - previousLevel >= 2; // Blessed tea detection
 
         // Update lastAttempt BEFORE recording (so next attempt compares correctly)
         currentSession.lastAttempt = {
@@ -462,7 +462,7 @@ async function handleEnhancementResult(action, _data) {
                 const xpGain = calculateSuccessXP(previousLevel, itemHrid);
                 currentSession.totalXP += xpGain;
 
-                await enhancementTracker.recordSuccess(previousLevel, newLevel);
+                await enhancementTracker.recordSuccess(previousLevel, newLevel, wasBlessed);
                 enhancementUI.scheduleUpdate(); // Update UI after success
 
                 // Check if we've reached target

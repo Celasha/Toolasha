@@ -65,6 +65,7 @@ export function createSession(itemHrid, itemName, startLevel, targetLevel, prote
         totalAttempts: 0,
         totalSuccesses: 0,
         totalFailures: 0,
+        totalBlessed: 0, // Successes that jumped +2 or more levels (Blessed Tea)
         totalXP: 0, // Total XP gained from enhancements
         longestSuccessStreak: 0,
         longestFailureStreak: 0,
@@ -88,6 +89,7 @@ export function initializeLevelTracking(session, level) {
         session.attemptsPerLevel[level] = {
             success: 0,
             fail: 0,
+            blessed: 0,
             successRate: 0,
         };
     }
@@ -111,8 +113,10 @@ export function updateSuccessRate(session, level) {
  * @param {Object} session - Session object
  * @param {number} previousLevel - Level before enhancement (level that succeeded)
  * @param {number} newLevel - New level after success
+ * @param {boolean} wasBlessed - Whether this success jumped +2 or more levels (Blessed Tea).
+ *   A subtype of success, not counted as an additional attempt/success on top of it.
  */
-export function recordSuccess(session, previousLevel, newLevel) {
+export function recordSuccess(session, previousLevel, newLevel, wasBlessed = false) {
     // Initialize tracking if needed for the level that succeeded
     initializeLevelTracking(session, previousLevel);
 
@@ -120,6 +124,11 @@ export function recordSuccess(session, previousLevel, newLevel) {
     session.attemptsPerLevel[previousLevel].success++;
     session.totalAttempts++;
     session.totalSuccesses++;
+
+    if (wasBlessed) {
+        session.attemptsPerLevel[previousLevel].blessed++;
+        session.totalBlessed++;
+    }
 
     // Update success rate for this level
     updateSuccessRate(session, previousLevel);
@@ -405,4 +414,24 @@ export function validateSession(session) {
     if (session.totalCost < 0 || session.coinCost < 0 || session.protectionCost < 0) return false;
 
     return true;
+}
+
+/**
+ * Normalize a session loaded from storage so older sessions (persisted before Blessed
+ * tracking existed) read with an explicit 0 instead of undefined. Mutates in place.
+ * @param {Object} session - Session object
+ * @returns {Object} The same session, normalized
+ */
+export function normalizeSession(session) {
+    if (typeof session.totalBlessed !== 'number') {
+        session.totalBlessed = 0;
+    }
+
+    for (const levelData of Object.values(session.attemptsPerLevel || {})) {
+        if (typeof levelData.blessed !== 'number') {
+            levelData.blessed = 0;
+        }
+    }
+
+    return session;
 }

@@ -814,8 +814,8 @@ class EnhancementUI {
         // Calculate stats
         const totalAttempts = session.totalAttempts;
         const totalSuccess = session.totalSuccesses;
-        const _totalFailure = session.totalFailures;
-        const _successRate = totalAttempts > 0 ? formatPercentage(totalSuccess / totalAttempts, 1) : '0.0%';
+        const totalFailure = session.totalFailures;
+        const totalBlessed = session.totalBlessed || 0;
 
         const duration = getSessionDuration(session);
         const durationText = this.formatDuration(duration);
@@ -855,15 +855,12 @@ class EnhancementUI {
         // Summary stats
         html += `
             <div style="margin-top: 8px;">
-                <div style="display: flex; justify-content: space-between; font-size: 13px;">
-                    <div>
-                        <span>Total Attempts:</span>
-                        <strong> ${totalAttempts}</strong>
-                    </div>
-                    <div>
-                        <span>Prots Used:</span>
-                        <strong> ${session.protectionCount || 0}</strong>
-                    </div>
+                <div style="font-size: 13px;">
+                    Attempts ${totalAttempts} · Successes ${totalSuccess} · Blessed ${totalBlessed} · Failures ${totalFailure}
+                </div>
+                <div style="font-size: 13px; margin-top: 4px;">
+                    <span>Prots Used:</span>
+                    <strong> ${session.protectionCount || 0}</strong>
                 </div>
             </div>`;
 
@@ -959,7 +956,7 @@ class EnhancementUI {
 
         let rows = '';
         for (const level of levels) {
-            const levelData = session.attemptsPerLevel[level] || { success: 0, fail: 0, successRate: 0 };
+            const levelData = session.attemptsPerLevel[level] || { success: 0, fail: 0, blessed: 0, successRate: 0 };
             const rate = formatPercentage(levelData.successRate, 1);
             const isCurrent = level === session.currentLevel;
 
@@ -972,10 +969,14 @@ class EnhancementUI {
             `
                 : '';
 
+            const blessedCount = levelData.blessed || 0;
+            const blessedSuffix =
+                blessedCount > 0 ? ` <span style="color: ${STYLE.colors.accent};">(${blessedCount}✦)</span>` : '';
+
             rows += `
                 <tr style="${rowStyle}">
                     <td style="${compactCellStyle} text-align: center;">${level}</td>
-                    <td style="${compactCellStyle} text-align: right;">${levelData.success}</td>
+                    <td style="${compactCellStyle} text-align: right;">${levelData.success}${blessedSuffix}</td>
                     <td style="${compactCellStyle} text-align: right;">${levelData.fail}</td>
                     <td style="${compactCellStyle} text-align: right;">${rate}</td>
                 </tr>

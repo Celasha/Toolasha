@@ -149,4 +149,32 @@ describe('EnhancementTracker character lifecycle', () => {
         expect(mocks.saveSessions).toHaveBeenCalledWith(tracker.sessions, 'character-a');
         expect(mocks.saveCurrentSessionId).toHaveBeenCalledWith(null, 'character-a');
     });
+
+    test('passes wasBlessed through to the session so a +2 success is tracked as Blessed', async () => {
+        const session = createSession('/items/sword', 'Sword', 0, 10, 0);
+        mocks.loadEnhancementState.mockResolvedValue({
+            sessions: { [session.id]: session },
+            currentSessionId: session.id,
+        });
+        const tracker = new EnhancementTracker();
+        await tracker.initialize();
+
+        await tracker.recordSuccess(0, 2, true);
+
+        expect(tracker.getCurrentSession().totalBlessed).toBe(1);
+    });
+
+    test('normalizes an older session loaded without a Blessed field to zero, not undefined', async () => {
+        const legacySession = createSession('/items/sword', 'Sword', 0, 5, 0);
+        delete legacySession.totalBlessed;
+        mocks.loadEnhancementState.mockResolvedValue({
+            sessions: { [legacySession.id]: legacySession },
+            currentSessionId: legacySession.id,
+        });
+        const tracker = new EnhancementTracker();
+
+        await tracker.initialize();
+
+        expect(tracker.getCurrentSession().totalBlessed).toBe(0);
+    });
 });
