@@ -16,6 +16,31 @@ import {
 } from '../../utils/formatters.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 
+/**
+ * Format a consumable's remaining runway for display.
+ * @param {number} seconds - Seconds until inventory reaches zero (Infinity if rate is 0/unknown)
+ * @returns {string} Formatted runway string
+ */
+export function formatRunway(seconds) {
+    if (!Number.isFinite(seconds)) {
+        return 'No usage observed';
+    }
+    if (seconds <= 0) {
+        return 'Out now';
+    }
+    if (seconds < 3600) {
+        return `~${Math.ceil(seconds / 60)}m`;
+    }
+    if (seconds < 86400) {
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        return m > 0 ? `~${h}h ${m}m` : `~${h}h`;
+    }
+    const d = Math.floor(seconds / 86400);
+    const h = Math.floor((seconds % 86400) / 3600);
+    return h > 0 ? `~${d}d ${h}h` : `~${d}d`;
+}
+
 class CombatStatsUI {
     constructor() {
         this.isInitialized = false;
@@ -567,6 +592,12 @@ class CombatStatsUI {
                 breakdown: stats.consumableBreakdown,
                 isDaily: true,
             },
+            {
+                label: 'First consumable to run out',
+                value: stats.firstToRunOut
+                    ? `${stats.firstToRunOut.itemName} - ${formatRunway(stats.firstToRunOut.timeToZeroSeconds)}`
+                    : 'No usage observed',
+            },
             ...(stats.keyBreakdown && stats.keyBreakdown.length > 0
                 ? [
                       {
@@ -871,6 +902,18 @@ class CombatStatsUI {
                                     <span style="text-align: right; color: #ff6b6b;">${formatNum(displayCost)}</span>
                                 `;
                                 breakdownDiv.appendChild(itemRow);
+
+                                if (!row.isDaily && item.timeToZeroSeconds !== undefined) {
+                                    const remainingRow = document.createElement('div');
+                                    remainingRow.style.cssText = `
+                                        font-size: 11px;
+                                        color: #888;
+                                        margin-top: -2px;
+                                        margin-bottom: 3px;
+                                    `;
+                                    remainingRow.textContent = `Remaining: ${formatRunway(item.timeToZeroSeconds)}`;
+                                    breakdownDiv.appendChild(remainingRow);
+                                }
                             }
 
                             // Add total row

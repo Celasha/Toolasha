@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
     currentCharacterId: 'character-a',
     on: vi.fn(),
     off: vi.fn(),
+    settingValues: { combatStats_runwayWarningThreshold: 12 },
 }));
 
 vi.mock('../../core/storage.js', () => ({
@@ -26,6 +27,7 @@ vi.mock('../../core/storage.js', () => ({
 vi.mock('../../core/data-manager.js', () => ({
     default: {
         getCurrentCharacterId: vi.fn(() => mocks.currentCharacterId),
+        getItemDetails: vi.fn((itemHrid) => ({ name: itemHrid.split('/').pop() })),
     },
 }));
 
@@ -36,15 +38,28 @@ vi.mock('../../core/websocket.js', () => ({
     },
 }));
 
+vi.mock('../../core/config.js', () => ({
+    default: {
+        getSettingValue: vi.fn((key, def) => mocks.settingValues[key] ?? def),
+    },
+}));
+
 import storage from '../../core/storage.js';
 import { CombatStatsDataCollector } from './combat-stats-data-collector.js';
 
 beforeEach(() => {
     mocks.values.clear();
     mocks.currentCharacterId = 'character-a';
+    mocks.settingValues = { combatStats_runwayWarningThreshold: 12 };
     mocks.on.mockClear();
     mocks.off.mockClear();
     vi.clearAllMocks();
+
+    globalThis.Notification = vi.fn(function MockNotification() {
+        this.close = vi.fn();
+    });
+    globalThis.Notification.permission = 'granted';
+    globalThis.Notification.requestPermission = vi.fn(async () => 'granted');
 });
 
 describe('CombatStatsDataCollector character-scoped persistence', () => {
@@ -126,6 +141,41 @@ describe('CombatStatsDataCollector character-scoped persistence', () => {
         expect(storage.setJSON).not.toHaveBeenCalled();
     });
 
+    test('a party member consumable that legitimately reads 0 stays 0, never falls back to a stale count', async () => {
+        const collector = new CombatStatsDataCollector();
+        collector.isInitialized = true;
+        collector.characterId = 'character-a';
+        mocks.currentCharacterId = 'character-a';
+
+        const battlePayload = (count) => ({
+            battleId: 1,
+            combatStartTime: new Date().toISOString(),
+            players: [
+                {
+                    character: { id: 'character-a', name: 'Self' },
+                    combatConsumables: [],
+                    totalLootMap: {},
+                    totalSkillExperienceMap: {},
+                },
+                {
+                    character: { id: 'character-b', name: 'Ally' },
+                    combatConsumables: [{ itemHrid: '/items/coffee', count }],
+                    totalLootMap: {},
+                    totalSkillExperienceMap: {},
+                },
+            ],
+        });
+
+        await collector.onNewBattle(battlePayload(3), collector.lifecycleGeneration);
+        await collector.onNewBattle(battlePayload(0), collector.lifecycleGeneration);
+
+        const allyConsumable = collector.latestCombatData.players
+            .find((p) => p.name === 'Ally')
+            .consumables.find((c) => c.itemHrid === '/items/coffee');
+
+        expect(allyConsumable.inventoryAmount).toBe(0);
+    });
+
     test('cleanup invalidates registered handlers before the next character initializes', async () => {
         const collector = new CombatStatsDataCollector();
         await collector.initialize();
@@ -136,5 +186,93 @@ describe('CombatStatsDataCollector character-scoped persistence', () => {
         expect(collector.lifecycleGeneration).toBe(generation + 1);
         expect(collector.isInitialized).toBe(false);
         expect(mocks.off).toHaveBeenCalledTimes(2);
+    });
+});
+
+describe('CombatStatsDataCollector runway warning', () => {
+    test('fires once when crossing from above to below the threshold', async () => {
+        const collector = new CombatStatsDataCollector();
+        await collector.requestRunwayNotificationPermission();
+
+        collector.checkRunwayWarning('/items/coffee', 20 * 3600); // above 12h threshold
+        collector.checkRunwayWarning('/items/coffee', 5 * 3600); // crosses below
+
+        expect(globalThis.Notification).toHaveBeenCalledTimes(1);
+        expect(globalThis.Notification.mock.calls[0][1].tag).toBe('combat-consumable-runway-/items/coffee');
+    });
+
+    test('does not spam on repeated calls while still below the threshold', async () => {
+        const collector = new CombatStatsDataCollector();
+        await collector.requestRunwayNotificationPermission();
+
+        collector.checkRunwayWarning('/items/coffee', 5 * 3600);
+        collector.checkRunwayWarning('/items/coffee', 4 * 3600);
+        collector.checkRunwayWarning('/items/coffee', 3 * 3600);
+
+        expect(globalThis.Notification).toHaveBeenCalledTimes(1);
+    });
+
+    test('re-arms after inventory is replenished back above the threshold', async () => {
+        const collector = new CombatStatsDataCollector();
+        await collector.requestRunwayNotificationPermission();
+
+        collector.checkRunwayWarning('/items/coffee', 5 * 3600); // fires
+        collector.checkRunwayWarning('/items/coffee', 30 * 3600); // replenished, re-arm
+        collector.checkRunwayWarning('/items/coffee', 5 * 3600); // fires again
+
+        expect(globalThis.Notification).toHaveBeenCalledTimes(2);
+    });
+
+    test('threshold of 0 disables the warning entirely', async () => {
+        mocks.settingValues.combatStats_runwayWarningThreshold = 0;
+        const collector = new CombatStatsDataCollector();
+        await collector.requestRunwayNotificationPermission();
+
+        collector.checkRunwayWarning('/items/coffee', 0);
+
+        expect(globalThis.Notification).not.toHaveBeenCalled();
+    });
+
+    test('cleanup resets warning-crossed state so a new character starts unarmed, not pre-tripped', async () => {
+        const collector = new CombatStatsDataCollector();
+        await collector.requestRunwayNotificationPermission();
+        collector.checkRunwayWarning('/items/coffee', 5 * 3600);
+        expect(collector.wasBelowRunwayThreshold['/items/coffee']).toBe(true);
+
+        collector.cleanup();
+
+        expect(collector.wasBelowRunwayThreshold).toEqual({});
+    });
+
+    test('a party member consumable running low never triggers a notification', async () => {
+        const collector = new CombatStatsDataCollector();
+        collector.isInitialized = true;
+        collector.characterId = 'character-a';
+        collector.runwayNotificationPermissionGranted = true;
+        mocks.currentCharacterId = 'character-a';
+
+        await collector.onNewBattle(
+            {
+                battleId: 1,
+                combatStartTime: new Date().toISOString(),
+                players: [
+                    {
+                        character: { id: 'character-a', name: 'Self' },
+                        combatConsumables: [],
+                        totalLootMap: {},
+                        totalSkillExperienceMap: {},
+                    },
+                    {
+                        character: { id: 'character-b', name: 'Ally' },
+                        combatConsumables: [{ itemHrid: '/items/coffee', count: 0 }],
+                        totalLootMap: {},
+                        totalSkillExperienceMap: {},
+                    },
+                ],
+            },
+            collector.lifecycleGeneration
+        );
+
+        expect(globalThis.Notification).not.toHaveBeenCalled();
     });
 });

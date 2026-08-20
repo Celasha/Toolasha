@@ -6,6 +6,8 @@
 import webSocketHook from '../../core/websocket.js';
 import storage from '../../core/storage.js';
 import dataManager from '../../core/data-manager.js';
+import config from '../../core/config.js';
+import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 const COMBAT_STATS_STORE = 'combatStats';
 const LEGACY_STORAGE_KEYS = Object.freeze({
@@ -25,6 +27,9 @@ class CombatStatsDataCollector {
         this.currentBattleId = null;
         this.characterId = null;
         this.lifecycleGeneration = 0;
+        this.wasBelowRunwayThreshold = {};
+        this.runwayNotificationPermissionGranted = false;
+        this.timerRegistry = createTimerRegistry();
 
         this._resetTrackingState();
     }
@@ -84,6 +89,9 @@ class CombatStatsDataCollector {
         await this.loadConsumableTracking(this.characterId);
         if (generation !== this.lifecycleGeneration || !this.isInitialized) return;
 
+        await this.requestRunwayNotificationPermission();
+        if (generation !== this.lifecycleGeneration || !this.isInitialized) return;
+
         // Store handler references for cleanup
         this.newBattleHandler = (data) => this.onNewBattle(data, generation);
         this.consumableEventHandler = (data) => this.onConsumableUsed(data, generation);
@@ -93,6 +101,90 @@ class CombatStatsDataCollector {
 
         // Listen for battle_consumable_ability_updated (fires on each consumable use)
         webSocketHook.on('battle_consumable_ability_updated', this.consumableEventHandler);
+    }
+
+    /**
+     * Request browser notification permission for the consumable runway warning
+     */
+    async requestRunwayNotificationPermission() {
+        if (typeof Notification === 'undefined') {
+            return;
+        }
+
+        if (Notification.permission === 'granted') {
+            this.runwayNotificationPermissionGranted = true;
+            return;
+        }
+
+        if (Notification.permission !== 'denied') {
+            try {
+                const permission = await Notification.requestPermission();
+                this.runwayNotificationPermissionGranted = permission === 'granted';
+            } catch (error) {
+                console.warn('[Combat Stats] Runway notification permission request failed:', error);
+            }
+        }
+    }
+
+    /**
+     * Check the current player's runway against the configured warning threshold and fire a
+     * one-shot browser notification on a threshold crossing (never for party members).
+     * @param {string} itemHrid - Item HRID
+     * @param {number} timeToZeroSeconds - Seconds until this item's inventory reaches zero
+     */
+    checkRunwayWarning(itemHrid, timeToZeroSeconds) {
+        const thresholdHours = config.getSettingValue('combatStats_runwayWarningThreshold', 12);
+        if (!thresholdHours || thresholdHours <= 0) {
+            this.wasBelowRunwayThreshold[itemHrid] = false;
+            return;
+        }
+
+        const thresholdSeconds = thresholdHours * 3600;
+        const isBelow = timeToZeroSeconds < thresholdSeconds;
+
+        if (isBelow && !this.wasBelowRunwayThreshold[itemHrid]) {
+            this.sendRunwayWarning(itemHrid, timeToZeroSeconds);
+        }
+
+        this.wasBelowRunwayThreshold[itemHrid] = isBelow;
+    }
+
+    /**
+     * Send the low-supply browser notification for a single consumable
+     * @param {string} itemHrid - Item HRID
+     * @param {number} timeToZeroSeconds - Seconds until this item's inventory reaches zero
+     */
+    sendRunwayWarning(itemHrid, timeToZeroSeconds) {
+        try {
+            if (!this.runwayNotificationPermissionGranted || typeof Notification === 'undefined') {
+                return;
+            }
+
+            const itemName = dataManager.getItemDetails(itemHrid)?.name || itemHrid;
+            const hours = Math.max(0, timeToZeroSeconds) / 3600;
+            const hoursLabel = hours < 1 ? `${Math.round(hours * 60)}m` : `${hours.toFixed(1)}h`;
+
+            const notification = new Notification('Milky Way Idle', {
+                body: `${itemName} is running low: ~${hoursLabel} remaining`,
+                icon: 'https://www.milkywayidle.com/favicon.ico',
+                tag: `combat-consumable-runway-${itemHrid}`,
+                requireInteraction: false,
+            });
+
+            notification.onclick = () => {
+                window.focus();
+                notification.close();
+            };
+
+            notification.onerror = (error) => {
+                console.error('[Combat Stats] Runway notification error:', error);
+            };
+
+            const closeTimeout = setTimeout(() => notification.close(), 5000);
+            this.timerRegistry.registerTimeout(closeTimeout);
+        } catch (error) {
+            console.error('[Combat Stats] Failed to send runway notification:', error);
+        }
     }
 
     /**
@@ -591,7 +683,9 @@ class CombatStatsDataCollector {
                                     this.getDefaultConsumed(consumable.itemHrid);
                                 trackingElapsed = elapsedSeconds;
                                 inventoryAmount =
-                                    this.consumableTracker.inventoryAmount[consumable.itemHrid] || consumable.count;
+                                    this.consumableTracker.inventoryAmount[consumable.itemHrid] !== undefined
+                                        ? this.consumableTracker.inventoryAmount[consumable.itemHrid]
+                                        : consumable.count;
                             } else {
                                 // Party member: use snapshot-based tracking (MCS-style)
                                 const playerName = player.character.name;
@@ -604,7 +698,9 @@ class CombatStatsDataCollector {
                                         this.getDefaultConsumed(consumable.itemHrid);
                                     trackingElapsed = this.calcElapsedSeconds(partyTracker);
                                     inventoryAmount =
-                                        partyTracker.inventoryAmount[consumable.itemHrid] || consumable.count;
+                                        partyTracker.inventoryAmount[consumable.itemHrid] !== undefined
+                                            ? partyTracker.inventoryAmount[consumable.itemHrid]
+                                            : consumable.count;
                                 } else {
                                     // Fallback if tracker not initialized yet
                                     actualConsumed = 0;
@@ -635,6 +731,10 @@ class CombatStatsDataCollector {
                             // Time until inventory runs out (MCS-style)
                             const timeToZeroSeconds =
                                 consumptionRate > 0 ? inventoryAmount / consumptionRate : Infinity;
+
+                            if (isCurrentPlayer) {
+                                this.checkRunwayWarning(consumable.itemHrid, timeToZeroSeconds);
+                            }
 
                             const consumableData = {
                                 itemHrid: consumable.itemHrid,
@@ -725,6 +825,9 @@ class CombatStatsDataCollector {
         this.isInitialized = false;
         this.latestCombatData = null;
         this.currentBattleId = null;
+        this.wasBelowRunwayThreshold = {};
+        this.runwayNotificationPermissionGranted = false;
+        this.timerRegistry.clearAll();
         // Note: Don't reset consumableTracker here - it's persisted
     }
 }

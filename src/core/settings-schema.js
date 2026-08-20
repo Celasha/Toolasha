@@ -1756,6 +1756,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Adds a Statistics button to the Combat panel showing income, profit, consumable costs, EXP, and drop details',
             },
+            combatStats_runwayWarningThreshold: {
+                id: 'combatStats_runwayWarningThreshold',
+                label: 'Combat Statistics: consumable runway warning threshold (hours)',
+                type: 'number',
+                default: 12,
+                help: 'Send a browser notification when a combat consumable is projected to run out within this many hours. Set to 0 to disable.',
+            },
             combatStatsChatMessage: {
                 id: 'combatStatsChatMessage',
                 label: 'Combat Statistics: Chat message format',

@@ -245,8 +245,8 @@ export function calculateConsumableCosts(consumables, durationSeconds) {
             defaultConsumed: consumable.defaultConsumed || 0,
             consumptionRate: consumable.consumptionRate,
             elapsedSeconds: consumable.elapsedSeconds || 0,
-            inventoryAmount: consumable.inventoryAmount || consumable.currentCount,
-            timeToZeroSeconds: consumable.timeToZeroSeconds || Infinity,
+            inventoryAmount: consumable.inventoryAmount ?? consumable.currentCount,
+            timeToZeroSeconds: consumable.timeToZeroSeconds ?? Infinity,
         });
     }
 
@@ -389,6 +389,15 @@ export function calculatePlayerStats(playerData, durationSeconds = null) {
     // Format loot list
     const lootList = formatLootList(playerData.loot);
 
+    // First consumable projected to run out (finite runway only - never Infinity/unknown)
+    const finiteRunwayItems = consumableBreakdown.filter((item) => Number.isFinite(item.timeToZeroSeconds));
+    const firstToRunOut =
+        finiteRunwayItems.length > 0
+            ? finiteRunwayItems.reduce((soonest, item) =>
+                  item.timeToZeroSeconds < soonest.timeToZeroSeconds ? item : soonest
+              )
+            : null;
+
     return {
         name: playerData.name,
         income: {
@@ -402,6 +411,7 @@ export function calculatePlayerStats(playerData, durationSeconds = null) {
         consumableCosts,
         consumableBreakdown,
         dailyConsumableCosts,
+        firstToRunOut,
         keyCosts,
         dailyKeyCosts,
         keyBreakdown,
