@@ -21,6 +21,23 @@ const LEGACY_STORAGE_KEYS = Object.freeze({
 });
 const STORAGE_MISSING = Symbol('storage-missing');
 
+/**
+ * Sum a `totalLootMap`-shaped object by real item HRID. The map's own object keys are opaque
+ * composite strings (`{characterId}::{itemLocationHrid}::{itemHrid}::{enhancementLevel}`), NOT
+ * the item HRID itself - the real HRID lives on each entry's own `.itemHrid` field, exactly like
+ * `calculateIncome()` already reads it in `combat-stats-calculator.js`.
+ * @param {Object} lootMap - `totalLootMap`-shaped object
+ * @returns {Object} Map of itemHrid -> total count
+ */
+function sumLootByItemHrid(lootMap) {
+    const totals = {};
+    for (const loot of Object.values(lootMap || {})) {
+        if (!loot?.itemHrid) continue;
+        totals[loot.itemHrid] = (totals[loot.itemHrid] || 0) + loot.count;
+    }
+    return totals;
+}
+
 class CombatStatsDataCollector {
     constructor() {
         this.isInitialized = false;
@@ -35,6 +52,8 @@ class CombatStatsDataCollector {
         this.timerRegistry = createTimerRegistry();
         this.pendingEncounter = null;
         this.latestSelfCombatDropQuantity = 0;
+        this.actualLootSnapshot = null;
+        this.trackedZoneKey = null;
         this.expectedLootTracker = new ExpectedLootTracker();
         this.dungeonCompletionHandler = null;
 
@@ -534,6 +553,11 @@ class CombatStatsDataCollector {
      * currently-active one), then snapshot this battle's monster composition and live multipliers
      * for the next call. Dungeons are handled separately via `dungeonTracker.onUpdate` - no
      * per-monster tracking happens while the current zone is a dungeon.
+     *
+     * Also snapshots the current player's total loot the moment tracking starts, so "Actual" for
+     * the comparison can be measured over the exact same window as "Expected" - reusing the
+     * session-wide `totalLootMap` directly would compare a short Expected sample against a much
+     * longer Actual window (e.g. the script attaching mid-fight), silently mis-scaling the result.
      * @param {Object} data - new_battle message data
      * @param {string} currentCharacterId - The current player's character ID
      */
@@ -544,7 +568,23 @@ class CombatStatsDataCollector {
         const zoneInfo = this.getCurrentZoneInfo();
         if (!zoneInfo || zoneInfo.isDungeon) {
             this.pendingEncounter = null;
+            this.actualLootSnapshot = null;
+            this.trackedZoneKey = null;
             return;
+        }
+
+        const zoneKey = `${zoneInfo.zoneHrid}:${zoneInfo.isDungeon}`;
+        if (this.trackedZoneKey !== null && this.trackedZoneKey !== zoneKey) {
+            // Zone changed - the expected-loot tracker resets internally for the same reason;
+            // the actual-loot snapshot must reset in lockstep or it would diff against a stale
+            // baseline from the previous zone.
+            this.pendingEncounter = null;
+            this.actualLootSnapshot = null;
+        }
+        this.trackedZoneKey = zoneKey;
+
+        if (this.actualLootSnapshot === null) {
+            this.actualLootSnapshot = sumLootByItemHrid(selfPlayer?.totalLootMap);
         }
 
         if (this.pendingEncounter) {
@@ -575,6 +615,34 @@ class CombatStatsDataCollector {
             combatDropQuantity: this.latestSelfCombatDropQuantity,
             debuffOnLevelGap,
         };
+    }
+
+    /**
+     * Actual loot the current player has gained since the expected-loot tracking window started
+     * (never the whole combat session), so Actual and Expected in the RNG Delta comparison always
+     * cover the exact same sample.
+     * @returns {Array<{itemHrid: string, count: number}>} Items gained since tracking started
+     */
+    getActualLootSinceTrackingStarted() {
+        if (!this.actualLootSnapshot || !this.latestCombatData) {
+            return [];
+        }
+
+        const selfPlayer = this.latestCombatData.players.find((player) => player.isCurrentPlayer);
+        if (!selfPlayer) {
+            return [];
+        }
+
+        const currentTotals = sumLootByItemHrid(selfPlayer.loot);
+        const items = [];
+        for (const [itemHrid, currentCount] of Object.entries(currentTotals)) {
+            const startCount = this.actualLootSnapshot[itemHrid] || 0;
+            const gained = currentCount - startCount;
+            if (gained > 0) {
+                items.push({ itemHrid, count: gained });
+            }
+        }
+        return items;
     }
 
     /**
@@ -611,6 +679,8 @@ class CombatStatsDataCollector {
                 await this.resetConsumableTracking(characterId);
                 if (generation !== this.lifecycleGeneration) return;
                 this.pendingEncounter = null;
+                this.actualLootSnapshot = null;
+                this.trackedZoneKey = null;
                 this.expectedLootTracker.reset();
             }
 
@@ -930,6 +1000,8 @@ class CombatStatsDataCollector {
         this.timerRegistry.clearAll();
         this.pendingEncounter = null;
         this.latestSelfCombatDropQuantity = 0;
+        this.actualLootSnapshot = null;
+        this.trackedZoneKey = null;
         this.expectedLootTracker.reset();
         // Note: Don't reset consumableTracker here - it's persisted
     }

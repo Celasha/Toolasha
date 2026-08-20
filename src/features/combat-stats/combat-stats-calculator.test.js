@@ -274,46 +274,76 @@ describe('calculatePlayerStats - actualVsExpected (RNG Delta)', () => {
         const stats = calculatePlayerStats(basePlayerData(), 3600, {
             expectedDropsMap: new Map(),
             sampleSize: 0,
+            elapsedSeconds: 3600,
+            actualLootSinceTracking: [],
         });
         expect(stats.actualVsExpected).toBeNull();
     });
 
-    test('computes a positive RNG delta when actual loot outvalues expected loot', () => {
-        const stats = calculatePlayerStats(
-            basePlayerData({ '/items/log': { itemHrid: '/items/log', count: 20 } }),
-            3600,
-            { expectedDropsMap: new Map([['/items/log', 10]]), sampleSize: 5, elapsedSeconds: 3600 }
-        );
-
-        expect(stats.actualVsExpected.rngDeltaValue).toBeGreaterThan(0);
-        expect(stats.actualVsExpected.sampleSize).toBe(5);
-    });
-
     test('is null when elapsedSeconds is zero (tracker never actually observed a time window)', () => {
-        const stats = calculatePlayerStats(
-            basePlayerData({ '/items/log': { itemHrid: '/items/log', count: 20 } }),
-            3600,
-            { expectedDropsMap: new Map([['/items/log', 10]]), sampleSize: 5, elapsedSeconds: 0 }
-        );
+        const stats = calculatePlayerStats(basePlayerData(), 3600, {
+            expectedDropsMap: new Map([['/items/log', 10]]),
+            sampleSize: 5,
+            elapsedSeconds: 0,
+            actualLootSinceTracking: [{ itemHrid: '/items/log', count: 20 }],
+        });
 
         expect(stats.actualVsExpected).toBeNull();
     });
 
-    test('scales Expected Revenue/day against the tracker own observed window, not the whole combat session duration', () => {
+    test('computes a positive RNG delta when actual loot outvalues expected loot over the same window', () => {
+        const stats = calculatePlayerStats(basePlayerData(), 3600, {
+            expectedDropsMap: new Map([['/items/log', 10]]),
+            sampleSize: 5,
+            elapsedSeconds: 3600,
+            actualLootSinceTracking: [{ itemHrid: '/items/log', count: 20 }],
+        });
+
+        expect(stats.actualVsExpected.rngDeltaValue).toBeGreaterThan(0);
+        expect(stats.actualVsExpected.sampleSize).toBe(5);
+        expect(stats.actualVsExpected.elapsedSeconds).toBe(3600);
+    });
+
+    test('never uses the whole-session totalLootMap for Actual - only actualLootSinceTracking', () => {
+        // playerData.loot represents a much longer whole-session total than the tracker's own
+        // short observed window; the comparison must ignore it entirely and use only the
+        // window-scoped actualLootSinceTracking, or Actual and Expected would cover different
+        // samples again.
+        const stats = calculatePlayerStats(
+            basePlayerData({ '/items/log': { itemHrid: '/items/log', count: 999999 } }),
+            3600,
+            {
+                expectedDropsMap: new Map([['/items/log', 10]]),
+                sampleSize: 5,
+                elapsedSeconds: 3600,
+                actualLootSinceTracking: [{ itemHrid: '/items/log', count: 20 }],
+            }
+        );
+
+        // 20 units * value 100 = 2000 over a 1-hour window, scaled to a full day: 2000 * 24 = 48000
+        // (not 999999 * 100, which would be the whole-session totalLootMap the fix must ignore)
+        expect(stats.actualVsExpected.actualRevenuePerDay).toBeCloseTo(48000, 0);
+    });
+
+    test('scales both Actual and Expected Revenue/day against the same tracker-observed window, not the whole combat session duration', () => {
         // The combat session has been running for 10 hours (e.g. the script attached mid-fight),
         // but the expected-loot tracker has only actually observed 60 seconds of that. Using the
-        // session duration as the denominator would understate the expected daily rate ~600x.
+        // session duration as the denominator for either side would mis-scale it relative to the
+        // other by whatever ratio the two windows differ by.
         const sessionDurationSeconds = 10 * 3600;
         const trackerElapsedSeconds = 60;
 
-        const stats = calculatePlayerStats(
-            basePlayerData({ '/items/log': { itemHrid: '/items/log', count: 1 } }),
-            sessionDurationSeconds,
-            { expectedDropsMap: new Map([['/items/log', 1]]), sampleSize: 1, elapsedSeconds: trackerElapsedSeconds }
-        );
+        const stats = calculatePlayerStats(basePlayerData(), sessionDurationSeconds, {
+            expectedDropsMap: new Map([['/items/log', 1]]),
+            sampleSize: 1,
+            elapsedSeconds: trackerElapsedSeconds,
+            actualLootSinceTracking: [{ itemHrid: '/items/log', count: 1 }],
+        });
 
         // 1 unit * value 100, scaled to a full day from a 60-second window: 100 * 86400/60 = 144000
         expect(stats.actualVsExpected.expectedRevenuePerDay).toBeCloseTo(144000, 0);
+        expect(stats.actualVsExpected.actualRevenuePerDay).toBeCloseTo(144000, 0);
+        expect(stats.actualVsExpected.rngDeltaValue).toBeCloseTo(0, 0);
     });
 
     test('sorts the item delta table by absolute value delta, not percent', () => {
@@ -322,23 +352,51 @@ describe('calculatePlayerStats - actualVsExpected (RNG Delta)', () => {
             return { value: 1, source: 'market', needsTax: false };
         });
 
-        const stats = calculatePlayerStats(
-            basePlayerData({
-                '/items/common_bulk': { itemHrid: '/items/common_bulk', count: 1000 },
-                '/items/rare_tiny': { itemHrid: '/items/rare_tiny', count: 1 },
-            }),
-            3600,
-            {
-                expectedDropsMap: new Map([
-                    ['/items/common_bulk', 500],
-                    ['/items/rare_tiny', 0.001],
-                ]),
-                sampleSize: 5,
-                elapsedSeconds: 3600,
-            }
-        );
+        const stats = calculatePlayerStats(basePlayerData(), 3600, {
+            expectedDropsMap: new Map([
+                ['/items/common_bulk', 500],
+                ['/items/rare_tiny', 0.001],
+            ]),
+            sampleSize: 5,
+            elapsedSeconds: 3600,
+            actualLootSinceTracking: [
+                { itemHrid: '/items/common_bulk', count: 1000 },
+                { itemHrid: '/items/rare_tiny', count: 1 },
+            ],
+        });
 
         // common_bulk delta = (1000-500)*1 = 500; rare_tiny delta = (1-0.001)*1e6 ~= 999000 - bigger, sorts first
         expect(stats.actualVsExpected.itemDeltas[0].itemHrid).toBe('/items/rare_tiny');
+    });
+
+    test('the item delta table is scaled to the same /day basis as the headline, so its rows sum to the Loot Luck delta', () => {
+        expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 10, source: 'market', needsTax: false });
+
+        const stats = calculatePlayerStats(basePlayerData(), 3600, {
+            expectedDropsMap: new Map([['/items/log', 5]]),
+            sampleSize: 3,
+            elapsedSeconds: 1800, // 30-minute window
+            actualLootSinceTracking: [{ itemHrid: '/items/log', count: 8 }],
+        });
+
+        const tableSum = stats.actualVsExpected.itemDeltas.reduce((sum, item) => sum + item.valueDelta, 0);
+
+        expect(tableSum).toBeCloseTo(stats.actualVsExpected.rngDeltaValue, 5);
+    });
+
+    test('scaling to /day surfaces a small fractional expected quantity instead of rounding it away', () => {
+        expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 10, source: 'market', needsTax: false });
+
+        // Over a 2-minute window, a rare drop expected only 0.001 times still exists at that
+        // window scale - scaled to /day (x720) it becomes a visible, non-zero quantity.
+        const stats = calculatePlayerStats(basePlayerData(), 3600, {
+            expectedDropsMap: new Map([['/items/rare_drop', 0.001]]),
+            sampleSize: 1,
+            elapsedSeconds: 120,
+            actualLootSinceTracking: [],
+        });
+
+        const row = stats.actualVsExpected.itemDeltas.find((item) => item.itemHrid === '/items/rare_drop');
+        expect(row.expectedCount).toBeCloseTo(0.72, 5);
     });
 });

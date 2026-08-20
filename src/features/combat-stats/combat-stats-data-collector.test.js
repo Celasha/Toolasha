@@ -297,7 +297,18 @@ describe('CombatStatsDataCollector expected-loot integration', () => {
         return { actionHrid: zoneHrid, isDone: false, difficultyTier };
     }
 
-    function battlePayload({ battleId, monsterHrids, combatLevel = 100, combatStats = {} }) {
+    // Real totalLootMap object keys are opaque composite strings, NOT the item HRID - the real
+    // HRID lives on each entry's own `.itemHrid` field. Tests build fixtures this way on purpose
+    // so a regression back to reading the object key as the HRID would be caught.
+    function compositeLootMap(entries) {
+        const lootMap = {};
+        for (const [itemHrid, count] of Object.entries(entries)) {
+            lootMap[`26354::/item_locations/inventory::${itemHrid}::0`] = { itemHrid, count };
+        }
+        return lootMap;
+    }
+
+    function battlePayload({ battleId, monsterHrids, combatLevel = 100, combatStats = {}, totalLootMap = {} }) {
         return {
             battleId,
             combatStartTime: new Date().toISOString(),
@@ -306,7 +317,7 @@ describe('CombatStatsDataCollector expected-loot integration', () => {
                 {
                     character: { id: 'character-a', name: 'Self' },
                     combatConsumables: [],
-                    totalLootMap: {},
+                    totalLootMap,
                     totalSkillExperienceMap: {},
                     combatDetails: { combatLevel, combatStats },
                 },
@@ -455,5 +466,83 @@ describe('CombatStatsDataCollector expected-loot integration', () => {
         onUpdateHandler({ dungeonHrid: '/actions/combat/chimerical_den', currentWave: 3 }, null);
 
         expect(collector.expectedLootTracker.hasData()).toBe(false);
+    });
+
+    test('actual loot since tracking started excludes loot gained before the tracking window began', async () => {
+        dataManager.getCurrentActions.mockReturnValue([regularZoneAction()]);
+        dataManager.getActionDetails.mockReturnValue({ combatZoneInfo: { isDungeon: false } });
+        const collector = await makeInitializedCollector();
+
+        // Session already has 999999 coin banked before tracking even starts (e.g. the script
+        // attached mid-fight) - the snapshot must capture this as the baseline, not as a gain.
+        await collector.onNewBattle(
+            battlePayload({
+                battleId: 1,
+                monsterHrids: ['/monsters/rat'],
+                totalLootMap: compositeLootMap({ '/items/coin': 999999 }),
+            }),
+            collector.lifecycleGeneration
+        );
+        await collector.onNewBattle(
+            battlePayload({
+                battleId: 2,
+                monsterHrids: ['/monsters/rat'],
+                totalLootMap: compositeLootMap({ '/items/coin': 1000049 }),
+            }),
+            collector.lifecycleGeneration
+        );
+
+        const actualLoot = collector.getActualLootSinceTrackingStarted();
+
+        expect(actualLoot).toEqual([{ itemHrid: '/items/coin', count: 50 }]);
+    });
+
+    test('a zone change resets the actual-loot snapshot in lockstep with the expected-loot tracker', async () => {
+        dataManager.getCurrentActions.mockReturnValue([regularZoneAction('/actions/combat/rat')]);
+        dataManager.getActionDetails.mockReturnValue({ combatZoneInfo: { isDungeon: false } });
+        const collector = await makeInitializedCollector();
+
+        await collector.onNewBattle(
+            battlePayload({
+                battleId: 1,
+                monsterHrids: ['/monsters/rat'],
+                totalLootMap: compositeLootMap({ '/items/coin': 100 }),
+            }),
+            collector.lifecycleGeneration
+        );
+
+        dataManager.getCurrentActions.mockReturnValue([regularZoneAction('/actions/combat/alligator')]);
+        await collector.onNewBattle(
+            battlePayload({
+                battleId: 2,
+                monsterHrids: ['/monsters/alligator'],
+                totalLootMap: compositeLootMap({ '/items/coin': 500 }),
+            }),
+            collector.lifecycleGeneration
+        );
+
+        // The snapshot re-baselined at the zone change (500), so nothing has been gained yet in
+        // the new zone - a stale rat-zone snapshot would have wrongly reported 400 gained.
+        expect(collector.getActualLootSinceTrackingStarted()).toEqual([]);
+    });
+
+    test('cleanup clears the actual-loot snapshot (no cross-character leakage)', async () => {
+        dataManager.getCurrentActions.mockReturnValue([regularZoneAction()]);
+        dataManager.getActionDetails.mockReturnValue({ combatZoneInfo: { isDungeon: false } });
+        const collector = await makeInitializedCollector();
+
+        await collector.onNewBattle(
+            battlePayload({
+                battleId: 1,
+                monsterHrids: ['/monsters/rat'],
+                totalLootMap: compositeLootMap({ '/items/coin': 100 }),
+            }),
+            collector.lifecycleGeneration
+        );
+
+        collector.cleanup();
+
+        expect(collector.actualLootSnapshot).toBeNull();
+        expect(collector.getActualLootSinceTrackingStarted()).toEqual([]);
     });
 });

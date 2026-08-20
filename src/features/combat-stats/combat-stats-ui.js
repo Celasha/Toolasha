@@ -17,8 +17,12 @@ import {
 } from '../../utils/formatters.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 
+const YEAR_SECONDS = 365 * 86400;
+
 /**
- * Format a consumable's remaining runway for display.
+ * Format a consumable's remaining runway for display. Capped at >1y - beyond that the estimate
+ * is both unreadable and, given how thin the underlying sample usually is, not meaningfully more
+ * precise than "a long time". Use `formatRunwayExact` for the uncapped value in a tooltip.
  * @param {number} seconds - Seconds until inventory reaches zero (Infinity if rate is 0/unknown)
  * @returns {string} Formatted runway string
  */
@@ -28,6 +32,9 @@ export function formatRunway(seconds) {
     }
     if (seconds <= 0) {
         return 'Out now';
+    }
+    if (seconds >= YEAR_SECONDS) {
+        return '>1y';
     }
     if (seconds < 3600) {
         return `~${Math.ceil(seconds / 60)}m`;
@@ -40,6 +47,73 @@ export function formatRunway(seconds) {
     const d = Math.floor(seconds / 86400);
     const h = Math.floor((seconds % 86400) / 3600);
     return h > 0 ? `~${d}d ${h}h` : `~${d}d`;
+}
+
+/**
+ * Uncapped exact runway string, for use as a tooltip alongside the capped `formatRunway` text.
+ * @param {number} seconds - Seconds until inventory reaches zero (Infinity if rate is 0/unknown)
+ * @returns {string} Formatted runway string, never capped at >1y
+ */
+export function formatRunwayExact(seconds) {
+    if (!Number.isFinite(seconds) || seconds <= 0) {
+        return formatRunway(seconds);
+    }
+    const d = Math.floor(seconds / 86400);
+    const h = Math.floor((seconds % 86400) / 3600);
+    if (d === 0) {
+        return formatRunway(seconds);
+    }
+    return h > 0 ? `~${d}d ${h}h` : `~${d}d`;
+}
+
+/**
+ * Format an item quantity with adaptive decimal precision so a small non-zero expected/actual
+ * count (common for rare drops over a short sample) never silently rounds down to a misleading
+ * "0". Larger quantities fall back to the existing K/M/B or separator formatting.
+ * @param {number} num - Quantity to format
+ * @param {Function} formatNum - The card's existing whole-number formatter (K/M/B or separator)
+ * @returns {string} Formatted quantity string
+ */
+export function formatQuantity(num, formatNum) {
+    if (!Number.isFinite(num)) {
+        return '0';
+    }
+    // Whole numbers (e.g. an already-rounded consumedPerDay) print as plain integers regardless
+    // of magnitude - only genuinely fractional quantities get adaptive decimal precision.
+    if (Math.abs(num - Math.round(num)) < 1e-6) {
+        return formatNum(Math.round(num));
+    }
+    const abs = Math.abs(num);
+    if (abs < 0.01) {
+        return num > 0 ? '<0.01' : '>-0.01';
+    }
+    if (abs < 1) {
+        return num.toFixed(2);
+    }
+    if (abs < 10) {
+        return num.toFixed(1);
+    }
+    return formatNum(num);
+}
+
+/**
+ * Color a runway value by urgency: red when already out, amber when below the configured warning
+ * threshold, muted gray otherwise (multi-day estimates should stay subtle, not alarming).
+ * @param {number} seconds - Seconds until inventory reaches zero (Infinity if rate is 0/unknown)
+ * @returns {string} CSS color
+ */
+export function getRunwayColor(seconds) {
+    if (!Number.isFinite(seconds)) {
+        return '#888';
+    }
+    if (seconds <= 0) {
+        return '#ff6b6b';
+    }
+    const thresholdHours = config.getSettingValue('combatStats_runwayWarningThreshold', 12);
+    if (thresholdHours > 0 && seconds < thresholdHours * 3600) {
+        return '#f0a830';
+    }
+    return '#888';
 }
 
 class CombatStatsUI {
@@ -309,6 +383,7 @@ class CombatStatsUI {
                   expectedDropsMap: expectedLootTracker.getExpectedDrops(dataManager.getInitClientData() || {}),
                   sampleSize: expectedLootTracker.getSampleSize(),
                   elapsedSeconds: expectedLootTracker.getElapsedSeconds(),
+                  actualLootSinceTracking: combatStatsDataCollector.getActualLootSinceTrackingStarted(),
               }
             : null;
         const playerStats = calculateAllPlayerStats(combatData, durationSeconds, expectedLootData);
@@ -602,10 +677,12 @@ class CombatStatsUI {
                 isDaily: true,
             },
             {
-                label: 'First consumable to run out',
+                label: 'Lowest runway',
                 value: stats.firstToRunOut
-                    ? `${stats.firstToRunOut.itemName} - ${formatRunway(stats.firstToRunOut.timeToZeroSeconds)}`
+                    ? `${stats.firstToRunOut.itemName} · ${formatRunway(stats.firstToRunOut.timeToZeroSeconds)}`
                     : 'No usage observed',
+                color: stats.firstToRunOut ? getRunwayColor(stats.firstToRunOut.timeToZeroSeconds) : undefined,
+                title: stats.firstToRunOut ? formatRunwayExact(stats.firstToRunOut.timeToZeroSeconds) : undefined,
             },
             ...(stats.keyBreakdown && stats.keyBreakdown.length > 0
                 ? [
@@ -636,38 +713,43 @@ class CombatStatsUI {
                 color: stats.dailyProfit[priceKey] >= 0 ? '#51cf66' : '#ff6b6b',
             },
             ...(stats.actualVsExpected
-                ? [
-                      {
-                          label: 'Actual Income/day',
-                          value: formatNum(stats.actualVsExpected.actualRevenuePerDay),
-                      },
-                      {
-                          label: 'Expected Income/day',
-                          value: formatNum(stats.actualVsExpected.expectedRevenuePerDay),
-                      },
-                      {
-                          label: 'RNG Delta',
-                          value: `${formatNum(stats.actualVsExpected.rngDeltaValue)} (${stats.actualVsExpected.rngDeltaPercent >= 0 ? '+' : ''}${stats.actualVsExpected.rngDeltaPercent.toFixed(1)}%)${stats.actualVsExpected.isPartial ? ' *' : ''}`,
-                          color: stats.actualVsExpected.rngDeltaValue >= 0 ? '#51cf66' : '#ff6b6b',
-                          expandable: true,
-                          itemDeltas: stats.actualVsExpected.itemDeltas,
-                          unvaluedItemHrids: stats.actualVsExpected.unvaluedItemHrids,
-                      },
-                      {
-                          label: 'Actual Profit/day',
-                          value: `${formatNum(stats.actualVsExpected.actualProfitPerDay)}/d`,
-                          color: stats.actualVsExpected.actualProfitPerDay >= 0 ? '#51cf66' : '#ff6b6b',
-                      },
-                      {
-                          label: 'Expected Profit/day',
-                          value: `${formatNum(stats.actualVsExpected.expectedProfitPerDay)}/d`,
-                          color: stats.actualVsExpected.expectedProfitPerDay >= 0 ? '#51cf66' : '#ff6b6b',
-                      },
-                      {
-                          label: 'Completed encounters',
-                          value: formatNum(stats.actualVsExpected.sampleSize),
-                      },
-                  ]
+                ? (() => {
+                      const sampleHeading = `Loot RNG sample · ${formatNum(stats.actualVsExpected.sampleSize)} encounters · ${formatRunway(stats.actualVsExpected.elapsedSeconds)}`;
+                      return [
+                          {
+                              label: 'Actual Rate',
+                              value: `${formatNum(stats.actualVsExpected.actualRevenuePerDay)}/d`,
+                              group: 'actualVsExpected',
+                              groupLabel: sampleHeading,
+                          },
+                          {
+                              label: 'Expected Rate',
+                              value: `${formatNum(stats.actualVsExpected.expectedRevenuePerDay)}/d`,
+                              group: 'actualVsExpected',
+                          },
+                          {
+                              label: 'Loot Luck',
+                              value: `${formatNum(stats.actualVsExpected.rngDeltaValue)} (${stats.actualVsExpected.rngDeltaPercent >= 0 ? '+' : ''}${stats.actualVsExpected.rngDeltaPercent.toFixed(1)}%)${stats.actualVsExpected.isPartial ? ' *' : ''}`,
+                              color: stats.actualVsExpected.rngDeltaValue >= 0 ? '#51cf66' : '#ff6b6b',
+                              expandable: true,
+                              itemDeltas: stats.actualVsExpected.itemDeltas,
+                              unvaluedItemHrids: stats.actualVsExpected.unvaluedItemHrids,
+                              group: 'actualVsExpected',
+                          },
+                          {
+                              label: 'Actual Profit/day',
+                              value: `${formatNum(stats.actualVsExpected.actualProfitPerDay)}/d`,
+                              color: stats.actualVsExpected.actualProfitPerDay >= 0 ? '#51cf66' : '#ff6b6b',
+                              group: 'actualVsExpected',
+                          },
+                          {
+                              label: 'Expected Profit/day',
+                              value: `${formatNum(stats.actualVsExpected.expectedProfitPerDay)}/d`,
+                              color: stats.actualVsExpected.expectedProfitPerDay >= 0 ? '#51cf66' : '#ff6b6b',
+                              group: 'actualVsExpected',
+                          },
+                      ];
+                  })()
                 : []),
             { label: 'Total EXP', value: formatNum(stats.totalExp) },
             { label: 'EXP/hour', value: `${formatNum(stats.expPerHour)}/h` },
@@ -678,11 +760,42 @@ class CombatStatsUI {
         const statsContainer = document.createElement('div');
         statsContainer.style.cssText = 'margin-bottom: 15px;';
 
+        let currentGroupKey = null;
+        let groupWrapper = null;
+
         for (const row of statsRows) {
+            if (row.group !== currentGroupKey) {
+                currentGroupKey = row.group;
+                if (row.group) {
+                    groupWrapper = document.createElement('div');
+                    groupWrapper.style.cssText = `
+                        margin: 8px 0;
+                        padding: 8px 10px;
+                        border: 1px solid #4a4a4a;
+                        border-radius: 6px;
+                        background: rgba(255, 255, 255, 0.03);
+                    `;
+                    const groupHeading = document.createElement('div');
+                    groupHeading.textContent = row.groupLabel || 'Recent sample';
+                    groupHeading.style.cssText = `
+                        font-size: 11px;
+                        color: #888;
+                        margin-bottom: 6px;
+                        font-style: italic;
+                    `;
+                    groupWrapper.appendChild(groupHeading);
+                    statsContainer.appendChild(groupWrapper);
+                } else {
+                    groupWrapper = null;
+                }
+            }
+            const targetContainer = groupWrapper || statsContainer;
+
             const rowDiv = document.createElement('div');
             rowDiv.style.cssText = `
                 display: flex;
                 justify-content: space-between;
+                gap: 8px;
                 margin-bottom: 5px;
                 font-size: 14px;
             `;
@@ -694,6 +807,9 @@ class CombatStatsUI {
             const value = document.createElement('span');
             value.textContent = row.value;
             value.style.color = row.color || textColor;
+            if (row.title) {
+                value.title = row.title;
+            }
 
             // Add expandable indicator if applicable
             if (row.expandable) {
@@ -735,9 +851,9 @@ class CombatStatsUI {
                             `;
                             header.innerHTML = `
                                 <span>Item</span>
-                                <span style="text-align: right;">Actual</span>
-                                <span style="text-align: right;">Expected</span>
-                                <span style="text-align: right;">Delta</span>
+                                <span style="text-align: right;">Actual/d</span>
+                                <span style="text-align: right;">Expected/d</span>
+                                <span style="text-align: right;">Value Δ</span>
                             `;
                             breakdownDiv.appendChild(header);
 
@@ -760,8 +876,8 @@ class CombatStatsUI {
                                 const deltaColor = item.valueDelta >= 0 ? '#51cf66' : '#ff6b6b';
                                 itemRow.innerHTML = `
                                     <span>${item.itemName}</span>
-                                    <span style="text-align: right;">${formatNumDecimals(item.actualCount)}</span>
-                                    <span style="text-align: right;">${formatNumDecimals(item.expectedCount)}</span>
+                                    <span style="text-align: right;">${formatQuantity(item.actualCount, formatNum)}</span>
+                                    <span style="text-align: right;">${formatQuantity(item.expectedCount, formatNum)}</span>
                                     <span style="text-align: right; color: ${deltaColor};">${formatNum(item.valueDelta)}</span>
                                 `;
                                 breakdownDiv.appendChild(itemRow);
@@ -998,7 +1114,7 @@ class CombatStatsUI {
 
                                 itemRow.innerHTML = `
                                     <span>${item.itemName}</span>
-                                    <span style="text-align: right;">${formatNum(displayQty)}</span>
+                                    <span style="text-align: right;">${formatQuantity(displayQty, formatNum)}</span>
                                     <span style="text-align: right;">${formatNum(displayPrice)}</span>
                                     <span style="text-align: right; color: #ff6b6b;">${formatNum(displayCost)}</span>
                                 `;
@@ -1008,11 +1124,12 @@ class CombatStatsUI {
                                     const remainingRow = document.createElement('div');
                                     remainingRow.style.cssText = `
                                         font-size: 11px;
-                                        color: #888;
+                                        color: ${getRunwayColor(item.timeToZeroSeconds)};
                                         margin-top: -2px;
                                         margin-bottom: 3px;
                                     `;
                                     remainingRow.textContent = `Remaining: ${formatRunway(item.timeToZeroSeconds)}`;
+                                    remainingRow.title = formatRunwayExact(item.timeToZeroSeconds);
                                     breakdownDiv.appendChild(remainingRow);
                                 }
                             }
@@ -1098,7 +1215,7 @@ class CombatStatsUI {
 
             rowDiv.appendChild(label);
             rowDiv.appendChild(value);
-            statsContainer.appendChild(rowDiv);
+            targetContainer.appendChild(rowDiv);
         }
 
         // Drop list
