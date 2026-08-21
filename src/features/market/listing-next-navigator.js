@@ -113,18 +113,24 @@ class ListingNextNavigator {
             }
         }
 
+        const label = progress.isLast ? 'Back to My Listings' : `Next (${progress.index + 1}/${progress.total})`;
+
         if (!this.nextBtn) {
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.id = NEXT_BTN_ID;
             btn.className = BTN_CLASS;
+            btn.textContent = label;
             btn.addEventListener('click', () => this._handleClick());
             container.appendChild(btn);
             this.nextBtn = btn;
         }
 
-        const label = progress.isLast ? 'Back to My Listings' : `Next (${progress.index + 1}/${progress.total})`;
-        this.nextBtn.textContent = label;
+        // textContent write is itself an observed childList mutation (document.body,
+        // childList/subtree) — writing unconditionally re-triggers _update() indefinitely.
+        if (this.nextBtn.textContent !== label) {
+            this.nextBtn.textContent = label;
+        }
     }
 
     _handleClick() {
