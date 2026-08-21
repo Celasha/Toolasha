@@ -9,6 +9,7 @@ import dataManager from '../../core/data-manager.js';
 import webSocketHook from '../../core/websocket.js';
 import { buildPlayerDTO, buildGameDataPayload, applyLoadoutSnapshotToDTO } from '../combat-sim/combat-sim-adapter.js';
 import { runLabyrinthSimulation } from '../combat-sim/combat-sim-runner.js';
+import { setReactInputValue } from '../../utils/react-input.js';
 import loadoutSnapshot from './loadout-snapshot.js';
 
 const ROOM_DURATION = 120;
@@ -19,6 +20,7 @@ const UPGRADE_SUCCESS_STEP = 0.005;
 const BADGE_CLASS = 'mwi-labyrinth-clear';
 const RECOMMEND_CLASS = 'mwi-labyrinth-recommend';
 const RECOMMEND_CONTROLS_CLASS = 'mwi-labyrinth-recommend-controls';
+const APPLY_SKIP_BUTTON_ID = 'mwi-apply-skip-btn';
 const LIVE_PROGRESS_CLASS = 'mwi-labyrinth-live-progress';
 const LIVE_PROGRESS_STALE_MS = 5000;
 
@@ -35,6 +37,8 @@ class LabyrinthClearRate {
         this.recommendRunning = false;
         this._recommendSimHours = 1;
         this._recommendTargetPct = 70;
+        this._pendingSelfAppliedKey = null;
+        this._pendingSelfAppliedValue = null;
         this.liveProgressHandler = null;
         this.liveProgressTimeout = null;
     }
@@ -51,9 +55,23 @@ class LabyrinthClearRate {
         this.wsHandler = (data) => this.onLabyrinthUpdated(data);
         webSocketHook.on('labyrinth_updated', this.wsHandler);
 
-        this.settingHandler = () => {
+        this.settingHandler = (data) => {
+            const selfKey = this._pendingSelfAppliedKey;
+            const selfValue = this._pendingSelfAppliedValue;
+            this._pendingSelfAppliedKey = null;
+            this._pendingSelfAppliedValue = null;
+
+            // Our own Apply Skip save also fires setting_updated -- only skip the invalidation
+            // when this event actually confirms that exact save (matched by key AND value), so
+            // unrelated setting changes (crate hrid, other rooms edited manually, etc.) still
+            // correctly invalidate stale recommendations as before.
+            const isSelfTriggeredSkipSave =
+                selfKey !== null && data?.characterSetting && data.characterSetting[selfKey] === selfValue;
+
             this.combatCache.clear();
-            this.recommendations.clear();
+            if (!isSelfTriggeredSkipSave) {
+                this.recommendations.clear();
+            }
             this.injectOverlays();
         };
         webSocketHook.on('setting_updated', this.settingHandler);
@@ -115,6 +133,8 @@ class LabyrinthClearRate {
         this.simRunning = false;
         this.recommendations.clear();
         this.recommendRunning = false;
+        this._pendingSelfAppliedKey = null;
+        this._pendingSelfAppliedValue = null;
         this.isInitialized = false;
     }
 
@@ -964,6 +984,7 @@ class LabyrinthClearRate {
         if (button) button.textContent = 'Recommend';
         this.recommendRunning = false;
         this.injectRecommendationBadges();
+        this._updateApplyButtonState();
     }
 
     /**
@@ -1004,6 +1025,117 @@ class LabyrinthClearRate {
     }
 
     /**
+     * Derive the characterSetting key for a room's skip threshold (mirrors getSkipThreshold /
+     * getCombatSkipThreshold's own key derivation, without duplicating their read logic).
+     */
+    _getSkipSettingKey(roomHrid, isSkill) {
+        if (isSkill) {
+            const skillId = roomHrid.replace('/skills/', '');
+            return `labyrinthSkip${skillId.charAt(0).toUpperCase()}${skillId.slice(1)}`;
+        }
+
+        const monsterName = roomHrid.replace('/monsters/', '');
+        const pascal = monsterName
+            .split('_')
+            .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+            .join('');
+        return `labyrinthSkip${pascal}`;
+    }
+
+    /**
+     * Visible rooms whose current skip threshold differs from the computed recommendation.
+     * Re-scanned fresh on every call (never a stale pre-built queue), so it always reflects the
+     * live DOM/settings.
+     * @returns {Array<{cell: Element, roomHrid: string, isSkill: boolean, recommendedThreshold: number}>}
+     */
+    getRoomsNeedingSkipUpdate() {
+        if (this.recommendations.size === 0) return [];
+
+        const cells = document.querySelectorAll('[class*="LabyrinthPanel_skipThreshold"]');
+        const rooms = [];
+
+        for (const cell of cells) {
+            const roomHrid = this.extractRoomHrid(cell);
+            if (!roomHrid) continue;
+
+            const rec = this.recommendations.get(roomHrid);
+            if (!rec || rec.threshold === null) continue;
+
+            const isSkill = roomHrid.startsWith('/skills/');
+            const currentThreshold = isSkill ? this.getSkipThreshold(roomHrid) : this.getCombatSkipThreshold(roomHrid);
+            if (currentThreshold === rec.threshold) continue;
+
+            rooms.push({ cell, roomHrid, isSkill, recommendedThreshold: rec.threshold });
+        }
+
+        return rooms;
+    }
+
+    /**
+     * Apply the next mismatched room's recommended skip threshold: forwards a click to that
+     * room's real Edit button, writes the recommended value into the game's own input, then
+     * forwards a click to the real Save button. Exactly one Save click, one server request, per
+     * call -- the user repeats the click to work through the rest.
+     */
+    applyNextRecommendedSkip() {
+        const alreadyEditing = document.querySelector('[class*="LabyrinthPanel_skipThreshold"] input[type="number"]');
+        if (alreadyEditing) {
+            console.warn(
+                '[Toolasha] Apply Skip: another room is already being edited manually; skipping to avoid discarding unsaved changes.'
+            );
+            return;
+        }
+
+        const next = this.getRoomsNeedingSkipUpdate()[0];
+        if (!next) return;
+
+        const { cell, roomHrid, isSkill, recommendedThreshold } = next;
+        const findButton = (label) =>
+            Array.from(cell.querySelectorAll('button')).find((b) => b.textContent.trim() === label);
+
+        const editButton = findButton('Edit');
+        if (!editButton) {
+            console.warn('[Toolasha] Apply Skip: Edit button not found for room', roomHrid);
+            return;
+        }
+        editButton.click();
+
+        const input = cell.querySelector('input[type="number"]');
+        if (!input) {
+            console.warn('[Toolasha] Apply Skip: threshold input not found after clicking Edit', roomHrid);
+            return;
+        }
+        setReactInputValue(input, recommendedThreshold, { focus: false });
+
+        const saveButton = findButton('Save');
+        if (!saveButton) {
+            console.warn('[Toolasha] Apply Skip: Save button not found for room', roomHrid);
+            return;
+        }
+
+        this._pendingSelfAppliedKey = this._getSkipSettingKey(roomHrid, isSkill);
+        this._pendingSelfAppliedValue = recommendedThreshold;
+        saveButton.click();
+
+        this._updateApplyButtonState();
+    }
+
+    /**
+     * Refresh the Apply Skip button's label and enabled state to reflect the current mismatch
+     * count.
+     */
+    _updateApplyButtonState() {
+        const button = document.getElementById(APPLY_SKIP_BUTTON_ID);
+        if (!button) return;
+
+        const remaining = this.getRoomsNeedingSkipUpdate().length;
+        button.textContent = `Apply Skip (${remaining})`;
+        button.disabled = remaining === 0;
+        button.style.opacity = remaining === 0 ? '0.5' : '1';
+        button.style.cursor = remaining === 0 ? 'default' : 'pointer';
+    }
+
+    /**
      * Inject recommend controls (button + target input) into the automation panel
      */
     injectRecommendControls() {
@@ -1015,6 +1147,7 @@ class LabyrinthClearRate {
             const hoursInput = document.getElementById('mwi-recommend-sim-hours');
             if (rateInput && !rateInput.dataset.userEdited) rateInput.value = defaultRate;
             if (hoursInput && !hoursInput.dataset.userEdited) hoursInput.value = defaultHours;
+            this._updateApplyButtonState();
             return;
         }
 
@@ -1068,12 +1201,22 @@ class LabyrinthClearRate {
             'padding:2px 10px; cursor:pointer; font-size:0.75rem; border-radius:4px; border:1px solid #555; background:#333; color:#ccc;';
         button.addEventListener('click', () => this.runRecommendations());
 
+        const applyButton = document.createElement('button');
+        applyButton.id = APPLY_SKIP_BUTTON_ID;
+        applyButton.textContent = 'Apply Skip (0)';
+        applyButton.disabled = true;
+        applyButton.style.cssText =
+            'padding:2px 10px; cursor:default; font-size:0.75rem; border-radius:4px; border:1px solid #555; background:#333; color:#ccc; opacity:0.5;';
+        applyButton.addEventListener('click', () => this.applyNextRecommendedSkip());
+
         container.appendChild(rateLabel);
         container.appendChild(rateInput);
         container.appendChild(hoursLabel);
         container.appendChild(hoursInput);
         container.appendChild(button);
+        container.appendChild(applyButton);
         table.parentNode.insertBefore(container, table);
+        this._updateApplyButtonState();
     }
 
     /**
@@ -1539,3 +1682,4 @@ class LabyrinthClearRate {
 
 const labyrinthClearRate = new LabyrinthClearRate();
 export default labyrinthClearRate;
+export { LabyrinthClearRate };
