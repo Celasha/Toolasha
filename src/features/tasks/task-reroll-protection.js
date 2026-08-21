@@ -16,12 +16,21 @@ import webSocketHook from '../../core/websocket.js';
 const STORAGE_KEY_PREFIX = 'taskProtectedHrids';
 
 /**
- * Get character-scoped storage key.
+ * Get a character-scoped storage key for the given prefix.
+ * @param {string} prefix
+ * @returns {string}
+ */
+function getCharacterScopedKey(prefix) {
+    const charId = dataManager.getCurrentCharacterId() || 'default';
+    return `${prefix}_${charId}`;
+}
+
+/**
+ * Get character-scoped storage key for the protected task HRID list.
  * @returns {string}
  */
 function getStorageKey() {
-    const charId = dataManager.getCurrentCharacterId() || 'default';
-    return `${STORAGE_KEY_PREFIX}_${charId}`;
+    return getCharacterScopedKey(STORAGE_KEY_PREFIX);
 }
 
 class TaskRerollProtection {
@@ -45,9 +54,9 @@ class TaskRerollProtection {
         const saved = await storage.getJSON(getStorageKey(), 'settings', []);
         this.protectedHrids = new Set(saved);
 
-        this.capProtectionEnabled = await storage.get('taskCapProtection', 'settings', false);
-        this.coinThreshold = await storage.get('taskCapCoinThreshold', 'settings', 320000);
-        this.cowbellThreshold = await storage.get('taskCapCowbellThreshold', 'settings', 32);
+        this.capProtectionEnabled = await storage.get(getCharacterScopedKey('taskCapProtection'), 'settings', false);
+        this.coinThreshold = await storage.get(getCharacterScopedKey('taskCapCoinThreshold'), 'settings', 320000);
+        this.cowbellThreshold = await storage.get(getCharacterScopedKey('taskCapCowbellThreshold'), 'settings', 32);
 
         // Watch for task cards appearing
         const unregister = domObserver.onClass('TaskRerollProtection', 'RandomTask_randomTask', (taskNode) => {
@@ -436,9 +445,9 @@ class TaskRerollProtection {
      * @private
      */
     async _saveCapProtection() {
-        await storage.set('taskCapProtection', this.capProtectionEnabled, 'settings');
-        await storage.set('taskCapCoinThreshold', this.coinThreshold, 'settings');
-        await storage.set('taskCapCowbellThreshold', this.cowbellThreshold, 'settings');
+        await storage.set(getCharacterScopedKey('taskCapProtection'), this.capProtectionEnabled, 'settings');
+        await storage.set(getCharacterScopedKey('taskCapCoinThreshold'), this.coinThreshold, 'settings');
+        await storage.set(getCharacterScopedKey('taskCapCowbellThreshold'), this.cowbellThreshold, 'settings');
     }
 
     /**
@@ -782,3 +791,4 @@ export default {
     },
     isTaskProtected: (taskCard) => taskRerollProtection.isTaskProtected(taskCard),
 };
+export { TaskRerollProtection };
