@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.93.1](https://github.com/Celasha/Toolasha/compare/v2.93.0...v2.93.1) (2026-08-21)
+
+### Bug Fixes
+
+- migrate legacy global reroll-cap value on a characters first load ([f1c22fc](https://github.com/Celasha/Toolasha/commit/f1c22fcc588bd1783a30bad8d0348af3f674a1e3))
+- scope reroll-cap block thresholds per character, not globally ([4a914d2](https://github.com/Celasha/Toolasha/commit/4a914d2a6920b0276ddac043cb87ee70cd916b1e))
+
 ## [2.93.0](https://github.com/Celasha/Toolasha/compare/v2.92.0...v2.93.0) (2026-08-20)
 
 ### Features
