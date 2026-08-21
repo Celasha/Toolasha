@@ -384,6 +384,7 @@ class CombatStatsUI {
                   sampleSize: expectedLootTracker.getSampleSize(),
                   elapsedSeconds: expectedLootTracker.getElapsedSeconds(),
                   actualLootSinceTracking: combatStatsDataCollector.getActualLootSinceTrackingStarted(),
+                  isDungeon: expectedLootTracker.isDungeon,
               }
             : null;
         const playerStats = calculateAllPlayerStats(combatData, durationSeconds, expectedLootData);
@@ -714,7 +715,7 @@ class CombatStatsUI {
             },
             ...(stats.actualVsExpected
                 ? (() => {
-                      const sampleHeading = `Loot RNG sample · ${formatNum(stats.actualVsExpected.sampleSize)} encounters · ${formatRunway(stats.actualVsExpected.elapsedSeconds)}`;
+                      const sampleHeading = `Loot Luck sample · ${formatNum(stats.actualVsExpected.sampleSize)} encounters · ${formatRunway(stats.actualVsExpected.elapsedSeconds)}`;
                       return [
                           {
                               label: 'Actual Rate',
