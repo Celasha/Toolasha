@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.93.1
+ * Version: 2.94.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7591,6 +7591,42 @@
     const labyrinthShopPrices = new LabyrinthShopPrices();
 
     /**
+     * Combat Level formula helpers.
+     *
+     * MWI's official Combat Level formula (per the in-game Game Guide) is:
+     *   raw = 0.1 * (Stamina + Intelligence + Attack + Defense + max(Melee, Ranged, Magic))
+     *       + 0.5 * max(Attack, Defense, Melee, Ranged, Magic)
+     *
+     * Applied to current whole skill levels, `raw` naturally has at most one meaningful decimal
+     * digit (the 0.1/0.5 coefficients on integer inputs cannot produce more). MWI's native sidebar
+     * floors this to an integer for display; this module exposes the unfloored value so the decimal
+     * sidebar display can show it (e.g. 133.2 next to a native 133). Level Malus is a separate
+     * mechanic and uses the canonical (floored) Combat Level - see calculateLevelGapDebuff()'s doc
+     * comment in combat-sim-adapter.js - not this raw value.
+     *
+     * This must never be confused with XP-within-level interpolation: inventing a fractional skill
+     * level from XP progress toward the next level is a different, invalid metric for this mechanic
+     * and must not feed into this formula.
+     */
+
+
+    /**
+     * Apply MWI's official Combat Level formula to a set of whole skill levels, rounded to one
+     * decimal place. The rounding only clears IEEE-754 float noise from the 0.1/0.5 coefficients
+     * (e.g. 0.1 * 3 === 0.30000000000000004 in JS) - it never discards real precision, since integer
+     * inputs cannot produce more than one meaningful decimal digit.
+     * @param {{stamina: number, intelligence: number, attack: number, defense: number, melee: number, ranged: number, magic: number}} levels
+     * @returns {number}
+     */
+    function calculateRawCombatLevel(levels) {
+        const { stamina, intelligence, attack, defense, melee, ranged, magic } = levels;
+        const combatStyleMax = Math.max(melee, ranged, magic);
+        const primaryMax = Math.max(attack, defense, melee, ranged, magic);
+        const raw = 0.1 * (stamina + intelligence + attack + defense + combatStyleMax) + 0.5 * primaryMax;
+        return Math.round(raw * 10) / 10;
+    }
+
+    /**
      * Combat Simulator Adapter
      * Bridges Toolasha's live data to the combat sim engine.
      *
@@ -8129,14 +8165,22 @@
     /**
      * Calculate the level-gap debuff for one party member given their combat level and the party's
      * highest combat level. Shared by Combat Sim (simulated party loadouts) and Combat Stats
-     * (real live encounters) so both agree on the exact same 1.2-ratio rule.
+     * (real live encounters) so both agree on the exact same eligibility rule.
+     *
+     * Per the official MWI Game Guide, both conditions are required: the player must be more than
+     * 20% lower AND at least 10 Combat Levels below the party's highest combat level. `combatLevel`
+     * and `maxCombatLevel` must be the canonical (floored) Combat Level - the same integer the game
+     * computes via `getCombatLevel()` and shows as `combatDetails.combatLevel` - since that is the
+     * only Combat Level concept evidenced anywhere in the game's client code or guide; there is no
+     * independent evidence of a separate raw/pre-floor value feeding this check.
      * @param {number} combatLevel - This player's combat level
      * @param {number} maxCombatLevel - The party's highest combat level
      * @returns {number} Debuff as a negative decimal (0 = no debuff, e.g. -0.3 = -30%)
      */
     function calculateLevelGapDebuff(combatLevel, maxCombatLevel) {
         const ratio = maxCombatLevel / combatLevel;
-        if (ratio <= 1.2) {
+        const gap = maxCombatLevel - combatLevel;
+        if (ratio <= 1.2 || gap < 10) {
             return 0;
         }
         const maxDebuff = 0.9;
@@ -8145,19 +8189,28 @@
     }
 
     /**
-     * Calculate combat level for level gap debuff.
-     * @param {Object} dto - Player DTO
+     * Calculate the canonical (floored) combat level from any object exposing the game's own
+     * combatDetails-shaped whole-skill-level fields (staminaLevel, intelligenceLevel, attackLevel,
+     * defenseLevel, meleeLevel, rangedLevel, magicLevel) - the same shape as a simulated player DTO
+     * here in Combat Sim. Combat Stats instead reads the native `combatDetails.combatLevel` field
+     * directly from live `new_battle` data rather than recomputing it, since that field already is
+     * the canonical value; Combat Sim has no such native field for a simulated party and must derive
+     * the equivalent value from the same official formula (see `calculateRawCombatLevel()`), floored
+     * the same way the game itself floors it.
+     * @param {{staminaLevel: number, intelligenceLevel: number, attackLevel: number, defenseLevel: number, meleeLevel: number, rangedLevel: number, magicLevel: number}} levelFields
      * @returns {number} Combat level
      */
-    function calcCombatLevel(dto) {
+    function calculateCombatLevelFromLevelFields(levelFields) {
         return Math.floor(
-            0.1 *
-                (dto.staminaLevel +
-                    dto.intelligenceLevel +
-                    dto.attackLevel +
-                    dto.defenseLevel +
-                    Math.max(dto.meleeLevel, dto.rangedLevel, dto.magicLevel)) +
-                0.5 * Math.max(dto.attackLevel, dto.defenseLevel, dto.meleeLevel, dto.rangedLevel, dto.magicLevel)
+            calculateRawCombatLevel({
+                stamina: levelFields.staminaLevel,
+                intelligence: levelFields.intelligenceLevel,
+                attack: levelFields.attackLevel,
+                defense: levelFields.defenseLevel,
+                melee: levelFields.meleeLevel,
+                ranged: levelFields.rangedLevel,
+                magic: levelFields.magicLevel,
+            })
         );
     }
 
@@ -8235,7 +8288,7 @@
 
         // Calculate level gap debuff
         if (players.length > 1) {
-            const levels = players.map((p) => calcCombatLevel(p));
+            const levels = players.map((p) => calculateCombatLevelFromLevelFields(p));
             const maxCombatLevel = Math.max(...levels);
 
             for (let i = 0; i < players.length; i++) {
@@ -9226,6 +9279,7 @@
     const BADGE_CLASS = 'mwi-labyrinth-clear';
     const RECOMMEND_CLASS = 'mwi-labyrinth-recommend';
     const RECOMMEND_CONTROLS_CLASS = 'mwi-labyrinth-recommend-controls';
+    const APPLY_SKIP_BUTTON_ID = 'mwi-apply-skip-btn';
     const LIVE_PROGRESS_CLASS = 'mwi-labyrinth-live-progress';
     const LIVE_PROGRESS_STALE_MS = 5000;
 
@@ -9242,6 +9296,8 @@
             this.recommendRunning = false;
             this._recommendSimHours = 1;
             this._recommendTargetPct = 70;
+            this._pendingSelfAppliedKey = null;
+            this._pendingSelfAppliedValue = null;
             this.liveProgressHandler = null;
             this.liveProgressTimeout = null;
         }
@@ -9258,9 +9314,23 @@
             this.wsHandler = (data) => this.onLabyrinthUpdated(data);
             webSocketHook.on('labyrinth_updated', this.wsHandler);
 
-            this.settingHandler = () => {
+            this.settingHandler = (data) => {
+                const selfKey = this._pendingSelfAppliedKey;
+                const selfValue = this._pendingSelfAppliedValue;
+                this._pendingSelfAppliedKey = null;
+                this._pendingSelfAppliedValue = null;
+
+                // Our own Apply Skip save also fires setting_updated -- only skip the invalidation
+                // when this event actually confirms that exact save (matched by key AND value), so
+                // unrelated setting changes (crate hrid, other rooms edited manually, etc.) still
+                // correctly invalidate stale recommendations as before.
+                const isSelfTriggeredSkipSave =
+                    selfKey !== null && data?.characterSetting && data.characterSetting[selfKey] === selfValue;
+
                 this.combatCache.clear();
-                this.recommendations.clear();
+                if (!isSelfTriggeredSkipSave) {
+                    this.recommendations.clear();
+                }
                 this.injectOverlays();
             };
             webSocketHook.on('setting_updated', this.settingHandler);
@@ -9322,6 +9392,8 @@
             this.simRunning = false;
             this.recommendations.clear();
             this.recommendRunning = false;
+            this._pendingSelfAppliedKey = null;
+            this._pendingSelfAppliedValue = null;
             this.isInitialized = false;
         }
 
@@ -10171,6 +10243,7 @@
             if (button) button.textContent = 'Recommend';
             this.recommendRunning = false;
             this.injectRecommendationBadges();
+            this._updateApplyButtonState();
         }
 
         /**
@@ -10211,6 +10284,117 @@
         }
 
         /**
+         * Derive the characterSetting key for a room's skip threshold (mirrors getSkipThreshold /
+         * getCombatSkipThreshold's own key derivation, without duplicating their read logic).
+         */
+        _getSkipSettingKey(roomHrid, isSkill) {
+            if (isSkill) {
+                const skillId = roomHrid.replace('/skills/', '');
+                return `labyrinthSkip${skillId.charAt(0).toUpperCase()}${skillId.slice(1)}`;
+            }
+
+            const monsterName = roomHrid.replace('/monsters/', '');
+            const pascal = monsterName
+                .split('_')
+                .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+                .join('');
+            return `labyrinthSkip${pascal}`;
+        }
+
+        /**
+         * Visible rooms whose current skip threshold differs from the computed recommendation.
+         * Re-scanned fresh on every call (never a stale pre-built queue), so it always reflects the
+         * live DOM/settings.
+         * @returns {Array<{cell: Element, roomHrid: string, isSkill: boolean, recommendedThreshold: number}>}
+         */
+        getRoomsNeedingSkipUpdate() {
+            if (this.recommendations.size === 0) return [];
+
+            const cells = document.querySelectorAll('[class*="LabyrinthPanel_skipThreshold"]');
+            const rooms = [];
+
+            for (const cell of cells) {
+                const roomHrid = this.extractRoomHrid(cell);
+                if (!roomHrid) continue;
+
+                const rec = this.recommendations.get(roomHrid);
+                if (!rec || rec.threshold === null) continue;
+
+                const isSkill = roomHrid.startsWith('/skills/');
+                const currentThreshold = isSkill ? this.getSkipThreshold(roomHrid) : this.getCombatSkipThreshold(roomHrid);
+                if (currentThreshold === rec.threshold) continue;
+
+                rooms.push({ cell, roomHrid, isSkill, recommendedThreshold: rec.threshold });
+            }
+
+            return rooms;
+        }
+
+        /**
+         * Apply the next mismatched room's recommended skip threshold: forwards a click to that
+         * room's real Edit button, writes the recommended value into the game's own input, then
+         * forwards a click to the real Save button. Exactly one Save click, one server request, per
+         * call -- the user repeats the click to work through the rest.
+         */
+        applyNextRecommendedSkip() {
+            const alreadyEditing = document.querySelector('[class*="LabyrinthPanel_skipThreshold"] input[type="number"]');
+            if (alreadyEditing) {
+                console.warn(
+                    '[Toolasha] Apply Skip: another room is already being edited manually; skipping to avoid discarding unsaved changes.'
+                );
+                return;
+            }
+
+            const next = this.getRoomsNeedingSkipUpdate()[0];
+            if (!next) return;
+
+            const { cell, roomHrid, isSkill, recommendedThreshold } = next;
+            const findButton = (label) =>
+                Array.from(cell.querySelectorAll('button')).find((b) => b.textContent.trim() === label);
+
+            const editButton = findButton('Edit');
+            if (!editButton) {
+                console.warn('[Toolasha] Apply Skip: Edit button not found for room', roomHrid);
+                return;
+            }
+            editButton.click();
+
+            const input = cell.querySelector('input[type="number"]');
+            if (!input) {
+                console.warn('[Toolasha] Apply Skip: threshold input not found after clicking Edit', roomHrid);
+                return;
+            }
+            reactInput_js.setReactInputValue(input, recommendedThreshold, { focus: false });
+
+            const saveButton = findButton('Save');
+            if (!saveButton) {
+                console.warn('[Toolasha] Apply Skip: Save button not found for room', roomHrid);
+                return;
+            }
+
+            this._pendingSelfAppliedKey = this._getSkipSettingKey(roomHrid, isSkill);
+            this._pendingSelfAppliedValue = recommendedThreshold;
+            saveButton.click();
+
+            this._updateApplyButtonState();
+        }
+
+        /**
+         * Refresh the Apply Skip button's label and enabled state to reflect the current mismatch
+         * count.
+         */
+        _updateApplyButtonState() {
+            const button = document.getElementById(APPLY_SKIP_BUTTON_ID);
+            if (!button) return;
+
+            const remaining = this.getRoomsNeedingSkipUpdate().length;
+            button.textContent = `Apply Skip (${remaining})`;
+            button.disabled = remaining === 0;
+            button.style.opacity = remaining === 0 ? '0.5' : '1';
+            button.style.cursor = remaining === 0 ? 'default' : 'pointer';
+        }
+
+        /**
          * Inject recommend controls (button + target input) into the automation panel
          */
         injectRecommendControls() {
@@ -10222,6 +10406,7 @@
                 const hoursInput = document.getElementById('mwi-recommend-sim-hours');
                 if (rateInput && !rateInput.dataset.userEdited) rateInput.value = defaultRate;
                 if (hoursInput && !hoursInput.dataset.userEdited) hoursInput.value = defaultHours;
+                this._updateApplyButtonState();
                 return;
             }
 
@@ -10275,12 +10460,22 @@
                 'padding:2px 10px; cursor:pointer; font-size:0.75rem; border-radius:4px; border:1px solid #555; background:#333; color:#ccc;';
             button.addEventListener('click', () => this.runRecommendations());
 
+            const applyButton = document.createElement('button');
+            applyButton.id = APPLY_SKIP_BUTTON_ID;
+            applyButton.textContent = 'Apply Skip (0)';
+            applyButton.disabled = true;
+            applyButton.style.cssText =
+                'padding:2px 10px; cursor:default; font-size:0.75rem; border-radius:4px; border:1px solid #555; background:#333; color:#ccc; opacity:0.5;';
+            applyButton.addEventListener('click', () => this.applyNextRecommendedSkip());
+
             container.appendChild(rateLabel);
             container.appendChild(rateInput);
             container.appendChild(hoursLabel);
             container.appendChild(hoursInput);
             container.appendChild(button);
+            container.appendChild(applyButton);
             table.parentNode.insertBefore(container, table);
+            this._updateApplyButtonState();
         }
 
         /**
@@ -22248,8 +22443,28 @@
      * completions for the current zone, then feeds the exact same canonical drop-math helper
      * Combat Sim uses (`calculateExpectedDrops`) so Actual and Expected never disagree because of
      * duplicated formulas.
+     *
+     * Encounters/runs are bucketed by their exact modifier signature (difficulty, party size, Combat
+     * Drop Rate/Rare Find/Drop Quantity, level-gap debuff) and each bucket is run through the
+     * canonical helper independently, then summed - a modifier change mid-sample (gear swap, party
+     * change, difficulty change) must never retroactively reprice encounters that already completed
+     * under the old modifiers.
      */
 
+
+    const REGULAR_MODIFIER_KEYS = [
+        'difficultyTier',
+        'numberOfPlayers',
+        'dropRateMultiplier',
+        'rareFindMultiplier',
+        'combatDropQuantity',
+        'debuffOnLevelGap',
+    ];
+    const DUNGEON_MODIFIER_KEYS = ['difficultyTier', 'numberOfPlayers', 'combatDropQuantity'];
+
+    function bucketKey(modifiers, keys) {
+        return keys.map((key) => modifiers[key]).join('|');
+    }
 
     class ExpectedLootTracker {
         constructor() {
@@ -22262,18 +22477,11 @@
         reset() {
             this.zoneHrid = null;
             this.isDungeon = false;
-            this.deaths = {};
-            this.dungeonsCompleted = 0;
+            /** @type {Map<string, {modifiers: Object, deaths: Object, dungeonsCompleted: number}>} */
+            this.buckets = new Map();
             this.completedEncounterCount = 0;
-            this.trackingStartTime = null;
-            this.latest = {
-                difficultyTier: 0,
-                numberOfPlayers: 1,
-                dropRateMultiplier: 1,
-                rareFindMultiplier: 1,
-                combatDropQuantity: 0,
-                debuffOnLevelGap: 0,
-            };
+            this.sampleStartTime = null;
+            this.sampleEndTime = null;
         }
 
         /**
@@ -22288,6 +22496,36 @@
             }
             this.zoneHrid = zoneHrid;
             this.isDungeon = isDungeon;
+        }
+
+        /**
+         * Establish the sample's start boundary the instant the Actual-loot baseline is captured,
+         * decoupled from the first *completed* encounter - the first encounter can legitimately take
+         * a long time to finish, and that whole duration must still count toward the sample window
+         * (otherwise the denominator excludes it while the numerator includes it once it completes).
+         * @param {string} zoneHrid - Current action HRID
+         * @param {boolean} isDungeon - Whether the current zone is a dungeon
+         */
+        markSampleStart(zoneHrid, isDungeon) {
+            this._syncZone(zoneHrid, isDungeon);
+            if (this.sampleStartTime === null) {
+                this.sampleStartTime = Date.now();
+            }
+        }
+
+        /**
+         * @param {Object} modifiers - Modifier signature for this bucket
+         * @param {Array<string>} keys - Which modifier fields identify this bucket's signature
+         * @returns {{modifiers: Object, deaths: Object, dungeonsCompleted: number}}
+         */
+        _bucketFor(modifiers, keys) {
+            const key = bucketKey(modifiers, keys);
+            let bucket = this.buckets.get(key);
+            if (!bucket) {
+                bucket = { modifiers, deaths: {}, dungeonsCompleted: 0 };
+                this.buckets.set(key, bucket);
+            }
+            return bucket;
         }
 
         /**
@@ -22313,23 +22551,27 @@
             debuffOnLevelGap,
         }) {
             this._syncZone(zoneHrid, false);
-            if (this.trackingStartTime === null) {
-                this.trackingStartTime = Date.now();
+            if (this.sampleStartTime === null) {
+                this.sampleStartTime = Date.now();
             }
 
+            const bucket = this._bucketFor(
+                {
+                    difficultyTier,
+                    numberOfPlayers,
+                    dropRateMultiplier,
+                    rareFindMultiplier,
+                    combatDropQuantity,
+                    debuffOnLevelGap,
+                },
+                REGULAR_MODIFIER_KEYS
+            );
             for (const monsterHrid of monsterHrids) {
-                this.deaths[monsterHrid] = (this.deaths[monsterHrid] || 0) + 1;
+                bucket.deaths[monsterHrid] = (bucket.deaths[monsterHrid] || 0) + 1;
             }
-            this.completedEncounterCount += 1;
 
-            this.latest = {
-                difficultyTier,
-                numberOfPlayers,
-                dropRateMultiplier,
-                rareFindMultiplier,
-                combatDropQuantity,
-                debuffOnLevelGap,
-            };
+            this.completedEncounterCount += 1;
+            this.sampleEndTime = Date.now();
         }
 
         /**
@@ -22342,13 +22584,15 @@
          */
         recordDungeonCompletion({ zoneHrid, difficultyTier, numberOfPlayers, combatDropQuantity }) {
             this._syncZone(zoneHrid, true);
-            if (this.trackingStartTime === null) {
-                this.trackingStartTime = Date.now();
+            if (this.sampleStartTime === null) {
+                this.sampleStartTime = Date.now();
             }
 
-            this.dungeonsCompleted += 1;
+            const bucket = this._bucketFor({ difficultyTier, numberOfPlayers, combatDropQuantity }, DUNGEON_MODIFIER_KEYS);
+            bucket.dungeonsCompleted += 1;
+
             this.completedEncounterCount += 1;
-            this.latest = { ...this.latest, difficultyTier, numberOfPlayers, combatDropQuantity };
+            this.sampleEndTime = Date.now();
         }
 
         /**
@@ -22366,44 +22610,91 @@
         }
 
         /**
-         * Real wall-clock time actually covered by the accumulated sample - NOT the whole combat
-         * session's duration, which may have started long before this tracker began observing
-         * (e.g. the script attached mid-fight). Using the session duration here would silently
-         * understate the expected daily rate by whatever ratio the two windows differ by.
-         * @returns {number} Seconds since the first completed encounter/dungeon run in this sample
+         * Merged kill-count view across every modifier bucket - read-only introspection only;
+         * `getExpectedDrops()` always computes per-bucket so a modifier change never retroactively
+         * reprices encounters that completed under different modifiers.
+         * @returns {Object} monsterHrid -> total kill count across all buckets
+         */
+        get deaths() {
+            const merged = {};
+            for (const bucket of this.buckets.values()) {
+                for (const [hrid, count] of Object.entries(bucket.deaths)) {
+                    merged[hrid] = (merged[hrid] || 0) + count;
+                }
+            }
+            return merged;
+        }
+
+        /**
+         * @returns {number} Total completed dungeon runs across all modifier buckets
+         */
+        get dungeonsCompleted() {
+            let total = 0;
+            for (const bucket of this.buckets.values()) {
+                total += bucket.dungeonsCompleted;
+            }
+            return total;
+        }
+
+        /**
+         * Real wall-clock time actually covered by the accumulated sample: from the moment the
+         * Actual-loot baseline was captured to the moment the most recently included encounter/run
+         * was confirmed completed. Deliberately NOT `Date.now() - sampleStartTime` - Expected only
+         * advances at a completed-encounter boundary, so using the current instant as the end would
+         * let the denominator keep growing after the last included sample, silently deflating the
+         * displayed rate the longer the user waits before checking.
+         * @returns {number} Seconds between the sample's start and last-completed boundary
          */
         getElapsedSeconds() {
-            if (this.trackingStartTime === null) {
+            if (this.sampleStartTime === null || this.sampleEndTime === null) {
                 return 0;
             }
-            return Math.max(0, (Date.now() - this.trackingStartTime) / 1000);
+            return Math.max(0, (this.sampleEndTime - this.sampleStartTime) / 1000);
         }
 
         /**
          * Compute expected drops for everything accumulated so far, using the exact same helper
-         * Combat Sim uses for simulated runs.
+         * Combat Sim uses for simulated runs - once per modifier bucket, then summed, so a modifier
+         * change mid-sample never retroactively recalculates already-completed encounters.
          * @param {Object} gameData - `dataManager.getInitClientData()` result (combatMonsterDetailMap/actionDetailMap)
          * @returns {Map<string, number>} itemHrid -> expected total drop count
          */
         getExpectedDrops(gameData) {
+            const totals = new Map();
             if (!this.hasData()) {
-                return new Map();
+                return totals;
             }
 
-            const simResult = {
-                isDungeon: this.isDungeon,
-                zoneName: this.zoneHrid,
-                deaths: this.deaths,
-                dungeonsCompleted: this.dungeonsCompleted,
-                numberOfPlayers: this.latest.numberOfPlayers || 1,
-                difficultyTier: this.latest.difficultyTier || 0,
-                dropRateMultiplier: { player1: this.latest.dropRateMultiplier || 1 },
-                rareFindMultiplier: { player1: this.latest.rareFindMultiplier || 1 },
-                combatDropQuantity: { player1: this.latest.combatDropQuantity || 0 },
-                debuffOnLevelGap: { player1: this.latest.debuffOnLevelGap || 0 },
-            };
+            for (const bucket of this.buckets.values()) {
+                const simResult = this.isDungeon
+                    ? {
+                          isDungeon: true,
+                          zoneName: this.zoneHrid,
+                          dungeonsCompleted: bucket.dungeonsCompleted,
+                          numberOfPlayers: bucket.modifiers.numberOfPlayers || 1,
+                          difficultyTier: bucket.modifiers.difficultyTier || 0,
+                          dropRateMultiplier: { player1: 1 },
+                          combatDropQuantity: { player1: bucket.modifiers.combatDropQuantity || 0 },
+                      }
+                    : {
+                          isDungeon: false,
+                          zoneName: this.zoneHrid,
+                          deaths: bucket.deaths,
+                          numberOfPlayers: bucket.modifiers.numberOfPlayers || 1,
+                          difficultyTier: bucket.modifiers.difficultyTier || 0,
+                          dropRateMultiplier: { player1: bucket.modifiers.dropRateMultiplier || 1 },
+                          rareFindMultiplier: { player1: bucket.modifiers.rareFindMultiplier || 1 },
+                          combatDropQuantity: { player1: bucket.modifiers.combatDropQuantity || 0 },
+                          debuffOnLevelGap: { player1: bucket.modifiers.debuffOnLevelGap || 0 },
+                      };
 
-            return calculateExpectedDrops(simResult, gameData, 'player1');
+                const bucketDrops = calculateExpectedDrops(simResult, gameData, 'player1');
+                for (const [itemHrid, count] of bucketDrops) {
+                    totals.set(itemHrid, (totals.get(itemHrid) || 0) + count);
+                }
+            }
+
+            return totals;
         }
     }
 
@@ -22448,9 +22739,6 @@
             this.currentBattleId = null;
             this.characterId = null;
             this.lifecycleGeneration = 0;
-            this.wasBelowRunwayThreshold = {};
-            this.runwayNotificationPermissionGranted = false;
-            this.timerRegistry = timerRegistry_js.createTimerRegistry();
             this.pendingEncounter = null;
             this.latestSelfCombatDropQuantity = 0;
             this.actualLootSnapshot = null;
@@ -22516,9 +22804,6 @@
             await this.loadConsumableTracking(this.characterId);
             if (generation !== this.lifecycleGeneration || !this.isInitialized) return;
 
-            await this.requestRunwayNotificationPermission();
-            if (generation !== this.lifecycleGeneration || !this.isInitialized) return;
-
             // Store handler references for cleanup
             this.newBattleHandler = (data) => this.onNewBattle(data, generation);
             this.consumableEventHandler = (data) => this.onConsumableUsed(data, generation);
@@ -22542,90 +22827,6 @@
                 }
             };
             dungeonTracker.onUpdate(this.dungeonCompletionHandler);
-        }
-
-        /**
-         * Request browser notification permission for the consumable runway warning
-         */
-        async requestRunwayNotificationPermission() {
-            if (typeof Notification === 'undefined') {
-                return;
-            }
-
-            if (Notification.permission === 'granted') {
-                this.runwayNotificationPermissionGranted = true;
-                return;
-            }
-
-            if (Notification.permission !== 'denied') {
-                try {
-                    const permission = await Notification.requestPermission();
-                    this.runwayNotificationPermissionGranted = permission === 'granted';
-                } catch (error) {
-                    console.warn('[Combat Stats] Runway notification permission request failed:', error);
-                }
-            }
-        }
-
-        /**
-         * Check the current player's runway against the configured warning threshold and fire a
-         * one-shot browser notification on a threshold crossing (never for party members).
-         * @param {string} itemHrid - Item HRID
-         * @param {number} timeToZeroSeconds - Seconds until this item's inventory reaches zero
-         */
-        checkRunwayWarning(itemHrid, timeToZeroSeconds) {
-            const thresholdHours = config.getSettingValue('combatStats_runwayWarningThreshold', 12);
-            if (!thresholdHours || thresholdHours <= 0) {
-                this.wasBelowRunwayThreshold[itemHrid] = false;
-                return;
-            }
-
-            const thresholdSeconds = thresholdHours * 3600;
-            const isBelow = timeToZeroSeconds < thresholdSeconds;
-
-            if (isBelow && !this.wasBelowRunwayThreshold[itemHrid]) {
-                this.sendRunwayWarning(itemHrid, timeToZeroSeconds);
-            }
-
-            this.wasBelowRunwayThreshold[itemHrid] = isBelow;
-        }
-
-        /**
-         * Send the low-supply browser notification for a single consumable
-         * @param {string} itemHrid - Item HRID
-         * @param {number} timeToZeroSeconds - Seconds until this item's inventory reaches zero
-         */
-        sendRunwayWarning(itemHrid, timeToZeroSeconds) {
-            try {
-                if (!this.runwayNotificationPermissionGranted || typeof Notification === 'undefined') {
-                    return;
-                }
-
-                const itemName = dataManager.getItemDetails(itemHrid)?.name || itemHrid;
-                const hours = Math.max(0, timeToZeroSeconds) / 3600;
-                const hoursLabel = hours < 1 ? `${Math.round(hours * 60)}m` : `${hours.toFixed(1)}h`;
-
-                const notification = new Notification('Milky Way Idle', {
-                    body: `${itemName} is running low: ~${hoursLabel} remaining`,
-                    icon: 'https://www.milkywayidle.com/favicon.ico',
-                    tag: `combat-consumable-runway-${itemHrid}`,
-                    requireInteraction: false,
-                });
-
-                notification.onclick = () => {
-                    window.focus();
-                    notification.close();
-                };
-
-                notification.onerror = (error) => {
-                    console.error('[Combat Stats] Runway notification error:', error);
-                };
-
-                const closeTimeout = setTimeout(() => notification.close(), 5000);
-                this.timerRegistry.registerTimeout(closeTimeout);
-            } catch (error) {
-                console.error('[Combat Stats] Failed to send runway notification:', error);
-            }
         }
 
         /**
@@ -22986,12 +23187,18 @@
 
             if (this.actualLootSnapshot === null) {
                 this.actualLootSnapshot = sumLootByItemHrid(selfPlayer?.totalLootMap);
+                this.expectedLootTracker.markSampleStart(zoneInfo.zoneHrid, false);
             }
 
             if (this.pendingEncounter) {
                 this.expectedLootTracker.recordCompletedEncounter(this.pendingEncounter);
             }
 
+            // Level Malus eligibility uses the canonical (floored) Combat Level - the same value the
+            // game computes via getCombatLevel() and exposes as combatDetails.combatLevel - since
+            // that is the only Combat Level concept evidenced anywhere in the game (see
+            // calculateLevelGapDebuff()'s doc comment in combat-sim-adapter.js). Live new_battle data
+            // already has this field, so it's read directly rather than recomputed.
             const levels = data.players
                 .map((player) => player?.combatDetails?.combatLevel)
                 .filter((level) => typeof level === 'number');
@@ -23297,10 +23504,6 @@
                                 const timeToZeroSeconds =
                                     consumptionRate > 0 ? inventoryAmount / consumptionRate : Infinity;
 
-                                if (isCurrentPlayer) {
-                                    this.checkRunwayWarning(consumable.itemHrid, timeToZeroSeconds);
-                                }
-
                                 const consumableData = {
                                     itemHrid: consumable.itemHrid,
                                     currentCount: consumable.count,
@@ -23396,9 +23599,6 @@
             this.isInitialized = false;
             this.latestCombatData = null;
             this.currentBattleId = null;
-            this.wasBelowRunwayThreshold = {};
-            this.runwayNotificationPermissionGranted = false;
-            this.timerRegistry.clearAll();
             this.pendingEncounter = null;
             this.latestSelfCombatDropQuantity = 0;
             this.actualLootSnapshot = null;
@@ -23844,9 +24044,17 @@
                 : null;
 
         // Actual vs Expected loot / RNG Delta - current player only, and only once at least one
-        // encounter has completed (never fabricated from zero completed samples)
+        // encounter has completed (never fabricated from zero completed samples). Dungeons are
+        // excluded: the current player's totalLootMap (the only Actual-loot source Combat Stats
+        // observes) never reflects a dungeon's completion reward - that reward is delivered via a
+        // different field entirely, so an "Actual" baseline for dungeons cannot be proven correct.
         let actualVsExpected = null;
-        if (expectedLootData && expectedLootData.sampleSize > 0 && expectedLootData.elapsedSeconds > 0) {
+        if (
+            expectedLootData &&
+            !expectedLootData.isDungeon &&
+            expectedLootData.sampleSize > 0 &&
+            expectedLootData.elapsedSeconds > 0
+        ) {
             // Both sides must cover the exact same window. Reusing the session-wide totalLootMap for
             // "Actual" would compare a short Expected sample against a much longer Actual window
             // (e.g. the script attaching mid-fight), silently mis-scaling the result - so Actual here
@@ -24393,6 +24601,7 @@
                       sampleSize: expectedLootTracker.getSampleSize(),
                       elapsedSeconds: expectedLootTracker.getElapsedSeconds(),
                       actualLootSinceTracking: combatStatsDataCollector.getActualLootSinceTrackingStarted(),
+                      isDungeon: expectedLootTracker.isDungeon,
                   }
                 : null;
             const playerStats = calculateAllPlayerStats(combatData, durationSeconds, expectedLootData);
@@ -24723,7 +24932,7 @@
                 },
                 ...(stats.actualVsExpected
                     ? (() => {
-                          const sampleHeading = `Loot RNG sample · ${formatNum(stats.actualVsExpected.sampleSize)} encounters · ${formatRunway(stats.actualVsExpected.elapsedSeconds)}`;
+                          const sampleHeading = `Loot Luck sample · ${formatNum(stats.actualVsExpected.sampleSize)} encounters · ${formatRunway(stats.actualVsExpected.elapsedSeconds)}`;
                           return [
                               {
                                   label: 'Actual Rate',

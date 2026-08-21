@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.93.1
+ * Version: 2.94.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2380,7 +2380,7 @@
                     label: 'Combat Statistics: consumable runway warning threshold (hours)',
                     type: 'number',
                     default: 12,
-                    help: 'Send a browser notification when a combat consumable is projected to run out within this many hours. Set to 0 to disable.',
+                    help: 'Highlight combat consumables projected to run out within this many hours. Set to 0 to disable warnings.',
                 },
                 combatStatsChatMessage: {
                     id: 'combatStatsChatMessage',
@@ -2662,10 +2662,10 @@
                 },
                 combatLevelProgress: {
                     id: 'combatLevelProgress',
-                    label: 'Left sidebar: Show precise Combat Level progress',
+                    label: 'Left sidebar: Show decimal Combat Level',
                     type: 'checkbox',
                     default: true,
-                    help: 'Shows weighted progress toward the next Combat Level (e.g. 94.80) next to the native Combat Level. Display-only - never changes the native integer level shown by the game.',
+                    help: "Shows the unrounded Combat Level formula value from current whole skill levels (e.g. 133.2). MWI's native sidebar floors it to an integer for display.",
                 },
                 itemIconLevel: {
                     id: 'itemIconLevel',
@@ -3776,7 +3776,8 @@
                 messageType === 'loadouts_updated' ||
                 messageType === 'setting_updated' ||
                 messageType === 'labyrinth_room_progress' ||
-                messageType === 'leaderboard_updated';
+                messageType === 'leaderboard_updated' ||
+                messageType === 'guild_updated';
 
             if (!skipDedup) {
                 // Deduplicate by message content to prevent 4x JSON.parse on same message

@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.93.1
+ * Version: 2.94.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -11963,6 +11963,34 @@
 
                 targetLevelInput.addEventListener('input', updateTargetLevel);
                 targetLevelInput.addEventListener('change', updateTargetLevel);
+
+                // Reverse direction: typing a quantity directly into the queue input updates the
+                // displayed result to reflect the level/xp that quantity would reach. This never
+                // writes back into targetLevelInput, so the two listeners cannot feed each other.
+                const updateFromQuantity = () => {
+                    const actionCount = parseInt(numberInput.value, 10);
+                    if (!actionCount || actionCount <= 0) {
+                        return;
+                    }
+
+                    const result = experienceCalculator_js.calculateLevelFromActions(
+                        currentLevel,
+                        currentXP,
+                        actionCount,
+                        totalEfficiency,
+                        actionTime,
+                        modifiedXP,
+                        levelExperienceTable
+                    );
+
+                    targetLevelResult.innerHTML = `
+                    ${formatters_js.formatWithSeparator(actionCount)} actions → Level ${result.finalLevel} (${result.percentToNext.toFixed(2)}% to next) | ${formatters_js.timeReadable(result.timeElapsed)}
+                `;
+                    targetLevelResult.style.color = `var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY})`;
+                };
+
+                numberInput.addEventListener('input', updateFromQuantity);
+                numberInput.addEventListener('change', updateFromQuantity);
 
                 // If restoring a saved target level, compute and display the result immediately
                 if (initialTargetLevel !== nextLevel) {

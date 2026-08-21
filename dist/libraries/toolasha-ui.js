@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.93.1
+ * Version: 2.94.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -635,18 +635,22 @@
     skillExperiencePercentage.setupSettingListener();
 
     /**
-     * Combat Level Progress Calculator
-     * Derives a continuous (fractional) Combat Level for display purposes only.
+     * Combat Level formula helpers.
      *
-     * MWI's native player Combat Level is an integer, computed as:
+     * MWI's official Combat Level formula (per the in-game Game Guide) is:
      *   raw = 0.1 * (Stamina + Intelligence + Attack + Defense + max(Melee, Ranged, Magic))
      *       + 0.5 * max(Attack, Defense, Melee, Ranged, Magic)
-     *   nativeCombatLevel = floor(raw)
      *
-     * This module applies the same weighting to fractional skill levels (integer level + XP
-     * progress toward the next level) to produce a "weighted progress toward the next level"
-     * score, e.g. 94.80. This value must never replace or contradict the native integer level -
-     * see clampDisplayCombatLevel().
+     * Applied to current whole skill levels, `raw` naturally has at most one meaningful decimal
+     * digit (the 0.1/0.5 coefficients on integer inputs cannot produce more). MWI's native sidebar
+     * floors this to an integer for display; this module exposes the unfloored value so the decimal
+     * sidebar display can show it (e.g. 133.2 next to a native 133). Level Malus is a separate
+     * mechanic and uses the canonical (floored) Combat Level - see calculateLevelGapDebuff()'s doc
+     * comment in combat-sim-adapter.js - not this raw value.
+     *
+     * This must never be confused with XP-within-level interpolation: inventing a fractional skill
+     * level from XP progress toward the next level is a different, invalid metric for this mechanic
+     * and must not feed into this formula.
      */
 
     const COMBAT_SKILL_HRIDS = {
@@ -660,93 +664,53 @@
     };
 
     /**
-     * Fractional skill level: integer level + XP progress toward the next level, clamped to
-     * [level, level + 1). Falls back to the plain integer level if the table has no next-level
-     * entry (max level) or the table is unavailable.
-     * @param {number} level - Native integer skill level
-     * @param {number} experience - Current skill XP
-     * @param {Array<number>|undefined} levelExperienceTable - Native level -> XP table
-     * @returns {number}
-     */
-    function calculateFractionalSkillLevel(level, experience, levelExperienceTable) {
-        const currentThreshold = levelExperienceTable?.[level];
-        const nextThreshold = levelExperienceTable?.[level + 1];
-
-        if (
-            typeof currentThreshold !== 'number' ||
-            typeof nextThreshold !== 'number' ||
-            nextThreshold <= currentThreshold
-        ) {
-            return level;
-        }
-
-        const progress = (experience - currentThreshold) / (nextThreshold - currentThreshold);
-        return level + Math.min(Math.max(progress, 0), 0.999999999);
-    }
-
-    /**
-     * Apply MWI's native Combat Level weighting to a set of skill levels (integer or fractional -
-     * the formula is identical either way).
+     * Apply MWI's official Combat Level formula to a set of whole skill levels, rounded to one
+     * decimal place. The rounding only clears IEEE-754 float noise from the 0.1/0.5 coefficients
+     * (e.g. 0.1 * 3 === 0.30000000000000004 in JS) - it never discards real precision, since integer
+     * inputs cannot produce more than one meaningful decimal digit.
      * @param {{stamina: number, intelligence: number, attack: number, defense: number, melee: number, ranged: number, magic: number}} levels
      * @returns {number}
      */
-    function calculateWeightedCombatScore(levels) {
+    function calculateRawCombatLevel(levels) {
         const { stamina, intelligence, attack, defense, melee, ranged, magic } = levels;
         const combatStyleMax = Math.max(melee, ranged, magic);
         const primaryMax = Math.max(attack, defense, melee, ranged, magic);
-        return 0.1 * (stamina + intelligence + attack + defense + combatStyleMax) + 0.5 * primaryMax;
+        const raw = 0.1 * (stamina + intelligence + attack + defense + combatStyleMax) + 0.5 * primaryMax;
+        return Math.round(raw * 10) / 10;
     }
 
     /**
-     * Clamp a continuous combat score for display so it never contradicts the native integer
-     * Combat Level: bounded to [nativeLevel, nativeLevel + 0.99], truncated (never rounded) to
-     * two decimals so a value like N.995 displays as N.99, not N+1.00.
-     * @param {number} continuousScore
-     * @param {number} nativeCombatLevel
-     * @returns {number}
+     * Compute the raw (unfloored) Combat Level from a live skills list, using only whole skill
+     * levels - no XP-within-level interpolation and no dependency on the level/XP table.
+     * @param {Array<{skillHrid: string, level: number}>|null} skills - dataManager.getSkills() shape
+     * @returns {number|null} null if required combat skill data is missing
      */
-    function clampDisplayCombatLevel(continuousScore, nativeCombatLevel) {
-        const clamped = Math.min(Math.max(continuousScore, nativeCombatLevel), nativeCombatLevel + 0.99);
-        return Math.floor(clamped * 100) / 100;
-    }
-
-    /**
-     * Compute the precise (continuous, display-only) Combat Level for a set of live skills.
-     * @param {Array<{skillHrid: string, level: number, experience: number}>|null} skills - dataManager.getSkills() shape
-     * @param {Array<number>|undefined} levelExperienceTable - Native level -> XP table
-     * @returns {{nativeCombatLevel: number, preciseValue: number}|null} null if required skill/table data is missing
-     */
-    function calculatePreciseCombatLevel(skills, levelExperienceTable) {
-        if (!skills || !levelExperienceTable) return null;
+    function calculateCombatLevelFromSkills(skills) {
+        if (!skills) return null;
 
         const skillByHrid = {};
         for (const skill of skills) {
             skillByHrid[skill.skillHrid] = skill;
         }
 
-        const integerLevels = {};
-        const fractionalLevels = {};
+        const levels = {};
         for (const [key, hrid] of Object.entries(COMBAT_SKILL_HRIDS)) {
             const skill = skillByHrid[hrid];
             if (!skill || typeof skill.level !== 'number') return null;
-            integerLevels[key] = skill.level;
-            fractionalLevels[key] = calculateFractionalSkillLevel(skill.level, skill.experience, levelExperienceTable);
+            levels[key] = skill.level;
         }
 
-        const nativeCombatLevel = Math.floor(calculateWeightedCombatScore(integerLevels));
-        const continuousScore = calculateWeightedCombatScore(fractionalLevels);
-        const preciseValue = clampDisplayCombatLevel(continuousScore, nativeCombatLevel);
-
-        return { nativeCombatLevel, preciseValue };
+        return calculateRawCombatLevel(levels);
     }
 
     /**
-     * Combat Level Progress Display
-     * Shows a continuous "weighted progress toward the next level" number next to the
-     * persistent Combat entry in the left sidebar, e.g. 94.80 next to the native 94.
+     * Decimal Combat Level Display
+     * Shows the unfloored Combat Level formula value, computed from current whole skill levels,
+     * next to the persistent Combat entry in the left sidebar (e.g. 133.2 next to the native 133).
      *
-     * Display-only: never replaces or feeds into combatDetails.combatLevel or any
-     * gameplay-affecting calculation (Combat Sim, Labyrinth, party requirements, etc.).
+     * Display-only: it never overwrites the native integer node, never feeds Level Malus (which
+     * uses the same floored Combat Level the game displays - see calculateLevelGapDebuff()'s doc
+     * comment), and must never be XP-interpolated (no fractional skill levels from XP progress).
      */
 
 
@@ -810,7 +774,7 @@
         }
 
         /**
-         * Recompute and render (or clear) the precise Combat Level companion span
+         * Recompute and render (or clear) the decimal Combat Level companion span
          */
         update() {
             const navRow = this.findCombatNavRow();
@@ -824,10 +788,9 @@
             }
 
             const skills = dataManager.getSkills();
-            const levelExperienceTable = dataManager.getInitClientData()?.levelExperienceTable;
-            const result = calculatePreciseCombatLevel(skills, levelExperienceTable);
+            const rawCombatLevel = calculateCombatLevelFromSkills(skills);
 
-            if (!result) {
+            if (rawCombatLevel === null) {
                 textContainer.querySelector(`.${CSS_CLASS$1}`)?.remove();
                 return;
             }
@@ -838,7 +801,7 @@
             }
 
             // Appended as a child of the native level span (never overwriting its own "150" text
-            // node) rather than a flex sibling, so it reads flush as one number ("150.49") instead
+            // node) rather than a flex sibling, so it reads flush as one number ("150.2") instead
             // of picking up the textContainer's flex gap between label/level as visible whitespace.
             let span = levelSpan.querySelector(`.${CSS_CLASS$1}`);
             if (!span) {
@@ -847,9 +810,9 @@
                 levelSpan.appendChild(span);
             }
 
-            const decimalText = result.preciseValue.toFixed(2).split('.')[1];
+            const decimalText = rawCombatLevel.toFixed(1).split('.')[1];
             span.textContent = `.${decimalText}`;
-            span.title = `Native Combat Level: ${result.nativeCombatLevel} · weighted progress toward the next level`;
+            span.title = `Combat Level from current whole skill levels · native display: ${Math.floor(rawCombatLevel)}`;
         }
 
         /**
@@ -7840,14 +7803,22 @@ ${starCSS}
     /**
      * Calculate the level-gap debuff for one party member given their combat level and the party's
      * highest combat level. Shared by Combat Sim (simulated party loadouts) and Combat Stats
-     * (real live encounters) so both agree on the exact same 1.2-ratio rule.
+     * (real live encounters) so both agree on the exact same eligibility rule.
+     *
+     * Per the official MWI Game Guide, both conditions are required: the player must be more than
+     * 20% lower AND at least 10 Combat Levels below the party's highest combat level. `combatLevel`
+     * and `maxCombatLevel` must be the canonical (floored) Combat Level - the same integer the game
+     * computes via `getCombatLevel()` and shows as `combatDetails.combatLevel` - since that is the
+     * only Combat Level concept evidenced anywhere in the game's client code or guide; there is no
+     * independent evidence of a separate raw/pre-floor value feeding this check.
      * @param {number} combatLevel - This player's combat level
      * @param {number} maxCombatLevel - The party's highest combat level
      * @returns {number} Debuff as a negative decimal (0 = no debuff, e.g. -0.3 = -30%)
      */
     function calculateLevelGapDebuff(combatLevel, maxCombatLevel) {
         const ratio = maxCombatLevel / combatLevel;
-        if (ratio <= 1.2) {
+        const gap = maxCombatLevel - combatLevel;
+        if (ratio <= 1.2 || gap < 10) {
             return 0;
         }
         const maxDebuff = 0.9;
@@ -7856,19 +7827,28 @@ ${starCSS}
     }
 
     /**
-     * Calculate combat level for level gap debuff.
-     * @param {Object} dto - Player DTO
+     * Calculate the canonical (floored) combat level from any object exposing the game's own
+     * combatDetails-shaped whole-skill-level fields (staminaLevel, intelligenceLevel, attackLevel,
+     * defenseLevel, meleeLevel, rangedLevel, magicLevel) - the same shape as a simulated player DTO
+     * here in Combat Sim. Combat Stats instead reads the native `combatDetails.combatLevel` field
+     * directly from live `new_battle` data rather than recomputing it, since that field already is
+     * the canonical value; Combat Sim has no such native field for a simulated party and must derive
+     * the equivalent value from the same official formula (see `calculateRawCombatLevel()`), floored
+     * the same way the game itself floors it.
+     * @param {{staminaLevel: number, intelligenceLevel: number, attackLevel: number, defenseLevel: number, meleeLevel: number, rangedLevel: number, magicLevel: number}} levelFields
      * @returns {number} Combat level
      */
-    function calcCombatLevel(dto) {
+    function calculateCombatLevelFromLevelFields(levelFields) {
         return Math.floor(
-            0.1 *
-                (dto.staminaLevel +
-                    dto.intelligenceLevel +
-                    dto.attackLevel +
-                    dto.defenseLevel +
-                    Math.max(dto.meleeLevel, dto.rangedLevel, dto.magicLevel)) +
-                0.5 * Math.max(dto.attackLevel, dto.defenseLevel, dto.meleeLevel, dto.rangedLevel, dto.magicLevel)
+            calculateRawCombatLevel({
+                stamina: levelFields.staminaLevel,
+                intelligence: levelFields.intelligenceLevel,
+                attack: levelFields.attackLevel,
+                defense: levelFields.defenseLevel,
+                melee: levelFields.meleeLevel,
+                ranged: levelFields.rangedLevel,
+                magic: levelFields.magicLevel,
+            })
         );
     }
 
@@ -7946,7 +7926,7 @@ ${starCSS}
 
         // Calculate level gap debuff
         if (players.length > 1) {
-            const levels = players.map((p) => calcCombatLevel(p));
+            const levels = players.map((p) => calculateCombatLevelFromLevelFields(p));
             const maxCombatLevel = Math.max(...levels);
 
             for (let i = 0; i < players.length; i++) {
