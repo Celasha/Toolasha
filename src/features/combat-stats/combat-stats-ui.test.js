@@ -69,6 +69,12 @@ describe('getRunwayColor', () => {
         expect(getRunwayColor(6 * 3600)).toBe('#f0a830');
     });
 
+    test('threshold 0 disables the visual warning - never amber regardless of runway', () => {
+        mocks.threshold = 0;
+        expect(getRunwayColor(6 * 3600)).toBe('#888');
+        expect(getRunwayColor(1)).toBe('#888');
+    });
+
     test('is muted gray when comfortably above the warning threshold', () => {
         mocks.threshold = 12;
         expect(getRunwayColor(30 * 3600)).toBe('#888');

@@ -291,6 +291,18 @@ describe('calculatePlayerStats - actualVsExpected (RNG Delta)', () => {
         expect(stats.actualVsExpected).toBeNull();
     });
 
+    test('is null for dungeons even with a full sample - the current player totalLootMap Combat Stats observes never reflects a dungeon completion reward, so Actual cannot be proven correct there', () => {
+        const stats = calculatePlayerStats(basePlayerData(), 3600, {
+            expectedDropsMap: new Map([['/items/dungeon_reward', 2]]),
+            sampleSize: 3,
+            elapsedSeconds: 3600,
+            actualLootSinceTracking: [],
+            isDungeon: true,
+        });
+
+        expect(stats.actualVsExpected).toBeNull();
+    });
+
     test('computes a positive RNG delta when actual loot outvalues expected loot over the same window', () => {
         const stats = calculatePlayerStats(basePlayerData(), 3600, {
             expectedDropsMap: new Map([['/items/log', 10]]),

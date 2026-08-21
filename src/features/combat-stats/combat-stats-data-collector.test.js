@@ -205,66 +205,44 @@ describe('CombatStatsDataCollector character-scoped persistence', () => {
     });
 });
 
-describe('CombatStatsDataCollector runway warning', () => {
-    test('fires once when crossing from above to below the threshold', async () => {
+describe('CombatStatsDataCollector consumable runway - no browser notification path', () => {
+    test('initialize never touches Notification.requestPermission', async () => {
         const collector = new CombatStatsDataCollector();
-        await collector.requestRunwayNotificationPermission();
+        await collector.initialize();
 
-        collector.checkRunwayWarning('/items/coffee', 20 * 3600); // above 12h threshold
-        collector.checkRunwayWarning('/items/coffee', 5 * 3600); // crosses below
-
-        expect(globalThis.Notification).toHaveBeenCalledTimes(1);
-        expect(globalThis.Notification.mock.calls[0][1].tag).toBe('combat-consumable-runway-/items/coffee');
+        expect(globalThis.Notification.requestPermission).not.toHaveBeenCalled();
+        collector.cleanup();
     });
 
-    test('does not spam on repeated calls while still below the threshold', async () => {
+    test('a low-runway current-player consumable never creates a browser Notification', async () => {
         const collector = new CombatStatsDataCollector();
-        await collector.requestRunwayNotificationPermission();
+        collector.isInitialized = true;
+        collector.characterId = 'character-a';
+        mocks.currentCharacterId = 'character-a';
 
-        collector.checkRunwayWarning('/items/coffee', 5 * 3600);
-        collector.checkRunwayWarning('/items/coffee', 4 * 3600);
-        collector.checkRunwayWarning('/items/coffee', 3 * 3600);
-
-        expect(globalThis.Notification).toHaveBeenCalledTimes(1);
-    });
-
-    test('re-arms after inventory is replenished back above the threshold', async () => {
-        const collector = new CombatStatsDataCollector();
-        await collector.requestRunwayNotificationPermission();
-
-        collector.checkRunwayWarning('/items/coffee', 5 * 3600); // fires
-        collector.checkRunwayWarning('/items/coffee', 30 * 3600); // replenished, re-arm
-        collector.checkRunwayWarning('/items/coffee', 5 * 3600); // fires again
-
-        expect(globalThis.Notification).toHaveBeenCalledTimes(2);
-    });
-
-    test('threshold of 0 disables the warning entirely', async () => {
-        mocks.settingValues.combatStats_runwayWarningThreshold = 0;
-        const collector = new CombatStatsDataCollector();
-        await collector.requestRunwayNotificationPermission();
-
-        collector.checkRunwayWarning('/items/coffee', 0);
+        await collector.onNewBattle(
+            {
+                battleId: 1,
+                combatStartTime: new Date().toISOString(),
+                players: [
+                    {
+                        character: { id: 'character-a', name: 'Self' },
+                        combatConsumables: [{ itemHrid: '/items/coffee', count: 0 }],
+                        totalLootMap: {},
+                        totalSkillExperienceMap: {},
+                    },
+                ],
+            },
+            collector.lifecycleGeneration
+        );
 
         expect(globalThis.Notification).not.toHaveBeenCalled();
     });
 
-    test('cleanup resets warning-crossed state so a new character starts unarmed, not pre-tripped', async () => {
-        const collector = new CombatStatsDataCollector();
-        await collector.requestRunwayNotificationPermission();
-        collector.checkRunwayWarning('/items/coffee', 5 * 3600);
-        expect(collector.wasBelowRunwayThreshold['/items/coffee']).toBe(true);
-
-        collector.cleanup();
-
-        expect(collector.wasBelowRunwayThreshold).toEqual({});
-    });
-
-    test('a party member consumable running low never triggers a notification', async () => {
+    test('a party member consumable running low never creates a browser Notification', async () => {
         const collector = new CombatStatsDataCollector();
         collector.isInitialized = true;
         collector.characterId = 'character-a';
-        collector.runwayNotificationPermissionGranted = true;
         mocks.currentCharacterId = 'character-a';
 
         await collector.onNewBattle(
@@ -290,6 +268,15 @@ describe('CombatStatsDataCollector runway warning', () => {
         );
 
         expect(globalThis.Notification).not.toHaveBeenCalled();
+    });
+
+    test('cleanup does not throw and leaves no notification-permission bookkeeping behind', async () => {
+        const collector = new CombatStatsDataCollector();
+        await collector.initialize();
+
+        expect(() => collector.cleanup()).not.toThrow();
+        expect(collector.runwayNotificationPermissionGranted).toBeUndefined();
+        expect(collector.wasBelowRunwayThreshold).toBeUndefined();
     });
 });
 
@@ -580,5 +567,166 @@ describe('CombatStatsDataCollector expected-loot integration', () => {
 
         expect(collector.actualLootSnapshot).toBeNull();
         expect(collector.getActualLootSinceTrackingStarted()).toEqual([]);
+    });
+});
+
+describe('CombatStatsDataCollector Loot Luck sample window (exact start/end boundaries)', () => {
+    function regularZoneAction(zoneHrid = '/actions/combat/rat', difficultyTier = 0) {
+        return { actionHrid: zoneHrid, isDone: false, difficultyTier };
+    }
+
+    function battlePayload({ battleId, monsterHrids }) {
+        return {
+            battleId,
+            combatStartTime: new Date().toISOString(),
+            monsters: monsterHrids.map((hrid) => ({ hrid })),
+            players: [
+                {
+                    character: { id: 'character-a', name: 'Self' },
+                    combatConsumables: [],
+                    totalLootMap: {},
+                    totalSkillExperienceMap: {},
+                    combatDetails: { combatLevel: 100, combatStats: {} },
+                },
+            ],
+        };
+    }
+
+    async function makeInitializedCollector() {
+        const collector = new CombatStatsDataCollector();
+        collector.isInitialized = true;
+        collector.characterId = 'character-a';
+        mocks.currentCharacterId = 'character-a';
+        return collector;
+    }
+
+    beforeEach(() => {
+        dataManager.getCurrentActions.mockReturnValue([regularZoneAction()]);
+        dataManager.getActionDetails.mockReturnValue({ combatZoneInfo: { isDungeon: false } });
+        vi.useFakeTimers();
+        vi.setSystemTime(0);
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    test('the first observed battle establishes the baseline; elapsed stays 0 until the next battle confirms it completed', async () => {
+        const collector = await makeInitializedCollector();
+
+        await collector.onNewBattle(
+            battlePayload({ battleId: 1, monsterHrids: ['/monsters/rat'] }),
+            collector.lifecycleGeneration
+        );
+
+        expect(collector.expectedLootTracker.getSampleSize()).toBe(0);
+        expect(collector.expectedLootTracker.getElapsedSeconds()).toBe(0);
+    });
+
+    test('next battle at t=60s confirms one completed encounter with a real 60s duration, not ~0s', async () => {
+        const collector = await makeInitializedCollector();
+
+        await collector.onNewBattle(
+            battlePayload({ battleId: 1, monsterHrids: ['/monsters/rat'] }),
+            collector.lifecycleGeneration
+        );
+
+        vi.setSystemTime(60_000);
+        await collector.onNewBattle(
+            battlePayload({ battleId: 2, monsterHrids: ['/monsters/rat'] }),
+            collector.lifecycleGeneration
+        );
+
+        expect(collector.expectedLootTracker.getSampleSize()).toBe(1);
+        expect(collector.expectedLootTracker.getElapsedSeconds()).toBe(60);
+    });
+
+    test('elapsed sample does not drift merely because time passes with no new completed encounter', async () => {
+        const collector = await makeInitializedCollector();
+
+        await collector.onNewBattle(
+            battlePayload({ battleId: 1, monsterHrids: ['/monsters/rat'] }),
+            collector.lifecycleGeneration
+        );
+        vi.setSystemTime(60_000);
+        await collector.onNewBattle(
+            battlePayload({ battleId: 2, monsterHrids: ['/monsters/rat'] }),
+            collector.lifecycleGeneration
+        );
+
+        // 30s pass with no new new_battle message at all (e.g. user just left the stats popup
+        // open) - the denominator must not silently keep growing off Date.now().
+        vi.setSystemTime(90_000);
+
+        expect(collector.expectedLootTracker.getSampleSize()).toBe(1);
+        expect(collector.expectedLootTracker.getElapsedSeconds()).toBe(60);
+    });
+
+    test('a third battle at t=120s confirms a second completed encounter, extending the sample end to 120s', async () => {
+        const collector = await makeInitializedCollector();
+
+        await collector.onNewBattle(
+            battlePayload({ battleId: 1, monsterHrids: ['/monsters/rat'] }),
+            collector.lifecycleGeneration
+        );
+        vi.setSystemTime(60_000);
+        await collector.onNewBattle(
+            battlePayload({ battleId: 2, monsterHrids: ['/monsters/rat'] }),
+            collector.lifecycleGeneration
+        );
+        vi.setSystemTime(120_000);
+        await collector.onNewBattle(
+            battlePayload({ battleId: 3, monsterHrids: ['/monsters/rat'] }),
+            collector.lifecycleGeneration
+        );
+
+        expect(collector.expectedLootTracker.getSampleSize()).toBe(2);
+        expect(collector.expectedLootTracker.getElapsedSeconds()).toBe(120);
+    });
+
+    test('the currently-active encounter never extends the sample end before it completes', async () => {
+        const collector = await makeInitializedCollector();
+
+        await collector.onNewBattle(
+            battlePayload({ battleId: 1, monsterHrids: ['/monsters/rat'] }),
+            collector.lifecycleGeneration
+        );
+        vi.setSystemTime(60_000);
+        await collector.onNewBattle(
+            battlePayload({ battleId: 2, monsterHrids: ['/monsters/rat'] }),
+            collector.lifecycleGeneration
+        );
+        const elapsedBeforeThirdBattle = collector.expectedLootTracker.getElapsedSeconds();
+
+        // Battle 2 is still active (no battle 3 yet) - time passing must not move the boundary.
+        vi.setSystemTime(100_000);
+
+        expect(collector.expectedLootTracker.getElapsedSeconds()).toBe(elapsedBeforeThirdBattle);
+    });
+
+    test('a zone change resets the sample start/end boundaries in lockstep with the Actual baseline', async () => {
+        const collector = await makeInitializedCollector();
+
+        await collector.onNewBattle(
+            battlePayload({ battleId: 1, monsterHrids: ['/monsters/rat'] }),
+            collector.lifecycleGeneration
+        );
+        vi.setSystemTime(60_000);
+        await collector.onNewBattle(
+            battlePayload({ battleId: 2, monsterHrids: ['/monsters/rat'] }),
+            collector.lifecycleGeneration
+        );
+        expect(collector.expectedLootTracker.getSampleSize()).toBe(1);
+
+        dataManager.getCurrentActions.mockReturnValue([regularZoneAction('/actions/combat/alligator')]);
+        vi.setSystemTime(90_000);
+        await collector.onNewBattle(
+            battlePayload({ battleId: 3, monsterHrids: ['/monsters/alligator'] }),
+            collector.lifecycleGeneration
+        );
+
+        // New zone, no completion yet - sample must restart clean, not inherit the old window.
+        expect(collector.expectedLootTracker.getSampleSize()).toBe(0);
+        expect(collector.expectedLootTracker.getElapsedSeconds()).toBe(0);
     });
 });

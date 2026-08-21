@@ -437,9 +437,17 @@ export function calculatePlayerStats(playerData, durationSeconds = null, expecte
             : null;
 
     // Actual vs Expected loot / RNG Delta - current player only, and only once at least one
-    // encounter has completed (never fabricated from zero completed samples)
+    // encounter has completed (never fabricated from zero completed samples). Dungeons are
+    // excluded: the current player's totalLootMap (the only Actual-loot source Combat Stats
+    // observes) never reflects a dungeon's completion reward - that reward is delivered via a
+    // different field entirely, so an "Actual" baseline for dungeons cannot be proven correct.
     let actualVsExpected = null;
-    if (expectedLootData && expectedLootData.sampleSize > 0 && expectedLootData.elapsedSeconds > 0) {
+    if (
+        expectedLootData &&
+        !expectedLootData.isDungeon &&
+        expectedLootData.sampleSize > 0 &&
+        expectedLootData.elapsedSeconds > 0
+    ) {
         // Both sides must cover the exact same window. Reusing the session-wide totalLootMap for
         // "Actual" would compare a short Expected sample against a much longer Actual window
         // (e.g. the script attaching mid-fight), silently mis-scaling the result - so Actual here

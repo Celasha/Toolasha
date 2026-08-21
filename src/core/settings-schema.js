@@ -1761,7 +1761,7 @@ export const settingsGroups = {
                 label: 'Combat Statistics: consumable runway warning threshold (hours)',
                 type: 'number',
                 default: 12,
-                help: 'Send a browser notification when a combat consumable is projected to run out within this many hours. Set to 0 to disable.',
+                help: 'Highlight combat consumables projected to run out within this many hours. Set to 0 to disable warnings.',
             },
             combatStatsChatMessage: {
                 id: 'combatStatsChatMessage',
