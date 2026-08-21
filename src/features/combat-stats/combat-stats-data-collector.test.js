@@ -48,6 +48,25 @@ vi.mock('../../core/config.js', () => ({
 
 vi.mock('../combat-sim/combat-sim-adapter.js', () => ({
     calculateLevelGapDebuff: vi.fn(() => 0),
+    calculateCombatLevelFromLevelFields: vi.fn((levelFields) => {
+        const combatStyleMax = Math.max(levelFields.meleeLevel, levelFields.rangedLevel, levelFields.magicLevel);
+        const primaryMax = Math.max(
+            levelFields.attackLevel,
+            levelFields.defenseLevel,
+            levelFields.meleeLevel,
+            levelFields.rangedLevel,
+            levelFields.magicLevel
+        );
+        const raw =
+            0.1 *
+                (levelFields.staminaLevel +
+                    levelFields.intelligenceLevel +
+                    levelFields.attackLevel +
+                    levelFields.defenseLevel +
+                    combatStyleMax) +
+            0.5 * primaryMax;
+        return Math.round(raw * 10) / 10;
+    }),
 }));
 
 vi.mock('../combat/dungeon-tracker.js', () => ({
@@ -60,6 +79,7 @@ vi.mock('../combat/dungeon-tracker.js', () => ({
 import storage from '../../core/storage.js';
 import dataManager from '../../core/data-manager.js';
 import dungeonTracker from '../combat/dungeon-tracker.js';
+import { calculateLevelGapDebuff } from '../combat-sim/combat-sim-adapter.js';
 import { CombatStatsDataCollector } from './combat-stats-data-collector.js';
 
 beforeEach(() => {
@@ -417,6 +437,62 @@ describe('CombatStatsDataCollector expected-loot integration', () => {
 
         expect(collector.expectedLootTracker.hasData()).toBe(false);
         expect(collector.pendingEncounter).not.toBeNull(); // this battle's own snapshot for the next completion
+    });
+
+    test('derives Level Malus input from the same raw whole-skill Combat Level formula as Combat Sim, not the floored combatDetails.combatLevel', async () => {
+        dataManager.getCurrentActions.mockReturnValue([regularZoneAction()]);
+        dataManager.getActionDetails.mockReturnValue({ combatZoneInfo: { isDungeon: false } });
+        const collector = await makeInitializedCollector();
+        calculateLevelGapDebuff.mockClear();
+
+        // Player report example: raw CL = 133.2, but the game's own floored combatLevel is 133.
+        const selfLevelFields = {
+            staminaLevel: 125,
+            intelligenceLevel: 124,
+            attackLevel: 130,
+            defenseLevel: 125,
+            meleeLevel: 105,
+            rangedLevel: 138,
+            magicLevel: 77,
+        };
+        // All 300s -> raw CL = 300 exactly, well above self.
+        const allyLevelFields = {
+            staminaLevel: 300,
+            intelligenceLevel: 300,
+            attackLevel: 300,
+            defenseLevel: 300,
+            meleeLevel: 300,
+            rangedLevel: 300,
+            magicLevel: 300,
+        };
+
+        await collector.onNewBattle(
+            {
+                battleId: 1,
+                combatStartTime: new Date().toISOString(),
+                monsters: [{ hrid: '/monsters/rat' }],
+                players: [
+                    {
+                        character: { id: 'character-a', name: 'Self' },
+                        combatConsumables: [],
+                        totalLootMap: {},
+                        totalSkillExperienceMap: {},
+                        combatDetails: { combatLevel: 133, combatStats: {}, ...selfLevelFields },
+                    },
+                    {
+                        character: { id: 'character-b', name: 'Ally' },
+                        combatConsumables: [],
+                        totalLootMap: {},
+                        totalSkillExperienceMap: {},
+                        combatDetails: { combatLevel: 300, combatStats: {}, ...allyLevelFields },
+                    },
+                ],
+            },
+            collector.lifecycleGeneration
+        );
+
+        // Called with the raw 133.2/300, never with the floored 133/300.
+        expect(calculateLevelGapDebuff).toHaveBeenCalledWith(133.2, 300);
     });
 
     test('cleanup resets the expected-loot tracker and pending encounter (no cross-character leakage)', async () => {

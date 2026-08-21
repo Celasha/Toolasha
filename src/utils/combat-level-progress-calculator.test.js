@@ -1,45 +1,37 @@
 import { describe, expect, test } from 'vitest';
-import {
-    calculateFractionalSkillLevel,
-    calculateWeightedCombatScore,
-    clampDisplayCombatLevel,
-    calculatePreciseCombatLevel,
-} from './combat-level-progress-calculator.js';
+import { calculateRawCombatLevel, calculateCombatLevelFromSkills } from './combat-level-progress-calculator.js';
 
-const TABLE = [0, 0, 33, 76, 132, 202, 286, 386, 503, 637, 791];
-
-describe('calculateFractionalSkillLevel', () => {
-    test('computes exact fractional progress from the native XP table', () => {
-        // Level 3 threshold is 76, level 4 threshold is 132. Halfway through: 76 + (132-76)/2 = 104
-        const result = calculateFractionalSkillLevel(3, 104, TABLE);
-        expect(result).toBeCloseTo(3.5, 5);
+describe('calculateRawCombatLevel', () => {
+    test('matches the player-reported example: whole skill levels -> 133.2, not 133.39', () => {
+        // Stamina 125, Intelligence 124, Attack 130, Defense 125, Melee 105, Ranged 138, Magic 77
+        const result = calculateRawCombatLevel({
+            stamina: 125,
+            intelligence: 124,
+            attack: 130,
+            defense: 125,
+            melee: 105,
+            ranged: 138,
+            magic: 77,
+        });
+        expect(result).toBe(133.2);
     });
 
-    test('is zero progress exactly at a level threshold', () => {
-        const result = calculateFractionalSkillLevel(3, 76, TABLE);
-        expect(result).toBe(3);
+    test('an exact result has no float noise (e.g. 0.1 * 3 !== 0.30000000000000004)', () => {
+        // stamina+intelligence+attack+defense+max(melee,ranged,magic) = 3, primaryMax = attack = 1
+        const result = calculateRawCombatLevel({
+            stamina: 1,
+            intelligence: 1,
+            attack: 1,
+            defense: 0,
+            melee: 0,
+            ranged: 0,
+            magic: 0,
+        });
+        expect(result).toBe(0.8);
     });
 
-    test('approaches but never reaches the next integer level just below the next threshold', () => {
-        const result = calculateFractionalSkillLevel(3, 131, TABLE);
-        expect(result).toBeGreaterThan(3.9);
-        expect(result).toBeLessThan(4);
-    });
-
-    test('falls back to the plain integer level at max level (no next-level entry)', () => {
-        const shortTable = [0, 0, 33];
-        const result = calculateFractionalSkillLevel(2, 40, shortTable);
-        expect(result).toBe(2);
-    });
-
-    test('falls back to the plain integer level when no table is supplied', () => {
-        expect(calculateFractionalSkillLevel(5, 999, undefined)).toBe(5);
-    });
-});
-
-describe('calculateWeightedCombatScore', () => {
-    function levels(overrides = {}) {
-        return {
+    test('the combat-style max is max(melee, ranged, magic)', () => {
+        const base = calculateRawCombatLevel({
             stamina: 50,
             intelligence: 50,
             attack: 50,
@@ -47,59 +39,58 @@ describe('calculateWeightedCombatScore', () => {
             melee: 50,
             ranged: 30,
             magic: 30,
-            ...overrides,
-        };
-    }
-
-    test('the combat-style max (melee/ranged/magic) changes when fractional levels cross', () => {
-        const base = calculateWeightedCombatScore(levels({ melee: 50.2, ranged: 50.1, magic: 30 }));
-        const crossed = calculateWeightedCombatScore(levels({ melee: 50.2, ranged: 50.3, magic: 30 }));
-        // Once ranged's fractional level overtakes melee's, it becomes the combat-style max,
-        // strictly increasing the weighted score even though melee did not change.
-        expect(crossed).toBeGreaterThan(base);
+        });
+        const higherRanged = calculateRawCombatLevel({
+            stamina: 50,
+            intelligence: 50,
+            attack: 50,
+            defense: 50,
+            melee: 50,
+            ranged: 90,
+            magic: 30,
+        });
+        expect(higherRanged).toBeGreaterThan(base);
     });
 
-    test('the primary max (attack/defense/combat-style) changes when a fractional level crosses it', () => {
-        const base = calculateWeightedCombatScore(levels({ attack: 60, defense: 59.9 }));
-        const crossed = calculateWeightedCombatScore(levels({ attack: 60, defense: 60.5 }));
-        expect(crossed).toBeGreaterThan(base);
+    test('the primary max is max(attack, defense, melee, ranged, magic)', () => {
+        const base = calculateRawCombatLevel({
+            stamina: 40,
+            intelligence: 35,
+            attack: 60,
+            defense: 55,
+            melee: 20,
+            ranged: 20,
+            magic: 15,
+        });
+        const higherDefense = calculateRawCombatLevel({
+            stamina: 40,
+            intelligence: 35,
+            attack: 60,
+            defense: 90,
+            melee: 20,
+            ranged: 20,
+            magic: 15,
+        });
+        expect(higherDefense).toBeGreaterThan(base);
     });
 
-    test('matches the plain native raw-score formula when given integer levels', () => {
-        const intLevels = { stamina: 40, intelligence: 35, attack: 60, defense: 55, melee: 70, ranged: 20, magic: 15 };
-        const expected = 0.1 * (40 + 35 + 60 + 55 + Math.max(70, 20, 15)) + 0.5 * Math.max(60, 55, 70, 20, 15);
-        expect(calculateWeightedCombatScore(intLevels)).toBeCloseTo(expected, 10);
+    test('matches the plain formula for a fresh/low character', () => {
+        const result = calculateRawCombatLevel({
+            stamina: 1,
+            intelligence: 1,
+            attack: 1,
+            defense: 1,
+            melee: 1,
+            ranged: 1,
+            magic: 1,
+        });
+        const expected = 0.1 * (1 + 1 + 1 + 1 + 1) + 0.5 * 1;
+        expect(result).toBeCloseTo(expected, 10);
     });
 });
 
-describe('clampDisplayCombatLevel', () => {
-    test('a continuous score below the native integer level cannot occur after clamping', () => {
-        expect(clampDisplayCombatLevel(93.5, 94)).toBe(94);
-    });
-
-    test('a continuous score at or above the next native integer displays at most N.99', () => {
-        expect(clampDisplayCombatLevel(96, 94)).toBe(94.99);
-        expect(clampDisplayCombatLevel(95, 94)).toBe(94.99);
-    });
-
-    test('truncates rather than rounds, so N.995 never displays as N+1.00', () => {
-        expect(clampDisplayCombatLevel(94.995, 94)).toBe(94.99);
-    });
-
-    test('truncates an in-range value down instead of rounding to the nearest cent', () => {
-        // 94.986 would round to 94.99 with toFixed(2); truncation must give 94.98.
-        expect(clampDisplayCombatLevel(94.986, 94)).toBe(94.98);
-    });
-
-    test('passes through an exact value with no truncation drift', () => {
-        expect(clampDisplayCombatLevel(94.0, 94)).toBe(94);
-    });
-});
-
-describe('calculatePreciseCombatLevel', () => {
-    const table = [0, 0, 33, 76, 132, 202, 286, 386, 503, 637, 791, 964, 1159];
-
-    function skill(hrid, level, experience) {
+describe('calculateCombatLevelFromSkills', () => {
+    function skill(hrid, level, experience = 0) {
         return { skillHrid: hrid, level, experience };
     }
 
@@ -113,48 +104,63 @@ describe('calculatePreciseCombatLevel', () => {
         magic = 3,
     } = {}) {
         return [
-            skill('/skills/stamina', stamina, table[stamina] || 0),
-            skill('/skills/intelligence', intelligence, table[intelligence] || 0),
-            skill('/skills/attack', attack, table[attack] || 0),
-            skill('/skills/defense', defense, table[defense] || 0),
-            skill('/skills/melee', melee, table[melee] || 0),
-            skill('/skills/ranged', ranged, table[ranged] || 0),
-            skill('/skills/magic', magic, table[magic] || 0),
+            skill('/skills/stamina', stamina),
+            skill('/skills/intelligence', intelligence),
+            skill('/skills/attack', attack),
+            skill('/skills/defense', defense),
+            skill('/skills/melee', melee),
+            skill('/skills/ranged', ranged),
+            skill('/skills/magic', magic),
         ];
     }
 
-    test('native level increasing (via higher integer skill levels) advances the displayed whole number', () => {
-        const lower = calculatePreciseCombatLevel(makeSkills({ attack: 5 }), table);
-        const higher = calculatePreciseCombatLevel(makeSkills({ attack: 10 }), table);
-        expect(higher.nativeCombatLevel).toBeGreaterThan(lower.nativeCombatLevel);
-        expect(higher.preciseValue).toBeGreaterThanOrEqual(higher.nativeCombatLevel);
+    test('computes the raw CL from whole skill levels only', () => {
+        const result = calculateCombatLevelFromSkills(
+            makeSkills({
+                stamina: 125,
+                intelligence: 124,
+                attack: 130,
+                defense: 125,
+                melee: 105,
+                ranged: 138,
+                magic: 77,
+            })
+        );
+        expect(result).toBe(133.2);
+    });
+
+    test('changing XP while all whole skill levels remain unchanged does not change the result', () => {
+        const skills = makeSkills();
+        const withXpProgress = skills.map((s) => ({ ...s, experience: s.experience + 999 }));
+
+        expect(calculateCombatLevelFromSkills(skills)).toBe(calculateCombatLevelFromSkills(withXpProgress));
+    });
+
+    test('a real whole-skill level-up changes the result according to the formula', () => {
+        const before = calculateCombatLevelFromSkills(makeSkills({ attack: 5 }));
+        const after = calculateCombatLevelFromSkills(makeSkills({ attack: 10 }));
+        expect(after).toBeGreaterThan(before);
+    });
+
+    test('does not require a level/XP table - works from levels alone', () => {
+        expect(calculateCombatLevelFromSkills(makeSkills())).not.toBeNull();
+    });
+
+    test('returns null when a required combat skill is missing from the live skills list', () => {
+        const incomplete = makeSkills().filter((s) => s.skillHrid !== '/skills/magic');
+        expect(calculateCombatLevelFromSkills(incomplete)).toBeNull();
+    });
+
+    test('returns null when no skills are supplied', () => {
+        expect(calculateCombatLevelFromSkills(null)).toBeNull();
     });
 
     test('is display-only: never mutates the skills array or its entries', () => {
         const skills = makeSkills();
         const snapshot = JSON.parse(JSON.stringify(skills));
 
-        calculatePreciseCombatLevel(skills, table);
+        calculateCombatLevelFromSkills(skills);
 
         expect(skills).toEqual(snapshot);
-    });
-
-    test('returns null when a required combat skill is missing from the live skills list', () => {
-        const incomplete = makeSkills().filter((s) => s.skillHrid !== '/skills/magic');
-        expect(calculatePreciseCombatLevel(incomplete, table)).toBeNull();
-    });
-
-    test('returns null when no skills are supplied', () => {
-        expect(calculatePreciseCombatLevel(null, table)).toBeNull();
-    });
-
-    test('returns null when no level experience table is supplied', () => {
-        expect(calculatePreciseCombatLevel(makeSkills(), undefined)).toBeNull();
-    });
-
-    test('the precise value never falls below the native integer level it is paired with', () => {
-        const result = calculatePreciseCombatLevel(makeSkills({ attack: 8, defense: 7 }), table);
-        expect(result.preciseValue).toBeGreaterThanOrEqual(result.nativeCombatLevel);
-        expect(result.preciseValue).toBeLessThanOrEqual(result.nativeCombatLevel + 0.99);
     });
 });
