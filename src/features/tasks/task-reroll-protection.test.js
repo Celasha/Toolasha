@@ -106,3 +106,64 @@ describe('TaskRerollProtection — cap protection storage is character-scoped', 
         expect(reloaded.cowbellThreshold).toBe(2);
     });
 });
+
+describe('TaskRerollProtection — one-time migration from the legacy global cap-protection keys', () => {
+    beforeEach(() => {
+        vi.resetModules();
+        Object.keys(storageData).forEach((k) => delete storageData[k]);
+    });
+
+    test('a character with no scoped value yet inherits the legacy global value and persists it as its own', async () => {
+        storageData['taskCapProtection'] = true;
+        storageData['taskCapCoinThreshold'] = 80000;
+        storageData['taskCapCowbellThreshold'] = 2;
+
+        const dataManager = (await import('../../core/data-manager.js')).default;
+        dataManager.getCurrentCharacterId.mockReturnValue('111111');
+
+        const { TaskRerollProtection } = await import('./task-reroll-protection.js');
+        const feature = new TaskRerollProtection();
+        await feature.initialize();
+
+        expect(feature.capProtectionEnabled).toBe(true);
+        expect(feature.coinThreshold).toBe(80000);
+        expect(feature.cowbellThreshold).toBe(2);
+        expect(storageData['taskCapProtection_111111']).toBe(true);
+        expect(storageData['taskCapCoinThreshold_111111']).toBe(80000);
+        expect(storageData['taskCapCowbellThreshold_111111']).toBe(2);
+    });
+
+    test('once a character has a scoped value, later changes to the legacy global key no longer affect it', async () => {
+        storageData['taskCapProtection'] = true;
+        storageData['taskCapCoinThreshold'] = 80000;
+        storageData['taskCapCowbellThreshold'] = 2;
+
+        const dataManager = (await import('../../core/data-manager.js')).default;
+        dataManager.getCurrentCharacterId.mockReturnValue('111111');
+
+        const { TaskRerollProtection } = await import('./task-reroll-protection.js');
+        const first = new TaskRerollProtection();
+        await first.initialize(); // migrates and persists the scoped key for 111111
+
+        // Legacy global key changes afterward (e.g. another still-unmigrated character wrote it)
+        storageData['taskCapCoinThreshold'] = 160000;
+
+        const reloaded = new TaskRerollProtection();
+        await reloaded.initialize();
+
+        expect(reloaded.coinThreshold).toBe(80000); // unaffected by the later legacy-key change
+    });
+
+    test('a character with no legacy global value and no scoped value falls back to hardcoded defaults', async () => {
+        const dataManager = (await import('../../core/data-manager.js')).default;
+        dataManager.getCurrentCharacterId.mockReturnValue('333333');
+
+        const { TaskRerollProtection } = await import('./task-reroll-protection.js');
+        const feature = new TaskRerollProtection();
+        await feature.initialize();
+
+        expect(feature.capProtectionEnabled).toBe(false);
+        expect(feature.coinThreshold).toBe(320000);
+        expect(feature.cowbellThreshold).toBe(32);
+    });
+});

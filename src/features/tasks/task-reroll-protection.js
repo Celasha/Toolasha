@@ -14,6 +14,12 @@ import storage from '../../core/storage.js';
 import webSocketHook from '../../core/websocket.js';
 
 const STORAGE_KEY_PREFIX = 'taskProtectedHrids';
+const CAP_ENABLED_KEY = 'taskCapProtection';
+const CAP_COIN_KEY = 'taskCapCoinThreshold';
+const CAP_COWBELL_KEY = 'taskCapCowbellThreshold';
+// storage.get's own defaultValue param defaults to null, so passing `undefined` to mean
+// "no value" would be swallowed by its own default substitution before we could inspect it.
+const NO_SCOPED_VALUE = Symbol('no-scoped-cap-protection-value');
 
 /**
  * Get a character-scoped storage key for the given prefix.
@@ -44,6 +50,28 @@ class TaskRerollProtection {
         this.confirmTimers = new WeakMap(); // taskCard → timeout ID
     }
 
+    /**
+     * Load cap protection settings for the current character. On a character's first load
+     * since per-character scoping was introduced, no scoped key exists yet — migrate the
+     * one-time legacy global value instead of silently resetting to defaults, then persist
+     * it under the scoped key so this only runs once per character.
+     * @private
+     */
+    async _loadCapProtection() {
+        const scopedEnabled = await storage.get(getCharacterScopedKey(CAP_ENABLED_KEY), 'settings', NO_SCOPED_VALUE);
+
+        if (scopedEnabled === NO_SCOPED_VALUE) {
+            this.capProtectionEnabled = await storage.get(CAP_ENABLED_KEY, 'settings', false);
+            this.coinThreshold = await storage.get(CAP_COIN_KEY, 'settings', 320000);
+            this.cowbellThreshold = await storage.get(CAP_COWBELL_KEY, 'settings', 32);
+            await this._saveCapProtection();
+        } else {
+            this.capProtectionEnabled = scopedEnabled;
+            this.coinThreshold = await storage.get(getCharacterScopedKey(CAP_COIN_KEY), 'settings', 320000);
+            this.cowbellThreshold = await storage.get(getCharacterScopedKey(CAP_COWBELL_KEY), 'settings', 32);
+        }
+    }
+
     async initialize() {
         if (this.isInitialized) return;
         if (!config.getSetting('taskRerollProtection')) return;
@@ -54,9 +82,7 @@ class TaskRerollProtection {
         const saved = await storage.getJSON(getStorageKey(), 'settings', []);
         this.protectedHrids = new Set(saved);
 
-        this.capProtectionEnabled = await storage.get(getCharacterScopedKey('taskCapProtection'), 'settings', false);
-        this.coinThreshold = await storage.get(getCharacterScopedKey('taskCapCoinThreshold'), 'settings', 320000);
-        this.cowbellThreshold = await storage.get(getCharacterScopedKey('taskCapCowbellThreshold'), 'settings', 32);
+        await this._loadCapProtection();
 
         // Watch for task cards appearing
         const unregister = domObserver.onClass('TaskRerollProtection', 'RandomTask_randomTask', (taskNode) => {
@@ -445,9 +471,9 @@ class TaskRerollProtection {
      * @private
      */
     async _saveCapProtection() {
-        await storage.set(getCharacterScopedKey('taskCapProtection'), this.capProtectionEnabled, 'settings');
-        await storage.set(getCharacterScopedKey('taskCapCoinThreshold'), this.coinThreshold, 'settings');
-        await storage.set(getCharacterScopedKey('taskCapCowbellThreshold'), this.cowbellThreshold, 'settings');
+        await storage.set(getCharacterScopedKey(CAP_ENABLED_KEY), this.capProtectionEnabled, 'settings');
+        await storage.set(getCharacterScopedKey(CAP_COIN_KEY), this.coinThreshold, 'settings');
+        await storage.set(getCharacterScopedKey(CAP_COWBELL_KEY), this.cowbellThreshold, 'settings');
     }
 
     /**
