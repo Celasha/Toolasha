@@ -250,7 +250,8 @@ class WebSocketHook {
             messageType === 'loadouts_updated' ||
             messageType === 'setting_updated' ||
             messageType === 'labyrinth_room_progress' ||
-            messageType === 'leaderboard_updated';
+            messageType === 'leaderboard_updated' ||
+            messageType === 'guild_updated';
 
         if (!skipDedup) {
             // Deduplicate by message content to prevent 4x JSON.parse on same message

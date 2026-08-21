@@ -108,3 +108,41 @@ describe('WebSocket hook — dispatch snapshots', () => {
         expect(calls).toEqual(['first', 'second']);
     });
 });
+
+describe('WebSocket hook — guild_updated must not be dropped by content-hash dedup', () => {
+    let webSocketHook;
+
+    beforeEach(async () => {
+        vi.resetModules();
+        const mod = await import('./websocket.js');
+        webSocketHook = mod.default;
+    });
+
+    // A real guild_updated payload's `id`/`name` alone fill the first 100 raw chars, so two
+    // consecutive updates that differ only in `experience` (further into the object) hash
+    // identically under the dedup-by-first-100-chars optimization — unless guild_updated is
+    // exempted the same way leaderboard_updated/labyrinth_updated/etc. already are.
+    function guildUpdatedMessage(experience) {
+        const guild = {
+            id: 'b6f1a2e4-8c3d-4a11-9f2b-7d5e6a8c9b10',
+            name: 'The Testers Guild',
+            level: 10,
+            createdAt: '2024-01-01T00:00:00.000Z',
+            guildType: 'standard',
+            currentWeekStartAt: '2026-08-01T00:00:00.000Z',
+            experience,
+        };
+        return JSON.stringify({ type: 'guild_updated', guild });
+    }
+
+    test('a second guild_updated with a colliding 100-char hash still reaches handlers', () => {
+        const handler = vi.fn();
+        webSocketHook.on('guild_updated', handler);
+
+        webSocketHook.processMessage(guildUpdatedMessage(2000));
+        webSocketHook.processMessage(guildUpdatedMessage(2500));
+
+        expect(handler).toHaveBeenCalledTimes(2);
+        expect(handler.mock.calls[1][0].guild.experience).toBe(2500);
+    });
+});
