@@ -22,7 +22,11 @@ import { parseArtisanBonus, getDrinkConcentration } from '../../utils/tea-parser
 import { formatPercentage, timeReadable, formatWithSeparator, formatKMB } from '../../utils/formatters.js';
 import { calculateExperienceMultiplier } from '../../utils/experience-parser.js';
 import { setReactInputValue } from '../../utils/react-input.js';
-import { calculateExpPerHour, calculateMultiLevelProgress } from '../../utils/experience-calculator.js';
+import {
+    calculateExpPerHour,
+    calculateMultiLevelProgress,
+    calculateLevelFromActions,
+} from '../../utils/experience-calculator.js';
 import { createCollapsibleSection } from '../../utils/ui-components.js';
 import { compactActionPanelSection } from './production-tools-layout.js';
 import { calculateActionsPerHour, calculateEffectiveActionsPerHour } from '../../utils/profit-helpers.js';
@@ -1438,6 +1442,34 @@ class QuickInputButtons {
             targetLevelInput.addEventListener('input', updateTargetLevel);
             targetLevelInput.addEventListener('change', updateTargetLevel);
 
+            // Reverse direction: typing a quantity directly into the queue input updates the
+            // displayed result to reflect the level/xp that quantity would reach. This never
+            // writes back into targetLevelInput, so the two listeners cannot feed each other.
+            const updateFromQuantity = () => {
+                const actionCount = parseInt(numberInput.value, 10);
+                if (!actionCount || actionCount <= 0) {
+                    return;
+                }
+
+                const result = calculateLevelFromActions(
+                    currentLevel,
+                    currentXP,
+                    actionCount,
+                    totalEfficiency,
+                    actionTime,
+                    modifiedXP,
+                    levelExperienceTable
+                );
+
+                targetLevelResult.innerHTML = `
+                    ${formatWithSeparator(actionCount)} actions → Level ${result.finalLevel} (${result.percentToNext.toFixed(2)}% to next) | ${timeReadable(result.timeElapsed)}
+                `;
+                targetLevelResult.style.color = `var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY})`;
+            };
+
+            numberInput.addEventListener('input', updateFromQuantity);
+            numberInput.addEventListener('change', updateFromQuantity);
+
             // If restoring a saved target level, compute and display the result immediately
             if (initialTargetLevel !== nextLevel) {
                 updateTargetLevel();
@@ -1466,3 +1498,4 @@ class QuickInputButtons {
 const quickInputButtons = new QuickInputButtons();
 
 export default quickInputButtons;
+export { QuickInputButtons };
