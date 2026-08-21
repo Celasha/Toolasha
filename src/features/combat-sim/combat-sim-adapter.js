@@ -548,9 +548,10 @@ function buildPartyMemberDTO(profile, clientData, battleData) {
  *
  * Per the official MWI Game Guide, both conditions are required: the player must be more than
  * 20% lower AND at least 10 Combat Levels below the party's highest combat level. `combatLevel`
- * and `maxCombatLevel` must be the raw (unfloored) whole-skill Combat Level formula value - see
- * `calculateRawCombatLevel()` - never a floored/integer approximation, since flooring before
- * this check can flip eligibility right at the boundary.
+ * and `maxCombatLevel` must be the canonical (floored) Combat Level - the same integer the game
+ * computes via `getCombatLevel()` and shows as `combatDetails.combatLevel` - since that is the
+ * only Combat Level concept evidenced anywhere in the game's client code or guide; there is no
+ * independent evidence of a separate raw/pre-floor value feeding this check.
  * @param {number} combatLevel - This player's combat level
  * @param {number} maxCombatLevel - The party's highest combat level
  * @returns {number} Debuff as a negative decimal (0 = no debuff, e.g. -0.3 = -30%)
@@ -567,24 +568,29 @@ export function calculateLevelGapDebuff(combatLevel, maxCombatLevel) {
 }
 
 /**
- * Calculate the raw (unfloored) combat level from any object exposing the game's own
+ * Calculate the canonical (floored) combat level from any object exposing the game's own
  * combatDetails-shaped whole-skill-level fields (staminaLevel, intelligenceLevel, attackLevel,
- * defenseLevel, meleeLevel, rangedLevel, magicLevel) - the same shape as a player DTO here in
- * Combat Sim and as a live `new_battle` player's `combatDetails` in Combat Stats, so both derive
- * Level Malus input from one canonical formula instead of two.
+ * defenseLevel, meleeLevel, rangedLevel, magicLevel) - the same shape as a simulated player DTO
+ * here in Combat Sim. Combat Stats instead reads the native `combatDetails.combatLevel` field
+ * directly from live `new_battle` data rather than recomputing it, since that field already is
+ * the canonical value; Combat Sim has no such native field for a simulated party and must derive
+ * the equivalent value from the same official formula (see `calculateRawCombatLevel()`), floored
+ * the same way the game itself floors it.
  * @param {{staminaLevel: number, intelligenceLevel: number, attackLevel: number, defenseLevel: number, meleeLevel: number, rangedLevel: number, magicLevel: number}} levelFields
  * @returns {number} Combat level
  */
 export function calculateCombatLevelFromLevelFields(levelFields) {
-    return calculateRawCombatLevel({
-        stamina: levelFields.staminaLevel,
-        intelligence: levelFields.intelligenceLevel,
-        attack: levelFields.attackLevel,
-        defense: levelFields.defenseLevel,
-        melee: levelFields.meleeLevel,
-        ranged: levelFields.rangedLevel,
-        magic: levelFields.magicLevel,
-    });
+    return Math.floor(
+        calculateRawCombatLevel({
+            stamina: levelFields.staminaLevel,
+            intelligence: levelFields.intelligenceLevel,
+            attack: levelFields.attackLevel,
+            defense: levelFields.defenseLevel,
+            melee: levelFields.meleeLevel,
+            ranged: levelFields.rangedLevel,
+            magic: levelFields.magicLevel,
+        })
+    );
 }
 
 /**

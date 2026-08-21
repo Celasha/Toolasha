@@ -3,9 +3,9 @@
  * Shows the unfloored Combat Level formula value, computed from current whole skill levels,
  * next to the persistent Combat entry in the left sidebar (e.g. 133.2 next to the native 133).
  *
- * Display-only in the sense that it never overwrites the native integer node - but unlike the
- * native sidebar's floored integer, this value is the same raw formula relevant to Level Malus,
- * so it must never be XP-interpolated (no fractional skill levels from XP progress).
+ * Display-only: it never overwrites the native integer node, never feeds Level Malus (which
+ * uses the same floored Combat Level the game displays - see calculateLevelGapDebuff()'s doc
+ * comment), and must never be XP-interpolated (no fractional skill levels from XP progress).
  */
 
 import config from '../../core/config.js';

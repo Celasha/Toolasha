@@ -50,19 +50,24 @@ describe('calculateLevelGapDebuff', () => {
             expect(calculateLevelGapDebuff(100.0, 120.0)).toBe(0);
         });
 
-        test('decimal (raw, unfloored) combat level inputs are not floored before the ratio/gap check', () => {
-            // Flooring 133.2 -> 149.9 to 133/149 would change both the ratio and the gap outcome;
-            // the function must use the exact decimal values it is given.
-            expect(calculateLevelGapDebuff(133.2, 149.9)).toBe(0); // gap 16.7 >= 10, ratio 1.125 <= 1.2 -> no malus
-            expect(calculateLevelGapDebuff(133.2, 165.0)).not.toBe(0); // ratio ~1.238 > 1.2, gap 31.8 >= 10
+        test('flooring the canonical Combat Level (not a raw value) can flip Malus eligibility at the boundary', () => {
+            // Raw combat levels 100.9 and 121.0: raw ratio = 121.0/100.9 ~= 1.1992 (<= 1.2), not
+            // eligible. Floored (the value the game actually computes/displays) = 100 and 121:
+            // floored ratio = 1.21 (> 1.2) and gap = 21 (>= 10), eligible. calculateLevelGapDebuff
+            // itself is precision-agnostic - it's the caller's job to pass the canonical floored
+            // value, which real call sites (Combat Sim, Combat Stats) now do.
+            expect(calculateLevelGapDebuff(100.9, 121.0)).toBe(0);
+            expect(calculateLevelGapDebuff(100, 121)).not.toBe(0);
         });
     });
 });
 
 describe('calculateCombatLevelFromLevelFields', () => {
-    test('computes the raw (unfloored) combat level from combatDetails-shaped whole-skill-level fields', () => {
-        // Player report example: Stamina 125, Intelligence 124, Attack 130, Defense 125,
-        // Melee 105, Ranged 138, Magic 77 -> raw CL = 133.2, not floored to 133.
+    test('computes the canonical (floored) combat level from combatDetails-shaped whole-skill-level fields', () => {
+        // Same example as the report: Stamina 125, Intelligence 124, Attack 130, Defense 125,
+        // Melee 105, Ranged 138, Magic 77 -> raw formula = 133.2, floored to 133 to match the
+        // game's own getCombatLevel()/combatDetails.combatLevel - there is no independent
+        // evidence of a separate raw/pre-floor Combat Level used anywhere in the game.
         const result = calculateCombatLevelFromLevelFields({
             staminaLevel: 125,
             intelligenceLevel: 124,
@@ -72,6 +77,6 @@ describe('calculateCombatLevelFromLevelFields', () => {
             rangedLevel: 138,
             magicLevel: 77,
         });
-        expect(result).toBe(133.2);
+        expect(result).toBe(133);
     });
 });

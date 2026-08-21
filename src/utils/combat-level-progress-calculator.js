@@ -7,9 +7,10 @@
  *
  * Applied to current whole skill levels, `raw` naturally has at most one meaningful decimal
  * digit (the 0.1/0.5 coefficients on integer inputs cannot produce more). MWI's native sidebar
- * floors this to an integer for display; this module exposes the unfloored value so features can
- * show it (e.g. 133.2 next to a native 133) or use it for Level Malus math that must not lose
- * that fractional part.
+ * floors this to an integer for display; this module exposes the unfloored value so the decimal
+ * sidebar display can show it (e.g. 133.2 next to a native 133). Level Malus is a separate
+ * mechanic and uses the canonical (floored) Combat Level - see calculateLevelGapDebuff()'s doc
+ * comment in combat-sim-adapter.js - not this raw value.
  *
  * This must never be confused with XP-within-level interpolation: inventing a fractional skill
  * level from XP progress toward the next level is a different, invalid metric for this mechanic
