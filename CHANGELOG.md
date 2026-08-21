@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.94.0](https://github.com/Celasha/Toolasha/compare/v2.93.1...v2.94.0) (2026-08-21)
+
+### Features
+
+- add one-click Apply Skip button for labyrinth recommended thresholds ([0e59126](https://github.com/Celasha/Toolasha/commit/0e591265d49fdc27b6b6fc49083e8a6b1646e3a0))
+
+### Bug Fixes
+
+- correct decimal combat level and level malus ([#660](https://github.com/Celasha/Toolasha/issues/660)) ([0e2486a](https://github.com/Celasha/Toolasha/commit/0e2486a51e5e43692719b587c1042d9c10025824))
+- restore evidence-backed floored Combat Level for Level Malus ([9fd8212](https://github.com/Celasha/Toolasha/commit/9fd821283146456b8b7d9461fbbfe76f36d9c131))
+- stop guild_updated refreshes from being silently deduplicated ([eb469a4](https://github.com/Celasha/Toolasha/commit/eb469a4ab452d7956155724694ba0dd6af4f08ff))
+- stop marketplace listing-next navigator self-mutation hang ([174355a](https://github.com/Celasha/Toolasha/commit/174355a9c89ea3648081df7a15d14fc28e242092))
+- sync target level calculator when typing a quantity directly ([9c80d50](https://github.com/Celasha/Toolasha/commit/9c80d50f2b293fedb3ad9b6aca54c244f36fb607))
+
 ## [2.93.1](https://github.com/Celasha/Toolasha/compare/v2.93.0...v2.93.1) (2026-08-21)
 
 ### Bug Fixes
