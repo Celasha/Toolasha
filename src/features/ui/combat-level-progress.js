@@ -1,16 +1,17 @@
 /**
- * Combat Level Progress Display
- * Shows a continuous "weighted progress toward the next level" number next to the
- * persistent Combat entry in the left sidebar, e.g. 94.80 next to the native 94.
+ * Decimal Combat Level Display
+ * Shows the unfloored Combat Level formula value, computed from current whole skill levels,
+ * next to the persistent Combat entry in the left sidebar (e.g. 133.2 next to the native 133).
  *
- * Display-only: never replaces or feeds into combatDetails.combatLevel or any
- * gameplay-affecting calculation (Combat Sim, Labyrinth, party requirements, etc.).
+ * Display-only in the sense that it never overwrites the native integer node - but unlike the
+ * native sidebar's floored integer, this value is the same raw formula relevant to Level Malus,
+ * so it must never be XP-interpolated (no fractional skill levels from XP progress).
  */
 
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
-import { calculatePreciseCombatLevel } from '../../utils/combat-level-progress-calculator.js';
+import { calculateCombatLevelFromSkills } from '../../utils/combat-level-progress-calculator.js';
 
 const CSS_CLASS = 'mwi-combat-level-precise';
 
@@ -72,7 +73,7 @@ class CombatLevelProgress {
     }
 
     /**
-     * Recompute and render (or clear) the precise Combat Level companion span
+     * Recompute and render (or clear) the decimal Combat Level companion span
      */
     update() {
         const navRow = this.findCombatNavRow();
@@ -86,10 +87,9 @@ class CombatLevelProgress {
         }
 
         const skills = dataManager.getSkills();
-        const levelExperienceTable = dataManager.getInitClientData()?.levelExperienceTable;
-        const result = calculatePreciseCombatLevel(skills, levelExperienceTable);
+        const rawCombatLevel = calculateCombatLevelFromSkills(skills);
 
-        if (!result) {
+        if (rawCombatLevel === null) {
             textContainer.querySelector(`.${CSS_CLASS}`)?.remove();
             return;
         }
@@ -100,7 +100,7 @@ class CombatLevelProgress {
         }
 
         // Appended as a child of the native level span (never overwriting its own "150" text
-        // node) rather than a flex sibling, so it reads flush as one number ("150.49") instead
+        // node) rather than a flex sibling, so it reads flush as one number ("150.2") instead
         // of picking up the textContainer's flex gap between label/level as visible whitespace.
         let span = levelSpan.querySelector(`.${CSS_CLASS}`);
         if (!span) {
@@ -109,9 +109,9 @@ class CombatLevelProgress {
             levelSpan.appendChild(span);
         }
 
-        const decimalText = result.preciseValue.toFixed(2).split('.')[1];
+        const decimalText = rawCombatLevel.toFixed(1).split('.')[1];
         span.textContent = `.${decimalText}`;
-        span.title = `Native Combat Level: ${result.nativeCombatLevel} · weighted progress toward the next level`;
+        span.title = `Combat Level from current whole skill levels · native display: ${Math.floor(rawCombatLevel)}`;
     }
 
     /**

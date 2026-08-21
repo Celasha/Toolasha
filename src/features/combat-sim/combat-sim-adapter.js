@@ -12,6 +12,7 @@ import loadoutSnapshot from '../combat/loadout-snapshot.js';
 import config from '../../core/config.js';
 import marketAPI from '../../api/marketplace.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
+import { calculateRawCombatLevel } from '../../utils/combat-level-progress-calculator.js';
 
 /**
  * Extract all required game data maps from initClientData for the sim engine.
@@ -543,14 +544,21 @@ function buildPartyMemberDTO(profile, clientData, battleData) {
 /**
  * Calculate the level-gap debuff for one party member given their combat level and the party's
  * highest combat level. Shared by Combat Sim (simulated party loadouts) and Combat Stats
- * (real live encounters) so both agree on the exact same 1.2-ratio rule.
+ * (real live encounters) so both agree on the exact same eligibility rule.
+ *
+ * Per the official MWI Game Guide, both conditions are required: the player must be more than
+ * 20% lower AND at least 10 Combat Levels below the party's highest combat level. `combatLevel`
+ * and `maxCombatLevel` must be the raw (unfloored) whole-skill Combat Level formula value - see
+ * `calculateRawCombatLevel()` - never a floored/integer approximation, since flooring before
+ * this check can flip eligibility right at the boundary.
  * @param {number} combatLevel - This player's combat level
  * @param {number} maxCombatLevel - The party's highest combat level
  * @returns {number} Debuff as a negative decimal (0 = no debuff, e.g. -0.3 = -30%)
  */
 export function calculateLevelGapDebuff(combatLevel, maxCombatLevel) {
     const ratio = maxCombatLevel / combatLevel;
-    if (ratio <= 1.2) {
+    const gap = maxCombatLevel - combatLevel;
+    if (ratio <= 1.2 || gap < 10) {
         return 0;
     }
     const maxDebuff = 0.9;
@@ -559,20 +567,24 @@ export function calculateLevelGapDebuff(combatLevel, maxCombatLevel) {
 }
 
 /**
- * Calculate combat level for level gap debuff.
- * @param {Object} dto - Player DTO
+ * Calculate the raw (unfloored) combat level from any object exposing the game's own
+ * combatDetails-shaped whole-skill-level fields (staminaLevel, intelligenceLevel, attackLevel,
+ * defenseLevel, meleeLevel, rangedLevel, magicLevel) - the same shape as a player DTO here in
+ * Combat Sim and as a live `new_battle` player's `combatDetails` in Combat Stats, so both derive
+ * Level Malus input from one canonical formula instead of two.
+ * @param {{staminaLevel: number, intelligenceLevel: number, attackLevel: number, defenseLevel: number, meleeLevel: number, rangedLevel: number, magicLevel: number}} levelFields
  * @returns {number} Combat level
  */
-function calcCombatLevel(dto) {
-    return Math.floor(
-        0.1 *
-            (dto.staminaLevel +
-                dto.intelligenceLevel +
-                dto.attackLevel +
-                dto.defenseLevel +
-                Math.max(dto.meleeLevel, dto.rangedLevel, dto.magicLevel)) +
-            0.5 * Math.max(dto.attackLevel, dto.defenseLevel, dto.meleeLevel, dto.rangedLevel, dto.magicLevel)
-    );
+export function calculateCombatLevelFromLevelFields(levelFields) {
+    return calculateRawCombatLevel({
+        stamina: levelFields.staminaLevel,
+        intelligence: levelFields.intelligenceLevel,
+        attack: levelFields.attackLevel,
+        defense: levelFields.defenseLevel,
+        melee: levelFields.meleeLevel,
+        ranged: levelFields.rangedLevel,
+        magic: levelFields.magicLevel,
+    });
 }
 
 /**
@@ -649,7 +661,7 @@ export async function buildAllPlayerDTOs() {
 
     // Calculate level gap debuff
     if (players.length > 1) {
-        const levels = players.map((p) => calcCombatLevel(p));
+        const levels = players.map((p) => calculateCombatLevelFromLevelFields(p));
         const maxCombatLevel = Math.max(...levels);
 
         for (let i = 0; i < players.length; i++) {

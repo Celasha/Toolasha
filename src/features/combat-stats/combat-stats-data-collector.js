@@ -8,7 +8,7 @@ import storage from '../../core/storage.js';
 import dataManager from '../../core/data-manager.js';
 import config from '../../core/config.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
-import { calculateLevelGapDebuff } from '../combat-sim/combat-sim-adapter.js';
+import { calculateLevelGapDebuff, calculateCombatLevelFromLevelFields } from '../combat-sim/combat-sim-adapter.js';
 import dungeonTracker from '../combat/dungeon-tracker.js';
 import ExpectedLootTracker from './expected-loot-tracker.js';
 
@@ -591,11 +591,20 @@ class CombatStatsDataCollector {
             this.expectedLootTracker.recordCompletedEncounter(this.pendingEncounter);
         }
 
+        // Level Malus eligibility needs the raw (unfloored) whole-skill Combat Level formula
+        // value, not the floored combatDetails.combatLevel the game computes for display - see
+        // calculateCombatLevelFromLevelFields(). Both this and Combat Sim's party-mode debuff
+        // derive from the same combatDetails-shaped level fields, so they stay in parity.
         const levels = data.players
-            .map((player) => player?.combatDetails?.combatLevel)
-            .filter((level) => typeof level === 'number');
+            .map((player) => player?.combatDetails)
+            .filter((combatDetails) => combatDetails && typeof combatDetails.staminaLevel === 'number')
+            .map((combatDetails) => calculateCombatLevelFromLevelFields(combatDetails));
         const maxCombatLevel = levels.length > 0 ? Math.max(...levels) : 0;
-        const selfCombatLevel = selfPlayer?.combatDetails?.combatLevel;
+        const selfCombatDetails = selfPlayer?.combatDetails;
+        const selfCombatLevel =
+            selfCombatDetails && typeof selfCombatDetails.staminaLevel === 'number'
+                ? calculateCombatLevelFromLevelFields(selfCombatDetails)
+                : undefined;
         const debuffOnLevelGap =
             typeof selfCombatLevel === 'number' && maxCombatLevel > 0
                 ? calculateLevelGapDebuff(selfCombatLevel, maxCombatLevel)

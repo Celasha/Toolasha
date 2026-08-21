@@ -2043,10 +2043,10 @@ export const settingsGroups = {
             },
             combatLevelProgress: {
                 id: 'combatLevelProgress',
-                label: 'Left sidebar: Show precise Combat Level progress',
+                label: 'Left sidebar: Show decimal Combat Level',
                 type: 'checkbox',
                 default: true,
-                help: 'Shows weighted progress toward the next Combat Level (e.g. 94.80) next to the native Combat Level. Display-only - never changes the native integer level shown by the game.',
+                help: "Shows the unrounded Combat Level formula value from current whole skill levels (e.g. 133.2). MWI's native sidebar floors it to an integer for display.",
             },
             itemIconLevel: {
                 id: 'itemIconLevel',
