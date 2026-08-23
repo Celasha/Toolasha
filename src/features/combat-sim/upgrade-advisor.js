@@ -925,6 +925,12 @@ export function generateCandidates(
                 upgradeLevel: targetLevel,
                 description: `${roomName} Lv${currentLevel} → Lv${targetLevel}`,
                 type: 'house',
+                // Only rooms usable for /action_types/combat (Armory, Dojo, etc.) affect combat
+                // stats at all - see HouseRoom's doc comment in engine/house-room.js. Skilling-only
+                // rooms (Observatory, Laboratory, etc.) still grant real globalBuffs (wisdom,
+                // rare_find), so EXP/Profit remain meaningful, but any DPS/EPH/DPH delta for them
+                // is pure sim sampling noise and must not be ranked or displayed as a real effect.
+                isCombatRelevant: !!room.usableInActionTypeMap?.['/action_types/combat'],
             });
         }
     }
@@ -1117,7 +1123,7 @@ export async function runUpgradeAnalysis(params, onProgress, options = {}) {
 
         const metrics = computeMetrics(simResult, gameData, playerHrid, hours);
         const deltas = computeDeltas(baselineMetrics, metrics);
-        const goldPer = computeGoldPerImprovement(candidate.cost, deltas);
+        const goldPer = computeGoldPerImprovement(candidate.cost, deltas, candidate.isCombatRelevant !== false);
 
         results.push({ candidate, cost: candidate.cost, metrics, deltas, goldPer });
         current++;
@@ -1177,8 +1183,15 @@ function computeDeltas(baseline, upgraded) {
 /**
  * Compute gold per 0.1% improvement for each metric.
  * Lower = better value.
+ * @param {number} cost - Upgrade cost in gold
+ * @param {Object} deltas - From computeDeltas()
+ * @param {boolean} [isCombatRelevant=true] - False for a house room with no combat actionBuffs
+ *   (e.g. Observatory/Laboratory/Sewing Parlor/Workshop) - any DPS/EPH/DPH delta for those is
+ *   pure sim sampling noise, not a real effect, so those three are forced to Infinity ("no
+ *   effect") rather than ranked on noise. EXP/Profit remain real (driven by wisdom/rare_find,
+ *   which every house room grants regardless of skill).
  */
-function computeGoldPerImprovement(cost, deltas) {
+export function computeGoldPerImprovement(cost, deltas, isCombatRelevant = true) {
     const goldPer = (pctDelta) => {
         if (pctDelta <= 0) return Infinity;
         // Gold per 0.1% = cost / (pctDelta * 10)
@@ -1193,11 +1206,11 @@ function computeGoldPerImprovement(cost, deltas) {
     };
 
     return {
-        dps: goldPer(deltas.dps),
+        dps: isCombatRelevant ? goldPer(deltas.dps) : Infinity,
         xp: goldPer(deltas.xp),
         profit: goldPer(deltas.profit),
-        encounters: goldPer(deltas.encounters),
-        deaths: goldPerReduction(deltas.deaths),
+        encounters: isCombatRelevant ? goldPer(deltas.encounters) : Infinity,
+        deaths: isCombatRelevant ? goldPerReduction(deltas.deaths) : Infinity,
     };
 }
 

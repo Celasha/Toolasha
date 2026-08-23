@@ -91,6 +91,9 @@ export function buildCommunityBuffsForSkill(communityBuffLevels, actionTypeHrid)
 
 /**
  * Build house buff array for a specific action type from editor house room levels.
+ * The game's own houseRoomDetailMap only marks a room's actionBuffs restriction at the room
+ * level via `usableInActionTypeMap` - individual buff entries carry no such field - so this
+ * checks the room, not the buff.
  * @param {Object} editorHouseRooms - { '/house_rooms/brewery': level, ... }
  * @param {string} actionTypeHrid - e.g. "/action_types/brewing"
  * @param {Object} houseRoomDetailMap - From gameData
@@ -105,9 +108,8 @@ export function buildHouseBuffsForSkill(editorHouseRooms, actionTypeHrid, houseR
         const roomDetail = houseRoomDetailMap[hrid];
         if (!roomDetail) continue;
 
-        if (Array.isArray(roomDetail.actionBuffs)) {
+        if (Array.isArray(roomDetail.actionBuffs) && roomDetail.usableInActionTypeMap?.[actionTypeHrid]) {
             for (const buff of roomDetail.actionBuffs) {
-                if (!buff?.usableInActionTypeMap?.[actionTypeHrid]) continue;
                 const flatBoost = (buff.flatBoostLevelBonus || 0) * level;
                 const ratioBoost = (buff.ratioBoostLevelBonus || 0) * level;
                 if (flatBoost === 0 && ratioBoost === 0) continue;

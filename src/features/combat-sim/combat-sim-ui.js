@@ -3196,7 +3196,12 @@ class CombatSimUI {
 
         results.results.forEach((r, i) => {
             const costStr = formatKMB(r.cost);
-            const rowColor = r.deltas.dps > 0 || r.deltas.profit > 0 ? '#e0e0e0' : '#888';
+            // A house room with no combat actionBuffs has no real DPS effect - its deltas.dps is
+            // pure sim noise, so only profit (its real effect) should brighten the row.
+            const rowColor =
+                (r.candidate.isCombatRelevant !== false && r.deltas.dps > 0) || r.deltas.profit > 0
+                    ? '#e0e0e0'
+                    : '#888';
 
             const fmtGoldPer = (val) => (val === Infinity ? '—' : formatKMB(val));
             const bestColor = '#4caf50';
@@ -3241,15 +3246,25 @@ class CombatSimUI {
             const deltaColor = (val) => (val > 0.5 ? '#4caf50' : val < -0.5 ? '#f44336' : '#888');
             // For deaths, lower is better (inverted color)
             const deathDeltaColor = (val) => (val < -0.01 ? '#4caf50' : val > 0.01 ? '#f44336' : '#888');
+            // Skilling-only house rooms (no /action_types/combat actionBuffs) have zero real
+            // effect on DPS/EPH/DPH - any sim delta for them is pure Monte Carlo sampling noise,
+            // not a real effect, so those three show N/A instead of a misleading value.
+            const naCombatMetrics = r.candidate.isCombatRelevant === false;
+            const naBlock = (label) =>
+                `<div><div style="color:#888;">${label}</div><div style="color:#666;">N/A</div><div style="color:#666;">not combat-relevant</div></div>`;
 
             html += `<tr data-upgrade-detail="${i}" style="display:none;">
                 <td colspan="5" style="padding:6px 12px; background:#0d0d1a; border-bottom:1px solid #222;">
                     <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:8px; font-size:11px;">
-                        <div>
+                        ${
+                            naCombatMetrics
+                                ? naBlock('DPS')
+                                : `<div>
                             <div style="color:#888;">DPS</div>
                             <div style="color:#e0e0e0;">${formatWithSeparator(r.metrics.dps, 3)}</div>
                             <div style="color:${deltaColor(dpsValueDelta)};">${fmtDpsDelta(dpsValueDelta)} (${r.deltas.dps >= 0 ? '+' : ''}${r.deltas.dps.toFixed(2)}%)</div>
-                        </div>
+                        </div>`
+                        }
                         <div>
                             <div style="color:#888;">EXP/hr</div>
                             <div style="color:#e0e0e0;">${formatKMB(r.metrics.xpPerHour)}</div>
@@ -3260,16 +3275,24 @@ class CombatSimUI {
                             <div style="color:#e0e0e0;">${formatKMB(r.metrics.profitPerHour)}</div>
                             <div style="color:${deltaColor(profitValueDelta)};">${fmtDelta(profitValueDelta)} (${r.deltas.profit >= 0 ? '+' : ''}${r.deltas.profit.toFixed(2)}%)</div>
                         </div>
-                        <div>
+                        ${
+                            naCombatMetrics
+                                ? naBlock('EPH')
+                                : `<div>
                             <div style="color:#888;">EPH</div>
                             <div style="color:#e0e0e0;">${r.metrics.encountersPerHour.toFixed(1)}</div>
                             <div style="color:${deltaColor(ephDelta)};">${fmtDeltaSmall(ephDelta)} (${r.deltas.encounters >= 0 ? '+' : ''}${r.deltas.encounters.toFixed(2)}%)</div>
-                        </div>
-                        <div>
+                        </div>`
+                        }
+                        ${
+                            naCombatMetrics
+                                ? naBlock('DPH')
+                                : `<div>
                             <div style="color:#888;">DPH</div>
                             <div style="color:#e0e0e0;">${r.metrics.deathsPerHour.toFixed(1)}</div>
                             <div style="color:${deathDeltaColor(dphDelta)};">${fmtDeltaSmall(dphDelta)} (${r.deltas.deaths >= 0 ? '+' : ''}${r.deltas.deaths.toFixed(2)}%)</div>
-                        </div>
+                        </div>`
+                        }
                     </div>
                     <div style="margin-top:6px; color:#666; font-size:10px;">
                         Baseline: DPS ${formatWithSeparator(results.baseline.dps, 3)} | EXP ${formatKMB(results.baseline.xpPerHour)} | Profit ${formatKMB(results.baseline.profitPerHour)} | EPH ${results.baseline.encountersPerHour.toFixed(1)} | DPH ${results.baseline.deathsPerHour.toFixed(1)}
