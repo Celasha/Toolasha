@@ -16,6 +16,7 @@ vi.mock('../../core/data-manager.js', () => ({
         getActionDrinkSlots: vi.fn(() => []),
         getCommunityBuffLevel: vi.fn(() => 0),
         getAchievementBuffFlatBoost: vi.fn(() => 0),
+        getElapsedSecondsInCurrentUnit: vi.fn(() => 0),
     },
 }));
 
@@ -96,6 +97,10 @@ vi.mock('../../utils/enhancement-calculator.js', () => ({
 }));
 
 import { ActionTimeDisplay } from './action-time-display.js';
+import dataManager from '../../core/data-manager.js';
+import { calculateActionStats } from '../../utils/action-calculator.js';
+import { calculateEfficiencyMultiplier } from '../../utils/efficiency.js';
+import { calculateEnhancementPredictions } from '../enhancement/enhancement-xp.js';
 
 /**
  * MutationObserver callbacks fire on the microtask queue — flush it before asserting.
@@ -197,5 +202,129 @@ describe('ActionTimeDisplay action-name observer self-mutation guard', () => {
         ];
 
         expect(instance.isSelfInflictedMutation(mutations)).toBe(false);
+    });
+});
+
+describe('ActionTimeDisplay current-unit partial progress (TLA-015)', () => {
+    let instance;
+
+    const actionDetails = { type: '/action_types/cheesesmithing' };
+    const inventoryLookup = { byHrid: {}, byEnhancedKey: {} };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        instance = new ActionTimeDisplay();
+        calculateActionStats.mockReturnValue({ actionTime: 135, totalEfficiency: 0 });
+        calculateEfficiencyMultiplier.mockReturnValue(1);
+        dataManager.getElapsedSecondsInCurrentUnit.mockReturnValue(0);
+    });
+
+    function makeAction(overrides = {}) {
+        return {
+            id: 1,
+            hasMaxCount: true,
+            maxCount: 1,
+            currentCount: 0,
+            actionHrid: '/actions/cheesesmithing/holy_hammer',
+            ...overrides,
+        };
+    }
+
+    test('T1 - no elapsed progress: remaining equals the full action time', () => {
+        const result = instance.calculateSingleQueueActionTime(makeAction(), actionDetails, inventoryLookup);
+        expect(result.totalTime).toBe(135);
+    });
+
+    test('T2 - 60s elapsed of a 135s action: remaining is 75s, not 135s', () => {
+        dataManager.getElapsedSecondsInCurrentUnit.mockReturnValue(60);
+        const result = instance.calculateSingleQueueActionTime(makeAction(), actionDetails, inventoryLookup);
+        expect(result.totalTime).toBe(75);
+    });
+
+    test('T3 - near-complete current unit (134s of 135s elapsed): remaining is ~1s', () => {
+        dataManager.getElapsedSecondsInCurrentUnit.mockReturnValue(134);
+        const result = instance.calculateSingleQueueActionTime(makeAction(), actionDetails, inventoryLookup);
+        expect(result.totalTime).toBe(1);
+    });
+
+    test('T4 - current partial unit plus two future full units: 75 + 135 + 135, not 3x135', () => {
+        dataManager.getElapsedSecondsInCurrentUnit.mockReturnValue(60);
+        const action = makeAction({ maxCount: 3, currentCount: 0 });
+        const result = instance.calculateSingleQueueActionTime(action, actionDetails, inventoryLookup);
+        expect(result.totalTime).toBe(345);
+        expect(result.totalTime).not.toBe(405);
+    });
+
+    test('elapsed subtraction is clamped so total time never goes negative', () => {
+        // Defensive edge case: elapsed reported >= full unit duration should never invert the sign.
+        dataManager.getElapsedSecondsInCurrentUnit.mockReturnValue(135);
+        const result = instance.calculateSingleQueueActionTime(makeAction(), actionDetails, inventoryLookup);
+        expect(result.totalTime).toBe(0);
+    });
+
+    test('cold/unknown provenance (no boundary yet): behaves exactly as before the fix, no fabricated partial', () => {
+        // getElapsedSecondsInCurrentUnit defaults to 0 when data-manager has no trustworthy boundary —
+        // this must reproduce the pre-fix "full remaining time" result, not some invented estimate.
+        const result = instance.calculateSingleQueueActionTime(makeAction(), actionDetails, inventoryLookup);
+        expect(result.totalTime).toBe(135);
+        expect(dataManager.getElapsedSecondsInCurrentUnit).toHaveBeenCalledWith(1, 0, 135);
+    });
+
+    test('queued (non-current) actions are unaffected — elapsed lookup uses that action own id/count', () => {
+        // calculateSingleQueueActionTime is shared by the current action and by queued-action loops;
+        // the lookup key is scoped by (actionId, currentCount) so a queued action never inherits the
+        // front action's elapsed time.
+        const queuedAction = makeAction({ id: 99, currentCount: 0 });
+        instance.calculateSingleQueueActionTime(queuedAction, actionDetails, inventoryLookup);
+        expect(dataManager.getElapsedSecondsInCurrentUnit).toHaveBeenCalledWith(99, 0, 135);
+    });
+
+    test('enhancing: 60s elapsed of a 90s attempt reduces materialTime-equivalent total by the same amount', () => {
+        calculateEnhancementPredictions.mockReturnValue({
+            expectedAttempts: 3,
+            expectedProtections: 0,
+            perActionTime: 90,
+            successMultiplier: 1,
+        });
+        dataManager.getElapsedSecondsInCurrentUnit.mockReturnValue(60);
+
+        const enhancingAction = {
+            id: 2,
+            hasMaxCount: true,
+            maxCount: 5,
+            currentCount: 0,
+            enhancingMaxLevel: 10,
+            primaryItemHash: '/item_locations/inventory::/items/cheese_sword::0',
+        };
+        const enhancingDetails = { type: '/action_types/enhancing' };
+
+        const result = instance.calculateEnhancingQueueTime(enhancingAction, enhancingDetails, inventoryLookup);
+        // realisticActions = min(5, 3) = 3 attempts of 90s = 270s, minus 60s already elapsed in the
+        // current attempt = 210s.
+        expect(result.totalTime).toBe(210);
+    });
+
+    test("enhancing with Philosopher's Mirror: elapsed is subtracted from the guaranteed-success total too", () => {
+        calculateEnhancementPredictions.mockReturnValue({
+            expectedAttempts: 5,
+            expectedProtections: 0,
+            perActionTime: 90,
+            successMultiplier: 1,
+        });
+        dataManager.getElapsedSecondsInCurrentUnit.mockReturnValue(30);
+
+        const enhancingAction = {
+            id: 3,
+            hasMaxCount: false,
+            currentCount: 0,
+            primaryItemHash: '/item_locations/inventory::/items/cheese_sword::0',
+            secondaryItemHash: '/item_locations/inventory::/items/philosophers_mirror::0',
+            enhancingMaxLevel: 5,
+        };
+        const enhancingDetails = { type: '/action_types/enhancing' };
+
+        const result = instance.calculateEnhancingQueueTime(enhancingAction, enhancingDetails, inventoryLookup);
+        // Guaranteed success: targetLevel(5) - currentLevel(0) = 5 attempts of 90s = 450s, minus 30s.
+        expect(result.totalTime).toBe(420);
     });
 });

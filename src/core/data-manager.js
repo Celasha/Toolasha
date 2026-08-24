@@ -34,6 +34,14 @@ class DataManager {
         this.bossMonsterHrids = new Set(); // Monster HRIDs that appear in bossSpawns
         this.battleData = null; // Current battle data (for Combat Sim export on Steam)
 
+        // Trustworthy boundary for the currently in-progress base action's current unit:
+        // { actionId, currentCount, unitStartTime }. Used to compute already-elapsed time in
+        // the active unit so Action Time Display doesn't re-anchor its ETA to a full fresh
+        // action on reload/remount. Persisted per-character so it survives reload; validated
+        // against the live actionId/currentCount pair on restore so a stale/mismatched boundary
+        // is never trusted (see _syncActionUnitBoundary).
+        this.actionUnitBoundary = null;
+
         // Character tracking for switch detection
         this.currentCharacterId = null;
         this.currentCharacterName = null;
@@ -230,6 +238,7 @@ class DataManager {
                 this.characterGuildBuffMap = {};
                 this.guildBuildingLevelMap = {};
                 this.battleData = null;
+                this.actionUnitBoundary = null;
 
                 // Reset switching flag (cleanup complete, ready for re-init)
                 this.isCharacterSwitching = false;
@@ -252,6 +261,11 @@ class DataManager {
             this.characterItems = data.characterItems;
             this.characterActions = [...data.characterActions];
             this.characterQuests = data.characterQuests || [];
+
+            // Restore/establish the current-unit timing boundary for whatever action is now
+            // front-most, so a reload or character switch-back doesn't discard a still-valid
+            // partial-progress boundary (see _restoreActionUnitBoundary).
+            await this._restoreActionUnitBoundary(newCharacterId);
 
             // Build equipment map
             this.updateEquipmentMap(data.characterItems);
@@ -294,6 +308,8 @@ class DataManager {
                 }
             }
 
+            this._syncActionUnitBoundary();
+
             this.emit('actions_updated', data);
         });
 
@@ -310,6 +326,8 @@ class DataManager {
                     }
                 }
             }
+
+            this._syncActionUnitBoundary();
 
             // CRITICAL: Update inventory from action_completed (this is how inventory updates during gathering!)
             if (data.endCharacterItems && Array.isArray(data.endCharacterItems) && this.characterItems) {
@@ -590,6 +608,86 @@ class DataManager {
      */
     getCurrentActions() {
         return [...this.characterActions];
+    }
+
+    /**
+     * Elapsed time already spent in the currently in-progress base action's active unit, so
+     * callers modeling "remaining time" don't double-count that partial unit as a full one.
+     * Returns 0 (fail-closed) whenever there's no trustworthy boundary for this exact
+     * (actionId, currentCount) pair — e.g. cold start, a completed unit we never observed, or a
+     * different action — matching the previous "assume fresh" behavior rather than fabricating
+     * a partial estimate.
+     * @param {number} actionId - id of the action currently in progress
+     * @param {number} currentCount - that action's currentCount at the moment being queried
+     * @param {number} unitDurationSeconds - full duration of one base action, for clamping
+     * @returns {number} Elapsed seconds in [0, unitDurationSeconds]
+     */
+    getElapsedSecondsInCurrentUnit(actionId, currentCount, unitDurationSeconds) {
+        const boundary = this.actionUnitBoundary;
+        if (!boundary || boundary.actionId !== actionId || boundary.currentCount !== currentCount) {
+            return 0;
+        }
+        const elapsedSeconds = (Date.now() - boundary.unitStartTime) / 1000;
+        return Math.min(Math.max(0, elapsedSeconds), unitDurationSeconds);
+    }
+
+    /**
+     * Reconcile the tracked current-unit boundary against the live front action (lowest
+     * ordinal). A no-op when the front action's (id, currentCount) is unchanged — that's the
+     * same in-progress unit, so its start time must not be reset. Otherwise establishes a
+     * fresh boundary at "now": this is exactly right when the front action just transitioned
+     * (action_completed continuation, or a new action taking the front slot) since that
+     * transition instant IS the new unit's start, and it's the correct fail-closed default
+     * when provenance is unknown (e.g. first observation of this pair).
+     */
+    _syncActionUnitBoundary() {
+        const sorted = [...this.characterActions].sort((a, b) => a.ordinal - b.ordinal);
+        const front = sorted[0] || null;
+
+        if (!front) {
+            this.actionUnitBoundary = null;
+            return;
+        }
+
+        const existing = this.actionUnitBoundary;
+        if (existing && existing.actionId === front.id && existing.currentCount === front.currentCount) {
+            return;
+        }
+
+        this.actionUnitBoundary = {
+            actionId: front.id,
+            currentCount: front.currentCount,
+            unitStartTime: Date.now(),
+        };
+
+        if (this.currentCharacterId) {
+            storage.set(this.currentCharacterId, this.actionUnitBoundary, 'actionProgress');
+        }
+    }
+
+    /**
+     * Restore a persisted current-unit boundary on character load/switch/reload. Only trusted
+     * when its (actionId, currentCount) still matches the live front action — otherwise at
+     * least one unit completed while unobserved, so the old start time is no longer meaningful
+     * and _syncActionUnitBoundary falls back to a fresh fail-closed boundary instead.
+     * @param {number} characterId
+     */
+    async _restoreActionUnitBoundary(characterId) {
+        const sorted = [...this.characterActions].sort((a, b) => a.ordinal - b.ordinal);
+        const front = sorted[0] || null;
+
+        if (!front) {
+            this.actionUnitBoundary = null;
+            return;
+        }
+
+        const persisted = await storage.get(characterId, 'actionProgress', null);
+        this.actionUnitBoundary =
+            persisted && persisted.actionId === front.id && persisted.currentCount === front.currentCount
+                ? persisted
+                : null;
+
+        this._syncActionUnitBoundary();
     }
 
     /**

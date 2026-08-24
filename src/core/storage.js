@@ -9,7 +9,7 @@ class Storage {
         this.db = null;
         this.available = false;
         this.dbName = 'ToolashaDB';
-        this.dbVersion = 17; // Bumped for leaderboardHistory store
+        this.dbVersion = 18; // Bumped for actionProgress store
         this.saveDebounceTimers = new Map(); // Per-key debounce timers
         this.pendingWrites = new Map(); // Per-key pending write data: {value, storeName, resolvers, generation}
         this._writeGeneration = new Map(); // Per-key monotonic generation counter
@@ -166,6 +166,12 @@ class Storage {
                 // Create leaderboardHistory store if it doesn't exist (for leaderboard XP tracker)
                 if (!db.objectStoreNames.contains('leaderboardHistory')) {
                     db.createObjectStore('leaderboardHistory');
+                }
+
+                // Create actionProgress store if it doesn't exist (for Action Time Display's
+                // cross-reload current-unit partial-progress boundary)
+                if (!db.objectStoreNames.contains('actionProgress')) {
+                    db.createObjectStore('actionProgress');
                 }
             };
         });
