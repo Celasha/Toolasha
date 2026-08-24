@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.95.0](https://github.com/Celasha/Toolasha/compare/v2.94.0...v2.95.0) (2026-08-24)
+
+
+### Features
+
+* support the szerra combat simulator for Import from Toolasha ([6dab777](https://github.com/Celasha/Toolasha/commit/6dab777db4b7f6ba89b9a551637bd2f0442bb2ca))
+
+
+### Bug Fixes
+
+* gate house room action buffs by their real action-type restriction ([d3221f4](https://github.com/Celasha/Toolasha/commit/d3221f4179c3156fd5507139c827d44bcbeb51a4))
+
 ## [2.94.0](https://github.com/Celasha/Toolasha/compare/v2.93.1...v2.94.0) (2026-08-21)
 
 ### Features
