@@ -366,7 +366,17 @@ class DataManager {
                 }
             }
 
+            // Merge ability XP/level changes embedded in action_completed (e.g. combat
+            // actions granting ability XP) - a second live path alongside abilities_updated.
+            this._mergeCharacterAbilities(data.endCharacterAbilities);
+
             this.emit('action_completed', data);
+        });
+
+        // Handle abilities_updated (ability level/XP changes: leveling up, learning a new
+        // ability, or other native ability-state changes outside of action_completed)
+        this.webSocketHook.on('abilities_updated', (data) => {
+            this._mergeCharacterAbilities(data.endCharacterAbilities);
         });
 
         // Handle items_updated (inventory/equipment changes)
@@ -553,6 +563,35 @@ class DataManager {
         for (const [actionTypeHrid, drinks] of Object.entries(drinkSlotsMap)) {
             this.actionTypeDrinkSlotsMap.set(actionTypeHrid, drinks || []);
         }
+    }
+
+    /**
+     * Merge a live ability-state update into the current character's ability list.
+     * Mirrors the native client's `updateCharacterAbilities()`: replace by abilityHrid,
+     * append if not yet known (newly learned ability). `endCharacterAbilities` is an update
+     * set, not necessarily the complete list, so unrelated abilities are preserved. Reassigns
+     * `characterData.characterAbilities` (rather than mutating in place) so every consumer
+     * that reads it fresh - Ability Book Calculator, Combat Sim adapter, Networth, tooltip
+     * prices, Combat Score - stays in sync from this one source with no separate mirror.
+     * @param {Array} endCharacterAbilities - Updated/newly learned ability entries
+     */
+    _mergeCharacterAbilities(endCharacterAbilities) {
+        if (!this.characterData || !Array.isArray(endCharacterAbilities) || endCharacterAbilities.length === 0) {
+            return;
+        }
+
+        const abilities = [...(this.characterData.characterAbilities || [])];
+        for (const updated of endCharacterAbilities) {
+            const index = abilities.findIndex((a) => a.abilityHrid === updated.abilityHrid);
+            if (index !== -1) {
+                abilities[index] = updated;
+            } else {
+                abilities.push(updated);
+            }
+        }
+        this.characterData.characterAbilities = abilities;
+
+        this.emit('abilities_updated', { endCharacterAbilities });
     }
 
     /**

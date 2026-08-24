@@ -310,3 +310,192 @@ describe('DataManager action-unit progress boundary (TLA-015)', () => {
         expect(dataManager.getElapsedSecondsInCurrentUnit(601, 1, 135)).toBe(50);
     });
 });
+
+describe('DataManager character ability live-state (TLA-016)', () => {
+    function makeCharacterPayload(characterId, characterAbilities) {
+        return {
+            character: { id: characterId, name: `char-${characterId}` },
+            characterActions: [],
+            characterSkills: [],
+            characterItems: [],
+            characterQuests: [],
+            characterAbilities,
+        };
+    }
+
+    function findAbility(dataManager, abilityHrid) {
+        return dataManager.characterData.characterAbilities.find((a) => a.abilityHrid === abilityHrid);
+    }
+
+    // Isolate from whatever character-switch state earlier describe blocks in this file left
+    // behind (currentCharacterId, lastCharacterSwitchTime) so every test here starts as a
+    // clean first load, regardless of suite ordering.
+    beforeEach(async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(0);
+        const { default: dataManager } = await import('./data-manager.js');
+        dataManager.currentCharacterId = null;
+        dataManager.currentCharacterName = null;
+        dataManager.lastCharacterSwitchTime = 0;
+        dataManager.characterData = null;
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    test('DM-1: init_character_data exposes the exact initial ability state', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const handler = webSocketHandlers.get('init_character_data');
+
+        await handler(makeCharacterPayload(9201, [{ abilityHrid: '/abilities/poke', level: 6, experience: 359 }]));
+
+        expect(findAbility(dataManager, '/abilities/poke')).toEqual({
+            abilityHrid: '/abilities/poke',
+            level: 6,
+            experience: 359,
+        });
+    });
+
+    test('DM-2: abilities_updated merges an existing ability without losing unrelated abilities', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const initHandler = webSocketHandlers.get('init_character_data');
+        await initHandler(
+            makeCharacterPayload(9202, [
+                { abilityHrid: '/abilities/poke', level: 6, experience: 359 },
+                { abilityHrid: '/abilities/impale', level: 3, experience: 100 },
+            ])
+        );
+
+        const abilitiesUpdatedHandler = webSocketHandlers.get('abilities_updated');
+        abilitiesUpdatedHandler({
+            endCharacterAbilities: [{ abilityHrid: '/abilities/poke', level: 7, experience: 410 }],
+        });
+
+        expect(findAbility(dataManager, '/abilities/poke')).toEqual({
+            abilityHrid: '/abilities/poke',
+            level: 7,
+            experience: 410,
+        });
+        expect(findAbility(dataManager, '/abilities/impale')).toEqual({
+            abilityHrid: '/abilities/impale',
+            level: 3,
+            experience: 100,
+        });
+    });
+
+    test('DM-3: a newly learned ability absent at init is added, not ignored', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const initHandler = webSocketHandlers.get('init_character_data');
+        await initHandler(makeCharacterPayload(9203, [{ abilityHrid: '/abilities/poke', level: 6, experience: 359 }]));
+
+        const abilitiesUpdatedHandler = webSocketHandlers.get('abilities_updated');
+        abilitiesUpdatedHandler({
+            endCharacterAbilities: [{ abilityHrid: '/abilities/frenzy', level: 1, experience: 0 }],
+        });
+
+        expect(findAbility(dataManager, '/abilities/frenzy')).toEqual({
+            abilityHrid: '/abilities/frenzy',
+            level: 1,
+            experience: 0,
+        });
+        // Original ability is preserved alongside the newly learned one.
+        expect(findAbility(dataManager, '/abilities/poke')).toEqual({
+            abilityHrid: '/abilities/poke',
+            level: 6,
+            experience: 359,
+        });
+    });
+
+    test('DM-4: action_completed.endCharacterAbilities merges while preserving existing items/skills behavior', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const initHandler = webSocketHandlers.get('init_character_data');
+        await initHandler(makeCharacterPayload(9204, [{ abilityHrid: '/abilities/poke', level: 6, experience: 359 }]));
+        dataManager.characterItems = [{ id: 1, count: 5, itemLocationHrid: '/item_locations/inventory' }];
+        dataManager.characterSkills = [{ skillHrid: '/skills/attack', experience: 100, level: 1 }];
+
+        const abilitiesListener = vi.fn();
+        dataManager.on('abilities_updated', abilitiesListener);
+
+        const completedHandler = webSocketHandlers.get('action_completed');
+        completedHandler({
+            endCharacterAction: { id: 1, isDone: false },
+            endCharacterAbilities: [{ abilityHrid: '/abilities/poke', level: 7, experience: 410 }],
+            endCharacterItems: [{ id: 1, count: 4, itemLocationHrid: '/item_locations/inventory' }],
+            endCharacterSkills: [{ skillHrid: '/skills/attack', experience: 150, level: 2 }],
+        });
+
+        expect(findAbility(dataManager, '/abilities/poke')).toEqual({
+            abilityHrid: '/abilities/poke',
+            level: 7,
+            experience: 410,
+        });
+        expect(dataManager.characterItems[0].count).toBe(4);
+        expect(dataManager.characterSkills[0]).toEqual({ skillHrid: '/skills/attack', experience: 150, level: 2 });
+
+        await vi.advanceTimersByTimeAsync(0); // 'abilities_updated' emit is deferred via setTimeout
+
+        expect(abilitiesListener).toHaveBeenCalledWith({
+            endCharacterAbilities: [{ abilityHrid: '/abilities/poke', level: 7, experience: 410 }],
+        });
+        dataManager.off('abilities_updated', abilitiesListener);
+    });
+
+    test('DM-5: a partial update touches only the named ability, leaving unrelated abilities untouched', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const initHandler = webSocketHandlers.get('init_character_data');
+        await initHandler(
+            makeCharacterPayload(9205, [
+                { abilityHrid: '/abilities/poke', level: 6, experience: 359 },
+                { abilityHrid: '/abilities/impale', level: 3, experience: 100 },
+                { abilityHrid: '/abilities/frenzy', level: 2, experience: 50 },
+            ])
+        );
+
+        const impaleBefore = findAbility(dataManager, '/abilities/impale');
+        const frenzyBefore = findAbility(dataManager, '/abilities/frenzy');
+
+        webSocketHandlers.get('abilities_updated')({
+            endCharacterAbilities: [{ abilityHrid: '/abilities/poke', level: 7, experience: 410 }],
+        });
+
+        expect(findAbility(dataManager, '/abilities/impale')).toEqual(impaleBefore);
+        expect(findAbility(dataManager, '/abilities/frenzy')).toEqual(frenzyBefore);
+    });
+
+    test('DM-6: character switch A -> B -> A isolates ability state per character', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const initHandler = webSocketHandlers.get('init_character_data');
+
+        await initHandler(makeCharacterPayload(9301, [{ abilityHrid: '/abilities/poke', level: 6, experience: 359 }]));
+        expect(findAbility(dataManager, '/abilities/poke').level).toBe(6);
+
+        vi.setSystemTime(2000);
+        await initHandler(
+            makeCharacterPayload(9302, [{ abilityHrid: '/abilities/poke', level: 20, experience: 9999 }])
+        );
+        expect(findAbility(dataManager, '/abilities/poke').level).toBe(20);
+
+        vi.setSystemTime(4000);
+        await initHandler(makeCharacterPayload(9301, [{ abilityHrid: '/abilities/poke', level: 6, experience: 359 }]));
+        expect(findAbility(dataManager, '/abilities/poke').level).toBe(6);
+    });
+
+    test('a late abilities_updated/action_completed ability update during the switch window (characterData cleared) is safely dropped', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const initHandler = webSocketHandlers.get('init_character_data');
+
+        await initHandler(makeCharacterPayload(9401, [{ abilityHrid: '/abilities/poke', level: 6, experience: 359 }]));
+
+        dataManager.characterData = null; // simulate the brief character_switching window
+        expect(() =>
+            webSocketHandlers.get('abilities_updated')({
+                endCharacterAbilities: [{ abilityHrid: '/abilities/poke', level: 99, experience: 99999 }],
+            })
+        ).not.toThrow();
+
+        vi.setSystemTime(2000);
+        await initHandler(makeCharacterPayload(9401, [{ abilityHrid: '/abilities/poke', level: 6, experience: 359 }]));
+        expect(findAbility(dataManager, '/abilities/poke').level).toBe(6);
+    });
+});

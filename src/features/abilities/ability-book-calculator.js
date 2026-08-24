@@ -31,6 +31,12 @@ export class AbilityBookCalculator {
         this._abilityBookExpiryTimer = null;
         this._abilityBookNativeTabListener = null;
         this._abilityBookVisibilityInterval = null;
+
+        // Live-state reactivity (TLA-016): one listener for the feature's lifetime, not
+        // re-registered per panel. It refreshes whichever calculator is currently open by
+        // reading `_activeCalculator`, which `injectCalculator` overwrites on each open.
+        this._abilityUpdateHandler = null;
+        this._activeCalculator = null;
     }
 
     /**
@@ -169,6 +175,13 @@ export class AbilityBookCalculator {
 
         this.autofillManager.initialize();
 
+        // Keep the calculator's current level/books/cost/autofill quantity live (TLA-016) -
+        // fires for both native ability-update paths (abilities_updated and
+        // action_completed.endCharacterAbilities), since DataManager merges both into one
+        // semantic 'abilities_updated' event.
+        this._abilityUpdateHandler = () => this._refreshActiveCalculator();
+        dataManager.on('abilities_updated', this._abilityUpdateHandler);
+
         // Register with centralized observer to watch for Item Dictionary modal
         this.unregisterObserver = domObserver.onClass(
             'AbilityBookCalculator',
@@ -241,6 +254,22 @@ export class AbilityBookCalculator {
     }
 
     /**
+     * Refresh the currently open calculator (if any) with the latest ability state.
+     * Called on every DataManager 'abilities_updated' event; no-ops if no calculator is
+     * open or its DOM was detached (modal closed) without a matching disable().
+     */
+    _refreshActiveCalculator() {
+        const ctx = this._activeCalculator;
+        if (!ctx || !ctx.input.isConnected) {
+            this._activeCalculator = null;
+            return;
+        }
+
+        const abilityData = this.getCurrentAbilityData(ctx.abilityHrid);
+        ctx.applyLiveAbilityData(abilityData.level, abilityData.xp);
+    }
+
+    /**
      * Get current ability level and XP from character data
      * @param {string} abilityHrid - Ability HRID
      * @returns {Object} {level, xp}
@@ -307,7 +336,9 @@ export class AbilityBookCalculator {
             return;
         }
 
-        const { level: currentLevel, xp: currentXp } = abilityData;
+        // Mutable (not const): kept live by _refreshActiveCalculator() below.
+        let currentLevel = abilityData.level;
+        let currentXp = abilityData.xp;
         const targetLevel = currentLevel + 1;
 
         // Calculate initial books needed
@@ -334,7 +365,7 @@ export class AbilityBookCalculator {
 
         calculatorDiv.innerHTML = `
             <div style="margin-bottom: 8px; font-size: 0.95em;">
-                <strong>Current level:</strong> ${currentLevel}
+                <strong>Current level:</strong> <span id="currentLevelValue">${currentLevel}</span>
             </div>
             <div style="margin-bottom: 8px;">
                 <label for="tillLevelInput">To level: </label>
@@ -352,14 +383,12 @@ export class AbilityBookCalculator {
                 <br>
                 Cost: ${formatKMB(Math.ceil(booksNeeded * ask))} / ${formatKMB(Math.ceil(booksNeeded * bid))} (ask / bid)
             </div>
-            <div style="font-size: 0.85em; color: #999; margin-top: 8px; font-style: italic;">
-                Refresh page to update current level
-            </div>
         `;
 
         // Add event listeners for input changes
         const input = calculatorDiv.querySelector('#tillLevelInput');
         const display = calculatorDiv.querySelector('#tillLevelNumber');
+        const currentLevelValueEl = calculatorDiv.querySelector('#currentLevelValue');
 
         let currentBooks = booksNeeded;
 
@@ -382,6 +411,28 @@ export class AbilityBookCalculator {
 
         input.addEventListener('change', updateDisplay);
         input.addEventListener('keyup', updateDisplay);
+
+        // Live-state reactivity (TLA-016): reflects a real ability update (level/XP) without
+        // a page reload. Preserves the user's selected target when it's still valid; if the
+        // update makes the current target unreachable (current level caught up to or passed
+        // it), advances the target to currentLevel + 1 rather than leaving a stale/impossible
+        // value on screen.
+        const applyLiveAbilityData = (level, xp) => {
+            currentLevel = level;
+            currentXp = xp;
+            currentLevelValueEl.textContent = String(currentLevel);
+            input.min = String(currentLevel + 1);
+
+            const target = parseInt(input.value);
+            if (!Number.isFinite(target) || target <= currentLevel) {
+                input.value = String(currentLevel + 1);
+            }
+
+            updateDisplay();
+        };
+
+        const abilityHrid = itemHrid.replace('/items/', '/abilities/');
+        this._activeCalculator = { abilityHrid, input, applyLiveAbilityData };
 
         // Buy on Marketplace button
         const buyButton = document.createElement('button');
@@ -481,6 +532,11 @@ export class AbilityBookCalculator {
             this.unregisterObserver();
             this.unregisterObserver = null;
         }
+        if (this._abilityUpdateHandler) {
+            dataManager.off('abilities_updated', this._abilityUpdateHandler);
+            this._abilityUpdateHandler = null;
+        }
+        this._activeCalculator = null;
         this.autofillManager.cleanup();
         this.isActive = false;
         this.isInitialized = false;
