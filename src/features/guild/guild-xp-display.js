@@ -14,6 +14,10 @@ import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { fNum, rankBadge, addColumn, makeColumnSortable } from '../../utils/table-columns.js';
 
 const CSS_PREFIX = 'mwi-guild-xp';
+// Marker on the native "Exp to Level Up" data block itself (never the `mwi-guild-xp` class used
+// by removable injected content) so its one-time min-height/height expansion is idempotent
+// across re-renders and cleanly revertible on disable().
+const EXP_CARD_CLASS = `${CSS_PREFIX}__exp-card`;
 
 // ─── Formatting helpers ─────────────────────────────────────────────────────
 
@@ -331,11 +335,13 @@ class GuildXPDisplay {
                 timeToLevel !== null
                     ? `<div class="${CSS_PREFIX}" style="color: var(--color-space-300); font-size: 13px;">${formatTimeLeft(timeToLevel)}</div>`
                     : '';
-            // Find the "Exp to Next Level" data block and append
+            // Find the "Exp to Next Level" data block, expand it to fit this extra content
+            // (native card keeps a fixed height otherwise), and append.
             const dataBlocks = dataGridEl.querySelectorAll('.GuildPanel_dataBlock__3qVhK');
             for (const block of dataBlocks) {
                 const label = block.querySelector('.GuildPanel_label__-A63g');
                 if (label && label.textContent.includes('Exp to')) {
+                    this._expandExpCardIfNeeded(block);
                     block.insertAdjacentHTML('beforeend', ttlHTML + nextSlotHTML);
                     break;
                 }
@@ -344,9 +350,28 @@ class GuildXPDisplay {
     }
 
     /**
-     * Build the "Next Guild Level Slot (+1)" line HTML from tracker ETA info.
-     * Deliberately never claims to predict Guild Hall capacity increases - only the
-     * level-earned +1 base slot, which is the only thing this data can prove.
+     * Expand the native "Exp to Level Up" data block to auto-height (once per DOM node) so
+     * Toolasha's appended ETA/slot content never falls below the native card background.
+     * Idempotent: skipped once the block already carries the marker class, so repeated
+     * `_renderOverview()` calls on the same persistent React-owned node never re-measure or
+     * accumulate style. A remounted/replaced block starts without the marker and is measured
+     * fresh, so no stale styling can leak across navigation.
+     * @param {Element} block - The native `.GuildPanel_dataBlock__3qVhK` element
+     */
+    _expandExpCardIfNeeded(block) {
+        if (block.classList.contains(EXP_CARD_CLASS)) return;
+        const nativeHeight = window.getComputedStyle(block).height;
+        block.classList.add(EXP_CARD_CLASS);
+        block.style.minHeight = nativeHeight;
+        block.style.height = 'auto';
+        block.style.paddingBottom = '8px';
+    }
+
+    /**
+     * Build the "Next Guild Level Slot (+1)" block HTML from tracker ETA info, as three compact
+     * lines that fit the narrow native "Exp to Level Up" card. Deliberately never claims to
+     * predict Guild Hall capacity increases - only the level-earned +1 base slot, which is the
+     * only thing this data can prove.
      * @param {null|{targetLevel: number, xpRemaining: number, status: string, etaMs?: number, rateBasis?: string, rateValue?: number}} slotEta
      * @returns {string} HTML, or '' if unavailable
      */
@@ -365,8 +390,10 @@ class GuildXPDisplay {
             etaText = 'collecting data';
         }
 
-        return `<div class="${CSS_PREFIX}" style="color: var(--color-space-300); font-size: 13px; margin-top: 4px;"${tooltip ? ` title="${tooltip}"` : ''}>
-            <span style="color: #9ca3af;">Next Guild Level Slot (+1):</span> Lv ${slotEta.targetLevel} · ${fNum(slotEta.xpRemaining)} XP remaining · ${etaText}
+        return `<div class="${CSS_PREFIX}" style="margin-top: 4px; font-size: 13px; line-height: 1.5;"${tooltip ? ` title="${tooltip}"` : ''}>
+            <div style="color: #9ca3af;">Next Guild Level Slot (+1)</div>
+            <div style="color: var(--color-space-300);">To Lv ${slotEta.targetLevel} · ${fNum(slotEta.xpRemaining)} XP</div>
+            <div style="color: var(--color-space-300); opacity: 0.85;">ETA: ${etaText}</div>
         </div>`;
     }
 
@@ -1015,11 +1042,23 @@ class GuildXPDisplay {
         document.querySelectorAll(`.${CSS_PREFIX}__tooltip`).forEach((el) => el.remove());
         document.getElementById('mwi-guild-activity-hide')?.remove();
 
+        // Restore the native "Exp to Level Up" card's own height/class (never destroyed by the
+        // injected-element removal above, since the expansion is applied to the native block
+        // itself rather than to a removable Toolasha-owned element).
+        document.querySelectorAll(`.${EXP_CARD_CLASS}`).forEach((el) => {
+            el.classList.remove(EXP_CARD_CLASS);
+            el.style.height = '';
+            el.style.minHeight = '';
+            el.style.paddingBottom = '';
+        });
+
         this.initialized = false;
     }
 }
 
 const guildXPDisplay = new GuildXPDisplay();
+
+export { GuildXPDisplay };
 
 export default {
     name: 'Guild XP Display',
