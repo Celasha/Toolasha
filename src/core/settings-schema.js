@@ -1206,13 +1206,6 @@ export const settingsGroups = {
                 default: true,
                 help: "Shows how many actions worth of the currently-viewed item the order book can profitably absorb, based on the last Risk of Ruin calculation. Ignores the marketplace's tradable range floor, which isn't exposed in game data.",
             },
-            market_milkywayMarketLink: {
-                id: 'market_milkywayMarketLink',
-                label: 'Market: Show MilkyWay Market link',
-                type: 'checkbox',
-                default: false,
-                help: 'Adds a small link to view the current item on milkyway.market',
-            },
         },
     },
 

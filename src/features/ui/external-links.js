@@ -64,10 +64,6 @@ class ExternalLinks {
                 url: 'https://shykai.github.io/MWICombatSimulatorTest/dist/',
             },
             {
-                label: 'Milkyway Market',
-                url: 'https://milkyway.market/',
-            },
-            {
                 label: 'Enhancelator',
                 url: 'https://doh-nuts.github.io/Enhancelator/',
             },

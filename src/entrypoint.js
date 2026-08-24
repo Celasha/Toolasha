@@ -166,13 +166,6 @@ function registerFeatures() {
             async: false,
         },
         {
-            key: 'milkywayMarketLink',
-            name: 'MilkyWay Market Link',
-            category: 'Market',
-            module: Market.milkywayMarketLink,
-            async: false,
-        },
-        {
             key: 'sellQueue',
             name: 'Sell Queue',
             category: 'Market',
