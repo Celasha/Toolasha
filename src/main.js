@@ -16,17 +16,18 @@ import { setupScrollTooltipDismissal } from './utils/dom.js';
 import guildXPTrackerFeature from './features/guild/guild-xp-tracker.js';
 
 /**
- * Detect if running on Combat Simulator page
- * @returns {boolean} True if on Combat Simulator
+ * Detect if running on a supported Combat Simulator page
+ * @returns {boolean} True if on a Combat Simulator
  */
 function isCombatSimulatorPage() {
     const url = window.location.href;
-    // Only work on test Combat Simulator for now
-    return url.includes('shykai.github.io/MWICombatSimulatorTest/dist/');
+    return (
+        url.includes('shykai.github.io/MWICombatSimulatorTest/dist/') ||
+        url.includes('szerra.github.io/mwi-shrine-combat-simulator/')
+    );
 }
 
 if (isCombatSimulatorPage()) {
-    console.log('[Toolasha] Detected combat sim page, initializing integration');
     // Initialize combat sim integration only
     combatSimIntegration.initialize();
 

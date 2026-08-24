@@ -36,7 +36,7 @@ Toolasha is a complete rewrite of the popular MWITools userscript, rebuilt from 
 - **Labyrinth Tracker** — Tracks best defeated enemy level per monster type
 - **Ability Triggers** — Displays ability trigger conditions
 - **Loadout Display** — Enhancement levels shown on loadout equipment
-- **Combat Sim Integration** — Import character data directly into the Shykai combat simulator
+- **Combat Sim Integration** — Import character data directly into the Shykai or szerra combat simulator
 
 ### ⚗️ Alchemy
 
@@ -201,7 +201,7 @@ Toolasha/
 │   │   ├── alchemy/              # Alchemy profit and history tracking
 │   │   ├── chat/                 # Chat enhancements and pop-out
 │   │   ├── combat/               # Combat statistics, dungeon tracker, labyrinth
-│   │   ├── combat-sim-integration/ # Shykai combat simulator integration
+│   │   ├── combat-sim-integration/ # Combat simulator (Shykai, szerra) integration
 │   │   ├── combat-stats/         # Detailed combat statistics
 │   │   ├── enhancement/          # Enhancement optimizer and tracker
 │   │   ├── house/                # House upgrade costs

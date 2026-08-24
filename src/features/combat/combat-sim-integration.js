@@ -24,7 +24,6 @@ let calculatorUIElements = null;
  * Initialize combat sim integration (runs on sim page only)
  */
 export function initialize() {
-    console.log('[Toolasha Combat Sim] initialize() called, URL:', window.location.href);
     disable();
 
     // Wait for simulator UI to load
@@ -331,14 +330,12 @@ function selectZone(zoneHrid, isDungeon) {
  */
 async function initializeSkillCalculator() {
     try {
-        console.log('[Toolasha Combat Sim Calculator] Starting initialization...');
         // Wait for sim results panel to exist
         const resultsPanel = await waitForSimResults();
         if (!resultsPanel) {
             console.warn('[Toolasha Combat Sim Calculator] Results panel not found');
             return;
         }
-        console.log('[Toolasha Combat Sim Calculator] Results panel found:', resultsPanel);
 
         // Wait for experience gain div to exist
         const expDiv = await waitForExpDiv();
@@ -346,14 +343,12 @@ async function initializeSkillCalculator() {
             console.warn('[Toolasha Combat Sim Calculator] Experience div not found');
             return;
         }
-        console.log('[Toolasha Combat Sim Calculator] Exp div found, setting up observer');
 
         // Apply result section highlights
         applyResultHighlights();
 
         // Setup mutation observer to watch for sim results
         setupSkillCalculatorObserver(expDiv, resultsPanel);
-        console.log('[Toolasha Combat Sim Calculator] Observer setup complete');
     } catch (error) {
         console.error('[Toolasha Combat Sim Calculator] Failed to initialize:', error);
     }
@@ -452,7 +447,6 @@ function setupSkillCalculatorObserver(expDiv, resultsPanel) {
         if (hasSignificantChange) {
             // Check if exp div has actual skill data
             const rows = expDiv.querySelectorAll('.row');
-            console.log('[Toolasha Combat Sim Calculator] Mutation detected, .row count:', rows.length);
 
             if (rows.length > 0) {
                 // Debounce to avoid multiple rapid calls
@@ -526,7 +520,6 @@ async function handleSimResults(resultsPanel) {
     try {
         // Extract exp rates from sim results
         const expRates = extractExpRates();
-        console.log('[Toolasha Combat Sim Calculator] expRates:', expRates);
 
         if (!expRates || Object.keys(expRates).length === 0) {
             console.warn('[Toolasha Combat Sim Calculator] No exp rates found');
@@ -535,12 +528,10 @@ async function handleSimResults(resultsPanel) {
 
         // Extract skill levels from simulator's active player tab
         let characterSkills = extractSimulatorSkillLevels();
-        console.log('[Toolasha Combat Sim Calculator] characterSkills:', characterSkills);
 
         // Fallback to real character data if simulator extraction fails
         if (!characterSkills) {
             const characterData = getCharacterDataFromStorage();
-            console.log('[Toolasha Combat Sim Calculator] Fallback characterData:', !!characterData);
 
             if (!characterData) {
                 console.warn('[Toolasha Combat Sim Calculator] No character data available');

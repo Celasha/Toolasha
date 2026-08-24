@@ -12,6 +12,7 @@
 // @match        https://www.milkywayidle.com/*
 // @match        https://test.milkywayidle.com/*
 // @match        https://shykai.github.io/MWICombatSimulatorTest/dist/*
+// @match        https://szerra.github.io/mwi-shrine-combat-simulator/*
 // @grant        GM_addStyle
 // @grant        GM.xmlHttpRequest
 // @grant        GM_xmlhttpRequest
