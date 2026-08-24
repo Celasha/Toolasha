@@ -6,7 +6,7 @@
 import webSocketHook from '../../core/websocket.js';
 import storage from '../../core/storage.js';
 import dataManager from '../../core/data-manager.js';
-import { calculateLevelGapDebuff } from '../combat-sim/combat-sim-adapter.js';
+import { calculateLevelGapDebuff, calculateCombatLevelFromLevelFields } from '../combat-sim/combat-sim-adapter.js';
 import dungeonTracker from '../combat/dungeon-tracker.js';
 import ExpectedLootTracker from './expected-loot-tracker.js';
 
@@ -18,6 +18,31 @@ const LEGACY_STORAGE_KEYS = Object.freeze({
     latestCombatRun: 'latestCombatRun',
 });
 const STORAGE_MISSING = Symbol('storage-missing');
+
+/**
+ * Derive a player's raw (unfloored) Combat Level from the seven whole skill-level fields on
+ * their live `combatDetails`, for the SERVER-CONFIRMED Level Malus mechanic input (see
+ * `calculateLevelGapDebuff()`'s doc comment in combat-sim-adapter.js). Returns null - never a
+ * silent fallback to the floored `combatDetails.combatLevel` - if any required field is missing,
+ * so a momentarily-incomplete payload skips the debuff calculation instead of feeding it wrong
+ * data.
+ * @param {Object} player - One player entry from a new_battle message
+ * @returns {number|null} Raw combat level, or null if the required fields aren't present
+ */
+function getRawCombatLevel(player) {
+    const cd = player?.combatDetails;
+    const fields = {
+        staminaLevel: cd?.staminaLevel,
+        intelligenceLevel: cd?.intelligenceLevel,
+        attackLevel: cd?.attackLevel,
+        defenseLevel: cd?.defenseLevel,
+        meleeLevel: cd?.meleeLevel,
+        rangedLevel: cd?.rangedLevel,
+        magicLevel: cd?.magicLevel,
+    };
+    if (Object.values(fields).some((v) => typeof v !== 'number')) return null;
+    return calculateCombatLevelFromLevelFields(fields);
+}
 
 /**
  * Sum a `totalLootMap`-shaped object by real item HRID. The map's own object keys are opaque
@@ -500,16 +525,13 @@ class CombatStatsDataCollector {
             this.expectedLootTracker.recordCompletedEncounter(this.pendingEncounter);
         }
 
-        // Level Malus eligibility uses the canonical (floored) Combat Level - the same value the
-        // game computes via getCombatLevel() and exposes as combatDetails.combatLevel - since
-        // that is the only Combat Level concept evidenced anywhere in the game (see
-        // calculateLevelGapDebuff()'s doc comment in combat-sim-adapter.js). Live new_battle data
-        // already has this field, so it's read directly rather than recomputed.
-        const levels = data.players
-            .map((player) => player?.combatDetails?.combatLevel)
-            .filter((level) => typeof level === 'number');
+        // Level Malus is SERVER-CONFIRMED to use the raw (unfloored) whole-skill Combat Level -
+        // not the native floored combatDetails.combatLevel field - so it's derived from the same
+        // seven whole skill-level fields and the same shared helper Combat Sim uses, rather than
+        // read directly. See calculateLevelGapDebuff()'s doc comment in combat-sim-adapter.js.
+        const levels = data.players.map((player) => getRawCombatLevel(player)).filter((level) => level !== null);
         const maxCombatLevel = levels.length > 0 ? Math.max(...levels) : 0;
-        const selfCombatLevel = selfPlayer?.combatDetails?.combatLevel;
+        const selfCombatLevel = getRawCombatLevel(selfPlayer);
         const debuffOnLevelGap =
             typeof selfCombatLevel === 'number' && maxCombatLevel > 0
                 ? calculateLevelGapDebuff(selfCombatLevel, maxCombatLevel)

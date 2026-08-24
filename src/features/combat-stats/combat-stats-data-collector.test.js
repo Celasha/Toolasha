@@ -46,8 +46,19 @@ vi.mock('../../core/config.js', () => ({
     },
 }));
 
+// Mocked as a pure, side-effect-free reimplementation of the real formula (not vi.importActual -
+// the real module transitively imports marketplace.js/websocket.js, which isn't set up here).
 vi.mock('../combat-sim/combat-sim-adapter.js', () => ({
     calculateLevelGapDebuff: vi.fn(() => 0),
+    calculateCombatLevelFromLevelFields: (levelFields) => {
+        const { staminaLevel, intelligenceLevel, attackLevel, defenseLevel, meleeLevel, rangedLevel, magicLevel } =
+            levelFields;
+        const combatStyleMax = Math.max(meleeLevel, rangedLevel, magicLevel);
+        const primaryMax = Math.max(attackLevel, defenseLevel, meleeLevel, rangedLevel, magicLevel);
+        const raw =
+            0.1 * (staminaLevel + intelligenceLevel + attackLevel + defenseLevel + combatStyleMax) + 0.5 * primaryMax;
+        return Math.round(raw * 10) / 10;
+    },
 }));
 
 vi.mock('../combat/dungeon-tracker.js', () => ({
@@ -296,6 +307,21 @@ describe('CombatStatsDataCollector expected-loot integration', () => {
         return lootMap;
     }
 
+    // Setting all seven whole-level fields to the same value makes calculateCombatLevelFromLevelFields
+    // (0.1*sum-of-five + 0.5*max, all equal inputs) return exactly that value - a convenient fixture
+    // shape for tests that don't care about Level Malus specifics.
+    function wholeLevelFields(level) {
+        return {
+            staminaLevel: level,
+            intelligenceLevel: level,
+            attackLevel: level,
+            defenseLevel: level,
+            meleeLevel: level,
+            rangedLevel: level,
+            magicLevel: level,
+        };
+    }
+
     function battlePayload({ battleId, monsterHrids, combatLevel = 100, combatStats = {}, totalLootMap = {} }) {
         return {
             battleId,
@@ -307,7 +333,7 @@ describe('CombatStatsDataCollector expected-loot integration', () => {
                     combatConsumables: [],
                     totalLootMap,
                     totalSkillExperienceMap: {},
-                    combatDetails: { combatLevel, combatStats },
+                    combatDetails: { combatLevel, combatStats, ...wholeLevelFields(combatLevel) },
                 },
             ],
         };
@@ -407,7 +433,7 @@ describe('CombatStatsDataCollector expected-loot integration', () => {
         expect(collector.pendingEncounter).not.toBeNull(); // this battle's own snapshot for the next completion
     });
 
-    test('derives Level Malus input from the native (floored) combatDetails.combatLevel, not a recomputed raw value', async () => {
+    test('I: derives Level Malus input from the raw (unfloored) whole-level Combat Level, never the native floored field', async () => {
         dataManager.getCurrentActions.mockReturnValue([regularZoneAction()]);
         dataManager.getActionDetails.mockReturnValue({ combatZoneInfo: { isDungeon: false } });
         const collector = await makeInitializedCollector();
@@ -424,22 +450,47 @@ describe('CombatStatsDataCollector expected-loot integration', () => {
                         combatConsumables: [],
                         totalLootMap: {},
                         totalSkillExperienceMap: {},
-                        combatDetails: { combatLevel: 133, combatStats: {} },
+                        // native/floored combatLevel is 133, but the whole-level fields produce a
+                        // raw combat level of 133.2 (the developer's own example) - Level Malus
+                        // must receive 133.2, never 133.
+                        combatDetails: {
+                            combatLevel: 133,
+                            combatStats: {},
+                            staminaLevel: 125,
+                            intelligenceLevel: 124,
+                            attackLevel: 130,
+                            defenseLevel: 125,
+                            meleeLevel: 105,
+                            rangedLevel: 138,
+                            magicLevel: 77,
+                        },
                     },
                     {
                         character: { id: 'character-b', name: 'Ally' },
                         combatConsumables: [],
                         totalLootMap: {},
                         totalSkillExperienceMap: {},
-                        combatDetails: { combatLevel: 300, combatStats: {} },
+                        // native/floored combatLevel is 300, but the whole-level fields produce a
+                        // raw combat level of 300.4 (intelligence isn't part of the 0.5x max term,
+                        // so +4 intelligence alone shifts the raw total by +0.4).
+                        combatDetails: {
+                            combatLevel: 300,
+                            combatStats: {},
+                            staminaLevel: 300,
+                            intelligenceLevel: 304,
+                            attackLevel: 300,
+                            defenseLevel: 300,
+                            meleeLevel: 300,
+                            rangedLevel: 300,
+                            magicLevel: 300,
+                        },
                     },
                 ],
             },
             collector.lifecycleGeneration
         );
 
-        // The game's own floored combatDetails.combatLevel, read directly - never recomputed.
-        expect(calculateLevelGapDebuff).toHaveBeenCalledWith(133, 300);
+        expect(calculateLevelGapDebuff).toHaveBeenCalledWith(133.2, 300.4);
     });
 
     test('cleanup resets the expected-loot tracker and pending encounter (no cross-character leakage)', async () => {

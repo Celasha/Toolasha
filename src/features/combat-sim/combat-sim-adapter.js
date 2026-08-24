@@ -546,51 +546,52 @@ function buildPartyMemberDTO(profile, clientData, battleData) {
  * highest combat level. Shared by Combat Sim (simulated party loadouts) and Combat Stats
  * (real live encounters) so both agree on the exact same eligibility rule.
  *
- * Per the official MWI Game Guide, both conditions are required: the player must be more than
- * 20% lower AND at least 10 Combat Levels below the party's highest combat level. `combatLevel`
- * and `maxCombatLevel` must be the canonical (floored) Combat Level - the same integer the game
- * computes via `getCombatLevel()` and shows as `combatDetails.combatLevel` - since that is the
- * only Combat Level concept evidenced anywhere in the game's client code or guide; there is no
- * independent evidence of a separate raw/pre-floor value feeding this check.
- * @param {number} combatLevel - This player's combat level
- * @param {number} maxCombatLevel - The party's highest combat level
+ * SERVER-CONFIRMED (direct MWI developer evidence): `combatLevel` and `maxCombatLevel` must be
+ * the raw (unfloored) whole-skill Combat Level - see `calculateCombatLevelFromLevelFields()` -
+ * not the native floored integer the game displays. The 20%-lower and 10-Combat-Level-lower
+ * conditions combine into one effective threshold, the comparison is strict, and the penalty is
+ * continuous (no 1%-step quantization). Supplied server implementation (Go):
+ *   effectiveThreshold := max(1.2, (combatLevel+10)/combatLevel)
+ *   if effectiveThreshold*combatLevel < topCombatLevel {
+ *       multiplier = max(0.1, 1.0-3.0*(topCombatLevel/combatLevel-effectiveThreshold))
+ *   }
+ * @param {number} combatLevel - This player's raw (unfloored) combat level
+ * @param {number} maxCombatLevel - The party's highest raw (unfloored) combat level
  * @returns {number} Debuff as a negative decimal (0 = no debuff, e.g. -0.3 = -30%)
  */
 export function calculateLevelGapDebuff(combatLevel, maxCombatLevel) {
-    const ratio = maxCombatLevel / combatLevel;
-    const gap = maxCombatLevel - combatLevel;
-    if (ratio <= 1.2 || gap < 10) {
+    const effectiveThreshold = Math.max(1.2, (combatLevel + 10) / combatLevel);
+    if (!(effectiveThreshold * combatLevel < maxCombatLevel)) {
         return 0;
     }
-    const maxDebuff = 0.9;
-    const levelPercent = Math.floor((ratio - 1.2) * 100) / 100;
-    return -1 * Math.min(maxDebuff, 3 * levelPercent);
+    const multiplier = Math.max(0.1, 1.0 - 3.0 * (maxCombatLevel / combatLevel - effectiveThreshold));
+    return multiplier - 1.0;
 }
 
 /**
- * Calculate the canonical (floored) combat level from any object exposing the game's own
+ * Calculate the raw (unfloored) combat level from any object exposing the game's own
  * combatDetails-shaped whole-skill-level fields (staminaLevel, intelligenceLevel, attackLevel,
  * defenseLevel, meleeLevel, rangedLevel, magicLevel) - the same shape as a simulated player DTO
- * here in Combat Sim. Combat Stats instead reads the native `combatDetails.combatLevel` field
- * directly from live `new_battle` data rather than recomputing it, since that field already is
- * the canonical value; Combat Sim has no such native field for a simulated party and must derive
- * the equivalent value from the same official formula (see `calculateRawCombatLevel()`), floored
- * the same way the game itself floors it.
+ * here in Combat Sim, and the same shape the server sends on live `combatDetails` objects.
+ *
+ * SERVER-CONFIRMED: this raw/unfloored value - not the native floored `combatDetails.combatLevel`
+ * integer the game displays - is the actual mechanic input for Level Malus (see
+ * `calculateLevelGapDebuff()`). Both Combat Sim (simulated party) and Combat Stats (live
+ * encounters, deriving this from the same seven fields on real `combatDetails`) use this one
+ * shared helper so they never disagree.
  * @param {{staminaLevel: number, intelligenceLevel: number, attackLevel: number, defenseLevel: number, meleeLevel: number, rangedLevel: number, magicLevel: number}} levelFields
- * @returns {number} Combat level
+ * @returns {number} Raw (unfloored) combat level
  */
 export function calculateCombatLevelFromLevelFields(levelFields) {
-    return Math.floor(
-        calculateRawCombatLevel({
-            stamina: levelFields.staminaLevel,
-            intelligence: levelFields.intelligenceLevel,
-            attack: levelFields.attackLevel,
-            defense: levelFields.defenseLevel,
-            melee: levelFields.meleeLevel,
-            ranged: levelFields.rangedLevel,
-            magic: levelFields.magicLevel,
-        })
-    );
+    return calculateRawCombatLevel({
+        stamina: levelFields.staminaLevel,
+        intelligence: levelFields.intelligenceLevel,
+        attack: levelFields.attackLevel,
+        defense: levelFields.defenseLevel,
+        melee: levelFields.meleeLevel,
+        ranged: levelFields.rangedLevel,
+        magic: levelFields.magicLevel,
+    });
 }
 
 /**

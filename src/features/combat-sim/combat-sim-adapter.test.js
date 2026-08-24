@@ -2,26 +2,48 @@ import { describe, expect, test } from 'vitest';
 import { calculateLevelGapDebuff, calculateCombatLevelFromLevelFields } from './combat-sim-adapter.js';
 
 describe('calculateLevelGapDebuff', () => {
-    test('no debuff when ratio is exactly at the 1.2 threshold', () => {
+    // SERVER-CONFIRMED (direct MWI developer evidence):
+    //   effectiveThreshold := max(1.2, (combatLevel+10)/combatLevel)
+    //   if effectiveThreshold*combatLevel < topCombatLevel {
+    //       multiplier = max(0.1, 1.0-3.0*(topCombatLevel/combatLevel-effectiveThreshold))
+    //   }
+    // combatLevel/topCombatLevel are the raw (unfloored) whole-skill Combat Level.
+
+    test('B: exact 20% boundary (CL 100 / top 120) -> no malus (strict comparison)', () => {
         expect(calculateLevelGapDebuff(100, 120)).toBe(0);
     });
 
-    test('no debuff when ratio is below the 1.2 threshold', () => {
-        expect(calculateLevelGapDebuff(100, 110)).toBe(0);
+    test('C: just above the 20% boundary (CL 100 / top 120.1) -> continuous, unquantized malus', () => {
+        // effectiveThreshold = 1.2, multiplier = 1 - 3*(1.201-1.2) = 0.997 -> debuff -0.003
+        expect(calculateLevelGapDebuff(100, 120.1)).toBeCloseTo(-0.003, 6);
+    });
+
+    test('D: exactly +10 below CL 50 (CL 40 / top 50.0) -> no malus (effectiveThreshold dominates)', () => {
+        // effectiveThreshold = max(1.2, 50/40) = 1.25; 1.25*40 = 50, not < 50 -> no malus
+        expect(calculateLevelGapDebuff(40, 50.0)).toBe(0);
+    });
+
+    test('E: just above +10 below CL 50 (CL 40 / top 50.1)', () => {
+        // effectiveThreshold = 1.25, multiplier = 1 - 3*(50.1/40 - 1.25) = 0.9925 -> debuff -0.0075
+        expect(calculateLevelGapDebuff(40, 50.1)).toBeCloseTo(-0.0075, 6);
+    });
+
+    test('F: below-50 penalty baseline uses effectiveThreshold, not a fixed 1.2 (CL 40 / top 51)', () => {
+        // effectiveThreshold = 1.25, ratio = 1.275, multiplier = 1 - 3*0.025 = 0.925 -> debuff -0.075
+        expect(calculateLevelGapDebuff(40, 51)).toBeCloseTo(-0.075, 6);
+    });
+
+    test('G: maximum penalty cap (CL 100 / top 150) -> -0.9, and larger gaps stay capped', () => {
+        expect(calculateLevelGapDebuff(100, 150)).toBeCloseTo(-0.9, 6);
+        expect(calculateLevelGapDebuff(100, 1000)).toBe(-0.9);
     });
 
     test("no debuff for the party's own highest-level player (ratio of exactly 1)", () => {
         expect(calculateLevelGapDebuff(150, 150)).toBe(0);
     });
 
-    test('applies a debuff just above the 1.2 threshold', () => {
-        // ratio = 130/100 = 1.3 -> levelPercent = floor((1.3-1.2)*100)/100 = 0.1 -> -min(0.9, 0.3) = -0.3
-        expect(calculateLevelGapDebuff(100, 130)).toBeCloseTo(-0.3, 5);
-    });
-
-    test('caps the debuff at -0.9 for very large level gaps', () => {
-        // ratio = 1000/100 = 10 -> levelPercent = floor((10-1.2)*100)/100 = 8.8 -> -min(0.9, 26.4) = -0.9
-        expect(calculateLevelGapDebuff(100, 1000)).toBe(-0.9);
+    test('no debuff when below the 1.2 ratio and the +10 gap', () => {
+        expect(calculateLevelGapDebuff(100, 110)).toBe(0);
     });
 
     test('is always 0 or negative, never a bonus', () => {
@@ -35,39 +57,20 @@ describe('calculateLevelGapDebuff', () => {
         }
     });
 
-    describe('the official 10-level-gap requirement (both ratio > 1.2 AND gap >= 10 are required)', () => {
-        test('ratio above 1.2 but gap under 10 -> no malus', () => {
-            // 49.9/40 = 1.2475 > 1.2, but the gap is only 9.9 levels
-            expect(calculateLevelGapDebuff(40.0, 49.9)).toBe(0);
-        });
-
-        test('gap exactly 10 and ratio above 1.2 -> malus applies', () => {
-            // 50/40 = 1.25 > 1.2, gap = 10.0 -> levelPercent = floor((1.25-1.2)*100)/100 = 0.05
-            expect(calculateLevelGapDebuff(40.0, 50.0)).toBeCloseTo(-0.15, 5);
-        });
-
-        test('ratio exactly 1.2 -> no malus regardless of the absolute gap', () => {
-            expect(calculateLevelGapDebuff(100.0, 120.0)).toBe(0);
-        });
-
-        test('flooring the canonical Combat Level (not a raw value) can flip Malus eligibility at the boundary', () => {
-            // Raw combat levels 100.9 and 121.0: raw ratio = 121.0/100.9 ~= 1.1992 (<= 1.2), not
-            // eligible. Floored (the value the game actually computes/displays) = 100 and 121:
-            // floored ratio = 1.21 (> 1.2) and gap = 21 (>= 10), eligible. calculateLevelGapDebuff
-            // itself is precision-agnostic - it's the caller's job to pass the canonical floored
-            // value, which real call sites (Combat Sim, Combat Stats) now do.
-            expect(calculateLevelGapDebuff(100.9, 121.0)).toBe(0);
-            expect(calculateLevelGapDebuff(100, 121)).not.toBe(0);
-        });
+    test('H: unfloored raw Combat Level changes eligibility at a real discrete boundary', () => {
+        // Developer example: self raw CL 133.2, top raw CL 159.9.
+        // Raw ratio 159.9/133.2 > 1.2 -> malus applies (must not be quantized to zero).
+        // If incorrectly floored to 133/159, 159/133 < 1.2 -> malus would incorrectly disappear.
+        expect(calculateLevelGapDebuff(133.2, 159.9)).toBeCloseTo(-0.001351351351, 9);
+        expect(calculateLevelGapDebuff(133, 159)).toBe(0);
     });
 });
 
 describe('calculateCombatLevelFromLevelFields', () => {
-    test('computes the canonical (floored) combat level from combatDetails-shaped whole-skill-level fields', () => {
-        // Same example as the report: Stamina 125, Intelligence 124, Attack 130, Defense 125,
-        // Melee 105, Ranged 138, Magic 77 -> raw formula = 133.2, floored to 133 to match the
-        // game's own getCombatLevel()/combatDetails.combatLevel - there is no independent
-        // evidence of a separate raw/pre-floor Combat Level used anywhere in the game.
+    test('A: computes the raw (unfloored) combat level from combatDetails-shaped whole-skill-level fields', () => {
+        // Developer example: Stamina 125, Intelligence 124, Attack 130, Defense 125, Melee 105,
+        // Ranged 138, Magic 77 -> raw formula = 133.2. SERVER-CONFIRMED: this raw value, not the
+        // floored native 133, is the actual Level Malus mechanic input.
         const result = calculateCombatLevelFromLevelFields({
             staminaLevel: 125,
             intelligenceLevel: 124,
@@ -77,6 +80,20 @@ describe('calculateCombatLevelFromLevelFields', () => {
             rangedLevel: 138,
             magicLevel: 77,
         });
-        expect(result).toBe(133);
+        expect(result).toBe(133.2);
+    });
+
+    test('J: no XP-within-level regression - whole levels only, never a value like 133.39', () => {
+        const result = calculateCombatLevelFromLevelFields({
+            staminaLevel: 125,
+            intelligenceLevel: 124,
+            attackLevel: 130,
+            defenseLevel: 125,
+            meleeLevel: 105,
+            rangedLevel: 138,
+            magicLevel: 77,
+        });
+        expect(result).not.toBeCloseTo(133.39, 1);
+        expect(result).toBe(133.2);
     });
 });
