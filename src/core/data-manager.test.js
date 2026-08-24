@@ -55,6 +55,355 @@ describe('DataManager', () => {
         expect(listener).toHaveBeenCalledWith(payload);
     });
 
+    test('initial character data keeps equipped items without count and filters explicit zero-count records', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const equipped = {
+            hash: 'character::main_hand::example_bow::10',
+            itemHrid: '/items/example_bow',
+            enhancementLevel: 10,
+            itemLocationHrid: '/item_locations/main_hand',
+        };
+        const removed = {
+            hash: 'character::inventory::removed_item::0',
+            itemHrid: '/items/removed_item',
+            enhancementLevel: 0,
+            itemLocationHrid: '/item_locations/inventory',
+            count: 0,
+        };
+
+        dataManager.currentCharacterId = null;
+        dataManager.currentCharacterName = null;
+        dataManager.lastCharacterSwitchTime = 0;
+        dataManager.characterItems = null;
+        dataManager.characterEquipment.clear();
+
+        const handler = webSocketHandlers.get('init_character_data');
+        expect(typeof handler).toBe('function');
+        const payload = {
+            character: { id: 'character-a', name: 'Character A' },
+            characterSkills: [],
+            characterItems: [equipped, removed],
+            characterActions: [],
+            characterQuests: [],
+            characterHouseRoomMap: {},
+            actionTypeDrinkSlotsMap: {},
+            characterGuildBuffMap: {},
+            guildBuildingLevelMap: {},
+        };
+        await handler(payload);
+
+        expect(payload.characterItems).toEqual([equipped, removed]);
+        expect(dataManager.getInventory()).toEqual([equipped]);
+        expect(dataManager.characterData.characterItems).toBe(dataManager.characterItems);
+        expect(dataManager.characterData.characterItems).toEqual([equipped]);
+        expect(dataManager.getEquipment().get('/item_locations/main_hand')).toEqual(equipped);
+    });
+
+    test('incremental updates keep legacy characterData.characterItems consumers on the live item array', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const initHandler = webSocketHandlers.get('init_character_data');
+        const updateHandler = webSocketHandlers.get('items_updated');
+        const initial = {
+            hash: 'character::inventory::example_bow::5',
+            itemHrid: '/items/example_bow',
+            enhancementLevel: 5,
+            itemLocationHrid: '/item_locations/inventory',
+            count: 1,
+        };
+        const replacement = {
+            hash: 'character::inventory::example_bow::10',
+            itemHrid: '/items/example_bow',
+            enhancementLevel: 10,
+            itemLocationHrid: '/item_locations/inventory',
+            count: 1,
+        };
+
+        dataManager.currentCharacterId = null;
+        dataManager.currentCharacterName = null;
+        dataManager.lastCharacterSwitchTime = 0;
+        dataManager.characterItems = null;
+        dataManager.characterEquipment.clear();
+
+        await initHandler({
+            character: { id: 'character-live-items', name: 'Character Live Items' },
+            characterSkills: [],
+            characterItems: [initial],
+            characterActions: [],
+            characterQuests: [],
+            characterHouseRoomMap: {},
+            actionTypeDrinkSlotsMap: {},
+            characterGuildBuffMap: {},
+            guildBuildingLevelMap: {},
+        });
+
+        updateHandler({
+            endCharacterItems: [{ ...initial, count: 0 }, replacement],
+        });
+
+        expect(dataManager.characterData.characterItems).toBe(dataManager.characterItems);
+        expect(dataManager.characterData.characterItems).toEqual([replacement]);
+        expect(dataManager.getInventory()).toEqual([replacement]);
+    });
+
+    test('keeps a newly observed equipped item when items_updated omits count', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const payload = {
+            endCharacterItems: [
+                {
+                    id: 'equipped-bow-10',
+                    itemHrid: '/items/example_bow',
+                    enhancementLevel: 10,
+                    itemLocationHrid: '/item_locations/main_hand',
+                },
+            ],
+        };
+
+        dataManager.characterItems = [];
+        dataManager.characterEquipment.clear();
+
+        const handler = webSocketHandlers.get('items_updated');
+        expect(typeof handler).toBe('function');
+
+        handler(payload);
+
+        expect(dataManager.getInventory()).toEqual(payload.endCharacterItems);
+        expect(dataManager.getEquipment().get('/item_locations/main_hand')).toEqual(payload.endCharacterItems[0]);
+    });
+
+    test('still ignores a newly observed character-item record with explicit zero count', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const payload = {
+            endCharacterItems: [
+                {
+                    id: 'removed-bow-10',
+                    itemHrid: '/items/example_bow',
+                    enhancementLevel: 10,
+                    itemLocationHrid: '/item_locations/main_hand',
+                    count: 0,
+                },
+            ],
+        };
+
+        dataManager.characterItems = [];
+        dataManager.characterEquipment.clear();
+
+        const handler = webSocketHandlers.get('items_updated');
+        handler(payload);
+
+        expect(dataManager.getInventory()).toEqual([]);
+        expect(dataManager.getEquipment().has('/item_locations/main_hand')).toBe(false);
+    });
+
+    test.each([
+        ['replacement before removal', true],
+        ['removal before replacement', false],
+    ])('keeps the replacement equipment regardless of batch order: %s', async (_label, replacementFirst) => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const oldItem = {
+            hash: 'character::main_hand::example_bow::5',
+            id: 'legacy-record-id',
+            itemHrid: '/items/example_bow',
+            enhancementLevel: 5,
+            itemLocationHrid: '/item_locations/main_hand',
+        };
+        const replacement = {
+            hash: 'character::main_hand::example_bow::10',
+            // Deliberately re-use the fallback id. Native `hash` identity must win.
+            id: 'legacy-record-id',
+            itemHrid: '/items/example_bow',
+            enhancementLevel: 10,
+            itemLocationHrid: '/item_locations/main_hand',
+        };
+        const removal = { ...oldItem, count: 0 };
+
+        dataManager.characterItems = [oldItem];
+        dataManager.updateEquipmentMap(dataManager.characterItems);
+
+        const handler = webSocketHandlers.get('items_updated');
+        handler({
+            endCharacterItems: replacementFirst ? [replacement, removal] : [removal, replacement],
+        });
+
+        expect(dataManager.getInventory()).toEqual([replacement]);
+        expect(dataManager.getEquipment().get('/item_locations/main_hand')).toEqual(replacement);
+    });
+
+    test('equipment location follows the last present hash update, not characterItems array order', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const oldItem = {
+            hash: 'character::main_hand::example_bow::5',
+            id: 'old-id',
+            itemHrid: '/items/example_bow',
+            enhancementLevel: 5,
+            itemLocationHrid: '/item_locations/main_hand',
+        };
+        const replacement = {
+            hash: 'character::main_hand::example_bow::10',
+            id: 'new-id',
+            itemHrid: '/items/example_bow',
+            enhancementLevel: 10,
+            itemLocationHrid: '/item_locations/main_hand',
+        };
+        dataManager.characterItems = [oldItem, replacement];
+        dataManager.updateEquipmentMap(dataManager.characterItems);
+        expect(dataManager.getEquipment().get('/item_locations/main_hand')).toEqual(replacement);
+
+        const refreshedOld = { ...oldItem, durability: 123 };
+        const handler = webSocketHandlers.get('items_updated');
+        handler({ endCharacterItems: [refreshedOld] });
+
+        // Native MWI sets characterEquipment[location] for every present update, even when
+        // another live hash for that location occurs later in the item-map iteration order.
+        expect(dataManager.getInventory()).toEqual([refreshedOld, replacement]);
+        expect(dataManager.getEquipment().get('/item_locations/main_hand')).toEqual(refreshedOld);
+    });
+
+    test('hash-aware removal can clear an equipment record that originated from a legacy id-only cache entry', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const legacy = {
+            id: 'legacy-equipped-id',
+            itemHrid: '/items/example_bow',
+            enhancementLevel: 5,
+            itemLocationHrid: '/item_locations/main_hand',
+        };
+        dataManager.characterItems = [legacy];
+        dataManager.updateEquipmentMap(dataManager.characterItems);
+
+        const handler = webSocketHandlers.get('items_updated');
+        handler({
+            endCharacterItems: [
+                {
+                    ...legacy,
+                    hash: 'character::main_hand::example_bow::5',
+                    count: 0,
+                },
+            ],
+        });
+
+        expect(dataManager.getInventory()).toEqual([]);
+        expect(dataManager.getEquipment().has('/item_locations/main_hand')).toBe(false);
+    });
+
+    test('a legacy id-only removal can remove a previously hash-aware record', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const existing = {
+            hash: 'character::inventory::example_log::0',
+            id: 'legacy-id',
+            itemHrid: '/items/example_log',
+            enhancementLevel: 0,
+            itemLocationHrid: '/item_locations/inventory',
+            count: 3,
+        };
+        dataManager.characterItems = [existing];
+
+        const handler = webSocketHandlers.get('items_updated');
+        handler({
+            endCharacterItems: [
+                {
+                    id: 'legacy-id',
+                    itemHrid: '/items/example_log',
+                    enhancementLevel: 0,
+                    itemLocationHrid: '/item_locations/inventory',
+                    count: 0,
+                },
+            ],
+        });
+
+        expect(dataManager.getInventory()).toEqual([]);
+    });
+
+    test('a hash-aware update replaces a legacy id-only record without duplicating it', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const legacy = {
+            id: 'legacy-id',
+            itemHrid: '/items/example_log',
+            enhancementLevel: 0,
+            itemLocationHrid: '/item_locations/inventory',
+            count: 2,
+        };
+        const current = {
+            hash: 'character::inventory::example_log::0',
+            id: 'legacy-id',
+            itemHrid: '/items/example_log',
+            enhancementLevel: 0,
+            itemLocationHrid: '/item_locations/inventory',
+            count: 7,
+        };
+        dataManager.characterItems = [legacy];
+
+        const handler = webSocketHandlers.get('items_updated');
+        handler({ endCharacterItems: [current] });
+
+        expect(dataManager.getInventory()).toEqual([current]);
+    });
+
+    test('hash-aware updates replace the full record so omitted count cannot retain a stale value', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const existing = {
+            hash: 'character::inventory::example_log::0',
+            id: 'same-id',
+            itemHrid: '/items/example_log',
+            enhancementLevel: 0,
+            itemLocationHrid: '/item_locations/inventory',
+            count: 7,
+        };
+        const updateWithoutCount = {
+            hash: existing.hash,
+            id: existing.id,
+            itemHrid: existing.itemHrid,
+            enhancementLevel: 0,
+            itemLocationHrid: existing.itemLocationHrid,
+        };
+        dataManager.characterItems = [existing];
+
+        const handler = webSocketHandlers.get('items_updated');
+        handler({ endCharacterItems: [updateWithoutCount] });
+
+        expect(dataManager.getInventory()).toEqual([updateWithoutCount]);
+        expect(Object.prototype.hasOwnProperty.call(dataManager.getInventory()[0], 'count')).toBe(false);
+    });
+
+    test('action_completed removes an inventory stack only on explicit zero count', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const existing = {
+            hash: 'character::inventory::example_log::0',
+            itemHrid: '/items/example_log',
+            enhancementLevel: 0,
+            itemLocationHrid: '/item_locations/inventory',
+            count: 3,
+        };
+        dataManager.characterItems = [existing];
+        dataManager.characterActions = [{ id: 'action-1', isDone: false }];
+
+        const handler = webSocketHandlers.get('action_completed');
+        handler({
+            endCharacterAction: { id: 'action-1', isDone: false },
+            endCharacterItems: [{ ...existing, count: 0 }],
+        });
+
+        expect(dataManager.getInventory()).toEqual([]);
+    });
+
+    test('action_completed keeps a new inventory stack when count is omitted', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const newItem = {
+            hash: 'character::inventory::example_log::0',
+            itemHrid: '/items/example_log',
+            enhancementLevel: 0,
+            itemLocationHrid: '/item_locations/inventory',
+        };
+        dataManager.characterItems = [];
+        dataManager.characterActions = [{ id: 'action-1', isDone: false }];
+
+        const handler = webSocketHandlers.get('action_completed');
+        handler({
+            endCharacterAction: { id: 'action-1', isDone: false },
+            endCharacterItems: [newItem],
+        });
+
+        expect(dataManager.getInventory()).toEqual([newItem]);
+    });
+
     test('merges market listings updates and emits updated list', async () => {
         const { default: dataManager } = await import('./data-manager.js');
         const listener = vi.fn();

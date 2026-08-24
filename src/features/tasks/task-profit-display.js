@@ -30,13 +30,7 @@ import {
     applyLoadoutSnapshotToDTO,
     calculateSimRevenue,
 } from '../combat-sim/combat-sim-adapter.js';
-// Lazy accessor: in production multi-bundle builds, the UI bundle loads after Combat.
-// Resolve at runtime via window.Toolasha.Combat to share the initialized instance,
-// with a fallback to the static import for dev single-bundle builds.
-import loadoutSnapshotLocal from '../combat/loadout-snapshot.js';
-function getLoadoutSnapshot() {
-    return window.Toolasha?.Combat?.loadoutSnapshot || loadoutSnapshotLocal;
-}
+import loadoutState from '../../core/loadout-state.js';
 
 // Compiled regex pattern (created once, reused for performance)
 const REGEX_TASK_PROGRESS = /(\d+)\s*\/\s*(\d+)/;
@@ -577,14 +571,18 @@ class TaskProfitDisplay {
                 const taskNode = container?.closest('[class*="RandomTask_randomTask"]');
                 if (!taskNode) return;
                 const taskData = this.parseTaskData(taskNode);
-                if (taskData) this._renderCombatEstimateConfig(container, taskData);
+                if (taskData) {
+                    const selectedLoadoutName = select.value;
+                    const selectedMode = container.querySelector('.mwi-combat-est-mode')?.dataset.mode || 'solo';
+                    this._renderCombatEstimateConfig(container, taskData, selectedLoadoutName, selectedMode);
+                }
             });
         };
 
-        getLoadoutSnapshot().onUpdate(loadoutsHandler);
+        loadoutState.onUpdate(loadoutsHandler);
 
         this.unregisterHandlers.push(() => {
-            getLoadoutSnapshot().offUpdate(loadoutsHandler);
+            loadoutState.offUpdate(loadoutsHandler);
         });
     }
 
@@ -985,27 +983,35 @@ class TaskProfitDisplay {
      * Shows a loadout dropdown and an "Estimate" button.
      * @param {Element} container - Container element to render into
      * @param {Object} taskData - Parsed task data
+     * @param {string|null} preferredLoadoutName - null = use configured default; '' = preserve Current Gear
+     * @param {'solo'|'zone'} preferredMode - Current temporary estimate mode to preserve across refreshes
      * @private
      */
-    _renderCombatEstimateConfig(container, taskData) {
+    _renderCombatEstimateConfig(container, taskData, preferredLoadoutName = null, preferredMode = 'solo') {
         container.innerHTML = '';
-        const snapshots = getLoadoutSnapshot()
+        const snapshots = loadoutState
             .getAllSnapshots()
+            .filter((s) => s.isUsableForCalculation)
             .filter((s) => !s.actionTypeHrid || s.actionTypeHrid === '/action_types/combat');
 
         const defaultLoadout = config.getSettingValue('combatSim_defaultLoadout', '');
+        const selectedLoadoutName = preferredLoadoutName === null ? defaultLoadout : preferredLoadoutName;
+        const selectedMode = preferredMode === 'zone' ? 'zone' : 'solo';
+        const usableLoadoutNames = new Set(snapshots.map((snapshot) => snapshot.name));
 
         let html = '<div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">';
         html +=
             '<select class="mwi-combat-est-loadout" style="font-size:11px; background:#1a1a1a; color:#ccc; border:1px solid #444; border-radius:3px; padding:2px 4px;">';
-        html += `<option value=""${!defaultLoadout ? ' selected' : ''}>— Current Gear —</option>`;
+        html += `<option value=""${!selectedLoadoutName ? ' selected' : ''}>— Current Gear —</option>`;
+        if (selectedLoadoutName && !usableLoadoutNames.has(selectedLoadoutName)) {
+            html += `<option value="${selectedLoadoutName}" selected>${selectedLoadoutName} (Unavailable)</option>`;
+        }
         for (const s of snapshots) {
-            const selected = s.name === defaultLoadout ? ' selected' : '';
+            const selected = s.name === selectedLoadoutName ? ' selected' : '';
             html += `<option value="${s.name}"${selected}>${s.name}</option>`;
         }
         html += '</select>';
-        html +=
-            '<button class="mwi-combat-est-mode" data-mode="solo" title="Solo: simulate only target monster. Zone: simulate full zone spawn table." style="font-size:11px; padding:2px 6px; background:#1a1a1a; color:#ccc; border:1px solid #444; border-radius:3px; cursor:pointer;">Solo</button>';
+        html += `<button class="mwi-combat-est-mode" data-mode="${selectedMode}" title="Solo: simulate only target monster. Zone: simulate full zone spawn table." style="font-size:11px; padding:2px 6px; background:#1a1a1a; color:${selectedMode === 'zone' ? '#aaddff' : '#ccc'}; border:1px solid ${selectedMode === 'zone' ? '#4a9eff44' : '#444'}; border-radius:3px; cursor:pointer;">${selectedMode === 'zone' ? 'Zone' : 'Solo'}</button>`;
         html +=
             '<button class="mwi-combat-est-btn" style="font-size:11px; padding:2px 8px; background:#1a3a5c; color:#4a9eff; border:1px solid #4a9eff44; border-radius:3px; cursor:pointer;">⚔ Estimate</button>';
         html += '</div>';
@@ -1087,8 +1093,14 @@ class TaskProfitDisplay {
             const { players } = await buildAllPlayerDTOs();
             if (!players.length) throw new Error('No player data');
 
-            if (loadoutName) {
-                applyLoadoutSnapshotToDTO(players[0], loadoutName, gameData);
+            const effectiveLoadoutName = loadoutName;
+            if (loadoutName && !applyLoadoutSnapshotToDTO(players[0], loadoutName, gameData)) {
+                // A configured/manual selection must not silently become Current Gear.
+                // Preserve the user's intended configuration and fail closed until they
+                // explicitly choose another loadout or Current Gear.
+                console.warn('[TaskProfit] Selected combat loadout is unavailable:', loadoutName);
+                container.innerHTML = `<span style="color:#f87171; font-size:11px;">Loadout “${loadoutName}” is unavailable. Choose another loadout or Current Gear.</span>`;
+                return;
             }
 
             const zoneAction = gameData.actionDetailMap[zoneHrid];
@@ -1165,7 +1177,7 @@ class TaskProfitDisplay {
                 killsPerHour,
                 timeEstimate,
                 completionSeconds,
-                loadoutName,
+                effectiveLoadoutName,
                 netPerHour,
                 rewardValue,
                 dropEntries,

@@ -108,6 +108,16 @@ const dataManager = new DataManager();
 export default dataManager;
 ```
 
+### Stateful Cross-Bundle Services
+
+- Stateful services must have exactly one owning bundle. Cross-bundle consumers must reference the owner through Rollup externals / the `window.Toolasha` namespace, never bundle another stateful copy.
+- Constructors of stateful services must be side-effect free. Register WebSocket/data/DOM listeners only in explicit lifecycle methods and remove them symmetrically.
+- `src/core/loadout-state.js` is the sole owner of saved MWI loadout state and exact/highest enhancement semantics. Feature code must consume resolved/effective snapshots and must not interpret `useExactEnhancement` or mutate raw snapshots.
+- Raw saved loadout state is server/cache evidence. Effective equipment is resolved at read time against current character ownership. Never use `enhancementLevel === 0` as a marker for highest-enhancement mode; exact +0 is valid.
+- Fresh structured server state outranks local cache, including an explicitly empty server map. Character switches must fail closed against prior-character state.
+- Treat accepted `init_character_data` as both character and WebSocket ownership. `loadouts_updated` does not reliably carry a character id, so reject updates from a socket other than the one that established the current accepted server state. WebSocket content deduplication must remain socket-scoped.
+- Keep the post-build `npm run check:loadout-state` gate green; it protects the production split bundles from silently reintroducing duplicate stateful loadout instances.
+
 ### Feature Interface
 
 ```js

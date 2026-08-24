@@ -1,8 +1,15 @@
-import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 
+import config from '../core/config.js';
 import dataManager from '../core/data-manager.js';
-import loadoutSnapshot from '../features/combat/loadout-snapshot.js';
+import loadoutState from '../core/loadout-state.js';
 import { resolveActionContext } from './action-context.js';
+
+vi.mock('../core/config.js', () => ({
+    default: {
+        getSetting: vi.fn(),
+    },
+}));
 
 vi.mock('../core/data-manager.js', () => ({
     default: {
@@ -12,44 +19,52 @@ vi.mock('../core/data-manager.js', () => ({
     },
 }));
 
-vi.mock('../features/combat/loadout-snapshot.js', () => ({
+vi.mock('../core/loadout-state.js', () => ({
     default: {
-        getSnapshotForSkill: vi.fn(),
-        getSnapshotDrinksForSkill: vi.fn(),
+        findSnapshotSelectionForActionType: vi.fn(),
     },
 }));
 
 const TYPE = '/action_types/cooking';
 const CURRENT_EQ = new Map([['/item_locations/main_hand', { itemHrid: '/items/current_pan' }]]);
 const CURRENT_DRINKS = [{ itemHrid: '/items/current_tea' }];
-const SNAPSHOT_EQ = new Map([['/item_locations/main_hand', { itemHrid: '/items/snapshot_pan' }]]);
+const SNAPSHOT_EQ = [{ itemLocationHrid: '/item_locations/main_hand', itemHrid: '/items/snapshot_pan' }];
 const SNAPSHOT_DRINKS = [{ itemHrid: '/items/snapshot_tea' }];
+
+function snapshot(overrides = {}) {
+    return {
+        name: 'Cooking',
+        isDefault: true,
+        equipment: SNAPSHOT_EQ,
+        drinks: SNAPSHOT_DRINKS,
+        ...overrides,
+    };
+}
 
 describe('resolveActionContext', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        config.getSetting.mockReturnValue(true);
         dataManager.getEquipment.mockReturnValue(CURRENT_EQ);
         dataManager.getActionDrinkSlots.mockReturnValue(CURRENT_DRINKS);
-        // Inventory contains all test drinks so the stock filter passes them through
         dataManager.getInventory.mockReturnValue([
             { itemHrid: '/items/current_tea', count: 5 },
             { itemHrid: '/items/snapshot_tea', count: 3 },
         ]);
     });
 
-    test('uses snapshot equipment and drinks when both exist', () => {
-        loadoutSnapshot.getSnapshotForSkill.mockReturnValue(SNAPSHOT_EQ);
-        loadoutSnapshot.getSnapshotDrinksForSkill.mockReturnValue(SNAPSHOT_DRINKS);
+    test('uses one canonical resolved snapshot for equipment and drinks', () => {
+        loadoutState.findSnapshotSelectionForActionType.mockReturnValue({ status: 'usable', snapshot: snapshot() });
 
         const result = resolveActionContext(TYPE);
 
-        expect(result.equipment).toBe(SNAPSHOT_EQ);
+        expect(result.equipment).toEqual(new Map([[SNAPSHOT_EQ[0].itemLocationHrid, SNAPSHOT_EQ[0]]]));
         expect(result.drinks).toEqual(SNAPSHOT_DRINKS);
+        expect(loadoutState.findSnapshotSelectionForActionType).toHaveBeenCalledWith(TYPE);
     });
 
-    test('falls back to current equipment and drinks when no snapshot exists', () => {
-        loadoutSnapshot.getSnapshotForSkill.mockReturnValue(null);
-        loadoutSnapshot.getSnapshotDrinksForSkill.mockReturnValue(null);
+    test('falls back to current equipment and drinks only when no matching snapshot exists', () => {
+        loadoutState.findSnapshotSelectionForActionType.mockReturnValue({ status: 'none', snapshot: null });
 
         const result = resolveActionContext(TYPE);
 
@@ -59,33 +74,63 @@ describe('resolveActionContext', () => {
         expect(dataManager.getActionDrinkSlots).toHaveBeenCalledWith(TYPE);
     });
 
-    test('falls back per-field when only equipment snapshot exists', () => {
-        loadoutSnapshot.getSnapshotForSkill.mockReturnValue(SNAPSHOT_EQ);
-        loadoutSnapshot.getSnapshotDrinksForSkill.mockReturnValue(null);
+    test('an intentional empty saved equipment set stays empty instead of inheriting current gear', () => {
+        loadoutState.findSnapshotSelectionForActionType.mockReturnValue({
+            status: 'usable',
+            snapshot: snapshot({ equipment: [] }),
+        });
 
         const result = resolveActionContext(TYPE);
 
-        expect(result.equipment).toBe(SNAPSHOT_EQ);
-        expect(result.drinks).toEqual(CURRENT_DRINKS);
+        expect(result.equipment).toEqual(new Map());
+        expect(dataManager.getEquipment).not.toHaveBeenCalled();
     });
 
-    test('falls back per-field when only drinks snapshot exists', () => {
-        loadoutSnapshot.getSnapshotForSkill.mockReturnValue(null);
-        loadoutSnapshot.getSnapshotDrinksForSkill.mockReturnValue(SNAPSHOT_DRINKS);
+    test('an intentional no-drink saved loadout stays empty instead of inheriting current drinks', () => {
+        loadoutState.findSnapshotSelectionForActionType.mockReturnValue({
+            status: 'usable',
+            snapshot: snapshot({ drinks: [] }),
+        });
+
+        const result = resolveActionContext(TYPE);
+
+        expect(result.drinks).toEqual([]);
+        expect(dataManager.getActionDrinkSlots).not.toHaveBeenCalled();
+    });
+
+    test('a slotted drink with an equipped/no-count inventory representation remains available', () => {
+        loadoutState.findSnapshotSelectionForActionType.mockReturnValue({ status: 'usable', snapshot: snapshot() });
+        dataManager.getInventory.mockReturnValue([{ itemHrid: '/items/snapshot_tea' }]);
+
+        expect(resolveActionContext(TYPE).drinks).toEqual(SNAPSHOT_DRINKS);
+    });
+
+    test('a matching but unavailable saved loadout fails closed to current state and stays distinguishable from no match', () => {
+        const unavailable = snapshot({
+            isUsableForCalculation: false,
+            hasUnavailableEquipment: true,
+            unavailableEquipment: [{ itemHrid: '/items/missing_pan' }],
+        });
+        loadoutState.findSnapshotSelectionForActionType.mockReturnValue({
+            status: 'unavailable',
+            snapshot: unavailable,
+        });
 
         const result = resolveActionContext(TYPE);
 
         expect(result.equipment).toBe(CURRENT_EQ);
-        expect(result.drinks).toEqual(SNAPSHOT_DRINKS);
+        expect(result.drinks).toEqual(CURRENT_DRINKS);
+        expect(result.source).toBe('current');
+        expect(result.loadoutSelection).toEqual({ status: 'unavailable', snapshot: unavailable });
     });
 
-    test('passes the action type through to both lookups', () => {
-        loadoutSnapshot.getSnapshotForSkill.mockReturnValue(null);
-        loadoutSnapshot.getSnapshotDrinksForSkill.mockReturnValue(null);
+    test('disabling automatic saved-loadout calculations does not query loadout state', () => {
+        config.getSetting.mockReturnValue(false);
 
-        resolveActionContext(TYPE);
+        const result = resolveActionContext(TYPE);
 
-        expect(loadoutSnapshot.getSnapshotForSkill).toHaveBeenCalledWith(TYPE);
-        expect(loadoutSnapshot.getSnapshotDrinksForSkill).toHaveBeenCalledWith(TYPE);
+        expect(loadoutState.findSnapshotSelectionForActionType).not.toHaveBeenCalled();
+        expect(result.equipment).toBe(CURRENT_EQ);
+        expect(result.drinks).toEqual(CURRENT_DRINKS);
     });
 });

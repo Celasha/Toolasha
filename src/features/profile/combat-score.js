@@ -14,9 +14,9 @@ import { constructMilkonomyExport } from '../combat/milkonomy-export.js';
 import { handleViewCardClick, handleViewCardFromSnapshot } from './character-card-button.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
-import loadoutSnapshot from '../combat/loadout-snapshot.js';
+import loadoutState from '../../core/loadout-state.js';
 import combatSimUI from '../combat-sim/combat-sim-ui.js';
-import { buildPlayerDTOFromProfile } from '../combat-sim/combat-sim-adapter.js';
+import { buildPlayerDTOFromProfile, mapLoadoutAbilitiesToNativeSlots } from '../combat-sim/combat-sim-adapter.js';
 
 /**
  * CombatScore class manages combat score display on profiles
@@ -554,7 +554,9 @@ class CombatScore {
                 profileData?.profile?.character?.id;
             const isOwnCharacter = profileCharId === dataManager.getCurrentCharacterId();
             if (isOwnCharacter) {
-                const allSnapshots = loadoutSnapshot.getAllSnapshots();
+                const allSnapshots = loadoutState
+                    .getAllSnapshots()
+                    .filter((snapshot) => snapshot.isUsableForCalculation);
                 const combatSnapshots = allSnapshots.filter((s) => s.actionTypeHrid === '/action_types/combat');
                 console.log(
                     `[CombatScore] Combat Sim dropdown: profileCharId=${profileCharId}, myCharId=${dataManager.getCurrentCharacterId()}, totalSnapshots=${allSnapshots.length}, combatSnapshots=${combatSnapshots.length}`
@@ -655,7 +657,7 @@ class CombatScore {
                 profileData?.profile?.character?.id;
             const isOwnCharacter = profileCharId === dataManager.getCurrentCharacterId();
             if (isOwnCharacter) {
-                const snapshots = loadoutSnapshot.getAllSnapshots();
+                const snapshots = loadoutState.getAllSnapshots().filter((snapshot) => snapshot.isUsableForCalculation);
                 if (snapshots.length > 0) {
                     loadoutBtn.style.display = '';
 
@@ -1024,7 +1026,7 @@ class CombatScore {
         const originalBg = button.style.background;
 
         try {
-            const snapshot = loadoutSnapshot.getAllSnapshots().find((s) => s.name === snapshotName);
+            const snapshot = loadoutState.getUsableSnapshotByName(snapshotName);
             if (!snapshot) {
                 console.error('[Combat Score] Snapshot not found:', snapshotName);
                 return;
@@ -1046,19 +1048,9 @@ class CombatScore {
             const playerObj = exportData.exportObj;
             const clientObj = dataManager.getInitClientData();
 
-            // Override equipment from snapshot, cross-referencing live data for
-            // accurate enhancement levels (loadouts with useExactEnhancement=false
-            // store 0 for most enhancement levels in the wearable hash)
-            const liveEquipment = dataManager.characterEquipment;
-            playerObj.player.equipment = (snapshot.equipment || []).map((item) => {
-                if (item.enhancementLevel > 0 || !liveEquipment) return item;
-                for (const [, liveItem] of liveEquipment) {
-                    if (liveItem.itemHrid === item.itemHrid) {
-                        return { ...item, enhancementLevel: liveItem.enhancementLevel || 0 };
-                    }
-                }
-                return item;
-            });
+            // Equipment is already resolved by Core Loadout State. Do not reinterpret
+            // exact/highest enhancement semantics in feature consumers.
+            playerObj.player.equipment = (snapshot.equipment || []).map((item) => ({ ...item }));
 
             // Override abilities from snapshot
             // Build ability level lookup from all learned abilities (not just currently equipped)
@@ -1068,29 +1060,15 @@ class CombatScore {
                 if (ab.abilityHrid) abilityLevelMap[ab.abilityHrid] = ab.level || 1;
             }
 
-            // Map snapshot abilities to sim format (slot 0 = special, slots 1-4 = normal)
-            playerObj.abilities = [
-                { abilityHrid: '', level: 1 },
-                { abilityHrid: '', level: 1 },
-                { abilityHrid: '', level: 1 },
-                { abilityHrid: '', level: 1 },
-                { abilityHrid: '', level: 1 },
-            ];
-            let normalAbilityIndex = 1;
-            for (const ability of snapshot.abilities) {
-                if (!ability.abilityHrid) continue;
-                const isSpecial = clientObj?.abilityDetailMap?.[ability.abilityHrid]?.isSpecialAbility || false;
-                const level = abilityLevelMap[ability.abilityHrid] || 1;
-
-                if (isSpecial) {
-                    playerObj.abilities[0] = { abilityHrid: ability.abilityHrid, level };
-                } else if (normalAbilityIndex < 5) {
-                    playerObj.abilities[normalAbilityIndex++] = {
-                        abilityHrid: ability.abilityHrid,
-                        level,
-                    };
-                }
-            }
+            // Preserve the actual saved MWI ability slots (1..5 -> export 0..4), including holes.
+            playerObj.abilities = mapLoadoutAbilitiesToNativeSlots(
+                snapshot.abilities,
+                clientObj?.abilityDetailMap || {},
+                (ability) => ({
+                    abilityHrid: ability.abilityHrid,
+                    level: abilityLevelMap[ability.abilityHrid] || 1,
+                })
+            ).map((ability) => ability || { abilityHrid: '', level: 1 });
 
             // Override triggers from snapshot (includes all configured triggers regardless of equip state)
             playerObj.triggerMap = {

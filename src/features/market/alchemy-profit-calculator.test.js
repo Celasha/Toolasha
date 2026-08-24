@@ -24,12 +24,9 @@ const dataManagerMock = {
 };
 
 vi.mock('../../core/data-manager.js', () => ({ default: dataManagerMock }));
-vi.mock('../../core/config.js', () => ({ default: { getSettingValue: (_key, def) => def } }));
+vi.mock('../../core/config.js', () => ({ default: { getSettingValue: (_key, def) => def, getSetting: () => false } }));
 vi.mock('../../api/marketplace.js', () => ({ default: { getPrice: () => null, on: () => {} } }));
 vi.mock('./expected-value-calculator.js', () => ({ default: {} }));
-vi.mock('../../features/combat/loadout-snapshot.js', () => ({
-    default: { getSnapshotForSkill: () => undefined, getSnapshotDrinksForSkill: () => undefined },
-}));
 
 const { default: alchemyProfitCalculator } = await import('./alchemy-profit-calculator.js');
 

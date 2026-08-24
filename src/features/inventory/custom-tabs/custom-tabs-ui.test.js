@@ -74,8 +74,13 @@ vi.mock('../inventory-badge-manager.js', () => ({
     },
 }));
 
-vi.mock('../../combat/loadout-snapshot.js', () => ({
-    default: { onSnapshotChange: vi.fn(() => () => {}), getSnapshot: vi.fn(() => null) },
+vi.mock('../../../core/loadout-state.js', () => ({
+    default: {
+        onUpdate: vi.fn(),
+        offUpdate: vi.fn(),
+        getAllSnapshots: vi.fn(() => []),
+        getSnapshotsById: vi.fn(() => ({})),
+    },
 }));
 
 vi.mock('../../../utils/formatters.js', () => ({
@@ -449,5 +454,148 @@ describe('CustomTabsUI action buttons survive removal of the piggybacked sort-co
         ui._applyLayoutSync(container);
 
         expect(document.querySelector('.toolasha-ct-action-btns')).not.toBeNull();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Loadout binding effective-enhancement parity
+// ---------------------------------------------------------------------------
+
+describe('CustomTabsUI loadout binding enhancement resolution', () => {
+    let ui;
+    let loadoutState;
+
+    beforeEach(async () => {
+        loadoutState = (await import('../../../core/loadout-state.js')).default;
+        vi.clearAllMocks();
+        ui = new CustomTabsUI();
+        ui._isActive = false;
+        ui._config = {
+            version: 1,
+            selectedTabId: 'tab-1',
+            tabs: [
+                {
+                    id: 'tab-1',
+                    name: 'Bound',
+                    items: ['/items/sword+5'],
+                    loadoutBindings: { Combat: ['/items/sword+5'] },
+                    children: [],
+                },
+            ],
+        };
+        vi.spyOn(ui, '_save').mockImplementation(() => {});
+    });
+
+    test('full sync tracks a canonical effective upgrade without mutating loadout truth', () => {
+        loadoutState.getSnapshotsById.mockReturnValue({
+            one: {
+                name: 'Combat',
+                equipment: [{ itemHrid: '/items/sword', enhancementLevel: 10, isAvailable: true }],
+                unavailableEquipment: [],
+                food: [],
+                drinks: [],
+            },
+        });
+
+        ui._onLoadoutSnapshotUpdate();
+
+        expect(ui._config.tabs[0].items).toEqual(['/items/sword+10']);
+        expect(ui._config.tabs[0].loadoutBindings.Combat).toEqual(['/items/sword+10']);
+        expect(ui._save).toHaveBeenCalled();
+    });
+
+    test('full sync tracks a canonical effective downgrade from +10 to +7', () => {
+        ui._config.tabs[0].items = ['/items/sword+10'];
+        ui._config.tabs[0].loadoutBindings.Combat = ['/items/sword+10'];
+        loadoutState.getSnapshotsById.mockReturnValue({
+            one: {
+                name: 'Combat',
+                equipment: [{ itemHrid: '/items/sword', enhancementLevel: 7, isAvailable: true }],
+                unavailableEquipment: [],
+                food: [],
+                drinks: [],
+            },
+        });
+
+        ui._onLoadoutSnapshotUpdate();
+
+        expect(ui._config.tabs[0].items).toEqual(['/items/sword+7']);
+        expect(ui._config.tabs[0].loadoutBindings.Combat).toEqual(['/items/sword+7']);
+        expect(ui._save).toHaveBeenCalled();
+    });
+
+    test('full sync preserves an existing binding when Core reports that saved equipment is unavailable', () => {
+        ui._config.tabs[0].items = ['/items/sword+10'];
+        ui._config.tabs[0].loadoutBindings.Combat = ['/items/sword+10'];
+        loadoutState.getSnapshotsById.mockReturnValue({
+            one: {
+                name: 'Combat',
+                equipment: [],
+                unavailableEquipment: [{ itemLocationHrid: '/item_locations/main_hand', itemHrid: '/items/sword' }],
+                hasUnavailableEquipment: true,
+                food: [],
+                drinks: [],
+            },
+        });
+
+        ui._onLoadoutSnapshotUpdate();
+
+        expect(ui._config.tabs[0].items).toEqual(['/items/sword+10']);
+        expect(ui._config.tabs[0].loadoutBindings.Combat).toEqual(['/items/sword+10']);
+        expect(ui._save).not.toHaveBeenCalled();
+    });
+
+    test('full sync retains intended consumable identity during a temporary stockout', async () => {
+        const { default: config } = await import('../../../core/config.js');
+        config.getSetting.mockImplementationOnce(() => true);
+
+        ui._config.tabs[0].items = ['/items/sword+10', '/items/apple_gummy'];
+        ui._config.tabs[0].loadoutBindings.Combat = ['/items/sword+10', '/items/apple_gummy'];
+        loadoutState.getSnapshotsById.mockReturnValue({
+            one: {
+                name: 'Combat',
+                equipment: [{ itemHrid: '/items/sword', enhancementLevel: 10, isAvailable: true }],
+                unavailableEquipment: [],
+                food: [{ itemHrid: '' }],
+                drinks: [],
+                unavailableFood: [{ slotIndex: 0, itemHrid: '/items/apple_gummy' }],
+                unavailableDrinks: [],
+            },
+        });
+
+        ui._onLoadoutSnapshotUpdate();
+
+        expect(ui._config.tabs[0].items).toEqual(['/items/sword+10', '/items/apple_gummy']);
+        expect(ui._config.tabs[0].loadoutBindings.Combat).toEqual(['/items/sword+10', '/items/apple_gummy']);
+        expect(ui._save).not.toHaveBeenCalled();
+    });
+
+    test('a new loadout binding fails closed instead of adding only the currently available subset', () => {
+        ui._config.tabs[0].items = [];
+        ui._config.tabs[0].loadoutBindings = {};
+        loadoutState.getSnapshotsById.mockReturnValue({
+            one: {
+                name: 'Partial',
+                actionTypeHrid: '/action_types/combat',
+                equipment: [{ itemHrid: '/items/sword', enhancementLevel: 10, isAvailable: true }],
+                unavailableEquipment: [{ itemLocationHrid: '/item_locations/off_hand', itemHrid: '/items/shield' }],
+                food: [],
+                drinks: [],
+                unavailableFood: [],
+                unavailableDrinks: [],
+            },
+        });
+        const container = document.createElement('div');
+
+        ui._renderLoadoutButtons(container, 'tab-1');
+
+        const button = container.querySelector('button');
+        expect(button).not.toBeNull();
+        expect(button.disabled).toBe(true);
+        expect(button.textContent).toContain('Unavailable');
+        button.click();
+        expect(ui._config.tabs[0].items).toEqual([]);
+        expect(ui._config.tabs[0].loadoutBindings).toEqual({});
+        expect(ui._save).not.toHaveBeenCalled();
     });
 });

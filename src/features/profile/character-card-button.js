@@ -8,7 +8,7 @@ import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import { buildCharacterSheetLink } from './character-sheet.js';
 import { calculateCombatScore } from './score-calculator.js';
-import loadoutSnapshot from '../combat/loadout-snapshot.js';
+import loadoutState from '../../core/loadout-state.js';
 
 /**
  * Convert combatConsumables array to actionTypeFoodSlotsMap/actionTypeDrinkSlotsMap format
@@ -134,7 +134,7 @@ export async function handleViewCardFromSnapshot(snapshotName) {
             return;
         }
 
-        const snapshot = loadoutSnapshot.getAllSnapshots().find((s) => s.name === snapshotName);
+        const snapshot = loadoutState.getUsableSnapshotByName(snapshotName);
         if (!snapshot) {
             console.error('[CharacterCardButton] Snapshot not found:', snapshotName);
             return;
@@ -157,16 +157,20 @@ export async function handleViewCardFromSnapshot(snapshotName) {
             }
         }
         for (const equip of snapshot.equipment) {
+            if (!Number.isFinite(equip.enhancementLevel)) {
+                console.error('[CharacterCardButton] Saved loadout has unresolved equipment:', snapshotName);
+                return;
+            }
             wearableItemMap[equip.itemLocationHrid] = {
                 itemLocationHrid: equip.itemLocationHrid,
                 itemHrid: equip.itemHrid,
-                enhancementLevel: equip.enhancementLevel || 0,
+                enhancementLevel: equip.enhancementLevel,
             };
         }
 
         // Build ability level lookup from current character data (levels are character-scoped, not loadout-scoped)
         const abilityLevelMap = {};
-        for (const ab of characterData.combatUnit?.combatAbilities || []) {
+        for (const ab of characterData.characterAbilities || []) {
             if (ab.abilityHrid) abilityLevelMap[ab.abilityHrid] = ab.level || 1;
         }
 

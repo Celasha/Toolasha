@@ -11,6 +11,7 @@ import config from '../core/config.js';
 import webSocketHook from '../core/websocket.js';
 import domObserver from '../core/dom-observer.js';
 import dataManager from '../core/data-manager.js';
+import loadoutState from '../core/loadout-state.js';
 import featureRegistry from '../core/feature-registry.js';
 import settingsStorage from '../core/settings-storage.js';
 import { settingsGroups } from '../core/settings-schema.js';
@@ -36,6 +37,7 @@ toolashaRoot.Core = {
     webSocketHook,
     domObserver,
     dataManager,
+    loadoutState,
     featureRegistry,
     settingsStorage,
     settingsGroups,

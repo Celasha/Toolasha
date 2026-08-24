@@ -10,7 +10,7 @@ import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
 import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } from '../../utils/panel-z-index.js';
 import scrollSimulator from './scroll-simulator.js';
-import loadoutSnapshot from './loadout-snapshot.js';
+import loadoutState from '../../core/loadout-state.js';
 import { SCROLL_BUFF_ITEMS, SCROLL_BUFF_LABELS } from '../../utils/scroll-buff-values.js';
 
 const BUTTON_ID = 'toolasha-scroll-sim-btn';
@@ -204,7 +204,7 @@ class ScrollSimPopup {
         `;
         note.textContent = this.loadoutName
             ? 'These scrolls override the defaults when this loadout is active for a skill.'
-            : 'Applied when no loadout matches the current skill (or loadout snapshots are disabled).';
+            : 'Applied when no loadout matches the current skill (or automatic saved-loadout calculations are disabled).';
         body.appendChild(note);
 
         // Scroll rows
@@ -330,7 +330,7 @@ function injectButton(navButtons) {
     const loadoutName = getLoadoutName(navButtons);
 
     // Hide for combat loadouts — scroll buffs don't apply to combat
-    const snapshot = loadoutSnapshot.getAllSnapshots().find((s) => s.name === loadoutName);
+    const snapshot = loadoutState.getSnapshotByName(loadoutName);
     if (snapshot?.actionTypeHrid === '/action_types/combat') return;
 
     const button = document.createElement('button');

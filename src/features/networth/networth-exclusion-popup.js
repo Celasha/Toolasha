@@ -10,7 +10,7 @@ import marketAPI from '../../api/marketplace.js';
 import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } from '../../utils/panel-z-index.js';
 import { networthFormatter } from '../../utils/formatters.js';
 import { getExclusions, isExcluded, addExclusion, removeExclusion, clearExclusions } from './networth-exclusions.js';
-import loadoutSnapshot from '../combat/loadout-snapshot.js';
+import loadoutState from '../../core/loadout-state.js';
 
 class NetworthExclusionPopup {
     constructor() {
@@ -149,9 +149,10 @@ class NetworthExclusionPopup {
         }
 
         // Loadout snapshots — only show if not already excluded
-        for (const snapshot of loadoutSnapshot.getAllSnapshots()) {
+        for (const snapshot of loadoutState.getAllSnapshots()) {
             if (!snapshot.name || isExcluded('loadout', snapshot.name)) continue;
-            const amount = snapshot.equipment.reduce((sum, eq) => {
+            const loadoutItems = [...(snapshot.equipment || []), ...(snapshot.unavailableEquipment || [])];
+            const amount = loadoutItems.reduce((sum, eq) => {
                 const price = marketAPI.getPrice(eq.itemHrid);
                 return sum + (price?.ask ?? 0);
             }, 0);
@@ -417,9 +418,10 @@ class NetworthExclusionPopup {
         }
 
         if (entry.type === 'loadout') {
-            const snapshot = loadoutSnapshot.getAllSnapshots().find((s) => s.name === entry.value);
+            const snapshot = loadoutState.getAllSnapshots().find((s) => s.name === entry.value);
             if (snapshot) {
-                return snapshot.equipment.map((eq) => {
+                const loadoutItems = [...(snapshot.equipment || []), ...(snapshot.unavailableEquipment || [])];
+                return loadoutItems.map((eq) => {
                     const details = dataManager.getItemDetails(eq.itemHrid);
                     const name = details?.name || eq.itemHrid.replace('/items/', '');
                     const price = marketAPI.getPrice(eq.itemHrid);

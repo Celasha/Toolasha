@@ -10,7 +10,7 @@ import webSocketHook from '../../core/websocket.js';
 import { buildPlayerDTO, buildGameDataPayload, applyLoadoutSnapshotToDTO } from '../combat-sim/combat-sim-adapter.js';
 import { runLabyrinthSimulation } from '../combat-sim/combat-sim-runner.js';
 import { setReactInputValue } from '../../utils/react-input.js';
-import loadoutSnapshot from './loadout-snapshot.js';
+import loadoutState from '../../core/loadout-state.js';
 
 const ROOM_DURATION = 120;
 const BASE_SKILLING_TIME = 10;
@@ -33,6 +33,7 @@ class LabyrinthClearRate {
         this.combatCache = new Map();
         this.simQueue = [];
         this.simRunning = false;
+        this.loadoutRevision = 0;
         this.recommendations = new Map();
         this.recommendRunning = false;
         this._recommendSimHours = 1;
@@ -77,11 +78,12 @@ class LabyrinthClearRate {
         webSocketHook.on('setting_updated', this.settingHandler);
 
         this.loadoutsHandler = () => {
+            this.loadoutRevision += 1;
             this.combatCache.clear();
             this.recommendations.clear();
             this.injectOverlays();
         };
-        webSocketHook.on('loadouts_updated', this.loadoutsHandler);
+        loadoutState.onUpdate(this.loadoutsHandler);
 
         this.liveProgressHandler = (data) => this.onLiveProgress(data);
         webSocketHook.on('labyrinth_room_progress', this.liveProgressHandler);
@@ -108,7 +110,7 @@ class LabyrinthClearRate {
         }
 
         if (this.loadoutsHandler) {
-            webSocketHook.off('loadouts_updated', this.loadoutsHandler);
+            loadoutState.offUpdate(this.loadoutsHandler);
             this.loadoutsHandler = null;
         }
 
@@ -128,6 +130,7 @@ class LabyrinthClearRate {
         document.querySelectorAll(`.${LIVE_PROGRESS_CLASS}`).forEach((el) => el.remove());
 
         this.roomData = null;
+        this.loadoutRevision += 1;
         this.combatCache.clear();
         this.simQueue = [];
         this.simRunning = false;
@@ -248,18 +251,22 @@ class LabyrinthClearRate {
      * @returns {Array} Array of buff-like objects with typeHrid and flatBoost/ratioBoost
      */
     getLoadoutEquipmentBuffs(loadoutId, skillId) {
-        const snapshot = loadoutSnapshot.snapshots[loadoutId];
-        if (!snapshot?.equipment?.length) return [];
+        const snapshot = loadoutState.getUsableSnapshotById(loadoutId);
+        if (!snapshot) return null;
+        if (!snapshot.equipment?.length) return [];
 
         const gameData = dataManager.getInitClientData();
-        if (!gameData?.itemDetailMap) return [];
+        // A configured saved loadout is an explicit calculation input. If Toolasha cannot
+        // resolve metadata for one of its equipment entries, fail closed instead of silently
+        // simulating a partial/naked loadout while reporting the saved loadout as used.
+        if (!gameData?.itemDetailMap) return null;
 
         const enhTable = gameData.enhancementLevelTotalBonusMultiplierTable || {};
         const toolSlot = `/item_locations/${skillId}_tool`;
 
         const totals = {};
         for (const equip of snapshot.equipment) {
-            if (!equip.itemHrid || !equip.itemLocationHrid) continue;
+            if (!equip.itemHrid || !equip.itemLocationHrid) return null;
 
             // Filter tool slots: only include the tool slot matching this skill
             if (equip.itemLocationHrid.endsWith('_tool') && equip.itemLocationHrid !== toolSlot) {
@@ -268,11 +275,12 @@ class LabyrinthClearRate {
 
             const itemDetail = gameData.itemDetailMap[equip.itemHrid];
             const equipDetail = itemDetail?.equipmentDetail;
-            if (!equipDetail) continue;
+            if (!equipDetail) return null;
 
             const baseStats = equipDetail.noncombatStats || {};
             const enhStats = equipDetail.noncombatEnhancementBonuses || {};
-            const enhLevel = equip.enhancementLevel || 0;
+            if (!Number.isFinite(equip.enhancementLevel)) return null;
+            const enhLevel = equip.enhancementLevel;
             const enhMultiplier = enhTable[enhLevel] ?? enhLevel;
 
             for (const [key, value] of Object.entries(baseStats)) {
@@ -323,6 +331,7 @@ class LabyrinthClearRate {
         // Equipment buffs come from the labyrinth loadout, not currently worn gear
         const loadoutId = this.getSkillingLoadoutId(`/skills/${skillId}`);
         const loadoutEquipBuffs = loadoutId ? this.getLoadoutEquipmentBuffs(loadoutId, skillId) : null;
+        if (loadoutId && loadoutEquipBuffs === null) return null;
 
         const buffSources = [
             loadoutEquipBuffs || charData.equipmentActionTypeBuffsMap?.[actionTypeHrid],
@@ -390,6 +399,9 @@ class LabyrinthClearRate {
         const skillId = skillHrid.replace('/skills/', '');
         const actionTypeHrid = `/action_types/${skillId}`;
         const metrics = this.getSkillingMetrics(skillId, actionTypeHrid);
+        if (!metrics) {
+            return { clearChance: 0, expectedSeconds: Infinity, error: 'Configured loadout is unavailable' };
+        }
 
         const skills = dataManager.getSkills();
         const skill = skills?.find((s) => s.skillHrid === skillHrid);
@@ -438,6 +450,9 @@ class LabyrinthClearRate {
         const skillId = 'enhancing';
         const actionTypeHrid = '/action_types/enhancing';
         const metrics = this.getSkillingMetrics(skillId, actionTypeHrid);
+        if (!metrics) {
+            return { clearChance: 0, expectedSeconds: Infinity, error: 'Configured loadout is unavailable' };
+        }
 
         const skills = dataManager.getSkills();
         const skill = skills?.find((s) => s.skillHrid === '/skills/enhancing');
@@ -735,12 +750,13 @@ class LabyrinthClearRate {
         const dto = buildPlayerDTO();
         if (!dto) return null;
 
-        const snapshot = loadoutSnapshot.snapshots[loadoutId];
-        if (snapshot?.name) {
-            const gameData = buildGameDataPayload();
-            applyLoadoutSnapshotToDTO(dto, snapshot.name, gameData);
-        }
-        return dto;
+        if (!loadoutId) return dto;
+
+        const snapshot = loadoutState.getUsableSnapshotById(loadoutId);
+        if (!snapshot?.name) return null;
+
+        const gameData = buildGameDataPayload();
+        return applyLoadoutSnapshotToDTO(dto, snapshot.name, gameData) ? dto : null;
     }
 
     /**
@@ -805,13 +821,16 @@ class LabyrinthClearRate {
     /**
      * Run combat sim for a monster room and return clear stats
      */
-    async computeCombatClear(monsterHrid, roomLevel) {
+    async computeCombatClear(monsterHrid, roomLevel, retryOnLoadoutChange = true) {
         const cacheKey = this.buildCombatCacheKey(monsterHrid, roomLevel);
         if (this.combatCache.has(cacheKey)) return this.combatCache.get(cacheKey);
 
+        const loadoutRevision = this.loadoutRevision;
         const loadoutId = this.getLabyrinthLoadoutId(monsterHrid);
         const dto = this.buildLabyrinthPlayerDTO(loadoutId);
-        if (!dto) return { clearChance: 0, expectedSeconds: Infinity };
+        if (!dto) {
+            return { clearChance: 0, expectedSeconds: Infinity, error: 'Configured loadout is unavailable' };
+        }
 
         const gameData = buildGameDataPayload();
         const crateHrids = this.getCrateHrids();
@@ -830,6 +849,21 @@ class LabyrinthClearRate {
                 labyrinthCombatBuffs,
             });
 
+            // A saved loadout can re-resolve while the worker is running (for example +5 -> +10
+            // in Highest mode). Invalidation alone is insufficient because this older async run
+            // could otherwise finish after combatCache.clear() and repopulate stale data. Retry
+            // once against the new effective state; after a second concurrent change, fail closed.
+            if (loadoutRevision !== this.loadoutRevision) {
+                if (retryOnLoadoutChange && this.isInitialized) {
+                    return this.computeCombatClear(monsterHrid, roomLevel, false);
+                }
+                return {
+                    clearChance: 0,
+                    expectedSeconds: Infinity,
+                    error: 'Configured loadout changed during simulation',
+                };
+            }
+
             const attempts = simResult.labyAttemptCount || 1;
             const winRate = (simResult.encounters || 0) / attempts;
             const totalTime = simResult.simulatedTime / 1e9;
@@ -839,7 +873,7 @@ class LabyrinthClearRate {
             const monsterDetail = gameDataLocal?.combatMonsterDetailMap?.[monsterHrid];
             const monsterName = monsterDetail?.name || monsterHrid.replace('/monsters/', '').replace(/_/g, ' ');
 
-            const snapshot = loadoutSnapshot.snapshots[loadoutId];
+            const snapshot = loadoutState.getUsableSnapshotById(loadoutId);
             const loadoutName = snapshot?.name || `Loadout #${loadoutId}`;
 
             const result = {
@@ -942,6 +976,7 @@ class LabyrinthClearRate {
         this.recommendRunning = true;
         this.recommendations.clear();
         this.combatCache.clear();
+        const loadoutRevision = this.loadoutRevision;
 
         const rateInput = document.getElementById('mwi-recommend-target-rate');
         const targetPct = rateInput ? parseInt(rateInput.value, 10) : null;
@@ -972,10 +1007,23 @@ class LabyrinthClearRate {
         for (const { roomHrid, isSkill } of rooms) {
             if (isSkill) {
                 const threshold = this.findRecommendedThreshold(roomHrid, targetRate);
+                if (loadoutRevision !== this.loadoutRevision) {
+                    if (button) button.textContent = 'Recommend';
+                    this.recommendRunning = false;
+                    return;
+                }
                 this.recommendations.set(roomHrid, { threshold });
             } else {
                 if (button) button.textContent = `Recommending... (${completed + 1}/${totalRooms})`;
                 const threshold = await this.findRecommendedThresholdCombat(roomHrid, targetRate);
+                // The loadout-state handler already cleared any prior recommendations. Do not
+                // publish a partial fresh/stale mix after an effective loadout change mid-run;
+                // the user can rerun Recommend against one coherent current state.
+                if (loadoutRevision !== this.loadoutRevision) {
+                    if (button) button.textContent = 'Recommend';
+                    this.recommendRunning = false;
+                    return;
+                }
                 this.recommendations.set(roomHrid, { threshold });
             }
             completed++;
@@ -1424,12 +1472,17 @@ class LabyrinthClearRate {
         const badge = document.createElement('span');
         badge.className = BADGE_CLASS;
         badge.style.cssText = 'font-size:0.7rem; margin-left:6px; white-space:nowrap;';
-        badge.style.color = this.getBadgeColor(result.clearChance);
-
-        const pct = Math.round(result.clearChance * 100);
-        const timeText = this.formatTime(result.expectedSeconds);
-        badge.textContent = pct >= 100 ? timeText : `${pct}% ${timeText}`;
-        badge.title = this.formatTooltip(result, roomLevel);
+        if (result.error) {
+            badge.style.color = '#d9534f';
+            badge.textContent = 'Loadout unavailable';
+            badge.title = result.error;
+        } else {
+            badge.style.color = this.getBadgeColor(result.clearChance);
+            const pct = Math.round(result.clearChance * 100);
+            const timeText = this.formatTime(result.expectedSeconds);
+            badge.textContent = pct >= 100 ? timeText : `${pct}% ${timeText}`;
+            badge.title = this.formatTooltip(result, roomLevel);
+        }
 
         cell.appendChild(badge);
         return badge;
@@ -1446,6 +1499,12 @@ class LabyrinthClearRate {
     }
 
     updateBadge(badge, result, roomLevel) {
+        if (result.error) {
+            badge.style.color = '#d9534f';
+            badge.textContent = 'Loadout unavailable';
+            badge.title = result.error;
+            return;
+        }
         badge.style.color = this.getBadgeColor(result.clearChance);
         const pct = Math.round(result.clearChance * 100);
         const timeText = this.formatTime(result.expectedSeconds);
@@ -1495,6 +1554,7 @@ class LabyrinthClearRate {
     }
 
     formatTooltip(result, roomLevel) {
+        if (result?.error) return result.error;
         const pct = (v) => `${(v * 100).toFixed(1)}%`;
 
         if (result.type === 'skilling') {

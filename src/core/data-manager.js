@@ -255,10 +255,18 @@ class DataManager {
                 this.currentCharacterGameMode = data.character?.gameMode || null;
             }
 
-            // Process new character data normally
-            this.characterData = data;
+            // Process new character data normally. Keep characterData.characterItems and
+            // this.characterItems on the same live array: several legacy consumers still read
+            // characterData directly, while incremental updates mutate this.characterItems.
+            // Mirror native presence semantics first so both views exclude only explicit zero.
+            // Do not mutate the shared WebSocket payload object: later subscribers should still
+            // observe the server message exactly as delivered.
+            const characterItems = Array.isArray(data.characterItems)
+                ? data.characterItems.filter((item) => item?.count !== 0)
+                : [];
+            this.characterData = { ...data, characterItems };
             this.characterSkills = data.characterSkills;
-            this.characterItems = data.characterItems;
+            this.characterItems = characterItems;
             this.characterActions = [...data.characterActions];
             this.characterQuests = data.characterQuests || [];
 
@@ -268,7 +276,7 @@ class DataManager {
             await this._restoreActionUnitBoundary(newCharacterId);
 
             // Build equipment map
-            this.updateEquipmentMap(data.characterItems);
+            this.updateEquipmentMap(this.characterItems);
 
             // Build house room map
             this.updateHouseRoomMap(data.characterHouseRoomMap);
@@ -331,22 +339,7 @@ class DataManager {
 
             // CRITICAL: Update inventory from action_completed (this is how inventory updates during gathering!)
             if (data.endCharacterItems && Array.isArray(data.endCharacterItems) && this.characterItems) {
-                for (const endItem of data.endCharacterItems) {
-                    // Only update inventory items
-                    if (endItem.itemLocationHrid !== '/item_locations/inventory') {
-                        continue;
-                    }
-
-                    // Find and update the item in inventory
-                    const index = this.characterItems.findIndex((invItem) => invItem.id === endItem.id);
-                    if (index !== -1) {
-                        // Update existing item
-                        this.characterItems[index].count = endItem.count;
-                    } else {
-                        // Add new item to inventory
-                        this.characterItems.push(endItem);
-                    }
-                }
+                this.applyCharacterItemUpdates(data.endCharacterItems, { inventoryOnly: true });
 
                 // Notify items_updated listeners (e.g. networth) of the inventory change
                 this.emit('items_updated', data);
@@ -386,24 +379,10 @@ class DataManager {
                     this.emit('items_updated', data);
                     return;
                 }
-                // Update inventory items in-place (endCharacterItems contains only changed items, not full inventory)
-                for (const item of data.endCharacterItems) {
-                    const index = this.characterItems.findIndex((invItem) => invItem.id === item.id);
-                    if (index !== -1) {
-                        if (item.count === 0) {
-                            // count 0 means removed from this location (e.g. equipped from inventory)
-                            this.characterItems.splice(index, 1);
-                        } else {
-                            // Update existing item (count and location may have changed, e.g. unequip)
-                            this.characterItems[index] = { ...this.characterItems[index], ...item };
-                        }
-                    } else if (item.count > 0) {
-                        // New item in inventory or equipment slot
-                        this.characterItems.push(item);
-                    }
-                }
-
-                this.updateEquipmentMap(data.endCharacterItems);
+                // Native MWI keys character-item updates by `hash` and updates its equipment
+                // location map in message order. applyCharacterItemUpdates mirrors both maps,
+                // including the guarded removal that cannot delete an already-current replacement.
+                this.applyCharacterItemUpdates(data.endCharacterItems);
             }
 
             this.emit('items_updated', data);
@@ -520,17 +499,144 @@ class DataManager {
     }
 
     /**
-     * Update equipment map from character items
-     * @param {Array} items - Character items array
+     * Find the existing record targeted by an incremental character-item update. Current MWI
+     * payloads expose `hash` (character + location + item + enhancement), which is authoritative.
+     * Older/fallback payloads may only expose `id`, so matching deliberately supports transitions
+     * between legacy id-only and current hash-aware records without letting a reused id collapse
+     * two distinct hash variants in the same batch.
+     * @param {Object} item
+     * @returns {number}
+     */
+    findCharacterItemIndex(item) {
+        if (!item || typeof item !== 'object' || !Array.isArray(this.characterItems)) return -1;
+
+        if (item.hash) {
+            const hashIndex = this.characterItems.findIndex((existing) => existing?.hash === item.hash);
+            if (hashIndex !== -1) return hashIndex;
+
+            // A current hash-aware update may replace a legacy cached record that never had a hash.
+            if (item.id !== null && item.id !== undefined) {
+                const legacyIdIndex = this.characterItems.findIndex(
+                    (existing) => !existing?.hash && existing?.id === item.id
+                );
+                if (legacyIdIndex !== -1) return legacyIdIndex;
+            }
+            return -1;
+        }
+
+        if (item.id !== null && item.id !== undefined) {
+            const idIndex = this.characterItems.findIndex((existing) => existing?.id === item.id);
+            if (idIndex !== -1) return idIndex;
+        }
+
+        if (!item.itemHrid || !item.itemLocationHrid) return -1;
+        const level = Number(item.enhancementLevel) || 0;
+        return this.characterItems.findIndex(
+            (existing) =>
+                !existing?.hash &&
+                (existing?.id === null || existing?.id === undefined) &&
+                existing?.itemLocationHrid === item.itemLocationHrid &&
+                existing?.itemHrid === item.itemHrid &&
+                (Number(existing?.enhancementLevel) || 0) === level
+        );
+    }
+
+    /**
+     * Apply incremental character-item updates using native MWI identity/presence semantics.
+     * Only explicit count === 0 removes a record; omitted count is valid/present.
+     * @param {Array<Object>} updates
+     * @param {{inventoryOnly?: boolean}} options
+     */
+    applyCharacterItemUpdates(updates, { inventoryOnly = false } = {}) {
+        if (!Array.isArray(this.characterItems)) this.characterItems = [];
+
+        const matchesCurrentEquipment = (current, candidate) => {
+            if (!current || !candidate) return false;
+            if (candidate.hash) return current.hash === candidate.hash;
+            if (candidate.id !== null && candidate.id !== undefined) return current.id === candidate.id;
+            return (
+                current.itemHrid === candidate.itemHrid &&
+                current.itemLocationHrid === candidate.itemLocationHrid &&
+                (Number(current.enhancementLevel) || 0) === (Number(candidate.enhancementLevel) || 0)
+            );
+        };
+
+        for (const item of updates || []) {
+            if (!item) continue;
+            if (inventoryOnly && item.itemLocationHrid !== '/item_locations/inventory') continue;
+
+            const hasIdentity =
+                !!item.hash ||
+                (item.id !== null && item.id !== undefined) ||
+                (!!item.itemHrid && !!item.itemLocationHrid);
+            if (!hasIdentity) continue;
+
+            const index = this.findCharacterItemIndex(item);
+            const previous = index !== -1 ? this.characterItems[index] : null;
+            const previousLocation = previous?.itemLocationHrid;
+
+            if (item.count === 0) {
+                if (index !== -1) this.characterItems.splice(index, 1);
+
+                if (!inventoryOnly) {
+                    const removedLocation = item.itemLocationHrid || previousLocation;
+                    if (removedLocation && removedLocation !== '/item_locations/inventory') {
+                        const current = this.characterEquipment.get(removedLocation);
+                        // Match native MWI: deleting an old hash must not clear a replacement
+                        // that already became current for the same equipment location.
+                        const removalMatchesCurrent =
+                            item.hash && current?.hash
+                                ? current.hash === item.hash
+                                : matchesCurrentEquipment(current, previous || item);
+                        if (removalMatchesCurrent) this.characterEquipment.delete(removedLocation);
+                    }
+                }
+                continue;
+            }
+
+            // Native MWI's hash-keyed Map replaces the full record on update. Preserve that
+            // behavior for current hash-aware payloads so an omitted field (notably `count`)
+            // cannot inherit stale state from an older object. Legacy id-only payloads still
+            // merge because they may be partial compatibility updates.
+            const storedItem = item.hash ? item : previous ? { ...previous, ...item } : item;
+            if (index !== -1) this.characterItems[index] = storedItem;
+            else this.characterItems.push(storedItem);
+
+            if (!inventoryOnly) {
+                const nextLocation = storedItem.itemLocationHrid;
+                // Legacy partial records can represent a move without an explicit old count:0.
+                // Avoid leaving a stale equipment pointer in the previous location.
+                if (
+                    previousLocation &&
+                    previousLocation !== '/item_locations/inventory' &&
+                    previousLocation !== nextLocation
+                ) {
+                    const current = this.characterEquipment.get(previousLocation);
+                    if (matchesCurrentEquipment(current, previous)) {
+                        this.characterEquipment.delete(previousLocation);
+                    }
+                }
+
+                if (nextLocation && nextLocation !== '/item_locations/inventory') {
+                    // Native location-map semantics are update ordered: the last present update
+                    // for a location wins, independently of where its hash record sits in our array.
+                    this.characterEquipment.set(nextLocation, storedItem);
+                }
+            }
+        }
+    }
+
+    /**
+     * Build the equipment location map from a full character-item snapshot (initial load).
+     * Incremental updates maintain this map directly in applyCharacterItemUpdates so native
+     * update ordering and guarded-removal semantics are preserved.
+     * @param {Array} items - Full current character items array
      */
     updateEquipmentMap(items) {
-        for (const item of items) {
-            if (item.itemLocationHrid !== '/item_locations/inventory') {
-                if (item.count === 0) {
-                    this.characterEquipment.delete(item.itemLocationHrid);
-                } else {
-                    this.characterEquipment.set(item.itemLocationHrid, item);
-                }
+        this.characterEquipment.clear();
+        for (const item of items || []) {
+            if (item?.itemLocationHrid && item.itemLocationHrid !== '/item_locations/inventory' && item.count !== 0) {
+                this.characterEquipment.set(item.itemLocationHrid, item);
             }
         }
     }

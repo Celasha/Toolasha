@@ -42,6 +42,17 @@ function find(fiber) {
 
 This approach traverses the React fiber tree to find game methods without depending on obfuscated property names.
 
+### Loadout State Integrity
+
+- `src/core/loadout-state.js` is always-on Core infrastructure and the single owner of saved loadout state. The `loadoutSnapshot` setting controls automatic use in calculations; it must not start/stop state capture.
+- Consumers receive resolved/effective snapshots. Do not read or reinterpret raw saved enhancement values, branch on `useExactEnhancement`, or use `enhancementLevel === 0` to mean "highest owned."
+- In highest mode, ignore the historical saved enhancement number and resolve the current highest-owned variant. In exact mode, preserve the saved level exactly, including +0.
+- Inventory changes may change effective state but must never rewrite the raw server snapshot. Custom/UI features must not mutate loadout truth.
+- Consumers that react to saved-loadout changes must subscribe through Core `loadoutState.onUpdate()`, never directly to the raw `loadouts_updated` WebSocket event; effective state also changes on relevant inventory/enhancement updates.
+- Fresh `init_character_data.characterLoadoutMap` / `loadouts_updated.characterLoadoutMap` is authoritative over IndexedDB cache, including `{}`. Do not allow stale cache or async work from a previous character to overwrite current state.
+- Accepted `init_character_data` also establishes the active WebSocket owner. Do not trust `loadouts_updated` to contain a character id: ignore updates from an old/different socket, and keep WebSocket content deduplication socket-scoped so a new connection cannot lose its authoritative init payload.
+- Never statically bundle another stateful loadout implementation into Utils/Market/Actions/Combat/UI. Run `npm run check:loadout-state` after the production build; CI must fail if more than one implementation/instance appears.
+
 ### Common Bugs to Watch For
 
 1. **Pricing mode not passed through**: Always ensure `pricingMode` is included in calculator return objects and passed to display formatters

@@ -107,6 +107,34 @@ describe('WebSocket hook — dispatch snapshots', () => {
 
         expect(calls).toEqual(['first', 'second']);
     });
+
+    test('message handlers receive the originating socket as dispatch context', () => {
+        const socket = makeFakeWebSocket();
+        const handler = vi.fn();
+        webSocketHook.on('socket_context', handler);
+
+        webSocketHook.processMessage(JSON.stringify({ type: 'socket_context', value: 1 }), socket);
+
+        expect(handler).toHaveBeenCalledWith(expect.objectContaining({ type: 'socket_context', value: 1 }), { socket });
+    });
+
+    test('content-hash deduplication is scoped per socket', () => {
+        const socketA = makeFakeWebSocket();
+        const socketB = makeFakeWebSocket();
+        const handler = vi.fn();
+        webSocketHook.on('socket_dedup', handler);
+
+        const prefix = 'x'.repeat(150);
+        const first = JSON.stringify({ type: 'socket_dedup', prefix, value: 1 });
+        const second = JSON.stringify({ type: 'socket_dedup', prefix, value: 2 });
+        expect(first.substring(0, 100)).toBe(second.substring(0, 100));
+
+        webSocketHook.processMessage(first, socketA);
+        webSocketHook.processMessage(second, socketB);
+
+        expect(handler).toHaveBeenCalledTimes(2);
+        expect(handler.mock.calls[1][0].value).toBe(2);
+    });
 });
 
 describe('WebSocket hook — guild_updated must not be dropped by content-hash dedup', () => {

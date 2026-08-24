@@ -20,11 +20,23 @@ import {
     calculateGatheringActionTotalsFromBase,
 } from '../../utils/profit-helpers.js';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
-import loadoutSnapshot from '../combat/loadout-snapshot.js';
+import loadoutState from '../../core/loadout-state.js';
 import scrollSimulator from '../combat/scroll-simulator.js';
 import { SCROLL_BUFF_ITEMS } from '../../utils/scroll-buff-values.js';
 
 const getMissingPriceIndicator = (isMissing) => (isMissing ? ' ⚠' : '');
+
+function getAutomaticLoadoutLabel(actionTypeHrid) {
+    if (!actionTypeHrid || !config.getSetting('loadoutSnapshot')) return 'Equipped';
+    const selection = loadoutState.findSnapshotSelectionForActionType(actionTypeHrid);
+    if (selection.status === 'usable') {
+        return `${selection.snapshot.name}${selection.snapshot.isDefault ? ' (Default)' : ''}`;
+    }
+    if (selection.status === 'unavailable') {
+        return `Equipped ⚠ (saved ${selection.snapshot.name || 'loadout'} unavailable)`;
+    }
+    return 'Equipped';
+}
 export const formatMissingLabel = (isMissing, value) => (isMissing ? '-- ⚠' : value);
 
 let _spriteUrl = null;
@@ -483,12 +495,7 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
         color: #888;
         font-size: 0.85em;
     `;
-    const gatheringSnapshotInfo = gatheringActionType
-        ? loadoutSnapshot.getSnapshotInfoForSkill(gatheringActionType)
-        : null;
-    const gatheringLoadoutLabel = gatheringSnapshotInfo
-        ? `${gatheringSnapshotInfo.name}${gatheringSnapshotInfo.isDefault ? ' (Default)' : ''}`
-        : 'Equipped';
+    const gatheringLoadoutLabel = getAutomaticLoadoutLabel(gatheringActionType);
     modeDiv.textContent = `Pricing Mode: ${modeLabel}  •  Loadout: ${gatheringLoadoutLabel}`;
     topLevelContent.appendChild(modeDiv);
 
@@ -1114,12 +1121,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
         color: #888;
         font-size: 0.85em;
     `;
-    const productionSnapshotInfo = productionActionType
-        ? loadoutSnapshot.getSnapshotInfoForSkill(productionActionType)
-        : null;
-    const productionLoadoutLabel = productionSnapshotInfo
-        ? `${productionSnapshotInfo.name}${productionSnapshotInfo.isDefault ? ' (Default)' : ''}`
-        : 'Equipped';
+    const productionLoadoutLabel = getAutomaticLoadoutLabel(productionActionType);
     modeDiv.textContent = `Pricing Mode: ${modeLabel}  •  Loadout: ${productionLoadoutLabel}`;
     topLevelContent.appendChild(modeDiv);
 

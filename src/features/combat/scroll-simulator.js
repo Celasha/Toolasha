@@ -14,7 +14,7 @@
 import dataManager from '../../core/data-manager.js';
 import config from '../../core/config.js';
 import storage from '../../core/storage.js';
-import loadoutSnapshot from './loadout-snapshot.js';
+import loadoutState from '../../core/loadout-state.js';
 
 const STORAGE_KEY_PREFIX = 'scroll_simulation';
 export const DEFAULT_KEY = '__default__';
@@ -50,7 +50,9 @@ class ScrollSimulator {
      */
     getScrollSetForActionType(actionTypeHrid) {
         if (!config.getSetting('simulateScrollEffects')) return new Set();
-        const loadoutName = loadoutSnapshot.getSnapshotInfoForSkill(actionTypeHrid)?.name;
+        const loadoutName = config.getSetting('loadoutSnapshot')
+            ? loadoutState.findSnapshotForActionType(actionTypeHrid)?.name
+            : null;
         if (loadoutName && this.scrollsByLoadout[loadoutName]) {
             return this.scrollsByLoadout[loadoutName];
         }

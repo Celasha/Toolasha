@@ -25,7 +25,12 @@ import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } fro
 import { formatWithSeparator } from '../../utils/formatters.js';
 import { SimEditor } from './sim-editor.js';
 import labyrinthClearRate from '../combat/labyrinth-clear-rate.js';
-import loadoutSnapshot from '../combat/loadout-snapshot.js';
+import loadoutState from '../../core/loadout-state.js';
+import {
+    buildSkillEquipmentResolution,
+    resolveConfiguredLoadoutName,
+    sanitizeSkillLoadoutAssignments,
+} from './lab-sim-loadout-resolution.js';
 
 const PANEL_ID = 'mwi-lab-sim-panel';
 const ACCENT = '#4a9eff';
@@ -576,6 +581,7 @@ class LabSimUI {
         const select = this.panel?.querySelector('#mwi-labsim-monster');
         if (!select) return;
 
+        const previousMonsterHrid = select.value;
         const monsters = getLabyrinthMonsters();
         select.innerHTML = '';
         for (const monster of monsters) {
@@ -583,6 +589,9 @@ class LabSimUI {
             option.value = monster.hrid;
             option.textContent = monster.name;
             select.appendChild(option);
+        }
+        if (previousMonsterHrid && monsters.some((monster) => monster.hrid === previousMonsterHrid)) {
+            select.value = previousMonsterHrid;
         }
     }
 
@@ -595,10 +604,20 @@ class LabSimUI {
             .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
             .join('');
         const loadoutId = dataManager.characterData?.characterSetting?.[`labyrinthLoadout${pascal}`];
-        if (!loadoutId) return;
-        const snapshot = loadoutSnapshot.snapshots[loadoutId];
-        if (!snapshot?.name) return;
-        this._editor.applyLoadoutByName(snapshot.name);
+        if (!loadoutId) {
+            // Native setting has no saved loadout for this monster: Current Gear is the
+            // explicit configuration. Never carry the previous monster's loadout forward.
+            this._editor.applyLoadoutByName('');
+            return;
+        }
+
+        // Preserve the native configured loadout identity even when it is currently
+        // unavailable or the referenced saved loadout was deleted. SimEditor marks that
+        // selection as blocking so combat calculations cannot run the previous DTO while
+        // claiming to use this monster's configured loadout.
+        this._editor.applyLoadoutByName(
+            resolveConfiguredLoadoutName(loadoutId, (id) => loadoutState.getSnapshotById(id))
+        );
     }
 
     /** @private */
@@ -752,10 +771,23 @@ class LabSimUI {
     }
 
     /** @private */
+    _getBlockedCombatLoadoutName() {
+        return this._editor?.getUnavailableLoadoutName?.() || '';
+    }
+
+    /** @private */
     async _onSimulate() {
         if (this.isRunning) {
             cancelSimulation();
             this._setStatus('Labyrinth simulation cancelled.');
+            return;
+        }
+
+        const blockedLoadoutName = this._getBlockedCombatLoadoutName();
+        if (blockedLoadoutName) {
+            this._setStatus(
+                `Configured combat loadout unavailable: ${blockedLoadoutName}. Choose another loadout or Current Gear.`
+            );
             return;
         }
 
@@ -959,6 +991,14 @@ class LabSimUI {
 
     /** @private */
     async _onUpgradeAnalyze() {
+        const blockedLoadoutName = this._getBlockedCombatLoadoutName();
+        if (blockedLoadoutName) {
+            this._setStatus(
+                `Configured combat loadout unavailable: ${blockedLoadoutName}. Choose another loadout or Current Gear.`
+            );
+            return;
+        }
+
         const playerIndex = parseInt(this.panel.querySelector('#mwi-labsim-upgrade-player')?.value) || 0;
         const roomLevel = parseInt(this.panel.querySelector('#mwi-labsim-level')?.value) || 100;
         const monsterHrid = this.panel.querySelector('#mwi-labsim-monster')?.value;
@@ -1242,7 +1282,8 @@ class LabSimUI {
         const container = this.panel?.querySelector('#mwi-labsim-skilling-loadouts');
         if (!container) return;
 
-        const allSnapshots = loadoutSnapshot.getAllSnapshots();
+        const allSnapshots = loadoutState.getAllSnapshots().filter((snapshot) => snapshot.isUsableForCalculation);
+        const usableSnapshotNames = new Set(allSnapshots.map((snapshot) => snapshot.name));
         const nonCombatSnapshots = allSnapshots.filter(
             (s) => s.actionTypeHrid && s.actionTypeHrid !== '/action_types/combat'
         );
@@ -1270,25 +1311,43 @@ class LabSimUI {
             }
         }
 
-        // Auto-populate from game's lab automation settings for any skill not already set
-        if (Object.keys(this._skillLoadouts).length < skills.length) {
-            const charSetting = dataManager.characterData?.characterSetting;
-            const snapshots = loadoutSnapshot.snapshots || {};
-            for (const skill of skills) {
-                if (this._skillLoadouts[skill.hrid]) continue;
-                const skillId = skill.hrid.replace('/skills/', '');
-                const pascal = skillId.charAt(0).toUpperCase() + skillId.slice(1);
-                const loadoutId = charSetting?.[`labyrinthLoadout${pascal}`];
-                if (loadoutId && snapshots[loadoutId]?.name) {
-                    this._skillLoadouts[skill.hrid] = snapshots[loadoutId].name;
-                } else {
-                    const match = nonCombatSnapshots.find((s) => s.actionTypeHrid === skill.actionType);
-                    if (match) {
-                        this._skillLoadouts[skill.hrid] = match.name;
-                    } else if (allSkillsSnapshots.length > 0) {
-                        this._skillLoadouts[skill.hrid] = allSkillsSnapshots[0].name;
-                    }
-                }
+        // Keep named manual/persistent selections even when they become unavailable.
+        // Only sanitize malformed value types; changing a named selection to Current Gear
+        // would silently change the simulation configuration.
+        const sanitized = sanitizeSkillLoadoutAssignments(
+            this._skillLoadouts,
+            skills.map((skill) => skill.hrid)
+        );
+        if (sanitized.changed) {
+            this._skillLoadouts = sanitized.assignments;
+            storage.set('labSimSkillingLoadouts', this._skillLoadouts, 'settings');
+        }
+
+        // Auto-populate only truly unassigned skills. An explicit empty-string selection means
+        // Current Gear and must not be overwritten. Preserve the game's explicit Labyrinth
+        // loadout name even when it is currently unavailable so calculation can fail closed
+        // instead of silently substituting Current Gear or another same-skill loadout.
+        const charSetting = dataManager.characterData?.characterSetting;
+        for (const skill of skills) {
+            if (Object.prototype.hasOwnProperty.call(this._skillLoadouts, skill.hrid)) continue;
+
+            const skillId = skill.hrid.replace('/skills/', '');
+            const pascal = skillId.charAt(0).toUpperCase() + skillId.slice(1);
+            const loadoutId = charSetting?.[`labyrinthLoadout${pascal}`];
+            if (loadoutId) {
+                this._skillLoadouts[skill.hrid] = resolveConfiguredLoadoutName(loadoutId, (id) =>
+                    loadoutState.getSnapshotById(id)
+                );
+                continue;
+            }
+
+            const match = nonCombatSnapshots.find((snapshot) => snapshot.actionTypeHrid === skill.actionType);
+            if (match) {
+                this._skillLoadouts[skill.hrid] = match.name;
+            } else if (allSkillsSnapshots.length > 0) {
+                this._skillLoadouts[skill.hrid] = allSkillsSnapshots[0].name;
+            } else {
+                this._skillLoadouts[skill.hrid] = '';
             }
         }
 
@@ -1311,6 +1370,9 @@ class LabSimUI {
             html += `<span style="color:#888; width:85px; flex-shrink:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${skill.label}">${skill.label}</span>`;
             html += `<select data-skill-loadout="${skill.hrid}" style="${selectStyle}">`;
             html += `<option value=""${!current ? ' selected' : ''}>Current Gear</option>`;
+            if (current && !usableSnapshotNames.has(current)) {
+                html += `<option value="${current}" selected>${current} (Unavailable)</option>`;
+            }
             for (const snap of [...nonCombatSnapshots, ...allSkillsSnapshots]) {
                 const label = snap.name + (snap.actionTypeHrid ? '' : ' (All)');
                 const selected = current === snap.name ? ' selected' : '';
@@ -1342,36 +1404,9 @@ class LabSimUI {
      * @returns {Object} { '/skills/woodcutting': { '/equipment_types/...': { hrid, enhancementLevel } }, ... }
      */
     _buildSkillEquipmentMap(gameData) {
-        const itemDetailMap = gameData?.itemDetailMap || {};
-        const liveEquipment = dataManager.characterEquipment;
-        const allSnapshots = loadoutSnapshot.getAllSnapshots();
-        const equipmentMap = {};
-
-        for (const [skillHrid, loadoutName] of Object.entries(this._skillLoadouts)) {
-            if (!loadoutName) continue;
-            const snapshot = allSnapshots.find((s) => s.name === loadoutName);
-            if (!snapshot?.equipment?.length) continue;
-
-            const equipment = {};
-            for (const equip of snapshot.equipment) {
-                const itemDetail = itemDetailMap[equip.itemHrid];
-                const equipType = itemDetail?.equipmentDetail?.type;
-                if (!equipType) continue;
-                let enhancementLevel = equip.enhancementLevel || 0;
-                if (enhancementLevel === 0 && liveEquipment) {
-                    for (const [, liveItem] of liveEquipment) {
-                        if (liveItem.itemHrid === equip.itemHrid) {
-                            enhancementLevel = liveItem.enhancementLevel || 0;
-                            break;
-                        }
-                    }
-                }
-                equipment[equipType] = { hrid: equip.itemHrid, enhancementLevel };
-            }
-            equipmentMap[skillHrid] = equipment;
-        }
-
-        return equipmentMap;
+        return buildSkillEquipmentResolution(this._skillLoadouts, gameData?.itemDetailMap || {}, (name) =>
+            loadoutState.getUsableSnapshotByName(name)
+        );
     }
 
     /** @private */
@@ -1397,7 +1432,13 @@ class LabSimUI {
         }
 
         const crateHrids = this._getSkillingCrates();
-        const skillEquipmentMap = this._buildSkillEquipmentMap(gameData);
+        const { equipmentMap: skillEquipmentMap, unavailableSelections } = this._buildSkillEquipmentMap(gameData);
+        if (unavailableSelections.length > 0) {
+            const names = [...new Set(unavailableSelections.map((entry) => entry.loadoutName))].join(', ');
+            this._setStatus(`Selected skilling loadout unavailable: ${names}. Choose another loadout or Current Gear.`);
+            this._renderSkillLoadoutTable();
+            return;
+        }
         const results = computeSkillingClearRatesFromEditor(roomLevel, dto, crateHrids, gameData, skillEquipmentMap);
         this._renderSkillingClearResults(results, roomLevel);
     }
@@ -1473,7 +1514,13 @@ class LabSimUI {
         }
 
         const crateHrids = this._getSkillingCrates();
-        const skillEquipmentMap = this._buildSkillEquipmentMap(gameData);
+        const { equipmentMap: skillEquipmentMap, unavailableSelections } = this._buildSkillEquipmentMap(gameData);
+        if (unavailableSelections.length > 0) {
+            const names = [...new Set(unavailableSelections.map((entry) => entry.loadoutName))].join(', ');
+            this._setStatus(`Selected skilling loadout unavailable: ${names}. Choose another loadout or Current Gear.`);
+            this._renderSkillLoadoutTable();
+            return;
+        }
         const targetSkill = this.panel.querySelector('#mwi-labsim-skilling-filter')?.value || null;
 
         const progressEl = this.panel.querySelector('#mwi-labsim-skilling-progress');
@@ -1687,7 +1734,10 @@ class LabSimUI {
             bringPanelToFront(this.panel);
             this._populateMonsters();
             if (!this._editor.isInitialized()) {
-                this._editor.initEditor();
+                this._editor.initEditor().then(() => {
+                    const monsterHrid = this.panel?.querySelector('#mwi-labsim-monster')?.value;
+                    if (monsterHrid) this._onMonsterChange(monsterHrid);
+                });
             }
         }
     }

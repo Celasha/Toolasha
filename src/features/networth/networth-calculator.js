@@ -24,7 +24,7 @@ import { calculateItemValueBatch } from '../../utils/networth-worker-manager.js'
 import { DUNGEON_CHEST_CHEST_KEYS } from '../combat-stats/combat-stats-calculator.js';
 import { getShopCoinCost } from '../../utils/game-lookups.js';
 import { isExcluded, getExclusions } from './networth-exclusions.js';
-import loadoutSnapshot from '../combat/loadout-snapshot.js';
+import loadoutState from '../../core/loadout-state.js';
 import { MARKET_TAX, COWBELL_BAG_HRID, COWBELL_BAG_TAX } from '../../utils/profit-constants.js';
 
 /**
@@ -599,11 +599,15 @@ export async function calculateNetworth() {
     const loadoutExcludedHridToName = new Map();
     const loadoutExclusions = getExclusions().filter((e) => e.type === 'loadout');
     if (loadoutExclusions.length > 0) {
-        const allSnapshots = loadoutSnapshot.getAllSnapshots();
+        const allSnapshots = loadoutState.getAllSnapshots();
         for (const exc of loadoutExclusions) {
             const snapshot = allSnapshots.find((s) => s.name === exc.value);
             if (snapshot) {
-                for (const eq of snapshot.equipment) {
+                // Networth loadout exclusions are identity-based, not calculation-based.
+                // Preserve intended saved item identities even when an exact/highest variant
+                // is currently unavailable; otherwise an unavailable loadout would silently
+                // stop excluding the very item it was configured to protect.
+                for (const eq of [...(snapshot.equipment || []), ...(snapshot.unavailableEquipment || [])]) {
                     if (!loadoutExcludedHridToName.has(eq.itemHrid)) {
                         loadoutExcludedHridToName.set(eq.itemHrid, exc.value);
                     }

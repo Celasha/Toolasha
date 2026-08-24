@@ -10,7 +10,7 @@ import {
     parseShykaiImport,
     applyLoadoutSnapshotToDTO,
 } from './combat-sim-adapter.js';
-import loadoutSnapshot from '../combat/loadout-snapshot.js';
+import loadoutState from '../../core/loadout-state.js';
 
 const ACCENT = '#4a9eff';
 const ACCENT_BG = 'rgba(74, 158, 255, 0.12)';
@@ -39,6 +39,8 @@ export class SimEditor {
         this._missingMembers = [];
         this._editorInitialized = false;
         this._selectedLoadoutName = '';
+        this._unavailableLoadoutName = '';
+        this._loadoutStatusMessage = '';
     }
 
     getEditedDTOs() {
@@ -59,16 +61,75 @@ export class SimEditor {
     getSelectedLoadoutName() {
         return this._selectedLoadoutName;
     }
+    getUnavailableLoadoutName() {
+        return this._unavailableLoadoutName;
+    }
 
     /**
-     * Apply a named loadout to the active player DTO and re-render.
+     * Apply a named persisted/programmatic loadout to the active player DTO and re-render.
+     * An unavailable configured loadout becomes a blocking selection: its identity remains
+     * visible, but callers can refuse to simulate the previous DTO under the wrong label.
      * @param {string} loadoutName - Snapshot name to apply
      */
     applyLoadoutByName(loadoutName) {
-        if (!loadoutName || !this._editedDTOs) return;
+        if (!this._editedDTOs) return false;
+
+        if (!loadoutName) {
+            const activePlayer = this._activeEditPlayer;
+            if (this._originalDTOs?.[activePlayer]) {
+                this._editedDTOs[activePlayer] = structuredClone(this._originalDTOs[activePlayer]);
+            }
+            this._selectedLoadoutName = '';
+            this._unavailableLoadoutName = '';
+            this._loadoutStatusMessage = '';
+            this.renderEditor();
+            return true;
+        }
+
+        const applied = this._applyLoadoutToDTO(loadoutName);
+        if (!applied) {
+            this._unavailableLoadoutName = loadoutName;
+            this._loadoutStatusMessage = `Configured loadout “${loadoutName}” is unavailable. Simulation is blocked until you choose another loadout or Current Gear.`;
+            this.renderEditor();
+            return false;
+        }
         this._selectedLoadoutName = loadoutName;
-        this._applyLoadoutToDTO(loadoutName);
+        this._unavailableLoadoutName = '';
+        this._loadoutStatusMessage = '';
         this.renderEditor();
+        return true;
+    }
+
+    /**
+     * Apply a loadout selection made in the editor dropdown without silently changing
+     * simulation meaning when the selected loadout becomes unavailable mid-interaction.
+     * @param {string} selectedName
+     * @returns {boolean}
+     * @private
+     */
+    _applyEditorLoadoutSelection(selectedName) {
+        if (!selectedName) {
+            const activePlayer = this._activeEditPlayer;
+            if (this._originalDTOs?.[activePlayer]) {
+                this._editedDTOs[activePlayer] = structuredClone(this._originalDTOs[activePlayer]);
+            }
+            this._selectedLoadoutName = '';
+            this._unavailableLoadoutName = '';
+            this._loadoutStatusMessage = '';
+            return true;
+        }
+
+        if (!this._applyLoadoutToDTO(selectedName)) {
+            // applyLoadoutSnapshotToDTO is transactional. Preserve both the previous DTO
+            // and selected-loadout identity instead of silently switching to Current Gear.
+            this._loadoutStatusMessage = `Loadout “${selectedName}” is unavailable. Previous simulation kept.`;
+            return false;
+        }
+
+        this._selectedLoadoutName = selectedName;
+        this._unavailableLoadoutName = '';
+        this._loadoutStatusMessage = '';
+        return true;
     }
 
     /**
@@ -157,6 +218,8 @@ export class SimEditor {
         this._missingMembers = [];
         this._editorInitialized = true;
         this._selectedLoadoutName = '';
+        this._unavailableLoadoutName = '';
+        this._loadoutStatusMessage = '';
 
         this.renderEditor();
     }
@@ -172,6 +235,8 @@ export class SimEditor {
         this._selfHrid = null;
         this._missingMembers = [];
         this._selectedLoadoutName = '';
+        this._unavailableLoadoutName = '';
+        this._loadoutStatusMessage = '';
     }
 
     /**
@@ -301,22 +366,34 @@ export class SimEditor {
 
         // Loadout dropdown + Reset button (skip in skillingMode — loadouts assigned per-skill)
         if (!this.skillingMode) {
-            const allSnapshots = loadoutSnapshot.getAllSnapshots();
+            const allSnapshots = loadoutState.getAllSnapshots();
             const filteredSnapshots = allSnapshots.filter(
-                (s) => !s.actionTypeHrid || s.actionTypeHrid === '/action_types/combat'
+                (snapshot) =>
+                    snapshot.isUsableForCalculation &&
+                    (!snapshot.actionTypeHrid || snapshot.actionTypeHrid === '/action_types/combat')
             );
+            const displayedLoadoutName = this._unavailableLoadoutName || this._selectedLoadoutName;
+            const selectedSnapshot = displayedLoadoutName
+                ? allSnapshots.find((snapshot) => snapshot.name === displayedLoadoutName)
+                : null;
+            const selectedIsUsable = filteredSnapshots.some((snapshot) => snapshot.name === displayedLoadoutName);
+            const selectedUnavailable = !!this._unavailableLoadoutName || (displayedLoadoutName && !selectedIsUsable);
 
             html += `<div style="display:flex; align-items:center; gap:6px; margin-bottom:8px;">`;
-            if (filteredSnapshots.length > 0) {
+            if (filteredSnapshots.length > 0 || selectedUnavailable) {
                 html += `<label style="color:#888; font-size:11px; flex-shrink:0;">Loadout</label>`;
                 html += `<select id="mwi-csim-loadout-select" style="
                     flex:1; min-width:0; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
                     border-radius:4px; padding:2px 6px; font-size:12px; font-family:inherit;">`;
-                html += `<option value=""${!this._selectedLoadoutName ? ' selected' : ''}>— Current Gear —</option>`;
+                html += `<option value=""${!displayedLoadoutName ? ' selected' : ''}>— Current Gear —</option>`;
                 for (const snap of filteredSnapshots) {
                     const label = snap.name + (snap.actionTypeHrid ? '' : ' (All Skills)');
-                    const selected = this._selectedLoadoutName === snap.name ? ' selected' : '';
+                    const selected = displayedLoadoutName === snap.name ? ' selected' : '';
                     html += `<option value="${snap.name}"${selected}>${label}</option>`;
+                }
+                if (selectedUnavailable) {
+                    const unavailableLabel = selectedSnapshot?.name || displayedLoadoutName;
+                    html += `<option value="${displayedLoadoutName}" selected disabled>${unavailableLabel} (Unavailable)</option>`;
                 }
                 html += `</select>`;
             }
@@ -325,6 +402,9 @@ export class SimEditor {
                 padding:2px 8px; border-radius:4px; font-size:11px; cursor:pointer;
                 font-family:inherit; flex-shrink:0;">Reset to Current</button>`;
             html += '</div>';
+            if (this._loadoutStatusMessage) {
+                html += `<div style="color:#f66; font-size:11px; margin:-4px 0 8px 0;">${this._loadoutStatusMessage}</div>`;
+            }
         }
 
         if (!this.skillingMode) {
@@ -1296,6 +1376,8 @@ export class SimEditor {
             resetBtn.addEventListener('click', () => {
                 this._editedDTOs = structuredClone(this._originalDTOs);
                 this._selectedLoadoutName = '';
+                this._unavailableLoadoutName = '';
+                this._loadoutStatusMessage = '';
                 this.renderEditor();
             });
         }
@@ -1373,15 +1455,7 @@ export class SimEditor {
         if (loadoutSelect) {
             loadoutSelect.addEventListener('change', () => {
                 const selectedName = loadoutSelect.value;
-                this._selectedLoadoutName = selectedName;
-                if (!selectedName) {
-                    const activePlayer = this._activeEditPlayer;
-                    if (this._originalDTOs?.[activePlayer]) {
-                        this._editedDTOs[activePlayer] = structuredClone(this._originalDTOs[activePlayer]);
-                    }
-                } else {
-                    this._applyLoadoutToDTO(selectedName);
-                }
+                this._applyEditorLoadoutSelection(selectedName);
                 this.renderEditor();
             });
         }
@@ -1520,9 +1594,9 @@ export class SimEditor {
     /** @private */
     _applyLoadoutToDTO(loadoutName) {
         const gameData = buildGameDataPayload();
-        if (!gameData) return;
+        if (!gameData) return false;
         const dto = this._editedDTOs[this._activeEditPlayer];
-        if (!dto) return;
-        applyLoadoutSnapshotToDTO(dto, loadoutName, gameData);
+        if (!dto) return false;
+        return applyLoadoutSnapshotToDTO(dto, loadoutName, gameData);
     }
 }

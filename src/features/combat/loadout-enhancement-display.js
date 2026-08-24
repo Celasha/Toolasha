@@ -2,34 +2,29 @@
  * Loadout Enhancement Display
  * Shows highest-owned enhancement level on equipment icons in the loadout panel
  *
- * Scrapes characterItems for the highest enhancementLevel per itemHrid,
+ * Uses Core's canonical owned-enhancement index for the highest level per itemHrid,
  * then injects a "+N" overlay (upper-right) on each loadout equipment icon.
  */
 
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
+import loadoutState from '../../core/loadout-state.js';
 
 const OVERLAY_CLASS = 'script_loadoutEnhLevel';
 
 /**
  * Build a map of itemHrid → highest enhancementLevel across all character items.
+ * This feature intentionally displays highest-owned (not the selected loadout's exact level),
+ * but it shares Core ownership semantics so equipped/no-count handling cannot drift.
  * @returns {Map<string, number>}
  */
 function buildEnhancementLevelMap() {
-    const inventory = dataManager.getInventory();
-    const map = new Map();
-    if (!inventory) return map;
-
-    for (const item of inventory) {
-        if (!item.itemHrid || item.count === 0) continue;
-        const existing = map.get(item.itemHrid) ?? 0;
-        const level = item.enhancementLevel ?? 0;
-        if (level > existing) {
-            map.set(item.itemHrid, level);
-        }
+    const result = new Map();
+    for (const [itemHrid, owned] of loadoutState.getOwnedEnhancementIndex(dataManager.getInventory())) {
+        result.set(itemHrid, owned.highestEnhancementLevel);
     }
-    return map;
+    return result;
 }
 
 /**

@@ -8,7 +8,7 @@
 
 import dataManager from '../../core/data-manager.js';
 import storage from '../../core/storage.js';
-import loadoutSnapshot from '../combat/loadout-snapshot.js';
+import loadoutState from '../../core/loadout-state.js';
 import config from '../../core/config.js';
 import marketAPI from '../../api/marketplace.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
@@ -791,50 +791,79 @@ export function getCommunityBuffs() {
 }
 
 /**
- * Apply a named loadout snapshot to a player DTO (mutates dto in place).
- * Extracted from CombatSimUI._applyLoadoutToDTO so both the sim UI and task display can use it.
+ * Place saved loadout abilities into their native MWI slots (1..5 -> array 0..4).
+ * Native slot identity is authoritative and intentional holes must survive every export path.
+ * Legacy/invalid slot data falls back by special-vs-normal classification without compacting
+ * any valid native slot.
+ * @param {Array<Object>} abilities
+ * @param {Object} abilityDetailMap
+ * @param {(ability: Object) => any} mapAbility
+ * @returns {Array<any|null>}
+ */
+export function mapLoadoutAbilitiesToNativeSlots(abilities, abilityDetailMap, mapAbility) {
+    const result = [null, null, null, null, null];
+    let fallbackNormalAbilityIndex = 1;
+
+    for (const ability of abilities || []) {
+        if (!ability?.abilityHrid) continue;
+        const mappedAbility = mapAbility(ability);
+        if (mappedAbility === null || mappedAbility === undefined) continue;
+
+        const nativeSlot = Number.parseInt(ability.slot, 10);
+        const nativeIndex = nativeSlot >= 1 && nativeSlot <= 5 ? nativeSlot - 1 : null;
+        if (nativeIndex !== null) {
+            result[nativeIndex] = mappedAbility;
+            continue;
+        }
+
+        const isSpecial = abilityDetailMap?.[ability.abilityHrid]?.isSpecialAbility || false;
+        if (isSpecial) {
+            // Invalid legacy slot metadata must not overwrite a valid native slot 1 that was
+            // already reconstructed above. Fill the special slot only when it is genuinely free.
+            if (result[0] === null) result[0] = mappedAbility;
+            continue;
+        }
+
+        while (fallbackNormalAbilityIndex < 5 && result[fallbackNormalAbilityIndex]) {
+            fallbackNormalAbilityIndex += 1;
+        }
+        if (fallbackNormalAbilityIndex < 5) {
+            result[fallbackNormalAbilityIndex++] = mappedAbility;
+        }
+    }
+
+    return result;
+}
+
+/**
+ * Apply a named canonical saved loadout to a player DTO (mutates dto in place on success).
  * @param {Object} dto - Player DTO to mutate
  * @param {string} snapshotName - Loadout snapshot name
  * @param {Object} gameData - Game data payload from buildGameDataPayload()
- * @returns {boolean} True if snapshot was found and applied, false otherwise
+ * @returns {boolean} True only when the complete usable snapshot was applied
  */
 export function applyLoadoutSnapshotToDTO(dto, snapshotName, gameData) {
-    const snapshots = loadoutSnapshot.getAllSnapshots();
-    const snapshot = snapshots.find((s) => s.name === snapshotName);
+    const snapshot = loadoutState.getUsableSnapshotByName(snapshotName);
     if (!snapshot) return false;
 
     const itemDetailMap = gameData.itemDetailMap || {};
     const abilityDetailMap = gameData.abilityDetailMap || {};
 
-    // Convert equipment: snapshot uses itemHrid, DTO keys by equipmentDetail.type.
-    // When useExactEnhancement=false, the wearable hash may store 0 for enhancement.
-    // Resolve by finding the highest enhancement of each item across all owned inventory,
-    // matching how the game treats "highest owned" loadout mode.
+    // Convert canonical resolved equipment: snapshot uses itemHrid, DTO keys by equipmentDetail.type.
+    // Exact/highest enhancement semantics are owned exclusively by Core Loadout State.
     const characterData = dataManager.characterData;
-    const maxEnhancementByItem = new Map();
-    for (const item of characterData?.characterItems || []) {
-        if (!item?.itemHrid || item.count === 0) continue;
-        const level = item.enhancementLevel || 0;
-        const existing = maxEnhancementByItem.get(item.itemHrid);
-        if (existing === undefined || level > existing) {
-            maxEnhancementByItem.set(item.itemHrid, level);
-        }
-    }
-
     const newEquipment = {};
     for (const equip of snapshot.equipment || []) {
         const itemDetail = itemDetailMap[equip.itemHrid];
         const equipType = itemDetail?.equipmentDetail?.type;
-        if (equipType) {
-            let enhancementLevel = equip.enhancementLevel || 0;
-            if (enhancementLevel === 0) {
-                enhancementLevel = maxEnhancementByItem.get(equip.itemHrid) || 0;
-            }
-            newEquipment[equipType] = {
-                hrid: equip.itemHrid,
-                enhancementLevel,
-            };
-        }
+        // Manual loadout application is all-or-nothing. Missing item metadata is just as
+        // unsafe as an unresolved enhancement: silently omitting that slot would simulate a
+        // different loadout while reporting success.
+        if (!equipType || !Number.isFinite(equip.enhancementLevel)) return false;
+        newEquipment[equipType] = {
+            hrid: equip.itemHrid,
+            enhancementLevel: equip.enhancementLevel,
+        };
     }
     dto.equipment = newEquipment;
 
@@ -863,23 +892,13 @@ export function applyLoadoutSnapshotToDTO(dto, snapshotName, gameData) {
         }));
     };
 
-    // Build abilities array (5 slots: 0=special, 1-4=normal)
-    dto.abilities = [null, null, null, null, null];
-    let normalAbilityIndex = 1;
-    for (const ab of snapshot.abilities || []) {
-        if (!ab.abilityHrid) continue;
-        const isSpecial = abilityDetailMap[ab.abilityHrid]?.isSpecialAbility || false;
-        const abilityDTO = {
-            hrid: ab.abilityHrid,
-            level: currentAbilityLevels[ab.abilityHrid] || 1,
-            triggers: buildTriggers(ab.abilityHrid),
-        };
-        if (isSpecial) {
-            dto.abilities[0] = abilityDTO;
-        } else if (normalAbilityIndex < 5) {
-            dto.abilities[normalAbilityIndex++] = abilityDTO;
-        }
-    }
+    // MWI saved loadout ability slots are 1..5 and Combat Sim uses the same ordering zero-based.
+    // Preserve native holes instead of compacting saved abilities upward in the editor/DTO.
+    dto.abilities = mapLoadoutAbilitiesToNativeSlots(snapshot.abilities, abilityDetailMap, (ab) => ({
+        hrid: ab.abilityHrid,
+        level: currentAbilityLevels[ab.abilityHrid] || 1,
+        triggers: buildTriggers(ab.abilityHrid),
+    }));
 
     // Convert food (3 slots)
     dto.food = [];

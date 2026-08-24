@@ -22,12 +22,8 @@ import {
 } from './skilling-optimizer-engine.js';
 import { scoreEquipmentSetup } from '../../utils/tea-optimizer.js';
 import { formatKMB } from '../../utils/formatters.js';
-import { buildEnhancementLevelMap } from '../../utils/loadout-scraper.js';
-import loadoutSnapshotLocal from '../combat/loadout-snapshot.js';
-
-function getLoadoutSnapshot() {
-    return window.Toolasha?.Combat?.loadoutSnapshot || loadoutSnapshotLocal;
-}
+import { buildOwnedEnhancementLevelMap } from '../../utils/owned-enhancement-map.js';
+import loadoutState from '../../core/loadout-state.js';
 
 const TAB_CLASS = 'toolasha-skilling-opt-tab';
 const PANEL_CLASS = 'toolasha-skilling-opt-panel';
@@ -290,20 +286,34 @@ class SkillingSimulatorUI {
             noneOpt.value = '';
             noneOpt.textContent = '— None —';
             compareSelect.appendChild(noneOpt);
-            for (const snap of getLoadoutSnapshot().getAllSnapshots()) {
+
+            const resolvedComparison = this.optimizerLoadout
+                ? loadoutState.resolveSnapshot(this.optimizerLoadout)
+                : null;
+            if (resolvedComparison) this.optimizerLoadout = resolvedComparison;
+            const currentComparisonName = resolvedComparison?.name || this.optimizerLoadout?.name || '';
+            const usableComparisons = loadoutState
+                .getAllSnapshots()
+                .filter((candidate) => candidate.isUsableForCalculation);
+            const usableComparisonNames = new Set(usableComparisons.map((snapshot) => snapshot.name));
+            if (currentComparisonName && !usableComparisonNames.has(currentComparisonName)) {
+                const unavailableOpt = document.createElement('option');
+                unavailableOpt.value = currentComparisonName;
+                unavailableOpt.textContent = `${currentComparisonName} (Unavailable)`;
+                unavailableOpt.selected = true;
+                unavailableOpt.disabled = true;
+                compareSelect.appendChild(unavailableOpt);
+            }
+            for (const snap of usableComparisons) {
                 const opt = document.createElement('option');
                 opt.value = snap.name;
                 opt.textContent = snap.name + (snap.isDefault ? ' ★' : '');
-                if (this.optimizerLoadout?.name === snap.name) opt.selected = true;
+                if (currentComparisonName === snap.name) opt.selected = true;
                 compareSelect.appendChild(opt);
             }
             compareSelect.addEventListener('change', () => {
                 const name = compareSelect.value;
-                this.optimizerLoadout = name
-                    ? getLoadoutSnapshot()
-                          .getAllSnapshots()
-                          .find((s) => s.name === name) || null
-                    : null;
+                this.optimizerLoadout = name ? loadoutState.getUsableSnapshotByName(name) : null;
             });
             compareRow.appendChild(compareLabel);
             compareRow.appendChild(compareSelect);
@@ -331,7 +341,7 @@ class SkillingSimulatorUI {
                         this.lastOptimizerResult = result;
 
                         // Build equipment map using player's actual owned enhancement levels
-                        const enhMap = buildEnhancementLevelMap();
+                        const enhMap = buildOwnedEnhancementLevelMap();
                         const achievableEquipment = new Map();
                         if (result) {
                             for (const [locationHrid, slotData] of Object.entries(result.slots)) {
@@ -371,15 +381,33 @@ class SkillingSimulatorUI {
                               )
                             : null;
 
-                        // Build loadout item map for comparison
+                        // Build loadout item map for comparison. Keep an intentionally empty
+                        // loadout distinct from "no comparison", and never silently replace an
+                        // unavailable manual comparison with an empty/current-gear baseline.
                         const loadoutItemMap = new Map();
+                        let hasUsableComparison = false;
+                        let unavailableComparisonName = null;
                         if (this.optimizerLoadout) {
-                            for (const eq of this.optimizerLoadout.equipment || []) {
-                                if (eq.itemHrid)
+                            const refreshedLoadout = loadoutState.resolveSnapshot(this.optimizerLoadout);
+                            if (refreshedLoadout?.isUsableForCalculation) {
+                                this.optimizerLoadout = refreshedLoadout;
+                                hasUsableComparison = true;
+                                for (const eq of refreshedLoadout.equipment || []) {
+                                    if (!eq.itemHrid || !eq.itemLocationHrid || !Number.isFinite(eq.enhancementLevel)) {
+                                        hasUsableComparison = false;
+                                        unavailableComparisonName = refreshedLoadout.name;
+                                        loadoutItemMap.clear();
+                                        break;
+                                    }
                                     loadoutItemMap.set(eq.itemLocationHrid, {
                                         itemHrid: eq.itemHrid,
-                                        enhancementLevel: eq.enhancementLevel || 0,
+                                        enhancementLevel: eq.enhancementLevel,
                                     });
+                                }
+                            } else {
+                                unavailableComparisonName =
+                                    refreshedLoadout?.name || this.optimizerLoadout?.name || 'Selected loadout';
+                                if (refreshedLoadout) this.optimizerLoadout = refreshedLoadout;
                             }
                         }
 
@@ -391,8 +419,14 @@ class SkillingSimulatorUI {
                                 resultsArea,
                                 result,
                                 { xpResult: xpAchievable, goldResult: goldAchievable },
-                                loadoutItemMap.size > 0 ? loadoutItemMap : null
+                                hasUsableComparison ? loadoutItemMap : null
                             );
+                            if (unavailableComparisonName) {
+                                const warning = document.createElement('div');
+                                warning.textContent = `Compare loadout “${unavailableComparisonName}” is unavailable. Comparison was not substituted with Current Gear.`;
+                                warning.style.cssText = 'color:#f87171; font-size:11px; margin-bottom:8px;';
+                                resultsArea.prepend(warning);
+                            }
                         }
                     }, 0)
                 );
@@ -461,7 +495,22 @@ class SkillingSimulatorUI {
             this._populateLoadoutSelect(loadoutSelect);
             loadoutRow.appendChild(loadoutSelect);
             wrap.appendChild(loadoutRow);
-            loadoutSelect.addEventListener('change', () => this._loadLoadout(loadoutSelect.value));
+            const loadoutStatus = document.createElement('div');
+            loadoutStatus.style.cssText = 'color:#f87171; font-size:11px; margin-left:64px;';
+            wrap.appendChild(loadoutStatus);
+            loadoutSelect.addEventListener('change', () => {
+                const name = loadoutSelect.value;
+                loadoutStatus.textContent = '';
+                if (!name) return;
+                if (!this._loadLoadout(name)) {
+                    const selectedOption = loadoutSelect.selectedOptions?.[0];
+                    if (selectedOption) {
+                        selectedOption.textContent = `${name} (Unavailable)`;
+                        selectedOption.disabled = true;
+                    }
+                    loadoutStatus.textContent = `Loadout “${name}” is unavailable and was not loaded.`;
+                }
+            });
         }
         // Actions
         const actionsRow = makeRow('Actions:');
@@ -522,34 +571,35 @@ class SkillingSimulatorUI {
         empty.textContent = '— No loadout —';
         select.appendChild(empty);
 
-        const snapshots = getLoadoutSnapshot().getAllSnapshots();
-        for (const snap of snapshots) {
+        for (const snap of loadoutState.getAllSnapshots()) {
             const opt = document.createElement('option');
             opt.value = snap.name;
-            opt.textContent = snap.name + (snap.isDefault ? ' ★' : '');
+            opt.textContent =
+                snap.name + (snap.isDefault ? ' ★' : '') + (snap.isUsableForCalculation ? '' : ' (Unavailable)');
+            opt.disabled = !snap.isUsableForCalculation;
             select.appendChild(opt);
         }
     }
 
     _loadLoadout(name) {
-        if (!name) return;
-        const snap = getLoadoutSnapshot()
-            .getAllSnapshots()
-            .find((s) => s.name === name);
-        if (!snap) return;
+        if (!name) return false;
+        const snap = loadoutState.getUsableSnapshotByName(name);
+        if (!snap) return false;
 
-        // Load equipment
-        this.equipment.clear();
+        // Build the imported equipment transactionally so a broken/unresolved numeric value
+        // can never partially replace the simulator with a plausible +0 setup.
+        const nextEquipment = new Map();
         for (const eq of snap.equipment || []) {
-            if (eq.itemHrid) {
-                this.equipment.set(eq.itemLocationHrid, {
-                    itemHrid: eq.itemHrid,
-                    enhancementLevel: eq.enhancementLevel || 0,
-                });
-            }
+            if (!eq.itemHrid || !eq.itemLocationHrid || !Number.isFinite(eq.enhancementLevel)) return false;
+            nextEquipment.set(eq.itemLocationHrid, {
+                itemHrid: eq.itemHrid,
+                enhancementLevel: eq.enhancementLevel,
+            });
         }
 
-        // Load drinks
+        this.equipment = nextEquipment;
+
+        // Loading a snapshot is an explicit one-time import into the editable simulator.
         this.teas = [
             snap.drinks?.[0]?.itemHrid || null,
             snap.drinks?.[1]?.itemHrid || null,
@@ -569,6 +619,7 @@ class SkillingSimulatorUI {
             const hrid = this.teas[i];
             this._updateTeaUI(i, refs, hrid);
         }
+        return true;
     }
 
     // -------------------------------------------------------------------------

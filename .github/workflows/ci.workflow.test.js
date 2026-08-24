@@ -68,6 +68,7 @@ describe('CI workflow — Release Please race fix', () => {
             'Run tests',
             'Build (dev standalone)',
             'Build (production libraries)',
+            'Verify loadout state integrity',
             'Verify bundle sizes',
         ]) {
             expect(job).toContain(step);

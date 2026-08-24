@@ -2,43 +2,57 @@
  * Action context resolver
  *
  * Returns the equipment and active drinks to use when predicting an action's
- * outcome (XP, time, profit, materials). When the loadoutSnapshot feature is
- * enabled and a saved loadout matches the action type, that snapshot is used
- * — so predictions reflect the gear the user would auto-equip rather than
- * whatever happens to be on their character right now.
+ * outcome (XP, time, profit, materials). When automatic saved-loadout use is
+ * enabled and a saved loadout matches the action type, the canonical Core
+ * loadout state is resolved against current ownership at read time.
  *
- * Resolution priority (handled inside loadoutSnapshot._findSnapshot):
+ * Resolution priority (handled inside loadoutState.findSnapshotForActionType):
  *   1. Skill-specific default loadout
  *   2. All-skills default loadout
  *   3. Skill-specific non-default
  *   4. All-skills non-default
  *   5. Fall back to currently-equipped gear / current drinks
  *
- * Equipment and drinks are resolved independently — it's valid to inherit the
- * snapshot's equipment while no snapshot drinks exist, in which case the
- * current drinks are used (and vice-versa).
+ * Intentional empty state is preserved: a matching saved loadout with no
+ * equipment or no drinks resolves to an empty Map/array rather than falling
+ * through to the character's currently equipped setup.
  */
 
+import config from '../core/config.js';
 import dataManager from '../core/data-manager.js';
-import loadoutSnapshot from '../features/combat/loadout-snapshot.js';
+import loadoutState from '../core/loadout-state.js';
 
 /**
  * @param {string} actionTypeHrid - e.g. "/action_types/cooking"
- * @returns {{equipment: Map, drinks: Array}}
+ * @returns {{equipment: Map, drinks: Array, source: string, loadoutSelection: Object|null}}
  */
 export function resolveActionContext(actionTypeHrid) {
-    const rawDrinks =
-        loadoutSnapshot.getSnapshotDrinksForSkill(actionTypeHrid) ?? dataManager.getActionDrinkSlots(actionTypeHrid);
+    const selection = config.getSetting('loadoutSnapshot')
+        ? loadoutState.findSnapshotSelectionForActionType(actionTypeHrid)
+        : { status: 'disabled', snapshot: null };
+    const snapshot = selection.status === 'usable' ? selection.snapshot : null;
 
-    // Only include drinks that are actually in stock — slotted-but-empty teas give no buff
+    // A matching-but-unavailable saved loadout is not equivalent to "no loadout" semantically.
+    // We fail closed to the character's proven current setup rather than inventing how the MWI
+    // server would execute missing loadout items. The returned selection metadata lets UIs make
+    // that fallback visible instead of silently claiming the saved loadout was used.
+    const rawDrinks = snapshot
+        ? (snapshot.drinks || []).filter((entry) => entry.itemHrid)
+        : dataManager.getActionDrinkSlots(actionTypeHrid);
+
+    // Only include drinks that are actually in stock — slotted-but-empty teas give no buff.
     const inventory = dataManager.getInventory();
     const drinks = (rawDrinks || []).filter(
-        (d) => d?.itemHrid && inventory.some((i) => i.itemHrid === d.itemHrid && (i.count || 0) > 0)
+        (drink) => drink?.itemHrid && inventory?.some((item) => item.itemHrid === drink.itemHrid && item.count !== 0)
     );
 
     return {
-        equipment: loadoutSnapshot.getSnapshotForSkill(actionTypeHrid) ?? dataManager.getEquipment(),
+        equipment: snapshot
+            ? new Map((snapshot.equipment || []).map((entry) => [entry.itemLocationHrid, entry]))
+            : dataManager.getEquipment(),
         drinks,
+        source: snapshot ? 'saved-loadout' : 'current',
+        loadoutSelection: selection,
     };
 }
 

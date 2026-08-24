@@ -1713,7 +1713,7 @@ export const settingsGroups = {
                 type: 'select',
                 default: '',
                 options: () => {
-                    const snapshot = window.Toolasha?.Combat?.loadoutSnapshot;
+                    const snapshot = window.Toolasha?.Core?.loadoutState;
                     const loadouts = snapshot
                         ? snapshot
                               .getAllSnapshots()
@@ -1721,7 +1721,10 @@ export const settingsGroups = {
                         : [];
                     return [
                         { value: '', label: 'Current Gear' },
-                        ...loadouts.map((s) => ({ value: s.name, label: s.name })),
+                        ...loadouts.map((s) => ({
+                            value: s.name,
+                            label: s.isUsableForCalculation ? s.name : `${s.name} (Unavailable)`,
+                        })),
                     ];
                 },
                 help: 'Loadout to use by default for combat estimates instead of currently equipped gear',
@@ -2055,10 +2058,10 @@ export const settingsGroups = {
             },
             loadoutSnapshot: {
                 id: 'loadoutSnapshot',
-                label: 'Loadout panel: Use saved loadout snapshots in profit calculations',
+                label: 'Loadouts: Use saved loadouts in profit/action calculations',
                 type: 'checkbox',
                 default: true,
-                help: "When you queue an action, Toolasha predicts its XP, time, and profit using the saved loadout for that skill (skill-default → all-skills-default → any saved loadout → currently-equipped). Save your loadouts in-game so they're captured. Disable to always predict using currently-equipped gear.",
+                help: "When you queue an action, Toolasha predicts its XP, time, and profit using the current saved game loadout for that skill (skill-default → all-skills-default → matching saved loadout → currently-equipped). 'Use highest enhancement level' is resolved from what you currently own. If the selected saved loadout contains unavailable equipment, food, or drinks, Toolasha falls back to the proven currently-equipped setup rather than guessing missing-item behavior. Disable to always predict using currently-equipped gear.",
             },
             showsKeyInfoInIcon: {
                 id: 'showsKeyInfoInIcon',

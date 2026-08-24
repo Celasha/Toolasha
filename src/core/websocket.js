@@ -28,7 +28,9 @@ class WebSocketHook {
          * Track processed messages by content hash to prevent duplicate JSON.parse
          * Uses message content (first 100 chars) as key since same message can have different event objects
          */
-        this.processedMessages = new Map(); // message hash -> timestamp
+        this.processedMessages = new Map(); // socket-scoped message hash -> timestamp
+        this.socketDedupIds = new WeakMap();
+        this.nextSocketDedupId = 1;
         this.recentActionCompleted = new Map(); // message content -> timestamp (50ms TTL dedup)
         this.messageCleanupInterval = null;
         this.isSocketWrapped = false;
@@ -77,7 +79,7 @@ class WebSocketHook {
             const message = originalGet.call(this);
 
             hookInstance.markMessageEventProcessed(this);
-            hookInstance.processMessage(message);
+            hookInstance.processMessage(message, socket);
 
             return message;
         };
@@ -194,7 +196,7 @@ class WebSocketHook {
             }
 
             this.markMessageEventProcessed(event);
-            this.processMessage(event.data);
+            this.processMessage(event.data, socket);
         });
     }
 
@@ -217,8 +219,9 @@ class WebSocketHook {
     /**
      * Process intercepted message
      * @param {string} message - JSON string from WebSocket
+     * @param {WebSocket|null} socket - Originating game socket when available
      */
-    processMessage(message) {
+    processMessage(message, socket = null) {
         // Parse message type first to determine deduplication strategy
         let messageType;
         try {
@@ -254,9 +257,12 @@ class WebSocketHook {
             messageType === 'guild_updated';
 
         if (!skipDedup) {
-            // Deduplicate by message content to prevent 4x JSON.parse on same message
-            // Use first 100 chars as hash (contains type + timestamp, unique enough)
-            const messageHash = message.substring(0, 100);
+            // Deduplicate by message content to prevent multiple interception paths from
+            // parsing the same physical socket message. Keep the key socket-scoped: a new
+            // game socket may legitimately deliver an init/state payload with the same first
+            // 100 characters as an old socket during reconnect/character switching.
+            const socketKey = this.getSocketDedupKey(socket);
+            const messageHash = `${socketKey}:${message.substring(0, 100)}`;
 
             if (this.processedMessages.has(messageHash)) {
                 return; // Already processed this message, skip
@@ -301,7 +307,7 @@ class WebSocketHook {
 
             for (const handler of handlers) {
                 try {
-                    const result = handler(data);
+                    const result = handler(data, { socket });
                     if (result instanceof Promise) {
                         result.catch((error) => {
                             console.error(`[WebSocket] Async handler error for ${parsedMessageType}:`, error);
@@ -316,7 +322,7 @@ class WebSocketHook {
             const wildcardHandlers = [...(this.messageHandlers.get('*') || [])];
             for (const handler of wildcardHandlers) {
                 try {
-                    const result = handler(data);
+                    const result = handler(data, { socket });
                     if (result instanceof Promise) {
                         result.catch((error) => {
                             console.error('[WebSocket] Async wildcard handler error:', error);
@@ -467,6 +473,22 @@ class WebSocketHook {
             clearTimeout(this.clientDataRetryTimeout);
             this.clientDataRetryTimeout = null;
         }
+    }
+
+    /**
+     * Return a stable weak identity for socket-scoped message deduplication.
+     * @param {WebSocket|null} socket - Originating socket when available
+     * @returns {string} Stable deduplication scope key
+     */
+    getSocketDedupKey(socket) {
+        if (!socket || (typeof socket !== 'object' && typeof socket !== 'function')) return 'no-socket';
+
+        let id = this.socketDedupIds.get(socket);
+        if (!id) {
+            id = this.nextSocketDedupId++;
+            this.socketDedupIds.set(socket, id);
+        }
+        return `socket-${id}`;
     }
 
     /**

@@ -20,7 +20,7 @@ const Combat = window.Toolasha.Combat;
 const UI = window.Toolasha.UI;
 
 // Destructure core modules
-const { storage, config, webSocketHook, domObserver, dataManager, featureRegistry } = Core;
+const { storage, config, webSocketHook, domObserver, dataManager, loadoutState, featureRegistry } = Core;
 
 const { setupScrollTooltipDismissal } = Utils.dom;
 
@@ -453,13 +453,6 @@ function registerFeatures() {
             async: false,
         },
         {
-            key: 'loadoutSnapshot',
-            name: 'Loadout Snapshots',
-            category: 'Combat',
-            module: Combat.loadoutSnapshot,
-            async: true,
-        },
-        {
             key: 'scrollSimulatorUI',
             name: 'Scroll Simulator UI',
             category: 'Combat',
@@ -797,6 +790,9 @@ if (isCombatSimulatorPage()) {
     // CRITICAL: Install WebSocket hook FIRST, before game connects
     webSocketHook.install();
 
+    // Always-on loadout state must capture structured loadout messages independently of feature settings.
+    loadoutState.startCapture();
+
     // CRITICAL: Start centralized DOM observer SECOND, before features initialize
     domObserver.start();
 
@@ -824,6 +820,9 @@ if (isCombatSimulatorPage()) {
 
             // Initialize config (loads settings from storage)
             await config.initialize();
+
+            // IndexedDB is only a fallback/cache for loadout state; fresh server state always wins.
+            await loadoutState.hydratePersistence();
 
             // Add beforeunload handler to flush all pending writes
             window.addEventListener('beforeunload', () => {

@@ -49,10 +49,20 @@ vi.mock('../combat-sim/combat-sim-runner.js', () => ({
     runLabyrinthSimulation: vi.fn(),
 }));
 
-vi.mock('./loadout-snapshot.js', () => ({ default: {} }));
+vi.mock('../../core/loadout-state.js', () => ({
+    default: {
+        getSnapshotById: vi.fn(() => null),
+        getUsableSnapshotById: vi.fn(() => null),
+        onUpdate: vi.fn(),
+        offUpdate: vi.fn(),
+    },
+}));
 
 const { LabyrinthClearRate } = await import('./labyrinth-clear-rate.js');
 const dataManager = (await import('../../core/data-manager.js')).default;
+const loadoutState = (await import('../../core/loadout-state.js')).default;
+const combatAdapter = await import('../combat-sim/combat-sim-adapter.js');
+const simRunner = await import('../combat-sim/combat-sim-runner.js');
 
 let savedCalls = [];
 
@@ -142,9 +152,172 @@ function buildAutomationTable(rooms) {
 }
 
 beforeEach(() => {
+    vi.clearAllMocks();
     savedCalls = [];
     document.body.innerHTML = '';
     dataManager.characterData = { characterSetting: {} };
+    dataManager.getSkills.mockReset().mockReturnValue([]);
+    dataManager.getInitClientData.mockReset().mockReturnValue({});
+    loadoutState.getSnapshotById.mockReset().mockReturnValue(null);
+    loadoutState.getUsableSnapshotById.mockReset().mockReturnValue(null);
+    combatAdapter.buildPlayerDTO.mockReset();
+    combatAdapter.buildGameDataPayload.mockReset();
+    combatAdapter.applyLoadoutSnapshotToDTO.mockReset();
+    simRunner.runLabyrinthSimulation.mockReset();
+});
+
+describe('loadout-state cache invalidation', () => {
+    test('subscribes to effective loadout updates so Highest-mode inventory changes invalidate cached simulations', () => {
+        const feature = new LabyrinthClearRate();
+        feature.initialize();
+
+        expect(loadoutState.onUpdate).toHaveBeenCalledWith(feature.loadoutsHandler);
+        const handler = feature.loadoutsHandler;
+        feature.combatCache.set('old', { clearChance: 1 });
+        feature.recommendations.set('/monsters/test', { threshold: 10 });
+
+        handler();
+
+        expect(feature.combatCache.size).toBe(0);
+        expect(feature.recommendations.size).toBe(0);
+
+        feature.disable();
+        expect(loadoutState.offUpdate).toHaveBeenCalledWith(handler);
+    });
+
+    test('an in-flight simulation cannot repopulate the cache with a pre-update effective loadout', async () => {
+        const feature = new LabyrinthClearRate();
+        feature.isInitialized = true;
+        feature.buildCombatCacheKey = vi.fn(() => 'combat-key');
+        feature.getLabyrinthLoadoutId = vi.fn(() => 123);
+        feature.buildLabyrinthPlayerDTO = vi.fn(() => ({ name: 'player' }));
+        feature.getCrateHrids = vi.fn(() => []);
+        feature.getLabyrinthCombatBuffs = vi.fn(() => []);
+
+        combatAdapter.buildGameDataPayload.mockReturnValue({});
+        dataManager.getInitClientData.mockReturnValue({
+            combatMonsterDetailMap: {
+                '/monsters/test': { name: 'Test' },
+            },
+        });
+        loadoutState.getUsableSnapshotById.mockReturnValue({ name: 'Highest Loadout' });
+
+        let resolveOldSimulation;
+        const oldSimulation = new Promise((resolve) => {
+            resolveOldSimulation = resolve;
+        });
+        simRunner.runLabyrinthSimulation.mockReturnValueOnce(oldSimulation).mockResolvedValueOnce({
+            labyAttemptCount: 2,
+            encounters: 2,
+            simulatedTime: 20e9,
+        });
+
+        const resultPromise = feature.computeCombatClear('/monsters/test', 100);
+        expect(simRunner.runLabyrinthSimulation).toHaveBeenCalledTimes(1);
+
+        // Model a Core effective-loadout update while the old (+5) worker is still running.
+        // The cache was already empty, so this specifically verifies the in-flight race rather
+        // than ordinary synchronous invalidation.
+        feature.loadoutRevision += 1;
+        feature.combatCache.clear();
+
+        resolveOldSimulation({
+            labyAttemptCount: 2,
+            encounters: 0,
+            simulatedTime: 20e9,
+        });
+
+        const result = await resultPromise;
+
+        expect(simRunner.runLabyrinthSimulation).toHaveBeenCalledTimes(2);
+        expect(result).toMatchObject({ clearChance: 1, winRate: 1, loadoutName: 'Highest Loadout' });
+        expect(feature.combatCache.get('combat-key')).toMatchObject({ clearChance: 1, winRate: 1 });
+    });
+
+    test('an effective loadout change aborts an in-flight recommendation run instead of publishing a partial result', async () => {
+        const feature = new LabyrinthClearRate();
+        const cell = document.createElement('div');
+        cell.className = 'LabyrinthPanel_skipThreshold__test';
+        document.body.appendChild(cell);
+        feature.extractRoomHrid = vi.fn(() => '/monsters/test');
+
+        let resolveThreshold;
+        const pendingThreshold = new Promise((resolve) => {
+            resolveThreshold = resolve;
+        });
+        feature.findRecommendedThresholdCombat = vi.fn(() => pendingThreshold);
+
+        const run = feature.runRecommendations();
+        expect(feature.recommendRunning).toBe(true);
+
+        feature.loadoutRevision += 1;
+        feature.recommendations.clear();
+        resolveThreshold(42);
+        await run;
+
+        expect(feature.recommendations.size).toBe(0);
+        expect(feature.recommendRunning).toBe(false);
+    });
+});
+
+describe('loadout equipment resolution boundary', () => {
+    test('fails closed instead of coercing an unresolved loadout enhancement to +0', () => {
+        const feature = new LabyrinthClearRate();
+        loadoutState.getUsableSnapshotById.mockReturnValueOnce({
+            equipment: [
+                {
+                    itemHrid: '/items/milking_tool',
+                    itemLocationHrid: '/item_locations/milking_tool',
+                    enhancementLevel: null,
+                },
+            ],
+        });
+        dataManager.getInitClientData.mockReturnValueOnce({
+            itemDetailMap: {
+                '/items/milking_tool': {
+                    equipmentDetail: {
+                        noncombatStats: { actionSpeed: 0.1 },
+                        noncombatEnhancementBonuses: { actionSpeed: 0.01 },
+                    },
+                },
+            },
+            enhancementLevelTotalBonusMultiplierTable: {},
+        });
+
+        expect(feature.getLoadoutEquipmentBuffs(123, 'milking')).toBeNull();
+    });
+
+    test('fails closed when saved equipment metadata is unavailable instead of simulating a partial loadout', () => {
+        const feature = new LabyrinthClearRate();
+        loadoutState.getUsableSnapshotById.mockReturnValueOnce({
+            equipment: [
+                {
+                    itemHrid: '/items/milking_tool',
+                    itemLocationHrid: '/item_locations/milking_tool',
+                    enhancementLevel: 7,
+                },
+            ],
+        });
+        dataManager.getInitClientData.mockReturnValueOnce({ itemDetailMap: {} });
+
+        expect(feature.getLoadoutEquipmentBuffs(123, 'milking')).toBeNull();
+    });
+
+    test('fails closed when game item metadata is not initialized for a non-empty saved loadout', () => {
+        const feature = new LabyrinthClearRate();
+        loadoutState.getUsableSnapshotById.mockReturnValueOnce({
+            equipment: [
+                {
+                    itemHrid: '/items/milking_tool',
+                    itemLocationHrid: '/item_locations/milking_tool',
+                    enhancementLevel: 7,
+                },
+            ],
+        });
+        dataManager.getInitClientData.mockReturnValueOnce({});
+
+        expect(feature.getLoadoutEquipmentBuffs(123, 'milking')).toBeNull();
+    });
 });
 
 describe('getRoomsNeedingSkipUpdate', () => {
