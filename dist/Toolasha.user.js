@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      2.94.0
+// @version      2.95.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -11,6 +11,7 @@
 // @match        https://www.milkywayidle.com/*
 // @match        https://test.milkywayidle.com/*
 // @match        https://shykai.github.io/MWICombatSimulatorTest/dist/*
+// @match        https://szerra.github.io/mwi-shrine-combat-simulator/*
 // @grant        GM_addStyle
 // @grant        GM.xmlHttpRequest
 // @grant        GM_xmlhttpRequest
@@ -21,12 +22,12 @@
 // @require      https://cdnjs.cloudflare.com/ajax/libs/mathjs/12.4.2/math.js
 // @require      https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js
 // @require      https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0/dist/chartjs-plugin-datalabels.min.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@e387e074cf13af276f314d895071d39a7b84fd47/dist/libraries/toolasha-core.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@e387e074cf13af276f314d895071d39a7b84fd47/dist/libraries/toolasha-utils.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@e387e074cf13af276f314d895071d39a7b84fd47/dist/libraries/toolasha-market.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@e387e074cf13af276f314d895071d39a7b84fd47/dist/libraries/toolasha-actions.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@e387e074cf13af276f314d895071d39a7b84fd47/dist/libraries/toolasha-combat.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@e387e074cf13af276f314d895071d39a7b84fd47/dist/libraries/toolasha-ui.js
+// @require      https://UPDATE-THIS-URL/toolasha-core.js
+// @require      https://UPDATE-THIS-URL/toolasha-utils.js
+// @require      https://UPDATE-THIS-URL/toolasha-market.js
+// @require      https://UPDATE-THIS-URL/toolasha-actions.js
+// @require      https://UPDATE-THIS-URL/toolasha-combat.js
+// @require      https://UPDATE-THIS-URL/toolasha-ui.js
 // ==/UserScript==
 // Note: Combat Sim auto-import requires Tampermonkey for cross-domain storage. Not available on Steam (use manual clipboard copy/paste instead).
 
@@ -60,13 +61,15 @@
     const { setupScrollTooltipDismissal } = Utils.dom;
 
     /**
-     * Detect if running on Combat Simulator page
-     * @returns {boolean} True if on Combat Simulator
+     * Detect if running on a supported Combat Simulator page
+     * @returns {boolean} True if on a Combat Simulator
      */
     function isCombatSimulatorPage() {
         const url = window.location.href;
-        // Only work on test Combat Simulator for now
-        return url.includes('shykai.github.io/MWICombatSimulatorTest/dist/');
+        return (
+            url.includes('shykai.github.io/MWICombatSimulatorTest/dist/') ||
+            url.includes('szerra.github.io/mwi-shrine-combat-simulator/')
+        );
     }
 
     /**
@@ -962,7 +965,7 @@
         // Expose minimal user-facing API
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
-        targetWindow.Toolasha.version = '2.94.0';
+        targetWindow.Toolasha.version = '2.95.0';
 
         // Feature toggle API (for users to manage settings via console)
         targetWindow.Toolasha.features = {
