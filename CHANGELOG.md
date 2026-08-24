@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.95.1](https://github.com/Celasha/Toolasha/compare/v2.95.0...v2.95.1) (2026-08-24)
+
+
+### Bug Fixes
+
+* account for the active action's partial progress in Action Time Display ETA ([9210b4a](https://github.com/Celasha/Toolasha/commit/9210b4ab1e96c86c0672b0a540f2331040fc1cd9))
+* keep Ability Book Calculator's current level and cost live (TLA-016) ([af3b92c](https://github.com/Celasha/Toolasha/commit/af3b92cd22f3ba3d6f2622ebfe1d30af96efdfec))
+* keep Guild level-slot details inside the native card ([#665](https://github.com/Celasha/Toolasha/issues/665)) ([fdb635f](https://github.com/Celasha/Toolasha/commit/fdb635f8f7b5511e745bc0520f9222a53ef1e97b))
+* match Level Malus to server combat level formula ([4ee0810](https://github.com/Celasha/Toolasha/commit/4ee081053995934549ca0718b36b55e356c735cc))
+* remove milkyway.market links (site permanently down) ([35155af](https://github.com/Celasha/Toolasha/commit/35155afc6ba3413f4d3e2f84d63ac466cbf327e3))
+* unify saved loadout resolution behind one Core state owner (TLA-017) ([6576a0e](https://github.com/Celasha/Toolasha/commit/6576a0ed64f2504d37772783560ebd7e22f4cd4a))
+
 ## [2.95.0](https://github.com/Celasha/Toolasha/compare/v2.94.0...v2.95.0) (2026-08-24)
 
 ### Features
