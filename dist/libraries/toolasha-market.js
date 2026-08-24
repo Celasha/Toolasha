@@ -1,11 +1,11 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.95.0
+ * Version: 2.95.1
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, enhancementCalculator_js, formatters_js, marketData_js, teaParser_js, profitConstants_js, profitHelpers_js, buffParser_js, equipmentParser_js, actionCalculator_js, tokenValuation_js, storage, enhancementConfig_js, dom, materialCalculator_js, timerRegistry_js, cleanupRegistry_js, webSocketHook, domObserverHelpers_js, enhancementMultipliers_js, marketplaceSession_js, reactInput_js, abilityCostCalculator_js, houseCostCalculator_js) {
+(function (config, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, enhancementCalculator_js, formatters_js, marketData_js, teaParser_js, profitConstants_js, profitHelpers_js, buffParser_js, equipmentParser_js, actionCalculator_js, tokenValuation_js, storage, enhancementConfig_js, dom, materialCalculator_js, timerRegistry_js, cleanupRegistry_js, loadoutState, domObserverHelpers_js, enhancementMultipliers_js, marketplaceSession_js, reactInput_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js) {
     'use strict';
 
     function _interopNamespaceDefault(e) {
@@ -10551,334 +10551,6 @@ self.onmessage = function (e) {
     }
 
     /**
-     * Loadout Snapshot
-     *
-     * Listens for `loadouts_updated` WebSocket messages to capture all loadout configurations
-     * (equipment, abilities, consumables, enhancement levels) in real time.
-     *
-     * Stored snapshots are used by profit calculators to apply the correct tool/equipment
-     * bonuses for a skill even when that loadout is not currently equipped.
-     *
-     * Skill matching: the loadout's actionTypeHrid (e.g. "/action_types/brewing") is compared
-     * to the action type of the profit calculation. An "All Skills" loadout (empty actionTypeHrid)
-     * is used as a fallback when no skill-specific snapshot is found.
-     *
-     * Priority: skill default > all skills default > skill non-default > all skills non-default
-     */
-
-
-    const STORAGE_KEY_PREFIX$1 = 'loadout_snapshots';
-
-    /**
-     * Returns the active WebSocket hook instance.
-     * In the multi-bundle production build each library bundles its own copy of websocket.js,
-     * but only the Core library's instance has install() called on it.
-     * Prefer window.Toolasha.Core.webSocketHook so listeners actually receive messages.
-     * Falls back to the bundled copy for the dev standalone build (single bundle, one instance).
-     */
-    function getWebSocketHook() {
-        return (typeof window !== 'undefined' && window.Toolasha?.Core?.webSocketHook) || webSocketHook;
-    }
-
-    /**
-     * Get character-scoped storage key.
-     * @returns {string}
-     */
-    function getStorageKey$2() {
-        const charId = dataManager.getCurrentCharacterId() || 'default';
-        return `${STORAGE_KEY_PREFIX$1}_${charId}`;
-    }
-
-    /**
-     * Parse a wearable hash string into itemLocationHrid, itemHrid, and enhancementLevel.
-     * Format: "characterId::/item_locations/location::/items/item_hrid::enhancementLevel"
-     * Empty string means no item in that slot.
-     * @param {string} itemLocationHrid - The equipment slot key (e.g. "/item_locations/body")
-     * @param {string} wearableHash - The wearable hash value
-     * @returns {{ itemLocationHrid: string, itemHrid: string, enhancementLevel: number }|null}
-     */
-    function parseWearable(itemLocationHrid, wearableHash) {
-        if (!wearableHash) return null;
-
-        const parts = wearableHash.split('::');
-        const itemHrid = parts.find((p) => p.startsWith('/items/'));
-        if (!itemHrid) return null;
-
-        const lastPart = parts[parts.length - 1];
-        const enhancementLevel = !lastPart.startsWith('/') ? parseInt(lastPart, 10) || 0 : 0;
-
-        return { itemLocationHrid, itemHrid, enhancementLevel };
-    }
-
-    /**
-     * Convert a server loadout object into our snapshot format.
-     * @param {Object} loadout - A loadout entry from characterLoadoutMap
-     * @returns {Object} snapshot
-     */
-    function buildSnapshot(loadout) {
-        // Parse equipment from wearableMap
-        const equipment = [];
-        for (const [locationHrid, hash] of Object.entries(loadout.wearableMap || {})) {
-            const parsed = parseWearable(locationHrid, hash);
-            if (parsed) equipment.push(parsed);
-        }
-
-        // Parse drinks
-        const drinks = (loadout.drinkItemHrids || []).map((hrid) => ({
-            itemHrid: hrid || '',
-        }));
-
-        // Parse food
-        const food = (loadout.foodItemHrids || []).map((hrid) => ({
-            itemHrid: hrid || '',
-        }));
-
-        // Parse abilities
-        const abilities = [];
-        for (const [slot, hrid] of Object.entries(loadout.abilityMap || {})) {
-            if (hrid) abilities.push({ abilityHrid: hrid, slot: parseInt(slot, 10) });
-        }
-
-        return {
-            name: loadout.name,
-            actionTypeHrid: loadout.actionTypeHrid || '',
-            isDefault: !!loadout.isDefault,
-            useExactEnhancement: loadout.useExactEnhancement ?? false,
-            ordinal: loadout.ordinal || 0,
-            equipment,
-            abilities,
-            food,
-            drinks,
-            abilityCombatTriggersMap: loadout.abilityCombatTriggersMap || {},
-            consumableCombatTriggersMap: loadout.consumableCombatTriggersMap || {},
-            savedAt: Date.now(),
-        };
-    }
-
-    class LoadoutSnapshot {
-        constructor() {
-            this.snapshots = {}; // In-memory cache: { [loadoutName]: snapshot }
-            this.characterInitializedHandler = null;
-            this.updateListeners = [];
-            this.isInitialized = false;
-
-            // Register WebSocket handler at module load time so in-session loadout
-            // changes are captured whenever loadouts_updated fires.
-            this.loadoutsUpdatedHandler = (data) => this._onLoadoutsUpdated(data);
-            getWebSocketHook().on('loadouts_updated', this.loadoutsUpdatedHandler);
-        }
-
-        /**
-         * Register a callback to be called whenever snapshots are updated.
-         * @param {Function} fn
-         */
-        onUpdate(fn) {
-            this.updateListeners.push(fn);
-        }
-
-        /**
-         * Remove a previously registered update callback.
-         * @param {Function} fn
-         */
-        offUpdate(fn) {
-            this.updateListeners = this.updateListeners.filter((l) => l !== fn);
-        }
-
-        _emitUpdate() {
-            this.updateListeners.forEach((fn) => fn());
-        }
-
-        async initialize() {
-            if (this.isInitialized) return;
-            this.isInitialized = true;
-
-            // Re-register WS handler if it was cleared by disable()
-            if (!this.loadoutsUpdatedHandler) {
-                this.loadoutsUpdatedHandler = (data) => this._onLoadoutsUpdated(data);
-                getWebSocketHook().on('loadouts_updated', this.loadoutsUpdatedHandler);
-            }
-
-            // Load from storage — loadouts_updated only fires when the user visits the loadouts
-            // UI, so storage is always the source of snapshots at startup.
-            if (Object.keys(this.snapshots).length === 0) {
-                const storageKey = getStorageKey$2();
-                // NOTE: getCurrentCharacterId() may be null at this point (before init_character_data
-                // arrives), so getStorageKey() may return 'loadout_snapshots_default'. We will reload
-                // from the correct key once character_initialized fires.
-                this.snapshots = (await storage.getJSON(storageKey, 'settings', null)) || {};
-
-                // Fallback for Steam users: if storage is also empty, bootstrap from
-                // the characterLoadoutMap embedded in init_character_data (already in dataManager).
-                if (Object.keys(this.snapshots).length === 0) {
-                    const characterLoadoutMap = dataManager.characterData?.characterLoadoutMap;
-                    if (characterLoadoutMap && Object.keys(characterLoadoutMap).length > 0) {
-                        this._onLoadoutsUpdated({ characterLoadoutMap });
-                    }
-                }
-            }
-
-            // Reload from the correct character-scoped key once character data is available
-            this.characterInitializedHandler = async () => {
-                const storageKey = getStorageKey$2();
-                const fresh = (await storage.getJSON(storageKey, 'settings', null)) || {};
-                if (Object.keys(fresh).length > 0) {
-                    this.snapshots = fresh;
-                    this._emitUpdate();
-                }
-            };
-            dataManager.on('character_initialized', this.characterInitializedHandler);
-        }
-
-        /**
-         * Handle a loadouts_updated WebSocket message.
-         * Replaces all snapshots with the server's current state.
-         * @param {Object} data - The WebSocket message payload
-         */
-        _onLoadoutsUpdated(data) {
-            const loadoutMap = data.characterLoadoutMap;
-            if (!loadoutMap) {
-                console.warn('[LoadoutSnapshot] loadouts_updated received but no characterLoadoutMap');
-                return;
-            }
-
-            const newSnapshots = {};
-            for (const [id, loadout] of Object.entries(loadoutMap)) {
-                if (!loadout.name) continue;
-                newSnapshots[id] = buildSnapshot(loadout);
-            }
-
-            this.snapshots = newSnapshots;
-            storage.setJSON(getStorageKey$2(), this.snapshots, 'settings');
-            this._emitUpdate();
-        }
-
-        /**
-         * Update a snapshot equipment item's enhancement level.
-         * Used when the highest owned enhancement of a loadout item changes (up or down).
-         * @param {string} itemHrid - Base item HRID (e.g. "/items/sword")
-         * @param {number} newLevel - New enhancement level (highest currently owned)
-         * @returns {boolean} True if any snapshot was updated
-         */
-        updateEnhancementLevel(itemHrid, newLevel) {
-            let changed = false;
-            for (const snapshot of Object.values(this.snapshots)) {
-                // Exact-mode snapshots intentionally hold a frozen level — never auto-update them.
-                if (snapshot.useExactEnhancement) continue;
-                for (const eq of snapshot.equipment || []) {
-                    if (eq.itemHrid === itemHrid && eq.enhancementLevel !== newLevel) {
-                        eq.enhancementLevel = newLevel;
-                        snapshot.savedAt = Date.now();
-                        changed = true;
-                    }
-                }
-            }
-            if (changed) {
-                storage.setJSON(getStorageKey$2(), this.snapshots, 'settings');
-                this._emitUpdate();
-            }
-            return changed;
-        }
-
-        /**
-         * Find the best snapshot for a given action type.
-         * Priority: skill default > all skills default > skill non-default > all skills non-default
-         * @param {string} actionTypeHrid - e.g. "/action_types/brewing"
-         * @returns {Object|null} snapshot entry or null
-         */
-        _findSnapshot(actionTypeHrid) {
-            if (!config.getSetting('loadoutSnapshot')) return null;
-
-            let skillDefault = null;
-            let allSkillsDefault = null;
-            let skillNonDefault = null;
-            let allSkillsNonDefault = null;
-
-            for (const snapshot of Object.values(this.snapshots)) {
-                if (snapshot.actionTypeHrid === actionTypeHrid) {
-                    if (snapshot.isDefault) {
-                        skillDefault = snapshot;
-                    } else {
-                        skillNonDefault = snapshot;
-                    }
-                } else if (snapshot.actionTypeHrid === '') {
-                    if (snapshot.isDefault) {
-                        allSkillsDefault = snapshot;
-                    } else {
-                        allSkillsNonDefault = snapshot;
-                    }
-                }
-            }
-
-            return skillDefault || allSkillsDefault || skillNonDefault || allSkillsNonDefault || null;
-        }
-
-        /**
-         * Get a Map<itemLocationHrid, item> for the best loadout snapshot matching the given
-         * action type. Returns null if no snapshot exists or the feature is disabled.
-         * The returned Map has the same format as dataManager.getEquipment().
-         * @param {string} actionTypeHrid
-         * @returns {Map<string, Object>|null}
-         */
-        getSnapshotForSkill(actionTypeHrid) {
-            const snapshot = this._findSnapshot(actionTypeHrid);
-            if (!snapshot || !snapshot.equipment?.length) return null;
-            return new Map(snapshot.equipment.map((e) => [e.itemLocationHrid, e]));
-        }
-
-        /**
-         * Get the drink slots array for the best loadout snapshot matching the given
-         * action type. Returns null if no snapshot exists or the feature is disabled.
-         * The returned array has the same format as dataManager.getActionDrinkSlots().
-         * @param {string} actionTypeHrid
-         * @returns {Array<{itemHrid: string}>|null}
-         */
-        getSnapshotDrinksForSkill(actionTypeHrid) {
-            const snapshot = this._findSnapshot(actionTypeHrid);
-            if (!snapshot) return null;
-            // Filter out empty slots so callers get only actual items
-            const filled = (snapshot.drinks || []).filter((d) => d.itemHrid);
-            return filled.length > 0 ? filled : null;
-        }
-
-        /**
-         * Get all saved loadout snapshots as a flat array.
-         * @returns {Array<Object>} Array of snapshot objects
-         */
-        getAllSnapshots() {
-            return Object.values(this.snapshots).sort((a, b) => a.ordinal - b.ordinal);
-        }
-
-        /**
-         * Get the name and default status of the saved loadout being used for a given action type.
-         * Returns an object with name and isDefault, or null if no snapshot exists or feature is disabled.
-         * @param {string} actionTypeHrid
-         * @returns {{ name: string, isDefault: boolean }|null}
-         */
-        getSnapshotInfoForSkill(actionTypeHrid) {
-            const snapshot = this._findSnapshot(actionTypeHrid);
-            if (!snapshot) return null;
-            return { name: snapshot.name, isDefault: !!snapshot.isDefault };
-        }
-
-        disable() {
-            if (this.loadoutsUpdatedHandler) {
-                getWebSocketHook().off('loadouts_updated', this.loadoutsUpdatedHandler);
-                this.loadoutsUpdatedHandler = null;
-            }
-
-            if (this.characterInitializedHandler) {
-                dataManager.off('character_initialized', this.characterInitializedHandler);
-                this.characterInitializedHandler = null;
-            }
-
-            this.updateListeners = [];
-            this.isInitialized = false;
-        }
-    }
-
-    const loadoutSnapshot = new LoadoutSnapshot();
-
-    /**
      * Combat Simulator Adapter
      * Bridges Toolasha's live data to the combat sim engine.
      *
@@ -19512,95 +19184,6 @@ self.onmessage = function (e) {
         cleanup,
     };
 
-    /**
-     * MilkyWay Market Link
-     * Adds a small link to view the current marketplace item on milkyway.market.
-     */
-
-
-    const LINK_ID = 'mwi-milkyway-market-link';
-
-    class MilkyWayMarketLink {
-        constructor() {
-            this.isInitialized = false;
-            this.unregisterHandler = null;
-            this.currentItemHrid = null;
-        }
-
-        initialize() {
-            if (this.isInitialized) return;
-            if (!config.getSetting('market_milkywayMarketLink')) return;
-
-            this.isInitialized = true;
-
-            const handler = (data) => {
-                if (!data.marketItemOrderBooks) return;
-                this.currentItemHrid = data.marketItemOrderBooks.itemHrid;
-                this._updateLink();
-            };
-
-            dataManager.on('market_item_order_books_updated', handler);
-            this.unregisterHandler = () => dataManager.off('market_item_order_books_updated', handler);
-        }
-
-        /**
-         * Get current enhancement level from DOM.
-         * @returns {number}
-         */
-        _getEnhancementLevel() {
-            const currentItem = document.querySelector('[class*="MarketplacePanel_currentItem"]');
-            if (!currentItem) return 0;
-            const el = currentItem.querySelector('[class*="Item_enhancementLevel"]');
-            if (!el) return 0;
-            const match = el.textContent.match(/\+(\d+)/);
-            return match ? parseInt(match[1], 10) : 0;
-        }
-
-        _updateLink() {
-            const existing = document.getElementById(LINK_ID);
-            if (existing) existing.remove();
-
-            if (!this.currentItemHrid) return;
-
-            const container = document.querySelector('[class*="MarketplacePanel_marketNavButtonContainer"]');
-            if (!container) return;
-
-            const enhancement = this._getEnhancementLevel();
-            const itemSlug = this.currentItemHrid.replace('/items/', '');
-            const url = `https://milkyway.market/items/${itemSlug}${enhancement > 0 ? `?enhancement=${enhancement}` : ''}`;
-
-            const link = document.createElement('a');
-            link.id = LINK_ID;
-            link.href = url;
-            link.target = '_blank';
-            link.rel = 'noopener noreferrer';
-            link.textContent = 'MilkyWay Market \u2197';
-            link.style.cssText = `
-            font-size: 10px;
-            color: #888;
-            text-decoration: none;
-            margin-left: 8px;
-            white-space: nowrap;
-        `;
-            link.addEventListener('mouseenter', () => (link.style.opacity = '0.7'));
-            link.addEventListener('mouseleave', () => (link.style.opacity = '1'));
-
-            container.appendChild(link);
-        }
-
-        disable() {
-            if (this.unregisterHandler) {
-                this.unregisterHandler();
-                this.unregisterHandler = null;
-            }
-            document.getElementById(LINK_ID)?.remove();
-            this.currentItemHrid = null;
-            this.isInitialized = false;
-        }
-    }
-
-    const milkywayMarketLink = new MilkyWayMarketLink();
-
     const CONNECTION_STATES = {
         CONNECTED: 'connected',
         DISCONNECTED: 'disconnected',
@@ -21196,11 +20779,15 @@ self.onmessage = function (e) {
         const loadoutExcludedHridToName = new Map();
         const loadoutExclusions = getExclusions().filter((e) => e.type === 'loadout');
         if (loadoutExclusions.length > 0) {
-            const allSnapshots = loadoutSnapshot.getAllSnapshots();
+            const allSnapshots = loadoutState.getAllSnapshots();
             for (const exc of loadoutExclusions) {
                 const snapshot = allSnapshots.find((s) => s.name === exc.value);
                 if (snapshot) {
-                    for (const eq of snapshot.equipment) {
+                    // Networth loadout exclusions are identity-based, not calculation-based.
+                    // Preserve intended saved item identities even when an exact/highest variant
+                    // is currently unavailable; otherwise an unavailable loadout would silently
+                    // stop excluding the very item it was configured to protect.
+                    for (const eq of [...(snapshot.equipment || []), ...(snapshot.unavailableEquipment || [])]) {
                         if (!loadoutExcludedHridToName.has(eq.itemHrid)) {
                             loadoutExcludedHridToName.set(eq.itemHrid, exc.value);
                         }
@@ -23568,9 +23155,10 @@ self.onmessage = function (e) {
             }
 
             // Loadout snapshots — only show if not already excluded
-            for (const snapshot of loadoutSnapshot.getAllSnapshots()) {
+            for (const snapshot of loadoutState.getAllSnapshots()) {
                 if (!snapshot.name || isExcluded('loadout', snapshot.name)) continue;
-                const amount = snapshot.equipment.reduce((sum, eq) => {
+                const loadoutItems = [...(snapshot.equipment || []), ...(snapshot.unavailableEquipment || [])];
+                const amount = loadoutItems.reduce((sum, eq) => {
                     const price = marketAPI.getPrice(eq.itemHrid);
                     return sum + (price?.ask ?? 0);
                 }, 0);
@@ -23836,9 +23424,10 @@ self.onmessage = function (e) {
             }
 
             if (entry.type === 'loadout') {
-                const snapshot = loadoutSnapshot.getAllSnapshots().find((s) => s.name === entry.value);
+                const snapshot = loadoutState.getAllSnapshots().find((s) => s.name === entry.value);
                 if (snapshot) {
-                    return snapshot.equipment.map((eq) => {
+                    const loadoutItems = [...(snapshot.equipment || []), ...(snapshot.unavailableEquipment || [])];
+                    return loadoutItems.map((eq) => {
                         const details = dataManager.getItemDetails(eq.itemHrid);
                         const name = details?.name || eq.itemHrid.replace('/items/', '');
                         const price = marketAPI.getPrice(eq.itemHrid);
@@ -28963,9 +28552,6 @@ self.onmessage = function (e) {
      * to visually group tiles under headers. Tiles never leave Inventory_items.
      */
 
-    function getLoadoutSnapshot() {
-        return window.Toolasha?.Combat?.loadoutSnapshot || loadoutSnapshot;
-    }
 
     // ---------------------------------------------------------------------------
     // CSS
@@ -29507,14 +29093,12 @@ self.onmessage = function (e) {
             // enhancement level changes. A 200ms debounce caused the enhanced item to disappear
             // from the custom tab for ~200ms while the new tile had no toolasha-ct-visible class.
             let rafId = null;
-            this._onItemsUpdated = (data) => {
+            this._onItemsUpdated = (_data) => {
                 if (rafId) cancelAnimationFrame(rafId);
                 rafId = requestAnimationFrame(() => {
                     rafId = null;
                     if (this._isActive) this._applyLayout();
                 });
-                // Check if any changed items have a higher enhancement than bound items
-                this._checkBindingEnhancements(data);
             };
             dataManager.on('items_updated', this._onItemsUpdated);
 
@@ -29532,10 +29116,20 @@ self.onmessage = function (e) {
 
             // Subscribe to loadout snapshot updates for auto-sync of loadout bindings
             this._loadoutBindingHandler = () => this._onLoadoutSnapshotUpdate();
-            getLoadoutSnapshot().onUpdate(this._loadoutBindingHandler);
+            loadoutState.onUpdate(this._loadoutBindingHandler);
             this._unregisterHandlers.push(() => {
-                getLoadoutSnapshot().offUpdate(this._loadoutBindingHandler);
+                loadoutState.offUpdate(this._loadoutBindingHandler);
             });
+
+            // On character switch, Core accepts the incoming character's loadouts only after the
+            // departing feature instance has been synchronously cleaned up. The new instance can
+            // therefore subscribe after that authoritative update was already emitted. Replay the
+            // current state once when it is real server/cache state; never replay authority `none`,
+            // because transient unknown state must not be interpreted as "all bindings deleted".
+            const loadoutStateInfo = loadoutState.getStateInfo?.();
+            if (loadoutStateInfo && loadoutStateInfo.authority !== 'none') {
+                this._onLoadoutSnapshotUpdate();
+            }
         }
 
         cleanup() {
@@ -31601,165 +31195,11 @@ self.onmessage = function (e) {
         }
 
         /**
-         * Check if any changed items have a higher enhancement level than what's in bindings.
-         * Runs on every items_updated tick but only does cheap Set lookups for the changed items.
-         * @param {Object} data - The items_updated event data
-         */
-        _checkBindingEnhancements(data) {
-            const changedItems = data?.endCharacterItems;
-            if (!changedItems || changedItems.length === 0) return;
-
-            // Build set of bound base HRIDs and their current enhancement levels
-            if (!this._boundBaseHrids) this._rebuildBoundBaseHrids();
-            if (this._boundBaseHrids.size === 0) return;
-
-            // Collect unique base HRIDs from the changed items that match bindings
-            const relevantBases = new Set();
-            for (const item of changedItems) {
-                if (!item.itemHrid) continue;
-                if (this._boundBaseHrids.has(item.itemHrid)) {
-                    relevantBases.add(item.itemHrid);
-                }
-            }
-            if (relevantBases.size === 0) return;
-
-            const inventory = dataManager.characterItems || [];
-            let anyChanged = false;
-            const loadoutSnapshot = getLoadoutSnapshot();
-            const snapshots = loadoutSnapshot.snapshots || {};
-
-            for (const baseHrid of relevantBases) {
-                // Cache may have been invalidated by a prior iteration's snapshot update
-                if (!this._boundBaseHrids) break;
-                const loadoutLevels = this._boundBaseHrids.get(baseHrid);
-                if (!loadoutLevels) continue;
-
-                // Find highest enhancement level of this item in current inventory (computed once per base)
-                let highestOwned = -1;
-                for (const item of inventory) {
-                    if (item.itemHrid === baseHrid && item.count > 0) {
-                        const level = item.enhancementLevel || 0;
-                        if (level > highestOwned) highestOwned = level;
-                    }
-                }
-
-                // If player owns none, skip (don't remove — they might just be mid-trade)
-                if (highestOwned < 0) continue;
-
-                // Process each loadout binding independently — exact-mode loadouts stay
-                // frozen, highest-mode loadouts update to the highest owned level.
-                for (const [loadoutName, currentLevel] of loadoutLevels) {
-                    const snap = Object.values(snapshots).find((s) => s.name === loadoutName);
-                    if (!snap || snap.useExactEnhancement) continue;
-                    if (highestOwned === currentLevel) continue;
-
-                    const oldHrid = currentLevel > 0 ? `${baseHrid}+${currentLevel}` : baseHrid;
-                    const newHrid = highestOwned > 0 ? `${baseHrid}+${highestOwned}` : baseHrid;
-
-                    this._walkAndSwapBinding(oldHrid, newHrid, loadoutName);
-                    anyChanged = true;
-
-                    // Update cached level for this specific loadout (cache may have been
-                    // nulled by the snapshot update listener below).
-                    if (this._boundBaseHrids) {
-                        this._boundBaseHrids.get(baseHrid)?.set(loadoutName, highestOwned);
-                    }
-                }
-
-                // Sync snapshot equipment levels — updateEnhancementLevel skips exact-mode
-                // snapshots internally, so it only touches highest-mode ones.
-                loadoutSnapshot.updateEnhancementLevel(baseHrid, highestOwned);
-            }
-
-            if (anyChanged) {
-                this._save();
-                if (this._isActive) this._applyLayout();
-            }
-        }
-
-        /**
-         * Build a Map of baseHrid → Map<loadoutName, currentLevel> across all bindings.
-         * Per-loadout granularity lets us update each binding independently based on
-         * its own snapshot's useExactEnhancement flag. Cached and invalidated when
-         * bindings change.
-         */
-        _rebuildBoundBaseHrids() {
-            this._boundBaseHrids = new Map(); // baseHrid → Map<loadoutName, currentLevel>
-            const walk = (tabs) => {
-                for (const tab of tabs) {
-                    if (tab.loadoutBindings) {
-                        for (const [loadoutName, items] of Object.entries(tab.loadoutBindings)) {
-                            for (const hrid of items) {
-                                const base = getBaseHrid(hrid);
-                                const plusIdx = hrid.lastIndexOf('+');
-                                const level =
-                                    plusIdx !== -1 && /^\d+$/.test(hrid.substring(plusIdx + 1))
-                                        ? parseInt(hrid.substring(plusIdx + 1), 10)
-                                        : 0;
-                                if (!this._boundBaseHrids.has(base)) {
-                                    this._boundBaseHrids.set(base, new Map());
-                                }
-                                const loadoutLevels = this._boundBaseHrids.get(base);
-                                const existing = loadoutLevels.get(loadoutName) ?? -1;
-                                if (level > existing) loadoutLevels.set(loadoutName, level);
-                            }
-                        }
-                    }
-                    if (tab.children.length > 0) walk(tab.children);
-                }
-            };
-            walk(this._config.tabs);
-        }
-
-        /**
-         * Swap an old HRID for a new one in all loadout bindings across all tabs.
-         * @param {string} oldHrid
-         * @param {string} newHrid
-         */
-        /**
-         * Swap an old HRID for a new one in loadout bindings across all tabs.
-         * @param {string} oldHrid
-         * @param {string} newHrid
-         * @param {string|null} restrictToLoadoutName - When set, only swap inside
-         *   bindings for this loadout. tab.items is swapped only if no other
-         *   loadout on the same tab still references oldHrid.
-         */
-        _walkAndSwapBinding(oldHrid, newHrid, restrictToLoadoutName = null) {
-            const walk = (tabs) => {
-                for (const tab of tabs) {
-                    if (tab.loadoutBindings) {
-                        let swappedInLoadout = false;
-                        let oldHridStillReferenced = false;
-                        for (const [name, items] of Object.entries(tab.loadoutBindings)) {
-                            if (restrictToLoadoutName && name !== restrictToLoadoutName) {
-                                if (items.includes(oldHrid)) oldHridStillReferenced = true;
-                                continue;
-                            }
-                            const idx = items.indexOf(oldHrid);
-                            if (idx !== -1) {
-                                items[idx] = newHrid;
-                                swappedInLoadout = true;
-                            }
-                        }
-                        if (swappedInLoadout && !oldHridStillReferenced) {
-                            // Also swap in tab.items
-                            const itemIdx = tab.items.indexOf(oldHrid);
-                            if (itemIdx !== -1) tab.items[itemIdx] = newHrid;
-                        }
-                    }
-                    if (tab.children.length > 0) walk(tab.children);
-                }
-            };
-            walk(this._config.tabs);
-        }
-
-        /**
          * Handle loadout snapshot updates — sync bound tabs automatically.
          * Called whenever any loadout is created/updated/deleted in-game.
          */
         _onLoadoutSnapshotUpdate() {
-            const loadoutSnapshot = getLoadoutSnapshot();
-            const snapshots = loadoutSnapshot.snapshots;
+            const snapshots = loadoutState.getSnapshotsById();
             const currentSnapshotNames = new Set(Object.values(snapshots).map((s) => s.name));
             const includeConsumables = config.getSetting('inventoryTabs_loadoutIncludeConsumables');
 
@@ -31770,12 +31210,16 @@ self.onmessage = function (e) {
                 for (const tab of tabs) {
                     if (tab.loadoutBindings && Object.keys(tab.loadoutBindings).length > 0) {
                         // Sync each binding against current snapshot
-                        for (const [loadoutName, _boundItems] of Object.entries(tab.loadoutBindings)) {
+                        for (const [loadoutName, boundItems] of Object.entries(tab.loadoutBindings)) {
                             // Find the matching snapshot
                             const snapshot = Object.values(snapshots).find((s) => s.name === loadoutName);
                             if (!snapshot) continue; // Will be cleaned up by orphan logic below
 
-                            // Build new snapshot items list
+                            // Build new snapshot items list. If Core cannot resolve a current effective
+                            // enhancement because the saved item is unavailable, preserve the binding's
+                            // existing representation instead of falling back to the historical raw
+                            // enhancement number. Server execution semantics for missing items are not
+                            // inferred here.
                             const newItems = [];
                             for (const eq of snapshot.equipment || []) {
                                 if (!eq.itemHrid) continue;
@@ -31783,11 +31227,27 @@ self.onmessage = function (e) {
                                     eq.enhancementLevel > 0 ? `${eq.itemHrid}+${eq.enhancementLevel}` : eq.itemHrid;
                                 newItems.push(hrid);
                             }
+                            for (const missing of snapshot.unavailableEquipment || []) {
+                                if (!missing.itemHrid) continue;
+                                const existingBoundItem = (boundItems || []).find(
+                                    (hrid) => getBaseHrid(hrid) === missing.itemHrid
+                                );
+                                if (existingBoundItem) newItems.push(existingBoundItem);
+                            }
                             if (includeConsumables) {
                                 for (const f of snapshot.food || []) {
                                     if (f.itemHrid) newItems.push(f.itemHrid);
                                 }
                                 for (const d of snapshot.drinks || []) {
+                                    if (d.itemHrid) newItems.push(d.itemHrid);
+                                }
+                                // Consumable identity remains unambiguous even while stock is zero.
+                                // Keep the loadout-bound tab tied to the intended food/drink instead of
+                                // deleting that binding just because the item is temporarily unavailable.
+                                for (const f of snapshot.unavailableFood || []) {
+                                    if (f.itemHrid) newItems.push(f.itemHrid);
+                                }
+                                for (const d of snapshot.unavailableDrinks || []) {
                                     if (d.itemHrid) newItems.push(d.itemHrid);
                                 }
                             }
@@ -31814,7 +31274,6 @@ self.onmessage = function (e) {
             walkAndSync(this._config.tabs);
 
             if (anyChanged) {
-                this._boundBaseHrids = null; // Invalidate cache
                 this._save();
                 if (this._isActive) this._applyLayout();
             }
@@ -31822,14 +31281,13 @@ self.onmessage = function (e) {
 
         _renderLoadoutButtons(container, tabId) {
             container.innerHTML = '';
-            const loadoutSnapshot = getLoadoutSnapshot();
-            const snapshots = loadoutSnapshot.snapshots;
+            const snapshots = loadoutState.getSnapshotsById();
             const entries = Object.values(snapshots);
 
             if (entries.length === 0) {
                 const msg = document.createElement('span');
                 msg.style.cssText = 'font-size:11px;color:#888;';
-                msg.textContent = 'No loadout snapshots — open your loadout panel first.';
+                msg.textContent = 'No saved loadouts available.';
                 container.appendChild(msg);
                 return;
             }
@@ -31848,10 +31306,11 @@ self.onmessage = function (e) {
                           .replace(/_/g, ' ')
                           .replace(/\b\w/g, (c) => c.toUpperCase())
                     : 'All Skills';
+                const hasUnavailableEquipment = (snapshot.unavailableEquipment || []).length > 0;
 
                 const loadoutItems = [];
                 for (const eq of snapshot.equipment || []) {
-                    if (!eq.itemHrid) continue;
+                    if (!eq.itemHrid || eq.isAvailable === false) continue;
                     const hrid = eq.enhancementLevel > 0 ? `${eq.itemHrid}+${eq.enhancementLevel}` : eq.itemHrid;
                     loadoutItems.push(hrid);
                 }
@@ -31862,6 +31321,12 @@ self.onmessage = function (e) {
                     for (const d of snapshot.drinks || []) {
                         if (d.itemHrid) loadoutItems.push(d.itemHrid);
                     }
+                    for (const f of snapshot.unavailableFood || []) {
+                        if (f.itemHrid) loadoutItems.push(f.itemHrid);
+                    }
+                    for (const d of snapshot.unavailableDrinks || []) {
+                        if (d.itemHrid) loadoutItems.push(d.itemHrid);
+                    }
                 }
 
                 const newItems = loadoutItems.filter((h) => !currentItems.has(h));
@@ -31869,12 +31334,21 @@ self.onmessage = function (e) {
 
                 const btn = document.createElement('button');
                 btn.className = 'toolasha-ct-cat-btn' + (allAdded ? ' toolasha-ct-cat-btn--added' : '');
-                btn.textContent = `${snapshot.name} (${skillLabel})`;
-                btn.title = allAdded
-                    ? `All items from "${snapshot.name}" already added`
-                    : `Add ${newItems.length} item(s) from "${snapshot.name}"`;
+                btn.textContent = `${snapshot.name} (${skillLabel})${hasUnavailableEquipment ? ' — Unavailable' : ''}`;
+                btn.disabled = hasUnavailableEquipment;
+                btn.title = hasUnavailableEquipment
+                    ? `Cannot add "${snapshot.name}" while saved equipment is unavailable`
+                    : allAdded
+                      ? `All items from "${snapshot.name}" already added`
+                      : `Add ${newItems.length} item(s) from "${snapshot.name}"`;
+
+                if (hasUnavailableEquipment) {
+                    btn.style.opacity = '0.55';
+                    btn.style.cursor = 'not-allowed';
+                }
 
                 btn.addEventListener('click', () => {
+                    if (hasUnavailableEquipment) return;
                     for (const hrid of newItems) {
                         this._config = addItem(this._config, tabId, hrid);
                         currentItems.add(hrid);
@@ -31882,7 +31356,6 @@ self.onmessage = function (e) {
                     // Record binding so this tab auto-syncs with loadout changes
                     if (loadoutItems.length > 0) {
                         this._config = addLoadoutBinding(this._config, tabId, snapshot.name, loadoutItems);
-                        this._boundBaseHrids = null; // Invalidate cache
                     }
                     this._save();
                     this._renderLoadoutButtons(container, tabId);
@@ -32239,9 +31712,8 @@ self.onmessage = function (e) {
         customTabsFeature: customTabsFeature$1,
         marketplaceShortcuts,
         sellQueue,
-        milkywayMarketLink,
     };
 
     console.log('[Toolasha] Market library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.tokenValuation, Toolasha.Core.storage, Toolasha.Utils.enhancementConfig, Toolasha.Utils.dom, Toolasha.Utils.materialCalculator, Toolasha.Utils.timerRegistry, Toolasha.Utils.cleanupRegistry, Toolasha.Core.webSocketHook, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Core, Toolasha.Utils.reactInput, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.tokenValuation, Toolasha.Core.storage, Toolasha.Utils.enhancementConfig, Toolasha.Utils.dom, Toolasha.Utils.materialCalculator, Toolasha.Utils.timerRegistry, Toolasha.Utils.cleanupRegistry, Toolasha.Core.loadoutState, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Core, Toolasha.Utils.reactInput, Toolasha.Core.webSocketHook, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator);

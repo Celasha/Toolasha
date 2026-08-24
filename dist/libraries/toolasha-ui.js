@@ -1,11 +1,11 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.95.0
+ * Version: 2.95.1
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, formatters_js, timerRegistry_js, domObserverHelpers_js, dom_js, storage, marketAPI, efficiency_js, webSocketHook, reactInput_js, actionPanelHelper_js, expectedValueCalculator, bonusRevenueCalculator_js, marketData_js, profitConstants_js, profitHelpers_js, profitCalculator, selectors_js, actionCalculator_js, equipmentParser_js, marketplaceSession_js, cleanupRegistry_js, settingsSchema_js, settingsStorage, enhancementConfig_js, materialCalculator_js, enhancementCalculator_js, teaParser_js, alchemyProfitCalculator) {
+(function (config, dataManager, domObserver, formatters_js, timerRegistry_js, domObserverHelpers_js, dom_js, storage, marketAPI, efficiency_js, webSocketHook, reactInput_js, actionPanelHelper_js, expectedValueCalculator, bonusRevenueCalculator_js, marketData_js, profitConstants_js, profitHelpers_js, profitCalculator, selectors_js, actionCalculator_js, equipmentParser_js, loadoutState, marketplaceSession_js, cleanupRegistry_js, settingsSchema_js, settingsStorage, enhancementConfig_js, materialCalculator_js, enhancementCalculator_js, teaParser_js, alchemyProfitCalculator) {
     'use strict';
 
     /**
@@ -644,9 +644,10 @@
      * Applied to current whole skill levels, `raw` naturally has at most one meaningful decimal
      * digit (the 0.1/0.5 coefficients on integer inputs cannot produce more). MWI's native sidebar
      * floors this to an integer for display; this module exposes the unfloored value so the decimal
-     * sidebar display can show it (e.g. 133.2 next to a native 133). Level Malus is a separate
-     * mechanic and uses the canonical (floored) Combat Level - see calculateLevelGapDebuff()'s doc
-     * comment in combat-sim-adapter.js - not this raw value.
+     * sidebar display can show it (e.g. 133.2 next to a native 133). This same raw/unfloored value is
+     * SERVER-CONFIRMED (direct MWI developer evidence) to also be the Level Malus mechanic input -
+     * see calculateLevelGapDebuff()'s doc comment in combat-sim-adapter.js - not the floored native
+     * integer.
      *
      * This must never be confused with XP-within-level interpolation: inventing a fractional skill
      * level from XP progress toward the next level is a different, invalid metric for this mechanic
@@ -708,9 +709,10 @@
      * Shows the unfloored Combat Level formula value, computed from current whole skill levels,
      * next to the persistent Combat entry in the left sidebar (e.g. 133.2 next to the native 133).
      *
-     * Display-only: it never overwrites the native integer node, never feeds Level Malus (which
-     * uses the same floored Combat Level the game displays - see calculateLevelGapDebuff()'s doc
-     * comment), and must never be XP-interpolated (no fractional skill levels from XP progress).
+     * Display-only: it never overwrites the native integer node and must never be XP-interpolated
+     * (no fractional skill levels from XP progress). This DOM span does not feed Level Malus itself -
+     * that mechanic derives the same raw/unfloored value independently from live combat data - see
+     * calculateLevelGapDebuff()'s doc comment in combat-sim-adapter.js.
      */
 
 
@@ -902,10 +904,6 @@
                     url: 'https://shykai.github.io/MWICombatSimulatorTest/dist/',
                 },
                 {
-                    label: 'Milkyway Market',
-                    url: 'https://milkyway.market/',
-                },
-                {
                     label: 'Enhancelator',
                     url: 'https://doh-nuts.github.io/Enhancelator/',
                 },
@@ -1042,15 +1040,15 @@
      */
 
 
-    const STORAGE_KEY_PREFIX$5 = 'tabOrder';
+    const STORAGE_KEY_PREFIX$4 = 'tabOrder';
 
     /**
      * Get character-scoped storage key.
      * @returns {string}
      */
-    function getStorageKey$5() {
+    function getStorageKey$4() {
         const charId = dataManager.getCurrentCharacterId() || 'default';
-        return `${STORAGE_KEY_PREFIX$5}_${charId}`;
+        return `${STORAGE_KEY_PREFIX$4}_${charId}`;
     }
 
     /**
@@ -1082,7 +1080,7 @@
             this.isInitialized = true;
 
             // Load saved order
-            this.savedOrder = await storage.getJSON(getStorageKey$5(), 'settings', null);
+            this.savedOrder = await storage.getJSON(getStorageKey$4(), 'settings', null);
 
             // Apply to existing tabs
             this._applyOrder();
@@ -1231,7 +1229,7 @@
          * @private
          */
         async _saveOrder(order) {
-            await storage.setJSON(getStorageKey$5(), order, 'settings', true);
+            await storage.setJSON(getStorageKey$4(), order, 'settings', true);
         }
 
         disable() {
@@ -7098,334 +7096,6 @@ ${starCSS}
     }
 
     /**
-     * Loadout Snapshot
-     *
-     * Listens for `loadouts_updated` WebSocket messages to capture all loadout configurations
-     * (equipment, abilities, consumables, enhancement levels) in real time.
-     *
-     * Stored snapshots are used by profit calculators to apply the correct tool/equipment
-     * bonuses for a skill even when that loadout is not currently equipped.
-     *
-     * Skill matching: the loadout's actionTypeHrid (e.g. "/action_types/brewing") is compared
-     * to the action type of the profit calculation. An "All Skills" loadout (empty actionTypeHrid)
-     * is used as a fallback when no skill-specific snapshot is found.
-     *
-     * Priority: skill default > all skills default > skill non-default > all skills non-default
-     */
-
-
-    const STORAGE_KEY_PREFIX$4 = 'loadout_snapshots';
-
-    /**
-     * Returns the active WebSocket hook instance.
-     * In the multi-bundle production build each library bundles its own copy of websocket.js,
-     * but only the Core library's instance has install() called on it.
-     * Prefer window.Toolasha.Core.webSocketHook so listeners actually receive messages.
-     * Falls back to the bundled copy for the dev standalone build (single bundle, one instance).
-     */
-    function getWebSocketHook() {
-        return (typeof window !== 'undefined' && window.Toolasha?.Core?.webSocketHook) || webSocketHook;
-    }
-
-    /**
-     * Get character-scoped storage key.
-     * @returns {string}
-     */
-    function getStorageKey$4() {
-        const charId = dataManager.getCurrentCharacterId() || 'default';
-        return `${STORAGE_KEY_PREFIX$4}_${charId}`;
-    }
-
-    /**
-     * Parse a wearable hash string into itemLocationHrid, itemHrid, and enhancementLevel.
-     * Format: "characterId::/item_locations/location::/items/item_hrid::enhancementLevel"
-     * Empty string means no item in that slot.
-     * @param {string} itemLocationHrid - The equipment slot key (e.g. "/item_locations/body")
-     * @param {string} wearableHash - The wearable hash value
-     * @returns {{ itemLocationHrid: string, itemHrid: string, enhancementLevel: number }|null}
-     */
-    function parseWearable(itemLocationHrid, wearableHash) {
-        if (!wearableHash) return null;
-
-        const parts = wearableHash.split('::');
-        const itemHrid = parts.find((p) => p.startsWith('/items/'));
-        if (!itemHrid) return null;
-
-        const lastPart = parts[parts.length - 1];
-        const enhancementLevel = !lastPart.startsWith('/') ? parseInt(lastPart, 10) || 0 : 0;
-
-        return { itemLocationHrid, itemHrid, enhancementLevel };
-    }
-
-    /**
-     * Convert a server loadout object into our snapshot format.
-     * @param {Object} loadout - A loadout entry from characterLoadoutMap
-     * @returns {Object} snapshot
-     */
-    function buildSnapshot(loadout) {
-        // Parse equipment from wearableMap
-        const equipment = [];
-        for (const [locationHrid, hash] of Object.entries(loadout.wearableMap || {})) {
-            const parsed = parseWearable(locationHrid, hash);
-            if (parsed) equipment.push(parsed);
-        }
-
-        // Parse drinks
-        const drinks = (loadout.drinkItemHrids || []).map((hrid) => ({
-            itemHrid: hrid || '',
-        }));
-
-        // Parse food
-        const food = (loadout.foodItemHrids || []).map((hrid) => ({
-            itemHrid: hrid || '',
-        }));
-
-        // Parse abilities
-        const abilities = [];
-        for (const [slot, hrid] of Object.entries(loadout.abilityMap || {})) {
-            if (hrid) abilities.push({ abilityHrid: hrid, slot: parseInt(slot, 10) });
-        }
-
-        return {
-            name: loadout.name,
-            actionTypeHrid: loadout.actionTypeHrid || '',
-            isDefault: !!loadout.isDefault,
-            useExactEnhancement: loadout.useExactEnhancement ?? false,
-            ordinal: loadout.ordinal || 0,
-            equipment,
-            abilities,
-            food,
-            drinks,
-            abilityCombatTriggersMap: loadout.abilityCombatTriggersMap || {},
-            consumableCombatTriggersMap: loadout.consumableCombatTriggersMap || {},
-            savedAt: Date.now(),
-        };
-    }
-
-    class LoadoutSnapshot {
-        constructor() {
-            this.snapshots = {}; // In-memory cache: { [loadoutName]: snapshot }
-            this.characterInitializedHandler = null;
-            this.updateListeners = [];
-            this.isInitialized = false;
-
-            // Register WebSocket handler at module load time so in-session loadout
-            // changes are captured whenever loadouts_updated fires.
-            this.loadoutsUpdatedHandler = (data) => this._onLoadoutsUpdated(data);
-            getWebSocketHook().on('loadouts_updated', this.loadoutsUpdatedHandler);
-        }
-
-        /**
-         * Register a callback to be called whenever snapshots are updated.
-         * @param {Function} fn
-         */
-        onUpdate(fn) {
-            this.updateListeners.push(fn);
-        }
-
-        /**
-         * Remove a previously registered update callback.
-         * @param {Function} fn
-         */
-        offUpdate(fn) {
-            this.updateListeners = this.updateListeners.filter((l) => l !== fn);
-        }
-
-        _emitUpdate() {
-            this.updateListeners.forEach((fn) => fn());
-        }
-
-        async initialize() {
-            if (this.isInitialized) return;
-            this.isInitialized = true;
-
-            // Re-register WS handler if it was cleared by disable()
-            if (!this.loadoutsUpdatedHandler) {
-                this.loadoutsUpdatedHandler = (data) => this._onLoadoutsUpdated(data);
-                getWebSocketHook().on('loadouts_updated', this.loadoutsUpdatedHandler);
-            }
-
-            // Load from storage — loadouts_updated only fires when the user visits the loadouts
-            // UI, so storage is always the source of snapshots at startup.
-            if (Object.keys(this.snapshots).length === 0) {
-                const storageKey = getStorageKey$4();
-                // NOTE: getCurrentCharacterId() may be null at this point (before init_character_data
-                // arrives), so getStorageKey() may return 'loadout_snapshots_default'. We will reload
-                // from the correct key once character_initialized fires.
-                this.snapshots = (await storage.getJSON(storageKey, 'settings', null)) || {};
-
-                // Fallback for Steam users: if storage is also empty, bootstrap from
-                // the characterLoadoutMap embedded in init_character_data (already in dataManager).
-                if (Object.keys(this.snapshots).length === 0) {
-                    const characterLoadoutMap = dataManager.characterData?.characterLoadoutMap;
-                    if (characterLoadoutMap && Object.keys(characterLoadoutMap).length > 0) {
-                        this._onLoadoutsUpdated({ characterLoadoutMap });
-                    }
-                }
-            }
-
-            // Reload from the correct character-scoped key once character data is available
-            this.characterInitializedHandler = async () => {
-                const storageKey = getStorageKey$4();
-                const fresh = (await storage.getJSON(storageKey, 'settings', null)) || {};
-                if (Object.keys(fresh).length > 0) {
-                    this.snapshots = fresh;
-                    this._emitUpdate();
-                }
-            };
-            dataManager.on('character_initialized', this.characterInitializedHandler);
-        }
-
-        /**
-         * Handle a loadouts_updated WebSocket message.
-         * Replaces all snapshots with the server's current state.
-         * @param {Object} data - The WebSocket message payload
-         */
-        _onLoadoutsUpdated(data) {
-            const loadoutMap = data.characterLoadoutMap;
-            if (!loadoutMap) {
-                console.warn('[LoadoutSnapshot] loadouts_updated received but no characterLoadoutMap');
-                return;
-            }
-
-            const newSnapshots = {};
-            for (const [id, loadout] of Object.entries(loadoutMap)) {
-                if (!loadout.name) continue;
-                newSnapshots[id] = buildSnapshot(loadout);
-            }
-
-            this.snapshots = newSnapshots;
-            storage.setJSON(getStorageKey$4(), this.snapshots, 'settings');
-            this._emitUpdate();
-        }
-
-        /**
-         * Update a snapshot equipment item's enhancement level.
-         * Used when the highest owned enhancement of a loadout item changes (up or down).
-         * @param {string} itemHrid - Base item HRID (e.g. "/items/sword")
-         * @param {number} newLevel - New enhancement level (highest currently owned)
-         * @returns {boolean} True if any snapshot was updated
-         */
-        updateEnhancementLevel(itemHrid, newLevel) {
-            let changed = false;
-            for (const snapshot of Object.values(this.snapshots)) {
-                // Exact-mode snapshots intentionally hold a frozen level — never auto-update them.
-                if (snapshot.useExactEnhancement) continue;
-                for (const eq of snapshot.equipment || []) {
-                    if (eq.itemHrid === itemHrid && eq.enhancementLevel !== newLevel) {
-                        eq.enhancementLevel = newLevel;
-                        snapshot.savedAt = Date.now();
-                        changed = true;
-                    }
-                }
-            }
-            if (changed) {
-                storage.setJSON(getStorageKey$4(), this.snapshots, 'settings');
-                this._emitUpdate();
-            }
-            return changed;
-        }
-
-        /**
-         * Find the best snapshot for a given action type.
-         * Priority: skill default > all skills default > skill non-default > all skills non-default
-         * @param {string} actionTypeHrid - e.g. "/action_types/brewing"
-         * @returns {Object|null} snapshot entry or null
-         */
-        _findSnapshot(actionTypeHrid) {
-            if (!config.getSetting('loadoutSnapshot')) return null;
-
-            let skillDefault = null;
-            let allSkillsDefault = null;
-            let skillNonDefault = null;
-            let allSkillsNonDefault = null;
-
-            for (const snapshot of Object.values(this.snapshots)) {
-                if (snapshot.actionTypeHrid === actionTypeHrid) {
-                    if (snapshot.isDefault) {
-                        skillDefault = snapshot;
-                    } else {
-                        skillNonDefault = snapshot;
-                    }
-                } else if (snapshot.actionTypeHrid === '') {
-                    if (snapshot.isDefault) {
-                        allSkillsDefault = snapshot;
-                    } else {
-                        allSkillsNonDefault = snapshot;
-                    }
-                }
-            }
-
-            return skillDefault || allSkillsDefault || skillNonDefault || allSkillsNonDefault || null;
-        }
-
-        /**
-         * Get a Map<itemLocationHrid, item> for the best loadout snapshot matching the given
-         * action type. Returns null if no snapshot exists or the feature is disabled.
-         * The returned Map has the same format as dataManager.getEquipment().
-         * @param {string} actionTypeHrid
-         * @returns {Map<string, Object>|null}
-         */
-        getSnapshotForSkill(actionTypeHrid) {
-            const snapshot = this._findSnapshot(actionTypeHrid);
-            if (!snapshot || !snapshot.equipment?.length) return null;
-            return new Map(snapshot.equipment.map((e) => [e.itemLocationHrid, e]));
-        }
-
-        /**
-         * Get the drink slots array for the best loadout snapshot matching the given
-         * action type. Returns null if no snapshot exists or the feature is disabled.
-         * The returned array has the same format as dataManager.getActionDrinkSlots().
-         * @param {string} actionTypeHrid
-         * @returns {Array<{itemHrid: string}>|null}
-         */
-        getSnapshotDrinksForSkill(actionTypeHrid) {
-            const snapshot = this._findSnapshot(actionTypeHrid);
-            if (!snapshot) return null;
-            // Filter out empty slots so callers get only actual items
-            const filled = (snapshot.drinks || []).filter((d) => d.itemHrid);
-            return filled.length > 0 ? filled : null;
-        }
-
-        /**
-         * Get all saved loadout snapshots as a flat array.
-         * @returns {Array<Object>} Array of snapshot objects
-         */
-        getAllSnapshots() {
-            return Object.values(this.snapshots).sort((a, b) => a.ordinal - b.ordinal);
-        }
-
-        /**
-         * Get the name and default status of the saved loadout being used for a given action type.
-         * Returns an object with name and isDefault, or null if no snapshot exists or feature is disabled.
-         * @param {string} actionTypeHrid
-         * @returns {{ name: string, isDefault: boolean }|null}
-         */
-        getSnapshotInfoForSkill(actionTypeHrid) {
-            const snapshot = this._findSnapshot(actionTypeHrid);
-            if (!snapshot) return null;
-            return { name: snapshot.name, isDefault: !!snapshot.isDefault };
-        }
-
-        disable() {
-            if (this.loadoutsUpdatedHandler) {
-                getWebSocketHook().off('loadouts_updated', this.loadoutsUpdatedHandler);
-                this.loadoutsUpdatedHandler = null;
-            }
-
-            if (this.characterInitializedHandler) {
-                dataManager.off('character_initialized', this.characterInitializedHandler);
-                this.characterInitializedHandler = null;
-            }
-
-            this.updateListeners = [];
-            this.isInitialized = false;
-        }
-    }
-
-    const loadoutSnapshot = new LoadoutSnapshot();
-
-    /**
      * Combat Simulator Adapter
      * Bridges Toolasha's live data to the combat sim engine.
      *
@@ -7805,51 +7475,52 @@ ${starCSS}
      * highest combat level. Shared by Combat Sim (simulated party loadouts) and Combat Stats
      * (real live encounters) so both agree on the exact same eligibility rule.
      *
-     * Per the official MWI Game Guide, both conditions are required: the player must be more than
-     * 20% lower AND at least 10 Combat Levels below the party's highest combat level. `combatLevel`
-     * and `maxCombatLevel` must be the canonical (floored) Combat Level - the same integer the game
-     * computes via `getCombatLevel()` and shows as `combatDetails.combatLevel` - since that is the
-     * only Combat Level concept evidenced anywhere in the game's client code or guide; there is no
-     * independent evidence of a separate raw/pre-floor value feeding this check.
-     * @param {number} combatLevel - This player's combat level
-     * @param {number} maxCombatLevel - The party's highest combat level
+     * SERVER-CONFIRMED (direct MWI developer evidence): `combatLevel` and `maxCombatLevel` must be
+     * the raw (unfloored) whole-skill Combat Level - see `calculateCombatLevelFromLevelFields()` -
+     * not the native floored integer the game displays. The 20%-lower and 10-Combat-Level-lower
+     * conditions combine into one effective threshold, the comparison is strict, and the penalty is
+     * continuous (no 1%-step quantization). Supplied server implementation (Go):
+     *   effectiveThreshold := max(1.2, (combatLevel+10)/combatLevel)
+     *   if effectiveThreshold*combatLevel < topCombatLevel {
+     *       multiplier = max(0.1, 1.0-3.0*(topCombatLevel/combatLevel-effectiveThreshold))
+     *   }
+     * @param {number} combatLevel - This player's raw (unfloored) combat level
+     * @param {number} maxCombatLevel - The party's highest raw (unfloored) combat level
      * @returns {number} Debuff as a negative decimal (0 = no debuff, e.g. -0.3 = -30%)
      */
     function calculateLevelGapDebuff(combatLevel, maxCombatLevel) {
-        const ratio = maxCombatLevel / combatLevel;
-        const gap = maxCombatLevel - combatLevel;
-        if (ratio <= 1.2 || gap < 10) {
+        const effectiveThreshold = Math.max(1.2, (combatLevel + 10) / combatLevel);
+        if (!(effectiveThreshold * combatLevel < maxCombatLevel)) {
             return 0;
         }
-        const maxDebuff = 0.9;
-        const levelPercent = Math.floor((ratio - 1.2) * 100) / 100;
-        return -1 * Math.min(maxDebuff, 3 * levelPercent);
+        const multiplier = Math.max(0.1, 1.0 - 3.0 * (maxCombatLevel / combatLevel - effectiveThreshold));
+        return multiplier - 1.0;
     }
 
     /**
-     * Calculate the canonical (floored) combat level from any object exposing the game's own
+     * Calculate the raw (unfloored) combat level from any object exposing the game's own
      * combatDetails-shaped whole-skill-level fields (staminaLevel, intelligenceLevel, attackLevel,
      * defenseLevel, meleeLevel, rangedLevel, magicLevel) - the same shape as a simulated player DTO
-     * here in Combat Sim. Combat Stats instead reads the native `combatDetails.combatLevel` field
-     * directly from live `new_battle` data rather than recomputing it, since that field already is
-     * the canonical value; Combat Sim has no such native field for a simulated party and must derive
-     * the equivalent value from the same official formula (see `calculateRawCombatLevel()`), floored
-     * the same way the game itself floors it.
+     * here in Combat Sim, and the same shape the server sends on live `combatDetails` objects.
+     *
+     * SERVER-CONFIRMED: this raw/unfloored value - not the native floored `combatDetails.combatLevel`
+     * integer the game displays - is the actual mechanic input for Level Malus (see
+     * `calculateLevelGapDebuff()`). Both Combat Sim (simulated party) and Combat Stats (live
+     * encounters, deriving this from the same seven fields on real `combatDetails`) use this one
+     * shared helper so they never disagree.
      * @param {{staminaLevel: number, intelligenceLevel: number, attackLevel: number, defenseLevel: number, meleeLevel: number, rangedLevel: number, magicLevel: number}} levelFields
-     * @returns {number} Combat level
+     * @returns {number} Raw (unfloored) combat level
      */
     function calculateCombatLevelFromLevelFields(levelFields) {
-        return Math.floor(
-            calculateRawCombatLevel({
-                stamina: levelFields.staminaLevel,
-                intelligence: levelFields.intelligenceLevel,
-                attack: levelFields.attackLevel,
-                defense: levelFields.defenseLevel,
-                melee: levelFields.meleeLevel,
-                ranged: levelFields.rangedLevel,
-                magic: levelFields.magicLevel,
-            })
-        );
+        return calculateRawCombatLevel({
+            stamina: levelFields.staminaLevel,
+            intelligence: levelFields.intelligenceLevel,
+            attack: levelFields.attackLevel,
+            defense: levelFields.defenseLevel,
+            melee: levelFields.meleeLevel,
+            ranged: levelFields.rangedLevel,
+            magic: levelFields.magicLevel,
+        });
     }
 
     /**
@@ -7954,50 +7625,79 @@ ${starCSS}
     }
 
     /**
-     * Apply a named loadout snapshot to a player DTO (mutates dto in place).
-     * Extracted from CombatSimUI._applyLoadoutToDTO so both the sim UI and task display can use it.
+     * Place saved loadout abilities into their native MWI slots (1..5 -> array 0..4).
+     * Native slot identity is authoritative and intentional holes must survive every export path.
+     * Legacy/invalid slot data falls back by special-vs-normal classification without compacting
+     * any valid native slot.
+     * @param {Array<Object>} abilities
+     * @param {Object} abilityDetailMap
+     * @param {(ability: Object) => any} mapAbility
+     * @returns {Array<any|null>}
+     */
+    function mapLoadoutAbilitiesToNativeSlots(abilities, abilityDetailMap, mapAbility) {
+        const result = [null, null, null, null, null];
+        let fallbackNormalAbilityIndex = 1;
+
+        for (const ability of abilities || []) {
+            if (!ability?.abilityHrid) continue;
+            const mappedAbility = mapAbility(ability);
+            if (mappedAbility === null || mappedAbility === undefined) continue;
+
+            const nativeSlot = Number.parseInt(ability.slot, 10);
+            const nativeIndex = nativeSlot >= 1 && nativeSlot <= 5 ? nativeSlot - 1 : null;
+            if (nativeIndex !== null) {
+                result[nativeIndex] = mappedAbility;
+                continue;
+            }
+
+            const isSpecial = abilityDetailMap?.[ability.abilityHrid]?.isSpecialAbility || false;
+            if (isSpecial) {
+                // Invalid legacy slot metadata must not overwrite a valid native slot 1 that was
+                // already reconstructed above. Fill the special slot only when it is genuinely free.
+                if (result[0] === null) result[0] = mappedAbility;
+                continue;
+            }
+
+            while (fallbackNormalAbilityIndex < 5 && result[fallbackNormalAbilityIndex]) {
+                fallbackNormalAbilityIndex += 1;
+            }
+            if (fallbackNormalAbilityIndex < 5) {
+                result[fallbackNormalAbilityIndex++] = mappedAbility;
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Apply a named canonical saved loadout to a player DTO (mutates dto in place on success).
      * @param {Object} dto - Player DTO to mutate
      * @param {string} snapshotName - Loadout snapshot name
      * @param {Object} gameData - Game data payload from buildGameDataPayload()
-     * @returns {boolean} True if snapshot was found and applied, false otherwise
+     * @returns {boolean} True only when the complete usable snapshot was applied
      */
     function applyLoadoutSnapshotToDTO(dto, snapshotName, gameData) {
-        const snapshots = loadoutSnapshot.getAllSnapshots();
-        const snapshot = snapshots.find((s) => s.name === snapshotName);
+        const snapshot = loadoutState.getUsableSnapshotByName(snapshotName);
         if (!snapshot) return false;
 
         const itemDetailMap = gameData.itemDetailMap || {};
         const abilityDetailMap = gameData.abilityDetailMap || {};
 
-        // Convert equipment: snapshot uses itemHrid, DTO keys by equipmentDetail.type.
-        // When useExactEnhancement=false, the wearable hash may store 0 for enhancement.
-        // Resolve by finding the highest enhancement of each item across all owned inventory,
-        // matching how the game treats "highest owned" loadout mode.
+        // Convert canonical resolved equipment: snapshot uses itemHrid, DTO keys by equipmentDetail.type.
+        // Exact/highest enhancement semantics are owned exclusively by Core Loadout State.
         const characterData = dataManager.characterData;
-        const maxEnhancementByItem = new Map();
-        for (const item of characterData?.characterItems || []) {
-            if (!item?.itemHrid || item.count === 0) continue;
-            const level = item.enhancementLevel || 0;
-            const existing = maxEnhancementByItem.get(item.itemHrid);
-            if (existing === undefined || level > existing) {
-                maxEnhancementByItem.set(item.itemHrid, level);
-            }
-        }
-
         const newEquipment = {};
         for (const equip of snapshot.equipment || []) {
             const itemDetail = itemDetailMap[equip.itemHrid];
             const equipType = itemDetail?.equipmentDetail?.type;
-            if (equipType) {
-                let enhancementLevel = equip.enhancementLevel || 0;
-                if (enhancementLevel === 0) {
-                    enhancementLevel = maxEnhancementByItem.get(equip.itemHrid) || 0;
-                }
-                newEquipment[equipType] = {
-                    hrid: equip.itemHrid,
-                    enhancementLevel,
-                };
-            }
+            // Manual loadout application is all-or-nothing. Missing item metadata is just as
+            // unsafe as an unresolved enhancement: silently omitting that slot would simulate a
+            // different loadout while reporting success.
+            if (!equipType || !Number.isFinite(equip.enhancementLevel)) return false;
+            newEquipment[equipType] = {
+                hrid: equip.itemHrid,
+                enhancementLevel: equip.enhancementLevel,
+            };
         }
         dto.equipment = newEquipment;
 
@@ -8026,23 +7726,13 @@ ${starCSS}
             }));
         };
 
-        // Build abilities array (5 slots: 0=special, 1-4=normal)
-        dto.abilities = [null, null, null, null, null];
-        let normalAbilityIndex = 1;
-        for (const ab of snapshot.abilities || []) {
-            if (!ab.abilityHrid) continue;
-            const isSpecial = abilityDetailMap[ab.abilityHrid]?.isSpecialAbility || false;
-            const abilityDTO = {
-                hrid: ab.abilityHrid,
-                level: currentAbilityLevels[ab.abilityHrid] || 1,
-                triggers: buildTriggers(ab.abilityHrid),
-            };
-            if (isSpecial) {
-                dto.abilities[0] = abilityDTO;
-            } else if (normalAbilityIndex < 5) {
-                dto.abilities[normalAbilityIndex++] = abilityDTO;
-            }
-        }
+        // MWI saved loadout ability slots are 1..5 and Combat Sim uses the same ordering zero-based.
+        // Preserve native holes instead of compacting saved abilities upward in the editor/DTO.
+        dto.abilities = mapLoadoutAbilitiesToNativeSlots(snapshot.abilities, abilityDetailMap, (ab) => ({
+            hrid: ab.abilityHrid,
+            level: currentAbilityLevels[ab.abilityHrid] || 1,
+            triggers: buildTriggers(ab.abilityHrid),
+        }));
 
         // Convert food (3 slots)
         dto.food = [];
@@ -8275,9 +7965,6 @@ ${starCSS}
      * Expandable breakdown on click
      */
 
-    function getLoadoutSnapshot() {
-        return window.Toolasha?.Combat?.loadoutSnapshot || loadoutSnapshot;
-    }
 
     // Compiled regex pattern (created once, reused for performance)
     const REGEX_TASK_PROGRESS = /(\d+)\s*\/\s*(\d+)/;
@@ -8818,14 +8505,18 @@ ${starCSS}
                     const taskNode = container?.closest('[class*="RandomTask_randomTask"]');
                     if (!taskNode) return;
                     const taskData = this.parseTaskData(taskNode);
-                    if (taskData) this._renderCombatEstimateConfig(container, taskData);
+                    if (taskData) {
+                        const selectedLoadoutName = select.value;
+                        const selectedMode = container.querySelector('.mwi-combat-est-mode')?.dataset.mode || 'solo';
+                        this._renderCombatEstimateConfig(container, taskData, selectedLoadoutName, selectedMode);
+                    }
                 });
             };
 
-            getLoadoutSnapshot().onUpdate(loadoutsHandler);
+            loadoutState.onUpdate(loadoutsHandler);
 
             this.unregisterHandlers.push(() => {
-                getLoadoutSnapshot().offUpdate(loadoutsHandler);
+                loadoutState.offUpdate(loadoutsHandler);
             });
         }
 
@@ -9226,27 +8917,35 @@ ${starCSS}
          * Shows a loadout dropdown and an "Estimate" button.
          * @param {Element} container - Container element to render into
          * @param {Object} taskData - Parsed task data
+         * @param {string|null} preferredLoadoutName - null = use configured default; '' = preserve Current Gear
+         * @param {'solo'|'zone'} preferredMode - Current temporary estimate mode to preserve across refreshes
          * @private
          */
-        _renderCombatEstimateConfig(container, taskData) {
+        _renderCombatEstimateConfig(container, taskData, preferredLoadoutName = null, preferredMode = 'solo') {
             container.innerHTML = '';
-            const snapshots = getLoadoutSnapshot()
+            const snapshots = loadoutState
                 .getAllSnapshots()
+                .filter((s) => s.isUsableForCalculation)
                 .filter((s) => !s.actionTypeHrid || s.actionTypeHrid === '/action_types/combat');
 
             const defaultLoadout = config.getSettingValue('combatSim_defaultLoadout', '');
+            const selectedLoadoutName = preferredLoadoutName === null ? defaultLoadout : preferredLoadoutName;
+            const selectedMode = preferredMode === 'zone' ? 'zone' : 'solo';
+            const usableLoadoutNames = new Set(snapshots.map((snapshot) => snapshot.name));
 
             let html = '<div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">';
             html +=
                 '<select class="mwi-combat-est-loadout" style="font-size:11px; background:#1a1a1a; color:#ccc; border:1px solid #444; border-radius:3px; padding:2px 4px;">';
-            html += `<option value=""${!defaultLoadout ? ' selected' : ''}>— Current Gear —</option>`;
+            html += `<option value=""${!selectedLoadoutName ? ' selected' : ''}>— Current Gear —</option>`;
+            if (selectedLoadoutName && !usableLoadoutNames.has(selectedLoadoutName)) {
+                html += `<option value="${selectedLoadoutName}" selected>${selectedLoadoutName} (Unavailable)</option>`;
+            }
             for (const s of snapshots) {
-                const selected = s.name === defaultLoadout ? ' selected' : '';
+                const selected = s.name === selectedLoadoutName ? ' selected' : '';
                 html += `<option value="${s.name}"${selected}>${s.name}</option>`;
             }
             html += '</select>';
-            html +=
-                '<button class="mwi-combat-est-mode" data-mode="solo" title="Solo: simulate only target monster. Zone: simulate full zone spawn table." style="font-size:11px; padding:2px 6px; background:#1a1a1a; color:#ccc; border:1px solid #444; border-radius:3px; cursor:pointer;">Solo</button>';
+            html += `<button class="mwi-combat-est-mode" data-mode="${selectedMode}" title="Solo: simulate only target monster. Zone: simulate full zone spawn table." style="font-size:11px; padding:2px 6px; background:#1a1a1a; color:${selectedMode === 'zone' ? '#aaddff' : '#ccc'}; border:1px solid ${selectedMode === 'zone' ? '#4a9eff44' : '#444'}; border-radius:3px; cursor:pointer;">${selectedMode === 'zone' ? 'Zone' : 'Solo'}</button>`;
             html +=
                 '<button class="mwi-combat-est-btn" style="font-size:11px; padding:2px 8px; background:#1a3a5c; color:#4a9eff; border:1px solid #4a9eff44; border-radius:3px; cursor:pointer;">⚔ Estimate</button>';
             html += '</div>';
@@ -9328,8 +9027,14 @@ ${starCSS}
                 const { players } = await buildAllPlayerDTOs();
                 if (!players.length) throw new Error('No player data');
 
-                if (loadoutName) {
-                    applyLoadoutSnapshotToDTO(players[0], loadoutName, gameData);
+                const effectiveLoadoutName = loadoutName;
+                if (loadoutName && !applyLoadoutSnapshotToDTO(players[0], loadoutName, gameData)) {
+                    // A configured/manual selection must not silently become Current Gear.
+                    // Preserve the user's intended configuration and fail closed until they
+                    // explicitly choose another loadout or Current Gear.
+                    console.warn('[TaskProfit] Selected combat loadout is unavailable:', loadoutName);
+                    container.innerHTML = `<span style="color:#f87171; font-size:11px;">Loadout “${loadoutName}” is unavailable. Choose another loadout or Current Gear.</span>`;
+                    return;
                 }
 
                 const zoneAction = gameData.actionDetailMap[zoneHrid];
@@ -9406,7 +9111,7 @@ ${starCSS}
                     killsPerHour,
                     timeEstimate,
                     completionSeconds,
-                    loadoutName,
+                    effectiveLoadoutName,
                     netPerHour,
                     rewardValue,
                     dropEntries,
@@ -19964,7 +19669,9 @@ ${starCSS}
          */
         getScrollSetForActionType(actionTypeHrid) {
             if (!config.getSetting('simulateScrollEffects')) return new Set();
-            const loadoutName = loadoutSnapshot.getSnapshotInfoForSkill(actionTypeHrid)?.name;
+            const loadoutName = config.getSetting('loadoutSnapshot')
+                ? loadoutState.findSnapshotForActionType(actionTypeHrid)?.name
+                : null;
             if (loadoutName && this.scrollsByLoadout[loadoutName]) {
                 return this.scrollsByLoadout[loadoutName];
             }
@@ -20229,7 +19936,7 @@ ${starCSS}
         `;
             note.textContent = this.loadoutName
                 ? 'These scrolls override the defaults when this loadout is active for a skill.'
-                : 'Applied when no loadout matches the current skill (or loadout snapshots are disabled).';
+                : 'Applied when no loadout matches the current skill (or automatic saved-loadout calculations are disabled).';
             body.appendChild(note);
 
             // Scroll rows
@@ -20355,7 +20062,7 @@ ${starCSS}
         const loadoutName = getLoadoutName(navButtons);
 
         // Hide for combat loadouts — scroll buffs don't apply to combat
-        const snapshot = loadoutSnapshot.getAllSnapshots().find((s) => s.name === loadoutName);
+        const snapshot = loadoutState.getSnapshotByName(loadoutName);
         if (snapshot?.actionTypeHrid === '/action_types/combat') return;
 
         const button = document.createElement('button');
@@ -37282,6 +36989,10 @@ self.onmessage = function (e) {
 
 
     const CSS_PREFIX$1 = 'mwi-guild-xp';
+    // Marker on the native "Exp to Level Up" data block itself (never the `mwi-guild-xp` class used
+    // by removable injected content) so its one-time min-height/height expansion is idempotent
+    // across re-renders and cleanly revertible on disable().
+    const EXP_CARD_CLASS = `${CSS_PREFIX$1}__exp-card`;
 
     // ─── Formatting helpers ─────────────────────────────────────────────────────
 
@@ -37599,11 +37310,13 @@ self.onmessage = function (e) {
                     timeToLevel !== null
                         ? `<div class="${CSS_PREFIX$1}" style="color: var(--color-space-300); font-size: 13px;">${formatTimeLeft(timeToLevel)}</div>`
                         : '';
-                // Find the "Exp to Next Level" data block and append
+                // Find the "Exp to Next Level" data block, expand it to fit this extra content
+                // (native card keeps a fixed height otherwise), and append.
                 const dataBlocks = dataGridEl.querySelectorAll('.GuildPanel_dataBlock__3qVhK');
                 for (const block of dataBlocks) {
                     const label = block.querySelector('.GuildPanel_label__-A63g');
                     if (label && label.textContent.includes('Exp to')) {
+                        this._expandExpCardIfNeeded(block);
                         block.insertAdjacentHTML('beforeend', ttlHTML + nextSlotHTML);
                         break;
                     }
@@ -37612,9 +37325,28 @@ self.onmessage = function (e) {
         }
 
         /**
-         * Build the "Next Guild Level Slot (+1)" line HTML from tracker ETA info.
-         * Deliberately never claims to predict Guild Hall capacity increases - only the
-         * level-earned +1 base slot, which is the only thing this data can prove.
+         * Expand the native "Exp to Level Up" data block to auto-height (once per DOM node) so
+         * Toolasha's appended ETA/slot content never falls below the native card background.
+         * Idempotent: skipped once the block already carries the marker class, so repeated
+         * `_renderOverview()` calls on the same persistent React-owned node never re-measure or
+         * accumulate style. A remounted/replaced block starts without the marker and is measured
+         * fresh, so no stale styling can leak across navigation.
+         * @param {Element} block - The native `.GuildPanel_dataBlock__3qVhK` element
+         */
+        _expandExpCardIfNeeded(block) {
+            if (block.classList.contains(EXP_CARD_CLASS)) return;
+            const nativeHeight = window.getComputedStyle(block).height;
+            block.classList.add(EXP_CARD_CLASS);
+            block.style.minHeight = nativeHeight;
+            block.style.height = 'auto';
+            block.style.paddingBottom = '8px';
+        }
+
+        /**
+         * Build the "Next Guild Level Slot (+1)" block HTML from tracker ETA info, as three compact
+         * lines that fit the narrow native "Exp to Level Up" card. Deliberately never claims to
+         * predict Guild Hall capacity increases - only the level-earned +1 base slot, which is the
+         * only thing this data can prove.
          * @param {null|{targetLevel: number, xpRemaining: number, status: string, etaMs?: number, rateBasis?: string, rateValue?: number}} slotEta
          * @returns {string} HTML, or '' if unavailable
          */
@@ -37633,8 +37365,10 @@ self.onmessage = function (e) {
                 etaText = 'collecting data';
             }
 
-            return `<div class="${CSS_PREFIX$1}" style="color: var(--color-space-300); font-size: 13px; margin-top: 4px;"${tooltip ? ` title="${tooltip}"` : ''}>
-            <span style="color: #9ca3af;">Next Guild Level Slot (+1):</span> Lv ${slotEta.targetLevel} · ${fNum(slotEta.xpRemaining)} XP remaining · ${etaText}
+            return `<div class="${CSS_PREFIX$1}" style="margin-top: 4px; font-size: 13px; line-height: 1.5;"${tooltip ? ` title="${tooltip}"` : ''}>
+            <div style="color: #9ca3af;">Next Guild Level Slot (+1)</div>
+            <div style="color: var(--color-space-300);">To Lv ${slotEta.targetLevel} · ${fNum(slotEta.xpRemaining)} XP</div>
+            <div style="color: var(--color-space-300); opacity: 0.85;">ETA: ${etaText}</div>
         </div>`;
         }
 
@@ -38282,6 +38016,16 @@ self.onmessage = function (e) {
             document.querySelectorAll(`.${CSS_PREFIX$1}`).forEach((el) => el.remove());
             document.querySelectorAll(`.${CSS_PREFIX$1}__tooltip`).forEach((el) => el.remove());
             document.getElementById('mwi-guild-activity-hide')?.remove();
+
+            // Restore the native "Exp to Level Up" card's own height/class (never destroyed by the
+            // injected-element removal above, since the expansion is applied to the native block
+            // itself rather than to a removable Toolasha-owned element).
+            document.querySelectorAll(`.${EXP_CARD_CLASS}`).forEach((el) => {
+                el.classList.remove(EXP_CARD_CLASS);
+                el.style.height = '';
+                el.style.minHeight = '';
+                el.style.paddingBottom = '';
+            });
 
             this.initialized = false;
         }
@@ -40765,4 +40509,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] UI library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core.marketAPI, Toolasha.Utils.efficiency, Toolasha.Core.webSocketHook, Toolasha.Utils.reactInput, Toolasha.Utils.actionPanelHelper, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.selectors, Toolasha.Utils.actionCalculator, Toolasha.Utils.equipmentParser, Toolasha.Core, Toolasha.Utils.cleanupRegistry, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.enhancementConfig, Toolasha.Utils.materialCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.teaParser, Toolasha.Market.alchemyProfitCalculator);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core.marketAPI, Toolasha.Utils.efficiency, Toolasha.Core.webSocketHook, Toolasha.Utils.reactInput, Toolasha.Utils.actionPanelHelper, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.selectors, Toolasha.Utils.actionCalculator, Toolasha.Utils.equipmentParser, Toolasha.Core.loadoutState, Toolasha.Core, Toolasha.Utils.cleanupRegistry, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.enhancementConfig, Toolasha.Utils.materialCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.teaParser, Toolasha.Market.alchemyProfitCalculator);

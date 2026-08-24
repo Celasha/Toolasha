@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      2.95.0
+// @version      2.95.1
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -22,12 +22,12 @@
 // @require      https://cdnjs.cloudflare.com/ajax/libs/mathjs/12.4.2/math.js
 // @require      https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js
 // @require      https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0/dist/chartjs-plugin-datalabels.min.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@12008107d50916b1883b795872dab0b6a5bb025e/dist/libraries/toolasha-core.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@12008107d50916b1883b795872dab0b6a5bb025e/dist/libraries/toolasha-utils.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@12008107d50916b1883b795872dab0b6a5bb025e/dist/libraries/toolasha-market.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@12008107d50916b1883b795872dab0b6a5bb025e/dist/libraries/toolasha-actions.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@12008107d50916b1883b795872dab0b6a5bb025e/dist/libraries/toolasha-combat.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@12008107d50916b1883b795872dab0b6a5bb025e/dist/libraries/toolasha-ui.js
+// @require      https://UPDATE-THIS-URL/toolasha-core.js
+// @require      https://UPDATE-THIS-URL/toolasha-utils.js
+// @require      https://UPDATE-THIS-URL/toolasha-market.js
+// @require      https://UPDATE-THIS-URL/toolasha-actions.js
+// @require      https://UPDATE-THIS-URL/toolasha-combat.js
+// @require      https://UPDATE-THIS-URL/toolasha-ui.js
 // ==/UserScript==
 // Note: Combat Sim auto-import requires Tampermonkey for cross-domain storage. Not available on Steam (use manual clipboard copy/paste instead).
 
@@ -56,7 +56,7 @@
     const UI = window.Toolasha.UI;
 
     // Destructure core modules
-    const { storage, config, webSocketHook, domObserver, dataManager, featureRegistry } = Core;
+    const { storage, config, webSocketHook, domObserver, dataManager, loadoutState, featureRegistry } = Core;
 
     const { setupScrollTooltipDismissal } = Utils.dom;
 
@@ -199,13 +199,6 @@
                 name: 'Trade History Display',
                 category: 'Market',
                 module: Market.tradeHistoryDisplay,
-                async: false,
-            },
-            {
-                key: 'milkywayMarketLink',
-                name: 'MilkyWay Market Link',
-                category: 'Market',
-                module: Market.milkywayMarketLink,
                 async: false,
             },
             {
@@ -494,13 +487,6 @@
                 category: 'Combat',
                 module: Combat.labyrinthClearRate,
                 async: false,
-            },
-            {
-                key: 'loadoutSnapshot',
-                name: 'Loadout Snapshots',
-                category: 'Combat',
-                module: Combat.loadoutSnapshot,
-                async: true,
             },
             {
                 key: 'scrollSimulatorUI',
@@ -840,6 +826,9 @@
         // CRITICAL: Install WebSocket hook FIRST, before game connects
         webSocketHook.install();
 
+        // Always-on loadout state must capture structured loadout messages independently of feature settings.
+        loadoutState.startCapture();
+
         // CRITICAL: Start centralized DOM observer SECOND, before features initialize
         domObserver.start();
 
@@ -867,6 +856,9 @@
 
                 // Initialize config (loads settings from storage)
                 await config.initialize();
+
+                // IndexedDB is only a fallback/cache for loadout state; fresh server state always wins.
+                await loadoutState.hydratePersistence();
 
                 // Add beforeunload handler to flush all pending writes
                 window.addEventListener('beforeunload', () => {
@@ -965,7 +957,7 @@
         // Expose minimal user-facing API
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
-        targetWindow.Toolasha.version = '2.95.0';
+        targetWindow.Toolasha.version = '2.95.1';
 
         // Feature toggle API (for users to manage settings via console)
         targetWindow.Toolasha.features = {

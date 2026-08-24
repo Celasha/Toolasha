@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.95.0
+ * Version: 2.95.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -19,7 +19,7 @@
             this.db = null;
             this.available = false;
             this.dbName = 'ToolashaDB';
-            this.dbVersion = 17; // Bumped for leaderboardHistory store
+            this.dbVersion = 18; // Bumped for actionProgress store
             this.saveDebounceTimers = new Map(); // Per-key debounce timers
             this.pendingWrites = new Map(); // Per-key pending write data: {value, storeName, resolvers, generation}
             this._writeGeneration = new Map(); // Per-key monotonic generation counter
@@ -176,6 +176,12 @@
                     // Create leaderboardHistory store if it doesn't exist (for leaderboard XP tracker)
                     if (!db.objectStoreNames.contains('leaderboardHistory')) {
                         db.createObjectStore('leaderboardHistory');
+                    }
+
+                    // Create actionProgress store if it doesn't exist (for Action Time Display's
+                    // cross-reload current-unit partial-progress boundary)
+                    if (!db.objectStoreNames.contains('actionProgress')) {
+                        db.createObjectStore('actionProgress');
                     }
                 };
             });
@@ -1825,13 +1831,6 @@
                     default: true,
                     help: "Shows how many actions worth of the currently-viewed item the order book can profitably absorb, based on the last Risk of Ruin calculation. Ignores the marketplace's tradable range floor, which isn't exposed in game data.",
                 },
-                market_milkywayMarketLink: {
-                    id: 'market_milkywayMarketLink',
-                    label: 'Market: Show MilkyWay Market link',
-                    type: 'checkbox',
-                    default: false,
-                    help: 'Adds a small link to view the current item on milkyway.market',
-                },
             },
         },
 
@@ -2339,7 +2338,7 @@
                     type: 'select',
                     default: '',
                     options: () => {
-                        const snapshot = window.Toolasha?.Combat?.loadoutSnapshot;
+                        const snapshot = window.Toolasha?.Core?.loadoutState;
                         const loadouts = snapshot
                             ? snapshot
                                   .getAllSnapshots()
@@ -2347,7 +2346,10 @@
                             : [];
                         return [
                             { value: '', label: 'Current Gear' },
-                            ...loadouts.map((s) => ({ value: s.name, label: s.name })),
+                            ...loadouts.map((s) => ({
+                                value: s.name,
+                                label: s.isUsableForCalculation ? s.name : `${s.name} (Unavailable)`,
+                            })),
                         ];
                     },
                     help: 'Loadout to use by default for combat estimates instead of currently equipped gear',
@@ -2681,10 +2683,10 @@
                 },
                 loadoutSnapshot: {
                     id: 'loadoutSnapshot',
-                    label: 'Loadout panel: Use saved loadout snapshots in profit calculations',
+                    label: 'Loadouts: Use saved loadouts in profit/action calculations',
                     type: 'checkbox',
                     default: true,
-                    help: "When you queue an action, Toolasha predicts its XP, time, and profit using the saved loadout for that skill (skill-default → all-skills-default → any saved loadout → currently-equipped). Save your loadouts in-game so they're captured. Disable to always predict using currently-equipped gear.",
+                    help: "When you queue an action, Toolasha predicts its XP, time, and profit using the current saved game loadout for that skill (skill-default → all-skills-default → matching saved loadout → currently-equipped). 'Use highest enhancement level' is resolved from what you currently own. If the selected saved loadout contains unavailable equipment, food, or drinks, Toolasha falls back to the proven currently-equipped setup rather than guessing missing-item behavior. Disable to always predict using currently-equipped gear.",
                 },
                 showsKeyInfoInIcon: {
                     id: 'showsKeyInfoInIcon',
@@ -3554,7 +3556,9 @@
              * Track processed messages by content hash to prevent duplicate JSON.parse
              * Uses message content (first 100 chars) as key since same message can have different event objects
              */
-            this.processedMessages = new Map(); // message hash -> timestamp
+            this.processedMessages = new Map(); // socket-scoped message hash -> timestamp
+            this.socketDedupIds = new WeakMap();
+            this.nextSocketDedupId = 1;
             this.recentActionCompleted = new Map(); // message content -> timestamp (50ms TTL dedup)
             this.messageCleanupInterval = null;
             this.isSocketWrapped = false;
@@ -3603,7 +3607,7 @@
                 const message = originalGet.call(this);
 
                 hookInstance.markMessageEventProcessed(this);
-                hookInstance.processMessage(message);
+                hookInstance.processMessage(message, socket);
 
                 return message;
             };
@@ -3720,7 +3724,7 @@
                 }
 
                 this.markMessageEventProcessed(event);
-                this.processMessage(event.data);
+                this.processMessage(event.data, socket);
             });
         }
 
@@ -3743,8 +3747,9 @@
         /**
          * Process intercepted message
          * @param {string} message - JSON string from WebSocket
+         * @param {WebSocket|null} socket - Originating game socket when available
          */
-        processMessage(message) {
+        processMessage(message, socket = null) {
             // Parse message type first to determine deduplication strategy
             let messageType;
             try {
@@ -3780,9 +3785,12 @@
                 messageType === 'guild_updated';
 
             if (!skipDedup) {
-                // Deduplicate by message content to prevent 4x JSON.parse on same message
-                // Use first 100 chars as hash (contains type + timestamp, unique enough)
-                const messageHash = message.substring(0, 100);
+                // Deduplicate by message content to prevent multiple interception paths from
+                // parsing the same physical socket message. Keep the key socket-scoped: a new
+                // game socket may legitimately deliver an init/state payload with the same first
+                // 100 characters as an old socket during reconnect/character switching.
+                const socketKey = this.getSocketDedupKey(socket);
+                const messageHash = `${socketKey}:${message.substring(0, 100)}`;
 
                 if (this.processedMessages.has(messageHash)) {
                     return; // Already processed this message, skip
@@ -3827,7 +3835,7 @@
 
                 for (const handler of handlers) {
                     try {
-                        const result = handler(data);
+                        const result = handler(data, { socket });
                         if (result instanceof Promise) {
                             result.catch((error) => {
                                 console.error(`[WebSocket] Async handler error for ${parsedMessageType}:`, error);
@@ -3842,7 +3850,7 @@
                 const wildcardHandlers = [...(this.messageHandlers.get('*') || [])];
                 for (const handler of wildcardHandlers) {
                     try {
-                        const result = handler(data);
+                        const result = handler(data, { socket });
                         if (result instanceof Promise) {
                             result.catch((error) => {
                                 console.error('[WebSocket] Async wildcard handler error:', error);
@@ -3993,6 +4001,22 @@
                 clearTimeout(this.clientDataRetryTimeout);
                 this.clientDataRetryTimeout = null;
             }
+        }
+
+        /**
+         * Return a stable weak identity for socket-scoped message deduplication.
+         * @param {WebSocket|null} socket - Originating socket when available
+         * @returns {string} Stable deduplication scope key
+         */
+        getSocketDedupKey(socket) {
+            if (!socket || (typeof socket !== 'object' && typeof socket !== 'function')) return 'no-socket';
+
+            let id = this.socketDedupIds.get(socket);
+            if (!id) {
+                id = this.nextSocketDedupId++;
+                this.socketDedupIds.set(socket, id);
+            }
+            return `socket-${id}`;
         }
 
         /**
@@ -4358,6 +4382,14 @@
             this.bossMonsterHrids = new Set(); // Monster HRIDs that appear in bossSpawns
             this.battleData = null; // Current battle data (for Combat Sim export on Steam)
 
+            // Trustworthy boundary for the currently in-progress base action's current unit:
+            // { actionId, currentCount, unitStartTime }. Used to compute already-elapsed time in
+            // the active unit so Action Time Display doesn't re-anchor its ETA to a full fresh
+            // action on reload/remount. Persisted per-character so it survives reload; validated
+            // against the live actionId/currentCount pair on restore so a stale/mismatched boundary
+            // is never trusted (see _syncActionUnitBoundary).
+            this.actionUnitBoundary = null;
+
             // Character tracking for switch detection
             this.currentCharacterId = null;
             this.currentCharacterName = null;
@@ -4554,6 +4586,7 @@
                     this.characterGuildBuffMap = {};
                     this.guildBuildingLevelMap = {};
                     this.battleData = null;
+                    this.actionUnitBoundary = null;
 
                     // Reset switching flag (cleanup complete, ready for re-init)
                     this.isCharacterSwitching = false;
@@ -4570,15 +4603,28 @@
                     this.currentCharacterGameMode = data.character?.gameMode || null;
                 }
 
-                // Process new character data normally
-                this.characterData = data;
+                // Process new character data normally. Keep characterData.characterItems and
+                // this.characterItems on the same live array: several legacy consumers still read
+                // characterData directly, while incremental updates mutate this.characterItems.
+                // Mirror native presence semantics first so both views exclude only explicit zero.
+                // Do not mutate the shared WebSocket payload object: later subscribers should still
+                // observe the server message exactly as delivered.
+                const characterItems = Array.isArray(data.characterItems)
+                    ? data.characterItems.filter((item) => item?.count !== 0)
+                    : [];
+                this.characterData = { ...data, characterItems };
                 this.characterSkills = data.characterSkills;
-                this.characterItems = data.characterItems;
+                this.characterItems = characterItems;
                 this.characterActions = [...data.characterActions];
                 this.characterQuests = data.characterQuests || [];
 
+                // Restore/establish the current-unit timing boundary for whatever action is now
+                // front-most, so a reload or character switch-back doesn't discard a still-valid
+                // partial-progress boundary (see _restoreActionUnitBoundary).
+                await this._restoreActionUnitBoundary(newCharacterId);
+
                 // Build equipment map
-                this.updateEquipmentMap(data.characterItems);
+                this.updateEquipmentMap(this.characterItems);
 
                 // Build house room map
                 this.updateHouseRoomMap(data.characterHouseRoomMap);
@@ -4618,6 +4664,8 @@
                     }
                 }
 
+                this._syncActionUnitBoundary();
+
                 this.emit('actions_updated', data);
             });
 
@@ -4635,24 +4683,11 @@
                     }
                 }
 
+                this._syncActionUnitBoundary();
+
                 // CRITICAL: Update inventory from action_completed (this is how inventory updates during gathering!)
                 if (data.endCharacterItems && Array.isArray(data.endCharacterItems) && this.characterItems) {
-                    for (const endItem of data.endCharacterItems) {
-                        // Only update inventory items
-                        if (endItem.itemLocationHrid !== '/item_locations/inventory') {
-                            continue;
-                        }
-
-                        // Find and update the item in inventory
-                        const index = this.characterItems.findIndex((invItem) => invItem.id === endItem.id);
-                        if (index !== -1) {
-                            // Update existing item
-                            this.characterItems[index].count = endItem.count;
-                        } else {
-                            // Add new item to inventory
-                            this.characterItems.push(endItem);
-                        }
-                    }
+                    this.applyCharacterItemUpdates(data.endCharacterItems, { inventoryOnly: true });
 
                     // Notify items_updated listeners (e.g. networth) of the inventory change
                     this.emit('items_updated', data);
@@ -4672,7 +4707,17 @@
                     }
                 }
 
+                // Merge ability XP/level changes embedded in action_completed (e.g. combat
+                // actions granting ability XP) - a second live path alongside abilities_updated.
+                this._mergeCharacterAbilities(data.endCharacterAbilities);
+
                 this.emit('action_completed', data);
+            });
+
+            // Handle abilities_updated (ability level/XP changes: leveling up, learning a new
+            // ability, or other native ability-state changes outside of action_completed)
+            this.webSocketHook.on('abilities_updated', (data) => {
+                this._mergeCharacterAbilities(data.endCharacterAbilities);
             });
 
             // Handle items_updated (inventory/equipment changes)
@@ -4682,24 +4727,10 @@
                         this.emit('items_updated', data);
                         return;
                     }
-                    // Update inventory items in-place (endCharacterItems contains only changed items, not full inventory)
-                    for (const item of data.endCharacterItems) {
-                        const index = this.characterItems.findIndex((invItem) => invItem.id === item.id);
-                        if (index !== -1) {
-                            if (item.count === 0) {
-                                // count 0 means removed from this location (e.g. equipped from inventory)
-                                this.characterItems.splice(index, 1);
-                            } else {
-                                // Update existing item (count and location may have changed, e.g. unequip)
-                                this.characterItems[index] = { ...this.characterItems[index], ...item };
-                            }
-                        } else if (item.count > 0) {
-                            // New item in inventory or equipment slot
-                            this.characterItems.push(item);
-                        }
-                    }
-
-                    this.updateEquipmentMap(data.endCharacterItems);
+                    // Native MWI keys character-item updates by `hash` and updates its equipment
+                    // location map in message order. applyCharacterItemUpdates mirrors both maps,
+                    // including the guarded removal that cannot delete an already-current replacement.
+                    this.applyCharacterItemUpdates(data.endCharacterItems);
                 }
 
                 this.emit('items_updated', data);
@@ -4816,17 +4847,144 @@
         }
 
         /**
-         * Update equipment map from character items
-         * @param {Array} items - Character items array
+         * Find the existing record targeted by an incremental character-item update. Current MWI
+         * payloads expose `hash` (character + location + item + enhancement), which is authoritative.
+         * Older/fallback payloads may only expose `id`, so matching deliberately supports transitions
+         * between legacy id-only and current hash-aware records without letting a reused id collapse
+         * two distinct hash variants in the same batch.
+         * @param {Object} item
+         * @returns {number}
+         */
+        findCharacterItemIndex(item) {
+            if (!item || typeof item !== 'object' || !Array.isArray(this.characterItems)) return -1;
+
+            if (item.hash) {
+                const hashIndex = this.characterItems.findIndex((existing) => existing?.hash === item.hash);
+                if (hashIndex !== -1) return hashIndex;
+
+                // A current hash-aware update may replace a legacy cached record that never had a hash.
+                if (item.id !== null && item.id !== undefined) {
+                    const legacyIdIndex = this.characterItems.findIndex(
+                        (existing) => !existing?.hash && existing?.id === item.id
+                    );
+                    if (legacyIdIndex !== -1) return legacyIdIndex;
+                }
+                return -1;
+            }
+
+            if (item.id !== null && item.id !== undefined) {
+                const idIndex = this.characterItems.findIndex((existing) => existing?.id === item.id);
+                if (idIndex !== -1) return idIndex;
+            }
+
+            if (!item.itemHrid || !item.itemLocationHrid) return -1;
+            const level = Number(item.enhancementLevel) || 0;
+            return this.characterItems.findIndex(
+                (existing) =>
+                    !existing?.hash &&
+                    (existing?.id === null || existing?.id === undefined) &&
+                    existing?.itemLocationHrid === item.itemLocationHrid &&
+                    existing?.itemHrid === item.itemHrid &&
+                    (Number(existing?.enhancementLevel) || 0) === level
+            );
+        }
+
+        /**
+         * Apply incremental character-item updates using native MWI identity/presence semantics.
+         * Only explicit count === 0 removes a record; omitted count is valid/present.
+         * @param {Array<Object>} updates
+         * @param {{inventoryOnly?: boolean}} options
+         */
+        applyCharacterItemUpdates(updates, { inventoryOnly = false } = {}) {
+            if (!Array.isArray(this.characterItems)) this.characterItems = [];
+
+            const matchesCurrentEquipment = (current, candidate) => {
+                if (!current || !candidate) return false;
+                if (candidate.hash) return current.hash === candidate.hash;
+                if (candidate.id !== null && candidate.id !== undefined) return current.id === candidate.id;
+                return (
+                    current.itemHrid === candidate.itemHrid &&
+                    current.itemLocationHrid === candidate.itemLocationHrid &&
+                    (Number(current.enhancementLevel) || 0) === (Number(candidate.enhancementLevel) || 0)
+                );
+            };
+
+            for (const item of updates || []) {
+                if (!item) continue;
+                if (inventoryOnly && item.itemLocationHrid !== '/item_locations/inventory') continue;
+
+                const hasIdentity =
+                    !!item.hash ||
+                    (item.id !== null && item.id !== undefined) ||
+                    (!!item.itemHrid && !!item.itemLocationHrid);
+                if (!hasIdentity) continue;
+
+                const index = this.findCharacterItemIndex(item);
+                const previous = index !== -1 ? this.characterItems[index] : null;
+                const previousLocation = previous?.itemLocationHrid;
+
+                if (item.count === 0) {
+                    if (index !== -1) this.characterItems.splice(index, 1);
+
+                    if (!inventoryOnly) {
+                        const removedLocation = item.itemLocationHrid || previousLocation;
+                        if (removedLocation && removedLocation !== '/item_locations/inventory') {
+                            const current = this.characterEquipment.get(removedLocation);
+                            // Match native MWI: deleting an old hash must not clear a replacement
+                            // that already became current for the same equipment location.
+                            const removalMatchesCurrent =
+                                item.hash && current?.hash
+                                    ? current.hash === item.hash
+                                    : matchesCurrentEquipment(current, previous || item);
+                            if (removalMatchesCurrent) this.characterEquipment.delete(removedLocation);
+                        }
+                    }
+                    continue;
+                }
+
+                // Native MWI's hash-keyed Map replaces the full record on update. Preserve that
+                // behavior for current hash-aware payloads so an omitted field (notably `count`)
+                // cannot inherit stale state from an older object. Legacy id-only payloads still
+                // merge because they may be partial compatibility updates.
+                const storedItem = item.hash ? item : previous ? { ...previous, ...item } : item;
+                if (index !== -1) this.characterItems[index] = storedItem;
+                else this.characterItems.push(storedItem);
+
+                if (!inventoryOnly) {
+                    const nextLocation = storedItem.itemLocationHrid;
+                    // Legacy partial records can represent a move without an explicit old count:0.
+                    // Avoid leaving a stale equipment pointer in the previous location.
+                    if (
+                        previousLocation &&
+                        previousLocation !== '/item_locations/inventory' &&
+                        previousLocation !== nextLocation
+                    ) {
+                        const current = this.characterEquipment.get(previousLocation);
+                        if (matchesCurrentEquipment(current, previous)) {
+                            this.characterEquipment.delete(previousLocation);
+                        }
+                    }
+
+                    if (nextLocation && nextLocation !== '/item_locations/inventory') {
+                        // Native location-map semantics are update ordered: the last present update
+                        // for a location wins, independently of where its hash record sits in our array.
+                        this.characterEquipment.set(nextLocation, storedItem);
+                    }
+                }
+            }
+        }
+
+        /**
+         * Build the equipment location map from a full character-item snapshot (initial load).
+         * Incremental updates maintain this map directly in applyCharacterItemUpdates so native
+         * update ordering and guarded-removal semantics are preserved.
+         * @param {Array} items - Full current character items array
          */
         updateEquipmentMap(items) {
-            for (const item of items) {
-                if (item.itemLocationHrid !== '/item_locations/inventory') {
-                    if (item.count === 0) {
-                        this.characterEquipment.delete(item.itemLocationHrid);
-                    } else {
-                        this.characterEquipment.set(item.itemLocationHrid, item);
-                    }
+            this.characterEquipment.clear();
+            for (const item of items || []) {
+                if (item?.itemLocationHrid && item.itemLocationHrid !== '/item_locations/inventory' && item.count !== 0) {
+                    this.characterEquipment.set(item.itemLocationHrid, item);
                 }
             }
         }
@@ -4859,6 +5017,35 @@
             for (const [actionTypeHrid, drinks] of Object.entries(drinkSlotsMap)) {
                 this.actionTypeDrinkSlotsMap.set(actionTypeHrid, drinks || []);
             }
+        }
+
+        /**
+         * Merge a live ability-state update into the current character's ability list.
+         * Mirrors the native client's `updateCharacterAbilities()`: replace by abilityHrid,
+         * append if not yet known (newly learned ability). `endCharacterAbilities` is an update
+         * set, not necessarily the complete list, so unrelated abilities are preserved. Reassigns
+         * `characterData.characterAbilities` (rather than mutating in place) so every consumer
+         * that reads it fresh - Ability Book Calculator, Combat Sim adapter, Networth, tooltip
+         * prices, Combat Score - stays in sync from this one source with no separate mirror.
+         * @param {Array} endCharacterAbilities - Updated/newly learned ability entries
+         */
+        _mergeCharacterAbilities(endCharacterAbilities) {
+            if (!this.characterData || !Array.isArray(endCharacterAbilities) || endCharacterAbilities.length === 0) {
+                return;
+            }
+
+            const abilities = [...(this.characterData.characterAbilities || [])];
+            for (const updated of endCharacterAbilities) {
+                const index = abilities.findIndex((a) => a.abilityHrid === updated.abilityHrid);
+                if (index !== -1) {
+                    abilities[index] = updated;
+                } else {
+                    abilities.push(updated);
+                }
+            }
+            this.characterData.characterAbilities = abilities;
+
+            this.emit('abilities_updated', { endCharacterAbilities });
         }
 
         /**
@@ -4914,6 +5101,86 @@
          */
         getCurrentActions() {
             return [...this.characterActions];
+        }
+
+        /**
+         * Elapsed time already spent in the currently in-progress base action's active unit, so
+         * callers modeling "remaining time" don't double-count that partial unit as a full one.
+         * Returns 0 (fail-closed) whenever there's no trustworthy boundary for this exact
+         * (actionId, currentCount) pair — e.g. cold start, a completed unit we never observed, or a
+         * different action — matching the previous "assume fresh" behavior rather than fabricating
+         * a partial estimate.
+         * @param {number} actionId - id of the action currently in progress
+         * @param {number} currentCount - that action's currentCount at the moment being queried
+         * @param {number} unitDurationSeconds - full duration of one base action, for clamping
+         * @returns {number} Elapsed seconds in [0, unitDurationSeconds]
+         */
+        getElapsedSecondsInCurrentUnit(actionId, currentCount, unitDurationSeconds) {
+            const boundary = this.actionUnitBoundary;
+            if (!boundary || boundary.actionId !== actionId || boundary.currentCount !== currentCount) {
+                return 0;
+            }
+            const elapsedSeconds = (Date.now() - boundary.unitStartTime) / 1000;
+            return Math.min(Math.max(0, elapsedSeconds), unitDurationSeconds);
+        }
+
+        /**
+         * Reconcile the tracked current-unit boundary against the live front action (lowest
+         * ordinal). A no-op when the front action's (id, currentCount) is unchanged — that's the
+         * same in-progress unit, so its start time must not be reset. Otherwise establishes a
+         * fresh boundary at "now": this is exactly right when the front action just transitioned
+         * (action_completed continuation, or a new action taking the front slot) since that
+         * transition instant IS the new unit's start, and it's the correct fail-closed default
+         * when provenance is unknown (e.g. first observation of this pair).
+         */
+        _syncActionUnitBoundary() {
+            const sorted = [...this.characterActions].sort((a, b) => a.ordinal - b.ordinal);
+            const front = sorted[0] || null;
+
+            if (!front) {
+                this.actionUnitBoundary = null;
+                return;
+            }
+
+            const existing = this.actionUnitBoundary;
+            if (existing && existing.actionId === front.id && existing.currentCount === front.currentCount) {
+                return;
+            }
+
+            this.actionUnitBoundary = {
+                actionId: front.id,
+                currentCount: front.currentCount,
+                unitStartTime: Date.now(),
+            };
+
+            if (this.currentCharacterId) {
+                storage.set(this.currentCharacterId, this.actionUnitBoundary, 'actionProgress');
+            }
+        }
+
+        /**
+         * Restore a persisted current-unit boundary on character load/switch/reload. Only trusted
+         * when its (actionId, currentCount) still matches the live front action — otherwise at
+         * least one unit completed while unobserved, so the old start time is no longer meaningful
+         * and _syncActionUnitBoundary falls back to a fresh fail-closed boundary instead.
+         * @param {number} characterId
+         */
+        async _restoreActionUnitBoundary(characterId) {
+            const sorted = [...this.characterActions].sort((a, b) => a.ordinal - b.ordinal);
+            const front = sorted[0] || null;
+
+            if (!front) {
+                this.actionUnitBoundary = null;
+                return;
+            }
+
+            const persisted = await storage.get(characterId, 'actionProgress', null);
+            this.actionUnitBoundary =
+                persisted && persisted.actionId === front.id && persisted.currentCount === front.currentCount
+                    ? persisted
+                    : null;
+
+            this._syncActionUnitBoundary();
         }
 
         /**
@@ -6709,6 +6976,834 @@
     const domObserver = new DOMObserver();
 
     /**
+     * Loadout State
+     *
+     * Canonical owner of saved MWI loadout state. Raw snapshots mirror the server payload;
+     * effective snapshots are resolved on demand against the current character inventory.
+     *
+     * Important invariants:
+     * - This is the only stateful loadout singleton in Toolasha.
+     * - Constructors are side-effect free; startCapture() owns lifecycle subscriptions.
+     * - Fresh server characterLoadoutMap always outranks IndexedDB cache, including an empty map.
+     * - Inventory changes never mutate raw snapshots. Highest-enhancement mode is resolved at read time.
+     * - Character switches clear the departing character synchronously and async cache hydration is generation-guarded.
+     */
+
+
+    const STORAGE_KEY_PREFIX = 'loadout_snapshots';
+    const LOADOUT_STATE_IMPLEMENTATION_ID = 'toolasha-core-loadout-state-v1';
+
+    function hasOwn(object, key) {
+        return Object.prototype.hasOwnProperty.call(object || {}, key);
+    }
+
+    function normalizeCharacterId(value) {
+        if (value === null || value === undefined || value === '') return null;
+        return String(value);
+    }
+
+    function normalizeSavedEnhancementLevel(value) {
+        if (value === null || value === undefined || value === '') return null;
+        const level = Number(value);
+        // Enhancement levels are discrete, non-negative indices. A malformed cache/hash must fail
+        // closed rather than becoming a plausible exact level through Number/parseInt coercion.
+        return Number.isInteger(level) && level >= 0 ? level : null;
+    }
+
+    function getStorageKey(characterId) {
+        return `${STORAGE_KEY_PREFIX}_${characterId}`;
+    }
+
+    function cloneJsonSafeValue(value) {
+        if (Array.isArray(value)) return value.map((entry) => cloneJsonSafeValue(entry));
+        if (value && typeof value === 'object') {
+            const clone = {};
+            for (const [key, entry] of Object.entries(value)) {
+                clone[key] = cloneJsonSafeValue(entry);
+            }
+            return clone;
+        }
+        return value;
+    }
+
+    function cloneTriggerMap(triggerMap) {
+        const clone = {};
+        if (!triggerMap || typeof triggerMap !== 'object' || Array.isArray(triggerMap)) return clone;
+
+        for (const [key, triggers] of Object.entries(triggerMap)) {
+            // Native loadout trigger maps contain arrays. Reject malformed cache/server values
+            // instead of retaining a mutable object reference or exposing a non-canonical shape.
+            if (!Array.isArray(triggers)) continue;
+            clone[key] = triggers.map((trigger) => cloneJsonSafeValue(trigger));
+        }
+        return clone;
+    }
+
+    /**
+     * Parse a wearable hash string into a raw saved equipment entry.
+     * Format: "characterId::/item_locations/location::/items/item_hrid::enhancementLevel".
+     * @param {string} itemLocationHrid
+     * @param {string} wearableHash
+     * @returns {{itemLocationHrid: string, itemHrid: string, enhancementLevel: number|null, savedItemHash: string}|null}
+     */
+    function parseLoadoutWearable(itemLocationHrid, wearableHash) {
+        if (!wearableHash || typeof wearableHash !== 'string') return null;
+
+        const parts = wearableHash.split('::');
+        const itemHrid = parts.find((part) => part.startsWith('/items/'));
+        if (!itemHrid) return null;
+
+        const lastPart = parts[parts.length - 1] || '';
+        const enhancementLevel = lastPart.startsWith('/') ? null : normalizeSavedEnhancementLevel(lastPart);
+
+        return { itemLocationHrid, itemHrid, enhancementLevel, savedItemHash: wearableHash };
+    }
+
+    /**
+     * Convert one server loadout entry into Toolasha's raw snapshot shape.
+     * The saved enhancement number is intentionally preserved even when useExactEnhancement=false;
+     * it is historical server state, not the effective level to use in calculations.
+     * @param {string} snapshotId
+     * @param {Object} loadout
+     * @returns {Object}
+     */
+    function buildRawLoadoutSnapshot(snapshotId, loadout) {
+        const equipment = [];
+        for (const [locationHrid, hash] of Object.entries(loadout?.wearableMap || {})) {
+            const parsed = parseLoadoutWearable(locationHrid, hash);
+            if (parsed) equipment.push(parsed);
+        }
+
+        const drinks = (loadout?.drinkItemHrids || []).map((itemHrid) => ({ itemHrid: itemHrid || '' }));
+        const food = (loadout?.foodItemHrids || []).map((itemHrid) => ({ itemHrid: itemHrid || '' }));
+
+        const abilities = [];
+        for (const [slot, abilityHrid] of Object.entries(loadout?.abilityMap || {})) {
+            if (!abilityHrid) continue;
+            abilities.push({ abilityHrid, slot: Number.parseInt(slot, 10) || 0 });
+        }
+        abilities.sort((a, b) => a.slot - b.slot);
+
+        return {
+            snapshotId: String(snapshotId),
+            name: loadout?.name || '',
+            actionTypeHrid: loadout?.actionTypeHrid || '',
+            isDefault: !!loadout?.isDefault,
+            suppressValidation: !!loadout?.suppressValidation,
+            useExactEnhancement: loadout?.useExactEnhancement === true,
+            ordinal: loadout?.ordinal || 0,
+            equipment,
+            abilities,
+            food,
+            drinks,
+            abilityCombatTriggersMap: cloneTriggerMap(loadout?.abilityCombatTriggersMap),
+            consumableCombatTriggersMap: cloneTriggerMap(loadout?.consumableCombatTriggersMap),
+            capturedAt: Date.now(),
+        };
+    }
+
+    /**
+     * Build current owned-enhancement information from characterItems.
+     * Equipped entries without a count are owned; only an explicit count === 0 is absent.
+     * A real +0 item is retained as a map entry, so +0 ownership is distinguishable from missing.
+     * @param {Array<Object>|null|undefined} characterItems
+     * @returns {Map<string, {highestEnhancementLevel: number, levels: Set<number>} >}
+     */
+    function buildOwnedEnhancementIndex(characterItems) {
+        const index = new Map();
+
+        for (const item of characterItems || []) {
+            if (!item?.itemHrid || item.count === 0) continue;
+
+            const level = Number.isFinite(Number(item.enhancementLevel)) ? Number(item.enhancementLevel) : 0;
+            let entry = index.get(item.itemHrid);
+            if (!entry) {
+                entry = { highestEnhancementLevel: level, levels: new Set() };
+                index.set(item.itemHrid, entry);
+            } else if (level > entry.highestEnhancementLevel) {
+                entry.highestEnhancementLevel = level;
+            }
+            entry.levels.add(level);
+        }
+
+        return index;
+    }
+
+    /**
+     * Resolve saved food/drink slots against the same inventory-only presence semantics used by
+     * MWI loadout validation. Empty slots are intentional and never treated as missing.
+     * Validation checks the +0 inventory hash for consumables; equipped/non-inventory entries do
+     * not satisfy a saved consumable slot. Only explicit count === 0 is absent.
+     * @param {Array<Object>|null|undefined} entries
+     * @param {Array<Object>|null|undefined} characterItems
+     * @returns {Array<{slotIndex:number,itemHrid:string,isAvailable:boolean}>}
+     */
+    function resolveLoadoutConsumables(entries, characterItems) {
+        const inventoryPresence = new Set();
+        for (const item of characterItems || []) {
+            if (!item?.itemHrid || item.itemLocationHrid !== '/item_locations/inventory' || item.count === 0) {
+                continue;
+            }
+            const level = Number.isFinite(Number(item.enhancementLevel)) ? Number(item.enhancementLevel) : 0;
+            if (level === 0) inventoryPresence.add(item.itemHrid);
+        }
+
+        return (entries || []).map((entry, slotIndex) => {
+            const itemHrid = entry?.itemHrid || '';
+            return {
+                slotIndex,
+                itemHrid,
+                isAvailable: !itemHrid || inventoryPresence.has(itemHrid),
+            };
+        });
+    }
+
+    /**
+     * Resolve raw saved equipment against current ownership.
+     * Missing-item execution semantics are deliberately not guessed; the intended item remains
+     * present with isAvailable=false so callers can surface/handle that state explicitly.
+     * @param {Object} rawSnapshot
+     * @param {Array<Object>|null|undefined} characterItems
+     * @returns {Array<Object>}
+     */
+    function resolveLoadoutEquipment(rawSnapshot, characterItems) {
+        const useExactEnhancement = rawSnapshot?.useExactEnhancement === true;
+
+        return (rawSnapshot?.equipment || []).map((rawEquipment) => {
+            // Native MWI loadout validation only considers the saved target equipment location
+            // plus Inventory for this slot. The same item equipped in some *other* location is not
+            // a valid source for this saved slot, so do not use the global itemHrid ownership map
+            // here. This matters for equipment types that can appear in more than one location.
+            const eligibleItems = (characterItems || []).filter((item) => {
+                if (item?.itemHrid !== rawEquipment.itemHrid || item.count === 0) return false;
+
+                // Native validation first accepts the exact raw wearable hash that was saved,
+                // even if that item was equipped in a different source slot when the loadout was
+                // authored. Replacement variants are then searched only in the loadout's target
+                // location and Inventory. Preserve the raw hash internally so we can match that
+                // behavior instead of broadening eligibility to arbitrary equipped locations.
+                if (rawEquipment.savedItemHash && item.hash === rawEquipment.savedItemHash) return true;
+                return (
+                    item.itemLocationHrid === rawEquipment.itemLocationHrid ||
+                    item.itemLocationHrid === '/item_locations/inventory'
+                );
+            });
+            const eligibleOwnership = buildOwnedEnhancementIndex(eligibleItems);
+            const owned = eligibleOwnership.get(rawEquipment.itemHrid);
+            const savedEnhancementLevel = normalizeSavedEnhancementLevel(rawEquipment.enhancementLevel);
+            const hasValidSavedEnhancementLevel = savedEnhancementLevel !== null;
+
+            if (useExactEnhancement) {
+                const isAvailable = hasValidSavedEnhancementLevel && !!owned?.levels.has(savedEnhancementLevel);
+                return {
+                    itemLocationHrid: rawEquipment.itemLocationHrid,
+                    itemHrid: rawEquipment.itemHrid,
+                    enhancementLevel: isAvailable ? savedEnhancementLevel : null,
+                    isAvailable,
+                };
+            }
+
+            if (owned) {
+                return {
+                    itemLocationHrid: rawEquipment.itemLocationHrid,
+                    itemHrid: rawEquipment.itemHrid,
+                    enhancementLevel: owned.highestEnhancementLevel,
+                    isAvailable: true,
+                };
+            }
+
+            // Fail closed. The historical saved level is raw server metadata, not an
+            // effective level. Do not expose it as a numeric fallback when the item is
+            // unavailable, because downstream `|| 0` / `?? 0` code could silently turn
+            // an unresolved loadout into a plausible-but-false calculation.
+            return {
+                itemLocationHrid: rawEquipment.itemLocationHrid,
+                itemHrid: rawEquipment.itemHrid,
+                enhancementLevel: null,
+                isAvailable: false,
+            };
+        });
+    }
+
+    function normalizeCachedSnapshots(value) {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+
+        // Future-proof wrapped cache format while remaining backward compatible with the
+        // existing plain { [loadoutId]: snapshot } cache already installed for users.
+        // Cache is untrusted/stale input: rebuild the canonical raw schema explicitly rather
+        // than spreading arbitrary legacy/effective fields back into Core truth state.
+        const candidate = value.snapshots && typeof value.snapshots === 'object' ? value.snapshots : value;
+        const normalized = {};
+
+        for (const [snapshotId, snapshot] of Object.entries(candidate)) {
+            if (!snapshot || typeof snapshot !== 'object' || !snapshot.name) continue;
+
+            const equipment = [];
+            for (const entry of Array.isArray(snapshot.equipment) ? snapshot.equipment : []) {
+                if (!entry?.itemHrid || !entry?.itemLocationHrid) continue;
+                equipment.push({
+                    itemLocationHrid: entry.itemLocationHrid,
+                    itemHrid: entry.itemHrid,
+                    enhancementLevel: normalizeSavedEnhancementLevel(entry.enhancementLevel),
+                    savedItemHash: typeof entry.savedItemHash === 'string' ? entry.savedItemHash : '',
+                });
+            }
+
+            const abilities = [];
+            for (const entry of Array.isArray(snapshot.abilities) ? snapshot.abilities : []) {
+                if (!entry?.abilityHrid) continue;
+                const parsedSlot = Number.parseInt(entry.slot, 10);
+                abilities.push({
+                    abilityHrid: entry.abilityHrid,
+                    slot: Number.isFinite(parsedSlot) ? parsedSlot : 0,
+                });
+            }
+            abilities.sort((a, b) => a.slot - b.slot);
+
+            const normalizeConsumables = (entries) =>
+                (Array.isArray(entries) ? entries : []).map((entry) => ({
+                    itemHrid: typeof entry === 'string' ? entry : entry?.itemHrid || '',
+                }));
+
+            normalized[String(snapshotId)] = {
+                snapshotId: String(snapshotId),
+                name: snapshot.name,
+                actionTypeHrid: snapshot.actionTypeHrid || '',
+                isDefault: !!snapshot.isDefault,
+                suppressValidation: !!snapshot.suppressValidation,
+                useExactEnhancement: snapshot.useExactEnhancement === true,
+                ordinal: snapshot.ordinal || 0,
+                equipment,
+                abilities,
+                food: normalizeConsumables(snapshot.food),
+                drinks: normalizeConsumables(snapshot.drinks),
+                abilityCombatTriggersMap: cloneTriggerMap(snapshot.abilityCombatTriggersMap),
+                consumableCombatTriggersMap: cloneTriggerMap(snapshot.consumableCombatTriggersMap),
+                capturedAt: Number(snapshot.capturedAt ?? snapshot.savedAt) || Date.now(),
+            };
+        }
+
+        return normalized;
+    }
+
+    class LoadoutState {
+        constructor() {
+            this.implementationId = LOADOUT_STATE_IMPLEMENTATION_ID;
+            this.rawSnapshots = {};
+            this.activeCharacterId = null;
+            this.activeSocket = null;
+            this.authority = 'none'; // none | cache | server
+            this.generation = 0;
+            this.captureStarted = false;
+            this.persistenceReady = false;
+            this.updateListeners = new Set();
+            this.inventoryResolutionSignatures = new Map();
+
+            this.initCharacterDataHandler = (data, context) => this._onInitCharacterData(data, context);
+            this.loadoutsUpdatedHandler = (data, context) => this._onLoadoutsUpdated(data, context);
+            this.characterSwitchingHandler = (data) => this._onCharacterSwitching(data);
+            this.itemsUpdatedHandler = (data) => this._onItemsUpdated(data);
+        }
+
+        /**
+         * Start always-on capture. Must run once immediately after the WebSocket hook is installed.
+         */
+        startCapture() {
+            if (this.captureStarted) return;
+            this.captureStarted = true;
+
+            webSocketHook.on('init_character_data', this.initCharacterDataHandler);
+            webSocketHook.on('loadouts_updated', this.loadoutsUpdatedHandler);
+            dataManager.on('character_switching', this.characterSwitchingHandler);
+            dataManager.on('items_updated', this.itemsUpdatedHandler);
+
+            // Defensive bootstrap for dev/hot-reload cases where character data predates capture.
+            if (dataManager.characterData?.character?.id) {
+                this._onInitCharacterData(dataManager.characterData);
+            }
+        }
+
+        /**
+         * Stop capture. Exposed for tests/debug teardown; normal Toolasha runtime keeps this service alive.
+         */
+        stopCapture() {
+            if (!this.captureStarted) return;
+            webSocketHook.off('init_character_data', this.initCharacterDataHandler);
+            webSocketHook.off('loadouts_updated', this.loadoutsUpdatedHandler);
+            dataManager.off('character_switching', this.characterSwitchingHandler);
+            dataManager.off('items_updated', this.itemsUpdatedHandler);
+            this.captureStarted = false;
+        }
+
+        /**
+         * Enable best-effort IndexedDB hydration/persistence after storage is initialized.
+         * Server state already captured before this call must never be overwritten by cache.
+         */
+        async hydratePersistence() {
+            this.persistenceReady = true;
+            const characterId = this.activeCharacterId;
+            if (!characterId) return;
+
+            const generation = this.generation;
+            if (this.authority === 'server') {
+                await this._persistCurrent(characterId, generation);
+                return;
+            }
+
+            await this._hydrateForCharacter(characterId, generation);
+        }
+
+        onUpdate(listener) {
+            if (typeof listener === 'function') this.updateListeners.add(listener);
+        }
+
+        offUpdate(listener) {
+            this.updateListeners.delete(listener);
+        }
+
+        /**
+         * Expose Core-owned current-ownership semantics without forcing feature bundles to
+         * import named helpers from this externalized module. Keeping the helper behind the
+         * canonical service also prevents Rollup's IIFE global mapping from treating the
+         * singleton object as a module namespace.
+         * @param {Array<Object>|null|undefined} characterItems
+         * @returns {Map<string, {highestEnhancementLevel: number, levels: Set<number>} >}
+         */
+        getOwnedEnhancementIndex(characterItems = dataManager.getInventory?.()) {
+            return buildOwnedEnhancementIndex(characterItems);
+        }
+
+        /**
+         * Fingerprint the inventory-dependent portion of one raw loadout. The signature excludes
+         * counts that remain positive and includes only effective equipment levels/availability and
+         * consumable availability. Raw/server changes still emit unconditionally.
+         * @param {Object} rawSnapshot
+         * @param {Array<Object>|null|undefined} inventory
+         * @returns {string}
+         * @private
+         */
+        _buildInventoryResolutionSignature(rawSnapshot, inventory = dataManager.getInventory?.()) {
+            const equipment = resolveLoadoutEquipment(rawSnapshot, inventory)
+                .map(
+                    (entry) =>
+                        `${entry.itemLocationHrid}:${entry.itemHrid}:${entry.isAvailable ? entry.enhancementLevel : 'missing'}`
+                )
+                .join(',');
+            const food = resolveLoadoutConsumables(rawSnapshot.food, inventory)
+                .map((entry) => `${entry.itemHrid}:${entry.isAvailable ? 1 : 0}`)
+                .join(',');
+            const drinks = resolveLoadoutConsumables(rawSnapshot.drinks, inventory)
+                .map((entry) => `${entry.itemHrid}:${entry.isAvailable ? 1 : 0}`)
+                .join(',');
+            return `${equipment}|${food}|${drinks}`;
+        }
+
+        _refreshInventoryResolutionSignatures() {
+            const inventory = dataManager.getInventory?.();
+            const next = new Map();
+            for (const [snapshotId, rawSnapshot] of Object.entries(this.rawSnapshots)) {
+                next.set(snapshotId, this._buildInventoryResolutionSignature(rawSnapshot, inventory));
+            }
+            this.inventoryResolutionSignatures = next;
+        }
+
+        _emitUpdate() {
+            for (const listener of [...this.updateListeners]) {
+                try {
+                    listener();
+                } catch (error) {
+                    console.error('[LoadoutState] Update listener failed:', error);
+                }
+            }
+        }
+
+        _onCharacterSwitching(_data) {
+            this.generation += 1;
+            this.activeCharacterId = null;
+            this.activeSocket = null;
+            this.authority = 'none';
+            this.rawSnapshots = {};
+            this.inventoryResolutionSignatures = new Map();
+
+            // Do not broadcast a normal loadout update while the departing character's
+            // feature listeners are still being synchronously torn down. Some consumers
+            // persist derived bindings and could otherwise mistake the transient empty
+            // state for "all loadouts were deleted". The incoming character's server/cache
+            // state will emit after cleanup has begun/completed.
+        }
+
+        _onInitCharacterData(data, context = null) {
+            const characterId = normalizeCharacterId(data?.character?.id);
+            if (!characterId) {
+                console.warn('[LoadoutState] Ignoring init_character_data without a character id');
+                return;
+            }
+
+            // DataManager is registered on the WebSocket hook before LoadoutState and is the
+            // authority for whether an init_character_data transition was accepted. In
+            // particular, DataManager deliberately rejects rapid (<1s) cross-character
+            // transitions as loop protection. Never ingest a payload that DataManager rejected,
+            // otherwise loadouts from character C could be combined with inventory from B.
+            const acceptedCharacterId = normalizeCharacterId(dataManager.getCurrentCharacterId?.());
+            if (!acceptedCharacterId || acceptedCharacterId !== characterId) {
+                console.warn('[LoadoutState] Ignoring init_character_data not accepted by DataManager');
+                return;
+            }
+
+            const previousCharacterId = this.activeCharacterId;
+            const characterChanged = previousCharacterId !== characterId;
+            this.generation += 1;
+            const generation = this.generation;
+            this.activeCharacterId = characterId;
+
+            // WebSocket messages are FIFO only within one socket. During a reconnect/character
+            // switch, an old socket can still deliver a delayed loadouts_updated payload after the
+            // new character is already active, and that payload does not reliably carry a character
+            // id. Bind accepted server state to the socket that delivered init_character_data so
+            // later cross-socket updates can be rejected without guessing from payload shape.
+            if (context?.socket) this.activeSocket = context.socket;
+            else if (characterChanged) this.activeSocket = null;
+
+            if (hasOwn(data, 'characterLoadoutMap')) {
+                this._replaceFromServer(data.characterLoadoutMap, characterId);
+                this._persistCurrentBestEffort(characterId, generation);
+                return;
+            }
+
+            // Never carry another character's snapshots through a payload that lacks loadout state.
+            // Same-character resyncs may omit the map; in that case retain the already-known state.
+            if (characterChanged) {
+                this.rawSnapshots = {};
+                this.authority = 'none';
+                this._refreshInventoryResolutionSignatures();
+                this._emitUpdate();
+            }
+
+            if (this.persistenceReady && this.authority !== 'server') {
+                void this._hydrateForCharacter(characterId, generation);
+            }
+        }
+
+        _onItemsUpdated(data) {
+            const changedHrids = new Set((data?.endCharacterItems || []).map((item) => item?.itemHrid).filter(Boolean));
+            if (changedHrids.size === 0) return;
+
+            // Effective highest-owned state changes with inventory/equipment, while raw saved
+            // snapshots intentionally do not. Only notify consumers when a changed item is
+            // actually referenced by a saved loadout, avoiding noise from normal gathering.
+            const inventory = dataManager.getInventory?.();
+            let effectiveStateChanged = false;
+
+            for (const [snapshotId, snapshot] of Object.entries(this.rawSnapshots)) {
+                const referencesChangedItem =
+                    (snapshot.equipment || []).some((item) => changedHrids.has(item.itemHrid)) ||
+                    (snapshot.food || []).some((item) => changedHrids.has(item.itemHrid)) ||
+                    (snapshot.drinks || []).some((item) => changedHrids.has(item.itemHrid));
+                if (!referencesChangedItem) continue;
+
+                const nextSignature = this._buildInventoryResolutionSignature(snapshot, inventory);
+                const previousSignature = this.inventoryResolutionSignatures.get(snapshotId);
+                if (nextSignature !== previousSignature) {
+                    this.inventoryResolutionSignatures.set(snapshotId, nextSignature);
+                    effectiveStateChanged = true;
+                }
+            }
+
+            if (effectiveStateChanged) this._emitUpdate();
+        }
+
+        _onLoadoutsUpdated(data, context = null) {
+            if (!hasOwn(data, 'characterLoadoutMap')) {
+                console.warn('[LoadoutState] loadouts_updated received without characterLoadoutMap');
+                return;
+            }
+
+            const currentCharacterId = normalizeCharacterId(dataManager.getCurrentCharacterId?.());
+            if (!this.activeCharacterId || !currentCharacterId || this.activeCharacterId !== currentCharacterId) {
+                console.warn('[LoadoutState] Ignoring loadouts_updated outside an active matching character context');
+                return;
+            }
+
+            if (this.activeSocket && context?.socket !== this.activeSocket) {
+                console.warn('[LoadoutState] Ignoring loadouts_updated from an unauthenticated or stale WebSocket');
+                return;
+            }
+
+            const payloadCharacterId = normalizeCharacterId(
+                data?.characterID ?? data?.characterId ?? data?.character?.id ?? null
+            );
+            if (payloadCharacterId && payloadCharacterId !== this.activeCharacterId) {
+                console.warn('[LoadoutState] Ignoring loadouts_updated for a different character');
+                return;
+            }
+
+            this.generation += 1;
+            const generation = this.generation;
+            this._replaceFromServer(data.characterLoadoutMap, this.activeCharacterId);
+            this._persistCurrentBestEffort(this.activeCharacterId, generation);
+        }
+
+        _replaceFromServer(loadoutMap, characterId) {
+            if (!loadoutMap || typeof loadoutMap !== 'object' || Array.isArray(loadoutMap)) {
+                console.warn('[LoadoutState] Invalid characterLoadoutMap; treating it as empty server state');
+                loadoutMap = {};
+            }
+
+            const snapshots = {};
+            for (const [snapshotId, loadout] of Object.entries(loadoutMap)) {
+                if (!loadout?.name) continue;
+                snapshots[String(snapshotId)] = buildRawLoadoutSnapshot(snapshotId, loadout);
+            }
+
+            this.activeCharacterId = normalizeCharacterId(characterId);
+            this.rawSnapshots = snapshots;
+            this.authority = 'server';
+            this._refreshInventoryResolutionSignatures();
+            this._emitUpdate();
+        }
+
+        async _hydrateForCharacter(characterId, generation) {
+            if (!this.persistenceReady || !characterId) return;
+
+            let cached;
+            try {
+                cached = await storage.getJSON(getStorageKey(characterId), 'settings', null);
+            } catch (error) {
+                console.error('[LoadoutState] Failed to read loadout cache:', error);
+                return;
+            }
+
+            if (generation !== this.generation || this.activeCharacterId !== characterId || this.authority === 'server') {
+                return;
+            }
+
+            if (cached === null || cached === undefined) return;
+
+            this.rawSnapshots = normalizeCachedSnapshots(cached);
+            this.authority = 'cache';
+            this._refreshInventoryResolutionSignatures();
+            this._emitUpdate();
+        }
+
+        _persistCurrentBestEffort(characterId, generation) {
+            if (!this.persistenceReady) return;
+            void this._persistCurrent(characterId, generation);
+        }
+
+        async _persistCurrent(characterId, generation) {
+            if (!this.persistenceReady || !characterId) return false;
+            if (generation !== this.generation || this.activeCharacterId !== characterId) return false;
+
+            const snapshots = this._cloneRawSnapshots();
+            try {
+                return await storage.setJSON(getStorageKey(characterId), snapshots, 'settings');
+            } catch (error) {
+                console.error('[LoadoutState] Failed to persist loadout cache:', error);
+                return false;
+            }
+        }
+
+        _cloneRawSnapshots() {
+            const clone = {};
+            for (const [snapshotId, snapshot] of Object.entries(this.rawSnapshots)) {
+                // Persist only the canonical raw schema. Do not spread arbitrary future fields:
+                // effective/resolved metadata must never become cache truth accidentally.
+                clone[snapshotId] = {
+                    snapshotId: String(snapshotId),
+                    name: snapshot.name || '',
+                    actionTypeHrid: snapshot.actionTypeHrid || '',
+                    isDefault: !!snapshot.isDefault,
+                    suppressValidation: !!snapshot.suppressValidation,
+                    useExactEnhancement: snapshot.useExactEnhancement === true,
+                    ordinal: snapshot.ordinal || 0,
+                    equipment: (snapshot.equipment || []).map((entry) => ({
+                        itemLocationHrid: entry.itemLocationHrid,
+                        itemHrid: entry.itemHrid,
+                        enhancementLevel: normalizeSavedEnhancementLevel(entry.enhancementLevel),
+                        savedItemHash: typeof entry.savedItemHash === 'string' ? entry.savedItemHash : '',
+                    })),
+                    abilities: (snapshot.abilities || []).map((entry) => ({
+                        abilityHrid: entry.abilityHrid,
+                        slot: Number.parseInt(entry.slot, 10) || 0,
+                    })),
+                    food: (snapshot.food || []).map((entry) => ({ itemHrid: entry?.itemHrid || '' })),
+                    drinks: (snapshot.drinks || []).map((entry) => ({ itemHrid: entry?.itemHrid || '' })),
+                    abilityCombatTriggersMap: cloneTriggerMap(snapshot.abilityCombatTriggersMap),
+                    consumableCombatTriggersMap: cloneTriggerMap(snapshot.consumableCombatTriggersMap),
+                    capturedAt: Number(snapshot.capturedAt) || Date.now(),
+                };
+            }
+            return clone;
+        }
+
+        /**
+         * Resolve a raw/cached snapshot against current character state.
+         * Passing a previously resolved snapshot re-resolves by snapshotId, so long-lived UI state
+         * cannot freeze an old highest-owned enhancement level.
+         * @param {Object|string|null} snapshotOrId
+         * @returns {Object|null}
+         */
+        resolveSnapshot(snapshotOrId) {
+            if (!snapshotOrId) return null;
+
+            let rawSnapshot = null;
+            if (typeof snapshotOrId === 'string' || typeof snapshotOrId === 'number') {
+                rawSnapshot = this.rawSnapshots[String(snapshotOrId)] || null;
+            } else if (hasOwn(snapshotOrId, 'snapshotId')) {
+                // A previously resolved snapshot has stable identity. If that id was deleted, do
+                // not silently rebind the stale object to a newly-created loadout that happens to
+                // reuse the same display name. Callers that intentionally select by name use
+                // getSnapshotByName()/getUsableSnapshotByName() explicitly.
+                rawSnapshot = this.rawSnapshots[String(snapshotOrId.snapshotId)] || null;
+            } else if (snapshotOrId.name) {
+                rawSnapshot =
+                    Object.values(this.rawSnapshots).find((snapshot) => snapshot.name === snapshotOrId.name) || null;
+            }
+
+            if (!rawSnapshot) return null;
+
+            const inventory = dataManager.getInventory?.();
+            const resolvedEquipment = resolveLoadoutEquipment(rawSnapshot, inventory);
+            const resolvedFood = resolveLoadoutConsumables(rawSnapshot.food, inventory);
+            const resolvedDrinks = resolveLoadoutConsumables(rawSnapshot.drinks, inventory);
+            const unavailableEquipment = resolvedEquipment
+                .filter((entry) => entry.isAvailable === false)
+                .map((entry) => ({
+                    itemLocationHrid: entry.itemLocationHrid,
+                    itemHrid: entry.itemHrid,
+                }));
+            const unavailableFood = resolvedFood
+                .filter((entry) => entry.itemHrid && entry.isAvailable === false)
+                .map((entry) => ({ slotIndex: entry.slotIndex, itemHrid: entry.itemHrid }));
+            const unavailableDrinks = resolvedDrinks
+                .filter((entry) => entry.itemHrid && entry.isAvailable === false)
+                .map((entry) => ({ slotIndex: entry.slotIndex, itemHrid: entry.itemHrid }));
+
+            // Do not expose raw enhancement-mode metadata or unresolved numeric levels to
+            // feature consumers. Public `equipment` contains only equipment Toolasha can
+            // prove is currently available; missing entries are carried separately so UIs
+            // can warn without calculations accidentally consuming historical levels.
+            const {
+                equipment: _rawEquipment,
+                useExactEnhancement: _rawUseExactEnhancement,
+                suppressValidation: _rawSuppressValidation,
+                ...publicMetadata
+            } = rawSnapshot;
+
+            return {
+                ...publicMetadata,
+                equipment: resolvedEquipment.filter((entry) => entry.isAvailable !== false),
+                unavailableEquipment,
+                hasUnavailableEquipment: unavailableEquipment.length > 0,
+                unavailableFood,
+                unavailableDrinks,
+                hasUnavailableConsumables: unavailableFood.length > 0 || unavailableDrinks.length > 0,
+                isUsableForCalculation:
+                    unavailableEquipment.length === 0 && unavailableFood.length === 0 && unavailableDrinks.length === 0,
+                abilities: (rawSnapshot.abilities || []).map((entry) => ({ ...entry })),
+                // Preserve native slot indices, including intentional holes. Missing consumables
+                // are blanked in calculation-facing arrays and retained only in the explicit
+                // unavailable* diagnostics so callers cannot accidentally simulate an item the
+                // character does not own.
+                food: resolvedFood.map((entry) => ({ itemHrid: entry.isAvailable ? entry.itemHrid : '' })),
+                drinks: resolvedDrinks.map((entry) => ({ itemHrid: entry.isAvailable ? entry.itemHrid : '' })),
+                abilityCombatTriggersMap: cloneTriggerMap(rawSnapshot.abilityCombatTriggersMap),
+                consumableCombatTriggersMap: cloneTriggerMap(rawSnapshot.consumableCombatTriggersMap),
+            };
+        }
+
+        getSnapshotById(snapshotId) {
+            return this.resolveSnapshot(String(snapshotId));
+        }
+
+        getSnapshotByName(name) {
+            const rawSnapshot = Object.values(this.rawSnapshots).find((snapshot) => snapshot.name === name);
+            return rawSnapshot ? this.resolveSnapshot(rawSnapshot) : null;
+        }
+
+        getUsableSnapshotById(snapshotId) {
+            const snapshot = this.getSnapshotById(snapshotId);
+            return snapshot?.isUsableForCalculation ? snapshot : null;
+        }
+
+        getUsableSnapshotByName(name) {
+            const snapshot = this.getSnapshotByName(name);
+            return snapshot?.isUsableForCalculation ? snapshot : null;
+        }
+
+        getSnapshotsById() {
+            const result = {};
+            for (const snapshotId of Object.keys(this.rawSnapshots)) {
+                const resolved = this.getSnapshotById(snapshotId);
+                if (resolved) result[snapshotId] = resolved;
+            }
+            return result;
+        }
+
+        getAllSnapshots() {
+            return Object.keys(this.rawSnapshots)
+                .map((snapshotId) => this.getSnapshotById(snapshotId))
+                .filter(Boolean)
+                .sort((a, b) => a.ordinal - b.ordinal);
+        }
+
+        /**
+         * Find the preferred saved loadout for an action type. This method is independent of the
+         * user setting that controls automatic profit/action calculations; callers decide whether
+         * saved loadouts should be used in their context.
+         * @param {string} actionTypeHrid
+         * @returns {Object|null}
+         */
+        findSnapshotSelectionForActionType(actionTypeHrid) {
+            let skillDefault = null;
+            let allSkillsDefault = null;
+            let skillNonDefault = null;
+            let allSkillsNonDefault = null;
+
+            for (const rawSnapshot of Object.values(this.rawSnapshots)) {
+                if (rawSnapshot.actionTypeHrid === actionTypeHrid) {
+                    if (rawSnapshot.isDefault) skillDefault = rawSnapshot;
+                    else skillNonDefault = rawSnapshot;
+                } else if (rawSnapshot.actionTypeHrid === '') {
+                    if (rawSnapshot.isDefault) allSkillsDefault = rawSnapshot;
+                    else allSkillsNonDefault = rawSnapshot;
+                }
+            }
+
+            const selected = skillDefault || allSkillsDefault || skillNonDefault || allSkillsNonDefault;
+            if (!selected) return { status: 'none', snapshot: null };
+
+            const resolved = this.resolveSnapshot(selected);
+            if (!resolved) return { status: 'none', snapshot: null };
+            return {
+                status: resolved.isUsableForCalculation ? 'usable' : 'unavailable',
+                snapshot: resolved,
+            };
+        }
+
+        findSnapshotForActionType(actionTypeHrid) {
+            const selection = this.findSnapshotSelectionForActionType(actionTypeHrid);
+            return selection.status === 'usable' ? selection.snapshot : null;
+        }
+
+        /**
+         * Expose state metadata for diagnostics/tests without exposing mutable raw snapshots.
+         */
+        getStateInfo() {
+            return {
+                activeCharacterId: this.activeCharacterId,
+                authority: this.authority,
+                generation: this.generation,
+                snapshotCount: Object.keys(this.rawSnapshots).length,
+                captureStarted: this.captureStarted,
+                persistenceReady: this.persistenceReady,
+            };
+        }
+    }
+
+    const loadoutState = new LoadoutState();
+
+    /**
      * Marketplace Session Service
      * Shared cross-bundle session management for marketplace workflows.
      * Ensures only one owner can run a marketplace workflow at a time.
@@ -7931,6 +9026,7 @@
         webSocketHook,
         domObserver,
         dataManager,
+        loadoutState,
         featureRegistry: featureRegistry$1,
         settingsStorage,
         settingsGroups,

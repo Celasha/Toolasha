@@ -1,11 +1,11 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.95.0
+ * Version: 2.95.1
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (dataManager, config, domObserver, enhancementConfig_js, enhancementCalculator_js, profitConstants_js, formatters_js, marketAPI, domObserverHelpers_js, bonusRevenueCalculator_js, marketData_js, efficiency_js, profitHelpers_js, profitCalculator, uiComponents_js, actionPanelHelper_js, webSocketHook, storage, dom_js, timerRegistry_js, teaParser_js, alchemyProfitCalculator, actionCalculator_js, cleanupRegistry_js, buffParser_js, equipmentParser_js, experienceParser_js, reactInput_js, experienceCalculator_js, materialCalculator_js, marketplaceSession_js, expectedValueCalculator) {
+(function (dataManager, config, domObserver, enhancementConfig_js, enhancementCalculator_js, profitConstants_js, formatters_js, marketAPI, domObserverHelpers_js, bonusRevenueCalculator_js, marketData_js, efficiency_js, profitHelpers_js, profitCalculator, uiComponents_js, actionPanelHelper_js, loadoutState, storage, dom_js, timerRegistry_js, teaParser_js, alchemyProfitCalculator, actionCalculator_js, cleanupRegistry_js, buffParser_js, equipmentParser_js, experienceParser_js, reactInput_js, experienceCalculator_js, materialCalculator_js, marketplaceSession_js, expectedValueCalculator) {
     'use strict';
 
     /**
@@ -1858,334 +1858,6 @@
     }
 
     /**
-     * Loadout Snapshot
-     *
-     * Listens for `loadouts_updated` WebSocket messages to capture all loadout configurations
-     * (equipment, abilities, consumables, enhancement levels) in real time.
-     *
-     * Stored snapshots are used by profit calculators to apply the correct tool/equipment
-     * bonuses for a skill even when that loadout is not currently equipped.
-     *
-     * Skill matching: the loadout's actionTypeHrid (e.g. "/action_types/brewing") is compared
-     * to the action type of the profit calculation. An "All Skills" loadout (empty actionTypeHrid)
-     * is used as a fallback when no skill-specific snapshot is found.
-     *
-     * Priority: skill default > all skills default > skill non-default > all skills non-default
-     */
-
-
-    const STORAGE_KEY_PREFIX$1 = 'loadout_snapshots';
-
-    /**
-     * Returns the active WebSocket hook instance.
-     * In the multi-bundle production build each library bundles its own copy of websocket.js,
-     * but only the Core library's instance has install() called on it.
-     * Prefer window.Toolasha.Core.webSocketHook so listeners actually receive messages.
-     * Falls back to the bundled copy for the dev standalone build (single bundle, one instance).
-     */
-    function getWebSocketHook() {
-        return (typeof window !== 'undefined' && window.Toolasha?.Core?.webSocketHook) || webSocketHook;
-    }
-
-    /**
-     * Get character-scoped storage key.
-     * @returns {string}
-     */
-    function getStorageKey$1() {
-        const charId = dataManager.getCurrentCharacterId() || 'default';
-        return `${STORAGE_KEY_PREFIX$1}_${charId}`;
-    }
-
-    /**
-     * Parse a wearable hash string into itemLocationHrid, itemHrid, and enhancementLevel.
-     * Format: "characterId::/item_locations/location::/items/item_hrid::enhancementLevel"
-     * Empty string means no item in that slot.
-     * @param {string} itemLocationHrid - The equipment slot key (e.g. "/item_locations/body")
-     * @param {string} wearableHash - The wearable hash value
-     * @returns {{ itemLocationHrid: string, itemHrid: string, enhancementLevel: number }|null}
-     */
-    function parseWearable(itemLocationHrid, wearableHash) {
-        if (!wearableHash) return null;
-
-        const parts = wearableHash.split('::');
-        const itemHrid = parts.find((p) => p.startsWith('/items/'));
-        if (!itemHrid) return null;
-
-        const lastPart = parts[parts.length - 1];
-        const enhancementLevel = !lastPart.startsWith('/') ? parseInt(lastPart, 10) || 0 : 0;
-
-        return { itemLocationHrid, itemHrid, enhancementLevel };
-    }
-
-    /**
-     * Convert a server loadout object into our snapshot format.
-     * @param {Object} loadout - A loadout entry from characterLoadoutMap
-     * @returns {Object} snapshot
-     */
-    function buildSnapshot(loadout) {
-        // Parse equipment from wearableMap
-        const equipment = [];
-        for (const [locationHrid, hash] of Object.entries(loadout.wearableMap || {})) {
-            const parsed = parseWearable(locationHrid, hash);
-            if (parsed) equipment.push(parsed);
-        }
-
-        // Parse drinks
-        const drinks = (loadout.drinkItemHrids || []).map((hrid) => ({
-            itemHrid: hrid || '',
-        }));
-
-        // Parse food
-        const food = (loadout.foodItemHrids || []).map((hrid) => ({
-            itemHrid: hrid || '',
-        }));
-
-        // Parse abilities
-        const abilities = [];
-        for (const [slot, hrid] of Object.entries(loadout.abilityMap || {})) {
-            if (hrid) abilities.push({ abilityHrid: hrid, slot: parseInt(slot, 10) });
-        }
-
-        return {
-            name: loadout.name,
-            actionTypeHrid: loadout.actionTypeHrid || '',
-            isDefault: !!loadout.isDefault,
-            useExactEnhancement: loadout.useExactEnhancement ?? false,
-            ordinal: loadout.ordinal || 0,
-            equipment,
-            abilities,
-            food,
-            drinks,
-            abilityCombatTriggersMap: loadout.abilityCombatTriggersMap || {},
-            consumableCombatTriggersMap: loadout.consumableCombatTriggersMap || {},
-            savedAt: Date.now(),
-        };
-    }
-
-    class LoadoutSnapshot {
-        constructor() {
-            this.snapshots = {}; // In-memory cache: { [loadoutName]: snapshot }
-            this.characterInitializedHandler = null;
-            this.updateListeners = [];
-            this.isInitialized = false;
-
-            // Register WebSocket handler at module load time so in-session loadout
-            // changes are captured whenever loadouts_updated fires.
-            this.loadoutsUpdatedHandler = (data) => this._onLoadoutsUpdated(data);
-            getWebSocketHook().on('loadouts_updated', this.loadoutsUpdatedHandler);
-        }
-
-        /**
-         * Register a callback to be called whenever snapshots are updated.
-         * @param {Function} fn
-         */
-        onUpdate(fn) {
-            this.updateListeners.push(fn);
-        }
-
-        /**
-         * Remove a previously registered update callback.
-         * @param {Function} fn
-         */
-        offUpdate(fn) {
-            this.updateListeners = this.updateListeners.filter((l) => l !== fn);
-        }
-
-        _emitUpdate() {
-            this.updateListeners.forEach((fn) => fn());
-        }
-
-        async initialize() {
-            if (this.isInitialized) return;
-            this.isInitialized = true;
-
-            // Re-register WS handler if it was cleared by disable()
-            if (!this.loadoutsUpdatedHandler) {
-                this.loadoutsUpdatedHandler = (data) => this._onLoadoutsUpdated(data);
-                getWebSocketHook().on('loadouts_updated', this.loadoutsUpdatedHandler);
-            }
-
-            // Load from storage — loadouts_updated only fires when the user visits the loadouts
-            // UI, so storage is always the source of snapshots at startup.
-            if (Object.keys(this.snapshots).length === 0) {
-                const storageKey = getStorageKey$1();
-                // NOTE: getCurrentCharacterId() may be null at this point (before init_character_data
-                // arrives), so getStorageKey() may return 'loadout_snapshots_default'. We will reload
-                // from the correct key once character_initialized fires.
-                this.snapshots = (await storage.getJSON(storageKey, 'settings', null)) || {};
-
-                // Fallback for Steam users: if storage is also empty, bootstrap from
-                // the characterLoadoutMap embedded in init_character_data (already in dataManager).
-                if (Object.keys(this.snapshots).length === 0) {
-                    const characterLoadoutMap = dataManager.characterData?.characterLoadoutMap;
-                    if (characterLoadoutMap && Object.keys(characterLoadoutMap).length > 0) {
-                        this._onLoadoutsUpdated({ characterLoadoutMap });
-                    }
-                }
-            }
-
-            // Reload from the correct character-scoped key once character data is available
-            this.characterInitializedHandler = async () => {
-                const storageKey = getStorageKey$1();
-                const fresh = (await storage.getJSON(storageKey, 'settings', null)) || {};
-                if (Object.keys(fresh).length > 0) {
-                    this.snapshots = fresh;
-                    this._emitUpdate();
-                }
-            };
-            dataManager.on('character_initialized', this.characterInitializedHandler);
-        }
-
-        /**
-         * Handle a loadouts_updated WebSocket message.
-         * Replaces all snapshots with the server's current state.
-         * @param {Object} data - The WebSocket message payload
-         */
-        _onLoadoutsUpdated(data) {
-            const loadoutMap = data.characterLoadoutMap;
-            if (!loadoutMap) {
-                console.warn('[LoadoutSnapshot] loadouts_updated received but no characterLoadoutMap');
-                return;
-            }
-
-            const newSnapshots = {};
-            for (const [id, loadout] of Object.entries(loadoutMap)) {
-                if (!loadout.name) continue;
-                newSnapshots[id] = buildSnapshot(loadout);
-            }
-
-            this.snapshots = newSnapshots;
-            storage.setJSON(getStorageKey$1(), this.snapshots, 'settings');
-            this._emitUpdate();
-        }
-
-        /**
-         * Update a snapshot equipment item's enhancement level.
-         * Used when the highest owned enhancement of a loadout item changes (up or down).
-         * @param {string} itemHrid - Base item HRID (e.g. "/items/sword")
-         * @param {number} newLevel - New enhancement level (highest currently owned)
-         * @returns {boolean} True if any snapshot was updated
-         */
-        updateEnhancementLevel(itemHrid, newLevel) {
-            let changed = false;
-            for (const snapshot of Object.values(this.snapshots)) {
-                // Exact-mode snapshots intentionally hold a frozen level — never auto-update them.
-                if (snapshot.useExactEnhancement) continue;
-                for (const eq of snapshot.equipment || []) {
-                    if (eq.itemHrid === itemHrid && eq.enhancementLevel !== newLevel) {
-                        eq.enhancementLevel = newLevel;
-                        snapshot.savedAt = Date.now();
-                        changed = true;
-                    }
-                }
-            }
-            if (changed) {
-                storage.setJSON(getStorageKey$1(), this.snapshots, 'settings');
-                this._emitUpdate();
-            }
-            return changed;
-        }
-
-        /**
-         * Find the best snapshot for a given action type.
-         * Priority: skill default > all skills default > skill non-default > all skills non-default
-         * @param {string} actionTypeHrid - e.g. "/action_types/brewing"
-         * @returns {Object|null} snapshot entry or null
-         */
-        _findSnapshot(actionTypeHrid) {
-            if (!config.getSetting('loadoutSnapshot')) return null;
-
-            let skillDefault = null;
-            let allSkillsDefault = null;
-            let skillNonDefault = null;
-            let allSkillsNonDefault = null;
-
-            for (const snapshot of Object.values(this.snapshots)) {
-                if (snapshot.actionTypeHrid === actionTypeHrid) {
-                    if (snapshot.isDefault) {
-                        skillDefault = snapshot;
-                    } else {
-                        skillNonDefault = snapshot;
-                    }
-                } else if (snapshot.actionTypeHrid === '') {
-                    if (snapshot.isDefault) {
-                        allSkillsDefault = snapshot;
-                    } else {
-                        allSkillsNonDefault = snapshot;
-                    }
-                }
-            }
-
-            return skillDefault || allSkillsDefault || skillNonDefault || allSkillsNonDefault || null;
-        }
-
-        /**
-         * Get a Map<itemLocationHrid, item> for the best loadout snapshot matching the given
-         * action type. Returns null if no snapshot exists or the feature is disabled.
-         * The returned Map has the same format as dataManager.getEquipment().
-         * @param {string} actionTypeHrid
-         * @returns {Map<string, Object>|null}
-         */
-        getSnapshotForSkill(actionTypeHrid) {
-            const snapshot = this._findSnapshot(actionTypeHrid);
-            if (!snapshot || !snapshot.equipment?.length) return null;
-            return new Map(snapshot.equipment.map((e) => [e.itemLocationHrid, e]));
-        }
-
-        /**
-         * Get the drink slots array for the best loadout snapshot matching the given
-         * action type. Returns null if no snapshot exists or the feature is disabled.
-         * The returned array has the same format as dataManager.getActionDrinkSlots().
-         * @param {string} actionTypeHrid
-         * @returns {Array<{itemHrid: string}>|null}
-         */
-        getSnapshotDrinksForSkill(actionTypeHrid) {
-            const snapshot = this._findSnapshot(actionTypeHrid);
-            if (!snapshot) return null;
-            // Filter out empty slots so callers get only actual items
-            const filled = (snapshot.drinks || []).filter((d) => d.itemHrid);
-            return filled.length > 0 ? filled : null;
-        }
-
-        /**
-         * Get all saved loadout snapshots as a flat array.
-         * @returns {Array<Object>} Array of snapshot objects
-         */
-        getAllSnapshots() {
-            return Object.values(this.snapshots).sort((a, b) => a.ordinal - b.ordinal);
-        }
-
-        /**
-         * Get the name and default status of the saved loadout being used for a given action type.
-         * Returns an object with name and isDefault, or null if no snapshot exists or feature is disabled.
-         * @param {string} actionTypeHrid
-         * @returns {{ name: string, isDefault: boolean }|null}
-         */
-        getSnapshotInfoForSkill(actionTypeHrid) {
-            const snapshot = this._findSnapshot(actionTypeHrid);
-            if (!snapshot) return null;
-            return { name: snapshot.name, isDefault: !!snapshot.isDefault };
-        }
-
-        disable() {
-            if (this.loadoutsUpdatedHandler) {
-                getWebSocketHook().off('loadouts_updated', this.loadoutsUpdatedHandler);
-                this.loadoutsUpdatedHandler = null;
-            }
-
-            if (this.characterInitializedHandler) {
-                dataManager.off('character_initialized', this.characterInitializedHandler);
-                this.characterInitializedHandler = null;
-            }
-
-            this.updateListeners = [];
-            this.isInitialized = false;
-        }
-    }
-
-    const loadoutSnapshot = new LoadoutSnapshot();
-
-    /**
      * Scroll Simulator
      * Manages per-loadout and global default scroll selections for profit/XP simulation.
      *
@@ -2233,7 +1905,9 @@
          */
         getScrollSetForActionType(actionTypeHrid) {
             if (!config.getSetting('simulateScrollEffects')) return new Set();
-            const loadoutName = loadoutSnapshot.getSnapshotInfoForSkill(actionTypeHrid)?.name;
+            const loadoutName = config.getSetting('loadoutSnapshot')
+                ? loadoutState.findSnapshotForActionType(actionTypeHrid)?.name
+                : null;
             if (loadoutName && this.scrollsByLoadout[loadoutName]) {
                 return this.scrollsByLoadout[loadoutName];
             }
@@ -2298,6 +1972,18 @@
 
 
     const getMissingPriceIndicator = (isMissing) => (isMissing ? ' ⚠' : '');
+
+    function getAutomaticLoadoutLabel(actionTypeHrid) {
+        if (!actionTypeHrid || !config.getSetting('loadoutSnapshot')) return 'Equipped';
+        const selection = loadoutState.findSnapshotSelectionForActionType(actionTypeHrid);
+        if (selection.status === 'usable') {
+            return `${selection.snapshot.name}${selection.snapshot.isDefault ? ' (Default)' : ''}`;
+        }
+        if (selection.status === 'unavailable') {
+            return `Equipped ⚠ (saved ${selection.snapshot.name || 'loadout'} unavailable)`;
+        }
+        return 'Equipped';
+    }
     const formatMissingLabel = (isMissing, value) => (isMissing ? '-- ⚠' : value);
 
     let _spriteUrl = null;
@@ -2756,12 +2442,7 @@
         color: #888;
         font-size: 0.85em;
     `;
-        const gatheringSnapshotInfo = gatheringActionType
-            ? loadoutSnapshot.getSnapshotInfoForSkill(gatheringActionType)
-            : null;
-        const gatheringLoadoutLabel = gatheringSnapshotInfo
-            ? `${gatheringSnapshotInfo.name}${gatheringSnapshotInfo.isDefault ? ' (Default)' : ''}`
-            : 'Equipped';
+        const gatheringLoadoutLabel = getAutomaticLoadoutLabel(gatheringActionType);
         modeDiv.textContent = `Pricing Mode: ${modeLabel}  •  Loadout: ${gatheringLoadoutLabel}`;
         topLevelContent.appendChild(modeDiv);
 
@@ -3387,12 +3068,7 @@
         color: #888;
         font-size: 0.85em;
     `;
-        const productionSnapshotInfo = productionActionType
-            ? loadoutSnapshot.getSnapshotInfoForSkill(productionActionType)
-            : null;
-        const productionLoadoutLabel = productionSnapshotInfo
-            ? `${productionSnapshotInfo.name}${productionSnapshotInfo.isDefault ? ' (Default)' : ''}`
-            : 'Equipped';
+        const productionLoadoutLabel = getAutomaticLoadoutLabel(productionActionType);
         modeDiv.textContent = `Pricing Mode: ${modeLabel}  •  Loadout: ${productionLoadoutLabel}`;
         topLevelContent.appendChild(modeDiv);
 
@@ -8038,7 +7714,12 @@
                 if (!isTrulyInfinite && count > 0) {
                     const avgActionsPerBaseAction = efficiency_js.calculateEfficiencyMultiplier(totalEfficiency);
                     baseActionsNeeded = Math.ceil(count / avgActionsPerBaseAction);
-                    totalTime = baseActionsNeeded * actionTime;
+                    const elapsedInCurrentUnit = dataManager.getElapsedSecondsInCurrentUnit(
+                        actionObj.id,
+                        actionObj.currentCount,
+                        actionTime
+                    );
+                    totalTime = Math.max(0, baseActionsNeeded * actionTime - elapsedInCurrentUnit);
                     actionTimeSeconds = totalTime;
                 } else if (isTrulyInfinite) {
                     totalTime = Infinity;
@@ -8684,7 +8365,15 @@
                 // Finite action or inventory-count infinite - remainingQueuedActions is queued actions
                 baseActionsNeeded = Math.ceil(remainingQueuedActions / avgActionsPerBaseAction);
             }
-            const totalTimeSeconds = baseActionsNeeded * actionTime;
+            // Subtract time already elapsed in the currently in-progress base action — baseActionsNeeded
+            // counts that active unit as a full one, so without this the ETA re-anchors to a fresh full
+            // action on every reload/remount instead of continuing from the server-side unit boundary.
+            const elapsedInCurrentUnit = dataManager.getElapsedSecondsInCurrentUnit(
+                action.id,
+                action.currentCount,
+                actionTime
+            );
+            const totalTimeSeconds = Math.max(0, baseActionsNeeded * actionTime - elapsedInCurrentUnit);
 
             // Calculate transmute recycle time estimate
             let recycleTimeSeconds = null;
@@ -8951,7 +8640,13 @@
                 }
             }
 
-            const materialTime = materialLimit !== null ? materialLimit * perActionTime : null;
+            const elapsedInCurrentUnit = dataManager.getElapsedSecondsInCurrentUnit(
+                action.id,
+                action.currentCount,
+                perActionTime
+            );
+            const materialTime =
+                materialLimit !== null ? Math.max(0, materialLimit * perActionTime - elapsedInCurrentUnit) : null;
 
             // Apply CSS overrides for non-combat display
             const enhCompact = config.getSetting('actionBar_compactWidth');
@@ -9060,7 +8755,12 @@
                 if (actionObj.hasMaxCount) {
                     actions = Math.min(actions, actionObj.maxCount - actionObj.currentCount);
                 }
-                return { count: actions, totalTime: actions * perActionTime };
+                const elapsedInCurrentUnit = dataManager.getElapsedSecondsInCurrentUnit(
+                    actionObj.id,
+                    actionObj.currentCount,
+                    perActionTime
+                );
+                return { count: actions, totalTime: Math.max(0, actions * perActionTime - elapsedInCurrentUnit) };
             }
 
             // Determine queue count
@@ -9076,7 +8776,12 @@
                 queuedActions === Infinity
                     ? predictions.expectedAttempts
                     : Math.min(queuedActions, predictions.expectedAttempts);
-            const totalTime = realisticActions * perActionTime;
+            const elapsedInCurrentUnit = dataManager.getElapsedSecondsInCurrentUnit(
+                actionObj.id,
+                actionObj.currentCount,
+                perActionTime
+            );
+            const totalTime = Math.max(0, realisticActions * perActionTime - elapsedInCurrentUnit);
 
             return { count: realisticActions, totalTime };
         }
@@ -9734,7 +9439,12 @@
                                     count = materialLimit; // Max queued actions based on materials
                                     const avgActionsPerBaseAction = efficiency_js.calculateEfficiencyMultiplier(totalEfficiency);
                                     baseActionsNeeded = Math.ceil(count / avgActionsPerBaseAction);
-                                    const totalTime = baseActionsNeeded * actionTime;
+                                    const elapsedInCurrentUnit = dataManager.getElapsedSecondsInCurrentUnit(
+                                        currentAction.id,
+                                        currentAction.currentCount,
+                                        actionTime
+                                    );
+                                    const totalTime = Math.max(0, baseActionsNeeded * actionTime - elapsedInCurrentUnit);
                                     accumulatedTime += totalTime;
                                     actionTimeSeconds = totalTime;
                                 }
@@ -9753,7 +9463,12 @@
 
                                 // Calculate time-consuming actions needed
                                 baseActionsNeeded = Math.ceil(count / avgActionsPerBaseAction);
-                                const totalTime = baseActionsNeeded * actionTime;
+                                const elapsedInCurrentUnit = dataManager.getElapsedSecondsInCurrentUnit(
+                                    currentAction.id,
+                                    currentAction.currentCount,
+                                    actionTime
+                                );
+                                const totalTime = Math.max(0, baseActionsNeeded * actionTime - elapsedInCurrentUnit);
                                 accumulatedTime += totalTime;
                                 actionTimeSeconds = totalTime;
                             }
@@ -24032,41 +23747,54 @@
      * Action context resolver
      *
      * Returns the equipment and active drinks to use when predicting an action's
-     * outcome (XP, time, profit, materials). When the loadoutSnapshot feature is
-     * enabled and a saved loadout matches the action type, that snapshot is used
-     * — so predictions reflect the gear the user would auto-equip rather than
-     * whatever happens to be on their character right now.
+     * outcome (XP, time, profit, materials). When automatic saved-loadout use is
+     * enabled and a saved loadout matches the action type, the canonical Core
+     * loadout state is resolved against current ownership at read time.
      *
-     * Resolution priority (handled inside loadoutSnapshot._findSnapshot):
+     * Resolution priority (handled inside loadoutState.findSnapshotForActionType):
      *   1. Skill-specific default loadout
      *   2. All-skills default loadout
      *   3. Skill-specific non-default
      *   4. All-skills non-default
      *   5. Fall back to currently-equipped gear / current drinks
      *
-     * Equipment and drinks are resolved independently — it's valid to inherit the
-     * snapshot's equipment while no snapshot drinks exist, in which case the
-     * current drinks are used (and vice-versa).
+     * Intentional empty state is preserved: a matching saved loadout with no
+     * equipment or no drinks resolves to an empty Map/array rather than falling
+     * through to the character's currently equipped setup.
      */
 
 
     /**
      * @param {string} actionTypeHrid - e.g. "/action_types/cooking"
-     * @returns {{equipment: Map, drinks: Array}}
+     * @returns {{equipment: Map, drinks: Array, source: string, loadoutSelection: Object|null}}
      */
     function resolveActionContext(actionTypeHrid) {
-        const rawDrinks =
-            loadoutSnapshot.getSnapshotDrinksForSkill(actionTypeHrid) ?? dataManager.getActionDrinkSlots(actionTypeHrid);
+        const selection = config.getSetting('loadoutSnapshot')
+            ? loadoutState.findSnapshotSelectionForActionType(actionTypeHrid)
+            : { status: 'disabled', snapshot: null };
+        const snapshot = selection.status === 'usable' ? selection.snapshot : null;
 
-        // Only include drinks that are actually in stock — slotted-but-empty teas give no buff
+        // A matching-but-unavailable saved loadout is not equivalent to "no loadout" semantically.
+        // We fail closed to the character's proven current setup rather than inventing how the MWI
+        // server would execute missing loadout items. The returned selection metadata lets UIs make
+        // that fallback visible instead of silently claiming the saved loadout was used.
+        const rawDrinks = snapshot
+            ? (snapshot.drinks || []).filter((entry) => entry.itemHrid)
+            : dataManager.getActionDrinkSlots(actionTypeHrid);
+
+        // Only include drinks that are actually in stock — slotted-but-empty teas give no buff.
         const inventory = dataManager.getInventory();
         const drinks = (rawDrinks || []).filter(
-            (d) => d?.itemHrid && inventory.some((i) => i.itemHrid === d.itemHrid && (i.count || 0) > 0)
+            (drink) => drink?.itemHrid && inventory?.some((item) => item.itemHrid === drink.itemHrid && item.count !== 0)
         );
 
         return {
-            equipment: loadoutSnapshot.getSnapshotForSkill(actionTypeHrid) ?? dataManager.getEquipment(),
+            equipment: snapshot
+                ? new Map((snapshot.equipment || []).map((entry) => [entry.itemLocationHrid, entry]))
+                : dataManager.getEquipment(),
             drinks,
+            source: snapshot ? 'saved-loadout' : 'current',
+            loadoutSelection: selection,
         };
     }
 
@@ -27121,34 +26849,21 @@
     }
 
     /**
-     * Loadout Scraper Utilities
-     *
-     * Shared DOM scraping helpers for reading equipment, abilities, and consumables
-     * from the game's LoadoutsPanel_selectedLoadout element.
-     *
-     * Used by loadout-export-button.js and loadout-snapshot.js.
+     * Build the current highest-owned enhancement map for UI features that explicitly need a
+     * highest-owned item lookup (for example the optimizer's hypothetical equipment picker).
+     * Saved-loadout semantics remain exclusively owned by Core LoadoutState.
      */
 
 
     /**
-     * Build a map of itemHrid → highest enhancementLevel across all character items.
-     * Covers both currently equipped items and inventory items.
-     * @returns {Map<string, number>}
+     * @returns {Map<string, number>} itemHrid -> current highest owned enhancement level
      */
-    function buildEnhancementLevelMap() {
-        const inventory = dataManager.getInventory();
-        const map = new Map();
-        if (!inventory) return map;
-
-        for (const item of inventory) {
-            if (!item.itemHrid || item.count === 0) continue;
-            const existing = map.get(item.itemHrid) ?? 0;
-            const level = item.enhancementLevel ?? 0;
-            if (level > existing) {
-                map.set(item.itemHrid, level);
-            }
+    function buildOwnedEnhancementLevelMap() {
+        const result = new Map();
+        for (const [itemHrid, owned] of loadoutState.getOwnedEnhancementIndex(dataManager.getInventory())) {
+            result.set(itemHrid, owned.highestEnhancementLevel);
         }
-        return map;
+        return result;
     }
 
     /**
@@ -27158,10 +26873,6 @@
      * pick which actions to include, and simulate XP/hr + Gold/hr.
      */
 
-
-    function getLoadoutSnapshot() {
-        return window.Toolasha?.Combat?.loadoutSnapshot || loadoutSnapshot;
-    }
 
     const TAB_CLASS = 'toolasha-skilling-opt-tab';
     const PANEL_CLASS = 'toolasha-skilling-opt-panel';
@@ -27424,20 +27135,34 @@
                 noneOpt.value = '';
                 noneOpt.textContent = '— None —';
                 compareSelect.appendChild(noneOpt);
-                for (const snap of getLoadoutSnapshot().getAllSnapshots()) {
+
+                const resolvedComparison = this.optimizerLoadout
+                    ? loadoutState.resolveSnapshot(this.optimizerLoadout)
+                    : null;
+                if (resolvedComparison) this.optimizerLoadout = resolvedComparison;
+                const currentComparisonName = resolvedComparison?.name || this.optimizerLoadout?.name || '';
+                const usableComparisons = loadoutState
+                    .getAllSnapshots()
+                    .filter((candidate) => candidate.isUsableForCalculation);
+                const usableComparisonNames = new Set(usableComparisons.map((snapshot) => snapshot.name));
+                if (currentComparisonName && !usableComparisonNames.has(currentComparisonName)) {
+                    const unavailableOpt = document.createElement('option');
+                    unavailableOpt.value = currentComparisonName;
+                    unavailableOpt.textContent = `${currentComparisonName} (Unavailable)`;
+                    unavailableOpt.selected = true;
+                    unavailableOpt.disabled = true;
+                    compareSelect.appendChild(unavailableOpt);
+                }
+                for (const snap of usableComparisons) {
                     const opt = document.createElement('option');
                     opt.value = snap.name;
                     opt.textContent = snap.name + (snap.isDefault ? ' ★' : '');
-                    if (this.optimizerLoadout?.name === snap.name) opt.selected = true;
+                    if (currentComparisonName === snap.name) opt.selected = true;
                     compareSelect.appendChild(opt);
                 }
                 compareSelect.addEventListener('change', () => {
                     const name = compareSelect.value;
-                    this.optimizerLoadout = name
-                        ? getLoadoutSnapshot()
-                              .getAllSnapshots()
-                              .find((s) => s.name === name) || null
-                        : null;
+                    this.optimizerLoadout = name ? loadoutState.getUsableSnapshotByName(name) : null;
                 });
                 compareRow.appendChild(compareLabel);
                 compareRow.appendChild(compareSelect);
@@ -27465,7 +27190,7 @@
                             this.lastOptimizerResult = result;
 
                             // Build equipment map using player's actual owned enhancement levels
-                            const enhMap = buildEnhancementLevelMap();
+                            const enhMap = buildOwnedEnhancementLevelMap();
                             const achievableEquipment = new Map();
                             if (result) {
                                 for (const [locationHrid, slotData] of Object.entries(result.slots)) {
@@ -27505,15 +27230,33 @@
                                   )
                                 : null;
 
-                            // Build loadout item map for comparison
+                            // Build loadout item map for comparison. Keep an intentionally empty
+                            // loadout distinct from "no comparison", and never silently replace an
+                            // unavailable manual comparison with an empty/current-gear baseline.
                             const loadoutItemMap = new Map();
+                            let hasUsableComparison = false;
+                            let unavailableComparisonName = null;
                             if (this.optimizerLoadout) {
-                                for (const eq of this.optimizerLoadout.equipment || []) {
-                                    if (eq.itemHrid)
+                                const refreshedLoadout = loadoutState.resolveSnapshot(this.optimizerLoadout);
+                                if (refreshedLoadout?.isUsableForCalculation) {
+                                    this.optimizerLoadout = refreshedLoadout;
+                                    hasUsableComparison = true;
+                                    for (const eq of refreshedLoadout.equipment || []) {
+                                        if (!eq.itemHrid || !eq.itemLocationHrid || !Number.isFinite(eq.enhancementLevel)) {
+                                            hasUsableComparison = false;
+                                            unavailableComparisonName = refreshedLoadout.name;
+                                            loadoutItemMap.clear();
+                                            break;
+                                        }
                                         loadoutItemMap.set(eq.itemLocationHrid, {
                                             itemHrid: eq.itemHrid,
-                                            enhancementLevel: eq.enhancementLevel || 0,
+                                            enhancementLevel: eq.enhancementLevel,
                                         });
+                                    }
+                                } else {
+                                    unavailableComparisonName =
+                                        refreshedLoadout?.name || this.optimizerLoadout?.name || 'Selected loadout';
+                                    if (refreshedLoadout) this.optimizerLoadout = refreshedLoadout;
                                 }
                             }
 
@@ -27525,8 +27268,14 @@
                                     resultsArea,
                                     result,
                                     { xpResult: xpAchievable, goldResult: goldAchievable },
-                                    loadoutItemMap.size > 0 ? loadoutItemMap : null
+                                    hasUsableComparison ? loadoutItemMap : null
                                 );
+                                if (unavailableComparisonName) {
+                                    const warning = document.createElement('div');
+                                    warning.textContent = `Compare loadout “${unavailableComparisonName}” is unavailable. Comparison was not substituted with Current Gear.`;
+                                    warning.style.cssText = 'color:#f87171; font-size:11px; margin-bottom:8px;';
+                                    resultsArea.prepend(warning);
+                                }
                             }
                         }, 0)
                     );
@@ -27595,7 +27344,22 @@
                 this._populateLoadoutSelect(loadoutSelect);
                 loadoutRow.appendChild(loadoutSelect);
                 wrap.appendChild(loadoutRow);
-                loadoutSelect.addEventListener('change', () => this._loadLoadout(loadoutSelect.value));
+                const loadoutStatus = document.createElement('div');
+                loadoutStatus.style.cssText = 'color:#f87171; font-size:11px; margin-left:64px;';
+                wrap.appendChild(loadoutStatus);
+                loadoutSelect.addEventListener('change', () => {
+                    const name = loadoutSelect.value;
+                    loadoutStatus.textContent = '';
+                    if (!name) return;
+                    if (!this._loadLoadout(name)) {
+                        const selectedOption = loadoutSelect.selectedOptions?.[0];
+                        if (selectedOption) {
+                            selectedOption.textContent = `${name} (Unavailable)`;
+                            selectedOption.disabled = true;
+                        }
+                        loadoutStatus.textContent = `Loadout “${name}” is unavailable and was not loaded.`;
+                    }
+                });
             }
             // Actions
             const actionsRow = makeRow('Actions:');
@@ -27656,34 +27420,35 @@
             empty.textContent = '— No loadout —';
             select.appendChild(empty);
 
-            const snapshots = getLoadoutSnapshot().getAllSnapshots();
-            for (const snap of snapshots) {
+            for (const snap of loadoutState.getAllSnapshots()) {
                 const opt = document.createElement('option');
                 opt.value = snap.name;
-                opt.textContent = snap.name + (snap.isDefault ? ' ★' : '');
+                opt.textContent =
+                    snap.name + (snap.isDefault ? ' ★' : '') + (snap.isUsableForCalculation ? '' : ' (Unavailable)');
+                opt.disabled = !snap.isUsableForCalculation;
                 select.appendChild(opt);
             }
         }
 
         _loadLoadout(name) {
-            if (!name) return;
-            const snap = getLoadoutSnapshot()
-                .getAllSnapshots()
-                .find((s) => s.name === name);
-            if (!snap) return;
+            if (!name) return false;
+            const snap = loadoutState.getUsableSnapshotByName(name);
+            if (!snap) return false;
 
-            // Load equipment
-            this.equipment.clear();
+            // Build the imported equipment transactionally so a broken/unresolved numeric value
+            // can never partially replace the simulator with a plausible +0 setup.
+            const nextEquipment = new Map();
             for (const eq of snap.equipment || []) {
-                if (eq.itemHrid) {
-                    this.equipment.set(eq.itemLocationHrid, {
-                        itemHrid: eq.itemHrid,
-                        enhancementLevel: eq.enhancementLevel || 0,
-                    });
-                }
+                if (!eq.itemHrid || !eq.itemLocationHrid || !Number.isFinite(eq.enhancementLevel)) return false;
+                nextEquipment.set(eq.itemLocationHrid, {
+                    itemHrid: eq.itemHrid,
+                    enhancementLevel: eq.enhancementLevel,
+                });
             }
 
-            // Load drinks
+            this.equipment = nextEquipment;
+
+            // Loading a snapshot is an explicit one-time import into the editable simulator.
             this.teas = [
                 snap.drinks?.[0]?.itemHrid || null,
                 snap.drinks?.[1]?.itemHrid || null,
@@ -27703,6 +27468,7 @@
                 const hrid = this.teas[i];
                 this._updateTeaUI(i, refs, hrid);
             }
+            return true;
         }
 
         // -------------------------------------------------------------------------
@@ -28569,4 +28335,4 @@
 
     console.log('[Toolasha] Actions library loaded');
 
-})(Toolasha.Core.dataManager, Toolasha.Core.config, Toolasha.Core.domObserver, Toolasha.Utils.enhancementConfig, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.profitConstants, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.efficiency, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.uiComponents, Toolasha.Utils.actionPanelHelper, Toolasha.Core.webSocketHook, Toolasha.Core.storage, Toolasha.Utils.dom, Toolasha.Utils.timerRegistry, Toolasha.Utils.teaParser, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.actionCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.experienceParser, Toolasha.Utils.reactInput, Toolasha.Utils.experienceCalculator, Toolasha.Utils.materialCalculator, Toolasha.Core, Toolasha.Market.expectedValueCalculator);
+})(Toolasha.Core.dataManager, Toolasha.Core.config, Toolasha.Core.domObserver, Toolasha.Utils.enhancementConfig, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.profitConstants, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.efficiency, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.uiComponents, Toolasha.Utils.actionPanelHelper, Toolasha.Core.loadoutState, Toolasha.Core.storage, Toolasha.Utils.dom, Toolasha.Utils.timerRegistry, Toolasha.Utils.teaParser, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.actionCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.experienceParser, Toolasha.Utils.reactInput, Toolasha.Utils.experienceCalculator, Toolasha.Utils.materialCalculator, Toolasha.Core, Toolasha.Market.expectedValueCalculator);
