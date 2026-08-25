@@ -86,6 +86,8 @@ import emptyQueueNotification from '../features/notifications/empty-queue-notifi
 
 // Queue Monitor
 import queueMonitor from '../features/queue-monitor/queue-monitor.js';
+import characterActivity from '../features/character-activity/character-activity.js';
+import characterSelectRenderer from '../features/character-activity/character-select-renderer.js';
 
 // Dev tools
 import pformancePanel from '../features/dev/pformance-panel.js';
@@ -149,6 +151,8 @@ toolashaRoot.UI = {
     leaderboardXPDisplay,
     emptyQueueNotification,
     queueMonitor,
+    characterActivity,
+    characterSelectRenderer,
     pformancePanel,
 };
 

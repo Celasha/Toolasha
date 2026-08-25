@@ -1111,3 +1111,41 @@ describe('DataManager character-WebSocket ownership (TLA-018)', () => {
         expect(dataManager.getHouseRoomLevel('/house_rooms/b')).toBe(7);
     });
 });
+
+describe('DataManager offline-progress cap / MooPass getters', () => {
+    test('returns null before any character data has loaded (fails closed, no guessed default)', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        dataManager.characterData = null;
+
+        expect(dataManager.getOfflineHourCap()).toBeNull();
+        expect(dataManager.getMooPassExpireTime()).toBeNull();
+    });
+
+    test('reads the exact server-resolved values, never reconstructed from purchases', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        dataManager.characterData = { characterInfo: { offlineHourCap: 14, mooPassExpireTime: 1234567890 } };
+
+        expect(dataManager.getOfflineHourCap()).toBe(14);
+        expect(dataManager.getMooPassExpireTime()).toBe(1234567890);
+    });
+
+    test('returns null for mooPassExpireTime when the character has no MooPass', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        dataManager.characterData = { characterInfo: { offlineHourCap: 10 } };
+
+        expect(dataManager.getMooPassExpireTime()).toBeNull();
+    });
+
+    test('character_info_updated refreshes both getters with the new values', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        dataManager.characterData = { characterInfo: { offlineHourCap: 10, mooPassExpireTime: null } };
+        dataManager.activeSocket = null; // isolate from other tests' socket-ownership state in this shared singleton
+
+        webSocketHandlers.get('character_info_updated')({
+            characterInfo: { offlineHourCap: 15, mooPassExpireTime: 5000 },
+        });
+
+        expect(dataManager.getOfflineHourCap()).toBe(15);
+        expect(dataManager.getMooPassExpireTime()).toBe(5000);
+    });
+});

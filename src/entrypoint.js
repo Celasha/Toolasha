@@ -760,6 +760,13 @@ function registerFeatures() {
             module: UI.queueMonitor,
             async: false,
         },
+        {
+            key: 'characterActivityStatus',
+            name: 'Character Activity Status',
+            category: 'General',
+            module: UI.characterActivity,
+            async: true,
+        },
     ];
 
     // Combine all features
@@ -795,6 +802,10 @@ if (isCombatSimulatorPage()) {
 
     // CRITICAL: Start centralized DOM observer SECOND, before features initialize
     domObserver.start();
+
+    // Always-on Character Select renderer: must run before any character ever initializes,
+    // since Character Select can be the very first page shown in a session.
+    UI.characterSelectRenderer.startWatching();
 
     // Set up scroll listener to dismiss stuck tooltips
     setupScrollTooltipDismissal();

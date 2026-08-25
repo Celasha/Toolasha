@@ -947,6 +947,23 @@ class DataManager {
     }
 
     /**
+     * Get the current character's server-resolved offline-progress hour cap. Never reconstructed
+     * from purchased upgrades - this is the exact value the server sends.
+     * @returns {number|null} Offline hour cap, or null if not yet known
+     */
+    getOfflineHourCap() {
+        return this.characterData?.characterInfo?.offlineHourCap ?? null;
+    }
+
+    /**
+     * Get the current character's MooPass expiry timestamp, if any.
+     * @returns {number|null} Epoch ms, or null if no MooPass / not yet known
+     */
+    getMooPassExpireTime() {
+        return this.characterData?.characterInfo?.mooPassExpireTime ?? null;
+    }
+
+    /**
      * Get player's house rooms
      * @returns {Map} House room map (room HRID -> {houseRoomHrid, level})
      */

@@ -17,6 +17,8 @@ import {
     formatCurrency,
     formatCompactNumber,
     formatLargeNumber,
+    isSameLocalDay,
+    formatActivityStatusTime,
 } from './formatters.js';
 
 // Mock config module for formatLargeNumber tests
@@ -388,5 +390,69 @@ describe('formatLargeNumber', () => {
     test('respects decimal parameter', () => {
         expect(formatLargeNumber(1500000, 2)).toBe('1.50M');
         expect(formatLargeNumber(2300, 0)).toBe('2K');
+    });
+});
+
+describe('isSameLocalDay', () => {
+    test('true for two timestamps on the same calendar day', () => {
+        const morning = new Date(2026, 7, 23, 8, 0).getTime();
+        const evening = new Date(2026, 7, 23, 23, 18).getTime();
+
+        expect(isSameLocalDay(morning, evening)).toBe(true);
+    });
+
+    test('false for timestamps on different calendar days, even close together', () => {
+        const lateNight = new Date(2026, 7, 22, 23, 59).getTime();
+        const nextMorning = new Date(2026, 7, 23, 0, 1).getTime();
+
+        expect(isSameLocalDay(lateNight, nextMorning)).toBe(false);
+    });
+});
+
+describe('formatActivityStatusTime', () => {
+    const sameDayPrefs = { dateFormat: 'MM-DD', timeFormat: '24hour' };
+
+    test('same local day shows time only', () => {
+        const now = new Date(2026, 7, 23, 12, 0).getTime();
+        const target = new Date(2026, 7, 23, 23, 18).getTime();
+
+        expect(formatActivityStatusTime(target, sameDayPrefs, now)).toBe('23:18');
+    });
+
+    test('a later day shows short date + time in MM-DD order', () => {
+        const now = new Date(2026, 7, 22, 12, 0).getTime();
+        const target = new Date(2026, 7, 23, 7, 46).getTime();
+
+        expect(formatActivityStatusTime(target, sameDayPrefs, now)).toBe('08-23 07:46');
+    });
+
+    test('a later day shows short date + time in DD-MM order when preferred', () => {
+        const now = new Date(2026, 7, 22, 12, 0).getTime();
+        const target = new Date(2026, 7, 23, 7, 46).getTime();
+
+        expect(formatActivityStatusTime(target, { dateFormat: 'DD-MM', timeFormat: '24hour' }, now)).toBe(
+            '23-08 07:46'
+        );
+    });
+
+    test('respects 12-hour preference', () => {
+        const now = new Date(2026, 7, 23, 12, 0).getTime();
+        const target = new Date(2026, 7, 23, 23, 18).getTime();
+
+        expect(formatActivityStatusTime(target, { dateFormat: 'MM-DD', timeFormat: '12hour' }, now)).toBe('11:18 PM');
+    });
+
+    test('never shows seconds', () => {
+        const now = new Date(2026, 7, 23, 12, 0).getTime();
+        const target = new Date(2026, 7, 23, 23, 18, 45).getTime();
+
+        expect(formatActivityStatusTime(target, sameDayPrefs, now)).not.toContain(':45');
+    });
+
+    test('falls back to schema defaults (MM-DD, 24hour) when no preferences are provided', () => {
+        const now = new Date(2026, 7, 22, 12, 0).getTime();
+        const target = new Date(2026, 7, 23, 7, 46).getTime();
+
+        expect(formatActivityStatusTime(target, {}, now)).toBe('08-23 07:46');
     });
 });

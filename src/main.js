@@ -14,6 +14,7 @@ import * as combatSimIntegration from './features/combat/combat-sim-integration.
 import settingsUI from './features/settings/settings-ui.js';
 import { setupScrollTooltipDismissal } from './utils/dom.js';
 import guildXPTrackerFeature from './features/guild/guild-xp-tracker.js';
+import characterSelectRenderer from './features/character-activity/character-select-renderer.js';
 
 /**
  * Detect if running on a supported Combat Simulator page
@@ -38,6 +39,10 @@ if (isCombatSimulatorPage()) {
 
     // CRITICAL: Start centralized DOM observer SECOND, before features initialize
     domObserver.start();
+
+    // Always-on Character Select renderer: must run before any character ever initializes,
+    // since Character Select can be the very first page shown in a session.
+    characterSelectRenderer.startWatching();
 
     // Set up scroll listener to dismiss stuck tooltips
     setupScrollTooltipDismissal();

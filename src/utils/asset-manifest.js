@@ -14,6 +14,7 @@ const SPRITE_KEYS = {
     monsters: 'combat_monsters_sprite',
     misc: 'misc_sprite',
     abilities: 'abilities_sprite',
+    skills: 'skills_sprite',
 };
 
 let manifestPromise = null;
@@ -62,7 +63,7 @@ async function fetchManifest() {
 
 /**
  * Get a specific sprite URL by key.
- * @param {'actions'|'items'|'monsters'|'misc'|'abilities'} key
+ * @param {'actions'|'items'|'monsters'|'misc'|'abilities'|'skills'} key
  * @returns {Promise<string|null>}
  */
 async function getSpriteUrl(key) {
