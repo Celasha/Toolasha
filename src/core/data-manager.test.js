@@ -848,3 +848,266 @@ describe('DataManager character ability live-state (TLA-016)', () => {
         expect(findAbility(dataManager, '/abilities/poke').level).toBe(6);
     });
 });
+
+describe('DataManager character-WebSocket ownership (TLA-018)', () => {
+    function makePayload(characterId, overrides = {}) {
+        return {
+            character: { id: characterId, name: `char-${characterId}` },
+            characterActions: [],
+            characterSkills: [],
+            characterItems: [],
+            characterQuests: [],
+            ...overrides,
+        };
+    }
+
+    // Isolate from whatever character-switch/ownership state earlier describe blocks left
+    // behind, regardless of suite ordering.
+    beforeEach(async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(0);
+        const { default: dataManager } = await import('./data-manager.js');
+        dataManager.currentCharacterId = null;
+        dataManager.currentCharacterName = null;
+        dataManager.lastCharacterSwitchTime = 0;
+        dataManager.characterData = null;
+        dataManager.characterItems = null;
+        dataManager.characterSkills = null;
+        dataManager.characterActions = [];
+        dataManager.characterQuests = [];
+        dataManager.characterHouseRooms.clear();
+        dataManager.activeSocket = null;
+        dataManager.initGeneration = 0;
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    test('a stale async init continuation cannot publish state or emit character_initialized after a newer init is accepted', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const { default: storage } = await import('./storage.js');
+        const initHandler = webSocketHandlers.get('init_character_data');
+
+        const socketA = {};
+        const socketB = {};
+
+        let resolveA;
+        storage.get.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    resolveA = resolve;
+                })
+        );
+
+        const initializedListener = vi.fn();
+        dataManager.on('character_initialized', initializedListener);
+
+        // A begins init on socket A with a front action, so it must await storage.get(actionProgress).
+        const pendingA = initHandler(
+            makePayload(9501, {
+                characterActions: [{ id: 5010, ordinal: 0, currentCount: 0 }],
+                characterHouseRoomMap: { r: { houseRoomHrid: '/house_rooms/a', level: 1 } },
+            }),
+            { socket: socketA }
+        );
+
+        // B arrives on a different socket while A's storage.get is still pending, and completes fully.
+        storage.get.mockResolvedValueOnce(null);
+        await initHandler(
+            makePayload(9502, { characterHouseRoomMap: { r: { houseRoomHrid: '/house_rooms/b', level: 5 } } }),
+            { socket: socketB }
+        );
+        await vi.advanceTimersByTimeAsync(0); // flush B's deferred character_initialized emit
+
+        expect(dataManager.currentCharacterId).toBe(9502);
+        expect(dataManager.getHouseRoomLevel('/house_rooms/b')).toBe(5);
+        expect(initializedListener).toHaveBeenCalledTimes(1);
+        expect(initializedListener.mock.calls[0][0].character.id).toBe(9502);
+
+        // A's storage.get now resolves — this continuation must be dropped, not published.
+        resolveA(null);
+        await pendingA;
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(dataManager.currentCharacterId).toBe(9502);
+        expect(dataManager.getHouseRoomLevel('/house_rooms/b')).toBe(5);
+        expect(dataManager.getHouseRoomLevel('/house_rooms/a')).toBe(0);
+        // No second character_initialized for the stale A continuation.
+        expect(initializedListener).toHaveBeenCalledTimes(1);
+
+        dataManager.off('character_initialized', initializedListener);
+    });
+
+    test('after an accepted init, character-scoped updates from a stale socket are ignored; the same updates from the current socket are applied', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const initHandler = webSocketHandlers.get('init_character_data');
+        const socketA = {};
+        const socketB = {};
+
+        await initHandler(makePayload(9601), { socket: socketA });
+        await initHandler(makePayload(9602), { socket: socketB });
+        expect(dataManager.currentCharacterId).toBe(9602);
+
+        // Stale socket A: abilities_updated must not merge.
+        webSocketHandlers.get('abilities_updated')(
+            { endCharacterAbilities: [{ abilityHrid: '/abilities/poke', level: 99, experience: 1 }] },
+            { socket: socketA }
+        );
+        expect(dataManager.characterData.characterAbilities).toBeUndefined();
+
+        // Stale socket A: items_updated must not apply.
+        dataManager.characterItems = [];
+        webSocketHandlers.get('items_updated')(
+            { endCharacterItems: [{ id: 1, count: 5, itemLocationHrid: '/item_locations/inventory' }] },
+            { socket: socketA }
+        );
+        expect(dataManager.characterItems).toEqual([]);
+
+        // Stale socket A: actions_updated must not apply.
+        webSocketHandlers.get('actions_updated')(
+            { endCharacterActions: [{ id: 777, isDone: false, ordinal: 0, currentCount: 0 }] },
+            { socket: socketA }
+        );
+        expect(dataManager.characterActions.some((a) => a.id === 777)).toBe(false);
+
+        // Stale socket A: house_rooms_updated must not apply.
+        webSocketHandlers.get('house_rooms_updated')(
+            { characterHouseRoomMap: { r: { houseRoomHrid: '/house_rooms/stale', level: 9 } } },
+            { socket: socketA }
+        );
+        expect(dataManager.getHouseRoomLevel('/house_rooms/stale')).toBe(0);
+
+        // Stale socket A: skills_updated must not apply.
+        webSocketHandlers.get('skills_updated')(
+            { characterSkills: [{ skillHrid: '/skills/attack', level: 99, experience: 1 }] },
+            { socket: socketA }
+        );
+        expect(dataManager.characterSkills).toEqual([]);
+
+        // Current socket B: the same classes of update are applied normally.
+        webSocketHandlers.get('abilities_updated')(
+            { endCharacterAbilities: [{ abilityHrid: '/abilities/poke', level: 10, experience: 500 }] },
+            { socket: socketB }
+        );
+        expect(dataManager.characterData.characterAbilities).toEqual([
+            { abilityHrid: '/abilities/poke', level: 10, experience: 500 },
+        ]);
+
+        webSocketHandlers.get('house_rooms_updated')(
+            { characterHouseRoomMap: { r: { houseRoomHrid: '/house_rooms/current', level: 3 } } },
+            { socket: socketB }
+        );
+        expect(dataManager.getHouseRoomLevel('/house_rooms/current')).toBe(3);
+    });
+
+    test('a delayed action_completed from a stale socket does not merge actions/items/skills/abilities', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const initHandler = webSocketHandlers.get('init_character_data');
+        const socketA = {};
+        const socketB = {};
+
+        await initHandler(makePayload(9701), { socket: socketA });
+        await initHandler(
+            makePayload(9702, {
+                characterActions: [{ id: 42, ordinal: 0, currentCount: 0 }],
+                characterSkills: [{ skillHrid: '/skills/attack', level: 1, experience: 0 }],
+                characterItems: [{ id: 1, count: 5, itemLocationHrid: '/item_locations/inventory' }],
+            }),
+            { socket: socketB }
+        );
+
+        webSocketHandlers.get('action_completed')(
+            {
+                endCharacterAction: { id: 42, isDone: false, ordinal: 0, currentCount: 1 },
+                endCharacterItems: [{ id: 1, count: 1, itemLocationHrid: '/item_locations/inventory' }],
+                endCharacterSkills: [{ skillHrid: '/skills/attack', level: 50, experience: 99999 }],
+                endCharacterAbilities: [{ abilityHrid: '/abilities/poke', level: 50, experience: 1 }],
+            },
+            { socket: socketA }
+        );
+
+        expect(dataManager.characterItems.find((i) => i.id === 1).count).toBe(5);
+        expect(dataManager.characterSkills.find((s) => s.skillHrid === '/skills/attack').level).toBe(1);
+        expect(dataManager.characterData.characterAbilities).toBeUndefined();
+        expect(dataManager.characterActions.find((a) => a.id === 42).currentCount).toBe(0);
+    });
+
+    test('a same-character reconnect on a new socket makes the old socket stale even though the character id is unchanged', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const initHandler = webSocketHandlers.get('init_character_data');
+        const socket1 = {};
+        const socket2 = {};
+
+        await initHandler(makePayload(9801), { socket: socket1 });
+        // Reconnect: same character, brand-new socket.
+        await initHandler(makePayload(9801), { socket: socket2 });
+
+        webSocketHandlers.get('house_rooms_updated')(
+            { characterHouseRoomMap: { r: { houseRoomHrid: '/house_rooms/old_socket', level: 9 } } },
+            { socket: socket1 }
+        );
+        expect(dataManager.getHouseRoomLevel('/house_rooms/old_socket')).toBe(0);
+
+        webSocketHandlers.get('house_rooms_updated')(
+            { characterHouseRoomMap: { r: { houseRoomHrid: '/house_rooms/new_socket', level: 4 } } },
+            { socket: socket2 }
+        );
+        expect(dataManager.getHouseRoomLevel('/house_rooms/new_socket')).toBe(4);
+    });
+
+    test('an invalid init_character_data payload cannot steal socket ownership', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const initHandler = webSocketHandlers.get('init_character_data');
+        const socketGood = {};
+        const socketBad = {};
+
+        await initHandler(makePayload(9901), { socket: socketGood });
+        const generationBefore = dataManager.initGeneration;
+
+        await initHandler({ character: { id: null, name: null } }, { socket: socketBad });
+
+        expect(dataManager.activeSocket).toBe(socketGood);
+        expect(dataManager.initGeneration).toBe(generationBefore);
+
+        webSocketHandlers.get('house_rooms_updated')(
+            { characterHouseRoomMap: { r: { houseRoomHrid: '/house_rooms/bad', level: 1 } } },
+            { socket: socketBad }
+        );
+        expect(dataManager.getHouseRoomLevel('/house_rooms/bad')).toBe(0);
+    });
+
+    test('a rejected rapid-fire character switch cannot steal socket ownership', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const initHandler = webSocketHandlers.get('init_character_data');
+        const socketA = {};
+        const socketB = {};
+        const socketRapid = {};
+
+        vi.setSystemTime(0);
+        await initHandler(makePayload(10001), { socket: socketA }); // first load, no rapid-switch check applies
+
+        vi.setSystemTime(100);
+        await initHandler(makePayload(10002), { socket: socketB }); // legitimate switch, accepted
+        const generationAfterB = dataManager.initGeneration;
+
+        vi.setSystemTime(200); // 100ms after the accepted switch — inside the 1s loop-protection window
+        await initHandler(makePayload(10003), { socket: socketRapid }); // must be rejected
+
+        expect(dataManager.currentCharacterId).toBe(10002);
+        expect(dataManager.activeSocket).toBe(socketB);
+        expect(dataManager.initGeneration).toBe(generationAfterB);
+
+        webSocketHandlers.get('house_rooms_updated')(
+            { characterHouseRoomMap: { r: { houseRoomHrid: '/house_rooms/rapid', level: 1 } } },
+            { socket: socketRapid }
+        );
+        expect(dataManager.getHouseRoomLevel('/house_rooms/rapid')).toBe(0);
+
+        webSocketHandlers.get('house_rooms_updated')(
+            { characterHouseRoomMap: { r: { houseRoomHrid: '/house_rooms/b', level: 7 } } },
+            { socket: socketB }
+        );
+        expect(dataManager.getHouseRoomLevel('/house_rooms/b')).toBe(7);
+    });
+});

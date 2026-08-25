@@ -49,6 +49,16 @@ class DataManager {
         this.isCharacterSwitching = false;
         this.lastCharacterSwitchTime = 0; // Prevent rapid-fire switch loops
 
+        // Character-WebSocket ownership (TLA-018). initGeneration is bumped on every accepted
+        // init_character_data so an older async init continuation can detect it was superseded
+        // after resuming from an await, and activeSocket is bound to the socket that delivered
+        // that accepted init so delayed character-scoped updates from a stale socket (old
+        // connection after a switch/reconnect) can be rejected without depending on every
+        // payload carrying a character id. Both start permissive (0 / null): no socket/epoch is
+        // known yet, matching loadout-state.js's ownership model.
+        this.initGeneration = 0;
+        this.activeSocket = null;
+
         // Event listeners
         this.eventListeners = new Map();
 
@@ -168,7 +178,7 @@ class DataManager {
      */
     setupMessageHandlers() {
         // Handle init_character_data (player data on login/refresh)
-        this.webSocketHook.on('init_character_data', async (data) => {
+        this.webSocketHook.on('init_character_data', async (data, context) => {
             // Detect character switch
             const newCharacterId = data.character?.id;
             const newCharacterName = data.character?.name;
@@ -255,6 +265,23 @@ class DataManager {
                 this.currentCharacterGameMode = data.character?.gameMode || null;
             }
 
+            // This init is accepted (validated, and not rejected as a rapid-fire switch above).
+            // Establish a new ownership epoch and bind the socket that delivered it before any
+            // awaits below can interleave with a second accepted init. A same-character
+            // reconnect still starts a fresh epoch — WebSocketHook does not serialize async
+            // handlers, so two overlapping init_character_data continuations must be
+            // distinguishable even when neither payload's character id differs (TLA-018).
+            this.initGeneration += 1;
+            const generation = this.initGeneration;
+            if (context?.socket) {
+                this.activeSocket = context.socket;
+            } else if (isCharacterSwitch) {
+                // No socket context and the character changed: the previously bound socket no
+                // longer corresponds to who is active. Fail closed to "unknown" rather than keep
+                // trusting a socket that may belong to the departed character.
+                this.activeSocket = null;
+            }
+
             // Process new character data normally. Keep characterData.characterItems and
             // this.characterItems on the same live array: several legacy consumers still read
             // characterData directly, while incremental updates mutate this.characterItems.
@@ -273,7 +300,18 @@ class DataManager {
             // Restore/establish the current-unit timing boundary for whatever action is now
             // front-most, so a reload or character switch-back doesn't discard a still-valid
             // partial-progress boundary (see _restoreActionUnitBoundary).
-            await this._restoreActionUnitBoundary(newCharacterId);
+            await this._restoreActionUnitBoundary(newCharacterId, generation);
+
+            if (this.initGeneration !== generation) {
+                // A newer init_character_data was accepted while this one was still awaiting its
+                // action-unit boundary restore. This continuation is stale: it must not publish
+                // derived maps built from its own local `data`, or emit character_initialized,
+                // over the newer character's already-installed canonical state (TLA-018).
+                console.warn(
+                    '[DataManager] Dropping stale init_character_data continuation (superseded by a newer accepted init)'
+                );
+                return;
+            }
 
             // Build equipment map
             this.updateEquipmentMap(this.characterItems);
@@ -305,7 +343,9 @@ class DataManager {
         });
 
         // Handle actions_updated (action queue changes)
-        this.webSocketHook.on('actions_updated', (data) => {
+        this.webSocketHook.on('actions_updated', (data, context) => {
+            if (!this._isFromActiveSocket(context)) return;
+
             // Update action list
             for (const action of data.endCharacterActions) {
                 // Always remove the old entry first to prevent duplicates —
@@ -322,7 +362,9 @@ class DataManager {
         });
 
         // Handle action_completed (action progress)
-        this.webSocketHook.on('action_completed', (data) => {
+        this.webSocketHook.on('action_completed', (data, context) => {
+            if (!this._isFromActiveSocket(context)) return;
+
             const action = data.endCharacterAction;
             if (action.isDone === false) {
                 for (let i = 0; i < this.characterActions.length; i++) {
@@ -368,12 +410,16 @@ class DataManager {
 
         // Handle abilities_updated (ability level/XP changes: leveling up, learning a new
         // ability, or other native ability-state changes outside of action_completed)
-        this.webSocketHook.on('abilities_updated', (data) => {
+        this.webSocketHook.on('abilities_updated', (data, context) => {
+            if (!this._isFromActiveSocket(context)) return;
+
             this._mergeCharacterAbilities(data.endCharacterAbilities);
         });
 
         // Handle items_updated (inventory/equipment changes)
-        this.webSocketHook.on('items_updated', (data) => {
+        this.webSocketHook.on('items_updated', (data, context) => {
+            if (!this._isFromActiveSocket(context)) return;
+
             if (data.endCharacterItems) {
                 if (!this.characterItems) {
                     this.emit('items_updated', data);
@@ -388,8 +434,11 @@ class DataManager {
             this.emit('items_updated', data);
         });
 
-        // Handle market_listings_updated (market order changes)
-        this.webSocketHook.on('market_listings_updated', (data) => {
+        // Handle market_listings_updated (the current character's own market order changes —
+        // character-scoped, unlike market_item_order_books_updated below)
+        this.webSocketHook.on('market_listings_updated', (data, context) => {
+            if (!this._isFromActiveSocket(context)) return;
+
             if (!this.characterData || !Array.isArray(data?.endMarketListings)) {
                 return;
             }
@@ -410,13 +459,16 @@ class DataManager {
             });
         });
 
-        // Handle market_item_order_books_updated (order book updates)
+        // Handle market_item_order_books_updated (order book updates). Global market data, not
+        // scoped to the active character — must not be dropped by socket-ownership checks.
         this.webSocketHook.on('market_item_order_books_updated', (data) => {
             this.emit('market_item_order_books_updated', data);
         });
 
         // Handle action_type_consumable_slots_updated (when user changes tea assignments)
-        this.webSocketHook.on('action_type_consumable_slots_updated', (data) => {
+        this.webSocketHook.on('action_type_consumable_slots_updated', (data, context) => {
+            if (!this._isFromActiveSocket(context)) return;
+
             // Update drink slots map with new consumables
             if (data.actionTypeDrinkSlotsMap) {
                 this.updateDrinkSlotsMap(data.actionTypeDrinkSlotsMap);
@@ -426,13 +478,17 @@ class DataManager {
         });
 
         // Handle consumable_buffs_updated (when buffs expire/refresh)
-        this.webSocketHook.on('consumable_buffs_updated', (data) => {
+        this.webSocketHook.on('consumable_buffs_updated', (data, context) => {
+            if (!this._isFromActiveSocket(context)) return;
+
             // Buffs updated - next hover will show updated values
             this.emit('buffs_updated', data);
         });
 
         // Handle personal_buffs_updated (seal buffs from Labyrinth)
-        this.webSocketHook.on('personal_buffs_updated', (data) => {
+        this.webSocketHook.on('personal_buffs_updated', (data, context) => {
+            if (!this._isFromActiveSocket(context)) return;
+
             if (data.personalActionTypeBuffsMap) {
                 this.personalActionTypeBuffsMap = data.personalActionTypeBuffsMap;
             }
@@ -440,7 +496,9 @@ class DataManager {
         });
 
         // Handle house_rooms_updated (when user upgrades house rooms)
-        this.webSocketHook.on('house_rooms_updated', (data) => {
+        this.webSocketHook.on('house_rooms_updated', (data, context) => {
+            if (!this._isFromActiveSocket(context)) return;
+
             // Update house room map with new levels
             if (data.characterHouseRoomMap) {
                 this.updateHouseRoomMap(data.characterHouseRoomMap);
@@ -450,7 +508,9 @@ class DataManager {
         });
 
         // Handle skills_updated (when user gains skill levels)
-        this.webSocketHook.on('skills_updated', (data) => {
+        this.webSocketHook.on('skills_updated', (data, context) => {
+            if (!this._isFromActiveSocket(context)) return;
+
             // Update character skills with new levels
             if (data.characterSkills) {
                 this.characterSkills = data.characterSkills;
@@ -460,13 +520,17 @@ class DataManager {
         });
 
         // Handle new_battle (combat start - for Combat Sim export on Steam)
-        this.webSocketHook.on('new_battle', (data) => {
+        this.webSocketHook.on('new_battle', (data, context) => {
+            if (!this._isFromActiveSocket(context)) return;
+
             // Store battle data (includes party consumables)
             this.battleData = data;
         });
 
         // Handle character_info_updated (task slot changes, cooldown timestamps, etc.)
-        this.webSocketHook.on('character_info_updated', (data) => {
+        this.webSocketHook.on('character_info_updated', (data, context) => {
+            if (!this._isFromActiveSocket(context)) return;
+
             if (this.characterData && data.characterInfo) {
                 this.characterData.characterInfo = data.characterInfo;
             }
@@ -474,7 +538,9 @@ class DataManager {
         });
 
         // Handle setting_updated (labyrinth skip thresholds, crate selection, etc.)
-        this.webSocketHook.on('setting_updated', (data) => {
+        this.webSocketHook.on('setting_updated', (data, context) => {
+            if (!this._isFromActiveSocket(context)) return;
+
             if (this.characterData && data.characterSetting) {
                 this.characterData.characterSetting = data.characterSetting;
             }
@@ -482,7 +548,9 @@ class DataManager {
         });
 
         // Handle quests_updated (keep characterQuests in sync mid-session)
-        this.webSocketHook.on('quests_updated', (data) => {
+        this.webSocketHook.on('quests_updated', (data, context) => {
+            if (!this._isFromActiveSocket(context)) return;
+
             if (data.endCharacterQuests && Array.isArray(data.endCharacterQuests)) {
                 for (const updatedQuest of data.endCharacterQuests) {
                     const index = this.characterQuests.findIndex((q) => q.id === updatedQuest.id);
@@ -496,6 +564,19 @@ class DataManager {
                 this.characterQuests = this.characterQuests.filter((q) => q.status !== '/quest_status/claimed');
             }
         });
+    }
+
+    /**
+     * True unless a character-scoped update is provably from a stale WebSocket — i.e., an
+     * accepted init_character_data bound a real socket (this.activeSocket) and this update's
+     * context carries a different one. Permissive whenever no socket is bound yet (initial
+     * load before any init_character_data, or tests that invoke handlers without a socket
+     * context) so this never depends on every payload carrying a character id (TLA-018).
+     * @param {{socket?: WebSocket}|null} context
+     * @returns {boolean}
+     */
+    _isFromActiveSocket(context) {
+        return !this.activeSocket || context?.socket === this.activeSocket;
     }
 
     /**
@@ -815,18 +896,32 @@ class DataManager {
      * when its (actionId, currentCount) still matches the live front action — otherwise at
      * least one unit completed while unobserved, so the old start time is no longer meaningful
      * and _syncActionUnitBoundary falls back to a fresh fail-closed boundary instead.
+     *
+     * `generation` is the init_character_data ownership epoch (TLA-018) captured by the caller
+     * before this await. WebSocketHook does not serialize async handlers, so a second
+     * init_character_data can be accepted — bumping `this.initGeneration` — while this restore's
+     * own `storage.get()` is still pending. Re-checking the epoch immediately after that await
+     * (and before the early-return no-op branch below, which has no await but still runs after
+     * the caller's own epoch check) ensures a stale continuation can never install a boundary
+     * for a character/init that is no longer the accepted one.
      * @param {number} characterId
+     * @param {number} generation
      */
-    async _restoreActionUnitBoundary(characterId) {
+    async _restoreActionUnitBoundary(characterId, generation) {
         const sorted = [...this.characterActions].sort((a, b) => a.ordinal - b.ordinal);
         const front = sorted[0] || null;
 
         if (!front) {
-            this.actionUnitBoundary = null;
+            if (this.initGeneration === generation) this.actionUnitBoundary = null;
             return;
         }
 
         const persisted = await storage.get(characterId, 'actionProgress', null);
+        if (this.initGeneration !== generation) {
+            // Superseded by a newer accepted init while this storage read was pending.
+            return;
+        }
+
         this.actionUnitBoundary =
             persisted && persisted.actionId === front.id && persisted.currentCount === front.currentCount
                 ? persisted
