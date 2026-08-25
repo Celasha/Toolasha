@@ -1,11 +1,11 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.95.2
+ * Version: 2.96.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, formatters_js, timerRegistry_js, domObserverHelpers_js, dom_js, storage, marketAPI, efficiency_js, webSocketHook, reactInput_js, actionPanelHelper_js, expectedValueCalculator, bonusRevenueCalculator_js, marketData_js, profitConstants_js, profitHelpers_js, profitCalculator, selectors_js, actionCalculator_js, equipmentParser_js, loadoutState, marketplaceSession_js, cleanupRegistry_js, settingsSchema_js, settingsStorage, enhancementConfig_js, materialCalculator_js, enhancementCalculator_js, teaParser_js, alchemyProfitCalculator) {
+(function (config, dataManager, domObserver, formatters_js, timerRegistry_js, domObserverHelpers_js, dom_js, storage, marketAPI, efficiency_js, webSocketHook, reactInput_js, actionPanelHelper_js, expectedValueCalculator, bonusRevenueCalculator_js, marketData_js, profitConstants_js, profitHelpers_js, profitCalculator, selectors_js, actionCalculator_js, equipmentParser_js, loadoutState, marketplaceSession_js, cleanupRegistry_js, settingsSchema_js, settingsStorage, enhancementConfig_js, materialCalculator_js, enhancementCalculator_js, teaParser_js, alchemyProfitCalculator, buffParser_js) {
     'use strict';
 
     /**
@@ -1293,7 +1293,7 @@
 
 
     const STORAGE_KEY$4 = 'modalPositions3';
-    const STORE_NAME$5 = 'settings';
+    const STORE_NAME$6 = 'settings';
 
     class DraggableModals {
         constructor() {
@@ -1307,7 +1307,7 @@
             if (this.initialized) return;
             if (!config.getSetting('draggableModals', true)) return;
 
-            this.offsets = (await storage.get(STORAGE_KEY$4, STORE_NAME$5, {})) || {};
+            this.offsets = (await storage.get(STORAGE_KEY$4, STORE_NAME$6, {})) || {};
 
             // Watch Modal_modalContent — unique to the inner dialog content element.
             // Its parentElement is Modal_modal (the box we apply transform to).
@@ -1386,7 +1386,7 @@
                     this._applyTransform(modalBox, clamped.dx, clamped.dy);
                     if (clamped.dx !== dx || clamped.dy !== dy) {
                         this.offsets[title] = clamped;
-                        storage.set(STORAGE_KEY$4, this.offsets, STORE_NAME$5);
+                        storage.set(STORAGE_KEY$4, this.offsets, STORE_NAME$6);
                     }
                 });
             }
@@ -1432,7 +1432,7 @@
                 const dx = isNaN(t.m41) ? 0 : t.m41;
                 const dy = isNaN(t.m42) ? 0 : t.m42;
                 this.offsets[title] = { dx, dy };
-                storage.set(STORAGE_KEY$4, this.offsets, STORE_NAME$5);
+                storage.set(STORAGE_KEY$4, this.offsets, STORE_NAME$6);
             };
 
             bar.addEventListener('mousedown', onMouseDown);
@@ -10795,6 +10795,7 @@ ${starCSS}
         monsters: 'combat_monsters_sprite',
         misc: 'misc_sprite',
         abilities: 'abilities_sprite',
+        skills: 'skills_sprite',
     };
 
     let manifestPromise = null;
@@ -10843,7 +10844,7 @@ ${starCSS}
 
     /**
      * Get a specific sprite URL by key.
-     * @param {'actions'|'items'|'monsters'|'misc'|'abilities'} key
+     * @param {'actions'|'items'|'monsters'|'misc'|'abilities'|'skills'} key
      * @returns {Promise<string|null>}
      */
     async function getSpriteUrl(key) {
@@ -15447,7 +15448,7 @@ ${starCSS}
      */
 
 
-    const STORE_NAME$4 = 'xpHistory';
+    const STORE_NAME$5 = 'xpHistory';
     const WINDOW_10M$2 = 10 * 60 * 1000;
     const WINDOW_1H$2 = 60 * 60 * 1000;
     const WINDOW_1W$2 = 7 * 24 * 60 * 60 * 1000;
@@ -15686,7 +15687,7 @@ ${starCSS}
             this.combatSession = {};
 
             // Load persisted history for this character
-            const stored = await storage.get(`xpHistory_${charId}`, STORE_NAME$4, {});
+            const stored = await storage.get(`xpHistory_${charId}`, STORE_NAME$5, {});
             this.xpHistory = stored;
 
             const t = data.currentTimestamp ? +new Date(data.currentTimestamp) : Date.now();
@@ -15704,7 +15705,7 @@ ${starCSS}
             });
 
             // Don't await — write is fire-and-forget, no need to block initialization
-            storage.set(`xpHistory_${charId}`, this.xpHistory, STORE_NAME$4);
+            storage.set(`xpHistory_${charId}`, this.xpHistory, STORE_NAME$5);
 
             this._updateNavBars();
         }
@@ -15743,7 +15744,7 @@ ${starCSS}
                 }
             });
 
-            storage.set(`xpHistory_${this.characterId}`, this.xpHistory, STORE_NAME$4);
+            storage.set(`xpHistory_${this.characterId}`, this.xpHistory, STORE_NAME$5);
 
             this._updateNavBars();
         }
@@ -15944,7 +15945,7 @@ ${starCSS}
      */
 
 
-    const STORE_NAME$3 = 'lootLogHistory';
+    const STORE_NAME$4 = 'lootLogHistory';
     const MAX_ENTRIES = 500;
 
     class LootLogHistory {
@@ -15959,7 +15960,7 @@ ${starCSS}
         async _load() {
             const key = this._getKey();
             if (!key) return [];
-            return await storage.get(key, STORE_NAME$3, []);
+            return await storage.get(key, STORE_NAME$4, []);
         }
 
         /**
@@ -15968,7 +15969,7 @@ ${starCSS}
         async _save(entries) {
             const key = this._getKey();
             if (!key) return;
-            await storage.set(key, entries, STORE_NAME$3, true);
+            await storage.set(key, entries, STORE_NAME$4, true);
         }
 
         /**
@@ -16004,7 +16005,7 @@ ${starCSS}
         async clearHistory() {
             const key = this._getKey();
             if (!key) return;
-            await storage.delete(key, STORE_NAME$3);
+            await storage.delete(key, STORE_NAME$4);
         }
     }
 
@@ -20108,7 +20109,7 @@ ${starCSS}
         popup.close();
     }
 
-    function initialize() {
+    function initialize$1() {
         if (!settingChangeHandler$1) {
             settingChangeHandler$1 = (enabled) => {
                 if (enabled) {
@@ -20142,7 +20143,7 @@ ${starCSS}
 
     var scrollSimulatorUI = {
         name: 'Scroll Simulator UI',
-        initialize,
+        initialize: initialize$1,
         openDefaultsPopup,
         disable,
     };
@@ -36071,7 +36072,7 @@ self.onmessage = function (e) {
      */
 
 
-    const STORE_NAME$2 = 'guildHistory';
+    const STORE_NAME$3 = 'guildHistory';
     const WINDOW_10M$1 = 10 * 60 * 1000;
     const WINDOW_1H$1 = 60 * 60 * 1000;
     const WINDOW_1D$1 = 24 * 60 * 60 * 1000;
@@ -36458,9 +36459,9 @@ self.onmessage = function (e) {
             }
 
             // Load persisted histories
-            this.guildXPHistory = await storage.get(`guildXP_${guildName}`, STORE_NAME$2, {});
+            this.guildXPHistory = await storage.get(`guildXP_${guildName}`, STORE_NAME$3, {});
             if (this.ownGuildID) {
-                this.memberXPHistory = await storage.get(`memberXP_${this.ownGuildID}`, STORE_NAME$2, {});
+                this.memberXPHistory = await storage.get(`memberXP_${this.ownGuildID}`, STORE_NAME$3, {});
             }
 
             const t = data.currentTimestamp ? +new Date(data.currentTimestamp) : Date.now();
@@ -36480,9 +36481,9 @@ self.onmessage = function (e) {
             }
 
             // Persist
-            await storage.set(`guildXP_${guildName}`, this.guildXPHistory, STORE_NAME$2, true);
+            await storage.set(`guildXP_${guildName}`, this.guildXPHistory, STORE_NAME$3, true);
             if (this.ownGuildID) {
-                await storage.set(`memberXP_${this.ownGuildID}`, this.memberXPHistory, STORE_NAME$2, true);
+                await storage.set(`memberXP_${this.ownGuildID}`, this.memberXPHistory, STORE_NAME$3, true);
             }
         }
 
@@ -36507,7 +36508,7 @@ self.onmessage = function (e) {
 
             const t = Date.now();
             pushXP$1(this.guildXPHistory[name], { t, xp: guild.experience });
-            storage.set(`guildXP_${name}`, this.guildXPHistory, STORE_NAME$2);
+            storage.set(`guildXP_${name}`, this.guildXPHistory, STORE_NAME$3);
         }
 
         /**
@@ -36526,7 +36527,7 @@ self.onmessage = function (e) {
 
             if (newGuildID && this.ownGuildID && newGuildID !== this.ownGuildID) {
                 // Guild switched — clear stale member data and load fresh from storage
-                this.memberXPHistory = await storage.get(`memberXP_${newGuildID}`, STORE_NAME$2, {});
+                this.memberXPHistory = await storage.get(`memberXP_${newGuildID}`, STORE_NAME$3, {});
                 this.memberMeta = {};
             }
 
@@ -36563,7 +36564,7 @@ self.onmessage = function (e) {
             }
 
             if (this.ownGuildID) {
-                storage.set(`memberXP_${this.ownGuildID}`, this.memberXPHistory, STORE_NAME$2);
+                storage.set(`memberXP_${this.ownGuildID}`, this.memberXPHistory, STORE_NAME$3);
             }
         }
 
@@ -36604,7 +36605,7 @@ self.onmessage = function (e) {
             }
 
             if (this.ownGuildName) {
-                storage.set(`guildXP_${this.ownGuildName}`, this.guildXPHistory, STORE_NAME$2);
+                storage.set(`guildXP_${this.ownGuildName}`, this.guildXPHistory, STORE_NAME$3);
             }
         }
 
@@ -36762,7 +36763,7 @@ self.onmessage = function (e) {
         async resetMemberData() {
             if (!this.ownGuildID) return;
             this.memberXPHistory = {};
-            await storage.set(`memberXP_${this.ownGuildID}`, {}, STORE_NAME$2);
+            await storage.set(`memberXP_${this.ownGuildID}`, {}, STORE_NAME$3);
         }
 
         /**
@@ -39362,7 +39363,7 @@ self.onmessage = function (e) {
      */
 
 
-    const STORE_NAME$1 = 'leaderboardHistory';
+    const STORE_NAME$2 = 'leaderboardHistory';
     const WINDOW_10M = 10 * 60 * 1000;
     const WINDOW_1H = 60 * 60 * 1000;
     const WINDOW_1D = 24 * 60 * 60 * 1000;
@@ -39466,7 +39467,7 @@ self.onmessage = function (e) {
 
             // Load history BEFORE registering WS listener to avoid race condition where
             // leaderboard_updated arrives before storage resolves, causing history to be overwritten.
-            this.playerXPHistory = await storage.get('playerXP', STORE_NAME$1, {});
+            this.playerXPHistory = await storage.get('playerXP', STORE_NAME$2, {});
 
             this._boundOnLeaderboardUpdated = (data) => this._onLeaderboardUpdated(data);
             webSocketHook.on('leaderboard_updated', this._boundOnLeaderboardUpdated);
@@ -39508,7 +39509,7 @@ self.onmessage = function (e) {
             }
 
             if (changed) {
-                storage.set('playerXP', this.playerXPHistory, STORE_NAME$1);
+                storage.set('playerXP', this.playerXPHistory, STORE_NAME$2);
             }
         }
 
@@ -39850,7 +39851,7 @@ self.onmessage = function (e) {
      */
 
 
-    const STORE_NAME = 'queueSnapshots';
+    const STORE_NAME$1 = 'queueSnapshots';
 
     class QueueSnapshot {
         constructor() {
@@ -39962,7 +39963,7 @@ self.onmessage = function (e) {
                 this.snapshots.set(oldId, snapshot);
 
                 // Persist to IndexedDB immediately (must complete before _loadSnapshots re-runs on re-init)
-                storage.set(`queueSnapshot_${oldId}`, snapshot, STORE_NAME, true);
+                storage.set(`queueSnapshot_${oldId}`, snapshot, STORE_NAME$1, true);
             } catch (error) {
                 console.error('[QueueSnapshot] Failed to create snapshot:', error);
             }
@@ -39973,9 +39974,9 @@ self.onmessage = function (e) {
          */
         async _loadSnapshots() {
             try {
-                const keys = await storage.getAllKeys(STORE_NAME);
+                const keys = await storage.getAllKeys(STORE_NAME$1);
                 for (const key of keys) {
-                    const snapshot = await storage.get(key, STORE_NAME);
+                    const snapshot = await storage.get(key, STORE_NAME$1);
                     if (snapshot?.characterId) {
                         const existing = this.snapshots.get(snapshot.characterId);
                         if (!existing || existing.timestamp <= snapshot.timestamp) {
@@ -40018,7 +40019,7 @@ self.onmessage = function (e) {
          */
         async deleteSnapshot(characterId) {
             this.snapshots.delete(characterId);
-            await storage.delete(`queueSnapshot_${characterId}`, STORE_NAME);
+            await storage.delete(`queueSnapshot_${characterId}`, STORE_NAME$1);
         }
     }
 
@@ -40471,6 +40472,3735 @@ self.onmessage = function (e) {
     };
 
     /**
+     * Tooltip Observer
+     * Centralized observer for tooltip/popper appearances
+     * Any feature can subscribe to be notified when tooltips appear
+     */
+
+
+    class TooltipObserver {
+        constructor() {
+            this.subscribers = new Map(); // name -> { callback, notifyClose }
+            this.unregisterObserver = null;
+            this.isInitialized = false;
+            this.activeRemovalObservers = new Set();
+            this.observedElements = new WeakSet();
+        }
+
+        /**
+         * Initialize the observer (call once)
+         */
+        initialize() {
+            if (this.isInitialized) {
+                return;
+            }
+
+            this.isInitialized = true;
+
+            // Watch for tooltip/popper elements appearing
+            // These are the common classes used by MUI tooltips/poppers
+            this.unregisterObserver = domObserver.onClass('TooltipObserver', ['MuiPopper', 'MuiTooltip'], (element) => {
+                this.notifySubscribers(element);
+            });
+        }
+
+        /**
+         * Subscribe to tooltip appearance events
+         * @param {string} name - Unique subscriber name
+         * @param {Function} callback - Function(element, eventType) to call when tooltip appears
+         * @param {Object} options - Subscription options
+         * @param {boolean} options.notifyClose - Observe and report tooltip removal (default false)
+         */
+        subscribe(name, callback, options = {}) {
+            this.subscribers.set(name, {
+                callback,
+                notifyClose: options.notifyClose === true,
+            });
+
+            // Auto-initialize if first subscriber
+            if (!this.isInitialized) {
+                this.initialize();
+            }
+        }
+
+        /**
+         * Unsubscribe from tooltip events
+         * @param {string} name - Subscriber name
+         */
+        unsubscribe(name) {
+            this.subscribers.delete(name);
+
+            if (this.subscribers.size === 0) {
+                this.disable();
+            }
+        }
+
+        /**
+         * Notify all subscribers that a tooltip appeared
+         * @param {Element} element - The tooltip/popper element
+         * @private
+         */
+        notifySubscribers(element) {
+            const needsCloseNotification = Array.from(this.subscribers.values()).some(
+                (subscriber) => subscriber.notifyClose
+            );
+
+            // Current production subscribers only need open notifications. Avoid creating
+            // one MutationObserver per transient tooltip unless close events are requested.
+            if (needsCloseNotification && !this.observedElements.has(element)) {
+                const observationRoot = document.body || element.parentNode;
+                if (observationRoot) {
+                    this.observedElements.add(element);
+                    const removalObserver = new MutationObserver(() => {
+                        if (element.isConnected) return;
+
+                        for (const [name, subscriber] of this.subscribers.entries()) {
+                            if (!subscriber.notifyClose) continue;
+                            try {
+                                subscriber.callback(element, 'closed');
+                            } catch (error) {
+                                console.error(`[TooltipObserver] Error in subscriber "${name}" (close):`, error);
+                            }
+                        }
+
+                        removalObserver.disconnect();
+                        this.activeRemovalObservers.delete(removalObserver);
+                        this.observedElements.delete(element);
+                    });
+
+                    this.activeRemovalObservers.add(removalObserver);
+                    removalObserver.observe(observationRoot, {
+                        childList: true,
+                        subtree: true,
+                    });
+                }
+            }
+
+            // Notify subscribers that tooltip opened
+            for (const [name, subscriber] of this.subscribers.entries()) {
+                try {
+                    subscriber.callback(element, 'opened');
+                } catch (error) {
+                    console.error(`[TooltipObserver] Error in subscriber "${name}" (open):`, error);
+                }
+            }
+        }
+
+        /**
+         * Cleanup and disable
+         */
+        disable() {
+            if (this.unregisterObserver) {
+                this.unregisterObserver();
+                this.unregisterObserver = null;
+            }
+            for (const observer of this.activeRemovalObservers) {
+                observer.disconnect();
+            }
+            this.activeRemovalObservers.clear();
+            this.observedElements = new WeakSet();
+            this.subscribers.clear();
+            this.isInitialized = false;
+        }
+    }
+
+    const tooltipObserver = new TooltipObserver();
+
+    /**
+     * Action Time Display Module
+     *
+     * Displays estimated completion time for queued actions.
+     * Uses WebSocket data from data-manager instead of DOM scraping.
+     *
+     * Features:
+     * - Appends stats to game's action name (queue count, time/action, actions/hr)
+     * - Shows time estimates below (total time → completion time)
+     * - Updates automatically on action changes
+     * - Queue tooltip enhancement (time for each action + total)
+     */
+
+
+    /**
+     * Format a completion Date as a clock string, respecting user's time/date format settings.
+     * @param {Date} completionTime
+     * @param {boolean} includeDate - Whether to include the date portion
+     * @returns {string}
+     */
+    function formatCompletionTime(completionTime, includeDate) {
+        return formatters_js.formatDateTime(completionTime, { includeDate, includeTime: true, includeSeconds: true });
+    }
+
+    /**
+     * ActionTimeDisplay class manages the time display panel and queue tooltips
+     */
+    class ActionTimeDisplay {
+        constructor() {
+            this.displayElement = null;
+            this.profitElement = null;
+            this.isInitialized = false;
+            this.updateTimer = null;
+            this.unregisterQueueObserver = null;
+            this.actionNameObserver = null;
+            this.queueMenuObserver = null; // Observer for queue menu mutations
+            this.unregisterActionNameObserver = null;
+            this.characterInitHandler = null; // Handler for character switch
+            this.activeProfitCalculationId = null; // Track active profit calculation to prevent race conditions
+            this.activeBarProfitId = null;
+            this.waitForPanelTimeout = null;
+            this.retryUpdateTimeout = null;
+            this.settingChangeHandlers = []; // [{key, fn}] for offSettingChange cleanup
+            this.cleanupRegistry = cleanupRegistry_js.createCleanupRegistry();
+        }
+
+        /**
+         * Initialize the action time display
+         */
+        async initialize() {
+            if (this.isInitialized) {
+                return;
+            }
+
+            // Migrate old display mode setting to new granular toggles
+            await this.migrateDisplayMode();
+
+            if (!config.getSetting('actionBar_enabled')) {
+                return;
+            }
+
+            // Set up setting change listeners for all action bar toggles
+            const actionBarSettings = [
+                'actionBar_enabled',
+                'actionBar_compactWidth',
+                'actionBar_showQueueCount',
+                'actionBar_showActionDuration',
+                'actionBar_showActionsPerHour',
+                'actionBar_showTimeRemaining',
+                'profitCalc_pricingMode',
+            ];
+            for (const key of actionBarSettings) {
+                const fn = (newValue) => {
+                    if (key === 'actionBar_enabled' && !newValue) {
+                        this.disable();
+                        return;
+                    }
+                    this.updateDisplay();
+                };
+                config.onSettingChange(key, fn);
+                this.settingChangeHandlers.push({ key, fn });
+            }
+            this.cleanupRegistry.registerCleanup(() => {
+                this.settingChangeHandlers.forEach(({ key, fn }) => config.offSettingChange(key, fn));
+                this.settingChangeHandlers = [];
+            });
+
+            // Set up handler for character switching
+            if (!this.characterInitHandler) {
+                this.characterInitHandler = () => {
+                    this.handleCharacterSwitch();
+                };
+                dataManager.on('character_initialized', this.characterInitHandler);
+                this.cleanupRegistry.registerCleanup(() => {
+                    if (this.characterInitHandler) {
+                        dataManager.off('character_initialized', this.characterInitHandler);
+                        this.characterInitHandler = null;
+                    }
+                });
+            }
+
+            // Listen for actions_updated so display refreshes when new actions arrive via WebSocket
+            // (the DOM updates optimistically before the WS message, so the mutation observer fires
+            // before characterActions is populated — this ensures we retry once the data is available)
+            if (!this.actionsUpdatedHandler) {
+                this.actionsUpdatedHandler = () => {
+                    this.updateDisplay();
+                };
+                dataManager.on('actions_updated', this.actionsUpdatedHandler);
+                this.cleanupRegistry.registerCleanup(() => {
+                    if (this.actionsUpdatedHandler) {
+                        dataManager.off('actions_updated', this.actionsUpdatedHandler);
+                        this.actionsUpdatedHandler = null;
+                    }
+                });
+            }
+
+            this.cleanupRegistry.registerCleanup(() => {
+                const actionNameElement = document.querySelector('div[class*="Header_actionName"]');
+                if (actionNameElement) {
+                    this.clearAppendedStats(actionNameElement);
+                }
+            });
+
+            this.cleanupRegistry.registerCleanup(() => {
+                if (this.waitForPanelTimeout) {
+                    clearTimeout(this.waitForPanelTimeout);
+                    this.waitForPanelTimeout = null;
+                }
+            });
+
+            this.cleanupRegistry.registerCleanup(() => {
+                if (this.retryUpdateTimeout) {
+                    clearTimeout(this.retryUpdateTimeout);
+                    this.retryUpdateTimeout = null;
+                }
+            });
+
+            this.cleanupRegistry.registerCleanup(() => {
+                if (this.updateTimer) {
+                    clearInterval(this.updateTimer);
+                    this.updateTimer = null;
+                }
+            });
+
+            this.cleanupRegistry.registerCleanup(() => {
+                if (this.actionNameObserver) {
+                    this.actionNameObserver();
+                    this.actionNameObserver = null;
+                }
+            });
+
+            this.cleanupRegistry.registerCleanup(() => {
+                if (this.queueMenuObserver) {
+                    this.queueMenuObserver();
+                    this.queueMenuObserver = null;
+                }
+            });
+
+            this.cleanupRegistry.registerCleanup(() => {
+                if (this.unregisterActionNameObserver) {
+                    this.unregisterActionNameObserver();
+                    this.unregisterActionNameObserver = null;
+                }
+            });
+
+            // Wait for action name element to exist
+            this.waitForActionPanel();
+
+            this.initializeActionNameWatcher();
+
+            // Initialize queue tooltip observer
+            this.initializeQueueObserver();
+
+            // Initialize queue hover tooltip observer
+            this.initializeQueueTooltipObserver();
+
+            this.isInitialized = true;
+        }
+
+        /**
+         * Migrate old totalActionTime display mode to granular toggle settings
+         */
+        async migrateDisplayMode() {
+            const oldMode = config.getSettingValue('totalActionTime', null);
+            const alreadyMigrated = config.getSettingValue('actionBar_enabled', null);
+            if (oldMode === null || alreadyMigrated !== null) return;
+
+            if (oldMode === 'off') {
+                config.setSetting('actionBar_enabled', false);
+            } else if (oldMode === 'minimal') {
+                config.setSetting('actionBar_showActionDuration', false);
+                config.setSetting('actionBar_showActionsPerHour', false);
+            } else if (oldMode === 'compact') {
+                config.setSetting('actionBar_compactWidth', true);
+            }
+            // 'full' maps to all defaults (all on, compact off)
+        }
+
+        /**
+         * Initialize observer for queue tooltip
+         */
+        initializeQueueObserver() {
+            // Register with centralized DOM observer to watch for queue menu
+            this.unregisterQueueObserver = domObserver.onClass(
+                'ActionTimeDisplay-Queue',
+                'QueuedActions_queuedActionsEditMenu',
+                (queueMenu) => {
+                    this.injectQueueTimes(queueMenu);
+
+                    this.setupQueueMenuObserver(queueMenu);
+                }
+            );
+
+            this.cleanupRegistry.registerCleanup(() => {
+                if (this.unregisterQueueObserver) {
+                    this.unregisterQueueObserver();
+                    this.unregisterQueueObserver = null;
+                }
+            });
+        }
+
+        /**
+         * Initialize observer for queue hover tooltip (the MUI Tooltip that appears on hover over "+N Queued Actions")
+         */
+        initializeQueueTooltipObserver() {
+            tooltipObserver.subscribe('queue-tooltip-timing', (element, eventType) => {
+                if (eventType !== 'opened') return;
+
+                // Identify queue tooltip by its unique class
+                const tooltipContent = element.querySelector('[class*="QueuedActions_queuedActionsTooltip"]');
+                if (!tooltipContent) return;
+
+                this.injectQueueTimesTooltip(tooltipContent);
+            });
+
+            this.cleanupRegistry.registerCleanup(() => {
+                tooltipObserver.unsubscribe('queue-tooltip-timing');
+            });
+        }
+
+        /**
+         * Inject time display into queue hover tooltip
+         * Reuses matchActionFromDiv and calculation logic from injectQueueTimes,
+         * but simplified (no mutation observer, no async profit).
+         * @param {HTMLElement} tooltipContent - The QueuedActions_queuedActionsTooltip container
+         */
+        injectQueueTimesTooltip(tooltipContent) {
+            try {
+                const currentActions = dataManager.getCurrentActions();
+                if (!currentActions || currentActions.length === 0) return;
+
+                const actionDivs = tooltipContent.querySelectorAll('[class^="QueuedActions_action__"]');
+                if (actionDivs.length === 0) return;
+
+                // Prevent duplicate injection
+                if (tooltipContent.querySelector('.mwi-queue-action-time')) return;
+
+                const inventoryLookup = this.buildInventoryLookup(dataManager.getInventory());
+
+                let accumulatedTime = 0;
+                let hasInfinite = false;
+
+                // Include current action time in total (same as edit menu)
+                const currentActionTime = this.calculateCurrentActionTime(currentActions, inventoryLookup);
+                if (currentActionTime) {
+                    accumulatedTime += currentActionTime.totalTime;
+                    if (currentActionTime.hasInfinite) hasInfinite = true;
+                }
+
+                // Track used action IDs to prevent duplicate matching
+                const usedActionIds = new Set();
+                if (currentActionTime?.actionId) {
+                    usedActionIds.add(currentActionTime.actionId);
+                }
+
+                for (const actionDiv of actionDivs) {
+                    const actionObj = this.matchActionFromDiv(actionDiv, currentActions, usedActionIds);
+
+                    if (!actionObj) {
+                        this.appendTimeToActionDiv(actionDiv, '[Unknown action]');
+                        continue;
+                    }
+
+                    usedActionIds.add(actionObj.id);
+
+                    const actionDetails = dataManager.getActionDetails(actionObj.actionHrid);
+                    if (!actionDetails) continue;
+
+                    const result = this.calculateSingleQueueActionTime(actionObj, actionDetails, inventoryLookup);
+
+                    if (result.isTrulyInfinite) {
+                        hasInfinite = true;
+                    } else {
+                        accumulatedTime += result.actionTimeSeconds;
+                    }
+
+                    // Format time text
+                    let timeText;
+                    if (result.isTrulyInfinite) {
+                        timeText = '[∞]';
+                    } else if (result.isInfinite && result.materialLimit !== null) {
+                        const timeStr = formatters_js.timeReadable(result.totalTime);
+                        timeText = `[${timeStr} · ${result.limitLabel}: ${this.formatLargeNumber(result.materialLimit)}]`;
+                    } else {
+                        const timeStr = formatters_js.timeReadable(result.totalTime);
+                        timeText = `[${timeStr}]`;
+                    }
+
+                    // Add completion time
+                    if (!hasInfinite && !result.isTrulyInfinite) {
+                        const completionDate = new Date();
+                        completionDate.setSeconds(completionDate.getSeconds() + accumulatedTime);
+                        const isToday = completionDate.toDateString() === new Date().toDateString();
+                        timeText += ` Complete at ${formatCompletionTime(completionDate, !isToday)}`;
+                    }
+
+                    this.appendTimeToActionDiv(actionDiv, timeText);
+                }
+
+                // Add total time at bottom of tooltip
+                const actionsContainer = tooltipContent.querySelector('[class*="QueuedActions_actions"]');
+                if (actionsContainer) {
+                    const totalDiv = document.createElement('div');
+                    totalDiv.className = 'mwi-queue-tooltip-total';
+                    totalDiv.style.cssText = `
+                    color: ${config.COLOR_TOOLTIP_INFO};
+                    font-weight: bold;
+                    margin-top: 8px;
+                    padding-top: 6px;
+                    border-top: 1px solid rgba(0, 0, 0, 0.2);
+                    text-align: center;
+                    font-size: 0.85em;
+                `;
+
+                    let totalText;
+                    if (hasInfinite) {
+                        totalText = accumulatedTime > 0 ? `Total: ${formatters_js.timeReadable(accumulatedTime)} + [∞]` : 'Total: [∞]';
+                    } else {
+                        totalText = `Total: ${formatters_js.timeReadable(accumulatedTime)}`;
+                    }
+                    totalDiv.textContent = totalText;
+                    actionsContainer.appendChild(totalDiv);
+                }
+            } catch (error) {
+                console.error('[Action Time Display] Error injecting queue tooltip times:', error);
+            }
+        }
+
+        /**
+         * Append a time display div to an action div in the queue tooltip
+         * @param {HTMLElement} actionDiv - The action container div
+         * @param {string} text - Time text to display
+         */
+        appendTimeToActionDiv(actionDiv, text) {
+            const timeDiv = document.createElement('div');
+            timeDiv.className = 'mwi-queue-action-time';
+            timeDiv.style.cssText = `
+            color: ${config.COLOR_TOOLTIP_INFO};
+            font-size: 0.85em;
+            margin-top: 2px;
+        `;
+            timeDiv.textContent = text;
+
+            const actionTextContainer = actionDiv.querySelector('[class*="QueuedActions_actionText"]');
+            if (actionTextContainer) {
+                actionTextContainer.appendChild(timeDiv);
+            } else {
+                actionDiv.appendChild(timeDiv);
+            }
+        }
+
+        /**
+         * Calculate time for the currently active action (for total time calculation)
+         * @param {Array} currentActions - All current actions from dataManager
+         * @param {Object} inventoryLookup - Inventory lookup map
+         * @returns {Object|null} { totalTime, hasInfinite, actionId } or null
+         */
+        calculateCurrentActionTime(currentActions, inventoryLookup) {
+            const actionNameElement = document.querySelector('div[class*="Header_actionName"]');
+            if (!actionNameElement || !actionNameElement.textContent) return null;
+
+            const actionNameText = this.getCleanActionName(actionNameElement);
+            const sorted = [...currentActions].sort((a, b) => a.ordinal - b.ordinal);
+            const currentAction = this.matchCurrentActionFromText(sorted.slice(0, 1), actionNameText);
+
+            if (!currentAction) return null;
+
+            const actionDetails = dataManager.getActionDetails(currentAction.actionHrid);
+            if (!actionDetails) return null;
+
+            const result = this.calculateSingleQueueActionTime(currentAction, actionDetails, inventoryLookup);
+
+            return {
+                totalTime: result.actionTimeSeconds,
+                hasInfinite: result.isTrulyInfinite,
+                actionId: currentAction.id,
+            };
+        }
+
+        /**
+         * Calculate time for a single queued action
+         * @param {Object} actionObj - Action object from dataManager cache
+         * @param {Object} actionDetails - Action details from dataManager
+         * @param {Object} inventoryLookup - Inventory lookup map
+         * @returns {Object} { totalTime, actionTimeSeconds, count, baseActionsNeeded, isTrulyInfinite, isInfinite, materialLimit, limitType, limitLabel, isEnhancing }
+         */
+        calculateSingleQueueActionTime(actionObj, actionDetails, inventoryLookup) {
+            const isEnhancing = actionDetails.type === '/action_types/enhancing';
+            const isInfinite = !actionObj.hasMaxCount || actionObj.actionHrid.includes('/combat/');
+
+            let totalTime = 0;
+            let actionTimeSeconds = 0;
+            let count = 0;
+            let baseActionsNeeded = 0;
+            let isTrulyInfinite = false;
+            let materialLimit = null;
+            let limitType = null;
+            let limitLabel = '';
+
+            if (isEnhancing) {
+                const enhancingTime = this.calculateEnhancingQueueTime(actionObj, actionDetails, inventoryLookup);
+                if (enhancingTime) {
+                    count = enhancingTime.count;
+                    totalTime = enhancingTime.totalTime;
+                    actionTimeSeconds = enhancingTime.totalTime;
+                } else if (isInfinite) {
+                    isTrulyInfinite = true;
+                    totalTime = Infinity;
+                }
+            } else {
+                const timeData = this.calculateActionTime(actionDetails, actionObj.actionHrid);
+                if (!timeData) {
+                    return {
+                        totalTime: 0,
+                        actionTimeSeconds: 0,
+                        count: 0,
+                        baseActionsNeeded: 0,
+                        isTrulyInfinite: isInfinite,
+                        isInfinite,
+                        materialLimit: null,
+                        limitType: null,
+                        limitLabel: '',
+                        isEnhancing,
+                    };
+                }
+
+                const { actionTime, totalEfficiency } = timeData;
+
+                if (isInfinite) {
+                    const equipment = dataManager.getEquipment();
+                    const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
+                    const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, itemDetailMap);
+                    const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
+                    const artisanBonus = teaParser_js.parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
+
+                    const limitResult = this.calculateMaterialLimit(
+                        actionDetails,
+                        inventoryLookup,
+                        artisanBonus,
+                        actionObj
+                    );
+                    if (limitResult) {
+                        materialLimit = limitResult.maxActions;
+                        limitType = limitResult.limitType;
+                    }
+                }
+
+                isTrulyInfinite = isInfinite && materialLimit === null;
+
+                if (!isInfinite) {
+                    count = actionObj.maxCount - actionObj.currentCount;
+                } else if (materialLimit !== null) {
+                    count = materialLimit;
+                }
+
+                if (!isTrulyInfinite && count > 0) {
+                    const avgActionsPerBaseAction = efficiency_js.calculateEfficiencyMultiplier(totalEfficiency);
+                    baseActionsNeeded = Math.ceil(count / avgActionsPerBaseAction);
+                    const elapsedInCurrentUnit = dataManager.getElapsedSecondsInCurrentUnit(
+                        actionObj.id,
+                        actionObj.currentCount,
+                        actionTime
+                    );
+                    totalTime = Math.max(0, baseActionsNeeded * actionTime - elapsedInCurrentUnit);
+                    actionTimeSeconds = totalTime;
+                } else if (isTrulyInfinite) {
+                    totalTime = Infinity;
+                }
+            }
+
+            // Derive limit label
+            if (limitType === 'gold') {
+                limitLabel = 'gold';
+            } else if (limitType && limitType.startsWith('material:')) {
+                limitLabel = 'mat';
+            } else if (limitType && limitType.startsWith('upgrade:')) {
+                limitLabel = 'upgrade';
+            } else {
+                limitLabel = 'max';
+            }
+
+            return {
+                totalTime,
+                actionTimeSeconds,
+                count,
+                baseActionsNeeded,
+                isTrulyInfinite,
+                isInfinite,
+                materialLimit,
+                limitType,
+                limitLabel,
+                isEnhancing,
+            };
+        }
+
+        /**
+         * Initialize observer for action name element replacement
+         */
+        initializeActionNameWatcher() {
+            if (this.unregisterActionNameObserver) {
+                return;
+            }
+
+            this.unregisterActionNameObserver = domObserver.onClass(
+                'ActionTimeDisplay-ActionName',
+                'Header_actionName',
+                (actionNameElement) => {
+                    if (!actionNameElement) {
+                        return;
+                    }
+
+                    this.createDisplayPanel();
+                    this.setupActionNameObserver(actionNameElement);
+                    this.updateDisplay();
+                }
+            );
+        }
+
+        /**
+         * Setup mutation observer for queue menu reordering
+         * @param {HTMLElement} queueMenu - Queue menu container element
+         */
+        setupQueueMenuObserver(queueMenu) {
+            if (!queueMenu) {
+                return;
+            }
+
+            if (this.queueMenuObserver) {
+                this.queueMenuObserver();
+                this.queueMenuObserver = null;
+            }
+
+            this.queueMenuObserver = domObserverHelpers_js.createMutationWatcher(
+                queueMenu,
+                () => {
+                    // Disconnect to prevent infinite loop (our injection triggers mutations)
+                    if (this.queueMenuObserver) {
+                        this.queueMenuObserver();
+                        this.queueMenuObserver = null;
+                    }
+
+                    // Queue DOM changed (reordering) - re-inject times
+                    // NOTE: Reconnection happens inside injectQueueTimes after async completes
+                    this.injectQueueTimes(queueMenu);
+                },
+                {
+                    childList: true,
+                    subtree: true,
+                }
+            );
+        }
+
+        /**
+         * Handle character switch
+         * Clean up old observers and re-initialize for new character's action panel
+         */
+        handleCharacterSwitch() {
+            // Cancel any active profit calculations to prevent stale data
+            this.activeProfitCalculationId = null;
+
+            // Clear appended stats from old character's action panel (before it's removed)
+            const oldActionNameElement = document.querySelector('div[class*="Header_actionName"]');
+            if (oldActionNameElement) {
+                this.clearAppendedStats(oldActionNameElement);
+            }
+
+            // Disconnect old action name observer (watching removed element)
+            if (this.actionNameObserver) {
+                this.actionNameObserver();
+                this.actionNameObserver = null;
+            }
+
+            // Clear display element reference (already removed from DOM by game)
+            this.displayElement = null;
+            this.profitElement = null;
+
+            // Re-initialize action panel display for new character
+            this.waitForActionPanel();
+        }
+
+        /**
+         * Wait for action panel to exist in DOM
+         */
+        async waitForActionPanel() {
+            // Try to find action name element (use wildcard for hash-suffixed class)
+            const actionNameElement = document.querySelector('div[class*="Header_actionName"]');
+
+            if (actionNameElement) {
+                this.createDisplayPanel();
+                this.setupActionNameObserver(actionNameElement);
+                this.updateDisplay();
+            } else {
+                // Not found, try again in 200ms
+                if (this.waitForPanelTimeout) {
+                    clearTimeout(this.waitForPanelTimeout);
+                }
+                this.waitForPanelTimeout = setTimeout(() => {
+                    this.waitForPanelTimeout = null;
+                    this.waitForActionPanel();
+                }, 200);
+                this.cleanupRegistry.registerTimeout(this.waitForPanelTimeout);
+            }
+        }
+
+        /**
+         * Setup MutationObserver to watch action name changes
+         * @param {HTMLElement} actionNameElement - The action name DOM element
+         */
+        setupActionNameObserver(actionNameElement) {
+            // Disconnect any previous observer first. Without this, a duplicate/leaked
+            // observer can end up watching the same element (this is called both from the
+            // persistent Header_actionName class watcher and from waitForActionPanel, which
+            // can both fire for the same element during a character switch) — see the
+            // isSelfInflictedMutation comment below for why that leak matters.
+            if (this.actionNameObserver) {
+                this.actionNameObserver();
+                this.actionNameObserver = null;
+            }
+
+            // Watch for text content changes in the action name element
+            this.actionNameObserver = domObserverHelpers_js.createMutationWatcher(
+                actionNameElement,
+                (mutations) => {
+                    if (this.isSelfInflictedMutation(mutations)) {
+                        return;
+                    }
+                    this.updateDisplay();
+                },
+                {
+                    childList: true,
+                    characterData: true,
+                    subtree: true,
+                }
+            );
+        }
+
+        /**
+         * True when every mutation in a batch is solely the addition/removal of our own
+         * `.mwi-appended-stats` marker span. updateDisplay() already disconnects the observer
+         * before touching the DOM and reconnects afterward, but if a second observer ever ends
+         * up watching the same element (e.g. a leaked/duplicate one), it would otherwise see our
+         * own edit, call updateDisplay() again, which re-edits the marker, which the leaked
+         * observer sees again — an endless remove/reappend cycle with no external cause needed.
+         * Filtering these out here makes the observer safe even if such a duplicate exists.
+         * @param {MutationRecord[]} mutations
+         * @returns {boolean}
+         */
+        isSelfInflictedMutation(mutations) {
+            return mutations.every((mutation) => {
+                if (mutation.type !== 'childList') {
+                    return false;
+                }
+                const nodes = [...mutation.addedNodes, ...mutation.removedNodes];
+                if (nodes.length === 0) {
+                    return false;
+                }
+                return nodes.every(
+                    (node) => node.nodeType === Node.ELEMENT_NODE && node.classList?.contains('mwi-appended-stats')
+                );
+            });
+        }
+
+        /**
+         * Create the display panel in the DOM
+         */
+        createDisplayPanel() {
+            if (this.displayElement && this.displayElement.isConnected) {
+                return; // Already created and still in the DOM
+            }
+            this.displayElement = null;
+
+            const orphan = document.getElementById('mwi-action-time-display');
+            if (orphan) {
+                orphan.remove();
+            }
+
+            const actionNameContainer = document.querySelector('div[class*="Header_actionName"]');
+            if (!actionNameContainer) {
+                return;
+            }
+
+            // NOTE: Width overrides are now applied in updateDisplay() after we know if it's combat
+            // This prevents HP/MP bar width issues when loading directly on combat actions
+
+            // Create display element
+            this.displayElement = document.createElement('div');
+            this.displayElement.id = 'mwi-action-time-display';
+            this.displayElement.style.cssText = `
+            font-size: 0.9em;
+            color: var(--text-color-secondary, ${config.COLOR_TEXT_SECONDARY});
+            margin-top: 2px;
+            line-height: 1.4;
+            text-align: left;
+            white-space: pre-wrap;
+        `;
+
+            // Insert after action name
+            actionNameContainer.parentNode.insertBefore(this.displayElement, actionNameContainer.nextSibling);
+
+            // Create profit element (below time display)
+            this.profitElement = document.createElement('div');
+            this.profitElement.id = 'mwi-action-profit-display';
+            this.profitElement.style.cssText = `
+            font-size: 0.9em;
+            color: var(--text-color-secondary, ${config.COLOR_TEXT_SECONDARY});
+            line-height: 1.4;
+            text-align: left;
+            white-space: pre-wrap;
+        `;
+            this.displayElement.parentNode.insertBefore(this.profitElement, this.displayElement.nextSibling);
+
+            this.cleanupRegistry.registerCleanup(() => {
+                if (this.displayElement && this.displayElement.parentNode) {
+                    this.displayElement.parentNode.removeChild(this.displayElement);
+                }
+                this.displayElement = null;
+                if (this.profitElement && this.profitElement.parentNode) {
+                    this.profitElement.parentNode.removeChild(this.profitElement);
+                }
+                this.profitElement = null;
+            });
+        }
+
+        /**
+         * Update the display with current action data
+         */
+        updateDisplay() {
+            if (!this.displayElement) {
+                this.createDisplayPanel();
+                if (!this.displayElement) {
+                    return;
+                }
+            }
+
+            if (!this.displayElement.isConnected) {
+                this.createDisplayPanel();
+                if (!this.displayElement) {
+                    return;
+                }
+            }
+
+            // Get current action - read from game UI which is always correct
+            // The game updates the DOM immediately when actions change
+            // Use wildcard selector to handle hash-suffixed class names
+            const actionNameElement = document.querySelector('div[class*="Header_actionName"]');
+
+            // CRITICAL: Disconnect observer before making changes to prevent infinite loop
+            if (this.actionNameObserver) {
+                this.actionNameObserver();
+                this.actionNameObserver = null;
+            }
+
+            if (!actionNameElement || !actionNameElement.textContent) {
+                this.displayElement.innerHTML = '';
+                // Clear any appended stats from the game's div
+                this.clearAppendedStats(actionNameElement);
+                // Reconnect observer
+                this.reconnectActionNameObserver(actionNameElement);
+                return;
+            }
+
+            // Parse action name from DOM
+            // Format can be: "Action Name (#123)", "Action Name (123)", "Action Name: Item (123)", etc.
+            // First, strip any stats we previously appended
+            const actionNameText = this.getCleanActionName(actionNameElement);
+
+            // Check if no action is running ("Doing nothing...")
+            if (actionNameText.includes('Doing nothing')) {
+                this.displayElement.innerHTML = '';
+                if (this.profitElement) this.profitElement.innerHTML = '';
+                this.clearAppendedStats(actionNameElement);
+                // Reconnect observer
+                this.reconnectActionNameObserver(actionNameElement);
+                return;
+            }
+
+            // Extract inventory count from parentheses (e.g., "Coinify: Item (4312)" -> 4312)
+            const inventoryCountMatch = actionNameText.match(/\(([\d,]+)\)$/);
+            const inventoryCount = inventoryCountMatch ? parseInt(inventoryCountMatch[1].replace(/,/g, ''), 10) : null;
+
+            // Find the matching action in cache
+            const cachedActions = dataManager.getCurrentActions();
+            let action;
+
+            // Match against the front action (lowest ordinal = most active).
+            // Sort needed because the array is in insertion order, not ordinal order.
+            if (cachedActions.length > 0) {
+                const sorted = cachedActions.sort((a, b) => a.ordinal - b.ordinal);
+                action = this.matchCurrentActionFromText(sorted.slice(0, 1), actionNameText);
+            }
+
+            if (!action) {
+                this.displayElement.innerHTML = '';
+                this.clearAppendedStats(actionNameElement);
+                // Only retry if no cached actions (data not loaded yet).
+                // If cached actions exist but none match, data updated before DOM —
+                // the mutation observer will trigger updateDisplay when DOM catches up.
+                if (cachedActions.length === 0) {
+                    this.scheduleUpdateRetry();
+                }
+                this.reconnectActionNameObserver(actionNameElement);
+                return;
+            }
+
+            const actionDetails = dataManager.getActionDetails(action.actionHrid);
+            if (!actionDetails) {
+                this.displayElement.innerHTML = '';
+                this.clearAppendedStats(actionNameElement);
+                // Reconnect observer
+                this.reconnectActionNameObserver(actionNameElement);
+                return;
+            }
+
+            // Skip combat actions - no time display for combat
+            if (actionDetails.type === '/action_types/combat') {
+                this.displayElement.innerHTML = '';
+                if (this.profitElement) this.profitElement.innerHTML = '';
+                this.clearAppendedStats(actionNameElement);
+
+                const combatCompact = config.getSetting('actionBar_compactWidth');
+
+                if (!combatCompact) {
+                    // FULL MODE: Expand parent containers so HP/MP bars match skilling progress bar width
+                    actionNameElement.style.removeProperty('overflow');
+                    actionNameElement.style.removeProperty('text-overflow');
+                    actionNameElement.style.removeProperty('white-space');
+                    actionNameElement.style.removeProperty('max-width');
+                    actionNameElement.style.removeProperty('width');
+                    actionNameElement.style.removeProperty('min-width');
+
+                    const parent1 = actionNameElement.parentElement;
+                    const parent2 = parent1?.parentElement;
+
+                    if (parent1) {
+                        parent1.style.setProperty('max-width', 'none', 'important');
+                        parent1.style.setProperty('width', 'auto', 'important');
+                        parent1.style.setProperty('overflow', 'visible', 'important');
+                    }
+
+                    if (parent2) {
+                        parent2.style.setProperty('max-width', 'none', 'important');
+                        parent2.style.setProperty('width', 'auto', 'important');
+                        parent2.style.setProperty('overflow', 'visible', 'important');
+                    }
+                } else {
+                    // COMPACT/MINIMAL: Remove all CSS overrides to restore game defaults
+                    actionNameElement.style.removeProperty('overflow');
+                    actionNameElement.style.removeProperty('text-overflow');
+                    actionNameElement.style.removeProperty('white-space');
+                    actionNameElement.style.removeProperty('max-width');
+                    actionNameElement.style.removeProperty('width');
+                    actionNameElement.style.removeProperty('min-width');
+
+                    let parent = actionNameElement.parentElement;
+                    let levels = 0;
+                    while (parent && levels < 5) {
+                        parent.style.removeProperty('overflow');
+                        parent.style.removeProperty('text-overflow');
+                        parent.style.removeProperty('white-space');
+                        parent.style.removeProperty('max-width');
+                        parent.style.removeProperty('width');
+                        parent.style.removeProperty('min-width');
+                        parent = parent.parentElement;
+                        levels++;
+                    }
+                }
+
+                this.reconnectActionNameObserver(actionNameElement);
+                return;
+            }
+
+            // Handle enhancing actions with specialized display
+            if (actionDetails.type === '/action_types/enhancing') {
+                if (this.profitElement) this.profitElement.innerHTML = '';
+                this.buildEnhancingDisplay(action, actionDetails, actionNameElement);
+                this.reconnectActionNameObserver(actionNameElement);
+                return;
+            }
+
+            // Re-apply CSS override on every update to prevent game's CSS from truncating text
+            // ONLY for non-combat actions (combat needs normal width for HP/MP bars)
+            // Use setProperty with 'important' to ensure we override game's styles
+
+            // Check compact width setting
+            const compactWidth = config.getSetting('actionBar_compactWidth');
+
+            if (compactWidth) {
+                // COMPACT MODE: Limit to 800px and reset parents
+                actionNameElement.style.setProperty('max-width', '800px', 'important');
+                actionNameElement.style.setProperty('overflow', 'hidden', 'important');
+                actionNameElement.style.setProperty('text-overflow', 'clip', 'important');
+                actionNameElement.style.setProperty('white-space', 'nowrap', 'important');
+                actionNameElement.style.setProperty('width', '', 'important');
+
+                const parent1 = actionNameElement.parentElement;
+                const parent2 = parent1?.parentElement;
+
+                if (parent1) {
+                    parent1.style.removeProperty('max-width');
+                    parent1.style.removeProperty('width');
+                    parent1.style.removeProperty('overflow');
+                }
+
+                if (parent2) {
+                    parent2.style.removeProperty('max-width');
+                    parent2.style.removeProperty('width');
+                    parent2.style.removeProperty('overflow');
+                }
+            } else {
+                // FULL WIDTH: Expand containers to show all text
+                actionNameElement.style.setProperty('overflow', 'visible', 'important');
+                actionNameElement.style.setProperty('text-overflow', 'clip', 'important');
+                actionNameElement.style.setProperty('white-space', 'nowrap', 'important');
+                actionNameElement.style.setProperty('max-width', 'none', 'important');
+                actionNameElement.style.setProperty('width', 'auto', 'important');
+
+                const parent1 = actionNameElement.parentElement;
+                const parent2 = parent1?.parentElement;
+
+                if (parent1) {
+                    parent1.style.setProperty('max-width', 'none', 'important');
+                    parent1.style.setProperty('width', 'auto', 'important');
+                    parent1.style.setProperty('overflow', 'visible', 'important');
+                }
+
+                if (parent2) {
+                    parent2.style.setProperty('max-width', 'none', 'important');
+                    parent2.style.setProperty('width', 'auto', 'important');
+                    parent2.style.setProperty('overflow', 'visible', 'important');
+                }
+            }
+
+            // Get character data
+            const equipment = dataManager.getEquipment();
+            const skills = dataManager.getSkills();
+            const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
+
+            // For alchemy actions, use item level for efficiency calculation (not action requirement)
+            let levelRequirementOverride = undefined;
+            if (actionDetails.type === '/action_types/alchemy' && action.primaryItemHash) {
+                const { itemHrid: alchItemHrid } = this.parseItemHash(action.primaryItemHash);
+                if (alchItemHrid) {
+                    const itemDetails = itemDetailMap[alchItemHrid];
+                    if (itemDetails && itemDetails.itemLevel) {
+                        levelRequirementOverride = itemDetails.itemLevel;
+                    }
+                }
+            }
+
+            // Use shared calculator
+            const stats = actionCalculator_js.calculateActionStats(actionDetails, {
+                skills,
+                equipment,
+                itemDetailMap,
+                actionHrid: action.actionHrid, // Pass action HRID for task detection
+                includeCommunityBuff: true,
+                includeBreakdown: false,
+                levelRequirementOverride,
+            });
+
+            if (!stats) {
+                // Reconnect observer
+                this.reconnectActionNameObserver(actionNameElement);
+                return;
+            }
+
+            const { actionTime, totalEfficiency } = stats;
+            const baseActionsPerHour = profitHelpers_js.calculateActionsPerHour(actionTime);
+
+            // Efficiency model:
+            // - Queue input counts completed actions (including instant repeats)
+            // - Efficiency adds instant repeats with no extra time
+            // - Time is based on time-consuming actions (queuedActions / avgActionsPerBaseAction)
+            // - Materials are consumed per completed action, including repeats
+            // Calculate average queued actions completed per time-consuming action
+            const avgActionsPerBaseAction = efficiency_js.calculateEfficiencyMultiplier(totalEfficiency);
+
+            // Calculate actions per hour WITH efficiency (total action completions including instant repeats)
+            const actionsPerHourWithEfficiency = profitHelpers_js.calculateEffectiveActionsPerHour(
+                baseActionsPerHour,
+                avgActionsPerBaseAction
+            );
+
+            // Calculate items per hour based on action type
+            let itemsPerHour;
+
+            // Gathering action types (need special handling for dropTable)
+            const GATHERING_TYPES = ['/action_types/foraging', '/action_types/woodcutting', '/action_types/milking'];
+
+            // Production action types that benefit from Gourmet Tea
+            const PRODUCTION_TYPES = ['/action_types/brewing', '/action_types/cooking'];
+
+            if (
+                actionDetails.dropTable &&
+                actionDetails.dropTable.length > 0 &&
+                GATHERING_TYPES.includes(actionDetails.type)
+            ) {
+                // Gathering action - use dropTable with gathering quantity bonus
+                const mainDrop = actionDetails.dropTable[0];
+                const baseAvgAmount = (mainDrop.minCount + mainDrop.maxCount) / 2;
+
+                // Calculate gathering quantity bonus (same as gathering-profit.js)
+                const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
+                const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, itemDetailMap);
+                const gatheringTea = teaParser_js.parseGatheringBonus(activeDrinks, itemDetailMap, drinkConcentration);
+
+                // Community buff
+                const communityBuffLevel = dataManager.getCommunityBuffLevel('/community_buff_types/gathering_quantity');
+                const communityGathering = communityBuffLevel ? 0.2 + (communityBuffLevel - 1) * 0.005 : 0;
+
+                // Achievement buffs
+                const achievementGathering = dataManager.getAchievementBuffFlatBoost(
+                    actionDetails.type,
+                    '/buff_types/gathering'
+                );
+
+                // Total gathering bonus (all additive)
+                const totalGathering = gatheringTea + communityGathering + achievementGathering;
+
+                // Apply gathering bonus to average amount
+                const avgAmountPerAction = baseAvgAmount * (1 + totalGathering);
+
+                // Items per hour = actions × drop rate × avg amount × efficiency
+                itemsPerHour = baseActionsPerHour * mainDrop.dropRate * avgAmountPerAction * avgActionsPerBaseAction;
+            } else if (actionDetails.outputItems && actionDetails.outputItems.length > 0) {
+                // Production action - use outputItems
+                const outputAmount = actionDetails.outputItems[0].count || 1;
+                itemsPerHour = baseActionsPerHour * outputAmount * avgActionsPerBaseAction;
+
+                // Apply Gourmet bonus for brewing/cooking (extra items chance)
+                if (PRODUCTION_TYPES.includes(actionDetails.type)) {
+                    const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
+                    const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, itemDetailMap);
+                    const gourmetBonus = teaParser_js.parseGourmetBonus(activeDrinks, itemDetailMap, drinkConcentration);
+
+                    // Gourmet gives a chance for extra items (e.g., 0.1344 = 13.44% more items)
+                    const gourmetBonusItems = itemsPerHour * gourmetBonus;
+                    itemsPerHour += gourmetBonusItems;
+                }
+            } else {
+                // Fallback - no items produced
+                itemsPerHour = actionsPerHourWithEfficiency;
+            }
+
+            // Calculate material limit for infinite actions
+            let materialLimit = null;
+            let limitType = null;
+            if (!action.hasMaxCount) {
+                // Get inventory and calculate Artisan bonus
+                const inventory = dataManager.getInventory();
+                const inventoryLookup = this.buildInventoryLookup(inventory);
+                const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, itemDetailMap);
+                const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
+                const artisanBonus = teaParser_js.parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
+
+                // Calculate max actions based on materials and costs
+                const limitResult = this.calculateMaterialLimit(actionDetails, inventoryLookup, artisanBonus, action);
+                if (limitResult) {
+                    materialLimit = limitResult.maxActions;
+                    limitType = limitResult.limitType;
+                }
+            }
+
+            let limitingItemHrid = null;
+            if (limitType?.startsWith('material:')) {
+                limitingItemHrid = limitType.slice('material:'.length);
+            } else if (limitType === 'gold') {
+                limitingItemHrid = '/items/coin';
+            }
+
+            // Get queue size for display (total queued, doesn't change)
+            // For infinite actions with inventory count, use that; otherwise use maxCount or Infinity
+            let queueSizeDisplay;
+            if (action.hasMaxCount) {
+                queueSizeDisplay = action.maxCount;
+            } else if (materialLimit !== null) {
+                // Material-limited infinite action - show infinity but we'll add "max: X" separately
+                queueSizeDisplay = Infinity;
+            } else if (inventoryCount !== null) {
+                queueSizeDisplay = inventoryCount;
+            } else {
+                queueSizeDisplay = Infinity;
+            }
+
+            // Get remaining actions for time calculation
+            // For infinite actions, use material limit if available, then inventory count
+            let remainingQueuedActions;
+            if (action.hasMaxCount) {
+                // Finite action: maxCount is the target, currentCount is progress toward that target
+                remainingQueuedActions = action.maxCount - action.currentCount;
+            } else if (materialLimit !== null) {
+                // Infinite action limited by materials (materialLimit is queued actions)
+                remainingQueuedActions = materialLimit;
+            } else if (inventoryCount !== null) {
+                // Infinite action: currentCount is lifetime total, so just use inventory count directly
+                remainingQueuedActions = inventoryCount;
+            } else {
+                remainingQueuedActions = Infinity;
+            }
+
+            // Calculate time-consuming actions needed
+            let baseActionsNeeded;
+            if (!action.hasMaxCount && materialLimit !== null) {
+                // Material-limited infinite action - convert queued actions to time-consuming actions
+                baseActionsNeeded = Math.ceil(materialLimit / avgActionsPerBaseAction);
+            } else {
+                // Finite action or inventory-count infinite - remainingQueuedActions is queued actions
+                baseActionsNeeded = Math.ceil(remainingQueuedActions / avgActionsPerBaseAction);
+            }
+            // Subtract time already elapsed in the currently in-progress base action — baseActionsNeeded
+            // counts that active unit as a full one, so without this the ETA re-anchors to a fresh full
+            // action on every reload/remount instead of continuing from the server-side unit boundary.
+            const elapsedInCurrentUnit = dataManager.getElapsedSecondsInCurrentUnit(
+                action.id,
+                action.currentCount,
+                actionTime
+            );
+            const totalTimeSeconds = Math.max(0, baseActionsNeeded * actionTime - elapsedInCurrentUnit);
+
+            // Calculate transmute recycle time estimate
+            let recycleTimeSeconds = null;
+            if (
+                actionDetails.hrid?.includes('transmute') &&
+                actionDetails.type === '/action_types/alchemy' &&
+                action.primaryItemHash &&
+                config.getSetting('actionBar_showRecycleTime')
+            ) {
+                const { itemHrid: transmuteItemHrid } = this.parseItemHash(action.primaryItemHash);
+                if (transmuteItemHrid) {
+                    const transmuteItemDetails = itemDetailMap[transmuteItemHrid];
+                    const dropTable = transmuteItemDetails?.alchemyDetail?.transmuteDropTable;
+                    if (dropTable) {
+                        const selfReturn = dropTable.find((d) => d.itemHrid === transmuteItemHrid);
+                        if (selfReturn && selfReturn.dropRate > 0) {
+                            const baseSuccessRate = transmuteItemDetails.alchemyDetail.transmuteSuccessRate || 0;
+                            let catalystBonus = 0;
+                            if (action.secondaryItemHash) {
+                                const { itemHrid: catHrid } = this.parseItemHash(action.secondaryItemHash);
+                                if (catHrid?.includes('prime_catalyst')) {
+                                    catalystBonus = 0.25;
+                                } else if (catHrid?.includes('catalyst_of_transmutation')) {
+                                    catalystBonus = 0.15;
+                                }
+                            }
+                            const teaBonus = buffParser_js.getAlchemySuccessBonus();
+                            const successRate = Math.min(1.0, baseSuccessRate * (1 + catalystBonus + teaBonus));
+                            const recycleRate = selfReturn.dropRate * successRate;
+                            if (recycleRate > 0 && recycleRate < 1) {
+                                recycleTimeSeconds = totalTimeSeconds / (1 - recycleRate);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Calculate completion time
+            const completionTime = new Date();
+            completionTime.setSeconds(completionTime.getSeconds() + totalTimeSeconds);
+
+            // Format time strings (timeReadable handles days/hours/minutes properly)
+            const timeStr = formatters_js.timeReadable(totalTimeSeconds);
+
+            // Format completion time
+            const now = new Date();
+            const isToday = completionTime.toDateString() === now.toDateString();
+            const clockTime = formatCompletionTime(completionTime, !isToday);
+
+            // Build display HTML
+            // Line 1: Append stats to game's action name div
+            const statsToAppend = [];
+
+            // Queue count
+            if (config.getSetting('actionBar_showQueueCount')) {
+                if (queueSizeDisplay !== Infinity) {
+                    statsToAppend.push(`(${queueSizeDisplay.toLocaleString()} queued)`);
+                } else if (materialLimit !== null) {
+                    let limitLabel = '';
+                    if (limitType === 'gold') {
+                        limitLabel = 'gold limit';
+                    } else if (limitType && limitType.startsWith('material:')) {
+                        limitLabel = 'mat limit';
+                    } else if (limitType && limitType.startsWith('upgrade:')) {
+                        limitLabel = 'upgrade limit';
+                    } else {
+                        limitLabel = 'max';
+                    }
+                    statsToAppend.push(`(∞ · ${limitLabel}: ${this.formatLargeNumber(materialLimit)})`);
+                } else {
+                    statsToAppend.push(`(∞)`);
+                }
+            }
+
+            // Time per action
+            if (config.getSetting('actionBar_showActionDuration')) {
+                statsToAppend.push(`${actionTime.toFixed(2)}s/action`);
+            }
+
+            // Actions/hr and items/hr
+            if (config.getSetting('actionBar_showActionsPerHour')) {
+                statsToAppend.push(
+                    `${actionsPerHourWithEfficiency.toFixed(0)} actions/hr (${itemsPerHour.toFixed(0)} items/hr)`
+                );
+            }
+
+            // Append to game's div (with marker for cleanup)
+            this.appendStatsToActionName(actionNameElement, statsToAppend.join(' · '));
+
+            // Line 2: Time estimates in our div
+            if (
+                config.getSetting('actionBar_showTimeRemaining') &&
+                remainingQueuedActions !== Infinity &&
+                !isNaN(remainingQueuedActions) &&
+                remainingQueuedActions > 0
+            ) {
+                const itemIconHtml = this.getItemIconHtml(limitingItemHrid);
+                const matsLabel = itemIconHtml ? `${itemIconHtml}:` : '';
+                let recycleHtml = '';
+                if (recycleTimeSeconds !== null) {
+                    const recycleCompletion = new Date();
+                    recycleCompletion.setSeconds(recycleCompletion.getSeconds() + recycleTimeSeconds);
+                    const recycleTimeStr = formatters_js.timeReadable(recycleTimeSeconds);
+                    const recycleIsToday = recycleCompletion.toDateString() === new Date().toDateString();
+                    const recycleClockTime = formatCompletionTime(recycleCompletion, !recycleIsToday);
+                    recycleHtml = `<span style="color:#4dd0a0; margin-left:12px; font-size:11px;">Est. w/ recycle: ${recycleTimeStr} → ${recycleClockTime}</span>`;
+                }
+                this.displayElement.innerHTML = `<span style="display: inline-flex; flex-wrap: nowrap; align-items: baseline; gap: 0.25em;"><span>⏱</span>${matsLabel} ${timeStr} → ${clockTime}</span>${recycleHtml}`;
+            } else {
+                this.displayElement.innerHTML = '';
+            }
+
+            // Line 3: Profit display (async, non-blocking)
+            this.updateActionBarProfit(action, remainingQueuedActions);
+
+            // Reconnect observer to watch for game's updates
+            this.reconnectActionNameObserver(actionNameElement);
+        }
+
+        /**
+         * Reconnect action name observer after making our changes
+         * @param {HTMLElement} actionNameElement - Action name element
+         */
+        reconnectActionNameObserver(actionNameElement) {
+            if (!actionNameElement) {
+                return;
+            }
+
+            if (this.actionNameObserver) {
+                this.actionNameObserver();
+            }
+
+            this.actionNameObserver = domObserverHelpers_js.createMutationWatcher(
+                actionNameElement,
+                (mutations) => {
+                    if (this.isSelfInflictedMutation(mutations)) {
+                        return;
+                    }
+                    this.updateDisplay();
+                },
+                {
+                    childList: true,
+                    characterData: true,
+                    subtree: true,
+                }
+            );
+        }
+
+        /**
+         * Build and display enhancing-specific stats in the action bar
+         * @param {Object} action - Current action object from dataManager
+         * @param {Object} actionDetails - Action details
+         * @param {HTMLElement} actionNameElement - Action name DOM element
+         * @param {string} displayMode - Display mode ('full', 'compact', 'minimal')
+         */
+        buildEnhancingDisplay(action, actionDetails, actionNameElement) {
+            // Parse primaryItemHash to get item HRID and current enhancement level
+            if (!action.primaryItemHash) {
+                this.displayElement.innerHTML = '';
+                this.clearAppendedStats(actionNameElement);
+                return;
+            }
+
+            const { itemHrid, level: currentLevel } = this.parseItemHash(action.primaryItemHash);
+            if (!itemHrid) {
+                this.displayElement.innerHTML = '';
+                this.clearAppendedStats(actionNameElement);
+                return;
+            }
+
+            const targetLevel = action.enhancingMaxLevel || 0;
+            const protectFrom = action.enhancingProtectionMinLevel || 0;
+
+            if (targetLevel <= currentLevel) {
+                this.displayElement.innerHTML = '';
+                this.clearAppendedStats(actionNameElement);
+                return;
+            }
+
+            // Get predictions from the enhancement calculator
+            const predictions = calculateEnhancementPredictions(itemHrid, currentLevel, targetLevel, protectFrom);
+            if (!predictions) {
+                this.displayElement.innerHTML = '';
+                this.clearAppendedStats(actionNameElement);
+                return;
+            }
+
+            const { expectedAttempts, expectedProtections, perActionTime, successMultiplier } = predictions;
+
+            // Detect Philosopher's Mirror — guarantees success on every attempt
+            let protectionItemHrid = null;
+            if (action.secondaryItemHash) {
+                const { itemHrid: secItemHrid } = this.parseItemHash(action.secondaryItemHash);
+                protectionItemHrid = secItemHrid;
+            }
+            if (!protectionItemHrid && action.enhancingProtectionItemHrid) {
+                protectionItemHrid = action.enhancingProtectionItemHrid;
+            }
+            const usesMirror = protectionItemHrid === '/items/philosophers_mirror';
+
+            const effectiveAttempts = usesMirror ? targetLevel - currentLevel : expectedAttempts;
+            const effectiveProtections = usesMirror ? 0 : expectedProtections;
+
+            // Calculate current level success rate
+            const baseRate = currentLevel < enhancementCalculator_js.BASE_SUCCESS_RATES.length ? enhancementCalculator_js.BASE_SUCCESS_RATES[currentLevel] : 30;
+            const actualSuccessRate = usesMirror ? 100 : Math.min(100, baseRate * successMultiplier);
+
+            // Determine queue count
+            let queuedActions;
+            let materialLimit = null;
+            let limitingItemHrid = null;
+
+            if (action.hasMaxCount) {
+                queuedActions = action.maxCount - action.currentCount;
+            } else {
+                // Infinite action — calculate material limit from enhancementCosts
+                const inventory = dataManager.getInventory();
+                const inventoryLookup = this.buildInventoryLookup(inventory);
+                const limitResult = this.calculateMaterialLimit(actionDetails, inventoryLookup, 0, action);
+                if (limitResult) {
+                    materialLimit = limitResult.maxActions;
+                    queuedActions = materialLimit;
+                    // Extract item HRID from limitType (e.g. "material:/items/foo" → "/items/foo")
+                    if (limitResult.limitType?.startsWith('material:')) {
+                        limitingItemHrid = limitResult.limitType.slice('material:'.length);
+                    }
+                } else {
+                    queuedActions = Infinity;
+                }
+
+                // Also check protection item availability if protection is active
+                if (
+                    protectFrom > 0 &&
+                    effectiveProtections > 0 &&
+                    config.getSetting('actionPanel_enhanceMatLimitProtections')
+                ) {
+                    if (protectionItemHrid) {
+                        const byHrid = inventoryLookup?.byHrid || {};
+                        const availableProtections = byHrid[protectionItemHrid] || 0;
+
+                        if (availableProtections < effectiveProtections) {
+                            const protectionRatio = effectiveProtections / effectiveAttempts;
+                            const maxAttemptsFromProtection =
+                                protectionRatio > 0 ? Math.floor(availableProtections / protectionRatio) : Infinity;
+
+                            if (maxAttemptsFromProtection < queuedActions) {
+                                queuedActions = maxAttemptsFromProtection;
+                                materialLimit = maxAttemptsFromProtection;
+                                limitingItemHrid = protectionItemHrid;
+                            }
+                        }
+                    }
+                }
+
+                // Philosopher's Mirror is consumed 1 per action — treat as material limit
+                if (usesMirror) {
+                    const byHrid = inventoryLookup?.byHrid || {};
+                    const availableMirrors = byHrid['/items/philosophers_mirror'] || 0;
+                    if (availableMirrors < queuedActions) {
+                        queuedActions = availableMirrors;
+                        materialLimit = availableMirrors;
+                        limitingItemHrid = '/items/philosophers_mirror';
+                    }
+                }
+            }
+
+            const elapsedInCurrentUnit = dataManager.getElapsedSecondsInCurrentUnit(
+                action.id,
+                action.currentCount,
+                perActionTime
+            );
+            const materialTime =
+                materialLimit !== null ? Math.max(0, materialLimit * perActionTime - elapsedInCurrentUnit) : null;
+
+            // Apply CSS overrides for non-combat display
+            const enhCompact = config.getSetting('actionBar_compactWidth');
+            if (enhCompact) {
+                actionNameElement.style.setProperty('max-width', '800px', 'important');
+                actionNameElement.style.setProperty('overflow', 'hidden', 'important');
+                actionNameElement.style.setProperty('text-overflow', 'clip', 'important');
+                actionNameElement.style.setProperty('white-space', 'nowrap', 'important');
+                actionNameElement.style.setProperty('width', '', 'important');
+            } else {
+                actionNameElement.style.setProperty('overflow', 'visible', 'important');
+                actionNameElement.style.setProperty('text-overflow', 'clip', 'important');
+                actionNameElement.style.setProperty('white-space', 'nowrap', 'important');
+                actionNameElement.style.setProperty('max-width', 'none', 'important');
+                actionNameElement.style.setProperty('width', 'auto', 'important');
+
+                const parent1 = actionNameElement.parentElement;
+                const parent2 = parent1?.parentElement;
+                if (parent1) {
+                    parent1.style.setProperty('max-width', 'none', 'important');
+                    parent1.style.setProperty('width', 'auto', 'important');
+                    parent1.style.setProperty('overflow', 'visible', 'important');
+                }
+                if (parent2) {
+                    parent2.style.setProperty('max-width', 'none', 'important');
+                    parent2.style.setProperty('width', 'auto', 'important');
+                    parent2.style.setProperty('overflow', 'visible', 'important');
+                }
+            }
+
+            // Build stats line — enhancing is always infinite, so skip queue count display
+            const statsToAppend = [];
+
+            if (config.getSetting('actionBar_showActionDuration')) {
+                statsToAppend.push(`${perActionTime.toFixed(2)}s/action`);
+            }
+            statsToAppend.push(`${actualSuccessRate.toFixed(1)}% success`);
+            statsToAppend.push(`~${formatters_js.formatWithSeparator(effectiveAttempts)} to target`);
+
+            if (protectFrom > 0 && effectiveProtections > 0) {
+                statsToAppend.push(`~${formatters_js.formatWithSeparator(effectiveProtections)} protections`);
+            }
+
+            this.appendStatsToActionName(actionNameElement, statsToAppend.join(' · '));
+
+            // Line 2: Time estimate — always material-based for enhancing
+            if (
+                config.getSetting('actionBar_showTimeRemaining') &&
+                materialTime !== null &&
+                materialTime > 0 &&
+                isFinite(materialTime)
+            ) {
+                const timeStr = formatters_js.timeReadable(materialTime);
+
+                const completionTime = new Date();
+                completionTime.setSeconds(completionTime.getSeconds() + materialTime);
+
+                const now = new Date();
+                const isToday = completionTime.toDateString() === now.toDateString();
+                const clockTime = formatCompletionTime(completionTime, !isToday);
+
+                const itemIconHtml = this.getItemIconHtml(limitingItemHrid);
+                const matsLabel = itemIconHtml ? `${itemIconHtml}:` : 'Mats:';
+                this.displayElement.innerHTML = `<span style="display: inline-flex; flex-wrap: nowrap; align-items: baseline; gap: 0.25em;"><span>⏱</span>${matsLabel} ${timeStr} → ${clockTime} (${formatters_js.formatWithSeparator(materialLimit)} actions)</span>`;
+            } else {
+                this.displayElement.innerHTML = '';
+            }
+        }
+
+        /**
+         * Calculate time for an enhancing action in the queue
+         * Uses enhancement predictions to determine realistic time based on min(queued, expected attempts)
+         * @param {Object} actionObj - Action object from dataManager
+         * @param {Object} actionDetails - Action details
+         * @param {Object} inventoryLookup - Inventory lookup maps
+         * @returns {Object|null} { count, totalTime } or null if cannot calculate
+         */
+        calculateEnhancingQueueTime(actionObj, actionDetails, inventoryLookup) {
+            if (!actionObj.primaryItemHash) return null;
+
+            const { itemHrid, level: currentLevel } = this.parseItemHash(actionObj.primaryItemHash);
+            if (!itemHrid) return null;
+
+            const targetLevel = actionObj.enhancingMaxLevel || 0;
+            const protectFrom = actionObj.enhancingProtectionMinLevel || 0;
+
+            if (targetLevel <= currentLevel) return null;
+
+            const predictions = calculateEnhancementPredictions(itemHrid, currentLevel, targetLevel, protectFrom);
+            if (!predictions || predictions.expectedAttempts <= 0) return null;
+
+            const perActionTime = predictions.perActionTime;
+
+            // Philosopher's Mirror guarantees success — exactly (target - current) actions
+            let usesMirror = false;
+            if (actionObj.secondaryItemHash) {
+                const { itemHrid: secItemHrid } = this.parseItemHash(actionObj.secondaryItemHash);
+                if (secItemHrid === '/items/philosophers_mirror') usesMirror = true;
+            }
+            if (!usesMirror && actionObj.enhancingProtectionItemHrid === '/items/philosophers_mirror') {
+                usesMirror = true;
+            }
+
+            if (usesMirror) {
+                let actions = targetLevel - currentLevel;
+                if (actionObj.hasMaxCount) {
+                    actions = Math.min(actions, actionObj.maxCount - actionObj.currentCount);
+                }
+                const elapsedInCurrentUnit = dataManager.getElapsedSecondsInCurrentUnit(
+                    actionObj.id,
+                    actionObj.currentCount,
+                    perActionTime
+                );
+                return { count: actions, totalTime: Math.max(0, actions * perActionTime - elapsedInCurrentUnit) };
+            }
+
+            // Determine queue count
+            let queuedActions;
+            if (actionObj.hasMaxCount) {
+                queuedActions = actionObj.maxCount - actionObj.currentCount;
+            } else {
+                const limitResult = this.calculateMaterialLimit(actionDetails, inventoryLookup, 0, actionObj);
+                queuedActions = limitResult?.maxActions ?? Infinity;
+            }
+
+            const realisticActions =
+                queuedActions === Infinity
+                    ? predictions.expectedAttempts
+                    : Math.min(queuedActions, predictions.expectedAttempts);
+            const elapsedInCurrentUnit = dataManager.getElapsedSecondsInCurrentUnit(
+                actionObj.id,
+                actionObj.currentCount,
+                perActionTime
+            );
+            const totalTime = Math.max(0, realisticActions * perActionTime - elapsedInCurrentUnit);
+
+            return { count: realisticActions, totalTime };
+        }
+
+        parseActionNameFromDom(actionNameText) {
+            // Strip ALL trailing parentheses groups (e.g., "(T3) (Party)" or "(50)")
+            // This handles combat tiers and party indicators: "Infernal Abyss (T3) (Party)" → "Infernal Abyss"
+            const actionNameMatch = actionNameText.match(/^(.+?)(?:\s*\([^)]+\))*$/);
+            const fullNameFromDom = actionNameMatch ? actionNameMatch[1].trim() : actionNameText;
+
+            if (fullNameFromDom.includes(':')) {
+                const parts = fullNameFromDom.split(':');
+                return {
+                    actionNameFromDom: parts[0].trim(),
+                    itemNameFromDom: parts.slice(1).join(':').trim(),
+                };
+            }
+
+            return {
+                actionNameFromDom: fullNameFromDom,
+                itemNameFromDom: null,
+            };
+        }
+
+        buildItemHridFromName(itemName) {
+            return `/items/${itemName
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, '')
+            .replace(/\s+/g, '_')}`;
+        }
+
+        /**
+         * Parse primaryItemHash to extract item HRID and enhancement level
+         * Handles both formats:
+         *   "/item_locations/inventory::/items/cheese_sword::1" (3 parts)
+         *   "161296::/item_locations/inventory::/items/cheese_sword::5" (4 parts)
+         * @param {string} hash - primaryItemHash string
+         * @returns {Object} {itemHrid, level} or {itemHrid: null, level: 0} on failure
+         */
+        parseItemHash(hash) {
+            try {
+                const parts = hash.split('::');
+
+                // Find the part that starts with /items/
+                const itemHrid = parts.find((part) => part.startsWith('/items/')) || null;
+
+                // Level is the last part if it's numeric (not a path)
+                let level = 0;
+                const lastPart = parts[parts.length - 1];
+                if (lastPart && !lastPart.startsWith('/')) {
+                    const parsed = parseInt(lastPart, 10);
+                    if (!isNaN(parsed)) {
+                        level = parsed;
+                    }
+                }
+
+                return { itemHrid, level };
+            } catch {
+                return { itemHrid: null, level: 0 };
+            }
+        }
+
+        matchCurrentActionFromText(currentActions, actionNameText) {
+            const { actionNameFromDom, itemNameFromDom } = this.parseActionNameFromDom(actionNameText);
+            const itemHridFromDom = this.buildItemHridFromName(itemNameFromDom || actionNameFromDom);
+
+            return currentActions.find((currentAction) => {
+                const actionDetails = dataManager.getActionDetails(currentAction.actionHrid);
+                if (!actionDetails) {
+                    return false;
+                }
+
+                // Enhancing actions: DOM shows item name (e.g. "Cheese Sword +1"), not "Enhance: ..."
+                // Match by checking if the action is enhancing and primaryItemHash contains the base item
+                if (actionDetails.type === '/action_types/enhancing' && currentAction.primaryItemHash) {
+                    // Strip enhancement level suffix (e.g. "Cheese Sword +1" → "Cheese Sword")
+                    const baseItemName = actionNameFromDom.replace(/\s*\+\d+$/, '');
+                    const baseItemHrid = this.buildItemHridFromName(baseItemName);
+                    if (currentAction.primaryItemHash.includes(baseItemHrid)) {
+                        return true;
+                    }
+                }
+
+                const outputItems = actionDetails.outputItems || [];
+                const dropTable = actionDetails.dropTable || [];
+                const matchesOutput = outputItems.some((item) => item.itemHrid === itemHridFromDom);
+                const matchesDrop = dropTable.some((drop) => drop.itemHrid === itemHridFromDom);
+                const matchesName =
+                    actionDetails.name === actionNameFromDom ||
+                    (actionNameFromDom.includes('★') && actionDetails.name === actionNameFromDom.replace(/\s*★/, ' (R)')) ||
+                    (actionNameFromDom.includes('(R)') &&
+                        actionDetails.name === actionNameFromDom.replace(/\s*\(R\)/, ' ★'));
+
+                if (!matchesName && !matchesOutput && !matchesDrop) {
+                    return false;
+                }
+
+                if (itemNameFromDom && currentAction.primaryItemHash) {
+                    const { itemHrid: hashItemHrid } = this.parseItemHash(currentAction.primaryItemHash);
+                    if (hashItemHrid) {
+                        const hashItemDetails = dataManager.getItemDetails(hashItemHrid);
+                        if (hashItemDetails?.name === itemNameFromDom) return true;
+                    }
+                    return currentAction.primaryItemHash.includes(itemHridFromDom);
+                }
+
+                return true;
+            });
+        }
+
+        scheduleUpdateRetry(attempt = 0) {
+            if (this.retryUpdateTimeout || attempt >= 3) {
+                return;
+            }
+
+            const delays = [150, 300, 500];
+            this.retryUpdateTimeout = setTimeout(() => {
+                this.retryUpdateTimeout = null;
+                this.updateDisplay();
+                if (!this.displayElement || !this.displayElement.innerHTML) {
+                    this.scheduleUpdateRetry(attempt + 1);
+                }
+            }, delays[attempt]);
+            this.cleanupRegistry.registerTimeout(this.retryUpdateTimeout);
+        }
+
+        /**
+         * Get clean action name from element, stripping any stats we appended
+         * @param {HTMLElement} actionNameElement - Action name element
+         * @returns {string} Clean action name text
+         */
+        getCleanActionName(actionNameElement) {
+            // Walk direct children to join their text with spaces, preserving word boundaries
+            // that textContent would collapse (e.g. <span>Dragon</span><span>Fruit</span> → "Dragon Fruit")
+            const markerSpan = actionNameElement.querySelector('.mwi-appended-stats');
+            const parts = [];
+            for (const node of actionNameElement.childNodes) {
+                if (node === markerSpan) continue;
+                const text = node.textContent.trim();
+                if (text) parts.push(text);
+            }
+            return parts.join(' ').replace(/\s+/g, ' ').trim();
+        }
+
+        /**
+         * Clear any stats we previously appended to action name
+         * @param {HTMLElement} actionNameElement - Action name element
+         */
+        clearAppendedStats(actionNameElement) {
+            if (!actionNameElement) return;
+            const markerSpan = actionNameElement.querySelector('.mwi-appended-stats');
+            if (markerSpan) {
+                markerSpan.remove();
+            }
+        }
+
+        /**
+         * Append stats to game's action name element
+         * @param {HTMLElement} actionNameElement - Action name element
+         * @param {string} statsText - Stats text to append
+         */
+        appendStatsToActionName(actionNameElement, statsText) {
+            // Clear any previous appended stats
+            this.clearAppendedStats(actionNameElement);
+
+            // Get clean action name before appending stats
+            const cleanActionName = this.getCleanActionName(actionNameElement);
+
+            // Create marker span for our additions
+            const statsSpan = document.createElement('span');
+            statsSpan.className = 'mwi-appended-stats';
+
+            // Check compact width toggle
+            const compactWidth = config.getSetting('actionBar_compactWidth');
+
+            if (compactWidth) {
+                // COMPACT MODE: Truncate stats if too long
+                statsSpan.style.cssText = `
+                color: var(--text-color-secondary, ${config.COLOR_TEXT_SECONDARY});
+                display: inline-block;
+                max-width: 400px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                vertical-align: bottom;
+            `;
+                // Set full text as tooltip on both stats span and parent element
+                const fullText = cleanActionName + ' ' + statsText;
+                statsSpan.setAttribute('title', fullText);
+                actionNameElement.setAttribute('title', fullText);
+            } else {
+                // FULL WIDTH and MINIMAL modes: Show all stats
+                statsSpan.style.cssText = `color: var(--text-color-secondary, ${config.COLOR_TEXT_SECONDARY});`;
+                // Remove tooltip in full width mode
+                actionNameElement.removeAttribute('title');
+            }
+
+            statsSpan.textContent = ' ' + statsText;
+
+            // Append to action name element
+            actionNameElement.appendChild(statsSpan);
+        }
+
+        /**
+         * Calculate action time for a given action
+         * @param {Object} actionDetails - Action details from data manager
+         * @param {string} actionHrid - Action HRID for task detection (optional)
+         * @returns {Object} {actionTime, totalEfficiency} or null if calculation fails
+         */
+        calculateActionTime(actionDetails, actionHrid = null) {
+            const skills = dataManager.getSkills();
+            const equipment = dataManager.getEquipment();
+            const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
+
+            // Use shared calculator with same parameters as main display
+            return actionCalculator_js.calculateActionStats(actionDetails, {
+                skills,
+                equipment,
+                itemDetailMap,
+                actionHrid, // Pass action HRID for task detection
+                includeCommunityBuff: true,
+                includeBreakdown: false,
+            });
+        }
+
+        /**
+         * Format a number with K/M suffix for large values
+         * @param {number} num - Number to format
+         * @returns {string} Formatted string (e.g., "1.23K", "5.67M")
+         */
+        formatLargeNumber(num) {
+            if (num < 10000) {
+                return num.toLocaleString(); // Under 10K: show full number with commas
+            } else if (num < 1000000) {
+                return (num / 1000).toFixed(1) + 'K'; // 10K-999K: show with K
+            } else {
+                return (num / 1000000).toFixed(2) + 'M'; // 1M+: show with M
+            }
+        }
+
+        /**
+         * Build inventory lookup maps for fast material queries
+         * @param {Array} inventory - Character inventory items
+        /**
+         * Build an inline SVG icon HTML string for an item HRID.
+         * Returns an empty string if the sprite URL cannot be found or no HRID given.
+         * @param {string|null} itemHrid - e.g. "/items/mirror_of_protection"
+         * @returns {string} HTML string with an inline <svg> element, or ''
+         */
+        getItemIconHtml(itemHrid) {
+            if (!itemHrid) return '';
+            const spriteEl = document.querySelector('use[href*="items_sprite"]');
+            if (!spriteEl) return '';
+            const spriteUrl = spriteEl.getAttribute('href')?.split('#')[0];
+            if (!spriteUrl) return '';
+            const symbolId = itemHrid.replace('/items/', '');
+            return `<svg width="16" height="16" style="vertical-align: middle; margin: 0 1px;"><use href="${spriteUrl}#${symbolId}"></use></svg>`;
+        }
+
+        /**
+         * @returns {Object} Lookup maps by HRID and enhancement
+         */
+        buildInventoryLookup(inventory) {
+            const byHrid = {};
+            const byEnhancedKey = {};
+
+            if (!Array.isArray(inventory)) {
+                return { byHrid, byEnhancedKey };
+            }
+
+            for (const item of inventory) {
+                if (item.itemLocationHrid !== '/item_locations/inventory') {
+                    continue;
+                }
+
+                const count = item.count || 0;
+                if (!count) {
+                    continue;
+                }
+
+                byHrid[item.itemHrid] = (byHrid[item.itemHrid] || 0) + count;
+
+                const enhancementLevel = item.enhancementLevel || 0;
+                const enhancedKey = `${item.itemHrid}::${enhancementLevel}`;
+                byEnhancedKey[enhancedKey] = (byEnhancedKey[enhancedKey] || 0) + count;
+            }
+
+            return { byHrid, byEnhancedKey };
+        }
+
+        /**
+         * Calculate maximum actions possible based on inventory materials
+         * @param {Object} actionDetails - Action detail object
+         * @param {Object|Array} inventoryLookup - Inventory lookup maps or raw inventory array
+         * @param {number} artisanBonus - Artisan material reduction (0-1 decimal)
+         * @param {Object} actionObj - Character action object (for primaryItemHash)
+         * @returns {Object|null} {maxActions: number, limitType: string} or null if unlimited
+         */
+        calculateMaterialLimit(actionDetails, inventoryLookup, artisanBonus, actionObj = null) {
+            if (!actionDetails || !inventoryLookup) {
+                return null;
+            }
+
+            // Materials are consumed per queued action. Efficiency only affects time, not materials.
+
+            const lookup = Array.isArray(inventoryLookup) ? this.buildInventoryLookup(inventoryLookup) : inventoryLookup;
+            const byHrid = lookup?.byHrid || {};
+            const byEnhancedKey = lookup?.byEnhancedKey || {};
+
+            // Check for primaryItemHash (ONLY for Alchemy actions: Coinify, Decompose, Transmute)
+            // Crafting actions also have primaryItemHash but should use the standard input/upgrade logic
+            // Format: "characterID::itemLocation::itemHrid::enhancementLevel"
+            const isEnhancingAction = actionDetails.type === '/action_types/enhancing';
+            if (isEnhancingAction && actionObj && actionObj.primaryItemHash) {
+                const { itemHrid } = this.parseItemHash(actionObj.primaryItemHash);
+                if (itemHrid) {
+                    const itemData = dataManager.getItemDetails(itemHrid);
+                    const costs = itemData?.enhancementCosts;
+                    if (costs && Array.isArray(costs) && costs.length > 0) {
+                        let minLimit = Infinity;
+                        let limitingType = 'unknown';
+                        for (const cost of costs) {
+                            const available = byHrid[cost.itemHrid] || 0;
+                            const maxFromThis = Math.floor(available / cost.count);
+                            if (maxFromThis < minLimit) {
+                                minLimit = maxFromThis;
+                                limitingType = cost.itemHrid.includes('coin') ? 'gold' : `material:${cost.itemHrid}`;
+                            }
+                        }
+                        if (minLimit !== Infinity) {
+                            return { maxActions: minLimit, limitType: limitingType };
+                        }
+                    }
+                }
+            }
+
+            const isAlchemyAction = actionDetails.type === '/action_types/alchemy';
+            if (isAlchemyAction && actionObj && actionObj.primaryItemHash) {
+                const { itemHrid: alchItemHrid, level: enhancementLevel } = this.parseItemHash(actionObj.primaryItemHash);
+                if (alchItemHrid) {
+                    let minLimit = Infinity;
+                    let limitType = 'unknown';
+
+                    const enhancedKey = `${alchItemHrid}::${enhancementLevel}`;
+                    const availableCount = byEnhancedKey[enhancedKey] || 0;
+                    const alchItemDetails = dataManager.getItemDetails(alchItemHrid);
+                    const bulkMultiplier = alchItemDetails?.alchemyDetail?.bulkMultiplier || 1;
+                    const maxFromItem = Math.floor(availableCount / bulkMultiplier);
+                    if (maxFromItem < minLimit) {
+                        minLimit = maxFromItem;
+                        limitType = `material:${alchItemHrid}`;
+                    }
+
+                    let alchemyCoinCost = 0;
+                    if (actionDetails.hrid?.includes('decompose') || actionDetails.hrid?.includes('unrefine')) {
+                        const itemLevel = alchItemDetails?.itemLevel || 1;
+                        alchemyCoinCost = (10 + itemLevel) * 5 * bulkMultiplier;
+                    } else if (actionDetails.hrid?.includes('transmute')) {
+                        const sellPrice = alchItemDetails?.sellPrice || 0;
+                        alchemyCoinCost = Math.max(50, Math.floor(sellPrice / 5)) * bulkMultiplier;
+                    }
+                    if (alchemyCoinCost > 0) {
+                        const availableGold = byHrid['/items/coin'] || 0;
+                        const maxFromGold = Math.floor(availableGold / alchemyCoinCost);
+                        if (maxFromGold < minLimit) {
+                            minLimit = maxFromGold;
+                            limitType = 'gold';
+                        }
+                    }
+
+                    if (actionObj.secondaryItemHash) {
+                        const { itemHrid: catalystHrid } = this.parseItemHash(actionObj.secondaryItemHash);
+                        if (catalystHrid) {
+                            const availableCatalyst = byHrid[catalystHrid] || 0;
+                            let baseSuccessRate = 0.7;
+                            if (actionDetails.hrid?.includes('decompose')) {
+                                baseSuccessRate = 0.6;
+                            } else if (actionDetails.hrid?.includes('transmute')) {
+                                baseSuccessRate = alchItemDetails?.alchemyDetail?.transmuteSuccessRate || 0.5;
+                            }
+                            if (baseSuccessRate > 0) {
+                                const maxFromCatalyst = Math.floor(availableCatalyst / baseSuccessRate);
+                                if (maxFromCatalyst < minLimit) {
+                                    minLimit = maxFromCatalyst;
+                                    limitType = `material:${catalystHrid}`;
+                                }
+                            }
+                        }
+                    }
+
+                    if (minLimit === Infinity) return null;
+                    return { maxActions: minLimit, limitType };
+                }
+            }
+
+            // Check if action requires input materials or has costs
+            const hasInputItems = actionDetails.inputItems && actionDetails.inputItems.length > 0;
+            const hasUpgradeItem = actionDetails.upgradeItemHrid;
+            const hasCoinCost = actionDetails.coinCost && actionDetails.coinCost > 0;
+
+            if (!hasInputItems && !hasUpgradeItem && !hasCoinCost) {
+                return null; // No materials or costs required - unlimited
+            }
+
+            let minLimit = Infinity;
+            let limitType = 'unknown';
+
+            // Check gold/coin constraint (if action has a coin cost)
+            if (hasCoinCost) {
+                const availableGold = byHrid['/items/coin'] || 0;
+                const maxActionsFromGold = Math.floor(availableGold / actionDetails.coinCost);
+
+                if (maxActionsFromGold < minLimit) {
+                    minLimit = maxActionsFromGold;
+                    limitType = 'gold';
+                }
+            }
+
+            // Check input items (affected by Artisan Tea)
+            if (hasInputItems) {
+                for (const inputItem of actionDetails.inputItems) {
+                    const availableCount = byHrid[inputItem.itemHrid] || 0;
+
+                    // Apply Artisan reduction to required materials
+                    const requiredPerAction = inputItem.count * (1 - artisanBonus);
+
+                    // Calculate max queued actions for this material
+                    const maxActions = Math.floor(availableCount / requiredPerAction);
+
+                    if (maxActions < minLimit) {
+                        minLimit = maxActions;
+                        limitType = `material:${inputItem.itemHrid}`;
+                    }
+                }
+            }
+
+            // Check upgrade item (NOT affected by Artisan Tea)
+            if (hasUpgradeItem) {
+                const availableCount = byHrid[hasUpgradeItem] || 0;
+
+                if (availableCount < minLimit) {
+                    minLimit = availableCount;
+                    limitType = `upgrade:${hasUpgradeItem}`;
+                }
+            }
+
+            if (minLimit === Infinity) {
+                return null;
+            }
+
+            return { maxActions: minLimit, limitType };
+        }
+
+        /**
+         * Match an action from cache by reading its name from a queue div
+         * @param {HTMLElement} actionDiv - The queue action div element
+         * @param {Array} cachedActions - Array of actions from dataManager
+         * @returns {Object|null} Matched action object or null
+         */
+        matchActionFromDiv(actionDiv, cachedActions, usedActionIds = new Set()) {
+            // Find the action text element within the div
+            const actionTextContainer = actionDiv.querySelector('[class*="QueuedActions_actionText"]');
+            if (!actionTextContainer) {
+                return null;
+            }
+
+            // The first child div contains the action name: "#3 🧪 Coinify: Foraging Essence"
+            const firstChildDiv = actionTextContainer.querySelector('[class*="QueuedActions_text__"]');
+            if (!firstChildDiv) {
+                return null;
+            }
+
+            // Check if this is an enhancing action by looking at the SVG icon
+            const svgIcon = firstChildDiv.querySelector('svg use');
+            const isEnhancingAction = svgIcon && svgIcon.getAttribute('href')?.includes('#enhancing');
+
+            // Get the text content (format: "#3Coinify: Foraging Essence" - no space after number!)
+            const fullText = firstChildDiv.textContent.trim();
+
+            // Remove position number: "#3Coinify: Foraging Essence" → "Coinify: Foraging Essence"
+            // Note: No space after the number in the actual text
+            const actionNameText = fullText.replace(/^#\d+/, '').trim();
+
+            // Handle enhancing actions specially
+            if (isEnhancingAction) {
+                // For enhancing, the text is just the item name (e.g., "Cheese Sword")
+                const itemName = actionNameText.replace(/\s*\+\d+$/, '');
+                const itemHrid = '/items/' + itemName.toLowerCase().replace(/\s+/g, '_');
+
+                // Find enhancing action matching this item (excluding already-used actions)
+                return cachedActions.find((a) => {
+                    if (usedActionIds.has(a.id)) {
+                        return false; // Skip already-matched actions
+                    }
+
+                    const actionDetails = dataManager.getActionDetails(a.actionHrid);
+                    if (!actionDetails || actionDetails.type !== '/action_types/enhancing') {
+                        return false;
+                    }
+
+                    // Match on primaryItemHash (the item being enhanced)
+                    return a.primaryItemHash && a.primaryItemHash.includes(itemHrid);
+                });
+            }
+
+            // Parse action name (same logic as main display)
+            let actionNameFromDiv, itemNameFromDiv;
+            if (actionNameText.includes(':')) {
+                const parts = actionNameText.split(':');
+                actionNameFromDiv = parts[0].trim();
+                itemNameFromDiv = parts.slice(1).join(':').trim();
+            } else {
+                actionNameFromDiv = actionNameText;
+                itemNameFromDiv = null;
+            }
+
+            // Match action from cache (same logic as main display, excluding already-used actions)
+            return cachedActions.find((a) => {
+                if (usedActionIds.has(a.id)) {
+                    return false; // Skip already-matched actions
+                }
+
+                const actionDetails = dataManager.getActionDetails(a.actionHrid);
+                if (!actionDetails) {
+                    return false;
+                }
+
+                if (actionDetails.name !== actionNameFromDiv) {
+                    const itemHridFromDiv = itemNameFromDiv
+                        ? `/items/${itemNameFromDiv.toLowerCase().replace(/\s+/g, '_')}`
+                        : `/items/${actionNameFromDiv.toLowerCase().replace(/\s+/g, '_')}`;
+                    const outputItems = actionDetails.outputItems || [];
+                    const dropTable = actionDetails.dropTable || [];
+                    const matchesOutput = outputItems.some((item) => item.itemHrid === itemHridFromDiv);
+                    const matchesDrop = dropTable.some((drop) => drop.itemHrid === itemHridFromDiv);
+
+                    if (!matchesOutput && !matchesDrop) {
+                        return false;
+                    }
+                }
+
+                // If there's an item name, match on primaryItemHash
+                if (itemNameFromDiv && a.primaryItemHash) {
+                    const { itemHrid: hashItemHrid } = this.parseItemHash(a.primaryItemHash);
+                    if (hashItemHrid) {
+                        const hashItemDetails = dataManager.getItemDetails(hashItemHrid);
+                        if (hashItemDetails?.name === itemNameFromDiv) return true;
+                    }
+                    const itemHrid = '/items/' + itemNameFromDiv.toLowerCase().replace(/\s+/g, '_');
+                    return a.primaryItemHash.includes(itemHrid);
+                }
+
+                return true;
+            });
+        }
+
+        /**
+         * Inject time display into queue tooltip
+         * @param {HTMLElement} queueMenu - Queue menu container element
+         */
+        injectQueueTimes(queueMenu) {
+            // Track if we need to reconnect observer at the end
+            let shouldReconnectObserver = false;
+
+            try {
+                // Get all queued actions
+                const currentActions = dataManager.getCurrentActions();
+                if (!currentActions || currentActions.length === 0) {
+                    return;
+                }
+
+                // Find all action divs in the queue (individual actions only, not wrapper or text containers)
+                const actionDivs = queueMenu.querySelectorAll('[class^="QueuedActions_action__"]');
+                if (actionDivs.length === 0) {
+                    return;
+                }
+
+                const inventoryLookup = this.buildInventoryLookup(dataManager.getInventory());
+
+                // Clear all existing time and profit displays to prevent duplicates
+                queueMenu.querySelectorAll('.mwi-queue-action-time').forEach((el) => el.remove());
+                queueMenu.querySelectorAll('.mwi-queue-action-profit').forEach((el) => el.remove());
+                const existingTotal = document.querySelector('#mwi-queue-total-time');
+                if (existingTotal) {
+                    existingTotal.remove();
+                }
+
+                // Observer is already disconnected by callback - we'll reconnect in finally
+                shouldReconnectObserver = true;
+
+                let accumulatedTime = 0;
+                let hasInfinite = false;
+                const actionsToCalculate = []; // Store actions for async profit calculation (with time in seconds)
+
+                // Detect current action from DOM so we can avoid double-counting
+                let currentAction = null;
+                const actionNameElement = document.querySelector('div[class*="Header_actionName"]');
+                if (actionNameElement && actionNameElement.textContent) {
+                    const actionNameText = this.getCleanActionName(actionNameElement);
+                    const sorted = [...currentActions].sort((a, b) => a.ordinal - b.ordinal);
+                    currentAction = this.matchCurrentActionFromText(sorted.slice(0, 1), actionNameText);
+                }
+
+                // Calculate time for current action to include in total
+                // Always include current action time, even if it appears in queue
+                if (currentAction) {
+                    const actionDetails = dataManager.getActionDetails(currentAction.actionHrid);
+                    if (actionDetails) {
+                        const isEnhancing = actionDetails.type === '/action_types/enhancing';
+
+                        // Check if infinite BEFORE calculating count
+                        const isInfinite = !currentAction.hasMaxCount || currentAction.actionHrid.includes('/combat/');
+
+                        let actionTimeSeconds = 0; // Time spent on this action (for profit calculation)
+                        let count = 0; // Queued action count for profit calculation
+                        let baseActionsNeeded = 0; // Time-consuming actions for time calculation
+
+                        if (isEnhancing) {
+                            // Enhancing: use enhancement-specific time calculation
+                            const enhancingTime = this.calculateEnhancingQueueTime(
+                                currentAction,
+                                actionDetails,
+                                inventoryLookup
+                            );
+                            if (enhancingTime) {
+                                count = enhancingTime.count;
+                                actionTimeSeconds = enhancingTime.totalTime;
+                                accumulatedTime += enhancingTime.totalTime;
+                            } else if (isInfinite) {
+                                hasInfinite = true;
+                            }
+                        } else if (isInfinite) {
+                            // Check for material limit on infinite actions
+                            const equipment = dataManager.getEquipment();
+                            const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
+                            const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, itemDetailMap);
+                            const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
+                            const artisanBonus = teaParser_js.parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
+
+                            // Calculate action stats to get efficiency
+                            const timeData = this.calculateActionTime(actionDetails, currentAction.actionHrid);
+                            if (timeData) {
+                                const { actionTime, totalEfficiency } = timeData;
+                                const limitResult = this.calculateMaterialLimit(
+                                    actionDetails,
+                                    inventoryLookup,
+                                    artisanBonus,
+                                    currentAction
+                                );
+
+                                const materialLimit = limitResult?.maxActions || null;
+
+                                if (materialLimit !== null) {
+                                    // Material-limited infinite action - calculate time
+                                    count = materialLimit; // Max queued actions based on materials
+                                    const avgActionsPerBaseAction = efficiency_js.calculateEfficiencyMultiplier(totalEfficiency);
+                                    baseActionsNeeded = Math.ceil(count / avgActionsPerBaseAction);
+                                    const elapsedInCurrentUnit = dataManager.getElapsedSecondsInCurrentUnit(
+                                        currentAction.id,
+                                        currentAction.currentCount,
+                                        actionTime
+                                    );
+                                    const totalTime = Math.max(0, baseActionsNeeded * actionTime - elapsedInCurrentUnit);
+                                    accumulatedTime += totalTime;
+                                    actionTimeSeconds = totalTime;
+                                }
+                            } else {
+                                // Could not calculate action time
+                                hasInfinite = true;
+                            }
+                        } else {
+                            count = currentAction.maxCount - currentAction.currentCount;
+                            const timeData = this.calculateActionTime(actionDetails, currentAction.actionHrid);
+                            if (timeData) {
+                                const { actionTime, totalEfficiency } = timeData;
+
+                                // Calculate average queued actions per time-consuming action
+                                const avgActionsPerBaseAction = efficiency_js.calculateEfficiencyMultiplier(totalEfficiency);
+
+                                // Calculate time-consuming actions needed
+                                baseActionsNeeded = Math.ceil(count / avgActionsPerBaseAction);
+                                const elapsedInCurrentUnit = dataManager.getElapsedSecondsInCurrentUnit(
+                                    currentAction.id,
+                                    currentAction.currentCount,
+                                    actionTime
+                                );
+                                const totalTime = Math.max(0, baseActionsNeeded * actionTime - elapsedInCurrentUnit);
+                                accumulatedTime += totalTime;
+                                actionTimeSeconds = totalTime;
+                            }
+                        }
+
+                        // Store action for profit calculation (done async after UI renders)
+                        // Skip enhancing actions — no profit applies
+                        if (actionTimeSeconds > 0 && !isEnhancing) {
+                            actionsToCalculate.push({
+                                actionHrid: currentAction.actionHrid,
+                                primaryItemHash: currentAction.primaryItemHash || null,
+                                timeSeconds: actionTimeSeconds,
+                                count: count,
+                                baseActionsNeeded: baseActionsNeeded,
+                            });
+                        }
+                    }
+                }
+
+                // Now process queued actions by reading from each div
+                // Each div shows a queued action, and we match it to cache by name
+                // Track used action IDs to prevent duplicate matching (e.g., two identical infinite actions)
+                const usedActionIds = new Set();
+
+                // CRITICAL FIX: Always mark current action as used to prevent queue from matching it
+                // The isCurrentActionInQueue flag only controls whether we add current action time to total
+                if (currentAction) {
+                    usedActionIds.add(currentAction.id);
+                }
+
+                for (let divIndex = 0; divIndex < actionDivs.length; divIndex++) {
+                    const actionDiv = actionDivs[divIndex];
+
+                    // Match this div's action from the cache (excluding already-matched actions)
+                    const actionObj = this.matchActionFromDiv(actionDiv, currentActions, usedActionIds);
+
+                    if (!actionObj) {
+                        // Could not match action - show unknown
+                        const timeDiv = document.createElement('div');
+                        timeDiv.className = 'mwi-queue-action-time';
+                        timeDiv.style.cssText = `
+                        color: var(--text-color-secondary, ${config.COLOR_TEXT_SECONDARY});
+                        font-size: 0.85em;
+                        margin-top: 2px;
+                    `;
+                        timeDiv.textContent = '[Unknown action]';
+
+                        const actionTextContainer = actionDiv.querySelector('[class*="QueuedActions_actionText"]');
+                        if (actionTextContainer) {
+                            actionTextContainer.appendChild(timeDiv);
+                        } else {
+                            actionDiv.appendChild(timeDiv);
+                        }
+
+                        continue;
+                    }
+
+                    // Mark this action as used for subsequent divs
+                    usedActionIds.add(actionObj.id);
+
+                    const actionDetails = dataManager.getActionDetails(actionObj.actionHrid);
+                    if (!actionDetails) {
+                        console.warn('[Action Time Display] Unknown queued action:', actionObj.actionHrid);
+                        continue;
+                    }
+
+                    const isEnhancing = actionDetails.type === '/action_types/enhancing';
+
+                    // Check if infinite BEFORE calculating count
+                    const isInfinite = !actionObj.hasMaxCount || actionObj.actionHrid.includes('/combat/');
+
+                    let totalTime;
+                    let actionTimeSeconds = 0;
+                    let baseActionsNeeded = 0;
+                    let count = 0;
+                    let isTrulyInfinite = false;
+                    let materialLimit = null;
+                    let limitType = null;
+
+                    if (isEnhancing) {
+                        // Enhancing: use enhancement-specific time calculation
+                        const enhancingTime = this.calculateEnhancingQueueTime(actionObj, actionDetails, inventoryLookup);
+                        if (enhancingTime) {
+                            count = enhancingTime.count;
+                            totalTime = enhancingTime.totalTime;
+                            actionTimeSeconds = enhancingTime.totalTime;
+                            accumulatedTime += enhancingTime.totalTime;
+                        } else if (isInfinite) {
+                            isTrulyInfinite = true;
+                            hasInfinite = true;
+                            totalTime = Infinity;
+                        } else {
+                            totalTime = 0;
+                        }
+                    } else {
+                        // Non-enhancing: use standard calculation
+                        // Calculate action time first to get efficiency
+                        const timeData = this.calculateActionTime(actionDetails, actionObj.actionHrid);
+                        if (!timeData) continue;
+
+                        const { actionTime, totalEfficiency } = timeData;
+
+                        // Calculate material limit for infinite actions
+                        if (isInfinite) {
+                            const equipment = dataManager.getEquipment();
+                            const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
+                            const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, itemDetailMap);
+                            const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
+                            const artisanBonus = teaParser_js.parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
+
+                            const limitResult = this.calculateMaterialLimit(
+                                actionDetails,
+                                inventoryLookup,
+                                artisanBonus,
+                                actionObj
+                            );
+
+                            if (limitResult) {
+                                materialLimit = limitResult.maxActions;
+                                limitType = limitResult.limitType;
+                            }
+                        }
+
+                        // Determine if truly infinite (no material limit)
+                        isTrulyInfinite = isInfinite && materialLimit === null;
+
+                        if (isTrulyInfinite) {
+                            hasInfinite = true;
+                        }
+
+                        // Calculate count for finite actions or material-limited infinite actions
+                        if (!isInfinite) {
+                            count = actionObj.maxCount - actionObj.currentCount;
+                        } else if (materialLimit !== null) {
+                            count = materialLimit;
+                        }
+
+                        // Calculate total time for this action
+                        if (isTrulyInfinite) {
+                            totalTime = Infinity;
+                        } else {
+                            // Calculate time-consuming actions needed
+                            const avgActionsPerBaseAction = efficiency_js.calculateEfficiencyMultiplier(totalEfficiency);
+                            baseActionsNeeded = Math.ceil(count / avgActionsPerBaseAction);
+                            totalTime = baseActionsNeeded * actionTime;
+                            accumulatedTime += totalTime;
+                            actionTimeSeconds = totalTime;
+                        }
+                    }
+
+                    // Store action for profit calculation (done async after UI renders)
+                    // Skip enhancing actions — no profit applies
+                    if (actionTimeSeconds > 0 && !isTrulyInfinite && !isEnhancing) {
+                        actionsToCalculate.push({
+                            actionHrid: actionObj.actionHrid,
+                            primaryItemHash: actionObj.primaryItemHash || null,
+                            timeSeconds: actionTimeSeconds,
+                            count: count,
+                            baseActionsNeeded: baseActionsNeeded,
+                            divIndex: divIndex, // Store index to match back to DOM element
+                        });
+                    }
+
+                    // Format completion time
+                    let completionText = '';
+                    if (!hasInfinite && !isTrulyInfinite) {
+                        const completionDate = new Date();
+                        completionDate.setSeconds(completionDate.getSeconds() + accumulatedTime);
+                        const isToday = completionDate.toDateString() === new Date().toDateString();
+
+                        completionText = ` Complete at ${formatCompletionTime(completionDate, !isToday)}`;
+                    }
+
+                    // Create time display element
+                    const timeDiv = document.createElement('div');
+                    timeDiv.className = 'mwi-queue-action-time';
+                    timeDiv.style.cssText = `
+                    color: var(--text-color-secondary, ${config.COLOR_TEXT_SECONDARY});
+                    font-size: 0.85em;
+                    margin-top: 2px;
+                `;
+
+                    if (isTrulyInfinite) {
+                        timeDiv.textContent = '[∞]';
+                    } else if (isInfinite && materialLimit !== null) {
+                        // Material-limited infinite action
+                        let limitLabel = '';
+                        if (limitType === 'gold') {
+                            limitLabel = 'gold';
+                        } else if (limitType && limitType.startsWith('material:')) {
+                            limitLabel = 'mat';
+                        } else if (limitType && limitType.startsWith('upgrade:')) {
+                            limitLabel = 'upgrade';
+                        } else {
+                            limitLabel = 'max';
+                        }
+                        const timeStr = formatters_js.timeReadable(totalTime);
+                        timeDiv.textContent = `[${timeStr} · ${limitLabel}: ${this.formatLargeNumber(materialLimit)}]${completionText}`;
+                    } else {
+                        const timeStr = formatters_js.timeReadable(totalTime);
+                        timeDiv.textContent = `[${timeStr}]${completionText}`;
+                    }
+
+                    // Find the actionText container and append inside it
+                    const actionTextContainer = actionDiv.querySelector('[class*="QueuedActions_actionText"]');
+                    if (actionTextContainer) {
+                        actionTextContainer.appendChild(timeDiv);
+                    } else {
+                        // Fallback: append to action div
+                        actionDiv.appendChild(timeDiv);
+                    }
+
+                    // Create empty profit div for this action (will be populated asynchronously)
+                    // Skip enhancing actions — no profit applies
+                    if (
+                        !isTrulyInfinite &&
+                        actionTimeSeconds > 0 &&
+                        !isEnhancing &&
+                        config.getSettingValue('actionQueue_showValue', true)
+                    ) {
+                        const profitDiv = document.createElement('div');
+                        profitDiv.className = 'mwi-queue-action-profit';
+                        profitDiv.dataset.divIndex = divIndex;
+                        profitDiv.style.cssText = `
+                        color: var(--text-color-secondary, ${config.COLOR_TEXT_SECONDARY});
+                        font-size: 0.85em;
+                        margin-top: 2px;
+                    `;
+                        // Leave empty - will be filled by async calculation
+                        profitDiv.textContent = '';
+
+                        if (actionTextContainer) {
+                            actionTextContainer.appendChild(profitDiv);
+                        } else {
+                            actionDiv.appendChild(profitDiv);
+                        }
+                    }
+                }
+
+                // Add total time at bottom (includes current action + all queued)
+                const totalDiv = document.createElement('div');
+                totalDiv.id = 'mwi-queue-total-time';
+                totalDiv.style.cssText = `
+                color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});
+                font-weight: bold;
+                margin-top: 12px;
+                padding: 8px;
+                border-top: 1px solid var(--border-color, ${config.COLOR_BORDER});
+                text-align: center;
+            `;
+
+                // Build total time text
+                let totalText = '';
+                if (hasInfinite) {
+                    // Show finite time first, then add infinity indicator
+                    if (accumulatedTime > 0) {
+                        totalText = `Total time: ${formatters_js.timeReadable(accumulatedTime)} + [∞]`;
+                    } else {
+                        totalText = 'Total time: [∞]';
+                    }
+                } else {
+                    totalText = `Total time: ${formatters_js.timeReadable(accumulatedTime)}`;
+                }
+
+                totalDiv.innerHTML = totalText;
+
+                // Insert after queue menu
+                queueMenu.insertAdjacentElement('afterend', totalDiv);
+
+                // Calculate profit asynchronously (non-blocking)
+                if (
+                    actionsToCalculate.length > 0 &&
+                    marketAPI.isLoaded() &&
+                    config.getSettingValue('actionQueue_showValue', true)
+                ) {
+                    // Async will handle observer reconnection after updates complete
+                    shouldReconnectObserver = false;
+                    this.calculateAndDisplayTotalProfit(totalDiv, actionsToCalculate, totalText, queueMenu);
+                }
+            } catch (error) {
+                console.error('[Toolasha] Error injecting queue times:', error);
+            } finally {
+                // Reconnect observer only if async didn't take over
+                if (shouldReconnectObserver) {
+                    this.setupQueueMenuObserver(queueMenu);
+                }
+            }
+        }
+
+        /**
+         * Calculate and display total profit asynchronously (non-blocking)
+         * @param {HTMLElement} totalDiv - The total display div element
+         * @param {Array} actionsToCalculate - Array of {actionHrid, timeSeconds, count, baseActionsNeeded, divIndex} objects
+         * @param {string} baseText - Base text (time) to prepend
+         * @param {HTMLElement} queueMenu - Queue menu element to reconnect observer after updates
+         */
+        async calculateAndDisplayTotalProfit(totalDiv, actionsToCalculate, baseText, queueMenu) {
+            // Generate unique ID for this calculation to prevent race conditions
+            const calculationId = Date.now() + Math.random();
+            this.activeProfitCalculationId = calculationId;
+
+            try {
+                let totalProfit = 0;
+                let hasProfitData = false;
+
+                // Create all profit calculation promises at once (parallel execution)
+                const profitPromises = actionsToCalculate.map(
+                    (action) =>
+                        Promise.race([
+                            this.calculateProfitForAction(action),
+                            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 500)),
+                        ]).catch(() => null) // Convert rejections to null
+                );
+
+                // Wait for all calculations to complete in parallel
+                const results = await Promise.allSettled(profitPromises);
+
+                // Check if this calculation is still valid (character might have switched)
+                if (this.activeProfitCalculationId !== calculationId) {
+                    return;
+                }
+
+                // Aggregate results and update individual action profit displays
+                results.forEach((result, index) => {
+                    const actionProfit = result.status === 'fulfilled' && result.value !== null ? result.value : null;
+
+                    if (actionProfit !== null) {
+                        totalProfit += actionProfit;
+                        hasProfitData = true;
+
+                        // Update individual action's profit display
+                        const action = actionsToCalculate[index];
+                        if (action.divIndex !== undefined) {
+                            const profitDiv = document.querySelector(
+                                `.mwi-queue-action-profit[data-div-index="${action.divIndex}"]`
+                            );
+                            if (profitDiv) {
+                                const profitColor =
+                                    actionProfit >= 0
+                                        ? config.getSettingValue('color_profit', '#4ade80')
+                                        : config.getSettingValue('color_loss', '#f87171');
+                                const profitSign = actionProfit >= 0 ? '+' : '';
+                                profitDiv.innerHTML = `Profit: <span style="color: ${profitColor};">${profitSign}${this.formatLargeNumber(Math.abs(Math.round(actionProfit)))}</span>`;
+                            }
+                        }
+                    }
+                });
+
+                // Update display with value
+                if (hasProfitData) {
+                    // Get value mode setting to determine label and color
+                    const valueMode = config.getSettingValue('actionQueue_valueMode', 'profit');
+                    const isEstimatedValue = valueMode === 'estimated_value';
+
+                    // Estimated value is always positive (revenue), so always use profit color
+                    // Profit can be negative, so use appropriate color
+                    const valueColor =
+                        isEstimatedValue || totalProfit >= 0
+                            ? config.getSettingValue('color_profit', '#4ade80')
+                            : config.getSettingValue('color_loss', '#f87171');
+                    const valueSign = totalProfit >= 0 ? '+' : '';
+                    const valueLabel = isEstimatedValue ? 'Estimated value' : 'Total profit';
+                    const valueText = `<br>${valueLabel}: <span style="color: ${valueColor};">${valueSign}${this.formatLargeNumber(Math.abs(Math.round(totalProfit)))}</span>`;
+                    totalDiv.innerHTML = baseText + valueText;
+                }
+            } catch (error) {
+                console.warn('[Action Time Display] Error calculating total profit:', error);
+            } finally {
+                // CRITICAL: Reconnect mutation observer after ALL DOM updates are complete
+                // This prevents infinite loop by ensuring observer only reconnects once all profit divs are updated
+                this.setupQueueMenuObserver(queueMenu);
+            }
+        }
+
+        /**
+         * Calculate profit or estimated value for a single action based on action count
+         * @param {Object} action - Action object with {actionHrid, timeSeconds, count, baseActionsNeeded}
+         * @returns {Promise<number|null>} Total value (profit or revenue) or null if unavailable
+         */
+        async calculateProfitForAction(action) {
+            const actionDetails = dataManager.getActionDetails(action.actionHrid);
+            if (!actionDetails) {
+                return null;
+            }
+
+            const valueMode = config.getSettingValue('actionQueue_valueMode', 'profit');
+
+            // Get profit data (already has profitPerAction calculated)
+            let profitData = null;
+            let isAlchemy = false;
+
+            if (actionDetails.type === '/action_types/alchemy' && action.primaryItemHash) {
+                profitData = this.calculateAlchemyProfitForAction(action);
+                isAlchemy = !!profitData;
+            }
+
+            if (!profitData) {
+                const gatheringProfit = await calculateGatheringProfit(action.actionHrid);
+                if (gatheringProfit) {
+                    profitData = gatheringProfit;
+                } else if (actionDetails.outputItems?.[0]?.itemHrid) {
+                    profitData = await profitCalculator.calculateProfit(actionDetails.outputItems[0].itemHrid);
+                }
+            }
+
+            if (!profitData) {
+                return null;
+            }
+
+            const actionsCount = action.count ?? 0;
+            if (!actionsCount) {
+                return 0;
+            }
+
+            if (typeof profitData.actionsPerHour !== 'number') {
+                return null;
+            }
+
+            if (isAlchemy) {
+                const profitPerAction = profitData.profitPerHour / profitData.actionsPerHour;
+                const totalProfit = profitPerAction * actionsCount;
+                if (valueMode === 'estimated_value') {
+                    const revenuePerAction = (profitData.revenuePerHour || 0) / profitData.actionsPerHour;
+                    return revenuePerAction * actionsCount;
+                }
+                return totalProfit;
+            }
+
+            if (profitData.baseOutputs) {
+                const totals = profitHelpers_js.calculateGatheringActionTotalsFromBase({
+                    actionsCount,
+                    actionsPerHour: profitData.actionsPerHour,
+                    baseOutputs: profitData.baseOutputs,
+                    bonusDrops: profitData.bonusRevenue?.bonusDrops || [],
+                    processingRevenueBonusPerAction: profitData.processingRevenueBonusPerAction,
+                    gourmetRevenueBonusPerAction: profitData.gourmetRevenueBonusPerAction,
+                    drinkCostPerHour: profitData.drinkCostPerHour,
+                    efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
+                });
+                return valueMode === 'estimated_value' ? totals.totalRevenue : totals.totalProfit;
+            }
+
+            const totals = profitHelpers_js.calculateProductionActionTotalsFromBase({
+                actionsCount,
+                actionsPerHour: profitData.actionsPerHour,
+                outputAmount: profitData.outputAmount || 1,
+                outputPrice: profitData.outputPrice,
+                gourmetBonus: profitData.gourmetBonus || 0,
+                bonusDrops: profitData.bonusRevenue?.bonusDrops || [],
+                materialCosts: profitData.materialCosts,
+                totalTeaCostPerHour: profitData.totalTeaCostPerHour,
+                efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
+            });
+
+            return valueMode === 'estimated_value' ? totals.totalRevenue : totals.totalProfit;
+        }
+
+        /**
+         * Calculate alchemy profit for a queued action using the alchemy profit calculator.
+         * @param {Object} action - Action object with {actionHrid, primaryItemHash}
+         * @returns {Object|null} Profit data with profitPerHour and actionsPerHour, or null
+         */
+        calculateAlchemyProfitForAction(action) {
+            const { itemHrid, level: enhancementLevel } = this.parseItemHash(action.primaryItemHash);
+            if (!itemHrid) return null;
+
+            const actionHrid = action.actionHrid;
+
+            if (actionHrid === '/actions/alchemy/coinify') {
+                return alchemyProfitCalculator.calculateCoinifyProfit(itemHrid, enhancementLevel || 0, true);
+            } else if (actionHrid === '/actions/alchemy/transmute') {
+                return alchemyProfitCalculator.calculateTransmuteProfit(itemHrid, true);
+            } else if (actionHrid === '/actions/alchemy/decompose') {
+                return alchemyProfitCalculator.calculateDecomposeProfit(itemHrid, enhancementLevel || 0, true);
+            }
+
+            return null;
+        }
+
+        /**
+         * Calculate and display profit in the action bar for the current action.
+         * @param {Object} action - Current action object from dataManager
+         * @param {number} remainingActions - Remaining queued actions (Infinity if unlimited)
+         */
+        async updateActionBarProfit(action, remainingActions) {
+            if (!this.profitElement) return;
+            if (!config.getSetting('actionBar_showProfit')) {
+                this.profitElement.innerHTML = '';
+                return;
+            }
+
+            const calcId = Date.now() + Math.random();
+            this.activeBarProfitId = calcId;
+
+            try {
+                const actionHrid = action.actionHrid;
+                const actionDetails = dataManager.getActionDetails(actionHrid);
+                if (!actionDetails) {
+                    this.profitElement.innerHTML = '';
+                    return;
+                }
+
+                let profitData = null;
+
+                if (actionDetails.type === '/action_types/alchemy' && action.primaryItemHash) {
+                    profitData = this.calculateAlchemyProfitForAction(action);
+                }
+
+                if (!profitData) {
+                    const gatheringProfit = await calculateGatheringProfit(actionHrid);
+                    if (gatheringProfit) {
+                        profitData = gatheringProfit;
+                    } else if (actionDetails.outputItems?.[0]?.itemHrid) {
+                        profitData = await profitCalculator.calculateProfit(actionDetails.outputItems[0].itemHrid);
+                    }
+                }
+
+                if (this.activeBarProfitId !== calcId) return;
+
+                if (!profitData || typeof profitData.profitPerHour !== 'number') {
+                    this.profitElement.innerHTML = '';
+                    return;
+                }
+
+                const profitPerHour = profitData.profitPerHour;
+                const profitColor =
+                    profitPerHour >= 0
+                        ? config.getSettingValue('color_profit', '#4ade80')
+                        : config.getSettingValue('color_loss', '#f87171');
+                const sign = profitPerHour >= 0 ? '+' : '';
+
+                let html = `<span style="color:#888;">Profit:</span> <span style="color:${profitColor}; font-weight:600;">${sign}${this.formatLargeNumber(Math.abs(Math.round(profitPerHour)))}/hr</span>`;
+
+                if (isFinite(remainingActions) && remainingActions > 0 && profitData.actionsPerHour > 0) {
+                    const profitPerAction =
+                        profitPerHour / (profitData.actionsPerHour * (profitData.efficiencyMultiplier || 1));
+                    const remainingProfit = profitPerAction * remainingActions;
+                    const remColor =
+                        remainingProfit >= 0
+                            ? config.getSettingValue('color_profit', '#4ade80')
+                            : config.getSettingValue('color_loss', '#f87171');
+                    const remSign = remainingProfit >= 0 ? '+' : '';
+                    html += ` <span style="color:#888;">·</span> <span style="color:#888;">remaining</span> <span style="color:${remColor}; font-weight:600;">${remSign}${this.formatLargeNumber(Math.abs(Math.round(remainingProfit)))}</span>`;
+                }
+
+                if (this.activeBarProfitId !== calcId) return;
+                this.profitElement.innerHTML = html;
+            } catch {
+                if (this.activeBarProfitId === calcId) {
+                    this.profitElement.innerHTML = '';
+                }
+            }
+        }
+
+        /**
+         * Disable the action time display (cleanup)
+         */
+        disable() {
+            this.cleanupRegistry.cleanupAll();
+            this.displayElement = null;
+            this.profitElement = null;
+            this.updateTimer = null;
+            this.unregisterQueueObserver = null;
+            this.actionNameObserver = null;
+            this.queueMenuObserver = null;
+            this.characterInitHandler = null;
+            this.waitForPanelTimeout = null;
+            this.activeProfitCalculationId = null;
+            this.activeBarProfitId = null;
+            this.isInitialized = false;
+        }
+    }
+
+    const actionTimeDisplay = new ActionTimeDisplay();
+
+    /**
+     * Character Activity Projection Engine
+     * Pure functions that project a character's current action + queue forward in time to find
+     * the earliest trustworthy point at which useful progress stops (action ends, queue ends,
+     * materials run out, or - resolved separately, at display time - the character's offline cap).
+     *
+     * Deliberately reuses Action Time Display's existing per-action duration/material-limit math
+     * (already corrected for partial-progress-in-the-current-unit, TLA-015) rather than building a
+     * second duration engine. This module's only job is to walk the queue sequentially and decide
+     * where the trustworthy chain has to stop.
+     */
+
+
+    const UNCERTAIN_ACTION_TYPES = new Set(['/action_types/labyrinth', '/action_types/enhancing']);
+
+    /**
+     * An action type/hrid this feature will never assert a trustworthy deadline for - Combat and
+     * Labyrinth have non-deterministic duration, and Enhancing has a stochastic outcome. Action Time
+     * Display shows an expected-value estimate for Enhancing; this feature is intentionally stricter
+     * (a false early warning is preferable to telling the player an alt is safe when it might not be).
+     * @param {Object} actionObj - Entry from `dataManager.getCurrentActions()`
+     * @param {Object} actionDetails - `dataManager.getActionDetails(actionObj.actionHrid)`
+     * @returns {boolean}
+     */
+    function isUncertainAction(actionObj, actionDetails) {
+        if (actionObj.actionHrid?.includes('/combat/')) return true;
+        return UNCERTAIN_ACTION_TYPES.has(actionDetails?.type);
+    }
+
+    function buildSegment({ actionObj, actionDetails, queuedIndex, startAt, endAt, certainty, stopCause }) {
+        return {
+            actionHrid: actionObj.actionHrid,
+            actionName: actionDetails?.name || actionObj.actionHrid,
+            actionTypeHrid: actionDetails?.type || null,
+            startAt,
+            endAt,
+            queuedIndex,
+            certainty,
+            stopCause,
+        };
+    }
+
+    /**
+     * Project the character's current action + queue forward from `now`, using only the current
+     * live action-queue data. Does not consider the offline-progress cap - that is deliberately
+     * resolved later against a live `lastOfflineTime` (see `resolveDisplayProjection`), since while
+     * this function runs the character is still connected and hasn't gone offline yet.
+     * @param {number} [now] - Epoch ms to project from (defaults to `Date.now()`)
+     * @returns {{segments: Array, terminalCause: string, terminalAt: number|null, certainty: string}}
+     *      terminalCause is one of: 'idle' | 'action' | 'queue' | 'materials' | 'infinite' | 'unknown'
+     */
+    function computeLiveProjection(now = Date.now()) {
+        const actions = dataManager.getCurrentActions();
+
+        if (!actions || actions.length === 0) {
+            return { segments: [], terminalCause: 'idle', terminalAt: now, certainty: 'trustworthy' };
+        }
+
+        const inventoryLookup = actionTimeDisplay.buildInventoryLookup(dataManager.getInventory());
+
+        const segments = [];
+        let currentTime = now;
+        let terminalCause = null;
+        let terminalAt = null;
+        let certainty = 'trustworthy';
+
+        for (let i = 0; i < actions.length; i++) {
+            const actionObj = actions[i];
+            const actionDetails = dataManager.getActionDetails(actionObj.actionHrid);
+
+            if (!actionDetails || isUncertainAction(actionObj, actionDetails)) {
+                segments.push(
+                    buildSegment({
+                        actionObj,
+                        actionDetails,
+                        queuedIndex: i,
+                        startAt: currentTime,
+                        endAt: null,
+                        certainty: 'uncertain',
+                        stopCause: 'unknown',
+                    })
+                );
+                terminalCause = 'unknown';
+                terminalAt = null;
+                certainty = 'uncertain';
+                break;
+            }
+
+            const timing = actionTimeDisplay.calculateSingleQueueActionTime(actionObj, actionDetails, inventoryLookup);
+
+            if (timing.isTrulyInfinite) {
+                segments.push(
+                    buildSegment({
+                        actionObj,
+                        actionDetails,
+                        queuedIndex: i,
+                        startAt: currentTime,
+                        endAt: null,
+                        certainty: 'trustworthy',
+                        stopCause: 'infinite',
+                    })
+                );
+                terminalCause = 'infinite';
+                terminalAt = null;
+                break;
+            }
+
+            const segmentEndAt = currentTime + timing.totalTime * 1000;
+            const stopCause = timing.limitType?.startsWith('material') ? 'materials' : 'count';
+
+            segments.push(
+                buildSegment({
+                    actionObj,
+                    actionDetails,
+                    queuedIndex: i,
+                    startAt: currentTime,
+                    endAt: segmentEndAt,
+                    certainty: 'trustworthy',
+                    stopCause,
+                })
+            );
+
+            currentTime = segmentEndAt;
+
+            if (i === actions.length - 1) {
+                terminalAt = segmentEndAt;
+                terminalCause = stopCause === 'materials' ? 'materials' : segments.length === 1 ? 'action' : 'queue';
+            }
+        }
+
+        return { segments, terminalCause, terminalAt, certainty };
+    }
+
+    /**
+     * Resolve a persisted projection into what should actually be displayed right now, applying the
+     * offline-progress-cap overlay against a freshly-read native `lastOfflineTime` (from Character
+     * Select) - never a value baked in at observation time, since while the character was still
+     * connected it hadn't gone offline yet and the true offline boundary wasn't knowable.
+     *
+     * Never asserts a green/yellow offline deadline across a MooPass expiry boundary this evidence
+     * can't prove the server's semantics for - falls back to 'unknown' (neutral, not a false
+     * reassurance) in that case, per the fail-closed requirement.
+     * @param {Object} stored - A persisted character-activity record (see character-activity-storage.js)
+     * @param {number|null} freshLastOfflineTime - Native `lastOfflineTime` from Character Select, ms epoch
+     * @returns {{terminalCause: string, terminalAt: number|null, segments: Array}}
+     */
+    function resolveDisplayProjection(stored, freshLastOfflineTime) {
+        const { segments, terminalCause, terminalAt } = stored.projection;
+
+        // Already uncertain/idle at observation time - the offline cap can never turn that into a
+        // safe assertion, so there's nothing to overlay.
+        if (terminalCause === 'unknown' || terminalCause === 'idle') {
+            return { segments, terminalCause, terminalAt };
+        }
+
+        const offlineHourCap = stored.offline?.hourCap;
+        if (!(offlineHourCap > 0) || freshLastOfflineTime == null) {
+            // No trustworthy cap, or the character hasn't actually gone offline yet by any evidence
+            // we have - an 'infinite' chain has no other possible deadline, so it's unknown; a
+            // finite chain's own terminalAt still stands on its own.
+            return terminalCause === 'infinite'
+                ? { segments, terminalCause: 'unknown', terminalAt: null }
+                : { segments, terminalCause, terminalAt };
+        }
+
+        const mooPassExpireTime = stored.offline?.mooPassExpireTime;
+        const offlineLimitAt = freshLastOfflineTime + offlineHourCap * 3600 * 1000;
+
+        if (mooPassExpireTime != null && mooPassExpireTime < offlineLimitAt) {
+            // The saved cap may have included MooPass hours that won't all be honored - the server's
+            // mid-offline MooPass-expiry behavior isn't provable from client evidence, so fail closed
+            // rather than assert a deadline that assumes the full cap held.
+            return terminalCause === 'infinite'
+                ? { segments, terminalCause: 'unknown', terminalAt: null }
+                : { segments, terminalCause, terminalAt };
+        }
+
+        if (terminalCause === 'infinite' || terminalAt === null || offlineLimitAt < terminalAt) {
+            return { segments, terminalCause: 'offline', terminalAt: offlineLimitAt };
+        }
+
+        return { segments, terminalCause, terminalAt };
+    }
+
+    /**
+     * Character Activity Status Storage
+     * Character-scoped persistence for activity projections, plus a small account-level mirror of
+     * the enable flag and date/time presentation preferences - both must be readable on Character
+     * Select, where there is no active character and therefore no per-character settings context.
+     */
+
+
+    const STORE_NAME = 'characterActivityStatus';
+    const ACCOUNT_PREFS_KEY = 'accountPreferences';
+    const SCHEMA_VERSION = 1;
+
+    const DEFAULT_ACCOUNT_PREFS = Object.freeze({
+        enabled: true,
+        dateFormat: 'MM-DD',
+        timeFormat: '24hour',
+    });
+
+    /**
+     * Load the persisted activity record for one character.
+     * @param {string} characterId
+     * @returns {Promise<Object|null>}
+     */
+    async function loadCharacterActivity(characterId) {
+        const record = await storage.getJSON(characterId, STORE_NAME, null);
+        if (!record || record.version !== SCHEMA_VERSION) {
+            // No prior schema exists to migrate from yet - anything else (missing, or a future,
+            // higher version this build doesn't understand) is treated as "never observed" rather
+            // than guessed at.
+            return null;
+        }
+        return record;
+    }
+
+    /**
+     * Persist the activity record for one character.
+     * @param {string} characterId
+     * @param {Object} record
+     * @param {boolean} [immediate] - Skip the normal debounce (e.g. best-effort flush on character
+     *      switch / page departure, where a delayed write could be lost)
+     * @returns {Promise<boolean>}
+     */
+    async function saveCharacterActivity(characterId, record, immediate = false) {
+        return storage.setJSON(characterId, { ...record, version: SCHEMA_VERSION }, STORE_NAME, immediate);
+    }
+
+    /**
+     * Load the account-level presentation/enable preferences used on Character Select, where no
+     * per-character settings context exists. Always returns a complete object (schema defaults
+     * fill in anything missing/never-saved).
+     * @returns {Promise<{enabled: boolean, dateFormat: string, timeFormat: string}>}
+     */
+    async function loadAccountPreferences() {
+        const saved = await storage.getJSON(ACCOUNT_PREFS_KEY, STORE_NAME, null);
+        return { ...DEFAULT_ACCOUNT_PREFS, ...(saved || {}) };
+    }
+
+    /**
+     * Persist the account-level presentation/enable preferences. Callers should pass the character-
+     * scoped values currently in effect for the active character, so Character Select later shows
+     * whatever was last actually used rather than a schema default.
+     * @param {Partial<{enabled: boolean, dateFormat: string, timeFormat: string}>} prefs
+     * @returns {Promise<boolean>}
+     */
+    async function saveAccountPreferences(prefs) {
+        const current = await loadAccountPreferences();
+        return storage.setJSON(ACCOUNT_PREFS_KEY, { ...current, ...prefs }, STORE_NAME);
+    }
+
+    /**
+     * Character Activity Collector
+     * Character-scoped lifecycle: computes an activity projection while a character is actively
+     * connected and persists it (plus a small account-level mirror of enable/date-time preferences
+     * used later on Character Select, where there is no active character context).
+     */
+
+
+    class CharacterActivityCollector {
+        constructor() {
+            this.isInitialized = false;
+            this.characterId = null;
+            this.characterName = null;
+            this.lifecycleGeneration = 0;
+            this.recomputeHandler = null;
+            this.switchingHandler = null;
+            this.beforeUnloadHandler = null;
+        }
+
+        async initialize() {
+            if (this.isInitialized) return;
+            this.isInitialized = true;
+            const generation = ++this.lifecycleGeneration;
+
+            this.characterId = dataManager.getCurrentCharacterId();
+            this.characterName = dataManager.getCurrentCharacterName();
+
+            this.recomputeHandler = () => this.recomputeAndPersist(generation);
+            dataManager.on('actions_updated', this.recomputeHandler);
+            dataManager.on('character_info_updated', this.recomputeHandler);
+
+            this.switchingHandler = () => this.recomputeAndPersist(generation, true);
+            dataManager.on('character_switching', this.switchingHandler);
+
+            this.beforeUnloadHandler = () => this.recomputeAndPersist(generation, true);
+            window.addEventListener('beforeunload', this.beforeUnloadHandler);
+
+            await this.recomputeAndPersist(generation);
+        }
+
+        /**
+         * Recompute the current projection and persist it. Coalesced by storage.js's normal
+         * debounced write path (3s) except for character-switch/page-departure, where a delayed
+         * write could be lost - those pass `immediate: true`.
+         * @param {number} generation - Lifecycle generation captured at registration time
+         * @param {boolean} [immediate]
+         */
+        async recomputeAndPersist(generation, immediate = false) {
+            if (generation !== this.lifecycleGeneration) return;
+            if (!this.characterId) return;
+
+            const record = {
+                characterId: this.characterId,
+                characterName: this.characterName,
+                observedAt: Date.now(),
+                offline: {
+                    hourCap: dataManager.getOfflineHourCap(),
+                    mooPassExpireTime: dataManager.getMooPassExpireTime(),
+                },
+                projection: computeLiveProjection(),
+            };
+
+            await saveCharacterActivity(this.characterId, record, immediate);
+            if (generation !== this.lifecycleGeneration) return;
+
+            await saveAccountPreferences({
+                enabled: config.getSetting('characterActivityStatus'),
+                dateFormat: config.getSettingValue('market_listingDateFormat', 'MM-DD'),
+                timeFormat: config.getSettingValue('market_listingTimeFormat', '24hour'),
+            });
+        }
+
+        cleanup() {
+            this.lifecycleGeneration += 1;
+
+            if (this.recomputeHandler) {
+                dataManager.off('actions_updated', this.recomputeHandler);
+                dataManager.off('character_info_updated', this.recomputeHandler);
+                this.recomputeHandler = null;
+            }
+            if (this.switchingHandler) {
+                dataManager.off('character_switching', this.switchingHandler);
+                this.switchingHandler = null;
+            }
+            if (this.beforeUnloadHandler) {
+                window.removeEventListener('beforeunload', this.beforeUnloadHandler);
+                this.beforeUnloadHandler = null;
+            }
+
+            this.isInitialized = false;
+            this.characterId = null;
+            this.characterName = null;
+        }
+    }
+
+    const characterActivityCollector = new CharacterActivityCollector();
+
+    /**
+     * Character Activity Status Feature
+     * Character-scoped half of the feature: observes the active character's queue/offline state and
+     * persists a projection. The Character Select renderer half is always-on and wired separately
+     * (see `character-select-renderer.js`), since it must run even before any character initializes.
+     */
+
+
+    async function initialize() {
+        await characterActivityCollector.initialize();
+    }
+
+    function cleanup() {
+        characterActivityCollector.cleanup();
+    }
+
+    var characterActivity = {
+        name: 'Character Activity Status',
+        initialize,
+        cleanup,
+    };
+
+    /**
+     * Character Select Native Resolver
+     * Fail-closed access to the native Character Select page's already-loaded character list, via
+     * the same bounded React-fiber-ascent pattern already used for the Marketplace resolver - no new
+     * `/characters` request, no parsing of visible text. Each populated slot is bound to a character
+     * purely by the exact ID captured in its native `<a href="/game?characterId=...">` link, then
+     * joined against the resolved owner's live `state.characters` by that same exact ID.
+     */
+
+
+    const MAX_OWNER_DEPTH = 256;
+    const SLOT_CLASS = 'CharacterSelectPage_slot';
+    const REQUIRED_STATE_KEYS = [
+        'characters',
+        'availableGameModes',
+        'gameModeInput',
+        'showCreateCharacterModal',
+        'isCreateCharacterPending',
+    ];
+    const REQUIRED_METHODS = ['loadCharacters', 'renderCharacterSlots', 'characterSelected'];
+
+    function hasCharacterSelectStateSignature(state) {
+        if (!state || typeof state !== 'object') return false;
+        if (!Array.isArray(state.characters)) return false;
+        return REQUIRED_STATE_KEYS.every((key) => key in state);
+    }
+
+    /**
+     * Ascend from a DOM anchor inside Character Select to the owning page component, validated by
+     * exact behavioral (method) + structural (state shape) signature. Fails closed (returns null) if
+     * ascent exceeds the depth bound or resolves to more than one distinct candidate.
+     * @param {Element} element - Any element inside the Character Select page
+     * @returns {Object|null} The Character Select page's component instance, or null
+     */
+    function getCharacterSelectOwnerFromElement(element) {
+        let fiber = getReactFiberFromElement(element);
+        let depth = 0;
+        const candidates = [];
+        const seen = new Set();
+
+        while (fiber && depth < MAX_OWNER_DEPTH) {
+            const stateNode = fiber.stateNode;
+            if (
+                stateNode &&
+                !seen.has(stateNode) &&
+                typeof stateNode.setState === 'function' &&
+                REQUIRED_METHODS.every((method) => typeof stateNode[method] === 'function') &&
+                hasCharacterSelectStateSignature(stateNode.state)
+            ) {
+                seen.add(stateNode);
+                candidates.push(stateNode);
+            }
+            fiber = fiber.return;
+            depth += 1;
+        }
+
+        if (candidates.length !== 1) return null;
+        return candidates[0];
+    }
+
+    /**
+     * Extract the character ID from a slot's native navigation link
+     * (`href="/game?characterId=<id>"`), never from visible text.
+     * @param {Element} linkElement
+     * @returns {string|null}
+     */
+    function getCharacterIdFromSlotLink(linkElement) {
+        const href = linkElement?.getAttribute?.('href');
+        if (!href) return null;
+        try {
+            const url = new URL(href, window.location.origin);
+            return url.searchParams.get('characterId') || null;
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * Find every populated Character Select slot (a slot with a real `characterId` link - the empty
+     * "create character" slots use the same CSS class but have no such link) under `rootElement`.
+     * Fails closed on malformed/missing IDs (skipped individually) and on a duplicate ID appearing in
+     * more than one slot (all slots sharing that ID are skipped, since which one is real is
+     * ambiguous).
+     * @param {Element} rootElement
+     * @returns {Array<{slotElement: Element, characterId: string}>}
+     */
+    function findPopulatedCharacterSlots(rootElement) {
+        const slots = rootElement.querySelectorAll(`[class*="${SLOT_CLASS}"]`);
+        const slotsById = new Map();
+
+        for (const slot of slots) {
+            const link = slot.querySelector('a[href*="characterId="]');
+            if (!link) continue;
+
+            const characterId = getCharacterIdFromSlotLink(link);
+            if (!characterId) continue;
+
+            if (!slotsById.has(characterId)) slotsById.set(characterId, []);
+            slotsById.get(characterId).push(slot);
+        }
+
+        const result = [];
+        for (const [characterId, slotElements] of slotsById) {
+            if (slotElements.length !== 1) continue;
+            result.push({ slotElement: slotElements[0], characterId });
+        }
+        return result;
+    }
+
+    /**
+     * Resolve every populated Character Select slot to its native character data, binding purely by
+     * exact ID (never position/name/order). Fails closed (excludes that slot) if the owner can't be
+     * validated, the slot's ID is malformed/duplicated, or the ID isn't present in the resolved
+     * owner's live character list.
+     * @param {Element} rootElement - Any element inside Character Select (e.g. the mutation target)
+     * @returns {Array<{slotElement: Element, character: Object}>|null} null if the owner itself
+     *      couldn't be resolved at all
+     */
+    function resolveCharacterSelectSlots(rootElement) {
+        const owner = getCharacterSelectOwnerFromElement(rootElement);
+        if (!owner) return null;
+
+        const characters = owner.state?.characters;
+        if (!Array.isArray(characters)) return null;
+
+        const charactersById = new Map(
+            characters.filter((character) => character?.id != null).map((c) => [String(c.id), c])
+        );
+
+        const slots = findPopulatedCharacterSlots(rootElement);
+        const resolved = [];
+
+        for (const { slotElement, characterId } of slots) {
+            const character = charactersById.get(String(characterId));
+            if (!character) continue;
+            resolved.push({ slotElement, character });
+        }
+
+        return resolved;
+    }
+
+    /**
+     * Character Select Renderer
+     * Injects the compact two-line Character Activity Status block into each populated native
+     * Character Select slot. Always-on (registered outside the normal character-scoped feature
+     * lifecycle, since Character Select can be the very first page shown with no character ever
+     * initialized yet) but cheap when idle - the DOM watcher only does work once Character Select
+     * actually appears.
+     */
+
+
+    const CHARACTER_SELECT_ROOT_CLASS = 'CharacterSelectPage_characterSelectPage';
+    const BLOCK_CLASS = 'toolasha-character-activity-status';
+    const REFRESH_INTERVAL_MS = 60000;
+    const ONE_HOUR_MS = 60 * 60 * 1000;
+    const STALE_TOLERANCE_MS = 5000;
+
+    const FUTURE_LABELS = {
+        action: 'Action ends',
+        queue: 'Queue ends',
+        materials: 'Materials run out',
+        offline: 'Offline limit',
+    };
+
+    const PAST_LABELS = {
+        action: 'Action ended',
+        queue: 'Queue ended',
+        materials: 'Materials ran out',
+        offline: 'Offline progress stopped',
+    };
+
+    const COLOR_HEX = {
+        green: '#51cf66',
+        yellow: '#f0a830',
+        red: '#ff6b6b',
+        neutral: '#888888',
+    };
+
+    /**
+     * Find whichever segment covers a given instant (its own `startAt`-`endAt` range covers `time`,
+     * or it's still open-ended). Segments are stored in chronological order with contiguous
+     * boundaries, so the first match walking forward is always correct.
+     * @param {Array} segments
+     * @param {number} time - Epoch ms
+     * @returns {{segment: Object, index: number}|null} null if every segment already ended by `time`
+     */
+    function findSegmentAtTime(segments, time) {
+        for (let i = 0; i < segments.length; i++) {
+            const segment = segments[i];
+            if (segment.endAt === null || segment.endAt > time) {
+                return { segment, index: i };
+            }
+        }
+        return null;
+    }
+
+    function formatActivityLine(segment, isPaused, queuedCount) {
+        let text = segment.actionName;
+        if (isPaused) text += ' ⏸';
+        if (queuedCount > 0) text += ` +${queuedCount} queued`;
+        return text;
+    }
+
+    /**
+     * Resolve the exact two-line display state for one character from its persisted record and
+     * live native data, given the current instant. Pure/testable - no DOM.
+     * @param {Object|null} record - `loadCharacterActivity()` result, or null if never observed
+     * @param {Object} character - Native character object (id, name, lastOfflineTime, isOnline)
+     * @param {Object} prefs - Account-level date/time preferences
+     * @param {number} [now]
+     * @returns {{firstLineText: string, limiterColor: string, limiterText: string}}
+     */
+    function computeSlotDisplayState(record, character, prefs, now = Date.now()) {
+        if (!record) {
+            return {
+                firstLineText: 'No activity data yet',
+                limiterColor: 'neutral',
+                limiterText: 'Open character once to enable status',
+            };
+        }
+
+        if (character.lastOfflineTime != null && character.lastOfflineTime > record.observedAt + STALE_TOLERANCE_MS) {
+            return {
+                firstLineText: 'Activity status outdated',
+                limiterColor: 'neutral',
+                limiterText: 'Open character to refresh',
+            };
+        }
+
+        const { segments, terminalCause, terminalAt } = resolveDisplayProjection(record, character.lastOfflineTime);
+
+        if (terminalCause === 'idle') {
+            return { firstLineText: 'No active action', limiterColor: 'red', limiterText: 'Character is idle' };
+        }
+
+        if (terminalCause === 'unknown' || segments.length === 0) {
+            const last = segments[segments.length - 1];
+            return {
+                firstLineText: last ? formatActivityLine(last, false, 0) : 'No active action expected',
+                limiterColor: 'neutral',
+                limiterText: 'End time unavailable',
+            };
+        }
+
+        const hasPassed = terminalAt !== null && terminalAt <= now;
+        const time = formatters_js.formatActivityStatusTime(terminalAt, prefs, now);
+
+        if (hasPassed) {
+            if (terminalCause === 'offline') {
+                const found = findSegmentAtTime(segments, terminalAt) || {
+                    segment: segments[segments.length - 1],
+                    index: segments.length - 1,
+                };
+                const queuedCount = segments.length - found.index - 1;
+                return {
+                    firstLineText: formatActivityLine(found.segment, true, queuedCount),
+                    limiterColor: 'red',
+                    limiterText: `${PAST_LABELS.offline} · ${time}`,
+                };
+            }
+            return {
+                firstLineText: 'No active action expected',
+                limiterColor: 'red',
+                limiterText: `${PAST_LABELS[terminalCause]} · ${time}`,
+            };
+        }
+
+        const found = findSegmentAtTime(segments, now);
+        const queuedCount = found ? segments.length - found.index - 1 : 0;
+        const color = terminalAt - now > ONE_HOUR_MS ? 'green' : 'yellow';
+
+        return {
+            firstLineText: found ? formatActivityLine(found.segment, false, queuedCount) : 'No active action expected',
+            limiterColor: color,
+            limiterText: `${FUTURE_LABELS[terminalCause]} · ${time}`,
+        };
+    }
+
+    class CharacterSelectRenderer {
+        constructor() {
+            this.isWatching = false;
+            this.unregisterObserver = null;
+            this.refreshTimer = null;
+            this.trackedSlots = new Map(); // characterId -> {slotElement, character}
+        }
+
+        /**
+         * Start watching for Character Select. Safe to call unconditionally on every page load,
+         * before any character has ever initialized - does nothing until Character Select actually
+         * appears in the DOM.
+         */
+        startWatching() {
+            if (this.isWatching) return;
+            this.isWatching = true;
+
+            this.unregisterObserver = domObserver.onClass('characterActivityStatus', CHARACTER_SELECT_ROOT_CLASS, (node) =>
+                this.onCharacterSelectMounted(node)
+            );
+        }
+
+        async onCharacterSelectMounted(rootElement) {
+            const resolved = resolveCharacterSelectSlots(rootElement);
+            if (!resolved) return;
+
+            this.trackedSlots.clear();
+            for (const { slotElement, character } of resolved) {
+                this.trackedSlots.set(character.id, { slotElement, character });
+            }
+
+            await this.renderAllTrackedSlots();
+            this.startRefreshTimer();
+        }
+
+        async renderAllTrackedSlots() {
+            const prefs = await loadAccountPreferences();
+            if (!prefs.enabled) {
+                this.clearAllInjectedBlocks();
+                return;
+            }
+
+            const spriteUrl = await assetManifest.getSpriteUrl('skills');
+
+            for (const { slotElement, character } of this.trackedSlots.values()) {
+                if (!slotElement.isConnected) continue;
+                const record = await loadCharacterActivity(character.id);
+                const state = computeSlotDisplayState(record, character, prefs);
+                this.renderSlotBlock(slotElement, state, record, spriteUrl);
+            }
+        }
+
+        renderSlotBlock(slotElement, state, record, spriteUrl) {
+            let block = slotElement.querySelector(`.${BLOCK_CLASS}`);
+            if (!block) {
+                block = document.createElement('div');
+                block.className = BLOCK_CLASS;
+                block.style.cssText = 'font-size:11px; line-height:1.3; margin-top:2px;';
+                slotElement.appendChild(block);
+            }
+
+            const iconHtml =
+                spriteUrl && record?.projection?.segments?.length
+                    ? `<svg width="16" height="16" style="vertical-align:middle;margin-right:3px;"><use href="${spriteUrl}#${skillSlugFromSegment(record.projection.segments[0])}"></use></svg>`
+                    : '';
+
+            block.innerHTML = `
+            <div style="display:flex;align-items:center;overflow:hidden;">
+                ${iconHtml}<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(state.firstLineText)}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:4px;opacity:0.85;">
+                <span style="width:6px;height:6px;border-radius:50%;background:${COLOR_HEX[state.limiterColor]};flex-shrink:0;"></span>
+                <span style="white-space:nowrap;">${escapeHtml(state.limiterText)}</span>
+            </div>
+        `;
+        }
+
+        startRefreshTimer() {
+            if (this.refreshTimer) return;
+            this.refreshTimer = setInterval(() => {
+                if (this.trackedSlots.size === 0 || !this.anySlotStillConnected()) {
+                    this.stopRefreshTimer();
+                    return;
+                }
+                this.renderAllTrackedSlots();
+            }, REFRESH_INTERVAL_MS);
+        }
+
+        anySlotStillConnected() {
+            for (const { slotElement } of this.trackedSlots.values()) {
+                if (slotElement.isConnected) return true;
+            }
+            return false;
+        }
+
+        stopRefreshTimer() {
+            if (this.refreshTimer) {
+                clearInterval(this.refreshTimer);
+                this.refreshTimer = null;
+            }
+        }
+
+        clearAllInjectedBlocks() {
+            for (const { slotElement } of this.trackedSlots.values()) {
+                slotElement.querySelector(`.${BLOCK_CLASS}`)?.remove();
+            }
+        }
+
+        /**
+         * Stop watching and remove everything this feature owns - observers, timers, injected nodes.
+         */
+        stopWatching() {
+            if (this.unregisterObserver) {
+                this.unregisterObserver();
+                this.unregisterObserver = null;
+            }
+            this.stopRefreshTimer();
+            this.clearAllInjectedBlocks();
+            this.trackedSlots.clear();
+            this.isWatching = false;
+        }
+    }
+
+    function skillSlugFromSegment(segment) {
+        return segment?.actionTypeHrid?.replace('/action_types/', '') || '';
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    const characterSelectRenderer = new CharacterSelectRenderer();
+
+    /**
      * UI Library
      * UI enhancements, tasks, skills, house, settings, and misc features
      *
@@ -40537,9 +44267,11 @@ self.onmessage = function (e) {
         leaderboardXPDisplay: leaderboardXPDisplay$1,
         emptyQueueNotification,
         queueMonitor,
+        characterActivity,
+        characterSelectRenderer,
         pformancePanel,
     };
 
     console.log('[Toolasha] UI library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core.marketAPI, Toolasha.Utils.efficiency, Toolasha.Core.webSocketHook, Toolasha.Utils.reactInput, Toolasha.Utils.actionPanelHelper, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.selectors, Toolasha.Utils.actionCalculator, Toolasha.Utils.equipmentParser, Toolasha.Core.loadoutState, Toolasha.Core, Toolasha.Utils.cleanupRegistry, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.enhancementConfig, Toolasha.Utils.materialCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.teaParser, Toolasha.Market.alchemyProfitCalculator);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core.marketAPI, Toolasha.Utils.efficiency, Toolasha.Core.webSocketHook, Toolasha.Utils.reactInput, Toolasha.Utils.actionPanelHelper, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.selectors, Toolasha.Utils.actionCalculator, Toolasha.Utils.equipmentParser, Toolasha.Core.loadoutState, Toolasha.Core, Toolasha.Utils.cleanupRegistry, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.enhancementConfig, Toolasha.Utils.materialCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.teaParser, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.buffParser);

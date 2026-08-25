@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.95.2
+ * Version: 2.96.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -12184,6 +12184,8 @@
             this.maxProduceableHandler = null;
             this.showProfitPerHourHandler = null;
             this.showExpPerHourHandler = null;
+            this.loadoutStateHandler = null;
+            this.loadoutSnapshotSettingHandler = null;
             this.profitCalcTimeout = null; // Debounce timer for deferred profit calculations
             this.actionNameToHridCache = null; // Cached reverse lookup map (name → hrid)
             this.isInitialized = false;
@@ -12230,6 +12232,17 @@
             dataManager.on('consumables_updated', this.consumablesUpdatedHandler);
             dataManager.on('character_switching', this.characterSwitchingHandler);
 
+            // Saved-loadout state can change without an items_updated event (editing a loadout,
+            // changing its Exact/Highest mode, etc.). Reuse the same debounce bucket so a loadout
+            // update that accompanies an inventory change coalesces into one action-card refresh.
+            this.loadoutStateHandler = () => {
+                clearTimeout(this.itemsUpdatedDebounceTimer);
+                this.itemsUpdatedDebounceTimer = setTimeout(() => {
+                    this.updateAllCounts();
+                }, this.DEBOUNCE_DELAY);
+            };
+            loadoutState.onUpdate(this.loadoutStateHandler);
+
             this.pricingModeHandler = () => {
                 this.updateAllCounts();
             };
@@ -12246,6 +12259,8 @@
             config.onSettingChange('actionPanel_maxProduceable', this.maxProduceableHandler);
             config.onSettingChange('actionPanel_showProfitPerHour_production', this.showProfitPerHourHandler);
             config.onSettingChange('actionPanel_showExpPerHour_production', this.showExpPerHourHandler);
+            this.loadoutSnapshotSettingHandler = () => this.updateAllCounts();
+            config.onSettingChange('loadoutSnapshot', this.loadoutSnapshotSettingHandler);
         }
 
         /**
@@ -13116,6 +13131,11 @@
                 this.characterSwitchingHandler = null;
             }
 
+            if (this.loadoutStateHandler) {
+                loadoutState.offUpdate(this.loadoutStateHandler);
+                this.loadoutStateHandler = null;
+            }
+
             if (this.pricingModeHandler) {
                 config.offSettingChange('profitCalc_pricingMode', this.pricingModeHandler);
                 this.pricingModeHandler = null;
@@ -13134,6 +13154,11 @@
             if (this.showExpPerHourHandler) {
                 config.offSettingChange('actionPanel_showExpPerHour_production', this.showExpPerHourHandler);
                 this.showExpPerHourHandler = null;
+            }
+
+            if (this.loadoutSnapshotSettingHandler) {
+                config.offSettingChange('loadoutSnapshot', this.loadoutSnapshotSettingHandler);
+                this.loadoutSnapshotSettingHandler = null;
             }
 
             // Clear all DOM references
@@ -13180,6 +13205,8 @@
             this.pricingModeHandler = null; // Handler for pricing mode changes
             this.showProfitPerHourHandler = null;
             this.showExpPerHourHandler = null;
+            this.loadoutStateHandler = null;
+            this.loadoutSnapshotSettingHandler = null;
             this.isInitialized = false;
             this.itemsUpdatedDebounceTimer = null; // Debounce timer for items_updated events
             this.consumablesUpdatedDebounceTimer = null; // Debounce timer for consumables_updated events
@@ -13233,6 +13260,14 @@
             dataManager.on('consumables_updated', this.consumablesUpdatedHandler);
             dataManager.on('character_switching', this.characterSwitchingHandler);
 
+            this.loadoutStateHandler = () => {
+                clearTimeout(this.itemsUpdatedDebounceTimer);
+                this.itemsUpdatedDebounceTimer = setTimeout(() => {
+                    this.updateAllStats();
+                }, this.DEBOUNCE_DELAY);
+            };
+            loadoutState.onUpdate(this.loadoutStateHandler);
+
             this.pricingModeHandler = () => {
                 this.updateAllStats();
             };
@@ -13241,6 +13276,8 @@
             this.showExpPerHourHandler = () => this.updateAllStats();
             config.onSettingChange('actionPanel_showProfitPerHour_gathering', this.showProfitPerHourHandler);
             config.onSettingChange('actionPanel_showExpPerHour_gathering', this.showExpPerHourHandler);
+            this.loadoutSnapshotSettingHandler = () => this.updateAllStats();
+            config.onSettingChange('loadoutSnapshot', this.loadoutSnapshotSettingHandler);
         }
 
         /**
@@ -13837,6 +13874,11 @@
                 this.characterSwitchingHandler = null;
             }
 
+            if (this.loadoutStateHandler) {
+                loadoutState.offUpdate(this.loadoutStateHandler);
+                this.loadoutStateHandler = null;
+            }
+
             if (this.pricingModeHandler) {
                 config.offSettingChange('profitCalc_pricingMode', this.pricingModeHandler);
                 this.pricingModeHandler = null;
@@ -13850,6 +13892,11 @@
             if (this.showExpPerHourHandler) {
                 config.offSettingChange('actionPanel_showExpPerHour_gathering', this.showExpPerHourHandler);
                 this.showExpPerHourHandler = null;
+            }
+
+            if (this.loadoutSnapshotSettingHandler) {
+                config.offSettingChange('loadoutSnapshot', this.loadoutSnapshotSettingHandler);
+                this.loadoutSnapshotSettingHandler = null;
             }
 
             // Clear all DOM references
@@ -22569,6 +22616,7 @@
         monsters: 'combat_monsters_sprite',
         misc: 'misc_sprite',
         abilities: 'abilities_sprite',
+        skills: 'skills_sprite',
     };
 
     let manifestPromise = null;
@@ -22617,7 +22665,7 @@
 
     /**
      * Get a specific sprite URL by key.
-     * @param {'actions'|'items'|'monsters'|'misc'|'abilities'} key
+     * @param {'actions'|'items'|'monsters'|'misc'|'abilities'|'skills'} key
      * @returns {Promise<string|null>}
      */
     async function getSpriteUrl(key) {
@@ -23770,7 +23818,7 @@
      */
     function resolveActionContext(actionTypeHrid) {
         const selection = config.getSetting('loadoutSnapshot')
-            ? loadoutState.findSnapshotSelectionForActionType(actionTypeHrid)
+            ? loadoutState.findCalculationSelectionForActionType(actionTypeHrid)
             : { status: 'disabled', snapshot: null };
         const snapshot = selection.status === 'usable' ? selection.snapshot : null;
 
@@ -23778,15 +23826,20 @@
         // We fail closed to the character's proven current setup rather than inventing how the MWI
         // server would execute missing loadout items. The returned selection metadata lets UIs make
         // that fallback visible instead of silently claiming the saved loadout was used.
-        const rawDrinks = snapshot
-            ? (snapshot.drinks || []).filter((entry) => entry.itemHrid)
-            : dataManager.getActionDrinkSlots(actionTypeHrid);
-
-        // Only include drinks that are actually in stock — slotted-but-empty teas give no buff.
-        const inventory = dataManager.getInventory();
-        const drinks = (rawDrinks || []).filter(
-            (drink) => drink?.itemHrid && inventory?.some((item) => item.itemHrid === drink.itemHrid && item.count !== 0)
-        );
+        let drinks;
+        if (snapshot) {
+            // Core already resolved saved consumables against live inventory and blanked unavailable
+            // slots. Do not rescan the full inventory again on every action calculation.
+            drinks = (snapshot.drinks || []).filter((entry) => entry.itemHrid);
+        } else {
+            const rawDrinks = dataManager.getActionDrinkSlots(actionTypeHrid);
+            // Current (non-saved-loadout) drink slots still need stock validation here.
+            const inventory = dataManager.getInventory();
+            drinks = (rawDrinks || []).filter(
+                (drink) =>
+                    drink?.itemHrid && inventory?.some((item) => item.itemHrid === drink.itemHrid && item.count !== 0)
+            );
+        }
 
         return {
             equipment: snapshot
