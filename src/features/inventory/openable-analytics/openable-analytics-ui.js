@@ -8,6 +8,7 @@
 
 import config from '../../../core/config.js';
 import dataManager from '../../../core/data-manager.js';
+import domObserver from '../../../core/dom-observer.js';
 import openableAnalyticsDataCollector from './openable-analytics-data-collector.js';
 import openableAnalyticsModalInjector, { formatValue, formatLuckPercent } from './openable-analytics-modal-injector.js';
 import { parseEdibleExport, parseCombatSuiteExport } from './openable-analytics-import-parsers.js';
@@ -16,6 +17,9 @@ const IMPORT_SOURCES = [
     { key: 'edible', label: 'Edible Tools', prefixedSource: 'import:edible' },
     { key: 'mwi-combat-suite', label: 'MWI Combat Suite', prefixedSource: 'import:mwi-combat-suite' },
 ];
+
+const INVENTORY_FILTER_CONTAINER_CLASS = 'Inventory_itemFilterContainer';
+const INVENTORY_BUTTON_CLASS = 'toolasha-openable-analytics-inventory-button';
 
 function luckColor(luckValue) {
     if (luckValue === null || luckValue === undefined) return config.COLOR_TEXT_SECONDARY || '#888888';
@@ -42,6 +46,7 @@ class OpenableAnalyticsUI {
         this.importStatus = null;
         this.pendingEdiblePlayers = null;
         this.pendingEdibleRawText = null;
+        this.unregisterInventoryButtonObserver = null;
     }
 
     initialize() {
@@ -51,6 +56,29 @@ class OpenableAnalyticsUI {
         openableAnalyticsModalInjector.initialize({
             onViewAnalytics: (containerHrid) => this.showPopup(containerHrid),
         });
+
+        // Persistent entry point: the "View Analytics" link inside the Opened Loot modal only
+        // exists right after opening something. This button in the Inventory panel's always-
+        // rendered search bar row lets it be opened at any time.
+        this.unregisterInventoryButtonObserver = domObserver.onClass(
+            'openableAnalyticsInventoryButton',
+            INVENTORY_FILTER_CONTAINER_CLASS,
+            (node) => this.injectInventoryButton(node)
+        );
+    }
+
+    injectInventoryButton(container) {
+        if (container.querySelector(`.${INVENTORY_BUTTON_CLASS}`)) return;
+
+        const button = document.createElement('div');
+        button.className = INVENTORY_BUTTON_CLASS;
+        button.textContent = '📊';
+        button.title = 'Openable Analytics';
+        button.style.cssText =
+            'cursor:pointer; margin-left:8px; font-size:16px; display:inline-flex; align-items:center;';
+        button.onclick = () => this.showPopup();
+
+        container.appendChild(button);
     }
 
     showPopup(containerHrid) {
@@ -455,6 +483,10 @@ class OpenableAnalyticsUI {
     cleanup() {
         this.closePopup();
         openableAnalyticsModalInjector.cleanup();
+        if (this.unregisterInventoryButtonObserver) {
+            this.unregisterInventoryButtonObserver();
+            this.unregisterInventoryButtonObserver = null;
+        }
         this.isInitialized = false;
     }
 }
@@ -462,3 +494,4 @@ class OpenableAnalyticsUI {
 const openableAnalyticsUI = new OpenableAnalyticsUI();
 
 export default openableAnalyticsUI;
+export { INVENTORY_FILTER_CONTAINER_CLASS, INVENTORY_BUTTON_CLASS };

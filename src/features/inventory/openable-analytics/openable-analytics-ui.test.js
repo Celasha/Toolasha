@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
         itemValueTotals: {},
     },
     knownContainers: ['/items/chest'],
+    domObserverRegistrations: [],
 }));
 
 vi.mock('../../../core/config.js', () => ({
@@ -26,7 +27,12 @@ vi.mock('../../../core/data-manager.js', () => ({
 }));
 
 vi.mock('../../../core/dom-observer.js', () => ({
-    default: { onClass: vi.fn(() => vi.fn()) },
+    default: {
+        onClass: vi.fn((_name, classNames, callback) => {
+            mocks.domObserverRegistrations.push({ classNames, callback });
+            return vi.fn();
+        }),
+    },
 }));
 
 vi.mock('./openable-analytics-data-collector.js', () => ({
@@ -39,7 +45,11 @@ vi.mock('./openable-analytics-data-collector.js', () => ({
     },
 }));
 
-const { default: openableAnalyticsUI } = await import('./openable-analytics-ui.js');
+const {
+    default: openableAnalyticsUI,
+    INVENTORY_FILTER_CONTAINER_CLASS,
+    INVENTORY_BUTTON_CLASS,
+} = await import('./openable-analytics-ui.js');
 
 beforeEach(() => {
     mocks.aggregate = {
@@ -53,6 +63,10 @@ beforeEach(() => {
         itemValueTotals: { '/items/coin': 42938, '/items/shard_of_protection': 400000 },
     };
     mocks.knownContainers = ['/items/chest'];
+    mocks.domObserverRegistrations = [];
+    document.body.innerHTML = '';
+    openableAnalyticsUI.cleanup();
+    openableAnalyticsUI.initialize();
     openableAnalyticsUI.selectedContainer = '/items/chest';
     openableAnalyticsUI.selectedScope = 'session';
 });
@@ -85,5 +99,50 @@ describe('buildItemOutcomes', () => {
         const wrapper = openableAnalyticsUI.buildItemOutcomes();
 
         expect(wrapper.textContent).toContain('No items gained in this scope.');
+    });
+});
+
+describe('persistent Inventory panel entry point', () => {
+    function filterContainerCallbacks() {
+        return mocks.domObserverRegistrations
+            .filter((r) => r.classNames === INVENTORY_FILTER_CONTAINER_CLASS)
+            .map((r) => r.callback);
+    }
+
+    test('injects a button into the Inventory panel search bar row', () => {
+        const filterContainer = document.createElement('div');
+        document.body.appendChild(filterContainer);
+
+        filterContainerCallbacks().forEach((cb) => cb(filterContainer));
+
+        expect(filterContainer.querySelectorAll(`.${INVENTORY_BUTTON_CLASS}`)).toHaveLength(1);
+    });
+
+    test('does not inject a second button if one is already present (idempotent on re-render)', () => {
+        const filterContainer = document.createElement('div');
+        document.body.appendChild(filterContainer);
+
+        filterContainerCallbacks().forEach((cb) => cb(filterContainer));
+        filterContainerCallbacks().forEach((cb) => cb(filterContainer));
+
+        expect(filterContainer.querySelectorAll(`.${INVENTORY_BUTTON_CLASS}`)).toHaveLength(1);
+    });
+
+    test('clicking the button opens the Analytics popup even with no specific opening context', () => {
+        const filterContainer = document.createElement('div');
+        document.body.appendChild(filterContainer);
+        filterContainerCallbacks().forEach((cb) => cb(filterContainer));
+
+        filterContainer.querySelector(`.${INVENTORY_BUTTON_CLASS}`).onclick();
+
+        expect(document.querySelector('.toolasha-openable-analytics-popup')).not.toBeNull();
+    });
+
+    test('cleanup unregisters the observer so a later re-initialize does not double-register', () => {
+        openableAnalyticsUI.cleanup();
+        mocks.domObserverRegistrations = [];
+        openableAnalyticsUI.initialize();
+
+        expect(filterContainerCallbacks()).toHaveLength(1);
     });
 });
