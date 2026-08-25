@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.95.1
+ * Version: 2.95.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -36989,10 +36989,13 @@ self.onmessage = function (e) {
 
 
     const CSS_PREFIX$1 = 'mwi-guild-xp';
-    // Marker on the native "Exp to Level Up" data block itself (never the `mwi-guild-xp` class used
-    // by removable injected content) so its one-time min-height/height expansion is idempotent
-    // across re-renders and cleanly revertible on disable().
+    // Markers on native elements themselves (never the `mwi-guild-xp` class used by removable
+    // injected content) so the one-time layout changes below are idempotent across re-renders and
+    // cleanly revertible on disable(). EXP_CARD_CLASS marks the "Exp to Level Up" data block whose
+    // content overflows into the extra vertical space; EXP_GRID_ITEM_CLASS marks the actual CSS
+    // grid item (its ancestor that is a direct child of the grid) that visually spans two rows.
     const EXP_CARD_CLASS = `${CSS_PREFIX$1}__exp-card`;
+    const EXP_GRID_ITEM_CLASS = `${CSS_PREFIX$1}__exp-grid-item`;
 
     // ─── Formatting helpers ─────────────────────────────────────────────────────
 
@@ -37316,7 +37319,7 @@ self.onmessage = function (e) {
                 for (const block of dataBlocks) {
                     const label = block.querySelector('.GuildPanel_label__-A63g');
                     if (label && label.textContent.includes('Exp to')) {
-                        this._expandExpCardIfNeeded(block);
+                        this._expandExpCardIfNeeded(block, dataGridEl);
                         block.insertAdjacentHTML('beforeend', ttlHTML + nextSlotHTML);
                         break;
                     }
@@ -37325,20 +37328,46 @@ self.onmessage = function (e) {
         }
 
         /**
-         * Expand the native "Exp to Level Up" data block to auto-height (once per DOM node) so
-         * Toolasha's appended ETA/slot content never falls below the native card background.
+         * Give the native "Exp to Level Up" card a true two-row visual span (once per DOM node) so
+         * Toolasha's appended ETA/slot content has room without inflating the whole first grid row.
+         *
+         * Native Guild Overview rows are `minmax(5.5rem, auto)`: an item's own auto/content height
+         * feeds back into its row track's size, so simply growing this card's height (the pre-TLA-019
+         * approach) also grew every sibling in row 1 and pushed row 2 down. Spanning two row tracks
+         * instead, with the card's own height set to a percentage of that spanned area rather than
+         * to its content, lets the grid's own auto-placement algorithm flow the card into the
+         * otherwise-empty row-2 cell beneath it without resizing either row - the same mechanism
+         * that already lets Toolasha's own multi-row stats/idle/offline/chart blocks stack under
+         * row 1 safely at any responsive column count (auto-placement skips occupied cells and
+         * reflows later items, whether the grid currently has one column or several).
+         *
          * Idempotent: skipped once the block already carries the marker class, so repeated
-         * `_renderOverview()` calls on the same persistent React-owned node never re-measure or
-         * accumulate style. A remounted/replaced block starts without the marker and is measured
-         * fresh, so no stale styling can leak across navigation.
+         * `_renderOverview()` calls on the same persistent React-owned node never re-touch layout.
+         * A remounted/replaced block starts without the marker and is set up fresh, so no stale
+         * styling can leak across navigation.
          * @param {Element} block - The native `.GuildPanel_dataBlock__3qVhK` element
+         * @param {Element} dataGridEl - The native `.GuildPanel_dataGrid` grid container
          */
-        _expandExpCardIfNeeded(block) {
+        _expandExpCardIfNeeded(block, dataGridEl) {
             if (block.classList.contains(EXP_CARD_CLASS)) return;
-            const nativeHeight = window.getComputedStyle(block).height;
             block.classList.add(EXP_CARD_CLASS);
-            block.style.minHeight = nativeHeight;
-            block.style.height = 'auto';
+
+            // Find the actual CSS grid item containing this card - its ancestor that is a direct
+            // child of the grid container - rather than assuming a fixed DOM nesting depth. This is
+            // the element the two-row span must apply to; it may or may not be `block` itself
+            // depending on whether native markup wraps the card in an intermediate group element.
+            let gridItem = block;
+            while (gridItem.parentElement && gridItem.parentElement !== dataGridEl) {
+                gridItem = gridItem.parentElement;
+            }
+            gridItem.classList.add(EXP_GRID_ITEM_CLASS);
+            gridItem.style.gridRow = 'span 2';
+
+            // A multi-row-span grid item's percentage height resolves against the spanned grid
+            // area, not a single row's auto-track size, so this does not feed back into inflating
+            // row 1. Do not hardcode a pixel height here - it would misrepresent the second row's
+            // real (responsive, gap-dependent) height.
+            block.style.height = '100%';
             block.style.paddingBottom = '8px';
         }
 
@@ -38017,14 +38046,18 @@ self.onmessage = function (e) {
             document.querySelectorAll(`.${CSS_PREFIX$1}__tooltip`).forEach((el) => el.remove());
             document.getElementById('mwi-guild-activity-hide')?.remove();
 
-            // Restore the native "Exp to Level Up" card's own height/class (never destroyed by the
-            // injected-element removal above, since the expansion is applied to the native block
-            // itself rather than to a removable Toolasha-owned element).
+            // Restore the native "Exp to Level Up" card's own height/class and the grid item that
+            // was made to span two rows (never destroyed by the injected-element removal above,
+            // since these changes are applied to native blocks themselves rather than to a
+            // removable Toolasha-owned element).
             document.querySelectorAll(`.${EXP_CARD_CLASS}`).forEach((el) => {
                 el.classList.remove(EXP_CARD_CLASS);
                 el.style.height = '';
-                el.style.minHeight = '';
                 el.style.paddingBottom = '';
+            });
+            document.querySelectorAll(`.${EXP_GRID_ITEM_CLASS}`).forEach((el) => {
+                el.classList.remove(EXP_GRID_ITEM_CLASS);
+                el.style.gridRow = '';
             });
 
             this.initialized = false;
