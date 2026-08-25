@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.95.2](https://github.com/Celasha/Toolasha/compare/v2.95.1...v2.95.2) (2026-08-25)
+
+
+### Bug Fixes
+
+* bind DataManager character-scoped state to its accepted WebSocket owner (TLA-018) ([5508ea2](https://github.com/Celasha/Toolasha/commit/5508ea2e9018fece2fa7ff4d8e64faec136de8ea))
+* give the Guild Exp card a real two-row grid span (TLA-019) ([cb3bd3f](https://github.com/Celasha/Toolasha/commit/cb3bd3fc55c73bcbea2b8d4da368379cdebb8306))
+
 ## [2.95.1](https://github.com/Celasha/Toolasha/compare/v2.95.0...v2.95.1) (2026-08-24)
 
 ### Bug Fixes
