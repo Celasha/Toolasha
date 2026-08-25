@@ -14,6 +14,9 @@ import { coinFormatter } from '../../../utils/formatters.js';
 
 const MODAL_CONTENT_CLASS = 'Inventory_modalContent';
 const LINE_CLASS = 'toolasha-openable-analytics-line';
+const GAINED_ITEMS_CLASS = 'Inventory_gainedItems';
+const ITEM_CONTAINER_CLASS = 'Item_itemContainer';
+const ITEM_VALUE_LABEL_CLASS = 'toolasha-openable-analytics-item-value';
 
 function formatValue(value) {
     if (value === null || value === undefined) return 'N/A';
@@ -73,6 +76,7 @@ class OpenableAnalyticsModalInjector {
     constructor() {
         this.isInitialized = false;
         this.unregisterObserver = null;
+        this.unregisterItemObserver = null;
         this.unsubscribeCollector = null;
         this.viewAnalyticsHandler = null;
     }
@@ -86,8 +90,25 @@ class OpenableAnalyticsModalInjector {
             this.tryInject(node)
         );
 
-        // Data-driven fallback: if the modal is already mounted when a new record arrives (the
-        // native component updates in place instead of remounting), refresh directly.
+        // Per-item labels need to react to the item icons themselves, not just the modal
+        // container: if the native modal stays mounted and updates in place for a new opening
+        // (rather than remounting), the modal-level observer above never fires again, but React
+        // still has to insert fresh Item_itemContainer nodes for the new gained items - this
+        // catches that update with the DOM already in its post-render state.
+        this.unregisterItemObserver = domObserver.onClass(
+            'openableAnalyticsModalItems',
+            ITEM_CONTAINER_CLASS,
+            (node) => {
+                const container = node.closest(`[class*="${MODAL_CONTENT_CLASS}"]`);
+                if (!container) return;
+                const record = openableAnalyticsDataCollector.getLatestRecord();
+                if (!record) return;
+                this.renderItemValueLabels(container, record);
+            }
+        );
+
+        // Data-driven fallback: covers the summary line (and opportunistically the per-item
+        // labels) as soon as new data arrives, ahead of any DOM mutation.
         this.unsubscribeCollector = openableAnalyticsDataCollector.onUpdate(() => this.refreshMountedModal());
     }
 
@@ -130,12 +151,50 @@ class OpenableAnalyticsModalInjector {
         if (viewLink && this.viewAnalyticsHandler) {
             viewLink.onclick = () => this.viewAnalyticsHandler(record.containerHrid);
         }
+
+        this.renderItemValueLabels(container, record);
+    }
+
+    /**
+     * Stamp a small value label onto each individual gained-item icon inside the native "You
+     * found:" list, matched positionally against `record.actualValueBreakdown` (both derive from
+     * the identical `gainedItems` array, so DOM order and breakdown order always agree). Skips
+     * labeling entirely - rather than risk mismatching values to the wrong item - if the icon
+     * count doesn't match the breakdown count (e.g. a rare special-cased item render).
+     * @param {HTMLElement} container - The modal's `Inventory_modalContent` root
+     * @param {Object} record - Latest normalized opening record
+     */
+    renderItemValueLabels(container, record) {
+        const gainedItemsContainer = container.querySelector(`[class*="${GAINED_ITEMS_CLASS}"]`);
+        if (!gainedItemsContainer) return;
+
+        const itemContainers = gainedItemsContainer.querySelectorAll(`[class*="${ITEM_CONTAINER_CLASS}"]`);
+        const breakdown = record.actualValueBreakdown || [];
+        if (itemContainers.length !== breakdown.length) return;
+
+        itemContainers.forEach((itemEl, index) => {
+            const item = breakdown[index];
+
+            let label = itemEl.querySelector(`.${ITEM_VALUE_LABEL_CLASS}`);
+            if (!label) {
+                label = document.createElement('div');
+                label.className = ITEM_VALUE_LABEL_CLASS;
+                label.style.cssText = 'font-size:10px; text-align:center; opacity:0.85;';
+                itemEl.appendChild(label);
+            }
+
+            label.textContent = item.resolved ? formatValue(item.value) : 'N/A';
+        });
     }
 
     cleanup() {
         if (this.unregisterObserver) {
             this.unregisterObserver();
             this.unregisterObserver = null;
+        }
+        if (this.unregisterItemObserver) {
+            this.unregisterItemObserver();
+            this.unregisterItemObserver = null;
         }
         if (this.unsubscribeCollector) {
             this.unsubscribeCollector();
@@ -149,4 +208,13 @@ class OpenableAnalyticsModalInjector {
 const openableAnalyticsModalInjector = new OpenableAnalyticsModalInjector();
 
 export default openableAnalyticsModalInjector;
-export { buildLineContent, formatValue, formatLuckPercent, MODAL_CONTENT_CLASS, LINE_CLASS };
+export {
+    buildLineContent,
+    formatValue,
+    formatLuckPercent,
+    MODAL_CONTENT_CLASS,
+    LINE_CLASS,
+    GAINED_ITEMS_CLASS,
+    ITEM_CONTAINER_CLASS,
+    ITEM_VALUE_LABEL_CLASS,
+};

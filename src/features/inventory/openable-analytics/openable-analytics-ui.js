@@ -252,7 +252,8 @@ class OpenableAnalyticsUI {
             const labelEl = document.createElement('span');
             labelEl.textContent = itemLabel(itemHrid);
             const valueEl = document.createElement('span');
-            valueEl.textContent = count;
+            const itemValue = aggregate.itemValueTotals?.[itemHrid];
+            valueEl.textContent = itemValue !== undefined ? `${count} (${formatValue(itemValue)})` : `${count} (N/A)`;
             row.appendChild(labelEl);
             row.appendChild(valueEl);
             wrapper.appendChild(row);

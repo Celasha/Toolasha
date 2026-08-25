@@ -112,6 +112,54 @@ describe('foldRecordIntoAggregate', () => {
         expect(aggregate.actualValuePartialEvents).toBe(1);
         expect(aggregate.actualValueCompleteEvents).toBe(0);
     });
+
+    test('accumulates per-item value totals from actualValueBreakdown across records', () => {
+        let aggregate = createEmptyAggregate();
+        aggregate = foldRecordIntoAggregate(
+            aggregate,
+            makeRecord({
+                actualValueBreakdown: [
+                    { itemHrid: '/items/coin', enhancementLevel: 0, count: 100, value: 100, resolved: true },
+                    { itemHrid: '/items/pearl', enhancementLevel: 0, count: 3, value: 300, resolved: true },
+                ],
+            })
+        );
+        aggregate = foldRecordIntoAggregate(
+            aggregate,
+            makeRecord({
+                actualValueBreakdown: [
+                    { itemHrid: '/items/coin', enhancementLevel: 0, count: 50, value: 50, resolved: true },
+                ],
+            })
+        );
+
+        expect(aggregate.itemValueTotals['/items/coin']).toBe(150);
+        expect(aggregate.itemValueTotals['/items/pearl']).toBe(300);
+    });
+
+    test('an unresolved item in the breakdown does not contribute a fake value to itemValueTotals', () => {
+        let aggregate = createEmptyAggregate();
+        aggregate = foldRecordIntoAggregate(
+            aggregate,
+            makeRecord({
+                actualValueBreakdown: [
+                    { itemHrid: '/items/mystery', enhancementLevel: 0, count: 1, value: 0, resolved: false },
+                ],
+            })
+        );
+
+        expect(aggregate.itemValueTotals['/items/mystery']).toBeUndefined();
+    });
+
+    test('a record with no actualValueBreakdown (written before this field existed) folds without crashing', () => {
+        const legacyRecord = makeRecord();
+        delete legacyRecord.actualValueBreakdown;
+
+        const aggregate = foldRecordIntoAggregate(createEmptyAggregate(), legacyRecord);
+
+        expect(aggregate.itemTotals['/items/coin']).toBe(100);
+        expect(aggregate.itemValueTotals).toEqual({});
+    });
 });
 
 describe('appendHistory bounding', () => {
@@ -236,6 +284,29 @@ describe('mergeAggregates', () => {
         expect(merged.actualValueTotal).toBe(5100);
         expect(merged.expectedValueTotal).toBe(4590);
         expect(merged.itemTotals['/items/coin']).toBe(1000);
+    });
+
+    test('merges per-item value totals across aggregates too', () => {
+        const live = foldRecordIntoAggregate(
+            createEmptyAggregate(),
+            makeRecord({
+                actualValueBreakdown: [
+                    { itemHrid: '/items/coin', enhancementLevel: 0, count: 100, value: 100, resolved: true },
+                ],
+            })
+        );
+        const imported = foldRecordIntoAggregate(
+            createEmptyAggregate(),
+            makeRecord({
+                actualValueBreakdown: [
+                    { itemHrid: '/items/coin', enhancementLevel: 0, count: 900, value: 900, resolved: true },
+                ],
+            })
+        );
+
+        const merged = mergeAggregates(live, imported);
+
+        expect(merged.itemValueTotals['/items/coin']).toBe(1000);
     });
 
     test('ignores null/undefined aggregates (e.g. no imports for this container)', () => {

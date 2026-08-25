@@ -29,6 +29,32 @@ beforeEach(() => {
 });
 
 describe('calculateActualValue', () => {
+    test('returns a per-item breakdown alongside the total, in gainedItems order', () => {
+        expectedValueCalculator.resolveSellSideValue.mockImplementation((itemHrid) =>
+            itemHrid === '/items/coin' ? { value: 1, needsTax: false } : { value: 50, needsTax: false }
+        );
+
+        const { breakdown } = calculateActualValue([
+            { itemHrid: '/items/coin', enhancementLevel: 0, count: 100 },
+            { itemHrid: '/items/pearl', enhancementLevel: 0, count: 3 },
+        ]);
+
+        expect(breakdown).toEqual([
+            { itemHrid: '/items/coin', enhancementLevel: 0, count: 100, value: 100, resolved: true },
+            { itemHrid: '/items/pearl', enhancementLevel: 0, count: 3, value: 150, resolved: true },
+        ]);
+    });
+
+    test('marks an unpriced item as unresolved with a value of 0 in the breakdown, not a fake price', () => {
+        expectedValueCalculator.resolveSellSideValue.mockReturnValue(null);
+
+        const { breakdown } = calculateActualValue([{ itemHrid: '/items/mystery', enhancementLevel: 0, count: 1 }]);
+
+        expect(breakdown).toEqual([
+            { itemHrid: '/items/mystery', enhancementLevel: 0, count: 1, value: 0, resolved: false },
+        ]);
+    });
+
     test('sums resolved gained-item values, applying tax when the source requires it', () => {
         expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 100, source: 'market', needsTax: true });
 
@@ -146,6 +172,23 @@ describe('calculateLuck', () => {
 });
 
 describe('buildOpeningRecord', () => {
+    test('includes a per-item actualValueBreakdown for the modal/history to consume', () => {
+        expectedValueCalculator.calculateExpectedValue.mockReturnValue({ expectedValue: 100 });
+        expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 20, needsTax: false });
+
+        const record = buildOpeningRecord({
+            containerHrid: '/items/chest',
+            containerCount: 1,
+            gainedItems: [{ itemHrid: '/items/pearl', enhancementLevel: 0, count: 5 }],
+            timestamp: 999,
+            characterId: 'char1',
+        });
+
+        expect(record.actualValueBreakdown).toEqual([
+            { itemHrid: '/items/pearl', enhancementLevel: 0, count: 5, value: 100, resolved: true },
+        ]);
+    });
+
     test('a granted-buff-only opening (no gained items, no EV model) is counted without fake luck', () => {
         expectedValueCalculator.calculateExpectedValue.mockReturnValue(null);
 

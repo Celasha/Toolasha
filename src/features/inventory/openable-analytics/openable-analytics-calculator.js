@@ -37,22 +37,31 @@ function valueGainedItemStack(itemHrid, enhancementLevel, count) {
  * Calculate the Actual Value of one opening from its gained items. Never treats a missing
  * price as zero silently - items that cannot be priced are excluded from the total and the
  * result is marked incomplete so callers/UI can surface a partial state instead of a false
- * precise number.
+ * precise number. Also returns a per-item breakdown (mirrors the totals) so callers can show or
+ * snapshot individual item values, not just the aggregate.
  * @param {Array<{itemHrid: string, enhancementLevel?: number, count: number}>} gainedItems
- * @returns {{value: number, complete: boolean}} Actual value and whether every item was priced
+ * @returns {{value: number, complete: boolean, breakdown: Array<{itemHrid: string, enhancementLevel: number, count: number, value: number, resolved: boolean}>}}
  */
 export function calculateActualValue(gainedItems) {
     let total = 0;
     let complete = true;
+    const breakdown = [];
 
     for (const item of gainedItems || []) {
         if (!item?.itemHrid) continue;
         const { value, resolved } = valueGainedItemStack(item.itemHrid, item.enhancementLevel, item.count);
         total += value;
         if (!resolved) complete = false;
+        breakdown.push({
+            itemHrid: item.itemHrid,
+            enhancementLevel: item.enhancementLevel || 0,
+            count: item.count || 0,
+            value,
+            resolved,
+        });
     }
 
-    return { value: total, complete };
+    return { value: total, complete, breakdown };
 }
 
 /**
@@ -130,7 +139,11 @@ export function buildOpeningRecord({
             count: item.count || 0,
         }));
 
-    const { value: actualValue, complete: actualValueComplete } = calculateActualValue(normalizedGainedItems);
+    const {
+        value: actualValue,
+        complete: actualValueComplete,
+        breakdown: actualValueBreakdown,
+    } = calculateActualValue(normalizedGainedItems);
     const { value: expectedValue, available: expectedValueAvailable } = calculateExpectedValueForOpening(
         containerHrid,
         containerCount
@@ -146,6 +159,7 @@ export function buildOpeningRecord({
         grantedBuffs: (grantedBuffs || []).map((buff) => ({ typeHrid: buff.typeHrid, duration: buff.duration })),
         actualValue,
         actualValueComplete,
+        actualValueBreakdown,
         expectedValue,
         expectedValueAvailable,
         luckValue,

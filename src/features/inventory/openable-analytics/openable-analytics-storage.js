@@ -81,6 +81,7 @@ export function createEmptyAggregate() {
         expectedValueUnavailableEvents: 0,
         grantedBuffEvents: 0,
         itemTotals: {},
+        itemValueTotals: {},
     };
 }
 
@@ -94,8 +95,16 @@ export function createEmptyAggregate() {
 export function foldRecordIntoAggregate(aggregate, record) {
     const base = aggregate || createEmptyAggregate();
     const itemTotals = { ...base.itemTotals };
+    const itemValueTotals = { ...base.itemValueTotals };
+
     for (const item of record.gainedItems || []) {
         itemTotals[item.itemHrid] = (itemTotals[item.itemHrid] || 0) + item.count;
+    }
+    // actualValueBreakdown may be absent on records written before this field existed - those
+    // simply don't contribute a per-item value (their count is still reflected in itemTotals).
+    for (const item of record.actualValueBreakdown || []) {
+        if (!item.resolved) continue;
+        itemValueTotals[item.itemHrid] = (itemValueTotals[item.itemHrid] || 0) + item.value;
     }
 
     return {
@@ -109,6 +118,7 @@ export function foldRecordIntoAggregate(aggregate, record) {
         expectedValueUnavailableEvents: base.expectedValueUnavailableEvents + (record.expectedValueAvailable ? 0 : 1),
         grantedBuffEvents: base.grantedBuffEvents + (record.grantedBuffs?.length > 0 ? 1 : 0),
         itemTotals,
+        itemValueTotals,
     };
 }
 
@@ -153,6 +163,9 @@ export function mergeAggregates(...aggregates) {
         merged.grantedBuffEvents += aggregate.grantedBuffEvents;
         for (const [itemHrid, count] of Object.entries(aggregate.itemTotals || {})) {
             merged.itemTotals[itemHrid] = (merged.itemTotals[itemHrid] || 0) + count;
+        }
+        for (const [itemHrid, value] of Object.entries(aggregate.itemValueTotals || {})) {
+            merged.itemValueTotals[itemHrid] = (merged.itemValueTotals[itemHrid] || 0) + value;
         }
     }
     return merged;

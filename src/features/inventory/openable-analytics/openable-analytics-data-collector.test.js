@@ -91,6 +91,19 @@ describe('loot_opened ingestion', () => {
         expect(session.eventsCount).toBe(1);
     });
 
+    test('the recorded record carries a per-item actualValueBreakdown, and it flows into the lifetime aggregate’s itemValueTotals', async () => {
+        const handler = mocks.on.mock.calls.find(([type]) => type === 'loot_opened')[1];
+        await handler(lootOpenedMessage());
+
+        const record = openableAnalyticsDataCollector.getLatestRecord();
+        expect(record.actualValueBreakdown).toEqual([
+            { itemHrid: '/items/coin', enhancementLevel: 0, count: 100, value: 1000, resolved: true },
+        ]);
+
+        const lifetime = openableAnalyticsDataCollector.getLifetimeAggregate('/items/chimerical_chest');
+        expect(lifetime.itemValueTotals['/items/coin']).toBe(1000);
+    });
+
     test('openedItem.count > 1 increments container count correctly', async () => {
         const handler = mocks.on.mock.calls.find(([type]) => type === 'loot_opened')[1];
         await handler(lootOpenedMessage({ openedItem: { itemHrid: '/items/chimerical_chest', count: 100 } }));
