@@ -1408,6 +1408,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'When enabled, Scroll of... items from the Labyrinth are not auto-opened',
             },
+            openableAnalytics: {
+                id: 'openableAnalytics',
+                label: 'Openable Analytics: Track Actual vs Expected Value + Luck',
+                type: 'checkbox',
+                default: true,
+                help: 'Shows Actual Value, Expected Value, and Luck for chests/crates/caches you open, plus a character-scoped Analytics view with session/lifetime history',
+            },
         },
     },
 

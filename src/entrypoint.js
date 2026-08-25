@@ -216,6 +216,13 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'openableAnalytics',
+            name: 'Openable Analytics',
+            category: 'Inventory',
+            module: Market.openableAnalytics,
+            async: true,
+        },
+        {
             key: 'inventoryTabs',
             name: 'Custom Inventory Tabs',
             category: 'Inventory',
