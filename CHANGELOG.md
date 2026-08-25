@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.96.0](https://github.com/Celasha/Toolasha/compare/v2.95.2...v2.96.0) (2026-08-25)
+
+
+### Features
+
+* add Character Activity Status to Character Select ([9d29250](https://github.com/Celasha/Toolasha/commit/9d29250fdd3b2204c258283cdfdac3ae75079619))
+
+
+### Bug Fixes
+
+* cache effective saved loadouts in action calculation hot paths (TLA-021) ([aad2fc1](https://github.com/Celasha/Toolasha/commit/aad2fc132d2a75d32c0591bcb214dcc9cb28acb3))
+
 ## [2.95.2](https://github.com/Celasha/Toolasha/compare/v2.95.1...v2.95.2) (2026-08-25)
 
 ### Bug Fixes
