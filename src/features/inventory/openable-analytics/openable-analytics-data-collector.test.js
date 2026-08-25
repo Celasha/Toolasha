@@ -204,3 +204,95 @@ describe('reset controls', () => {
         expect(openableAnalyticsDataCollector.getLifetimeAggregate('/items/chimerical_chest').eventsCount).toBe(0);
     });
 });
+
+describe('bulk imports (Edible Tools / MWI Combat Suite)', () => {
+    test('importContainers adds an imported aggregate that is combined into getLifetimeAggregate alongside live tracking', async () => {
+        const handler = mocks.on.mock.calls.find(([type]) => type === 'loot_opened')[1];
+        await handler(lootOpenedMessage()); // 1 live event, 100 coin
+
+        await openableAnalyticsDataCollector.importContainers('import:mwi-combat-suite', [
+            { containerHrid: '/items/chimerical_chest', containerCount: 500, itemTotals: { '/items/coin': 50000 } },
+        ]);
+
+        const combined = openableAnalyticsDataCollector.getLifetimeAggregate('/items/chimerical_chest');
+        expect(combined.containersOpened).toBe(501);
+        expect(combined.itemTotals['/items/coin']).toBe(50100);
+    });
+
+    test('getLiveLifetimeAggregate excludes imports (only live-tracked openings)', async () => {
+        const handler = mocks.on.mock.calls.find(([type]) => type === 'loot_opened')[1];
+        await handler(lootOpenedMessage());
+
+        await openableAnalyticsDataCollector.importContainers('import:edible', [
+            { containerHrid: '/items/chimerical_chest', containerCount: 999, itemTotals: {} },
+        ]);
+
+        expect(
+            openableAnalyticsDataCollector.getLiveLifetimeAggregate('/items/chimerical_chest').containersOpened
+        ).toBe(1);
+    });
+
+    test('re-importing the same source replaces (does not add to) its previous per-container total', async () => {
+        await openableAnalyticsDataCollector.importContainers('import:edible', [
+            { containerHrid: '/items/chimerical_chest', containerCount: 100, itemTotals: { '/items/coin': 1000 } },
+        ]);
+        await openableAnalyticsDataCollector.importContainers('import:edible', [
+            { containerHrid: '/items/chimerical_chest', containerCount: 150, itemTotals: { '/items/coin': 1500 } },
+        ]);
+
+        const combined = openableAnalyticsDataCollector.getLifetimeAggregate('/items/chimerical_chest');
+        expect(combined.containersOpened).toBe(150);
+        expect(combined.itemTotals['/items/coin']).toBe(1500);
+    });
+
+    test('two different import sources for the same container both contribute to the combined total', async () => {
+        await openableAnalyticsDataCollector.importContainers('import:edible', [
+            { containerHrid: '/items/chimerical_chest', containerCount: 100, itemTotals: {} },
+        ]);
+        await openableAnalyticsDataCollector.importContainers('import:mwi-combat-suite', [
+            { containerHrid: '/items/chimerical_chest', containerCount: 200, itemTotals: {} },
+        ]);
+
+        expect(openableAnalyticsDataCollector.getLifetimeAggregate('/items/chimerical_chest').containersOpened).toBe(
+            300
+        );
+    });
+
+    test('getKnownContainers includes containers that only have imported data, no live openings', async () => {
+        await openableAnalyticsDataCollector.importContainers('import:edible', [
+            { containerHrid: '/items/purples_gift', containerCount: 5, itemTotals: {} },
+        ]);
+
+        expect(openableAnalyticsDataCollector.getKnownContainers()).toContain('/items/purples_gift');
+    });
+
+    test('imports are persisted under a character-scoped storage key', async () => {
+        await openableAnalyticsDataCollector.importContainers('import:edible', [
+            { containerHrid: '/items/chimerical_chest', containerCount: 10, itemTotals: {} },
+        ]);
+
+        expect(mocks.values.has('imports:char-a')).toBe(true);
+    });
+
+    test('resetContainer clears imported data for that container too', async () => {
+        await openableAnalyticsDataCollector.importContainers('import:edible', [
+            { containerHrid: '/items/chimerical_chest', containerCount: 10, itemTotals: {} },
+        ]);
+
+        await openableAnalyticsDataCollector.resetContainer('/items/chimerical_chest');
+
+        expect(openableAnalyticsDataCollector.getLifetimeAggregate('/items/chimerical_chest').containersOpened).toBe(0);
+    });
+
+    test('imports loaded on initialize are scoped to the current character', async () => {
+        await openableAnalyticsDataCollector.importContainers('import:edible', [
+            { containerHrid: '/items/chimerical_chest', containerCount: 10, itemTotals: {} },
+        ]);
+
+        mocks.currentCharacterId = 'char-b';
+        openableAnalyticsDataCollector.cleanup();
+        await openableAnalyticsDataCollector.initialize();
+
+        expect(openableAnalyticsDataCollector.getLifetimeAggregate('/items/chimerical_chest').containersOpened).toBe(0);
+    });
+});

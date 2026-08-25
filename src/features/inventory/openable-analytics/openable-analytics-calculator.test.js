@@ -15,8 +15,13 @@ vi.mock('../../market/expected-value-calculator.js', () => ({
 
 const { default: dataManager } = await import('../../../core/data-manager.js');
 const { default: expectedValueCalculator } = await import('../../market/expected-value-calculator.js');
-const { calculateActualValue, calculateExpectedValueForOpening, calculateLuck, buildOpeningRecord } =
-    await import('./openable-analytics-calculator.js');
+const {
+    calculateActualValue,
+    calculateExpectedValueForOpening,
+    calculateLuck,
+    buildOpeningRecord,
+    buildImportedAggregateRecord,
+} = await import('./openable-analytics-calculator.js');
 
 beforeEach(() => {
     vi.clearAllMocks();
@@ -195,5 +200,51 @@ describe('buildOpeningRecord', () => {
 
         expect(record.containerCount).toBe(100);
         expect(record.expectedValue).toBe(10000);
+    });
+});
+
+describe('buildImportedAggregateRecord', () => {
+    test('converts an itemTotals map into gainedItems and reuses buildOpeningRecord math', () => {
+        expectedValueCalculator.calculateExpectedValue.mockReturnValue({ expectedValue: 100 });
+        expectedValueCalculator.resolveSellSideValue.mockImplementation((itemHrid) =>
+            itemHrid === '/items/coin' ? { value: 1, needsTax: false } : { value: 10, needsTax: false }
+        );
+
+        const record = buildImportedAggregateRecord({
+            containerHrid: '/items/chest',
+            containerCount: 50,
+            itemTotals: { '/items/coin': 1000, '/items/pearl': 5 },
+            timestamp: 111,
+            characterId: 'char1',
+            source: 'import:mwi-combat-suite',
+        });
+
+        expect(record.gainedItems).toEqual(
+            expect.arrayContaining([
+                { itemHrid: '/items/coin', enhancementLevel: 0, count: 1000 },
+                { itemHrid: '/items/pearl', enhancementLevel: 0, count: 5 },
+            ])
+        );
+        expect(record.actualValue).toBe(1050); // 1000*1 + 5*10
+        expect(record.expectedValue).toBe(5000); // 100 * 50
+        expect(record.source).toBe('import:mwi-combat-suite');
+    });
+
+    test('never trusts the import source’s own valuation - recomputes from raw counts', () => {
+        expectedValueCalculator.calculateExpectedValue.mockReturnValue(null);
+        expectedValueCalculator.resolveSellSideValue.mockReturnValue(null);
+
+        const record = buildImportedAggregateRecord({
+            containerHrid: '/items/unmodelled_chest',
+            containerCount: 10,
+            itemTotals: { '/items/mystery_item': 1 },
+            timestamp: 222,
+            characterId: 'char1',
+            source: 'import:edible',
+        });
+
+        expect(record.actualValue).toBe(0);
+        expect(record.actualValueComplete).toBe(false);
+        expect(record.expectedValueAvailable).toBe(false);
     });
 });

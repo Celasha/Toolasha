@@ -18,6 +18,10 @@ function historyKey(characterId) {
     return `history:${characterId}`;
 }
 
+function importsKey(characterId) {
+    return `imports:${characterId}`;
+}
+
 /**
  * Load the lifetime aggregate map (containerHrid -> aggregate) for one character.
  * @param {string} characterId
@@ -109,6 +113,52 @@ export function foldRecordIntoAggregate(aggregate, record) {
 }
 
 /**
+ * Load bulk-imported aggregates (Edible Tools / MWI Combat Suite / future sources) for one
+ * character. Shape: `{ [source]: { [containerHrid]: aggregate } }`.
+ * @param {string} characterId
+ * @returns {Promise<Object>}
+ */
+export async function loadImports(characterId) {
+    return storage.getJSON(importsKey(characterId), STORE_NAME, {});
+}
+
+/**
+ * Persist bulk-imported aggregates for one character.
+ * @param {string} characterId
+ * @param {Object} imports
+ * @returns {Promise<boolean>}
+ */
+export async function saveImports(characterId, imports) {
+    return storage.setJSON(importsKey(characterId), imports, STORE_NAME);
+}
+
+/**
+ * Sum any number of aggregates (live + one or more imported sources) into one combined
+ * aggregate for display. Never mutates its inputs.
+ * @param {...Object} aggregates
+ * @returns {Object}
+ */
+export function mergeAggregates(...aggregates) {
+    const merged = createEmptyAggregate();
+    for (const aggregate of aggregates) {
+        if (!aggregate) continue;
+        merged.eventsCount += aggregate.eventsCount;
+        merged.containersOpened += aggregate.containersOpened;
+        merged.actualValueTotal += aggregate.actualValueTotal;
+        merged.actualValueCompleteEvents += aggregate.actualValueCompleteEvents;
+        merged.actualValuePartialEvents += aggregate.actualValuePartialEvents;
+        merged.expectedValueTotal += aggregate.expectedValueTotal;
+        merged.expectedValueAvailableEvents += aggregate.expectedValueAvailableEvents;
+        merged.expectedValueUnavailableEvents += aggregate.expectedValueUnavailableEvents;
+        merged.grantedBuffEvents += aggregate.grantedBuffEvents;
+        for (const [itemHrid, count] of Object.entries(aggregate.itemTotals || {})) {
+            merged.itemTotals[itemHrid] = (merged.itemTotals[itemHrid] || 0) + count;
+        }
+    }
+    return merged;
+}
+
+/**
  * Reset (delete) lifetime + history data for one container for one character.
  * @param {string} characterId
  * @param {string} containerHrid
@@ -123,7 +173,13 @@ export async function resetContainer(characterId, containerHrid) {
     const filtered = history.filter((record) => record.containerHrid !== containerHrid);
     await storage.setJSON(historyKey(characterId), filtered, STORE_NAME);
 
-    return { lifetime, history: filtered };
+    const imports = await loadImports(characterId);
+    for (const source of Object.keys(imports)) {
+        delete imports[source][containerHrid];
+    }
+    await saveImports(characterId, imports);
+
+    return { lifetime, history: filtered, imports };
 }
 
 /**
@@ -134,6 +190,7 @@ export async function resetContainer(characterId, containerHrid) {
 export async function resetAll(characterId) {
     await storage.delete(lifetimeKey(characterId), STORE_NAME);
     await storage.delete(historyKey(characterId), STORE_NAME);
+    await storage.delete(importsKey(characterId), STORE_NAME);
 }
 
 export const OPENABLE_ANALYTICS_STORE = STORE_NAME;

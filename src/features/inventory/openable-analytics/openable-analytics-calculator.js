@@ -155,3 +155,44 @@ export function buildOpeningRecord({
         source,
     };
 }
+
+/**
+ * Build a normalized opening record from a bulk `{itemHrid: count}` map instead of an
+ * individual `gainedItems` array. This is the seam for historical bulk-import sources (Edible
+ * Tools, MWI Combat Suite) that only retain cumulative item totals per container, not
+ * per-opening detail - the import produces one synthetic record representing the entire
+ * imported total, valued through the exact same `buildOpeningRecord` math (and therefore
+ * Toolasha's own pricing/EV, never the source tool's own stored numbers).
+ * @param {Object} input
+ * @param {string} input.containerHrid
+ * @param {number} input.containerCount - Total containers opened, per the import source
+ * @param {Object} input.itemTotals - Map of itemHrid -> cumulative count gained
+ * @param {number} input.timestamp
+ * @param {string} input.characterId
+ * @param {string} input.source - e.g. 'import:edible' or 'import:mwi-combat-suite'
+ * @returns {Object} Normalized opening record (enhancementLevel always 0 - imports don't track it)
+ */
+export function buildImportedAggregateRecord({
+    containerHrid,
+    containerCount,
+    itemTotals,
+    timestamp,
+    characterId,
+    source,
+}) {
+    const gainedItems = Object.entries(itemTotals || {}).map(([itemHrid, count]) => ({
+        itemHrid,
+        enhancementLevel: 0,
+        count,
+    }));
+
+    return buildOpeningRecord({
+        containerHrid,
+        containerCount,
+        gainedItems,
+        grantedBuffs: [],
+        timestamp,
+        characterId,
+        source,
+    });
+}

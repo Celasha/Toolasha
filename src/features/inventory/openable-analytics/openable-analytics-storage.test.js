@@ -24,8 +24,11 @@ const {
     saveLifetime,
     loadHistory,
     appendHistory,
+    loadImports,
+    saveImports,
     createEmptyAggregate,
     foldRecordIntoAggregate,
+    mergeAggregates,
     resetContainer,
     resetAll,
     OPENABLE_ANALYTICS_MAX_HISTORY_EVENTS,
@@ -178,5 +181,72 @@ describe('reset controls', () => {
 
         expect(await loadLifetime('char-a')).toEqual({});
         expect(await loadLifetime('char-b')).toEqual({ '/items/chest': createEmptyAggregate() });
+    });
+
+    test('resetContainer clears only the targeted container’s imported data, leaving other sources/containers intact', async () => {
+        await saveImports('char-a', {
+            'import:edible': { '/items/chest': createEmptyAggregate(), '/items/crate': createEmptyAggregate() },
+        });
+
+        const { imports } = await resetContainer('char-a', '/items/chest');
+
+        expect(imports['import:edible']['/items/chest']).toBeUndefined();
+        expect(imports['import:edible']['/items/crate']).toEqual(createEmptyAggregate());
+    });
+
+    test('resetAll clears imported data too', async () => {
+        await saveImports('char-a', { 'import:edible': { '/items/chest': createEmptyAggregate() } });
+
+        await resetAll('char-a');
+
+        expect(await loadImports('char-a')).toEqual({});
+    });
+});
+
+describe('imports persistence', () => {
+    test('imports are stored under a character-scoped key, separate from live-tracked lifetime', async () => {
+        await saveImports('char-a', { 'import:mwi-combat-suite': { '/items/chest': createEmptyAggregate() } });
+        await saveLifetime('char-a', {});
+
+        expect(await loadImports('char-a')).toEqual({
+            'import:mwi-combat-suite': { '/items/chest': createEmptyAggregate() },
+        });
+        expect(await loadLifetime('char-a')).toEqual({});
+    });
+});
+
+describe('mergeAggregates', () => {
+    test('sums numeric fields and merges item totals across live + imported aggregates', () => {
+        const live = foldRecordIntoAggregate(
+            createEmptyAggregate(),
+            makeRecord({ actualValue: 100, expectedValue: 90 })
+        );
+        const imported = foldRecordIntoAggregate(
+            createEmptyAggregate(),
+            makeRecord({
+                actualValue: 5000,
+                expectedValue: 4500,
+                gainedItems: [{ itemHrid: '/items/coin', count: 900 }],
+            })
+        );
+
+        const merged = mergeAggregates(live, imported);
+
+        expect(merged.eventsCount).toBe(2);
+        expect(merged.actualValueTotal).toBe(5100);
+        expect(merged.expectedValueTotal).toBe(4590);
+        expect(merged.itemTotals['/items/coin']).toBe(1000);
+    });
+
+    test('ignores null/undefined aggregates (e.g. no imports for this container)', () => {
+        const live = foldRecordIntoAggregate(createEmptyAggregate(), makeRecord());
+
+        const merged = mergeAggregates(live, undefined, null);
+
+        expect(merged).toEqual(live);
+    });
+
+    test('returns an empty aggregate when called with no real aggregates', () => {
+        expect(mergeAggregates()).toEqual(createEmptyAggregate());
     });
 });

@@ -10,6 +10,12 @@ import config from '../../../core/config.js';
 import dataManager from '../../../core/data-manager.js';
 import openableAnalyticsDataCollector from './openable-analytics-data-collector.js';
 import openableAnalyticsModalInjector, { formatValue, formatLuckPercent } from './openable-analytics-modal-injector.js';
+import { parseEdibleExport, parseCombatSuiteExport } from './openable-analytics-import-parsers.js';
+
+const IMPORT_SOURCES = [
+    { key: 'edible', label: 'Edible Tools', prefixedSource: 'import:edible' },
+    { key: 'mwi-combat-suite', label: 'MWI Combat Suite', prefixedSource: 'import:mwi-combat-suite' },
+];
 
 function luckColor(luckValue) {
     if (luckValue === null || luckValue === undefined) return config.COLOR_TEXT_SECONDARY || '#888888';
@@ -32,6 +38,10 @@ class OpenableAnalyticsUI {
         this.popup = null;
         this.selectedContainer = null;
         this.selectedScope = 'session';
+        this.importSourceKey = 'mwi-combat-suite';
+        this.importStatus = null;
+        this.pendingEdiblePlayers = null;
+        this.pendingEdibleRawText = null;
     }
 
     initialize() {
@@ -47,6 +57,9 @@ class OpenableAnalyticsUI {
         const known = openableAnalyticsDataCollector.getKnownContainers();
         this.selectedContainer = containerHrid || known[0] || null;
         this.selectedScope = 'session';
+        this.importStatus = null;
+        this.pendingEdiblePlayers = null;
+        this.pendingEdibleRawText = null;
         this.createPopup();
     }
 
@@ -111,6 +124,7 @@ class OpenableAnalyticsUI {
             const empty = document.createElement('div');
             empty.textContent = 'No openings recorded yet for this character.';
             empty.style.opacity = '0.75';
+            empty.style.marginBottom = '16px';
             popup.appendChild(empty);
         } else {
             popup.appendChild(this.buildControls(known));
@@ -118,6 +132,8 @@ class OpenableAnalyticsUI {
             popup.appendChild(this.buildItemOutcomes());
             popup.appendChild(this.buildResetControls());
         }
+
+        popup.appendChild(this.buildImportPanel());
 
         overlay.appendChild(popup);
         document.body.appendChild(overlay);
@@ -278,6 +294,161 @@ class OpenableAnalyticsUI {
         wrapper.appendChild(resetContainerButton);
         wrapper.appendChild(resetAllButton);
         return wrapper;
+    }
+
+    buildImportPanel() {
+        const wrapper = document.createElement('div');
+        wrapper.style.cssText = 'padding-top:16px; border-top:1px solid #3a3a3a;';
+
+        const heading = document.createElement('div');
+        heading.textContent = 'Import Historical Data';
+        heading.style.cssText = 'font-weight:600; margin-bottom:6px;';
+        wrapper.appendChild(heading);
+
+        const help = document.createElement('div');
+        help.style.cssText = 'font-size:12px; opacity:0.75; margin-bottom:8px;';
+        help.textContent =
+            "Adds a one-time bulk total to your Lifetime totals, revalued using Toolasha's own pricing. Does not add individual opening events (these sources only keep running totals, not per-opening history). Re-importing the same source replaces its previous total rather than adding to it.";
+        wrapper.appendChild(help);
+
+        if (this.pendingEdiblePlayers) {
+            wrapper.appendChild(this.buildEdiblePlayerPicker());
+            return wrapper;
+        }
+
+        const controls = document.createElement('div');
+        controls.style.cssText = 'display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap;';
+
+        const sourceSelect = document.createElement('select');
+        sourceSelect.style.cssText =
+            'background:#2a2a2a; color:#fff; border:1px solid #4a4a4a; padding:4px 8px; border-radius:4px;';
+        for (const { key, label } of IMPORT_SOURCES) {
+            const option = document.createElement('option');
+            option.value = key;
+            option.textContent = label;
+            if (key === this.importSourceKey) option.selected = true;
+            sourceSelect.appendChild(option);
+        }
+        sourceSelect.onchange = () => {
+            this.importSourceKey = sourceSelect.value;
+        };
+
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = '.json,application/json,text/plain';
+        fileInput.style.cssText = 'font-size:12px; max-width:180px;';
+
+        controls.appendChild(sourceSelect);
+        controls.appendChild(fileInput);
+        wrapper.appendChild(controls);
+
+        const textarea = document.createElement('textarea');
+        textarea.placeholder =
+            "Paste exported/copied data here (MWI Combat Suite: paste the exported .json file contents. Edible Tools: paste the value of localStorage.getItem('Edible_Tools') from your browser devtools).";
+        textarea.style.cssText =
+            'width:100%; height:70px; background:#2a2a2a; color:#fff; border:1px solid #4a4a4a; border-radius:4px; padding:6px; font-size:12px; box-sizing:border-box; resize:vertical;';
+        wrapper.appendChild(textarea);
+
+        fileInput.onchange = () => {
+            const file = fileInput.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+                textarea.value = String(reader.result || '');
+            };
+            reader.readAsText(file);
+        };
+
+        const importButton = document.createElement('button');
+        importButton.textContent = 'Import';
+        importButton.style.cssText =
+            'margin-top:8px; background:#4a4a4a; border:1px solid #5a5a5a; color:#fff; font-size:12px; cursor:pointer; padding:6px 12px; border-radius:4px;';
+        importButton.onclick = () => this.handleImportSubmit(textarea.value);
+        wrapper.appendChild(importButton);
+
+        if (this.importStatus) {
+            const status = document.createElement('div');
+            status.style.cssText = 'margin-top:8px; font-size:12px; opacity:0.9;';
+            status.textContent = this.importStatus;
+            wrapper.appendChild(status);
+        }
+
+        return wrapper;
+    }
+
+    buildEdiblePlayerPicker() {
+        const wrapper = document.createElement('div');
+
+        const label = document.createElement('div');
+        label.textContent = 'This Edible Tools data has more than one player - which one is this character?';
+        label.style.cssText = 'font-size:12px; margin-bottom:6px;';
+        wrapper.appendChild(label);
+
+        const select = document.createElement('select');
+        select.style.cssText =
+            'background:#2a2a2a; color:#fff; border:1px solid #4a4a4a; padding:4px 8px; border-radius:4px; margin-right:8px;';
+        for (const player of this.pendingEdiblePlayers) {
+            const option = document.createElement('option');
+            option.value = player.id;
+            option.textContent = player.name;
+            select.appendChild(option);
+        }
+        wrapper.appendChild(select);
+
+        const confirmButton = document.createElement('button');
+        confirmButton.textContent = 'Import for this player';
+        confirmButton.style.cssText =
+            'background:#4a4a4a; border:1px solid #5a5a5a; color:#fff; font-size:12px; cursor:pointer; padding:6px 12px; border-radius:4px;';
+        confirmButton.onclick = () => this.handleEdiblePlayerSelected(select.value);
+        wrapper.appendChild(confirmButton);
+
+        return wrapper;
+    }
+
+    async handleImportSubmit(rawText) {
+        if (!rawText?.trim()) {
+            this.importStatus = 'Paste or upload some data first.';
+            this.createPopup();
+            return;
+        }
+
+        const result = this.importSourceKey === 'edible' ? parseEdibleExport(rawText) : parseCombatSuiteExport(rawText);
+
+        if (result.needsPlayerSelection) {
+            this.pendingEdiblePlayers = result.players;
+            this.pendingEdibleRawText = rawText;
+            this.createPopup();
+            return;
+        }
+
+        const sourceEntry = IMPORT_SOURCES.find((entry) => entry.key === this.importSourceKey);
+        await this.applyImportResult(sourceEntry.prefixedSource, result);
+    }
+
+    async handleEdiblePlayerSelected(playerId) {
+        const result = parseEdibleExport(this.pendingEdibleRawText, { playerId });
+        this.pendingEdiblePlayers = null;
+        this.pendingEdibleRawText = null;
+        await this.applyImportResult('import:edible', result);
+    }
+
+    async applyImportResult(source, result) {
+        if (result.containers.length > 0) {
+            await openableAnalyticsDataCollector.importContainers(source, result.containers);
+        }
+
+        const importedCount = result.containers.length;
+        const warningsText = result.warnings.length > 0 ? ` ${result.warnings.join(' ')}` : '';
+        this.importStatus =
+            importedCount > 0
+                ? `Imported ${importedCount} container(s).${warningsText}`
+                : `Nothing imported.${warningsText}`;
+
+        if (!this.selectedContainer && result.containers[0]) {
+            this.selectedContainer = result.containers[0].containerHrid;
+        }
+
+        this.createPopup();
     }
 
     cleanup() {

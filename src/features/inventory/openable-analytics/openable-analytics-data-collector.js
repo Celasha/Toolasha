@@ -7,14 +7,17 @@
 
 import webSocketHook from '../../../core/websocket.js';
 import dataManager from '../../../core/data-manager.js';
-import { buildOpeningRecord } from './openable-analytics-calculator.js';
+import { buildOpeningRecord, buildImportedAggregateRecord } from './openable-analytics-calculator.js';
 import {
     loadLifetime,
     saveLifetime,
     loadHistory,
     appendHistory,
+    loadImports,
+    saveImports,
     foldRecordIntoAggregate,
     createEmptyAggregate,
+    mergeAggregates,
     resetContainer as storageResetContainer,
     resetAll as storageResetAll,
 } from './openable-analytics-storage.js';
@@ -28,6 +31,7 @@ class OpenableAnalyticsDataCollector {
         this.lifetime = {};
         this.history = [];
         this.session = {};
+        this.imports = {};
         this.latestRecord = null;
         this.updateListeners = new Set();
     }
@@ -51,9 +55,11 @@ class OpenableAnalyticsDataCollector {
         if (this.characterId) {
             this.lifetime = await loadLifetime(this.characterId);
             this.history = await loadHistory(this.characterId);
+            this.imports = await loadImports(this.characterId);
         } else {
             this.lifetime = {};
             this.history = [];
+            this.imports = {};
         }
 
         if (generation !== this.lifecycleGeneration || !this.isInitialized) return;
@@ -157,17 +163,72 @@ class OpenableAnalyticsDataCollector {
 
     /**
      * @param {string} containerHrid
-     * @returns {Object} Lifetime (persisted) aggregate
+     * @returns {Object} Lifetime (persisted, live-tracked) aggregate, excluding bulk imports -
+     *      use `getLifetimeAggregate` for the combined total shown in the UI.
      */
-    getLifetimeAggregate(containerHrid) {
+    getLiveLifetimeAggregate(containerHrid) {
         return this.lifetime[containerHrid] || createEmptyAggregate();
     }
 
     /**
-     * @returns {Array<string>} Container HRIDs that have at least one lifetime opening recorded
+     * @param {string} containerHrid
+     * @returns {Object} Lifetime aggregate combining live-tracked openings with any bulk-imported
+     *      historical totals (Edible Tools / MWI Combat Suite / future sources) for this container.
+     */
+    getLifetimeAggregate(containerHrid) {
+        const importedAggregates = Object.values(this.imports)
+            .map((bySource) => bySource[containerHrid])
+            .filter(Boolean);
+        return mergeAggregates(this.lifetime[containerHrid], ...importedAggregates);
+    }
+
+    /**
+     * @returns {Array<string>} Container HRIDs with at least one lifetime opening, live or imported
      */
     getKnownContainers() {
-        return Object.keys(this.lifetime);
+        const containers = new Set(Object.keys(this.lifetime));
+        for (const bySource of Object.values(this.imports)) {
+            for (const containerHrid of Object.keys(bySource)) {
+                containers.add(containerHrid);
+            }
+        }
+        return [...containers];
+    }
+
+    /**
+     * Import a batch of bulk historical containers from an external source (Edible Tools, MWI
+     * Combat Suite, or a future source), recomputing Actual/Expected/Luck via Toolasha's own
+     * valuation from the raw item counts rather than trusting the source's own stored numbers.
+     * Re-importing the same source replaces (not adds to) that source's per-container totals, so
+     * importing an updated export is idempotent rather than double-counting.
+     * @param {string} source - e.g. 'import:edible' or 'import:mwi-combat-suite'
+     * @param {Array<{containerHrid: string, containerCount: number, itemTotals: Object}>} containers
+     * @returns {Promise<Array<Object>>} The resulting per-container aggregates that were imported
+     */
+    async importContainers(source, containers) {
+        if (!this.characterId) return [];
+
+        const bySource = { ...(this.imports[source] || {}) };
+        const results = [];
+
+        for (const { containerHrid, containerCount, itemTotals } of containers) {
+            const record = buildImportedAggregateRecord({
+                containerHrid,
+                containerCount,
+                itemTotals,
+                timestamp: Date.now(),
+                characterId: this.characterId,
+                source,
+            });
+            const aggregate = foldRecordIntoAggregate(createEmptyAggregate(), record);
+            bySource[containerHrid] = aggregate;
+            results.push({ containerHrid, aggregate });
+        }
+
+        this.imports = { ...this.imports, [source]: bySource };
+        await saveImports(this.characterId, this.imports);
+
+        return results;
     }
 
     /**
@@ -180,14 +241,15 @@ class OpenableAnalyticsDataCollector {
     }
 
     /**
-     * Reset lifetime + history + in-memory session data for one container, current character.
+     * Reset lifetime + history + imports + in-memory session data for one container, current character.
      * @param {string} containerHrid
      */
     async resetContainer(containerHrid) {
         if (!this.characterId) return;
-        const { lifetime, history } = await storageResetContainer(this.characterId, containerHrid);
+        const { lifetime, history, imports } = await storageResetContainer(this.characterId, containerHrid);
         this.lifetime = lifetime;
         this.history = history;
+        this.imports = imports;
         delete this.session[containerHrid];
         if (this.latestRecord?.containerHrid === containerHrid) {
             this.latestRecord = null;
@@ -195,14 +257,15 @@ class OpenableAnalyticsDataCollector {
     }
 
     /**
-     * Reset all Openable Analytics data (lifetime + history + in-memory session) for the
-     * current character.
+     * Reset all Openable Analytics data (lifetime + history + imports + in-memory session) for
+     * the current character.
      */
     async resetAll() {
         if (!this.characterId) return;
         await storageResetAll(this.characterId);
         this.lifetime = {};
         this.history = [];
+        this.imports = {};
         this.session = {};
         this.latestRecord = null;
     }
@@ -222,6 +285,7 @@ class OpenableAnalyticsDataCollector {
         this.characterId = null;
         this.lifetime = {};
         this.history = [];
+        this.imports = {};
         this.session = {};
         this.latestRecord = null;
         this.updateListeners.clear();
