@@ -8,6 +8,7 @@
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
+import loadoutState from '../../core/loadout-state.js';
 import actionPanelSort from './action-panel-sort.js';
 import actionFilter from './action-filter.js';
 import { calculateGatheringProfit } from './gathering-profit.js';
@@ -26,6 +27,8 @@ class GatheringStats {
         this.pricingModeHandler = null; // Handler for pricing mode changes
         this.showProfitPerHourHandler = null;
         this.showExpPerHourHandler = null;
+        this.loadoutStateHandler = null;
+        this.loadoutSnapshotSettingHandler = null;
         this.isInitialized = false;
         this.itemsUpdatedDebounceTimer = null; // Debounce timer for items_updated events
         this.consumablesUpdatedDebounceTimer = null; // Debounce timer for consumables_updated events
@@ -79,6 +82,14 @@ class GatheringStats {
         dataManager.on('consumables_updated', this.consumablesUpdatedHandler);
         dataManager.on('character_switching', this.characterSwitchingHandler);
 
+        this.loadoutStateHandler = () => {
+            clearTimeout(this.itemsUpdatedDebounceTimer);
+            this.itemsUpdatedDebounceTimer = setTimeout(() => {
+                this.updateAllStats();
+            }, this.DEBOUNCE_DELAY);
+        };
+        loadoutState.onUpdate(this.loadoutStateHandler);
+
         this.pricingModeHandler = () => {
             this.updateAllStats();
         };
@@ -87,6 +98,8 @@ class GatheringStats {
         this.showExpPerHourHandler = () => this.updateAllStats();
         config.onSettingChange('actionPanel_showProfitPerHour_gathering', this.showProfitPerHourHandler);
         config.onSettingChange('actionPanel_showExpPerHour_gathering', this.showExpPerHourHandler);
+        this.loadoutSnapshotSettingHandler = () => this.updateAllStats();
+        config.onSettingChange('loadoutSnapshot', this.loadoutSnapshotSettingHandler);
     }
 
     /**
@@ -683,6 +696,11 @@ class GatheringStats {
             this.characterSwitchingHandler = null;
         }
 
+        if (this.loadoutStateHandler) {
+            loadoutState.offUpdate(this.loadoutStateHandler);
+            this.loadoutStateHandler = null;
+        }
+
         if (this.pricingModeHandler) {
             config.offSettingChange('profitCalc_pricingMode', this.pricingModeHandler);
             this.pricingModeHandler = null;
@@ -696,6 +714,11 @@ class GatheringStats {
         if (this.showExpPerHourHandler) {
             config.offSettingChange('actionPanel_showExpPerHour_gathering', this.showExpPerHourHandler);
             this.showExpPerHourHandler = null;
+        }
+
+        if (this.loadoutSnapshotSettingHandler) {
+            config.offSettingChange('loadoutSnapshot', this.loadoutSnapshotSettingHandler);
+            this.loadoutSnapshotSettingHandler = null;
         }
 
         // Clear all DOM references

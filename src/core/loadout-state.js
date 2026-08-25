@@ -324,6 +324,14 @@ class LoadoutState {
         this.persistenceReady = false;
         this.updateListeners = new Set();
         this.inventoryResolutionSignatures = new Map();
+        // Effective snapshots are expensive to resolve: each equipment slot validates against
+        // current ownership and consumables validate against inventory presence. Action-card
+        // calculations can read the same saved loadout hundreds of times while mounting a
+        // skill page, so resolving on every read turns a correct state model into a hot-path
+        // performance regression. Keep one canonical effective snapshot per raw snapshot and
+        // refresh it only when raw loadout state or relevant inventory semantics change.
+        this.resolvedSnapshotCache = new Map();
+        this.actionTypeSelectionIdCache = new Map();
 
         this.initCharacterDataHandler = (data, context) => this._onInitCharacterData(data, context);
         this.loadoutsUpdatedHandler = (data, context) => this._onLoadoutsUpdated(data, context);
@@ -409,28 +417,40 @@ class LoadoutState {
      * @private
      */
     _buildInventoryResolutionSignature(rawSnapshot, inventory = dataManager.getInventory?.()) {
-        const equipment = resolveLoadoutEquipment(rawSnapshot, inventory)
-            .map(
-                (entry) =>
-                    `${entry.itemLocationHrid}:${entry.itemHrid}:${entry.isAvailable ? entry.enhancementLevel : 'missing'}`
-            )
-            .join(',');
-        const food = resolveLoadoutConsumables(rawSnapshot.food, inventory)
-            .map((entry) => `${entry.itemHrid}:${entry.isAvailable ? 1 : 0}`)
-            .join(',');
-        const drinks = resolveLoadoutConsumables(rawSnapshot.drinks, inventory)
-            .map((entry) => `${entry.itemHrid}:${entry.isAvailable ? 1 : 0}`)
-            .join(',');
-        return `${equipment}|${food}|${drinks}`;
+        return this._buildResolutionSignature(this._resolveRawSnapshot(rawSnapshot, inventory));
     }
 
-    _refreshInventoryResolutionSignatures() {
+    _buildResolutionSignature(resolvedSnapshot) {
+        if (!resolvedSnapshot) return '';
+        const equipment = (resolvedSnapshot.equipment || [])
+            .map((entry) => `${entry.itemLocationHrid}:${entry.itemHrid}:${entry.enhancementLevel}`)
+            .join(',');
+        const unavailableEquipment = (resolvedSnapshot.unavailableEquipment || [])
+            .map((entry) => `${entry.itemLocationHrid}:${entry.itemHrid}:missing`)
+            .join(',');
+        const food = (resolvedSnapshot.food || []).map((entry) => entry.itemHrid || '').join(',');
+        const drinks = (resolvedSnapshot.drinks || []).map((entry) => entry.itemHrid || '').join(',');
+        const unavailableFood = (resolvedSnapshot.unavailableFood || [])
+            .map((entry) => `${entry.slotIndex}:${entry.itemHrid}`)
+            .join(',');
+        const unavailableDrinks = (resolvedSnapshot.unavailableDrinks || [])
+            .map((entry) => `${entry.slotIndex}:${entry.itemHrid}`)
+            .join(',');
+        return `${equipment}|${unavailableEquipment}|${food}|${drinks}|${unavailableFood}|${unavailableDrinks}`;
+    }
+
+    _refreshResolvedState() {
         const inventory = dataManager.getInventory?.();
-        const next = new Map();
+        const nextSignatures = new Map();
+        const nextResolved = new Map();
         for (const [snapshotId, rawSnapshot] of Object.entries(this.rawSnapshots)) {
-            next.set(snapshotId, this._buildInventoryResolutionSignature(rawSnapshot, inventory));
+            const resolved = this._resolveRawSnapshot(rawSnapshot, inventory);
+            nextResolved.set(snapshotId, resolved);
+            nextSignatures.set(snapshotId, this._buildResolutionSignature(resolved));
         }
-        this.inventoryResolutionSignatures = next;
+        this.resolvedSnapshotCache = nextResolved;
+        this.inventoryResolutionSignatures = nextSignatures;
+        this.actionTypeSelectionIdCache.clear();
     }
 
     _emitUpdate() {
@@ -450,6 +470,8 @@ class LoadoutState {
         this.authority = 'none';
         this.rawSnapshots = {};
         this.inventoryResolutionSignatures = new Map();
+        this.resolvedSnapshotCache = new Map();
+        this.actionTypeSelectionIdCache = new Map();
 
         // Do not broadcast a normal loadout update while the departing character's
         // feature listeners are still being synchronously torn down. Some consumers
@@ -501,7 +523,7 @@ class LoadoutState {
         if (characterChanged) {
             this.rawSnapshots = {};
             this.authority = 'none';
-            this._refreshInventoryResolutionSignatures();
+            this._refreshResolvedState();
             this._emitUpdate();
         }
 
@@ -527,10 +549,12 @@ class LoadoutState {
                 (snapshot.drinks || []).some((item) => changedHrids.has(item.itemHrid));
             if (!referencesChangedItem) continue;
 
-            const nextSignature = this._buildInventoryResolutionSignature(snapshot, inventory);
+            const nextResolved = this._resolveRawSnapshot(snapshot, inventory);
+            const nextSignature = this._buildResolutionSignature(nextResolved);
             const previousSignature = this.inventoryResolutionSignatures.get(snapshotId);
             if (nextSignature !== previousSignature) {
                 this.inventoryResolutionSignatures.set(snapshotId, nextSignature);
+                this.resolvedSnapshotCache.set(snapshotId, nextResolved);
                 effectiveStateChanged = true;
             }
         }
@@ -584,7 +608,7 @@ class LoadoutState {
         this.activeCharacterId = normalizeCharacterId(characterId);
         this.rawSnapshots = snapshots;
         this.authority = 'server';
-        this._refreshInventoryResolutionSignatures();
+        this._refreshResolvedState();
         this._emitUpdate();
     }
 
@@ -607,7 +631,7 @@ class LoadoutState {
 
         this.rawSnapshots = normalizeCachedSnapshots(cached);
         this.authority = 'cache';
-        this._refreshInventoryResolutionSignatures();
+        this._refreshResolvedState();
         this._emitUpdate();
     }
 
@@ -662,33 +686,8 @@ class LoadoutState {
         return clone;
     }
 
-    /**
-     * Resolve a raw/cached snapshot against current character state.
-     * Passing a previously resolved snapshot re-resolves by snapshotId, so long-lived UI state
-     * cannot freeze an old highest-owned enhancement level.
-     * @param {Object|string|null} snapshotOrId
-     * @returns {Object|null}
-     */
-    resolveSnapshot(snapshotOrId) {
-        if (!snapshotOrId) return null;
-
-        let rawSnapshot = null;
-        if (typeof snapshotOrId === 'string' || typeof snapshotOrId === 'number') {
-            rawSnapshot = this.rawSnapshots[String(snapshotOrId)] || null;
-        } else if (hasOwn(snapshotOrId, 'snapshotId')) {
-            // A previously resolved snapshot has stable identity. If that id was deleted, do
-            // not silently rebind the stale object to a newly-created loadout that happens to
-            // reuse the same display name. Callers that intentionally select by name use
-            // getSnapshotByName()/getUsableSnapshotByName() explicitly.
-            rawSnapshot = this.rawSnapshots[String(snapshotOrId.snapshotId)] || null;
-        } else if (snapshotOrId.name) {
-            rawSnapshot =
-                Object.values(this.rawSnapshots).find((snapshot) => snapshot.name === snapshotOrId.name) || null;
-        }
-
+    _resolveRawSnapshot(rawSnapshot, inventory = dataManager.getInventory?.()) {
         if (!rawSnapshot) return null;
-
-        const inventory = dataManager.getInventory?.();
         const resolvedEquipment = resolveLoadoutEquipment(rawSnapshot, inventory);
         const resolvedFood = resolveLoadoutConsumables(rawSnapshot.food, inventory);
         const resolvedDrinks = resolveLoadoutConsumables(rawSnapshot.drinks, inventory);
@@ -738,6 +737,48 @@ class LoadoutState {
         };
     }
 
+    _cloneResolvedSnapshot(snapshot) {
+        return snapshot ? cloneJsonSafeValue(snapshot) : null;
+    }
+
+    /**
+     * Resolve a raw/cached snapshot against current character state.
+     * Effective state is maintained event-driven by loadouts_updated / items_updated and reads
+     * are served from the canonical cache. Returning a defensive clone preserves the old public
+     * contract: feature code can never mutate Core's cached truth by holding a snapshot object.
+     * @param {Object|string|null} snapshotOrId
+     * @returns {Object|null}
+     */
+    resolveSnapshot(snapshotOrId) {
+        if (!snapshotOrId) return null;
+
+        let snapshotId = null;
+        if (typeof snapshotOrId === 'string' || typeof snapshotOrId === 'number') {
+            snapshotId = String(snapshotOrId);
+        } else if (hasOwn(snapshotOrId, 'snapshotId')) {
+            // A previously resolved snapshot has stable identity. If that id was deleted, do
+            // not silently rebind the stale object to a newly-created loadout that happens to
+            // reuse the same display name. Callers that intentionally select by name use
+            // getSnapshotByName()/getUsableSnapshotByName() explicitly.
+            snapshotId = String(snapshotOrId.snapshotId);
+        } else if (snapshotOrId.name) {
+            const rawSnapshot = Object.values(this.rawSnapshots).find(
+                (snapshot) => snapshot.name === snapshotOrId.name
+            );
+            snapshotId = rawSnapshot?.snapshotId || null;
+        }
+
+        if (!snapshotId || !this.rawSnapshots[snapshotId]) return null;
+
+        let resolved = this.resolvedSnapshotCache.get(snapshotId);
+        if (!resolved) {
+            resolved = this._resolveRawSnapshot(this.rawSnapshots[snapshotId]);
+            this.resolvedSnapshotCache.set(snapshotId, resolved);
+            this.inventoryResolutionSignatures.set(snapshotId, this._buildResolutionSignature(resolved));
+        }
+        return this._cloneResolvedSnapshot(resolved);
+    }
+
     getSnapshotById(snapshotId) {
         return this.resolveSnapshot(String(snapshotId));
     }
@@ -773,6 +814,62 @@ class LoadoutState {
             .sort((a, b) => a.ordinal - b.ordinal);
     }
 
+    _getSelectedSnapshotIdForActionType(actionTypeHrid) {
+        if (this.actionTypeSelectionIdCache.has(actionTypeHrid)) {
+            return this.actionTypeSelectionIdCache.get(actionTypeHrid);
+        }
+
+        let skillDefault = null;
+        let allSkillsDefault = null;
+        let skillNonDefault = null;
+        let allSkillsNonDefault = null;
+
+        for (const rawSnapshot of Object.values(this.rawSnapshots)) {
+            if (rawSnapshot.actionTypeHrid === actionTypeHrid) {
+                if (rawSnapshot.isDefault) skillDefault = rawSnapshot.snapshotId;
+                else skillNonDefault = rawSnapshot.snapshotId;
+            } else if (rawSnapshot.actionTypeHrid === '') {
+                if (rawSnapshot.isDefault) allSkillsDefault = rawSnapshot.snapshotId;
+                else allSkillsNonDefault = rawSnapshot.snapshotId;
+            }
+        }
+
+        const selectedId = skillDefault || allSkillsDefault || skillNonDefault || allSkillsNonDefault || null;
+        this.actionTypeSelectionIdCache.set(actionTypeHrid, selectedId);
+        return selectedId;
+    }
+
+    /**
+     * Lightweight saved-loadout lookup for action/profit hot paths. Unlike the descriptive
+     * snapshot API, this intentionally copies only the fields calculations need and never
+     * clones abilities/trigger maps. Effective equipment/consumable state still comes from the
+     * same canonical cache and therefore preserves all Exact/Highest/availability semantics.
+     * @param {string} actionTypeHrid
+     * @returns {{status:string,snapshot:Object|null}}
+     */
+    findCalculationSelectionForActionType(actionTypeHrid) {
+        const selectedId = this._getSelectedSnapshotIdForActionType(actionTypeHrid);
+        if (!selectedId) return { status: 'none', snapshot: null };
+
+        const resolved = this.resolvedSnapshotCache.get(selectedId);
+        if (!resolved) return { status: 'none', snapshot: null };
+
+        const snapshot = {
+            snapshotId: resolved.snapshotId,
+            name: resolved.name,
+            equipment: (resolved.equipment || []).map((entry) => ({ ...entry })),
+            drinks: (resolved.drinks || []).map((entry) => ({ ...entry })),
+            hasUnavailableEquipment: resolved.hasUnavailableEquipment,
+            hasUnavailableConsumables: resolved.hasUnavailableConsumables,
+            isUsableForCalculation: resolved.isUsableForCalculation,
+        };
+
+        return {
+            status: snapshot.isUsableForCalculation ? 'usable' : 'unavailable',
+            snapshot,
+        };
+    }
+
     /**
      * Find the preferred saved loadout for an action type. This method is independent of the
      * user setting that controls automatic profit/action calculations; callers decide whether
@@ -781,25 +878,11 @@ class LoadoutState {
      * @returns {Object|null}
      */
     findSnapshotSelectionForActionType(actionTypeHrid) {
-        let skillDefault = null;
-        let allSkillsDefault = null;
-        let skillNonDefault = null;
-        let allSkillsNonDefault = null;
+        const selectedId = this._getSelectedSnapshotIdForActionType(actionTypeHrid);
 
-        for (const rawSnapshot of Object.values(this.rawSnapshots)) {
-            if (rawSnapshot.actionTypeHrid === actionTypeHrid) {
-                if (rawSnapshot.isDefault) skillDefault = rawSnapshot;
-                else skillNonDefault = rawSnapshot;
-            } else if (rawSnapshot.actionTypeHrid === '') {
-                if (rawSnapshot.isDefault) allSkillsDefault = rawSnapshot;
-                else allSkillsNonDefault = rawSnapshot;
-            }
-        }
+        if (!selectedId) return { status: 'none', snapshot: null };
 
-        const selected = skillDefault || allSkillsDefault || skillNonDefault || allSkillsNonDefault;
-        if (!selected) return { status: 'none', snapshot: null };
-
-        const resolved = this.resolveSnapshot(selected);
+        const resolved = this.resolveSnapshot(selectedId);
         if (!resolved) return { status: 'none', snapshot: null };
         return {
             status: resolved.isUsableForCalculation ? 'usable' : 'unavailable',

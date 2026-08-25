@@ -514,6 +514,38 @@ describe('Core LoadoutState ownership and lifecycle', () => {
         expect(listener).toHaveBeenCalledTimes(1);
     });
 
+    test('the cached effective resolution follows Highest downward, not only upward', () => {
+        const state = new LoadoutState();
+        state.startCapture();
+        setActiveCharacter('A');
+        mocks.inventory = [
+            { itemHrid: SWORD, enhancementLevel: 10, count: 1, itemLocationHrid: '/item_locations/inventory' },
+        ];
+        mocks.wsHandlers.get('init_character_data')(
+            initPayload('A', { one: serverLoadout({ name: 'One', savedLevel: 2 }) })
+        );
+        expect(state.getSnapshotById('one').equipment[0].enhancementLevel).toBe(10);
+        const listener = vi.fn();
+        state.onUpdate(listener);
+
+        // The +10 was the character's only sword and is now enhanced down to +5. A cached
+        // resolution that only ever moved upward would incorrectly keep serving +10.
+        mocks.inventory = [
+            { itemHrid: SWORD, enhancementLevel: 5, count: 1, itemLocationHrid: '/item_locations/inventory' },
+        ];
+        mocks.dataHandlers.get('items_updated')({
+            endCharacterItems: [
+                { itemHrid: SWORD, enhancementLevel: 5, count: 1, itemLocationHrid: '/item_locations/inventory' },
+            ],
+        });
+
+        expect(listener).toHaveBeenCalledTimes(1);
+        expect(state.getSnapshotById('one').equipment[0]).toMatchObject({
+            enhancementLevel: 5,
+            isAvailable: true,
+        });
+    });
+
     test('referenced item count churn does not notify when effective loadout resolution is unchanged', () => {
         const state = new LoadoutState();
         state.startCapture();
@@ -625,6 +657,62 @@ describe('Core LoadoutState ownership and lifecycle', () => {
             unavailableDrinks: [{ slotIndex: 0, itemHrid: '/items/tea' }],
             isUsableForCalculation: false,
         });
+    });
+
+    test('restocking a saved consumable after stockout notifies and clears the unavailable state', () => {
+        const state = new LoadoutState();
+        state.startCapture();
+        setActiveCharacter('A');
+        mocks.inventory = [
+            { itemHrid: SWORD, enhancementLevel: 5, count: 1, itemLocationHrid: MAIN_HAND },
+            { itemHrid: '/items/tea', enhancementLevel: 0, count: 0, itemLocationHrid: '/item_locations/inventory' },
+        ];
+        mocks.wsHandlers.get('init_character_data')(
+            initPayload('A', { one: serverLoadout({ name: 'One', drinks: ['/items/tea'] }) })
+        );
+        expect(state.getSnapshotById('one').isUsableForCalculation).toBe(false);
+        const listener = vi.fn();
+        state.onUpdate(listener);
+
+        mocks.inventory = [
+            { itemHrid: SWORD, enhancementLevel: 5, count: 1, itemLocationHrid: MAIN_HAND },
+            { itemHrid: '/items/tea', enhancementLevel: 0, count: 5, itemLocationHrid: '/item_locations/inventory' },
+        ];
+        mocks.dataHandlers.get('items_updated')({
+            endCharacterItems: [
+                {
+                    itemHrid: '/items/tea',
+                    enhancementLevel: 0,
+                    count: 5,
+                    itemLocationHrid: '/item_locations/inventory',
+                },
+            ],
+        });
+
+        expect(listener).toHaveBeenCalledTimes(1);
+        expect(state.getSnapshotById('one')).toMatchObject({
+            drinks: [{ itemHrid: '/items/tea' }],
+            hasUnavailableConsumables: false,
+            isUsableForCalculation: true,
+        });
+
+        // A later restock to a different positive count is the same effective state and must
+        // not re-notify.
+        mocks.inventory = [
+            { itemHrid: SWORD, enhancementLevel: 5, count: 1, itemLocationHrid: MAIN_HAND },
+            { itemHrid: '/items/tea', enhancementLevel: 0, count: 8, itemLocationHrid: '/item_locations/inventory' },
+        ];
+        mocks.dataHandlers.get('items_updated')({
+            endCharacterItems: [
+                {
+                    itemHrid: '/items/tea',
+                    enhancementLevel: 0,
+                    count: 8,
+                    itemLocationHrid: '/item_locations/inventory',
+                },
+            ],
+        });
+        expect(listener).toHaveBeenCalledTimes(1);
     });
 });
 
@@ -1028,7 +1116,7 @@ describe('effective enhancement resolution contract', () => {
         expect(state.getSnapshotByName('Same Name')?.snapshotId).toBe('replacement');
     });
 
-    test('a previously resolved snapshot is re-resolved from raw state after inventory changes', () => {
+    test('a previously resolved snapshot refreshes after the canonical items_updated invalidation path', () => {
         const state = new LoadoutState();
         state.startCapture();
         setActiveCharacter('A');
@@ -1045,7 +1133,114 @@ describe('effective enhancement resolution contract', () => {
         mocks.inventory = [
             { itemHrid: SWORD, enhancementLevel: 12, count: 1, itemLocationHrid: '/item_locations/inventory' },
         ];
+        mocks.dataHandlers.get('items_updated')({
+            endCharacterItems: [
+                { itemHrid: SWORD, enhancementLevel: 12, count: 1, itemLocationHrid: '/item_locations/inventory' },
+            ],
+        });
         const second = state.resolveSnapshot(first);
         expect(second.equipment[0]).toMatchObject({ enhancementLevel: 12, isAvailable: true });
+    });
+
+    test('repeated effective reads reuse the resolved cache instead of rescanning inventory', () => {
+        const state = new LoadoutState();
+        state.startCapture();
+        setActiveCharacter('A');
+        mocks.inventory = [
+            { itemHrid: SWORD, enhancementLevel: 10, count: 1, itemLocationHrid: '/item_locations/inventory' },
+            { itemHrid: '/items/tea', enhancementLevel: 0, count: 20, itemLocationHrid: '/item_locations/inventory' },
+        ];
+        mocks.wsHandlers.get('init_character_data')(
+            initPayload('A', { one: serverLoadout({ name: 'One', savedLevel: 5, drinks: ['/items/tea'] }) })
+        );
+
+        dataManager.getInventory.mockClear();
+
+        for (let i = 0; i < 100; i += 1) {
+            expect(state.findSnapshotSelectionForActionType('/action_types/crafting')).toMatchObject({
+                status: 'usable',
+                snapshot: { equipment: [expect.objectContaining({ enhancementLevel: 10 })] },
+            });
+        }
+
+        // The cache was populated when authoritative state arrived. Hot-path reads do not
+        // touch inventory at all until a relevant items_updated invalidation occurs.
+        expect(dataManager.getInventory).not.toHaveBeenCalled();
+
+        mocks.inventory = [
+            { itemHrid: SWORD, enhancementLevel: 12, count: 1, itemLocationHrid: '/item_locations/inventory' },
+            { itemHrid: '/items/tea', enhancementLevel: 0, count: 20, itemLocationHrid: '/item_locations/inventory' },
+        ];
+        mocks.dataHandlers.get('items_updated')({
+            endCharacterItems: [
+                { itemHrid: SWORD, enhancementLevel: 12, count: 1, itemLocationHrid: '/item_locations/inventory' },
+            ],
+        });
+
+        expect(state.findSnapshotSelectionForActionType('/action_types/crafting')).toMatchObject({
+            status: 'usable',
+            snapshot: { equipment: [expect.objectContaining({ enhancementLevel: 12 })] },
+        });
+        expect(dataManager.getInventory).toHaveBeenCalledTimes(1);
+    });
+
+    test('the lightweight calculation-only selection never touches inventory on repeat and matches the descriptive resolution', () => {
+        const state = new LoadoutState();
+        state.startCapture();
+        setActiveCharacter('A');
+        mocks.inventory = [
+            { itemHrid: SWORD, enhancementLevel: 8, count: 1, itemLocationHrid: MAIN_HAND },
+            { itemHrid: '/items/tea', enhancementLevel: 0, count: 3, itemLocationHrid: '/item_locations/inventory' },
+        ];
+        mocks.wsHandlers.get('init_character_data')(
+            initPayload('A', { one: serverLoadout({ name: 'One', savedLevel: 1, drinks: ['/items/tea'] }) })
+        );
+
+        const descriptive = state.findSnapshotSelectionForActionType('/action_types/crafting');
+        dataManager.getInventory.mockClear();
+
+        let calculationSelection;
+        for (let i = 0; i < 50; i += 1) {
+            calculationSelection = state.findCalculationSelectionForActionType('/action_types/crafting');
+        }
+
+        expect(dataManager.getInventory).not.toHaveBeenCalled();
+        expect(calculationSelection.status).toBe('usable');
+        expect(calculationSelection.snapshot.equipment).toEqual(descriptive.snapshot.equipment);
+        expect(calculationSelection.snapshot.drinks).toEqual(descriptive.snapshot.drinks);
+        expect(calculationSelection.snapshot.isUsableForCalculation).toBe(descriptive.snapshot.isUsableForCalculation);
+
+        // The lightweight snapshot must be defensively copied too: mutating it cannot corrupt
+        // the canonical cache read by the next hot-path or descriptive call.
+        calculationSelection.snapshot.equipment[0].enhancementLevel = 999;
+        expect(
+            state.findCalculationSelectionForActionType('/action_types/crafting').snapshot.equipment[0]
+        ).toMatchObject({ enhancementLevel: 8 });
+    });
+
+    test('an unavailable saved loadout is reported consistently by both the calculation-only and descriptive selectors', () => {
+        const state = new LoadoutState();
+        state.startCapture();
+        setActiveCharacter('A');
+        mocks.inventory = [];
+        mocks.wsHandlers.get('init_character_data')(
+            initPayload('A', { one: serverLoadout({ name: 'One', savedLevel: 5, useExactEnhancement: true }) })
+        );
+
+        expect(state.findCalculationSelectionForActionType('/action_types/crafting')).toMatchObject({
+            status: 'unavailable',
+            snapshot: { hasUnavailableEquipment: true, isUsableForCalculation: false },
+        });
+    });
+
+    test('no matching saved loadout reports none for both selectors without touching inventory', () => {
+        const state = new LoadoutState();
+        state.startCapture();
+        setActiveCharacter('A');
+
+        expect(state.findCalculationSelectionForActionType('/action_types/crafting')).toEqual({
+            status: 'none',
+            snapshot: null,
+        });
     });
 });

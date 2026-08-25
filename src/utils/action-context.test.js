@@ -21,7 +21,7 @@ vi.mock('../core/data-manager.js', () => ({
 
 vi.mock('../core/loadout-state.js', () => ({
     default: {
-        findSnapshotSelectionForActionType: vi.fn(),
+        findCalculationSelectionForActionType: vi.fn(),
     },
 }));
 
@@ -54,17 +54,19 @@ describe('resolveActionContext', () => {
     });
 
     test('uses one canonical resolved snapshot for equipment and drinks', () => {
-        loadoutState.findSnapshotSelectionForActionType.mockReturnValue({ status: 'usable', snapshot: snapshot() });
+        loadoutState.findCalculationSelectionForActionType.mockReturnValue({ status: 'usable', snapshot: snapshot() });
 
         const result = resolveActionContext(TYPE);
 
         expect(result.equipment).toEqual(new Map([[SNAPSHOT_EQ[0].itemLocationHrid, SNAPSHOT_EQ[0]]]));
         expect(result.drinks).toEqual(SNAPSHOT_DRINKS);
-        expect(loadoutState.findSnapshotSelectionForActionType).toHaveBeenCalledWith(TYPE);
+        expect(loadoutState.findCalculationSelectionForActionType).toHaveBeenCalledWith(TYPE);
+        // Saved consumables have already been stock-validated by Core LoadoutState.
+        expect(dataManager.getInventory).not.toHaveBeenCalled();
     });
 
     test('falls back to current equipment and drinks only when no matching snapshot exists', () => {
-        loadoutState.findSnapshotSelectionForActionType.mockReturnValue({ status: 'none', snapshot: null });
+        loadoutState.findCalculationSelectionForActionType.mockReturnValue({ status: 'none', snapshot: null });
 
         const result = resolveActionContext(TYPE);
 
@@ -75,7 +77,7 @@ describe('resolveActionContext', () => {
     });
 
     test('an intentional empty saved equipment set stays empty instead of inheriting current gear', () => {
-        loadoutState.findSnapshotSelectionForActionType.mockReturnValue({
+        loadoutState.findCalculationSelectionForActionType.mockReturnValue({
             status: 'usable',
             snapshot: snapshot({ equipment: [] }),
         });
@@ -87,7 +89,7 @@ describe('resolveActionContext', () => {
     });
 
     test('an intentional no-drink saved loadout stays empty instead of inheriting current drinks', () => {
-        loadoutState.findSnapshotSelectionForActionType.mockReturnValue({
+        loadoutState.findCalculationSelectionForActionType.mockReturnValue({
             status: 'usable',
             snapshot: snapshot({ drinks: [] }),
         });
@@ -99,7 +101,7 @@ describe('resolveActionContext', () => {
     });
 
     test('a slotted drink with an equipped/no-count inventory representation remains available', () => {
-        loadoutState.findSnapshotSelectionForActionType.mockReturnValue({ status: 'usable', snapshot: snapshot() });
+        loadoutState.findCalculationSelectionForActionType.mockReturnValue({ status: 'usable', snapshot: snapshot() });
         dataManager.getInventory.mockReturnValue([{ itemHrid: '/items/snapshot_tea' }]);
 
         expect(resolveActionContext(TYPE).drinks).toEqual(SNAPSHOT_DRINKS);
@@ -111,7 +113,7 @@ describe('resolveActionContext', () => {
             hasUnavailableEquipment: true,
             unavailableEquipment: [{ itemHrid: '/items/missing_pan' }],
         });
-        loadoutState.findSnapshotSelectionForActionType.mockReturnValue({
+        loadoutState.findCalculationSelectionForActionType.mockReturnValue({
             status: 'unavailable',
             snapshot: unavailable,
         });
@@ -129,7 +131,7 @@ describe('resolveActionContext', () => {
 
         const result = resolveActionContext(TYPE);
 
-        expect(loadoutState.findSnapshotSelectionForActionType).not.toHaveBeenCalled();
+        expect(loadoutState.findCalculationSelectionForActionType).not.toHaveBeenCalled();
         expect(result.equipment).toBe(CURRENT_EQ);
         expect(result.drinks).toEqual(CURRENT_DRINKS);
     });

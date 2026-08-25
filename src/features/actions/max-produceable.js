@@ -12,6 +12,7 @@
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
+import loadoutState from '../../core/loadout-state.js';
 import marketAPI from '../../api/marketplace.js';
 import actionPanelSort from './action-panel-sort.js';
 import actionFilter from './action-filter.js';
@@ -61,6 +62,8 @@ class MaxProduceable {
         this.maxProduceableHandler = null;
         this.showProfitPerHourHandler = null;
         this.showExpPerHourHandler = null;
+        this.loadoutStateHandler = null;
+        this.loadoutSnapshotSettingHandler = null;
         this.profitCalcTimeout = null; // Debounce timer for deferred profit calculations
         this.actionNameToHridCache = null; // Cached reverse lookup map (name → hrid)
         this.isInitialized = false;
@@ -107,6 +110,17 @@ class MaxProduceable {
         dataManager.on('consumables_updated', this.consumablesUpdatedHandler);
         dataManager.on('character_switching', this.characterSwitchingHandler);
 
+        // Saved-loadout state can change without an items_updated event (editing a loadout,
+        // changing its Exact/Highest mode, etc.). Reuse the same debounce bucket so a loadout
+        // update that accompanies an inventory change coalesces into one action-card refresh.
+        this.loadoutStateHandler = () => {
+            clearTimeout(this.itemsUpdatedDebounceTimer);
+            this.itemsUpdatedDebounceTimer = setTimeout(() => {
+                this.updateAllCounts();
+            }, this.DEBOUNCE_DELAY);
+        };
+        loadoutState.onUpdate(this.loadoutStateHandler);
+
         this.pricingModeHandler = () => {
             this.updateAllCounts();
         };
@@ -123,6 +137,8 @@ class MaxProduceable {
         config.onSettingChange('actionPanel_maxProduceable', this.maxProduceableHandler);
         config.onSettingChange('actionPanel_showProfitPerHour_production', this.showProfitPerHourHandler);
         config.onSettingChange('actionPanel_showExpPerHour_production', this.showExpPerHourHandler);
+        this.loadoutSnapshotSettingHandler = () => this.updateAllCounts();
+        config.onSettingChange('loadoutSnapshot', this.loadoutSnapshotSettingHandler);
     }
 
     /**
@@ -993,6 +1009,11 @@ class MaxProduceable {
             this.characterSwitchingHandler = null;
         }
 
+        if (this.loadoutStateHandler) {
+            loadoutState.offUpdate(this.loadoutStateHandler);
+            this.loadoutStateHandler = null;
+        }
+
         if (this.pricingModeHandler) {
             config.offSettingChange('profitCalc_pricingMode', this.pricingModeHandler);
             this.pricingModeHandler = null;
@@ -1011,6 +1032,11 @@ class MaxProduceable {
         if (this.showExpPerHourHandler) {
             config.offSettingChange('actionPanel_showExpPerHour_production', this.showExpPerHourHandler);
             this.showExpPerHourHandler = null;
+        }
+
+        if (this.loadoutSnapshotSettingHandler) {
+            config.offSettingChange('loadoutSnapshot', this.loadoutSnapshotSettingHandler);
+            this.loadoutSnapshotSettingHandler = null;
         }
 
         // Clear all DOM references

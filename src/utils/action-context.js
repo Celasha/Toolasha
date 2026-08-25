@@ -28,7 +28,7 @@ import loadoutState from '../core/loadout-state.js';
  */
 export function resolveActionContext(actionTypeHrid) {
     const selection = config.getSetting('loadoutSnapshot')
-        ? loadoutState.findSnapshotSelectionForActionType(actionTypeHrid)
+        ? loadoutState.findCalculationSelectionForActionType(actionTypeHrid)
         : { status: 'disabled', snapshot: null };
     const snapshot = selection.status === 'usable' ? selection.snapshot : null;
 
@@ -36,15 +36,20 @@ export function resolveActionContext(actionTypeHrid) {
     // We fail closed to the character's proven current setup rather than inventing how the MWI
     // server would execute missing loadout items. The returned selection metadata lets UIs make
     // that fallback visible instead of silently claiming the saved loadout was used.
-    const rawDrinks = snapshot
-        ? (snapshot.drinks || []).filter((entry) => entry.itemHrid)
-        : dataManager.getActionDrinkSlots(actionTypeHrid);
-
-    // Only include drinks that are actually in stock — slotted-but-empty teas give no buff.
-    const inventory = dataManager.getInventory();
-    const drinks = (rawDrinks || []).filter(
-        (drink) => drink?.itemHrid && inventory?.some((item) => item.itemHrid === drink.itemHrid && item.count !== 0)
-    );
+    let drinks;
+    if (snapshot) {
+        // Core already resolved saved consumables against live inventory and blanked unavailable
+        // slots. Do not rescan the full inventory again on every action calculation.
+        drinks = (snapshot.drinks || []).filter((entry) => entry.itemHrid);
+    } else {
+        const rawDrinks = dataManager.getActionDrinkSlots(actionTypeHrid);
+        // Current (non-saved-loadout) drink slots still need stock validation here.
+        const inventory = dataManager.getInventory();
+        drinks = (rawDrinks || []).filter(
+            (drink) =>
+                drink?.itemHrid && inventory?.some((item) => item.itemHrid === drink.itemHrid && item.count !== 0)
+        );
+    }
 
     return {
         equipment: snapshot
