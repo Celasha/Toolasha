@@ -1,10 +1,21 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
-const { mockGetActionDetails, mockGetCurrentActions, mockGetInventory, mockGetInitClientData } = vi.hoisted(() => ({
+const {
+    mockGetActionDetails,
+    mockGetCurrentActions,
+    mockGetInventory,
+    mockGetInitClientData,
+    mockGetActionDrinkSlots,
+    mockResolveActionContext,
+    mockParseArtisanBonus,
+} = vi.hoisted(() => ({
     mockGetActionDetails: vi.fn(),
     mockGetCurrentActions: vi.fn(),
     mockGetInventory: vi.fn(),
     mockGetInitClientData: vi.fn(),
+    mockGetActionDrinkSlots: vi.fn(),
+    mockResolveActionContext: vi.fn(),
+    mockParseArtisanBonus: vi.fn(),
 }));
 
 vi.mock('../core/config.js', () => ({
@@ -19,22 +30,27 @@ vi.mock('../core/data-manager.js', () => ({
         getCurrentActions: mockGetCurrentActions,
         getInventory: mockGetInventory,
         getInitClientData: mockGetInitClientData,
+        getActionDrinkSlots: mockGetActionDrinkSlots,
     },
 }));
 
 vi.mock('./tea-parser.js', () => ({
-    parseArtisanBonus: vi.fn(() => 0.1),
+    parseArtisanBonus: mockParseArtisanBonus,
     getDrinkConcentration: vi.fn(() => 1),
 }));
 
 vi.mock('./action-context.js', () => ({
-    resolveActionContext: vi.fn(() => ({ equipment: new Map(), drinks: [] })),
+    resolveActionContext: mockResolveActionContext,
 }));
 
 vi.mock('./enhancement-config.js', () => ({ getEnhancingParams: vi.fn() }));
 vi.mock('./enhancement-calculator.js', () => ({ calculateEnhancement: vi.fn() }));
 
-import { calculateMaterialRequirements, calculateQueuedMaterialsForAction } from './material-calculator.js';
+import {
+    calculateMaterialRequirements,
+    calculateQueuedMaterialsForAction,
+    isArtisanTeaOutOfStock,
+} from './material-calculator.js';
 
 const SUGAR = '/items/sugar';
 const CAKE = '/actions/cooking/marsberry_cake';
@@ -80,6 +96,8 @@ describe('material-calculator queue reservations', () => {
                 [SUGAR]: { name: 'Sugar', isTradable: true },
             },
         });
+        mockResolveActionContext.mockReturnValue({ equipment: new Map(), drinks: [], source: 'current' });
+        mockParseArtisanBonus.mockReturnValue(0.1);
     });
 
     test('matches the reported Marsberry queue math exactly', () => {
@@ -105,5 +123,50 @@ describe('material-calculator queue reservations', () => {
             available: 4758,
             missing: 0,
         });
+    });
+});
+
+describe('isArtisanTeaOutOfStock', () => {
+    const ARTISAN_TEA = '/items/artisan_tea';
+
+    beforeEach(() => {
+        mockGetActionDetails.mockReturnValue({ hrid: CAKE, type: '/action_types/cooking' });
+        mockGetInitClientData.mockReturnValue({ itemDetailMap: { [ARTISAN_TEA]: { name: 'Artisan Tea' } } });
+        mockGetActionDrinkSlots.mockReturnValue([{ itemHrid: ARTISAN_TEA }]);
+    });
+
+    test('reports out of stock when the same live drink slot resolves to no bonus (current gear)', () => {
+        mockResolveActionContext.mockReturnValue({ equipment: new Map(), drinks: [], source: 'current' });
+        // rawDrinks (slotted) has a bonus, inStockDrinks (stock-filtered) does not
+        mockParseArtisanBonus.mockImplementation((drinks) => (drinks.length > 0 ? 0.1 : 0));
+
+        expect(isArtisanTeaOutOfStock(CAKE)).toBe(true);
+    });
+
+    test('is never reported when the calculation is sourced from a saved loadout', () => {
+        // A saved loadout can only be selected when every consumable slot is confirmed
+        // available, so its own configured drinks can never legitimately be "out of stock".
+        // Comparing them against the character's unrelated live drink slots is a false positive.
+        mockResolveActionContext.mockReturnValue({
+            equipment: new Map(),
+            drinks: [{ itemHrid: '/items/other_tea' }],
+            source: 'saved-loadout',
+        });
+        mockParseArtisanBonus.mockImplementation((drinks) =>
+            drinks.some((d) => d.itemHrid === ARTISAN_TEA) ? 0.1 : 0
+        );
+
+        expect(isArtisanTeaOutOfStock(CAKE)).toBe(false);
+    });
+
+    test('reports false when the live drink slot is actually in stock', () => {
+        mockResolveActionContext.mockReturnValue({
+            equipment: new Map(),
+            drinks: [{ itemHrid: ARTISAN_TEA }],
+            source: 'current',
+        });
+        mockParseArtisanBonus.mockReturnValue(0.1);
+
+        expect(isArtisanTeaOutOfStock(CAKE)).toBe(false);
     });
 });
