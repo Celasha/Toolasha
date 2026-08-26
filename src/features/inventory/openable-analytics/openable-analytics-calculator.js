@@ -68,34 +68,53 @@ export function calculateActualValue(gainedItems) {
  * Calculate the Expected Value of one opening using Toolasha's existing container EV calculator.
  * Returns `available: false` (never a fake zero) when the opened item has no meaningful
  * monetary EV model - e.g. a not-yet-initialized calculator, or a buff-only openable that has
- * no entry in `openableLootDropMap`.
+ * no entry in `openableLootDropMap`. `isOpenable` alone is broader than "has a monetary loot
+ * model": Labyrinth Scroll/Seal items are openable because they grant a buff, so the underlying
+ * drop table must be checked directly rather than trusting a non-negative EV total.
  * @param {string} containerHrid - Opened container item HRID
  * @param {number} containerCount - Number of containers opened by this event
- * @returns {{value: number|null, available: boolean}}
+ * @returns {{value: number|null, available: boolean, complete: boolean}}
  */
 export function calculateExpectedValueForOpening(containerHrid, containerCount) {
     if (!containerHrid || !(containerCount > 0)) {
-        return { value: null, available: false };
+        return { value: null, available: false, complete: false };
+    }
+
+    const dropTable = dataManager.getInitClientData?.()?.openableLootDropMap?.[containerHrid];
+    if (!Array.isArray(dropTable) || dropTable.length === 0) {
+        return { value: null, available: false, complete: false };
     }
 
     const ev = expectedValueCalculator.calculateExpectedValue(containerHrid);
     if (!ev || !(ev.expectedValue >= 0)) {
-        return { value: null, available: false };
+        return { value: null, available: false, complete: false };
     }
 
-    return { value: ev.expectedValue * containerCount, available: true };
+    // The shared EV breakdown already reports per-drop hasPriceData. Keep the numeric subtotal
+    // available as partial information, but never let it be treated as complete for Luck.
+    const complete = !Array.isArray(ev.drops) || ev.drops.every((drop) => drop?.hasPriceData !== false);
+    return { value: ev.expectedValue * containerCount, available: true, complete };
 }
 
 /**
  * Calculate Luck (Actual - Expected) and Luck % for one opening. Luck is only meaningful when
- * Expected Value is available; otherwise both fields are `null`, never a fabricated zero.
+ * both sides of the comparison are complete: an incomplete Actual subtotal or a partial Expected
+ * breakdown must never be presented as a precise, comparable Luck number.
  * @param {number} actualValue
  * @param {number|null} expectedValue
  * @param {boolean} expectedAvailable
+ * @param {boolean} [actualComplete] - Whether the Actual subtotal priced every gained item
+ * @param {boolean} [expectedComplete] - Whether every modeled Expected drop could be priced
  * @returns {{luckValue: number|null, luckPercent: number|null}}
  */
-export function calculateLuck(actualValue, expectedValue, expectedAvailable) {
-    if (!expectedAvailable || expectedValue === null) {
+export function calculateLuck(
+    actualValue,
+    expectedValue,
+    expectedAvailable,
+    actualComplete = true,
+    expectedComplete = true
+) {
+    if (!actualComplete || !expectedAvailable || !expectedComplete || expectedValue === null) {
         return { luckValue: null, luckPercent: null };
     }
 
@@ -120,6 +139,9 @@ export function calculateLuck(actualValue, expectedValue, expectedAvailable) {
  * @param {number} input.timestamp
  * @param {string} input.characterId
  * @param {string} [input.source] - Provenance tag, e.g. 'loot_opened' or a future 'import:*'
+ * @param {boolean} [input.sourceDataComplete] - False when the caller already knows part of its
+ *      own source data could not be resolved (e.g. an import parser that had to drop an unmatched
+ *      gained-item name) - keeps that upstream gap from silently looking like a complete Actual.
  * @returns {Object} Normalized opening record
  */
 export function buildOpeningRecord({
@@ -130,6 +152,7 @@ export function buildOpeningRecord({
     timestamp,
     characterId,
     source = 'loot_opened',
+    sourceDataComplete = true,
 }) {
     const normalizedGainedItems = (gainedItems || [])
         .filter((item) => item?.itemHrid)
@@ -144,11 +167,19 @@ export function buildOpeningRecord({
         complete: actualValueComplete,
         breakdown: actualValueBreakdown,
     } = calculateActualValue(normalizedGainedItems);
-    const { value: expectedValue, available: expectedValueAvailable } = calculateExpectedValueForOpening(
-        containerHrid,
-        containerCount
+    const effectiveActualComplete = actualValueComplete && sourceDataComplete;
+    const {
+        value: expectedValue,
+        available: expectedValueAvailable,
+        complete: expectedValueComplete,
+    } = calculateExpectedValueForOpening(containerHrid, containerCount);
+    const { luckValue, luckPercent } = calculateLuck(
+        actualValue,
+        expectedValue,
+        expectedValueAvailable,
+        effectiveActualComplete,
+        expectedValueComplete
     );
-    const { luckValue, luckPercent } = calculateLuck(actualValue, expectedValue, expectedValueAvailable);
 
     return {
         timestamp,
@@ -158,10 +189,12 @@ export function buildOpeningRecord({
         gainedItems: normalizedGainedItems,
         grantedBuffs: (grantedBuffs || []).map((buff) => ({ typeHrid: buff.typeHrid, duration: buff.duration })),
         actualValue,
-        actualValueComplete,
+        actualValueComplete: effectiveActualComplete,
         actualValueBreakdown,
         expectedValue,
         expectedValueAvailable,
+        expectedValueComplete,
+        sourceDataComplete,
         luckValue,
         luckPercent,
         pricingMode: config.getSettingValue('profitCalc_pricingMode', 'hybrid'),
@@ -184,6 +217,8 @@ export function buildOpeningRecord({
  * @param {number} input.timestamp
  * @param {string} input.characterId
  * @param {string} input.source - e.g. 'import:edible' or 'import:mwi-combat-suite'
+ * @param {boolean} [input.sourceDataComplete] - False when the import parser had to drop an
+ *      unresolved gained-item name, so this synthetic record's Actual is only a subtotal.
  * @returns {Object} Normalized opening record (enhancementLevel always 0 - imports don't track it)
  */
 export function buildImportedAggregateRecord({
@@ -193,6 +228,7 @@ export function buildImportedAggregateRecord({
     timestamp,
     characterId,
     source,
+    sourceDataComplete = true,
 }) {
     const gainedItems = Object.entries(itemTotals || {}).map(([itemHrid, count]) => ({
         itemHrid,
@@ -208,5 +244,6 @@ export function buildImportedAggregateRecord({
         timestamp,
         characterId,
         source,
+        sourceDataComplete,
     });
 }

@@ -1,7 +1,10 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../../core/data-manager.js', () => ({
-    default: { getItemDetails: vi.fn(() => ({ isTradable: true })) },
+    default: {
+        getItemDetails: vi.fn(() => ({ isTradable: true })),
+        getInitClientData: vi.fn(() => ({ openableLootDropMap: { '/items/chest': [{ itemHrid: '/items/coin' }] } })),
+    },
 }));
 vi.mock('../../../core/config.js', () => ({
     default: { getSettingValue: vi.fn((key, defaultValue) => defaultValue) },
@@ -125,12 +128,53 @@ describe('calculateExpectedValueForOpening', () => {
         expect(available).toBe(false);
     });
 
+    test('EV-1: a buff-only openable (isOpenable, no openableLootDropMap entry) is N/A even if the shared EV calculator returns a zero-EV object instead of null', () => {
+        // This is the real production shape for e.g. /items/seal_of_rare_find: isOpenable=true
+        // but no openableLootDropMap entry, so the generic calculator's empty-drop reduction can
+        // return { expectedValue: 0, drops: [] } rather than null. The dropTable gate must catch
+        // this before ever trusting a non-negative expectedValue as a real monetary model.
+        expectedValueCalculator.calculateExpectedValue.mockReturnValue({ expectedValue: 0, drops: [] });
+
+        const { value, available } = calculateExpectedValueForOpening('/items/seal_of_rare_find', 1);
+
+        expect(value).toBeNull();
+        expect(available).toBe(false);
+        expect(expectedValueCalculator.calculateExpectedValue).not.toHaveBeenCalled();
+    });
+
     test('returns unavailable when containerCount is zero or missing', () => {
         const { value, available } = calculateExpectedValueForOpening('/items/chest', 0);
 
         expect(value).toBeNull();
         expect(available).toBe(false);
         expect(expectedValueCalculator.calculateExpectedValue).not.toHaveBeenCalled();
+    });
+
+    test('EV-3: marks Expected partial (never Luck-complete) when one modeled drop could not be priced', () => {
+        expectedValueCalculator.calculateExpectedValue.mockReturnValue({
+            expectedValue: 500,
+            drops: [
+                { itemHrid: '/items/coin', expectedValue: 500, hasPriceData: true },
+                { itemHrid: '/items/mystery', expectedValue: 0, hasPriceData: false },
+            ],
+        });
+
+        const { value, available, complete } = calculateExpectedValueForOpening('/items/chest', 1);
+
+        expect(value).toBe(500);
+        expect(available).toBe(true);
+        expect(complete).toBe(false);
+    });
+
+    test('is complete when every modeled drop could be priced', () => {
+        expectedValueCalculator.calculateExpectedValue.mockReturnValue({
+            expectedValue: 500,
+            drops: [{ itemHrid: '/items/coin', expectedValue: 500, hasPriceData: true }],
+        });
+
+        const { complete } = calculateExpectedValueForOpening('/items/chest', 1);
+
+        expect(complete).toBe(true);
     });
 });
 
@@ -168,6 +212,27 @@ describe('calculateLuck', () => {
 
         expect(luckValue).toBe(500);
         expect(luckPercent).toBeNull();
+    });
+
+    test('EV-2 / OA-7: returns null when Actual is partial, even though Expected is fully available', () => {
+        const { luckValue, luckPercent } = calculateLuck(500, 1000, true, false);
+
+        expect(luckValue).toBeNull();
+        expect(luckPercent).toBeNull();
+    });
+
+    test('EV-3 / OA-8: returns null when Expected is only partially priced, even though Actual is complete', () => {
+        const { luckValue, luckPercent } = calculateLuck(500, 1000, true, true, false);
+
+        expect(luckValue).toBeNull();
+        expect(luckPercent).toBeNull();
+    });
+
+    test('EV-4: returns a real Luck value when both Actual and Expected are fully complete', () => {
+        const { luckValue, luckPercent } = calculateLuck(1500, 1000, true, true, true);
+
+        expect(luckValue).toBe(500);
+        expect(luckPercent).toBe(50);
     });
 });
 
@@ -244,6 +309,65 @@ describe('buildOpeningRecord', () => {
         expect(record.containerCount).toBe(100);
         expect(record.expectedValue).toBe(10000);
     });
+
+    test('EV-2 / OA-7: a partial Actual (one unpriced gained item) makes Luck N/A even though Expected is available', () => {
+        expectedValueCalculator.calculateExpectedValue.mockReturnValue({ expectedValue: 100 });
+        expectedValueCalculator.resolveSellSideValue.mockReturnValueOnce(null);
+
+        const record = buildOpeningRecord({
+            containerHrid: '/items/chest',
+            containerCount: 1,
+            gainedItems: [{ itemHrid: '/items/mystery', enhancementLevel: 0, count: 1 }],
+            timestamp: 1,
+            characterId: 'char1',
+        });
+
+        expect(record.actualValueComplete).toBe(false);
+        expect(record.expectedValueAvailable).toBe(true);
+        expect(record.luckValue).toBeNull();
+        expect(record.luckPercent).toBeNull();
+    });
+
+    test('EV-3 / OA-8: a partial Expected (one unpriced modeled drop) makes Luck N/A even though Actual is complete', () => {
+        expectedValueCalculator.calculateExpectedValue.mockReturnValue({
+            expectedValue: 100,
+            drops: [{ itemHrid: '/items/mystery', expectedValue: 0, hasPriceData: false }],
+        });
+        expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 10, needsTax: false });
+
+        const record = buildOpeningRecord({
+            containerHrid: '/items/chest',
+            containerCount: 1,
+            gainedItems: [{ itemHrid: '/items/x', enhancementLevel: 0, count: 1 }],
+            timestamp: 1,
+            characterId: 'char1',
+        });
+
+        expect(record.actualValueComplete).toBe(true);
+        expect(record.expectedValueAvailable).toBe(true);
+        expect(record.expectedValueComplete).toBe(false);
+        expect(record.luckValue).toBeNull();
+    });
+
+    test('OA-9: sourceDataComplete=false (e.g. an import that dropped an unmatched item) forces Actual partial and Luck N/A', () => {
+        expectedValueCalculator.calculateExpectedValue.mockReturnValue({ expectedValue: 100 });
+        expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 10, needsTax: false });
+
+        const record = buildOpeningRecord({
+            containerHrid: '/items/chest',
+            containerCount: 1,
+            gainedItems: [{ itemHrid: '/items/x', enhancementLevel: 0, count: 1 }],
+            timestamp: 1,
+            characterId: 'char1',
+            sourceDataComplete: false,
+        });
+
+        // Every gained item it does know about was priced, but the source told us it dropped
+        // an unresolved one - Actual must still be reported as partial.
+        expect(record.actualValueComplete).toBe(false);
+        expect(record.sourceDataComplete).toBe(false);
+        expect(record.luckValue).toBeNull();
+    });
 });
 
 describe('buildImportedAggregateRecord', () => {
@@ -289,5 +413,23 @@ describe('buildImportedAggregateRecord', () => {
         expect(record.actualValue).toBe(0);
         expect(record.actualValueComplete).toBe(false);
         expect(record.expectedValueAvailable).toBe(false);
+    });
+
+    test('IMPORT-3 / OA-9: propagates sourceDataComplete: false through to the built record', () => {
+        expectedValueCalculator.calculateExpectedValue.mockReturnValue({ expectedValue: 100 });
+        expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 1, needsTax: false });
+
+        const record = buildImportedAggregateRecord({
+            containerHrid: '/items/chest',
+            containerCount: 10,
+            itemTotals: { '/items/coin': 100 },
+            timestamp: 333,
+            characterId: 'char1',
+            source: 'import:edible',
+            sourceDataComplete: false,
+        });
+
+        expect(record.actualValueComplete).toBe(false);
+        expect(record.luckValue).toBeNull();
     });
 });

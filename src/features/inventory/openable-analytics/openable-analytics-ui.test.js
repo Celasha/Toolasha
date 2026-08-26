@@ -71,6 +71,78 @@ beforeEach(() => {
     openableAnalyticsUI.selectedScope = 'session';
 });
 
+describe('buildSummary', () => {
+    test('labels the live opening-event count as "Tracked opening events" (section 3.1)', () => {
+        const wrapper = openableAnalyticsUI.buildSummary();
+
+        expect(wrapper.textContent).toContain('Tracked opening events');
+        expect(wrapper.textContent).not.toContain('Opening events1');
+    });
+
+    test('shows a real Luck value when every valuation record folded into the aggregate is Luck-eligible', () => {
+        mocks.aggregate = {
+            ...mocks.aggregate,
+            valuationRecordCount: 1,
+            luckEligibleRecordCount: 1,
+        };
+
+        const wrapper = openableAnalyticsUI.buildSummary();
+
+        expect(wrapper.textContent).not.toContain('LuckN/A');
+    });
+
+    test('AGG-1: shows Luck N/A when one folded valuation record is partial/unavailable, even though others are eligible', () => {
+        mocks.aggregate = {
+            ...mocks.aggregate,
+            valuationRecordCount: 3,
+            luckEligibleRecordCount: 2,
+        };
+
+        const wrapper = openableAnalyticsUI.buildSummary();
+        const rows = [...wrapper.querySelectorAll('div')].filter((el) => el.children.length === 2);
+        const luckRow = rows.find((row) => row.textContent.startsWith('Luck'));
+
+        expect(luckRow.textContent).toBe('LuckN/A');
+    });
+
+    test('marks Actual Value (partial) when the aggregate has any partial-actual events', () => {
+        mocks.aggregate = { ...mocks.aggregate, actualValuePartialEvents: 1 };
+
+        const wrapper = openableAnalyticsUI.buildSummary();
+
+        expect(wrapper.textContent).toContain('(partial)');
+    });
+
+    test('AGG-2: shows Expected Value as N/A rather than a fabricated total when no record has Expected available', () => {
+        mocks.aggregate = { ...mocks.aggregate, expectedValueAvailableEvents: 0, expectedValueTotal: 0 };
+
+        const wrapper = openableAnalyticsUI.buildSummary();
+        const rows = [...wrapper.querySelectorAll('div')].filter((el) => el.children.length === 2);
+        const expectedRow = rows.find((row) => row.textContent.startsWith('Expected Value'));
+
+        expect(expectedRow.textContent).toBe('Expected ValueN/A');
+    });
+
+    test('section 3.3/3.4: notes imported-vs-live valuation timing and overlap risk only for a Lifetime scope with imported data', () => {
+        openableAnalyticsUI.selectedScope = 'lifetime';
+        mocks.aggregate = { ...mocks.aggregate, hasImportedData: true };
+
+        const wrapper = openableAnalyticsUI.buildSummary();
+
+        expect(wrapper.textContent).toContain('additive');
+        expect(wrapper.textContent).toContain('double-count');
+    });
+
+    test('shows the plain event-time note for a Session scope (no import ambiguity)', () => {
+        openableAnalyticsUI.selectedScope = 'session';
+
+        const wrapper = openableAnalyticsUI.buildSummary();
+
+        expect(wrapper.textContent).toContain('snapshotted using Toolasha pricing');
+        expect(wrapper.textContent).not.toContain('double-count');
+    });
+});
+
 describe('buildItemOutcomes', () => {
     test('shows each item’s count alongside its cumulative value', () => {
         const wrapper = openableAnalyticsUI.buildItemOutcomes();

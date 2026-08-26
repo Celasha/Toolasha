@@ -24,6 +24,8 @@ const {
     saveLifetime,
     loadHistory,
     appendHistory,
+    appendHistoryRecord,
+    saveHistory,
     loadImports,
     saveImports,
     createEmptyAggregate,
@@ -33,6 +35,8 @@ const {
     resetAll,
     OPENABLE_ANALYTICS_MAX_HISTORY_EVENTS,
 } = storageModule;
+
+const storageMock = (await import('../../../core/storage.js')).default;
 
 beforeEach(() => {
     mocks.values.clear();
@@ -260,6 +264,107 @@ describe('imports persistence', () => {
             'import:mwi-combat-suite': { '/items/chest': createEmptyAggregate() },
         });
         expect(await loadLifetime('char-a')).toEqual({});
+    });
+});
+
+describe('OA-4: immediate persistence (no debounce that can race reset ordering)', () => {
+    test('saveLifetime, saveHistory, and saveImports all write immediately', async () => {
+        storageMock.setJSON.mockClear();
+
+        await saveLifetime('char-a', {});
+        await saveHistory('char-a', []);
+        await saveImports('char-a', {});
+
+        for (const call of storageMock.setJSON.mock.calls) {
+            expect(call[3]).toBe(true);
+        }
+        expect(storageMock.setJSON).toHaveBeenCalledTimes(3);
+    });
+});
+
+describe('appendHistoryRecord (pure, synchronous half of history append)', () => {
+    test('does not persist by itself - callers control ordering against saveHistory', async () => {
+        storageMock.setJSON.mockClear();
+
+        const updated = appendHistoryRecord([], makeRecord());
+
+        expect(updated).toHaveLength(1);
+        expect(storageMock.setJSON).not.toHaveBeenCalled();
+    });
+
+    test('two overlapping callers deriving from the same prior array both survive once each is committed in order (OA-3)', () => {
+        // Simulates two concurrent recordOpening() calls that both read `this.history` before
+        // either await resolves: each starts from the same base array, and the caller (the data
+        // collector) is responsible for committing both pure appends before persisting, rather
+        // than letting a debounced write silently coalesce them.
+        const base = [];
+        const afterFirst = appendHistoryRecord(base, makeRecord({ containerHrid: '/items/chest' }));
+        const afterSecond = appendHistoryRecord(afterFirst, makeRecord({ containerHrid: '/items/crate' }));
+
+        expect(afterSecond).toHaveLength(2);
+        expect(afterSecond.map((r) => r.containerHrid)).toEqual(['/items/chest', '/items/crate']);
+    });
+});
+
+describe('opening-event vs. imported-container counting (section 3.1)', () => {
+    test('a live loot_opened-sourced record increments eventsCount (Tracked opening events)', () => {
+        const aggregate = foldRecordIntoAggregate(createEmptyAggregate(), makeRecord({ source: 'loot_opened' }));
+
+        expect(aggregate.eventsCount).toBe(1);
+        expect(aggregate.containersOpened).toBe(1);
+    });
+
+    test('an imported cumulative snapshot does not increment eventsCount, only containersOpened (AGG-2)', () => {
+        const aggregate = foldRecordIntoAggregate(
+            createEmptyAggregate(),
+            makeRecord({ source: 'import:edible', containerCount: 500 })
+        );
+
+        expect(aggregate.eventsCount).toBe(0);
+        expect(aggregate.containersOpened).toBe(500);
+        expect(aggregate.hasImportedData).toBe(true);
+    });
+
+    test('mixing one live event and one imported snapshot only counts the live one as an opening event', () => {
+        let aggregate = createEmptyAggregate();
+        aggregate = foldRecordIntoAggregate(aggregate, makeRecord({ source: 'loot_opened' }));
+        aggregate = foldRecordIntoAggregate(aggregate, makeRecord({ source: 'import:mwi-combat-suite' }));
+
+        expect(aggregate.eventsCount).toBe(1);
+        expect(aggregate.containersOpened).toBe(2);
+        expect(aggregate.hasImportedData).toBe(true);
+    });
+});
+
+describe('aggregate Luck fail-closed as a whole (section 3.2)', () => {
+    test('every folded record Luck-eligible => luckEligibleRecordCount matches valuationRecordCount', () => {
+        let aggregate = createEmptyAggregate();
+        aggregate = foldRecordIntoAggregate(aggregate, makeRecord({ luckValue: 10 }));
+        aggregate = foldRecordIntoAggregate(aggregate, makeRecord({ luckValue: -5 }));
+
+        expect(aggregate.valuationRecordCount).toBe(2);
+        expect(aggregate.luckEligibleRecordCount).toBe(2);
+    });
+
+    test('one record with no eligible Luck (partial/unavailable) makes the aggregate fail closed (AGG-1)', () => {
+        let aggregate = createEmptyAggregate();
+        aggregate = foldRecordIntoAggregate(aggregate, makeRecord({ luckValue: 10 }));
+        aggregate = foldRecordIntoAggregate(aggregate, makeRecord({ luckValue: null }));
+
+        expect(aggregate.valuationRecordCount).toBe(2);
+        expect(aggregate.luckEligibleRecordCount).toBe(1);
+        // Consumers must treat luckEligibleRecordCount !== valuationRecordCount as "Luck N/A for
+        // the whole aggregate", never subtract a partial Expected from a superset Actual.
+    });
+
+    test('a partial-Expected record is tracked separately from a fully unavailable one', () => {
+        const aggregate = foldRecordIntoAggregate(
+            createEmptyAggregate(),
+            makeRecord({ expectedValueAvailable: true, expectedValueComplete: false, luckValue: null })
+        );
+
+        expect(aggregate.expectedValuePartialEvents).toBe(1);
+        expect(aggregate.expectedValueUnavailableEvents).toBe(0);
     });
 });
 

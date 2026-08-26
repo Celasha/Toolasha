@@ -31,7 +31,10 @@ class WebSocketHook {
         this.processedMessages = new Map(); // socket-scoped message hash -> timestamp
         this.socketDedupIds = new WeakMap();
         this.nextSocketDedupId = 1;
-        this.recentActionCompleted = new Map(); // message content -> timestamp (50ms TTL dedup)
+        // Some character event types must bypass the lossy first-100-char dedup because two
+        // genuine messages can share the same prefix. Keep a tiny socket-scoped exact-message
+        // guard for duplicate interception of the same physical payload instead.
+        this.recentExactMessages = new Map(); // socket + type + full message -> timestamp
         this.messageCleanupInterval = null;
         this.isSocketWrapped = false;
         this.originalWebSocket = null;
@@ -254,7 +257,8 @@ class WebSocketHook {
             messageType === 'setting_updated' ||
             messageType === 'labyrinth_room_progress' ||
             messageType === 'leaderboard_updated' ||
-            messageType === 'guild_updated';
+            messageType === 'guild_updated' ||
+            messageType === 'loot_opened';
 
         if (!skipDedup) {
             // Deduplicate by message content to prevent multiple interception paths from
@@ -274,23 +278,28 @@ class WebSocketHook {
             if (this.processedMessages.size > 100) {
                 this.cleanupProcessedMessages();
             }
-        } else if (messageType === 'action_completed') {
-            // action_completed bypasses the content-hash dedup (Gabriel's fix, commit 1007215)
-            // but the WebSocket prototype wrapper can fire two listeners for the same physical
-            // message object. The WeakSet guard catches same-object duplicates, but if two
-            // independent listeners each receive a distinct MessageEvent wrapping the same
-            // payload, both pass the WeakSet check and processMessage is called twice.
-            // Use a short 50ms TTL keyed on full message content to collapse these duplicates.
-            // Two genuine consecutive action_completed messages are always seconds apart.
+        } else if (messageType === 'action_completed' || messageType === 'loot_opened') {
+            // These types bypass the lossy first-100-char dedup (Gabriel's fix, commit 1007215,
+            // extended to loot_opened) because two genuine consecutive messages can share the
+            // same prefix while differing later. The WebSocket prototype wrapper can still fire
+            // two listeners for the same physical message object - the WeakSet guard catches
+            // same-object duplicates, but if two independent listeners each receive a distinct
+            // MessageEvent wrapping the same payload, both pass the WeakSet check and
+            // processMessage is called twice. Collapse only that exact-duplicate interception in
+            // a short 50ms TTL window, scoped per socket and message type so a reconnect can
+            // replay identical state without being suppressed by the old socket's guard.
             const now = Date.now();
-            if (this.recentActionCompleted.has(message)) {
+            const socketKey = this.getSocketDedupKey(socket);
+            const exactKey = `${socketKey}:${messageType}:${message}`;
+            const previous = this.recentExactMessages.get(exactKey);
+            if (previous !== undefined && now - previous <= 50) {
                 return; // Duplicate from second listener — skip
             }
-            this.recentActionCompleted.set(message, now);
+            this.recentExactMessages.set(exactKey, now);
             // Prune entries older than 50ms to keep memory bounded
-            for (const [key, ts] of this.recentActionCompleted) {
+            for (const [key, ts] of this.recentExactMessages) {
                 if (now - ts > 50) {
-                    this.recentActionCompleted.delete(key);
+                    this.recentExactMessages.delete(key);
                 }
             }
         }
@@ -511,6 +520,7 @@ class WebSocketHook {
     cleanup() {
         this.clearClientDataRetry();
         this.processedMessages.clear();
+        this.recentExactMessages.clear();
     }
 
     /**

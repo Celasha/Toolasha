@@ -160,6 +160,63 @@ describe('idempotent modal injection', () => {
         expect(modal.textContent).toContain('Expected N/A');
         expect(modal.textContent).not.toContain('Luck');
     });
+
+    test('OA-7: shows Actual (partial) and no Luck value when the Actual subtotal is incomplete', () => {
+        mocks.latestRecord = {
+            ...mocks.latestRecord,
+            actualValueComplete: false,
+            luckValue: null,
+            luckPercent: null,
+        };
+        const modal = buildModal();
+        modalCallbacks().forEach((cb) => cb(modal));
+
+        expect(modal.textContent).toContain('(partial)');
+        expect(modal.textContent).not.toContain('Luck');
+    });
+
+    test('OA-8: shows Expected (partial) and no Luck value when the Expected breakdown is incomplete', () => {
+        mocks.latestRecord = {
+            ...mocks.latestRecord,
+            expectedValueComplete: false,
+            luckValue: null,
+            luckPercent: null,
+        };
+        const modal = buildModal();
+        modalCallbacks().forEach((cb) => cb(modal));
+
+        expect(modal.textContent).toContain('(partial)');
+        expect(modal.textContent).not.toContain('Luck');
+    });
+
+    test('AGG-1: Lifetime Luck is not shown when the lifetime aggregate has any non-eligible valuation record', () => {
+        mocks.lifetimeAggregate = {
+            containersOpened: 10,
+            actualValueTotal: 500,
+            expectedValueTotal: 400,
+            valuationRecordCount: 3,
+            luckEligibleRecordCount: 2,
+        };
+        const modal = buildModal();
+        modalCallbacks().forEach((cb) => cb(modal));
+
+        expect(modal.textContent).toContain('Lifetime: 10 opened');
+        expect(modal.textContent).not.toMatch(/Lifetime:.*Luck/);
+    });
+
+    test('Lifetime Luck is shown when every folded valuation record is Luck-eligible', () => {
+        mocks.lifetimeAggregate = {
+            containersOpened: 10,
+            actualValueTotal: 500,
+            expectedValueTotal: 400,
+            valuationRecordCount: 3,
+            luckEligibleRecordCount: 3,
+        };
+        const modal = buildModal();
+        modalCallbacks().forEach((cb) => cb(modal));
+
+        expect(modal.textContent).toMatch(/Lifetime:.*Luck/);
+    });
 });
 
 describe('per-item value labels', () => {

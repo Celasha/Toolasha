@@ -42,15 +42,25 @@ function luckColor(luckValue) {
  * @returns {{html: string, containerHrid: string}}
  */
 function buildLineContent(record, lifetimeAggregate) {
-    const sessionLine = record.expectedValueAvailable
-        ? `${record.containerCount} opened · Actual ${formatValue(record.actualValue)} · Expected ${formatValue(
-              record.expectedValue
-          )} · Luck <span style="color:${luckColor(record.luckValue)}">${formatValue(
-              record.luckValue
-          )}${formatLuckPercent(record.luckPercent)}</span>`
-        : `${record.containerCount} opened · Actual ${formatValue(record.actualValue)} · Expected N/A`;
+    const actualText = `${formatValue(record.actualValue)}${record.actualValueComplete ? '' : ' (partial)'}`;
+    const expectedText = !record.expectedValueAvailable
+        ? 'N/A'
+        : `${formatValue(record.expectedValue)}${record.expectedValueComplete === false ? ' (partial)' : ''}`;
+    const luckAvailable = record.luckValue !== null && record.luckValue !== undefined;
+    const sessionLine = `${record.containerCount} opened · Actual ${actualText} · Expected ${expectedText}${
+        luckAvailable
+            ? ` · Luck <span style="color:${luckColor(record.luckValue)}">${formatValue(
+                  record.luckValue
+              )}${formatLuckPercent(record.luckPercent)}</span>`
+            : ''
+    }`;
 
-    const lifetimeLuckAvailable = lifetimeAggregate.expectedValueAvailableEvents > 0;
+    // Aggregate Luck must fail closed as a whole: it is only meaningful when every valuation
+    // component folded into this lifetime aggregate is itself Luck-eligible (section 3.2) -
+    // never subtract a partial/unavailable Expected subset from a superset Actual total.
+    const lifetimeLuckAvailable =
+        (lifetimeAggregate.valuationRecordCount || 0) > 0 &&
+        lifetimeAggregate.luckEligibleRecordCount === lifetimeAggregate.valuationRecordCount;
     const lifetimeLuckValue = lifetimeLuckAvailable
         ? lifetimeAggregate.actualValueTotal - lifetimeAggregate.expectedValueTotal
         : null;
@@ -65,11 +75,7 @@ function buildLineContent(record, lifetimeAggregate) {
           )}">${formatValue(lifetimeLuckValue)}${formatLuckPercent(lifetimeLuckPercent)}</span>`
         : `Lifetime: ${lifetimeAggregate.containersOpened} opened`;
 
-    const partialNote = record.actualValueComplete
-        ? ''
-        : ' <span title="One or more gained items could not be priced">(partial)</span>';
-
-    return `<div>${sessionLine}${partialNote}</div><div style="opacity:0.75">${lifetimeLine} · <span class="toolasha-openable-analytics-view-link" style="cursor:pointer;text-decoration:underline">View Analytics</span></div>`;
+    return `<div>${sessionLine}</div><div style="opacity:0.75">${lifetimeLine} · <span class="toolasha-openable-analytics-view-link" style="cursor:pointer;text-decoration:underline">View Analytics</span></div>`;
 }
 
 class OpenableAnalyticsModalInjector {

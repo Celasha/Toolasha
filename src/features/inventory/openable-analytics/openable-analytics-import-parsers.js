@@ -64,7 +64,9 @@ export function parseCombatSuiteExport(rawText) {
             }
         }
 
-        containers.push({ containerHrid, containerCount, itemTotals });
+        // MWI Combat Suite is already HRID-keyed, so nothing here is dropped for being
+        // unresolvable - this source's Actual is always as complete as its own raw counts.
+        containers.push({ containerHrid, containerCount, itemTotals, sourceDataComplete: true });
     }
 
     return { containers, warnings };
@@ -148,7 +150,10 @@ export function parseEdibleExport(rawText, { playerId } = {}) {
             warnings.push(`${chestName}: ${unmatchedItemCount} gained item(s) could not be matched and were excluded.`);
         }
 
-        containers.push({ containerHrid, containerCount, itemTotals });
+        // Do not let a warning-only path turn into a falsely precise imported Luck value: an
+        // unmatched gained item means this container's Actual is only a subtotal of the real
+        // source data, not the complete picture.
+        containers.push({ containerHrid, containerCount, itemTotals, sourceDataComplete: unmatchedItemCount === 0 });
     }
 
     return { containers, warnings };

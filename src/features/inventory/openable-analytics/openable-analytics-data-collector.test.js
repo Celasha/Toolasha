@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
     evAvailable: true,
     evValue: 90,
     sellSideValue: { value: 10, needsTax: false },
+    dropTable: { '/items/chimerical_chest': [{ itemHrid: '/items/coin' }] },
 }));
 
 vi.mock('../../../core/storage.js', () => ({
@@ -30,11 +31,10 @@ vi.mock('../../../core/data-manager.js', () => ({
     default: {
         getCurrentCharacterId: vi.fn(() => mocks.currentCharacterId),
         getItemDetails: vi.fn(() => ({ isTradable: true })),
+        getInitClientData: vi.fn(() => ({ openableLootDropMap: mocks.dropTable })),
+        on: mocks.on,
+        off: mocks.off,
     },
-}));
-
-vi.mock('../../../core/websocket.js', () => ({
-    default: { on: mocks.on, off: mocks.off, onSocketEvent: vi.fn(), offSocketEvent: vi.fn() },
 }));
 
 vi.mock('../../../core/config.js', () => ({
@@ -48,7 +48,7 @@ vi.mock('../../../utils/market-data.js', () => ({
 vi.mock('../../market/expected-value-calculator.js', () => ({
     default: {
         resolveSellSideValue: vi.fn(() => mocks.sellSideValue),
-        calculateExpectedValue: vi.fn(() => (mocks.evAvailable ? { expectedValue: mocks.evValue } : null)),
+        calculateExpectedValue: vi.fn(() => (mocks.evAvailable ? { expectedValue: mocks.evValue, drops: [] } : null)),
     },
 }));
 
@@ -63,11 +63,28 @@ function lootOpenedMessage(overrides = {}) {
     };
 }
 
+function lootOpenedEvent(overrides = {}, characterId = mocks.currentCharacterId) {
+    return { data: lootOpenedMessage(overrides), characterId };
+}
+
+function lootHandler() {
+    const handler = mocks.on.mock.calls.find(([type]) => type === 'loot_opened')[1];
+    // The registered handler is intentionally fire-and-forget in production (DataManager's
+    // critical/synchronous emit does not await listeners; ordering is enforced internally by the
+    // collector's own persistence queue). Wrap it here so tests can still await the resulting
+    // persistence deterministically without changing that production contract.
+    return (event) => {
+        handler(event);
+        return openableAnalyticsDataCollector.persistenceQueue;
+    };
+}
+
 beforeEach(async () => {
     mocks.values.clear();
     mocks.currentCharacterId = 'char-a';
     mocks.evAvailable = true;
     mocks.evValue = 90;
+    mocks.dropTable = { '/items/chimerical_chest': [{ itemHrid: '/items/coin' }] };
     mocks.on.mockClear();
     mocks.off.mockClear();
     openableAnalyticsDataCollector.cleanup();
@@ -79,9 +96,8 @@ describe('loot_opened ingestion', () => {
         expect(mocks.on).toHaveBeenCalledWith('loot_opened', expect.any(Function));
     });
 
-    test('a direct loot_opened message is recorded into the latest record and session aggregate', async () => {
-        const handler = mocks.on.mock.calls.find(([type]) => type === 'loot_opened')[1];
-        await handler(lootOpenedMessage());
+    test('a direct loot_opened event is recorded into the latest record and session aggregate', async () => {
+        await lootHandler()(lootOpenedEvent());
 
         const record = openableAnalyticsDataCollector.getLatestRecord();
         expect(record.containerHrid).toBe('/items/chimerical_chest');
@@ -92,8 +108,7 @@ describe('loot_opened ingestion', () => {
     });
 
     test('the recorded record carries a per-item actualValueBreakdown, and it flows into the lifetime aggregate’s itemValueTotals', async () => {
-        const handler = mocks.on.mock.calls.find(([type]) => type === 'loot_opened')[1];
-        await handler(lootOpenedMessage());
+        await lootHandler()(lootOpenedEvent());
 
         const record = openableAnalyticsDataCollector.getLatestRecord();
         expect(record.actualValueBreakdown).toEqual([
@@ -105,8 +120,7 @@ describe('loot_opened ingestion', () => {
     });
 
     test('openedItem.count > 1 increments container count correctly', async () => {
-        const handler = mocks.on.mock.calls.find(([type]) => type === 'loot_opened')[1];
-        await handler(lootOpenedMessage({ openedItem: { itemHrid: '/items/chimerical_chest', count: 100 } }));
+        await lootHandler()(lootOpenedEvent({ openedItem: { itemHrid: '/items/chimerical_chest', count: 100 } }));
 
         const record = openableAnalyticsDataCollector.getLatestRecord();
         expect(record.containerCount).toBe(100);
@@ -116,8 +130,19 @@ describe('loot_opened ingestion', () => {
     });
 
     test('a message with no openedItem is ignored, not recorded as a broken event', async () => {
-        const handler = mocks.on.mock.calls.find(([type]) => type === 'loot_opened')[1];
-        await handler({ gainedItems: [], grantedBuffs: [] });
+        await lootHandler()({ data: { gainedItems: [], grantedBuffs: [] }, characterId: 'char-a' });
+
+        expect(openableAnalyticsDataCollector.getLatestRecord()).toBeNull();
+    });
+
+    test('OWN-1: an event carrying a stale/different characterId than the collector’s own is ignored', async () => {
+        await lootHandler()(lootOpenedEvent({}, 'char-other'));
+
+        expect(openableAnalyticsDataCollector.getLatestRecord()).toBeNull();
+    });
+
+    test('an event with no characterId is ignored', async () => {
+        await lootHandler()({ data: lootOpenedMessage(), characterId: null });
 
         expect(openableAnalyticsDataCollector.getLatestRecord()).toBeNull();
     });
@@ -135,8 +160,7 @@ describe('character separation', () => {
     });
 
     test('recording an opening persists lifetime data under the current character’s key only', async () => {
-        const handler = mocks.on.mock.calls.find(([type]) => type === 'loot_opened')[1];
-        await handler(lootOpenedMessage());
+        await lootHandler()(lootOpenedEvent());
 
         expect(mocks.values.has('lifetime:char-a')).toBe(true);
         expect(mocks.values.get('lifetime:char-a')['/items/chimerical_chest'].eventsCount).toBe(1);
@@ -145,8 +169,7 @@ describe('character separation', () => {
 
 describe('session reset on character/page lifecycle', () => {
     test('re-initializing (character switch or page reload) clears the in-memory session aggregate', async () => {
-        const handler = mocks.on.mock.calls.find(([type]) => type === 'loot_opened')[1];
-        await handler(lootOpenedMessage());
+        await lootHandler()(lootOpenedEvent());
         expect(openableAnalyticsDataCollector.getSessionAggregate('/items/chimerical_chest').eventsCount).toBe(1);
 
         openableAnalyticsDataCollector.cleanup();
@@ -156,24 +179,49 @@ describe('session reset on character/page lifecycle', () => {
     });
 
     test('a stale handler continuation from before cleanup() cannot record after a new initialize()', async () => {
-        const staleHandler = mocks.on.mock.calls.find(([type]) => type === 'loot_opened')[1];
+        const staleHandler = lootHandler();
 
         openableAnalyticsDataCollector.cleanup();
         await openableAnalyticsDataCollector.initialize();
 
-        // Simulate the old WebSocket listener firing one more time before it was unregistered.
-        await staleHandler(lootOpenedMessage());
+        // Simulate the old listener firing one more time before it was unregistered.
+        await staleHandler(lootOpenedEvent());
 
         expect(openableAnalyticsDataCollector.getLatestRecord()).toBeNull();
+    });
+
+    test('INIT-1 / LIFE-1: a stale initialize continuation cannot publish loaded state once a newer lifecycle has taken over', async () => {
+        // Make the character-scoped storage load hang so a second initialize() can race ahead of it.
+        let resolveLoad;
+        const { default: storage } = await import('../../../core/storage.js');
+        storage.getJSON.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    resolveLoad = resolve;
+                })
+        );
+
+        openableAnalyticsDataCollector.cleanup();
+        const pendingInit = openableAnalyticsDataCollector.initialize();
+
+        // A second, newer initialize() completes fully while the first is still awaiting its load.
+        mocks.values.set('lifetime:char-a', { '/items/chest': { eventsCount: 99 } });
+        openableAnalyticsDataCollector.cleanup();
+        await openableAnalyticsDataCollector.initialize();
+
+        // The first initialize's delayed load now resolves - it must not publish over current state.
+        resolveLoad({});
+        await pendingInit;
+
+        expect(openableAnalyticsDataCollector.getLifetimeAggregate('/items/chest').eventsCount).toBe(99);
     });
 });
 
 describe('granted-buff / non-monetary openings', () => {
     test('can be counted (session aggregate increments) without fake Luck', async () => {
         mocks.evAvailable = false;
-        const handler = mocks.on.mock.calls.find(([type]) => type === 'loot_opened')[1];
-        await handler(
-            lootOpenedMessage({
+        await lootHandler()(
+            lootOpenedEvent({
                 openedItem: { itemHrid: '/items/seal_of_rare_find', count: 1 },
                 gainedItems: [],
                 grantedBuffs: [{ typeHrid: '/buff_types/rare_find', duration: 3600 }],
@@ -195,20 +243,47 @@ describe('update listeners', () => {
         const seen = [];
         const unsubscribe = openableAnalyticsDataCollector.onUpdate((record) => seen.push(record));
 
-        const handler = mocks.on.mock.calls.find(([type]) => type === 'loot_opened')[1];
-        await handler(lootOpenedMessage());
+        await lootHandler()(lootOpenedEvent());
         expect(seen).toHaveLength(1);
 
         unsubscribe();
-        await handler(lootOpenedMessage());
+        await lootHandler()(lootOpenedEvent());
         expect(seen).toHaveLength(1);
+    });
+
+    test('NOTIFY-1: Lifetime already includes the current opening by the time update listeners run', async () => {
+        let lifetimeAtNotifyTime = null;
+        openableAnalyticsDataCollector.onUpdate(() => {
+            lifetimeAtNotifyTime = openableAnalyticsDataCollector.getLifetimeAggregate('/items/chimerical_chest');
+        });
+
+        await lootHandler()(lootOpenedEvent());
+
+        expect(lifetimeAtNotifyTime.eventsCount).toBe(1);
+    });
+});
+
+describe('HIST-1: concurrent openings both survive (OA-3)', () => {
+    test('two overlapping recordOpening() calls both land in session, lifetime, and detailed history', async () => {
+        const handler = lootHandler();
+
+        // Both calls are started before either awaits its persistence, simulating truly
+        // overlapping loot_opened deliveries.
+        const first = handler(lootOpenedEvent({ openedItem: { itemHrid: '/items/chest', count: 1 } }));
+        const second = handler(lootOpenedEvent({ openedItem: { itemHrid: '/items/crate', count: 1 } }));
+        await Promise.all([first, second]);
+
+        expect(openableAnalyticsDataCollector.getSessionAggregate('/items/chest').eventsCount).toBe(1);
+        expect(openableAnalyticsDataCollector.getSessionAggregate('/items/crate').eventsCount).toBe(1);
+        expect(openableAnalyticsDataCollector.getHistory()).toHaveLength(2);
+        expect(mocks.values.get('lifetime:char-a')['/items/chest'].eventsCount).toBe(1);
+        expect(mocks.values.get('lifetime:char-a')['/items/crate'].eventsCount).toBe(1);
     });
 });
 
 describe('reset controls', () => {
     test('resetAll clears session, lifetime, and latest record for the current character', async () => {
-        const handler = mocks.on.mock.calls.find(([type]) => type === 'loot_opened')[1];
-        await handler(lootOpenedMessage());
+        await lootHandler()(lootOpenedEvent());
 
         await openableAnalyticsDataCollector.resetAll();
 
@@ -216,12 +291,50 @@ describe('reset controls', () => {
         expect(openableAnalyticsDataCollector.getSessionAggregate('/items/chimerical_chest').eventsCount).toBe(0);
         expect(openableAnalyticsDataCollector.getLifetimeAggregate('/items/chimerical_chest').eventsCount).toBe(0);
     });
+
+    test('RESET-1: an opening queued before Reset All does not resurrect after reset completes', async () => {
+        await lootHandler()(lootOpenedEvent());
+        await openableAnalyticsDataCollector.resetAll();
+
+        expect(mocks.values.has('lifetime:char-a')).toBe(false);
+        expect(mocks.values.has('history:char-a')).toBe(false);
+    });
+
+    test('RESET-2: a new opening arriving after Reset All survives', async () => {
+        await lootHandler()(lootOpenedEvent());
+        await openableAnalyticsDataCollector.resetAll();
+        await lootHandler()(lootOpenedEvent({ openedItem: { itemHrid: '/items/chimerical_chest', count: 1 } }));
+
+        expect(openableAnalyticsDataCollector.getLifetimeAggregate('/items/chimerical_chest').eventsCount).toBe(1);
+        expect(mocks.values.get('history:char-a')).toHaveLength(1);
+    });
+
+    test('RESET-2b: an opening that starts before Reset All resolves but is ordered after it still survives', async () => {
+        const handler = lootHandler();
+        const opening = handler(lootOpenedEvent());
+        const reset = openableAnalyticsDataCollector.resetAll();
+        await Promise.all([opening, reset]);
+
+        // In-memory state reflects reset (opening ran first, reset ran second and cleared it).
+        expect(openableAnalyticsDataCollector.getLatestRecord()).toBeNull();
+    });
+
+    test('RESET-3: resetting one container does not affect another container’s data', async () => {
+        await lootHandler()(lootOpenedEvent({ openedItem: { itemHrid: '/items/chest', count: 1 } }));
+        await lootHandler()(lootOpenedEvent({ openedItem: { itemHrid: '/items/crate', count: 1 } }));
+
+        await openableAnalyticsDataCollector.resetContainer('/items/chest');
+
+        expect(openableAnalyticsDataCollector.getLifetimeAggregate('/items/chest').eventsCount).toBe(0);
+        expect(openableAnalyticsDataCollector.getLifetimeAggregate('/items/crate').eventsCount).toBe(1);
+        expect(mocks.values.get('history:char-a').some((r) => r.containerHrid === '/items/chest')).toBe(false);
+        expect(mocks.values.get('history:char-a').some((r) => r.containerHrid === '/items/crate')).toBe(true);
+    });
 });
 
 describe('bulk imports (Edible Tools / MWI Combat Suite)', () => {
     test('importContainers adds an imported aggregate that is combined into getLifetimeAggregate alongside live tracking', async () => {
-        const handler = mocks.on.mock.calls.find(([type]) => type === 'loot_opened')[1];
-        await handler(lootOpenedMessage()); // 1 live event, 100 coin
+        await lootHandler()(lootOpenedEvent()); // 1 live event, 100 coin
 
         await openableAnalyticsDataCollector.importContainers('import:mwi-combat-suite', [
             { containerHrid: '/items/chimerical_chest', containerCount: 500, itemTotals: { '/items/coin': 50000 } },
@@ -233,8 +346,7 @@ describe('bulk imports (Edible Tools / MWI Combat Suite)', () => {
     });
 
     test('getLiveLifetimeAggregate excludes imports (only live-tracked openings)', async () => {
-        const handler = mocks.on.mock.calls.find(([type]) => type === 'loot_opened')[1];
-        await handler(lootOpenedMessage());
+        await lootHandler()(lootOpenedEvent());
 
         await openableAnalyticsDataCollector.importContainers('import:edible', [
             { containerHrid: '/items/chimerical_chest', containerCount: 999, itemTotals: {} },
@@ -245,7 +357,7 @@ describe('bulk imports (Edible Tools / MWI Combat Suite)', () => {
         ).toBe(1);
     });
 
-    test('re-importing the same source replaces (does not add to) its previous per-container total', async () => {
+    test('IMPORT-1: re-importing the same source replaces (does not add to) its previous per-container total', async () => {
         await openableAnalyticsDataCollector.importContainers('import:edible', [
             { containerHrid: '/items/chimerical_chest', containerCount: 100, itemTotals: { '/items/coin': 1000 } },
         ]);
@@ -256,6 +368,38 @@ describe('bulk imports (Edible Tools / MWI Combat Suite)', () => {
         const combined = openableAnalyticsDataCollector.getLifetimeAggregate('/items/chimerical_chest');
         expect(combined.containersOpened).toBe(150);
         expect(combined.itemTotals['/items/coin']).toBe(1500);
+    });
+
+    test('IMPORT-1b: a container present in the old import but absent from the new one is gone (whole-source replacement, OA-5)', async () => {
+        await openableAnalyticsDataCollector.importContainers('import:edible', [
+            { containerHrid: '/items/chimerical_chest', containerCount: 100, itemTotals: {} },
+            { containerHrid: '/items/purples_gift', containerCount: 5, itemTotals: {} },
+        ]);
+        await openableAnalyticsDataCollector.importContainers('import:edible', [
+            { containerHrid: '/items/chimerical_chest', containerCount: 150, itemTotals: {} },
+        ]);
+
+        expect(openableAnalyticsDataCollector.getKnownContainers()).not.toContain('/items/purples_gift');
+        expect(openableAnalyticsDataCollector.getLifetimeAggregate('/items/chimerical_chest').containersOpened).toBe(
+            150
+        );
+    });
+
+    test('IMPORT-2: switching the imported Edible player leaves no old-player-only containers behind', async () => {
+        // Player A's export.
+        await openableAnalyticsDataCollector.importContainers('import:edible', [
+            { containerHrid: '/items/chimerical_chest', containerCount: 100, itemTotals: {} },
+            { containerHrid: '/items/player_a_only_chest', containerCount: 3, itemTotals: {} },
+        ]);
+        // Player B's export under the same source.
+        await openableAnalyticsDataCollector.importContainers('import:edible', [
+            { containerHrid: '/items/chimerical_chest', containerCount: 20, itemTotals: {} },
+        ]);
+
+        expect(openableAnalyticsDataCollector.getKnownContainers()).not.toContain('/items/player_a_only_chest');
+        expect(openableAnalyticsDataCollector.getLifetimeAggregate('/items/chimerical_chest').containersOpened).toBe(
+            20
+        );
     });
 
     test('two different import sources for the same container both contribute to the combined total', async () => {
@@ -285,6 +429,16 @@ describe('bulk imports (Edible Tools / MWI Combat Suite)', () => {
         ]);
 
         expect(mocks.values.has('imports:char-a')).toBe(true);
+    });
+
+    test('AGG-2: an imported cumulative snapshot does not increment tracked opening events', async () => {
+        await openableAnalyticsDataCollector.importContainers('import:edible', [
+            { containerHrid: '/items/chimerical_chest', containerCount: 500, itemTotals: {} },
+        ]);
+
+        const combined = openableAnalyticsDataCollector.getLifetimeAggregate('/items/chimerical_chest');
+        expect(combined.eventsCount).toBe(0);
+        expect(combined.containersOpened).toBe(500);
     });
 
     test('resetContainer clears imported data for that container too', async () => {

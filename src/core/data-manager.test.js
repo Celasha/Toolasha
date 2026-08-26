@@ -1110,6 +1110,81 @@ describe('DataManager character-WebSocket ownership (TLA-018)', () => {
         );
         expect(dataManager.getHouseRoomLevel('/house_rooms/b')).toBe(7);
     });
+
+    test('loot_opened is emitted with the accepted character id only when it arrives on the active socket', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const initHandler = webSocketHandlers.get('init_character_data');
+        const lootHandler = webSocketHandlers.get('loot_opened');
+        const socketA = {};
+        const socketB = {};
+        const listener = vi.fn();
+        dataManager.on('loot_opened', listener);
+
+        await initHandler(makePayload(11001), { socket: socketA });
+        await initHandler(makePayload(11002), { socket: socketB });
+
+        // OWN-1: A accepted -> B accepted -> delayed A loot_opened must be ignored.
+        lootHandler({ openedItem: { itemHrid: '/items/chest', count: 1 } }, { socket: socketA });
+        expect(listener).not.toHaveBeenCalled();
+
+        // B's own opening is accepted and carries B's character id.
+        lootHandler({ openedItem: { itemHrid: '/items/chest', count: 1 } }, { socket: socketB });
+        expect(listener).toHaveBeenCalledTimes(1);
+        expect(listener.mock.calls[0][0].characterId).toBe(11002);
+        expect(listener.mock.calls[0][0].data.openedItem.itemHrid).toBe('/items/chest');
+
+        dataManager.off('loot_opened', listener);
+    });
+
+    test('OWN-2: a same-character reconnect to a new socket makes the old socket stale for loot_opened too', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const initHandler = webSocketHandlers.get('init_character_data');
+        const lootHandler = webSocketHandlers.get('loot_opened');
+        const socket1 = {};
+        const socket2 = {};
+        const listener = vi.fn();
+        dataManager.on('loot_opened', listener);
+
+        await initHandler(makePayload(11101), { socket: socket1 });
+        await initHandler(makePayload(11101), { socket: socket2 }); // same character, new socket
+
+        lootHandler({ openedItem: { itemHrid: '/items/crate', count: 1 } }, { socket: socket1 });
+        expect(listener).not.toHaveBeenCalled();
+
+        lootHandler({ openedItem: { itemHrid: '/items/crate', count: 1 } }, { socket: socket2 });
+        expect(listener).toHaveBeenCalledTimes(1);
+
+        dataManager.off('loot_opened', listener);
+    });
+
+    test('loot_opened is delivered synchronously (critical dispatch) so it cannot be lost to a following character_switching cleanup', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const initHandler = webSocketHandlers.get('init_character_data');
+        const lootHandler = webSocketHandlers.get('loot_opened');
+        const socketA = {};
+        const listener = vi.fn();
+        dataManager.on('loot_opened', listener);
+
+        await initHandler(makePayload(11201), { socket: socketA });
+        lootHandler({ openedItem: { itemHrid: '/items/chest', count: 1 } }, { socket: socketA });
+
+        // No need to flush timers: a critical/synchronous event must already be delivered.
+        expect(listener).toHaveBeenCalledTimes(1);
+
+        dataManager.off('loot_opened', listener);
+    });
+
+    test('loot_opened is ignored before any character is accepted', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const lootHandler = webSocketHandlers.get('loot_opened');
+        const listener = vi.fn();
+        dataManager.on('loot_opened', listener);
+
+        lootHandler({ openedItem: { itemHrid: '/items/chest', count: 1 } }, { socket: {} });
+
+        expect(listener).not.toHaveBeenCalled();
+        dataManager.off('loot_opened', listener);
+    });
 });
 
 describe('DataManager offline-progress cap / MooPass getters', () => {

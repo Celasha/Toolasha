@@ -1,24 +1,24 @@
 /**
  * Openable Analytics Data Collector
- * Listens for the native `loot_opened` WebSocket message, builds a normalized opening record via
+ * Consumes the character-scoped, socket-ownership-gated `loot_opened` event that DataManager
+ * derives from the native WebSocket message (TLA-018), builds a normalized opening record via
  * the shared calculator, and maintains character-scoped session (in-memory) and lifetime
  * (persisted) aggregates plus a bounded detailed history.
  */
 
-import webSocketHook from '../../../core/websocket.js';
 import dataManager from '../../../core/data-manager.js';
 import { buildOpeningRecord, buildImportedAggregateRecord } from './openable-analytics-calculator.js';
 import {
     loadLifetime,
     saveLifetime,
     loadHistory,
-    appendHistory,
+    appendHistoryRecord,
+    saveHistory,
     loadImports,
     saveImports,
     foldRecordIntoAggregate,
     createEmptyAggregate,
     mergeAggregates,
-    resetContainer as storageResetContainer,
     resetAll as storageResetAll,
 } from './openable-analytics-storage.js';
 
@@ -34,6 +34,26 @@ class OpenableAnalyticsDataCollector {
         this.imports = {};
         this.latestRecord = null;
         this.updateListeners = new Set();
+        // One ordered persistence lane for opening/import/reset mutations. It intentionally
+        // survives cleanup()/reinitialize so an accepted write cannot be overtaken by a later
+        // reset, and initialize() waits on it so a same-character re-enable never loads a
+        // pre-write snapshot (OA-3, OA-4, OA-11).
+        this.persistenceQueue = Promise.resolve();
+    }
+
+    /**
+     * Queue one persistence operation behind every earlier one, current lifecycle or not. A
+     * later opening/reset therefore always lands after everything queued before it, and a
+     * failed operation never blocks the lane for subsequent writes.
+     * @param {Function} task - Async function to run once earlier queued work has settled
+     * @returns {Promise<*>}
+     */
+    enqueuePersistence(task) {
+        const run = this.persistenceQueue.then(task, task);
+        this.persistenceQueue = run.catch((error) => {
+            console.error('[OpenableAnalytics] Persistence operation failed:', error);
+        });
+        return run;
     }
 
     /**
@@ -46,36 +66,57 @@ class OpenableAnalyticsDataCollector {
         }
 
         this.isInitialized = true;
-        this.characterId = dataManager.getCurrentCharacterId();
+        // Do not load a stale pre-write snapshot if this feature was toggled/reinitialized while
+        // an accepted persistence operation from the previous lifecycle is still finishing.
+        await this.persistenceQueue.catch(() => {});
+
+        const characterId = dataManager.getCurrentCharacterId();
         const generation = ++this.lifecycleGeneration;
 
+        const [lifetime, history, imports] = characterId
+            ? await Promise.all([loadLifetime(characterId), loadHistory(characterId), loadImports(characterId)])
+            : [{}, [], {}];
+
+        if (
+            generation !== this.lifecycleGeneration ||
+            !this.isInitialized ||
+            dataManager.getCurrentCharacterId() !== characterId
+        ) {
+            return;
+        }
+
+        // Commit the loaded snapshot only after every async load has completed and ownership is
+        // still valid - no partially loaded stale lifecycle is ever published into singleton
+        // state (OA-11).
+        this.characterId = characterId;
+        this.lifetime = lifetime;
+        this.history = history;
+        this.imports = imports;
         this.session = {};
         this.latestRecord = null;
 
-        if (this.characterId) {
-            this.lifetime = await loadLifetime(this.characterId);
-            this.history = await loadHistory(this.characterId);
-            this.imports = await loadImports(this.characterId);
-        } else {
-            this.lifetime = {};
-            this.history = [];
-            this.imports = {};
-        }
-
-        if (generation !== this.lifecycleGeneration || !this.isInitialized) return;
-
-        this.lootOpenedHandler = (data) => this.onLootOpened(data, generation);
-        webSocketHook.on('loot_opened', this.lootOpenedHandler);
+        this.lootOpenedHandler = (event) => {
+            this.onLootOpened(event, generation).catch((error) => {
+                console.error('[OpenableAnalytics] Failed to record loot_opened:', error);
+            });
+        };
+        dataManager.on('loot_opened', this.lootOpenedHandler);
     }
 
     /**
-     * Handle a native `loot_opened` message: normalize, fold into session/lifetime aggregates,
-     * persist, and notify UI listeners.
-     * @param {Object} data - Raw `loot_opened` message payload
+     * Handle a character-scoped `loot_opened` event from DataManager (already filtered to the
+     * accepted active socket - TLA-018). Ignores an event whose captured characterId no longer
+     * matches this collector's current character, which also protects against a stale
+     * continuation resuming after a character switch even though DataManager's own ownership
+     * check already covers the common case.
+     * @param {Object} event - `{data, characterId}` as emitted by DataManager
      * @param {number} generation - Lifecycle generation captured at registration time
      */
-    async onLootOpened(data, generation) {
+    async onLootOpened(event, generation) {
         if (generation !== this.lifecycleGeneration) return;
+        const data = event?.data;
+        const characterId = event?.characterId;
+        if (!characterId || characterId !== this.characterId) return;
         if (!data?.openedItem?.itemHrid) return;
 
         await this.recordOpening(
@@ -85,7 +126,7 @@ class OpenableAnalyticsDataCollector {
                 gainedItems: data.gainedItems,
                 grantedBuffs: data.grantedBuffs,
                 timestamp: Date.now(),
-                characterId: this.characterId,
+                characterId,
             },
             { generation }
         );
@@ -93,9 +134,9 @@ class OpenableAnalyticsDataCollector {
 
     /**
      * Build and record one opening from already-normalized input. This is the shared entry
-     * point for both the live WebSocket path and any future historical-import adapter (Edible
-     * Tools / MWI Combat Suite) - an importer can call this directly with `source: 'import:...'`
-     * without needing to go through `loot_opened` at all.
+     * point for both the live WebSocket path and the historical-import adapters (Edible Tools /
+     * MWI Combat Suite) - an importer can call this directly with `source: 'import:...'` without
+     * needing to go through `loot_opened` at all.
      * @param {Object} input - See `buildOpeningRecord` for shape
      * @param {Object} [options]
      * @param {number} [options.generation] - Lifecycle generation to guard against a stale
@@ -107,20 +148,35 @@ class OpenableAnalyticsDataCollector {
 
         if (generation !== this.lifecycleGeneration) return record;
 
+        // Commit every in-memory view synchronously, in this exact order, before notifying
+        // listeners. This guarantees two overlapping openings each derive their history append
+        // from the collector's own latest in-memory array rather than a shared stale snapshot
+        // (OA-3), and that a mounted modal's data-driven refresh always sees Lifetime already
+        // including the opening that triggered it (OA-10).
         this.session[record.containerHrid] = foldRecordIntoAggregate(this.session[record.containerHrid], record);
-        this.latestRecord = record;
-        this.notifyListeners(record);
-
         if (record.characterId) {
             this.lifetime = {
                 ...this.lifetime,
                 [record.containerHrid]: foldRecordIntoAggregate(this.lifetime[record.containerHrid], record),
             };
-            this.history = await appendHistory(record.characterId, this.history, record);
-
-            if (generation !== this.lifecycleGeneration) return record;
-            await saveLifetime(record.characterId, this.lifetime);
+            this.history = appendHistoryRecord(this.history, record);
         }
+
+        this.latestRecord = record;
+        this.notifyListeners(record);
+
+        if (!record.characterId) return record;
+
+        // Queue persistence behind everything already queued (including any earlier opening or
+        // a reset). A later reset therefore cannot resurrect this opening, and this opening
+        // cannot be lost to a reset that was already in flight when it arrived (OA-4).
+        const characterId = record.characterId;
+        const historySnapshot = this.history;
+        const lifetimeSnapshot = this.lifetime;
+        await this.enqueuePersistence(async () => {
+            await saveHistory(characterId, historySnapshot);
+            await saveLifetime(characterId, lifetimeSnapshot);
+        });
 
         return record;
     }
@@ -199,19 +255,21 @@ class OpenableAnalyticsDataCollector {
      * Import a batch of bulk historical containers from an external source (Edible Tools, MWI
      * Combat Suite, or a future source), recomputing Actual/Expected/Luck via Toolasha's own
      * valuation from the raw item counts rather than trusting the source's own stored numbers.
-     * Re-importing the same source replaces (not adds to) that source's per-container totals, so
-     * importing an updated export is idempotent rather than double-counting.
+     * Re-importing the same source atomically replaces that source's entire snapshot - containers
+     * present in an older export but absent from the new one do not survive (OA-5), which matters
+     * for Edible multi-player exports where switching the selected player must not leave the
+     * previous player's containers mixed into the current `import:edible` snapshot.
      * @param {string} source - e.g. 'import:edible' or 'import:mwi-combat-suite'
-     * @param {Array<{containerHrid: string, containerCount: number, itemTotals: Object}>} containers
+     * @param {Array<{containerHrid: string, containerCount: number, itemTotals: Object, sourceDataComplete?: boolean}>} containers
      * @returns {Promise<Array<Object>>} The resulting per-container aggregates that were imported
      */
     async importContainers(source, containers) {
         if (!this.characterId) return [];
 
-        const bySource = { ...(this.imports[source] || {}) };
+        const bySource = {};
         const results = [];
 
-        for (const { containerHrid, containerCount, itemTotals } of containers) {
+        for (const { containerHrid, containerCount, itemTotals, sourceDataComplete = true } of containers) {
             const record = buildImportedAggregateRecord({
                 containerHrid,
                 containerCount,
@@ -219,14 +277,17 @@ class OpenableAnalyticsDataCollector {
                 timestamp: Date.now(),
                 characterId: this.characterId,
                 source,
+                sourceDataComplete,
             });
             const aggregate = foldRecordIntoAggregate(createEmptyAggregate(), record);
             bySource[containerHrid] = aggregate;
             results.push({ containerHrid, aggregate });
         }
 
+        const characterId = this.characterId;
         this.imports = { ...this.imports, [source]: bySource };
-        await saveImports(this.characterId, this.imports);
+        const importsSnapshot = this.imports;
+        await this.enqueuePersistence(() => saveImports(characterId, importsSnapshot));
 
         return results;
     }
@@ -241,12 +302,28 @@ class OpenableAnalyticsDataCollector {
     }
 
     /**
-     * Reset lifetime + history + imports + in-memory session data for one container, current character.
+     * Reset lifetime + history + imports + in-memory session data for one container, current
+     * character. Commits in-memory state immediately and queues its persistence behind every
+     * earlier opening/import/reset, so a later opening for a *different* container is unaffected
+     * and a later opening for *this* container (arriving after this call returns) is never
+     * overwritten by this reset (OA-4).
      * @param {string} containerHrid
      */
     async resetContainer(containerHrid) {
         if (!this.characterId) return;
-        const { lifetime, history, imports } = await storageResetContainer(this.characterId, containerHrid);
+
+        const characterId = this.characterId;
+        const lifetime = { ...this.lifetime };
+        delete lifetime[containerHrid];
+        const history = this.history.filter((record) => record.containerHrid !== containerHrid);
+        const imports = Object.fromEntries(
+            Object.entries(this.imports).map(([source, byContainer]) => {
+                const next = { ...byContainer };
+                delete next[containerHrid];
+                return [source, next];
+            })
+        );
+
         this.lifetime = lifetime;
         this.history = history;
         this.imports = imports;
@@ -254,30 +331,40 @@ class OpenableAnalyticsDataCollector {
         if (this.latestRecord?.containerHrid === containerHrid) {
             this.latestRecord = null;
         }
+
+        await this.enqueuePersistence(async () => {
+            await saveLifetime(characterId, lifetime);
+            await saveHistory(characterId, history);
+            await saveImports(characterId, imports);
+        });
     }
 
     /**
      * Reset all Openable Analytics data (lifetime + history + imports + in-memory session) for
-     * the current character.
+     * the current character. Commits in-memory state immediately and queues the deletion behind
+     * every earlier write, so an opening that arrives after this call starts still persists once
+     * this reset's queued deletion has run (OA-4).
      */
     async resetAll() {
         if (!this.characterId) return;
-        await storageResetAll(this.characterId);
+        const characterId = this.characterId;
         this.lifetime = {};
         this.history = [];
         this.imports = {};
         this.session = {};
         this.latestRecord = null;
+
+        await this.enqueuePersistence(() => storageResetAll(characterId));
     }
 
     /**
-     * Cleanup the collector's WebSocket subscription and in-memory state.
+     * Cleanup the collector's `loot_opened` subscription and in-memory state.
      */
     cleanup() {
         this.lifecycleGeneration += 1;
 
         if (this.lootOpenedHandler) {
-            webSocketHook.off('loot_opened', this.lootOpenedHandler);
+            dataManager.off('loot_opened', this.lootOpenedHandler);
             this.lootOpenedHandler = null;
         }
 
@@ -289,6 +376,9 @@ class OpenableAnalyticsDataCollector {
         this.session = {};
         this.latestRecord = null;
         this.updateListeners.clear();
+        // Deliberately do not reset persistenceQueue: an accepted old-lifecycle write must
+        // finish under its captured character key, and initialize() waits on this same lane
+        // before loading so it can never load a snapshot from before that write landed.
     }
 }
 

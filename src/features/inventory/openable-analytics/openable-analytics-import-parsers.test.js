@@ -60,6 +60,7 @@ describe('parseCombatSuiteExport', () => {
             containerHrid: '/items/large_treasure_chest',
             containerCount: 3671,
             itemTotals: { '/items/coin': 246365372, '/items/pearl': 4479 },
+            sourceDataComplete: true,
         });
     });
 
@@ -117,6 +118,7 @@ describe('parseEdibleExport', () => {
                 containerHrid: '/items/large_treasure_chest',
                 containerCount: 100,
                 itemTotals: { '/items/coin': 5000, '/items/pearl': 12 },
+                sourceDataComplete: true,
             },
         ]);
     });
@@ -173,6 +175,32 @@ describe('parseEdibleExport', () => {
 
         expect(containers[0].itemTotals).toEqual({ '/items/coin': 5000 });
         expect(warnings.some((w) => w.includes('1 gained item'))).toBe(true);
+    });
+
+    test('IMPORT-3 / OA-9: an unmatched gained item marks the container sourceDataComplete: false, not a falsely complete import', () => {
+        const raw = JSON.stringify({
+            Chest_Open_Data: {
+                p1: {
+                    玩家昵称: 'Celasha',
+                    开箱数据: {
+                        'Large Treasure Chest': {
+                            总计开箱数量: 100,
+                            获得物品: { Coin: { 数量: 5000 }, 'Some Unknown Item': { 数量: 3 } },
+                        },
+                    },
+                },
+            },
+        });
+
+        const { containers } = parseEdibleExport(raw);
+
+        expect(containers[0].sourceDataComplete).toBe(false);
+    });
+
+    test('a container with every gained item matched is sourceDataComplete: true', () => {
+        const { containers } = parseEdibleExport(edibleJson());
+
+        expect(containers[0].sourceDataComplete).toBe(true);
     });
 
     test('returns an empty result with a warning for invalid JSON', () => {

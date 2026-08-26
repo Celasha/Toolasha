@@ -218,16 +218,34 @@ class OpenableAnalyticsUI {
         wrapper.style.cssText =
             'background:#2a2a2a; border:1px solid #4a4a4a; border-radius:6px; padding:12px; margin-bottom:16px;';
 
-        const luckAvailable = aggregate.expectedValueAvailableEvents > 0;
+        // Aggregate Luck must fail closed as a whole (section 3.2): only available when every
+        // valuation record folded into this aggregate is itself Luck-eligible, never a
+        // subtraction of a partial/unavailable Expected subset from a superset Actual total.
+        const luckAvailable =
+            (aggregate.valuationRecordCount || 0) > 0 &&
+            aggregate.luckEligibleRecordCount === aggregate.valuationRecordCount;
         const luckValue = luckAvailable ? aggregate.actualValueTotal - aggregate.expectedValueTotal : null;
         const luckPercent =
             luckAvailable && aggregate.expectedValueTotal > 0 ? (luckValue / aggregate.expectedValueTotal) * 100 : null;
 
+        const actualText = `${formatValue(aggregate.actualValueTotal)}${
+            aggregate.actualValuePartialEvents > 0 ? ' (partial)' : ''
+        }`;
+        const expectedHasAny = aggregate.expectedValueAvailableEvents > 0;
+        const expectedIsPartial =
+            aggregate.expectedValueUnavailableEvents > 0 || (aggregate.expectedValuePartialEvents || 0) > 0;
+        const expectedText = expectedHasAny
+            ? `${formatValue(aggregate.expectedValueTotal)}${expectedIsPartial ? ' (partial)' : ''}`
+            : 'N/A';
+
         const rows = [
-            ['Opening events', aggregate.eventsCount],
+            // Tracked opening events counts only real live loot_opened records - an imported
+            // cumulative snapshot represents many containers but only one synthetic Toolasha
+            // record, and must not be counted as one opening event (section 3.1).
+            ['Tracked opening events', aggregate.eventsCount],
             ['Containers opened', aggregate.containersOpened],
-            ['Actual Value', formatValue(aggregate.actualValueTotal)],
-            ['Expected Value', luckAvailable ? formatValue(aggregate.expectedValueTotal) : 'N/A'],
+            ['Actual Value', actualText],
+            ['Expected Value', expectedText],
             [
                 'Luck',
                 luckAvailable ? `${formatValue(luckValue)}${formatLuckPercent(luckPercent)}` : 'N/A',
@@ -251,6 +269,17 @@ class OpenableAnalyticsUI {
             row.appendChild(valueEl);
             wrapper.appendChild(row);
         }
+
+        // Live and imported valuations are different concepts (section 3.3/3.4): live openings
+        // are event-time snapshots, while imported cumulative totals are necessarily revalued at
+        // import time and can double-count against an overlapping live/imported period.
+        const valuationNote = document.createElement('div');
+        valuationNote.style.cssText = 'margin-top:8px; font-size:11px; opacity:0.7; line-height:1.35;';
+        valuationNote.textContent =
+            this.selectedScope === 'lifetime' && aggregate.hasImportedData
+                ? 'Live values are event-time snapshots. Imported totals are revalued at import time. Imported sources are additive; overlapping periods/sources can double-count.'
+                : 'Live values are snapshotted using Toolasha pricing at the opening event.';
+        wrapper.appendChild(valuationNote);
 
         return wrapper;
     }
@@ -337,7 +366,7 @@ class OpenableAnalyticsUI {
         const help = document.createElement('div');
         help.style.cssText = 'font-size:12px; opacity:0.75; margin-bottom:8px;';
         help.textContent =
-            "Adds a one-time bulk total to your Lifetime totals, revalued using Toolasha's own pricing. Does not add individual opening events (these sources only keep running totals, not per-opening history). Re-importing the same source replaces its previous total rather than adding to it.";
+            "Adds a cumulative source snapshot to Lifetime and revalues it at import time using Toolasha's current pricing. It does not add individual opening events (these sources only keep running totals, not per-opening history). Re-importing the same source replaces that entire source snapshot. Different sources are additive; importing overlapping periods/sources can double-count because the source data has no per-opening timestamps/IDs for reliable deduplication.";
         wrapper.appendChild(help);
 
         if (this.pendingEdiblePlayers) {

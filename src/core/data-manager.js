@@ -564,6 +564,20 @@ class DataManager {
                 this.characterQuests = this.characterQuests.filter((q) => q.status !== '/quest_status/claimed');
             }
         });
+
+        // `loot_opened` is character-scoped, but it has no dedicated DataManager-owned state -
+        // feature modules (Openable Analytics) consume it directly. Route it through the same
+        // TLA-018 accepted-socket ownership as every other character-scoped handler instead of
+        // letting a feature invent its own socket ownership, and capture characterId at
+        // acceptance time so a later character switch can't cause the opening to be attributed
+        // to whichever character happens to be current when an async consumer continuation
+        // resumes.
+        this.webSocketHook.on('loot_opened', (data, context) => {
+            if (!this._isFromActiveSocket(context)) return;
+            if (!this.currentCharacterId) return;
+
+            this.emit('loot_opened', { data, characterId: this.currentCharacterId });
+        });
     }
 
     /**
@@ -1433,8 +1447,10 @@ class DataManager {
 
     /**
      * Emit event to all listeners
-     * Only character_switching is critical (must run immediately for proper cleanup)
-     * All other events including character_switched and character_initialized are deferred
+     * character_switching must run immediately for proper cleanup. `loot_opened` is also
+     * dispatched synchronously: it is an accepted character-scoped event whose consumer must
+     * capture the opening before a subsequent character cleanup can invalidate feature state.
+     * All other events including character_switched and character_initialized are deferred.
      * @param {string} event - Event name
      * @param {*} data - Event data
      */
@@ -1445,9 +1461,9 @@ class DataManager {
         // be delivered to listeners that subscribed after the event was emitted.
         const listeners = [...(this.eventListeners.get(event) || [])];
 
-        // Only character_switching must run immediately (cleanup phase)
-        // character_switched can be deferred - it just schedules re-init anyway
-        const isCritical = event === 'character_switching';
+        // character_switching (cleanup) and loot_opened (accepted character-scoped event) must
+        // run immediately. character_switched can be deferred - it just schedules re-init anyway.
+        const isCritical = event === 'character_switching' || event === 'loot_opened';
 
         if (isCritical) {
             // Run immediately on main thread
