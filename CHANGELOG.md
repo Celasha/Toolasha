@@ -2,10 +2,9 @@
 
 ## [2.96.1](https://github.com/Celasha/Toolasha/compare/v2.96.0...v2.96.1) (2026-08-26)
 
-
 ### Bug Fixes
 
-* stop false Artisan Tea out-of-stock warning under saved loadouts ([f141112](https://github.com/Celasha/Toolasha/commit/f141112cf09c1d4848769ca8b278ef4611792188))
+- stop false Artisan Tea out-of-stock warning under saved loadouts ([f141112](https://github.com/Celasha/Toolasha/commit/f141112cf09c1d4848769ca8b278ef4611792188))
 
 ## [2.96.0](https://github.com/Celasha/Toolasha/compare/v2.95.2...v2.96.0) (2026-08-25)
 
