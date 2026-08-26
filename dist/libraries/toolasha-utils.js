@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.96.0
+ * Version: 2.96.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8008,8 +8008,17 @@ self.onmessage = function (e) {
             const rawDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
             if (!rawDrinks?.length) return false;
 
+            const context = resolveActionContext(actionDetails.type);
+
+            // A saved loadout can only be selected for calculation when every one of its
+            // consumable slots is confirmed available (Core fails the whole selection closed
+            // to current gear otherwise). So a saved loadout's own configured drinks can never
+            // be "out of stock" here — comparing the character's live drink slots against a
+            // different, independently-configured loadout's drinks is not a stock check.
+            if (context.source === 'saved-loadout') return false;
+
             // In-stock drinks come from resolveActionContext (already filtered)
-            const { equipment, drinks: inStockDrinks } = resolveActionContext(actionDetails.type);
+            const { equipment, drinks: inStockDrinks } = context;
             const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
 
             return (
