@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.97.2](https://github.com/Celasha/Toolasha/compare/v2.97.1...v2.97.2) (2026-08-27)
+
+### Bug Fixes
+
+- correct Skilling Simulator/Optimizer scenario math and loadout parity (TLA-024) ([4af7920](https://github.com/Celasha/Toolasha/commit/4af7920adf671449af5a1b1e2977b452c00b5c3f))
+- relocate Openable Analytics inventory button to Net Worth icon row ([b00aedb](https://github.com/Celasha/Toolasha/commit/b00aedb1f99a2ccbde6976d4b7e9b4c9419768e5))
+- stop stale action filter from hiding Combat Zones ([9ba8ae9](https://github.com/Celasha/Toolasha/commit/9ba8ae9798a827448f5f38db11a44643d10e824d))
+
 ## [2.97.1](https://github.com/Celasha/Toolasha/compare/v2.97.0...v2.97.1) (2026-08-27)
 
 ### Bug Fixes
