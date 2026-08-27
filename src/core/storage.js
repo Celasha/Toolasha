@@ -8,8 +8,14 @@ class Storage {
     constructor() {
         this.db = null;
         this.available = false;
-        this.dbName = 'ToolashaDB';
         this.dbVersion = 20; // Bumped for characterActivityStatus and openableAnalytics stores
+        // Standalone dev/test builds (BUILD_TARGET=dev-standalone) must never share the released
+        // product's IndexedDB namespace: a dev build carrying an unreleased schema bump upgrades
+        // ToolashaDB in place, and released code can then never reopen it (VersionError) once the
+        // dev build is removed. The build-channel marker is injected by rollup.config.js only for
+        // that target, so production/watch builds are unaffected.
+        const isStandaloneDevBuild = globalThis.__TOOLASHA_BUILD_CHANNEL__ === 'dev-standalone';
+        this.dbName = isStandaloneDevBuild ? `ToolashaDB-dev-v${this.dbVersion}` : 'ToolashaDB';
         this.saveDebounceTimers = new Map(); // Per-key debounce timers
         this.pendingWrites = new Map(); // Per-key pending write data: {value, storeName, resolvers, generation}
         this._writeGeneration = new Map(); // Per-key monotonic generation counter
@@ -43,7 +49,18 @@ class Storage {
             const request = indexedDB.open(this.dbName, this.dbVersion);
 
             request.onerror = () => {
-                console.error('[Storage] Failed to open IndexedDB', request.error);
+                if (request.error?.name === 'VersionError') {
+                    // The physical DB was created by a newer Toolasha schema than this build
+                    // requests. Never delete/recreate it here - the data is intact and only
+                    // needs a compatible/newer Toolasha version to open it again.
+                    console.error(
+                        `[Storage] ${this.dbName} was created by a newer Toolasha schema. ` +
+                            'Stored data has been preserved; install a compatible/newer Toolasha version.',
+                        request.error
+                    );
+                } else {
+                    console.error('[Storage] Failed to open IndexedDB', request.error);
+                }
                 reject(request.error);
             };
 
