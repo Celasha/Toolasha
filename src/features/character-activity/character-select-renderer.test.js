@@ -11,8 +11,23 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../core/dom-observer.js', () => ({
     default: {
+        // Mirrors the real dom-observer's node-level class match (ignoring its descendant-scan
+        // branch, which isn't exercised here since tests invoke the callback with the exact
+        // matched element) so a registration that doesn't watch a given class genuinely never
+        // fires for it, the same as production - this is what makes the TLA-025 regression below
+        // actually fail against the pre-fix single-class registration.
         onClass: vi.fn((_name, classNames, callback) => {
-            mocks.onClassRegistrations.push({ classNames, callback });
+            const classArray = Array.isArray(classNames) ? classNames : [classNames];
+            const registration = {
+                classNames: classArray,
+                callback: (node) => {
+                    const className = typeof node.className === 'string' ? node.className : '';
+                    if (classArray.some((targetClass) => className.includes(targetClass))) {
+                        return callback(node);
+                    }
+                },
+            };
+            mocks.onClassRegistrations.push(registration);
             return vi.fn();
         }),
     },
@@ -272,20 +287,32 @@ describe('idempotent Character Select injection and lifecycle', () => {
         characterSelectRenderer.stopWatching();
     });
 
-    function buildSlot() {
+    function buildRoot() {
+        const root = document.createElement('div');
+        root.className = 'CharacterSelectPage_characterSelectPage__test';
+        document.body.appendChild(root);
+        return root;
+    }
+
+    function buildSlot(root = buildRoot()) {
         const slot = document.createElement('div');
-        document.body.appendChild(slot);
+        root.appendChild(slot);
         return slot;
     }
 
-    test('startWatching registers exactly one observer for the Character Select root class', () => {
+    test('startWatching registers one shared observer for both the Character Select root and async slots container', () => {
         characterSelectRenderer.startWatching();
 
         expect(mocks.onClassRegistrations).toHaveLength(1);
+        expect(mocks.onClassRegistrations[0].classNames).toEqual([
+            'CharacterSelectPage_characterSelectPage',
+            'CharacterSelectPage_characterSlots',
+        ]);
     });
 
     test('injects exactly one block per resolved slot, and updates it in place on a second render pass rather than duplicating', async () => {
-        const slot = buildSlot();
+        const root = buildRoot();
+        const slot = buildSlot(root);
         mocks.resolvedSlots = [{ slotElement: slot, character: character() }];
         mocks.activityRecords.set(
             'char-a',
@@ -294,31 +321,33 @@ describe('idempotent Character Select injection and lifecycle', () => {
 
         characterSelectRenderer.startWatching();
         const callback = mocks.onClassRegistrations[0].callback;
-        await callback(document.createElement('div'));
-        await callback(document.createElement('div'));
+        await callback(root);
+        await callback(root);
 
         expect(slot.querySelectorAll('.toolasha-character-activity-status')).toHaveLength(1);
         expect(slot.textContent).toContain('Character is idle');
     });
 
     test('does not inject anything when the account-level preference mirror says disabled', async () => {
-        const slot = buildSlot();
+        const root = buildRoot();
+        const slot = buildSlot(root);
         mocks.resolvedSlots = [{ slotElement: slot, character: character() }];
         mocks.accountPrefs = { enabled: false, dateFormat: 'MM-DD', timeFormat: '24hour' };
 
         characterSelectRenderer.startWatching();
-        await mocks.onClassRegistrations[0].callback(document.createElement('div'));
+        await mocks.onClassRegistrations[0].callback(root);
 
         expect(slot.querySelector('.toolasha-character-activity-status')).toBeNull();
     });
 
     test('stopWatching removes injected blocks and unregisters the observer', async () => {
-        const slot = buildSlot();
+        const root = buildRoot();
+        const slot = buildSlot(root);
         mocks.resolvedSlots = [{ slotElement: slot, character: character() }];
         mocks.activityRecords.set('char-a', record());
 
         characterSelectRenderer.startWatching();
-        await mocks.onClassRegistrations[0].callback(document.createElement('div'));
+        await mocks.onClassRegistrations[0].callback(root);
         expect(slot.querySelector('.toolasha-character-activity-status')).not.toBeNull();
 
         characterSelectRenderer.stopWatching();
@@ -328,8 +357,57 @@ describe('idempotent Character Select injection and lifecycle', () => {
 
     test('when the resolver cannot validate an owner, nothing is injected (fails closed, no crash)', async () => {
         mocks.resolvedSlots = null;
+        const root = buildRoot();
 
         characterSelectRenderer.startWatching();
-        await expect(mocks.onClassRegistrations[0].callback(document.createElement('div'))).resolves.not.toThrow();
+        await expect(mocks.onClassRegistrations[0].callback(root)).resolves.not.toThrow();
+    });
+
+    // TLA-025: native Character Select mounts its root with isLoading=true/characters=[] first,
+    // then inserts the characterSlots container inside that same root once loadCharacters()
+    // resolves asynchronously. The renderer must rescan on that later insertion rather than only
+    // discovering slots at the original root mount.
+    test('rescans when native character slots arrive after the already-mounted loading root', async () => {
+        const root = buildRoot();
+        mocks.resolvedSlots = [];
+
+        characterSelectRenderer.startWatching();
+        const callback = mocks.onClassRegistrations[0].callback;
+
+        // Native MWI mounts Character Select with isLoading=true / characters=[] first.
+        await callback(root);
+        expect(root.querySelector('.toolasha-character-activity-status')).toBeNull();
+
+        // loadCharacters() resolves later and React inserts the slots container under the same root.
+        const slotsContainer = document.createElement('div');
+        slotsContainer.className = 'CharacterSelectPage_characterSlots__test';
+        root.appendChild(slotsContainer);
+        const slot = buildSlot(slotsContainer);
+        mocks.resolvedSlots = [{ slotElement: slot, character: character() }];
+        mocks.activityRecords.set('char-a', record());
+
+        await callback(slotsContainer);
+
+        expect(slot.querySelectorAll('.toolasha-character-activity-status')).toHaveLength(1);
+        expect(slot.textContent).toContain('Character is idle');
+
+        // Repeated matching mutations must only update the same owned block, never duplicate it.
+        await callback(slotsContainer);
+        expect(slot.querySelectorAll('.toolasha-character-activity-status')).toHaveLength(1);
+    });
+
+    // TLA-025: the userscript can attach after Character Select has already finished loading (the
+    // root mounted and slots resolved before startWatching() ever registered the observer).
+    test('performs a bounded catch-up scan when Character Select is already mounted before startWatching()', async () => {
+        const root = buildRoot();
+        const slot = buildSlot(root);
+        mocks.resolvedSlots = [{ slotElement: slot, character: character() }];
+        mocks.activityRecords.set('char-a', record());
+
+        characterSelectRenderer.startWatching();
+        for (let i = 0; i < 5; i++) await Promise.resolve();
+
+        expect(slot.querySelectorAll('.toolasha-character-activity-status')).toHaveLength(1);
+        expect(slot.textContent).toContain('Character is idle');
     });
 });

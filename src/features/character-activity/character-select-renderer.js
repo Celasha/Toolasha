@@ -15,6 +15,7 @@ import { resolveDisplayProjection } from './character-activity-projection.js';
 import { loadCharacterActivity, loadAccountPreferences } from './character-activity-storage.js';
 
 const CHARACTER_SELECT_ROOT_CLASS = 'CharacterSelectPage_characterSelectPage';
+const CHARACTER_SLOTS_CLASS = 'CharacterSelectPage_characterSlots';
 const BLOCK_CLASS = 'toolasha-character-activity-status';
 const REFRESH_INTERVAL_MS = 60000;
 const ONE_HOUR_MS = 60 * 60 * 1000;
@@ -158,9 +159,39 @@ class CharacterSelectRenderer {
         if (this.isWatching) return;
         this.isWatching = true;
 
-        this.unregisterObserver = domObserver.onClass('characterActivityStatus', CHARACTER_SELECT_ROOT_CLASS, (node) =>
-            this.onCharacterSelectMounted(node)
+        // Native Character Select mounts its root with isLoading=true/characters=[] first, then
+        // inserts the actual character-slots container inside that same root once the async
+        // loadCharacters() call resolves. Watch for both signals on the shared observer so a
+        // slots-container insertion under an already-mounted root triggers a rescan.
+        this.unregisterObserver = domObserver.onClass(
+            'characterActivityStatus',
+            [CHARACTER_SELECT_ROOT_CLASS, CHARACTER_SLOTS_CLASS],
+            (node) => this.onCharacterSelectDomReady(node)
         );
+
+        // The userscript can attach after Character Select has already finished loading (e.g. a
+        // late-attaching context, or a re-render of this module). Do one bounded catch-up scan
+        // here rather than waiting indefinitely for another root/slots insertion; later async
+        // slot arrival is still handled by the observer above. Not a repeated/polling scan - runs
+        // exactly once, guarded by the isWatching check above.
+        const existingRoot = document.querySelector(`[class*="${CHARACTER_SELECT_ROOT_CLASS}"]`);
+        if (existingRoot) this.onCharacterSelectMounted(existingRoot);
+    }
+
+    /**
+     * Resolve whichever Character Select root owns a newly-observed node (the root itself, or the
+     * later-inserted slots container nested inside it) and (re)run discovery against that root.
+     * @param {Element} node
+     */
+    async onCharacterSelectDomReady(node) {
+        if (!node?.isConnected) return;
+
+        const rootElement =
+            (typeof node.className === 'string' && node.className.includes(CHARACTER_SELECT_ROOT_CLASS) && node) ||
+            node.closest?.(`[class*="${CHARACTER_SELECT_ROOT_CLASS}"]`);
+        if (!rootElement) return;
+
+        return this.onCharacterSelectMounted(rootElement);
     }
 
     async onCharacterSelectMounted(rootElement) {
