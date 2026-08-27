@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.97.0](https://github.com/Celasha/Toolasha/compare/v2.96.1...v2.97.0) (2026-08-27)
+
+
+### Features
+
+* add openable analytics and luck tracking ([#667](https://github.com/Celasha/Toolasha/issues/667)) ([3f31784](https://github.com/Celasha/Toolasha/commit/3f317848d9baea17f5c7533bf2757ec295db4629))
+
+
+### Bug Fixes
+
+* show unavailable loadouts in Combat Sim ([e4fa288](https://github.com/Celasha/Toolasha/commit/e4fa2888a0c625c54c500050a891cbbbb640262a))
+
 ## [2.96.1](https://github.com/Celasha/Toolasha/compare/v2.96.0...v2.96.1) (2026-08-26)
 
 ### Bug Fixes
