@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.96.1
+ * Version: 2.97.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -10601,7 +10601,7 @@ self.onmessage = function (e) {
      */
 
 
-    const COIN_HRID = '/items/coin';
+    const COIN_HRID$1 = '/items/coin';
     const DEFAULT_EMPIRICAL_SAMPLE_SIZE = 5000;
 
     function getKeyPricingMode() {
@@ -10683,7 +10683,7 @@ self.onmessage = function (e) {
         const price = expectedValueCalculator.getDropPrice(itemHrid);
         if (price === null) return null;
 
-        if (itemHrid === COIN_HRID) return count * price;
+        if (itemHrid === COIN_HRID$1) return count * price;
 
         const itemDetails = dataManager.getItemDetails(itemHrid);
         const canBeSold = itemDetails?.isTradable !== false;
@@ -19121,7 +19121,7 @@ self.onmessage = function (e) {
         }
     }
 
-    function initialize() {
+    function initialize$1() {
         if (isActive) return;
         if (!config.getSetting('sellQueue')) return;
 
@@ -19155,7 +19155,7 @@ self.onmessage = function (e) {
         isActive = true;
     }
 
-    function cleanup() {
+    function cleanup$1() {
         if (sellQueueSessionId !== null && marketplaceSession_js.marketplaceSession.isActive(sellQueueSessionId)) {
             marketplaceSession_js.marketplaceSession.end(sellQueueSessionId);
         } else {
@@ -19174,14 +19174,14 @@ self.onmessage = function (e) {
     }
 
     config.onSettingChange('sellQueue', (value) => {
-        if (value) initialize();
-        else cleanup();
+        if (value) initialize$1();
+        else cleanup$1();
     });
 
     var sellQueue = {
         name: 'Sell Queue',
-        initialize,
-        cleanup,
+        initialize: initialize$1,
+        cleanup: cleanup$1,
     };
 
     const CONNECTION_STATES = {
@@ -21141,7 +21141,7 @@ self.onmessage = function (e) {
      */
 
 
-    const STORE_NAME = 'networthHistory';
+    const STORE_NAME$1 = 'networthHistory';
     const SNAPSHOT_INTERVAL = 60 * 60 * 1000; // 1 hour
     const MAX_DETAIL_SNAPSHOTS = 25; // ~24h of hourly snapshots + 1 buffer
 
@@ -21172,11 +21172,11 @@ self.onmessage = function (e) {
 
             // Load existing history from storage
             const storageKey = `networth_${this.characterId}`;
-            this.history = await storage.get(storageKey, STORE_NAME, []);
+            this.history = await storage.get(storageKey, STORE_NAME$1, []);
 
             // Load existing detail history from storage
             const detailKey = `networthDetail_${this.characterId}`;
-            this.detailHistory = await storage.get(detailKey, STORE_NAME, []);
+            this.detailHistory = await storage.get(detailKey, STORE_NAME$1, []);
 
             // Take an immediate first snapshot
             await this.takeSnapshot();
@@ -21215,10 +21215,10 @@ self.onmessage = function (e) {
 
             // Persist to storage
             const storageKey = `networth_${this.characterId}`;
-            await storage.set(storageKey, this.history, STORE_NAME, true);
+            await storage.set(storageKey, this.history, STORE_NAME$1, true);
 
             const detailKey = `networthDetail_${this.characterId}`;
-            await storage.set(detailKey, this.detailHistory, STORE_NAME, true);
+            await storage.set(detailKey, this.detailHistory, STORE_NAME$1, true);
         }
 
         /**
@@ -21348,7 +21348,7 @@ self.onmessage = function (e) {
             if (idx === -1) return;
             this.history.splice(idx, 1);
             const storageKey = `networth_${this.characterId}`;
-            await storage.set(storageKey, this.history, STORE_NAME);
+            await storage.set(storageKey, this.history, STORE_NAME$1);
         }
 
         /**
@@ -25210,7 +25210,7 @@ self.onmessage = function (e) {
 
     const UI_ID = 'mwi-offline-economics';
     const MODAL_ANCHOR_CLASS = 'OfflineProgressModal_offlineProgress';
-    const MODAL_CONTENT_CLASS = 'OfflineProgressModal_modalContent';
+    const MODAL_CONTENT_CLASS$1 = 'OfflineProgressModal_modalContent';
 
     const SOURCE_LABELS = {
         coin: 'Coin face value',
@@ -25263,7 +25263,7 @@ self.onmessage = function (e) {
             this.characterSwitchingHandler = () => this.handleCharacterSwitching();
             dataManager.on('character_switching', this.characterSwitchingHandler);
 
-            this.domObserverUnregister = domObserver.onClass('OfflineProgressEconomics', MODAL_CONTENT_CLASS, (node) =>
+            this.domObserverUnregister = domObserver.onClass('OfflineProgressEconomics', MODAL_CONTENT_CLASS$1, (node) =>
                 this.processModalNode(node)
             );
 
@@ -25279,7 +25279,7 @@ self.onmessage = function (e) {
             // The native modal itself renders from that same event, so for the same reason it is
             // very likely already mounted by now - domObserver.onClass only reacts to *future*
             // insertions, so scan for an already-present modal too.
-            document.querySelectorAll(`[class*="${MODAL_CONTENT_CLASS}"]`).forEach((node) => this.processModalNode(node));
+            document.querySelectorAll(`[class*="${MODAL_CONTENT_CLASS$1}"]`).forEach((node) => this.processModalNode(node));
 
             this.isActive = true;
         }
@@ -31663,6 +31663,2612 @@ self.onmessage = function (e) {
     };
 
     /**
+     * Openable Analytics Calculator
+     * Pure valuation math for one opening: Actual Value, Expected Value, and Luck (Actual - Expected).
+     * Consumes Toolasha's existing Expected Value calculator and sell-side pricing stack rather than
+     * duplicating drop/pricing formulas.
+     */
+
+
+    /**
+     * Value one gained item stack at event-time sell-side prices, applying market tax when the
+     * resolved value source requires it (mirrors `resolveSellSideValue`'s own `needsTax` contract).
+     * @param {string} itemHrid - Gained item HRID
+     * @param {number} enhancementLevel - Enhancement level of the gained stack
+     * @param {number} count - Number of this item gained
+     * @returns {{value: number, resolved: boolean}} Value contribution and whether it could be priced
+     */
+    function valueGainedItemStack(itemHrid, enhancementLevel, count) {
+        const resolved = expectedValueCalculator.resolveSellSideValue(itemHrid, enhancementLevel || 0);
+        if (!resolved) {
+            return { value: 0, resolved: false };
+        }
+
+        const itemDetails = dataManager.getItemDetails(itemHrid);
+        const isTradable = itemDetails?.isTradable !== false;
+        const perUnit =
+            resolved.needsTax && isTradable ? profitHelpers_js.calculatePriceAfterTax(resolved.value, profitConstants_js.MARKET_TAX) : resolved.value;
+
+        return { value: perUnit * (count || 0), resolved: true };
+    }
+
+    /**
+     * Calculate the Actual Value of one opening from its gained items. Never treats a missing
+     * price as zero silently - items that cannot be priced are excluded from the total and the
+     * result is marked incomplete so callers/UI can surface a partial state instead of a false
+     * precise number. Also returns a per-item breakdown (mirrors the totals) so callers can show or
+     * snapshot individual item values, not just the aggregate.
+     * @param {Array<{itemHrid: string, enhancementLevel?: number, count: number}>} gainedItems
+     * @returns {{value: number, complete: boolean, breakdown: Array<{itemHrid: string, enhancementLevel: number, count: number, value: number, resolved: boolean}>}}
+     */
+    function calculateActualValue(gainedItems) {
+        let total = 0;
+        let complete = true;
+        const breakdown = [];
+
+        for (const item of gainedItems || []) {
+            if (!item?.itemHrid) continue;
+            const { value, resolved } = valueGainedItemStack(item.itemHrid, item.enhancementLevel, item.count);
+            total += value;
+            if (!resolved) complete = false;
+            breakdown.push({
+                itemHrid: item.itemHrid,
+                enhancementLevel: item.enhancementLevel || 0,
+                count: item.count || 0,
+                value,
+                resolved,
+            });
+        }
+
+        return { value: total, complete, breakdown };
+    }
+
+    /**
+     * Calculate the Expected Value of one opening using Toolasha's existing container EV calculator.
+     * Returns `available: false` (never a fake zero) when the opened item has no meaningful
+     * monetary EV model - e.g. a not-yet-initialized calculator, or a buff-only openable that has
+     * no entry in `openableLootDropMap`. `isOpenable` alone is broader than "has a monetary loot
+     * model": Labyrinth Scroll/Seal items are openable because they grant a buff, so the underlying
+     * drop table must be checked directly rather than trusting a non-negative EV total.
+     * @param {string} containerHrid - Opened container item HRID
+     * @param {number} containerCount - Number of containers opened by this event
+     * @returns {{value: number|null, available: boolean, complete: boolean}}
+     */
+    function calculateExpectedValueForOpening(containerHrid, containerCount) {
+        if (!containerHrid || !(containerCount > 0)) {
+            return { value: null, available: false, complete: false };
+        }
+
+        const dropTable = dataManager.getInitClientData?.()?.openableLootDropMap?.[containerHrid];
+        if (!Array.isArray(dropTable) || dropTable.length === 0) {
+            return { value: null, available: false, complete: false };
+        }
+
+        const ev = expectedValueCalculator.calculateExpectedValue(containerHrid);
+        if (!ev || !(ev.expectedValue >= 0)) {
+            return { value: null, available: false, complete: false };
+        }
+
+        // The shared calculator's breakdown (`ev.drops`) can silently omit an active raw drop
+        // entirely when it can't resolve that item's details, rather than reporting it with
+        // `hasPriceData: false`. Checking `hasPriceData` on only the rows that survived into
+        // `ev.drops` can therefore falsely prove completeness. Compare against every drop the raw
+        // table itself considers active (a positive drop rate) before trusting the breakdown.
+        const activeRawDrops = dropTable.filter((drop) => (drop?.dropRate || 0) > 0);
+        const complete =
+            Array.isArray(ev.drops) &&
+            ev.drops.length === activeRawDrops.length &&
+            ev.drops.every((drop) => drop?.hasPriceData !== false);
+        return { value: ev.expectedValue * containerCount, available: true, complete };
+    }
+
+    /**
+     * Calculate Luck (Actual - Expected) and Luck % for one opening. Luck is only meaningful when
+     * both sides of the comparison are complete: an incomplete Actual subtotal or a partial Expected
+     * breakdown must never be presented as a precise, comparable Luck number.
+     * @param {number} actualValue
+     * @param {number|null} expectedValue
+     * @param {boolean} expectedAvailable
+     * @param {boolean} [actualComplete] - Whether the Actual subtotal priced every gained item
+     * @param {boolean} [expectedComplete] - Whether every modeled Expected drop could be priced
+     * @returns {{luckValue: number|null, luckPercent: number|null}}
+     */
+    function calculateLuck(
+        actualValue,
+        expectedValue,
+        expectedAvailable,
+        actualComplete = true,
+        expectedComplete = true
+    ) {
+        if (!actualComplete || !expectedAvailable || !expectedComplete || expectedValue === null) {
+            return { luckValue: null, luckPercent: null };
+        }
+
+        const luckValue = actualValue - expectedValue;
+        const luckPercent = expectedValue > 0 ? (luckValue / expectedValue) * 100 : null;
+
+        return { luckValue, luckPercent };
+    }
+
+    /**
+     * Build a fully normalized opening record from already-extracted opening data. This is the
+     * shared seam for both the live `loot_opened` WebSocket path and any future historical-import
+     * adapter (e.g. Edible Tools / MWI Combat Suite data) - a future importer only needs to map its
+     * own data into this same `{containerHrid, containerCount, gainedItems, grantedBuffs, timestamp,
+     * characterId, source}` shape and call this function, without needing to know about
+     * `loot_opened` at all.
+     * @param {Object} input
+     * @param {string} input.containerHrid
+     * @param {number} input.containerCount
+     * @param {Array} input.gainedItems
+     * @param {Array} [input.grantedBuffs]
+     * @param {number} input.timestamp
+     * @param {string} input.characterId
+     * @param {string} [input.source] - Provenance tag, e.g. 'loot_opened' or a future 'import:*'
+     * @param {boolean} [input.sourceDataComplete] - False when the caller already knows part of its
+     *      own source data could not be resolved (e.g. an import parser that had to drop an unmatched
+     *      gained-item name) - keeps that upstream gap from silently looking like a complete Actual.
+     * @returns {Object} Normalized opening record
+     */
+    function buildOpeningRecord({
+        containerHrid,
+        containerCount,
+        gainedItems,
+        grantedBuffs,
+        timestamp,
+        characterId,
+        source = 'loot_opened',
+        sourceDataComplete = true,
+    }) {
+        const normalizedGainedItems = (gainedItems || [])
+            .filter((item) => item?.itemHrid)
+            .map((item) => ({
+                itemHrid: item.itemHrid,
+                enhancementLevel: item.enhancementLevel || 0,
+                count: item.count || 0,
+            }));
+
+        const {
+            value: actualValue,
+            complete: actualValueComplete,
+            breakdown: actualValueBreakdown,
+        } = calculateActualValue(normalizedGainedItems);
+        const effectiveActualComplete = actualValueComplete && sourceDataComplete;
+        const {
+            value: expectedValue,
+            available: expectedValueAvailable,
+            complete: expectedValueComplete,
+        } = calculateExpectedValueForOpening(containerHrid, containerCount);
+        const { luckValue, luckPercent } = calculateLuck(
+            actualValue,
+            expectedValue,
+            expectedValueAvailable,
+            effectiveActualComplete,
+            expectedValueComplete
+        );
+
+        return {
+            timestamp,
+            characterId,
+            containerHrid,
+            containerCount,
+            gainedItems: normalizedGainedItems,
+            grantedBuffs: (grantedBuffs || []).map((buff) => ({ typeHrid: buff.typeHrid, duration: buff.duration })),
+            actualValue,
+            actualValueComplete: effectiveActualComplete,
+            actualValueBreakdown,
+            expectedValue,
+            expectedValueAvailable,
+            expectedValueComplete,
+            sourceDataComplete,
+            luckValue,
+            luckPercent,
+            pricingMode: config.getSettingValue('profitCalc_pricingMode', 'hybrid'),
+            keyPricingMode: config.getSettingValue('profitCalc_keyPricingMode', 'ask'),
+            source,
+        };
+    }
+
+    /**
+     * Build a normalized opening record from a bulk `{itemHrid: count}` map instead of an
+     * individual `gainedItems` array. This is the seam for historical bulk-import sources (Edible
+     * Tools, MWI Combat Suite) that only retain cumulative item totals per container, not
+     * per-opening detail - the import produces one synthetic record representing the entire
+     * imported total, valued through the exact same `buildOpeningRecord` math (and therefore
+     * Toolasha's own pricing/EV, never the source tool's own stored numbers).
+     * @param {Object} input
+     * @param {string} input.containerHrid
+     * @param {number} input.containerCount - Total containers opened, per the import source
+     * @param {Object} input.itemTotals - Map of itemHrid -> cumulative count gained
+     * @param {number} input.timestamp
+     * @param {string} input.characterId
+     * @param {string} input.source - e.g. 'import:edible' or 'import:mwi-combat-suite'
+     * @param {boolean} [input.sourceDataComplete] - False when the import parser had to drop an
+     *      unresolved gained-item name, so this synthetic record's Actual is only a subtotal.
+     * @returns {Object} Normalized opening record (enhancementLevel always 0 - imports don't track it)
+     */
+    function buildImportedAggregateRecord({
+        containerHrid,
+        containerCount,
+        itemTotals,
+        timestamp,
+        characterId,
+        source,
+        sourceDataComplete = true,
+    }) {
+        const gainedItems = Object.entries(itemTotals || {}).map(([itemHrid, count]) => ({
+            itemHrid,
+            enhancementLevel: 0,
+            count,
+        }));
+
+        return buildOpeningRecord({
+            containerHrid,
+            containerCount,
+            gainedItems,
+            grantedBuffs: [],
+            timestamp,
+            characterId,
+            source,
+            sourceDataComplete,
+        });
+    }
+
+    /**
+     * Openable Analytics Storage
+     * Character-scoped IndexedDB persistence for lifetime aggregates and bounded detailed history.
+     * Lifetime aggregates are updated incrementally at write time so pruning the detailed history
+     * array never changes lifetime totals.
+     */
+
+
+    const STORE_NAME = 'openableAnalytics';
+    const MAX_HISTORY_EVENTS = 500;
+
+    function lifetimeKey(characterId) {
+        return `lifetime:${characterId}`;
+    }
+
+    function historyKey(characterId) {
+        return `history:${characterId}`;
+    }
+
+    function importsKey(characterId) {
+        return `imports:${characterId}`;
+    }
+
+    /**
+     * Load the lifetime aggregate map (containerHrid -> aggregate) for one character.
+     * @param {string} characterId
+     * @returns {Promise<Object>} Map of containerHrid -> aggregate object
+     */
+    async function loadLifetime(characterId) {
+        return storage.getJSON(lifetimeKey(characterId), STORE_NAME, {});
+    }
+
+    /**
+     * Persist the lifetime aggregate map for one character.
+     * @param {string} characterId
+     * @param {Object} lifetime
+     * @returns {Promise<boolean>}
+     */
+    async function saveLifetime(characterId, lifetime) {
+        // Analytics mutation ordering is owned by the collector's persistence queue; do not
+        // introduce a second Core Storage debounce that could coalesce distinct log snapshots or
+        // resolve after a later reset/opening has already run.
+        return storage.setJSON(lifetimeKey(characterId), lifetime, STORE_NAME, true);
+    }
+
+    /**
+     * Load the bounded detailed opening history for one character (most recent last).
+     * @param {string} characterId
+     * @returns {Promise<Array>}
+     */
+    async function loadHistory(characterId) {
+        return storage.getJSON(historyKey(characterId), STORE_NAME, []);
+    }
+
+    /**
+     * Pure, synchronous append of one detailed opening record, pruning the oldest entries beyond
+     * `MAX_HISTORY_EVENTS`. Does not touch the lifetime aggregate or persistence - callers that need
+     * ordered/immediate persistence should follow with `saveHistory()` themselves (see the data
+     * collector's persistence queue), so two overlapping callers never both derive their next state
+     * from the same stale array.
+     * @param {Array} history - Current in-memory history array
+     * @param {Object} record - New detailed record to append
+     * @returns {Array} The updated (possibly pruned) history array
+     */
+    function appendHistoryRecord(history, record) {
+        const updated = [...history, record];
+        return updated.length > MAX_HISTORY_EVENTS ? updated.slice(updated.length - MAX_HISTORY_EVENTS) : updated;
+    }
+
+    /**
+     * Persist a character's detailed opening history immediately (not debounced) - reset must be
+     * able to order itself unambiguously against opening/import writes.
+     * @param {string} characterId
+     * @param {Array} history
+     * @returns {Promise<boolean>}
+     */
+    async function saveHistory(characterId, history) {
+        return storage.setJSON(historyKey(characterId), history, STORE_NAME, true);
+    }
+
+    /**
+     * Create an empty aggregate for a container that has never been recorded before.
+     * @returns {Object}
+     */
+    function createEmptyAggregate() {
+        return {
+            eventsCount: 0,
+            containersOpened: 0,
+            actualValueTotal: 0,
+            actualValueCompleteEvents: 0,
+            actualValuePartialEvents: 0,
+            expectedValueTotal: 0,
+            expectedValueAvailableEvents: 0,
+            expectedValueUnavailableEvents: 0,
+            expectedValuePartialEvents: 0,
+            valuationRecordCount: 0,
+            luckEligibleRecordCount: 0,
+            hasImportedData: false,
+            grantedBuffEvents: 0,
+            itemTotals: {},
+            itemValueTotals: {},
+        };
+    }
+
+    /**
+     * Fold one normalized opening record into an aggregate (lifetime or session), returning a new
+     * aggregate object. Never mutates the input.
+     * @param {Object} aggregate - Existing aggregate (or a fresh `createEmptyAggregate()`)
+     * @param {Object} record - Normalized opening record from `buildOpeningRecord`
+     * @returns {Object} New aggregate reflecting the folded-in record
+     */
+    function foldRecordIntoAggregate(aggregate, record) {
+        const base = aggregate || createEmptyAggregate();
+        const itemTotals = { ...base.itemTotals };
+        const itemValueTotals = { ...base.itemValueTotals };
+
+        for (const item of record.gainedItems || []) {
+            itemTotals[item.itemHrid] = (itemTotals[item.itemHrid] || 0) + item.count;
+        }
+        // actualValueBreakdown may be absent on records written before this field existed - those
+        // simply don't contribute a per-item value (their count is still reflected in itemTotals).
+        for (const item of record.actualValueBreakdown || []) {
+            if (!item.resolved) continue;
+            itemValueTotals[item.itemHrid] = (itemValueTotals[item.itemHrid] || 0) + item.value;
+        }
+
+        // Imported sources expose a cumulative container total, not individual opening events - one
+        // imported record must not be counted as one "opening event" (section 3.1).
+        const isImported = typeof record.source === 'string' && record.source.startsWith('import:');
+        // A record only qualifies as Luck-eligible when Actual is complete and Expected is both
+        // available and complete - calculateLuck() already enforces this and reports it back as a
+        // non-null luckValue, so aggregate Luck can fail closed as a whole (section 3.2) without
+        // re-deriving the same completeness rules here.
+        const expectedPartial = record.expectedValueAvailable && record.expectedValueComplete === false;
+        const luckEligible = record.luckValue !== null && record.luckValue !== undefined;
+
+        return {
+            // Imported sources expose cumulative container totals, not individual opening events.
+            eventsCount: base.eventsCount + (isImported ? 0 : 1),
+            containersOpened: base.containersOpened + record.containerCount,
+            actualValueTotal: base.actualValueTotal + record.actualValue,
+            actualValueCompleteEvents: base.actualValueCompleteEvents + (record.actualValueComplete ? 1 : 0),
+            actualValuePartialEvents: base.actualValuePartialEvents + (record.actualValueComplete ? 0 : 1),
+            expectedValueTotal: base.expectedValueTotal + (record.expectedValueAvailable ? record.expectedValue : 0),
+            expectedValueAvailableEvents: base.expectedValueAvailableEvents + (record.expectedValueAvailable ? 1 : 0),
+            expectedValueUnavailableEvents: base.expectedValueUnavailableEvents + (record.expectedValueAvailable ? 0 : 1),
+            expectedValuePartialEvents: (base.expectedValuePartialEvents || 0) + (expectedPartial ? 1 : 0),
+            valuationRecordCount: (base.valuationRecordCount || 0) + 1,
+            luckEligibleRecordCount: (base.luckEligibleRecordCount || 0) + (luckEligible ? 1 : 0),
+            hasImportedData: Boolean(base.hasImportedData || isImported),
+            grantedBuffEvents: base.grantedBuffEvents + (record.grantedBuffs?.length > 0 ? 1 : 0),
+            itemTotals,
+            itemValueTotals,
+        };
+    }
+
+    /**
+     * Load bulk-imported aggregates (Edible Tools / MWI Combat Suite / future sources) for one
+     * character. Shape: `{ [source]: { [containerHrid]: aggregate } }`.
+     * @param {string} characterId
+     * @returns {Promise<Object>}
+     */
+    async function loadImports(characterId) {
+        return storage.getJSON(importsKey(characterId), STORE_NAME, {});
+    }
+
+    /**
+     * Persist bulk-imported aggregates for one character.
+     * @param {string} characterId
+     * @param {Object} imports
+     * @returns {Promise<boolean>}
+     */
+    async function saveImports(characterId, imports) {
+        return storage.setJSON(importsKey(characterId), imports, STORE_NAME, true);
+    }
+
+    /**
+     * Sum any number of aggregates (live + one or more imported sources) into one combined
+     * aggregate for display. Never mutates its inputs.
+     * @param {...Object} aggregates
+     * @returns {Object}
+     */
+    function mergeAggregates(...aggregates) {
+        const merged = createEmptyAggregate();
+        for (const aggregate of aggregates) {
+            if (!aggregate) continue;
+            merged.eventsCount += aggregate.eventsCount;
+            merged.containersOpened += aggregate.containersOpened;
+            merged.actualValueTotal += aggregate.actualValueTotal;
+            merged.actualValueCompleteEvents += aggregate.actualValueCompleteEvents;
+            merged.actualValuePartialEvents += aggregate.actualValuePartialEvents;
+            merged.expectedValueTotal += aggregate.expectedValueTotal;
+            merged.expectedValueAvailableEvents += aggregate.expectedValueAvailableEvents;
+            merged.expectedValueUnavailableEvents += aggregate.expectedValueUnavailableEvents;
+            merged.expectedValuePartialEvents += aggregate.expectedValuePartialEvents || 0;
+            merged.valuationRecordCount += aggregate.valuationRecordCount || 0;
+            merged.luckEligibleRecordCount += aggregate.luckEligibleRecordCount || 0;
+            merged.hasImportedData = Boolean(merged.hasImportedData || aggregate.hasImportedData);
+            merged.grantedBuffEvents += aggregate.grantedBuffEvents;
+            for (const [itemHrid, count] of Object.entries(aggregate.itemTotals || {})) {
+                merged.itemTotals[itemHrid] = (merged.itemTotals[itemHrid] || 0) + count;
+            }
+            for (const [itemHrid, value] of Object.entries(aggregate.itemValueTotals || {})) {
+                merged.itemValueTotals[itemHrid] = (merged.itemValueTotals[itemHrid] || 0) + value;
+            }
+        }
+        return merged;
+    }
+
+    /**
+     * Reset (delete) all Openable Analytics data for one character.
+     * @param {string} characterId
+     * @returns {Promise<boolean>} Whether every delete succeeded
+     */
+    async function resetAll(characterId) {
+        const lifetimeOk = await storage.delete(lifetimeKey(characterId), STORE_NAME);
+        const historyOk = await storage.delete(historyKey(characterId), STORE_NAME);
+        const importsOk = await storage.delete(importsKey(characterId), STORE_NAME);
+        return lifetimeOk && historyOk && importsOk;
+    }
+
+    /**
+     * Openable Analytics Data Collector
+     * Consumes the character-scoped, socket-ownership-gated `loot_opened` event that DataManager
+     * derives from the native WebSocket message (TLA-018), builds a normalized opening record via
+     * the shared calculator, and maintains character-scoped session (in-memory) and lifetime
+     * (persisted) aggregates plus a bounded detailed history.
+     */
+
+
+    class OpenableAnalyticsDataCollector {
+        constructor() {
+            this.isInitialized = false;
+            this.characterId = null;
+            this.lifecycleGeneration = 0;
+            this.lootOpenedHandler = null;
+            this.lifetime = {};
+            this.history = [];
+            this.session = {};
+            this.imports = {};
+            this.latestRecord = null;
+            this.updateListeners = new Set();
+            this.stateChangeListeners = new Set();
+            // One ordered persistence lane for opening/import/reset mutations. It intentionally
+            // survives cleanup()/reinitialize so an accepted write cannot be overtaken by a later
+            // reset, and initialize() waits on it so a same-character re-enable never loads a
+            // pre-write snapshot (OA-3, OA-4, OA-11).
+            this.persistenceQueue = Promise.resolve();
+        }
+
+        /**
+         * Queue one persistence operation behind every earlier one, current lifecycle or not. A
+         * later opening/reset therefore always lands after everything queued before it. `task` must
+         * resolve to a boolean success flag (Core Storage often resolves `false` on IndexedDB
+         * failure rather than rejecting) - a failed task still lets subsequent queued work run.
+         * @param {Function} task - Async function returning a boolean success flag
+         * @returns {Promise<boolean>} Whether this operation's persistence succeeded
+         */
+        enqueuePersistence(task) {
+            const run = this.persistenceQueue.then(task, task).catch((error) => {
+                console.error('[OpenableAnalytics] Persistence operation threw:', error);
+                return false;
+            });
+            this.persistenceQueue = run.then(() => {});
+            return run;
+        }
+
+        /**
+         * Initialize the collector for the current character. Session aggregates always start
+         * empty here - Session is page/character-lifecycle scoped, never manually started/resumed.
+         */
+        async initialize() {
+            if (this.isInitialized) {
+                return;
+            }
+
+            this.isInitialized = true;
+            // Do not load a stale pre-write snapshot if this feature was toggled/reinitialized while
+            // an accepted persistence operation from the previous lifecycle is still finishing.
+            await this.persistenceQueue.catch(() => {});
+
+            const characterId = dataManager.getCurrentCharacterId();
+            const generation = ++this.lifecycleGeneration;
+
+            const [lifetime, history, imports] = characterId
+                ? await Promise.all([loadLifetime(characterId), loadHistory(characterId), loadImports(characterId)])
+                : [{}, [], {}];
+
+            if (
+                generation !== this.lifecycleGeneration ||
+                !this.isInitialized ||
+                dataManager.getCurrentCharacterId() !== characterId
+            ) {
+                return;
+            }
+
+            // Commit the loaded snapshot only after every async load has completed and ownership is
+            // still valid - no partially loaded stale lifecycle is ever published into singleton
+            // state (OA-11).
+            this.characterId = characterId;
+            this.lifetime = lifetime;
+            this.history = history;
+            this.imports = imports;
+            this.session = {};
+            this.latestRecord = null;
+
+            this.lootOpenedHandler = (event) => {
+                this.onLootOpened(event, generation).catch((error) => {
+                    console.error('[OpenableAnalytics] Failed to record loot_opened:', error);
+                });
+            };
+            dataManager.on('loot_opened', this.lootOpenedHandler);
+        }
+
+        /**
+         * Handle a character-scoped `loot_opened` event from DataManager (already filtered to the
+         * accepted active socket - TLA-018). Ignores an event whose captured characterId no longer
+         * matches this collector's current character, which also protects against a stale
+         * continuation resuming after a character switch even though DataManager's own ownership
+         * check already covers the common case.
+         * @param {Object} event - `{data, characterId}` as emitted by DataManager
+         * @param {number} generation - Lifecycle generation captured at registration time
+         */
+        async onLootOpened(event, generation) {
+            if (generation !== this.lifecycleGeneration) return;
+            const data = event?.data;
+            const characterId = event?.characterId;
+            if (!characterId || characterId !== this.characterId) return;
+            if (!data?.openedItem?.itemHrid) return;
+
+            await this.recordOpening(
+                {
+                    containerHrid: data.openedItem.itemHrid,
+                    containerCount: data.openedItem.count || 1,
+                    gainedItems: data.gainedItems,
+                    grantedBuffs: data.grantedBuffs,
+                    timestamp: Date.now(),
+                    characterId,
+                },
+                { generation }
+            );
+        }
+
+        /**
+         * Build and record one opening from already-normalized input. This is the shared entry
+         * point for both the live WebSocket path and the historical-import adapters (Edible Tools /
+         * MWI Combat Suite) - an importer can call this directly with `source: 'import:...'` without
+         * needing to go through `loot_opened` at all.
+         * @param {Object} input - See `buildOpeningRecord` for shape
+         * @param {Object} [options]
+         * @param {number} [options.generation] - Lifecycle generation to guard against a stale
+         *      continuation resuming after `cleanup()`/a character switch
+         * @returns {Promise<Object>} The normalized record that was recorded
+         */
+        async recordOpening(input, { generation = this.lifecycleGeneration } = {}) {
+            const record = buildOpeningRecord(input);
+
+            if (generation !== this.lifecycleGeneration) return record;
+
+            // Commit every in-memory view synchronously, in this exact order, before notifying
+            // listeners. This guarantees two overlapping openings each derive their history append
+            // from the collector's own latest in-memory array rather than a shared stale snapshot
+            // (OA-3), and that a mounted modal's data-driven refresh always sees Lifetime already
+            // including the opening that triggered it (OA-10).
+            this.session[record.containerHrid] = foldRecordIntoAggregate(this.session[record.containerHrid], record);
+            if (record.characterId) {
+                this.lifetime = {
+                    ...this.lifetime,
+                    [record.containerHrid]: foldRecordIntoAggregate(this.lifetime[record.containerHrid], record),
+                };
+                this.history = appendHistoryRecord(this.history, record);
+            }
+
+            this.latestRecord = record;
+            this.notifyListeners(record);
+            this.notifyStateChange();
+
+            if (!record.characterId) return record;
+
+            // Queue persistence behind everything already queued (including any earlier opening or
+            // a reset). A later reset therefore cannot resurrect this opening, and this opening
+            // cannot be lost to a reset that was already in flight when it arrived (OA-4).
+            const characterId = record.characterId;
+            const historySnapshot = this.history;
+            const lifetimeSnapshot = this.lifetime;
+            const persisted = await this.enqueuePersistence(async () => {
+                const historyOk = await saveHistory(characterId, historySnapshot);
+                const lifetimeOk = await saveLifetime(characterId, lifetimeSnapshot);
+                return historyOk && lifetimeOk;
+            });
+            if (!persisted) {
+                console.error('[OpenableAnalytics] Could not save this opening. It may not persist after reload.');
+            }
+
+            return record;
+        }
+
+        /**
+         * Subscribe to newly recorded openings (used by the modal-line injector to update
+         * immediately, without waiting for a DOM-mount fallback).
+         * @param {Function} callback - Called with the new normalized record
+         * @returns {Function} Unsubscribe function
+         */
+        onUpdate(callback) {
+            this.updateListeners.add(callback);
+            return () => this.updateListeners.delete(callback);
+        }
+
+        notifyListeners(record) {
+            for (const callback of this.updateListeners) {
+                try {
+                    callback(record);
+                } catch (error) {
+                    console.error('[OpenableAnalytics] Update listener error:', error);
+                }
+            }
+        }
+
+        /**
+         * Subscribe to any in-memory analytics mutation (live opening, import, replace, remove
+         * import, delete container, delete all) - used by Full Analytics to refresh only while it is
+         * currently mounted. Fired immediately after the in-memory commit, before persistence.
+         * @param {Function} callback - Called with no arguments
+         * @returns {Function} Unsubscribe function
+         */
+        onStateChange(callback) {
+            this.stateChangeListeners.add(callback);
+            return () => this.stateChangeListeners.delete(callback);
+        }
+
+        notifyStateChange() {
+            for (const callback of this.stateChangeListeners) {
+                try {
+                    callback();
+                } catch (error) {
+                    console.error('[OpenableAnalytics] State-change listener error:', error);
+                }
+            }
+        }
+
+        /**
+         * @returns {Object|null} The most recently recorded normalized opening record, if any
+         */
+        getLatestRecord() {
+            return this.latestRecord;
+        }
+
+        /**
+         * @param {string} containerHrid
+         * @returns {Object} Session (in-memory, page/character lifecycle-scoped) aggregate
+         */
+        getSessionAggregate(containerHrid) {
+            return this.session[containerHrid] || createEmptyAggregate();
+        }
+
+        /**
+         * @returns {Array<string>} Container HRIDs that actually exist in the current in-memory
+         *      Session - never containers that only have Lifetime/imported history.
+         */
+        getSessionContainers() {
+            return Object.keys(this.session);
+        }
+
+        /**
+         * @param {string} containerHrid
+         * @returns {Object} Lifetime (persisted, live-tracked) aggregate, excluding bulk imports -
+         *      use `getLifetimeAggregate` for the combined total shown in the UI.
+         */
+        getLiveLifetimeAggregate(containerHrid) {
+            return this.lifetime[containerHrid] || createEmptyAggregate();
+        }
+
+        /**
+         * @param {string} containerHrid
+         * @returns {Object} Lifetime aggregate combining live-tracked openings with any bulk-imported
+         *      historical totals (Edible Tools / MWI Combat Suite / future sources) for this container.
+         */
+        getLifetimeAggregate(containerHrid) {
+            const importedAggregates = Object.values(this.imports)
+                .map((bySource) => bySource[containerHrid])
+                .filter(Boolean);
+            return mergeAggregates(this.lifetime[containerHrid], ...importedAggregates);
+        }
+
+        /**
+         * @returns {Array<string>} Container HRIDs with at least one lifetime opening, live or imported
+         */
+        getKnownContainers() {
+            const containers = new Set(Object.keys(this.lifetime));
+            for (const bySource of Object.values(this.imports)) {
+                for (const containerHrid of Object.keys(bySource)) {
+                    containers.add(containerHrid);
+                }
+            }
+            return [...containers];
+        }
+
+        /**
+         * @returns {Array<string>} Import source keys that currently have at least one container
+         */
+        getImportSourceKeys() {
+            return Object.entries(this.imports)
+                .filter(([, byContainer]) => Object.keys(byContainer).length > 0)
+                .map(([source]) => source);
+        }
+
+        /**
+         * @param {string} source
+         * @returns {Set<string>} Container HRIDs currently imported under this source
+         */
+        getImportedContainerHrids(source) {
+            return new Set(Object.keys(this.imports[source] || {}));
+        }
+
+        /**
+         * Import a batch of bulk historical containers from an external source (Edible Tools, MWI
+         * Combat Suite, or a future source), recomputing Actual/Expected/Luck via Toolasha's own
+         * valuation from the raw item counts rather than trusting the source's own stored numbers.
+         * Re-importing the same source atomically replaces that source's entire snapshot - containers
+         * present in an older export but absent from the new one do not survive (OA-5), which matters
+         * for Edible multi-player exports where switching the selected player must not leave the
+         * previous player's containers mixed into the current `import:edible` snapshot.
+         * @param {string} source - e.g. 'import:edible' or 'import:mwi-combat-suite'
+         * @param {Array<{containerHrid: string, containerCount: number, itemTotals: Object, sourceDataComplete?: boolean}>} containers
+         * @returns {Promise<{results: Array<Object>, persisted: boolean}>} Resulting per-container
+         *      aggregates and whether the import was actually saved
+         */
+        async importContainers(source, containers) {
+            if (!this.characterId) return { results: [], persisted: false };
+
+            const bySource = {};
+            const results = [];
+
+            for (const { containerHrid, containerCount, itemTotals, sourceDataComplete = true } of containers) {
+                const record = buildImportedAggregateRecord({
+                    containerHrid,
+                    containerCount,
+                    itemTotals,
+                    timestamp: Date.now(),
+                    characterId: this.characterId,
+                    source,
+                    sourceDataComplete,
+                });
+                const aggregate = foldRecordIntoAggregate(createEmptyAggregate(), record);
+                bySource[containerHrid] = aggregate;
+                results.push({ containerHrid, aggregate });
+            }
+
+            const characterId = this.characterId;
+            this.imports = { ...this.imports, [source]: bySource };
+            const importsSnapshot = this.imports;
+            this.notifyStateChange();
+
+            const persisted = await this.enqueuePersistence(() => saveImports(characterId, importsSnapshot));
+            if (!persisted) {
+                console.error('[OpenableAnalytics] Could not save the imported data. It may not persist after reload.');
+            }
+
+            return { results, persisted };
+        }
+
+        /**
+         * Remove one whole external source snapshot (e.g. 'import:edible'), keeping live Toolasha
+         * history, current Session, and every other import source untouched.
+         * @param {string} source
+         * @returns {Promise<boolean>} Whether the removal was actually saved
+         */
+        async removeImport(source) {
+            if (!this.characterId) return false;
+
+            const characterId = this.characterId;
+            const imports = { ...this.imports };
+            delete imports[source];
+            this.imports = imports;
+            this.notifyStateChange();
+
+            const persisted = await this.enqueuePersistence(() => saveImports(characterId, imports));
+            if (!persisted) {
+                console.error('[OpenableAnalytics] Could not remove the imported data. It may reappear after reload.');
+            }
+
+            return persisted;
+        }
+
+        /**
+         * @param {string} [containerHrid] - If provided, filter history to this container only
+         * @returns {Array<Object>} Detailed history records, most recent last
+         */
+        getHistory(containerHrid) {
+            if (!containerHrid) return this.history;
+            return this.history.filter((record) => record.containerHrid === containerHrid);
+        }
+
+        /**
+         * Reset lifetime + history + imports + in-memory session data for one container, current
+         * character. Commits in-memory state immediately and queues its persistence behind every
+         * earlier opening/import/reset, so a later opening for a *different* container is unaffected
+         * and a later opening for *this* container (arriving after this call returns) is never
+         * overwritten by this reset (OA-4). Prunes any import source left with zero containers so an
+         * empty `{ [source]: {} }` entry can never appear as an existing source.
+         * @param {string} containerHrid
+         * @returns {Promise<boolean>} Whether the reset was actually saved
+         */
+        async resetContainer(containerHrid) {
+            if (!this.characterId) return false;
+
+            const characterId = this.characterId;
+            const lifetime = { ...this.lifetime };
+            delete lifetime[containerHrid];
+            const history = this.history.filter((record) => record.containerHrid !== containerHrid);
+            const imports = Object.fromEntries(
+                Object.entries(this.imports)
+                    .map(([source, byContainer]) => {
+                        const next = { ...byContainer };
+                        delete next[containerHrid];
+                        return [source, next];
+                    })
+                    .filter(([, byContainer]) => Object.keys(byContainer).length > 0)
+            );
+
+            this.lifetime = lifetime;
+            this.history = history;
+            this.imports = imports;
+            delete this.session[containerHrid];
+            if (this.latestRecord?.containerHrid === containerHrid) {
+                this.latestRecord = null;
+            }
+            this.notifyStateChange();
+
+            const persisted = await this.enqueuePersistence(async () => {
+                const lifetimeOk = await saveLifetime(characterId, lifetime);
+                const historyOk = await saveHistory(characterId, history);
+                const importsOk = await saveImports(characterId, imports);
+                return lifetimeOk && historyOk && importsOk;
+            });
+            if (!persisted) {
+                console.error('[OpenableAnalytics] Could not save this deletion. It may reappear after reload.');
+            }
+
+            return persisted;
+        }
+
+        /**
+         * Reset all Openable Analytics data (lifetime + history + imports + in-memory session) for
+         * the current character. Commits in-memory state immediately and queues the deletion behind
+         * every earlier write, so an opening that arrives after this call starts still persists once
+         * this reset's queued deletion has run (OA-4).
+         * @returns {Promise<boolean>} Whether the reset was actually saved
+         */
+        async resetAll() {
+            if (!this.characterId) return false;
+            const characterId = this.characterId;
+            this.lifetime = {};
+            this.history = [];
+            this.imports = {};
+            this.session = {};
+            this.latestRecord = null;
+            this.notifyStateChange();
+
+            const persisted = await this.enqueuePersistence(() => resetAll(characterId));
+            if (!persisted) {
+                console.error('[OpenableAnalytics] Could not save this deletion. It may reappear after reload.');
+            }
+
+            return persisted;
+        }
+
+        /**
+         * Cleanup the collector's `loot_opened` subscription and in-memory state.
+         */
+        cleanup() {
+            this.lifecycleGeneration += 1;
+
+            if (this.lootOpenedHandler) {
+                dataManager.off('loot_opened', this.lootOpenedHandler);
+                this.lootOpenedHandler = null;
+            }
+
+            this.isInitialized = false;
+            this.characterId = null;
+            this.lifetime = {};
+            this.history = [];
+            this.imports = {};
+            this.session = {};
+            this.latestRecord = null;
+            this.updateListeners.clear();
+            this.stateChangeListeners.clear();
+            // Deliberately do not reset persistenceQueue: an accepted old-lifecycle write must
+            // finish under its captured character key, and initialize() waits on this same lane
+            // before loading so it can never load a snapshot from before that write landed.
+        }
+    }
+
+    const openableAnalyticsDataCollector = new OpenableAnalyticsDataCollector();
+
+    /**
+     * Openable Analytics Modal Injector
+     * Injects a compact Actual/Expected/Luck footer + per-item value labels into the native "Opened
+     * Loot" modal. Idempotent by design: injected content is located by its own marker class and
+     * replaced in place, so it self-corrects regardless of whether the modal remounts for a new
+     * opening or is updated in place while already displayed.
+     */
+
+
+    const MODAL_CONTENT_CLASS = 'Inventory_modalContent';
+    const LINE_CLASS = 'toolasha-openable-analytics-line';
+    const GAINED_ITEMS_CLASS = 'Inventory_gainedItems';
+    const ITEM_CONTAINER_CLASS = 'Item_itemContainer';
+    const ITEM_VALUE_LABEL_CLASS = 'toolasha-openable-analytics-item-value';
+    const COIN_HRID = '/items/coin';
+
+    const LUCK_TOOLTIP =
+        'Luck is Actual loot value minus Expected loot value. It does not include the container/key cost and is not opening profit.';
+    const LUCK_UNAVAILABLE_TOOLTIP = `Some required values are missing, so Luck can't be calculated. ${LUCK_TOOLTIP}`;
+    const PARTIAL_TOOLTIP = 'One or more gained items could not be priced.';
+
+    function formatValue(value) {
+        if (value === null || value === undefined) return '—';
+        return formatters_js.coinFormatter(Math.round(value));
+    }
+
+    /** Compact tiny per-item annotation, e.g. `≈54K`, `≈1.10M`, `≈0` - always compact regardless of the user's number-format setting. */
+    function formatTinyItemValue(value) {
+        const rounded = Math.round(value);
+        if (rounded === 0) return '≈0';
+        return `≈${formatters_js.formatKMB3Digits(rounded)}`;
+    }
+
+    /** Luck value with an explicit `+` on positive amounts; negative values already carry their own `-`. Zero is neutral (no sign). */
+    function formatLuckValue(value) {
+        if (value === null || value === undefined) return '—';
+        const rounded = Math.round(value);
+        const sign = rounded > 0 ? '+' : '';
+        return sign + formatters_js.coinFormatter(rounded);
+    }
+
+    /** Luck percent with an explicit `+`, one decimal place, and `-0.0%` normalized to `0.0%`. */
+    function formatLuckPercent(percent) {
+        if (percent === null || percent === undefined) return '';
+        let rounded = percent.toFixed(1);
+        if (rounded === '-0.0') rounded = '0.0';
+        const sign = parseFloat(rounded) > 0 ? '+' : '';
+        return ` (${sign}${rounded}%)`;
+    }
+
+    function luckColor(luckValue) {
+        if (luckValue > 0) return config.COLOR_PROFIT;
+        if (luckValue < 0) return config.COLOR_LOSS;
+        return config.COLOR_TEXT_SECONDARY || '#888888';
+    }
+
+    /**
+     * Build the inner HTML for the injected footer from the latest opening record + its lifetime
+     * aggregate. The container/opened-count wording is intentionally omitted - the native result
+     * already communicates what was opened and how many.
+     * @param {Object} record - Latest normalized opening record
+     * @param {Object} lifetimeAggregate - Lifetime aggregate for this container
+     * @param {Function} [onViewAnalytics] - Invoked when "View Analytics" is clicked
+     * @returns {string}
+     */
+    function buildFooterContent(record, lifetimeAggregate) {
+        const actualPartial = !record.actualValueComplete;
+        const actualText = `${formatValue(record.actualValue)}${
+        actualPartial ? ` <span title="${PARTIAL_TOOLTIP}">[Partial]</span>` : ''
+    }`;
+        const expectedText = record.expectedValueAvailable ? formatValue(record.expectedValue) : '—';
+        const luckAvailable = record.luckValue !== null && record.luckValue !== undefined;
+        const luckTitle = luckAvailable ? LUCK_TOOLTIP : LUCK_UNAVAILABLE_TOOLTIP;
+        const luckText = luckAvailable
+            ? `<span style="color:${luckColor(record.luckValue)}">${formatLuckValue(record.luckValue)}${formatLuckPercent(record.luckPercent)}</span>`
+            : '—';
+
+        const currentLine = `Actual ${actualText} · Expected ${expectedText} · <span title="${luckTitle}">Luck</span> ${luckText}`;
+
+        // Suppress a Lifetime row that would just repeat this exact first event: semantically, this
+        // container's Lifetime consists of nothing but this one live event and no imported data.
+        const isOnlyEverEvent = lifetimeAggregate.eventsCount === 1 && !lifetimeAggregate.hasImportedData;
+        const lifetimeLuckAvailable =
+            !isOnlyEverEvent &&
+            (lifetimeAggregate.valuationRecordCount || 0) > 0 &&
+            lifetimeAggregate.luckEligibleRecordCount === lifetimeAggregate.valuationRecordCount;
+        const lifetimeLuckValue = lifetimeLuckAvailable
+            ? lifetimeAggregate.actualValueTotal - lifetimeAggregate.expectedValueTotal
+            : null;
+        const lifetimeLuckPercent =
+            lifetimeLuckAvailable && lifetimeAggregate.expectedValueTotal > 0
+                ? (lifetimeLuckValue / lifetimeAggregate.expectedValueTotal) * 100
+                : null;
+
+        const viewLink = `<span class="toolasha-openable-analytics-view-link" style="cursor:pointer;text-decoration:underline">View Analytics</span>`;
+        const lifetimeLine = isOnlyEverEvent
+            ? viewLink
+            : `Lifetime ×${lifetimeAggregate.containersOpened}${
+              lifetimeLuckAvailable
+                  ? ` · Luck <span style="color:${luckColor(lifetimeLuckValue)}">${formatLuckValue(lifetimeLuckValue)}${formatLuckPercent(lifetimeLuckPercent)}</span>`
+                  : ''
+          } · ${viewLink}`;
+
+        return `<div>${currentLine}</div><div style="opacity:0.75">${lifetimeLine}</div>`;
+    }
+
+    class OpenableAnalyticsModalInjector {
+        constructor() {
+            this.isInitialized = false;
+            this.unregisterObserver = null;
+            this.unregisterItemObserver = null;
+            this.unsubscribeCollector = null;
+            this.viewAnalyticsHandler = null;
+        }
+
+        initialize({ onViewAnalytics } = {}) {
+            if (this.isInitialized) return;
+            this.isInitialized = true;
+            this.viewAnalyticsHandler = onViewAnalytics || null;
+
+            this.unregisterObserver = domObserver.onClass('openableAnalyticsModal', MODAL_CONTENT_CLASS, (node) =>
+                this.tryInject(node)
+            );
+
+            // Per-item labels need to react to the item icons themselves, not just the modal
+            // container: if the native modal stays mounted and updates in place for a new opening
+            // (rather than remounting), the modal-level observer above never fires again, but React
+            // still has to insert fresh Item_itemContainer nodes for the new gained items - this
+            // catches that update with the DOM already in its post-render state.
+            this.unregisterItemObserver = domObserver.onClass(
+                'openableAnalyticsModalItems',
+                ITEM_CONTAINER_CLASS,
+                (node) => {
+                    if (!this.isInitialized) return;
+                    const container = node.closest(`[class*="${MODAL_CONTENT_CLASS}"]`);
+                    if (!container) return;
+                    this.reconcileModal(container);
+                }
+            );
+
+            // Data-driven fallback: covers the footer (and opportunistically the per-item labels)
+            // as soon as new data arrives, ahead of any DOM mutation.
+            this.unsubscribeCollector = openableAnalyticsDataCollector.onUpdate(() => this.refreshMountedModal());
+        }
+
+        tryInject(container) {
+            if (!this.isInitialized) return;
+            if (!container?.classList) return;
+            const className = typeof container.className === 'string' ? container.className : '';
+            if (!className.includes(MODAL_CONTENT_CLASS)) return;
+
+            this.reconcileModal(container);
+        }
+
+        refreshMountedModal() {
+            if (!this.isInitialized) return;
+            const container = document.querySelector(`[class*="${MODAL_CONTENT_CLASS}"]`);
+            if (!container) return;
+
+            this.reconcileModal(container);
+        }
+
+        /**
+         * Never trust a generic `Inventory_modalContent` match alone. Only treat a mounted container
+         * as the current monetary reward result when the DOM structurally proves it: it must contain
+         * a real, non-empty gained-items section, and the collector's latest record must itself be a
+         * monetary opening (at least one gained item). This also naturally excludes buff-only
+         * openables, which never render a gained-items section at all. If ownership cannot be
+         * established, any previously injected OA content is stripped instead of left stale - this
+         * also handles the native modal being reused from a monetary opening into a buff-only result.
+         * @param {HTMLElement} container - Candidate `Inventory_modalContent` root
+         */
+        reconcileModal(container) {
+            if (!this.isInitialized) return;
+
+            const record = openableAnalyticsDataCollector.getLatestRecord();
+            const gainedItemsContainer = container.querySelector(`[class*="${GAINED_ITEMS_CLASS}"]`);
+            const itemContainers = gainedItemsContainer
+                ? gainedItemsContainer.querySelectorAll(`[class*="${ITEM_CONTAINER_CLASS}"]`)
+                : [];
+            const isMonetaryRewardModal = Boolean(record) && record.gainedItems?.length > 0 && itemContainers.length > 0;
+
+            if (!isMonetaryRewardModal) {
+                this.clearOwnedDom(container);
+                return;
+            }
+
+            this.renderFooter(container, record);
+            this.renderItemValueLabels(container, record, itemContainers);
+        }
+
+        renderFooter(container, record) {
+            const lifetimeAggregate = openableAnalyticsDataCollector.getLifetimeAggregate(record.containerHrid);
+
+            let line = container.querySelector(`.${LINE_CLASS}`);
+            if (!line) {
+                line = document.createElement('div');
+                line.className = LINE_CLASS;
+                line.style.cssText = 'font-size:12px;margin:6px 0;';
+                // Place after all native reward content, immediately above the native Close button,
+                // which the client always renders as the final child of modalContent.
+                const closeButton = container.lastElementChild;
+                if (closeButton) {
+                    container.insertBefore(line, closeButton);
+                } else {
+                    container.appendChild(line);
+                }
+            }
+
+            line.innerHTML = buildFooterContent(record, lifetimeAggregate);
+
+            const viewLink = line.querySelector('.toolasha-openable-analytics-view-link');
+            if (viewLink && this.viewAnalyticsHandler) {
+                viewLink.onclick = () => this.viewAnalyticsHandler(record.containerHrid);
+            }
+        }
+
+        /**
+         * Stamp a small value annotation onto each individual gained-item icon, matched positionally
+         * against `record.actualValueBreakdown` (both derive from the identical `gainedItems` array,
+         * so DOM order and breakdown order always agree). Always clears any previously stamped labels
+         * first so a failed/mismatched re-render never leaves a stale value on the wrong item, then
+         * skips labeling entirely - rather than risk mismatching values - if the icon count doesn't
+         * match the breakdown count.
+         * @param {HTMLElement} container - The modal's `Inventory_modalContent` root
+         * @param {Object} record - Latest normalized opening record
+         * @param {NodeList} itemContainers - Item icon nodes inside the gained-items section
+         */
+        renderItemValueLabels(container, record, itemContainers) {
+            container.querySelectorAll(`.${ITEM_VALUE_LABEL_CLASS}`).forEach((label) => label.remove());
+
+            const breakdown = record.actualValueBreakdown || [];
+            if (itemContainers.length !== breakdown.length) return;
+
+            itemContainers.forEach((itemEl, index) => {
+                const item = breakdown[index];
+                if (item.itemHrid === COIN_HRID) return; // native quantity already equals face value
+                if (!item.resolved) return; // no fabricated/placeholder label for an unpriced item
+
+                const label = document.createElement('div');
+                label.className = ITEM_VALUE_LABEL_CLASS;
+                label.style.cssText = 'font-size:10px; text-align:center; opacity:0.85;';
+                label.textContent = formatTinyItemValue(item.value);
+                itemEl.appendChild(label);
+            });
+        }
+
+        /** Remove any OA-owned footer/labels from one modal container without touching native content. */
+        clearOwnedDom(container) {
+            container.querySelectorAll(`.${LINE_CLASS}, .${ITEM_VALUE_LABEL_CLASS}`).forEach((el) => el.remove());
+        }
+
+        cleanup() {
+            if (this.unregisterObserver) {
+                this.unregisterObserver();
+                this.unregisterObserver = null;
+            }
+            if (this.unregisterItemObserver) {
+                this.unregisterItemObserver();
+                this.unregisterItemObserver = null;
+            }
+            if (this.unsubscribeCollector) {
+                this.unsubscribeCollector();
+                this.unsubscribeCollector = null;
+            }
+            this.viewAnalyticsHandler = null;
+            this.isInitialized = false;
+
+            // Remove any OA-owned DOM left in the document (e.g. a modal still open when the
+            // feature/character is toggled off), and guarantee a stale/queued observer callback
+            // cannot reinject after this point since isInitialized is now false.
+            document.querySelectorAll(`.${LINE_CLASS}, .${ITEM_VALUE_LABEL_CLASS}`).forEach((el) => el.remove());
+        }
+    }
+
+    const openableAnalyticsModalInjector = new OpenableAnalyticsModalInjector();
+
+    /**
+     * Openable Analytics Import Parsers
+     * Parses pasted/uploaded historical container-opening data from other tools into the same
+     * `{containerHrid, containerCount, itemTotals}` shape the data collector's live tracking uses,
+     * so recomputation always goes through Toolasha's own pricing/EV stack rather than trusting a
+     * source tool's own stored numbers.
+     *
+     * Historical import is a baseline/migration feature, not a synchronization engine: supported
+     * external exports are cumulative totals with no reliable per-opening identities/timestamps, so
+     * Toolasha cannot prove a newer import doesn't already include live-tracked openings, or that two
+     * imported sources don't cover the same historical period. Same-source replacement only prevents
+     * stacking two old snapshots of the same source - it does not prove no overlap with anything else.
+     */
+
+
+    const ITEM_HRID_PATTERN = /^\/items\/[a-z0-9_]+$/;
+
+    /**
+     * @param {*} value
+     * @returns {boolean} True only for a real, non-negative, finite safe-integer count - never a
+     *      coerced string, negative, fractional, or unsafe number.
+     */
+    function isValidCount(value) {
+        return typeof value === 'number' && Number.isFinite(value) && Number.isSafeInteger(value) && value >= 0;
+    }
+
+    /**
+     * @param {*} value
+     * @returns {boolean} True for a plain object (map-like), explicitly excluding arrays and null -
+     *      import sources describe maps, and an array in that position is a malformed export.
+     */
+    function isPlainObject(value) {
+        return typeof value === 'object' && value !== null && !Array.isArray(value);
+    }
+
+    /**
+     * A container with real current game data but no monetary loot model and nothing imported for it
+     * has no economic information Openable Analytics can display - safe to skip entirely rather than
+     * list a permanently empty/unavailable row.
+     * @param {string} containerHrid
+     * @param {Object} itemTotals
+     * @returns {boolean}
+     */
+    function isKnownNonMonetaryWithNoLoot(containerHrid, itemTotals) {
+        if (Object.keys(itemTotals).length > 0) return false;
+        if (!dataManager.getItemDetails(containerHrid)) return false; // unknown HRID - keep it (section 19)
+        const dropTable = dataManager.getInitClientData?.()?.openableLootDropMap?.[containerHrid];
+        return !Array.isArray(dropTable) || dropTable.length === 0;
+    }
+
+    /**
+     * Build a lowercased item/container display-name -> HRID map from the current game data, for
+     * resolving name-keyed import sources (Edible Tools) back to HRIDs. Sources that are already
+     * HRID-keyed (MWI Combat Suite) don't need this.
+     * @returns {Object} Map of lowercased name -> item HRID
+     */
+    function buildItemNameToHridMap() {
+        const initData = dataManager.getInitClientData();
+        const itemDetailMap = initData?.itemDetailMap || {};
+        const map = {};
+        for (const [itemHrid, details] of Object.entries(itemDetailMap)) {
+            if (details?.name) {
+                map[details.name.toLowerCase()] = itemHrid;
+            }
+        }
+        return map;
+    }
+
+    /**
+     * Detect which supported import format a pasted/uploaded text matches, from its validated JSON
+     * shape alone - the source-select dropdown is intentionally removed (section 16).
+     * @param {string} rawText
+     * @returns {{source: 'edible'|'mwi-combat-suite'|null, error?: string}}
+     */
+    function detectImportSource(rawText) {
+        let parsed;
+        try {
+            parsed = JSON.parse(rawText);
+        } catch {
+            return { source: null, error: 'Could not parse this text as JSON.' };
+        }
+
+        if (!isPlainObject(parsed)) {
+            return { source: null, error: 'This does not look like a supported export.' };
+        }
+
+        const hasCombatSuiteShape = isPlainObject(parsed.chests);
+        const hasEdibleShape = isPlainObject(parsed.Chest_Open_Data);
+
+        if (hasCombatSuiteShape && hasEdibleShape) {
+            return { source: null, error: 'This data matches more than one supported format and cannot be imported.' };
+        }
+        if (hasCombatSuiteShape) return { source: 'mwi-combat-suite' };
+        if (hasEdibleShape) return { source: 'edible' };
+        return { source: null, error: 'This does not match a supported Edible Tools or MWI Combat Suite export.' };
+    }
+
+    /**
+     * Parse an MWI Combat Suite export (a downloaded/pasted JSON file, already HRID-keyed). Only
+     * cumulative `total.opened` / `total.loot` counts are read - the source's own
+     * actualValue/expectedValue/luck fields are intentionally ignored so the import is recomputed
+     * under Toolasha's own valuation.
+     * @param {string} rawText - Raw JSON text (file contents or pasted text)
+     * @returns {{status: 'invalid'|'empty'|'ready', message?: string, containers: Array, warnings: Array<string>, ownerName: string|null, ownerMismatch: boolean|null}}
+     */
+    function parseCombatSuiteExport(rawText) {
+        let parsed;
+        try {
+            parsed = JSON.parse(rawText);
+        } catch {
+            return invalidResult('Could not parse the pasted/uploaded text as JSON.');
+        }
+
+        const chests = parsed?.chests;
+        if (!isPlainObject(chests)) {
+            return invalidResult('No "chests" data found in this export.');
+        }
+
+        const ownerName = typeof parsed?.player === 'string' ? parsed.player : null;
+        const currentCharacterName = dataManager.getCurrentCharacterName?.() ?? null;
+        const ownerMismatch = ownerName === null ? null : ownerName !== currentCharacterName;
+
+        const warnings = [];
+        const containers = [];
+
+        for (const [containerHrid, chest] of Object.entries(chests)) {
+            if (!ITEM_HRID_PATTERN.test(containerHrid)) {
+                warnings.push(`Skipped an entry with an invalid item id: "${containerHrid}".`);
+                continue;
+            }
+
+            const containerCount = chest?.total?.opened;
+            if (containerCount === undefined || containerCount === 0) {
+                continue; // no openings recorded - silently ignored, not a warning
+            }
+            if (!isValidCount(containerCount) || containerCount === 0) {
+                warnings.push(`Skipped ${chest?.name || containerHrid}: invalid opened count.`);
+                continue;
+            }
+
+            // Distinguish a missing/malformed loot block (corrupted data) from an explicitly present
+            // empty one (a real record of "opened N times, gained nothing"). Importing the former as
+            // if it were the latter would silently fabricate Actual 0 / a huge Expected / Luck -100%.
+            const total = chest?.total || {};
+            if (!('loot' in total)) {
+                warnings.push(`Skipped ${chest?.name || containerHrid}: opening count present but loot data is missing.`);
+                continue;
+            }
+            if (!isPlainObject(total.loot)) {
+                warnings.push(`Skipped ${chest?.name || containerHrid}: loot data is malformed.`);
+                continue;
+            }
+
+            const itemTotals = {};
+            let hadInvalidItem = false;
+            for (const [itemHrid, item] of Object.entries(total.loot)) {
+                if (!ITEM_HRID_PATTERN.test(itemHrid)) {
+                    hadInvalidItem = true;
+                    continue;
+                }
+                const count = item?.count;
+                if (count === undefined || count === 0) continue; // zero/absent - silently ignored
+                if (!isValidCount(count)) {
+                    hadInvalidItem = true;
+                    continue;
+                }
+                itemTotals[itemHrid] = count;
+            }
+
+            if (hadInvalidItem) {
+                warnings.push(
+                    `${chest?.name || containerHrid}: one or more gained items had invalid data and were excluded.`
+                );
+            }
+
+            if (isKnownNonMonetaryWithNoLoot(containerHrid, itemTotals)) continue;
+
+            // MWI Combat Suite is already HRID-keyed and validated above, so nothing here is dropped
+            // for being unresolvable - this source's Actual is only marked partial when validation
+            // itself excluded something.
+            containers.push({ containerHrid, containerCount, itemTotals, sourceDataComplete: !hadInvalidItem });
+        }
+
+        if (containers.length === 0) {
+            return { ...emptyResult(), warnings, ownerName, ownerMismatch };
+        }
+
+        return { status: 'ready', containers, warnings, ownerName, ownerMismatch };
+    }
+
+    /**
+     * Parse an Edible Tools `Edible_Tools` localStorage value (pasted as text, or read directly from
+     * `localStorage.getItem('Edible_Tools')` when same-origin). Edible only retains cumulative totals
+     * per chest, keyed by localized display name rather than HRID, so this resolves names against the
+     * current game's item list and reports anything it can't match rather than silently dropping it.
+     * @param {string} rawText - Raw JSON text
+     * @param {Object} [options]
+     * @param {string} [options.playerId] - Which player's data to import, if the export has more than one
+     * @returns {{status: 'invalid'|'empty'|'ready', message?: string, containers: Array, warnings: Array<string>, needsPlayerSelection?: boolean, players?: Array<{id: string, name: string}>}}
+     */
+    function parseEdibleExport(rawText, { playerId } = {}) {
+        let parsed;
+        try {
+            parsed = JSON.parse(rawText);
+        } catch {
+            return invalidResult('Could not parse the pasted text as JSON.');
+        }
+
+        const chestOpenData = parsed?.Chest_Open_Data;
+        if (!isPlainObject(chestOpenData)) {
+            return invalidResult('No "Chest_Open_Data" found in this Edible Tools data.');
+        }
+
+        const players = Object.entries(chestOpenData).map(([id, playerData]) => ({
+            id,
+            name: playerData?.['玩家昵称'] || id,
+        }));
+
+        if (!playerId) {
+            if (players.length === 0) {
+                return invalidResult('No player data found in this Edible Tools data.');
+            }
+            if (players.length === 1) {
+                playerId = players[0].id;
+            } else {
+                // Never silently guess among multiple players: try an exact current-character-ID key
+                // match, then a unique exact current-character-name match, before asking explicitly.
+                const currentCharacterId = dataManager.getCurrentCharacterId?.() ?? null;
+                const currentCharacterName = dataManager.getCurrentCharacterName?.() ?? null;
+
+                if (currentCharacterId && chestOpenData[String(currentCharacterId)]) {
+                    playerId = String(currentCharacterId);
+                } else if (currentCharacterName) {
+                    const nameMatches = players.filter((player) => player.name === currentCharacterName);
+                    if (nameMatches.length === 1) {
+                        playerId = nameMatches[0].id;
+                    }
+                }
+
+                if (!playerId) {
+                    return { status: 'empty', containers: [], warnings: [], needsPlayerSelection: true, players };
+                }
+            }
+        }
+
+        const playerData = chestOpenData[playerId];
+        const chestData = playerData?.['开箱数据'];
+        if (!isPlainObject(chestData)) {
+            return invalidResult(`No chest data found for ${playerData?.['玩家昵称'] || playerId}.`);
+        }
+
+        // Same ownership preflight contract as parseCombatSuiteExport: the strongest available
+        // evidence is an exact resolved-player-ID match, then an exact nickname/character-name
+        // match, then explicit unknown - never a silent omission that skips the mismatch warning.
+        const ownerName = typeof playerData?.['玩家昵称'] === 'string' ? playerData['玩家昵称'] : null;
+        const currentCharacterId = dataManager.getCurrentCharacterId?.() ?? null;
+        const currentCharacterName = dataManager.getCurrentCharacterName?.() ?? null;
+        let ownerMismatch;
+        if (currentCharacterId !== null && String(playerId) === String(currentCharacterId)) {
+            ownerMismatch = false;
+        } else if (ownerName && currentCharacterName) {
+            ownerMismatch = ownerName !== currentCharacterName;
+        } else {
+            ownerMismatch = null;
+        }
+
+        const nameToHrid = buildItemNameToHridMap();
+        const warnings = [];
+        const containers = [];
+        let anyChestNameResolved = false;
+
+        for (const [chestName, chest] of Object.entries(chestData)) {
+            const containerHrid = nameToHrid[chestName.toLowerCase()];
+
+            if (!containerHrid) {
+                warnings.push(`Skipped "${chestName}": could not match to a known item.`);
+                continue;
+            }
+            anyChestNameResolved = true;
+
+            const containerCount = chest?.['总计开箱数量'];
+            if (containerCount === undefined || containerCount === 0) {
+                continue; // no openings recorded - silently ignored, not a warning
+            }
+            if (!isValidCount(containerCount)) {
+                warnings.push(`Skipped ${chestName}: invalid opened count.`);
+                continue;
+            }
+
+            if (!('获得物品' in (chest || {}))) {
+                warnings.push(`Skipped ${chestName}: opening count present but gained-item data is missing.`);
+                continue;
+            }
+            if (!isPlainObject(chest['获得物品'])) {
+                warnings.push(`Skipped ${chestName}: gained-item data is malformed.`);
+                continue;
+            }
+
+            const itemTotals = {};
+            let unmatchedItemCount = 0;
+            let hadInvalidCount = false;
+            for (const [itemName, itemData] of Object.entries(chest['获得物品'])) {
+                const itemHrid = nameToHrid[itemName.toLowerCase()];
+                if (!itemHrid) {
+                    unmatchedItemCount++;
+                    continue;
+                }
+                const count = itemData?.['数量'];
+                if (count === undefined || count === 0) continue;
+                if (!isValidCount(count)) {
+                    hadInvalidCount = true;
+                    continue;
+                }
+                itemTotals[itemHrid] = count;
+            }
+
+            if (unmatchedItemCount > 0) {
+                warnings.push(`${chestName}: ${unmatchedItemCount} gained item(s) could not be matched and were excluded.`);
+            }
+            if (hadInvalidCount) {
+                warnings.push(`${chestName}: one or more gained items had invalid counts and were excluded.`);
+            }
+
+            if (isKnownNonMonetaryWithNoLoot(containerHrid, itemTotals)) continue;
+
+            // Do not let a warning-only path turn into a falsely precise imported Luck value: an
+            // unmatched/invalid gained item means this container's Actual is only a subtotal of the
+            // real source data, not the complete picture.
+            containers.push({
+                containerHrid,
+                containerCount,
+                itemTotals,
+                sourceDataComplete: unmatchedItemCount === 0 && !hadInvalidCount,
+            });
+        }
+
+        // Edible is name-keyed/localized. If nothing at all could be resolved, this isn't legitimate
+        // valid-empty history - it's a locale/format the current item list can't match against.
+        if (!anyChestNameResolved && Object.keys(chestData).length > 0) {
+            return { ...invalidResult('None of the chest names in this export could be matched to a known item.') };
+        }
+
+        if (containers.length === 0) {
+            return { ...emptyResult(), warnings, ownerName, ownerMismatch };
+        }
+
+        return { status: 'ready', containers, warnings, ownerName, ownerMismatch };
+    }
+
+    function invalidResult(message) {
+        return { status: 'invalid', message, containers: [], warnings: [] };
+    }
+
+    function emptyResult() {
+        return {
+            status: 'empty',
+            message: 'No opening history found in this export. Existing import was not changed.',
+            containers: [],
+            warnings: [],
+        };
+    }
+
+    /**
+     * Openable Analytics UI
+     * Character-scoped Analytics popup: Session/Lifetime toggle, single-open accordion of containers,
+     * per-container Actual/Expected/Luck + Loot table, and a collapsed Manage Data section for
+     * historical imports and destructive resets. One mounted shell is reused for all interactions -
+     * content is rebuilt in place rather than tearing down and recreating the whole popup.
+     */
+
+
+    const INVENTORY_FILTER_CONTAINER_CLASS = 'Inventory_itemFilterContainer';
+    const INVENTORY_BUTTON_CLASS = 'toolasha-openable-analytics-inventory-button';
+
+    const IMPORT_SOURCE_LABELS = {
+        'import:edible': 'Edible Tools',
+        'import:mwi-combat-suite': 'MWI Combat Suite',
+    };
+
+    function containerLabel(containerHrid) {
+        const details = dataManager.getItemDetails(containerHrid);
+        return details?.name || containerHrid;
+    }
+
+    function itemLabel(itemHrid) {
+        const details = dataManager.getItemDetails(itemHrid);
+        return details?.name || itemHrid;
+    }
+
+    /** Signed large-number formatting for Luck: explicit `+` on positive, native `-` on negative, neutral on exactly zero. */
+    function formatSignedLargeNumber(value) {
+        const rounded = Math.round(value);
+        const sign = rounded > 0 ? '+' : '';
+        return sign + formatters_js.formatLargeNumber(rounded);
+    }
+
+    function readEdibleLocalStorage() {
+        try {
+            return localStorage.getItem('Edible_Tools');
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * Sort Loot rows: positive known value descending, then known-zero rows, then unavailable-value
+     * rows, then alphabetically by display name as a tie-breaker. Uses property existence (not
+     * truthiness) so a legitimate resolved value of 0 is never treated the same as "unavailable".
+     */
+    function sortLootEntries(entries, itemValueTotals) {
+        const rank = (itemHrid) => {
+            if (!(itemHrid in itemValueTotals)) return 2;
+            return itemValueTotals[itemHrid] > 0 ? 0 : 1;
+        };
+        return [...entries].sort(([hridA], [hridB]) => {
+            const rankA = rank(hridA);
+            const rankB = rank(hridB);
+            if (rankA !== rankB) return rankA - rankB;
+            if (rankA === 0) return itemValueTotals[hridB] - itemValueTotals[hridA];
+            return itemLabel(hridA).localeCompare(itemLabel(hridB));
+        });
+    }
+
+    class OpenableAnalyticsUI {
+        constructor() {
+            this.isInitialized = false;
+            this.popupOverlay = null;
+            this.popupBody = null;
+            this.scope = 'lifetime';
+            this.expandedContainer = null;
+            this.manageDataOpen = false;
+            this.pendingImport = null;
+            this.mutationInFlight = false;
+            this.deleteContainerError = null;
+            this.deleteAllError = null;
+            this.unregisterInventoryButtonObserver = null;
+            this.unsubscribeStateChange = null;
+        }
+
+        initialize() {
+            if (this.isInitialized) return;
+            this.isInitialized = true;
+
+            openableAnalyticsModalInjector.initialize({
+                onViewAnalytics: (containerHrid) => this.showPopup({ containerHrid }),
+            });
+
+            // Persistent entry point: the "View Analytics" link inside the Opened Loot footer only
+            // exists right after opening something. This button in the Inventory panel's always-
+            // rendered search bar row lets it be opened at any time. Catch up on any matching
+            // container that already exists before this feature initialized (OA-RUNTIME-1), in
+            // addition to watching for future mounts.
+            this.unregisterInventoryButtonObserver = domObserver.onClass(
+                'openableAnalyticsInventoryButton',
+                INVENTORY_FILTER_CONTAINER_CLASS,
+                (node) => this.injectInventoryButton(node)
+            );
+            document
+                .querySelectorAll(`[class*="${INVENTORY_FILTER_CONTAINER_CLASS}"]`)
+                .forEach((node) => this.injectInventoryButton(node));
+
+            this.unsubscribeStateChange = openableAnalyticsDataCollector.onStateChange(() => this.refreshIfMounted());
+        }
+
+        injectInventoryButton(container) {
+            // Fail closed against a stale/captured observer callback firing after cleanup() has
+            // already torn down this feature's lifecycle.
+            if (!this.isInitialized) return;
+            if (container.querySelector(`.${INVENTORY_BUTTON_CLASS}`)) return;
+
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = INVENTORY_BUTTON_CLASS;
+            button.textContent = '📊';
+            button.title = 'Openable Analytics';
+            button.setAttribute('aria-label', 'Openable Analytics');
+            button.style.cssText =
+                'cursor:pointer; margin-left:8px; font-size:16px; display:inline-flex; align-items:center; background:none; border:none; padding:2px;';
+            button.onclick = () => this.showPopup();
+
+            container.appendChild(button);
+        }
+
+        /**
+         * @param {Object} [options]
+         * @param {string} [options.containerHrid] - When provided (View Analytics from a footer),
+         *      opens Lifetime with this container expanded and scrolled into view. Without it
+         *      (persistent Inventory entry point), opens Lifetime with all rows collapsed.
+         */
+        showPopup({ containerHrid } = {}) {
+            this.scope = 'lifetime';
+            this.expandedContainer =
+                containerHrid && openableAnalyticsDataCollector.getKnownContainers().includes(containerHrid)
+                    ? containerHrid
+                    : null;
+            this.manageDataOpen = false;
+            this.pendingImport = null;
+
+            if (!this.popupOverlay) {
+                this.buildShell();
+            }
+            this.renderBody();
+
+            if (this.expandedContainer) {
+                const row = [...this.popupBody.querySelectorAll('[data-container-hrid]')].find(
+                    (el) => el.dataset.containerHrid === this.expandedContainer
+                );
+                row?.scrollIntoView?.({ block: 'nearest' });
+            }
+        }
+
+        closePopup() {
+            if (this.popupOverlay) {
+                this.popupOverlay.remove();
+                this.popupOverlay = null;
+                this.popupBody = null;
+            }
+        }
+
+        /** Refresh in-place content only while the popup is currently mounted; never opens/recreates it. */
+        refreshIfMounted() {
+            if (!this.popupOverlay) return;
+            const scrollTop = this.popupBody.scrollTop;
+            this.renderBody();
+            this.popupBody.scrollTop = scrollTop;
+        }
+
+        buildShell() {
+            const textColor = config.COLOR_TEXT_PRIMARY;
+
+            const overlay = document.createElement('div');
+            overlay.className = 'toolasha-openable-analytics-overlay';
+            overlay.style.cssText = `
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.7); z-index: 10000;
+            display: flex; align-items: center; justify-content: center;
+        `;
+
+            const popup = document.createElement('div');
+            popup.className = 'toolasha-openable-analytics-popup';
+            popup.style.cssText = `
+            background: #1a1a1a; border: 2px solid #3a3a3a; border-radius: 8px;
+            color: ${textColor}; width: min(560px, 92vw); max-height: 85vh;
+            display: flex; flex-direction: column; box-sizing: border-box; min-width: 0;
+        `;
+
+            const header = document.createElement('div');
+            header.style.cssText = `
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 16px 20px; border-bottom: 2px solid #3a3a3a; flex-shrink: 0;
+        `;
+
+            const titleWrap = document.createElement('div');
+            const title = document.createElement('h2');
+            title.textContent = 'Openable Analytics';
+            title.style.cssText = `margin: 0; color: ${textColor}; font-size: 20px;`;
+            const characterName = document.createElement('div');
+            characterName.style.cssText = 'font-size:12px; opacity:0.7; margin-top:2px;';
+            characterName.textContent = dataManager.getCurrentCharacterName() || '';
+            titleWrap.appendChild(title);
+            titleWrap.appendChild(characterName);
+
+            const closeButton = document.createElement('button');
+            closeButton.type = 'button';
+            closeButton.textContent = '×';
+            closeButton.setAttribute('aria-label', 'Close');
+            closeButton.style.cssText = `background: none; border: none; color: ${textColor}; font-size: 28px; cursor: pointer; padding: 0; line-height: 1;`;
+            closeButton.onclick = () => this.closePopup();
+
+            header.appendChild(titleWrap);
+            header.appendChild(closeButton);
+            popup.appendChild(header);
+
+            const body = document.createElement('div');
+            body.className = 'toolasha-openable-analytics-body';
+            body.style.cssText = 'padding: 16px 20px; overflow-y: auto; min-width: 0;';
+            popup.appendChild(body);
+
+            overlay.appendChild(popup);
+            document.body.appendChild(overlay);
+
+            overlay.onclick = (e) => {
+                if (e.target === overlay) this.closePopup();
+            };
+
+            this.popupOverlay = overlay;
+            this.popupBody = body;
+        }
+
+        getContainersForScope() {
+            return this.scope === 'session'
+                ? openableAnalyticsDataCollector.getSessionContainers()
+                : openableAnalyticsDataCollector.getKnownContainers();
+        }
+
+        getAggregate(containerHrid) {
+            return this.scope === 'session'
+                ? openableAnalyticsDataCollector.getSessionAggregate(containerHrid)
+                : openableAnalyticsDataCollector.getLifetimeAggregate(containerHrid);
+        }
+
+        setScope(scope) {
+            if (scope === this.scope) return;
+            this.scope = scope;
+            const stillExists = this.getContainersForScope().includes(this.expandedContainer);
+            if (!stillExists) this.expandedContainer = null;
+            this.renderBody();
+        }
+
+        toggleContainer(containerHrid) {
+            this.expandedContainer = this.expandedContainer === containerHrid ? null : containerHrid;
+            this.renderBody();
+        }
+
+        renderBody() {
+            if (!this.popupBody) return;
+            this.popupBody.innerHTML = '';
+
+            this.popupBody.appendChild(this.buildScopeToggle());
+
+            const containers = this.getContainersForScope();
+            if (!this.getContainersForScope().includes(this.expandedContainer)) {
+                this.expandedContainer = null;
+            }
+
+            if (containers.length === 0) {
+                this.popupBody.appendChild(this.buildEmptyState());
+            } else {
+                this.popupBody.appendChild(this.buildAccordion(containers));
+            }
+
+            this.popupBody.appendChild(this.buildManageData());
+        }
+
+        buildScopeToggle() {
+            const wrapper = document.createElement('div');
+            wrapper.style.cssText = 'display:flex; gap:6px; margin-bottom:14px;';
+
+            for (const scope of ['session', 'lifetime']) {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.textContent = scope === 'session' ? 'Session' : 'Lifetime';
+                const active = scope === this.scope;
+                button.style.cssText = `
+                flex:1; padding:6px 10px; border-radius:4px; cursor:pointer; font-size:13px;
+                border:1px solid ${active ? config.COLOR_ACCENT : '#4a4a4a'};
+                background:${active ? config.COLOR_ACCENT : '#2a2a2a'};
+                color:${active ? '#0a0a0a' : '#fff'};
+            `;
+                button.onclick = () => this.setScope(scope);
+                wrapper.appendChild(button);
+            }
+
+            return wrapper;
+        }
+
+        buildEmptyState() {
+            const wrapper = document.createElement('div');
+            wrapper.style.cssText = 'opacity:0.75; padding:12px 0; font-size:13px; line-height:1.5;';
+
+            if (this.scope === 'session') {
+                wrapper.textContent = 'No tracked chest, crate, or cache openings this session.';
+                return wrapper;
+            }
+
+            wrapper.innerHTML = 'No chest, crate, or cache history yet.<br>Open one to start tracking.<br>';
+            const importLink = document.createElement('span');
+            importLink.textContent = 'Import History';
+            importLink.style.cssText = 'cursor:pointer; text-decoration:underline;';
+            importLink.onclick = () => {
+                this.manageDataOpen = true;
+                this.renderBody();
+                this.popupBody.querySelector('.toolasha-openable-analytics-manage-data')?.scrollIntoView();
+            };
+            wrapper.appendChild(importLink);
+            return wrapper;
+        }
+
+        buildAccordion(containers) {
+            const wrapper = document.createElement('div');
+            wrapper.style.cssText = 'margin-bottom:16px;';
+
+            // Stable alphabetical order - never reordered by Luck/value/count/recent activity.
+            const sorted = [...containers].sort((a, b) => containerLabel(a).localeCompare(containerLabel(b)));
+
+            for (const containerHrid of sorted) {
+                wrapper.appendChild(this.buildAccordionRow(containerHrid));
+            }
+
+            return wrapper;
+        }
+
+        buildAccordionRow(containerHrid) {
+            const aggregate = this.getAggregate(containerHrid);
+            const isOpen = this.expandedContainer === containerHrid;
+
+            const details = document.createElement('details');
+            details.dataset.containerHrid = containerHrid;
+            details.open = isOpen;
+            details.style.cssText = 'border-bottom:1px solid #2a2a2a; padding:6px 0;';
+
+            const summary = document.createElement('summary');
+            summary.style.cssText =
+                'cursor:pointer; display:flex; align-items:center; gap:8px; list-style:none; font-size:13px;';
+            summary.onclick = (e) => {
+                e.preventDefault();
+                this.toggleContainer(containerHrid);
+            };
+
+            const name = document.createElement('span');
+            name.textContent = containerLabel(containerHrid);
+            name.style.cssText = 'flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+
+            const count = document.createElement('span');
+            count.textContent = `×${aggregate.containersOpened}`;
+            count.style.cssText = 'flex-shrink:0; opacity:0.8;';
+
+            if (aggregate.hasImportedData) {
+                const infoMark = document.createElement('span');
+                infoMark.textContent = 'ⓘ';
+                infoMark.title = 'Includes imported historical data';
+                infoMark.style.cssText = `flex-shrink:0; color:${config.COLOR_INFO};`;
+                count.appendChild(document.createTextNode(' '));
+                count.appendChild(infoMark);
+            }
+
+            const luckEligible =
+                (aggregate.valuationRecordCount || 0) > 0 &&
+                aggregate.luckEligibleRecordCount === aggregate.valuationRecordCount;
+            const luckValue = luckEligible ? aggregate.actualValueTotal - aggregate.expectedValueTotal : null;
+            const luckPercent =
+                luckEligible && aggregate.expectedValueTotal > 0 ? (luckValue / aggregate.expectedValueTotal) * 100 : null;
+
+            const luck = document.createElement('span');
+            luck.style.cssText = 'flex-shrink:0; min-width:56px; text-align:right;';
+            if (!luckEligible) {
+                luck.textContent = '—';
+            } else if (luckPercent !== null) {
+                luck.textContent = formatLuckPercent(luckPercent)
+                    .trim()
+                    .replace(/^\(|\)$/g, '');
+                luck.style.color = luckColor(luckValue);
+            } else {
+                // Complete Expected of exactly zero: percent is meaningless, but the absolute Luck
+                // value is still valid - show that instead of making the row look unavailable.
+                luck.textContent = formatSignedLargeNumber(luckValue);
+                luck.style.color = luckColor(luckValue);
+            }
+
+            summary.appendChild(name);
+            summary.appendChild(count);
+            summary.appendChild(luck);
+            details.appendChild(summary);
+
+            if (isOpen) {
+                details.appendChild(this.buildExpandedDetails(containerHrid, aggregate));
+            }
+
+            return details;
+        }
+
+        buildExpandedDetails(containerHrid, aggregate) {
+            const wrapper = document.createElement('div');
+            wrapper.style.cssText = 'padding:10px 4px 4px 4px;';
+
+            const luckEligible =
+                (aggregate.valuationRecordCount || 0) > 0 &&
+                aggregate.luckEligibleRecordCount === aggregate.valuationRecordCount;
+            const luckValue = luckEligible ? aggregate.actualValueTotal - aggregate.expectedValueTotal : null;
+            const luckPercent =
+                luckEligible && aggregate.expectedValueTotal > 0 ? (luckValue / aggregate.expectedValueTotal) * 100 : null;
+
+            const summaryRow = document.createElement('div');
+            summaryRow.style.cssText = 'display:flex; justify-content:space-between; margin-bottom:10px; font-size:13px;';
+
+            const actualCol = document.createElement('div');
+            actualCol.innerHTML = `<div style="opacity:0.7; font-size:11px;">Actual</div>${formatters_js.formatLargeNumber(aggregate.actualValueTotal)}${aggregate.actualValuePartialEvents > 0 ? ' <span title="One or more openings/imports could not be fully priced">[Partial]</span>' : ''}`;
+
+            const expectedCol = document.createElement('div');
+            const expectedHasAny = aggregate.expectedValueAvailableEvents > 0;
+            expectedCol.innerHTML = `<div style="opacity:0.7; font-size:11px;">Expected</div>${expectedHasAny ? formatters_js.formatLargeNumber(aggregate.expectedValueTotal) : '—'}`;
+
+            const luckCol = document.createElement('div');
+            luckCol.style.textAlign = 'right';
+            const luckHeader = document.createElement('div');
+            luckHeader.style.cssText = 'opacity:0.7; font-size:11px;';
+            const luckInfo = document.createElement('span');
+            luckInfo.textContent = 'Luck ⓘ';
+            luckInfo.title =
+                'Luck is Actual loot value minus Expected loot value. It does not include the container/key cost and is not opening profit.';
+            luckHeader.appendChild(luckInfo);
+            const luckValueEl = document.createElement('div');
+            if (!luckEligible) {
+                luckValueEl.textContent = '—';
+            } else {
+                luckValueEl.textContent =
+                    formatSignedLargeNumber(luckValue) + (luckPercent !== null ? formatLuckPercent(luckPercent) : '');
+                luckValueEl.style.color = luckColor(luckValue);
+            }
+            luckCol.appendChild(luckHeader);
+            luckCol.appendChild(luckValueEl);
+
+            summaryRow.appendChild(actualCol);
+            summaryRow.appendChild(expectedCol);
+            summaryRow.appendChild(luckCol);
+            wrapper.appendChild(summaryRow);
+
+            if (aggregate.hasImportedData) {
+                const note = document.createElement('div');
+                note.style.cssText = 'font-size:11px; opacity:0.7; margin-bottom:10px; line-height:1.35;';
+                note.textContent =
+                    'Includes imported historical data: imported raw counts are recalculated using current Toolasha prices/loot model at import time, and imported/live periods may overlap.';
+                wrapper.appendChild(note);
+            }
+
+            wrapper.appendChild(this.buildLootTable(aggregate));
+
+            if (this.expandedContainer) {
+                const deleteRow = document.createElement('div');
+                deleteRow.style.cssText = 'margin-top:10px;';
+                const deleteButton = document.createElement('button');
+                deleteButton.type = 'button';
+                deleteButton.textContent = `Delete ${containerLabel(containerHrid)} Data…`;
+                deleteButton.disabled = this.mutationInFlight;
+                deleteButton.style.cssText = this.destructiveButtonStyle();
+                deleteButton.onclick = () => this.handleDeleteContainer(containerHrid);
+                deleteRow.appendChild(deleteButton);
+
+                if (this.deleteContainerError?.containerHrid === containerHrid) {
+                    const error = document.createElement('div');
+                    error.style.cssText = `margin-top:6px; font-size:12px; color:${config.COLOR_WARNING};`;
+                    error.textContent = this.deleteContainerError.message;
+                    deleteRow.appendChild(error);
+                }
+
+                wrapper.appendChild(deleteRow);
+            }
+
+            return wrapper;
+        }
+
+        buildLootTable(aggregate) {
+            const wrapper = document.createElement('div');
+
+            const heading = document.createElement('div');
+            heading.textContent = 'Loot';
+            heading.style.cssText = 'font-weight:600; margin-bottom:6px; font-size:13px;';
+            wrapper.appendChild(heading);
+
+            const entries = Object.entries(aggregate.itemTotals || {});
+            if (entries.length === 0) {
+                const empty = document.createElement('div');
+                empty.textContent = 'No items gained in this scope.';
+                empty.style.cssText = 'opacity:0.75; font-size:12px;';
+                wrapper.appendChild(empty);
+                return wrapper;
+            }
+
+            const itemValueTotals = aggregate.itemValueTotals || {};
+            const sorted = sortLootEntries(entries, itemValueTotals);
+
+            const table = document.createElement('table');
+            table.style.cssText = 'width:100%; border-collapse:collapse; font-size:12px;';
+
+            const headerRow = document.createElement('tr');
+            headerRow.style.cssText = 'opacity:0.7; text-align:left;';
+            headerRow.innerHTML = `<th style="font-weight:400; padding:2px 0;">Item</th><th style="font-weight:400; text-align:right; padding:2px 0;">Qty</th><th style="font-weight:400; text-align:right; padding:2px 0;">Value <span title="Values are the amounts recorded at each opening/import, not current market value.">ⓘ</span></th>`;
+            table.appendChild(headerRow);
+
+            for (const [itemHrid, count] of sorted) {
+                const row = document.createElement('tr');
+                const hasValue = itemHrid in itemValueTotals;
+                const valueText = hasValue ? formatters_js.formatLargeNumber(itemValueTotals[itemHrid]) : '—';
+                row.innerHTML = `<td style="padding:2px 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:0;">${itemLabel(itemHrid)}</td><td style="text-align:right; padding:2px 0;">${formatters_js.formatLargeNumber(count)}</td><td style="text-align:right; padding:2px 0;">${valueText}</td>`;
+                table.appendChild(row);
+            }
+
+            wrapper.appendChild(table);
+            return wrapper;
+        }
+
+        destructiveButtonStyle() {
+            return 'background:#4a2a2a; border:1px solid #5a3a3a; color:#fff; font-size:12px; cursor:pointer; padding:6px 12px; border-radius:4px;';
+        }
+
+        buildManageData() {
+            const details = document.createElement('details');
+            details.className = 'toolasha-openable-analytics-manage-data';
+            details.open = this.manageDataOpen;
+            details.style.cssText = 'margin-top:8px; border-top:1px solid #3a3a3a; padding-top:10px;';
+
+            const summary = document.createElement('summary');
+            summary.textContent = 'Manage Data';
+            summary.style.cssText = 'cursor:pointer; font-weight:600; font-size:13px; list-style:none;';
+            summary.onclick = (e) => {
+                e.preventDefault();
+                this.manageDataOpen = !this.manageDataOpen;
+                this.renderBody();
+            };
+            details.appendChild(summary);
+
+            if (this.manageDataOpen) {
+                const content = document.createElement('div');
+                content.style.cssText = 'padding-top:10px;';
+                content.appendChild(this.buildImportSourceList());
+                content.appendChild(this.buildImportControls());
+                content.appendChild(this.buildDeleteAllControl());
+                details.appendChild(content);
+            }
+
+            return details;
+        }
+
+        buildImportSourceList() {
+            const wrapper = document.createElement('div');
+            wrapper.style.cssText = 'margin-bottom:12px;';
+
+            const heading = document.createElement('div');
+            heading.textContent = 'Historical Imports';
+            heading.style.cssText = 'font-weight:600; font-size:12px; margin-bottom:6px;';
+            wrapper.appendChild(heading);
+
+            const sources = openableAnalyticsDataCollector.getImportSourceKeys();
+            if (sources.length === 0) {
+                const empty = document.createElement('div');
+                empty.textContent = 'No imported sources.';
+                empty.style.cssText = 'opacity:0.7; font-size:12px;';
+                wrapper.appendChild(empty);
+                return wrapper;
+            }
+
+            for (const source of sources) {
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:4px 0;';
+
+                const label = document.createElement('span');
+                label.textContent = IMPORT_SOURCE_LABELS[source] || source;
+                label.style.cssText = 'font-size:12px;';
+
+                const removeButton = document.createElement('button');
+                removeButton.type = 'button';
+                removeButton.textContent = 'Remove Import';
+                removeButton.disabled = this.mutationInFlight;
+                removeButton.style.cssText =
+                    'background:#3a3a3a; border:1px solid #4a4a4a; color:#fff; font-size:11px; cursor:pointer; padding:4px 8px; border-radius:4px;';
+                removeButton.onclick = () => this.handleRemoveImport(source);
+
+                row.appendChild(label);
+                row.appendChild(removeButton);
+                wrapper.appendChild(row);
+            }
+
+            return wrapper;
+        }
+
+        buildImportControls() {
+            const wrapper = document.createElement('div');
+            wrapper.style.cssText = 'margin-bottom:12px; padding-top:10px; border-top:1px solid #2a2a2a;';
+
+            const heading = document.createElement('div');
+            heading.textContent = 'Import History';
+            heading.style.cssText = 'font-weight:600; font-size:12px; margin-bottom:6px;';
+            wrapper.appendChild(heading);
+
+            if (this.pendingImport?.needsPlayerSelection) {
+                wrapper.appendChild(this.buildEdiblePlayerPicker());
+                return wrapper;
+            }
+
+            if (this.pendingImport?.preflight) {
+                wrapper.appendChild(this.buildImportPreflight());
+                return wrapper;
+            }
+
+            const controls = document.createElement('div');
+            controls.style.cssText = 'display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;';
+
+            if (readEdibleLocalStorage() !== null) {
+                const edibleButton = document.createElement('button');
+                edibleButton.type = 'button';
+                edibleButton.textContent = 'Import from Edible Tools';
+                edibleButton.style.cssText = this.controlButtonStyle();
+                edibleButton.onclick = () => this.beginImport(readEdibleLocalStorage(), 'edible');
+                controls.appendChild(edibleButton);
+            }
+
+            const fileButtonWrap = document.createElement('div');
+            fileButtonWrap.style.cssText = 'position:relative; overflow:hidden; display:inline-block;';
+            const fileButton = document.createElement('button');
+            fileButton.type = 'button';
+            fileButton.textContent = 'Choose JSON File';
+            fileButton.style.cssText = this.controlButtonStyle();
+            const fileInput = document.createElement('input');
+            fileInput.type = 'file';
+            fileInput.accept = '.json,application/json,text/plain';
+            fileInput.style.cssText = 'position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%;';
+            fileInput.onchange = () => {
+                const file = fileInput.files?.[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = () => this.beginImport(String(reader.result || ''));
+                reader.onerror = () => {
+                    this.pendingImport = { errorMessage: 'Could not read the selected file.' };
+                    this.renderBody();
+                };
+                reader.readAsText(file);
+            };
+            fileButtonWrap.appendChild(fileButton);
+            fileButtonWrap.appendChild(fileInput);
+            controls.appendChild(fileButtonWrap);
+
+            const pasteLink = document.createElement('span');
+            pasteLink.textContent = 'Paste JSON Instead';
+            pasteLink.style.cssText = 'cursor:pointer; text-decoration:underline; font-size:12px; align-self:center;';
+            pasteLink.onclick = () => {
+                this.showPasteArea = true;
+                this.renderBody();
+            };
+            wrapper.appendChild(controls);
+
+            if (this.showPasteArea) {
+                const textarea = document.createElement('textarea');
+                textarea.placeholder = 'Paste exported JSON here (Edible Tools or MWI Combat Suite).';
+                textarea.style.cssText =
+                    'width:100%; height:70px; background:#2a2a2a; color:#fff; border:1px solid #4a4a4a; border-radius:4px; padding:6px; font-size:12px; box-sizing:border-box; resize:vertical; margin-bottom:6px;';
+                wrapper.appendChild(textarea);
+
+                const submitButton = document.createElement('button');
+                submitButton.type = 'button';
+                submitButton.textContent = 'Preview Import';
+                submitButton.style.cssText = this.controlButtonStyle();
+                submitButton.onclick = () => this.beginImport(textarea.value);
+                wrapper.appendChild(submitButton);
+            } else {
+                wrapper.appendChild(pasteLink);
+            }
+
+            if (this.pendingImport?.errorMessage) {
+                const error = document.createElement('div');
+                error.style.cssText = `margin-top:8px; font-size:12px; color:${config.COLOR_WARNING};`;
+                error.textContent = this.pendingImport.errorMessage;
+                wrapper.appendChild(error);
+            }
+
+            if (this.pendingImport?.statusMessage) {
+                const status = document.createElement('div');
+                status.style.cssText = 'margin-top:8px; font-size:12px; opacity:0.9;';
+                status.textContent = this.pendingImport.statusMessage;
+                wrapper.appendChild(status);
+            }
+
+            return wrapper;
+        }
+
+        controlButtonStyle() {
+            return 'background:#3a3a3a; border:1px solid #4a4a4a; color:#fff; font-size:12px; cursor:pointer; padding:6px 10px; border-radius:4px;';
+        }
+
+        /** Parse pasted/uploaded/one-click text, auto-detecting the source unless explicitly known (Edible one-click). */
+        beginImport(rawText, knownSource) {
+            if (!rawText?.trim()) {
+                this.pendingImport = { errorMessage: 'No data found to import.' };
+                this.renderBody();
+                return;
+            }
+
+            let source = knownSource;
+            if (!source) {
+                const detected = detectImportSource(rawText);
+                if (!detected.source) {
+                    this.pendingImport = { errorMessage: detected.error };
+                    this.renderBody();
+                    return;
+                }
+                source = detected.source;
+            }
+
+            const result = source === 'edible' ? parseEdibleExport(rawText) : parseCombatSuiteExport(rawText);
+            this.applyParseResult(source, rawText, result);
+        }
+
+        applyParseResult(source, rawText, result) {
+            if (result.needsPlayerSelection) {
+                this.pendingImport = { needsPlayerSelection: true, players: result.players, rawText, source };
+                this.renderBody();
+                return;
+            }
+
+            if (result.status === 'invalid') {
+                this.pendingImport = { errorMessage: result.message };
+                this.renderBody();
+                return;
+            }
+
+            if (result.status === 'empty') {
+                this.pendingImport = { statusMessage: result.message };
+                this.renderBody();
+                return;
+            }
+
+            const prefixedSource = `import:${source}`;
+            const alreadyExists = openableAnalyticsDataCollector.getImportSourceKeys().includes(prefixedSource);
+            const overlaps = this.detectOverlap(prefixedSource, result.containers);
+
+            this.pendingImport = {
+                source,
+                prefixedSource,
+                containers: result.containers,
+                warnings: result.warnings,
+                alreadyExists,
+                overlaps,
+                ownerMismatch: result.ownerMismatch,
+                ownerName: result.ownerName,
+                preflight: true,
+            };
+            this.renderBody();
+        }
+
+        detectOverlap(prefixedSource, containers) {
+            const otherImportedHrids = new Set();
+            for (const source of openableAnalyticsDataCollector.getImportSourceKeys()) {
+                if (source === prefixedSource) continue;
+                for (const hrid of openableAnalyticsDataCollector.getImportedContainerHrids(source)) {
+                    otherImportedHrids.add(hrid);
+                }
+            }
+
+            return containers.some(({ containerHrid }) => {
+                const hasLive = openableAnalyticsDataCollector.getLiveLifetimeAggregate(containerHrid).eventsCount > 0;
+                return hasLive || otherImportedHrids.has(containerHrid);
+            });
+        }
+
+        buildEdiblePlayerPicker() {
+            const wrapper = document.createElement('div');
+
+            const label = document.createElement('div');
+            label.textContent = 'This Edible Tools data has more than one player - which one is this character?';
+            label.style.cssText = 'font-size:12px; margin-bottom:6px;';
+            wrapper.appendChild(label);
+
+            const select = document.createElement('select');
+            select.style.cssText =
+                'background:#2a2a2a; color:#fff; border:1px solid #4a4a4a; padding:4px 8px; border-radius:4px; margin-right:8px;';
+            for (const player of this.pendingImport.players) {
+                const option = document.createElement('option');
+                option.value = player.id;
+                option.textContent = player.name;
+                select.appendChild(option);
+            }
+            wrapper.appendChild(select);
+
+            const confirmButton = document.createElement('button');
+            confirmButton.type = 'button';
+            confirmButton.textContent = 'Continue';
+            confirmButton.style.cssText = this.controlButtonStyle();
+            confirmButton.onclick = () => {
+                const result = parseEdibleExport(this.pendingImport.rawText, { playerId: select.value });
+                this.applyParseResult('edible', this.pendingImport.rawText, result);
+            };
+
+            const cancelButton = document.createElement('button');
+            cancelButton.type = 'button';
+            cancelButton.textContent = 'Cancel';
+            cancelButton.style.cssText = this.controlButtonStyle() + 'margin-left:6px;';
+            cancelButton.onclick = () => {
+                this.pendingImport = null;
+                this.renderBody();
+            };
+
+            wrapper.appendChild(confirmButton);
+            wrapper.appendChild(cancelButton);
+            return wrapper;
+        }
+
+        buildImportPreflight() {
+            const { source, containers, warnings, alreadyExists, overlaps, ownerMismatch, ownerName } = this.pendingImport;
+            const wrapper = document.createElement('div');
+
+            const summary = document.createElement('div');
+            const totalOpenings = containers.reduce((sum, c) => sum + c.containerCount, 0);
+            summary.style.cssText = 'font-size:12px; margin-bottom:6px;';
+            summary.textContent = `${IMPORT_SOURCE_LABELS[`import:${source}`]}: ${formatters_js.formatLargeNumber(totalOpenings)} openings across ${containers.length} container(s) ready to import.`;
+            wrapper.appendChild(summary);
+
+            if (ownerMismatch === true) {
+                const warn = document.createElement('div');
+                warn.style.cssText = `font-size:12px; color:${config.COLOR_WARNING}; margin-bottom:6px;`;
+                warn.textContent = `This export's recorded player ("${ownerName}") does not match the current character.`;
+                wrapper.appendChild(warn);
+            } else if (ownerMismatch === null) {
+                const warn = document.createElement('div');
+                warn.style.cssText = `font-size:12px; color:${config.COLOR_WARNING}; margin-bottom:6px;`;
+                warn.textContent = 'This export does not record which character it belongs to - please verify ownership.';
+                wrapper.appendChild(warn);
+            }
+
+            if (overlaps) {
+                const warn = document.createElement('div');
+                warn.style.cssText = `font-size:12px; color:${config.COLOR_INFO}; margin-bottom:6px;`;
+                warn.textContent =
+                    'These cumulative histories may cover the same openings and cannot be reliably deduplicated.';
+                wrapper.appendChild(warn);
+            }
+
+            if (warnings?.length > 0) {
+                const warn = document.createElement('div');
+                warn.style.cssText = 'font-size:11px; opacity:0.75; margin-bottom:6px;';
+                warn.textContent = warnings.join(' ');
+                wrapper.appendChild(warn);
+            }
+
+            const confirmButton = document.createElement('button');
+            confirmButton.type = 'button';
+            confirmButton.textContent = this.mutationInFlight ? 'Importing…' : alreadyExists ? 'Replace Import…' : 'Import';
+            confirmButton.disabled = this.mutationInFlight;
+            confirmButton.style.cssText = this.controlButtonStyle();
+            confirmButton.onclick = () => this.handleConfirmImport();
+
+            const cancelButton = document.createElement('button');
+            cancelButton.type = 'button';
+            cancelButton.textContent = 'Cancel';
+            cancelButton.disabled = this.mutationInFlight;
+            cancelButton.style.cssText = this.controlButtonStyle() + 'margin-left:6px;';
+            cancelButton.onclick = () => {
+                this.pendingImport = null;
+                this.renderBody();
+            };
+
+            wrapper.appendChild(confirmButton);
+            wrapper.appendChild(cancelButton);
+            return wrapper;
+        }
+
+        async handleConfirmImport() {
+            const { prefixedSource, containers, alreadyExists } = this.pendingImport;
+            this.mutationInFlight = true;
+            this.renderBody();
+
+            const { persisted } = await openableAnalyticsDataCollector.importContainers(prefixedSource, containers);
+
+            // The popup may have been closed while this awaited - never resurrect/recreate it.
+            this.mutationInFlight = false;
+            if (!this.popupOverlay) return;
+
+            const totalOpenings = containers.reduce((sum, c) => sum + c.containerCount, 0);
+            this.pendingImport = persisted
+                ? {
+                      statusMessage: `${alreadyExists ? 'Replaced' : 'Imported'} ${IMPORT_SOURCE_LABELS[prefixedSource]} import: ${formatters_js.formatLargeNumber(totalOpenings)} openings across ${containers.length} container(s).`,
+                  }
+                : { errorMessage: 'Could not save Openable Analytics data. Current changes may not persist after reload.' };
+            this.showPasteArea = false;
+            this.renderBody();
+        }
+
+        async handleRemoveImport(source) {
+            this.mutationInFlight = true;
+            this.renderBody();
+
+            const persisted = await openableAnalyticsDataCollector.removeImport(source);
+
+            this.mutationInFlight = false;
+            if (!this.popupOverlay) return;
+
+            if (!persisted) {
+                this.pendingImport = { errorMessage: 'Could not remove the imported data. It may reappear after reload.' };
+            } else {
+                this.pendingImport = {
+                    statusMessage: `Removed ${IMPORT_SOURCE_LABELS[source]} import. Live Toolasha history was kept.`,
+                };
+            }
+            this.renderBody();
+        }
+
+        async handleDeleteContainer(containerHrid) {
+            if (
+                !confirm(
+                    `Delete all Openable Analytics data for ${containerLabel(containerHrid)} on this character? This cannot be undone.`
+                )
+            ) {
+                return;
+            }
+
+            this.mutationInFlight = true;
+            this.deleteContainerError = null;
+            this.renderBody();
+
+            const persisted = await openableAnalyticsDataCollector.resetContainer(containerHrid);
+
+            this.mutationInFlight = false;
+            if (!this.popupOverlay) return;
+            this.deleteContainerError = persisted
+                ? null
+                : { containerHrid, message: 'Could not save this deletion. It may reappear after reload.' };
+            this.renderBody();
+        }
+
+        buildDeleteAllControl() {
+            const wrapper = document.createElement('div');
+            wrapper.style.cssText = 'padding-top:10px; border-top:1px solid #2a2a2a;';
+
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.textContent = 'Delete All Analytics Data…';
+            button.disabled = this.mutationInFlight;
+            button.style.cssText = this.destructiveButtonStyle();
+            button.onclick = () => this.handleDeleteAll();
+
+            wrapper.appendChild(button);
+
+            if (this.deleteAllError) {
+                const error = document.createElement('div');
+                error.style.cssText = `margin-top:6px; font-size:12px; color:${config.COLOR_WARNING};`;
+                error.textContent = this.deleteAllError;
+                wrapper.appendChild(error);
+            }
+
+            return wrapper;
+        }
+
+        async handleDeleteAll() {
+            const characterName = dataManager.getCurrentCharacterName() || 'this character';
+            if (!confirm(`Delete ALL Openable Analytics data for ${characterName}? This cannot be undone.`)) {
+                return;
+            }
+
+            this.mutationInFlight = true;
+            this.deleteAllError = null;
+            this.renderBody();
+
+            const persisted = await openableAnalyticsDataCollector.resetAll();
+
+            this.mutationInFlight = false;
+            if (!this.popupOverlay) return;
+            this.deleteAllError = persisted ? null : 'Could not save this deletion. It may reappear after reload.';
+            // Delete All does not silently close the popup - show the resulting empty state in place.
+            this.renderBody();
+        }
+
+        cleanup() {
+            this.closePopup();
+            openableAnalyticsModalInjector.cleanup();
+            document.querySelectorAll(`.${INVENTORY_BUTTON_CLASS}`).forEach((button) => button.remove());
+            if (this.unregisterInventoryButtonObserver) {
+                this.unregisterInventoryButtonObserver();
+                this.unregisterInventoryButtonObserver = null;
+            }
+            if (this.unsubscribeStateChange) {
+                this.unsubscribeStateChange();
+                this.unsubscribeStateChange = null;
+            }
+            this.isInitialized = false;
+            this.showPasteArea = false;
+            this.deleteContainerError = null;
+            this.deleteAllError = null;
+        }
+    }
+
+    const openableAnalyticsUI = new OpenableAnalyticsUI();
+
+    /**
+     * Openable Analytics Feature
+     * Main entry point for Actual vs Expected Value + Luck tracking on openable containers.
+     */
+
+
+    async function initialize() {
+        await openableAnalyticsDataCollector.initialize();
+        openableAnalyticsUI.initialize();
+    }
+
+    function cleanup() {
+        openableAnalyticsDataCollector.cleanup();
+        openableAnalyticsUI.cleanup();
+    }
+
+    var openableAnalytics = {
+        name: 'Openable Analytics',
+        initialize,
+        cleanup,
+    };
+
+    /**
      * Market Library
      * Market, inventory, and economy features
      *
@@ -31710,6 +34316,7 @@ self.onmessage = function (e) {
         autoAllButton: autoAllButton$1,
         inventoryCategoryTotals,
         customTabsFeature: customTabsFeature$1,
+        openableAnalytics,
         marketplaceShortcuts,
         sellQueue,
     };

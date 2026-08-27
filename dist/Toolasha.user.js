@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      2.96.1
+// @version      2.97.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -22,12 +22,12 @@
 // @require      https://cdnjs.cloudflare.com/ajax/libs/mathjs/12.4.2/math.js
 // @require      https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js
 // @require      https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0/dist/chartjs-plugin-datalabels.min.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@32d398f7c8aed4165f71b409363eb12c4ee8053d/dist/libraries/toolasha-core.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@32d398f7c8aed4165f71b409363eb12c4ee8053d/dist/libraries/toolasha-utils.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@32d398f7c8aed4165f71b409363eb12c4ee8053d/dist/libraries/toolasha-market.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@32d398f7c8aed4165f71b409363eb12c4ee8053d/dist/libraries/toolasha-actions.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@32d398f7c8aed4165f71b409363eb12c4ee8053d/dist/libraries/toolasha-combat.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@32d398f7c8aed4165f71b409363eb12c4ee8053d/dist/libraries/toolasha-ui.js
+// @require      https://UPDATE-THIS-URL/toolasha-core.js
+// @require      https://UPDATE-THIS-URL/toolasha-utils.js
+// @require      https://UPDATE-THIS-URL/toolasha-market.js
+// @require      https://UPDATE-THIS-URL/toolasha-actions.js
+// @require      https://UPDATE-THIS-URL/toolasha-combat.js
+// @require      https://UPDATE-THIS-URL/toolasha-ui.js
 // ==/UserScript==
 // Note: Combat Sim auto-import requires Tampermonkey for cross-domain storage. Not available on Steam (use manual clipboard copy/paste instead).
 
@@ -92,6 +92,10 @@
                 category: 'Market',
                 module: Market.expectedValueCalculator,
                 async: true,
+                // Shared infrastructure: initialize when either consumer needs it, not only when the
+                // tooltip UI setting is on, so Openable Analytics keeps working after a character
+                // switch even when itemTooltip_expectedValue is off (OA-RUNTIME-2).
+                customCheck: () => config.getSetting('itemTooltip_expectedValue') || config.getSetting('openableAnalytics'),
             },
             {
                 key: 'tooltipConsumables',
@@ -250,6 +254,13 @@
                 category: 'Inventory',
                 module: Market.autoAllButton,
                 async: false,
+            },
+            {
+                key: 'openableAnalytics',
+                name: 'Openable Analytics',
+                category: 'Inventory',
+                module: Market.openableAnalytics,
+                async: true,
             },
             {
                 key: 'inventoryTabs',
@@ -968,7 +979,7 @@
         // Expose minimal user-facing API
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
-        targetWindow.Toolasha.version = '2.96.1';
+        targetWindow.Toolasha.version = '2.97.0';
 
         // Feature toggle API (for users to manage settings via console)
         targetWindow.Toolasha.features = {

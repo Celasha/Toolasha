@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.96.1
+ * Version: 2.97.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -15814,31 +15814,41 @@
             // Loadout dropdown + Reset button (skip in skillingMode — loadouts assigned per-skill)
             if (!this.skillingMode) {
                 const allSnapshots = loadoutState.getAllSnapshots();
-                const filteredSnapshots = allSnapshots.filter(
-                    (snapshot) =>
-                        snapshot.isUsableForCalculation &&
-                        (!snapshot.actionTypeHrid || snapshot.actionTypeHrid === '/action_types/combat')
+                // "Relevant to this simulator" (Combat/All Skills action type) is independent of
+                // "usable for calculation" - every relevant saved loadout stays visible so an
+                // unresolved one can be shown disabled instead of silently disappearing (TLA-023).
+                const relevantSnapshots = allSnapshots.filter(
+                    (snapshot) => !snapshot.actionTypeHrid || snapshot.actionTypeHrid === '/action_types/combat'
                 );
                 const displayedLoadoutName = this._unavailableLoadoutName || this._selectedLoadoutName;
                 const selectedSnapshot = displayedLoadoutName
                     ? allSnapshots.find((snapshot) => snapshot.name === displayedLoadoutName)
                     : null;
-                const selectedIsUsable = filteredSnapshots.some((snapshot) => snapshot.name === displayedLoadoutName);
-                const selectedUnavailable = !!this._unavailableLoadoutName || (displayedLoadoutName && !selectedIsUsable);
+                const selectedInRelevantList = relevantSnapshots.some((snapshot) => snapshot.name === displayedLoadoutName);
+                const selectedUnavailable =
+                    !!this._unavailableLoadoutName || (displayedLoadoutName && !selectedInRelevantList);
+                // Only synthesize a fallback option when the selected/unavailable loadout isn't
+                // already being rendered inline below (e.g. it was deleted or moved out of scope) -
+                // otherwise it would be listed twice.
+                const needsSyntheticUnavailableOption = selectedUnavailable && !selectedInRelevantList;
 
                 html += `<div style="display:flex; align-items:center; gap:6px; margin-bottom:8px;">`;
-                if (filteredSnapshots.length > 0 || selectedUnavailable) {
+                if (relevantSnapshots.length > 0 || needsSyntheticUnavailableOption) {
                     html += `<label style="color:#888; font-size:11px; flex-shrink:0;">Loadout</label>`;
                     html += `<select id="mwi-csim-loadout-select" style="
                     flex:1; min-width:0; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
                     border-radius:4px; padding:2px 6px; font-size:12px; font-family:inherit;">`;
                     html += `<option value=""${!displayedLoadoutName ? ' selected' : ''}>— Current Gear —</option>`;
-                    for (const snap of filteredSnapshots) {
-                        const label = snap.name + (snap.actionTypeHrid ? '' : ' (All Skills)');
+                    for (const snap of relevantSnapshots) {
+                        const label =
+                            snap.name +
+                            (snap.actionTypeHrid ? '' : ' (All Skills)') +
+                            (snap.isUsableForCalculation ? '' : ' (Unavailable)');
                         const selected = displayedLoadoutName === snap.name ? ' selected' : '';
-                        html += `<option value="${snap.name}"${selected}>${label}</option>`;
+                        const disabled = snap.isUsableForCalculation ? '' : ' disabled';
+                        html += `<option value="${snap.name}"${selected}${disabled}>${label}</option>`;
                     }
-                    if (selectedUnavailable) {
+                    if (needsSyntheticUnavailableOption) {
                         const unavailableLabel = selectedSnapshot?.name || displayedLoadoutName;
                         html += `<option value="${displayedLoadoutName}" selected disabled>${unavailableLabel} (Unavailable)</option>`;
                     }

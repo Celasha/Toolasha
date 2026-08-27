@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.96.1
+ * Version: 2.97.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -18,8 +18,14 @@
         constructor() {
             this.db = null;
             this.available = false;
-            this.dbName = 'ToolashaDB';
-            this.dbVersion = 19; // Bumped for characterActivityStatus store
+            this.dbVersion = 20; // Bumped for characterActivityStatus and openableAnalytics stores
+            // Standalone dev/test builds (BUILD_TARGET=dev-standalone) must never share the released
+            // product's IndexedDB namespace: a dev build carrying an unreleased schema bump upgrades
+            // ToolashaDB in place, and released code can then never reopen it (VersionError) once the
+            // dev build is removed. The build-channel marker is injected by rollup.config.js only for
+            // that target, so production/watch builds are unaffected.
+            const isStandaloneDevBuild = globalThis.__TOOLASHA_BUILD_CHANNEL__ === 'dev-standalone';
+            this.dbName = isStandaloneDevBuild ? `ToolashaDB-dev-v${this.dbVersion}` : 'ToolashaDB';
             this.saveDebounceTimers = new Map(); // Per-key debounce timers
             this.pendingWrites = new Map(); // Per-key pending write data: {value, storeName, resolvers, generation}
             this._writeGeneration = new Map(); // Per-key monotonic generation counter
@@ -53,7 +59,18 @@
                 const request = indexedDB.open(this.dbName, this.dbVersion);
 
                 request.onerror = () => {
-                    console.error('[Storage] Failed to open IndexedDB', request.error);
+                    if (request.error?.name === 'VersionError') {
+                        // The physical DB was created by a newer Toolasha schema than this build
+                        // requests. Never delete/recreate it here - the data is intact and only
+                        // needs a compatible/newer Toolasha version to open it again.
+                        console.error(
+                            `[Storage] ${this.dbName} was created by a newer Toolasha schema. ` +
+                                'Stored data has been preserved; install a compatible/newer Toolasha version.',
+                            request.error
+                        );
+                    } else {
+                        console.error('[Storage] Failed to open IndexedDB', request.error);
+                    }
                     reject(request.error);
                 };
 
@@ -188,6 +205,12 @@
                     // Activity Status projections + account-level presentation preferences)
                     if (!db.objectStoreNames.contains('characterActivityStatus')) {
                         db.createObjectStore('characterActivityStatus');
+                    }
+
+                    // Create openableAnalytics store if it doesn't exist (for Openable Analytics
+                    // lifetime aggregates and bounded detailed opening history)
+                    if (!db.objectStoreNames.contains('openableAnalytics')) {
+                        db.createObjectStore('openableAnalytics');
                     }
                 };
             });
@@ -2039,6 +2062,13 @@
                     default: true,
                     help: 'When enabled, Scroll of... items from the Labyrinth are not auto-opened',
                 },
+                openableAnalytics: {
+                    id: 'openableAnalytics',
+                    label: 'Openable Analytics: Track Actual vs Expected Value + Luck',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Shows Actual Value, Expected Value, and Luck for chests/crates/caches you open, plus a character-scoped Analytics view with session/lifetime history',
+                },
             },
         },
 
@@ -3572,7 +3602,10 @@
             this.processedMessages = new Map(); // socket-scoped message hash -> timestamp
             this.socketDedupIds = new WeakMap();
             this.nextSocketDedupId = 1;
-            this.recentActionCompleted = new Map(); // message content -> timestamp (50ms TTL dedup)
+            // Some character event types must bypass the lossy first-100-char dedup because two
+            // genuine messages can share the same prefix. Keep a tiny socket-scoped exact-message
+            // guard for duplicate interception of the same physical payload instead.
+            this.recentExactMessages = new Map(); // socket + type + full message -> timestamp
             this.messageCleanupInterval = null;
             this.isSocketWrapped = false;
             this.originalWebSocket = null;
@@ -3795,7 +3828,8 @@
                 messageType === 'setting_updated' ||
                 messageType === 'labyrinth_room_progress' ||
                 messageType === 'leaderboard_updated' ||
-                messageType === 'guild_updated';
+                messageType === 'guild_updated' ||
+                messageType === 'loot_opened';
 
             if (!skipDedup) {
                 // Deduplicate by message content to prevent multiple interception paths from
@@ -3815,23 +3849,28 @@
                 if (this.processedMessages.size > 100) {
                     this.cleanupProcessedMessages();
                 }
-            } else if (messageType === 'action_completed') {
-                // action_completed bypasses the content-hash dedup (Gabriel's fix, commit 1007215)
-                // but the WebSocket prototype wrapper can fire two listeners for the same physical
-                // message object. The WeakSet guard catches same-object duplicates, but if two
-                // independent listeners each receive a distinct MessageEvent wrapping the same
-                // payload, both pass the WeakSet check and processMessage is called twice.
-                // Use a short 50ms TTL keyed on full message content to collapse these duplicates.
-                // Two genuine consecutive action_completed messages are always seconds apart.
+            } else if (messageType === 'action_completed' || messageType === 'loot_opened') {
+                // These types bypass the lossy first-100-char dedup (Gabriel's fix, commit 1007215,
+                // extended to loot_opened) because two genuine consecutive messages can share the
+                // same prefix while differing later. The WebSocket prototype wrapper can still fire
+                // two listeners for the same physical message object - the WeakSet guard catches
+                // same-object duplicates, but if two independent listeners each receive a distinct
+                // MessageEvent wrapping the same payload, both pass the WeakSet check and
+                // processMessage is called twice. Collapse only that exact-duplicate interception in
+                // a short 50ms TTL window, scoped per socket and message type so a reconnect can
+                // replay identical state without being suppressed by the old socket's guard.
                 const now = Date.now();
-                if (this.recentActionCompleted.has(message)) {
+                const socketKey = this.getSocketDedupKey(socket);
+                const exactKey = `${socketKey}:${messageType}:${message}`;
+                const previous = this.recentExactMessages.get(exactKey);
+                if (previous !== undefined && now - previous <= 50) {
                     return; // Duplicate from second listener — skip
                 }
-                this.recentActionCompleted.set(message, now);
+                this.recentExactMessages.set(exactKey, now);
                 // Prune entries older than 50ms to keep memory bounded
-                for (const [key, ts] of this.recentActionCompleted) {
+                for (const [key, ts] of this.recentExactMessages) {
                     if (now - ts > 50) {
-                        this.recentActionCompleted.delete(key);
+                        this.recentExactMessages.delete(key);
                     }
                 }
             }
@@ -4052,6 +4091,7 @@
         cleanup() {
             this.clearClientDataRetry();
             this.processedMessages.clear();
+            this.recentExactMessages.clear();
         }
 
         /**
@@ -4925,6 +4965,20 @@
                     this.characterQuests = this.characterQuests.filter((q) => q.status !== '/quest_status/claimed');
                 }
             });
+
+            // `loot_opened` is character-scoped, but it has no dedicated DataManager-owned state -
+            // feature modules (Openable Analytics) consume it directly. Route it through the same
+            // TLA-018 accepted-socket ownership as every other character-scoped handler instead of
+            // letting a feature invent its own socket ownership, and capture characterId at
+            // acceptance time so a later character switch can't cause the opening to be attributed
+            // to whichever character happens to be current when an async consumer continuation
+            // resumes.
+            this.webSocketHook.on('loot_opened', (data, context) => {
+                if (!this._isFromActiveSocket(context)) return;
+                if (!this.currentCharacterId) return;
+
+                this.emit('loot_opened', { data, characterId: this.currentCharacterId });
+            });
         }
 
         /**
@@ -5794,8 +5848,10 @@
 
         /**
          * Emit event to all listeners
-         * Only character_switching is critical (must run immediately for proper cleanup)
-         * All other events including character_switched and character_initialized are deferred
+         * character_switching must run immediately for proper cleanup. `loot_opened` is also
+         * dispatched synchronously: it is an accepted character-scoped event whose consumer must
+         * capture the opening before a subsequent character cleanup can invalidate feature state.
+         * All other events including character_switched and character_initialized are deferred.
          * @param {string} event - Event name
          * @param {*} data - Event data
          */
@@ -5806,9 +5862,9 @@
             // be delivered to listeners that subscribed after the event was emitted.
             const listeners = [...(this.eventListeners.get(event) || [])];
 
-            // Only character_switching must run immediately (cleanup phase)
-            // character_switched can be deferred - it just schedules re-init anyway
-            const isCritical = event === 'character_switching';
+            // character_switching (cleanup) and loot_opened (accepted character-scoped event) must
+            // run immediately. character_switched can be deferred - it just schedules re-init anyway.
+            const isCritical = event === 'character_switching' || event === 'loot_opened';
 
             if (isCritical) {
                 // Run immediately on main thread
