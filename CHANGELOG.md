@@ -2,12 +2,11 @@
 
 ## [2.97.1](https://github.com/Celasha/Toolasha/compare/v2.97.0...v2.97.1) (2026-08-27)
 
-
 ### Bug Fixes
 
-* don't gate saved loadout usability on missing consumables ([0702d19](https://github.com/Celasha/Toolasha/commit/0702d1908995ab2319dece9ad9b39016512b4f26))
-* rescan Character Select for async-loaded slots (TLA-025) ([8559dd0](https://github.com/Celasha/Toolasha/commit/8559dd0abf28f92361ad2da4f07b2f559d148568))
-* stop double-dispatch of setting_updated and other bypass-dedup WS messages ([87953ca](https://github.com/Celasha/Toolasha/commit/87953ca922e8578d5ab2e6372eb974ae5efbc829))
+- don't gate saved loadout usability on missing consumables ([0702d19](https://github.com/Celasha/Toolasha/commit/0702d1908995ab2319dece9ad9b39016512b4f26))
+- rescan Character Select for async-loaded slots (TLA-025) ([8559dd0](https://github.com/Celasha/Toolasha/commit/8559dd0abf28f92361ad2da4f07b2f559d148568))
+- stop double-dispatch of setting_updated and other bypass-dedup WS messages ([87953ca](https://github.com/Celasha/Toolasha/commit/87953ca922e8578d5ab2e6372eb974ae5efbc829))
 
 ## [2.97.0](https://github.com/Celasha/Toolasha/compare/v2.96.1...v2.97.0) (2026-08-27)
 
