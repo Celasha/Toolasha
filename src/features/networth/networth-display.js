@@ -365,7 +365,7 @@ class NetworthInventoryDisplay {
         const showExcluded = excl.total > 0;
 
         this.container.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 6px;">
+            <div class="mwi-networth-icon-row" style="display: flex; align-items: center; gap: 6px;">
                 <div style="cursor: pointer; font-weight: bold; flex: 1;" id="mwi-networth-toggle">
                     + Net Worth: ${totalNetworth}
                 </div>

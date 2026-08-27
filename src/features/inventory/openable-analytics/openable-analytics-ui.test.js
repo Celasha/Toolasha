@@ -105,12 +105,30 @@ const {
     default: openableAnalyticsUI,
     INVENTORY_FILTER_CONTAINER_CLASS,
     INVENTORY_BUTTON_CLASS,
+    NETWORTH_ICON_ROW_CLASS,
+    NETWORTH_BUTTON_CLASS,
 } = await import('./openable-analytics-ui.js');
 
 function filterContainerCallbacks() {
     return mocks.domObserverRegistrations
         .filter((r) => r.classNames === INVENTORY_FILTER_CONTAINER_CLASS)
         .map((r) => r.callback);
+}
+
+function networthRowCallbacks() {
+    return mocks.domObserverRegistrations
+        .filter((r) => r.classNames === NETWORTH_ICON_ROW_CLASS)
+        .map((r) => r.callback);
+}
+
+function networthRow() {
+    const row = document.createElement('div');
+    row.className = NETWORTH_ICON_ROW_CLASS;
+    const toggle = document.createElement('div');
+    toggle.id = 'mwi-networth-toggle';
+    row.appendChild(toggle);
+    document.body.appendChild(row);
+    return row;
 }
 
 beforeEach(() => {
@@ -231,6 +249,88 @@ describe('persistent Inventory panel entry point (OA-RUNTIME-1)', () => {
         openableAnalyticsUI.initialize();
 
         expect(filterContainerCallbacks()).toHaveLength(1);
+    });
+});
+
+describe('Net Worth icon row entry point', () => {
+    test('mounts into an existing Net Worth icon row on initialize', () => {
+        openableAnalyticsUI.cleanup();
+        const row = networthRow();
+
+        openableAnalyticsUI.initialize();
+
+        expect(row.querySelectorAll(`.${NETWORTH_BUTTON_CLASS}`)).toHaveLength(1);
+    });
+
+    test('mounts into a Net Worth icon row that appears later', () => {
+        const row = networthRow();
+
+        networthRowCallbacks().forEach((cb) => cb(row));
+
+        expect(row.querySelectorAll(`.${NETWORTH_BUTTON_CLASS}`)).toHaveLength(1);
+    });
+
+    test('re-render of the Net Worth row (fresh node via innerHTML replace) does not duplicate the button', () => {
+        const row = networthRow();
+        networthRowCallbacks().forEach((cb) => cb(row));
+
+        // Simulate networth-display.js rebuilding the row's contents in place.
+        row.innerHTML = '<div id="mwi-networth-toggle"></div>';
+        networthRowCallbacks().forEach((cb) => cb(row));
+
+        expect(row.querySelectorAll(`.${NETWORTH_BUTTON_CLASS}`)).toHaveLength(1);
+    });
+
+    test('once the Net Worth row exists, the filter-row button is not created', () => {
+        const row = networthRow();
+        networthRowCallbacks().forEach((cb) => cb(row));
+
+        const filterContainer = document.createElement('div');
+        document.body.appendChild(filterContainer);
+        filterContainerCallbacks().forEach((cb) => cb(filterContainer));
+
+        expect(filterContainer.querySelectorAll(`.${INVENTORY_BUTTON_CLASS}`)).toHaveLength(0);
+    });
+
+    test('a pre-existing filter-row button is removed once the Net Worth row appears', () => {
+        const filterContainer = document.createElement('div');
+        document.body.appendChild(filterContainer);
+        filterContainerCallbacks().forEach((cb) => cb(filterContainer));
+        expect(filterContainer.querySelectorAll(`.${INVENTORY_BUTTON_CLASS}`)).toHaveLength(1);
+
+        const row = networthRow();
+        networthRowCallbacks().forEach((cb) => cb(row));
+
+        expect(filterContainer.querySelectorAll(`.${INVENTORY_BUTTON_CLASS}`)).toHaveLength(0);
+        expect(row.querySelectorAll(`.${NETWORTH_BUTTON_CLASS}`)).toHaveLength(1);
+    });
+
+    test('without a Net Worth row, the filter row remains the entry point (fails closed, not silently missing)', () => {
+        const filterContainer = document.createElement('div');
+        document.body.appendChild(filterContainer);
+        filterContainerCallbacks().forEach((cb) => cb(filterContainer));
+
+        expect(filterContainer.querySelectorAll(`.${INVENTORY_BUTTON_CLASS}`)).toHaveLength(1);
+    });
+
+    test('cleanup removes an already-injected Net Worth row button', () => {
+        const row = networthRow();
+        networthRowCallbacks().forEach((cb) => cb(row));
+        expect(row.querySelectorAll(`.${NETWORTH_BUTTON_CLASS}`)).toHaveLength(1);
+
+        openableAnalyticsUI.cleanup();
+
+        expect(row.querySelectorAll(`.${NETWORTH_BUTTON_CLASS}`)).toHaveLength(0);
+    });
+
+    test('clicking the Net Worth row button opens Lifetime with all rows collapsed', () => {
+        const row = networthRow();
+        networthRowCallbacks().forEach((cb) => cb(row));
+
+        row.querySelector(`.${NETWORTH_BUTTON_CLASS}`).onclick();
+
+        expect(popup()).not.toBeNull();
+        expect(popup().querySelectorAll('details[open]')).toHaveLength(0);
     });
 });
 
