@@ -723,8 +723,11 @@ class LoadoutState {
             unavailableFood,
             unavailableDrinks,
             hasUnavailableConsumables: unavailableFood.length > 0 || unavailableDrinks.length > 0,
-            isUsableForCalculation:
-                unavailableEquipment.length === 0 && unavailableFood.length === 0 && unavailableDrinks.length === 0,
+            // Missing consumables never gate usability: unlike equipment (which can be rare or
+            // costly to reacquire), food/drinks are cheap and fast to rebuy, so a loadout missing
+            // only consumables is still usable — the resolved food/drinks arrays already blank the
+            // missing slots above rather than fabricating an item the character doesn't own.
+            isUsableForCalculation: unavailableEquipment.length === 0,
             abilities: (rawSnapshot.abilities || []).map((entry) => ({ ...entry })),
             // Preserve native slot indices, including intentional holes. Missing consumables
             // are blanked in calculation-facing arrays and retained only in the explicit

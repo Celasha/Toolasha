@@ -655,7 +655,7 @@ describe('Core LoadoutState ownership and lifecycle', () => {
         expect(state.getSnapshotById('one')).toMatchObject({
             hasUnavailableConsumables: true,
             unavailableDrinks: [{ slotIndex: 0, itemHrid: '/items/tea' }],
-            isUsableForCalculation: false,
+            isUsableForCalculation: true,
         });
     });
 
@@ -670,7 +670,7 @@ describe('Core LoadoutState ownership and lifecycle', () => {
         mocks.wsHandlers.get('init_character_data')(
             initPayload('A', { one: serverLoadout({ name: 'One', drinks: ['/items/tea'] }) })
         );
-        expect(state.getSnapshotById('one').isUsableForCalculation).toBe(false);
+        expect(state.getSnapshotById('one').hasUnavailableConsumables).toBe(true);
         const listener = vi.fn();
         state.onUpdate(listener);
 
@@ -991,7 +991,7 @@ describe('effective enhancement resolution contract', () => {
         ]);
     });
 
-    test('missing saved food/drinks make a snapshot unusable without treating intentional empty slots as missing', () => {
+    test('missing saved food/drinks do not make a snapshot unusable, but are still surfaced as diagnostics', () => {
         const state = new LoadoutState();
         state.startCapture();
         setActiveCharacter('A');
@@ -1012,13 +1012,13 @@ describe('effective enhancement resolution contract', () => {
         expect(snapshot.unavailableFood).toEqual([]);
         expect(snapshot.unavailableDrinks).toEqual([{ slotIndex: 0, itemHrid: '/items/tea' }]);
         expect(snapshot.hasUnavailableConsumables).toBe(true);
-        expect(snapshot.isUsableForCalculation).toBe(false);
-        expect(state.getUsableSnapshotById('one')).toBeNull();
+        expect(snapshot.isUsableForCalculation).toBe(true);
+        expect(state.getUsableSnapshotById('one')).not.toBeNull();
         expect(state.findSnapshotSelectionForActionType('/action_types/crafting')).toMatchObject({
-            status: 'unavailable',
+            status: 'usable',
             snapshot: { name: 'Test Loadout', hasUnavailableConsumables: true },
         });
-        expect(state.findSnapshotForActionType('/action_types/crafting')).toBeNull();
+        expect(state.findSnapshotForActionType('/action_types/crafting')).not.toBeNull();
     });
 
     test('suppressValidation never turns an unproven missing-item loadout into a usable calculation', () => {
