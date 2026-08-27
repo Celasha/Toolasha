@@ -196,10 +196,18 @@ export function parseConsumableWisdom(drinkSlots, itemDetailMap, drinkConcentrat
  * Calculate total experience multiplier and breakdown
  * @param {string} skillHrid - Skill HRID (e.g., "/skills/foraging")
  * @param {string} actionTypeHrid - Action type HRID (e.g., "/action_types/foraging")
+ * @param {{equipment: Map, drinks: Array}|null} [scenarioOverride] - When provided, use this
+ *   explicit equipment/drinks instead of resolving the live/saved action context. For hypothetical
+ *   calculations (Skilling Simulator/Optimizer) so candidate gear's Wisdom/Charm XP is scored
+ *   instead of the character's actual current/saved gear. Global sources (house, community,
+ *   achievement, MooPass, personal, guild) still reflect the real current character - only
+ *   equipment/drinks are hypothetical.
  * @returns {Object} Experience data with breakdown
  */
-export function calculateExperienceMultiplier(skillHrid, actionTypeHrid) {
-    const { equipment, drinks: activeDrinks } = resolveActionContext(actionTypeHrid);
+export function calculateExperienceMultiplier(skillHrid, actionTypeHrid, scenarioOverride = null) {
+    const { equipment, drinks: activeDrinks } = scenarioOverride
+        ? { equipment: scenarioOverride.equipment ?? new Map(), drinks: scenarioOverride.drinks ?? [] }
+        : resolveActionContext(actionTypeHrid);
     const gameData = dataManager.getInitClientData();
     const itemDetailMap = gameData?.itemDetailMap || {};
 

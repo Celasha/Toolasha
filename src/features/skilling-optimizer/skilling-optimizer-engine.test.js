@@ -1,4 +1,4 @@
-import { describe, test, expect, vi } from 'vitest';
+import { describe, test, expect, vi, afterEach } from 'vitest';
 
 const BACK_LOCATION = '/item_locations/back';
 const REFINED_HRID = '/items/chance_cape_refined';
@@ -46,6 +46,7 @@ vi.mock('../../utils/tea-optimizer.js', () => ({
 }));
 
 const { optimizeSkill } = await import('./skilling-optimizer-engine.js');
+const { scoreEquipmentSetup } = await import('../../utils/tea-optimizer.js');
 
 describe('optimizeSkill - refined item breakpoint labeling', () => {
     test('records the effective scored level separately from the nominal breakpoint bucket', () => {
@@ -84,5 +85,132 @@ describe('optimizeSkill - refined item breakpoint labeling', () => {
         // bucket (3) - which would have wrongly produced (100 + 1*3) * 2 = 206 instead of 220.
         expect(entry.xpScore).toBe(110);
         expect(entry.goldScore).toBe(220);
+    });
+});
+
+describe('optimizeSkill - Compare is a one-slot replacement of the full loadout (TLA-024/OPT-1/2/3)', () => {
+    const HEAD_LOCATION = '/item_locations/head';
+    const OTHER_ITEM_HRID = '/items/other_helm';
+
+    const compareEquipment = new Map([
+        [BACK_LOCATION, { itemHrid: NONREFINED_HRID, enhancementLevel: 5 }],
+        [HEAD_LOCATION, { itemHrid: OTHER_ITEM_HRID, enhancementLevel: 3 }],
+    ]);
+    const compareDrinks = ['/items/compare_tea'];
+
+    const originalImpl = scoreEquipmentSetup.getMockImplementation();
+
+    afterEach(() => {
+        scoreEquipmentSetup.mockImplementation(originalImpl);
+    });
+
+    test('baseline and every candidate score the full loadout equipment + its drinks, only the tested slot replaced', () => {
+        const calls = [];
+        scoreEquipmentSetup.mockImplementation(
+            (skillName, goal, equipment, playerLevel, selectedActionHrids, teaHrids) => {
+                calls.push({ equipment: new Map(equipment), teaHrids });
+                // Score by total slot count so a call receiving the full loadout differs measurably
+                // from one receiving an otherwise-empty/one-item Map.
+                return equipment.size * 100 + (equipment.get(BACK_LOCATION)?.enhancementLevel ?? 0);
+            }
+        );
+
+        const result = optimizeSkill('Crafting', 50, null, { equipment: compareEquipment, drinks: compareDrinks });
+
+        // The baseline call (empty candidate loop hasn't started yet) must see all 2 loadout slots.
+        expect(calls[0].equipment.size).toBe(2);
+        expect(calls[0].equipment.get(HEAD_LOCATION)?.itemHrid).toBe(OTHER_ITEM_HRID);
+        expect(calls[0].teaHrids).toEqual(compareDrinks);
+
+        // Every candidate call for the BACK slot must still carry the untouched HEAD slot from
+        // the same loadout - never an otherwise-empty Map with just the candidate in it.
+        const backSlotCalls = calls.filter((c) => c.equipment.has(BACK_LOCATION) && c.equipment.size >= 2);
+        expect(backSlotCalls.length).toBeGreaterThan(0);
+        for (const call of backSlotCalls) {
+            expect(call.equipment.get(HEAD_LOCATION)?.itemHrid).toBe(OTHER_ITEM_HRID);
+            expect(call.teaHrids).toEqual(compareDrinks);
+        }
+
+        expect(result.xpBaseline).toBe(calls[0].equipment.size * 100 + 5);
+    });
+
+    test('an intentionally empty compared slot is distinct from no comparison at all', () => {
+        scoreEquipmentSetup.mockImplementation((skillName, goal, equipment) => equipment.size * 100);
+
+        // HEAD_LOCATION is intentionally absent from this loadout (an empty slot), never carried
+        // over from the default Map() no-comparison baseline used when compareLoadout is null.
+        const emptySlotLoadout = new Map([[BACK_LOCATION, { itemHrid: NONREFINED_HRID, enhancementLevel: 1 }]]);
+        const withEmptySlot = optimizeSkill('Crafting', 50, null, { equipment: emptySlotLoadout, drinks: [] });
+        const withNoComparison = optimizeSkill('Crafting', 50, null, null);
+
+        expect(withEmptySlot.xpBaseline).toBe(100); // one real slot present
+        expect(withNoComparison.xpBaseline).toBe(0); // truly empty Map, no comparison at all
+    });
+
+    test('without a compareLoadout, baseline/candidates preserve the original empty-Map/no-drinks behavior', () => {
+        const calls = [];
+        scoreEquipmentSetup.mockImplementation(
+            (skillName, goal, equipment, playerLevel, selectedActionHrids, teaHrids) => {
+                calls.push({ size: equipment.size, teaHrids });
+                return equipment.size;
+            }
+        );
+
+        optimizeSkill('Crafting', 50, null);
+
+        expect(calls[0].size).toBe(0);
+        expect(calls[0].teaHrids).toEqual([]);
+    });
+});
+
+describe('getRelevantStatsForSkill via getItemsForSlot (TLA-024/OPT-17)', () => {
+    test('includes skillingExperience, skill-specific Experience, and drinkConcentration fields', async () => {
+        const wisdomCharmHrid = '/items/wisdom_charm_test';
+        const skillCharmHrid = '/items/crafting_charm_test';
+        const pouchHrid = '/items/guzzling_pouch_test';
+
+        const extendedItemDetailMap = {
+            ...itemDetailMap,
+            [wisdomCharmHrid]: {
+                name: 'Wisdom Charm',
+                equipmentDetail: {
+                    type: '/equipment_types/charm',
+                    noncombatStats: { skillingExperience: 0.1 },
+                    levelRequirements: [],
+                },
+            },
+            [skillCharmHrid]: {
+                name: 'Crafting Charm',
+                equipmentDetail: {
+                    type: '/equipment_types/charm',
+                    noncombatStats: { craftingExperience: 0.1 },
+                    levelRequirements: [],
+                },
+            },
+            [pouchHrid]: {
+                name: 'Guzzling Pouch',
+                equipmentDetail: {
+                    type: '/equipment_types/pouch',
+                    noncombatStats: { drinkConcentration: 0.1 },
+                    levelRequirements: [],
+                },
+            },
+        };
+
+        vi.doMock('../../core/data-manager.js', () => ({
+            default: {
+                getInitClientData: vi.fn(() => ({ itemDetailMap: extendedItemDetailMap })),
+                getSkills: vi.fn(() => [{ skillHrid: '/skills/crafting', level: 50 }]),
+            },
+        }));
+        vi.resetModules();
+        const { getItemsForSlot } = await import('./skilling-optimizer-engine.js');
+
+        const charmItems = getItemsForSlot('/item_locations/charm', 'Crafting').map((i) => i.hrid);
+        expect(charmItems).toContain(wisdomCharmHrid);
+        expect(charmItems).toContain(skillCharmHrid);
+
+        const pouchItems = getItemsForSlot('/item_locations/pouch', 'Crafting').map((i) => i.hrid);
+        expect(pouchItems).toContain(pouchHrid);
     });
 });

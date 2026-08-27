@@ -41,7 +41,7 @@ describe('calculateEfficiencyBreakdown', () => {
     test('includes tea skill level bonus in effective level', () => {
         const result = calculateEfficiencyBreakdown({
             requiredLevel: 20,
-            skillLevel: 18,
+            skillLevel: 20,
             teaSkillLevelBonus: 5,
         });
 
@@ -50,7 +50,9 @@ describe('calculateEfficiencyBreakdown', () => {
         expect(result.levelEfficiency).toBe(5);
     });
 
-    test('clamps skill level to required level', () => {
+    test('does not clamp a below-requirement skill level up before adding the tea bonus (TLA-024/OPT-15)', () => {
+        // A tea/buff bonus that doesn't close the whole gap to the requirement must not be
+        // credited as pure efficiency - only the real boosted level counts.
         const result = calculateEfficiencyBreakdown({
             requiredLevel: 30,
             skillLevel: 10,
@@ -58,6 +60,28 @@ describe('calculateEfficiencyBreakdown', () => {
         });
 
         expect(result.effectiveRequirement).toBe(30);
+        expect(result.effectiveLevel).toBe(12);
+        expect(result.levelEfficiency).toBe(0);
+    });
+
+    test('published MWI example: skill 18, requirement 20, tea +3 -> effective 21 -> only +1% level efficiency', () => {
+        const result = calculateEfficiencyBreakdown({
+            requiredLevel: 20,
+            skillLevel: 18,
+            teaSkillLevelBonus: 3,
+        });
+
+        expect(result.effectiveLevel).toBe(21);
+        expect(result.levelEfficiency).toBe(1);
+    });
+
+    test('a tea bonus that fully closes the gap still only credits the real overshoot', () => {
+        const result = calculateEfficiencyBreakdown({
+            requiredLevel: 30,
+            skillLevel: 10,
+            teaSkillLevelBonus: 22,
+        });
+
         expect(result.effectiveLevel).toBe(32);
         expect(result.levelEfficiency).toBe(2);
     });

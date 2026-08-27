@@ -20,7 +20,7 @@ import {
     SLOT_DISPLAY_NAMES,
     SKILL_TOOL_LOCATION,
 } from './skilling-optimizer-engine.js';
-import { scoreEquipmentSetup } from '../../utils/tea-optimizer.js';
+import { SKILL_TO_ACTION_TYPE } from '../../utils/tea-optimizer.js';
 import { formatKMB } from '../../utils/formatters.js';
 import { buildOwnedEnhancementLevelMap } from '../../utils/owned-enhancement-map.js';
 import loadoutState from '../../core/loadout-state.js';
@@ -51,6 +51,14 @@ class SkillingSimulatorUI {
         this.equipment = new Map(); // locationHrid → { itemHrid, enhancementLevel }
         this.teas = [null, null, null];
         this.selectedActionHrids = null; // null = all available
+        this._simulatorLoadoutName = null;
+        this._simulatorLoadoutUnavailableName = null;
+
+        // Tracks whether the canonical per-Skill loadout has been auto-applied for the current
+        // skill selection yet. Auto-retargeting only fires on an actual Skill change (or once on
+        // first panel build) - never on an unrelated panel rebuild - so manual edits survive
+        // mode switches and other re-renders.
+        this._retargetedForSkill = null;
 
         // UI element refs (updated in place without rebuilding panel)
         this._slotBtns = new Map(); // locationHrid → { nameBtn, enhInput, clearBtn }
@@ -192,6 +200,7 @@ class SkillingSimulatorUI {
 
     _buildPanel() {
         if (!STYLE_EL.isConnected) document.head.appendChild(STYLE_EL);
+        this._ensureRetargetedForCurrentSkill();
         this._slotBtns.clear();
         this._teaBtns = [];
 
@@ -337,54 +346,13 @@ class SkillingSimulatorUI {
                 optimizeBtn.disabled = true;
                 requestAnimationFrame(() =>
                     setTimeout(() => {
-                        const result = optimizeSkill(this.currentSkill, this.currentLevel, this.selectedActionHrids);
-                        this.lastOptimizerResult = result;
-
-                        // Build equipment map using player's actual owned enhancement levels
-                        const enhMap = buildOwnedEnhancementLevelMap();
-                        const achievableEquipment = new Map();
-                        if (result) {
-                            for (const [locationHrid, slotData] of Object.entries(result.slots)) {
-                                const best = slotData.progression[slotData.progression.length - 1];
-                                if (best?.itemHrid) {
-                                    achievableEquipment.set(locationHrid, {
-                                        itemHrid: best.itemHrid,
-                                        enhancementLevel: enhMap.get(best.itemHrid) ?? 0,
-                                    });
-                                }
-                            }
-                        }
-
-                        // Performance with achievable equipment and optimal teas for each goal
-                        const xpAchievable = result
-                            ? findOptimalTeas(
-                                  this.currentSkill,
-                                  'xp',
-                                  null,
-                                  null,
-                                  null,
-                                  null,
-                                  achievableEquipment,
-                                  this.selectedActionHrids
-                              )
-                            : null;
-                        const goldAchievable = result
-                            ? findOptimalTeas(
-                                  this.currentSkill,
-                                  'gold',
-                                  null,
-                                  null,
-                                  null,
-                                  null,
-                                  achievableEquipment,
-                                  this.selectedActionHrids
-                              )
-                            : null;
-
                         // Build loadout item map for comparison. Keep an intentionally empty
                         // loadout distinct from "no comparison", and never silently replace an
                         // unavailable manual comparison with an empty/current-gear baseline.
+                        // Resolved before optimizeSkill() so BASELINE and every slot's CANDIDATE
+                        // score the exact same full loadout + drinks + selected actions.
                         const loadoutItemMap = new Map();
+                        let compareDrinks = [];
                         let hasUsableComparison = false;
                         let unavailableComparisonName = null;
                         if (this.optimizerLoadout) {
@@ -404,12 +372,70 @@ class SkillingSimulatorUI {
                                         enhancementLevel: eq.enhancementLevel,
                                     });
                                 }
+                                if (hasUsableComparison) {
+                                    compareDrinks = (refreshedLoadout.drinks || [])
+                                        .map((d) => d.itemHrid)
+                                        .filter(Boolean);
+                                }
                             } else {
                                 unavailableComparisonName =
                                     refreshedLoadout?.name || this.optimizerLoadout?.name || 'Selected loadout';
                                 if (refreshedLoadout) this.optimizerLoadout = refreshedLoadout;
                             }
                         }
+
+                        const result = optimizeSkill(
+                            this.currentSkill,
+                            this.currentLevel,
+                            this.selectedActionHrids,
+                            hasUsableComparison ? { equipment: loadoutItemMap, drinks: compareDrinks } : null
+                        );
+                        this.lastOptimizerResult = result;
+
+                        // Build equipment map using player's actual owned enhancement levels.
+                        // A recommended item the player doesn't own at all is unavailable, never
+                        // a fictitious achievable +0 - exclude it rather than fabricate ownership.
+                        const enhMap = buildOwnedEnhancementLevelMap();
+                        const achievableEquipment = new Map();
+                        if (result) {
+                            for (const [locationHrid, slotData] of Object.entries(result.slots)) {
+                                const best = slotData.progression[slotData.progression.length - 1];
+                                if (best?.itemHrid && enhMap.has(best.itemHrid)) {
+                                    achievableEquipment.set(locationHrid, {
+                                        itemHrid: best.itemHrid,
+                                        enhancementLevel: enhMap.get(best.itemHrid),
+                                    });
+                                }
+                            }
+                        }
+
+                        // Performance with achievable equipment and optimal teas for each goal
+                        const xpAchievable = result
+                            ? findOptimalTeas(
+                                  this.currentSkill,
+                                  'xp',
+                                  null,
+                                  null,
+                                  null,
+                                  null,
+                                  achievableEquipment,
+                                  this.selectedActionHrids,
+                                  this.currentLevel
+                              )
+                            : null;
+                        const goldAchievable = result
+                            ? findOptimalTeas(
+                                  this.currentSkill,
+                                  'gold',
+                                  null,
+                                  null,
+                                  null,
+                                  null,
+                                  achievableEquipment,
+                                  this.selectedActionHrids,
+                                  this.currentLevel
+                              )
+                            : null;
 
                         optimizeBtn.textContent = 'Optimize';
                         optimizeBtn.disabled = false;
@@ -497,6 +523,9 @@ class SkillingSimulatorUI {
             wrap.appendChild(loadoutRow);
             const loadoutStatus = document.createElement('div');
             loadoutStatus.style.cssText = 'color:#f87171; font-size:11px; margin-left:64px;';
+            if (this._simulatorLoadoutUnavailableName) {
+                loadoutStatus.textContent = `Loadout “${this._simulatorLoadoutUnavailableName}” is unavailable and was not loaded.`;
+            }
             wrap.appendChild(loadoutStatus);
             loadoutSelect.addEventListener('change', () => {
                 const name = loadoutSelect.value;
@@ -551,8 +580,11 @@ class SkillingSimulatorUI {
         skillSelect.addEventListener('change', () => {
             this.currentSkill = skillSelect.value;
             this.currentLevel = getPlayerSkillLevel(this.currentSkill);
-            this.teas = [null, null, null];
             this.selectedActionHrids = null;
+            // Retargets equipment/teas/Compare for the new Skill (never carries the previous
+            // Skill's gear/drinks/Compare forward) - _retargetedForSkill still holds the old
+            // Skill name here, so this always fires on a real change.
+            this._ensureRetargetedForCurrentSkill();
             this._rebuildPanel();
         });
 
@@ -569,15 +601,32 @@ class SkillingSimulatorUI {
         const empty = document.createElement('option');
         empty.value = '';
         empty.textContent = '— No loadout —';
+        if (!this._simulatorLoadoutName) empty.selected = true;
         select.appendChild(empty);
 
+        let matched = false;
         for (const snap of loadoutState.getAllSnapshots()) {
             const opt = document.createElement('option');
             opt.value = snap.name;
             opt.textContent =
                 snap.name + (snap.isDefault ? ' ★' : '') + (snap.isUsableForCalculation ? '' : ' (Unavailable)');
             opt.disabled = !snap.isUsableForCalculation;
+            if (this._simulatorLoadoutName === snap.name) {
+                opt.selected = true;
+                matched = true;
+            }
             select.appendChild(opt);
+        }
+
+        // The retargeted-to loadout may have been deleted entirely since being resolved -
+        // represent it explicitly rather than silently falling back to "— No loadout —".
+        if (this._simulatorLoadoutName && !matched) {
+            const unavailableOpt = document.createElement('option');
+            unavailableOpt.value = this._simulatorLoadoutName;
+            unavailableOpt.textContent = `${this._simulatorLoadoutName} (Unavailable)`;
+            unavailableOpt.selected = true;
+            unavailableOpt.disabled = true;
+            select.appendChild(unavailableOpt);
         }
     }
 
@@ -619,7 +668,76 @@ class SkillingSimulatorUI {
             const hrid = this.teas[i];
             this._updateTeaUI(i, refs, hrid);
         }
+        this._simulatorLoadoutName = name;
+        this._simulatorLoadoutUnavailableName = null;
         return true;
+    }
+
+    /**
+     * Resolve the canonical preferred loadout for an action type using Core's existing priority
+     * (skill default -> all-skills default -> skill non-default -> all-skills non-default ->
+     * none), transactionally validated the same way as a manual _loadLoadout() import.
+     * @param {string} actionTypeHrid
+     * @returns {{status:'usable'|'unavailable'|'none', name: string|null, equipment?: Map, drinks?: Array}}
+     */
+    _resolveCanonicalLoadout(actionTypeHrid) {
+        const selection = loadoutState.findSnapshotSelectionForActionType(actionTypeHrid);
+        if (selection.status !== 'usable') {
+            return {
+                status: selection.status === 'unavailable' ? 'unavailable' : 'none',
+                name: selection.snapshot?.name || null,
+            };
+        }
+
+        const snap = selection.snapshot;
+        const equipment = new Map();
+        for (const eq of snap.equipment || []) {
+            if (!eq.itemHrid || !eq.itemLocationHrid || !Number.isFinite(eq.enhancementLevel)) {
+                return { status: 'unavailable', name: snap.name };
+            }
+            equipment.set(eq.itemLocationHrid, { itemHrid: eq.itemHrid, enhancementLevel: eq.enhancementLevel });
+        }
+        const drinks = [
+            snap.drinks?.[0]?.itemHrid || null,
+            snap.drinks?.[1]?.itemHrid || null,
+            snap.drinks?.[2]?.itemHrid || null,
+        ];
+        return { status: 'usable', name: snap.name, equipment, drinks };
+    }
+
+    /**
+     * Retarget both Simulator and Optimizer to the canonical preferred loadout for the current
+     * Skill, exactly once per actual Skill change (guarded by _retargetedForSkill) - never on an
+     * unrelated panel rebuild, so manual edits survive mode switches. Never carries equipment,
+     * drinks, or a Compare loadout over from a previously selected Skill.
+     */
+    _ensureRetargetedForCurrentSkill() {
+        if (this._retargetedForSkill === this.currentSkill) return;
+        this._retargetedForSkill = this.currentSkill;
+
+        const actionType = SKILL_TO_ACTION_TYPE[this.currentSkill.toLowerCase()] || null;
+        const resolved = actionType ? this._resolveCanonicalLoadout(actionType) : { status: 'none', name: null };
+
+        if (resolved.status === 'usable') {
+            this.equipment = resolved.equipment;
+            this.teas = resolved.drinks;
+            this._simulatorLoadoutName = resolved.name;
+            this._simulatorLoadoutUnavailableName = null;
+            this.optimizerLoadout = loadoutState.getUsableSnapshotByName(resolved.name);
+        } else {
+            // 'unavailable': fail closed to a clean empty scenario rather than substituting
+            // Current Gear, a fabricated +0 setup, or stale gear from the previous Skill - and
+            // still surface which preferred loadout couldn't be used.
+            // 'none': no preferred loadout exists for this Skill at all.
+            this.equipment = new Map();
+            this.teas = [null, null, null];
+            this._simulatorLoadoutName = resolved.status === 'unavailable' ? resolved.name : null;
+            this._simulatorLoadoutUnavailableName = resolved.status === 'unavailable' ? resolved.name : null;
+            // Reusing the same {name} placeholder shape the manual Compare dropdown already
+            // handles when a previously-selected loadout later becomes unavailable, so the
+            // existing "(Unavailable)" rendering applies without a separate code path.
+            this.optimizerLoadout = resolved.status === 'unavailable' ? { name: resolved.name } : null;
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -1058,6 +1176,25 @@ class SkillingSimulatorUI {
     _runSimulation() {
         if (!this._resultsArea) return;
 
+        this._resultsArea.innerHTML = '';
+
+        const section = document.createElement('div');
+        section.appendChild(this._makeSectionHeader('Results'));
+
+        // Alchemy XP/Gold depend on the specific item + enhancement being processed, which this
+        // generic action-wide scenario has no context for. A generic number here would silently
+        // misrepresent real Coinify/Decompose/Transmute economics - fail closed instead.
+        if (this.currentSkill === 'Alchemy') {
+            const unsupported = document.createElement('div');
+            unsupported.style.cssText = 'color: rgba(255,255,255,0.5); font-size: 12px;';
+            unsupported.textContent =
+                'Alchemy scenario math is not item-aware yet, so a generic Results number here would ' +
+                'misrepresent real Coinify/Decompose/Transmute economics. Unsupported for now.';
+            section.appendChild(unsupported);
+            this._resultsArea.appendChild(section);
+            return;
+        }
+
         const result = calculateSkillPerformance(
             this.currentSkill,
             this.equipment,
@@ -1066,25 +1203,37 @@ class SkillingSimulatorUI {
             this.selectedActionHrids
         );
 
-        this._resultsArea.innerHTML = '';
-
-        const section = document.createElement('div');
-        section.appendChild(this._makeSectionHeader('Results'));
-
         const stats = document.createElement('div');
         stats.style.cssText = 'display: flex; gap: 20px; margin-bottom: 8px;';
 
-        const makeStat = (label, value, color) => {
+        const makeStat = (label, value, color, isIncomplete = false) => {
             const el = document.createElement('div');
+            const valueText = isIncomplete ? `${formatKMB(value)} (incomplete)` : formatKMB(value);
             el.innerHTML = `
                 <div style="font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">${label}</div>
-                <div style="font-size:15px;font-weight:700;color:${color};">${value > 0 ? formatKMB(value) : '—'}</div>
+                <div style="font-size:15px;font-weight:700;color:${color};">${valueText}</div>
             `;
             return el;
         };
 
-        stats.appendChild(makeStat('XP / hr', result.xpPerHour, config.COLOR_INFO));
-        stats.appendChild(makeStat('Gold / hr', result.goldPerHour, config.COLOR_PROFIT));
+        // Multi-action Results are an equal-weight arithmetic average across the fixed selected
+        // cohort - label it as such so it is never mistaken for one real action's exact rate.
+        const allActionsAvailable = getSkillActionsForDisplay(this.currentSkill, this.currentLevel).filter(
+            (a) => a.available
+        );
+        const selectedCount =
+            this.selectedActionHrids === null ? allActionsAvailable.length : this.selectedActionHrids.size;
+        const isMultiAction = selectedCount > 1;
+
+        stats.appendChild(makeStat(isMultiAction ? 'Avg XP / hr' : 'XP / hr', result.xpPerHour, config.COLOR_INFO));
+        stats.appendChild(
+            makeStat(
+                isMultiAction ? 'Avg Gold / hr' : 'Gold / hr',
+                result.goldPerHour,
+                config.COLOR_PROFIT,
+                result.hasMissingPrice
+            )
+        );
         section.appendChild(stats);
 
         if (result.teaCostPerHour > 0) {
@@ -1117,31 +1266,34 @@ class SkillingSimulatorUI {
         for (const [locationHrid, slotData] of slotEntries) {
             const loadoutEntry = loadoutItemMap?.get(locationHrid) ?? null;
 
-            // Use the loadout item's score as the baseline when a compare is selected,
-            // so percentages show improvement over what the user currently has.
-            // Fall back to global empty baseline when no compare is set.
-            let slotXpBaseline = result.xpBaseline;
-            let slotGoldBaseline = result.goldBaseline;
-            if (loadoutEntry) {
-                const equipment = new Map([[locationHrid, loadoutEntry]]);
-                slotXpBaseline = scoreEquipmentSetup(result.skill, 'xp', equipment, result.playerLevel);
-                slotGoldBaseline = scoreEquipmentSetup(result.skill, 'gold', equipment, result.playerLevel);
-            }
-
-            this._renderSlotRow(container, slotData, loadoutEntry, slotXpBaseline, slotGoldBaseline);
+            // result.xpBaseline/goldBaseline already reflect the full Compare loadout + its
+            // drinks (or the empty-slot baseline when no Compare is selected) - optimizeSkill()
+            // computed it once against the same scenario every candidate in slotData.progression
+            // was scored against, so it's reused as-is rather than re-scored per slot.
+            this._renderSlotRow(container, slotData, loadoutEntry, result.xpBaseline, result.goldBaseline);
         }
 
         const xpResult = achievableStats?.xpResult;
         const goldResult = achievableStats?.goldResult;
-        const hasXp = xpResult?.optimal?.avgScore > 0;
-        const hasGold = goldResult?.optimal?.avgScore > 0;
+        // Presence of an optimal result is what matters - a genuinely negative avgScore (every
+        // combination including no-tea is a net loss) must still be shown as a signed number,
+        // never hidden the same way a fabricated zero would be.
+        const hasXp = xpResult?.optimal != null;
+        const hasGold = goldResult?.optimal != null;
 
         if (hasXp || hasGold) {
             const statsRow = document.createElement('div');
             statsRow.style.cssText = 'display: flex; gap: 20px; margin-top: 16px; margin-bottom: 4px;';
             if (hasXp) statsRow.appendChild(this._makeStat('Avg XP/hr', xpResult.optimal.avgScore, config.COLOR_INFO));
             if (hasGold)
-                statsRow.appendChild(this._makeStat('Avg Gold/hr', goldResult.optimal.avgScore, config.COLOR_PROFIT));
+                statsRow.appendChild(
+                    this._makeStat(
+                        'Avg Gold/hr',
+                        goldResult.optimal.avgScore,
+                        config.COLOR_PROFIT,
+                        goldResult.optimal.hasMissingPrice
+                    )
+                );
             container.appendChild(statsRow);
         }
 
@@ -1375,11 +1527,12 @@ class SkillingSimulatorUI {
         return tiers;
     }
 
-    _makeStat(label, value, color) {
+    _makeStat(label, value, color, isIncomplete = false) {
         const el = document.createElement('div');
+        const valueText = isIncomplete ? `${formatKMB(value)} (incomplete)` : formatKMB(value);
         el.innerHTML = `
             <div style="font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">${label}</div>
-            <div style="font-size:15px;font-weight:700;color:${color};">${value > 0 ? formatKMB(value) : '—'}</div>
+            <div style="font-size:15px;font-weight:700;color:${color};">${valueText}</div>
         `;
         return el;
     }
@@ -1440,6 +1593,7 @@ class SkillingSimulatorUI {
 
 const skillingSimulatorUI = new SkillingSimulatorUI();
 
+export { SkillingSimulatorUI };
 export default {
     name: 'Skilling Simulator',
     initialize: () => skillingSimulatorUI.initialize(),

@@ -214,18 +214,35 @@ function getCandidatesForSlot(locationHrid, playerLevels, itemDetailMap) {
 }
 
 /**
- * Score a single candidate item in a slot at a specific enhancement level.
+ * Score a single candidate item in a slot at a specific enhancement level. When `baseEquipment`
+ * is provided (a Compare loadout is active), the candidate replaces only this one location in an
+ * otherwise-full copy of that loadout - never an otherwise-empty Map - so every other slot's
+ * interaction (Wisdom, Drink Concentration, etc.) is held constant, matching the baseline.
  * @param {string} itemHrid
  * @param {string} locationHrid
  * @param {string} skillName
  * @param {string} goal
  * @param {number} enhancementLevel
  * @param {number} playerLevel
+ * @param {Set<string>|null} selectedActionHrids
+ * @param {Map} [baseEquipment] - Full loadout equipment to copy and overwrite one slot in
+ * @param {string[]} [teaHrids] - Drinks to score alongside (the base loadout's own drinks)
  * @returns {number}
  */
-function scoreCandidate(itemHrid, locationHrid, skillName, goal, enhancementLevel, playerLevel, selectedActionHrids) {
-    const equipment = new Map([[locationHrid, { itemHrid, enhancementLevel }]]);
-    return scoreEquipmentSetup(skillName, goal, equipment, playerLevel, selectedActionHrids);
+function scoreCandidate(
+    itemHrid,
+    locationHrid,
+    skillName,
+    goal,
+    enhancementLevel,
+    playerLevel,
+    selectedActionHrids,
+    baseEquipment = null,
+    teaHrids = []
+) {
+    const equipment = new Map(baseEquipment || []);
+    equipment.set(locationHrid, { itemHrid, enhancementLevel });
+    return scoreEquipmentSetup(skillName, goal, equipment, playerLevel, selectedActionHrids, teaHrids);
 }
 
 /**
@@ -239,10 +256,13 @@ function getRelevantStatsForSkill(skillName) {
         `${key}Speed`,
         `${key}Efficiency`,
         `${key}RareFind`,
+        `${key}Experience`,
         'skillingSpeed',
         'skillingEfficiency',
         'skillingRareFind',
         'skillingEssenceFind',
+        'skillingExperience',
+        'drinkConcentration',
     ]);
     if (GATHERING_SKILLS.has(key)) fields.add('gatheringQuantity');
     return fields;
@@ -330,9 +350,13 @@ export function getSkillDrinkItems() {
  * @param {string} skillName
  * @param {number} playerLevel
  * @param {Set<string>|null} selectedActionHrids - HRIDs of actions to score against, or null for all
+ * @param {{equipment: Map, drinks: string[]}|null} [compareLoadout] - When provided, BASELINE is
+ *   the full loadout (equipment + its drinks) and every CANDIDATE is an exact copy of that same
+ *   loadout with only the one slot under test replaced - never an otherwise-empty Map. When null
+ *   (no Compare loadout selected), preserves the original empty-baseline/no-drinks behavior.
  * @returns {Object|null}
  */
-export function optimizeSkill(skillName, playerLevel, selectedActionHrids = null) {
+export function optimizeSkill(skillName, playerLevel, selectedActionHrids = null, compareLoadout = null) {
     // Gathering skills: score for Gold — captures gathering quantity, rare/essence find + speed/efficiency.
     // Production skills: score for XP — more reliable since it doesn't depend on market prices.
     const goal = GATHERING_SKILLS.has(skillName.toLowerCase()) ? 'gold' : 'xp';
@@ -342,8 +366,25 @@ export function optimizeSkill(skillName, playerLevel, selectedActionHrids = null
     const { itemDetailMap } = gameData;
     const playerLevels = buildPlayerLevelMap(skillName, playerLevel);
 
-    const xpBaseline = scoreEquipmentSetup(skillName, 'xp', new Map(), playerLevel, selectedActionHrids);
-    const goldBaseline = scoreEquipmentSetup(skillName, 'gold', new Map(), playerLevel, selectedActionHrids);
+    const compareEquipment = compareLoadout?.equipment ?? new Map();
+    const compareDrinks = compareLoadout?.drinks ?? [];
+
+    const xpBaseline = scoreEquipmentSetup(
+        skillName,
+        'xp',
+        compareEquipment,
+        playerLevel,
+        selectedActionHrids,
+        compareDrinks
+    );
+    const goldBaseline = scoreEquipmentSetup(
+        skillName,
+        'gold',
+        compareEquipment,
+        playerLevel,
+        selectedActionHrids,
+        compareDrinks
+    );
     const baseline = goal === 'xp' ? xpBaseline : goldBaseline;
 
     const slots = {};
@@ -383,7 +424,9 @@ export function optimizeSkill(skillName, playerLevel, selectedActionHrids = null
                     goal,
                     effectiveLevel,
                     playerLevel,
-                    selectedActionHrids
+                    selectedActionHrids,
+                    compareEquipment,
+                    compareDrinks
                 );
 
                 if (score > bestScore) {
@@ -409,7 +452,9 @@ export function optimizeSkill(skillName, playerLevel, selectedActionHrids = null
                         'xp',
                         bestEffectiveLevel,
                         playerLevel,
-                        selectedActionHrids
+                        selectedActionHrids,
+                        compareEquipment,
+                        compareDrinks
                     );
                 })(),
                 goldScore: (() => {
@@ -422,7 +467,9 @@ export function optimizeSkill(skillName, playerLevel, selectedActionHrids = null
                         'gold',
                         bestEffectiveLevel,
                         playerLevel,
-                        selectedActionHrids
+                        selectedActionHrids,
+                        compareEquipment,
+                        compareDrinks
                     );
                 })(),
                 isChange: (bestItem?.hrid ?? null) !== lastWinnerHrid,
@@ -456,7 +503,8 @@ export function optimizeSkill(skillName, playerLevel, selectedActionHrids = null
         null,
         null,
         optimalEquipmentAtMax,
-        selectedActionHrids
+        selectedActionHrids,
+        playerLevel
     );
     const goldTeaResult = findOptimalTeas(
         skillName,
@@ -466,7 +514,8 @@ export function optimizeSkill(skillName, playerLevel, selectedActionHrids = null
         null,
         null,
         optimalEquipmentAtMax,
-        selectedActionHrids
+        selectedActionHrids,
+        playerLevel
     );
 
     return {

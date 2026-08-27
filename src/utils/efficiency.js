@@ -81,9 +81,14 @@ export function calculateEfficiencyBreakdown({
     personalEfficiency = 0,
     guildEfficiency = 0,
 }) {
+    // Published MWI evidence (calcGatheringProductionLevelEfficiencyBuff) computes level
+    // efficiency from the real boosted skill level versus the effective requirement directly -
+    // it never clamps a below-requirement base skill level up to the requirement before adding
+    // a tea/buff level bonus. A tea that doesn't close the whole gap on its own must not be
+    // credited as if it did (e.g. skill 18, requirement 20, tea +3 -> boosted level 21 -> only
+    // +1% level efficiency, not +3%).
     const effectiveRequirement = (requiredLevel || 0) + actionLevelBonus;
-    const baseSkillLevel = Math.max(skillLevel || 0, requiredLevel || 0);
-    const effectiveLevel = baseSkillLevel + teaSkillLevelBonus;
+    const effectiveLevel = (skillLevel || 0) + teaSkillLevelBonus;
     const levelEfficiency = Math.max(0, effectiveLevel - effectiveRequirement);
     const totalEfficiency = stackAdditive(
         levelEfficiency,
