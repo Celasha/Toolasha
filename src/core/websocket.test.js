@@ -238,3 +238,46 @@ describe('WebSocket hook — loot_opened dedup (OA-1)', () => {
         expect(handler).toHaveBeenCalledTimes(2);
     });
 });
+
+describe('WebSocket hook — same-event double dispatch via attachSocketListeners (labyrinth Apply Skip regression)', () => {
+    let webSocketHook;
+
+    beforeEach(async () => {
+        vi.resetModules();
+        const mod = await import('./websocket.js');
+        webSocketHook = mod.default;
+    });
+
+    // The real page also intercepts messages via a MessageEvent.prototype.data getter override
+    // (installed by install(), not exercised in this fake-socket harness). Reading event.data
+    // inside attachSocketListeners's own message listener can trigger that getter first, which
+    // itself marks-and-processes the event before this listener reaches its own processMessage
+    // call. Simulate that getter's side effect directly on a plain event so the listener's
+    // ordering bug (or its fix) is exercised without mutating the real MessageEvent prototype.
+    function messageEventWithSelfProcessingGetter(message, socket) {
+        const event = new Event('message');
+        Object.defineProperty(event, 'data', {
+            configurable: true,
+            get() {
+                if (!webSocketHook.isMessageEventProcessed(event)) {
+                    webSocketHook.markMessageEventProcessed(event);
+                    webSocketHook.processMessage(message, socket);
+                }
+                return message;
+            },
+        });
+        return event;
+    }
+
+    test('setting_updated is not dispatched twice when reading event.data itself already processed the message', () => {
+        const handler = vi.fn();
+        webSocketHook.on('setting_updated', handler);
+        const socket = makeFakeWebSocket();
+        webSocketHook.attachSocketListeners(socket);
+
+        const message = JSON.stringify({ type: 'setting_updated', characterSetting: { labyrinthSkipMilking: 15 } });
+        socket.dispatchEvent(messageEventWithSelfProcessingGetter(message, socket));
+
+        expect(handler).toHaveBeenCalledTimes(1);
+    });
+});

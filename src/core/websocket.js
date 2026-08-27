@@ -198,6 +198,14 @@ class WebSocketHook {
                 return;
             }
 
+            // Reading event.data above can itself trigger the MessageEvent.prototype.data
+            // getter hook (hookedGet), which already marks-and-processes the event. Re-check
+            // here so this listener doesn't call processMessage a second time for the same
+            // physical message.
+            if (this.isMessageEventProcessed(event)) {
+                return;
+            }
+
             this.markMessageEventProcessed(event);
             this.processMessage(event.data, socket);
         });
