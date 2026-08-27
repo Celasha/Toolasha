@@ -90,9 +90,16 @@ export function calculateExpectedValueForOpening(containerHrid, containerCount) 
         return { value: null, available: false, complete: false };
     }
 
-    // The shared EV breakdown already reports per-drop hasPriceData. Keep the numeric subtotal
-    // available as partial information, but never let it be treated as complete for Luck.
-    const complete = !Array.isArray(ev.drops) || ev.drops.every((drop) => drop?.hasPriceData !== false);
+    // The shared calculator's breakdown (`ev.drops`) can silently omit an active raw drop
+    // entirely when it can't resolve that item's details, rather than reporting it with
+    // `hasPriceData: false`. Checking `hasPriceData` on only the rows that survived into
+    // `ev.drops` can therefore falsely prove completeness. Compare against every drop the raw
+    // table itself considers active (a positive drop rate) before trusting the breakdown.
+    const activeRawDrops = dropTable.filter((drop) => (drop?.dropRate || 0) > 0);
+    const complete =
+        Array.isArray(ev.drops) &&
+        ev.drops.length === activeRawDrops.length &&
+        ev.drops.every((drop) => drop?.hasPriceData !== false);
     return { value: ev.expectedValue * containerCount, available: true, complete };
 }
 

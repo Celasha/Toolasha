@@ -34,6 +34,7 @@ class OpenableAnalyticsDataCollector {
         this.imports = {};
         this.latestRecord = null;
         this.updateListeners = new Set();
+        this.stateChangeListeners = new Set();
         // One ordered persistence lane for opening/import/reset mutations. It intentionally
         // survives cleanup()/reinitialize so an accepted write cannot be overtaken by a later
         // reset, and initialize() waits on it so a same-character re-enable never loads a
@@ -43,16 +44,18 @@ class OpenableAnalyticsDataCollector {
 
     /**
      * Queue one persistence operation behind every earlier one, current lifecycle or not. A
-     * later opening/reset therefore always lands after everything queued before it, and a
-     * failed operation never blocks the lane for subsequent writes.
-     * @param {Function} task - Async function to run once earlier queued work has settled
-     * @returns {Promise<*>}
+     * later opening/reset therefore always lands after everything queued before it. `task` must
+     * resolve to a boolean success flag (Core Storage often resolves `false` on IndexedDB
+     * failure rather than rejecting) - a failed task still lets subsequent queued work run.
+     * @param {Function} task - Async function returning a boolean success flag
+     * @returns {Promise<boolean>} Whether this operation's persistence succeeded
      */
     enqueuePersistence(task) {
-        const run = this.persistenceQueue.then(task, task);
-        this.persistenceQueue = run.catch((error) => {
-            console.error('[OpenableAnalytics] Persistence operation failed:', error);
+        const run = this.persistenceQueue.then(task, task).catch((error) => {
+            console.error('[OpenableAnalytics] Persistence operation threw:', error);
+            return false;
         });
+        this.persistenceQueue = run.then(() => {});
         return run;
     }
 
@@ -164,6 +167,7 @@ class OpenableAnalyticsDataCollector {
 
         this.latestRecord = record;
         this.notifyListeners(record);
+        this.notifyStateChange();
 
         if (!record.characterId) return record;
 
@@ -173,10 +177,14 @@ class OpenableAnalyticsDataCollector {
         const characterId = record.characterId;
         const historySnapshot = this.history;
         const lifetimeSnapshot = this.lifetime;
-        await this.enqueuePersistence(async () => {
-            await saveHistory(characterId, historySnapshot);
-            await saveLifetime(characterId, lifetimeSnapshot);
+        const persisted = await this.enqueuePersistence(async () => {
+            const historyOk = await saveHistory(characterId, historySnapshot);
+            const lifetimeOk = await saveLifetime(characterId, lifetimeSnapshot);
+            return historyOk && lifetimeOk;
         });
+        if (!persisted) {
+            console.error('[OpenableAnalytics] Could not save this opening. It may not persist after reload.');
+        }
 
         return record;
     }
@@ -203,6 +211,28 @@ class OpenableAnalyticsDataCollector {
     }
 
     /**
+     * Subscribe to any in-memory analytics mutation (live opening, import, replace, remove
+     * import, delete container, delete all) - used by Full Analytics to refresh only while it is
+     * currently mounted. Fired immediately after the in-memory commit, before persistence.
+     * @param {Function} callback - Called with no arguments
+     * @returns {Function} Unsubscribe function
+     */
+    onStateChange(callback) {
+        this.stateChangeListeners.add(callback);
+        return () => this.stateChangeListeners.delete(callback);
+    }
+
+    notifyStateChange() {
+        for (const callback of this.stateChangeListeners) {
+            try {
+                callback();
+            } catch (error) {
+                console.error('[OpenableAnalytics] State-change listener error:', error);
+            }
+        }
+    }
+
+    /**
      * @returns {Object|null} The most recently recorded normalized opening record, if any
      */
     getLatestRecord() {
@@ -215,6 +245,14 @@ class OpenableAnalyticsDataCollector {
      */
     getSessionAggregate(containerHrid) {
         return this.session[containerHrid] || createEmptyAggregate();
+    }
+
+    /**
+     * @returns {Array<string>} Container HRIDs that actually exist in the current in-memory
+     *      Session - never containers that only have Lifetime/imported history.
+     */
+    getSessionContainers() {
+        return Object.keys(this.session);
     }
 
     /**
@@ -252,6 +290,23 @@ class OpenableAnalyticsDataCollector {
     }
 
     /**
+     * @returns {Array<string>} Import source keys that currently have at least one container
+     */
+    getImportSourceKeys() {
+        return Object.entries(this.imports)
+            .filter(([, byContainer]) => Object.keys(byContainer).length > 0)
+            .map(([source]) => source);
+    }
+
+    /**
+     * @param {string} source
+     * @returns {Set<string>} Container HRIDs currently imported under this source
+     */
+    getImportedContainerHrids(source) {
+        return new Set(Object.keys(this.imports[source] || {}));
+    }
+
+    /**
      * Import a batch of bulk historical containers from an external source (Edible Tools, MWI
      * Combat Suite, or a future source), recomputing Actual/Expected/Luck via Toolasha's own
      * valuation from the raw item counts rather than trusting the source's own stored numbers.
@@ -261,10 +316,11 @@ class OpenableAnalyticsDataCollector {
      * previous player's containers mixed into the current `import:edible` snapshot.
      * @param {string} source - e.g. 'import:edible' or 'import:mwi-combat-suite'
      * @param {Array<{containerHrid: string, containerCount: number, itemTotals: Object, sourceDataComplete?: boolean}>} containers
-     * @returns {Promise<Array<Object>>} The resulting per-container aggregates that were imported
+     * @returns {Promise<{results: Array<Object>, persisted: boolean}>} Resulting per-container
+     *      aggregates and whether the import was actually saved
      */
     async importContainers(source, containers) {
-        if (!this.characterId) return [];
+        if (!this.characterId) return { results: [], persisted: false };
 
         const bySource = {};
         const results = [];
@@ -287,9 +343,37 @@ class OpenableAnalyticsDataCollector {
         const characterId = this.characterId;
         this.imports = { ...this.imports, [source]: bySource };
         const importsSnapshot = this.imports;
-        await this.enqueuePersistence(() => saveImports(characterId, importsSnapshot));
+        this.notifyStateChange();
 
-        return results;
+        const persisted = await this.enqueuePersistence(() => saveImports(characterId, importsSnapshot));
+        if (!persisted) {
+            console.error('[OpenableAnalytics] Could not save the imported data. It may not persist after reload.');
+        }
+
+        return { results, persisted };
+    }
+
+    /**
+     * Remove one whole external source snapshot (e.g. 'import:edible'), keeping live Toolasha
+     * history, current Session, and every other import source untouched.
+     * @param {string} source
+     * @returns {Promise<boolean>} Whether the removal was actually saved
+     */
+    async removeImport(source) {
+        if (!this.characterId) return false;
+
+        const characterId = this.characterId;
+        const imports = { ...this.imports };
+        delete imports[source];
+        this.imports = imports;
+        this.notifyStateChange();
+
+        const persisted = await this.enqueuePersistence(() => saveImports(characterId, imports));
+        if (!persisted) {
+            console.error('[OpenableAnalytics] Could not remove the imported data. It may reappear after reload.');
+        }
+
+        return persisted;
     }
 
     /**
@@ -306,22 +390,26 @@ class OpenableAnalyticsDataCollector {
      * character. Commits in-memory state immediately and queues its persistence behind every
      * earlier opening/import/reset, so a later opening for a *different* container is unaffected
      * and a later opening for *this* container (arriving after this call returns) is never
-     * overwritten by this reset (OA-4).
+     * overwritten by this reset (OA-4). Prunes any import source left with zero containers so an
+     * empty `{ [source]: {} }` entry can never appear as an existing source.
      * @param {string} containerHrid
+     * @returns {Promise<boolean>} Whether the reset was actually saved
      */
     async resetContainer(containerHrid) {
-        if (!this.characterId) return;
+        if (!this.characterId) return false;
 
         const characterId = this.characterId;
         const lifetime = { ...this.lifetime };
         delete lifetime[containerHrid];
         const history = this.history.filter((record) => record.containerHrid !== containerHrid);
         const imports = Object.fromEntries(
-            Object.entries(this.imports).map(([source, byContainer]) => {
-                const next = { ...byContainer };
-                delete next[containerHrid];
-                return [source, next];
-            })
+            Object.entries(this.imports)
+                .map(([source, byContainer]) => {
+                    const next = { ...byContainer };
+                    delete next[containerHrid];
+                    return [source, next];
+                })
+                .filter(([, byContainer]) => Object.keys(byContainer).length > 0)
         );
 
         this.lifetime = lifetime;
@@ -331,12 +419,19 @@ class OpenableAnalyticsDataCollector {
         if (this.latestRecord?.containerHrid === containerHrid) {
             this.latestRecord = null;
         }
+        this.notifyStateChange();
 
-        await this.enqueuePersistence(async () => {
-            await saveLifetime(characterId, lifetime);
-            await saveHistory(characterId, history);
-            await saveImports(characterId, imports);
+        const persisted = await this.enqueuePersistence(async () => {
+            const lifetimeOk = await saveLifetime(characterId, lifetime);
+            const historyOk = await saveHistory(characterId, history);
+            const importsOk = await saveImports(characterId, imports);
+            return lifetimeOk && historyOk && importsOk;
         });
+        if (!persisted) {
+            console.error('[OpenableAnalytics] Could not save this deletion. It may reappear after reload.');
+        }
+
+        return persisted;
     }
 
     /**
@@ -344,17 +439,24 @@ class OpenableAnalyticsDataCollector {
      * the current character. Commits in-memory state immediately and queues the deletion behind
      * every earlier write, so an opening that arrives after this call starts still persists once
      * this reset's queued deletion has run (OA-4).
+     * @returns {Promise<boolean>} Whether the reset was actually saved
      */
     async resetAll() {
-        if (!this.characterId) return;
+        if (!this.characterId) return false;
         const characterId = this.characterId;
         this.lifetime = {};
         this.history = [];
         this.imports = {};
         this.session = {};
         this.latestRecord = null;
+        this.notifyStateChange();
 
-        await this.enqueuePersistence(() => storageResetAll(characterId));
+        const persisted = await this.enqueuePersistence(() => storageResetAll(characterId));
+        if (!persisted) {
+            console.error('[OpenableAnalytics] Could not save this deletion. It may reappear after reload.');
+        }
+
+        return persisted;
     }
 
     /**
@@ -376,6 +478,7 @@ class OpenableAnalyticsDataCollector {
         this.session = {};
         this.latestRecord = null;
         this.updateListeners.clear();
+        this.stateChangeListeners.clear();
         // Deliberately do not reset persistenceQueue: an accepted old-lifecycle write must
         // finish under its captured character key, and initialize() waits on this same lane
         // before loading so it can never load a snapshot from before that write landed.

@@ -219,10 +219,19 @@ describe('reset controls', () => {
         await saveLifetime('char-a', { '/items/chest': createEmptyAggregate() });
         mocks.values.set('history:char-a', [makeRecord()]);
 
-        await resetAll('char-a');
+        const succeeded = await resetAll('char-a');
 
+        expect(succeeded).toBe(true);
         expect(await loadLifetime('char-a')).toEqual({});
         expect(await loadHistory('char-a')).toEqual([]);
+    });
+
+    test('section 22: resetAll reports false when one delete fails, without throwing', async () => {
+        storageMock.delete.mockResolvedValueOnce(false);
+
+        const succeeded = await resetAll('char-a');
+
+        expect(succeeded).toBe(false);
     });
 
     test('resetAll for one character does not affect another character’s data', async () => {

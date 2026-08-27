@@ -9,7 +9,10 @@ const mocks = vi.hoisted(() => ({
         containersOpened: 0,
         actualValueTotal: 0,
         expectedValueTotal: 0,
-        expectedValueAvailableEvents: 0,
+        valuationRecordCount: 0,
+        luckEligibleRecordCount: 0,
+        eventsCount: 0,
+        hasImportedData: false,
     },
 }));
 
@@ -60,7 +63,10 @@ function buildModal(itemCount = 3) {
         { length: itemCount },
         (_, i) => `<div class="Item_itemContainer__x7kH1" data-index="${i}"></div>`
     ).join('');
-    container.innerHTML = `<div class="Inventory_header__1">Loot Gained!</div><div>item icon</div><div class="Inventory_gainedItems__abc">${itemsHtml}</div>`;
+    container.innerHTML =
+        itemCount > 0
+            ? `<div class="Inventory_header__1">Opened Loot</div><div class="Inventory_gainedItems__abc"><div class="Inventory_label__x">You found:</div>${itemsHtml}</div><button>Close</button>`
+            : `<div class="Inventory_header__1">Opened Loot</div><button>Close</button>`;
     document.body.appendChild(container);
     return container;
 }
@@ -69,12 +75,15 @@ function itemContainersOf(modal) {
     return modal.querySelectorAll(`[class*="${ITEM_CONTAINER_CLASS}"]`);
 }
 
-beforeEach(() => {
-    mocks.registrations = [];
-    mocks.unsubscribeCollectorCallbacks = [];
-    mocks.latestRecord = {
+function monetaryRecord(overrides = {}) {
+    return {
         containerHrid: '/items/chest',
         containerCount: 6,
+        gainedItems: [
+            { itemHrid: '/items/coin', enhancementLevel: 0, count: 42938 },
+            { itemHrid: '/items/shard_of_protection', enhancementLevel: 0, count: 8 },
+            { itemHrid: '/items/pearl', enhancementLevel: 0, count: 1 },
+        ],
         actualValue: 1470000,
         actualValueComplete: true,
         actualValueBreakdown: [
@@ -84,44 +93,40 @@ beforeEach(() => {
         ],
         expectedValue: 2190000,
         expectedValueAvailable: true,
+        expectedValueComplete: true,
         luckValue: -720000,
         luckPercent: -32.9,
+        ...overrides,
+    };
+}
+
+beforeEach(() => {
+    mocks.registrations = [];
+    mocks.unsubscribeCollectorCallbacks = [];
+    mocks.latestRecord = monetaryRecord();
+    mocks.lifetimeAggregate = {
+        containersOpened: 10,
+        actualValueTotal: 5000000,
+        expectedValueTotal: 6300000,
+        valuationRecordCount: 4,
+        luckEligibleRecordCount: 4,
+        eventsCount: 4,
+        hasImportedData: false,
     };
     document.body.innerHTML = '';
     openableAnalyticsModalInjector.cleanup();
     openableAnalyticsModalInjector.initialize();
 });
 
-describe('idempotent modal injection', () => {
-    test('injects exactly one summary line on first mount', () => {
+describe('modal ownership (section 5)', () => {
+    test('proven monetary result modal: footer is inserted after native reward content, before the native Close button', () => {
         const modal = buildModal();
         modalCallbacks().forEach((cb) => cb(modal));
 
         expect(modal.querySelectorAll(`.${LINE_CLASS}`)).toHaveLength(1);
-        expect(modal.textContent).toContain('6 opened');
-    });
-
-    test('remounting the modal for a second opening replaces the line in place rather than duplicating it', () => {
-        const modal = buildModal();
-        modalCallbacks().forEach((cb) => cb(modal));
-
-        mocks.latestRecord = { ...mocks.latestRecord, containerCount: 3, actualValue: 500000 };
-        modalCallbacks().forEach((cb) => cb(modal));
-
-        expect(modal.querySelectorAll(`.${LINE_CLASS}`)).toHaveLength(1);
-        expect(modal.textContent).toContain('3 opened');
-        expect(modal.textContent).not.toContain('6 opened');
-    });
-
-    test('a data-driven update to an already-mounted modal (no remount) updates the line in place', () => {
-        const modal = buildModal();
-        modalCallbacks().forEach((cb) => cb(modal));
-
-        mocks.latestRecord = { ...mocks.latestRecord, containerCount: 42 };
-        mocks.unsubscribeCollectorCallbacks.forEach((cb) => cb(mocks.latestRecord));
-
-        expect(modal.querySelectorAll(`.${LINE_CLASS}`)).toHaveLength(1);
-        expect(modal.textContent).toContain('42 opened');
+        const children = [...modal.children];
+        const lineIndex = children.findIndex((el) => el.classList.contains(LINE_CLASS));
+        expect(lineIndex).toBe(children.length - 2); // immediately before the trailing <button>Close</button>
     });
 
     test('does not touch a modalContent node from an unrelated class match', () => {
@@ -134,7 +139,15 @@ describe('idempotent modal injection', () => {
         expect(other.querySelectorAll(`.${LINE_CLASS}`)).toHaveLength(0);
     });
 
-    test('never injects before any record exists (no crash, no line)', () => {
+    test('a real Inventory_modalContent that structurally has no gained-items section gets no OA footer', () => {
+        const modal = buildModal(0); // no Inventory_gainedItems section at all
+
+        modalCallbacks().forEach((cb) => cb(modal));
+
+        expect(modal.querySelectorAll(`.${LINE_CLASS}`)).toHaveLength(0);
+    });
+
+    test('never injects before any record exists (no crash, no footer)', () => {
         mocks.latestRecord = null;
         const modal = buildModal();
         modalCallbacks().forEach((cb) => cb(modal));
@@ -142,10 +155,11 @@ describe('idempotent modal injection', () => {
         expect(modal.querySelectorAll(`.${LINE_CLASS}`)).toHaveLength(0);
     });
 
-    test('shows Expected: N/A without a Luck value when EV is unavailable for the opened container', () => {
+    test('pure buff-only openable (no gained items) never gets a monetary OA footer', () => {
         mocks.latestRecord = {
             containerHrid: '/items/seal_of_rare_find',
             containerCount: 1,
+            gainedItems: [],
             actualValue: 0,
             actualValueComplete: true,
             actualValueBreakdown: [],
@@ -157,103 +171,203 @@ describe('idempotent modal injection', () => {
         const modal = buildModal(0);
         modalCallbacks().forEach((cb) => cb(modal));
 
-        expect(modal.textContent).toContain('Expected N/A');
-        expect(modal.textContent).not.toContain('Luck');
+        expect(modal.querySelectorAll(`.${LINE_CLASS}`)).toHaveLength(0);
+        expect(modal.textContent).not.toContain('Actual');
     });
 
-    test('OA-7: shows Actual (partial) and no Luck value when the Actual subtotal is incomplete', () => {
+    test('monetary -> buff-only modal reuse removes the stale monetary footer/labels', () => {
+        const modal = buildModal(3);
+        modalCallbacks().forEach((cb) => cb(modal));
+        expect(modal.querySelectorAll(`.${LINE_CLASS}`)).toHaveLength(1);
+
+        // React reuses the same modalContent node for a later buff-only result.
+        modal.querySelector(`[class*="Inventory_gainedItems"]`)?.remove();
         mocks.latestRecord = {
-            ...mocks.latestRecord,
-            actualValueComplete: false,
+            containerHrid: '/items/seal_of_rare_find',
+            containerCount: 1,
+            gainedItems: [],
+            actualValue: 0,
+            actualValueComplete: true,
+            actualValueBreakdown: [],
+            expectedValue: null,
+            expectedValueAvailable: false,
             luckValue: null,
             luckPercent: null,
+        };
+        modalCallbacks().forEach((cb) => cb(modal));
+
+        expect(modal.querySelectorAll(`.${LINE_CLASS}`)).toHaveLength(0);
+        expect(modal.querySelectorAll(`.${ITEM_VALUE_LABEL_CLASS}`)).toHaveLength(0);
+    });
+});
+
+describe('footer UI contract (section 6)', () => {
+    test('normal monetary opening shows Actual/Expected/Luck without opened-count wording', () => {
+        const modal = buildModal();
+        modalCallbacks().forEach((cb) => cb(modal));
+
+        expect(modal.textContent).toContain('Actual');
+        expect(modal.textContent).toContain('Expected');
+        expect(modal.textContent).toContain('Luck');
+        expect(modal.textContent).not.toMatch(/\d+ opened/);
+    });
+
+    test('negative Luck includes an explicit minus sign and percent', () => {
+        const modal = buildModal();
+        modalCallbacks().forEach((cb) => cb(modal));
+
+        expect(modal.textContent).toContain('-720K');
+        expect(modal.textContent).toContain('-32.9%');
+    });
+
+    test('positive Luck includes an explicit plus sign in both value and percent', () => {
+        mocks.latestRecord = monetaryRecord({ luckValue: 720000, luckPercent: 32.9 });
+        const modal = buildModal();
+        modalCallbacks().forEach((cb) => cb(modal));
+
+        expect(modal.textContent).toContain('+720K');
+        expect(modal.textContent).toContain('+32.9%');
+    });
+
+    test('rounded -0.0% luck percent is normalized to 0.0%, not shown as negative', () => {
+        mocks.latestRecord = monetaryRecord({ luckValue: 0, luckPercent: -0.02 });
+        const modal = buildModal();
+        modalCallbacks().forEach((cb) => cb(modal));
+
+        expect(modal.textContent).not.toContain('-0.0%');
+        expect(modal.textContent).toContain('0.0%');
+    });
+
+    test('monetary incomplete valuation shows [Partial] and Luck as an explicit unavailable dash, not N/A', () => {
+        mocks.latestRecord = monetaryRecord({ actualValueComplete: false, luckValue: null, luckPercent: null });
+        const modal = buildModal();
+        modalCallbacks().forEach((cb) => cb(modal));
+
+        expect(modal.textContent).toContain('[Partial]');
+        expect(modal.textContent).not.toContain('N/A');
+        expect(modal.querySelector(`.${LINE_CLASS}`).textContent).toMatch(/Luck\s*—/);
+    });
+
+    test('first tracked event with no other Lifetime history suppresses a redundant Lifetime row', () => {
+        mocks.lifetimeAggregate = {
+            containersOpened: 6,
+            actualValueTotal: 1470000,
+            expectedValueTotal: 2190000,
+            valuationRecordCount: 1,
+            luckEligibleRecordCount: 1,
+            eventsCount: 1,
+            hasImportedData: false,
         };
         const modal = buildModal();
         modalCallbacks().forEach((cb) => cb(modal));
 
-        expect(modal.textContent).toContain('(partial)');
-        expect(modal.textContent).not.toContain('Luck');
+        expect(modal.textContent).toContain('View Analytics');
+        expect(modal.textContent).not.toMatch(/Lifetime/);
     });
 
-    test('OA-8: shows Expected (partial) and no Luck value when the Expected breakdown is incomplete', () => {
-        mocks.latestRecord = {
-            ...mocks.latestRecord,
-            expectedValueComplete: false,
-            luckValue: null,
-            luckPercent: null,
+    test('prior live history still shows a Lifetime row', () => {
+        const modal = buildModal();
+        modalCallbacks().forEach((cb) => cb(modal));
+
+        expect(modal.textContent).toMatch(/Lifetime ×10/);
+    });
+
+    test('imported-only Lifetime history (this is the first live event) still shows a Lifetime row', () => {
+        mocks.lifetimeAggregate = {
+            containersOpened: 501,
+            actualValueTotal: 1470000,
+            expectedValueTotal: 2190000,
+            valuationRecordCount: 2,
+            luckEligibleRecordCount: 2,
+            eventsCount: 1,
+            hasImportedData: true,
         };
         const modal = buildModal();
         modalCallbacks().forEach((cb) => cb(modal));
 
-        expect(modal.textContent).toContain('(partial)');
-        expect(modal.textContent).not.toContain('Luck');
+        expect(modal.textContent).toMatch(/Lifetime ×501/);
     });
 
-    test('AGG-1: Lifetime Luck is not shown when the lifetime aggregate has any non-eligible valuation record', () => {
+    test('AGG-1: Lifetime Luck is hidden when one folded valuation record is not Luck-eligible', () => {
         mocks.lifetimeAggregate = {
             containersOpened: 10,
             actualValueTotal: 500,
             expectedValueTotal: 400,
             valuationRecordCount: 3,
             luckEligibleRecordCount: 2,
+            eventsCount: 3,
+            hasImportedData: false,
         };
         const modal = buildModal();
         modalCallbacks().forEach((cb) => cb(modal));
 
-        expect(modal.textContent).toContain('Lifetime: 10 opened');
-        expect(modal.textContent).not.toMatch(/Lifetime:.*Luck/);
+        expect(modal.textContent).toMatch(/Lifetime ×10/);
+        expect(modal.textContent).not.toMatch(/Lifetime.*Luck/);
     });
 
-    test('Lifetime Luck is shown when every folded valuation record is Luck-eligible', () => {
-        mocks.lifetimeAggregate = {
-            containersOpened: 10,
-            actualValueTotal: 500,
-            expectedValueTotal: 400,
-            valuationRecordCount: 3,
-            luckEligibleRecordCount: 3,
-        };
+    test('Luck has an explanatory tooltip that does not claim to be profitability', () => {
         const modal = buildModal();
         modalCallbacks().forEach((cb) => cb(modal));
 
-        expect(modal.textContent).toMatch(/Lifetime:.*Luck/);
+        const luckSpan = [...modal.querySelectorAll('span')].find((el) => el.textContent === 'Luck');
+        expect(luckSpan.title.toLowerCase()).toContain('actual loot value minus expected loot value');
+        expect(luckSpan.title.toLowerCase()).toContain('is not opening profit');
     });
 });
 
-describe('per-item value labels', () => {
-    test('stamps a value label on each gained-item icon, matched positionally to the breakdown', () => {
+describe('per-item value labels (section 7)', () => {
+    test('normal resolved items get a compact approximate label; Coin never gets one', () => {
         const modal = buildModal(3);
         modalCallbacks().forEach((cb) => cb(modal));
 
         const items = itemContainersOf(modal);
-        expect(items[0].querySelector(`.${ITEM_VALUE_LABEL_CLASS}`).textContent).toBe('42K');
-        expect(items[1].querySelector(`.${ITEM_VALUE_LABEL_CLASS}`).textContent).toBe('400K');
-        expect(items[2].querySelector(`.${ITEM_VALUE_LABEL_CLASS}`).textContent).toBe('1,062');
+        expect(items[0].querySelector(`.${ITEM_VALUE_LABEL_CLASS}`)).toBeNull(); // Coin
+        expect(items[1].querySelector(`.${ITEM_VALUE_LABEL_CLASS}`).textContent).toBe('≈400K');
+        expect(items[2].querySelector(`.${ITEM_VALUE_LABEL_CLASS}`).textContent).toBe('≈1.06K');
     });
 
-    test('shows N/A for an unresolved item instead of a fabricated value', () => {
-        mocks.latestRecord = {
-            ...mocks.latestRecord,
+    test('resolved value of exactly zero shows ≈0, not unavailable', () => {
+        mocks.latestRecord = monetaryRecord({
             actualValueBreakdown: [
-                { itemHrid: '/items/mystery', enhancementLevel: 0, count: 1, value: 0, resolved: false },
+                { itemHrid: '/items/worthless_item', enhancementLevel: 0, count: 1, value: 0, resolved: true },
             ],
-        };
+        });
         const modal = buildModal(1);
         modalCallbacks().forEach((cb) => cb(modal));
 
-        expect(itemContainersOf(modal)[0].querySelector(`.${ITEM_VALUE_LABEL_CLASS}`).textContent).toBe('N/A');
+        expect(itemContainersOf(modal)[0].querySelector(`.${ITEM_VALUE_LABEL_CLASS}`).textContent).toBe('≈0');
     });
 
-    test('re-rendering updates the same label in place rather than adding a second one', () => {
+    test('an unresolved item renders no tiny label at all (not a fabricated N/A)', () => {
+        mocks.latestRecord = monetaryRecord({
+            actualValueBreakdown: [
+                { itemHrid: '/items/mystery', enhancementLevel: 0, count: 1, value: 0, resolved: false },
+            ],
+        });
+        const modal = buildModal(1);
+        modalCallbacks().forEach((cb) => cb(modal));
+
+        expect(itemContainersOf(modal)[0].querySelector(`.${ITEM_VALUE_LABEL_CLASS}`)).toBeNull();
+    });
+
+    test('re-rendering updates labels in place rather than adding a second one', () => {
         const modal = buildModal(3);
         modalCallbacks().forEach((cb) => cb(modal));
         modalCallbacks().forEach((cb) => cb(modal));
 
         const items = itemContainersOf(modal);
-        expect(items[0].querySelectorAll(`.${ITEM_VALUE_LABEL_CLASS}`)).toHaveLength(1);
+        expect(items[1].querySelectorAll(`.${ITEM_VALUE_LABEL_CLASS}`)).toHaveLength(1);
     });
 
-    test('skips labeling entirely (no crash, no mismatched values) when the icon count does not match the breakdown', () => {
-        const modal = buildModal(5); // 5 icons but the mocked record's breakdown has 3 entries
+    test('DOM item-count/breakdown mismatch clears any previously stamped labels before failing closed', () => {
+        const modal = buildModal(3);
+        modalCallbacks().forEach((cb) => cb(modal));
+        expect(itemContainersOf(modal)[1].querySelector(`.${ITEM_VALUE_LABEL_CLASS}`)).not.toBeNull();
+
+        // A rare special-cased render adds a 4th icon the breakdown doesn't account for.
+        const extra = document.createElement('div');
+        extra.className = 'Item_itemContainer__extra';
+        modal.querySelector('[class*="Inventory_gainedItems"]').appendChild(extra);
 
         expect(() => modalCallbacks().forEach((cb) => cb(modal))).not.toThrow();
         itemContainersOf(modal).forEach((item) => {
@@ -263,13 +377,10 @@ describe('per-item value labels', () => {
 
     test('the item-level observer relabels using the current DOM state when new item icons are inserted directly', () => {
         const modal = buildModal(3);
-        // Simulate the "modal stays mounted, content updates in place" path: item icons are
-        // (re)inserted without the modal container itself being re-added, so only the
-        // item-level observer fires, not the modal-level one.
         itemCallbacks().forEach((cb) => cb(itemContainersOf(modal)[0]));
 
         const items = itemContainersOf(modal);
-        expect(items[0].querySelector(`.${ITEM_VALUE_LABEL_CLASS}`).textContent).toBe('42K');
+        expect(items[1].querySelector(`.${ITEM_VALUE_LABEL_CLASS}`).textContent).toBe('≈400K');
     });
 
     test('the item-level observer ignores an item icon outside any tracked Openable Analytics modal', () => {
@@ -279,6 +390,49 @@ describe('per-item value labels', () => {
 
         expect(() => itemCallbacks().forEach((cb) => cb(strayItem))).not.toThrow();
         expect(strayItem.querySelector(`.${ITEM_VALUE_LABEL_CLASS}`)).toBeNull();
+    });
+});
+
+describe('cleanup and stale callback safety (section 8)', () => {
+    test('cleanup removes the footer and all item labels from the DOM', () => {
+        const modal = buildModal(3);
+        modalCallbacks().forEach((cb) => cb(modal));
+        expect(modal.querySelectorAll(`.${LINE_CLASS}`)).toHaveLength(1);
+        expect(modal.querySelectorAll(`.${ITEM_VALUE_LABEL_CLASS}`).length).toBeGreaterThan(0);
+
+        openableAnalyticsModalInjector.cleanup();
+
+        expect(modal.querySelectorAll(`.${LINE_CLASS}`)).toHaveLength(0);
+        expect(modal.querySelectorAll(`.${ITEM_VALUE_LABEL_CLASS}`)).toHaveLength(0);
+    });
+
+    test('a stale modal-observer callback captured before cleanup cannot reinject after cleanup', () => {
+        const staleModalCallback = modalCallbacks()[0];
+        openableAnalyticsModalInjector.cleanup();
+
+        const modal = buildModal(3);
+        expect(() => staleModalCallback(modal)).not.toThrow();
+
+        expect(modal.querySelectorAll(`.${LINE_CLASS}`)).toHaveLength(0);
+    });
+
+    test('a stale item-observer callback captured before cleanup cannot reinject after cleanup', () => {
+        const staleItemCallback = itemCallbacks()[0];
+        openableAnalyticsModalInjector.cleanup();
+
+        const modal = buildModal(3);
+        expect(() => staleItemCallback(itemContainersOf(modal)[0])).not.toThrow();
+
+        expect(modal.querySelectorAll(`.${ITEM_VALUE_LABEL_CLASS}`)).toHaveLength(0);
+    });
+
+    test('a stale data-driven update captured before cleanup cannot reinject after cleanup', () => {
+        const modal = buildModal(3);
+        modalCallbacks().forEach((cb) => cb(modal));
+        openableAnalyticsModalInjector.cleanup();
+
+        expect(() => mocks.unsubscribeCollectorCallbacks.forEach((cb) => cb(mocks.latestRecord))).not.toThrow();
+        expect(modal.querySelectorAll(`.${LINE_CLASS}`)).toHaveLength(0);
     });
 });
 

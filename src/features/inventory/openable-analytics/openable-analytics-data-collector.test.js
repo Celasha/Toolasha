@@ -462,4 +462,124 @@ describe('bulk imports (Edible Tools / MWI Combat Suite)', () => {
 
         expect(openableAnalyticsDataCollector.getLifetimeAggregate('/items/chimerical_chest').containersOpened).toBe(0);
     });
+
+    test('removeImport removes one whole source, keeping live history and other sources intact', async () => {
+        await lootHandler()(lootOpenedEvent({ openedItem: { itemHrid: '/items/chimerical_chest', count: 1 } }));
+        await openableAnalyticsDataCollector.importContainers('import:edible', [
+            { containerHrid: '/items/chimerical_chest', containerCount: 100, itemTotals: {} },
+        ]);
+        await openableAnalyticsDataCollector.importContainers('import:mwi-combat-suite', [
+            { containerHrid: '/items/chimerical_chest', containerCount: 200, itemTotals: {} },
+        ]);
+
+        const persisted = await openableAnalyticsDataCollector.removeImport('import:edible');
+
+        expect(persisted).toBe(true);
+        const combined = openableAnalyticsDataCollector.getLifetimeAggregate('/items/chimerical_chest');
+        expect(combined.containersOpened).toBe(201); // 1 live + 200 mwi-combat-suite, edible's 100 gone
+    });
+
+    test('resetContainer prunes an import source left with zero containers rather than leaving an empty {} entry', async () => {
+        await openableAnalyticsDataCollector.importContainers('import:edible', [
+            { containerHrid: '/items/chimerical_chest', containerCount: 10, itemTotals: {} },
+        ]);
+
+        await openableAnalyticsDataCollector.resetContainer('/items/chimerical_chest');
+
+        expect(openableAnalyticsDataCollector.getImportSourceKeys()).not.toContain('import:edible');
+    });
+});
+
+describe('section 22: persistence-failure handling', () => {
+    test('recordOpening logs when the underlying save fails, but in-memory state still reflects the opening', async () => {
+        const { default: storage } = await import('../../../core/storage.js');
+        storage.setJSON.mockResolvedValueOnce(false); // saveHistory fails
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+        await lootHandler()(lootOpenedEvent());
+
+        expect(openableAnalyticsDataCollector.getLatestRecord()).not.toBeNull();
+        expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Could not save'));
+        errorSpy.mockRestore();
+    });
+
+    test('a failed persistence operation does not poison the queue for later queued work', async () => {
+        const { default: storage } = await import('../../../core/storage.js');
+        storage.setJSON.mockResolvedValueOnce(false); // first opening's saveHistory fails
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+
+        await lootHandler()(lootOpenedEvent({ openedItem: { itemHrid: '/items/chest', count: 1 } }));
+        await lootHandler()(lootOpenedEvent({ openedItem: { itemHrid: '/items/crate', count: 1 } }));
+
+        // The second opening's persistence must still run and succeed.
+        expect(mocks.values.get('lifetime:char-a')['/items/crate'].eventsCount).toBe(1);
+    });
+
+    test('importContainers reports persisted: false when the save fails', async () => {
+        const { default: storage } = await import('../../../core/storage.js');
+        storage.setJSON.mockResolvedValueOnce(false);
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+
+        const { persisted } = await openableAnalyticsDataCollector.importContainers('import:edible', [
+            { containerHrid: '/items/chimerical_chest', containerCount: 10, itemTotals: {} },
+        ]);
+
+        expect(persisted).toBe(false);
+    });
+
+    test('resetAll reports false when a delete fails', async () => {
+        const { default: storage } = await import('../../../core/storage.js');
+        storage.delete.mockResolvedValueOnce(false);
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+
+        const persisted = await openableAnalyticsDataCollector.resetAll();
+
+        expect(persisted).toBe(false);
+    });
+});
+
+describe('section 23: state-change subscription', () => {
+    test('fires immediately after in-memory commit for a live opening', async () => {
+        const seen = [];
+        openableAnalyticsDataCollector.onStateChange(() => seen.push(true));
+
+        await lootHandler()(lootOpenedEvent());
+
+        expect(seen).toHaveLength(1);
+    });
+
+    test('fires for import, remove import, delete container, and delete all', async () => {
+        let count = 0;
+        openableAnalyticsDataCollector.onStateChange(() => count++);
+
+        await openableAnalyticsDataCollector.importContainers('import:edible', [
+            { containerHrid: '/items/chimerical_chest', containerCount: 10, itemTotals: {} },
+        ]);
+        await openableAnalyticsDataCollector.removeImport('import:edible');
+        await openableAnalyticsDataCollector.resetContainer('/items/chimerical_chest');
+        await openableAnalyticsDataCollector.resetAll();
+
+        expect(count).toBe(4);
+    });
+
+    test('can unsubscribe', async () => {
+        const seen = [];
+        const unsubscribe = openableAnalyticsDataCollector.onStateChange(() => seen.push(true));
+        unsubscribe();
+
+        await lootHandler()(lootOpenedEvent());
+
+        expect(seen).toHaveLength(0);
+    });
+
+    test('cleanup clears state-change listeners', async () => {
+        const seen = [];
+        openableAnalyticsDataCollector.onStateChange(() => seen.push(true));
+
+        openableAnalyticsDataCollector.cleanup();
+        await openableAnalyticsDataCollector.initialize();
+        await lootHandler()(lootOpenedEvent());
+
+        expect(seen).toHaveLength(0);
+    });
 });

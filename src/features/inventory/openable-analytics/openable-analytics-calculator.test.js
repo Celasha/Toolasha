@@ -3,7 +3,9 @@ import { describe, test, expect, vi, beforeEach } from 'vitest';
 vi.mock('../../../core/data-manager.js', () => ({
     default: {
         getItemDetails: vi.fn(() => ({ isTradable: true })),
-        getInitClientData: vi.fn(() => ({ openableLootDropMap: { '/items/chest': [{ itemHrid: '/items/coin' }] } })),
+        getInitClientData: vi.fn(() => ({
+            openableLootDropMap: { '/items/chest': [{ itemHrid: '/items/coin', dropRate: 0.9 }] },
+        })),
     },
 }));
 vi.mock('../../../core/config.js', () => ({
@@ -29,6 +31,9 @@ const {
 beforeEach(() => {
     vi.clearAllMocks();
     dataManager.getItemDetails.mockReturnValue({ isTradable: true });
+    dataManager.getInitClientData.mockReturnValue({
+        openableLootDropMap: { '/items/chest': [{ itemHrid: '/items/coin', dropRate: 0.9 }] },
+    });
 });
 
 describe('calculateActualValue', () => {
@@ -174,6 +179,52 @@ describe('calculateExpectedValueForOpening', () => {
 
         const { complete } = calculateExpectedValueForOpening('/items/chest', 1);
 
+        expect(complete).toBe(true);
+    });
+
+    test('section 4: active raw drop silently missing from the shared breakdown is still partial even though the surviving row is priced', () => {
+        dataManager.getInitClientData.mockReturnValue({
+            openableLootDropMap: {
+                '/items/chest': [
+                    { itemHrid: '/items/coin', dropRate: 0.9 },
+                    { itemHrid: '/items/pearl', dropRate: 0.1 },
+                ],
+            },
+        });
+        // The shared calculator silently dropped /items/pearl from its own breakdown (e.g. it
+        // could not resolve itemDetails for it) instead of reporting hasPriceData: false.
+        expectedValueCalculator.calculateExpectedValue.mockReturnValue({
+            expectedValue: 500,
+            drops: [{ itemHrid: '/items/coin', expectedValue: 500, hasPriceData: true }],
+        });
+
+        const { complete } = calculateExpectedValueForOpening('/items/chest', 1);
+
+        expect(complete).toBe(false);
+    });
+
+    test('section 4: no ev.drops array at all cannot prove completeness', () => {
+        expectedValueCalculator.calculateExpectedValue.mockReturnValue({ expectedValue: 500 });
+
+        const { available, complete } = calculateExpectedValueForOpening('/items/chest', 1);
+
+        expect(available).toBe(true);
+        expect(complete).toBe(false);
+    });
+
+    test('section 4: complete Expected of exactly zero is still a valid absolute value, not missing', () => {
+        expectedValueCalculator.calculateExpectedValue.mockReturnValue({ expectedValue: 0, drops: [] });
+        dataManager.getInitClientData.mockReturnValue({ openableLootDropMap: { '/items/chest': [] } });
+        // An empty-but-present drop table (0 active raw drops) still counts as a real monetary
+        // model with a legitimately zero EV - distinct from no dropTable entry at all.
+        dataManager.getInitClientData.mockReturnValue({
+            openableLootDropMap: { '/items/chest': [{ itemHrid: '/items/coin', dropRate: 0 }] },
+        });
+
+        const { value, available, complete } = calculateExpectedValueForOpening('/items/chest', 1);
+
+        expect(value).toBe(0);
+        expect(available).toBe(true);
         expect(complete).toBe(true);
     });
 });

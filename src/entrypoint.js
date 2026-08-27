@@ -56,6 +56,10 @@ function registerFeatures() {
             category: 'Market',
             module: Market.expectedValueCalculator,
             async: true,
+            // Shared infrastructure: initialize when either consumer needs it, not only when the
+            // tooltip UI setting is on, so Openable Analytics keeps working after a character
+            // switch even when itemTooltip_expectedValue is off (OA-RUNTIME-2).
+            customCheck: () => config.getSetting('itemTooltip_expectedValue') || config.getSetting('openableAnalytics'),
         },
         {
             key: 'tooltipConsumables',

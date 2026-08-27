@@ -251,12 +251,13 @@ export async function resetContainer(characterId, containerHrid) {
 /**
  * Reset (delete) all Openable Analytics data for one character.
  * @param {string} characterId
- * @returns {Promise<void>}
+ * @returns {Promise<boolean>} Whether every delete succeeded
  */
 export async function resetAll(characterId) {
-    await storage.delete(lifetimeKey(characterId), STORE_NAME);
-    await storage.delete(historyKey(characterId), STORE_NAME);
-    await storage.delete(importsKey(characterId), STORE_NAME);
+    const lifetimeOk = await storage.delete(lifetimeKey(characterId), STORE_NAME);
+    const historyOk = await storage.delete(historyKey(characterId), STORE_NAME);
+    const importsOk = await storage.delete(importsKey(characterId), STORE_NAME);
+    return lifetimeOk && historyOk && importsOk;
 }
 
 export const OPENABLE_ANALYTICS_STORE = STORE_NAME;
