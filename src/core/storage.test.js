@@ -39,8 +39,13 @@ function makeFakeDb(shouldFail = false) {
 
 // ── Fresh Storage instance per test ─────────────────────────────────────────
 
-async function makeStorage() {
+async function makeStorage({ devStandalone = false } = {}) {
     vi.resetModules();
+    if (devStandalone) {
+        globalThis.__TOOLASHA_BUILD_CHANNEL__ = 'dev-standalone';
+    } else {
+        delete globalThis.__TOOLASHA_BUILD_CHANNEL__;
+    }
     const mod = await import('./storage.js');
     const s = mod.default;
     // Reset internal state for isolation
@@ -61,6 +66,7 @@ describe('Storage write durability (TLA-007)', () => {
 
     afterEach(() => {
         vi.useRealTimers();
+        delete globalThis.__TOOLASHA_BUILD_CHANNEL__;
     });
 
     test('DB closes before debounce fires: value is requeued and survives', async () => {
@@ -197,5 +203,56 @@ describe('Storage write durability (TLA-007)', () => {
         // All coalesced into the last write — the winning write should resolve true
         expect(results[results.length - 1]).toBe(true);
         expect(goodDb._store['c']).toBe('v3');
+    });
+});
+
+describe('Storage database identity and VersionError safety (TLA-022)', () => {
+    afterEach(() => {
+        delete globalThis.__TOOLASHA_BUILD_CHANNEL__;
+        vi.unstubAllGlobals();
+    });
+
+    test('STORAGE-DEV-1: production storage keeps the released ToolashaDB namespace', async () => {
+        const s = await makeStorage();
+        expect(s.dbName).toBe('ToolashaDB');
+    });
+
+    test('STORAGE-DEV-2/3: standalone dev storage is isolated and schema-scoped', async () => {
+        const s = await makeStorage({ devStandalone: true });
+        expect(s.dbName).toBe(`ToolashaDB-dev-v${s.dbVersion}`);
+        expect(s.dbName).not.toBe('ToolashaDB');
+    });
+
+    test('STORAGE-DEV-5: removing the dev build marker returns to the production database identity', async () => {
+        const dev = await makeStorage({ devStandalone: true });
+        expect(dev.dbName).not.toBe('ToolashaDB');
+
+        const stable = await makeStorage();
+        expect(stable.dbName).toBe('ToolashaDB');
+    });
+
+    test('STORAGE-DEV-7/8: VersionError preserves the database and reports a newer-schema diagnostic', async () => {
+        const s = await makeStorage();
+        const request = {};
+        const deleteDatabase = vi.fn();
+        const versionError = new Error('requested version is lower than existing version');
+        versionError.name = 'VersionError';
+
+        vi.stubGlobal('indexedDB', {
+            open: vi.fn(() => {
+                queueMicrotask(() => {
+                    request.error = versionError;
+                    request.onerror?.();
+                });
+                return request;
+            }),
+            deleteDatabase,
+        });
+
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+        await expect(s.openDatabase()).rejects.toMatchObject({ name: 'VersionError' });
+        expect(deleteDatabase).not.toHaveBeenCalled();
+        expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('newer Toolasha schema'), versionError);
     });
 });

@@ -174,3 +174,67 @@ describe('WebSocket hook — guild_updated must not be dropped by content-hash d
         expect(handler.mock.calls[1][0].guild.experience).toBe(2500);
     });
 });
+
+describe('WebSocket hook — loot_opened dedup (OA-1)', () => {
+    let webSocketHook;
+
+    beforeEach(async () => {
+        vi.resetModules();
+        const mod = await import('./websocket.js');
+        webSocketHook = mod.default;
+    });
+
+    // A real loot_opened payload's `openedItem` alone can fill the first 100 raw chars, so two
+    // genuine consecutive openings of the same container that differ only in `gainedItems`
+    // (further into the object) would hash identically under the lossy first-100-char dedup.
+    function lootOpenedMessage(gainedItemCount) {
+        const openedItem = { itemHrid: '/items/chimerical_chest', enhancementLevel: 0, count: 1 };
+        return JSON.stringify({
+            type: 'loot_opened',
+            openedItem,
+            gainedItems: [{ itemHrid: '/items/coin', enhancementLevel: 0, count: gainedItemCount }],
+            grantedBuffs: [],
+        });
+    }
+
+    test('DEDUP-1: two same-socket loot_opened messages sharing the first 100 chars but differing later both dispatch', () => {
+        const handler = vi.fn();
+        webSocketHook.on('loot_opened', handler);
+        const socket = makeFakeWebSocket();
+
+        const first = lootOpenedMessage(100);
+        const second = lootOpenedMessage(200);
+        expect(first.substring(0, 100)).toBe(second.substring(0, 100));
+
+        webSocketHook.processMessage(first, socket);
+        webSocketHook.processMessage(second, socket);
+
+        expect(handler).toHaveBeenCalledTimes(2);
+        expect(handler.mock.calls[1][0].gainedItems[0].count).toBe(200);
+    });
+
+    test('DEDUP-2: an exact duplicate interception of the same physical message collapses to one dispatch', () => {
+        const handler = vi.fn();
+        webSocketHook.on('loot_opened', handler);
+        const socket = makeFakeWebSocket();
+        const message = lootOpenedMessage(100);
+
+        webSocketHook.processMessage(message, socket);
+        webSocketHook.processMessage(message, socket);
+
+        expect(handler).toHaveBeenCalledTimes(1);
+    });
+
+    test('DEDUP-3: the same raw content on a newly accepted socket is not suppressed by an old socket’s dedup state', () => {
+        const handler = vi.fn();
+        webSocketHook.on('loot_opened', handler);
+        const socketA = makeFakeWebSocket();
+        const socketB = makeFakeWebSocket();
+        const message = lootOpenedMessage(100);
+
+        webSocketHook.processMessage(message, socketA);
+        webSocketHook.processMessage(message, socketB);
+
+        expect(handler).toHaveBeenCalledTimes(2);
+    });
+});

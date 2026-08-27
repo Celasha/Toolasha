@@ -45,6 +45,7 @@ import dungeonTokenTooltips from '../features/inventory/dungeon-token-tooltips.j
 import autoAllButton from '../features/inventory/auto-all-button.js';
 import inventoryCategoryTotals from '../features/inventory/inventory-category-totals.js';
 import customTabsFeature from '../features/inventory/custom-tabs/custom-tabs-feature.js';
+import openableAnalytics from '../features/inventory/openable-analytics/openable-analytics.js';
 
 // Export to global namespace
 const toolashaRoot = window.Toolasha || {};
@@ -86,6 +87,7 @@ toolashaRoot.Market = {
     autoAllButton,
     inventoryCategoryTotals,
     customTabsFeature,
+    openableAnalytics,
     marketplaceShortcuts,
     sellQueue,
 };

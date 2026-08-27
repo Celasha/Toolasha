@@ -175,7 +175,19 @@ function workerBundlePlugin() {
 // Check if we should build for production (multi-bundle)
 const isProduction = process.env.BUILD_MODE === 'production';
 const buildTarget = process.env.BUILD_TARGET || 'dev';
-const devOutputFile = buildTarget === 'dev-standalone' ? 'dist/Toolasha-dev.user.js' : 'dist/Toolasha.user.js';
+const isStandaloneDevBuild = buildTarget === 'dev-standalone';
+const devOutputFile = isStandaloneDevBuild ? 'dist/Toolasha-dev.user.js' : 'dist/Toolasha.user.js';
+
+// The standalone dev/test build must be visibly distinct from production and must never share
+// its persistent IndexedDB namespace (TLA-022) - both are driven off this one build-time marker
+// so no runtime heuristic (filename/URL/version) has to guess which build is running.
+const devUserscriptHeader = isStandaloneDevBuild
+    ? userscriptHeader
+          .replace('// @name         Toolasha\n', '// @name         Toolasha DEV\n')
+          .replace(/^\/\/ @downloadURL.*\n/m, '')
+          .replace(/^\/\/ @updateURL.*\n/m, '')
+    : userscriptHeader;
+const devBuildIntro = isStandaloneDevBuild ? "globalThis.__TOOLASHA_BUILD_CHANNEL__ = 'dev-standalone';\n" : '';
 
 // Development build configuration (single bundle for local testing)
 const devConfig = {
@@ -184,7 +196,8 @@ const devConfig = {
         file: devOutputFile,
         format: 'iife',
         name: 'Toolasha',
-        banner: userscriptHeader,
+        banner: devUserscriptHeader,
+        intro: devBuildIntro,
     },
     plugins: [
         cssRawPlugin(),
