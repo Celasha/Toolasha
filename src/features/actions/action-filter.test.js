@@ -157,3 +157,73 @@ describe('ActionFilter mode/profit synchronization after a character-switch sett
         expect(config.onSettingsLoaded).toHaveBeenCalledTimes(1);
     });
 });
+
+describe('ActionFilter stale filterValue must not leak into non-filterable pages (e.g. Combat Zones)', () => {
+    beforeEach(async () => {
+        document.body.innerHTML = '';
+        mocks.settingsLoadedHandlers = [];
+        mocks.pricingMode = 'hybrid';
+        mocks.titleCallback = null;
+        vi.clearAllMocks();
+        await actionFilter.initialize();
+    });
+
+    afterEach(() => {
+        actionFilter.cleanup();
+    });
+
+    function makeTile(name) {
+        const tile = document.createElement('div');
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'name';
+        nameDiv.textContent = name;
+        tile.appendChild(nameDiv);
+        document.body.appendChild(tile);
+        return tile;
+    }
+
+    test('a tile registering after the filtered title bar is removed from the DOM is not hidden by the stale filter', () => {
+        const title = makeTitle();
+        mocks.titleCallback(title);
+        actionFilter.filterValue = 'milk';
+
+        // Simulate navigating away from the filterable skill page (e.g. to Combat Zones): the
+        // title bar's React node is unmounted, but no new filterable title appears to replace it.
+        title.remove();
+
+        const zoneTile = makeTile('Aqua Planet');
+        actionFilter.registerPanel(zoneTile, 'Aqua Planet');
+
+        expect(actionFilter.filterValue).toBe('');
+        expect(zoneTile.dataset.mwiFilterHidden).not.toBe('true');
+        expect(zoneTile.style.display).not.toBe('none');
+    });
+
+    test('multiple tiles registering after navigating away all stay visible, not just the first', () => {
+        const title = makeTitle();
+        mocks.titleCallback(title);
+        actionFilter.filterValue = 'milk';
+        title.remove();
+
+        const tileA = makeTile('Smelly Planet');
+        const tileB = makeTile('Aqua Planet');
+        actionFilter.registerPanel(tileA, 'Smelly Planet');
+        actionFilter.registerPanel(tileB, 'Aqua Planet');
+
+        expect(tileA.style.display).not.toBe('none');
+        expect(tileB.style.display).not.toBe('none');
+    });
+
+    test('a live filter on the same page still applies normally (no regression to in-page filtering)', () => {
+        const title = makeTitle();
+        mocks.titleCallback(title);
+        actionFilter.filterValue = 'milk';
+
+        // Title stays connected — this is a normal filter on the current page, not a navigation.
+        const tile = makeTile('Aqua Planet');
+        actionFilter.registerPanel(tile, 'Aqua Planet');
+
+        expect(tile.dataset.mwiFilterHidden).toBe('true');
+        expect(tile.style.display).toBe('none');
+    });
+});

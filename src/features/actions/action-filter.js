@@ -339,6 +339,16 @@ class ActionFilter {
      * @param {string} actionName - The action/item name
      */
     registerPanel(actionPanel, actionName) {
+        // The tile class this registers from (SkillAction_skillAction__.../panel-observer.js) is
+        // generic and reused outside filterable skill pages (e.g. Combat Zones). If the title bar
+        // we attached the filter to has since been removed from the DOM without a new filterable
+        // title appearing to replace it (i.e. we navigated to a non-filterable page), the tracked
+        // filterValue is stale and must not be applied to whatever tile is registering now.
+        if (this.currentTitleElement && !this.currentTitleElement.isConnected) {
+            this.clearFilter();
+            this.currentTitleElement = null;
+        }
+
         // Store the container for later "no results" check
         const container = actionPanel.parentElement;
 
