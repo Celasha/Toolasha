@@ -250,6 +250,21 @@ export function parseEdibleExport(rawText, { playerId } = {}) {
         return invalidResult(`No chest data found for ${playerData?.['玩家昵称'] || playerId}.`);
     }
 
+    // Same ownership preflight contract as parseCombatSuiteExport: the strongest available
+    // evidence is an exact resolved-player-ID match, then an exact nickname/character-name
+    // match, then explicit unknown - never a silent omission that skips the mismatch warning.
+    const ownerName = typeof playerData?.['玩家昵称'] === 'string' ? playerData['玩家昵称'] : null;
+    const currentCharacterId = dataManager.getCurrentCharacterId?.() ?? null;
+    const currentCharacterName = dataManager.getCurrentCharacterName?.() ?? null;
+    let ownerMismatch;
+    if (currentCharacterId !== null && String(playerId) === String(currentCharacterId)) {
+        ownerMismatch = false;
+    } else if (ownerName && currentCharacterName) {
+        ownerMismatch = ownerName !== currentCharacterName;
+    } else {
+        ownerMismatch = null;
+    }
+
     const nameToHrid = buildItemNameToHridMap();
     const warnings = [];
     const containers = [];
@@ -327,10 +342,10 @@ export function parseEdibleExport(rawText, { playerId } = {}) {
     }
 
     if (containers.length === 0) {
-        return { ...emptyResult(), warnings };
+        return { ...emptyResult(), warnings, ownerName, ownerMismatch };
     }
 
-    return { status: 'ready', containers, warnings };
+    return { status: 'ready', containers, warnings, ownerName, ownerMismatch };
 }
 
 function invalidResult(message) {

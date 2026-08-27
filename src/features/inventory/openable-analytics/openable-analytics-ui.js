@@ -76,6 +76,8 @@ class OpenableAnalyticsUI {
         this.manageDataOpen = false;
         this.pendingImport = null;
         this.mutationInFlight = false;
+        this.deleteContainerError = null;
+        this.deleteAllError = null;
         this.unregisterInventoryButtonObserver = null;
         this.unsubscribeStateChange = null;
     }
@@ -106,6 +108,9 @@ class OpenableAnalyticsUI {
     }
 
     injectInventoryButton(container) {
+        // Fail closed against a stale/captured observer callback firing after cleanup() has
+        // already torn down this feature's lifecycle.
+        if (!this.isInitialized) return;
         if (container.querySelector(`.${INVENTORY_BUTTON_CLASS}`)) return;
 
         const button = document.createElement('button');
@@ -465,6 +470,14 @@ class OpenableAnalyticsUI {
             deleteButton.style.cssText = this.destructiveButtonStyle();
             deleteButton.onclick = () => this.handleDeleteContainer(containerHrid);
             deleteRow.appendChild(deleteButton);
+
+            if (this.deleteContainerError?.containerHrid === containerHrid) {
+                const error = document.createElement('div');
+                error.style.cssText = `margin-top:6px; font-size:12px; color:${config.COLOR_WARNING};`;
+                error.textContent = this.deleteContainerError.message;
+                deleteRow.appendChild(error);
+            }
+
             wrapper.appendChild(deleteRow);
         }
 
@@ -914,12 +927,16 @@ class OpenableAnalyticsUI {
         }
 
         this.mutationInFlight = true;
+        this.deleteContainerError = null;
         this.renderBody();
 
-        await openableAnalyticsDataCollector.resetContainer(containerHrid);
+        const persisted = await openableAnalyticsDataCollector.resetContainer(containerHrid);
 
         this.mutationInFlight = false;
         if (!this.popupOverlay) return;
+        this.deleteContainerError = persisted
+            ? null
+            : { containerHrid, message: 'Could not save this deletion. It may reappear after reload.' };
         this.renderBody();
     }
 
@@ -935,6 +952,14 @@ class OpenableAnalyticsUI {
         button.onclick = () => this.handleDeleteAll();
 
         wrapper.appendChild(button);
+
+        if (this.deleteAllError) {
+            const error = document.createElement('div');
+            error.style.cssText = `margin-top:6px; font-size:12px; color:${config.COLOR_WARNING};`;
+            error.textContent = this.deleteAllError;
+            wrapper.appendChild(error);
+        }
+
         return wrapper;
     }
 
@@ -945,12 +970,14 @@ class OpenableAnalyticsUI {
         }
 
         this.mutationInFlight = true;
+        this.deleteAllError = null;
         this.renderBody();
 
-        await openableAnalyticsDataCollector.resetAll();
+        const persisted = await openableAnalyticsDataCollector.resetAll();
 
         this.mutationInFlight = false;
         if (!this.popupOverlay) return;
+        this.deleteAllError = persisted ? null : 'Could not save this deletion. It may reappear after reload.';
         // Delete All does not silently close the popup - show the resulting empty state in place.
         this.renderBody();
     }
@@ -958,6 +985,7 @@ class OpenableAnalyticsUI {
     cleanup() {
         this.closePopup();
         openableAnalyticsModalInjector.cleanup();
+        document.querySelectorAll(`.${INVENTORY_BUTTON_CLASS}`).forEach((button) => button.remove());
         if (this.unregisterInventoryButtonObserver) {
             this.unregisterInventoryButtonObserver();
             this.unregisterInventoryButtonObserver = null;
@@ -968,6 +996,8 @@ class OpenableAnalyticsUI {
         }
         this.isInitialized = false;
         this.showPasteArea = false;
+        this.deleteContainerError = null;
+        this.deleteAllError = null;
     }
 }
 

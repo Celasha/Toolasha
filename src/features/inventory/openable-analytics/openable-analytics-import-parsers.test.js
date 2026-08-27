@@ -463,4 +463,82 @@ describe('parseEdibleExport', () => {
         expect(containers).toHaveLength(0);
         expect(warnings.some((w) => w.includes('missing'))).toBe(true);
     });
+
+    describe('ownership metadata (PR667-FINAL-3)', () => {
+        test('single-player export matching the current character -> ownerMismatch: false', () => {
+            mocks.currentCharacterName = 'Celasha';
+            const result = parseEdibleExport(edibleJson());
+
+            expect(result.ownerName).toBe('Celasha');
+            expect(result.ownerMismatch).toBe(false);
+        });
+
+        test('single-player export belonging to another named character -> ownerMismatch: true', () => {
+            mocks.currentCharacterName = 'SomeoneElse';
+            const result = parseEdibleExport(edibleJson());
+
+            expect(result.ownerName).toBe('Celasha');
+            expect(result.ownerMismatch).toBe(true);
+        });
+
+        test('exact current-character-ID match is accepted as matched even if the nickname differs', () => {
+            mocks.currentCharacterId = 'p1';
+            mocks.currentCharacterName = 'SomeoneElse';
+            const result = parseEdibleExport(edibleJson());
+
+            expect(result.ownerMismatch).toBe(false);
+        });
+
+        test('an explicitly selected player (multi-player picker) carries ownership metadata into preflight', () => {
+            mocks.currentCharacterName = 'Other';
+            const raw = edibleJson({ p2: { 玩家昵称: 'Other', 开箱数据: {} } });
+
+            const result = parseEdibleExport(raw, { playerId: 'p1' });
+
+            expect(result.ownerName).toBe('Celasha');
+            expect(result.ownerMismatch).toBe(true);
+        });
+
+        test('no ID match and no current character name available -> explicit unknown state, not a silent omission', () => {
+            const result = parseEdibleExport(edibleJson());
+
+            expect(result.ownerName).toBe('Celasha');
+            expect(result.ownerMismatch).toBeNull();
+        });
+
+        test('a player with no recorded nickname and no ID match -> explicit unknown state', () => {
+            mocks.currentCharacterName = 'Celasha';
+            const raw = JSON.stringify({
+                Chest_Open_Data: {
+                    p1: {
+                        开箱数据: {
+                            'Large Treasure Chest': { 总计开箱数量: 100, 获得物品: { Coin: { 数量: 5000 } } },
+                        },
+                    },
+                },
+            });
+
+            const result = parseEdibleExport(raw);
+
+            expect(result.ownerName).toBeNull();
+            expect(result.ownerMismatch).toBeNull();
+        });
+
+        test('ownership metadata is present on a valid-empty result, not only on ready', () => {
+            mocks.currentCharacterName = 'SomeoneElse';
+            const raw = JSON.stringify({
+                Chest_Open_Data: {
+                    p1: {
+                        玩家昵称: 'Celasha',
+                        开箱数据: { 'Large Treasure Chest': { 总计开箱数量: 0, 获得物品: {} } },
+                    },
+                },
+            });
+
+            const result = parseEdibleExport(raw);
+
+            expect(result.status).toBe('empty');
+            expect(result.ownerMismatch).toBe(true);
+        });
+    });
 });

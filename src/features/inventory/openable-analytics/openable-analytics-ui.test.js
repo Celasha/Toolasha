@@ -234,6 +234,45 @@ describe('persistent Inventory panel entry point (OA-RUNTIME-1)', () => {
     });
 });
 
+describe('PR667-FINAL-1: Inventory button lifecycle', () => {
+    test('cleanup removes an already-injected Inventory button', () => {
+        const filterContainer = document.createElement('div');
+        document.body.appendChild(filterContainer);
+        filterContainerCallbacks().forEach((cb) => cb(filterContainer));
+        expect(filterContainer.querySelectorAll(`.${INVENTORY_BUTTON_CLASS}`)).toHaveLength(1);
+
+        openableAnalyticsUI.cleanup();
+
+        expect(filterContainer.querySelectorAll(`.${INVENTORY_BUTTON_CLASS}`)).toHaveLength(0);
+    });
+
+    test('a stale/captured observer callback invoked after cleanup cannot inject a button', () => {
+        const filterContainer = document.createElement('div');
+        document.body.appendChild(filterContainer);
+        const staleCallbacks = filterContainerCallbacks();
+
+        openableAnalyticsUI.cleanup();
+        staleCallbacks.forEach((cb) => cb(filterContainer));
+
+        expect(filterContainer.querySelectorAll(`.${INVENTORY_BUTTON_CLASS}`)).toHaveLength(0);
+    });
+
+    test('initialize -> cleanup -> initialize produces exactly one working button, not zero and not duplicates', () => {
+        const filterContainer = document.createElement('div');
+        filterContainer.className = INVENTORY_FILTER_CONTAINER_CLASS;
+        document.body.appendChild(filterContainer);
+
+        openableAnalyticsUI.cleanup();
+        openableAnalyticsUI.initialize();
+        openableAnalyticsUI.cleanup();
+        openableAnalyticsUI.initialize();
+
+        const buttons = filterContainer.querySelectorAll(`.${INVENTORY_BUTTON_CLASS}`);
+        expect(buttons).toHaveLength(1);
+        expect(() => buttons[0].onclick()).not.toThrow();
+    });
+});
+
 describe('View Analytics entry point (section 9)', () => {
     test('opens Lifetime with the requested container expanded and brought into view', () => {
         openableAnalyticsUI.showPopup({ containerHrid: '/items/chest' });
@@ -455,6 +494,107 @@ describe('Manage Data (section 14)', () => {
         await openableAnalyticsUI.handleDeleteAll();
 
         expect(openableAnalyticsDataCollector.resetAll).not.toHaveBeenCalled();
+    });
+});
+
+describe('PR667-FINAL-2: destructive reset failure visibility', () => {
+    test('resetContainer() returning false produces a visible failure state', async () => {
+        mocks.resetContainerResult = false;
+        vi.spyOn(window, 'confirm').mockReturnValue(true);
+        openableAnalyticsUI.showPopup({ containerHrid: '/items/chest' });
+
+        await openableAnalyticsUI.handleDeleteContainer('/items/chest');
+
+        expect(popup().textContent).toContain('Could not save this deletion');
+    });
+
+    test('resetAll() returning false produces a visible failure state', async () => {
+        mocks.resetAllResult = false;
+        vi.spyOn(window, 'confirm').mockReturnValue(true);
+        openableAnalyticsUI.showPopup();
+        openableAnalyticsUI.manageDataOpen = true;
+        openableAnalyticsUI.renderBody();
+
+        await openableAnalyticsUI.handleDeleteAll();
+
+        expect(popup().textContent).toContain('Could not save this deletion');
+    });
+
+    test('a successful container deletion does not show a false error', async () => {
+        vi.spyOn(window, 'confirm').mockReturnValue(true);
+        openableAnalyticsUI.showPopup({ containerHrid: '/items/chest' });
+
+        await openableAnalyticsUI.handleDeleteContainer('/items/chest');
+
+        expect(popup().textContent).not.toContain('Could not save this deletion');
+    });
+
+    test('a successful Delete All does not show a false error', async () => {
+        vi.spyOn(window, 'confirm').mockReturnValue(true);
+        openableAnalyticsUI.showPopup();
+        openableAnalyticsUI.manageDataOpen = true;
+        openableAnalyticsUI.renderBody();
+
+        await openableAnalyticsUI.handleDeleteAll();
+
+        expect(popup().textContent).not.toContain('Could not save this deletion');
+    });
+
+    test('closing the popup during a failed async container delete does not recreate/reopen it', async () => {
+        let resolvePersist;
+        mocks.resetContainerResult = false;
+        openableAnalyticsDataCollector.resetContainer.mockReturnValueOnce(
+            new Promise((resolve) => {
+                resolvePersist = resolve;
+            })
+        );
+        vi.spyOn(window, 'confirm').mockReturnValue(true);
+        openableAnalyticsUI.showPopup({ containerHrid: '/items/chest' });
+
+        const pending = openableAnalyticsUI.handleDeleteContainer('/items/chest');
+        openableAnalyticsUI.closePopup();
+        resolvePersist(false);
+        await pending;
+
+        expect(popup()).toBeNull();
+    });
+
+    test('closing the popup during a failed async Delete All does not recreate/reopen it', async () => {
+        let resolvePersist;
+        openableAnalyticsDataCollector.resetAll.mockReturnValueOnce(
+            new Promise((resolve) => {
+                resolvePersist = resolve;
+            })
+        );
+        vi.spyOn(window, 'confirm').mockReturnValue(true);
+        openableAnalyticsUI.showPopup();
+
+        const pending = openableAnalyticsUI.handleDeleteAll();
+        openableAnalyticsUI.closePopup();
+        resolvePersist(false);
+        await pending;
+
+        expect(popup()).toBeNull();
+    });
+});
+
+describe('PR667-FINAL-3: Edible ownership mismatch is shown in the UI, not only Combat Suite', () => {
+    test('an Edible import with ownerMismatch: true shows the same warning wording as Combat Suite', () => {
+        detectImportSource.mockReturnValue({ source: 'edible' });
+        parseEdibleExport.mockReturnValue({
+            status: 'ready',
+            containers: [{ containerHrid: '/items/chest', containerCount: 5, itemTotals: {} }],
+            warnings: [],
+            ownerName: 'SomeoneElse',
+            ownerMismatch: true,
+        });
+        openableAnalyticsUI.showPopup();
+        openableAnalyticsUI.manageDataOpen = true;
+        openableAnalyticsUI.renderBody();
+
+        openableAnalyticsUI.beginImport('{"Chest_Open_Data":{}}', 'edible');
+
+        expect(popup().textContent).toContain('does not match the current character');
     });
 });
 
