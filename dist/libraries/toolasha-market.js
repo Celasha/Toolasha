@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.97.1
+ * Version: 2.97.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -24091,7 +24091,7 @@ self.onmessage = function (e) {
             const showExcluded = excl.total > 0;
 
             this.container.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 6px;">
+            <div class="mwi-networth-icon-row" style="display: flex; align-items: center; gap: 6px;">
                 <div style="cursor: pointer; font-weight: bold; flex: 1;" id="mwi-networth-toggle">
                     + Net Worth: ${totalNetworth}
                 </div>
@@ -33259,6 +33259,8 @@ self.onmessage = function (e) {
 
     const INVENTORY_FILTER_CONTAINER_CLASS = 'Inventory_itemFilterContainer';
     const INVENTORY_BUTTON_CLASS = 'toolasha-openable-analytics-inventory-button';
+    const NETWORTH_ICON_ROW_CLASS = 'mwi-networth-icon-row';
+    const NETWORTH_BUTTON_CLASS = 'toolasha-openable-analytics-networth-button';
 
     const IMPORT_SOURCE_LABELS = {
         'import:edible': 'Edible Tools',
@@ -33322,6 +33324,7 @@ self.onmessage = function (e) {
             this.deleteContainerError = null;
             this.deleteAllError = null;
             this.unregisterInventoryButtonObserver = null;
+            this.unregisterNetworthButtonObserver = null;
             this.unsubscribeStateChange = null;
         }
 
@@ -33337,7 +33340,9 @@ self.onmessage = function (e) {
             // exists right after opening something. This button in the Inventory panel's always-
             // rendered search bar row lets it be opened at any time. Catch up on any matching
             // container that already exists before this feature initialized (OA-RUNTIME-1), in
-            // addition to watching for future mounts.
+            // addition to watching for future mounts. It's superseded by injectNetworthButton()
+            // below whenever the Net Worth icon row is available, and only stays as the visible
+            // entry point when that row doesn't exist (Inventory Summary Panel disabled).
             this.unregisterInventoryButtonObserver = domObserver.onClass(
                 'openableAnalyticsInventoryButton',
                 INVENTORY_FILTER_CONTAINER_CLASS,
@@ -33347,7 +33352,28 @@ self.onmessage = function (e) {
                 .querySelectorAll(`[class*="${INVENTORY_FILTER_CONTAINER_CLASS}"]`)
                 .forEach((node) => this.injectInventoryButton(node));
 
+            // Preferred entry point: grouped with the Net Worth panel's other icon buttons. Its
+            // row is rebuilt (innerHTML) on every networth update, so this fires again each time
+            // and re-inserts the button.
+            this.unregisterNetworthButtonObserver = domObserver.onClass(
+                'openableAnalyticsNetworthButton',
+                NETWORTH_ICON_ROW_CLASS,
+                (node) => this.injectNetworthButton(node)
+            );
+            document.querySelectorAll(`.${NETWORTH_ICON_ROW_CLASS}`).forEach((node) => this.injectNetworthButton(node));
+
             this.unsubscribeStateChange = openableAnalyticsDataCollector.onStateChange(() => this.refreshIfMounted());
+        }
+
+        createButton(className) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = className;
+            button.textContent = '🎁';
+            button.title = 'Openable Analytics';
+            button.setAttribute('aria-label', 'Openable Analytics');
+            button.onclick = () => this.showPopup();
+            return button;
         }
 
         injectInventoryButton(container) {
@@ -33355,18 +33381,34 @@ self.onmessage = function (e) {
             // already torn down this feature's lifecycle.
             if (!this.isInitialized) return;
             if (container.querySelector(`.${INVENTORY_BUTTON_CLASS}`)) return;
+            // The Net Worth icon row is the preferred home for this button; only fall back to the
+            // filter row when that row doesn't exist (Inventory Summary Panel disabled).
+            if (document.querySelector(`.${NETWORTH_ICON_ROW_CLASS}`)) return;
 
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = INVENTORY_BUTTON_CLASS;
-            button.textContent = '📊';
-            button.title = 'Openable Analytics';
-            button.setAttribute('aria-label', 'Openable Analytics');
+            const button = this.createButton(INVENTORY_BUTTON_CLASS);
             button.style.cssText =
                 'cursor:pointer; margin-left:8px; font-size:16px; display:inline-flex; align-items:center; background:none; border:none; padding:2px;';
-            button.onclick = () => this.showPopup();
 
             container.appendChild(button);
+        }
+
+        injectNetworthButton(container) {
+            if (!this.isInitialized) return;
+            if (container.querySelector(`.${NETWORTH_BUTTON_CLASS}`)) return;
+
+            // Now that the preferred row exists, the filter-row fallback button is redundant.
+            document.querySelectorAll(`.${INVENTORY_BUTTON_CLASS}`).forEach((button) => button.remove());
+
+            const button = this.createButton(NETWORTH_BUTTON_CLASS);
+            button.style.cssText =
+                'cursor:pointer; font-size:14px; opacity:0.7; padding:2px 4px; border-radius:3px; line-height:1; background:none; border:none; display:inline-flex; align-items:center;';
+
+            const toggle = container.querySelector('#mwi-networth-toggle');
+            if (toggle?.nextSibling) {
+                container.insertBefore(button, toggle.nextSibling);
+            } else {
+                container.appendChild(button);
+            }
         }
 
         /**
@@ -34229,9 +34271,14 @@ self.onmessage = function (e) {
             this.closePopup();
             openableAnalyticsModalInjector.cleanup();
             document.querySelectorAll(`.${INVENTORY_BUTTON_CLASS}`).forEach((button) => button.remove());
+            document.querySelectorAll(`.${NETWORTH_BUTTON_CLASS}`).forEach((button) => button.remove());
             if (this.unregisterInventoryButtonObserver) {
                 this.unregisterInventoryButtonObserver();
                 this.unregisterInventoryButtonObserver = null;
+            }
+            if (this.unregisterNetworthButtonObserver) {
+                this.unregisterNetworthButtonObserver();
+                this.unregisterNetworthButtonObserver = null;
             }
             if (this.unsubscribeStateChange) {
                 this.unsubscribeStateChange();

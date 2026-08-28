@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.97.1
+ * Version: 2.97.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5157,6 +5157,16 @@
          * @param {string} actionName - The action/item name
          */
         registerPanel(actionPanel, actionName) {
+            // The tile class this registers from (SkillAction_skillAction__.../panel-observer.js) is
+            // generic and reused outside filterable skill pages (e.g. Combat Zones). If the title bar
+            // we attached the filter to has since been removed from the DOM without a new filterable
+            // title appearing to replace it (i.e. we navigated to a non-filterable page), the tracked
+            // filterValue is stale and must not be applied to whatever tile is registering now.
+            if (this.currentTitleElement && !this.currentTitleElement.isConnected) {
+                this.clearFilter();
+                this.currentTitleElement = null;
+            }
+
             // Store the container for later "no results" check
             const container = actionPanel.parentElement;
 
@@ -19818,7 +19828,7 @@
 
         // Helper to add combination if valid
         const addCombo = (combo) => {
-            if (combo.length > 0 && combo.length <= 3) {
+            if (combo.length <= 3) {
                 if (constraints) {
                     if ([...constraints.pinned].some((t) => !combo.includes(t))) return;
                     if (combo.some((t) => constraints.banned.has(t))) return;
@@ -19826,6 +19836,10 @@
                 combinations.push(combo);
             }
         };
+
+        // No-tea is always a valid candidate (e.g. every paid tea can be a net loss for Gold after
+        // consumable cost) unless a pinned tea requirement rules it out (handled inside addCombo).
+        addCombo([]);
 
         // Option 1: No skill tea, only general teas (1-3 general teas)
         for (let i = 0; i < generalTeas.length; i++) {
@@ -19965,26 +19979,27 @@
             teaEfficiency: buffs.efficiency,
             communityEfficiency: otherEfficiency.community || 0,
             achievementEfficiency: otherEfficiency.achievement || 0,
+            personalEfficiency: otherEfficiency.personal || 0,
+            guildEfficiency: otherEfficiency.guild || 0,
         });
 
         const totalEfficiency = efficiencyData.totalEfficiency;
         const efficiencyMultiplier = efficiency_js.calculateEfficiencyMultiplier(totalEfficiency);
 
-        // Calculate actions per hour with equipment speed bonus
+        // Calculate actions per hour with equipment + personal + guild (Tempo) speed bonus
         const baseTime = (actionDetails.baseTimeCost || 3e9) / 1e9;
-        const actionTime = baseTime / (1 + equipmentSpeedBonus);
+        const actionTime = baseTime / (1 + equipmentSpeedBonus + (otherEfficiency.speed || 0));
         const baseActionsPerHour = profitHelpers_js.calculateActionsPerHour(actionTime);
         const actionsPerHour = profitHelpers_js.calculateEffectiveActionsPerHour(baseActionsPerHour, efficiencyMultiplier);
 
-        // Get the FULL XP multiplier from all sources
+        // Get the FULL XP multiplier from all sources, scoped to this candidate's equipment - never
+        // the live/saved action context. Tea wisdom is excluded here (drinks: []) since this
+        // hypothetical combo's tea wisdom is already tracked separately in buffs.wisdom.
         const skillHrid = actionDetails.experienceGain.skillHrid;
-        const currentXpData = experienceParser_js.calculateExperienceMultiplier(skillHrid, actionDetails.type);
+        const xpData = experienceParser_js.calculateExperienceMultiplier(skillHrid, actionDetails.type, { equipment, drinks: [] });
 
-        // Replace current tea wisdom with our calculated tea wisdom
-        const currentTeaWisdom = currentXpData.breakdown?.consumableWisdom || 0;
-        const baseWisdomWithoutTea = currentXpData.totalWisdom - currentTeaWisdom;
-        const totalWisdomWithOurTea = baseWisdomWithoutTea + buffs.wisdom;
-        const charmExperience = currentXpData.charmExperience || 0;
+        const totalWisdomWithOurTea = xpData.totalWisdom + buffs.wisdom;
+        const charmExperience = xpData.charmExperience || 0;
         const xpMultiplier = 1 + totalWisdomWithOurTea / 100 + charmExperience / 100;
 
         // XP per hour
@@ -20027,6 +20042,8 @@
             teaEfficiency: buffs.efficiency,
             communityEfficiency: otherEfficiency.community || 0,
             achievementEfficiency: otherEfficiency.achievement || 0,
+            personalEfficiency: otherEfficiency.personal || 0,
+            guildEfficiency: otherEfficiency.guild || 0,
         });
 
         const totalEfficiency = efficiencyData.totalEfficiency;
@@ -20034,13 +20051,15 @@
 
         // Calculate actions per hour (with speed bonus, WITHOUT efficiency - efficiency applied to outputs)
         const baseTime = (actionDetails.baseTimeCost || 3e9) / 1e9;
-        const actionTime = baseTime / (1 + equipmentSpeedBonus);
+        const actionTime = baseTime / (1 + equipmentSpeedBonus + (otherEfficiency.speed || 0));
         const actionsPerHour = profitHelpers_js.calculateActionsPerHour(actionTime);
 
         // Calculate revenue from drops
         let totalRevenue = 0;
+        let hasMissingPrice = false;
         const dropTable = actionDetails.dropTable || [];
         const gatheringBonus = 1 + buffs.gathering + (otherEfficiency.gathering || 0);
+        const processingChance = buffs.processing + (otherEfficiency.processing || 0);
 
         for (const drop of dropTable) {
             const dropRate = drop.dropRate || 1;
@@ -20052,14 +20071,20 @@
             const avgAmountPerAction = avgCount * gatheringBonus;
 
             // Get item price (use 'sell' side for output items to match tile calculation)
-            const rawPrice = marketData_js.getItemPrice(drop.itemHrid, { context: 'profit', side: 'sell' }) || 0;
+            const rawPriceResult = marketData_js.getItemPrice(drop.itemHrid, { context: 'profit', side: 'sell' });
+            if (rawPriceResult === null) hasMissingPrice = true;
+            const rawPrice = rawPriceResult || 0;
 
             // Check for processing conversion
-            if (buffs.processing > 0) {
+            if (processingChance > 0) {
                 const processedData = findProcessingConversion(drop.itemHrid, gameData);
                 if (processedData) {
-                    const processedPrice =
-                        marketData_js.getItemPrice(processedData.outputItemHrid, { context: 'profit', side: 'sell' }) || 0;
+                    const processedPriceResult = marketData_js.getItemPrice(processedData.outputItemHrid, {
+                        context: 'profit',
+                        side: 'sell',
+                    });
+                    if (processedPriceResult === null) hasMissingPrice = true;
+                    const processedPrice = processedPriceResult || 0;
                     const conversionRatio = processedData.conversionRatio;
 
                     // Processing Tea check happens per action:
@@ -20067,7 +20092,7 @@
                     const processedIfProcs = Math.floor(avgAmountPerAction / conversionRatio);
 
                     // Expected processed items per action
-                    const processedPerAction = buffs.processing * processedIfProcs;
+                    const processedPerAction = processingChance * processedIfProcs;
 
                     // Net processing bonus = processed value - cost of raw converted
                     const processingNetValue =
@@ -20090,13 +20115,14 @@
 
         // Add bonus revenue from essence and rare find drops
         const bonusRevenue = bonusRevenueCalculator_js.calculateBonusRevenue(actionDetails, actionsPerHour, equipment, itemDetailMap);
+        if (bonusRevenue?.hasMissingPrices) hasMissingPrice = true;
         const efficiencyBoostedBonusRevenue = bonusRevenue.totalBonusRevenue * efficiencyMultiplier;
         totalRevenue += efficiencyBoostedBonusRevenue;
 
         // Apply market tax
         const profitPerHour = totalRevenue * (1 - profitConstants_js.MARKET_TAX);
 
-        return profitPerHour;
+        return { profitPerHour, hasMissingPrice };
     }
 
     /**
@@ -20134,6 +20160,8 @@
             teaEfficiency: buffs.efficiency,
             communityEfficiency: otherEfficiency.community || 0,
             achievementEfficiency: otherEfficiency.achievement || 0,
+            personalEfficiency: otherEfficiency.personal || 0,
+            guildEfficiency: otherEfficiency.guild || 0,
         });
 
         const totalEfficiency = efficiencyData.totalEfficiency;
@@ -20141,30 +20169,37 @@
 
         // Calculate actions per hour (with speed bonus, WITHOUT efficiency - efficiency applied to outputs)
         const baseTime = (actionDetails.baseTimeCost || 3e9) / 1e9;
-        const actionTime = baseTime / (1 + equipmentSpeedBonus);
+        const actionTime = baseTime / (1 + equipmentSpeedBonus + (otherEfficiency.speed || 0));
         const actionsPerHour = profitHelpers_js.calculateActionsPerHour(actionTime);
 
         // Calculate input costs (with artisan reduction for regular inputs)
         // Use 'buy' side for inputs to match tile calculation
         let inputCost = 0;
+        let hasMissingPrice = false;
         const artisanReduction = 1 - buffs.artisan;
 
         // Add upgrade item cost (NOT affected by Artisan Tea)
         if (actionDetails.upgradeItemHrid) {
-            let upgradePrice = marketData_js.getItemPrice(actionDetails.upgradeItemHrid, { context: 'profit', side: 'buy' }) || 0;
+            const upgradePriceResult = marketData_js.getItemPrice(actionDetails.upgradeItemHrid, { context: 'profit', side: 'buy' });
+            let upgradePrice = upgradePriceResult || 0;
             // Special case: Coins have no market price but have face value of 1
-            if (actionDetails.upgradeItemHrid === '/items/coin' && upgradePrice === 0) {
-                upgradePrice = 1;
+            if (actionDetails.upgradeItemHrid === '/items/coin') {
+                if (upgradePrice === 0) upgradePrice = 1;
+            } else if (upgradePriceResult === null) {
+                hasMissingPrice = true;
             }
             inputCost += upgradePrice; // Always 1 upgrade item, no artisan reduction
         }
 
         // Add regular input item costs (affected by Artisan Tea)
         for (const input of actionDetails.inputItems || []) {
-            let price = marketData_js.getItemPrice(input.itemHrid, { context: 'profit', side: 'buy' }) || 0;
+            const priceResult = marketData_js.getItemPrice(input.itemHrid, { context: 'profit', side: 'buy' });
+            let price = priceResult || 0;
             // Special case: Coins have no market price but have face value of 1
-            if (input.itemHrid === '/items/coin' && price === 0) {
-                price = 1;
+            if (input.itemHrid === '/items/coin') {
+                if (price === 0) price = 1;
+            } else if (priceResult === null) {
+                hasMissingPrice = true;
             }
             const effectiveCount = input.count * artisanReduction;
             inputCost += price * effectiveCount;
@@ -20175,9 +20210,11 @@
         let outputRevenue = 0;
         const isCookingOrBrewing =
             actionDetails.type === '/action_types/cooking' || actionDetails.type === '/action_types/brewing';
-        const gourmetBonus = isCookingOrBrewing ? 1 + buffs.gourmet : 1;
+        const gourmetBonus = isCookingOrBrewing ? 1 + buffs.gourmet + (otherEfficiency.gourmet || 0) : 1;
         for (const output of actionDetails.outputItems || []) {
-            const price = marketData_js.getItemPrice(output.itemHrid, { context: 'profit', side: 'sell' }) || 0;
+            const priceResult = marketData_js.getItemPrice(output.itemHrid, { context: 'profit', side: 'sell' });
+            if (priceResult === null) hasMissingPrice = true;
+            const price = priceResult || 0;
             const effectiveCount = output.count * gourmetBonus;
             outputRevenue += price * effectiveCount;
         }
@@ -20190,6 +20227,7 @@
 
         // Add bonus revenue from essence and rare find drops (same as tile calculation)
         const bonusRevenue = bonusRevenueCalculator_js.calculateBonusRevenue(actionDetails, actionsPerHour, equipment, itemDetailMap);
+        if (bonusRevenue?.hasMissingPrices) hasMissingPrice = true;
         const efficiencyBoostedBonusRevenue = (bonusRevenue?.totalBonusRevenue || 0) * efficiencyMultiplier;
 
         // Apply market tax to revenue portion only (including bonus revenue)
@@ -20197,7 +20235,7 @@
         const marketTax = (revenuePerHour + efficiencyBoostedBonusRevenue) * profitConstants_js.MARKET_TAX;
         const netProfitPerHour = grossProfitPerHour + efficiencyBoostedBonusRevenue - marketTax;
 
-        return netProfitPerHour;
+        return { profitPerHour: netProfitPerHour, hasMissingPrice };
     }
 
     /**
@@ -20286,11 +20324,14 @@
         const successRate = Math.max(0, Math.min(1.0, baseSuccessRate * (1 + levelPenalty) * (1 + teaBonusOverride)));
 
         // XP per action: success gives full XP, failure gives 10%
-        // Wisdom multiplier — replace current tea wisdom with our hypothetical tea wisdom
-        const xpData = experienceParser_js.calculateExperienceMultiplier('/skills/alchemy', '/action_types/alchemy');
-        const currentTeaWisdom = xpData.breakdown?.consumableWisdom || 0;
-        const baseWisdomWithoutTea = xpData.totalWisdom - currentTeaWisdom;
-        const totalWisdomWithOurTea = baseWisdomWithoutTea + buffs.wisdom;
+        // Wisdom multiplier, scoped to this scenario's equipment — never the live/saved context.
+        // Tea wisdom is excluded here (drinks: []) since buffs.wisdom already tracks this combo's tea.
+        const { equipment, itemDetailMap } = calcContext;
+        const xpData = experienceParser_js.calculateExperienceMultiplier('/skills/alchemy', '/action_types/alchemy', {
+            equipment,
+            drinks: [],
+        });
+        const totalWisdomWithOurTea = xpData.totalWisdom + buffs.wisdom;
         const charmExperience = xpData.charmExperience || 0;
         const wisdomMultiplier = 1 + totalWisdomWithOurTea / 100 + charmExperience / 100;
 
@@ -20299,7 +20340,6 @@
 
         // Actions per hour (uses item level for efficiency, not action level requirement)
         const requiredLevel = itemLevel;
-        const { equipment, itemDetailMap } = calcContext;
         const teaSkillLevelBonus = buffs.skillLevels['alchemy'] || 0;
         const equipmentSpeedBonus = equipmentParser_js.parseEquipmentSpeedBonuses(equipment, actionDetails.type, itemDetailMap) || 0;
         const equipmentEfficiencyBonus = equipmentParser_js.parseEquipmentEfficiencyBonuses(equipment, actionDetails.type, itemDetailMap) || 0;
@@ -20314,11 +20354,13 @@
             teaEfficiency: buffs.efficiency,
             communityEfficiency: otherEfficiency.community || 0,
             achievementEfficiency: otherEfficiency.achievement || 0,
+            personalEfficiency: otherEfficiency.personal || 0,
+            guildEfficiency: otherEfficiency.guild || 0,
         });
 
         const efficiencyMultiplier = efficiency_js.calculateEfficiencyMultiplier(efficiencyData.totalEfficiency);
         const baseTime = (actionDetails.baseTimeCost || 20e9) / 1e9;
-        const actionTime = baseTime / (1 + equipmentSpeedBonus);
+        const actionTime = baseTime / (1 + equipmentSpeedBonus + (otherEfficiency.speed || 0));
         const baseActionsPerHour = profitHelpers_js.calculateActionsPerHour(actionTime);
         const actionsPerHour = profitHelpers_js.calculateEffectiveActionsPerHour(baseActionsPerHour, efficiencyMultiplier);
 
@@ -20422,17 +20464,27 @@
         const drinksPerHour = profitHelpers_js.calculateDrinksPerHour(drinkConcentration);
         const breakdown = [];
         let total = 0;
+        let hasMissingPrice = false;
 
         for (const teaHrid of teaHrids) {
             // Use getItemPrice with 'profit' context and 'buy' side to match tile calculation
-            const unitPrice = marketData_js.getItemPrice(teaHrid, { context: 'profit', side: 'buy' }) || 0;
+            const priceResult = marketData_js.getItemPrice(teaHrid, { context: 'profit', side: 'buy' });
+            if (priceResult === null) hasMissingPrice = true;
+            const unitPrice = priceResult || 0;
             const costPerHour = unitPrice * drinksPerHour;
             const name = gameData?.itemDetailMap?.[teaHrid]?.name || teaHrid;
-            breakdown.push({ hrid: teaHrid, name, unitsPerHour: drinksPerHour, unitPrice, costPerHour });
+            breakdown.push({
+                hrid: teaHrid,
+                name,
+                unitsPerHour: drinksPerHour,
+                unitPrice,
+                costPerHour,
+                missingPrice: priceResult === null,
+            });
             total += costPerHour;
         }
 
-        return { total, breakdown };
+        return { total, breakdown, hasMissingPrice };
     }
 
     /**
@@ -20453,6 +20505,11 @@
             achievement: 0,
             wisdom: 0,
             gathering: 0,
+            processing: 0,
+            gourmet: 0,
+            personal: 0,
+            guild: 0,
+            speed: 0,
         };
 
         if (!gameData) return result;
@@ -20498,6 +20555,9 @@
         const achievementGathering = dataManager.getAchievementBuffFlatBoost(actionType, '/buff_types/gathering');
         result.gathering += achievementGathering;
 
+        // Personal buff (seal) gathering — stacks with community/achievement gathering
+        result.gathering += dataManager.getPersonalBuffFlatBoost(actionType, '/buff_types/gathering');
+
         // Community wisdom buff
         const communityWisdomLevel = dataManager.getCommunityBuffLevel('/community_buff_types/experience');
         if (communityWisdomLevel) {
@@ -20506,6 +20566,25 @@
 
         // Achievement buffs
         result.achievement = dataManager.getAchievementBuffFlatBoost(actionType, '/buff_types/efficiency') * 100;
+
+        // Personal buffs (Labyrinth seals) — Efficiency, Action Speed, Processing, Gourmet
+        result.personal = dataManager.getPersonalBuffFlatBoost(actionType, '/buff_types/efficiency') * 100;
+        result.processing += dataManager.getPersonalBuffFlatBoost(actionType, '/buff_types/processing');
+        result.gourmet += dataManager.getPersonalBuffFlatBoost(actionType, '/buff_types/gourmet');
+        const personalSpeed = dataManager.getPersonalBuffFlatBoost(actionType, '/buff_types/action_speed');
+
+        // Guild buffs (Shrines) — Force -> efficiency, Tempo -> action_speed
+        const guildBuffs = dataManager.characterData?.guildActionTypeBuffsMap?.[actionType] || [];
+        result.guild = guildBuffs.reduce(
+            (sum, b) =>
+                b.typeHrid === '/buff_types/efficiency' ? sum + ((b.flatBoost || 0) + (b.ratioBoost || 0)) * 100 : sum,
+            0
+        );
+        const guildSpeed = guildBuffs.reduce(
+            (sum, b) => (b.typeHrid === '/buff_types/action_speed' ? sum + (b.flatBoost || 0) + (b.ratioBoost || 0) : sum),
+            0
+        );
+        result.speed = personalSpeed + guildSpeed;
 
         // Equipment efficiency (simplified - would need full parser for accuracy)
         // For now, we'll skip this as it requires more complex parsing
@@ -20529,7 +20608,8 @@
         constraints = null,
         alchemyContext = null,
         equipmentOverride = null,
-        selectedActionHrids = null
+        selectedActionHrids = null,
+        playerLevelOverride = null
     ) {
         const normalizedSkill = skillName.toLowerCase();
         const isGathering = GATHERING_SKILLS$1.includes(normalizedSkill);
@@ -20544,14 +20624,21 @@
             return { error: 'Game data not loaded' };
         }
 
-        // Get player's skill level
-        const skills = dataManager.getSkills();
-        const skillHrid = `/skills/${normalizedSkill}`;
-        let playerLevel = 1;
-        for (const skill of skills || []) {
-            if (skill.skillHrid === skillHrid) {
-                playerLevel = skill.level;
-                break;
+        // Get player's skill level - a caller (Simulator/Optimizer) may pass an explicit simulated
+        // level so equipment ranking and tea optimization always score the same one scenario,
+        // instead of this silently re-reading the character's real current level.
+        let playerLevel;
+        if (playerLevelOverride != null) {
+            playerLevel = playerLevelOverride;
+        } else {
+            const skills = dataManager.getSkills();
+            const skillHrid = `/skills/${normalizedSkill}`;
+            playerLevel = 1;
+            for (const skill of skills || []) {
+                if (skill.skillHrid === skillHrid) {
+                    playerLevel = skill.level;
+                    break;
+                }
             }
         }
 
@@ -20634,6 +20721,8 @@
 
             let totalScore = 0;
             let profitableCount = 0;
+            // Tea cost only affects the Gold metric; a missing tea price is irrelevant to XP/hr.
+            let hasMissingPrice = goal === 'gold' && teaCostPerHour.hasMissingPrice;
             const actionScores = [];
 
             // Alchemy mode: score the specific item, not all actions
@@ -20642,23 +20731,19 @@
                 let score;
                 if (goal === 'xp') {
                     score = calculateAlchemyXpPerHour(alchemyContext, buffs, playerLevel, otherEfficiency, calcContext);
-                    totalScore += score;
                 } else {
                     score = calculateAlchemyGoldPerHour(alchemyContext, buffs) - teaCostPerHour.total;
-                    if (score > 0) {
-                        totalScore += score;
-                        profitableCount++;
-                    }
                 }
+                totalScore += score;
+                if (score > 0) profitableCount++;
                 actionScores.push({ action: actionName, score });
             } else {
                 for (const action of actions) {
                     let score;
                     if (goal === 'xp') {
                         score = calculateXpPerHour(action, buffs, playerLevel, otherEfficiency, calcContext);
-                        totalScore += score;
                     } else if (isGathering) {
-                        score = calculateGatheringGoldPerHour(
+                        const goldResult = calculateGatheringGoldPerHour(
                             action,
                             buffs,
                             playerLevel,
@@ -20666,15 +20751,10 @@
                             gameData,
                             calcContext
                         );
-                        // Deduct tea costs from gold score
-                        score -= teaCostPerHour.total;
-                        // Only include profitable actions in gold calculations
-                        if (score > 0) {
-                            totalScore += score;
-                            profitableCount++;
-                        }
+                        score = goldResult.profitPerHour - teaCostPerHour.total;
+                        if (goldResult.hasMissingPrice) hasMissingPrice = true;
                     } else {
-                        score = calculateProductionGoldPerHour(
+                        const goldResult = calculateProductionGoldPerHour(
                             action,
                             buffs,
                             playerLevel,
@@ -20682,21 +20762,20 @@
                             gameData,
                             calcContext
                         );
-                        // Deduct tea costs from gold score
-                        score -= teaCostPerHour.total;
-                        // Only include profitable actions in gold calculations
-                        if (score > 0) {
-                            totalScore += score;
-                            profitableCount++;
-                        }
+                        score = goldResult.profitPerHour - teaCostPerHour.total;
+                        if (goldResult.hasMissingPrice) hasMissingPrice = true;
                     }
 
+                    // Fixed cohort: every selected action contributes its signed score, whether
+                    // profitable or not, so the denominator never changes because an action loses.
+                    totalScore += score;
+                    if (score > 0) profitableCount++;
                     actionScores.push({ action: action.name, score });
                 }
             }
 
-            // For gold, average across profitable actions only; for XP, average across all
-            const avgDivisor = goal === 'gold' ? profitableCount || 1 : alchemyContext ? 1 : actions.length;
+            // The divisor is the fixed selected-action cohort size, never a filtered subset.
+            const avgDivisor = alchemyContext ? 1 : actions.length;
 
             results.push({
                 teas: combo,
@@ -20705,12 +20784,26 @@
                 actionScores,
                 buffs,
                 teaCostPerHour,
-                profitableCount, // Track how many actions are profitable
+                profitableCount, // Diagnostic only: how many actions are individually profitable
+                hasMissingPrice,
             });
         }
 
-        // Sort by total score (descending)
-        results.sort((a, b) => b.totalScore - a.totalScore);
+        // Rank by the displayed objective (avgScore) - with a fixed denominator this agrees with
+        // totalScore ordering, but avgScore is the metric actually shown to the user.
+        results.sort((a, b) => b.avgScore - a.avgScore);
+
+        // An incomplete Gold candidate (a required price unresolved) must never win an exact ranking
+        // over a complete one, even if its computed score looks higher. Promote the best complete
+        // candidate instead; only fall through to an incomplete top result when every candidate for
+        // this goal is incomplete, in which case there is no complete answer to prefer.
+        if (goal === 'gold') {
+            const completeIndex = results.findIndex((r) => !r.hasMissingPrice);
+            if (completeIndex > 0) {
+                const [best] = results.splice(completeIndex, 1);
+                results.unshift(best);
+            }
+        }
 
         // Get tea names for display
         const getTeaName = (hrid) => gameData.itemDetailMap[hrid]?.name || hrid;
@@ -20760,6 +20853,8 @@
                 actionScores: topResult.actionScores,
                 buffs: topResult.buffs, // Include for UI debugging
                 profitableCount: topResult.profitableCount, // How many actions are profitable
+                hasMissingPrice: topResult.hasMissingPrice, // True: a required price is unresolved,
+                // this Gold result is incomplete and must not be presented as an exact ranking.
             },
             isConsistent,
             skill: skillName,
@@ -20774,6 +20869,7 @@
                 teas: r.teas.map(getTeaName),
                 avgScore: r.avgScore,
                 teaCostPerHour: r.teaCostPerHour,
+                hasMissingPrice: r.hasMissingPrice,
             })),
             excludedActions: excludedForDisplay, // Actions excluded due to level
             // Include top result's tea cost for debug
@@ -20809,15 +20905,25 @@
     }
 
     /**
-     * Score a hypothetical equipment setup for a skill and goal with zero tea buffs.
-     * Used by the skilling optimizer to rank equipment candidates per slot independently of teas.
+     * Score a hypothetical equipment setup (optionally with a specific tea combination) for a skill
+     * and goal. Used both to rank equipment candidates independently (teaHrids=[], the default) and
+     * to score a full Compare loadout baseline/candidate together with its own drinks.
      * @param {string} skillName
      * @param {string} goal - 'xp' or 'gold'
      * @param {Map} equipment - Map<itemLocationHrid, { itemHrid, enhancementLevel }>
      * @param {number} playerLevel
-     * @returns {number} Average XP/hr or Gold/hr across available actions
+     * @param {Set<string>|null} [selectedActionHrids]
+     * @param {string[]} [teaHrids] - Tea item HRIDs to score alongside the equipment (default: none)
+     * @returns {number} Average XP/hr or Gold/hr across the selected action cohort
      */
-    function scoreEquipmentSetup(skillName, goal, equipment, playerLevel, selectedActionHrids = null) {
+    function scoreEquipmentSetup(
+        skillName,
+        goal,
+        equipment,
+        playerLevel,
+        selectedActionHrids = null,
+        teaHrids = []
+    ) {
         const normalizedSkill = skillName.toLowerCase();
         const isGathering = GATHERING_SKILLS$1.includes(normalizedSkill);
         const isProduction = PRODUCTION_SKILLS.includes(normalizedSkill);
@@ -20841,28 +20947,37 @@
         const { available: actions } = getActionsForSkill(normalizedSkill, playerLevel, selectedActionHrids);
         if (!actions.length) return 0;
 
-        const emptyBuffs = {
-            efficiency: 0,
-            wisdom: 0,
-            gathering: 0,
-            processing: 0,
-            artisan: 0,
-            gourmet: 0,
-            actionLevel: 0,
-            alchemySuccess: 0,
-            skillLevels: {},
-        };
+        const filteredTeas = (teaHrids || []).filter(Boolean);
+        const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, gameData.itemDetailMap);
+        const buffs = filteredTeas.length
+            ? parseTeaBuffs(filteredTeas, gameData.itemDetailMap, drinkConcentration)
+            : {
+                  efficiency: 0,
+                  wisdom: 0,
+                  gathering: 0,
+                  processing: 0,
+                  artisan: 0,
+                  gourmet: 0,
+                  actionLevel: 0,
+                  alchemySuccess: 0,
+                  skillLevels: {},
+              };
+        const teaCostPerHour = filteredTeas.length ? calculateTeaCostPerHour(filteredTeas, drinkConcentration).total : 0;
 
         const calcContext = { equipment, itemDetailMap: gameData.itemDetailMap };
 
         // Alchemy XP is derived from item level, not from action data — standard calculateXpPerHour
         // always returns 0 for alchemy. Use a dedicated path with a representative item instead.
+        // Alchemy Gold needs full item+action-type context this equipment-only ranking doesn't have -
+        // fail closed rather than mistakenly returning an XP value for a Gold request (never silently
+        // wrong-typed).
         if (normalizedSkill === 'alchemy') {
+            if (goal === 'gold') return 0;
             const repItemHrid = getRepresentativeAlchemyItemHrid(playerLevel, gameData.itemDetailMap);
             if (!repItemHrid) return 0;
             return calculateAlchemyXpPerHour(
                 { actionType: 'decompose', itemHrid: repItemHrid },
-                emptyBuffs,
+                buffs,
                 playerLevel,
                 otherEfficiency,
                 calcContext
@@ -20875,36 +20990,33 @@
         for (const action of actions) {
             let score;
             if (goal === 'xp') {
-                score = calculateXpPerHour(action, emptyBuffs, playerLevel, otherEfficiency, calcContext);
-                totalScore += score;
-                count++;
+                score = calculateXpPerHour(action, buffs, playerLevel, otherEfficiency, calcContext);
             } else if (isGathering) {
                 score = calculateGatheringGoldPerHour(
                     action,
-                    emptyBuffs,
+                    buffs,
                     playerLevel,
                     otherEfficiency,
                     gameData,
                     calcContext
-                );
-                if (score > 0) {
-                    totalScore += score;
-                    count++;
-                }
+                ).profitPerHour;
+                if (filteredTeas.length) score -= teaCostPerHour;
             } else {
                 score = calculateProductionGoldPerHour(
                     action,
-                    emptyBuffs,
+                    buffs,
                     playerLevel,
                     otherEfficiency,
                     gameData,
                     calcContext
-                );
-                if (score > 0) {
-                    totalScore += score;
-                    count++;
-                }
+                ).profitPerHour;
+                if (filteredTeas.length) score -= teaCostPerHour;
             }
+
+            // Fixed cohort: every selected action contributes its signed score, whether profitable
+            // or not, so the divisor never changes because an action becomes unprofitable.
+            totalScore += score;
+            count++;
         }
 
         return count > 0 ? totalScore / count : 0;
@@ -21001,14 +21113,14 @@
      * @param {string[]} teaHrids - Tea item HRIDs (null/empty entries are filtered)
      * @param {number} playerLevel
      * @param {Set<string>|null} selectedActionHrids
-     * @returns {{ xpPerHour: number, goldPerHour: number, teaCostPerHour: number }}
+     * @returns {{ xpPerHour: number, goldPerHour: number, teaCostPerHour: number, hasMissingPrice: boolean }}
      */
     function calculateSkillPerformance(skillName, equipment, teaHrids, playerLevel, selectedActionHrids = null) {
         const normalizedSkill = skillName.toLowerCase();
         const isGathering = GATHERING_SKILLS$1.includes(normalizedSkill);
         const isProduction = PRODUCTION_SKILLS.includes(normalizedSkill);
 
-        const empty = { xpPerHour: 0, goldPerHour: 0, teaCostPerHour: 0 };
+        const empty = { xpPerHour: 0, goldPerHour: 0, teaCostPerHour: 0, hasMissingPrice: false };
         if (!isGathering && !isProduction) return empty;
         if (selectedActionHrids !== null && selectedActionHrids.size === 0) return empty;
 
@@ -21034,33 +21146,27 @@
         const teaCost = calculateTeaCostPerHour(filteredTeas, drinkConcentration);
         const calcContext = { equipment, itemDetailMap: gameData.itemDetailMap };
 
-        let totalXp = 0,
-            xpCount = 0;
-        let totalGold = 0,
-            goldCount = 0;
+        let totalXp = 0;
+        let totalGold = 0;
+        let hasMissingPrice = teaCost.hasMissingPrice;
 
         for (const action of actions) {
-            const xp = calculateXpPerHour(action, buffs, playerLevel, otherEfficiency, calcContext);
-            if (xp > 0) {
-                totalXp += xp;
-                xpCount++;
-            }
+            totalXp += calculateXpPerHour(action, buffs, playerLevel, otherEfficiency, calcContext);
 
-            const gold = isGathering
-                ? calculateGatheringGoldPerHour(action, buffs, playerLevel, otherEfficiency, gameData, calcContext) -
-                  teaCost.total
-                : calculateProductionGoldPerHour(action, buffs, playerLevel, otherEfficiency, gameData, calcContext) -
-                  teaCost.total;
-            if (gold > 0) {
-                totalGold += gold;
-                goldCount++;
-            }
+            const goldResult = isGathering
+                ? calculateGatheringGoldPerHour(action, buffs, playerLevel, otherEfficiency, gameData, calcContext)
+                : calculateProductionGoldPerHour(action, buffs, playerLevel, otherEfficiency, gameData, calcContext);
+            if (goldResult.hasMissingPrice) hasMissingPrice = true;
+            // Fixed cohort: every selected action contributes its signed Gold/hr, whether profitable
+            // or not, so the average is never inflated by silently dropping a losing action.
+            totalGold += goldResult.profitPerHour - teaCost.total;
         }
 
         return {
-            xpPerHour: xpCount > 0 ? totalXp / xpCount : 0,
-            goldPerHour: goldCount > 0 ? totalGold / goldCount : 0,
+            xpPerHour: totalXp / actions.length,
+            goldPerHour: totalGold / actions.length,
             teaCostPerHour: teaCost.total,
+            hasMissingPrice,
         };
     }
 
@@ -26634,18 +26740,35 @@
     }
 
     /**
-     * Score a single candidate item in a slot at a specific enhancement level.
+     * Score a single candidate item in a slot at a specific enhancement level. When `baseEquipment`
+     * is provided (a Compare loadout is active), the candidate replaces only this one location in an
+     * otherwise-full copy of that loadout - never an otherwise-empty Map - so every other slot's
+     * interaction (Wisdom, Drink Concentration, etc.) is held constant, matching the baseline.
      * @param {string} itemHrid
      * @param {string} locationHrid
      * @param {string} skillName
      * @param {string} goal
      * @param {number} enhancementLevel
      * @param {number} playerLevel
+     * @param {Set<string>|null} selectedActionHrids
+     * @param {Map} [baseEquipment] - Full loadout equipment to copy and overwrite one slot in
+     * @param {string[]} [teaHrids] - Drinks to score alongside (the base loadout's own drinks)
      * @returns {number}
      */
-    function scoreCandidate(itemHrid, locationHrid, skillName, goal, enhancementLevel, playerLevel, selectedActionHrids) {
-        const equipment = new Map([[locationHrid, { itemHrid, enhancementLevel }]]);
-        return scoreEquipmentSetup(skillName, goal, equipment, playerLevel, selectedActionHrids);
+    function scoreCandidate(
+        itemHrid,
+        locationHrid,
+        skillName,
+        goal,
+        enhancementLevel,
+        playerLevel,
+        selectedActionHrids,
+        baseEquipment = null,
+        teaHrids = []
+    ) {
+        const equipment = new Map(baseEquipment || []);
+        equipment.set(locationHrid, { itemHrid, enhancementLevel });
+        return scoreEquipmentSetup(skillName, goal, equipment, playerLevel, selectedActionHrids, teaHrids);
     }
 
     /**
@@ -26659,10 +26782,13 @@
             `${key}Speed`,
             `${key}Efficiency`,
             `${key}RareFind`,
+            `${key}Experience`,
             'skillingSpeed',
             'skillingEfficiency',
             'skillingRareFind',
             'skillingEssenceFind',
+            'skillingExperience',
+            'drinkConcentration',
         ]);
         if (GATHERING_SKILLS.has(key)) fields.add('gatheringQuantity');
         return fields;
@@ -26750,9 +26876,13 @@
      * @param {string} skillName
      * @param {number} playerLevel
      * @param {Set<string>|null} selectedActionHrids - HRIDs of actions to score against, or null for all
+     * @param {{equipment: Map, drinks: string[]}|null} [compareLoadout] - When provided, BASELINE is
+     *   the full loadout (equipment + its drinks) and every CANDIDATE is an exact copy of that same
+     *   loadout with only the one slot under test replaced - never an otherwise-empty Map. When null
+     *   (no Compare loadout selected), preserves the original empty-baseline/no-drinks behavior.
      * @returns {Object|null}
      */
-    function optimizeSkill(skillName, playerLevel, selectedActionHrids = null) {
+    function optimizeSkill(skillName, playerLevel, selectedActionHrids = null, compareLoadout = null) {
         // Gathering skills: score for Gold — captures gathering quantity, rare/essence find + speed/efficiency.
         // Production skills: score for XP — more reliable since it doesn't depend on market prices.
         const goal = GATHERING_SKILLS.has(skillName.toLowerCase()) ? 'gold' : 'xp';
@@ -26762,8 +26892,25 @@
         const { itemDetailMap } = gameData;
         const playerLevels = buildPlayerLevelMap(skillName, playerLevel);
 
-        const xpBaseline = scoreEquipmentSetup(skillName, 'xp', new Map(), playerLevel, selectedActionHrids);
-        const goldBaseline = scoreEquipmentSetup(skillName, 'gold', new Map(), playerLevel, selectedActionHrids);
+        const compareEquipment = compareLoadout?.equipment ?? new Map();
+        const compareDrinks = compareLoadout?.drinks ?? [];
+
+        const xpBaseline = scoreEquipmentSetup(
+            skillName,
+            'xp',
+            compareEquipment,
+            playerLevel,
+            selectedActionHrids,
+            compareDrinks
+        );
+        const goldBaseline = scoreEquipmentSetup(
+            skillName,
+            'gold',
+            compareEquipment,
+            playerLevel,
+            selectedActionHrids,
+            compareDrinks
+        );
         const baseline = goal === 'xp' ? xpBaseline : goldBaseline;
 
         const slots = {};
@@ -26803,7 +26950,9 @@
                         goal,
                         effectiveLevel,
                         playerLevel,
-                        selectedActionHrids
+                        selectedActionHrids,
+                        compareEquipment,
+                        compareDrinks
                     );
 
                     if (score > bestScore) {
@@ -26829,7 +26978,9 @@
                             'xp',
                             bestEffectiveLevel,
                             playerLevel,
-                            selectedActionHrids
+                            selectedActionHrids,
+                            compareEquipment,
+                            compareDrinks
                         );
                     })(),
                     goldScore: (() => {
@@ -26842,7 +26993,9 @@
                             'gold',
                             bestEffectiveLevel,
                             playerLevel,
-                            selectedActionHrids
+                            selectedActionHrids,
+                            compareEquipment,
+                            compareDrinks
                         );
                     })(),
                     isChange: (bestItem?.hrid ?? null) !== lastWinnerHrid,
@@ -26876,7 +27029,8 @@
             null,
             null,
             optimalEquipmentAtMax,
-            selectedActionHrids
+            selectedActionHrids,
+            playerLevel
         );
         const goldTeaResult = findOptimalTeas(
             skillName,
@@ -26886,7 +27040,8 @@
             null,
             null,
             optimalEquipmentAtMax,
-            selectedActionHrids
+            selectedActionHrids,
+            playerLevel
         );
 
         return {
@@ -26953,6 +27108,14 @@
             this.equipment = new Map(); // locationHrid → { itemHrid, enhancementLevel }
             this.teas = [null, null, null];
             this.selectedActionHrids = null; // null = all available
+            this._simulatorLoadoutName = null;
+            this._simulatorLoadoutUnavailableName = null;
+
+            // Tracks whether the canonical per-Skill loadout has been auto-applied for the current
+            // skill selection yet. Auto-retargeting only fires on an actual Skill change (or once on
+            // first panel build) - never on an unrelated panel rebuild - so manual edits survive
+            // mode switches and other re-renders.
+            this._retargetedForSkill = null;
 
             // UI element refs (updated in place without rebuilding panel)
             this._slotBtns = new Map(); // locationHrid → { nameBtn, enhInput, clearBtn }
@@ -27094,6 +27257,7 @@
 
         _buildPanel() {
             if (!STYLE_EL.isConnected) document.head.appendChild(STYLE_EL);
+            this._ensureRetargetedForCurrentSkill();
             this._slotBtns.clear();
             this._teaBtns = [];
 
@@ -27239,54 +27403,13 @@
                     optimizeBtn.disabled = true;
                     requestAnimationFrame(() =>
                         setTimeout(() => {
-                            const result = optimizeSkill(this.currentSkill, this.currentLevel, this.selectedActionHrids);
-                            this.lastOptimizerResult = result;
-
-                            // Build equipment map using player's actual owned enhancement levels
-                            const enhMap = buildOwnedEnhancementLevelMap();
-                            const achievableEquipment = new Map();
-                            if (result) {
-                                for (const [locationHrid, slotData] of Object.entries(result.slots)) {
-                                    const best = slotData.progression[slotData.progression.length - 1];
-                                    if (best?.itemHrid) {
-                                        achievableEquipment.set(locationHrid, {
-                                            itemHrid: best.itemHrid,
-                                            enhancementLevel: enhMap.get(best.itemHrid) ?? 0,
-                                        });
-                                    }
-                                }
-                            }
-
-                            // Performance with achievable equipment and optimal teas for each goal
-                            const xpAchievable = result
-                                ? findOptimalTeas(
-                                      this.currentSkill,
-                                      'xp',
-                                      null,
-                                      null,
-                                      null,
-                                      null,
-                                      achievableEquipment,
-                                      this.selectedActionHrids
-                                  )
-                                : null;
-                            const goldAchievable = result
-                                ? findOptimalTeas(
-                                      this.currentSkill,
-                                      'gold',
-                                      null,
-                                      null,
-                                      null,
-                                      null,
-                                      achievableEquipment,
-                                      this.selectedActionHrids
-                                  )
-                                : null;
-
                             // Build loadout item map for comparison. Keep an intentionally empty
                             // loadout distinct from "no comparison", and never silently replace an
                             // unavailable manual comparison with an empty/current-gear baseline.
+                            // Resolved before optimizeSkill() so BASELINE and every slot's CANDIDATE
+                            // score the exact same full loadout + drinks + selected actions.
                             const loadoutItemMap = new Map();
+                            let compareDrinks = [];
                             let hasUsableComparison = false;
                             let unavailableComparisonName = null;
                             if (this.optimizerLoadout) {
@@ -27306,12 +27429,70 @@
                                             enhancementLevel: eq.enhancementLevel,
                                         });
                                     }
+                                    if (hasUsableComparison) {
+                                        compareDrinks = (refreshedLoadout.drinks || [])
+                                            .map((d) => d.itemHrid)
+                                            .filter(Boolean);
+                                    }
                                 } else {
                                     unavailableComparisonName =
                                         refreshedLoadout?.name || this.optimizerLoadout?.name || 'Selected loadout';
                                     if (refreshedLoadout) this.optimizerLoadout = refreshedLoadout;
                                 }
                             }
+
+                            const result = optimizeSkill(
+                                this.currentSkill,
+                                this.currentLevel,
+                                this.selectedActionHrids,
+                                hasUsableComparison ? { equipment: loadoutItemMap, drinks: compareDrinks } : null
+                            );
+                            this.lastOptimizerResult = result;
+
+                            // Build equipment map using player's actual owned enhancement levels.
+                            // A recommended item the player doesn't own at all is unavailable, never
+                            // a fictitious achievable +0 - exclude it rather than fabricate ownership.
+                            const enhMap = buildOwnedEnhancementLevelMap();
+                            const achievableEquipment = new Map();
+                            if (result) {
+                                for (const [locationHrid, slotData] of Object.entries(result.slots)) {
+                                    const best = slotData.progression[slotData.progression.length - 1];
+                                    if (best?.itemHrid && enhMap.has(best.itemHrid)) {
+                                        achievableEquipment.set(locationHrid, {
+                                            itemHrid: best.itemHrid,
+                                            enhancementLevel: enhMap.get(best.itemHrid),
+                                        });
+                                    }
+                                }
+                            }
+
+                            // Performance with achievable equipment and optimal teas for each goal
+                            const xpAchievable = result
+                                ? findOptimalTeas(
+                                      this.currentSkill,
+                                      'xp',
+                                      null,
+                                      null,
+                                      null,
+                                      null,
+                                      achievableEquipment,
+                                      this.selectedActionHrids,
+                                      this.currentLevel
+                                  )
+                                : null;
+                            const goldAchievable = result
+                                ? findOptimalTeas(
+                                      this.currentSkill,
+                                      'gold',
+                                      null,
+                                      null,
+                                      null,
+                                      null,
+                                      achievableEquipment,
+                                      this.selectedActionHrids,
+                                      this.currentLevel
+                                  )
+                                : null;
 
                             optimizeBtn.textContent = 'Optimize';
                             optimizeBtn.disabled = false;
@@ -27399,6 +27580,9 @@
                 wrap.appendChild(loadoutRow);
                 const loadoutStatus = document.createElement('div');
                 loadoutStatus.style.cssText = 'color:#f87171; font-size:11px; margin-left:64px;';
+                if (this._simulatorLoadoutUnavailableName) {
+                    loadoutStatus.textContent = `Loadout “${this._simulatorLoadoutUnavailableName}” is unavailable and was not loaded.`;
+                }
                 wrap.appendChild(loadoutStatus);
                 loadoutSelect.addEventListener('change', () => {
                     const name = loadoutSelect.value;
@@ -27453,8 +27637,11 @@
             skillSelect.addEventListener('change', () => {
                 this.currentSkill = skillSelect.value;
                 this.currentLevel = getPlayerSkillLevel(this.currentSkill);
-                this.teas = [null, null, null];
                 this.selectedActionHrids = null;
+                // Retargets equipment/teas/Compare for the new Skill (never carries the previous
+                // Skill's gear/drinks/Compare forward) - _retargetedForSkill still holds the old
+                // Skill name here, so this always fires on a real change.
+                this._ensureRetargetedForCurrentSkill();
                 this._rebuildPanel();
             });
 
@@ -27471,15 +27658,32 @@
             const empty = document.createElement('option');
             empty.value = '';
             empty.textContent = '— No loadout —';
+            if (!this._simulatorLoadoutName) empty.selected = true;
             select.appendChild(empty);
 
+            let matched = false;
             for (const snap of loadoutState.getAllSnapshots()) {
                 const opt = document.createElement('option');
                 opt.value = snap.name;
                 opt.textContent =
                     snap.name + (snap.isDefault ? ' ★' : '') + (snap.isUsableForCalculation ? '' : ' (Unavailable)');
                 opt.disabled = !snap.isUsableForCalculation;
+                if (this._simulatorLoadoutName === snap.name) {
+                    opt.selected = true;
+                    matched = true;
+                }
                 select.appendChild(opt);
+            }
+
+            // The retargeted-to loadout may have been deleted entirely since being resolved -
+            // represent it explicitly rather than silently falling back to "— No loadout —".
+            if (this._simulatorLoadoutName && !matched) {
+                const unavailableOpt = document.createElement('option');
+                unavailableOpt.value = this._simulatorLoadoutName;
+                unavailableOpt.textContent = `${this._simulatorLoadoutName} (Unavailable)`;
+                unavailableOpt.selected = true;
+                unavailableOpt.disabled = true;
+                select.appendChild(unavailableOpt);
             }
         }
 
@@ -27521,7 +27725,76 @@
                 const hrid = this.teas[i];
                 this._updateTeaUI(i, refs, hrid);
             }
+            this._simulatorLoadoutName = name;
+            this._simulatorLoadoutUnavailableName = null;
             return true;
+        }
+
+        /**
+         * Resolve the canonical preferred loadout for an action type using Core's existing priority
+         * (skill default -> all-skills default -> skill non-default -> all-skills non-default ->
+         * none), transactionally validated the same way as a manual _loadLoadout() import.
+         * @param {string} actionTypeHrid
+         * @returns {{status:'usable'|'unavailable'|'none', name: string|null, equipment?: Map, drinks?: Array}}
+         */
+        _resolveCanonicalLoadout(actionTypeHrid) {
+            const selection = loadoutState.findSnapshotSelectionForActionType(actionTypeHrid);
+            if (selection.status !== 'usable') {
+                return {
+                    status: selection.status === 'unavailable' ? 'unavailable' : 'none',
+                    name: selection.snapshot?.name || null,
+                };
+            }
+
+            const snap = selection.snapshot;
+            const equipment = new Map();
+            for (const eq of snap.equipment || []) {
+                if (!eq.itemHrid || !eq.itemLocationHrid || !Number.isFinite(eq.enhancementLevel)) {
+                    return { status: 'unavailable', name: snap.name };
+                }
+                equipment.set(eq.itemLocationHrid, { itemHrid: eq.itemHrid, enhancementLevel: eq.enhancementLevel });
+            }
+            const drinks = [
+                snap.drinks?.[0]?.itemHrid || null,
+                snap.drinks?.[1]?.itemHrid || null,
+                snap.drinks?.[2]?.itemHrid || null,
+            ];
+            return { status: 'usable', name: snap.name, equipment, drinks };
+        }
+
+        /**
+         * Retarget both Simulator and Optimizer to the canonical preferred loadout for the current
+         * Skill, exactly once per actual Skill change (guarded by _retargetedForSkill) - never on an
+         * unrelated panel rebuild, so manual edits survive mode switches. Never carries equipment,
+         * drinks, or a Compare loadout over from a previously selected Skill.
+         */
+        _ensureRetargetedForCurrentSkill() {
+            if (this._retargetedForSkill === this.currentSkill) return;
+            this._retargetedForSkill = this.currentSkill;
+
+            const actionType = SKILL_TO_ACTION_TYPE[this.currentSkill.toLowerCase()] || null;
+            const resolved = actionType ? this._resolveCanonicalLoadout(actionType) : { status: 'none', name: null };
+
+            if (resolved.status === 'usable') {
+                this.equipment = resolved.equipment;
+                this.teas = resolved.drinks;
+                this._simulatorLoadoutName = resolved.name;
+                this._simulatorLoadoutUnavailableName = null;
+                this.optimizerLoadout = loadoutState.getUsableSnapshotByName(resolved.name);
+            } else {
+                // 'unavailable': fail closed to a clean empty scenario rather than substituting
+                // Current Gear, a fabricated +0 setup, or stale gear from the previous Skill - and
+                // still surface which preferred loadout couldn't be used.
+                // 'none': no preferred loadout exists for this Skill at all.
+                this.equipment = new Map();
+                this.teas = [null, null, null];
+                this._simulatorLoadoutName = resolved.status === 'unavailable' ? resolved.name : null;
+                this._simulatorLoadoutUnavailableName = resolved.status === 'unavailable' ? resolved.name : null;
+                // Reusing the same {name} placeholder shape the manual Compare dropdown already
+                // handles when a previously-selected loadout later becomes unavailable, so the
+                // existing "(Unavailable)" rendering applies without a separate code path.
+                this.optimizerLoadout = resolved.status === 'unavailable' ? { name: resolved.name } : null;
+            }
         }
 
         // -------------------------------------------------------------------------
@@ -27960,6 +28233,25 @@
         _runSimulation() {
             if (!this._resultsArea) return;
 
+            this._resultsArea.innerHTML = '';
+
+            const section = document.createElement('div');
+            section.appendChild(this._makeSectionHeader('Results'));
+
+            // Alchemy XP/Gold depend on the specific item + enhancement being processed, which this
+            // generic action-wide scenario has no context for. A generic number here would silently
+            // misrepresent real Coinify/Decompose/Transmute economics - fail closed instead.
+            if (this.currentSkill === 'Alchemy') {
+                const unsupported = document.createElement('div');
+                unsupported.style.cssText = 'color: rgba(255,255,255,0.5); font-size: 12px;';
+                unsupported.textContent =
+                    'Alchemy scenario math is not item-aware yet, so a generic Results number here would ' +
+                    'misrepresent real Coinify/Decompose/Transmute economics. Unsupported for now.';
+                section.appendChild(unsupported);
+                this._resultsArea.appendChild(section);
+                return;
+            }
+
             const result = calculateSkillPerformance(
                 this.currentSkill,
                 this.equipment,
@@ -27968,25 +28260,37 @@
                 this.selectedActionHrids
             );
 
-            this._resultsArea.innerHTML = '';
-
-            const section = document.createElement('div');
-            section.appendChild(this._makeSectionHeader('Results'));
-
             const stats = document.createElement('div');
             stats.style.cssText = 'display: flex; gap: 20px; margin-bottom: 8px;';
 
-            const makeStat = (label, value, color) => {
+            const makeStat = (label, value, color, isIncomplete = false) => {
                 const el = document.createElement('div');
+                const valueText = isIncomplete ? `${formatters_js.formatKMB(value)} (incomplete)` : formatters_js.formatKMB(value);
                 el.innerHTML = `
                 <div style="font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">${label}</div>
-                <div style="font-size:15px;font-weight:700;color:${color};">${value > 0 ? formatters_js.formatKMB(value) : '—'}</div>
+                <div style="font-size:15px;font-weight:700;color:${color};">${valueText}</div>
             `;
                 return el;
             };
 
-            stats.appendChild(makeStat('XP / hr', result.xpPerHour, config.COLOR_INFO));
-            stats.appendChild(makeStat('Gold / hr', result.goldPerHour, config.COLOR_PROFIT));
+            // Multi-action Results are an equal-weight arithmetic average across the fixed selected
+            // cohort - label it as such so it is never mistaken for one real action's exact rate.
+            const allActionsAvailable = getSkillActionsForDisplay(this.currentSkill, this.currentLevel).filter(
+                (a) => a.available
+            );
+            const selectedCount =
+                this.selectedActionHrids === null ? allActionsAvailable.length : this.selectedActionHrids.size;
+            const isMultiAction = selectedCount > 1;
+
+            stats.appendChild(makeStat(isMultiAction ? 'Avg XP / hr' : 'XP / hr', result.xpPerHour, config.COLOR_INFO));
+            stats.appendChild(
+                makeStat(
+                    isMultiAction ? 'Avg Gold / hr' : 'Gold / hr',
+                    result.goldPerHour,
+                    config.COLOR_PROFIT,
+                    result.hasMissingPrice
+                )
+            );
             section.appendChild(stats);
 
             if (result.teaCostPerHour > 0) {
@@ -28019,31 +28323,34 @@
             for (const [locationHrid, slotData] of slotEntries) {
                 const loadoutEntry = loadoutItemMap?.get(locationHrid) ?? null;
 
-                // Use the loadout item's score as the baseline when a compare is selected,
-                // so percentages show improvement over what the user currently has.
-                // Fall back to global empty baseline when no compare is set.
-                let slotXpBaseline = result.xpBaseline;
-                let slotGoldBaseline = result.goldBaseline;
-                if (loadoutEntry) {
-                    const equipment = new Map([[locationHrid, loadoutEntry]]);
-                    slotXpBaseline = scoreEquipmentSetup(result.skill, 'xp', equipment, result.playerLevel);
-                    slotGoldBaseline = scoreEquipmentSetup(result.skill, 'gold', equipment, result.playerLevel);
-                }
-
-                this._renderSlotRow(container, slotData, loadoutEntry, slotXpBaseline, slotGoldBaseline);
+                // result.xpBaseline/goldBaseline already reflect the full Compare loadout + its
+                // drinks (or the empty-slot baseline when no Compare is selected) - optimizeSkill()
+                // computed it once against the same scenario every candidate in slotData.progression
+                // was scored against, so it's reused as-is rather than re-scored per slot.
+                this._renderSlotRow(container, slotData, loadoutEntry, result.xpBaseline, result.goldBaseline);
             }
 
             const xpResult = achievableStats?.xpResult;
             const goldResult = achievableStats?.goldResult;
-            const hasXp = xpResult?.optimal?.avgScore > 0;
-            const hasGold = goldResult?.optimal?.avgScore > 0;
+            // Presence of an optimal result is what matters - a genuinely negative avgScore (every
+            // combination including no-tea is a net loss) must still be shown as a signed number,
+            // never hidden the same way a fabricated zero would be.
+            const hasXp = xpResult?.optimal != null;
+            const hasGold = goldResult?.optimal != null;
 
             if (hasXp || hasGold) {
                 const statsRow = document.createElement('div');
                 statsRow.style.cssText = 'display: flex; gap: 20px; margin-top: 16px; margin-bottom: 4px;';
                 if (hasXp) statsRow.appendChild(this._makeStat('Avg XP/hr', xpResult.optimal.avgScore, config.COLOR_INFO));
                 if (hasGold)
-                    statsRow.appendChild(this._makeStat('Avg Gold/hr', goldResult.optimal.avgScore, config.COLOR_PROFIT));
+                    statsRow.appendChild(
+                        this._makeStat(
+                            'Avg Gold/hr',
+                            goldResult.optimal.avgScore,
+                            config.COLOR_PROFIT,
+                            goldResult.optimal.hasMissingPrice
+                        )
+                    );
                 container.appendChild(statsRow);
             }
 
@@ -28277,11 +28584,12 @@
             return tiers;
         }
 
-        _makeStat(label, value, color) {
+        _makeStat(label, value, color, isIncomplete = false) {
             const el = document.createElement('div');
+            const valueText = isIncomplete ? `${formatters_js.formatKMB(value)} (incomplete)` : formatters_js.formatKMB(value);
             el.innerHTML = `
             <div style="font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">${label}</div>
-            <div style="font-size:15px;font-weight:700;color:${color};">${value > 0 ? formatters_js.formatKMB(value) : '—'}</div>
+            <div style="font-size:15px;font-weight:700;color:${color};">${valueText}</div>
         `;
             return el;
         }
@@ -28341,7 +28649,6 @@
     }
 
     const skillingSimulatorUI = new SkillingSimulatorUI();
-
     var skillingOptimizer = {
         name: 'Skilling Simulator',
         initialize: () => skillingSimulatorUI.initialize(),

@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.97.1
+ * Version: 2.97.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1977,9 +1977,14 @@
         personalEfficiency = 0,
         guildEfficiency = 0,
     }) {
+        // Published MWI evidence (calcGatheringProductionLevelEfficiencyBuff) computes level
+        // efficiency from the real boosted skill level versus the effective requirement directly -
+        // it never clamps a below-requirement base skill level up to the requirement before adding
+        // a tea/buff level bonus. A tea that doesn't close the whole gap on its own must not be
+        // credited as if it did (e.g. skill 18, requirement 20, tea +3 -> boosted level 21 -> only
+        // +1% level efficiency, not +3%).
         const effectiveRequirement = (requiredLevel || 0) + actionLevelBonus;
-        const baseSkillLevel = Math.max(skillLevel || 0, requiredLevel || 0);
-        const effectiveLevel = baseSkillLevel + teaSkillLevelBonus;
+        const effectiveLevel = (skillLevel || 0) + teaSkillLevelBonus;
         const levelEfficiency = Math.max(0, effectiveLevel - effectiveRequirement);
         const totalEfficiency = stackAdditive(
             levelEfficiency,
@@ -5468,10 +5473,18 @@ self.onmessage = function (e) {
      * Calculate total experience multiplier and breakdown
      * @param {string} skillHrid - Skill HRID (e.g., "/skills/foraging")
      * @param {string} actionTypeHrid - Action type HRID (e.g., "/action_types/foraging")
+     * @param {{equipment: Map, drinks: Array}|null} [scenarioOverride] - When provided, use this
+     *   explicit equipment/drinks instead of resolving the live/saved action context. For hypothetical
+     *   calculations (Skilling Simulator/Optimizer) so candidate gear's Wisdom/Charm XP is scored
+     *   instead of the character's actual current/saved gear. Global sources (house, community,
+     *   achievement, MooPass, personal, guild) still reflect the real current character - only
+     *   equipment/drinks are hypothetical.
      * @returns {Object} Experience data with breakdown
      */
-    function calculateExperienceMultiplier(skillHrid, actionTypeHrid) {
-        const { equipment, drinks: activeDrinks } = resolveActionContext(actionTypeHrid);
+    function calculateExperienceMultiplier(skillHrid, actionTypeHrid, scenarioOverride = null) {
+        const { equipment, drinks: activeDrinks } = scenarioOverride
+            ? { equipment: scenarioOverride.equipment ?? new Map(), drinks: scenarioOverride.drinks ?? [] }
+            : resolveActionContext(actionTypeHrid);
         const gameData = dataManager.getInitClientData();
         const itemDetailMap = gameData?.itemDetailMap || {};
 
