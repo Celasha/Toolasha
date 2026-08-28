@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.98.0](https://github.com/Celasha/Toolasha/compare/v2.97.2...v2.98.0) (2026-08-28)
+
+
+### Features
+
+* move collectable listings to top of My Listings ([6eced67](https://github.com/Celasha/Toolasha/commit/6eced674c1ee200e4f9a114e365201a2df97db7b))
+
+
+### Bug Fixes
+
+* catch in-place Collect button appearance in My Listings sort ([3770d33](https://github.com/Celasha/Toolasha/commit/3770d33e122890caa4d448cce8c8edbad999dbfe))
+* show 3 significant digits for enhancing rate/min-sell tooltip ([a463cef](https://github.com/Celasha/Toolasha/commit/a463cefe2cd7b8ba6bcd8a2b0f964ded589b93a4))
+
 ## [2.97.2](https://github.com/Celasha/Toolasha/compare/v2.97.1...v2.97.2) (2026-08-27)
 
 ### Bug Fixes
