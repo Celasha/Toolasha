@@ -552,8 +552,10 @@ class SkillingSimulatorUI {
             const all = getSkillActionsForDisplay(this.currentSkill, this.currentLevel);
             const avail = all.filter((a) => a.available);
             if (!this.selectedActionHrids) return `All (${avail.length})`;
-            const n = [...this.selectedActionHrids].filter((h) => avail.some((a) => a.hrid === h)).length;
-            return `${n} / ${avail.length}`;
+            // Counts against the full action list (not just avail) so an explicitly selected
+            // locked action - pending a tea unlock - is still reflected in the count.
+            const n = [...this.selectedActionHrids].filter((h) => all.some((a) => a.hrid === h)).length;
+            return `${n} / ${all.length}`;
         };
         actionBtn.textContent = getActionLabel();
         this._actionBtn = actionBtn;
@@ -1134,16 +1136,29 @@ class SkillingSimulatorUI {
         popup.appendChild(allRow);
 
         for (const action of actions) {
+            // A locked action can still be explicitly selected - a tea combination the Optimizer
+            // searches (or a manually picked Simulator tea) may unlock it at the boosted level.
+            // "All" never auto-includes a locked action; it only becomes checked via an explicit
+            // toggle below, matching selectedActionHrids === null meaning ordinary base-available
+            // actions only.
             const isChecked =
-                action.available && (this.selectedActionHrids === null || this.selectedActionHrids.has(action.hrid));
-            const label = action.available ? action.name : `${action.name} (lv ${action.requiredLevel})`;
-            const { row, cb } = makeRow(label, isChecked, !action.available, (checked) => {
+                this.selectedActionHrids === null ? action.available : this.selectedActionHrids.has(action.hrid);
+            const label = action.available
+                ? action.name
+                : `${action.name} (lv ${action.requiredLevel} — locked, may unlock via tea)`;
+            const { row, cb } = makeRow(label, isChecked, false, (checked) => {
                 if (this.selectedActionHrids === null) {
                     this.selectedActionHrids = new Set(available.map((a) => a.hrid));
                 }
                 if (checked) this.selectedActionHrids.add(action.hrid);
                 else this.selectedActionHrids.delete(action.hrid);
-                if (available.every((a) => this.selectedActionHrids.has(a.hrid))) {
+                // Collapse back to "All" only when every ordinarily-available action is selected
+                // AND no locked action was explicitly added - a locked pick always needs the
+                // explicit Set form, since "All" itself never implies a locked action.
+                const onlyOrdinaryAvailableSelected =
+                    available.every((a) => this.selectedActionHrids.has(a.hrid)) &&
+                    actions.every((a) => a.available || !this.selectedActionHrids.has(a.hrid));
+                if (onlyOrdinaryAvailableSelected) {
                     this.selectedActionHrids = null;
                     allCb.checked = true;
                 } else {
@@ -1395,6 +1410,7 @@ class SkillingSimulatorUI {
                     ? `+${suggestedEntry.enhancementLevel}`
                     : `${suggestedEntry.itemName} +${suggestedEntry.enhancementLevel}`;
                 this._applyRefinedTooltip(nameSpan, suggestedEntry.itemHrid);
+                this._applyIncompleteTooltip(nameSpan, suggestedEntry.hasMissingPrice);
                 entryRow.appendChild(nameSpan);
 
                 const gainEl = this._makeGainEl(
@@ -1427,6 +1443,7 @@ class SkillingSimulatorUI {
                 name.style.cssText = `font-size: 12px; color: ${i === 0 ? 'rgba(255,255,255,0.85)' : config.COLOR_ACCENT}; font-weight: ${i > 0 ? '600' : '400'};`;
                 name.textContent = tier.itemName;
                 this._applyRefinedTooltip(name, tier.itemHrid);
+                this._applyIncompleteTooltip(name, tier.hasMissingPrice);
                 tierRow.appendChild(name);
 
                 const gainEl = this._makeGainEl(tier.xpScore, xpBaseline, tier.goldScore, goldBaseline, spriteUrl);
@@ -1453,6 +1470,21 @@ class SkillingSimulatorUI {
             'enhancement level can still outperform a higher-level non-refined item.';
         nameEl.style.cursor = 'help';
         nameEl.style.borderBottom = '1px dotted rgba(255,255,255,0.35)';
+    }
+
+    /**
+     * FAIL C / OPT-27: a required market price for this recommendation is unresolved, so its score
+     * is incomplete - not a verified exact ranking. Mirrors the existing Results "(incomplete)"
+     * wording (_makeStat) rather than silently presenting an unresolved-price score as exact.
+     * @param {HTMLElement} nameEl
+     * @param {boolean} hasMissingPrice
+     */
+    _applyIncompleteTooltip(nameEl, hasMissingPrice) {
+        if (!hasMissingPrice) return;
+        nameEl.textContent += ' (incomplete)';
+        nameEl.title = 'A required market price is unresolved, so this recommendation is not an exact ranking.';
+        nameEl.style.cursor = 'help';
+        nameEl.style.color = config.COLOR_WARNING;
     }
 
     _makeGainEl(xpScore, xpBaseline, goldScore, goldBaseline, spriteUrl) {
@@ -1516,11 +1548,15 @@ class SkillingSimulatorUI {
                     fromLevel: entry.enhancementLevel,
                     toLevel: entry.enhancementLevel,
                     score: entry.score,
+                    hasMissingPrice: entry.hasMissingPrice,
                     xpScore: entry.xpScore,
                     goldScore: entry.goldScore,
                 };
             } else {
                 current.toLevel = entry.enhancementLevel;
+                // Reflects the latest (highest-enhancement) breakpoint's completeness within this
+                // tier, matching toLevel above.
+                current.hasMissingPrice = entry.hasMissingPrice;
             }
         }
         if (current) tiers.push(current);

@@ -3,6 +3,10 @@ import { describe, test, expect, vi, afterEach } from 'vitest';
 const BACK_LOCATION = '/item_locations/back';
 const REFINED_HRID = '/items/chance_cape_refined';
 const NONREFINED_HRID = '/items/chance_cape';
+const POUCH_LOCATION = '/item_locations/pouch';
+const NO_DC_POUCH_HRID = '/items/plain_pouch';
+const GUZZLING_POUCH_HRID = '/items/guzzling_pouch';
+const GUZZLING_TEA_HRID = '/items/some_tea';
 
 const itemDetailMap = {
     [REFINED_HRID]: {
@@ -21,6 +25,22 @@ const itemDetailMap = {
             levelRequirements: [],
         },
     },
+    [NO_DC_POUCH_HRID]: {
+        name: 'Plain Pouch',
+        equipmentDetail: {
+            type: '/equipment_types/pouch',
+            noncombatStats: { skillingSpeed: 0.01 },
+            levelRequirements: [],
+        },
+    },
+    [GUZZLING_POUCH_HRID]: {
+        name: 'Guzzling Pouch',
+        equipmentDetail: {
+            type: '/equipment_types/pouch',
+            noncombatStats: { drinkConcentration: 0.1 },
+            levelRequirements: [],
+        },
+    },
 };
 
 vi.mock('../../core/data-manager.js', () => ({
@@ -35,10 +55,10 @@ vi.mock('../../core/data-manager.js', () => ({
 vi.mock('../../utils/tea-optimizer.js', () => ({
     scoreEquipmentSetup: vi.fn((skillName, goal, equipment) => {
         const entry = equipment.get(BACK_LOCATION);
-        if (!entry) return 0;
+        if (!entry) return { score: 0, hasMissingPrice: false };
         const isRefined = entry.itemHrid === REFINED_HRID;
         const xpRaw = isRefined ? 100 + 1 * entry.enhancementLevel : 0 + 12 * entry.enhancementLevel;
-        return goal === 'xp' ? xpRaw : xpRaw * 2;
+        return { score: goal === 'xp' ? xpRaw : xpRaw * 2, hasMissingPrice: false };
     }),
     findOptimalTeas: vi.fn(() => null),
     getSkillActionsForDisplay: vi.fn(),
@@ -46,7 +66,7 @@ vi.mock('../../utils/tea-optimizer.js', () => ({
 }));
 
 const { optimizeSkill } = await import('./skilling-optimizer-engine.js');
-const { scoreEquipmentSetup } = await import('../../utils/tea-optimizer.js');
+const { scoreEquipmentSetup, findOptimalTeas } = await import('../../utils/tea-optimizer.js');
 
 describe('optimizeSkill - refined item breakpoint labeling', () => {
     test('records the effective scored level separately from the nominal breakpoint bucket', () => {
@@ -111,7 +131,10 @@ describe('optimizeSkill - Compare is a one-slot replacement of the full loadout 
                 calls.push({ equipment: new Map(equipment), teaHrids });
                 // Score by total slot count so a call receiving the full loadout differs measurably
                 // from one receiving an otherwise-empty/one-item Map.
-                return equipment.size * 100 + (equipment.get(BACK_LOCATION)?.enhancementLevel ?? 0);
+                return {
+                    score: equipment.size * 100 + (equipment.get(BACK_LOCATION)?.enhancementLevel ?? 0),
+                    hasMissingPrice: false,
+                };
             }
         );
 
@@ -135,7 +158,10 @@ describe('optimizeSkill - Compare is a one-slot replacement of the full loadout 
     });
 
     test('an intentionally empty compared slot is distinct from no comparison at all', () => {
-        scoreEquipmentSetup.mockImplementation((skillName, goal, equipment) => equipment.size * 100);
+        scoreEquipmentSetup.mockImplementation((skillName, goal, equipment) => ({
+            score: equipment.size * 100,
+            hasMissingPrice: false,
+        }));
 
         // HEAD_LOCATION is intentionally absent from this loadout (an empty slot), never carried
         // over from the default Map() no-comparison baseline used when compareLoadout is null.
@@ -152,7 +178,7 @@ describe('optimizeSkill - Compare is a one-slot replacement of the full loadout 
         scoreEquipmentSetup.mockImplementation(
             (skillName, goal, equipment, playerLevel, selectedActionHrids, teaHrids) => {
                 calls.push({ size: equipment.size, teaHrids });
-                return equipment.size;
+                return { score: equipment.size, hasMissingPrice: false };
             }
         );
 
@@ -212,5 +238,88 @@ describe('getRelevantStatsForSkill via getItemsForSlot (TLA-024/OPT-17)', () => 
 
         const pouchItems = getItemsForSlot('/item_locations/pouch', 'Crafting').map((i) => i.hrid);
         expect(pouchItems).toContain(pouchHrid);
+    });
+});
+
+describe('optimizeSkill - Guzzling Pouch / Drink Concentration joint interaction (TLA-024 REOPEN/OPT-25)', () => {
+    const originalScoreImpl = scoreEquipmentSetup.getMockImplementation();
+    const originalTeaImpl = findOptimalTeas.getMockImplementation();
+
+    afterEach(() => {
+        scoreEquipmentSetup.mockImplementation(originalScoreImpl);
+        findOptimalTeas.mockImplementation(originalTeaImpl);
+    });
+
+    test('a Drink Concentration item that loses under a fixed no-tea score still wins once jointly evaluated against its own best tea', () => {
+        // The fixed-tea score never distinguishes which tea is active, so Guzzling Pouch is
+        // systematically undervalued (1) versus a plain, tea-independent pouch (10) unless the
+        // engine jointly re-checks it against a tea search of its own.
+        scoreEquipmentSetup.mockImplementation((_skillName, _goal, equipment) => {
+            const entry = equipment.get(POUCH_LOCATION);
+            if (!entry) return { score: 0, hasMissingPrice: false };
+            if (entry.itemHrid === GUZZLING_POUCH_HRID) return { score: 1, hasMissingPrice: false };
+            if (entry.itemHrid === NO_DC_POUCH_HRID) return { score: 10, hasMissingPrice: false };
+            return { score: 0, hasMissingPrice: false };
+        });
+
+        findOptimalTeas.mockImplementation((_skillName, _goal, _l, _a, _c, _al, equipmentOverride) => {
+            const hasPouch = equipmentOverride?.get(POUCH_LOCATION)?.itemHrid === GUZZLING_POUCH_HRID;
+            if (!hasPouch) return { optimal: null };
+            // Only Guzzling Pouch's amplified Drink Concentration makes this tea worth running.
+            return { optimal: { teas: [{ hrid: GUZZLING_TEA_HRID, name: 'Some Tea' }], avgScore: 100 } };
+        });
+
+        const result = optimizeSkill('Crafting', 50, null);
+
+        const pouchProgression = result.slots[POUCH_LOCATION].progression;
+        const maxEntry = pouchProgression[pouchProgression.length - 1];
+        expect(maxEntry.itemHrid).toBe(GUZZLING_POUCH_HRID);
+        expect(maxEntry.score).toBe(100);
+    });
+});
+
+describe('optimizeSkill - missing-price completeness through equipment Gold ranking (TLA-024 REOPEN/OPT-27)', () => {
+    const originalScoreImpl = scoreEquipmentSetup.getMockImplementation();
+
+    afterEach(() => {
+        scoreEquipmentSetup.mockImplementation(originalScoreImpl);
+    });
+
+    test('an incomplete (missing-price) higher score never beats a complete lower score', () => {
+        scoreEquipmentSetup.mockImplementation((_skillName, _goal, equipment) => {
+            const entry = equipment.get(BACK_LOCATION);
+            if (!entry) return { score: 0, hasMissingPrice: false };
+            if (entry.itemHrid === REFINED_HRID) return { score: 500, hasMissingPrice: true };
+            if (entry.itemHrid === NONREFINED_HRID) return { score: 50, hasMissingPrice: false };
+            return { score: 0, hasMissingPrice: false };
+        });
+
+        const result = optimizeSkill('Milking', 50, null);
+
+        const progression = result.slots[BACK_LOCATION].progression;
+        const maxEntry = progression[progression.length - 1];
+        expect(maxEntry.itemHrid).toBe(NONREFINED_HRID);
+        expect(maxEntry.score).toBe(50);
+        expect(maxEntry.hasMissingPrice).toBe(false);
+    });
+
+    test('when every candidate (including baseline) is incomplete, the highest incomplete score still wins and is marked incomplete', () => {
+        // Baseline shares the same missing action price as every candidate here - this is the
+        // realistic shape (an unresolved price affects the action regardless of equipment), unlike
+        // an artificial scenario where baseline alone stays complete while every real item doesn't.
+        scoreEquipmentSetup.mockImplementation((_skillName, _goal, equipment) => {
+            const entry = equipment.get(BACK_LOCATION);
+            if (!entry) return { score: 0, hasMissingPrice: true };
+            if (entry.itemHrid === REFINED_HRID) return { score: 500, hasMissingPrice: true };
+            if (entry.itemHrid === NONREFINED_HRID) return { score: 50, hasMissingPrice: true };
+            return { score: 0, hasMissingPrice: true };
+        });
+
+        const result = optimizeSkill('Milking', 50, null);
+
+        const progression = result.slots[BACK_LOCATION].progression;
+        const maxEntry = progression[progression.length - 1];
+        expect(maxEntry.itemHrid).toBe(REFINED_HRID);
+        expect(maxEntry.hasMissingPrice).toBe(true);
     });
 });

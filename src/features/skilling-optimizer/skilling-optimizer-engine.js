@@ -193,6 +193,36 @@ function meetsLevelRequirements(itemDetail, playerLevels) {
 }
 
 /**
+ * Whether an item grants Drink Concentration - the specific stat behind the Guzzling Pouch/tea
+ * interaction FAIL B targets (a DC item's value is entirely tea-dependent, so it needs the joint
+ * re-check in runEquipmentSlotRound rather than a plain fixed-tea score).
+ * @param {string} itemHrid
+ * @param {Object} itemDetailMap
+ * @returns {boolean}
+ */
+function candidateHasDrinkConcentration(itemHrid, itemDetailMap) {
+    return (itemDetailMap[itemHrid]?.equipmentDetail?.noncombatStats?.drinkConcentration ?? 0) > 0;
+}
+
+/**
+ * FAIL C / OPT-27: a candidate with an unresolved required price (hasMissingPrice) is an
+ * incomplete Gold number, not a verified exact one - it must never beat a complete candidate no
+ * matter how favorable its raw score looks. Only when every candidate seen so far is incomplete
+ * does a higher incomplete score still win (there's no complete alternative to prefer instead).
+ * For 'xp' goal, hasMissingPrice is always false on both sides, so this degenerates to a plain
+ * score comparison.
+ * @param {number} score
+ * @param {boolean} hasMissingPrice
+ * @param {number} bestScoreSoFar
+ * @param {boolean} bestHasMissingPriceSoFar
+ * @returns {boolean}
+ */
+function isBetterCandidate(score, hasMissingPrice, bestScoreSoFar, bestHasMissingPriceSoFar) {
+    if (hasMissingPrice !== bestHasMissingPriceSoFar) return !hasMissingPrice;
+    return score > bestScoreSoFar;
+}
+
+/**
  * Get all equipment candidates for a slot that the player can equip.
  * @param {string} locationHrid
  * @param {Map<string, number>} playerLevels
@@ -227,7 +257,7 @@ function getCandidatesForSlot(locationHrid, playerLevels, itemDetailMap) {
  * @param {Set<string>|null} selectedActionHrids
  * @param {Map} [baseEquipment] - Full loadout equipment to copy and overwrite one slot in
  * @param {string[]} [teaHrids] - Drinks to score alongside (the base loadout's own drinks)
- * @returns {number}
+ * @returns {{score: number, hasMissingPrice: boolean}}
  */
 function scoreCandidate(
     itemHrid,
@@ -356,37 +386,27 @@ export function getSkillDrinkItems() {
  *   (no Compare loadout selected), preserves the original empty-baseline/no-drinks behavior.
  * @returns {Object|null}
  */
-export function optimizeSkill(skillName, playerLevel, selectedActionHrids = null, compareLoadout = null) {
-    // Gathering skills: score for Gold — captures gathering quantity, rare/essence find + speed/efficiency.
-    // Production skills: score for XP — more reliable since it doesn't depend on market prices.
-    const goal = GATHERING_SKILLS.has(skillName.toLowerCase()) ? 'gold' : 'xp';
-    const gameData = dataManager.getInitClientData();
-    if (!gameData?.itemDetailMap) return null;
-
-    const { itemDetailMap } = gameData;
-    const playerLevels = buildPlayerLevelMap(skillName, playerLevel);
-
-    const compareEquipment = compareLoadout?.equipment ?? new Map();
-    const compareDrinks = compareLoadout?.drinks ?? [];
-
-    const xpBaseline = scoreEquipmentSetup(
-        skillName,
-        'xp',
-        compareEquipment,
-        playerLevel,
-        selectedActionHrids,
-        compareDrinks
-    );
-    const goldBaseline = scoreEquipmentSetup(
-        skillName,
-        'gold',
-        compareEquipment,
-        playerLevel,
-        selectedActionHrids,
-        compareDrinks
-    );
-    const baseline = goal === 'xp' ? xpBaseline : goldBaseline;
-
+/**
+ * Run one full per-slot equipment optimization pass, holding the given tea combination fixed for
+ * every candidate score (except a narrow Drink-Concentration joint re-check, see FAIL B below).
+ * Extracted from optimizeSkill() so it can be re-run against successive tea winners (see the
+ * coordinate-ascent loop in optimizeSkill) without duplicating the breakpoint scan.
+ * @returns {{slots: Object, optimalEquipmentAtMax: Map}}
+ */
+function runEquipmentSlotRound(
+    skillName,
+    goal,
+    playerLevel,
+    selectedActionHrids,
+    itemDetailMap,
+    playerLevels,
+    compareEquipment,
+    teaHridsForRound,
+    baseline,
+    baselineHasMissingPrice,
+    xpBaseline,
+    goldBaseline
+) {
     const slots = {};
     const optimalEquipmentAtMax = new Map();
 
@@ -409,7 +429,9 @@ export function optimizeSkill(skillName, playerLevel, selectedActionHrids = null
         for (const bp of sortedBreakpoints) {
             let bestItem = null;
             let bestScore = baseline;
+            let bestHasMissingPrice = baselineHasMissingPrice;
             let bestEffectiveLevel = bp;
+            let bestItemTeaHrids = teaHridsForRound;
 
             for (const candidate of candidates) {
                 // Refined items are essentially never enhanced below +10 in practice (doing so
@@ -417,7 +439,7 @@ export function optimizeSkill(skillName, playerLevel, selectedActionHrids = null
                 // even when checking lower breakpoint buckets - bestEffectiveLevel below records
                 // what was actually scored, since it can differ from the nominal bucket `bp`.
                 const effectiveLevel = candidate.hrid.includes('_refined') ? Math.max(bp, 10) : bp;
-                const score = scoreCandidate(
+                const candidateResult = scoreCandidate(
                     candidate.hrid,
                     locationHrid,
                     skillName,
@@ -426,13 +448,54 @@ export function optimizeSkill(skillName, playerLevel, selectedActionHrids = null
                     playerLevel,
                     selectedActionHrids,
                     compareEquipment,
-                    compareDrinks
+                    teaHridsForRound
                 );
+                let candidateScore = candidateResult.score;
+                let candidateHasMissingPrice = candidateResult.hasMissingPrice;
+                let candidateTeaHrids = teaHridsForRound;
 
-                if (score > bestScore) {
-                    bestScore = score;
+                // FAIL B / OPT-25: Drink Concentration only pays off once a DC-amplified tea is
+                // actually active, so scoring this candidate against the round's fixed tea
+                // assumption can systematically undervalue it (e.g. it loses under no-tea/an
+                // unrelated tea, but a jointly-chosen tea would make it win). Narrowly re-check
+                // DC-bearing candidates against their own best tea response - scoped to just these
+                // rare items rather than a full per-candidate tea search for every item in every
+                // slot, which would be far too expensive to run interactively.
+                if (candidateHasDrinkConcentration(candidate.hrid, itemDetailMap)) {
+                    const jointEquipment = new Map(compareEquipment);
+                    jointEquipment.set(locationHrid, { itemHrid: candidate.hrid, enhancementLevel: effectiveLevel });
+                    const jointTeaResult = findOptimalTeas(
+                        skillName,
+                        goal,
+                        null,
+                        null,
+                        null,
+                        null,
+                        jointEquipment,
+                        selectedActionHrids,
+                        playerLevel
+                    );
+                    if (
+                        jointTeaResult?.optimal &&
+                        isBetterCandidate(
+                            jointTeaResult.optimal.avgScore,
+                            jointTeaResult.optimal.hasMissingPrice,
+                            candidateScore,
+                            candidateHasMissingPrice
+                        )
+                    ) {
+                        candidateScore = jointTeaResult.optimal.avgScore;
+                        candidateHasMissingPrice = jointTeaResult.optimal.hasMissingPrice;
+                        candidateTeaHrids = jointTeaResult.optimal.teas.map((tea) => tea.hrid);
+                    }
+                }
+
+                if (isBetterCandidate(candidateScore, candidateHasMissingPrice, bestScore, bestHasMissingPrice)) {
+                    bestScore = candidateScore;
+                    bestHasMissingPrice = candidateHasMissingPrice;
                     bestItem = candidate;
                     bestEffectiveLevel = effectiveLevel;
+                    bestItemTeaHrids = candidateTeaHrids;
                 }
             }
 
@@ -442,6 +505,10 @@ export function optimizeSkill(skillName, playerLevel, selectedActionHrids = null
                 itemHrid: bestItem?.hrid ?? null,
                 itemName: bestItem?.name ?? null,
                 score: bestScore,
+                // FAIL C / OPT-27: whether this breakpoint's winning score rests on an unresolved
+                // required price - an incomplete number, not a verified exact one. Always false
+                // for XP-goal skills (XP never touches market prices).
+                hasMissingPrice: bestHasMissingPrice,
                 xpScore: (() => {
                     if (!bestItem) return xpBaseline;
                     if (goal === 'xp') return bestScore;
@@ -454,8 +521,8 @@ export function optimizeSkill(skillName, playerLevel, selectedActionHrids = null
                         playerLevel,
                         selectedActionHrids,
                         compareEquipment,
-                        compareDrinks
-                    );
+                        bestItemTeaHrids
+                    ).score;
                 })(),
                 goldScore: (() => {
                     if (!bestItem) return goldBaseline;
@@ -469,8 +536,8 @@ export function optimizeSkill(skillName, playerLevel, selectedActionHrids = null
                         playerLevel,
                         selectedActionHrids,
                         compareEquipment,
-                        compareDrinks
-                    );
+                        bestItemTeaHrids
+                    ).score;
                 })(),
                 isChange: (bestItem?.hrid ?? null) !== lastWinnerHrid,
             });
@@ -494,21 +561,118 @@ export function optimizeSkill(skillName, playerLevel, selectedActionHrids = null
         }
     }
 
-    // Run tea optimizer for both goals with optimal equipment at max enhancement
-    const xpTeaResult = findOptimalTeas(
+    return { slots, optimalEquipmentAtMax };
+}
+
+export function optimizeSkill(skillName, playerLevel, selectedActionHrids = null, compareLoadout = null) {
+    // Gathering skills: score for Gold — captures gathering quantity, rare/essence find + speed/efficiency.
+    // Production skills: score for XP — more reliable since it doesn't depend on market prices.
+    const goal = GATHERING_SKILLS.has(skillName.toLowerCase()) ? 'gold' : 'xp';
+    const gameData = dataManager.getInitClientData();
+    if (!gameData?.itemDetailMap) return null;
+
+    const { itemDetailMap } = gameData;
+    const playerLevels = buildPlayerLevelMap(skillName, playerLevel);
+
+    const compareEquipment = compareLoadout?.equipment ?? new Map();
+    const compareDrinks = compareLoadout?.drinks ?? [];
+
+    const xpBaselineResult = scoreEquipmentSetup(
         skillName,
         'xp',
-        null,
-        null,
-        null,
-        null,
-        optimalEquipmentAtMax,
+        compareEquipment,
+        playerLevel,
         selectedActionHrids,
-        playerLevel
+        compareDrinks
     );
-    const goldTeaResult = findOptimalTeas(
+    const goldBaselineResult = scoreEquipmentSetup(
         skillName,
         'gold',
+        compareEquipment,
+        playerLevel,
+        selectedActionHrids,
+        compareDrinks
+    );
+    const xpBaseline = xpBaselineResult.score;
+    const goldBaseline = goldBaselineResult.score;
+    const baseline = goal === 'xp' ? xpBaseline : goldBaseline;
+    const baselineHasMissingPrice =
+        goal === 'xp' ? xpBaselineResult.hasMissingPrice : goldBaselineResult.hasMissingPrice;
+
+    // FAIL B / OPT-25: equipment and tea choices can interact - e.g. Guzzling Pouch's Drink
+    // Concentration stat only pays off once the tea combo that benefits from it is actually in
+    // play, so a single equipment-then-tea pass can permanently miss it (the pouch loses when
+    // scored with no tea, and equipment is never revisited after tea search runs). This alternates
+    // a full per-slot equipment pass (holding tea fixed) with a full tea search (holding equipment
+    // fixed) for a few rounds, feeding each round's tea winner into the next equipment pass. This
+    // is coordinate ascent, not exhaustive search: each pass fully re-optimizes its own dimension
+    // against the other's current fixed choice, which can surface genuine equipment<->tea
+    // interactions, but it proves only a local joint equilibrium (neither side can unilaterally
+    // improve further) - never a certified global optimum over the full equipment x tea
+    // combination space, which is combinatorially far too large to search exhaustively here.
+    // (runEquipmentSlotRound additionally jointly re-checks Drink-Concentration candidates
+    // specifically against their own best tea, so this loop isn't the only defense against a
+    // pouch-style interaction slipping through a single fixed-tea assumption.)
+    //
+    // A Compare loadout is a different product concept: "which single-slot swap beats this exact
+    // real loadout, holding everything else - including its own real drinks - constant" (the
+    // already-accepted TLA-024 one-slot-replacement invariant). So when compareLoadout is active,
+    // the round below runs exactly once against compareDrinks, unchanged from the original
+    // single-pass behavior - the iterative tea search only applies to the no-Compare, free
+    // equipment+tea recommendation scenario.
+    const hasCompareLoadout = compareLoadout != null;
+    const MAX_ROUNDS = hasCompareLoadout ? 1 : 3;
+
+    let teaHridsForRound = compareDrinks;
+    let slots = {};
+    let optimalEquipmentAtMax = new Map();
+    let teaResult = null;
+
+    for (let round = 0; round < MAX_ROUNDS; round++) {
+        const roundOutcome = runEquipmentSlotRound(
+            skillName,
+            goal,
+            playerLevel,
+            selectedActionHrids,
+            itemDetailMap,
+            playerLevels,
+            compareEquipment,
+            teaHridsForRound,
+            baseline,
+            baselineHasMissingPrice,
+            xpBaseline,
+            goldBaseline
+        );
+        slots = roundOutcome.slots;
+        optimalEquipmentAtMax = roundOutcome.optimalEquipmentAtMax;
+
+        teaResult = findOptimalTeas(
+            skillName,
+            goal,
+            null,
+            null,
+            null,
+            null,
+            optimalEquipmentAtMax,
+            selectedActionHrids,
+            playerLevel
+        );
+        const nextTeaHrids = (teaResult?.optimal?.teas || []).map((tea) => tea.hrid);
+
+        // Fixed point: this round's equipment produced the same winning tea combo it was seeded
+        // with - another round would just rediscover the identical equipment set.
+        const previousTeaHrids = teaHridsForRound;
+        const isSameTeaSet =
+            nextTeaHrids.length === previousTeaHrids.length &&
+            nextTeaHrids.every((hrid) => previousTeaHrids.includes(hrid));
+        if (isSameTeaSet) break;
+        teaHridsForRound = nextTeaHrids;
+    }
+
+    const otherGoal = goal === 'xp' ? 'gold' : 'xp';
+    const otherTeaResult = findOptimalTeas(
+        skillName,
+        otherGoal,
         null,
         null,
         null,
@@ -517,6 +681,8 @@ export function optimizeSkill(skillName, playerLevel, selectedActionHrids = null
         selectedActionHrids,
         playerLevel
     );
+    const xpTeaResult = goal === 'xp' ? teaResult : otherTeaResult;
+    const goldTeaResult = goal === 'gold' ? teaResult : otherTeaResult;
 
     return {
         skill: skillName,

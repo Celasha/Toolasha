@@ -4,7 +4,11 @@
  */
 
 import dataManager from '../core/data-manager.js';
-import { calculateEfficiencyBreakdown, calculateEfficiencyMultiplier } from './efficiency.js';
+import {
+    calculateEfficiencyBreakdown,
+    calculateEfficiencyMultiplier,
+    getActionEfficiencyContext,
+} from './efficiency.js';
 import { calculateExperienceMultiplier } from './experience-parser.js';
 import { getDrinkConcentration } from './tea-parser.js';
 import {
@@ -703,12 +707,36 @@ function getActionsForSkill(skillName, playerLevel, selectedActionHrids = null) 
         const requiredLevel = action.levelRequirement?.level || 1;
         if (playerLevel >= requiredLevel) {
             available.push(action);
+        } else if (selectedActionHrids) {
+            // An explicitly selected action keeps its exact identity in the fixed cohort even
+            // when locked at base level - a tea combination may unlock it (see
+            // isActionExecutable). Only the ordinary "All" listing (selectedActionHrids === null)
+            // pre-filters by base level for display purposes.
+            available.push(action);
         } else {
             excluded.push({ action, reason: 'level', requiredLevel });
         }
     }
 
     return { available, excluded };
+}
+
+/**
+ * Whether an action can actually be performed given the player's base level plus whatever skill
+ * level a tea combination grants for this skill. Only skill-level tea buffs (e.g. Foraging Tea)
+ * raise the effective level far enough to unlock an action outright - the game checks this against
+ * an integer level, so the (possibly fractional, DC-scaled) bonus is floored here. This is a
+ * distinct question from levelEfficiency's continuous, unfloored math (calculateEfficiencyBreakdown),
+ * which still applies unchanged once an action is confirmed executable.
+ * @param {Object} action - Action detail object
+ * @param {number} playerLevel
+ * @param {number} teaSkillLevelBonus - This skill's tea level bonus for the combination being tested
+ * @returns {boolean}
+ */
+function isActionExecutable(action, playerLevel, teaSkillLevelBonus) {
+    const requiredLevel = action.levelRequirement?.level || 1;
+    if (playerLevel >= requiredLevel) return true;
+    return Math.floor(playerLevel + (teaSkillLevelBonus || 0)) >= requiredLevel;
 }
 
 /**
@@ -769,22 +797,54 @@ function calculateTeaCostPerHour(teaHrids, drinkConcentration) {
 }
 
 /**
- * Get other efficiency sources (non-tea)
+ * Community efficiency buff (percentage) for an action type - the one piece of
+ * getActionEfficiencyContext's contract that's caller-computed (see its own jsdoc), matching the
+ * same formula/cache-free lookup profit-calculator.js/gathering-profit.js already use.
+ * @param {string} actionType
+ * @param {boolean} isProduction
+ * @param {Object} gameData
+ * @returns {number}
+ */
+function getCommunityEfficiencyForActionType(actionType, isProduction, gameData) {
+    const communityBuffType = isProduction
+        ? '/community_buff_types/production_efficiency'
+        : '/community_buff_types/efficiency';
+    const level = dataManager.getCommunityBuffLevel(communityBuffType);
+    if (!level) return 0;
+
+    const buffDef = gameData?.communityBuffTypeDetailMap?.[communityBuffType];
+    if (!buffDef?.usableInActionTypeMap?.[actionType] || !buffDef?.buff) return 0;
+
+    const baseBonus = (buffDef.buff.flatBoost || 0) * 100;
+    const levelBonus = (level - 1) * (buffDef.buff.flatBoostLevelBonus || 0) * 100;
+    return baseBonus + levelBonus;
+}
+
+/**
+ * Get other (non-tea) efficiency sources for an action type - house, community, achievement,
+ * personal, guild (Force/Tempo), and the non-tea share of gathering/processing/gourmet.
+ *
+ * FAIL D / OPT-28: previously this independently re-collected all of these from dataManager
+ * itself, duplicating the exact same house/achievement/personal/guild logic
+ * getActionEfficiencyContext() already owns for profit-calculator.js and gathering-profit.js -
+ * two independent implementations of the same math that could silently drift apart. Now sourced
+ * from that one shared function instead, with drinksOverride: [] so its own tea-derived fields
+ * stay at zero - tea-optimizer tracks the searched/hypothetical tea combo's contribution
+ * separately via parseTeaBuffs(), which is what makes it a tea *search*.
+ *
+ * None of these values depend on equipment, skill level, or the specific action beyond its
+ * actionType, so a minimal synthetic action is sufficient - this keeps the call decoupled from
+ * whichever specific candidate/action happens to be under evaluation.
  * @param {string} actionType - Action type HRID
+ * @param {boolean} isProduction
  * @returns {Object} Other efficiency values
  */
-function getOtherEfficiencySources(actionType) {
-    const _equipment = dataManager.getEquipment();
-    const houseRoomsMap = dataManager.getHouseRooms();
-    const houseRooms = houseRoomsMap ? Array.from(houseRoomsMap.values()) : [];
+function buildNonTeaEfficiencySources(actionType, isProduction) {
     const gameData = dataManager.getInitClientData();
-
     const result = {
         house: 0,
-        equipment: 0,
         community: 0,
         achievement: 0,
-        wisdom: 0,
         gathering: 0,
         processing: 0,
         gourmet: 0,
@@ -792,83 +852,30 @@ function getOtherEfficiencySources(actionType) {
         guild: 0,
         speed: 0,
     };
-
     if (!gameData) return result;
 
-    // House efficiency
-    if (houseRooms) {
-        for (const room of houseRooms) {
-            const roomDetail = gameData.houseRoomDetailMap?.[room.houseRoomHrid];
-            if (roomDetail?.usableInActionTypeMap?.[actionType]) {
-                result.house += (room.level || 0) * 1.5;
-            }
-        }
-    }
+    const communityEfficiency = getCommunityEfficiencyForActionType(actionType, isProduction, gameData);
+    const representativeAction = { type: actionType, baseTimeCost: 1e9, levelRequirement: { level: 1 } };
+    const effCtx = getActionEfficiencyContext(representativeAction, {
+        isProduction,
+        gameData,
+        communityEfficiency,
+        equipmentOverride: new Map(),
+        drinksOverride: [],
+        skillLevelOverride: 1,
+    });
 
-    // Community efficiency buff - use production_efficiency for production skills
-    // Match the tile's calculation from profit-calculator.js
-    const isProductionType = PRODUCTION_SKILLS.some((skill) => actionType.includes(skill));
-    const communityBuffType = isProductionType
-        ? '/community_buff_types/production_efficiency'
-        : '/community_buff_types/efficiency';
-    const communityEffLevel = dataManager.getCommunityBuffLevel(communityBuffType);
-    if (communityEffLevel) {
-        // Get buff definition from game data for accurate calculation
-        const buffDef = gameData.communityBuffTypeDetailMap?.[communityBuffType];
-        if (buffDef?.usableInActionTypeMap?.[actionType] && buffDef?.buff) {
-            // Formula: flatBoost + (level - 1) × flatBoostLevelBonus
-            const baseBonus = (buffDef.buff.flatBoost || 0) * 100;
-            const levelBonus = (communityEffLevel - 1) * (buffDef.buff.flatBoostLevelBonus || 0) * 100;
-            result.community = baseBonus + levelBonus;
-        } else {
-            // Fallback to old formula if buff doesn't apply to this action
-            result.community = 0;
-        }
-    }
+    const { communityGathering = 0, achievementGathering = 0, personalGathering = 0 } = effCtx.gatheringDetails ?? {};
 
-    // Community gathering buff
-    const communityGatheringLevel = dataManager.getCommunityBuffLevel('/community_buff_types/gathering_quantity');
-    if (communityGatheringLevel) {
-        result.gathering = 0.2 + (communityGatheringLevel - 1) * 0.005;
-    }
-
-    // Achievement gathering buff (stacks with community gathering)
-    const achievementGathering = dataManager.getAchievementBuffFlatBoost(actionType, '/buff_types/gathering');
-    result.gathering += achievementGathering;
-
-    // Personal buff (seal) gathering — stacks with community/achievement gathering
-    result.gathering += dataManager.getPersonalBuffFlatBoost(actionType, '/buff_types/gathering');
-
-    // Community wisdom buff
-    const communityWisdomLevel = dataManager.getCommunityBuffLevel('/community_buff_types/experience');
-    if (communityWisdomLevel) {
-        result.wisdom = 20 + (communityWisdomLevel - 1) * 0.5;
-    }
-
-    // Achievement buffs
-    result.achievement = dataManager.getAchievementBuffFlatBoost(actionType, '/buff_types/efficiency') * 100;
-
-    // Personal buffs (Labyrinth seals) — Efficiency, Action Speed, Processing, Gourmet
-    result.personal = dataManager.getPersonalBuffFlatBoost(actionType, '/buff_types/efficiency') * 100;
-    result.processing += dataManager.getPersonalBuffFlatBoost(actionType, '/buff_types/processing');
-    result.gourmet += dataManager.getPersonalBuffFlatBoost(actionType, '/buff_types/gourmet');
-    const personalSpeed = dataManager.getPersonalBuffFlatBoost(actionType, '/buff_types/action_speed');
-
-    // Guild buffs (Shrines) — Force -> efficiency, Tempo -> action_speed
-    const guildBuffs = dataManager.characterData?.guildActionTypeBuffsMap?.[actionType] || [];
-    result.guild = guildBuffs.reduce(
-        (sum, b) =>
-            b.typeHrid === '/buff_types/efficiency' ? sum + ((b.flatBoost || 0) + (b.ratioBoost || 0)) * 100 : sum,
-        0
-    );
-    const guildSpeed = guildBuffs.reduce(
-        (sum, b) => (b.typeHrid === '/buff_types/action_speed' ? sum + (b.flatBoost || 0) + (b.ratioBoost || 0) : sum),
-        0
-    );
-    result.speed = personalSpeed + guildSpeed;
-
-    // Equipment efficiency (simplified - would need full parser for accuracy)
-    // For now, we'll skip this as it requires more complex parsing
+    result.house = effCtx.houseEfficiency;
+    result.community = communityEfficiency;
+    result.achievement = effCtx.achievementEfficiency;
+    result.personal = effCtx.personalEfficiency;
+    result.guild = effCtx.guildEfficiency;
+    result.speed = (effCtx.personalSpeedBonus || 0) + (effCtx.guildSpeedBonus || 0);
+    result.gathering = communityGathering + achievementGathering + personalGathering;
+    result.processing = effCtx.processingBonus || 0;
+    result.gourmet = effCtx.gourmetBonus || 0;
 
     return result;
 }
@@ -983,7 +990,7 @@ export function findOptimalTeas(
 
     // Get other efficiency sources
     const actionType = SKILL_TO_ACTION_TYPE[normalizedSkill];
-    const otherEfficiency = getOtherEfficiencySources(actionType);
+    const otherEfficiency = buildNonTeaEfficiencySources(actionType, isProduction);
 
     // Score each combination
     const results = [];
@@ -996,6 +1003,14 @@ export function findOptimalTeas(
 
     for (const combo of combinations) {
         const buffs = parseTeaBuffs(combo, gameData.itemDetailMap, drinkConcentration);
+
+        // FAIL A / OPT-22/23: an explicitly selected action that's locked at base level stays in
+        // `actions` (see getActionsForSkill) so its exact identity survives in the fixed cohort,
+        // but a combo that doesn't actually unlock it can't legitimately run this scenario at all
+        // - exclude the whole combo rather than silently scoring around the locked action (which
+        // would either shrink the fixed cohort or credit an action that can't be performed).
+        const comboSkillLevelBonus = buffs.skillLevels[normalizedSkill] || 0;
+        if (actions.some((action) => !isActionExecutable(action, playerLevel, comboSkillLevelBonus))) continue;
 
         // Calculate tea cost per hour for this combo
         const teaCostPerHour = calculateTeaCostPerHour(combo, drinkConcentration);
@@ -1195,7 +1210,9 @@ function getRepresentativeAlchemyItemHrid(playerLevel, itemDetailMap) {
  * @param {number} playerLevel
  * @param {Set<string>|null} [selectedActionHrids]
  * @param {string[]} [teaHrids] - Tea item HRIDs to score alongside the equipment (default: none)
- * @returns {number} Average XP/hr or Gold/hr across the selected action cohort
+ * @returns {{score: number, hasMissingPrice: boolean}} Average XP/hr or Gold/hr across the
+ *   selected action cohort, plus whether a required Gold price was unresolved (always false for
+ *   'xp' goal, which never touches market prices)
  */
 export function scoreEquipmentSetup(
     skillName,
@@ -1209,15 +1226,15 @@ export function scoreEquipmentSetup(
     const isGathering = GATHERING_SKILLS.includes(normalizedSkill);
     const isProduction = PRODUCTION_SKILLS.includes(normalizedSkill);
 
-    if (!isGathering && !isProduction) return 0;
+    if (!isGathering && !isProduction) return { score: 0, hasMissingPrice: false };
 
     const gameData = dataManager.getInitClientData();
-    if (!gameData?.itemDetailMap) return 0;
+    if (!gameData?.itemDetailMap) return { score: 0, hasMissingPrice: false };
 
     const actionType = SKILL_TO_ACTION_TYPE[normalizedSkill];
-    if (!actionType) return 0;
+    if (!actionType) return { score: 0, hasMissingPrice: false };
 
-    const otherEfficiency = getOtherEfficiencySources(actionType);
+    const otherEfficiency = buildNonTeaEfficiencySources(actionType, isProduction);
 
     // Add equipment gathering quantity bonus — not captured by the standard speed/efficiency parsers
     if (isGathering) {
@@ -1226,7 +1243,7 @@ export function scoreEquipmentSetup(
     }
 
     const { available: actions } = getActionsForSkill(normalizedSkill, playerLevel, selectedActionHrids);
-    if (!actions.length) return 0;
+    if (!actions.length) return { score: 0, hasMissingPrice: false };
 
     const filteredTeas = (teaHrids || []).filter(Boolean);
     const drinkConcentration = getDrinkConcentration(equipment, gameData.itemDetailMap);
@@ -1253,44 +1270,63 @@ export function scoreEquipmentSetup(
     // fail closed rather than mistakenly returning an XP value for a Gold request (never silently
     // wrong-typed).
     if (normalizedSkill === 'alchemy') {
-        if (goal === 'gold') return 0;
+        if (goal === 'gold') return { score: 0, hasMissingPrice: false };
         const repItemHrid = getRepresentativeAlchemyItemHrid(playerLevel, gameData.itemDetailMap);
-        if (!repItemHrid) return 0;
-        return calculateAlchemyXpPerHour(
-            { actionType: 'decompose', itemHrid: repItemHrid },
-            buffs,
-            playerLevel,
-            otherEfficiency,
-            calcContext
-        );
+        if (!repItemHrid) return { score: 0, hasMissingPrice: false };
+        return {
+            score: calculateAlchemyXpPerHour(
+                { actionType: 'decompose', itemHrid: repItemHrid },
+                buffs,
+                playerLevel,
+                otherEfficiency,
+                calcContext
+            ),
+            hasMissingPrice: false,
+        };
     }
 
     let totalScore = 0;
     let count = 0;
+    let hasMissingPrice = false;
+    const teaSkillLevelBonus = buffs.skillLevels[normalizedSkill] || 0;
 
     for (const action of actions) {
+        // FAIL A: an explicitly selected action that's locked at base level stays in `actions`
+        // (see getActionsForSkill). This fixed tea combination isn't being searched here, so if it
+        // doesn't unlock the action, that action simply can't run under this setup - score it as 0
+        // rather than crediting a reduced-but-nonzero rate for an action that couldn't execute at
+        // all, while still counting it in the fixed-cohort divisor below.
+        if (!isActionExecutable(action, playerLevel, teaSkillLevelBonus)) {
+            count++;
+            continue;
+        }
+
         let score;
         if (goal === 'xp') {
             score = calculateXpPerHour(action, buffs, playerLevel, otherEfficiency, calcContext);
         } else if (isGathering) {
-            score = calculateGatheringGoldPerHour(
+            const goldResult = calculateGatheringGoldPerHour(
                 action,
                 buffs,
                 playerLevel,
                 otherEfficiency,
                 gameData,
                 calcContext
-            ).profitPerHour;
+            );
+            score = goldResult.profitPerHour;
+            if (goldResult.hasMissingPrice) hasMissingPrice = true;
             if (filteredTeas.length) score -= teaCostPerHour;
         } else {
-            score = calculateProductionGoldPerHour(
+            const goldResult = calculateProductionGoldPerHour(
                 action,
                 buffs,
                 playerLevel,
                 otherEfficiency,
                 gameData,
                 calcContext
-            ).profitPerHour;
+            );
+            score = goldResult.profitPerHour;
+            if (goldResult.hasMissingPrice) hasMissingPrice = true;
             if (filteredTeas.length) score -= teaCostPerHour;
         }
 
@@ -1300,7 +1336,7 @@ export function scoreEquipmentSetup(
         count++;
     }
 
-    return count > 0 ? totalScore / count : 0;
+    return { score: count > 0 ? totalScore / count : 0, hasMissingPrice };
 }
 
 /**
@@ -1418,7 +1454,7 @@ export function calculateSkillPerformance(skillName, equipment, teaHrids, player
     const drinkConcentration = getDrinkConcentration(equipment, gameData.itemDetailMap);
     const buffs = parseTeaBuffs(filteredTeas, gameData.itemDetailMap, drinkConcentration);
 
-    const otherEfficiency = getOtherEfficiencySources(actionType);
+    const otherEfficiency = buildNonTeaEfficiencySources(actionType, isProduction);
     if (isGathering) {
         const equipGathering = parseGatheringQuantityBonus(equipment, gameData.itemDetailMap);
         if (equipGathering > 0) otherEfficiency.gathering = (otherEfficiency.gathering || 0) + equipGathering;
@@ -1430,8 +1466,14 @@ export function calculateSkillPerformance(skillName, equipment, teaHrids, player
     let totalXp = 0;
     let totalGold = 0;
     let hasMissingPrice = teaCost.hasMissingPrice;
+    const teaSkillLevelBonus = buffs.skillLevels[normalizedSkill] || 0;
 
     for (const action of actions) {
+        // FAIL A: this fixed drink selection isn't a search - if it doesn't unlock an explicitly
+        // selected but base-locked action, that action can't run at all under this setup. Credit
+        // it as 0 rather than a reduced-but-nonzero rate, but keep it in the fixed-cohort divisor.
+        if (!isActionExecutable(action, playerLevel, teaSkillLevelBonus)) continue;
+
         totalXp += calculateXpPerHour(action, buffs, playerLevel, otherEfficiency, calcContext);
 
         const goldResult = isGathering
