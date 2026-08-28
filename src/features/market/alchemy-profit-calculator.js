@@ -378,6 +378,127 @@ class AlchemyProfitCalculator {
         return best;
     }
 
+    /**
+     * Price-independent Alchemy action metrics: action time, efficiency, action speed, and
+     * success rate. Deliberately performs no market price lookups for the item being processed,
+     * so callers (inline XP/hour, Action Speed & Time, Level Progress) keep working when market
+     * prices are unavailable - a marketless Iron Cow character, or any item with no listed price -
+     * unlike calculateCoinifyProfit/calculateDecomposeProfit/calculateTransmuteProfit, which
+     * return null in that case because they also compute market-valued Profitability.
+     * Uses the live-equipped catalyst/tea (via _liveSetupCombo), matching how the action panel's
+     * own success rate is derived, not a profit-maximizing search.
+     * @param {string} itemHrid - Item HRID being processed
+     * @param {'coinify'|'decompose'|'transmute'} actionType - Alchemy action type
+     * @returns {Object|null} { actionType, itemHrid, actionTime, actionsPerHour, efficiency,
+     *   efficiencyBreakdown, actionSpeedBreakdown, successRate, successRateBreakdown, pricingMode }
+     *   or null if the item/action data itself is unavailable or not of the given type
+     */
+    calculateAlchemyActionMetrics(itemHrid, actionType) {
+        try {
+            const gameData = dataManager.getInitClientData();
+            const itemDetails = dataManager.getItemDetails(itemHrid);
+            if (!gameData || !itemDetails || !itemDetails.alchemyDetail) {
+                return null;
+            }
+
+            let baseSuccessRate;
+            let levelPenalty = 0;
+            let actionHrid;
+
+            if (actionType === 'coinify') {
+                if (itemDetails.alchemyDetail.isCoinifiable !== true) return null;
+                baseSuccessRate = BASE_SUCCESS_RATES.COINIFY;
+                actionHrid = '/actions/alchemy/coinify';
+            } else if (actionType === 'decompose') {
+                if (!itemDetails.alchemyDetail.decomposeItems) return null;
+                baseSuccessRate = BASE_SUCCESS_RATES.DECOMPOSE;
+                actionHrid = '/actions/alchemy/decompose';
+            } else if (actionType === 'transmute') {
+                if (!itemDetails.alchemyDetail.transmuteDropTable) return null;
+                baseSuccessRate = itemDetails.alchemyDetail.transmuteSuccessRate || 0;
+                if (baseSuccessRate === 0) return null;
+
+                // Under-level penalty: perLevel × (alchemyLevel - itemLevel) where perLevel = 0.9 / itemLevel
+                const itemLevel = itemDetails.itemLevel || 1;
+                const skills = dataManager.getSkills();
+                const alchemySkill = skills?.find((s) => s.skillHrid === '/skills/alchemy');
+                const alchemyLevel = alchemySkill?.level || 1;
+                levelPenalty = alchemyLevel < itemLevel ? (0.9 / itemLevel) * (alchemyLevel - itemLevel) : 0;
+                actionHrid = '/actions/alchemy/transmute';
+            } else {
+                return null;
+            }
+
+            const actionDetails = gameData.actionDetailMap[actionHrid];
+            if (!actionDetails) {
+                return null;
+            }
+
+            const pricingMode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
+
+            // Alchemy uses item level (not action requirement) for efficiency calculation
+            const actionStats = calculateActionStats(actionDetails, {
+                skills: dataManager.getSkills(),
+                equipment: dataManager.getEquipment(),
+                itemDetailMap: gameData.itemDetailMap,
+                includeCommunityBuff: true,
+                includeBreakdown: true,
+                levelRequirementOverride: itemDetails.itemLevel || 1,
+            });
+            const { actionTime, totalEfficiency, efficiencyBreakdown } = actionStats;
+
+            const equipment = dataManager.getEquipment();
+            const speedBonus = parseEquipmentSpeedBonuses(equipment, actionDetails.type, gameData.itemDetailMap);
+            const allSpeedBonuses = debugEquipmentSpeedBonuses(equipment, gameData.itemDetailMap);
+            const skillName = actionDetails.type.replace('/action_types/', '');
+            const skillSpecificSpeed = skillName + 'Speed';
+            const relevantSpeeds = allSpeedBonuses.filter(
+                (item) => item.speedType === skillSpecificSpeed || item.speedType === 'skillingSpeed'
+            );
+            const actionSpeedBreakdown = {
+                total: speedBonus,
+                equipment: speedBonus,
+                tea: 0, // TODO: Add tea speed bonuses when tea-parser supports it
+                equipmentDetails: relevantSpeeds.map((item) => ({
+                    name: item.itemName,
+                    enhancementLevel: item.enhancementLevel,
+                    speedBonus: item.scaledBonus,
+                })),
+                teaDetails: [],
+            };
+
+            const efficiencyDecimal = totalEfficiency / 100;
+            const actionsPerHourWithEfficiency = calculateActionsPerHour(actionTime) * (1 + efficiencyDecimal);
+
+            const combo = this._liveSetupCombo({
+                baseSuccessRate,
+                actionsPerHour: actionsPerHourWithEfficiency,
+                efficiencyDecimal,
+                actionTime,
+                alchemyBonusRevenue: 0,
+                computeNetProfit: () => 0,
+                computeTeaCost: () => 0,
+                levelPenalty,
+            });
+
+            return {
+                actionType,
+                itemHrid,
+                actionTime,
+                actionsPerHour: actionsPerHourWithEfficiency,
+                efficiency: efficiencyDecimal,
+                efficiencyBreakdown,
+                actionSpeedBreakdown,
+                successRate: combo.successRate,
+                successRateBreakdown: combo.successRateBreakdown,
+                pricingMode,
+            };
+        } catch (error) {
+            console.error('[AlchemyProfitCalculator] Failed to calculate alchemy action metrics:', error);
+            return null;
+        }
+    }
+
     _liveSetupCombo({
         baseSuccessRate,
         actionsPerHour,

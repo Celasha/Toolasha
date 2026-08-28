@@ -36,14 +36,14 @@ export class AlchemyProfitDisplay {
     }
 
     /**
-     * Initialize the display system
+     * Initialize the display system.
+     * Not gated on `alchemy_profitDisplay` - that setting only controls the Profitability
+     * section (see createDisplay). Inline XP/hr, Action Speed & Time and Level Progress are
+     * non-market metrics owned by this module and must keep working regardless, including for
+     * Iron Cow characters where `alchemy_profitDisplay` is force-disabled.
      */
     initialize() {
         if (this.isInitialized) {
-            return;
-        }
-
-        if (!config.getSetting('alchemy_profitDisplay')) {
             return;
         }
 
@@ -352,11 +352,6 @@ export class AlchemyProfitDisplay {
                 profitData = alchemyProfitCalculator.calculateDecomposeProfit(itemHrid, enhancementLevel, true);
             }
 
-            if (!profitData) {
-                this.removeDisplay();
-                return;
-            }
-
             // Determine action type string for XP calculation
             let actionType = null;
             if (isCoinify) actionType = 'coinify';
@@ -366,8 +361,25 @@ export class AlchemyProfitDisplay {
             // Get item HRID from requirements
             const itemHrid = requirements && requirements.length > 0 ? requirements[0].itemHrid : null;
 
+            // profitData carries Profitability plus the non-market metrics together. When market
+            // prices are unavailable (a missing price, or a marketless Iron Cow character),
+            // calculateCoinifyProfit/DecomposeProfit/TransmuteProfit all return null even though
+            // XP/hr, Action Speed & Time and Level Progress don't need any price data. Fall back
+            // to the price-independent metrics scenario so those three keep rendering -
+            // Profitability alone stays hidden in that case (see createDisplay).
+            const hasProfitData = !!profitData;
+            let metrics = profitData;
+            if (!metrics && actionType && itemHrid) {
+                metrics = alchemyProfitCalculator.calculateAlchemyActionMetrics(itemHrid, actionType);
+            }
+
+            if (!metrics) {
+                this.removeDisplay();
+                return;
+            }
+
             // Always recreate display (complex collapsible structure makes refresh difficult)
-            this.createDisplay(infoContainer, profitData, actionType, itemHrid);
+            this.createDisplay(infoContainer, metrics, actionType, itemHrid, hasProfitData);
         } catch (error) {
             console.error('[AlchemyProfitDisplay] Failed to update display:', error);
             this.removeDisplay();
@@ -406,21 +418,88 @@ export class AlchemyProfitDisplay {
     }
 
     /**
-     * Create profit display element with detailed breakdown
+     * Create the Alchemy display: Profitability (market-valued, gated) plus the non-market
+     * metrics (Action Speed & Time, Level Progress, inline XP/hr) that must render regardless.
      * @param {HTMLElement} container - Container to append to
-     * @param {Object} profitData - Profit calculation results from calculateProfit()
+     * @param {Object} metrics - Either full profit data (calculateCoinifyProfit/etc.) or the
+     *   price-independent scenario from calculateAlchemyActionMetrics
      * @param {string} actionType - Alchemy action type ('coinify', 'decompose', or 'transmute')
      * @param {string} itemHrid - Item HRID being processed
+     * @param {boolean} hasProfitData - Whether `metrics` is full market-valued profit data
+     *   (required for Profitability) as opposed to the price-independent fallback scenario
      */
-    createDisplay(container, profitData, actionType, itemHrid) {
+    createDisplay(container, metrics, actionType, itemHrid, hasProfitData) {
         // Remove any existing display
         this.removeDisplay();
 
-        // Check global hide setting
-        if (!config.getSetting('actionPanel_showProfitDetail')) {
-            return;
+        // Profitability is market-valued and stays hidden unless market data is actually
+        // available AND both the Alchemy-specific and global profit-detail settings allow it.
+        // Iron Cow force-disables both settings; missing market data (hasProfitData=false)
+        // fails Profitability closed on its own regardless of the settings.
+        const canShowProfitability =
+            hasProfitData &&
+            config.getSetting('alchemy_profitDisplay') &&
+            config.getSetting('actionPanel_showProfitDetail');
+
+        const profitSection = canShowProfitability ? this.buildProfitabilitySection(metrics) : null;
+        if (profitSection) {
+            container.appendChild(profitSection);
         }
 
+        // Find the Repeat input field for dynamic updates
+        const alchemyComponent = document.querySelector('[class*="SkillActionDetail_alchemyComponent"]');
+        const inputContainer = alchemyComponent?.querySelector('[class*="maxActionCountInput"]');
+        const inputField = inputContainer?.querySelector('input');
+
+        // Cache the input field if available (it gets removed when action starts)
+        if (inputField) {
+            this.cachedInputField = inputField;
+        }
+
+        // Use cached input field if current one is not available
+        const effectiveInputField = inputField || this.cachedInputField;
+
+        // Create Action Speed & Time section - price-independent, always attempted from `metrics`
+        let speedTimeSection = null;
+        if (effectiveInputField && metrics.actionTime && metrics.efficiencyBreakdown) {
+            speedTimeSection = this.createActionSpeedTimeSection(metrics, effectiveInputField);
+            if (speedTimeSection) {
+                speedTimeSection.id = 'mwi-alchemy-speed-time';
+                speedTimeSection.classList.add('mwi-alchemy-speed-time');
+                speedTimeSection.setAttribute('data-mwi-profit-display', 'true');
+                container.appendChild(speedTimeSection);
+            }
+        }
+
+        // Create Level Progress section - price-independent, always attempted from `metrics`
+        let levelProgressSection = null;
+        if (actionType && itemHrid) {
+            levelProgressSection = this.createLevelProgressSection(actionType, itemHrid, metrics);
+            if (levelProgressSection) {
+                levelProgressSection.id = 'mwi-alchemy-level-progress';
+                levelProgressSection.classList.add('mwi-alchemy-level-progress');
+                levelProgressSection.setAttribute('data-mwi-profit-display', 'true');
+                container.appendChild(levelProgressSection);
+            }
+        }
+
+        const alchemyPanel = container.closest('[class*="SkillActionDetail_alchemyComponent"]') || container;
+        this.inlineXpPerHour = this.calculateAlchemyXpPerHour(actionType, itemHrid, metrics);
+        renderInlineXpRate(alchemyPanel, this.inlineXpPerHour, { owner: 'alchemy' });
+
+        // Anchor for checkAndUpdateDisplay's "does anything currently exist" check - independent
+        // of which specific sections rendered, since Profitability alone may be legitimately
+        // absent while the non-market sections are present.
+        this.displayElement = profitSection || speedTimeSection || levelProgressSection;
+    }
+
+    /**
+     * Build the market-valued Profitability section (revenue/costs/modifiers breakdown).
+     * Does not append to the DOM - the caller decides whether/where to mount it.
+     * @param {Object} profitData - Full profit data from calculateCoinifyProfit/DecomposeProfit/TransmuteProfit
+     * @returns {HTMLElement|null} Profitability section element, or null if data is incomplete
+     */
+    buildProfitabilitySection(profitData) {
         // Validate required data
         if (
             !profitData ||
@@ -430,7 +509,7 @@ export class AlchemyProfitDisplay {
             !profitData.consumableCosts
         ) {
             console.error('[AlchemyProfitDisplay] Missing required profit data fields:', profitData);
-            return;
+            return null;
         }
 
         // Extract summary values
@@ -933,49 +1012,7 @@ export class AlchemyProfitDisplay {
         profitSection.classList.add('mwi-alchemy-profit');
         profitSection.setAttribute('data-mwi-profit-display', 'true');
 
-        // Append to container
-        container.appendChild(profitSection);
-
-        // Find the Repeat input field for dynamic updates
-        const alchemyComponent = document.querySelector('[class*="SkillActionDetail_alchemyComponent"]');
-        const inputContainer = alchemyComponent?.querySelector('[class*="maxActionCountInput"]');
-        const inputField = inputContainer?.querySelector('input');
-
-        // Cache the input field if available (it gets removed when action starts)
-        if (inputField) {
-            this.cachedInputField = inputField;
-        }
-
-        // Use cached input field if current one is not available
-        const effectiveInputField = inputField || this.cachedInputField;
-
-        // Create Action Speed & Time section (after profitability)
-        if (effectiveInputField && profitData.actionTime && profitData.efficiencyBreakdown) {
-            const speedTimeSection = this.createActionSpeedTimeSection(profitData, effectiveInputField);
-            if (speedTimeSection) {
-                speedTimeSection.id = 'mwi-alchemy-speed-time';
-                speedTimeSection.classList.add('mwi-alchemy-speed-time');
-                speedTimeSection.setAttribute('data-mwi-profit-display', 'true');
-                container.appendChild(speedTimeSection);
-            }
-        }
-
-        // Create Level Progress section (after action speed)
-        if (actionType && itemHrid) {
-            const levelProgressSection = this.createLevelProgressSection(actionType, itemHrid, profitData);
-            if (levelProgressSection) {
-                levelProgressSection.id = 'mwi-alchemy-level-progress';
-                levelProgressSection.classList.add('mwi-alchemy-level-progress');
-                levelProgressSection.setAttribute('data-mwi-profit-display', 'true');
-                container.appendChild(levelProgressSection);
-            }
-        }
-
-        const alchemyPanel = container.closest('[class*="SkillActionDetail_alchemyComponent"]') || container;
-        this.inlineXpPerHour = this.calculateAlchemyXpPerHour(actionType, itemHrid, profitData);
-        renderInlineXpRate(alchemyPanel, this.inlineXpPerHour, { owner: 'alchemy' });
-
-        this.displayElement = profitSection;
+        return profitSection;
     }
 
     /**
@@ -1422,15 +1459,19 @@ export class AlchemyProfitDisplay {
     }
 
     /**
-     * Remove profit display
+     * Remove all owned display sections (Profitability, Action Speed & Time, Level Progress)
+     * and the inline XP/hr rate. Removes each by its own id/data attribute rather than only via
+     * `this.displayElement`, since that anchor may point at any one of the three sections
+     * depending on which rendered (Profitability alone is legitimately absent).
      */
     removeDisplay() {
         removeInlineXpRate(document, 'alchemy');
         this.inlineXpPerHour = 0;
 
-        // Remove profitability section
-        if (this.displayElement && this.displayElement.parentNode) {
-            this.displayElement.remove();
+        // Remove Profitability section
+        const profitSection = document.getElementById('mwi-alchemy-profit');
+        if (profitSection && profitSection.parentNode) {
+            profitSection.remove();
         }
         this.displayElement = null;
 
