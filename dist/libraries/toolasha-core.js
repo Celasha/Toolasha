@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.97.2
+ * Version: 2.98.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1741,6 +1741,15 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Displays top order price and total value on each listing in My Listings table',
+                },
+                market_collectableListingsToTop: {
+                    id: 'market_collectableListingsToTop',
+                    label: 'Market: Move collectable listings to top of My Listings',
+                    type: 'checkbox',
+                    default: true,
+                    help:
+                        'Listings with something to collect are moved to the top so you can see what "Collect All" ' +
+                        'grabbed without scrolling. Manually sorting a column takes over until sort is cleared',
                 },
                 market_listingRefreshNavigator: {
                     id: 'market_listingRefreshNavigator',
@@ -6026,6 +6035,13 @@
                     category: 'Market',
                     description: 'Shows top order price, total value, and listing age on My Listings',
                     settingKey: 'market_showListingPrices',
+                },
+                market_collectableListingsToTop: {
+                    enabled: true,
+                    name: 'Collectable Listings to Top',
+                    category: 'Market',
+                    description: 'Moves listings with something to collect to the top of My Listings',
+                    settingKey: 'market_collectableListingsToTop',
                 },
                 market_showEstimatedListingAge: {
                     enabled: true,
