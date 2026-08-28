@@ -113,6 +113,13 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'collectableListingsSort',
+            name: 'Collectable Listings Sort',
+            category: 'Market',
+            module: Market.collectableListingsSort,
+            async: false,
+        },
+        {
             key: 'queueLengthEstimator',
             name: 'Queue Length Estimator',
             category: 'Market',

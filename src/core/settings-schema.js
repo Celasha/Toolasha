@@ -1088,6 +1088,15 @@ export const settingsGroups = {
                 default: true,
                 help: 'Displays top order price and total value on each listing in My Listings table',
             },
+            market_collectableListingsToTop: {
+                id: 'market_collectableListingsToTop',
+                label: 'Market: Move collectable listings to top of My Listings',
+                type: 'checkbox',
+                default: true,
+                help:
+                    'Listings with something to collect are moved to the top so you can see what "Collect All" ' +
+                    'grabbed without scrolling. Manually sorting a column takes over until sort is cleared',
+            },
             market_listingRefreshNavigator: {
                 id: 'market_listingRefreshNavigator',
                 label: 'Market: Show Refresh/Next buttons for cycling My Listings',

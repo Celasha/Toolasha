@@ -128,6 +128,13 @@ class Config {
                 description: 'Shows top order price, total value, and listing age on My Listings',
                 settingKey: 'market_showListingPrices',
             },
+            market_collectableListingsToTop: {
+                enabled: true,
+                name: 'Collectable Listings to Top',
+                category: 'Market',
+                description: 'Moves listings with something to collect to the top of My Listings',
+                settingKey: 'market_collectableListingsToTop',
+            },
             market_showEstimatedListingAge: {
                 enabled: true,
                 name: 'Estimated Listing Age',

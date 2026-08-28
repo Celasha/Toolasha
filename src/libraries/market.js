@@ -15,6 +15,7 @@ import autoFillPrice from '../features/market/auto-fill-price.js';
 import autoClickMax from '../features/market/auto-click-max.js';
 import itemCountDisplay from '../features/market/item-count-display.js';
 import listingPriceDisplay from '../features/market/listing-price-display.js';
+import collectableListingsSort from '../features/market/collectable-listings-sort.js';
 import estimatedListingAge from '../features/market/estimated-listing-age.js';
 import queueLengthEstimator from '../features/market/queue-length-estimator.js';
 import marketDepthCap from '../features/market/market-depth-cap.js';
@@ -65,6 +66,7 @@ toolashaRoot.Market = {
     autoClickMax,
     itemCountDisplay,
     listingPriceDisplay,
+    collectableListingsSort,
     estimatedListingAge,
     queueLengthEstimator,
     marketDepthCap,
