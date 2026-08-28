@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.98.1](https://github.com/Celasha/Toolasha/compare/v2.98.0...v2.98.1) (2026-08-28)
+
+
+### Bug Fixes
+
+* catch up Character Activity Status when it mounts before observer readiness (TLA-025) ([a84bf98](https://github.com/Celasha/Toolasha/commit/a84bf98b399fa01b8525fa268b85ce60c987c05a))
+* close remaining TLA-024 acceptance gaps in Skilling Optimizer/Simulator ([6626c0c](https://github.com/Celasha/Toolasha/commit/6626c0c5dcf59ca5db7328318e8ac6a329572c92))
+* decouple Alchemy XP/speed/progress from alchemy_profitDisplay ([f7cf974](https://github.com/Celasha/Toolasha/commit/f7cf974dfc645ad2eb99f9ef684d4a9f986b177b))
+
 ## [2.98.0](https://github.com/Celasha/Toolasha/compare/v2.97.2...v2.98.0) (2026-08-28)
 
 ### Features
