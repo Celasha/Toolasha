@@ -176,4 +176,30 @@ describe('collectableListingsSort.initialize()', () => {
         const statuses = Array.from(table.querySelectorAll('tbody tr')).map((r) => r.children[0].textContent);
         expect(statuses).toEqual(['Filled', 'Active']);
     });
+
+    test('reorders when a row gains a Collect button in place (React reuses the <tr>, no add/remove)', async () => {
+        const table = buildTable([
+            { status: 'Active', hasCollect: false },
+            { status: 'Active', hasCollect: false },
+        ]);
+
+        collectableListingsSort.initialize();
+
+        // Simulate the game flipping the second listing to Filled: React mutates the existing
+        // <tr>'s cells in place rather than replacing the row, so the tbody's own childList
+        // never changes — only a subtree-scoped observer sees this.
+        const secondRow = table.querySelectorAll('tbody tr')[1];
+        secondRow.children[0].textContent = 'Filled';
+        const collectCell = document.createElement('td');
+        const btn = document.createElement('button');
+        btn.textContent = 'Collect';
+        collectCell.appendChild(btn);
+        secondRow.replaceChild(collectCell, secondRow.children[1]);
+
+        await Promise.resolve();
+        await Promise.resolve();
+
+        const statuses = Array.from(table.querySelectorAll('tbody tr')).map((r) => r.children[0].textContent);
+        expect(statuses).toEqual(['Filled', 'Active']);
+    });
 });

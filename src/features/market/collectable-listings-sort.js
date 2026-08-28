@@ -56,8 +56,11 @@ class CollectableListingsSort {
         }
 
         if (!this.tbodyObservers.has(tbody)) {
+            // subtree: true is required — React reuses the same <tr> when a listing's status
+            // flips to Filled and just swaps in a Collect button inside it, rather than
+            // replacing the row itself, so a childList-only watch on tbody never sees it.
             const observer = new MutationObserver(() => this._reorder(tableNode));
-            observer.observe(tbody, { childList: true });
+            observer.observe(tbody, { childList: true, subtree: true });
             this.tbodyObservers.set(tbody, observer);
             this.cleanupRegistry.registerCleanup(() => observer.disconnect());
         }
