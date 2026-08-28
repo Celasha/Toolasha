@@ -146,6 +146,7 @@ class CharacterSelectRenderer {
     constructor() {
         this.isWatching = false;
         this.unregisterObserver = null;
+        this.unregisterReady = null;
         this.refreshTimer = null;
         this.trackedSlots = new Map(); // characterId -> {slotElement, character}
     }
@@ -169,13 +170,21 @@ class CharacterSelectRenderer {
             (node) => this.onCharacterSelectDomReady(node)
         );
 
-        // The userscript can attach after Character Select has already finished loading (e.g. a
-        // late-attaching context, or a re-render of this module). Do one bounded catch-up scan
-        // here rather than waiting indefinitely for another root/slots insertion; later async
-        // slot arrival is still handled by the observer above. Not a repeated/polling scan - runs
-        // exactly once, guarded by the isWatching check above.
+        // @run-at document-start means domObserver.start() can return before document.body exists.
+        // If native Character Select fully mounts during that readiness gap, neither its root nor
+        // slots insertion can be observed. Subscribe to the centralized observer's actual-ready
+        // lifecycle and perform the bounded catch-up only after it is attached to the current body.
+        // If it is already observing, onReady() invokes this immediately.
+        this.unregisterReady = domObserver.onReady('characterActivityStatusCatchUp', () => this.catchUpExistingRoot());
+    }
+
+    /**
+     * Bounded catch-up after the shared DOM observer is actually ready.
+     */
+    async catchUpExistingRoot() {
+        if (!this.isWatching) return;
         const existingRoot = document.querySelector(`[class*="${CHARACTER_SELECT_ROOT_CLASS}"]`);
-        if (existingRoot) this.onCharacterSelectMounted(existingRoot);
+        if (existingRoot) return this.onCharacterSelectMounted(existingRoot);
     }
 
     /**
@@ -287,6 +296,10 @@ class CharacterSelectRenderer {
         if (this.unregisterObserver) {
             this.unregisterObserver();
             this.unregisterObserver = null;
+        }
+        if (this.unregisterReady) {
+            this.unregisterReady();
+            this.unregisterReady = null;
         }
         this.stopRefreshTimer();
         this.clearAllInjectedBlocks();

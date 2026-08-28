@@ -1,3 +1,4 @@
+/* @vitest-environment jsdom */
 /**
  * Tests for DOMObserver debounce behavior
  */
@@ -122,5 +123,45 @@ describe('DOMObserver debounce', () => {
 
         expect(domObserver.debounceTimers.size).toBe(0);
         expect(domObserver.debouncedLatest.size).toBe(0);
+    });
+});
+
+describe('DOMObserver readiness lifecycle (TLA-025 reopen)', () => {
+    let domObserver;
+
+    beforeEach(async () => {
+        vi.useFakeTimers();
+        vi.resetModules();
+        const mod = await import('./dom-observer.js');
+        domObserver = mod.default;
+    });
+
+    afterEach(() => {
+        domObserver?.stop();
+        vi.useRealTimers();
+    });
+
+    test('onReady registered before start is notified once observing actually starts', () => {
+        const callback = vi.fn();
+        const unregister = domObserver.onReady('late-body-catch-up', callback);
+
+        // Do not depend on mutation delivery: readiness is a distinct lifecycle signal.
+        domObserver.start();
+
+        expect(domObserver.isObserving).toBe(true);
+        expect(callback).toHaveBeenCalledTimes(1);
+        unregister();
+    });
+
+    test('onReady registered after observer is active catches up immediately and unregisters cleanly', () => {
+        domObserver.start();
+        const callback = vi.fn();
+        const unregister = domObserver.onReady('already-ready', callback);
+
+        expect(callback).toHaveBeenCalledTimes(1);
+        expect(domObserver.getStats().readyHandlerCount).toBe(1);
+
+        unregister();
+        expect(domObserver.getStats().readyHandlerCount).toBe(0);
     });
 });

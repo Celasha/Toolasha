@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     onClassRegistrations: [],
+    onReadyRegistrations: [],
+    domReady: false,
     resolvedSlots: null,
     accountPrefs: { enabled: true, dateFormat: 'MM-DD', timeFormat: '24hour' },
     activityRecords: new Map(),
@@ -29,6 +31,14 @@ vi.mock('../../core/dom-observer.js', () => ({
             };
             mocks.onClassRegistrations.push(registration);
             return vi.fn();
+        }),
+        onReady: vi.fn((_name, callback) => {
+            const registration = { callback, active: true };
+            mocks.onReadyRegistrations.push(registration);
+            if (mocks.domReady) callback();
+            return vi.fn(() => {
+                registration.active = false;
+            });
         }),
     },
 }));
@@ -281,6 +291,8 @@ describe('idempotent Character Select injection and lifecycle', () => {
     beforeEach(() => {
         document.body.innerHTML = '';
         mocks.onClassRegistrations = [];
+        mocks.onReadyRegistrations = [];
+        mocks.domReady = true;
         mocks.resolvedSlots = null;
         mocks.accountPrefs = { enabled: true, dateFormat: 'MM-DD', timeFormat: '24hour' };
         mocks.activityRecords = new Map();
@@ -409,5 +421,36 @@ describe('idempotent Character Select injection and lifecycle', () => {
 
         expect(slot.querySelectorAll('.toolasha-character-activity-status')).toHaveLength(1);
         expect(slot.textContent).toContain('Character is idle');
+    });
+
+    // TLA-025 REOPEN: at @run-at document-start the shared observer may not be attached yet
+    // because document.body does not exist. Character Select can fully mount during that gap,
+    // producing no observable mutation after the observer finally attaches. Readiness must trigger
+    // a bounded catch-up at the moment observing actually becomes active.
+    test('catches up when Character Select fully mounts before the shared observer becomes ready', async () => {
+        characterSelectRenderer.stopWatching();
+        mocks.domReady = false;
+        document.body.innerHTML = '';
+
+        characterSelectRenderer.startWatching();
+        expect(mocks.onReadyRegistrations).toHaveLength(1);
+
+        // Native UI fully mounts while the central observer is still waiting for body/readiness.
+        const root = buildRoot();
+        const slot = buildSlot(root);
+        mocks.resolvedSlots = [{ slotElement: slot, character: character() }];
+        mocks.activityRecords.set('char-a', record());
+        expect(slot.querySelector('.toolasha-character-activity-status')).toBeNull();
+
+        // The real DOMObserver emits readiness only after it actually attaches to document.body.
+        mocks.domReady = true;
+        await mocks.onReadyRegistrations[0].callback();
+
+        expect(slot.querySelectorAll('.toolasha-character-activity-status')).toHaveLength(1);
+        expect(slot.textContent).toContain('Character is idle');
+
+        // Re-notification/remount catch-up remains idempotent.
+        await mocks.onReadyRegistrations[0].callback();
+        expect(slot.querySelectorAll('.toolasha-character-activity-status')).toHaveLength(1);
     });
 });
