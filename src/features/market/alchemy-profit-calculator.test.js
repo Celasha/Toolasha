@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
 
 const marketPrices = {};
@@ -174,5 +174,95 @@ describe('calculateDecomposeProfit', () => {
         expect(profit.requirementCosts[0]).toMatchObject({ count: 1, costPerAction: 1000 });
         const outputDrop = profit.dropRevenues.find((d) => d.itemHrid === OUTPUT_HRID);
         expect(outputDrop.count).toBe(10);
+    });
+});
+
+describe('actionContext atomicity for Coinify/Decompose/Transmute (TLA-027)', () => {
+    // The Current Action Bar passes an explicit {equipment, drinks} context (resolveCurrentActionContext)
+    // so these calculators must use it instead of independently reading dataManager's live equipment/drinks -
+    // otherwise a caller supplying e.g. saved-loadout equipment could still get live drinks mixed in.
+    const COINIFY_ITEM = '/items/test_context_coinify';
+    const DECOMPOSE_ITEM = '/items/test_context_decompose';
+    const TRANSMUTE_ITEM = '/items/test_context_transmute';
+    const CONTEXT = { equipment: new Map(), drinks: [] };
+
+    function baseActionDetailMap() {
+        return {
+            '/actions/alchemy/coinify': {
+                type: '/action_types/alchemy',
+                baseTimeCost: 20e9,
+                levelRequirement: { level: 1 },
+            },
+            '/actions/alchemy/decompose': {
+                type: '/action_types/alchemy',
+                baseTimeCost: 20e9,
+                levelRequirement: { level: 1 },
+            },
+            '/actions/alchemy/transmute': {
+                type: '/action_types/alchemy',
+                baseTimeCost: 20e9,
+                levelRequirement: { level: 1 },
+            },
+        };
+    }
+
+    beforeEach(() => {
+        dataManagerMock.getEquipment.mockClear();
+        dataManagerMock.getActionDrinkSlots.mockClear();
+    });
+
+    test('calculateCoinifyProfit uses the supplied actionContext instead of reading live equipment/drinks', () => {
+        const itemDetailMap = {
+            [COINIFY_ITEM]: { itemLevel: 5, sellPrice: 10, alchemyDetail: { isCoinifiable: true } },
+        };
+        dataManagerMock.getInitClientData.mockReturnValue({ itemDetailMap, actionDetailMap: baseActionDetailMap() });
+        dataManagerMock.getItemDetails.mockReturnValue(itemDetailMap[COINIFY_ITEM]);
+        marketPrices[COINIFY_ITEM] = 5;
+
+        const profit = alchemyProfitCalculator.calculateCoinifyProfit(COINIFY_ITEM, 0, false, null, CONTEXT);
+
+        expect(profit).not.toBeNull();
+        expect(dataManagerMock.getEquipment).not.toHaveBeenCalled();
+        expect(dataManagerMock.getActionDrinkSlots).not.toHaveBeenCalled();
+    });
+
+    test('calculateDecomposeProfit uses the supplied actionContext instead of reading live equipment/drinks', () => {
+        const itemDetailMap = {
+            [DECOMPOSE_ITEM]: {
+                itemLevel: 5,
+                alchemyDetail: { decomposeItems: [{ itemHrid: '/items/output', count: 1 }] },
+            },
+        };
+        dataManagerMock.getInitClientData.mockReturnValue({ itemDetailMap, actionDetailMap: baseActionDetailMap() });
+        dataManagerMock.getItemDetails.mockReturnValue(itemDetailMap[DECOMPOSE_ITEM]);
+        marketPrices[DECOMPOSE_ITEM] = 5;
+
+        const profit = alchemyProfitCalculator.calculateDecomposeProfit(DECOMPOSE_ITEM, 0, false, null, CONTEXT);
+
+        expect(profit).not.toBeNull();
+        expect(dataManagerMock.getEquipment).not.toHaveBeenCalled();
+        expect(dataManagerMock.getActionDrinkSlots).not.toHaveBeenCalled();
+    });
+
+    test('calculateTransmuteProfit uses the supplied actionContext instead of reading live equipment/drinks', () => {
+        const itemDetailMap = {
+            [TRANSMUTE_ITEM]: {
+                itemLevel: 5,
+                alchemyDetail: {
+                    transmuteDropTable: [{ itemHrid: '/items/output', dropRate: 0.5, minCount: 1, maxCount: 1 }],
+                    transmuteSuccessRate: 0.5,
+                },
+            },
+        };
+        dataManagerMock.getInitClientData.mockReturnValue({ itemDetailMap, actionDetailMap: baseActionDetailMap() });
+        dataManagerMock.getItemDetails.mockReturnValue(itemDetailMap[TRANSMUTE_ITEM]);
+        dataManagerMock.getSkills.mockReturnValue([{ skillHrid: '/skills/alchemy', level: 10 }]);
+        marketPrices[TRANSMUTE_ITEM] = 5;
+
+        const profit = alchemyProfitCalculator.calculateTransmuteProfit(TRANSMUTE_ITEM, false, null, null, CONTEXT);
+
+        expect(profit).not.toBeNull();
+        expect(dataManagerMock.getEquipment).not.toHaveBeenCalled();
+        expect(dataManagerMock.getActionDrinkSlots).not.toHaveBeenCalled();
     });
 });

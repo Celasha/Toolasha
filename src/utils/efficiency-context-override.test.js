@@ -164,3 +164,89 @@ describe('getActionEfficiencyContext hypothetical overrides', () => {
         expect(result.skillLevel).toBe(7);
     });
 });
+
+describe('getActionEfficiencyContext live actionContextOverride (TLA-027)', () => {
+    beforeEach(() => {
+        mocks.skills = [{ skillHrid: '/skills/milking', level: 20 }];
+        mocks.personalBuffs = { '/buff_types/efficiency': 0.05 };
+        mocks.liveEquipment = new Map([['/item_locations/tool', { itemHrid: '/items/live_tool' }]]);
+        mocks.liveDrinks = [{ itemHrid: '/items/live_tea' }];
+        vi.clearAllMocks();
+    });
+
+    test('an explicit actionContextOverride never calls the live/saved resolveActionContext()', () => {
+        const liveContext = {
+            equipment: new Map([['/item_locations/tool', { itemHrid: '/items/current_tool' }]]),
+            drinks: [{ itemHrid: MILKING_TEA }],
+        };
+
+        getActionEfficiencyContext(actionDetails, {
+            isProduction: false,
+            gameData: { itemDetailMap },
+            actionContextOverride: liveContext,
+        });
+
+        expect(resolveActionContext).not.toHaveBeenCalled();
+    });
+
+    test('an explicit actionContextOverride never mixes with the live path - equipment and drinks come from one atomic object', () => {
+        const liveContext = {
+            equipment: new Map([['/item_locations/tool', { itemHrid: '/items/current_tool' }]]),
+            drinks: [{ itemHrid: MILKING_TEA }],
+        };
+        // Live path would otherwise resolve to totally different equipment/drinks.
+        mocks.liveEquipment = new Map([['/item_locations/tool', { itemHrid: '/items/other_tool' }]]);
+        mocks.liveDrinks = [];
+
+        const result = getActionEfficiencyContext(actionDetails, {
+            isProduction: false,
+            gameData: { itemDetailMap },
+            actionContextOverride: liveContext,
+        });
+
+        expect(result.equipment).toBe(liveContext.equipment);
+        // teaSkillLevelBonus only nonzero if the tea in liveContext.drinks was actually used.
+        expect(result.teaSkillLevelBonus).toBe(3);
+    });
+
+    test('actionContextOverride takes priority over a hypothetical equipmentOverride/drinksOverride pairing', () => {
+        const liveContext = {
+            equipment: new Map([['/item_locations/tool', { itemHrid: '/items/current_tool' }]]),
+            drinks: [],
+        };
+        const hypotheticalEquipment = new Map([['/item_locations/tool', { itemHrid: '/items/hypothetical_tool' }]]);
+
+        const result = getActionEfficiencyContext(actionDetails, {
+            isProduction: false,
+            gameData: { itemDetailMap },
+            actionContextOverride: liveContext,
+            equipmentOverride: hypotheticalEquipment,
+            drinksOverride: [{ itemHrid: MILKING_TEA }],
+        });
+
+        expect(result.equipment).toBe(liveContext.equipment);
+        expect(result.teaSkillLevelBonus).toBe(0); // liveContext.drinks is empty, not the hypothetical tea
+    });
+
+    test('actionContextOverride is a genuine parity path: identical equipment/drinks produce byte-for-byte identical output to the live path', () => {
+        const sharedEquipment = new Map();
+        const sharedDrinks = [{ itemHrid: MILKING_TEA }];
+
+        mocks.liveEquipment = sharedEquipment;
+        mocks.liveDrinks = sharedDrinks;
+        const viaLive = getActionEfficiencyContext(actionDetails, {
+            isProduction: false,
+            gameData: { itemDetailMap },
+        });
+
+        const viaOverride = getActionEfficiencyContext(actionDetails, {
+            isProduction: false,
+            gameData: { itemDetailMap },
+            actionContextOverride: { equipment: sharedEquipment, drinks: sharedDrinks },
+        });
+
+        expect(viaOverride.efficiencyBreakdown).toEqual(viaLive.efficiencyBreakdown);
+        expect(viaOverride.actionTime).toBe(viaLive.actionTime);
+        expect(viaOverride.teaSkillLevelBonus).toBe(viaLive.teaSkillLevelBonus);
+    });
+});

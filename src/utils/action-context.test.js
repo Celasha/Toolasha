@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 import config from '../core/config.js';
 import dataManager from '../core/data-manager.js';
 import loadoutState from '../core/loadout-state.js';
-import { resolveActionContext } from './action-context.js';
+import { resolveActionContext, resolveCurrentActionContext } from './action-context.js';
 
 vi.mock('../core/config.js', () => ({
     default: {
@@ -51,6 +51,26 @@ describe('resolveActionContext', () => {
             { itemHrid: '/items/current_tea', count: 5 },
             { itemHrid: '/items/snapshot_tea', count: 3 },
         ]);
+    });
+
+    test('resolveCurrentActionContext ignores saved-loadout mode and returns one current equipment+drinks context', () => {
+        loadoutState.findCalculationSelectionForActionType.mockReturnValue({ status: 'usable', snapshot: snapshot() });
+
+        const result = resolveCurrentActionContext(TYPE);
+
+        expect(result.equipment).toBe(CURRENT_EQ);
+        expect(result.drinks).toEqual(CURRENT_DRINKS);
+        expect(result.source).toBe('current');
+        expect(result.loadoutSelection).toBeNull();
+        expect(loadoutState.findCalculationSelectionForActionType).not.toHaveBeenCalled();
+    });
+
+    test('resolveCurrentActionContext stock-validates current drinks without falling through to saved drinks', () => {
+        dataManager.getInventory.mockReturnValue([{ itemHrid: '/items/current_tea', count: 0 }]);
+        loadoutState.findCalculationSelectionForActionType.mockReturnValue({ status: 'usable', snapshot: snapshot() });
+
+        expect(resolveCurrentActionContext(TYPE).drinks).toEqual([]);
+        expect(loadoutState.findCalculationSelectionForActionType).not.toHaveBeenCalled();
     });
 
     test('uses one canonical resolved snapshot for equipment and drinks', () => {

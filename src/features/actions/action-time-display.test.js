@@ -16,7 +16,12 @@ vi.mock('../../core/data-manager.js', () => ({
         getActionDrinkSlots: vi.fn(() => []),
         getCommunityBuffLevel: vi.fn(() => 0),
         getAchievementBuffFlatBoost: vi.fn(() => 0),
+        getPersonalBuffFlatBoost: vi.fn(() => 0),
+        getHouseRooms: vi.fn(() => new Map()),
+        isTaskAction: vi.fn(() => false),
+        getTaskSpeedBonus: vi.fn(() => 0),
         getElapsedSecondsInCurrentUnit: vi.fn(() => 0),
+        characterData: { guildActionTypeBuffsMap: {} },
     },
 }));
 
@@ -60,6 +65,11 @@ vi.mock('../../utils/action-calculator.js', () => ({
     calculateActionStats: vi.fn(),
 }));
 
+vi.mock('../../utils/action-context.js', () => ({
+    resolveActionContext: vi.fn(() => ({ equipment: new Map(), drinks: [], source: 'saved-loadout' })),
+    resolveCurrentActionContext: vi.fn(() => ({ equipment: new Map(), drinks: [], source: 'current' })),
+}));
+
 vi.mock('../../utils/formatters.js', () => ({
     timeReadable: vi.fn((s) => `${s}s`),
     formatWithSeparator: vi.fn((n) => `${n}`),
@@ -98,7 +108,11 @@ vi.mock('../../utils/enhancement-calculator.js', () => ({
 
 import { ActionTimeDisplay } from './action-time-display.js';
 import dataManager from '../../core/data-manager.js';
+import config from '../../core/config.js';
 import { calculateActionStats } from '../../utils/action-calculator.js';
+import { resolveActionContext, resolveCurrentActionContext } from '../../utils/action-context.js';
+import { calculateGatheringProfit } from './gathering-profit.js';
+import profitCalculator from '../market/profit-calculator.js';
 import { calculateEfficiencyMultiplier } from '../../utils/efficiency.js';
 import { calculateEnhancementPredictions } from '../enhancement/enhancement-xp.js';
 
@@ -202,6 +216,149 @@ describe('ActionTimeDisplay action-name observer self-mutation guard', () => {
         ];
 
         expect(instance.isSelfInflictedMutation(mutations)).toBe(false);
+    });
+});
+
+describe('ActionTimeDisplay atomic current vs prediction contexts (TLA-027)', () => {
+    let instance;
+    const TYPE = '/action_types/woodcutting';
+    const ACTION = '/actions/woodcutting/arcane_tree';
+    const actionDetails = { type: TYPE, levelRequirement: { skillHrid: '/skills/woodcutting', level: 80 } };
+    const currentContext = {
+        equipment: new Map([['/item_locations/tool', { itemHrid: '/items/holy_hatchet', enhancementLevel: 5 }]]),
+        drinks: [{ itemHrid: '/items/current_tea' }],
+        source: 'current',
+    };
+    const predictionContext = {
+        equipment: new Map([['/item_locations/tool', { itemHrid: '/items/rainbow_hatchet', enhancementLevel: 5 }]]),
+        drinks: [{ itemHrid: '/items/saved_tea' }],
+        source: 'saved-loadout',
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        vi.useFakeTimers();
+        config.getSetting.mockImplementation(() => false);
+        instance = new ActionTimeDisplay();
+        dataManager.getSkills.mockReturnValue([{ skillHrid: '/skills/woodcutting', level: 83 }]);
+        dataManager.getActionDetails.mockReturnValue(actionDetails);
+        dataManager.getCurrentActions.mockReturnValue([{ id: 1, ordinal: 0, actionHrid: ACTION }]);
+        resolveCurrentActionContext.mockReturnValue(currentContext);
+        resolveActionContext.mockReturnValue(predictionContext);
+        calculateActionStats.mockReturnValue({ actionTime: 10, totalEfficiency: 0 });
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    test('explicit current context reaches calculateActionStats atomically without re-resolving prediction context', () => {
+        instance.calculateActionTime(actionDetails, ACTION, currentContext);
+
+        expect(calculateActionStats).toHaveBeenCalledWith(
+            actionDetails,
+            expect.objectContaining({
+                equipment: currentContext.equipment,
+                actionContext: currentContext,
+            })
+        );
+        expect(resolveActionContext).not.toHaveBeenCalled();
+    });
+
+    test('future queue calculation defaults to the saved-loadout-aware prediction context', () => {
+        instance.calculateActionTime(actionDetails, ACTION);
+
+        expect(resolveActionContext).toHaveBeenCalledWith(TYPE);
+        expect(calculateActionStats).toHaveBeenCalledWith(
+            actionDetails,
+            expect.objectContaining({
+                equipment: predictionContext.equipment,
+                actionContext: predictionContext,
+            })
+        );
+    });
+
+    test('calculateSingleQueueActionTime forwards an explicit context atomically to calculateActionTime, without re-resolving prediction', () => {
+        // This is the layer calculateCurrentActionTime uses for the currently active action -
+        // proving it passes resolveCurrentActionContext()'s result straight through.
+        instance.calculateSingleQueueActionTime(
+            { id: 1, hasMaxCount: true, maxCount: 1, currentCount: 0, actionHrid: ACTION },
+            actionDetails,
+            { byHrid: {} },
+            currentContext
+        );
+
+        expect(calculateActionStats).toHaveBeenCalledWith(
+            actionDetails,
+            expect.objectContaining({ equipment: currentContext.equipment, actionContext: currentContext })
+        );
+        expect(resolveActionContext).not.toHaveBeenCalled();
+    });
+
+    test('live-state refresh is signature-gated so ordinary unchanged items_updated work does not rerender', () => {
+        const updateSpy = vi.spyOn(instance, 'updateDisplay').mockImplementation(() => {});
+        instance.lastLiveContextSignature = instance.buildLiveContextSignature(
+            dataManager.getCurrentActions()[0],
+            actionDetails
+        );
+
+        instance.scheduleLiveContextRefresh();
+        vi.advanceTimersByTime(50);
+        expect(updateSpy).not.toHaveBeenCalled();
+
+        resolveCurrentActionContext.mockReturnValue({
+            ...currentContext,
+            equipment: new Map([['/item_locations/tool', { itemHrid: '/items/rainbow_hatchet', enhancementLevel: 5 }]]),
+        });
+        instance.scheduleLiveContextRefresh();
+        vi.advanceTimersByTime(50);
+        expect(updateSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test('rapid repeated live-state notifications inside the debounce window coalesce into a single refresh', () => {
+        const updateSpy = vi.spyOn(instance, 'updateDisplay').mockImplementation(() => {});
+        instance.lastLiveContextSignature = 'stale';
+
+        instance.scheduleLiveContextRefresh();
+        instance.scheduleLiveContextRefresh();
+        instance.scheduleLiveContextRefresh();
+        vi.advanceTimersByTime(50);
+
+        expect(updateSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test('Action Bar profit uses the supplied current context instead of saved-loadout defaults', async () => {
+        config.getSetting.mockImplementation((key) => key === 'actionBar_showProfit');
+        instance.profitElement = document.createElement('div');
+        const action = { actionHrid: ACTION };
+        dataManager.getActionDetails.mockReturnValue({ ...actionDetails, dropTable: [{}] });
+        calculateGatheringProfit.mockResolvedValue({
+            profitPerHour: 1000,
+            actionsPerHour: 100,
+            efficiencyMultiplier: 1,
+        });
+
+        await instance.updateActionBarProfit(action, Infinity, currentContext);
+
+        expect(calculateGatheringProfit).toHaveBeenCalledWith(ACTION, { actionContext: currentContext });
+        expect(profitCalculator.calculateProfit).not.toHaveBeenCalled();
+    });
+
+    test('Action Bar profit defaults to resolveCurrentActionContext when no context is explicitly supplied', async () => {
+        config.getSetting.mockImplementation((key) => key === 'actionBar_showProfit');
+        instance.profitElement = document.createElement('div');
+        const action = { actionHrid: ACTION };
+        dataManager.getActionDetails.mockReturnValue({ ...actionDetails, dropTable: [{}] });
+        calculateGatheringProfit.mockResolvedValue({
+            profitPerHour: 500,
+            actionsPerHour: 50,
+            efficiencyMultiplier: 1,
+        });
+
+        await instance.updateActionBarProfit(action, Infinity);
+
+        expect(resolveCurrentActionContext).toHaveBeenCalledWith(TYPE);
+        expect(calculateGatheringProfit).toHaveBeenCalledWith(ACTION, { actionContext: currentContext });
     });
 });
 

@@ -2084,7 +2084,7 @@ export const settingsGroups = {
                 label: 'Loadouts: Use saved loadouts in profit/action calculations',
                 type: 'checkbox',
                 default: true,
-                help: "When you queue an action, Toolasha predicts its XP, time, and profit using the current saved game loadout for that skill (skill-default → all-skills-default → matching saved loadout → currently-equipped). 'Use highest enhancement level' is resolved from what you currently own. If the selected saved loadout contains unavailable equipment, food, or drinks, Toolasha falls back to the proven currently-equipped setup rather than guessing missing-item behavior. Disable to always predict using currently-equipped gear.",
+                help: "When you queue an action, Toolasha predicts its XP, time, and profit using the current saved game loadout for that skill (skill-default → all-skills-default → matching saved loadout → currently-equipped). 'Use highest enhancement level' is resolved from what you currently own. Unavailable saved equipment makes the prediction fall back to the proven currently-equipped setup; unavailable saved food/drinks do not invalidate the loadout and their missing slots are omitted. Disable to always predict using currently-equipped gear.",
             },
             showsKeyInfoInIcon: {
                 id: 'showsKeyInfoInIcon',

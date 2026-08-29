@@ -66,9 +66,14 @@ function buildProcessingConversionCache(gameData) {
 /**
  * Calculate comprehensive profit for a gathering action
  * @param {string} actionHrid - Action HRID (e.g., "/actions/foraging/asteroid_belt")
+ * @param {Object} [options={}]
+ * @param {{equipment: Map, drinks: Array}|null} [options.actionContext=null] - Exact live context
+ *   override (e.g. from resolveCurrentActionContext) for the Current Action Bar. When omitted,
+ *   uses the normal predictive live/saved action context.
  * @returns {Object|null} Profit data or null if not applicable
  */
-export async function calculateGatheringProfit(actionHrid) {
+export async function calculateGatheringProfit(actionHrid, options = {}) {
+    const { actionContext = null } = options;
     const gameData = dataManager.getInitClientData();
     const actionDetail = gameData.actionDetailMap[actionHrid];
 
@@ -95,7 +100,11 @@ export async function calculateGatheringProfit(actionHrid) {
     // Note: Market API is pre-loaded by caller (max-produceable.js)
     // No need to check or fetch here
 
-    const effCtx = getActionEfficiencyContext(actionDetail, { isProduction: false, gameData });
+    const effCtx = getActionEfficiencyContext(actionDetail, {
+        isProduction: false,
+        gameData,
+        actionContextOverride: actionContext,
+    });
 
     const {
         equipment,

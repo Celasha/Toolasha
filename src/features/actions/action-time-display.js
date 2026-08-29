@@ -20,6 +20,7 @@ import { calculateGatheringProfit } from './gathering-profit.js';
 import profitCalculator from '../market/profit-calculator.js';
 import alchemyProfitCalculator from '../market/alchemy-profit-calculator.js';
 import { calculateActionStats } from '../../utils/action-calculator.js';
+import { resolveActionContext, resolveCurrentActionContext } from '../../utils/action-context.js';
 import { timeReadable, formatWithSeparator, formatDateTime } from '../../utils/formatters.js';
 import { calculateEfficiencyMultiplier } from '../../utils/efficiency.js';
 import { createCleanupRegistry } from '../../utils/cleanup-registry.js';
@@ -69,6 +70,9 @@ export class ActionTimeDisplay {
         this.waitForPanelTimeout = null;
         this.retryUpdateTimeout = null;
         this.settingChangeHandlers = []; // [{key, fn}] for offSettingChange cleanup
+        this.liveStateHandlers = []; // [{event, fn}] for DataManager cleanup
+        this.liveContextRefreshTimeout = null;
+        this.lastLiveContextSignature = null;
         this.cleanupRegistry = createCleanupRegistry();
     }
 
@@ -142,6 +146,34 @@ export class ActionTimeDisplay {
                 }
             });
         }
+
+        // The Current Action Bar is a live-state surface, not a saved-loadout prediction. Refresh
+        // it when inputs to the live calculation may have changed. A lightweight signature gate
+        // (buildLiveContextSignature/scheduleLiveContextRefresh) prevents ordinary gathering loot
+        // (items_updated fires on every completion) from triggering an expensive profit
+        // recalculation when equipment/consumables/buffs are actually unchanged.
+        const liveStateEvents = [
+            'items_updated',
+            'consumables_updated',
+            'personal_buffs_updated',
+            'house_rooms_updated',
+            'skills_updated',
+            'action_completed',
+        ];
+        for (const event of liveStateEvents) {
+            const fn = () => this.scheduleLiveContextRefresh();
+            dataManager.on(event, fn);
+            this.liveStateHandlers.push({ event, fn });
+        }
+        this.cleanupRegistry.registerCleanup(() => {
+            this.liveStateHandlers.forEach(({ event, fn }) => dataManager.off(event, fn));
+            this.liveStateHandlers = [];
+            if (this.liveContextRefreshTimeout) {
+                clearTimeout(this.liveContextRefreshTimeout);
+                this.liveContextRefreshTimeout = null;
+            }
+            this.lastLiveContextSignature = null;
+        });
 
         this.cleanupRegistry.registerCleanup(() => {
             const actionNameElement = document.querySelector('div[class*="Header_actionName"]');
@@ -417,7 +449,12 @@ export class ActionTimeDisplay {
         const actionDetails = dataManager.getActionDetails(currentAction.actionHrid);
         if (!actionDetails) return null;
 
-        const result = this.calculateSingleQueueActionTime(currentAction, actionDetails, inventoryLookup);
+        const result = this.calculateSingleQueueActionTime(
+            currentAction,
+            actionDetails,
+            inventoryLookup,
+            resolveCurrentActionContext(actionDetails.type)
+        );
 
         return {
             totalTime: result.actionTimeSeconds,
@@ -431,9 +468,12 @@ export class ActionTimeDisplay {
      * @param {Object} actionObj - Action object from dataManager cache
      * @param {Object} actionDetails - Action details from dataManager
      * @param {Object} inventoryLookup - Inventory lookup map
+     * @param {{equipment: Map, drinks: Array}|null} [actionContext=null] - Atomic context. When
+     *   omitted, defaults to the predictive live/saved action context.
      * @returns {Object} { totalTime, actionTimeSeconds, count, baseActionsNeeded, isTrulyInfinite, isInfinite, materialLimit, limitType, limitLabel, isEnhancing }
      */
-    calculateSingleQueueActionTime(actionObj, actionDetails, inventoryLookup) {
+    calculateSingleQueueActionTime(actionObj, actionDetails, inventoryLookup, actionContext = null) {
+        const context = actionContext ?? resolveActionContext(actionDetails.type);
         const isEnhancing = actionDetails.type === '/action_types/enhancing';
         const isInfinite = !actionObj.hasMaxCount || actionObj.actionHrid.includes('/combat/');
 
@@ -457,7 +497,7 @@ export class ActionTimeDisplay {
                 totalTime = Infinity;
             }
         } else {
-            const timeData = this.calculateActionTime(actionDetails, actionObj.actionHrid);
+            const timeData = this.calculateActionTime(actionDetails, actionObj.actionHrid, context);
             if (!timeData) {
                 return {
                     totalTime: 0,
@@ -476,11 +516,10 @@ export class ActionTimeDisplay {
             const { actionTime, totalEfficiency } = timeData;
 
             if (isInfinite) {
-                const equipment = dataManager.getEquipment();
+                const equipment = context.equipment;
                 const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
                 const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
-                const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
-                const artisanBonus = parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
+                const artisanBonus = parseArtisanBonus(context.drinks, itemDetailMap, drinkConcentration);
 
                 const limitResult = this.calculateMaterialLimit(
                     actionDetails,
@@ -979,10 +1018,15 @@ export class ActionTimeDisplay {
             }
         }
 
-        // Get character data
-        const equipment = dataManager.getEquipment();
+        // Current Action Bar describes the action that is actually running now. Ignore
+        // saved-loadout prediction settings and keep current equipment + current drinks as one
+        // atomic context (resolveCurrentActionContext), so this never mixes e.g. current
+        // equipment with saved-loadout drinks.
+        const liveActionContext = resolveCurrentActionContext(actionDetails.type);
+        const equipment = liveActionContext.equipment;
         const skills = dataManager.getSkills();
         const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
+        this.lastLiveContextSignature = this.buildLiveContextSignature(action, actionDetails);
 
         // For alchemy actions, use item level for efficiency calculation (not action requirement)
         let levelRequirementOverride = undefined;
@@ -1000,6 +1044,7 @@ export class ActionTimeDisplay {
         const stats = calculateActionStats(actionDetails, {
             skills,
             equipment,
+            actionContext: liveActionContext,
             itemDetailMap,
             actionHrid: action.actionHrid, // Pass action HRID for task detection
             includeCommunityBuff: true,
@@ -1049,7 +1094,7 @@ export class ActionTimeDisplay {
             const baseAvgAmount = (mainDrop.minCount + mainDrop.maxCount) / 2;
 
             // Calculate gathering quantity bonus (same as gathering-profit.js)
-            const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
+            const activeDrinks = liveActionContext.drinks;
             const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
             const gatheringTea = parseGatheringBonus(activeDrinks, itemDetailMap, drinkConcentration);
 
@@ -1063,8 +1108,11 @@ export class ActionTimeDisplay {
                 '/buff_types/gathering'
             );
 
+            // Personal buff (seal)
+            const personalGathering = dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/gathering');
+
             // Total gathering bonus (all additive)
-            const totalGathering = gatheringTea + communityGathering + achievementGathering;
+            const totalGathering = gatheringTea + communityGathering + achievementGathering + personalGathering;
 
             // Apply gathering bonus to average amount
             const avgAmountPerAction = baseAvgAmount * (1 + totalGathering);
@@ -1078,9 +1126,11 @@ export class ActionTimeDisplay {
 
             // Apply Gourmet bonus for brewing/cooking (extra items chance)
             if (PRODUCTION_TYPES.includes(actionDetails.type)) {
-                const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
+                const activeDrinks = liveActionContext.drinks;
                 const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
-                const gourmetBonus = parseGourmetBonus(activeDrinks, itemDetailMap, drinkConcentration);
+                const gourmetBonus =
+                    parseGourmetBonus(activeDrinks, itemDetailMap, drinkConcentration) +
+                    dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/gourmet');
 
                 // Gourmet gives a chance for extra items (e.g., 0.1344 = 13.44% more items)
                 const gourmetBonusItems = itemsPerHour * gourmetBonus;
@@ -1099,8 +1149,7 @@ export class ActionTimeDisplay {
             const inventory = dataManager.getInventory();
             const inventoryLookup = this.buildInventoryLookup(inventory);
             const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
-            const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
-            const artisanBonus = parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
+            const artisanBonus = parseArtisanBonus(liveActionContext.drinks, itemDetailMap, drinkConcentration);
 
             // Calculate max actions based on materials and costs
             const limitResult = this.calculateMaterialLimit(actionDetails, inventoryLookup, artisanBonus, action);
@@ -1278,7 +1327,7 @@ export class ActionTimeDisplay {
         }
 
         // Line 3: Profit display (async, non-blocking)
-        this.updateActionBarProfit(action, remainingQueuedActions);
+        this.updateActionBarProfit(action, remainingQueuedActions, liveActionContext);
 
         // Reconnect observer to watch for game's updates
         this.reconnectActionNameObserver(actionNameElement);
@@ -1777,20 +1826,95 @@ export class ActionTimeDisplay {
     }
 
     /**
+     * Build a lightweight signature of the current live calculation inputs for the running
+     * action. Deliberately excludes saved-loadout state: the Current Action Bar describes what
+     * is actually equipped/active now, so the signature is built purely from
+     * resolveCurrentActionContext() plus the other live modifiers the calculation reads.
+     * @param {Object} action
+     * @param {Object} actionDetails
+     * @returns {string}
+     */
+    buildLiveContextSignature(action, actionDetails) {
+        const context = resolveCurrentActionContext(actionDetails.type);
+        const equipment = Array.from(context.equipment?.entries?.() || [])
+            .map(([location, item]) => `${location}:${item?.itemHrid || ''}:${item?.enhancementLevel ?? 0}`)
+            .sort();
+        const drinks = (context.drinks || []).map((drink) => drink?.itemHrid || '');
+        const skillHrid = actionDetails.levelRequirement?.skillHrid;
+        const skillLevel = dataManager.getSkills()?.find((skill) => skill.skillHrid === skillHrid)?.level ?? null;
+        const houseRooms = Array.from(dataManager.getHouseRooms?.()?.values?.() || [])
+            .map((room) => `${room.houseRoomHrid}:${room.level || 0}`)
+            .sort();
+        const guildBuffs = (dataManager.characterData?.guildActionTypeBuffsMap?.[actionDetails.type] || [])
+            .map((buff) => `${buff.typeHrid}:${buff.flatBoost || 0}:${buff.ratioBoost || 0}`)
+            .sort();
+
+        return JSON.stringify({
+            actionHrid: action?.actionHrid || '',
+            equipment,
+            drinks,
+            skillLevel,
+            houseRooms,
+            taskSpeed:
+                action?.actionHrid && dataManager.isTaskAction(action.actionHrid) ? dataManager.getTaskSpeedBonus() : 0,
+            personal: [
+                dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/action_speed'),
+                dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/efficiency'),
+                dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/gathering'),
+                dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/processing'),
+                dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/gourmet'),
+            ],
+            achievement: [
+                dataManager.getAchievementBuffFlatBoost(actionDetails.type, '/buff_types/efficiency'),
+                dataManager.getAchievementBuffFlatBoost(actionDetails.type, '/buff_types/gathering'),
+            ],
+            community: [
+                dataManager.getCommunityBuffLevel('/community_buff_types/gathering_quantity'),
+                dataManager.getCommunityBuffLevel('/community_buff_types/production_efficiency'),
+            ],
+            guildBuffs,
+        });
+    }
+
+    /**
+     * Coalesce live-state notifications (items_updated fires on every gathering completion) and
+     * refresh the Current Action Bar only when the live calculation inputs actually changed.
+     * This is what keeps ordinary loot from reintroducing the TLA-021 hot-path regression.
+     */
+    scheduleLiveContextRefresh() {
+        if (this.liveContextRefreshTimeout) return;
+        this.liveContextRefreshTimeout = setTimeout(() => {
+            this.liveContextRefreshTimeout = null;
+            const currentAction = [...dataManager.getCurrentActions()].sort((a, b) => a.ordinal - b.ordinal)[0];
+            if (!currentAction) return;
+            const actionDetails = dataManager.getActionDetails(currentAction.actionHrid);
+            if (!actionDetails || actionDetails.type === '/action_types/combat') return;
+
+            const signature = this.buildLiveContextSignature(currentAction, actionDetails);
+            if (signature === this.lastLiveContextSignature) return;
+            this.updateDisplay();
+        }, 50);
+    }
+
+    /**
      * Calculate action time for a given action
      * @param {Object} actionDetails - Action details from data manager
      * @param {string} actionHrid - Action HRID for task detection (optional)
+     * @param {{equipment: Map, drinks: Array}|null} [actionContext=null] - Atomic context. When
+     *   omitted, defaults to the normal predictive live/saved action context (used by future
+     *   queue entries); the live Current Action Bar always passes its own explicit context.
      * @returns {Object} {actionTime, totalEfficiency} or null if calculation fails
      */
-    calculateActionTime(actionDetails, actionHrid = null) {
+    calculateActionTime(actionDetails, actionHrid = null, actionContext = null) {
         const skills = dataManager.getSkills();
-        const equipment = dataManager.getEquipment();
+        const context = actionContext ?? resolveActionContext(actionDetails.type);
         const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
 
-        // Use shared calculator with same parameters as main display
+        // Keep one atomic equipment+drinks context for this calculation.
         return calculateActionStats(actionDetails, {
             skills,
-            equipment,
+            equipment: context.equipment,
+            actionContext: context,
             itemDetailMap,
             actionHrid, // Pass action HRID for task detection
             includeCommunityBuff: true,
@@ -2206,14 +2330,22 @@ export class ActionTimeDisplay {
                         }
                     } else if (isInfinite) {
                         // Check for material limit on infinite actions
-                        const equipment = dataManager.getEquipment();
+                        const currentContext = resolveCurrentActionContext(actionDetails.type);
+                        const equipment = currentContext.equipment;
                         const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
                         const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
-                        const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
-                        const artisanBonus = parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
+                        const artisanBonus = parseArtisanBonus(
+                            currentContext.drinks,
+                            itemDetailMap,
+                            drinkConcentration
+                        );
 
-                        // Calculate action stats to get efficiency
-                        const timeData = this.calculateActionTime(actionDetails, currentAction.actionHrid);
+                        // Current action is already running: use the proven live setup.
+                        const timeData = this.calculateActionTime(
+                            actionDetails,
+                            currentAction.actionHrid,
+                            currentContext
+                        );
                         if (timeData) {
                             const { actionTime, totalEfficiency } = timeData;
                             const limitResult = this.calculateMaterialLimit(
@@ -2245,7 +2377,11 @@ export class ActionTimeDisplay {
                         }
                     } else {
                         count = currentAction.maxCount - currentAction.currentCount;
-                        const timeData = this.calculateActionTime(actionDetails, currentAction.actionHrid);
+                        const timeData = this.calculateActionTime(
+                            actionDetails,
+                            currentAction.actionHrid,
+                            resolveCurrentActionContext(actionDetails.type)
+                        );
                         if (timeData) {
                             const { actionTime, totalEfficiency } = timeData;
 
@@ -2355,20 +2491,20 @@ export class ActionTimeDisplay {
                         totalTime = 0;
                     }
                 } else {
-                    // Non-enhancing: use standard calculation
-                    // Calculate action time first to get efficiency
-                    const timeData = this.calculateActionTime(actionDetails, actionObj.actionHrid);
+                    // Non-enhancing future queue entry: use the prediction context selected for
+                    // that action type (saved loadout when enabled, current setup otherwise).
+                    const queuedContext = resolveActionContext(actionDetails.type);
+                    const timeData = this.calculateActionTime(actionDetails, actionObj.actionHrid, queuedContext);
                     if (!timeData) continue;
 
                     const { actionTime, totalEfficiency } = timeData;
 
-                    // Calculate material limit for infinite actions
+                    // Calculate material limit from the same prediction context.
                     if (isInfinite) {
-                        const equipment = dataManager.getEquipment();
+                        const equipment = queuedContext.equipment;
                         const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
                         const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
-                        const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
-                        const artisanBonus = parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
+                        const artisanBonus = parseArtisanBonus(queuedContext.drinks, itemDetailMap, drinkConcentration);
 
                         const limitResult = this.calculateMaterialLimit(
                             actionDetails,
@@ -2720,20 +2856,34 @@ export class ActionTimeDisplay {
     /**
      * Calculate alchemy profit for a queued action using the alchemy profit calculator.
      * @param {Object} action - Action object with {actionHrid, primaryItemHash}
+     * @param {{equipment: Map, drinks: Array}|null} [actionContext=null] - Exact live context
+     *   override for the Current Action Bar.
      * @returns {Object|null} Profit data with profitPerHour and actionsPerHour, or null
      */
-    calculateAlchemyProfitForAction(action) {
+    calculateAlchemyProfitForAction(action, actionContext = null) {
         const { itemHrid, level: enhancementLevel } = this.parseItemHash(action.primaryItemHash);
         if (!itemHrid) return null;
 
         const actionHrid = action.actionHrid;
 
         if (actionHrid === '/actions/alchemy/coinify') {
-            return alchemyProfitCalculator.calculateCoinifyProfit(itemHrid, enhancementLevel || 0, true);
+            return alchemyProfitCalculator.calculateCoinifyProfit(
+                itemHrid,
+                enhancementLevel || 0,
+                true,
+                null,
+                actionContext
+            );
         } else if (actionHrid === '/actions/alchemy/transmute') {
-            return alchemyProfitCalculator.calculateTransmuteProfit(itemHrid, true);
+            return alchemyProfitCalculator.calculateTransmuteProfit(itemHrid, true, null, null, actionContext);
         } else if (actionHrid === '/actions/alchemy/decompose') {
-            return alchemyProfitCalculator.calculateDecomposeProfit(itemHrid, enhancementLevel || 0, true);
+            return alchemyProfitCalculator.calculateDecomposeProfit(
+                itemHrid,
+                enhancementLevel || 0,
+                true,
+                null,
+                actionContext
+            );
         }
 
         return null;
@@ -2743,8 +2893,10 @@ export class ActionTimeDisplay {
      * Calculate and display profit in the action bar for the current action.
      * @param {Object} action - Current action object from dataManager
      * @param {number} remainingActions - Remaining queued actions (Infinity if unlimited)
+     * @param {{equipment: Map, drinks: Array}|null} [actionContext=null] - Current live context;
+     *   defaults to resolveCurrentActionContext() for the action's type when omitted.
      */
-    async updateActionBarProfit(action, remainingActions) {
+    async updateActionBarProfit(action, remainingActions, actionContext = null) {
         if (!this.profitElement) return;
         if (!config.getSetting('actionBar_showProfit')) {
             this.profitElement.innerHTML = '';
@@ -2761,19 +2913,22 @@ export class ActionTimeDisplay {
                 this.profitElement.innerHTML = '';
                 return;
             }
+            const currentContext = actionContext ?? resolveCurrentActionContext(actionDetails.type);
 
             let profitData = null;
 
             if (actionDetails.type === '/action_types/alchemy' && action.primaryItemHash) {
-                profitData = this.calculateAlchemyProfitForAction(action);
+                profitData = this.calculateAlchemyProfitForAction(action, currentContext);
             }
 
             if (!profitData) {
-                const gatheringProfit = await calculateGatheringProfit(actionHrid);
+                const gatheringProfit = await calculateGatheringProfit(actionHrid, { actionContext: currentContext });
                 if (gatheringProfit) {
                     profitData = gatheringProfit;
                 } else if (actionDetails.outputItems?.[0]?.itemHrid) {
-                    profitData = await profitCalculator.calculateProfit(actionDetails.outputItems[0].itemHrid);
+                    profitData = await profitCalculator.calculateProfit(actionDetails.outputItems[0].itemHrid, {
+                        actionContext: currentContext,
+                    });
                 }
             }
 

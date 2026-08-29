@@ -134,6 +134,10 @@ export function calculateEfficiencyBreakdown({
  * @param {Object} [options.gameData=null] - Pre-fetched gameData (required for gathering path).
  * @param {number} [options.communityEfficiency=0] - Community buff efficiency (production only).
  *   Caller computes this via their own method (e.g. calculateCommunityBuffBonus) and passes it in.
+ * @param {{equipment: Map, drinks: Array}|null} [options.actionContextOverride=null] - Exact proven
+ *   live context supplied by a caller such as the Current Action Bar (see resolveCurrentActionContext).
+ *   Takes priority over equipmentOverride/drinksOverride and the live/saved resolveActionContext()
+ *   path - keeps a caller's atomic current-equipment+current-drinks pairing intact.
  * @param {Map|null} [options.equipmentOverride=null] - When provided (together with
  *   drinksOverride), scores this exact hypothetical equipment instead of resolving the
  *   live/saved action context - for a what-if scenario (e.g. the Skilling Optimizer/Simulator),
@@ -151,6 +155,7 @@ export function getActionEfficiencyContext(actionDetails, options = {}) {
         isProduction = false,
         gameData = null,
         communityEfficiency = 0,
+        actionContextOverride = null,
         equipmentOverride = null,
         drinksOverride = null,
         skillLevelOverride = null,
@@ -161,9 +166,11 @@ export function getActionEfficiencyContext(actionDetails, options = {}) {
     // never fall through to resolveActionContext()'s live/saved resolution - that would silently
     // mix real character state into a what-if calculation.
     const isHypothetical = equipmentOverride != null || drinksOverride != null;
-    const { equipment, drinks: drinkSlots } = isHypothetical
-        ? { equipment: equipmentOverride ?? new Map(), drinks: drinksOverride ?? [] }
-        : resolveActionContext(actionDetails.type);
+    const { equipment, drinks: drinkSlots } = actionContextOverride
+        ? actionContextOverride
+        : isHypothetical
+          ? { equipment: equipmentOverride ?? new Map(), drinks: drinksOverride ?? [] }
+          : resolveActionContext(actionDetails.type);
     const itemDetailMap = gameData?.itemDetailMap ?? dataManager.getInitClientData()?.itemDetailMap ?? {};
 
     // Drink concentration

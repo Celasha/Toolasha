@@ -632,9 +632,19 @@ class AlchemyProfitCalculator {
     /**
      * @param {string} itemHrid - Item HRID
      * @param {number} enhancementLevel - Enhancement level (default 0)
+     * @param {boolean} [useLiveSetup=false]
+     * @param {number|null} [teaBonusOverride=null]
+     * @param {{equipment: Map, drinks: Array}|null} [actionContext=null] - Exact live context
+     *   override (e.g. from resolveCurrentActionContext) for the Current Action Bar.
      * @returns {Object|null} Detailed profit data or null if not coinifiable
      */
-    calculateCoinifyProfit(itemHrid, enhancementLevel = 0, useLiveSetup = false, teaBonusOverride = null) {
+    calculateCoinifyProfit(
+        itemHrid,
+        enhancementLevel = 0,
+        useLiveSetup = false,
+        teaBonusOverride = null,
+        actionContext = null
+    ) {
         try {
             const gameData = dataManager.getInitClientData();
             const itemDetails = dataManager.getItemDetails(itemHrid);
@@ -657,11 +667,17 @@ class AlchemyProfitCalculator {
             // Get pricing mode
             const pricingMode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
 
-            // Calculate action stats (time + efficiency) using shared helper
-            // Alchemy uses item level (not action requirement) for efficiency calculation
+            // Keep a caller-supplied live context atomic (used by the Current Action Bar). Legacy
+            // callers without an override retain the existing calculator behavior.
+            const equipment = actionContext?.equipment ?? dataManager.getEquipment();
+            const activeDrinks = actionContext?.drinks ?? dataManager.getActionDrinkSlots('/action_types/alchemy');
+
+            // Calculate action stats (time + efficiency) using shared helper. Alchemy uses item
+            // level (not action requirement) for efficiency calculation.
             const actionStats = calculateActionStats(actionDetails, {
                 skills: dataManager.getSkills(),
-                equipment: dataManager.getEquipment(),
+                equipment,
+                actionContext,
                 itemDetailMap: gameData.itemDetailMap,
                 includeCommunityBuff: true,
                 includeBreakdown: true,
@@ -669,9 +685,6 @@ class AlchemyProfitCalculator {
             });
 
             const { actionTime, totalEfficiency, efficiencyBreakdown } = actionStats;
-
-            // Get equipment for drink concentration and speed calculation
-            const equipment = dataManager.getEquipment();
 
             // Calculate action speed breakdown with details
             const _baseTime = actionDetails.baseTimeCost / 1e9;
@@ -734,7 +747,7 @@ class AlchemyProfitCalculator {
 
             // Calculate live tea cost (used for tea combinations)
             const teaCostData = calculateTeaCostsPerHour({
-                drinkSlots: dataManager.getActionDrinkSlots('/action_types/alchemy'),
+                drinkSlots: activeDrinks,
                 drinkConcentration,
                 itemDetailMap: gameData.itemDetailMap,
                 getItemPrice: (hrid) => getItemPrice(hrid, { context: 'profit', side: 'buy' }),
@@ -899,9 +912,19 @@ class AlchemyProfitCalculator {
      * Calculate Decompose profit for an item with full detailed breakdown
      * @param {string} itemHrid - Item HRID
      * @param {number} enhancementLevel - Enhancement level (default 0)
+     * @param {boolean} [useLiveSetup=false]
+     * @param {number|null} [teaBonusOverride=null]
+     * @param {{equipment: Map, drinks: Array}|null} [actionContext=null] - Exact live context
+     *   override (e.g. from resolveCurrentActionContext) for the Current Action Bar.
      * @returns {Object|null} Profit data or null if not decomposable
      */
-    calculateDecomposeProfit(itemHrid, enhancementLevel = 0, useLiveSetup = false, teaBonusOverride = null) {
+    calculateDecomposeProfit(
+        itemHrid,
+        enhancementLevel = 0,
+        useLiveSetup = false,
+        teaBonusOverride = null,
+        actionContext = null
+    ) {
         try {
             const gameData = dataManager.getInitClientData();
             const itemDetails = dataManager.getItemDetails(itemHrid);
@@ -924,11 +947,17 @@ class AlchemyProfitCalculator {
             // Get pricing mode
             const pricingMode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
 
-            // Calculate action stats (time + efficiency) using shared helper
-            // Alchemy uses item level (not action requirement) for efficiency calculation
+            // Keep a caller-supplied live context atomic (used by the Current Action Bar). Legacy
+            // callers without an override retain the existing calculator behavior.
+            const equipment = actionContext?.equipment ?? dataManager.getEquipment();
+            const activeDrinks = actionContext?.drinks ?? dataManager.getActionDrinkSlots('/action_types/alchemy');
+
+            // Calculate action stats (time + efficiency) using shared helper. Alchemy uses item
+            // level (not action requirement) for efficiency calculation.
             const actionStats = calculateActionStats(actionDetails, {
                 skills: dataManager.getSkills(),
-                equipment: dataManager.getEquipment(),
+                equipment,
+                actionContext,
                 itemDetailMap: gameData.itemDetailMap,
                 includeCommunityBuff: true,
                 includeBreakdown: true,
@@ -936,9 +965,6 @@ class AlchemyProfitCalculator {
             });
 
             const { actionTime, totalEfficiency, efficiencyBreakdown } = actionStats;
-
-            // Get equipment for drink concentration and speed calculation
-            const equipment = dataManager.getEquipment();
 
             // Calculate action speed breakdown with details
             const _baseTime = actionDetails.baseTimeCost / 1e9;
@@ -1042,7 +1068,7 @@ class AlchemyProfitCalculator {
 
             // Calculate live tea cost (used for tea combinations)
             const teaCostData = calculateTeaCostsPerHour({
-                drinkSlots: dataManager.getActionDrinkSlots('/action_types/alchemy'),
+                drinkSlots: activeDrinks,
                 drinkConcentration,
                 itemDetailMap: gameData.itemDetailMap,
                 getItemPrice: (hrid) => getItemPrice(hrid, { context: 'profit', side: 'buy' }),
@@ -1207,9 +1233,17 @@ class AlchemyProfitCalculator {
      * @param {number|null} [teaBonusOverride]
      * @param {'none'|'typeSpecific'|'prime'|null} [catalystChoice] - Force a specific catalyst
      *   instead of searching for the best one or reading the live panel.
+     * @param {{equipment: Map, drinks: Array}|null} [actionContext=null] - Exact live context
+     *   override (e.g. from resolveCurrentActionContext) for the Current Action Bar.
      * @returns {Object|null} Profit data or null if not transmutable
      */
-    calculateTransmuteProfit(itemHrid, useLiveSetup = false, teaBonusOverride = null, catalystChoice = null) {
+    calculateTransmuteProfit(
+        itemHrid,
+        useLiveSetup = false,
+        teaBonusOverride = null,
+        catalystChoice = null,
+        actionContext = null
+    ) {
         try {
             const gameData = dataManager.getInitClientData();
             const itemDetails = dataManager.getItemDetails(itemHrid);
@@ -1246,11 +1280,17 @@ class AlchemyProfitCalculator {
             // Get pricing mode
             const pricingMode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
 
-            // Calculate action stats (time + efficiency) using shared helper
-            // Alchemy uses item level (not action requirement) for efficiency calculation
+            // Keep a caller-supplied live context atomic (used by the Current Action Bar). Legacy
+            // callers without an override retain the existing calculator behavior.
+            const equipment = actionContext?.equipment ?? dataManager.getEquipment();
+            const activeDrinks = actionContext?.drinks ?? dataManager.getActionDrinkSlots('/action_types/alchemy');
+
+            // Calculate action stats (time + efficiency) using shared helper. Alchemy uses item
+            // level (not action requirement) for efficiency calculation.
             const actionStats = calculateActionStats(actionDetails, {
                 skills: dataManager.getSkills(),
-                equipment: dataManager.getEquipment(),
+                equipment,
+                actionContext,
                 itemDetailMap: gameData.itemDetailMap,
                 includeCommunityBuff: true,
                 includeBreakdown: true,
@@ -1258,9 +1298,6 @@ class AlchemyProfitCalculator {
             });
 
             const { actionTime, totalEfficiency, efficiencyBreakdown } = actionStats;
-
-            // Get equipment for drink concentration and speed calculation
-            const equipment = dataManager.getEquipment();
 
             // Calculate action speed breakdown with details
             const _baseTime = actionDetails.baseTimeCost / 1e9;
@@ -1359,7 +1396,7 @@ class AlchemyProfitCalculator {
 
             // Calculate live tea cost (used for tea combinations)
             const teaCostData = calculateTeaCostsPerHour({
-                drinkSlots: dataManager.getActionDrinkSlots('/action_types/alchemy'),
+                drinkSlots: activeDrinks,
                 drinkConcentration,
                 itemDetailMap: gameData.itemDetailMap,
                 getItemPrice: (hrid) => getItemPrice(hrid, { context: 'profit', side: 'buy' }),

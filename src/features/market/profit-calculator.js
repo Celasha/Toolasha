@@ -72,9 +72,14 @@ class ProfitCalculator {
     /**
      * Calculate profit for a crafted item
      * @param {string} itemHrid - Item HRID
+     * @param {Object} [options={}]
+     * @param {{equipment: Map, drinks: Array}|null} [options.actionContext=null] - Exact live
+     *   context override (e.g. from resolveCurrentActionContext) for the Current Action Bar. When
+     *   omitted, uses the normal predictive live/saved action context.
      * @returns {Promise<Object|null>} Profit data or null if not craftable
      */
-    async calculateProfit(itemHrid) {
+    async calculateProfit(itemHrid, options = {}) {
+        const { actionContext = null } = options;
         // Get item details
         const itemDetails = dataManager.getItemDetails(itemHrid);
         if (!itemDetails) {
@@ -115,6 +120,7 @@ class ProfitCalculator {
         const effCtx = getActionEfficiencyContext(actionDetails, {
             isProduction: true,
             communityEfficiency,
+            actionContextOverride: actionContext,
         });
 
         const {

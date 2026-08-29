@@ -24,7 +24,10 @@ import { resolveActionContext } from './action-context.js';
  * @param {Object} actionDetails - Action detail object from game data
  * @param {Object} options - Configuration options
  * @param {Array} options.skills - Character skills array
- * @param {Array} options.equipment - Character equipment array
+ * @param {Array|Map} options.equipment - Character equipment for legacy callers
+ * @param {{equipment: Map, drinks: Array}|null} [options.actionContext=null] - Atomic equipment+drinks
+ *   context. When provided, both fields are used together and no second live/saved context is
+ *   resolved for drinks - prevents mixing e.g. current equipment with saved-loadout drinks.
  * @param {Object} options.itemDetailMap - Item detail map from game data
  * @param {string} options.actionHrid - Action HRID for task detection (optional)
  * @param {boolean} options.includeCommunityBuff - Include community buff in efficiency (default: false)
@@ -35,7 +38,8 @@ import { resolveActionContext } from './action-context.js';
 export function calculateActionStats(actionDetails, options = {}) {
     const {
         skills,
-        equipment,
+        equipment: equipmentOption,
+        actionContext = null,
         itemDetailMap,
         actionHrid,
         includeCommunityBuff = false,
@@ -44,6 +48,7 @@ export function calculateActionStats(actionDetails, options = {}) {
     } = options;
 
     try {
+        const equipment = actionContext?.equipment ?? equipmentOption;
         // Calculate base action time
         const baseTime = actionDetails.baseTimeCost / 1e9; // nanoseconds to seconds
 
@@ -82,8 +87,9 @@ export function calculateActionStats(actionDetails, options = {}) {
         // Get drink concentration
         const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
 
-        // Get active drinks for this action type (loadout-snapshot aware)
-        const activeDrinks = resolveActionContext(actionDetails.type).drinks;
+        // Keep equipment and drinks atomic when the caller supplied an explicit context. Legacy
+        // callers without actionContext retain the existing loadout-aware drink behavior.
+        const activeDrinks = actionContext?.drinks ?? resolveActionContext(actionDetails.type).drinks;
 
         // Calculate Action Level bonus from teas
         const actionLevelBonus = parseActionLevelBonus(activeDrinks, itemDetailMap, drinkConcentration);

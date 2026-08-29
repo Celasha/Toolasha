@@ -16,11 +16,39 @@
  * Intentional empty state is preserved: a matching saved loadout with no
  * equipment or no drinks resolves to an empty Map/array rather than falling
  * through to the character's currently equipped setup.
+ *
+ * resolveCurrentActionContext() is the separate live-state counterpart: it always ignores
+ * saved-loadout prediction and returns the character's actual current setup, for surfaces (like
+ * the Current Action Bar) that describe what is actually running now rather than a prediction.
  */
 
 import config from '../core/config.js';
 import dataManager from '../core/data-manager.js';
 import loadoutState from '../core/loadout-state.js';
+
+/**
+ * Resolve the character's proven current live setup, ignoring saved-loadout prediction settings.
+ * Equipment and drinks are returned as one atomic context so callers cannot accidentally mix
+ * current equipment with saved-loadout consumables (or vice versa). Used by live-state surfaces
+ * (e.g. the Current Action Bar) that describe the action actually running now, as opposed to
+ * predictive action cards/future queue entries which use resolveActionContext().
+ * @param {string} actionTypeHrid - e.g. "/action_types/cooking"
+ * @returns {{equipment: Map, drinks: Array, source: string, loadoutSelection: null}}
+ */
+export function resolveCurrentActionContext(actionTypeHrid) {
+    const rawDrinks = dataManager.getActionDrinkSlots(actionTypeHrid);
+    const inventory = dataManager.getInventory();
+    const drinks = (rawDrinks || []).filter(
+        (drink) => drink?.itemHrid && inventory?.some((item) => item.itemHrid === drink.itemHrid && item.count !== 0)
+    );
+
+    return {
+        equipment: dataManager.getEquipment(),
+        drinks,
+        source: 'current',
+        loadoutSelection: null,
+    };
+}
 
 /**
  * @param {string} actionTypeHrid - e.g. "/action_types/cooking"
@@ -42,13 +70,7 @@ export function resolveActionContext(actionTypeHrid) {
         // slots. Do not rescan the full inventory again on every action calculation.
         drinks = (snapshot.drinks || []).filter((entry) => entry.itemHrid);
     } else {
-        const rawDrinks = dataManager.getActionDrinkSlots(actionTypeHrid);
-        // Current (non-saved-loadout) drink slots still need stock validation here.
-        const inventory = dataManager.getInventory();
-        drinks = (rawDrinks || []).filter(
-            (drink) =>
-                drink?.itemHrid && inventory?.some((item) => item.itemHrid === drink.itemHrid && item.count !== 0)
-        );
+        drinks = resolveCurrentActionContext(actionTypeHrid).drinks;
     }
 
     return {
@@ -61,4 +83,4 @@ export function resolveActionContext(actionTypeHrid) {
     };
 }
 
-export default { resolveActionContext };
+export default { resolveActionContext, resolveCurrentActionContext };
