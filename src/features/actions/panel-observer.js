@@ -68,6 +68,7 @@ let autoProtectTargetInputs = new WeakSet();
 let enhancingPanelWatchers = [];
 let itemsUpdatedHandler = null;
 let consumablesUpdatedHandler = null;
+let buffsUpdatedHandler = null; // Handler for the native live-buff family (TLA-028)
 
 /**
  * Trigger debounced enhancement stats update
@@ -189,6 +190,20 @@ function setupEnhancementRefreshListeners() {
             }, DEBOUNCE_DELAY);
         };
         dataManager.on('consumables_updated', consumablesUpdatedHandler);
+    }
+
+    // House/achievement/MooPass/community/consumable/equipment/personal/guild buff changes
+    // (TLA-028) don't fire items_updated/consumables_updated - success/speed/rare-find/XP
+    // breakdowns in the enhancement calculator and action-panel profit all depend on this state.
+    if (!buffsUpdatedHandler) {
+        buffsUpdatedHandler = () => {
+            clearTimeout(itemsUpdatedDebounceTimer);
+            itemsUpdatedDebounceTimer = setTimeout(() => {
+                refreshEnhancementCalculator();
+                refreshProfitPanel();
+            }, DEBOUNCE_DELAY);
+        };
+        dataManager.on('buffs_updated', buffsUpdatedHandler);
     }
 }
 
@@ -802,6 +817,10 @@ export function disablePanelObserver() {
     if (consumablesUpdatedHandler) {
         dataManager.off('consumables_updated', consumablesUpdatedHandler);
         consumablesUpdatedHandler = null;
+    }
+    if (buffsUpdatedHandler) {
+        dataManager.off('buffs_updated', buffsUpdatedHandler);
+        buffsUpdatedHandler = null;
     }
 
     // Cleanup action filter

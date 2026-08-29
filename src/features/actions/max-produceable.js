@@ -57,6 +57,7 @@ class MaxProduceable {
         this.lastCrimsonMilkCount = null; // For debugging inventory updates
         this.itemsUpdatedHandler = null;
         this.actionCompletedHandler = null;
+        this.buffsUpdatedHandler = null; // Handler for the native live-buff family (TLA-028)
         this.characterSwitchingHandler = null; // Handler for character switch cleanup
         this.pricingModeHandler = null; // Handler for pricing mode changes
         this.maxProduceableHandler = null;
@@ -101,6 +102,15 @@ class MaxProduceable {
                 this.updateAllCounts();
             }, this.DEBOUNCE_DELAY);
         };
+        // House/achievement/MooPass/community/consumable/equipment/personal/guild buff changes
+        // (TLA-028) don't fire items_updated/consumables_updated - route through the same
+        // debounce so an achievement tier unlock etc. refreshes profit/hr and exp/hr too.
+        this.buffsUpdatedHandler = () => {
+            clearTimeout(this.itemsUpdatedDebounceTimer);
+            this.itemsUpdatedDebounceTimer = setTimeout(() => {
+                this.updateAllCounts();
+            }, this.DEBOUNCE_DELAY);
+        };
         this.characterSwitchingHandler = () => {
             this.clearAllReferences();
         };
@@ -108,6 +118,7 @@ class MaxProduceable {
         // Event-driven updates (no polling needed)
         dataManager.on('items_updated', this.itemsUpdatedHandler);
         dataManager.on('consumables_updated', this.consumablesUpdatedHandler);
+        dataManager.on('buffs_updated', this.buffsUpdatedHandler);
         dataManager.on('character_switching', this.characterSwitchingHandler);
 
         // Saved-loadout state can change without an items_updated event (editing a loadout,
@@ -1002,6 +1013,11 @@ class MaxProduceable {
         if (this.consumablesUpdatedHandler) {
             dataManager.off('consumables_updated', this.consumablesUpdatedHandler);
             this.consumablesUpdatedHandler = null;
+        }
+
+        if (this.buffsUpdatedHandler) {
+            dataManager.off('buffs_updated', this.buffsUpdatedHandler);
+            this.buffsUpdatedHandler = null;
         }
 
         if (this.characterSwitchingHandler) {

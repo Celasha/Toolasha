@@ -258,7 +258,17 @@ class WebSocketHook {
             messageType === 'battle_consumable_ability_updated' ||
             messageType === 'battle_unit_fetched' ||
             messageType === 'action_type_consumable_slots_updated' ||
+            // Native skilling/live-buff state messages replace whole maps/arrays. Two genuine
+            // consecutive updates can easily share the first 100 raw characters and differ only
+            // in a later buff value, so the lossy prefix hash must never collapse them.
+            messageType === 'house_rooms_updated' ||
+            messageType === 'achievement_buffs_updated' ||
+            messageType === 'moo_pass_buffs_updated' ||
+            messageType === 'community_buffs_updated' ||
             messageType === 'consumable_buffs_updated' ||
+            messageType === 'equipment_buffs_updated' ||
+            messageType === 'personal_buffs_updated' ||
+            messageType === 'guild_buffs_updated' ||
             messageType === 'character_info_updated' ||
             messageType === 'labyrinth_updated' ||
             messageType === 'loadouts_updated' ||

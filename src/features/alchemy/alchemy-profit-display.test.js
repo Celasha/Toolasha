@@ -44,6 +44,49 @@ vi.mock('../../utils/timer-registry.js', () => ({
 }));
 
 import { AlchemyProfitDisplay } from './alchemy-profit-display.js';
+import dataManager from '../../core/data-manager.js';
+
+describe('AlchemyProfitDisplay subscribes to the common buffs_updated event (TLA-028)', () => {
+    let display;
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        display = new AlchemyProfitDisplay();
+    });
+
+    test('initialize registers a buffs_updated listener alongside items_updated/consumables_updated', () => {
+        display.initialize();
+
+        const subscribedEvents = dataManager.on.mock.calls.map(([event]) => event);
+        expect(subscribedEvents).toContain('buffs_updated');
+        expect(subscribedEvents).toContain('items_updated');
+        expect(subscribedEvents).toContain('consumables_updated');
+    });
+
+    test('disable unregisters the buffs_updated listener', () => {
+        display.initialize();
+
+        display.disable();
+
+        expect(dataManager.off).toHaveBeenCalledWith('buffs_updated', expect.any(Function));
+    });
+
+    test('a buffs_updated notification clears the cached fingerprint and re-checks the display while active', () => {
+        vi.useFakeTimers();
+        display.initialize();
+        display.isActive = true;
+        display.lastFingerprint = 'stale';
+        const checkSpy = vi.spyOn(display, 'checkAndUpdateDisplay').mockImplementation(() => {});
+
+        const buffsHandler = dataManager.on.mock.calls.find(([event]) => event === 'buffs_updated')[1];
+        buffsHandler();
+        vi.advanceTimersByTime(100);
+
+        expect(display.lastFingerprint).toBeNull();
+        expect(checkSpy).toHaveBeenCalledTimes(1);
+        vi.useRealTimers();
+    });
+});
 
 describe('Alchemy inline XP/hour calculation', () => {
     beforeEach(() => {

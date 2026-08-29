@@ -104,4 +104,24 @@ describe('GatheringStats saved-loadout hot-path refresh wiring', () => {
         expect(mocks.loadoutUpdateHandlers.size).toBe(0);
         expect(mocks.settingHandlers.has('loadoutSnapshot')).toBe(false);
     });
+
+    test('subscribes to the common buffs_updated event (TLA-028) and schedules a debounced refresh', async () => {
+        await gatheringStats.initialize();
+        expect(mocks.dataHandlers.has('buffs_updated')).toBe(true);
+
+        const updateAllStats = vi.spyOn(gatheringStats, 'updateAllStats').mockImplementation(() => {});
+        mocks.dataHandlers.get('buffs_updated')();
+        expect(updateAllStats).not.toHaveBeenCalled();
+
+        vi.advanceTimersByTime(300);
+        expect(updateAllStats).toHaveBeenCalledTimes(1);
+    });
+
+    test('disable unsubscribes the buffs_updated handler', async () => {
+        await gatheringStats.initialize();
+
+        gatheringStats.disable();
+
+        expect(mocks.dataHandlers.has('buffs_updated')).toBe(false);
+    });
 });

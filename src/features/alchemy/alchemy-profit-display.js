@@ -76,6 +76,20 @@ export class AlchemyProfitDisplay {
         };
         dataManager.on('consumables_updated', this.consumablesChangeHandler);
 
+        // House/achievement/MooPass/community/consumable/equipment/personal/guild buff changes
+        // (TLA-028) don't fire items_updated/consumables_updated - success rate, efficiency,
+        // rare/essence find and profit all depend on this state while the panel stays mounted.
+        this.buffsChangeHandler = () => {
+            clearTimeout(this.equipmentChangeTimeout);
+            this.equipmentChangeTimeout = setTimeout(() => {
+                if (this.isActive) {
+                    this.lastFingerprint = null;
+                    this.checkAndUpdateDisplay();
+                }
+            }, 100);
+        };
+        dataManager.on('buffs_updated', this.buffsChangeHandler);
+
         this.isActive = true;
     }
 
@@ -1517,6 +1531,11 @@ export class AlchemyProfitDisplay {
         if (this.consumablesChangeHandler) {
             dataManager.off('consumables_updated', this.consumablesChangeHandler);
             this.consumablesChangeHandler = null;
+        }
+
+        if (this.buffsChangeHandler) {
+            dataManager.off('buffs_updated', this.buffsChangeHandler);
+            this.buffsChangeHandler = null;
         }
 
         if (this.contentObserver) {

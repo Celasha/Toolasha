@@ -362,6 +362,49 @@ describe('ActionTimeDisplay atomic current vs prediction contexts (TLA-027)', ()
     });
 });
 
+describe('ActionTimeDisplay live invalidation subscribes to the common buffs_updated event (TLA-028)', () => {
+    let instance;
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        config.getSetting.mockImplementation((key) => key === 'actionBar_enabled');
+        config.getSettingValue.mockImplementation((_key, fallback) => fallback);
+        instance = new ActionTimeDisplay();
+    });
+
+    afterEach(() => {
+        instance.disable();
+    });
+
+    test('subscribes to the common buffs_updated event rather than enumerating individual native buff message types', async () => {
+        await instance.initialize();
+
+        const subscribedEvents = dataManager.on.mock.calls.map(([event]) => event);
+        expect(subscribedEvents).toContain('buffs_updated');
+        expect(subscribedEvents).not.toContain('personal_buffs_updated');
+        expect(subscribedEvents).not.toContain('house_rooms_updated');
+    });
+
+    test('still subscribes to the non-buff live-state events needed for the signature gate', async () => {
+        await instance.initialize();
+
+        const subscribedEvents = dataManager.on.mock.calls.map(([event]) => event);
+        expect(subscribedEvents).toContain('items_updated');
+        expect(subscribedEvents).toContain('consumables_updated');
+        expect(subscribedEvents).toContain('skills_updated');
+        expect(subscribedEvents).toContain('action_completed');
+    });
+
+    test('disable() cleans up the buffs_updated subscription', async () => {
+        await instance.initialize();
+        expect(dataManager.on).toHaveBeenCalledWith('buffs_updated', expect.any(Function));
+
+        instance.disable();
+
+        expect(dataManager.off).toHaveBeenCalledWith('buffs_updated', expect.any(Function));
+    });
+});
+
 describe('ActionTimeDisplay current-unit partial progress (TLA-015)', () => {
     let instance;
 

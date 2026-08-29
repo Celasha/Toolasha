@@ -281,3 +281,58 @@ describe('WebSocket hook — same-event double dispatch via attachSocketListener
         expect(handler).toHaveBeenCalledTimes(1);
     });
 });
+
+describe('WebSocket hook — live buff-state messages must not be dropped by prefix dedup (TLA-028)', () => {
+    let webSocketHook;
+
+    beforeEach(async () => {
+        vi.resetModules();
+        const mod = await import('./websocket.js');
+        webSocketHook = mod.default;
+    });
+
+    const cases = [
+        ['house_rooms_updated', 'houseActionTypeBuffsMap'],
+        ['achievement_buffs_updated', 'achievementActionTypeBuffsMap'],
+        ['moo_pass_buffs_updated', 'mooPassActionTypeBuffsMap'],
+        ['community_buffs_updated', 'communityActionTypeBuffsMap'],
+        ['consumable_buffs_updated', 'consumableActionTypeBuffsMap'],
+        ['equipment_buffs_updated', 'equipmentActionTypeBuffsMap'],
+        ['personal_buffs_updated', 'personalActionTypeBuffsMap'],
+        ['guild_buffs_updated', 'guildActionTypeBuffsMap'],
+    ];
+
+    function collidingMessage(type, mapField, flatBoost) {
+        const actionType = '/action_types/woodcutting';
+        return JSON.stringify({
+            type,
+            [mapField]: {
+                [actionType]: [
+                    {
+                        typeHrid:
+                            '/buff_types/this_intentionally_long_buff_type_name_keeps_the_changed_value_past_100_chars',
+                        flatBoost,
+                    },
+                ],
+            },
+        });
+    }
+
+    test.each(cases)(
+        '%s dispatches both genuine consecutive states even when their first 100 chars collide',
+        (type, mapField) => {
+            const handler = vi.fn();
+            webSocketHook.on(type, handler);
+
+            const first = collidingMessage(type, mapField, 0.1);
+            const second = collidingMessage(type, mapField, 0.2);
+            expect(first.substring(0, 100)).toBe(second.substring(0, 100));
+
+            webSocketHook.processMessage(first);
+            webSocketHook.processMessage(second);
+
+            expect(handler).toHaveBeenCalledTimes(2);
+            expect(handler.mock.calls[1][0][mapField]['/action_types/woodcutting'][0].flatBoost).toBe(0.2);
+        }
+    );
+});

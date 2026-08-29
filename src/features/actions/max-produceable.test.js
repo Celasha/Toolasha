@@ -114,4 +114,24 @@ describe('MaxProduceable saved-loadout hot-path refresh wiring', () => {
         expect(mocks.loadoutUpdateHandlers.size).toBe(0);
         expect(mocks.settingHandlers.has('loadoutSnapshot')).toBe(false);
     });
+
+    test('subscribes to the common buffs_updated event (TLA-028) and schedules a debounced refresh', async () => {
+        await maxProduceable.initialize();
+        expect(mocks.dataHandlers.has('buffs_updated')).toBe(true);
+
+        const updateAllCounts = vi.spyOn(maxProduceable, 'updateAllCounts').mockImplementation(() => {});
+        mocks.dataHandlers.get('buffs_updated')();
+        expect(updateAllCounts).not.toHaveBeenCalled();
+
+        vi.advanceTimersByTime(300);
+        expect(updateAllCounts).toHaveBeenCalledTimes(1);
+    });
+
+    test('disable unsubscribes the buffs_updated handler', async () => {
+        await maxProduceable.initialize();
+
+        await maxProduceable.disable();
+
+        expect(mocks.dataHandlers.has('buffs_updated')).toBe(false);
+    });
 });

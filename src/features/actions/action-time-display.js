@@ -151,12 +151,14 @@ export class ActionTimeDisplay {
         // it when inputs to the live calculation may have changed. A lightweight signature gate
         // (buildLiveContextSignature/scheduleLiveContextRefresh) prevents ordinary gathering loot
         // (items_updated fires on every completion) from triggering an expensive profit
-        // recalculation when equipment/consumables/buffs are actually unchanged.
+        // recalculation when equipment/consumables/buffs are actually unchanged. `buffs_updated`
+        // is DataManager's common semantic invalidation for the whole native live-buff family
+        // (house/achievement/moo pass/community/consumable/equipment/personal/guild) - subscribe
+        // to that one event rather than enumerating individual buff message types (TLA-028).
         const liveStateEvents = [
             'items_updated',
             'consumables_updated',
-            'personal_buffs_updated',
-            'house_rooms_updated',
+            'buffs_updated',
             'skills_updated',
             'action_completed',
         ];

@@ -1224,3 +1224,288 @@ describe('DataManager offline-progress cap / MooPass getters', () => {
         expect(dataManager.getMooPassExpireTime()).toBe(5000);
     });
 });
+
+describe('DataManager live buff WebSocket state parity (TLA-028)', () => {
+    function makeCharacterPayload(characterId, overrides = {}) {
+        return {
+            character: { id: characterId, name: `char-${characterId}` },
+            characterActions: [],
+            characterSkills: [],
+            characterItems: [],
+            characterQuests: [],
+            characterHouseRoomMap: {},
+            actionTypeDrinkSlotsMap: {},
+            characterGuildBuffMap: {},
+            guildBuildingLevelMap: {},
+            achievementActionTypeBuffsMap: {},
+            mooPassBuffs: [],
+            mooPassActionTypeBuffsMap: {},
+            communityBuffs: [],
+            communityActionTypeBuffsMap: {},
+            consumableActionTypeBuffsMap: {},
+            equipmentActionTypeBuffsMap: {},
+            equipmentTaskActionBuffs: {},
+            personalActionTypeBuffsMap: {},
+            characterBuffs: [],
+            guildActionTypeBuffsMap: {},
+            ...overrides,
+        };
+    }
+
+    beforeEach(async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(0);
+        const { default: dataManager } = await import('./data-manager.js');
+        dataManager.currentCharacterId = null;
+        dataManager.currentCharacterName = null;
+        dataManager.lastCharacterSwitchTime = 0;
+        dataManager.characterData = null;
+        dataManager.characterItems = null;
+        dataManager.characterSkills = null;
+        dataManager.characterActions = [];
+        dataManager.characterQuests = [];
+        dataManager.characterHouseRooms.clear();
+        dataManager.actionTypeDrinkSlotsMap.clear();
+        dataManager.personalActionTypeBuffsMap = {};
+        dataManager.characterGuildBuffMap = {};
+        dataManager.guildBuildingLevelMap = {};
+        dataManager.activeSocket = null;
+        dataManager.initGeneration = 0;
+        dataManager.achievementBuffCache = { source: null, byActionType: new Map() };
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    test('mirrors the native replacement contract for the full live buff-state family before emitting semantic events', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const socket = {};
+        await webSocketHandlers.get('init_character_data')(makeCharacterPayload(12001), { socket });
+
+        const genericListener = vi.fn();
+        dataManager.on('buffs_updated', genericListener);
+
+        const houseRooms = { room: { houseRoomHrid: '/house_rooms/log_shed', level: 4 } };
+        const houseBuffs = { '/action_types/woodcutting': [{ typeHrid: '/buff_types/efficiency', flatBoost: 0.06 }] };
+        webSocketHandlers.get('house_rooms_updated')(
+            {
+                type: 'house_rooms_updated',
+                characterHouseRoomMap: houseRooms,
+                houseActionTypeBuffsMap: houseBuffs,
+            },
+            { socket }
+        );
+        expect(dataManager.getHouseRoomLevel('/house_rooms/log_shed')).toBe(4);
+        expect(dataManager.characterData.characterHouseRoomMap).toBe(houseRooms);
+        expect(dataManager.characterData.houseActionTypeBuffsMap).toBe(houseBuffs);
+
+        const achievementBuffs = {
+            '/action_types/woodcutting': [{ typeHrid: '/buff_types/wisdom', flatBoost: 0.03 }],
+        };
+        webSocketHandlers.get('achievement_buffs_updated')(
+            { type: 'achievement_buffs_updated', achievementActionTypeBuffsMap: achievementBuffs },
+            { socket }
+        );
+        expect(dataManager.characterData.achievementActionTypeBuffsMap).toBe(achievementBuffs);
+        expect(dataManager.getAchievementBuffFlatBoost('/action_types/woodcutting', '/buff_types/wisdom')).toBe(0.03);
+
+        const mooPassBuffs = [{ typeHrid: '/buff_types/wisdom', flatBoost: 0.05 }];
+        const mooPassActionBuffs = {
+            '/action_types/woodcutting': [{ typeHrid: '/buff_types/wisdom', flatBoost: 0.05 }],
+        };
+        webSocketHandlers.get('moo_pass_buffs_updated')(
+            {
+                type: 'moo_pass_buffs_updated',
+                mooPassBuffs,
+                mooPassActionTypeBuffsMap: mooPassActionBuffs,
+            },
+            { socket }
+        );
+        expect(dataManager.characterData.mooPassBuffs).toBe(mooPassBuffs);
+        expect(dataManager.characterData.mooPassActionTypeBuffsMap).toBe(mooPassActionBuffs);
+        expect(dataManager.getMooPassBuffs()).toBe(mooPassBuffs);
+
+        const communityBuffs = [{ hrid: '/community_buff_types/gathering_quantity', level: 20 }];
+        const communityActionBuffs = {
+            '/action_types/woodcutting': [{ typeHrid: '/buff_types/gathering', flatBoost: 0.295 }],
+        };
+        webSocketHandlers.get('community_buffs_updated')(
+            {
+                type: 'community_buffs_updated',
+                communityBuffs,
+                communityActionTypeBuffsMap: communityActionBuffs,
+            },
+            { socket }
+        );
+        expect(dataManager.characterData.communityBuffs).toBe(communityBuffs);
+        expect(dataManager.characterData.communityActionTypeBuffsMap).toBe(communityActionBuffs);
+        expect(dataManager.getCommunityBuffLevel('/community_buff_types/gathering_quantity')).toBe(20);
+
+        const consumableBuffs = {
+            '/action_types/woodcutting': [{ typeHrid: '/buff_types/efficiency', flatBoost: 0.1 }],
+        };
+        webSocketHandlers.get('consumable_buffs_updated')(
+            { type: 'consumable_buffs_updated', consumableActionTypeBuffsMap: consumableBuffs },
+            { socket }
+        );
+        expect(dataManager.characterData.consumableActionTypeBuffsMap).toBe(consumableBuffs);
+
+        const equipmentBuffs = {
+            '/action_types/woodcutting': [{ typeHrid: '/buff_types/action_speed', flatBoost: 0.84 }],
+        };
+        const equipmentTaskBuffs = {
+            '/actions/woodcutting/arcane_tree': [{ typeHrid: '/buff_types/wisdom', flatBoost: 0.01 }],
+        };
+        webSocketHandlers.get('equipment_buffs_updated')(
+            {
+                type: 'equipment_buffs_updated',
+                equipmentActionTypeBuffsMap: equipmentBuffs,
+                equipmentTaskActionBuffs: equipmentTaskBuffs,
+            },
+            { socket }
+        );
+        expect(dataManager.characterData.equipmentActionTypeBuffsMap).toBe(equipmentBuffs);
+        expect(dataManager.characterData.equipmentTaskActionBuffs).toBe(equipmentTaskBuffs);
+
+        const personalBuffs = {
+            '/action_types/woodcutting': [{ typeHrid: '/buff_types/efficiency', flatBoost: 0.07 }],
+        };
+        const characterBuffs = [{ typeHrid: '/buff_types/efficiency', flatBoost: 0.07 }];
+        webSocketHandlers.get('personal_buffs_updated')(
+            {
+                type: 'personal_buffs_updated',
+                personalActionTypeBuffsMap: personalBuffs,
+                characterBuffs,
+            },
+            { socket }
+        );
+        expect(dataManager.personalActionTypeBuffsMap).toBe(personalBuffs);
+        expect(dataManager.characterData.personalActionTypeBuffsMap).toBe(personalBuffs);
+        expect(dataManager.characterData.characterBuffs).toBe(characterBuffs);
+        expect(dataManager.getPersonalBuffFlatBoost('/action_types/woodcutting', '/buff_types/efficiency')).toBe(0.07);
+
+        const characterGuildBuffs = { '/guild_buffs/woodcutting_speed': { level: 2 } };
+        const guildActionBuffs = {
+            '/action_types/woodcutting': [{ typeHrid: '/buff_types/action_speed', flatBoost: 0.02 }],
+        };
+        webSocketHandlers.get('guild_buffs_updated')(
+            {
+                type: 'guild_buffs_updated',
+                characterGuildBuffMap: characterGuildBuffs,
+                guildActionTypeBuffsMap: guildActionBuffs,
+            },
+            { socket }
+        );
+        expect(dataManager.characterGuildBuffMap).toBe(characterGuildBuffs);
+        expect(dataManager.characterData.characterGuildBuffMap).toBe(characterGuildBuffs);
+        expect(dataManager.characterData.guildActionTypeBuffsMap).toBe(guildActionBuffs);
+        expect(dataManager.getCharacterGuildBuffLevel('/guild_buffs/woodcutting_speed')).toBe(2);
+
+        await vi.advanceTimersByTimeAsync(0);
+        expect(genericListener).toHaveBeenCalledTimes(8);
+        expect(genericListener.mock.calls.map(([payload]) => payload.type)).toEqual([
+            'house_rooms_updated',
+            'achievement_buffs_updated',
+            'moo_pass_buffs_updated',
+            'community_buffs_updated',
+            'consumable_buffs_updated',
+            'equipment_buffs_updated',
+            'personal_buffs_updated',
+            'guild_buffs_updated',
+        ]);
+
+        dataManager.off('buffs_updated', genericListener);
+    });
+
+    test('replacement payloads clear old canonical buff state instead of merging it - empty {}/[] are meaningful, not ignored', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const socket = {};
+        await webSocketHandlers.get('init_character_data')(
+            makeCharacterPayload(12002, {
+                achievementActionTypeBuffsMap: {
+                    '/action_types/woodcutting': [{ typeHrid: '/buff_types/wisdom', flatBoost: 0.2 }],
+                },
+                communityBuffs: [{ hrid: '/community_buff_types/experience', level: 10 }],
+                communityActionTypeBuffsMap: { stale: [{ typeHrid: '/buff_types/wisdom', flatBoost: 0.1 }] },
+                characterGuildBuffMap: { stale: { level: 9 } },
+                guildActionTypeBuffsMap: { stale: [{ typeHrid: '/buff_types/action_speed', flatBoost: 0.9 }] },
+            }),
+            { socket }
+        );
+
+        // Prime the achievement cache against the old source object.
+        expect(dataManager.getAchievementBuffFlatBoost('/action_types/woodcutting', '/buff_types/wisdom')).toBe(0.2);
+
+        webSocketHandlers.get('achievement_buffs_updated')(
+            { type: 'achievement_buffs_updated', achievementActionTypeBuffsMap: {} },
+            { socket }
+        );
+        webSocketHandlers.get('community_buffs_updated')(
+            { type: 'community_buffs_updated', communityBuffs: [], communityActionTypeBuffsMap: {} },
+            { socket }
+        );
+        webSocketHandlers.get('guild_buffs_updated')(
+            { type: 'guild_buffs_updated', characterGuildBuffMap: {}, guildActionTypeBuffsMap: {} },
+            { socket }
+        );
+
+        expect(dataManager.characterData.achievementActionTypeBuffsMap).toEqual({});
+        expect(dataManager.getAchievementBuffFlatBoost('/action_types/woodcutting', '/buff_types/wisdom')).toBe(0);
+        expect(dataManager.characterData.communityBuffs).toEqual([]);
+        expect(dataManager.characterData.communityActionTypeBuffsMap).toEqual({});
+        expect(dataManager.characterGuildBuffMap).toEqual({});
+        expect(dataManager.characterData.characterGuildBuffMap).toEqual({});
+        expect(dataManager.characterData.guildActionTypeBuffsMap).toEqual({});
+    });
+
+    test('TLA-018: stale-socket buff updates cannot overwrite the active character; same-character reconnect makes the old socket stale', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const initHandler = webSocketHandlers.get('init_character_data');
+        const socketOld = {};
+        const socketNew = {};
+
+        await initHandler(makeCharacterPayload(12003), { socket: socketOld });
+        await initHandler(makeCharacterPayload(12003), { socket: socketNew });
+
+        webSocketHandlers.get('community_buffs_updated')(
+            {
+                type: 'community_buffs_updated',
+                communityBuffs: [{ hrid: '/community_buff_types/experience', level: 99 }],
+                communityActionTypeBuffsMap: { stale: [] },
+            },
+            { socket: socketOld }
+        );
+        webSocketHandlers.get('guild_buffs_updated')(
+            {
+                type: 'guild_buffs_updated',
+                characterGuildBuffMap: { stale: { level: 99 } },
+                guildActionTypeBuffsMap: { stale: [] },
+            },
+            { socket: socketOld }
+        );
+        webSocketHandlers.get('personal_buffs_updated')(
+            {
+                type: 'personal_buffs_updated',
+                personalActionTypeBuffsMap: { stale: [] },
+                characterBuffs: [{ typeHrid: '/buff_types/wisdom', flatBoost: 9 }],
+            },
+            { socket: socketOld }
+        );
+
+        expect(dataManager.characterData.communityBuffs).toEqual([]);
+        expect(dataManager.characterGuildBuffMap).toEqual({});
+        expect(dataManager.personalActionTypeBuffsMap).toEqual({});
+
+        const currentCommunity = [{ hrid: '/community_buff_types/experience', level: 12 }];
+        webSocketHandlers.get('community_buffs_updated')(
+            {
+                type: 'community_buffs_updated',
+                communityBuffs: currentCommunity,
+                communityActionTypeBuffsMap: { current: [] },
+            },
+            { socket: socketNew }
+        );
+        expect(dataManager.characterData.communityBuffs).toBe(currentCommunity);
+    });
+});
