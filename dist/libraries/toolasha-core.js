@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.98.0
+ * Version: 2.98.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6977,6 +6977,7 @@
         constructor() {
             this.observer = null;
             this.handlers = [];
+            this.readyHandlers = []; // Callbacks fired when the shared observer is actually attached to document.body
             this.isObserving = false;
             this.debounceTimers = new Map(); // Track debounce timers per handler
             this.debouncedLatest = new Map(); // Latest { node, mutation } per handler (O(1) per handler)
@@ -7028,9 +7029,61 @@
                 });
 
                 this.isObserving = true;
+                this.notifyReadyHandlers();
             };
 
             startObserver();
+        }
+
+        /**
+         * Notify handlers that depend on the observer being attached to the current body.
+         * Important for @run-at document-start: start() may have returned before document.body existed.
+         * @private
+         */
+        notifyReadyHandlers() {
+            for (const handler of [...this.readyHandlers]) {
+                try {
+                    const result = handler.callback();
+                    if (result && typeof result.catch === 'function') {
+                        result.catch((error) => {
+                            console.error(`[DOM Observer] Ready handler error (${handler.name}):`, error);
+                        });
+                    }
+                } catch (error) {
+                    console.error(`[DOM Observer] Ready handler error (${handler.name}):`, error);
+                }
+            }
+        }
+
+        /**
+         * Register a callback that runs whenever the centralized observer has actually attached to
+         * document.body. If it is already attached, the callback runs immediately. This is a bounded
+         * lifecycle/catch-up signal, not a polling mechanism.
+         * @param {string} name - Handler name for diagnostics
+         * @param {Function} callback - Called with no arguments when observing is ready
+         * @returns {Function} Unregister function
+         */
+        onReady(name, callback) {
+            const handler = { name, callback };
+            this.readyHandlers.push(handler);
+
+            if (this.isObserving) {
+                try {
+                    const result = callback();
+                    if (result && typeof result.catch === 'function') {
+                        result.catch((error) => {
+                            console.error(`[DOM Observer] Ready handler error (${name}):`, error);
+                        });
+                    }
+                } catch (error) {
+                    console.error(`[DOM Observer] Ready handler error (${name}):`, error);
+                }
+            }
+
+            return () => {
+                const index = this.readyHandlers.indexOf(handler);
+                if (index > -1) this.readyHandlers.splice(index, 1);
+            };
         }
 
         /**
@@ -7169,6 +7222,7 @@
             return {
                 isObserving: this.isObserving,
                 handlerCount: this.handlers.length,
+                readyHandlerCount: this.readyHandlers.length,
                 handlers: this.handlers.map((h) => ({
                     name: h.name,
                     debounced: h.debounce || false,

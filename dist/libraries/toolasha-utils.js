@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.98.0
+ * Version: 2.98.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2030,13 +2030,36 @@
      * @param {Object} [options.gameData=null] - Pre-fetched gameData (required for gathering path).
      * @param {number} [options.communityEfficiency=0] - Community buff efficiency (production only).
      *   Caller computes this via their own method (e.g. calculateCommunityBuffBonus) and passes it in.
+     * @param {Map|null} [options.equipmentOverride=null] - When provided (together with
+     *   drinksOverride), scores this exact hypothetical equipment instead of resolving the
+     *   live/saved action context - for a what-if scenario (e.g. the Skilling Optimizer/Simulator),
+     *   never for live play. All current/global modifiers below (house, community, achievement,
+     *   personal, guild) still apply as-is; only equipment/drinks/skill level become hypothetical.
+     * @param {Array|null} [options.drinksOverride=null] - Hypothetical drink slots
+     *   (`[{itemHrid}, ...]`) to use instead of the live/saved action context's drinks. Only takes
+     *   effect together with equipmentOverride.
+     * @param {number|null} [options.skillLevelOverride=null] - Hypothetical skill level (e.g. a
+     *   Simulator "Level" field) instead of the character's real current level for this skill.
      * @returns {Object} Efficiency context with all computed values
      */
     function getActionEfficiencyContext(actionDetails, options = {}) {
-        const { isProduction = false, gameData = null, communityEfficiency = 0 } = options;
+        const {
+            isProduction = false,
+            gameData = null,
+            communityEfficiency = 0,
+            equipmentOverride = null,
+            drinksOverride = null,
+            skillLevelOverride = null,
+        } = options;
 
         const skills = dataManager.getSkills();
-        const { equipment, drinks: drinkSlots } = resolveActionContext(actionDetails.type);
+        // A hypothetical scenario (Optimizer/Simulator) supplies its own equipment+drinks and must
+        // never fall through to resolveActionContext()'s live/saved resolution - that would silently
+        // mix real character state into a what-if calculation.
+        const isHypothetical = equipmentOverride != null || drinksOverride != null;
+        const { equipment, drinks: drinkSlots } = isHypothetical
+            ? { equipment: equipmentOverride ?? new Map(), drinks: drinksOverride ?? [] }
+            : resolveActionContext(actionDetails.type);
         const itemDetailMap = gameData?.itemDetailMap ?? dataManager.getInitClientData()?.itemDetailMap ?? {};
 
         // Drink concentration
@@ -2064,7 +2087,9 @@
         const baseRequirement = actionDetails.levelRequirement?.level || 1;
         const skillHrid = actionDetails.levelRequirement?.skillHrid;
         let skillLevel = baseRequirement;
-        if (skills) {
+        if (skillLevelOverride != null) {
+            skillLevel = skillLevelOverride;
+        } else if (skills) {
             for (const skill of skills) {
                 if (skill.skillHrid === skillHrid) {
                     skillLevel = skill.level;
