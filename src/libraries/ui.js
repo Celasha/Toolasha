@@ -13,6 +13,7 @@ import combatLevelProgress from '../features/ui/combat-level-progress.js';
 import externalLinks from '../features/ui/external-links.js';
 import hideLabyrinthBadge from '../features/ui/hide-labyrinth-badge.js';
 import hideGuildBadge from '../features/ui/hide-guild-badge.js';
+import hideNavBarGlow from '../features/ui/hide-nav-bar-glow.js';
 import tabReorder from '../features/ui/tab-reorder.js';
 import draggableModals from '../features/ui/draggable-modals.js';
 
@@ -108,6 +109,7 @@ toolashaRoot.UI = {
     externalLinks,
     hideLabyrinthBadge,
     hideGuildBadge,
+    hideNavBarGlow,
     tabReorder,
     draggableModals,
     altClickNavigation,

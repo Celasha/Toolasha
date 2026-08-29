@@ -539,6 +539,13 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'hideNavBarGlow',
+            name: 'Hide Nav Bar Glow',
+            category: 'UI',
+            module: UI.hideNavBarGlow,
+            async: false,
+        },
+        {
             key: 'tabReorder',
             name: 'Tab Reorder',
             category: 'UI',

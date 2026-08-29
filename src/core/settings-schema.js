@@ -2047,6 +2047,13 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: false,
             },
+            hideNavBarGlow: {
+                id: 'hideNavBarGlow',
+                label: 'Left sidebar: Hide active skill glow effect',
+                type: 'checkbox',
+                default: false,
+                help: "Removes the game's pulsing orange glow animation from the currently active skill's icon in the left navigation bar.",
+            },
             tabReorder: {
                 id: 'tabReorder',
                 label: 'Character panel: Drag-and-drop tab reordering',
