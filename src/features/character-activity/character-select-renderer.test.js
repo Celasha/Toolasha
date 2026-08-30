@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     accountPrefs: { enabled: true, dateFormat: 'MM-DD', timeFormat: '24hour' },
     activityRecords: new Map(),
     spriteUrl: 'https://example.com/skills_sprite.svg',
+    spritePromise: null,
 }));
 
 vi.mock('../../core/dom-observer.js', () => ({
@@ -44,7 +45,7 @@ vi.mock('../../core/dom-observer.js', () => ({
 }));
 
 vi.mock('../../utils/asset-manifest.js', () => ({
-    default: { getSpriteUrl: vi.fn(async () => mocks.spriteUrl) },
+    default: { getSpriteUrl: vi.fn(() => mocks.spritePromise || Promise.resolve(mocks.spriteUrl)) },
 }));
 
 vi.mock('./character-select-resolver.js', () => ({
@@ -296,6 +297,7 @@ describe('idempotent Character Select injection and lifecycle', () => {
         mocks.resolvedSlots = null;
         mocks.accountPrefs = { enabled: true, dateFormat: 'MM-DD', timeFormat: '24hour' };
         mocks.activityRecords = new Map();
+        mocks.spritePromise = null;
         characterSelectRenderer.stopWatching();
     });
 
@@ -338,6 +340,100 @@ describe('idempotent Character Select injection and lifecycle', () => {
 
         expect(slot.querySelectorAll('.toolasha-character-activity-status')).toHaveLength(1);
         expect(slot.textContent).toContain('Character is idle');
+    });
+
+    test('renders status text without waiting for the optional skill-sprite manifest request', async () => {
+        const root = buildRoot();
+        const slot = buildSlot(root);
+        mocks.resolvedSlots = [{ slotElement: slot, character: character() }];
+        mocks.activityRecords.set('char-a', record());
+
+        let resolveSprite;
+        mocks.spritePromise = new Promise((resolve) => {
+            resolveSprite = resolve;
+        });
+
+        characterSelectRenderer.startWatching();
+        const renderPromise = mocks.onClassRegistrations[0].callback(root);
+        for (let i = 0; i < 5; i++) await Promise.resolve();
+
+        try {
+            expect(slot.querySelectorAll('.toolasha-character-activity-status')).toHaveLength(1);
+            expect(slot.textContent).toContain('Character is idle');
+        } finally {
+            resolveSprite(null);
+            await renderPromise;
+        }
+    });
+
+    test('an older delayed sprite continuation cannot overwrite a newer render of the same slot', async () => {
+        const root = buildRoot();
+        const slot = buildSlot(root);
+        mocks.resolvedSlots = [{ slotElement: slot, character: character() }];
+        mocks.activityRecords.set('char-a', record());
+
+        let resolveSprite;
+        mocks.spritePromise = new Promise((resolve) => {
+            resolveSprite = resolve;
+        });
+
+        characterSelectRenderer.startWatching();
+        const callback = mocks.onClassRegistrations[0].callback;
+        await callback(root);
+        expect(slot.textContent).toContain('Character is idle');
+
+        // A newer rescan publishes a different state before the first render's sprite resolves.
+        mocks.activityRecords.set(
+            'char-a',
+            record({
+                projection: {
+                    segments: [
+                        {
+                            actionName: 'Newest Action',
+                            actionTypeHrid: '/action_types/foraging',
+                            startAt: 1000,
+                            endAt: null,
+                            queuedIndex: 0,
+                        },
+                    ],
+                    terminalCause: 'unknown',
+                    terminalAt: null,
+                },
+            })
+        );
+        await callback(root);
+        expect(slot.textContent).toContain('Newest Action');
+
+        // Both generations share the delayed promise. Only the newest generation may enrich.
+        resolveSprite('https://example.com/skills_sprite.svg');
+        for (let i = 0; i < 5; i++) await Promise.resolve();
+
+        expect(slot.textContent).toContain('Newest Action');
+        expect(slot.textContent).not.toContain('Character is idle');
+    });
+
+    test('stopWatching invalidates delayed sprite enrichment so removed UI cannot reappear', async () => {
+        const root = buildRoot();
+        const slot = buildSlot(root);
+        mocks.resolvedSlots = [{ slotElement: slot, character: character() }];
+        mocks.activityRecords.set('char-a', record());
+
+        let resolveSprite;
+        mocks.spritePromise = new Promise((resolve) => {
+            resolveSprite = resolve;
+        });
+
+        characterSelectRenderer.startWatching();
+        await mocks.onClassRegistrations[0].callback(root);
+        expect(slot.querySelector('.toolasha-character-activity-status')).not.toBeNull();
+
+        characterSelectRenderer.stopWatching();
+        expect(slot.querySelector('.toolasha-character-activity-status')).toBeNull();
+
+        resolveSprite('https://example.com/skills_sprite.svg');
+        for (let i = 0; i < 5; i++) await Promise.resolve();
+
+        expect(slot.querySelector('.toolasha-character-activity-status')).toBeNull();
     });
 
     test('does not inject anything when the account-level preference mirror says disabled', async () => {

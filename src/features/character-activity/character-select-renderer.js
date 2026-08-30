@@ -148,6 +148,7 @@ class CharacterSelectRenderer {
         this.unregisterObserver = null;
         this.unregisterReady = null;
         this.refreshTimer = null;
+        this.renderGeneration = 0;
         this.trackedSlots = new Map(); // characterId -> {slotElement, character}
     }
 
@@ -217,20 +218,48 @@ class CharacterSelectRenderer {
     }
 
     async renderAllTrackedSlots() {
+        // Each rescan/refresh owns one render generation. Any older async load that resumes after a
+        // remount or newer refresh must fail closed instead of writing stale content into a slot.
+        const generation = ++this.renderGeneration;
         const prefs = await loadAccountPreferences();
+        if (!this.isWatching || generation !== this.renderGeneration) return;
+
         if (!prefs.enabled) {
             this.clearAllInjectedBlocks();
             return;
         }
 
-        const spriteUrl = await assetManifest.getSpriteUrl('skills');
-
+        const rendered = [];
         for (const { slotElement, character } of this.trackedSlots.values()) {
             if (!slotElement.isConnected) continue;
+
             const record = await loadCharacterActivity(character.id);
+            if (!this.isWatching || generation !== this.renderGeneration) return;
+            if (!slotElement.isConnected) continue;
+            if (this.trackedSlots.get(character.id)?.slotElement !== slotElement) continue;
+
             const state = computeSlotDisplayState(record, character, prefs);
-            this.renderSlotBlock(slotElement, state, record, spriteUrl);
+            this.renderSlotBlock(slotElement, state, record, null);
+            rendered.push({ characterId: character.id, slotElement, state, record });
         }
+
+        // The skill sprite is decorative. Start this optional network/manifest lookup only after
+        // all status text is already rendered, then enrich only if this render generation still
+        // owns the same slots. A blocked sprite request can never suppress the feature itself.
+        if (rendered.length === 0) return;
+        void Promise.resolve()
+            .then(() => assetManifest.getSpriteUrl('skills'))
+            .then((spriteUrl) => {
+                if (!spriteUrl || !this.isWatching || generation !== this.renderGeneration) return;
+                for (const { characterId, slotElement, state, record } of rendered) {
+                    if (!slotElement.isConnected) continue;
+                    if (this.trackedSlots.get(characterId)?.slotElement !== slotElement) continue;
+                    this.renderSlotBlock(slotElement, state, record, spriteUrl);
+                }
+            })
+            .catch((error) => {
+                console.warn('[Character Activity Status] Optional skill sprite lookup failed:', error);
+            });
     }
 
     renderSlotBlock(slotElement, state, record, spriteUrl) {
@@ -302,6 +331,7 @@ class CharacterSelectRenderer {
             this.unregisterReady = null;
         }
         this.stopRefreshTimer();
+        this.renderGeneration += 1; // invalidate any in-flight render/sprite enrichment
         this.clearAllInjectedBlocks();
         this.trackedSlots.clear();
         this.isWatching = false;

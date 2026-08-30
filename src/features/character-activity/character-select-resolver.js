@@ -90,7 +90,12 @@ export function findPopulatedCharacterSlots(rootElement) {
     const slotsById = new Map();
 
     for (const slot of slots) {
-        const link = slot.querySelector('a[href*="characterId="]');
+        // Current native MWI renders each populated slot as the navigation link itself
+        // (`<a class="...slot..." href="/game?characterId=...">`), not as a wrapper
+        // containing a descendant link. `querySelector()` never matches the element it is
+        // called on, so prefer the slot itself when it owns the characterId href while
+        // retaining the descendant fallback for compatible future/alternate markup.
+        const link = slot.matches?.('a[href*="characterId="]') ? slot : slot.querySelector('a[href*="characterId="]');
         if (!link) continue;
 
         const characterId = getCharacterIdFromSlotLink(link);

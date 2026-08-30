@@ -39,6 +39,15 @@ function attachFiber(element, stateNode) {
 }
 
 function buildSlot(characterId) {
+    // Exact current native MWI shape: the populated slot is the navigation anchor itself.
+    const slot = document.createElement('a');
+    slot.className = 'CharacterSelectPage_slot__abc';
+    slot.setAttribute('href', `/game?characterId=${characterId}`);
+    return slot;
+}
+
+function buildWrappedSlot(characterId) {
+    // Retain compatibility with a wrapper + descendant-link shape if native markup changes.
     const slot = document.createElement('div');
     slot.className = 'CharacterSelectPage_slot__abc';
     slot.innerHTML = `<a href="/game?characterId=${characterId}"></a>`;
@@ -93,6 +102,26 @@ describe('getCharacterSelectOwnerFromElement', () => {
 
         expect(getCharacterSelectOwnerFromElement(anchor)).toBeNull();
     });
+
+    test('fails closed when more than one matching Character Select owner exists on the ancestry', () => {
+        const ownerOne = makeOwner();
+        const ownerTwo = makeOwner();
+        const anchor = document.createElement('div');
+        document.body.appendChild(anchor);
+
+        Object.defineProperty(anchor, '__reactFiber$ambiguous', {
+            configurable: true,
+            value: {
+                stateNode: null,
+                return: {
+                    stateNode: ownerOne,
+                    return: { stateNode: ownerTwo, return: null },
+                },
+            },
+        });
+
+        expect(getCharacterSelectOwnerFromElement(anchor)).toBeNull();
+    });
 });
 
 describe('getCharacterIdFromSlotLink', () => {
@@ -118,9 +147,17 @@ describe('getCharacterIdFromSlotLink', () => {
 });
 
 describe('findPopulatedCharacterSlots', () => {
-    test('finds only slots with a real characterId link, skipping empty create-character slots', () => {
+    test('finds current native populated slots where the characterId href belongs to the slot itself', () => {
         const root = document.createElement('div');
         const populated = buildSlot('char-a');
+        root.appendChild(populated);
+
+        expect(findPopulatedCharacterSlots(root)).toEqual([{ slotElement: populated, characterId: 'char-a' }]);
+    });
+
+    test('retains wrapper + descendant-link compatibility while skipping empty create-character slots', () => {
+        const root = document.createElement('div');
+        const populated = buildWrappedSlot('char-a');
         const empty = document.createElement('div');
         empty.className = 'CharacterSelectPage_slot__abc'; // same class, no characterId link
         root.appendChild(populated);
@@ -129,6 +166,19 @@ describe('findPopulatedCharacterSlots', () => {
         const result = findPopulatedCharacterSlots(root);
 
         expect(result).toEqual([{ slotElement: populated, characterId: 'char-a' }]);
+    });
+
+    test('skips malformed or missing characterId slots rather than guessing identity', () => {
+        const root = document.createElement('div');
+        const emptyId = document.createElement('a');
+        emptyId.className = 'CharacterSelectPage_slot__abc';
+        emptyId.setAttribute('href', '/game?characterId=');
+        const noId = document.createElement('div');
+        noId.className = 'CharacterSelectPage_slot__abc';
+        root.appendChild(emptyId);
+        root.appendChild(noId);
+
+        expect(findPopulatedCharacterSlots(root)).toEqual([]);
     });
 
     test('fails closed on a duplicate character ID across slots - excludes all of them', () => {
