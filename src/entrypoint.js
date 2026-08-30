@@ -451,6 +451,13 @@ function registerFeatures() {
         },
         { key: 'combatStats', name: 'Combat Stats', category: 'Combat', module: Combat.combatStats, async: false },
         {
+            key: 'combatConsumableTimer',
+            name: 'Combat Consumable Timer',
+            category: 'Combat',
+            module: Combat.combatConsumableTimer,
+            async: false,
+        },
+        {
             key: 'labyrinthTracker',
             name: 'Labyrinth Tracker',
             category: 'Combat',

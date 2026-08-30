@@ -1789,6 +1789,13 @@ export const settingsGroups = {
                 default: 12,
                 help: 'Highlight combat consumables projected to run out within this many hours. Set to 0 to disable warnings.',
             },
+            combatConsumableTimer: {
+                id: 'combatConsumableTimer',
+                label: 'Combat consumable timer: Show remaining food/drink time during battle',
+                type: 'checkbox',
+                default: true,
+                help: 'Shows each active combat food/drink\'s estimated remaining runway below its icon in the Consumables list during battle. Requires "Combat Statistics" to be enabled - the estimate comes from its consumption tracker.',
+            },
             combatStatsChatMessage: {
                 id: 'combatStatsChatMessage',
                 label: 'Combat Statistics: Chat message format',

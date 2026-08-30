@@ -28,6 +28,7 @@ import labSim from '../features/combat-sim/lab-sim.js';
 
 // Combat stats
 import combatStats from '../features/combat-stats/combat-stats.js';
+import combatConsumableTimer from '../features/combat/combat-consumable-timer.js';
 
 // Abilities
 import abilityBookCalculator from '../features/abilities/ability-book-calculator.js';
@@ -67,6 +68,7 @@ toolashaRoot.Combat = {
         constructMilkonomyExport,
     },
     combatStats,
+    combatConsumableTimer,
     abilityBookCalculator,
     abilityTooltipTiming,
     combatScore,
