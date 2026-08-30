@@ -634,6 +634,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Shows whether ability is learned and current level/progress on ability book tooltips',
             },
+            abilityTooltip_effectiveTiming: {
+                id: 'abilityTooltip_effectiveTiming',
+                label: 'Show effective cooldown/cast time (with your stats)',
+                type: 'checkbox',
+                default: true,
+                help: 'Computes actual Cooldown/Cast Time from your current Ability Haste, Cast Speed, and Attack level, and shows it on ability tooltips when different from the base value.',
+            },
             itemTooltip_enhancementMilestones: {
                 id: 'itemTooltip_enhancementMilestones',
                 label: 'Show enhancement milestones (+5/+7/+10/+12)',

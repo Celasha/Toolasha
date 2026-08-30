@@ -31,6 +31,7 @@ import combatStats from '../features/combat-stats/combat-stats.js';
 
 // Abilities
 import abilityBookCalculator from '../features/abilities/ability-book-calculator.js';
+import abilityTooltipTiming from '../features/abilities/ability-tooltip-timing.js';
 
 // Profile (combat score)
 import combatScore from '../features/profile/combat-score.js';
@@ -67,6 +68,7 @@ toolashaRoot.Combat = {
     },
     combatStats,
     abilityBookCalculator,
+    abilityTooltipTiming,
     combatScore,
     characterCardButton,
     eliteAchievementReminder,

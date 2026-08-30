@@ -383,6 +383,14 @@ function registerFeatures() {
             module: Combat.abilityBookCalculator,
             async: false,
         },
+        {
+            key: 'abilityTooltipTiming',
+            name: 'Ability Tooltip Timing',
+            category: 'Combat',
+            module: Combat.abilityTooltipTiming,
+            async: false,
+            customCheck: () => config.getSetting('abilityTooltip_effectiveTiming'),
+        },
         { key: 'zoneIndices', name: 'Zone Indices', category: 'Combat', module: Combat.zoneIndices, async: false },
         { key: 'combatScore', name: 'Combat Score', category: 'Profile', module: Combat.combatScore, async: false },
         {
