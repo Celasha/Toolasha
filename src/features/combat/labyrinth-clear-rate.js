@@ -593,7 +593,10 @@ class LabyrinthClearRate {
     }
 
     /**
-     * Get the skip threshold for a skill from characterSetting
+     * Get the signed skip threshold for a skill from characterSetting.
+     * Native MWI accepts and persists thresholds from -999 through 999; negative values are
+     * meaningful (they skip rooms sufficiently below the character's effective level), not an
+     * "unset" sentinel. Preserve that sign here and only reject a derived non-physical room level.
      */
     getSkipThreshold(skillHrid) {
         const charSetting = dataManager.characterData?.characterSetting;
@@ -601,7 +604,7 @@ class LabyrinthClearRate {
 
         const skillId = skillHrid.replace('/skills/', '');
         const key = `labyrinthSkip${skillId.charAt(0).toUpperCase()}${skillId.slice(1)}`;
-        return Math.max(0, Math.floor(Number(charSetting[key]) || 0));
+        return Math.floor(Number(charSetting[key]) || 0);
     }
 
     /**
@@ -682,19 +685,18 @@ class LabyrinthClearRate {
     }
 
     /**
-     * Compute target room level from effective level + skip threshold
-     * Matches reference script: floor(effectiveLevel + skipThreshold - 1)
+     * Compute target room level from effective level + signed skip threshold.
+     * Matches native MWI's boundary: floor(effectiveLevel + skipThreshold - 1).
      */
     getTargetRoomLevel(skillHrid) {
         const effectiveLevel = this.getEffectiveLevel(skillHrid);
         const skipThreshold = this.getSkipThreshold(skillHrid);
-        if (skipThreshold <= 0) return 0;
-
-        return Math.floor(effectiveLevel + skipThreshold - 1);
+        return Math.max(0, Math.floor(effectiveLevel + skipThreshold - 1));
     }
 
     /**
-     * Get the skip threshold for a combat room from characterSetting
+     * Get the signed skip threshold for a combat room from characterSetting.
+     * Native MWI uses the same -999..999 setting domain for combat and skilling rooms.
      */
     getCombatSkipThreshold(monsterHrid) {
         const charSetting = dataManager.characterData?.characterSetting;
@@ -706,11 +708,11 @@ class LabyrinthClearRate {
             .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
             .join('');
         const key = `labyrinthSkip${pascal}`;
-        return Math.max(0, Math.floor(Number(charSetting[key]) || 0));
+        return Math.floor(Number(charSetting[key]) || 0);
     }
 
     /**
-     * Compute target room level for a combat room.
+     * Compute target room level for a combat room from the signed native threshold.
      * Uses the player's effective combat level as the base (same as the game).
      */
     getCombatRoomLevel(monsterHrid) {
@@ -722,10 +724,8 @@ class LabyrinthClearRate {
         }
 
         const skipThreshold = this.getCombatSkipThreshold(monsterHrid);
-        if (skipThreshold <= 0) return 0;
-
         const effectiveCombatLevel = this.getPlayerEffectiveCombatLevel();
-        return Math.floor(effectiveCombatLevel + skipThreshold - 1);
+        return Math.max(0, Math.floor(effectiveCombatLevel + skipThreshold - 1));
     }
 
     /**

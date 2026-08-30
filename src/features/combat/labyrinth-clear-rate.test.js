@@ -320,6 +320,85 @@ describe('loadout equipment resolution boundary', () => {
     });
 });
 
+describe('signed labyrinth skip threshold semantics', () => {
+    test('preserves native negative skill and combat skip thresholds instead of coercing them to zero', () => {
+        const feature = new LabyrinthClearRate();
+        dataManager.characterData.characterSetting = {
+            labyrinthSkipMilking: -16,
+            labyrinthSkipPyreHunter: -77,
+        };
+
+        expect(feature.getSkipThreshold('/skills/milking')).toBe(-16);
+        expect(feature.getCombatSkipThreshold('/monsters/pyre_hunter')).toBe(-77);
+    });
+
+    test('maps signed skill thresholds to the same effectiveLevel + threshold - 1 room boundary as native MWI', () => {
+        const feature = new LabyrinthClearRate();
+        dataManager.characterData.characterSetting = { labyrinthSkipMilking: -16 };
+        dataManager.getSkills.mockReturnValue([{ skillHrid: '/skills/milking', level: 60 }]);
+
+        expect(feature.getTargetRoomLevel('/skills/milking')).toBe(43);
+
+        dataManager.characterData.characterSetting.labyrinthSkipMilking = 0;
+        expect(feature.getTargetRoomLevel('/skills/milking')).toBe(59);
+    });
+
+    test('maps signed combat thresholds instead of treating non-positive values as no room', () => {
+        const feature = new LabyrinthClearRate();
+        dataManager.characterData.characterSetting = { labyrinthSkipPyreHunter: -16 };
+        dataManager.characterData.combatUnit = { combatDetails: { combatLevel: 60 } };
+
+        expect(feature.getCombatRoomLevel('/monsters/pyre_hunter')).toBe(43);
+
+        dataManager.characterData.characterSetting.labyrinthSkipPyreHunter = 0;
+        expect(feature.getCombatRoomLevel('/monsters/pyre_hunter')).toBe(59);
+    });
+
+    test('keeps the clear-rate badge reachable for a negative current skill threshold', () => {
+        const feature = new LabyrinthClearRate();
+        buildAutomationTable([
+            {
+                roomHrid: '/skills/milking',
+                isSkill: true,
+                settingKey: 'labyrinthSkipMilking',
+                currentValue: -16,
+            },
+        ]);
+        dataManager.getSkills.mockReturnValue([{ skillHrid: '/skills/milking', level: 60 }]);
+
+        feature.injectOverlays();
+
+        const badge = document.querySelector('.mwi-labyrinth-clear');
+        expect(badge).not.toBeNull();
+        expect(badge.textContent).not.toBe('...');
+    });
+
+    test('keeps the combat clear-rate simulation reachable for a negative current threshold', () => {
+        const feature = new LabyrinthClearRate();
+        buildAutomationTable([
+            {
+                roomHrid: '/monsters/pyre_hunter',
+                isSkill: false,
+                settingKey: 'labyrinthSkipPyreHunter',
+                currentValue: -22,
+            },
+        ]);
+        dataManager.characterData.combatUnit = { combatDetails: { combatLevel: 60 } };
+        feature.processSimQueue = vi.fn();
+
+        feature.injectOverlays();
+
+        const badge = document.querySelector('.mwi-labyrinth-clear');
+        expect(badge).not.toBeNull();
+        expect(badge.textContent).toBe('...');
+        expect(feature.simQueue).toHaveLength(1);
+        expect(feature.simQueue[0]).toMatchObject({
+            monsterHrid: '/monsters/pyre_hunter',
+            roomLevel: 37,
+        });
+    });
+});
+
 describe('getRoomsNeedingSkipUpdate', () => {
     test('returns only rooms whose current threshold differs from the recommendation', () => {
         const feature = new LabyrinthClearRate();
@@ -335,6 +414,21 @@ describe('getRoomsNeedingSkipUpdate', () => {
         expect(rooms).toHaveLength(1);
         expect(rooms[0].roomHrid).toBe('/skills/milking');
         expect(rooms[0].recommendedThreshold).toBe(15);
+    });
+
+    test('does not re-queue an already-correct negative recommendation forever', () => {
+        const feature = new LabyrinthClearRate();
+        buildAutomationTable([
+            {
+                roomHrid: '/monsters/pyre_hunter',
+                isSkill: false,
+                settingKey: 'labyrinthSkipPyreHunter',
+                currentValue: -22,
+            },
+        ]);
+        feature.recommendations.set('/monsters/pyre_hunter', { threshold: -22 });
+
+        expect(feature.getRoomsNeedingSkipUpdate()).toEqual([]);
     });
 
     test('returns an empty array when no recommendations have been computed', () => {
@@ -360,6 +454,40 @@ describe('applyNextRecommendedSkip', () => {
         expect(savedCalls).toHaveLength(1);
         expect(savedCalls[0]).toEqual({ roomHrid: '/skills/milking', settingKey: 'labyrinthSkipMilking', value: 15 });
         expect(dataManager.characterData.characterSetting.labyrinthSkipMilking).toBe(15);
+    });
+
+    test('applies a negative recommendation once, then advances to the next mismatched room', () => {
+        const feature = new LabyrinthClearRate();
+        buildAutomationTable([
+            {
+                roomHrid: '/monsters/pyre_hunter',
+                isSkill: false,
+                settingKey: 'labyrinthSkipPyreHunter',
+                currentValue: 17,
+            },
+            {
+                roomHrid: '/monsters/frost_sniper',
+                isSkill: false,
+                settingKey: 'labyrinthSkipFrostSniper',
+                currentValue: 10,
+            },
+        ]);
+        feature.recommendations.set('/monsters/pyre_hunter', { threshold: -22 });
+        feature.recommendations.set('/monsters/frost_sniper', { threshold: 44 });
+
+        feature.applyNextRecommendedSkip();
+        expect(savedCalls).toEqual([
+            { roomHrid: '/monsters/pyre_hunter', settingKey: 'labyrinthSkipPyreHunter', value: -22 },
+        ]);
+        expect(feature.getRoomsNeedingSkipUpdate().map((room) => room.roomHrid)).toEqual(['/monsters/frost_sniper']);
+
+        feature.applyNextRecommendedSkip();
+        expect(savedCalls[1]).toEqual({
+            roomHrid: '/monsters/frost_sniper',
+            settingKey: 'labyrinthSkipFrostSniper',
+            value: 44,
+        });
+        expect(feature.getRoomsNeedingSkipUpdate()).toEqual([]);
     });
 
     test('does nothing when every visible room already matches its recommendation', () => {
@@ -429,6 +557,33 @@ describe('settingHandler self-triggered-save exemption', () => {
         expect(feature.recommendations.get('/skills/foraging')).toEqual({ threshold: 30 });
     });
 
+    test('preserves recommendations when a negative Apply Skip value is confirmed exactly', () => {
+        const feature = new LabyrinthClearRate();
+        buildAutomationTable([
+            {
+                roomHrid: '/monsters/pyre_hunter',
+                isSkill: false,
+                settingKey: 'labyrinthSkipPyreHunter',
+                currentValue: 17,
+            },
+            {
+                roomHrid: '/monsters/frost_sniper',
+                isSkill: false,
+                settingKey: 'labyrinthSkipFrostSniper',
+                currentValue: 10,
+            },
+        ]);
+        feature.recommendations.set('/monsters/pyre_hunter', { threshold: -22 });
+        feature.recommendations.set('/monsters/frost_sniper', { threshold: 44 });
+        feature.initialize();
+
+        feature.applyNextRecommendedSkip();
+        feature.settingHandler({ characterSetting: { ...dataManager.characterData.characterSetting } });
+
+        expect(feature.recommendations.size).toBe(2);
+        expect(feature.getRoomsNeedingSkipUpdate().map((room) => room.roomHrid)).toEqual(['/monsters/frost_sniper']);
+    });
+
     test('still clears recommendations for an unrelated/external setting change', () => {
         const feature = new LabyrinthClearRate();
         buildAutomationTable([
@@ -482,6 +637,28 @@ describe('_updateApplyButtonState', () => {
             { roomHrid: '/skills/milking', isSkill: true, settingKey: 'labyrinthSkipMilking', currentValue: 15 },
         ]);
         feature.recommendations.set('/skills/milking', { threshold: 15 });
+
+        const button = document.createElement('button');
+        button.id = 'mwi-apply-skip-btn';
+        document.body.appendChild(button);
+
+        feature._updateApplyButtonState();
+
+        expect(button.textContent).toBe('Apply Skip (0)');
+        expect(button.disabled).toBe(true);
+    });
+
+    test('does not count an already-matching negative row as still pending', () => {
+        const feature = new LabyrinthClearRate();
+        buildAutomationTable([
+            {
+                roomHrid: '/monsters/pyre_hunter',
+                isSkill: false,
+                settingKey: 'labyrinthSkipPyreHunter',
+                currentValue: -22,
+            },
+        ]);
+        feature.recommendations.set('/monsters/pyre_hunter', { threshold: -22 });
 
         const button = document.createElement('button');
         button.id = 'mwi-apply-skip-btn';
