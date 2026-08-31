@@ -2,25 +2,23 @@
 
 ## [2.99.0](https://github.com/Celasha/Toolasha/compare/v2.98.1...v2.99.0) (2026-08-31)
 
-
 ### Features
 
-* add hybrid Artisan requirement mode for missing materials ([3ae58de](https://github.com/Celasha/Toolasha/commit/3ae58de4216f71eff569a615dd58835e1d950d06))
-* add search filter to Skilling Optimizer action picker ([18ce1ab](https://github.com/Celasha/Toolasha/commit/18ce1ab885be387db2d3362f63b8a89a0215c13e))
-* add setting to hide the active-skill nav bar glow ([0aa8993](https://github.com/Celasha/Toolasha/commit/0aa89930fbd11ebfaa42c23345ca6a3fc13c9661))
-* show effective ability cooldown/cast time in tooltips ([f2460fe](https://github.com/Celasha/Toolasha/commit/f2460fe94647b47d9f7a6742d7f30b068606f820))
-* show live combat food/drink runway on the battle consumables grid ([f4a4a27](https://github.com/Celasha/Toolasha/commit/f4a4a270f1cc4acf3e44b353dae413b6711f3553))
-
+- add hybrid Artisan requirement mode for missing materials ([3ae58de](https://github.com/Celasha/Toolasha/commit/3ae58de4216f71eff569a615dd58835e1d950d06))
+- add search filter to Skilling Optimizer action picker ([18ce1ab](https://github.com/Celasha/Toolasha/commit/18ce1ab885be387db2d3362f63b8a89a0215c13e))
+- add setting to hide the active-skill nav bar glow ([0aa8993](https://github.com/Celasha/Toolasha/commit/0aa89930fbd11ebfaa42c23345ca6a3fc13c9661))
+- show effective ability cooldown/cast time in tooltips ([f2460fe](https://github.com/Celasha/Toolasha/commit/f2460fe94647b47d9f7a6742d7f30b068606f820))
+- show live combat food/drink runway on the battle consumables grid ([f4a4a27](https://github.com/Celasha/Toolasha/commit/f4a4a270f1cc4acf3e44b353dae413b6711f3553))
 
 ### Bug Fixes
 
-* defer Marketplace cleanup until workflow activation (TLA-033) ([feb5ff8](https://github.com/Celasha/Toolasha/commit/feb5ff876c1136fc1a1dd0d1ba3b496669bd80cb))
-* exclude non-random openables from analytics (TLA-030) ([c22246c](https://github.com/Celasha/Toolasha/commit/c22246c4582aea5e2c14407f691cf4525c1f6f8d))
-* harden Combat Sim engine, economics, and Upgrade Advisor correctness (TLA-029) ([36848fb](https://github.com/Celasha/Toolasha/commit/36848fb24d8a28c38f2167ddabc4facf1ac33c9b))
-* keep Alchemy current action aligned with queue order (TLA-032) ([34a21ea](https://github.com/Celasha/Toolasha/commit/34a21ea996d8c9eb1d2b9dfd2497f0c4d8c883c6))
-* keep current action calculations atomic and live (TLA-027) ([cec0a34](https://github.com/Celasha/Toolasha/commit/cec0a3401bec25d5e33a609d81baa185c1829c73))
-* preserve signed labyrinth skip thresholds (TLA-031) ([8cfbd16](https://github.com/Celasha/Toolasha/commit/8cfbd16523b29986e0438c1e9d208da83525e111))
-* sync live buff WebSocket state into DataManager (TLA-028) ([aea6703](https://github.com/Celasha/Toolasha/commit/aea67032e6ccd91ac08bbd61260b5631b1dff6da))
+- defer Marketplace cleanup until workflow activation (TLA-033) ([feb5ff8](https://github.com/Celasha/Toolasha/commit/feb5ff876c1136fc1a1dd0d1ba3b496669bd80cb))
+- exclude non-random openables from analytics (TLA-030) ([c22246c](https://github.com/Celasha/Toolasha/commit/c22246c4582aea5e2c14407f691cf4525c1f6f8d))
+- harden Combat Sim engine, economics, and Upgrade Advisor correctness (TLA-029) ([36848fb](https://github.com/Celasha/Toolasha/commit/36848fb24d8a28c38f2167ddabc4facf1ac33c9b))
+- keep Alchemy current action aligned with queue order (TLA-032) ([34a21ea](https://github.com/Celasha/Toolasha/commit/34a21ea996d8c9eb1d2b9dfd2497f0c4d8c883c6))
+- keep current action calculations atomic and live (TLA-027) ([cec0a34](https://github.com/Celasha/Toolasha/commit/cec0a3401bec25d5e33a609d81baa185c1829c73))
+- preserve signed labyrinth skip thresholds (TLA-031) ([8cfbd16](https://github.com/Celasha/Toolasha/commit/8cfbd16523b29986e0438c1e9d208da83525e111))
+- sync live buff WebSocket state into DataManager (TLA-028) ([aea6703](https://github.com/Celasha/Toolasha/commit/aea67032e6ccd91ac08bbd61260b5631b1dff6da))
 
 ## [2.98.1](https://github.com/Celasha/Toolasha/compare/v2.98.0...v2.98.1) (2026-08-28)
 
