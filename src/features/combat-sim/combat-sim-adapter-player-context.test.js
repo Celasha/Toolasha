@@ -2,10 +2,26 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     characterData: null,
-    guildBuildingLevelMap: {},
+    characterGuildBuffMap: {},
     personalActionTypeBuffsMap: {},
     mooPassBuffs: [],
 }));
+
+// Mirrors the real game's guildBuffDetailMap shape: one "_combat" and one "_skilling" entry per
+// shrine, each carrying a shrineHrid grouping field and an isCombat flag - the same shape
+// getCombatGuildBuffHridForShrine() resolves against.
+const GUILD_BUFF_DETAIL_MAP = {
+    '/guild_buffs/force_combat': { shrineHrid: '/guild_shrines/force', isCombat: true },
+    '/guild_buffs/force_skilling': { shrineHrid: '/guild_shrines/force', isCombat: false },
+    '/guild_buffs/tempo_combat': { shrineHrid: '/guild_shrines/tempo', isCombat: true },
+    '/guild_buffs/tempo_skilling': { shrineHrid: '/guild_shrines/tempo', isCombat: false },
+    '/guild_buffs/spirit_combat': { shrineHrid: '/guild_shrines/spirit', isCombat: true },
+    '/guild_buffs/spirit_skilling': { shrineHrid: '/guild_shrines/spirit', isCombat: false },
+    '/guild_buffs/rarity_combat': { shrineHrid: '/guild_shrines/rarity', isCombat: true },
+    '/guild_buffs/rarity_skilling': { shrineHrid: '/guild_shrines/rarity', isCombat: false },
+    '/guild_buffs/scholar_combat': { shrineHrid: '/guild_shrines/scholar', isCombat: true },
+    '/guild_buffs/scholar_skilling': { shrineHrid: '/guild_shrines/scholar', isCombat: false },
+};
 
 vi.mock('../../core/loadout-state.js', () => ({
     default: {
@@ -21,15 +37,20 @@ vi.mock('../../core/data-manager.js', () => ({
         get personalActionTypeBuffsMap() {
             return mocks.personalActionTypeBuffsMap;
         },
-        getInitClientData: vi.fn(() => ({ itemDetailMap: {} })),
+        getInitClientData: vi.fn(() => ({ itemDetailMap: {}, guildBuffDetailMap: GUILD_BUFF_DETAIL_MAP })),
         getCommunityBuffLevel: vi.fn(() => 0),
-        getGuildBuildingLevel: vi.fn((hrid) => mocks.guildBuildingLevelMap[hrid] || 0),
+        getCharacterGuildBuffLevel: vi.fn((hrid) => mocks.characterGuildBuffMap[hrid] || 0),
         getMooPassBuffs: vi.fn(() => mocks.mooPassBuffs),
         characterEquipment: undefined,
     },
 }));
 
-import { buildPlayerDTO, buildPlayerDTOFromProfile, COMBAT_SHRINE_HRIDS } from './combat-sim-adapter.js';
+import {
+    buildPlayerDTO,
+    buildPlayerDTOFromProfile,
+    COMBAT_SHRINE_HRIDS,
+    getCombatGuildBuffHridForShrine,
+} from './combat-sim-adapter.js';
 
 function baseCharacterData(overrides = {}) {
     return {
@@ -45,15 +66,17 @@ describe('buildPlayerDTO - per-player Shrine/MooPass/achievement/personal-buff c
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.characterData = baseCharacterData();
-        mocks.guildBuildingLevelMap = {};
+        mocks.characterGuildBuffMap = {};
         mocks.personalActionTypeBuffsMap = {};
         mocks.mooPassBuffs = [];
     });
 
-    test('shrineLevels is seeded from live guildBuildingLevelMap for all 5 known shrines, level 0 omitted', () => {
-        mocks.guildBuildingLevelMap = {
-            '/guild_shrines/spirit': 20,
-            '/guild_shrines/force': 0,
+    test('shrineLevels is seeded from the purchased/active combat guild-buff level, not the shrine building cap', () => {
+        // Spirit's combat buff is purchased to 20; Force's combat buff is at 0 (never purchased),
+        // even though its skilling variant (unrelated buff hrid, not read here) might be nonzero.
+        mocks.characterGuildBuffMap = {
+            '/guild_buffs/spirit_combat': 20,
+            '/guild_buffs/force_combat': 0,
         };
 
         const dto = buildPlayerDTO();
@@ -117,11 +140,11 @@ describe('buildPlayerDTO - per-player Shrine/MooPass/achievement/personal-buff c
 });
 
 describe('buildPlayerDTOFromProfile (teammate) - never inherits self/Player 1 context (CSIM-AUD-019)', () => {
-    test('teammate shrineLevels come from their own shared profile.guildBuffLevelMap, never self', () => {
+    test('teammate shrineLevels come from their own shared profile.guildBuffLevelMap, keyed by combat guild-buff hrid', () => {
         const profileData = {
             profile: {
                 characterSkills: [],
-                guildBuffLevelMap: { '/guild_shrines/scholar': 15 },
+                guildBuffLevelMap: { '/guild_buffs/scholar_combat': 15, '/guild_buffs/scholar_skilling': 99 },
                 characterAchievements: [{ achievementHrid: '/achievements/teammate_only' }],
                 sharableCharacter: { hasMooPass: true },
             },
@@ -129,6 +152,8 @@ describe('buildPlayerDTOFromProfile (teammate) - never inherits self/Player 1 co
 
         const dto = buildPlayerDTOFromProfile(profileData);
 
+        // Only the combat variant feeds combat-sim shrineLevels - the skilling variant (99) at the
+        // same shrine must never leak in as if it were the combat level.
         expect(dto.shrineLevels).toEqual({ '/guild_shrines/scholar': 15 });
         expect(dto.hasMooPass).toBe(true);
         expect(dto.characterAchievements).toEqual([{ achievementHrid: '/achievements/teammate_only' }]);
@@ -146,16 +171,46 @@ describe('buildPlayerDTOFromProfile (teammate) - never inherits self/Player 1 co
         expect(dto.characterAchievements).toEqual([]);
     });
 
-    test('all 5 known shrine hrids are candidates for prefill, unrelated hrids in guildBuffLevelMap are ignored', () => {
+    test('all 5 known shrines resolve to their own combat guild-buff hrid, unrelated buff hrids are ignored', () => {
         const profileData = {
             profile: {
                 characterSkills: [],
-                guildBuffLevelMap: { '/guild_shrines/unrelated_hrid': 99, '/guild_shrines/force': 10 },
+                guildBuffLevelMap: { '/guild_buffs/unrelated_hrid': 99, '/guild_buffs/force_combat': 10 },
             },
         };
         const dto = buildPlayerDTOFromProfile(profileData);
         expect(dto.shrineLevels).toEqual({ '/guild_shrines/force': 10 });
         expect(COMBAT_SHRINE_HRIDS).toContain('/guild_shrines/force');
-        expect(COMBAT_SHRINE_HRIDS).not.toContain('/guild_shrines/unrelated_hrid');
+    });
+
+    test('a shrine hrid used directly as a guildBuffLevelMap key (the pre-fix bug shape) is never read', () => {
+        // Regression guard: guildBuffLevelMap is keyed by guild-buff hrid, never by shrine hrid -
+        // this shape never actually occurs in real payloads and must stay ignored.
+        const profileData = {
+            profile: {
+                characterSkills: [],
+                guildBuffLevelMap: { '/guild_shrines/force': 10 },
+            },
+        };
+        const dto = buildPlayerDTOFromProfile(profileData);
+        expect(dto.shrineLevels).toEqual({});
+    });
+});
+
+describe('getCombatGuildBuffHridForShrine', () => {
+    test('resolves a shrine hrid to its own combat guild-buff hrid, never the skilling variant', () => {
+        expect(getCombatGuildBuffHridForShrine('/guild_shrines/tempo', GUILD_BUFF_DETAIL_MAP)).toBe(
+            '/guild_buffs/tempo_combat'
+        );
+    });
+
+    test('returns null for a shrine with no matching combat buff entry', () => {
+        expect(getCombatGuildBuffHridForShrine('/guild_shrines/unknown', GUILD_BUFF_DETAIL_MAP)).toBeNull();
+    });
+
+    test('returns null for a missing/empty guildBuffDetailMap rather than throwing', () => {
+        expect(getCombatGuildBuffHridForShrine('/guild_shrines/force', {})).toBeNull();
+        expect(getCombatGuildBuffHridForShrine('/guild_shrines/force', null)).toBeNull();
+        expect(getCombatGuildBuffHridForShrine('/guild_shrines/force', undefined)).toBeNull();
     });
 });
