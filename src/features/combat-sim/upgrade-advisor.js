@@ -7,7 +7,9 @@
 
 import dataManager from '../../core/data-manager.js';
 import { buildGameDataPayload, calculateSimRevenue } from './combat-sim-adapter.js';
-import { runSimulation, runLabyrinthSimulation } from './combat-sim-runner.js';
+import { runSimulation, runLabyrinthSimulation, buildExtraBuffs } from './combat-sim-runner.js';
+import { setGameData } from './engine/game-data.js';
+import Player from './engine/player.js';
 import labyrinthClearRate from '../combat/labyrinth-clear-rate.js';
 import { resolveItemPrice } from '../../utils/profit-helpers.js';
 import { getItemPrices } from '../../utils/market-data.js';
@@ -878,6 +880,7 @@ export function generateCandidates(
                         slot: `ability_${slotIdx}`,
                         currentHrid: ability.hrid,
                         currentLevel: ability.level,
+                        currentXp: ability.experience || 0,
                         upgradeHrid: ability.hrid,
                         upgradeLevel: targetLevel,
                         description: `${abilityName} Lv${ability.level} → Lv${targetLevel}`,
@@ -942,40 +945,50 @@ export function generateCandidates(
  * Calculate the total gold cost for a candidate upgrade.
  * Uses market prices as primary source (buy upgraded - sell current).
  * Falls back to enhancement cost estimate if market data unavailable.
+ * Propagates price-resolution completeness (CSIM-AUD-013) instead of silently treating an
+ * unresolvable `resolveItemPrice()` result as an exact-looking zero cost - a candidate whose
+ * cost genuinely couldn't be priced must never be ranked as a known zero-cost upgrade.
  * @param {Object} candidate - Candidate from generateCandidates()
  * @param {Object} gameData - Game data
- * @returns {number} Total gold cost
+ * @returns {{cost: number, costIsIncomplete: boolean}}
  */
 export function calculateUpgradeCost(candidate, gameData) {
     if (candidate.type === 'ability_level') {
-        const levelXpTable = gameData.levelExperienceTable || [];
-        const currentXp = levelXpTable[candidate.currentLevel] || 0;
-        return calculateAbilityLevelUpCost(
+        // Use the ability's real live XP progress (CSIM-AUD-017), not the XP threshold for the
+        // current level - substituting the threshold treats every ability as if it had just
+        // barely dinged its current level with zero progress, overstating the real book cost.
+        const currentXp = candidate.currentXp ?? 0;
+        const cost = calculateAbilityLevelUpCost(
             candidate.currentHrid,
             candidate.currentLevel,
             currentXp,
             candidate.upgradeLevel
         );
+        return { cost, costIsIncomplete: false };
     }
 
     if (candidate.type === 'ability_swap') {
-        return calculateAbilityLevelUpCost(candidate.upgradeHrid, 0, 0, candidate.upgradeLevel);
+        const cost = calculateAbilityLevelUpCost(candidate.upgradeHrid, 0, 0, candidate.upgradeLevel);
+        return { cost, costIsIncomplete: false };
     }
 
     if (candidate.type === 'cross_slot') {
         let buyCost = 0;
+        let costIsIncomplete = false;
         for (const [, item] of Object.entries(candidate.addedSlots)) {
             const price = resolveItemPrice(item.hrid, {
                 side: 'buy',
                 enhancementLevel: item.enhancementLevel,
             });
+            if (price.missing) costIsIncomplete = true;
             buyCost += price.price;
         }
-        const sellPrice = resolveItemPrice(candidate.currentHrid, {
+        const sellResolved = resolveItemPrice(candidate.currentHrid, {
             side: 'sell',
             enhancementLevel: candidate.currentLevel,
-        }).price;
-        return Math.max(0, buyCost - sellPrice);
+        });
+        if (sellResolved.missing) costIsIncomplete = true;
+        return { cost: Math.max(0, buyCost - sellResolved.price), costIsIncomplete };
     }
 
     if (candidate.type === 'enhancement') {
@@ -985,17 +998,18 @@ export function calculateUpgradeCost(candidate, gameData) {
         const currentMarket = getItemPrices(candidate.currentHrid, candidate.currentLevel);
 
         if (upgradedMarket?.ask > 0 && currentMarket?.bid > 0) {
-            return Math.max(0, upgradedMarket.ask - currentMarket.bid);
+            return { cost: Math.max(0, upgradedMarket.ask - currentMarket.bid), costIsIncomplete: false };
         }
 
         // Fallback: enhancement cost estimate with protection
-        return calculateEnhancementCost(
+        const cost = calculateEnhancementCost(
             candidate.currentHrid,
             candidate.currentLevel,
             candidate.upgradeLevel,
             gameData,
             { slot: candidate.slot }
         );
+        return { cost, costIsIncomplete: false };
     }
 
     if (candidate.type === 'house') {
@@ -1003,27 +1017,76 @@ export function calculateUpgradeCost(candidate, gameData) {
         const levelCosts = roomData?.upgradeCostsMap?.[candidate.upgradeLevel] || [];
 
         let total = 0;
+        let costIsIncomplete = false;
         for (const item of levelCosts) {
             if (item.itemHrid === '/items/coin') {
                 total += item.count;
             } else {
-                total += resolveItemPrice(item.itemHrid, { side: 'buy' }).price * item.count;
+                const resolved = resolveItemPrice(item.itemHrid, { side: 'buy' });
+                if (resolved.missing) costIsIncomplete = true;
+                total += resolved.price * item.count;
             }
         }
-        return total;
+        return { cost: total, costIsIncomplete };
     }
 
     // Tier upgrade: buy new item at same enhancement - sell current item
-    const buyPrice = resolveItemPrice(candidate.upgradeHrid, {
+    const buyResolved = resolveItemPrice(candidate.upgradeHrid, {
         side: 'buy',
         enhancementLevel: candidate.upgradeLevel,
-    }).price;
-    const sellPrice = resolveItemPrice(candidate.currentHrid, {
+    });
+    const sellResolved = resolveItemPrice(candidate.currentHrid, {
         side: 'sell',
         enhancementLevel: candidate.currentLevel,
-    }).price;
+    });
 
-    return Math.max(0, buyPrice - sellPrice);
+    return {
+        cost: Math.max(0, buyResolved.price - sellResolved.price),
+        costIsIncomplete: buyResolved.missing || sellResolved.missing,
+    };
+}
+
+/**
+ * One canonical equipment/ability candidate-application helper (CSIM-AUD-015/016), shared by the
+ * ordinary Combat Advisor and the Labyrinth Advisor so they can never diverge again:
+ * - a same-ability level-up candidate preserves the real current trigger array instead of
+ *   destroying it with `triggers: null` (a level-up is "same ability/cast policy, higher level",
+ *   not "higher level plus changed cast policy");
+ * - an ability swap (different ability) legitimately starts with no trigger config;
+ * - a cross-slot candidate (e.g. two_hand <-> main_hand+off_hand) clears every `clearedSlots`
+ *   entry and sets every `addedSlots` entry, instead of falling through to a single-slot write
+ *   that would simulate a different, impossible equipment map from the one costed.
+ * @param {Object} dto - Player DTO to mutate in place
+ * @param {Object} candidate - Candidate from generateCandidates()
+ */
+export function applyCandidateToDTO(dto, candidate) {
+    if (candidate.slot.startsWith('ability_')) {
+        const slotIdx = parseInt(candidate.slot.split('_')[1]);
+        const currentAbility = dto.abilities[slotIdx];
+        const preserveTriggers =
+            candidate.type === 'ability_level' && currentAbility?.hrid === candidate.upgradeHrid
+                ? (currentAbility.triggers ?? null)
+                : null;
+        dto.abilities[slotIdx] = {
+            hrid: candidate.upgradeHrid,
+            level: candidate.upgradeLevel,
+            triggers: preserveTriggers,
+        };
+    } else if (candidate.slot.startsWith('house_')) {
+        dto.houseRooms[candidate.currentHrid] = candidate.upgradeLevel;
+    } else if (candidate.type === 'cross_slot') {
+        for (const slot of candidate.clearedSlots) {
+            dto.equipment[slot] = null;
+        }
+        for (const [slot, item] of Object.entries(candidate.addedSlots)) {
+            dto.equipment[slot] = item;
+        }
+    } else {
+        dto.equipment[candidate.slot] = {
+            hrid: candidate.upgradeHrid,
+            enhancementLevel: candidate.upgradeLevel,
+        };
+    }
 }
 
 /**
@@ -1062,10 +1125,10 @@ export async function runUpgradeAnalysis(params, onProgress, options = {}) {
         abilityLevelType,
         skipBackSlot
     );
-    const candidatesWithCost = candidates.map((c) => ({
-        ...c,
-        cost: calculateUpgradeCost(c, gameData),
-    }));
+    const candidatesWithCost = candidates.map((c) => {
+        const { cost, costIsIncomplete } = calculateUpgradeCost(c, gameData);
+        return { ...c, cost, costIsIncomplete };
+    });
 
     const total = candidatesWithCost.length + 1; // +1 for baseline
     let current = 0;
@@ -1094,25 +1157,7 @@ export async function runUpgradeAnalysis(params, onProgress, options = {}) {
 
         // Clone playerDTOs and apply candidate upgrade
         const modifiedDTOs = JSON.parse(JSON.stringify(playerDTOs));
-
-        if (candidate.slot.startsWith('ability_')) {
-            // Ability upgrade/swap
-            const slotIdx = parseInt(candidate.slot.split('_')[1]);
-            modifiedDTOs[playerIndex].abilities[slotIdx] = {
-                hrid: candidate.upgradeHrid,
-                level: candidate.upgradeLevel,
-                triggers: null,
-            };
-        } else if (candidate.slot.startsWith('house_')) {
-            // House room upgrade
-            modifiedDTOs[playerIndex].houseRooms[candidate.currentHrid] = candidate.upgradeLevel;
-        } else {
-            // Equipment upgrade
-            modifiedDTOs[playerIndex].equipment[candidate.slot] = {
-                hrid: candidate.upgradeHrid,
-                enhancementLevel: candidate.upgradeLevel,
-            };
-        }
+        applyCandidateToDTO(modifiedDTOs[playerIndex], candidate);
 
         const simResult = await runSimulation(
             { gameData, playerDTOs: modifiedDTOs, zoneHrid, difficultyTier, hours, communityBuffs },
@@ -1138,6 +1183,26 @@ export async function runUpgradeAnalysis(params, onProgress, options = {}) {
     });
 
     return { baseline: baselineMetrics, results };
+}
+
+/**
+ * Compute the player's total effective Wisdom (`combatExperience`) multiplier from every
+ * canonical source EXCEPT Lab Experience (CSIM-AUD-018) - MooPass, Community EXP, Shrine of
+ * Scholar, house rooms, etc. Builds a real Player from the same DTO/context the actual
+ * simulation uses, so this is never a second hand-maintained list of Wisdom sources.
+ * @param {Object} playerDTO
+ * @param {Object} gameData
+ * @param {Object} communityBuffs
+ * @returns {number}
+ */
+export function computeOtherWisdomMultiplier(playerDTO, gameData, communityBuffs) {
+    setGameData(gameData);
+    const player = Player.createFromDTO(JSON.parse(JSON.stringify(playerDTO)));
+    player.zoneBuffs = [];
+    player.extraBuffs = buildExtraBuffs(communityBuffs, playerDTO.hasMooPass);
+    player.generatePermanentBuffs();
+    player.clearBuffs();
+    return player.combatDetails.combatStats.combatExperience;
 }
 
 /**
@@ -1431,10 +1496,10 @@ export async function runLabyrinthUpgradeAnalysis(params, onProgress, options = 
         abilityLevelType,
         skipBackSlot
     );
-    const candidatesWithCost = candidates.map((c) => ({
-        ...c,
-        cost: calculateUpgradeCost(c, gameData),
-    }));
+    const candidatesWithCost = candidates.map((c) => {
+        const { cost, costIsIncomplete } = calculateUpgradeCost(c, gameData);
+        return { ...c, cost, costIsIncomplete };
+    });
 
     // Generate buff candidates (skilling buffs handled in skilling tab)
     const buffCandidates = generateLabyrinthBuffCandidates();
@@ -1476,27 +1541,7 @@ export async function runLabyrinthUpgradeAnalysis(params, onProgress, options = 
         onProgress?.({ current, total, description: `Simulating: ${candidate.description}` });
 
         const modifiedDTO = JSON.parse(JSON.stringify(playerDTOs[playerIndex]));
-
-        if (candidate.slot.startsWith('ability_')) {
-            const slotIdx = parseInt(candidate.slot.split('_')[1]);
-            modifiedDTO.abilities[slotIdx] = {
-                hrid: candidate.upgradeHrid,
-                level: candidate.upgradeLevel,
-                triggers: null,
-            };
-        } else if (candidate.type === 'cross_slot') {
-            for (const slot of candidate.clearedSlots) {
-                modifiedDTO.equipment[slot] = null;
-            }
-            for (const [slot, item] of Object.entries(candidate.addedSlots)) {
-                modifiedDTO.equipment[slot] = item;
-            }
-        } else {
-            modifiedDTO.equipment[candidate.slot] = {
-                hrid: candidate.upgradeHrid,
-                enhancementLevel: candidate.upgradeLevel,
-            };
-        }
+        applyCandidateToDTO(modifiedDTO, candidate);
 
         const simResult = await runLabyrinthSimulation({
             gameData,
@@ -1569,9 +1614,16 @@ export async function runLabyrinthUpgradeAnalysis(params, onProgress, options = 
     }
 
     // ── Experience buff (flat % increase, no sim needed) ──
+    // Marginal Wisdom value (CSIM-AUD-018): the engine's combatExperience multiplier is additive
+    // across every active Wisdom source (MooPass, Community, Shrine/house, etc. - see
+    // CombatUnit.updateCombatDetails()), so the marginal gain of +1 Lab Experience level must be
+    // evaluated against the player's TOTAL current Wisdom, not the Lab buff's own bonus in
+    // isolation - otherwise the marginal percentage is overstated for any player who already has
+    // other Wisdom sources active.
+    const otherWisdomMultiplier = computeOtherWisdomMultiplier(playerDTO, gameData, communityBuffs);
     for (const buffCandidate of experienceBuffCandidates) {
-        const currentBonus = buffCandidate.currentLevel * buffCandidate.step;
-        const newBonus = (buffCandidate.currentLevel + 1) * buffCandidate.step;
+        const currentBonus = otherWisdomMultiplier + buffCandidate.currentLevel * buffCandidate.step;
+        const newBonus = otherWisdomMultiplier + (buffCandidate.currentLevel + 1) * buffCandidate.step;
         const xpDeltaPct = ((1 + newBonus) / (1 + currentBonus) - 1) * 100;
 
         results.push({
@@ -1801,7 +1853,9 @@ export function generateSkillingEquipmentCandidates(editorDTO, gameData, skillEq
                 description: `${itemName} +${currentLevel} \u2192 +${nextBP}`,
                 type: 'enhancement',
             };
-            candidate.cost = calculateUpgradeCost(candidate, gameData);
+            const { cost, costIsIncomplete } = calculateUpgradeCost(candidate, gameData);
+            candidate.cost = cost;
+            candidate.costIsIncomplete = costIsIncomplete;
             candidates.push(candidate);
         }
     }

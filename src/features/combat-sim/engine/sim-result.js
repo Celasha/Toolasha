@@ -36,6 +36,14 @@ class SimResult {
 
         this.wipeEvents = [];
         this.totalDamageDealt = {}; // sourceHrid → total damage dealt
+
+        // Kill-time-context drop accounting (CSIM-AUD-011): per-monster, per-player running sums
+        // of each player's drop-rate/rare-find/quantity multiplier AT THE MOMENT of each kill,
+        // rather than a single end-of-simulation snapshot applied retroactively to every kill.
+        // { [monsterHrid]: { killCount, byPlayer: { [playerHrid]: { sumDropRateMultiplier, sumRareFindMultiplier, sumCombatDropQuantity } } } }
+        this.killDropContext = {};
+        // Same idea for dungeon completion rewards, which only use combatDropQuantity.
+        this.dungeonCompletionDropContext = { count: 0, byPlayer: {} };
     }
 
     addWipeEvent(logs, simulationTime, wave) {
@@ -53,6 +61,54 @@ class SimResult {
         }
 
         this.deaths[unit.hrid] += 1;
+    }
+
+    /**
+     * Accumulate each player's drop-rate/rare-find/quantity multiplier AT THE MOMENT this monster
+     * died (CSIM-AUD-011), instead of relying solely on a single end-of-simulation snapshot
+     * applied retroactively to every kill regardless of when temporary buffs/scrolls were active.
+     * @param {string} monsterHrid
+     * @param {Array<Player>} players
+     */
+    recordMonsterKill(monsterHrid, players) {
+        if (!this.killDropContext[monsterHrid]) {
+            this.killDropContext[monsterHrid] = { killCount: 0, byPlayer: {} };
+        }
+        const entry = this.killDropContext[monsterHrid];
+        entry.killCount += 1;
+
+        for (const player of players || []) {
+            if (!player) continue;
+            if (!entry.byPlayer[player.hrid]) {
+                entry.byPlayer[player.hrid] = {
+                    sumDropRateMultiplier: 0,
+                    sumRareFindMultiplier: 0,
+                    sumCombatDropQuantity: 0,
+                };
+            }
+            const stats = player.combatDetails.combatStats;
+            entry.byPlayer[player.hrid].sumDropRateMultiplier += 1 + stats.combatDropRate;
+            entry.byPlayer[player.hrid].sumRareFindMultiplier += 1 + stats.combatRareFind;
+            entry.byPlayer[player.hrid].sumCombatDropQuantity += stats.combatDropQuantity;
+        }
+    }
+
+    /**
+     * Same kill-time-context accounting as recordMonsterKill(), for dungeon completion rewards
+     * (which only use combatDropQuantity, not per-monster drop-rate/rare-find).
+     * @param {Array<Player>} players
+     */
+    recordDungeonCompletion(players) {
+        this.dungeonCompletionDropContext.count += 1;
+
+        for (const player of players || []) {
+            if (!player) continue;
+            if (!this.dungeonCompletionDropContext.byPlayer[player.hrid]) {
+                this.dungeonCompletionDropContext.byPlayer[player.hrid] = { sumCombatDropQuantity: 0 };
+            }
+            this.dungeonCompletionDropContext.byPlayer[player.hrid].sumCombatDropQuantity +=
+                player.combatDetails.combatStats.combatDropQuantity;
+        }
     }
 
     updateTimeSpentAlive(name, alive, time) {

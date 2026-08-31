@@ -24,7 +24,7 @@ onmessage = function (event) {
             zoneHrid,
             difficultyTier,
             simulationTimeLimit,
-            extraBuffs,
+            extraBuffsByPlayer,
             labyrinth: labyrinthData,
         } = event.data;
 
@@ -50,7 +50,9 @@ onmessage = function (event) {
             const player = Player.createFromDTO(cloned);
             // Labyrinth: crate buffs go to zoneBuffs; otherwise use zone buffs
             player.zoneBuffs = labyrinth ? labyrinth.buffs : zone.buffs;
-            player.extraBuffs = extraBuffs;
+            // Each player owns its own extraBuffs array (CSIM-AUD-019/020) - never one shared
+            // reference applied identically to every player.
+            player.extraBuffs = extraBuffsByPlayer?.[player.hrid] || [];
             return player;
         });
 

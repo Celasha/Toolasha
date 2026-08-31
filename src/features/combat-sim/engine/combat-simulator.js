@@ -31,6 +31,16 @@ const PLAYER_RESPAWN_INTERVAL = 150 * ONE_SECOND;
 const RESTART_INTERVAL = 3 * ONE_SECOND;
 const ENRAGE_TICK_INTERVAL = 60 * ONE_SECOND;
 
+// The official party Aura family (CSIM-AUD-001) uses strongest-source-wins + fallback semantics.
+// Every other buff/debuff intentionally keeps the ordinary last-write-wins replacement policy.
+const OFFICIAL_AURA_ABILITY_HRIDS = new Set([
+    '/abilities/speed_aura',
+    '/abilities/guardian_aura',
+    '/abilities/fierce_aura',
+    '/abilities/critical_aura',
+    '/abilities/mystic_aura',
+]);
+
 class CombatSimulator {
     /**
      * @param {Array} players
@@ -317,12 +327,16 @@ class CombatSimulator {
             if (event.time === 0) {
                 // First combat start event
                 this.players[i].generatePermanentBuffs();
+                this._applyPersonalPermanentCombatBuffs(this.players[i]);
             }
             if (this.labyrinth) {
                 // Labyrinth: full reset every encounter (independent fights)
                 this.players[i].reset(0);
             } else {
                 this.players[i].reset(this.simulationTime);
+            }
+            if (event.time === 0) {
+                this._applyPersonalTimedCombatBuffs(this.players[i]);
             }
         }
 
@@ -373,6 +387,7 @@ class CombatSimulator {
             const currentDungeonCount = this.zone.dungeonsCompleted;
             if (currentDungeonCount > this.tempDungeonCount) {
                 this.tempDungeonCount = currentDungeonCount;
+                this.simResult.recordDungeonCompletion(this.players);
                 for (let i = 0; i < this.players.length; i++) {
                     this.players[i].combatDetails.currentHitpoints = this.players[i].combatDetails.maxHitpoints;
                     this.players[i].combatDetails.currentManapoints = this.players[i].combatDetails.maxManapoints;
@@ -491,7 +506,7 @@ class CombatSimulator {
                     startTime: '0001-01-01T00:00:00Z',
                     duration: curseExpireTime,
                 };
-                target.addBuff(curseBuff);
+                target.addBuff(curseBuff, this.simulationTime);
                 this.eventQueue.addEvent(curseExpirationEvent);
             }
 
@@ -520,7 +535,7 @@ class CombatSimulator {
                     startTime: '0001-01-01T00:00:00Z',
                     duration: weakenExpireTime,
                 };
-                source.addBuff(weakenBuff);
+                source.addBuff(weakenBuff, this.simulationTime);
                 this.eventQueue.addEvent(weakenExpirationEvent);
             }
 
@@ -567,6 +582,7 @@ class CombatSimulator {
                 this.simResult.addDeath(target);
                 if (!target.isPlayer) {
                     this.simResult.updateTimeSpentAlive(target.hrid, false, this.simulationTime);
+                    this.simResult.recordMonsterKill(target.hrid, this.players);
                 }
             }
 
@@ -579,6 +595,7 @@ class CombatSimulator {
                 this.simResult.addDeath(source);
                 if (!source.isPlayer) {
                     this.simResult.updateTimeSpentAlive(source.hrid, false, this.simulationTime);
+                    this.simResult.recordMonsterKill(source.hrid, this.players);
                 }
                 break;
             }
@@ -860,6 +877,7 @@ class CombatSimulator {
             this.simResult.addDeath(event.target);
             if (!event.target.isPlayer) {
                 this.simResult.updateTimeSpentAlive(event.target.hrid, false, this.simulationTime);
+                this.simResult.recordMonsterKill(event.target.hrid, this.players);
             }
         }
 
@@ -935,7 +953,7 @@ class CombatSimulator {
         const MAX_FURY_STACK = 5;
 
         const oldAmount = source.furyAmount;
-        const newAmount = didHit ? Math.min(oldAmount + 1, MAX_FURY_STACK) : Math.floor(oldAmount / 2);
+        const newAmount = didHit ? Math.min(oldAmount + 1, MAX_FURY_STACK) : oldAmount / 2;
 
         source.furyAmount = newAmount;
 
@@ -1224,6 +1242,7 @@ class CombatSimulator {
             this.simResult.addDeath(source);
             if (!source.isPlayer) {
                 this.simResult.updateTimeSpentAlive(source.hrid, false, this.simulationTime);
+                this.simResult.recordMonsterKill(source.hrid, this.players);
             }
         }
 
@@ -1234,9 +1253,11 @@ class CombatSimulator {
 
     processAbilityBuffEffect(source, ability, abilityEffect) {
         if (abilityEffect.targetType === 'allAllies') {
+            const isOfficialAura = OFFICIAL_AURA_ABILITY_HRIDS.has(ability.hrid);
             const targets = source.isPlayer ? this.players : this.enemies;
             for (const target of targets.filter((unit) => unit && unit.combatDetails.currentHitpoints > 0)) {
                 for (const buff of abilityEffect.buffs) {
+                    let appliedBuff = buff;
                     if (ability.isSpecialAbility && buff.multiplierForSkillHrid && buff.multiplierPerSkillLevel > 0) {
                         const multiplier =
                             1.0 +
@@ -1245,9 +1266,12 @@ class CombatSimulator {
                         const currentBuff = structuredClone(buff);
                         currentBuff.flatBoost *= multiplier;
                         currentBuff.ratioBoost *= multiplier;
-                        target.addBuff(currentBuff, this.simulationTime);
+                        appliedBuff = currentBuff;
+                    }
+                    if (isOfficialAura) {
+                        target.addAuraBuff(appliedBuff, source.hrid, this.simulationTime);
                     } else {
-                        target.addBuff(buff, this.simulationTime);
+                        target.addBuff(appliedBuff, this.simulationTime);
                     }
                     const checkBuffExpirationEvent = new CheckBuffExpirationEvent(
                         this.simulationTime + buff.duration,
@@ -1339,6 +1363,7 @@ class CombatSimulator {
                     this.simResult.addDeath(tempTarget);
                     if (!tempTarget.isPlayer) {
                         this.simResult.updateTimeSpentAlive(tempTarget.hrid, false, this.simulationTime);
+                        this.simResult.recordMonsterKill(tempTarget.hrid, this.players);
                     }
                 }
 
@@ -1351,6 +1376,7 @@ class CombatSimulator {
                     this.simResult.addDeath(tempSource);
                     if (!tempSource.isPlayer) {
                         this.simResult.updateTimeSpentAlive(tempSource.hrid, false, this.simulationTime);
+                        this.simResult.recordMonsterKill(tempSource.hrid, this.players);
                     }
                 }
             } else {
@@ -1483,7 +1509,7 @@ class CombatSimulator {
                         startTime: '0001-01-01T00:00:00Z',
                         duration: curseExpireTime,
                     };
-                    target.addBuff(curseBuff);
+                    target.addBuff(curseBuff, this.simulationTime);
                     this.eventQueue.addEvent(curseExpirationEvent);
                 }
 
@@ -1509,7 +1535,7 @@ class CombatSimulator {
                         startTime: '0001-01-01T00:00:00Z',
                         duration: weakenExpireTime,
                     };
-                    source.addBuff(weakenBuff);
+                    source.addBuff(weakenBuff, this.simulationTime);
                     this.eventQueue.addEvent(weakenExpirationEvent);
                 }
 
@@ -1555,6 +1581,7 @@ class CombatSimulator {
                     this.simResult.addDeath(target);
                     if (!target.isPlayer) {
                         this.simResult.updateTimeSpentAlive(target.hrid, false, this.simulationTime);
+                        this.simResult.recordMonsterKill(target.hrid, this.players);
                     }
                 }
 
@@ -1614,6 +1641,60 @@ class CombatSimulator {
         this.simResult.addHitpointsGained(source, ability.hrid, amountHealed);
     }
 
+    /**
+     * Death (via eventQueue.clearEventsForUnit) removes every scheduled event for the dying unit,
+     * including CheckBuffExpirationEvents for buffs that were still legitimately active. Re-schedule
+     * expiration for any surviving buff at its original absolute expiry so it cannot outlive its
+     * intended duration after revive.
+     * @param {CombatUnit} unit
+     */
+    _rescheduleSurvivingBuffExpirations(unit) {
+        Object.values(unit.combatBuffs).forEach((buff) => {
+            const remaining = buff.startTime + buff.duration - this.simulationTime;
+            if (Number.isFinite(remaining) && remaining > 0) {
+                this.eventQueue.addEvent(new CheckBuffExpirationEvent(this.simulationTime + remaining, unit));
+            }
+        });
+    }
+
+    /**
+     * A current-character personal/scroll combat buff with no remaining-lifetime evidence is
+     * kept permanent (today's status-quo behavior) - added alongside generatePermanentBuffs()
+     * so it is baked into the combatBuffs snapshot the upcoming reset()/clearBuffs() copies from
+     * permanentBuffs (CSIM-AUD-019).
+     * @param {Player} player
+     */
+    _applyPersonalPermanentCombatBuffs(player) {
+        const context = player.personalCombatBuffs;
+        if (!context?.buffs?.length || context.remainingDurationNs != null) return;
+        context.buffs.forEach((buff) => player.addPermanentBuff(buff));
+    }
+
+    /**
+     * A current-character personal/scroll combat buff with known remaining lifetime is modeled as
+     * a timed buff for exactly that many nanoseconds of simulated time, then expires on the same
+     * logical timeline - never as an eternal permanent buff. Applied AFTER reset()/clearBuffs()
+     * so it is not wiped by the permanentBuffs snapshot copy (CSIM-AUD-019).
+     * @param {Player} player
+     */
+    _applyPersonalTimedCombatBuffs(player) {
+        const context = player.personalCombatBuffs;
+        if (!context?.buffs?.length || context.remainingDurationNs == null) return;
+        context.buffs.forEach((buff, index) => {
+            const timedBuff = {
+                uniqueHrid: buff.uniqueHrid || `/buff_uniques/personal_combat_${index}`,
+                typeHrid: buff.typeHrid,
+                ratioBoost: buff.ratioBoost || 0,
+                flatBoost: buff.flatBoost || 0,
+                duration: context.remainingDurationNs,
+            };
+            player.addBuff(timedBuff, this.simulationTime);
+        });
+        this.eventQueue.addEvent(
+            new CheckBuffExpirationEvent(this.simulationTime + context.remainingDurationNs, player)
+        );
+    }
+
     processAbilityReviveEffect(source, ability, abilityEffect) {
         if (abilityEffect.targetType !== 'deadAlly') {
             throw new Error('Unsupported target type for revive ability effect: ' + ability.hrid);
@@ -1626,6 +1707,7 @@ class CombatSimulator {
             this.eventQueue.clearByTypeAndHrid(PlayerRespawnEvent.type, reviveTarget.hrid);
 
             reviveTarget.removeExpiredBuffs(this.simulationTime);
+            this._rescheduleSurvivingBuffExpirations(reviveTarget);
 
             const amountHealed = CombatUtilities.processRevive(source, abilityEffect, reviveTarget);
             this.simResult.addHitpointsGained(reviveTarget, ability.hrid, amountHealed);

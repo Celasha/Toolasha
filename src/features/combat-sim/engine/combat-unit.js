@@ -26,6 +26,7 @@ class CombatUnit {
     food = [null, null, null];
     drinks = [null, null, null];
     houseRooms = [];
+    shrines = [];
     dropTable = [];
     rareDropTable = [];
     abilityManaCosts = new Map();
@@ -155,6 +156,9 @@ class CombatUnit {
     extraBuffs = {};
     furyAmount = 0;
     furyExpireTime = 0;
+    // Per-source registry for the official party Aura family only (CSIM-AUD-001):
+    // { [buffUniqueHrid]: { [casterHrid]: buffClone } }. Ordinary buffs never use this.
+    auraSources = {};
 
     constructor() {}
 
@@ -181,13 +185,19 @@ class CombatUnit {
             });
         });
 
+        const maxHitpointsBoost = this.getBuffBoost('/buff_types/max_hitpoints');
+        const maxManapointsBoost = this.getBuffBoost('/buff_types/max_manapoints');
         this.combatDetails.maxHitpoints = Math.floor(
-            (10 * (10 + this.combatDetails.staminaLevel) + this.combatDetails.combatStats.maxHitpoints) *
-                (1 + this.combatDetails.combatStats.maxHitpointsRatio)
+            (10 * (10 + this.combatDetails.staminaLevel) +
+                this.combatDetails.combatStats.maxHitpoints +
+                maxHitpointsBoost.flatBoost) *
+                (1 + this.combatDetails.combatStats.maxHitpointsRatio + maxHitpointsBoost.ratioBoost)
         );
         this.combatDetails.maxManapoints = Math.floor(
-            (10 * (10 + this.combatDetails.intelligenceLevel) + this.combatDetails.combatStats.maxManapoints) *
-                (1 + this.combatDetails.combatStats.maxManapointsRatio)
+            (10 * (10 + this.combatDetails.intelligenceLevel) +
+                this.combatDetails.combatStats.maxManapoints +
+                maxManapointsBoost.flatBoost) *
+                (1 + this.combatDetails.combatStats.maxManapointsRatio + maxManapointsBoost.ratioBoost)
         );
 
         const accuracyRatioBoostFromFury = this.getBuffBoost('/buff_types/fury_accuracy').ratioBoost;
@@ -354,24 +364,51 @@ class CombatUnit {
         this.combatDetails.combatStats.combatDropQuantity += combatDropQuantityBoosts.flatBoost;
 
         const baseThreat = 100 + this.combatDetails.combatStats.threat;
-        this.combatDetails.totalThreat = baseThreat;
         const threatBoosts = this.getBuffBoost('/buff_types/threat');
-        if (threatBoosts.ratioBoost !== 0) {
-            this.combatDetails.combatStats.threat += baseThreat * threatBoosts.ratioBoost;
-        } else {
-            this.combatDetails.combatStats.threat = baseThreat;
-        }
-        this.combatDetails.combatStats.threat += threatBoosts.flatBoost;
+        const effectiveThreat = baseThreat * (1 + threatBoosts.ratioBoost) + threatBoosts.flatBoost;
+        this.combatDetails.totalThreat = effectiveThreat;
+        this.combatDetails.combatStats.threat = effectiveThreat;
 
         this.combatDetails.combatStats.retaliation += this.getBuffBoost('/buff_types/retaliation').flatBoost;
         this.combatDetails.combatStats.tenacity += this.getBuffBoost('/buff_types/tenacity').flatBoost;
     }
 
     addBuff(buff, currentTime) {
-        buff.startTime = currentTime;
-        this.combatBuffs[buff.uniqueHrid] = buff;
+        const ownedBuff = { ...buff, startTime: currentTime };
+        this.combatBuffs[ownedBuff.uniqueHrid] = ownedBuff;
 
         this.updateCombatDetails();
+    }
+
+    /**
+     * Official party Aura family only (CSIM-AUD-001): strongest-source-wins with automatic
+     * fallback to the next-strongest still-active source when the winning source expires.
+     * Ordinary buffs must keep using addBuff()'s last-write-wins semantics.
+     * @param {Object} buff
+     * @param {string} sourceHrid - hrid of the casting unit
+     * @param {number} currentTime
+     */
+    addAuraBuff(buff, sourceHrid, currentTime) {
+        if (!this.auraSources[buff.uniqueHrid]) {
+            this.auraSources[buff.uniqueHrid] = {};
+        }
+        this.auraSources[buff.uniqueHrid][sourceHrid] = { ...buff, startTime: currentTime };
+        this._recomputeAuraBuff(buff.uniqueHrid);
+
+        this.updateCombatDetails();
+    }
+
+    /** @private */
+    _recomputeAuraBuff(uniqueHrid) {
+        const sources = Object.values(this.auraSources[uniqueHrid] || {});
+        if (sources.length === 0) {
+            delete this.combatBuffs[uniqueHrid];
+            return;
+        }
+        const strongest = sources.reduce((best, candidate) =>
+            candidate.ratioBoost + candidate.flatBoost > best.ratioBoost + best.flatBoost ? candidate : best
+        );
+        this.combatBuffs[uniqueHrid] = strongest;
     }
 
     removeBuff(buff) {
@@ -424,7 +461,7 @@ class CombatUnit {
             this.permanentBuffs[buff.typeHrid].flatBoost += buff.flatBoost;
             this.permanentBuffs[buff.typeHrid].ratioBoost += buff.ratioBoost;
         } else {
-            this.permanentBuffs[buff.typeHrid] = buff;
+            this.permanentBuffs[buff.typeHrid] = { ...buff };
         }
     }
 
@@ -432,6 +469,12 @@ class CombatUnit {
         for (let i = 0; i < this.houseRooms.length; i++) {
             const houseRoom = this.houseRooms[i];
             houseRoom.buffs.forEach((buff) => {
+                this.addPermanentBuff(buff);
+            });
+        }
+        for (let i = 0; i < this.shrines.length; i++) {
+            const shrine = this.shrines[i];
+            shrine.buffs.forEach((buff) => {
                 this.addPermanentBuff(buff);
             });
         }
@@ -455,11 +498,30 @@ class CombatUnit {
             delete this.combatBuffs[buff.uniqueHrid];
         });
 
+        // Aura sources are tracked per-caster so the effective buff can fall back to the
+        // next-strongest still-active source instead of just disappearing when only the
+        // strongest source's contribution expires.
+        Object.keys(this.auraSources).forEach((uniqueHrid) => {
+            const sources = this.auraSources[uniqueHrid];
+            let changed = false;
+            Object.keys(sources).forEach((sourceHrid) => {
+                const buff = sources[sourceHrid];
+                if (buff.startTime + buff.duration <= currentTime) {
+                    delete sources[sourceHrid];
+                    changed = true;
+                }
+            });
+            if (changed) {
+                this._recomputeAuraBuff(uniqueHrid);
+            }
+        });
+
         this.updateCombatDetails();
     }
 
     clearBuffs() {
         this.combatBuffs = structuredClone(this.permanentBuffs);
+        this.auraSources = {};
         this.furyAmount = 0;
         this.furyExpireTime = 0;
         this.updateCombatDetails();

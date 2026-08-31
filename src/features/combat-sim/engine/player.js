@@ -3,6 +3,7 @@ import CombatUnit from './combat-unit.js';
 import Consumable from './consumable.js';
 import Equipment from './equipment.js';
 import HouseRoom from './house-room.js';
+import Shrine from './shrine.js';
 
 class Player extends CombatUnit {
     equipment = {
@@ -54,8 +55,18 @@ class Player extends CombatUnit {
                 player.houseRooms.push(new HouseRoom(houseRoom[0], houseRoom[1]));
             }
         });
+        Object.entries(dto.shrineLevels || {}).forEach(([shrineHrid, level]) => {
+            if (level > 0) {
+                player.shrines.push(new Shrine(shrineHrid, level));
+            }
+        });
 
         player.debuffOnLevelGap = dto.debuffOnLevelGap;
+        player.personalCombatBuffs = dto.personalCombatBuffs || { buffs: [], remainingDurationNs: null };
+        player.characterAchievements = dto.characterAchievements || [];
+        // Active Monster-task target hrids (CSIM-AUD-023) - explicitly empty/unknown for imported
+        // party members whose task state is unavailable, never inherited from another player.
+        player.taskEligibleMonsterHrids = dto.taskEligibleMonsterHrids || [];
 
         return player;
     }

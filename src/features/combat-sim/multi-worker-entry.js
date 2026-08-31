@@ -25,8 +25,16 @@ onmessage = async function (event) {
     const { type } = event.data;
 
     if (type === 'start_all_zones') {
-        const { workerScript, gameData, playerDTOs, zones, simulationTimeLimit, extraBuffs, maxWorkers, useEarlyExit } =
-            event.data;
+        const {
+            workerScript,
+            gameData,
+            playerDTOs,
+            zones,
+            simulationTimeLimit,
+            extraBuffsByPlayer,
+            maxWorkers,
+            useEarlyExit,
+        } = event.data;
 
         // Create Blob URL for simulation workers from the bundled script string
         const blob = new Blob([workerScript], { type: 'application/javascript' });
@@ -114,7 +122,7 @@ onmessage = async function (event) {
                             zoneHrid: task.zoneHrid,
                             difficultyTier: task.difficultyTier,
                             simulationTimeLimit,
-                            extraBuffs,
+                            extraBuffsByPlayer,
                         });
                     });
                 } catch (error) {

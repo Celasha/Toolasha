@@ -12,11 +12,26 @@ import loadoutState from '../../core/loadout-state.js';
 import config from '../../core/config.js';
 import marketAPI from '../../api/marketplace.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
+import { calculatePriceAfterTax } from '../../utils/profit-helpers.js';
+import { MARKET_TAX } from '../../utils/profit-constants.js';
 import { calculateRawCombatLevel } from '../../utils/combat-level-progress-calculator.js';
 
 /**
+ * The five current combat-relevant guild Shrines (CSIM-AUD-021, UI-002). Effect construction is
+ * fully data-driven (see engine/shrine.js) - this list only identifies which shrine hrids the
+ * Sim Editor and DTO builders should carry, never their formulas.
+ */
+export const COMBAT_SHRINE_HRIDS = [
+    '/guild_shrines/force',
+    '/guild_shrines/tempo',
+    '/guild_shrines/spirit',
+    '/guild_shrines/rarity',
+    '/guild_shrines/scholar',
+];
+
+/**
  * Extract all required game data maps from initClientData for the sim engine.
- * @returns {Object|null} Plain object with all 13 game data maps, or null if data unavailable
+ * @returns {Object|null} Plain object with all 15 game data maps, or null if data unavailable
  */
 export function buildGameDataPayload() {
     const clientData = dataManager.getInitClientData();
@@ -40,7 +55,59 @@ export function buildGameDataPayload() {
         abilitySlotsLevelRequirementList: clientData.abilitySlotsLevelRequirementList,
         openableLootDropMap: clientData.openableLootDropMap,
         labyrinthCrateDetailMap: clientData.labyrinthCrateDetailMap,
+        guildBuffDetailMap: clientData.guildBuffDetailMap,
+        guildShrineDetailMap: clientData.guildShrineDetailMap,
     };
+}
+
+/**
+ * Resolve the current character's active Monster-task target hrids (CSIM-AUD-023). The sim runs
+ * in a Web Worker with no access to the main-thread DataManager singleton, so eligibility must be
+ * resolved here and threaded through the player DTO as plain data.
+ * @returns {Array<string>} Monster hrids the current character has an active Monster task for
+ */
+function resolveTaskEligibleMonsterHrids() {
+    const quests = dataManager.characterQuests || [];
+    return quests
+        .filter(
+            (quest) =>
+                quest.category === '/quest_category/random_task' &&
+                quest.type === '/quest_type/monster' &&
+                quest.status === '/quest_status/in_progress' &&
+                quest.monsterHrid
+        )
+        .map((quest) => quest.monsterHrid);
+}
+
+/**
+ * Model the current character's active personal/scroll combat buffs for their real remaining
+ * lifetime rather than as an eternal permanent buff (CSIM-AUD-019). `personalActionTypeBuffsMap`
+ * is the already-aggregated buff total for the combat action type; `characterBuffs[].expiresAt`
+ * is the only per-instance timing evidence available, so the combined aggregate is modeled as
+ * expiring at the EARLIEST active personal buff's expiry - a conservative simplification that
+ * never overstates the buff's simulated benefit. If no expiry evidence exists at all (e.g. stale
+ * cache), the aggregate is kept permanent rather than inventing an expiry from no evidence.
+ * Automatic scroll purchase/renewal is explicitly out of scope.
+ * @returns {{buffs: Array<Object>, remainingDurationNs: number|null}}
+ */
+function getSelfPersonalCombatBuffContext() {
+    const buffs = dataManager.personalActionTypeBuffsMap?.['/action_types/combat'] || [];
+    if (buffs.length === 0) {
+        return { buffs: [], remainingDurationNs: null };
+    }
+
+    const characterBuffs = dataManager.characterData?.characterBuffs || [];
+    const now = Date.now();
+    const remainingMs = characterBuffs
+        .map((buff) => buff?.expiresAt)
+        .map((expiresAt) => new Date(expiresAt).getTime() - now)
+        .filter((ms) => Number.isFinite(ms) && ms > 0);
+
+    if (remainingMs.length === 0) {
+        return { buffs, remainingDurationNs: null };
+    }
+
+    return { buffs, remainingDurationNs: Math.min(...remainingMs) * 1e6 };
 }
 
 /**
@@ -88,7 +155,11 @@ export function buildPlayerDTO() {
         houseRooms: {},
         tokenUpgrades: { speed: 0, efficiency: 0, success: 0, doubleProgress: 0 },
         communityBuffLevels: { productionEfficiency: 0, enhancingSpeed: 0, gatheringQuantity: 0, experience: 0 },
-        guildCombatBuffs: [],
+        shrineLevels: {},
+        hasMooPass: false,
+        characterAchievements: [],
+        personalCombatBuffs: { buffs: [], remainingDurationNs: null },
+        taskEligibleMonsterHrids: [],
     };
 
     // Extract all skill levels (combat + skilling)
@@ -119,8 +190,21 @@ export function buildPlayerDTO() {
         experience: dataManager.getCommunityBuffLevel('/community_buff_types/experience') || 0,
     };
 
-    // Extract guild combat buffs (pre-computed server-side per action type)
-    dto.guildCombatBuffs = characterData.guildActionTypeBuffsMap?.['/action_types/combat'] || [];
+    // Extract self Shrine levels from live guild state (CSIM-AUD-021/UI-002). Effective shrine
+    // buffs are constructed generically by the engine's Shrine class from these editable levels -
+    // never from the frozen guildActionTypeBuffsMap snapshot, so the Sim Editor's Shrine section
+    // is the single canonical source and cannot double-apply against a second baked-in path.
+    for (const shrineHrid of COMBAT_SHRINE_HRIDS) {
+        const level = dataManager.getGuildBuildingLevel(shrineHrid);
+        if (level > 0) {
+            dto.shrineLevels[shrineHrid] = level;
+        }
+    }
+
+    dto.hasMooPass = (dataManager.getMooPassBuffs()?.length ?? 0) > 0;
+    dto.characterAchievements = characterData.characterAchievements || [];
+    dto.personalCombatBuffs = getSelfPersonalCombatBuffContext();
+    dto.taskEligibleMonsterHrids = resolveTaskEligibleMonsterHrids();
 
     // Extract equipped items → keyed by equipment type
     // Prefer the always-current characterEquipment Map (updated on every items_updated WS message)
@@ -205,8 +289,16 @@ export function buildPlayerDTO() {
         }
     }
 
-    // Extract equipped abilities → array of { hrid, level, triggers }
+    // Extract equipped abilities → array of { hrid, level, triggers, experience }
     const equippedAbilities = characterData.combatUnit?.combatAbilities || [];
+    // Live per-ability XP progress (CSIM-AUD-017) - combatUnit.combatAbilities carries level only;
+    // characterAbilities is the same source AbilityBookCalculator already uses for live XP.
+    const abilityExperienceByHrid = {};
+    for (const ability of characterData.characterAbilities || []) {
+        if (ability?.abilityHrid) {
+            abilityExperienceByHrid[ability.abilityHrid] = ability.experience || 0;
+        }
+    }
     // Slot 0 = special ability, slots 1-4 = normal abilities
     for (let i = 0; i < 5; i++) {
         dto.abilities.push(null);
@@ -221,6 +313,7 @@ export function buildPlayerDTO() {
             hrid: ability.abilityHrid,
             level: ability.level || 1,
             triggers: buildTriggerDTOs(ability.abilityHrid),
+            experience: abilityExperienceByHrid[ability.abilityHrid] || 0,
         };
 
         if (isSpecial) {
@@ -424,6 +517,11 @@ function buildPartyMemberDTO(profile, clientData, battleData) {
         drinks: [],
         abilities: [],
         houseRooms: {},
+        shrineLevels: {},
+        hasMooPass: false,
+        characterAchievements: [],
+        personalCombatBuffs: { buffs: [], remainingDurationNs: null },
+        taskEligibleMonsterHrids: [],
     };
 
     // Extract skill levels
@@ -434,6 +532,20 @@ function buildPartyMemberDTO(profile, clientData, battleData) {
             dto[key] = skill.level || 1;
         }
     }
+
+    // Extract teammate context evidence already present in a shared-profile payload (CSIM-AUD-019).
+    // This is genuinely per-player evidence and must never fall back to the current/self player's
+    // values - absent/malformed evidence stays neutral (shrineLevels empty, hasMooPass false,
+    // characterAchievements empty) rather than being fabricated. Personal/scroll combat-buff
+    // lifetime evidence is not exposed in a shared-profile payload, so it stays explicitly unknown.
+    for (const shrineHrid of COMBAT_SHRINE_HRIDS) {
+        const level = profile.profile?.guildBuffLevelMap?.[shrineHrid];
+        if (Number.isFinite(level) && level > 0) {
+            dto.shrineLevels[shrineHrid] = level;
+        }
+    }
+    dto.hasMooPass = profile.profile?.sharableCharacter?.hasMooPass ?? false;
+    dto.characterAchievements = profile.profile?.characterAchievements || [];
 
     // Extract equipment from wearableItemMap → keyed by equipmentDetail.type
     if (profile.profile?.wearableItemMap) {
@@ -926,6 +1038,25 @@ export function applyLoadoutSnapshotToDTO(dto, snapshotName, gameData) {
 }
 
 /**
+ * Compute the canonical time-based OOM percentage for one player (UI-001):
+ * `actual time out of mana / simulated time * 100`. Reuses the exact same closed-plus-open-window
+ * accounting already proven correct by the existing single-sim "Run Out Ratio" detail row - never
+ * the historical count-based insufficient-MP-check ratio.
+ * @param {Object} simResult - SimResult from runSimulation()
+ * @param {string} playerHrid
+ * @returns {number|null} OOM percentage (0-100), or null if there is no data for this player
+ */
+export function computeOomPercent(simResult, playerHrid) {
+    const stat = simResult?.playerRanOutOfManaTime?.[playerHrid];
+    if (!stat || !simResult.simulatedTime) return null;
+
+    const openWindow = stat.isOutOfMana ? simResult.simulatedTime - stat.startTimeForOutOfMana : 0;
+    const totalOomTime = stat.totalTimeForOutOfMana + openWindow;
+
+    return (totalOomTime / simResult.simulatedTime) * 100;
+}
+
+/**
  * Calculate expected drops from simulation results for a specific player.
  * Uses deterministic expected-value math (no RNG rolls).
  * @param {Object} simResult - SimResult from the engine
@@ -935,6 +1066,8 @@ export function applyLoadoutSnapshotToDTO(dto, snapshotName, gameData) {
  */
 export function calculateExpectedDrops(simResult, gameData, playerHrid = 'player1') {
     const combatMonsterDetailMap = gameData.combatMonsterDetailMap;
+    // Fallback end-of-simulation snapshot, used only when kill-time context is unavailable
+    // (e.g. a legacy/synthetic SimResult that never called recordMonsterKill/recordDungeonCompletion).
     const dropRateMultiplier = simResult.dropRateMultiplier[playerHrid] || 1;
     const rareFindMultiplier = simResult.rareFindMultiplier?.[playerHrid] || 1;
     const combatDropQuantity = simResult.combatDropQuantity?.[playerHrid] || 0;
@@ -953,8 +1086,19 @@ export function calculateExpectedDrops(simResult, gameData, playerHrid = 'player
             const rewardDropTable = actionDetail?.combatZoneInfo?.dungeonInfo?.rewardDropTable;
 
             if (rewardDropTable) {
+                // Kill-time-context drop quantity (CSIM-AUD-011): average this player's
+                // combatDropQuantity across every completion actually recorded, instead of the
+                // single end-of-run snapshot value applied to every completion regardless of when
+                // a temporary buff/scroll was active.
+                const dungeonContext = simResult.dungeonCompletionDropContext;
+                const playerDungeonContext = dungeonContext?.byPlayer?.[playerHrid];
+                const avgCombatDropQuantity =
+                    playerDungeonContext && dungeonContext.count > 0
+                        ? playerDungeonContext.sumCombatDropQuantity / dungeonContext.count
+                        : combatDropQuantity;
+
                 const baseChestCount = 5;
-                const chestsPerCompletion = (baseChestCount / numberOfPlayers) * (1 + combatDropQuantity);
+                const chestsPerCompletion = (baseChestCount / numberOfPlayers) * (1 + avgCombatDropQuantity);
 
                 for (const drop of rewardDropTable) {
                     const baseRate = drop.dropRate + (drop.dropRatePerDifficultyTier ?? 0) * difficultyTier;
@@ -983,6 +1127,22 @@ export function calculateExpectedDrops(simResult, gameData, playerHrid = 'player
 
             const killCount = simResult.deaths[monsterHrid];
 
+            // Kill-time-context multipliers (CSIM-AUD-011): average this player's multiplier
+            // across every kill actually recorded for this monster, instead of the single
+            // end-of-run snapshot applied retroactively to every accumulated kill.
+            const killContext = simResult.killDropContext?.[monsterHrid];
+            const playerKillContext = killContext?.byPlayer?.[playerHrid];
+            const hasKillContext = playerKillContext && killContext.killCount > 0;
+            const avgDropRateMultiplier = hasKillContext
+                ? playerKillContext.sumDropRateMultiplier / killContext.killCount
+                : dropRateMultiplier;
+            const avgRareFindMultiplier = hasKillContext
+                ? playerKillContext.sumRareFindMultiplier / killContext.killCount
+                : rareFindMultiplier;
+            const avgCombatDropQuantity = hasKillContext
+                ? playerKillContext.sumCombatDropQuantity / killContext.killCount
+                : combatDropQuantity;
+
             // Regular drops
             if (monsterData.dropTable) {
                 for (const drop of monsterData.dropTable) {
@@ -990,12 +1150,12 @@ export function calculateExpectedDrops(simResult, gameData, playerHrid = 'player
 
                     const tierMultiplier = 1.0 + 0.1 * difficultyTier;
                     const baseRate = drop.dropRate + (drop.dropRatePerDifficultyTier ?? 0) * difficultyTier;
-                    const adjustedRate = Math.min(1.0, tierMultiplier * baseRate * dropRateMultiplier);
+                    const adjustedRate = Math.min(1.0, tierMultiplier * baseRate * avgDropRateMultiplier);
                     if (adjustedRate <= 0) continue;
 
                     const avgCount = (drop.minCount + drop.maxCount) / 2;
                     const expected =
-                        (killCount * adjustedRate * avgCount * (1 + debuffOnLevelGap) * (1 + combatDropQuantity)) /
+                        (killCount * adjustedRate * avgCount * (1 + debuffOnLevelGap) * (1 + avgCombatDropQuantity)) /
                         numberOfPlayers;
 
                     totalDropMap.set(drop.itemHrid, (totalDropMap.get(drop.itemHrid) || 0) + expected);
@@ -1007,10 +1167,10 @@ export function calculateExpectedDrops(simResult, gameData, playerHrid = 'player
                 for (const drop of monsterData.rareDropTable) {
                     if (drop.minDifficultyTier > difficultyTier) continue;
 
-                    const adjustedRate = drop.dropRate * rareFindMultiplier;
+                    const adjustedRate = drop.dropRate * avgRareFindMultiplier;
                     const avgCount = (drop.minCount + (drop.maxCount ?? drop.minCount)) / 2;
                     const expected =
-                        (killCount * adjustedRate * avgCount * (1 + debuffOnLevelGap) * (1 + combatDropQuantity)) /
+                        (killCount * adjustedRate * avgCount * (1 + debuffOnLevelGap) * (1 + avgCombatDropQuantity)) /
                         numberOfPlayers;
 
                     totalDropMap.set(drop.itemHrid, (totalDropMap.get(drop.itemHrid) || 0) + expected);
@@ -1087,20 +1247,6 @@ export function calculateDungeonKeyCosts(dropMap, getBuyPrice) {
 }
 
 /**
- * Get the sell price for an item based on the global pricing mode.
- * @param {Object|null} priceData - { bid, ask } from marketAPI.getPrice()
- * @returns {number}
- */
-function getSellPrice(priceData) {
-    if (!priceData) return 0;
-    const mode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
-    if (mode === 'conservative' || mode === 'patientBuy') {
-        return priceData.bid > 0 ? priceData.bid : 0;
-    }
-    return priceData.ask > 0 ? priceData.ask : 0;
-}
-
-/**
  * Get the buy price for an item based on the global pricing mode.
  * @param {Object|null} priceData - { bid, ask } from marketAPI.getPrice()
  * @returns {number}
@@ -1116,28 +1262,32 @@ function getBuyPrice(priceData) {
 
 /**
  * Calculate revenue and consumable costs from a sim result.
- * Respects the user's profitCalc_pricingMode setting.
+ * Respects the user's profitCalc_pricingMode setting. Reuses the canonical sell-side valuation +
+ * market tax contract (CSIM-AUD-012) instead of a Combat-Sim-specific formula, and folds dungeon
+ * key cost into its own returned totals (CSIM-AUD-014) so every caller of this shared function -
+ * not just the main Results detail view, which already computes key cost separately - sees a
+ * complete profit number (e.g. All-Zones' "skip worse tiers" pruning, Upgrade Advisor).
  * @param {Object} simResult - SimResult from runSimulation()
  * @param {Object} gameData - Game data payload from buildGameDataPayload()
  * @param {string} playerHrid - Player HRID to read drop multipliers and consumables for
  * @param {number} hours - Number of hours simulated
- * @returns {{ revenuePerHour: number, costPerHour: number, netPerHour: number,
- *             dropEntries: Array, consumableEntries: Array }}
+ * @returns {{ revenuePerHour: number, costPerHour: number, netPerHour: number, keyCostPerHour: number,
+ *             hasMissingPrices: boolean, dropEntries: Array, consumableEntries: Array }}
  */
 export function calculateSimRevenue(simResult, gameData, playerHrid, hours) {
     let revenuePerHour = 0;
+    let hasMissingPrices = false;
     const dropEntries = [];
 
     const dropMap = calculateExpectedDrops(simResult, gameData, playerHrid);
     for (const [itemHrid, total] of dropMap.entries()) {
         if (total <= 0) continue;
-        let unitValue = itemHrid === '/items/coin' ? 1 : getSellPrice(marketAPI.getPrice(itemHrid));
-        if (unitValue === 0) {
-            const ev =
-                expectedValueCalculator.getCachedValue(itemHrid) ||
-                expectedValueCalculator.calculateSingleContainer(itemHrid);
-            if (ev !== null && ev > 0) unitValue = ev;
+        const resolved = expectedValueCalculator.resolveSellSideValue(itemHrid);
+        if (!resolved) {
+            hasMissingPrices = true;
+            continue;
         }
+        const unitValue = resolved.needsTax ? calculatePriceAfterTax(resolved.value, MARKET_TAX) : resolved.value;
         const perHour = (total / hours) * unitValue;
         revenuePerHour += perHour;
         if (unitValue > 0) {
@@ -1160,10 +1310,21 @@ export function calculateSimRevenue(simResult, gameData, playerHrid, hours) {
         }
     }
 
+    let keyCostPerHour = 0;
+    if (simResult.isDungeon) {
+        const keyCosts = calculateDungeonKeyCosts(dropMap, (keyHrid) => getBuyPrice(marketAPI.getPrice(keyHrid)));
+        for (const key of keyCosts) {
+            keyCostPerHour += key.totalCost / hours;
+        }
+        costPerHour += keyCostPerHour;
+    }
+
     return {
         revenuePerHour,
         costPerHour,
         netPerHour: revenuePerHour - costPerHour,
+        keyCostPerHour,
+        hasMissingPrices,
         dropEntries,
         consumableEntries,
     };

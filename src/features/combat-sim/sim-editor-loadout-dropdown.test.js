@@ -10,6 +10,13 @@ vi.mock('./combat-sim-adapter.js', () => ({
     buildAllPlayerDTOs: vi.fn(),
     parseShykaiImport: vi.fn(),
     applyLoadoutSnapshotToDTO: vi.fn(),
+    COMBAT_SHRINE_HRIDS: [
+        '/guild_shrines/force',
+        '/guild_shrines/tempo',
+        '/guild_shrines/spirit',
+        '/guild_shrines/rarity',
+        '/guild_shrines/scholar',
+    ],
 }));
 
 vi.mock('../../core/loadout-state.js', () => ({

@@ -49,8 +49,8 @@ export function calculateAbilityCost(abilityHrid, targetLevel) {
     // Determine XP per book (50 for starters, 500 for advanced)
     const xpPerBook = isStarterAbility(abilityHrid) ? 50 : 500;
 
-    // Calculate books needed
-    let booksNeeded = targetXp / xpPerBook;
+    // Calculate books needed - always an integer purchase, never fractional (CSIM-AUD-017)
+    let booksNeeded = Math.ceil(targetXp / xpPerBook);
     booksNeeded += 1; // +1 book to learn the ability initially
 
     // Get market price for ability book
@@ -98,8 +98,8 @@ export function calculateAbilityLevelUpCost(abilityHrid, currentLevel, currentXp
     // Determine XP per book
     const xpPerBook = isStarterAbility(abilityHrid) ? 50 : 500;
 
-    // Calculate books needed
-    let booksNeeded = xpNeeded / xpPerBook;
+    // Calculate books needed - always an integer purchase, never fractional (CSIM-AUD-017)
+    let booksNeeded = Math.max(0, Math.ceil(xpNeeded / xpPerBook));
 
     // If starting from level 0, need +1 book to learn initially
     if (currentLevel === 0) {

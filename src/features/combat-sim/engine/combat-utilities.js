@@ -1,4 +1,19 @@
 class CombatUtilities {
+    /**
+     * Task Damage is only earned while undertaking the relevant task (CSIM-AUD-023): a player's
+     * taskDamage bonus applies against `opponent` only when `opponent` is that player's active
+     * Monster-task target. Non-player units (monsters) have no task concept, so their own
+     * (effectively always-zero) taskDamage stat is returned unconditionally rather than gated.
+     * @param {CombatUnit} unit - The unit whose taskDamage stat is being considered
+     * @param {CombatUnit} opponent - The unit on the other side of this damage exchange
+     * @returns {number}
+     */
+    static getEffectiveTaskDamage(unit, opponent) {
+        if (!unit.isPlayer) return unit.combatDetails.combatStats.taskDamage;
+        const isEligible = unit.taskEligibleMonsterHrids?.includes(opponent.hrid);
+        return isEligible ? unit.combatDetails.combatStats.taskDamage : 0;
+    }
+
     static getTarget(enemies) {
         if (!enemies) {
             return null;
@@ -221,7 +236,7 @@ class CombatUtilities {
                 sourceDamageTakenRatio = (100 - penetratedSourceResistance) / 100;
             }
 
-            const targetTaskDamageMultiplier = 1.0 + target.combatDetails.combatStats.taskDamage;
+            const targetTaskDamageMultiplier = 1.0 + CombatUtilities.getEffectiveTaskDamage(target, source);
             const sourceDamageTakenMultiplier = 1.0 + source.combatDetails.combatStats.damageTaken;
             const targetDamageMultiplier = targetTaskDamageMultiplier * sourceDamageTakenMultiplier;
 
@@ -258,7 +273,7 @@ class CombatUtilities {
                     sourceDamageTakenRatio = (100.0 - sourceEffectiveArmor) / 100.0;
                 }
 
-                const targetTaskDamageMultiplier = 1.0 + target.combatDetails.combatStats.taskDamage;
+                const targetTaskDamageMultiplier = 1.0 + CombatUtilities.getEffectiveTaskDamage(target, source);
                 const sourceDamageTakenMultiplier = 1.0 + source.combatDetails.combatStats.damageTaken;
                 const retaliationDamageMultiplier = targetTaskDamageMultiplier * sourceDamageTakenMultiplier;
 

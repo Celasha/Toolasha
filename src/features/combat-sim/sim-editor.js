@@ -9,6 +9,7 @@ import {
     buildAllPlayerDTOs,
     parseShykaiImport,
     applyLoadoutSnapshotToDTO,
+    COMBAT_SHRINE_HRIDS,
 } from './combat-sim-adapter.js';
 import loadoutState from '../../core/loadout-state.js';
 
@@ -424,6 +425,7 @@ export class SimEditor {
         }
         html += this._renderSkillLevelsSection(dto);
         html += this._renderHouseRoomsSection(dto, gameData);
+        html += this._renderShrinesSection(dto, gameData);
         if (this.skillingMode) {
             html += this._renderTokenUpgradesSection(dto);
             html += this._renderCommunityBuffsSection(dto);
@@ -1196,6 +1198,38 @@ export class SimEditor {
     }
 
     /** @private */
+    _renderShrinesSection(dto, gameData) {
+        const guildShrineDetailMap = gameData.guildShrineDetailMap || {};
+        const shrineHrids = COMBAT_SHRINE_HRIDS.filter((hrid) => guildShrineDetailMap[hrid]);
+        const activeCount = shrineHrids.filter((hrid) => (dto.shrineLevels?.[hrid] || 0) > 0).length;
+
+        let html = `<div style="margin-bottom:10px;">`;
+        html += `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:6px; cursor:pointer; user-select:none;" data-toggle="shrine-section">`;
+        html += `<span data-arrow="shrine-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> Shrines`;
+        html += `<span style="color:#888; font-weight:400; font-size:11px; margin-left:6px;">${activeCount} active</span>`;
+        html += '</div>';
+        html += `<div id="mwi-csim-shrine-section" style="display:none;">`;
+        html += `<div style="display:grid; grid-template-columns:1fr 1fr; gap:4px 12px;">`;
+
+        for (const hrid of shrineHrids) {
+            const shrine = guildShrineDetailMap[hrid];
+            const name = shrine.name || hrid.split('/').pop();
+            const maxLevel = shrine.maxLevel || 20;
+            const level = dto.shrineLevels?.[hrid] || 0;
+            html += `<div style="display:flex; align-items:center; gap:6px; font-size:12px;">`;
+            html += `<span style="color:#888; width:100px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${name}">${name}</span>`;
+            html += `<input type="number" min="0" max="${maxLevel}" value="${level}"
+                data-shrine-hrid="${hrid}"
+                style="width:40px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
+                border-radius:3px; padding:1px 3px; font-size:12px; text-align:center;">`;
+            html += '</div>';
+        }
+
+        html += '</div></div></div>';
+        return html;
+    }
+
+    /** @private */
     _renderTokenUpgradesSection(dto) {
         const upgrades = [
             { key: 'speed', label: 'Speed' },
@@ -1333,6 +1367,21 @@ export class SimEditor {
                     delete dto.houseRooms[hrid];
                 } else {
                     dto.houseRooms[hrid] = val;
+                }
+            });
+        });
+
+        editorArea.querySelectorAll('[data-shrine-hrid]').forEach((input) => {
+            input.addEventListener('change', () => {
+                const hrid = input.dataset.shrineHrid;
+                const maxLevel = parseInt(input.max) || 20;
+                const val = Math.max(0, Math.min(maxLevel, parseInt(input.value) || 0));
+                input.value = val;
+                if (!dto.shrineLevels) dto.shrineLevels = {};
+                if (val === 0) {
+                    delete dto.shrineLevels[hrid];
+                } else {
+                    dto.shrineLevels[hrid] = val;
                 }
             });
         });

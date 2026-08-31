@@ -170,16 +170,17 @@ class Monster extends CombatUnit {
             this.combatDetails.combatStats.attackInterval = gameMonster.combatDetails.attackInterval;
         }
 
-        super.updateCombatDetails();
-
-        // Labyrinth: scale armor and resistances after combat details are calculated
+        // Labyrinth room scaling applies once to the monster's base armor/resistance contributions.
+        // Defense level is already room-scaled above (labyrinthScaleFactor); scaling the derived
+        // totalArmor/totalXResistance again after super.updateCombatDetails() would double-apply it.
         if (this.roomLevel > 0) {
-            const scaleFactor = this.roomLevel / LABYRINTH_BASE_ROOM_LEVEL;
-            this.combatDetails.totalArmor *= scaleFactor;
-            this.combatDetails.totalWaterResistance *= scaleFactor;
-            this.combatDetails.totalNatureResistance *= scaleFactor;
-            this.combatDetails.totalFireResistance *= scaleFactor;
+            this.combatDetails.combatStats.armor *= labyrinthScaleFactor;
+            this.combatDetails.combatStats.waterResistance *= labyrinthScaleFactor;
+            this.combatDetails.combatStats.natureResistance *= labyrinthScaleFactor;
+            this.combatDetails.combatStats.fireResistance *= labyrinthScaleFactor;
         }
+
+        super.updateCombatDetails();
     }
 }
 

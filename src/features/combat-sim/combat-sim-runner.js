@@ -1,32 +1,20 @@
 /**
  * Combat Simulator Runner
- * Runs simulations in parallel Web Workers for maximum speed.
+ * Runs one logical stateful simulation timeline in one Web Worker.
  *
- * For large simulations (>= 20 hours), the time is split across multiple
- * workers (up to 4) running in parallel. Results are merged by summing
- * all additive counters. For small simulations, a single worker is used.
+ * Independent targets/zones may still be parallelized by their higher-level runners
+ * (see all-zones-runner.js), but elapsed time from one stateful simulation must never
+ * be split across fresh worker replicas and merged as if it were one timeline - buffs,
+ * cooldowns, consumables, Fury, and OOM windows would silently reset at each split.
  */
 
 // The ?worker suffix is handled by rollup's workerBundlePlugin at build time
 import WORKER_SCRIPT from './combat-sim-worker-entry.js?worker';
-import config from '../../core/config.js';
 
 let workerBlobURL = null;
 let activeWorkers = [];
 let taskIdCounter = 0;
 let pendingRejects = []; // Track reject functions to abort on cancel
-
-const MIN_HOURS_PER_WORKER = 20;
-const MAX_WORKERS = 4;
-
-/**
- * @returns {number} Max worker count from setting, or hardware concurrency if 0/unset
- */
-function getMaxWorkers() {
-    const setting = config.getSetting('combatSim_maxThreads') || 0;
-    const cores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 4;
-    return setting > 0 ? Math.min(setting, cores) : Math.min(MAX_WORKERS, cores);
-}
 
 /**
  * Get or create the worker Blob URL (created once, reused).
@@ -41,15 +29,18 @@ export function getWorkerURL() {
 }
 
 /**
- * Build extra buffs from community buffs, MooPass, and guild combat buffs.
- * @param {Object} communityBuffs - { mooPass, comExp, comDrop }
- * @param {Array} [guildCombatBuffs] - Pre-computed guild buff objects for /action_types/combat
+ * Build one player's extra (non-house, non-shrine) buffs: genuinely global community buffs plus
+ * that player's own MooPass status. Guild Shrine buffs are no longer carried here - they are
+ * constructed generically by the engine's Shrine class from each player's own `shrineLevels`
+ * (CSIM-AUD-021/UI-002), so there is exactly one canonical path and no double application.
+ * @param {Object} communityBuffs - { comExp, comDrop } (genuinely server-wide, shared by every player)
+ * @param {boolean} [hasMooPass] - Whether THIS specific player has MooPass active
  * @returns {Array<Object>}
  */
-export function buildExtraBuffs(communityBuffs, guildCombatBuffs) {
+export function buildExtraBuffs(communityBuffs, hasMooPass) {
     const extraBuffs = [];
 
-    if (communityBuffs?.mooPass) {
+    if (hasMooPass) {
         extraBuffs.push({
             uniqueHrid: '/buff_uniques/experience_moo_pass_buff',
             typeHrid: '/buff_types/wisdom',
@@ -88,11 +79,24 @@ export function buildExtraBuffs(communityBuffs, guildCombatBuffs) {
         });
     }
 
-    if (Array.isArray(guildCombatBuffs)) {
-        extraBuffs.push(...guildCombatBuffs);
-    }
-
     return extraBuffs;
+}
+
+/**
+ * Build each player's own extra buffs (CSIM-AUD-019/020): community buffs are genuinely global
+ * and shared identically, but MooPass is per-player. Every player gets its OWN array (never one
+ * shared array reference across players), closing the CSIM-AUD-020B amplification vector at its
+ * source in addition to the ownership fix in CombatUnit.addPermanentBuff().
+ * @param {Array<Object>} playerDTOs
+ * @param {Object} communityBuffs - { comExp, comDrop }
+ * @returns {Object<string, Array<Object>>} playerHrid -> that player's own extraBuffs array
+ */
+export function buildExtraBuffsByPlayer(playerDTOs, communityBuffs) {
+    const extraBuffsByPlayer = {};
+    for (const dto of playerDTOs) {
+        extraBuffsByPlayer[dto.hrid] = buildExtraBuffs(communityBuffs, dto.hasMooPass);
+    }
+    return extraBuffsByPlayer;
 }
 
 /**
@@ -140,238 +144,47 @@ export function runWorkerChunk(message, onProgress) {
 }
 
 /**
- * Merge multiple SimResults into one by summing all additive counters.
- * @param {Array<Object>} results - Array of SimResult objects
- * @returns {Object} Merged SimResult
- */
-function mergeSimResults(results) {
-    if (results.length === 1) return results[0];
-
-    const merged = structuredClone(results[0]);
-
-    for (let i = 1; i < results.length; i++) {
-        const r = results[i];
-
-        // Encounters
-        merged.encounters += r.encounters;
-
-        // Deaths (per unit hrid)
-        for (const [hrid, count] of Object.entries(r.deaths)) {
-            merged.deaths[hrid] = (merged.deaths[hrid] || 0) + count;
-        }
-
-        // Experience gained (per player → per skill)
-        for (const [playerHrid, skills] of Object.entries(r.experienceGained)) {
-            if (!merged.experienceGained[playerHrid]) {
-                merged.experienceGained[playerHrid] = {};
-            }
-            for (const [skill, amount] of Object.entries(skills)) {
-                merged.experienceGained[playerHrid][skill] = (merged.experienceGained[playerHrid][skill] || 0) + amount;
-            }
-        }
-
-        // Consumables used (per player → per item)
-        for (const [playerHrid, items] of Object.entries(r.consumablesUsed)) {
-            if (!merged.consumablesUsed[playerHrid]) {
-                merged.consumablesUsed[playerHrid] = {};
-            }
-            for (const [itemHrid, count] of Object.entries(items)) {
-                merged.consumablesUsed[playerHrid][itemHrid] =
-                    (merged.consumablesUsed[playerHrid][itemHrid] || 0) + count;
-            }
-        }
-
-        // Mana used (per player → per ability)
-        if (r.manaUsed) {
-            if (!merged.manaUsed) merged.manaUsed = {};
-            for (const [playerHrid, abilities] of Object.entries(r.manaUsed)) {
-                if (!merged.manaUsed[playerHrid]) merged.manaUsed[playerHrid] = {};
-                for (const [abilityHrid, amount] of Object.entries(abilities)) {
-                    merged.manaUsed[playerHrid][abilityHrid] = (merged.manaUsed[playerHrid][abilityHrid] || 0) + amount;
-                }
-            }
-        }
-
-        // Hitpoints gained/spent (per unit → per source)
-        for (const field of ['hitpointsGained', 'manapointsGained', 'hitpointsSpent']) {
-            if (r[field]) {
-                if (!merged[field]) merged[field] = {};
-                for (const [unitHrid, sources] of Object.entries(r[field])) {
-                    if (!merged[field][unitHrid]) merged[field][unitHrid] = {};
-                    for (const [source, amount] of Object.entries(sources)) {
-                        merged[field][unitHrid][source] = (merged[field][unitHrid][source] || 0) + amount;
-                    }
-                }
-            }
-        }
-
-        // Attacks (per source → per target → per ability)
-        if (r.attacks) {
-            if (!merged.attacks) merged.attacks = {};
-            for (const [sourceHrid, targets] of Object.entries(r.attacks)) {
-                if (!merged.attacks[sourceHrid]) merged.attacks[sourceHrid] = {};
-                for (const [targetHrid, abilities] of Object.entries(targets)) {
-                    if (!merged.attacks[sourceHrid][targetHrid]) {
-                        merged.attacks[sourceHrid][targetHrid] = {};
-                    }
-                    for (const [abilityName, stats] of Object.entries(abilities)) {
-                        if (!merged.attacks[sourceHrid][targetHrid][abilityName]) {
-                            merged.attacks[sourceHrid][targetHrid][abilityName] = { hit: 0, miss: 0 };
-                        }
-                        merged.attacks[sourceHrid][targetHrid][abilityName].hit += stats.hit || 0;
-                        merged.attacks[sourceHrid][targetHrid][abilityName].miss += stats.miss || 0;
-                    }
-                }
-            }
-        }
-
-        // Mana run out (OR across chunks — if any chunk went OOM, mark as true)
-        if (r.playerRanOutOfMana) {
-            if (!merged.playerRanOutOfMana) merged.playerRanOutOfMana = {};
-            for (const [playerHrid, ranOut] of Object.entries(r.playerRanOutOfMana)) {
-                merged.playerRanOutOfMana[playerHrid] = merged.playerRanOutOfMana[playerHrid] || ranOut;
-            }
-        }
-
-        // Mana run out time (sum closed OOM windows; close any still-open window at chunk boundary)
-        if (r.playerRanOutOfManaTime) {
-            if (!merged.playerRanOutOfManaTime) merged.playerRanOutOfManaTime = {};
-            for (const [playerHrid, stat] of Object.entries(r.playerRanOutOfManaTime)) {
-                const openWindow = stat.isOutOfMana ? r.simulatedTime - stat.startTimeForOutOfMana : 0;
-                const chunkTotal = stat.totalTimeForOutOfMana + openWindow;
-                if (!merged.playerRanOutOfManaTime[playerHrid]) {
-                    merged.playerRanOutOfManaTime[playerHrid] = {
-                        isOutOfMana: false,
-                        startTimeForOutOfMana: 0,
-                        totalTimeForOutOfMana: 0,
-                    };
-                }
-                merged.playerRanOutOfManaTime[playerHrid].totalTimeForOutOfMana += chunkTotal;
-            }
-        }
-
-        // Debuff on level gap — constant per player, just take the value from any chunk
-        if (r.debuffOnLevelGap) {
-            if (!merged.debuffOnLevelGap) merged.debuffOnLevelGap = {};
-            for (const [playerHrid, debuff] of Object.entries(r.debuffOnLevelGap)) {
-                merged.debuffOnLevelGap[playerHrid] = debuff;
-            }
-        }
-
-        // Wipe events — collect up to 20 across all chunks
-        if (r.wipeEvents && r.wipeEvents.length > 0) {
-            if (!merged.wipeEvents) merged.wipeEvents = [];
-            for (const event of r.wipeEvents) {
-                if (merged.wipeEvents.length < 20) merged.wipeEvents.push(event);
-            }
-        }
-
-        // Dungeon stats
-        if (r.isDungeon) {
-            merged.dungeonsCompleted = (merged.dungeonsCompleted || 0) + (r.dungeonsCompleted || 0);
-            merged.dungeonsFailed = (merged.dungeonsFailed || 0) + (r.dungeonsFailed || 0);
-            merged.maxWaveReached = Math.max(merged.maxWaveReached || 0, r.maxWaveReached || 0);
-        }
-
-        // Simulated time
-        merged.simulatedTime = (merged.simulatedTime || 0) + (r.simulatedTime || 0);
-
-        // Total damage dealt per source
-        if (r.totalDamageDealt) {
-            if (!merged.totalDamageDealt) merged.totalDamageDealt = {};
-            for (const [hrid, damage] of Object.entries(r.totalDamageDealt)) {
-                merged.totalDamageDealt[hrid] = (merged.totalDamageDealt[hrid] || 0) + damage;
-            }
-        }
-
-        // Time spent alive
-        if (r.timeSpentAlive) {
-            if (!merged.timeSpentAlive) merged.timeSpentAlive = [];
-            for (const entry of r.timeSpentAlive) {
-                const existing = merged.timeSpentAlive.find((e) => e.name === entry.name);
-                if (existing) {
-                    existing.timeSpentAlive += entry.timeSpentAlive;
-                    existing.count += entry.count;
-                } else {
-                    merged.timeSpentAlive.push({ ...entry });
-                }
-            }
-        }
-    }
-
-    return merged;
-}
-
-/**
- * Run a combat simulation, parallelized across multiple Workers when beneficial.
+ * Run a combat simulation as one continuous, full-duration stateful timeline (CSIM-AUD-006).
+ * Independent targets/zones are parallelized by all-zones-runner.js at a higher level, never by
+ * splitting one target's elapsed time across independent worker replicas.
  * @param {Object} params
  * @param {Object} params.gameData - Game data maps from buildGameDataPayload()
  * @param {Array<Object>} params.playerDTOs - Player DTOs from buildAllPlayerDTOs()
  * @param {string} params.zoneHrid - Zone HRID
  * @param {number} params.difficultyTier - Difficulty tier (0+)
  * @param {number} params.hours - Hours to simulate
- * @param {Object} params.communityBuffs - { mooPass, comExp, comDrop }
+ * @param {Object} params.communityBuffs - { comExp, comDrop }
  * @param {Function} [onProgress] - Called with (percent: 0-100)
- * @returns {Promise<Object>} Merged SimResult
+ * @returns {Promise<Object>} SimResult
  */
 export async function runSimulation(params, onProgress) {
     const { gameData, playerDTOs, zoneHrid, difficultyTier, hours, communityBuffs } = params;
 
-    const guildCombatBuffs = playerDTOs[0]?.guildCombatBuffs;
-    const extraBuffs = buildExtraBuffs(communityBuffs, guildCombatBuffs);
+    const extraBuffsByPlayer = buildExtraBuffsByPlayer(playerDTOs, communityBuffs);
     const ONE_HOUR_NS = 3600 * 1e9;
 
     // Cancel any previous run
     cancelSimulation();
 
-    // Determine worker count
-    const maxWorkers = getMaxWorkers();
-    const workerCount =
-        hours >= MIN_HOURS_PER_WORKER * 2 ? Math.min(maxWorkers, Math.floor(hours / MIN_HOURS_PER_WORKER)) : 1;
-
-    // Split hours across workers
-    const baseHours = Math.floor(hours / workerCount);
-    const remainder = hours - baseHours * workerCount;
-
-    const chunks = [];
-    for (let i = 0; i < workerCount; i++) {
-        const chunkHours = baseHours + (i < remainder ? 1 : 0);
-        chunks.push(chunkHours);
-    }
-
-    // Track per-worker progress
-    const workerProgress = new Array(workerCount).fill(0);
-    const reportProgress = () => {
-        if (!onProgress) return;
-        const totalPercent = Math.round(workerProgress.reduce((sum, p) => sum + p, 0) / workerCount);
-        onProgress(totalPercent);
+    const taskId = ++taskIdCounter;
+    const message = {
+        type: 'start_simulation',
+        taskId,
+        gameData,
+        playerDTOs,
+        zoneHrid,
+        difficultyTier,
+        // Preserve the exact requested duration, including fractional hours - one target's
+        // simulation timeline must never be time-sliced.
+        simulationTimeLimit: hours * ONE_HOUR_NS,
+        extraBuffsByPlayer,
     };
 
-    // Launch all workers in parallel
-    const promises = chunks.map((chunkHours, i) => {
-        const taskId = ++taskIdCounter;
-        const message = {
-            type: 'start_simulation',
-            taskId,
-            gameData,
-            playerDTOs,
-            zoneHrid,
-            difficultyTier,
-            simulationTimeLimit: chunkHours * ONE_HOUR_NS,
-            extraBuffs,
-        };
-
-        return runWorkerChunk(message, (percent) => {
-            workerProgress[i] = percent;
-            reportProgress();
-        });
-    });
-
-    const results = await Promise.all(promises);
+    const result = await runWorkerChunk(message, onProgress);
 
     if (onProgress) onProgress(100);
 
-    return mergeSimResults(results);
+    return result;
 }
 
 /**
@@ -422,8 +235,13 @@ export async function runLabyrinthSimulation(params, onProgress) {
         labyrinthCombatBuffs,
     } = params;
 
-    const guildCombatBuffs = playerDTOs[0]?.guildCombatBuffs;
-    const extraBuffs = [...buildExtraBuffs(communityBuffs, guildCombatBuffs), ...(labyrinthCombatBuffs || [])];
+    const extraBuffsByPlayer = buildExtraBuffsByPlayer(playerDTOs, communityBuffs);
+    if (labyrinthCombatBuffs?.length) {
+        // Labyrinth crate buffs are genuinely shared party-wide loot, unlike guild Shrines/MooPass.
+        for (const dto of playerDTOs) {
+            extraBuffsByPlayer[dto.hrid] = [...extraBuffsByPlayer[dto.hrid], ...labyrinthCombatBuffs];
+        }
+    }
     const ONE_HOUR_NS = 3600 * 1e9;
 
     // Cancel any previous run
@@ -438,7 +256,7 @@ export async function runLabyrinthSimulation(params, onProgress) {
         zoneHrid,
         difficultyTier: 0,
         simulationTimeLimit: hours * ONE_HOUR_NS,
-        extraBuffs,
+        extraBuffsByPlayer,
         labyrinth: {
             monsterHrid,
             roomLevel,

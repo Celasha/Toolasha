@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'vitest';
-import { calculateLevelGapDebuff, calculateCombatLevelFromLevelFields } from './combat-sim-adapter.js';
+import {
+    calculateLevelGapDebuff,
+    calculateCombatLevelFromLevelFields,
+    computeOomPercent,
+    calculateExpectedDrops,
+} from './combat-sim-adapter.js';
 
 describe('calculateLevelGapDebuff', () => {
     // SERVER-CONFIRMED (direct MWI developer evidence):
@@ -95,5 +100,107 @@ describe('calculateCombatLevelFromLevelFields', () => {
         });
         expect(result).not.toBeCloseTo(133.39, 1);
         expect(result).toBe(133.2);
+    });
+});
+
+describe('computeOomPercent (UI-001) - time-based OOM %, not count-based', () => {
+    test('exact zero OOM time returns exactly 0', () => {
+        const simResult = {
+            simulatedTime: 1000,
+            playerRanOutOfManaTime: {
+                player1: { isOutOfMana: false, startTimeForOutOfMana: 0, totalTimeForOutOfMana: 0 },
+            },
+        };
+        expect(computeOomPercent(simResult, 'player1')).toBe(0);
+    });
+
+    test('a closed OOM window computes the exact percentage', () => {
+        const simResult = {
+            simulatedTime: 1000,
+            playerRanOutOfManaTime: {
+                player1: { isOutOfMana: false, startTimeForOutOfMana: 0, totalTimeForOutOfMana: 50 },
+            },
+        };
+        expect(computeOomPercent(simResult, 'player1')).toBeCloseTo(5);
+    });
+
+    test('an open final OOM window includes only [start, simulatedTime)', () => {
+        const simResult = {
+            simulatedTime: 1000,
+            playerRanOutOfManaTime: {
+                player1: { isOutOfMana: true, startTimeForOutOfMana: 900, totalTimeForOutOfMana: 0 },
+            },
+        };
+        // Open window contributes (1000 - 900) = 100ns on top of the 0 closed total.
+        expect(computeOomPercent(simResult, 'player1')).toBeCloseTo(10);
+    });
+
+    test('closed + open windows combine correctly', () => {
+        const simResult = {
+            simulatedTime: 1000,
+            playerRanOutOfManaTime: {
+                player1: { isOutOfMana: true, startTimeForOutOfMana: 950, totalTimeForOutOfMana: 20 },
+            },
+        };
+        // (20 closed + 50 open) / 1000 = 7%
+        expect(computeOomPercent(simResult, 'player1')).toBeCloseTo(7);
+    });
+
+    test('missing data for a player returns null rather than a fabricated 0', () => {
+        const simResult = { simulatedTime: 1000, playerRanOutOfManaTime: {} };
+        expect(computeOomPercent(simResult, 'player1')).toBeNull();
+    });
+});
+
+describe('calculateExpectedDrops - kill-time-context multipliers used when available (CSIM-AUD-011)', () => {
+    function baseSimResult(overrides = {}) {
+        return {
+            deaths: { '/monsters/bear': 10 },
+            dropRateMultiplier: { player1: 2.0 }, // stale end-of-run snapshot
+            rareFindMultiplier: { player1: 1 },
+            combatDropQuantity: { player1: 0 },
+            debuffOnLevelGap: { player1: 0 },
+            numberOfPlayers: 1,
+            difficultyTier: 0,
+            isDungeon: false,
+            ...overrides,
+        };
+    }
+
+    const gameData = {
+        combatMonsterDetailMap: {
+            '/monsters/bear': {
+                dropTable: [{ itemHrid: '/items/log', dropRate: 0.5, minCount: 1, maxCount: 1, minDifficultyTier: 0 }],
+            },
+        },
+    };
+
+    test('falls back to the end-of-run snapshot when no kill-time context is present (legacy SimResult)', () => {
+        const result = baseSimResult();
+        const drops = calculateExpectedDrops(result, gameData, 'player1');
+        // 10 kills * rate(0.5) * 2.0 snapshot multiplier * avgCount(1) = 10
+        expect(drops.get('/items/log')).toBeCloseTo(10);
+    });
+
+    test('uses the kill-weighted average from killDropContext instead of the stale end-of-run snapshot', () => {
+        const result = baseSimResult({
+            killDropContext: {
+                '/monsters/bear': {
+                    killCount: 10,
+                    byPlayer: {
+                        // 5 kills at 1.0x + 5 kills at 2.0x = kill-weighted average 1.5x, not the 2.0 snapshot.
+                        player1: {
+                            sumDropRateMultiplier: 5 * 1.0 + 5 * 2.0,
+                            sumRareFindMultiplier: 10,
+                            sumCombatDropQuantity: 0,
+                        },
+                    },
+                },
+            },
+        });
+
+        const drops = calculateExpectedDrops(result, gameData, 'player1');
+        // 10 kills * rate(0.5) * 1.5 average multiplier * avgCount(1) = 7.5, not 10.
+        expect(drops.get('/items/log')).toBeCloseTo(7.5);
     });
 });

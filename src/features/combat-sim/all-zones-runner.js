@@ -7,7 +7,7 @@
  * multi-zone throughput.
  */
 
-import { buildExtraBuffs } from './combat-sim-runner.js';
+import { buildExtraBuffsByPlayer } from './combat-sim-runner.js';
 import WORKER_SCRIPT from './combat-sim-worker-entry.js?worker';
 import MULTI_WORKER_SCRIPT from './multi-worker-entry.js?worker';
 import { calculateSimRevenue } from './combat-sim-adapter.js';
@@ -36,7 +36,7 @@ export async function runAllZonesSimulation(params, onProgress) {
     // Cancel any previous run
     cancelAllZonesSimulation();
 
-    const extraBuffs = buildExtraBuffs(communityBuffs);
+    const extraBuffsByPlayer = buildExtraBuffsByPlayer(playerDTOs, communityBuffs);
     const ONE_HOUR_NS = 3600 * 1e9;
     const simulationTimeLimit = hours * ONE_HOUR_NS;
 
@@ -131,7 +131,7 @@ export async function runAllZonesSimulation(params, onProgress) {
             playerDTOs,
             zones,
             simulationTimeLimit,
-            extraBuffs,
+            extraBuffsByPlayer,
             maxWorkers,
             useEarlyExit: !!useEarlyExit,
         });

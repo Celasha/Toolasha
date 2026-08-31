@@ -19,6 +19,7 @@ import {
     calculateDungeonKeyCosts,
     calculateSimRevenue,
     getZonesThatDropItem,
+    computeOomPercent,
 } from './combat-sim-adapter.js';
 import { runSimulation, cancelSimulation } from './combat-sim-runner.js';
 import { runAllZonesSimulation, cancelAllZonesSimulation } from './all-zones-runner.js';
@@ -811,6 +812,7 @@ class CombatSimUI {
             { key: 'tier', label: 'T' },
             { key: 'encounters', label: 'Enc/hr' },
             { key: 'deaths', label: 'Deaths/hr' },
+            { key: 'oom', label: 'OOM' },
             ...skillCols,
             { key: 'revenue', label: 'Rev/hr' },
             { key: 'expenses', label: 'Cost/hr' },
@@ -835,6 +837,7 @@ class CombatSimUI {
                     tier: r.zone.difficultyTier,
                     encounters,
                     deaths: playerDeaths,
+                    oom: computeOomPercent(sim, playerHrid),
                     totalXP,
                     stamina: (xp.stamina || 0) / simHours,
                     intelligence: (xp.intelligence || 0) / simHours,
@@ -907,6 +910,10 @@ class CombatSimUI {
                             } else {
                                 style += ' color:#e0e0e0;';
                             }
+                        } else if (col.key === 'oom') {
+                            const oomCell = this._formatOomCell(val);
+                            display = oomCell.text;
+                            style += ` text-align:right; font-variant-numeric:tabular-nums; color:${oomCell.color};`;
                         } else {
                             display = formatKMB(Math.round(val));
                             style += ' text-align:right; font-variant-numeric:tabular-nums;';
@@ -1751,7 +1758,7 @@ class CombatSimUI {
 
         // History panel (above everything)
         if (this._simHistory.length > 0) {
-            html += this._renderHistoryPanel();
+            html += this._renderHistoryPanel(activeTab);
         }
 
         // Player tabs (only shown for party sims)
@@ -1777,7 +1784,7 @@ class CombatSimUI {
         const compEntry = compIdx !== null ? this._simHistory[compIdx] : null;
         const compResult = compEntry?.simResult;
         const compHours = compEntry?.hours;
-        const compMetrics = compEntry?.metrics;
+        const compMetrics = compEntry?.metricsByPlayer?.[activeTab];
         const hasPrev = compResult && compHours;
         const prevEncPerHr = hasPrev ? compResult.encounters / compHours : null;
         const prevDeathsPerHr = hasPrev ? (compResult.deaths?.[activeTab] || 0) / compHours : null;
@@ -1806,13 +1813,10 @@ class CombatSimUI {
         html += `<span style="color:${oomColor}; font-weight:600;">${ranOutOfMana ? 'Yes' : 'No'}</span>`;
         html += '</div>';
         if (ranOutOfMana && simResult.playerRanOutOfManaTime?.[activeTab] && simResult.simulatedTime) {
-            const stat = simResult.playerRanOutOfManaTime[activeTab];
-            const openWindow = stat.isOutOfMana ? simResult.simulatedTime - stat.startTimeForOutOfMana : 0;
-            const totalOomTime = stat.totalTimeForOutOfMana + openWindow;
-            const oomRatio = ((totalOomTime / simResult.simulatedTime) * 100).toFixed(2);
+            const oomPercent = computeOomPercent(simResult, activeTab);
             html += `<div style="${rowStyle}">`;
             html += `<span style="${labelStyle}">Run Out Ratio</span>`;
-            html += `<span style="color:#ff6b6b; font-weight:600;">${oomRatio}%</span>`;
+            html += `<span style="color:#ff6b6b; font-weight:600;">${oomPercent.toFixed(2)}%</span>`;
             html += '</div>';
         }
 
@@ -2427,16 +2431,32 @@ class CombatSimUI {
      * Also ensures all history entries have metrics for comparison table.
      * @private
      */
+    /**
+     * Ensure each history entry has metrics computed for the CURRENTLY ACTIVE player, keyed by
+     * player hrid rather than "computed once" (UI-001 staleness fix) - previously, switching the
+     * active player tab after a comparison table had metrics cached would keep showing whichever
+     * player was active the first time that entry was rendered.
+     * @private
+     */
     _ensureHistoryMetrics(simResult, hours, gameData, activeTab) {
         const latestEntry = this._simHistory[this._simHistory.length - 1];
-        if (latestEntry && !latestEntry.metrics) {
-            latestEntry.metrics = this._computeMetrics(simResult, hours, gameData, activeTab);
+        if (latestEntry) {
+            if (!latestEntry.metricsByPlayer) latestEntry.metricsByPlayer = {};
+            if (!latestEntry.metricsByPlayer[activeTab]) {
+                latestEntry.metricsByPlayer[activeTab] = this._computeMetrics(simResult, hours, gameData, activeTab);
+            }
         }
 
-        // Ensure all entries have metrics (for comparison table)
+        // Ensure all entries have metrics for the active player (for comparison table)
         for (const entry of this._simHistory) {
-            if (!entry.metrics) {
-                entry.metrics = this._computeMetrics(entry.simResult, entry.hours, entry.gameData, activeTab);
+            if (!entry.metricsByPlayer) entry.metricsByPlayer = {};
+            if (!entry.metricsByPlayer[activeTab]) {
+                entry.metricsByPlayer[activeTab] = this._computeMetrics(
+                    entry.simResult,
+                    entry.hours,
+                    entry.gameData,
+                    activeTab
+                );
             }
         }
     }
@@ -2589,13 +2609,13 @@ class CombatSimUI {
         this._displayResults(activeEntry.simResult, activeEntry.hours, activeEntry.gameData);
     }
 
-    _renderHistoryPanel() {
+    _renderHistoryPanel(activeTab) {
         const history = this._simHistory;
         if (history.length < 2) return '';
 
         const baseIdx = this._comparisonBaseline ?? 0;
         const baseEntry = history[baseIdx];
-        const baseM = baseEntry?.metrics;
+        const baseM = baseEntry?.metricsByPlayer?.[activeTab];
 
         // Check if any sim is a dungeon
         const hasDungeon = history.some((e) => e.simResult?.isDungeon);
@@ -2678,7 +2698,7 @@ class CombatSimUI {
         for (const idx of this._comparisonSlots) {
             if (idx === baseIdx || idx >= history.length) continue;
             const entry = history[idx];
-            const m = entry.metrics;
+            const m = entry.metricsByPlayer?.[activeTab];
             const profitColor = m?.profitPerHr >= 0 ? '#7ec87e' : '#ff6b6b';
 
             const ephDelta = baseM && m ? this._formatDelta(m.encountersPerHr, baseM.encountersPerHr, true) : '';
@@ -2997,6 +3017,24 @@ class CombatSimUI {
     }
 
     /**
+     * Format one player's OOM% for display (UI-001):
+     * - exact 0 -> "No" in neutral/default text, never green;
+     * - >0 and <0.1% -> "<0.1%" in the same neutral color as "No", never a misleading "0.0%";
+     * - >=0.1% -> red, one decimal place.
+     * @param {number|null} oomPercent
+     * @returns {{text: string, color: string}}
+     * @private
+     */
+    _formatOomCell(oomPercent) {
+        const NEUTRAL = '#888';
+        const WARNING = '#f44336';
+        if (oomPercent == null) return { text: '—', color: NEUTRAL };
+        if (oomPercent === 0) return { text: 'No', color: NEUTRAL };
+        if (oomPercent < 0.1) return { text: '<0.1%', color: NEUTRAL };
+        return { text: oomPercent.toFixed(1) + '%', color: WARNING };
+    }
+
+    /**
      * Get the buy price for an item based on the global pricing mode.
      * @param {Object} priceData - { bid, ask } from marketAPI
      * @returns {number}
@@ -3195,7 +3233,10 @@ class CombatSimUI {
         }
 
         results.results.forEach((r, i) => {
-            const costStr = formatKMB(r.cost);
+            // Incomplete cost resolution (CSIM-AUD-013) must never look like a known, precise
+            // value - a candidate whose cost genuinely couldn't be fully priced is marked with a
+            // "~" prefix rather than being ranked as if it were an exact/free upgrade.
+            const costStr = (r.candidate.costIsIncomplete ? '~' : '') + formatKMB(r.cost);
             // A house room with no combat actionBuffs has no real DPS effect - its deltas.dps is
             // pure sim noise, so only profit (its real effect) should brighten the row.
             const rowColor =
