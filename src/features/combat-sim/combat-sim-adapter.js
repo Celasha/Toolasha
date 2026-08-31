@@ -212,13 +212,17 @@ export function buildPlayerDTO() {
     // guildActionTypeBuffsMap snapshot, so the Sim Editor's Shrine section is the single canonical
     // source and cannot double-apply against a second baked-in path. Uses the character's
     // purchased/active guild-buff level (getCharacterGuildBuffLevel, from guild_buffs_updated),
-    // not the shrine building's unlocked cap (getGuildBuildingLevel, from guild_updated) - a guild
-    // can unlock a shrine level without having spent the resources to activate it yet.
+    // clamped to the shrine building's unlocked cap (getGuildBuildingLevel, from guild_updated) -
+    // a purchased level can never legitimately exceed the shrine's current cap for the guild
+    // you're actually in, so if the two ever briefly disagree (e.g. a guild switch mid-session,
+    // where the two live messages can land a moment apart), never simulate the higher figure.
     const guildBuffDetailMap = clientData.guildBuffDetailMap || {};
     for (const shrineHrid of COMBAT_SHRINE_HRIDS) {
         const combatBuffHrid = getCombatGuildBuffHridForShrine(shrineHrid, guildBuffDetailMap);
         if (!combatBuffHrid) continue;
-        const level = dataManager.getCharacterGuildBuffLevel(combatBuffHrid);
+        const purchasedLevel = dataManager.getCharacterGuildBuffLevel(combatBuffHrid);
+        const unlockedCap = dataManager.getGuildBuildingLevel(shrineHrid);
+        const level = Math.min(purchasedLevel, unlockedCap);
         if (level > 0) {
             dto.shrineLevels[shrineHrid] = level;
         }

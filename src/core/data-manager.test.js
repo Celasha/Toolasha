@@ -1608,6 +1608,29 @@ describe('DataManager live buff WebSocket state parity (TLA-028)', () => {
         expect(dataManager.characterData.guildActionTypeBuffsMap).toEqual({});
     });
 
+    test('guild_updated refreshes the shrine building unlocked cap live, not just at init', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const socket = {};
+        await webSocketHandlers.get('init_character_data')(
+            makeCharacterPayload(12004, { guildBuildingLevelMap: { '/guild_shrines/force': 4 } }),
+            { socket }
+        );
+        expect(dataManager.getGuildBuildingLevel('/guild_shrines/force')).toBe(4);
+
+        // Simulates switching to a guild with different shrine levels mid-session, without a page
+        // reload - before this handler existed, guildBuildingLevelMap had no live listener at all
+        // and would have stayed frozen at the old guild's value indefinitely.
+        const newGuildBuildingLevels = { '/guild_shrines/force': 1, '/guild_shrines/tempo': 2 };
+        webSocketHandlers.get('guild_updated')(
+            { type: 'guild_updated', guildBuildingLevelMap: newGuildBuildingLevels },
+            { socket }
+        );
+
+        expect(dataManager.getGuildBuildingLevel('/guild_shrines/force')).toBe(1);
+        expect(dataManager.getGuildBuildingLevel('/guild_shrines/tempo')).toBe(2);
+        expect(dataManager.characterData.guildBuildingLevelMap).toBe(newGuildBuildingLevels);
+    });
+
     test('TLA-018: stale-socket buff updates cannot overwrite the active character; same-character reconnect makes the old socket stale', async () => {
         const { default: dataManager } = await import('./data-manager.js');
         const initHandler = webSocketHandlers.get('init_character_data');
@@ -1633,6 +1656,10 @@ describe('DataManager live buff WebSocket state parity (TLA-028)', () => {
             },
             { socket: socketOld }
         );
+        webSocketHandlers.get('guild_updated')(
+            { type: 'guild_updated', guildBuildingLevelMap: { stale: 99 } },
+            { socket: socketOld }
+        );
         webSocketHandlers.get('personal_buffs_updated')(
             {
                 type: 'personal_buffs_updated',
@@ -1644,6 +1671,7 @@ describe('DataManager live buff WebSocket state parity (TLA-028)', () => {
 
         expect(dataManager.characterData.communityBuffs).toEqual([]);
         expect(dataManager.characterGuildBuffMap).toEqual({});
+        expect(dataManager.guildBuildingLevelMap).toEqual({});
         expect(dataManager.personalActionTypeBuffsMap).toEqual({});
 
         const currentCommunity = [{ hrid: '/community_buff_types/experience', level: 12 }];

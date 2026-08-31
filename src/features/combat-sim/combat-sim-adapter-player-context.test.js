@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
     characterData: null,
     characterGuildBuffMap: {},
+    guildBuildingLevelMap: {},
     personalActionTypeBuffsMap: {},
     mooPassBuffs: [],
 }));
@@ -40,6 +41,7 @@ vi.mock('../../core/data-manager.js', () => ({
         getInitClientData: vi.fn(() => ({ itemDetailMap: {}, guildBuffDetailMap: GUILD_BUFF_DETAIL_MAP })),
         getCommunityBuffLevel: vi.fn(() => 0),
         getCharacterGuildBuffLevel: vi.fn((hrid) => mocks.characterGuildBuffMap[hrid] || 0),
+        getGuildBuildingLevel: vi.fn((hrid) => mocks.guildBuildingLevelMap[hrid] ?? 20),
         getMooPassBuffs: vi.fn(() => mocks.mooPassBuffs),
         characterEquipment: undefined,
     },
@@ -67,6 +69,7 @@ describe('buildPlayerDTO - per-player Shrine/MooPass/achievement/personal-buff c
         vi.clearAllMocks();
         mocks.characterData = baseCharacterData();
         mocks.characterGuildBuffMap = {};
+        mocks.guildBuildingLevelMap = {};
         mocks.personalActionTypeBuffsMap = {};
         mocks.mooPassBuffs = [];
     });
@@ -82,6 +85,37 @@ describe('buildPlayerDTO - per-player Shrine/MooPass/achievement/personal-buff c
         const dto = buildPlayerDTO();
 
         expect(dto.shrineLevels).toEqual({ '/guild_shrines/spirit': 20 });
+        expect(Object.keys(dto.shrineLevels)).not.toContain('/guild_shrines/force');
+    });
+
+    test('a purchased level higher than the shrine building cap is clamped down (e.g. after switching to a guild with lower shrines)', () => {
+        // Simulates a guild switch mid-session: characterGuildBuffMap (live-updated via
+        // guild_buffs_updated) already reflects the new guild's higher purchased level, but
+        // guildBuildingLevelMap momentarily still shows the new guild's lower unlocked cap - the
+        // sim must never use the higher, cap-exceeding figure.
+        mocks.characterGuildBuffMap = { '/guild_buffs/force_combat': 15 };
+        mocks.guildBuildingLevelMap = { '/guild_shrines/force': 4 };
+
+        const dto = buildPlayerDTO();
+
+        expect(dto.shrineLevels).toEqual({ '/guild_shrines/force': 4 });
+    });
+
+    test('a purchased level at or below the cap is never clamped down further than necessary', () => {
+        mocks.characterGuildBuffMap = { '/guild_buffs/force_combat': 3 };
+        mocks.guildBuildingLevelMap = { '/guild_shrines/force': 4 };
+
+        const dto = buildPlayerDTO();
+
+        expect(dto.shrineLevels).toEqual({ '/guild_shrines/force': 3 });
+    });
+
+    test('a shrine with no unlocked cap at all (0) omits the shrine even if a stale purchased level lingers', () => {
+        mocks.characterGuildBuffMap = { '/guild_buffs/force_combat': 5 };
+        mocks.guildBuildingLevelMap = { '/guild_shrines/force': 0 };
+
+        const dto = buildPlayerDTO();
+
         expect(Object.keys(dto.shrineLevels)).not.toContain('/guild_shrines/force');
     });
 
