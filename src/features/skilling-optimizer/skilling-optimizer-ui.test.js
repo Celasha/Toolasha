@@ -126,3 +126,48 @@ describe('per-Skill loadout retargeting (TLA-024/OPT-24)', () => {
         });
     });
 });
+
+describe('_makeCostPaybackEl - recommendation price / marginal gain / payback display', () => {
+    test('returns null when there is no cost and no incomplete-price flag', () => {
+        const ui = new SkillingSimulatorUI();
+        expect(ui._makeCostPaybackEl(0, false, 100, 0, null)).toBeNull();
+    });
+
+    test('shows just the cost when there is no XP or Gold gain to rate it against', () => {
+        const ui = new SkillingSimulatorUI();
+        const el = ui._makeCostPaybackEl(2_000_000, false, 0, 0, null);
+        expect(el.textContent).toContain('Cost: 2.0M');
+        expect(el.textContent).not.toContain('Payback');
+        expect(el.textContent).not.toContain('per 1M gold');
+    });
+
+    test('shows marginal XP gain per gold spent alongside cost', () => {
+        const ui = new SkillingSimulatorUI();
+        // 500 XP/hr gained for a 2M gold cost -> 250 XP/hr per 1M gold spent.
+        const el = ui._makeCostPaybackEl(2_000_000, false, 500, 0, null);
+        expect(el.textContent).toContain('250 XP/hr per 1M gold');
+    });
+
+    test('shows payback time derived from the Gold/hr gain', () => {
+        const ui = new SkillingSimulatorUI();
+        // 1,000,000 gold cost / 100,000 gold/hr gain = 10 hours to break even.
+        const el = ui._makeCostPaybackEl(1_000_000, false, 0, 100_000, null);
+        expect(el.textContent).toContain('Payback: 10h');
+    });
+
+    test('an unresolved price is marked incomplete and never backs a ratio built on an unknown number', () => {
+        const ui = new SkillingSimulatorUI();
+        const el = ui._makeCostPaybackEl(0, true, 500, 100_000, null);
+        expect(el.textContent).toContain('~');
+        expect(el.textContent).not.toContain('per 1M gold');
+        expect(el.textContent).not.toContain('Payback');
+    });
+
+    test('a negative or zero gain never produces a ratio, even when cost is known', () => {
+        const ui = new SkillingSimulatorUI();
+        const el = ui._makeCostPaybackEl(1_000_000, false, -50, 0, null);
+        expect(el.textContent).toContain('Cost: 1.0M');
+        expect(el.textContent).not.toContain('per 1M gold');
+        expect(el.textContent).not.toContain('Payback');
+    });
+});

@@ -741,9 +741,12 @@ function isActionExecutable(action, playerLevel, teaSkillLevelBonus) {
 
 /**
  * Get all actions for a skill for display purposes, including level-locked ones.
+ * Sorted by the game's own sortIndex (same convention used for the combat zone dropdown in
+ * combat-sim-adapter.js) rather than level+name, since actions sharing a level requirement are
+ * not necessarily alphabetical in the game's own action list.
  * @param {string} skillName
  * @param {number} playerLevel
- * @returns {Array<{ hrid, name, requiredLevel, available }>} Sorted by level requirement
+ * @returns {Array<{ hrid, name, requiredLevel, available, sortIndex }>} Sorted by sortIndex
  */
 export function getSkillActionsForDisplay(skillName, playerLevel) {
     const gameData = dataManager.getInitClientData();
@@ -756,9 +759,15 @@ export function getSkillActionsForDisplay(skillName, playerLevel) {
     for (const [hrid, action] of Object.entries(gameData.actionDetailMap)) {
         if (action.type !== actionType) continue;
         const requiredLevel = action.levelRequirement?.level || 1;
-        result.push({ hrid, name: action.name, requiredLevel, available: playerLevel >= requiredLevel });
+        result.push({
+            hrid,
+            name: action.name,
+            requiredLevel,
+            available: playerLevel >= requiredLevel,
+            sortIndex: action.sortIndex ?? 0,
+        });
     }
-    return result.sort((a, b) => a.requiredLevel - b.requiredLevel || a.name.localeCompare(b.name));
+    return result.sort((a, b) => a.sortIndex - b.sortIndex || a.name.localeCompare(b.name));
 }
 
 /**

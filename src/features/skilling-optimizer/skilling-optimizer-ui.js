@@ -21,7 +21,7 @@ import {
     SKILL_TOOL_LOCATION,
 } from './skilling-optimizer-engine.js';
 import { SKILL_TO_ACTION_TYPE } from '../../utils/tea-optimizer.js';
-import { formatKMB } from '../../utils/formatters.js';
+import { formatKMB, timeReadable } from '../../utils/formatters.js';
 import { buildOwnedEnhancementLevelMap } from '../../utils/owned-enhancement-map.js';
 import loadoutState from '../../core/loadout-state.js';
 
@@ -1446,6 +1446,15 @@ class SkillingSimulatorUI {
                 );
                 if (gainEl) entryRow.appendChild(gainEl);
 
+                const costEl = this._makeCostPaybackEl(
+                    suggestedEntry.cost,
+                    suggestedEntry.costIsIncomplete,
+                    suggestedEntry.xpScore - xpBaseline,
+                    suggestedEntry.goldScore - goldBaseline,
+                    spriteUrl
+                );
+                if (costEl) entryRow.appendChild(costEl);
+
                 row.appendChild(entryRow);
             }
         } else {
@@ -1472,6 +1481,15 @@ class SkillingSimulatorUI {
 
                 const gainEl = this._makeGainEl(tier.xpScore, xpBaseline, tier.goldScore, goldBaseline, spriteUrl);
                 if (gainEl) tierRow.appendChild(gainEl);
+
+                const costEl = this._makeCostPaybackEl(
+                    tier.cost,
+                    tier.costIsIncomplete,
+                    tier.xpScore - xpBaseline,
+                    tier.goldScore - goldBaseline,
+                    spriteUrl
+                );
+                if (costEl) tierRow.appendChild(costEl);
 
                 row.appendChild(tierRow);
             }
@@ -1556,6 +1574,70 @@ class SkillingSimulatorUI {
         return wrapper;
     }
 
+    /**
+     * Cost to acquire a recommendation, plus marginal-gain-per-gold and payback-time context so
+     * the player can judge value for money, not just raw XP/Gold gain.
+     * @param {number} cost - Gold cost from the engine (net of selling the current item, if any)
+     * @param {boolean} costIsIncomplete - Whether a required market price was unresolved
+     * @param {number} xpDelta - XP/hr gain over baseline
+     * @param {number} goldDelta - Gold/hr gain over baseline
+     * @param {string|null} spriteUrl
+     * @returns {HTMLElement|null}
+     */
+    _makeCostPaybackEl(cost, costIsIncomplete, xpDelta, goldDelta, spriteUrl) {
+        if (cost <= 0 && !costIsIncomplete) return null;
+
+        const coinNode = () => {
+            if (!spriteUrl) return document.createTextNode(' G');
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('width', '12');
+            svg.setAttribute('height', '12');
+            svg.style.flexShrink = '0';
+            const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+            use.setAttribute('href', `${spriteUrl}#coin`);
+            svg.appendChild(use);
+            return svg;
+        };
+
+        const parts = [];
+
+        const costSpan = document.createElement('span');
+        costSpan.style.cssText = 'display: inline-flex; align-items: center; gap: 2px;';
+        costSpan.appendChild(document.createTextNode('Cost: ' + (costIsIncomplete ? '~' : '') + formatKMB(cost)));
+        costSpan.appendChild(coinNode());
+        if (costIsIncomplete) {
+            costSpan.title = 'A required market price is unresolved, so this cost is not exact.';
+            costSpan.style.cursor = 'help';
+        }
+        parts.push(costSpan);
+
+        // Below, further ratios only make sense against a real, fully-resolved cost.
+        if (cost > 0 && !costIsIncomplete) {
+            if (xpDelta > 0) {
+                const xpPerMillion = (xpDelta / cost) * 1_000_000;
+                const span = document.createElement('span');
+                span.textContent = `${formatKMB(xpPerMillion)} XP/hr per 1M gold`;
+                parts.push(span);
+            }
+
+            if (goldDelta > 0) {
+                const paybackHours = cost / goldDelta;
+                const span = document.createElement('span');
+                span.textContent = `Payback: ${timeReadable(paybackHours * 3600)}`;
+                parts.push(span);
+            }
+        }
+
+        const wrapper = document.createElement('span');
+        wrapper.style.cssText =
+            'font-size: 10px; color: rgba(255,255,255,0.4); margin-left: auto; flex-shrink: 0; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;';
+        for (let i = 0; i < parts.length; i++) {
+            if (i > 0) wrapper.appendChild(document.createTextNode(' · '));
+            wrapper.appendChild(parts[i]);
+        }
+        return wrapper;
+    }
+
     _groupTiers(progression) {
         const tiers = [];
         let current = null;
@@ -1575,12 +1657,16 @@ class SkillingSimulatorUI {
                     hasMissingPrice: entry.hasMissingPrice,
                     xpScore: entry.xpScore,
                     goldScore: entry.goldScore,
+                    cost: entry.cost,
+                    costIsIncomplete: entry.costIsIncomplete,
                 };
             } else {
                 current.toLevel = entry.enhancementLevel;
                 // Reflects the latest (highest-enhancement) breakpoint's completeness within this
                 // tier, matching toLevel above.
                 current.hasMissingPrice = entry.hasMissingPrice;
+                current.cost = entry.cost;
+                current.costIsIncomplete = entry.costIsIncomplete;
             }
         }
         if (current) tiers.push(current);

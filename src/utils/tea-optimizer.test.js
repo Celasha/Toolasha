@@ -83,7 +83,8 @@ mocks.actionDetailMap = {
     },
 };
 
-const { calculateSkillPerformance, findOptimalTeas, scoreEquipmentSetup } = await import('./tea-optimizer.js');
+const { calculateSkillPerformance, findOptimalTeas, scoreEquipmentSetup, getSkillActionsForDisplay } =
+    await import('./tea-optimizer.js');
 
 describe('tea-optimizer scenario math (TLA-024)', () => {
     beforeEach(() => {
@@ -291,5 +292,62 @@ describe('REOPEN/OPT-28 architecture: shared getActionEfficiencyContext ownershi
         // shared function now, not a parallel from-scratch reimplementation.
         expect(source).not.toContain('function getOtherEfficiencySources(');
         expect(source).not.toMatch(/houseRoomDetailMap\?\.\[room\.houseRoomHrid\]/);
+    });
+});
+
+describe('getSkillActionsForDisplay sort order', () => {
+    const MILKING_TYPE = '/action_types/milking';
+    const originalActionDetailMap = mocks.actionDetailMap;
+
+    afterEach(() => {
+        mocks.actionDetailMap = originalActionDetailMap;
+    });
+
+    test('sorts by the game sortIndex rather than level+name, matching the combat zone dropdown convention', () => {
+        // Egg/Wheat/Sugar/Cotton/Farmland all share level 1 in the real game data, but the
+        // game's own sortIndex order does not match alphabetical - a naive level+name sort would
+        // put Cotton before Egg, which is the "unusual" order this is fixing.
+        mocks.actionDetailMap = {
+            '/actions/milking/cotton': {
+                type: MILKING_TYPE,
+                name: 'Cotton',
+                levelRequirement: { level: 1 },
+                sortIndex: 4,
+            },
+            '/actions/milking/egg': { type: MILKING_TYPE, name: 'Egg', levelRequirement: { level: 1 }, sortIndex: 1 },
+            '/actions/milking/farmland': {
+                type: MILKING_TYPE,
+                name: 'Farmland',
+                levelRequirement: { level: 1 },
+                sortIndex: 5,
+            },
+            '/actions/milking/sugar': {
+                type: MILKING_TYPE,
+                name: 'Sugar',
+                levelRequirement: { level: 1 },
+                sortIndex: 3,
+            },
+            '/actions/milking/wheat': {
+                type: MILKING_TYPE,
+                name: 'Wheat',
+                levelRequirement: { level: 1 },
+                sortIndex: 2,
+            },
+        };
+
+        const result = getSkillActionsForDisplay('milking', 1);
+
+        expect(result.map((a) => a.name)).toEqual(['Egg', 'Wheat', 'Sugar', 'Cotton', 'Farmland']);
+    });
+
+    test('actions with no sortIndex fall back to name order rather than crashing', () => {
+        mocks.actionDetailMap = {
+            '/actions/milking/b': { type: MILKING_TYPE, name: 'B Cow', levelRequirement: { level: 1 } },
+            '/actions/milking/a': { type: MILKING_TYPE, name: 'A Cow', levelRequirement: { level: 1 } },
+        };
+
+        const result = getSkillActionsForDisplay('milking', 1);
+
+        expect(result.map((a) => a.name)).toEqual(['A Cow', 'B Cow']);
     });
 });

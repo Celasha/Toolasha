@@ -65,8 +65,13 @@ vi.mock('../../utils/tea-optimizer.js', () => ({
     calculateSkillPerformance: vi.fn(),
 }));
 
+vi.mock('../../utils/profit-helpers.js', () => ({
+    resolveItemPrice: vi.fn(() => ({ price: 0, custom: false, missing: false })),
+}));
+
 const { optimizeSkill } = await import('./skilling-optimizer-engine.js');
 const { scoreEquipmentSetup, findOptimalTeas } = await import('../../utils/tea-optimizer.js');
+const { resolveItemPrice } = await import('../../utils/profit-helpers.js');
 
 describe('optimizeSkill - refined item breakpoint labeling', () => {
     test('records the effective scored level separately from the nominal breakpoint bucket', () => {
@@ -186,6 +191,81 @@ describe('optimizeSkill - Compare is a one-slot replacement of the full loadout 
 
         expect(calls[0].size).toBe(0);
         expect(calls[0].teaHrids).toEqual([]);
+    });
+});
+
+describe('optimizeSkill - equipment recommendation cost (marginal gain per gold / payback support)', () => {
+    const originalResolveImpl = resolveItemPrice.getMockImplementation();
+
+    afterEach(() => {
+        resolveItemPrice.mockImplementation(originalResolveImpl);
+    });
+
+    test('with no current item in the slot, cost is the full buy price of the winning item', () => {
+        resolveItemPrice.mockImplementation((itemHrid, { side, enhancementLevel }) => {
+            if (itemHrid === NONREFINED_HRID && side === 'buy') {
+                return { price: 1000 * enhancementLevel, custom: false, missing: false };
+            }
+            return { price: 0, custom: false, missing: false };
+        });
+
+        const result = optimizeSkill('Crafting', 50, null);
+        const entry = result.slots[BACK_LOCATION].progression.find((e) => e.breakpoint === 12);
+
+        expect(entry.itemHrid).toBe(NONREFINED_HRID);
+        expect(entry.cost).toBe(12000);
+        expect(entry.costIsIncomplete).toBe(false);
+    });
+
+    test('with a current item equipped in the slot (Compare loadout), cost nets the sell price of the current item', () => {
+        resolveItemPrice.mockImplementation((itemHrid, { side, enhancementLevel }) => {
+            if (itemHrid === NONREFINED_HRID && side === 'buy') {
+                return { price: 1000 * enhancementLevel, custom: false, missing: false };
+            }
+            if (itemHrid === REFINED_HRID && side === 'sell') {
+                return { price: 4000, custom: false, missing: false };
+            }
+            return { price: 0, custom: false, missing: false };
+        });
+
+        const compareEquipment = new Map([[BACK_LOCATION, { itemHrid: REFINED_HRID, enhancementLevel: 5 }]]);
+        const result = optimizeSkill('Crafting', 50, null, { equipment: compareEquipment, drinks: [] });
+        const entry = result.slots[BACK_LOCATION].progression.find((e) => e.breakpoint === 12);
+
+        expect(entry.itemHrid).toBe(NONREFINED_HRID);
+        expect(entry.cost).toBe(12000 - 4000);
+    });
+
+    test('a net cost below zero (current item sells for more than the new one costs) floors at zero', () => {
+        resolveItemPrice.mockImplementation((itemHrid, { side, enhancementLevel }) => {
+            if (itemHrid === NONREFINED_HRID && side === 'buy') {
+                return { price: 1000 * enhancementLevel, custom: false, missing: false };
+            }
+            if (itemHrid === REFINED_HRID && side === 'sell') {
+                return { price: 999999, custom: false, missing: false };
+            }
+            return { price: 0, custom: false, missing: false };
+        });
+
+        const compareEquipment = new Map([[BACK_LOCATION, { itemHrid: REFINED_HRID, enhancementLevel: 5 }]]);
+        const result = optimizeSkill('Crafting', 50, null, { equipment: compareEquipment, drinks: [] });
+        const entry = result.slots[BACK_LOCATION].progression.find((e) => e.breakpoint === 12);
+
+        expect(entry.cost).toBe(0);
+    });
+
+    test('a missing buy or sell price marks the cost as incomplete rather than silently free', () => {
+        resolveItemPrice.mockImplementation((itemHrid, { side }) => {
+            if (itemHrid === NONREFINED_HRID && side === 'buy') {
+                return { price: 0, custom: false, missing: true };
+            }
+            return { price: 0, custom: false, missing: false };
+        });
+
+        const result = optimizeSkill('Crafting', 50, null);
+        const entry = result.slots[BACK_LOCATION].progression.find((e) => e.breakpoint === 12);
+
+        expect(entry.costIsIncomplete).toBe(true);
     });
 });
 

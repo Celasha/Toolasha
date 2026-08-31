@@ -12,6 +12,7 @@ import {
     getSkillActionsForDisplay,
     calculateSkillPerformance,
 } from '../../utils/tea-optimizer.js';
+import { resolveItemPrice } from '../../utils/profit-helpers.js';
 
 export { getSkillActionsForDisplay, calculateSkillPerformance, findOptimalTeas };
 
@@ -387,6 +388,33 @@ export function getSkillDrinkItems() {
  * @returns {Object|null}
  */
 /**
+ * Cost to move into a recommended item at a given enhancement level, netted against selling
+ * whatever currently occupies that slot (mirrors the Combat Sim Upgrade Advisor's tier-upgrade
+ * cost convention: buy target - sell current). With no current item (empty-baseline mode), this
+ * is simply the full buy price.
+ * @param {string} itemHrid
+ * @param {number} enhancementLevel
+ * @param {{itemHrid: string, enhancementLevel: number}|null} currentEquipped
+ * @returns {{cost: number, costIsIncomplete: boolean}}
+ */
+function calculateSlotUpgradeCost(itemHrid, enhancementLevel, currentEquipped) {
+    const buyResolved = resolveItemPrice(itemHrid, { side: 'buy', enhancementLevel });
+    let cost = buyResolved.price;
+    let costIsIncomplete = buyResolved.missing;
+
+    if (currentEquipped?.itemHrid) {
+        const sellResolved = resolveItemPrice(currentEquipped.itemHrid, {
+            side: 'sell',
+            enhancementLevel: currentEquipped.enhancementLevel || 0,
+        });
+        if (sellResolved.missing) costIsIncomplete = true;
+        cost = Math.max(0, cost - sellResolved.price);
+    }
+
+    return { cost, costIsIncomplete };
+}
+
+/**
  * Run one full per-slot equipment optimization pass, holding the given tea combination fixed for
  * every candidate score (except a narrow Drink-Concentration joint re-check, see FAIL B below).
  * Extracted from optimizeSkill() so it can be re-run against successive tea winners (see the
@@ -422,6 +450,7 @@ function runEquipmentSlotRound(
             }
         }
         const sortedBreakpoints = [...allBreakpoints].sort((a, b) => a - b);
+        const currentEquipped = compareEquipment.get(locationHrid) || null;
 
         const progression = [];
         let lastWinnerHrid = null;
@@ -499,6 +528,10 @@ function runEquipmentSlotRound(
                 }
             }
 
+            const { cost, costIsIncomplete } = bestItem
+                ? calculateSlotUpgradeCost(bestItem.hrid, bestEffectiveLevel, currentEquipped)
+                : { cost: 0, costIsIncomplete: false };
+
             progression.push({
                 breakpoint: bp,
                 enhancementLevel: bestItem ? bestEffectiveLevel : bp,
@@ -509,6 +542,11 @@ function runEquipmentSlotRound(
                 // required price - an incomplete number, not a verified exact one. Always false
                 // for XP-goal skills (XP never touches market prices).
                 hasMissingPrice: bestHasMissingPrice,
+                // Gold cost to acquire this item (netted against selling whatever currently
+                // occupies the slot, or the full buy price with no current item) - distinct from
+                // hasMissingPrice above, which is about the *score*, not the *cost*.
+                cost,
+                costIsIncomplete,
                 xpScore: (() => {
                     if (!bestItem) return xpBaseline;
                     if (goal === 'xp') return bestScore;
