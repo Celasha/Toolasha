@@ -486,6 +486,7 @@ export const settingsGroups = {
                 options: [
                     { value: 'expected', label: 'Expected value (average)' },
                     { value: 'worst-case', label: 'Worst-case per action (ceil per craft)' },
+                    { value: 'hybrid', label: 'Hybrid (ceil below 100 actions, average at 100+)' },
                 ],
                 help: 'Choose how missing materials accounts for Artisan Tea reductions when suggesting what to buy.',
             },

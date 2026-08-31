@@ -13,12 +13,16 @@ import { resolveActionContext } from './action-context.js';
 export const ARTISAN_MATERIAL_MODE = {
     EXPECTED: 'expected',
     WORST_CASE: 'worst-case',
+    HYBRID: 'hybrid',
 };
 
+const HYBRID_WORST_CASE_MAX_ACTIONS = 100;
+
 function normalizeArtisanMode(mode) {
-    return mode === ARTISAN_MATERIAL_MODE.WORST_CASE
-        ? ARTISAN_MATERIAL_MODE.WORST_CASE
-        : ARTISAN_MATERIAL_MODE.EXPECTED;
+    if (mode === ARTISAN_MATERIAL_MODE.WORST_CASE || mode === ARTISAN_MATERIAL_MODE.HYBRID) {
+        return mode;
+    }
+    return ARTISAN_MATERIAL_MODE.EXPECTED;
 }
 
 /**
@@ -39,7 +43,10 @@ function getArtisanMaterialMode() {
  */
 function calculateTotalRequired(basePerAction, artisanBonus, numActions, artisanMode) {
     const materialsPerAction = basePerAction * (1 - artisanBonus);
-    if (artisanMode === ARTISAN_MATERIAL_MODE.WORST_CASE) {
+    const useWorstCase =
+        artisanMode === ARTISAN_MATERIAL_MODE.WORST_CASE ||
+        (artisanMode === ARTISAN_MATERIAL_MODE.HYBRID && numActions < HYBRID_WORST_CASE_MAX_ACTIONS);
+    if (useWorstCase) {
         return Math.ceil(materialsPerAction) * numActions;
     }
     return Math.ceil(materialsPerAction * numActions);

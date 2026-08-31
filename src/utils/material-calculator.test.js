@@ -8,6 +8,7 @@ const {
     mockGetActionDrinkSlots,
     mockResolveActionContext,
     mockParseArtisanBonus,
+    mockGetSettingValue,
 } = vi.hoisted(() => ({
     mockGetActionDetails: vi.fn(),
     mockGetCurrentActions: vi.fn(),
@@ -16,11 +17,12 @@ const {
     mockGetActionDrinkSlots: vi.fn(),
     mockResolveActionContext: vi.fn(),
     mockParseArtisanBonus: vi.fn(),
+    mockGetSettingValue: vi.fn(() => 'expected'),
 }));
 
 vi.mock('../core/config.js', () => ({
     default: {
-        getSettingValue: vi.fn(() => 'expected'),
+        getSettingValue: mockGetSettingValue,
     },
 }));
 
@@ -58,6 +60,7 @@ const DONUT = '/actions/cooking/marsberry_donut';
 
 describe('material-calculator queue reservations', () => {
     beforeEach(() => {
+        mockGetSettingValue.mockReturnValue('expected');
         mockGetActionDetails.mockImplementation((actionHrid) => {
             if (actionHrid === CAKE) {
                 return {
@@ -168,5 +171,59 @@ describe('isArtisanTeaOutOfStock', () => {
         mockParseArtisanBonus.mockReturnValue(0.1);
 
         expect(isArtisanTeaOutOfStock(CAKE)).toBe(false);
+    });
+});
+
+describe('artisan material mode branching', () => {
+    // CAKE requires 2 sugar/action; with a 0.1 artisan bonus, materialsPerAction = 1.8.
+    beforeEach(() => {
+        mockGetActionDetails.mockReturnValue({
+            hrid: CAKE,
+            type: '/action_types/cooking',
+            inputItems: [{ itemHrid: SUGAR, count: 2 }],
+        });
+        mockGetCurrentActions.mockReturnValue([]);
+        mockGetInventory.mockReturnValue([]);
+        mockGetInitClientData.mockReturnValue({
+            itemDetailMap: { [SUGAR]: { name: 'Sugar', isTradable: true } },
+        });
+        mockResolveActionContext.mockReturnValue({ equipment: new Map(), drinks: [], source: 'current' });
+        mockParseArtisanBonus.mockReturnValue(0.1);
+    });
+
+    test('expected mode ceils the total across all actions', () => {
+        mockGetSettingValue.mockReturnValue('expected');
+        const [sugar] = calculateMaterialRequirements(CAKE, 50, false);
+        expect(sugar.required).toBe(90); // ceil(1.8 * 50)
+    });
+
+    test('worst-case mode ceils per craft before multiplying', () => {
+        mockGetSettingValue.mockReturnValue('worst-case');
+        const [sugar] = calculateMaterialRequirements(CAKE, 50, false);
+        expect(sugar.required).toBe(100); // ceil(1.8) * 50
+    });
+
+    test('hybrid mode uses worst-case rounding below 100 actions', () => {
+        mockGetSettingValue.mockReturnValue('hybrid');
+        const [sugar] = calculateMaterialRequirements(CAKE, 50, false);
+        expect(sugar.required).toBe(100); // ceil(1.8) * 50, matches worst-case below the threshold
+    });
+
+    test('hybrid mode switches to expected-value rounding at exactly 100 actions', () => {
+        mockGetSettingValue.mockReturnValue('hybrid');
+        const [sugar] = calculateMaterialRequirements(CAKE, 100, false);
+        expect(sugar.required).toBe(180); // ceil(1.8 * 100), matches expected at/above the threshold
+    });
+
+    test('hybrid mode uses expected-value rounding at infinity', () => {
+        mockGetSettingValue.mockReturnValue('hybrid');
+        const [sugar] = calculateMaterialRequirements(CAKE, Infinity, false);
+        expect(sugar.required).toBe(Infinity);
+    });
+
+    test('unrecognized mode values fall back to expected-value rounding', () => {
+        mockGetSettingValue.mockReturnValue('not-a-real-mode');
+        const [sugar] = calculateMaterialRequirements(CAKE, 50, false);
+        expect(sugar.required).toBe(90); // ceil(1.8 * 50), same as expected mode
     });
 });
