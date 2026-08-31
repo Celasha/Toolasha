@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.98.1
+ * Version: 2.99.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1308,9 +1308,14 @@
         /**
          * Calculate profit for a crafted item
          * @param {string} itemHrid - Item HRID
+         * @param {Object} [options={}]
+         * @param {{equipment: Map, drinks: Array}|null} [options.actionContext=null] - Exact live
+         *   context override (e.g. from resolveCurrentActionContext) for the Current Action Bar. When
+         *   omitted, uses the normal predictive live/saved action context.
          * @returns {Promise<Object|null>} Profit data or null if not craftable
          */
-        async calculateProfit(itemHrid) {
+        async calculateProfit(itemHrid, options = {}) {
+            const { actionContext = null } = options;
             // Get item details
             const itemDetails = dataManager.getItemDetails(itemHrid);
             if (!itemDetails) {
@@ -1351,6 +1356,7 @@
             const effCtx = efficiency_js.getActionEfficiencyContext(actionDetails, {
                 isProduction: true,
                 communityEfficiency,
+                actionContextOverride: actionContext,
             });
 
             const {
@@ -3278,9 +3284,19 @@ self.onmessage = function (e) {
         /**
          * @param {string} itemHrid - Item HRID
          * @param {number} enhancementLevel - Enhancement level (default 0)
+         * @param {boolean} [useLiveSetup=false]
+         * @param {number|null} [teaBonusOverride=null]
+         * @param {{equipment: Map, drinks: Array}|null} [actionContext=null] - Exact live context
+         *   override (e.g. from resolveCurrentActionContext) for the Current Action Bar.
          * @returns {Object|null} Detailed profit data or null if not coinifiable
          */
-        calculateCoinifyProfit(itemHrid, enhancementLevel = 0, useLiveSetup = false, teaBonusOverride = null) {
+        calculateCoinifyProfit(
+            itemHrid,
+            enhancementLevel = 0,
+            useLiveSetup = false,
+            teaBonusOverride = null,
+            actionContext = null
+        ) {
             try {
                 const gameData = dataManager.getInitClientData();
                 const itemDetails = dataManager.getItemDetails(itemHrid);
@@ -3303,11 +3319,17 @@ self.onmessage = function (e) {
                 // Get pricing mode
                 const pricingMode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
 
-                // Calculate action stats (time + efficiency) using shared helper
-                // Alchemy uses item level (not action requirement) for efficiency calculation
+                // Keep a caller-supplied live context atomic (used by the Current Action Bar). Legacy
+                // callers without an override retain the existing calculator behavior.
+                const equipment = actionContext?.equipment ?? dataManager.getEquipment();
+                const activeDrinks = actionContext?.drinks ?? dataManager.getActionDrinkSlots('/action_types/alchemy');
+
+                // Calculate action stats (time + efficiency) using shared helper. Alchemy uses item
+                // level (not action requirement) for efficiency calculation.
                 const actionStats = actionCalculator_js.calculateActionStats(actionDetails, {
                     skills: dataManager.getSkills(),
-                    equipment: dataManager.getEquipment(),
+                    equipment,
+                    actionContext,
                     itemDetailMap: gameData.itemDetailMap,
                     includeCommunityBuff: true,
                     includeBreakdown: true,
@@ -3315,9 +3337,6 @@ self.onmessage = function (e) {
                 });
 
                 const { actionTime, totalEfficiency, efficiencyBreakdown } = actionStats;
-
-                // Get equipment for drink concentration and speed calculation
-                const equipment = dataManager.getEquipment();
 
                 // Calculate action speed breakdown with details
                 const _baseTime = actionDetails.baseTimeCost / 1e9;
@@ -3380,7 +3399,7 @@ self.onmessage = function (e) {
 
                 // Calculate live tea cost (used for tea combinations)
                 const teaCostData = profitHelpers_js.calculateTeaCostsPerHour({
-                    drinkSlots: dataManager.getActionDrinkSlots('/action_types/alchemy'),
+                    drinkSlots: activeDrinks,
                     drinkConcentration,
                     itemDetailMap: gameData.itemDetailMap,
                     getItemPrice: (hrid) => marketData_js.getItemPrice(hrid, { context: 'profit', side: 'buy' }),
@@ -3536,9 +3555,19 @@ self.onmessage = function (e) {
          * Calculate Decompose profit for an item with full detailed breakdown
          * @param {string} itemHrid - Item HRID
          * @param {number} enhancementLevel - Enhancement level (default 0)
+         * @param {boolean} [useLiveSetup=false]
+         * @param {number|null} [teaBonusOverride=null]
+         * @param {{equipment: Map, drinks: Array}|null} [actionContext=null] - Exact live context
+         *   override (e.g. from resolveCurrentActionContext) for the Current Action Bar.
          * @returns {Object|null} Profit data or null if not decomposable
          */
-        calculateDecomposeProfit(itemHrid, enhancementLevel = 0, useLiveSetup = false, teaBonusOverride = null) {
+        calculateDecomposeProfit(
+            itemHrid,
+            enhancementLevel = 0,
+            useLiveSetup = false,
+            teaBonusOverride = null,
+            actionContext = null
+        ) {
             try {
                 const gameData = dataManager.getInitClientData();
                 const itemDetails = dataManager.getItemDetails(itemHrid);
@@ -3561,11 +3590,17 @@ self.onmessage = function (e) {
                 // Get pricing mode
                 const pricingMode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
 
-                // Calculate action stats (time + efficiency) using shared helper
-                // Alchemy uses item level (not action requirement) for efficiency calculation
+                // Keep a caller-supplied live context atomic (used by the Current Action Bar). Legacy
+                // callers without an override retain the existing calculator behavior.
+                const equipment = actionContext?.equipment ?? dataManager.getEquipment();
+                const activeDrinks = actionContext?.drinks ?? dataManager.getActionDrinkSlots('/action_types/alchemy');
+
+                // Calculate action stats (time + efficiency) using shared helper. Alchemy uses item
+                // level (not action requirement) for efficiency calculation.
                 const actionStats = actionCalculator_js.calculateActionStats(actionDetails, {
                     skills: dataManager.getSkills(),
-                    equipment: dataManager.getEquipment(),
+                    equipment,
+                    actionContext,
                     itemDetailMap: gameData.itemDetailMap,
                     includeCommunityBuff: true,
                     includeBreakdown: true,
@@ -3573,9 +3608,6 @@ self.onmessage = function (e) {
                 });
 
                 const { actionTime, totalEfficiency, efficiencyBreakdown } = actionStats;
-
-                // Get equipment for drink concentration and speed calculation
-                const equipment = dataManager.getEquipment();
 
                 // Calculate action speed breakdown with details
                 const _baseTime = actionDetails.baseTimeCost / 1e9;
@@ -3679,7 +3711,7 @@ self.onmessage = function (e) {
 
                 // Calculate live tea cost (used for tea combinations)
                 const teaCostData = profitHelpers_js.calculateTeaCostsPerHour({
-                    drinkSlots: dataManager.getActionDrinkSlots('/action_types/alchemy'),
+                    drinkSlots: activeDrinks,
                     drinkConcentration,
                     itemDetailMap: gameData.itemDetailMap,
                     getItemPrice: (hrid) => marketData_js.getItemPrice(hrid, { context: 'profit', side: 'buy' }),
@@ -3844,9 +3876,17 @@ self.onmessage = function (e) {
          * @param {number|null} [teaBonusOverride]
          * @param {'none'|'typeSpecific'|'prime'|null} [catalystChoice] - Force a specific catalyst
          *   instead of searching for the best one or reading the live panel.
+         * @param {{equipment: Map, drinks: Array}|null} [actionContext=null] - Exact live context
+         *   override (e.g. from resolveCurrentActionContext) for the Current Action Bar.
          * @returns {Object|null} Profit data or null if not transmutable
          */
-        calculateTransmuteProfit(itemHrid, useLiveSetup = false, teaBonusOverride = null, catalystChoice = null) {
+        calculateTransmuteProfit(
+            itemHrid,
+            useLiveSetup = false,
+            teaBonusOverride = null,
+            catalystChoice = null,
+            actionContext = null
+        ) {
             try {
                 const gameData = dataManager.getInitClientData();
                 const itemDetails = dataManager.getItemDetails(itemHrid);
@@ -3883,11 +3923,17 @@ self.onmessage = function (e) {
                 // Get pricing mode
                 const pricingMode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
 
-                // Calculate action stats (time + efficiency) using shared helper
-                // Alchemy uses item level (not action requirement) for efficiency calculation
+                // Keep a caller-supplied live context atomic (used by the Current Action Bar). Legacy
+                // callers without an override retain the existing calculator behavior.
+                const equipment = actionContext?.equipment ?? dataManager.getEquipment();
+                const activeDrinks = actionContext?.drinks ?? dataManager.getActionDrinkSlots('/action_types/alchemy');
+
+                // Calculate action stats (time + efficiency) using shared helper. Alchemy uses item
+                // level (not action requirement) for efficiency calculation.
                 const actionStats = actionCalculator_js.calculateActionStats(actionDetails, {
                     skills: dataManager.getSkills(),
-                    equipment: dataManager.getEquipment(),
+                    equipment,
+                    actionContext,
                     itemDetailMap: gameData.itemDetailMap,
                     includeCommunityBuff: true,
                     includeBreakdown: true,
@@ -3895,9 +3941,6 @@ self.onmessage = function (e) {
                 });
 
                 const { actionTime, totalEfficiency, efficiencyBreakdown } = actionStats;
-
-                // Get equipment for drink concentration and speed calculation
-                const equipment = dataManager.getEquipment();
 
                 // Calculate action speed breakdown with details
                 const _baseTime = actionDetails.baseTimeCost / 1e9;
@@ -3996,7 +4039,7 @@ self.onmessage = function (e) {
 
                 // Calculate live tea cost (used for tea combinations)
                 const teaCostData = profitHelpers_js.calculateTeaCostsPerHour({
-                    drinkSlots: dataManager.getActionDrinkSlots('/action_types/alchemy'),
+                    drinkSlots: activeDrinks,
                     drinkConcentration,
                     itemDetailMap: gameData.itemDetailMap,
                     getItemPrice: (hrid) => marketData_js.getItemPrice(hrid, { context: 'profit', side: 'buy' }),
@@ -4265,9 +4308,14 @@ self.onmessage = function (e) {
     /**
      * Calculate comprehensive profit for a gathering action
      * @param {string} actionHrid - Action HRID (e.g., "/actions/foraging/asteroid_belt")
+     * @param {Object} [options={}]
+     * @param {{equipment: Map, drinks: Array}|null} [options.actionContext=null] - Exact live context
+     *   override (e.g. from resolveCurrentActionContext) for the Current Action Bar. When omitted,
+     *   uses the normal predictive live/saved action context.
      * @returns {Object|null} Profit data or null if not applicable
      */
-    async function calculateGatheringProfit(actionHrid) {
+    async function calculateGatheringProfit(actionHrid, options = {}) {
+        const { actionContext = null } = options;
         const gameData = dataManager.getInitClientData();
         const actionDetail = gameData.actionDetailMap[actionHrid];
 
@@ -4294,7 +4342,11 @@ self.onmessage = function (e) {
         // Note: Market API is pre-loaded by caller (max-produceable.js)
         // No need to check or fetch here
 
-        const effCtx = efficiency_js.getActionEfficiencyContext(actionDetail, { isProduction: false, gameData });
+        const effCtx = efficiency_js.getActionEfficiencyContext(actionDetail, {
+            isProduction: false,
+            gameData,
+            actionContextOverride: actionContext,
+        });
 
         const {
             equipment,
@@ -19259,6 +19311,9 @@ self.onmessage = function (e) {
      * Prepare the Marketplace UI for one captured Sell Queue session.
      * A shared promise lets several rapid queue additions join the same navigation
      * instead of treating the not-yet-mounted tablist as a fatal reinjection failure.
+     * Does not arm the cleanup/exit observer — that happens only after the caller's own
+     * initial navigation to the first queued item succeeds, so it can never see a retained
+     * pre-workflow "My Listings" state.
      * @param {number} sessionId
      * @returns {Promise<boolean>}
      */
@@ -19270,8 +19325,15 @@ self.onmessage = function (e) {
         }
 
         if (!marketplaceSession_js.marketplaceSession.isActive(sessionId)) return false;
-        if (!injectTabs(getVisibleMarketplaceTabContainer(), sessionId)) return false;
+        return injectTabs(getVisibleMarketplaceTabContainer(), sessionId);
+    }
 
+    /**
+     * Arm the cleanup/exit observer and inventory listener for the SELL_QUEUE owner.
+     * Must only be called once, after the first queued item's own navigation has succeeded.
+     * @param {number} sessionId
+     */
+    function setupSellQueueCleanupObserver(sessionId) {
         cleanupObserver?.();
         cleanupObserver = setupMarketplaceCleanupObserver({
             owner: marketplaceSession_js.MARKETPLACE_OWNER.SELL_QUEUE,
@@ -19284,7 +19346,6 @@ self.onmessage = function (e) {
             },
         });
         setupInventoryListener();
-        return true;
     }
 
     /**
@@ -19336,6 +19397,14 @@ self.onmessage = function (e) {
             !navigateToMarketplace(itemHrid, 0)
         ) {
             if (marketplaceSession_js.marketplaceSession.isActive(capturedSessionId)) marketplaceSession_js.marketplaceSession.end(capturedSessionId);
+            return;
+        }
+
+        // Only arm the cleanup/exit observer once the first queued item's own navigation has
+        // succeeded, so it can never see a retained pre-workflow "My Listings" state. Later
+        // additions reuse the observer already armed by the first item's activation.
+        if (isFirstItem) {
+            setupSellQueueCleanupObserver(capturedSessionId);
         }
     }
 
@@ -32168,6 +32237,174 @@ self.onmessage = function (e) {
     }
 
     /**
+     * Openable Analytics eligibility
+     *
+     * Openable Analytics is useful only when an opening has outcome variance to analyze. Known
+     * buff-only/no-item-loot activations and fully deterministic fixed-output openables are excluded.
+     * Unknown/incomplete current game data fails open so newly-added or temporarily unresolved
+     * randomized openables are never silently discarded.
+     */
+
+
+    const OPENABLE_MODEL_STATUS = Object.freeze({
+        RANDOMIZED: 'randomized',
+        DETERMINISTIC: 'deterministic',
+        NO_ITEM_LOOT: 'no_item_loot',
+        UNKNOWN: 'unknown',
+    });
+
+    function getCurrentDropTable(containerHrid) {
+        if (!containerHrid || !dataManager.getItemDetails(containerHrid)) return { status: 'unknown', dropTable: null };
+
+        const openableLootDropMap = dataManager.getInitClientData?.()?.openableLootDropMap;
+        if (!openableLootDropMap || typeof openableLootDropMap !== 'object') {
+            return { status: 'unknown', dropTable: null };
+        }
+
+        const dropTable = openableLootDropMap[containerHrid];
+        if (!Array.isArray(dropTable) || dropTable.length === 0) {
+            return { status: 'no_item_loot', dropTable: [] };
+        }
+
+        return { status: 'present', dropTable };
+    }
+
+    /**
+     * Classify one openable against the current authoritative client data.
+     *
+     * A deterministic model means every active drop is guaranteed (`dropRate === 1`) and has a fixed
+     * quantity (`minCount === maxCount`). Any probability below 1 or quantity range makes the opening
+     * randomized. Incomplete/malformed model data is UNKNOWN and therefore fails open.
+     * @param {string} containerHrid
+     * @returns {'randomized'|'deterministic'|'no_item_loot'|'unknown'}
+     */
+    function getOpenableModelStatus(containerHrid) {
+        const { status, dropTable } = getCurrentDropTable(containerHrid);
+        if (status === 'unknown') return OPENABLE_MODEL_STATUS.UNKNOWN;
+        if (status === 'no_item_loot') return OPENABLE_MODEL_STATUS.NO_ITEM_LOOT;
+
+        let activeDrops = 0;
+        let randomized = false;
+
+        for (const drop of dropTable) {
+            const rate = drop?.dropRate;
+            if (!Number.isFinite(rate)) return OPENABLE_MODEL_STATUS.UNKNOWN;
+            if (rate <= 0) continue;
+
+            activeDrops += 1;
+            if (!drop?.itemHrid) return OPENABLE_MODEL_STATUS.UNKNOWN;
+
+            const minCount = drop?.minCount;
+            const maxCount = drop?.maxCount;
+            if (!Number.isFinite(minCount) || !Number.isFinite(maxCount)) {
+                // A probability below 1 already proves variance even if count metadata is incomplete.
+                if (rate !== 1) {
+                    randomized = true;
+                    continue;
+                }
+                return OPENABLE_MODEL_STATUS.UNKNOWN;
+            }
+
+            if (rate !== 1 || minCount !== maxCount) randomized = true;
+        }
+
+        if (activeDrops === 0) return OPENABLE_MODEL_STATUS.NO_ITEM_LOOT;
+        return randomized ? OPENABLE_MODEL_STATUS.RANDOMIZED : OPENABLE_MODEL_STATUS.DETERMINISTIC;
+    }
+
+    function getDeterministicExpectedTotals(containerHrid, containerCount) {
+        if (!Number.isSafeInteger(containerCount) || containerCount <= 0) return null;
+        if (getOpenableModelStatus(containerHrid) !== OPENABLE_MODEL_STATUS.DETERMINISTIC) return null;
+
+        const { dropTable } = getCurrentDropTable(containerHrid);
+        const totals = {};
+        for (const drop of dropTable) {
+            if (!(drop?.dropRate > 0)) continue;
+            const count = drop.minCount * containerCount;
+            if (!Number.isSafeInteger(count) || count < 0) return null;
+            totals[drop.itemHrid] = (totals[drop.itemHrid] || 0) + count;
+        }
+        return totals;
+    }
+
+    function normalizeObservedTotals(gainedItems) {
+        const totals = {};
+        for (const item of gainedItems || []) {
+            if (!item?.itemHrid) return null;
+            const count = item.count;
+            if (!Number.isSafeInteger(count) || count < 0) return null;
+            if (count === 0) continue;
+            totals[item.itemHrid] = (totals[item.itemHrid] || 0) + count;
+        }
+        return totals;
+    }
+
+    function normalizedTotalsEqual(left, right) {
+        if (!left || !right) return false;
+        const leftKeys = Object.keys(left)
+            .filter((key) => left[key] !== 0)
+            .sort();
+        const rightKeys = Object.keys(right)
+            .filter((key) => right[key] !== 0)
+            .sort();
+        if (leftKeys.length !== rightKeys.length) return false;
+        return leftKeys.every((key, index) => key === rightKeys[index] && left[key] === right[key]);
+    }
+
+    /**
+     * Decide whether one live opening should enter Openable Analytics.
+     *
+     * - randomized / unknown model -> track;
+     * - known no-item-loot + no gained items -> exclude;
+     * - deterministic fixed-output + exact expected output -> exclude;
+     * - any runtime outcome contradicting the static non-random model -> fail open and track.
+     * @param {string} containerHrid
+     * @param {number} containerCount
+     * @param {Array<{itemHrid?: string, count?: number}>} [gainedItems]
+     * @returns {boolean}
+     */
+    function shouldTrackOpenableOpening(containerHrid, containerCount, gainedItems = []) {
+        const modelStatus = getOpenableModelStatus(containerHrid);
+        if (modelStatus === OPENABLE_MODEL_STATUS.RANDOMIZED || modelStatus === OPENABLE_MODEL_STATUS.UNKNOWN) {
+            return true;
+        }
+
+        const observedTotals = normalizeObservedTotals(gainedItems);
+        if (modelStatus === OPENABLE_MODEL_STATUS.NO_ITEM_LOOT) {
+            return observedTotals === null || Object.keys(observedTotals).length > 0;
+        }
+
+        const expectedTotals = getDeterministicExpectedTotals(containerHrid, containerCount);
+        return !normalizedTotalsEqual(observedTotals, expectedTotals);
+    }
+
+    /**
+     * Decide whether a historical aggregate from an import source carries analytical information.
+     * The same fail-open rule applies: an exact deterministic outcome is skipped, but contradictory
+     * source data is preserved for review instead of being silently discarded.
+     * @param {string} containerHrid
+     * @param {number} containerCount
+     * @param {Object<string, number>} itemTotals
+     * @returns {boolean}
+     */
+    function shouldTrackImportedOpenable(containerHrid, containerCount, itemTotals = {}) {
+        const gainedItems = Object.entries(itemTotals || {}).map(([itemHrid, count]) => ({ itemHrid, count }));
+        return shouldTrackOpenableOpening(containerHrid, containerCount, gainedItems);
+    }
+
+    /**
+     * Whether a persisted/session container should be exposed in Analytics UI lists. Known non-random
+     * current models are hidden without destructively rewriting the user's IndexedDB history.
+     * Unknown/incomplete game data remains visible (fail open).
+     * @param {string} containerHrid
+     * @returns {boolean}
+     */
+    function shouldExposeOpenableContainer(containerHrid) {
+        const modelStatus = getOpenableModelStatus(containerHrid);
+        return modelStatus === OPENABLE_MODEL_STATUS.RANDOMIZED || modelStatus === OPENABLE_MODEL_STATUS.UNKNOWN;
+    }
+
+    /**
      * Openable Analytics Storage
      * Character-scoped IndexedDB persistence for lifetime aggregates and bounded detailed history.
      * Lifetime aggregates are updated incrementally at write time so pruning the detailed history
@@ -32497,10 +32734,23 @@ self.onmessage = function (e) {
             if (!characterId || characterId !== this.characterId) return;
             if (!data?.openedItem?.itemHrid) return;
 
+            const containerCount = data.openedItem.count || 1;
+            if (!shouldTrackOpenableOpening(data.openedItem.itemHrid, containerCount, data.gainedItems)) {
+                // This opening carries no analytical signal (known no-item-loot/deterministic outcome
+                // that matches the model) - do not record it. Also clear the latest record and notify:
+                // otherwise the modal injector's own footer logic (which trusts getLatestRecord() as a
+                // proxy for "the record belonging to the modal that's now open") could stamp a stale,
+                // unrelated container's Actual/Expected/Luck onto this excluded opening's native modal
+                // (e.g. Bag Of 10 Cowbells still renders real gained-item DOM, unlike a Scroll).
+                this.latestRecord = null;
+                this.notifyListeners(null);
+                return;
+            }
+
             await this.recordOpening(
                 {
                     containerHrid: data.openedItem.itemHrid,
-                    containerCount: data.openedItem.count || 1,
+                    containerCount,
                     gainedItems: data.gainedItems,
                     grantedBuffs: data.grantedBuffs,
                     timestamp: Date.now(),
@@ -32627,7 +32877,7 @@ self.onmessage = function (e) {
          *      Session - never containers that only have Lifetime/imported history.
          */
         getSessionContainers() {
-            return Object.keys(this.session);
+            return Object.keys(this.session).filter(shouldExposeOpenableContainer);
         }
 
         /**
@@ -32661,7 +32911,7 @@ self.onmessage = function (e) {
                     containers.add(containerHrid);
                 }
             }
-            return [...containers];
+            return [...containers].filter(shouldExposeOpenableContainer);
         }
 
         /**
@@ -33175,21 +33425,6 @@ self.onmessage = function (e) {
     }
 
     /**
-     * A container with real current game data but no monetary loot model and nothing imported for it
-     * has no economic information Openable Analytics can display - safe to skip entirely rather than
-     * list a permanently empty/unavailable row.
-     * @param {string} containerHrid
-     * @param {Object} itemTotals
-     * @returns {boolean}
-     */
-    function isKnownNonMonetaryWithNoLoot(containerHrid, itemTotals) {
-        if (Object.keys(itemTotals).length > 0) return false;
-        if (!dataManager.getItemDetails(containerHrid)) return false; // unknown HRID - keep it (section 19)
-        const dropTable = dataManager.getInitClientData?.()?.openableLootDropMap?.[containerHrid];
-        return !Array.isArray(dropTable) || dropTable.length === 0;
-    }
-
-    /**
      * Build a lowercased item/container display-name -> HRID map from the current game data, for
      * resolving name-keyed import sources (Edible Tools) back to HRIDs. Sources that are already
      * HRID-keyed (MWI Combat Suite) don't need this.
@@ -33314,7 +33549,7 @@ self.onmessage = function (e) {
                 );
             }
 
-            if (isKnownNonMonetaryWithNoLoot(containerHrid, itemTotals)) continue;
+            if (!shouldTrackImportedOpenable(containerHrid, containerCount, itemTotals)) continue;
 
             // MWI Combat Suite is already HRID-keyed and validated above, so nothing here is dropped
             // for being unresolvable - this source's Actual is only marked partial when validation
@@ -33462,7 +33697,7 @@ self.onmessage = function (e) {
                 warnings.push(`${chestName}: one or more gained items had invalid counts and were excluded.`);
             }
 
-            if (isKnownNonMonetaryWithNoLoot(containerHrid, itemTotals)) continue;
+            if (!shouldTrackImportedOpenable(containerHrid, containerCount, itemTotals)) continue;
 
             // Do not let a warning-only path turn into a falsely precise imported Luck value: an
             // unmatched/invalid gained item means this container's Actual is only a subtotal of the

@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.98.1
+ * Version: 2.99.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1140,6 +1140,7 @@
                     options: [
                         { value: 'expected', label: 'Expected value (average)' },
                         { value: 'worst-case', label: 'Worst-case per action (ceil per craft)' },
+                        { value: 'hybrid', label: 'Hybrid (ceil below 100 actions, average at 100+)' },
                     ],
                     help: 'Choose how missing materials accounts for Artisan Tea reductions when suggesting what to buy.',
                 },
@@ -1287,6 +1288,13 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Shows whether ability is learned and current level/progress on ability book tooltips',
+                },
+                abilityTooltip_effectiveTiming: {
+                    id: 'abilityTooltip_effectiveTiming',
+                    label: 'Show effective cooldown/cast time (with your stats)',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Computes actual Cooldown/Cast Time from your current Ability Haste, Cast Speed, and Attack level, and shows it on ability tooltips when different from the base value.',
                 },
                 itemTooltip_enhancementMilestones: {
                     id: 'itemTooltip_enhancementMilestones',
@@ -2436,6 +2444,13 @@
                     default: 12,
                     help: 'Highlight combat consumables projected to run out within this many hours. Set to 0 to disable warnings.',
                 },
+                combatConsumableTimer: {
+                    id: 'combatConsumableTimer',
+                    label: 'Combat consumable timer: Show remaining food/drink time during battle',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Shows each active combat food/drink\'s estimated remaining runway below its icon in the Consumables list during battle. Requires "Combat Statistics" to be enabled - the estimate comes from its consumption tracker.',
+                },
                 combatStatsChatMessage: {
                     id: 'combatStatsChatMessage',
                     label: 'Combat Statistics: Chat message format',
@@ -2701,6 +2716,13 @@
                     type: 'checkbox',
                     default: false,
                 },
+                hideNavBarGlow: {
+                    id: 'hideNavBarGlow',
+                    label: 'Left sidebar: Hide active skill glow effect',
+                    type: 'checkbox',
+                    default: false,
+                    help: "Removes the game's pulsing orange glow animation from the currently active skill's icon in the left navigation bar.",
+                },
                 tabReorder: {
                     id: 'tabReorder',
                     label: 'Character panel: Drag-and-drop tab reordering',
@@ -2738,7 +2760,7 @@
                     label: 'Loadouts: Use saved loadouts in profit/action calculations',
                     type: 'checkbox',
                     default: true,
-                    help: "When you queue an action, Toolasha predicts its XP, time, and profit using the current saved game loadout for that skill (skill-default → all-skills-default → matching saved loadout → currently-equipped). 'Use highest enhancement level' is resolved from what you currently own. If the selected saved loadout contains unavailable equipment, food, or drinks, Toolasha falls back to the proven currently-equipped setup rather than guessing missing-item behavior. Disable to always predict using currently-equipped gear.",
+                    help: "When you queue an action, Toolasha predicts its XP, time, and profit using the current saved game loadout for that skill (skill-default → all-skills-default → matching saved loadout → currently-equipped). 'Use highest enhancement level' is resolved from what you currently own. Unavailable saved equipment makes the prediction fall back to the proven currently-equipped setup; unavailable saved food/drinks do not invalidate the loadout and their missing slots are omitted. Disable to always predict using currently-equipped gear.",
                 },
                 showsKeyInfoInIcon: {
                     id: 'showsKeyInfoInIcon',
@@ -3838,7 +3860,17 @@
                 messageType === 'battle_consumable_ability_updated' ||
                 messageType === 'battle_unit_fetched' ||
                 messageType === 'action_type_consumable_slots_updated' ||
+                // Native skilling/live-buff state messages replace whole maps/arrays. Two genuine
+                // consecutive updates can easily share the first 100 raw characters and differ only
+                // in a later buff value, so the lossy prefix hash must never collapse them.
+                messageType === 'house_rooms_updated' ||
+                messageType === 'achievement_buffs_updated' ||
+                messageType === 'moo_pass_buffs_updated' ||
+                messageType === 'community_buffs_updated' ||
                 messageType === 'consumable_buffs_updated' ||
+                messageType === 'equipment_buffs_updated' ||
+                messageType === 'personal_buffs_updated' ||
+                messageType === 'guild_buffs_updated' ||
                 messageType === 'character_info_updated' ||
                 messageType === 'labyrinth_updated' ||
                 messageType === 'loadouts_updated' ||
@@ -4764,14 +4796,36 @@
             this.webSocketHook.on('actions_updated', (data, context) => {
                 if (!this._isFromActiveSocket(context)) return;
 
-                // Update action list
+                // Mirror native MWI queue-state semantics: replace existing actions in place,
+                // remove completed actions, and re-sort only when a row is new or its ordinal changes.
+                // Removing + appending every update makes array insertion order diverge from the
+                // native queue after a reorder; consumers that inspect the first/current action can
+                // then accidentally read a queued action instead.
+                let queueOrderChanged = false;
                 for (const action of data.endCharacterActions) {
-                    // Always remove the old entry first to prevent duplicates —
-                    // endCharacterActions can contain existing actions alongside new ones.
-                    this.characterActions = this.characterActions.filter((a) => a.id !== action.id);
-                    if (action.isDone === false) {
-                        this.characterActions.push(action);
+                    const index = this.characterActions.findIndex((existing) => existing.id === action.id);
+
+                    if (action.isDone === true) {
+                        if (index !== -1) this.characterActions.splice(index, 1);
+                    } else if (action.isDone === false) {
+                        if (index !== -1) {
+                            if (this.characterActions[index].ordinal !== action.ordinal) queueOrderChanged = true;
+                            this.characterActions[index] = action;
+                        } else {
+                            this.characterActions.push(action);
+                            queueOrderChanged = true;
+                        }
                     }
+                }
+
+                if (queueOrderChanged) {
+                    this.characterActions.sort((a, b) => {
+                        const aPartyId = a?.partyID ?? 0;
+                        const bPartyId = b?.partyID ?? 0;
+                        if (aPartyId !== 0 && bPartyId === 0) return -1;
+                        if (aPartyId === 0 && bPartyId !== 0) return 1;
+                        return (Number(a?.ordinal) || 0) - (Number(b?.ordinal) || 0);
+                    });
                 }
 
                 this._syncActionUnitBoundary();
@@ -4895,11 +4949,97 @@
                 this.emit('consumables_updated', data);
             });
 
-            // Handle consumable_buffs_updated (when buffs expire/refresh)
+            // Native skilling/live-buff state family. MWI replaces these maps/arrays wholesale in
+            // its own message handlers; mirror that exact replacement contract in canonical
+            // characterData before emitting semantic events. Every handler is character/socket
+            // scoped through the TLA-018 accepted-socket boundary. Existing separate DataManager
+            // mirrors that current getters depend on (characterHouseRooms, personalActionTypeBuffsMap,
+            // characterGuildBuffMap) are kept in sync alongside characterData, not replaced by it.
+
+            // Handle house_rooms_updated (room levels + derived house action buffs)
+            this.webSocketHook.on('house_rooms_updated', (data, context) => {
+                if (!this._isFromActiveSocket(context)) return;
+
+                if (data.characterHouseRoomMap !== undefined) {
+                    this.updateHouseRoomMap(data.characterHouseRoomMap);
+                    if (this.characterData) this.characterData.characterHouseRoomMap = data.characterHouseRoomMap;
+                }
+                if (data.houseActionTypeBuffsMap !== undefined && this.characterData) {
+                    this.characterData.houseActionTypeBuffsMap = data.houseActionTypeBuffsMap;
+                }
+
+                this.emit('house_rooms_updated', data);
+                this.emit('buffs_updated', data);
+            });
+
+            // Handle achievement_buffs_updated
+            this.webSocketHook.on('achievement_buffs_updated', (data, context) => {
+                if (!this._isFromActiveSocket(context)) return;
+
+                if (data.achievementActionTypeBuffsMap !== undefined && this.characterData) {
+                    this.characterData.achievementActionTypeBuffsMap = data.achievementActionTypeBuffsMap;
+                }
+
+                this.emit('achievement_buffs_updated', data);
+                this.emit('buffs_updated', data);
+            });
+
+            // Handle moo_pass_buffs_updated
+            this.webSocketHook.on('moo_pass_buffs_updated', (data, context) => {
+                if (!this._isFromActiveSocket(context)) return;
+
+                if (this.characterData) {
+                    if (data.mooPassBuffs !== undefined) this.characterData.mooPassBuffs = data.mooPassBuffs;
+                    if (data.mooPassActionTypeBuffsMap !== undefined) {
+                        this.characterData.mooPassActionTypeBuffsMap = data.mooPassActionTypeBuffsMap;
+                    }
+                }
+
+                this.emit('moo_pass_buffs_updated', data);
+                this.emit('buffs_updated', data);
+            });
+
+            // Handle community_buffs_updated
+            this.webSocketHook.on('community_buffs_updated', (data, context) => {
+                if (!this._isFromActiveSocket(context)) return;
+
+                if (this.characterData) {
+                    if (data.communityBuffs !== undefined) this.characterData.communityBuffs = data.communityBuffs;
+                    if (data.communityActionTypeBuffsMap !== undefined) {
+                        this.characterData.communityActionTypeBuffsMap = data.communityActionTypeBuffsMap;
+                    }
+                }
+
+                this.emit('community_buffs_updated', data);
+                this.emit('buffs_updated', data);
+            });
+
+            // Handle consumable_buffs_updated (when active consumable buffs expire/refresh)
             this.webSocketHook.on('consumable_buffs_updated', (data, context) => {
                 if (!this._isFromActiveSocket(context)) return;
 
-                // Buffs updated - next hover will show updated values
+                if (data.consumableActionTypeBuffsMap !== undefined && this.characterData) {
+                    this.characterData.consumableActionTypeBuffsMap = data.consumableActionTypeBuffsMap;
+                }
+
+                this.emit('consumable_buffs_updated', data);
+                this.emit('buffs_updated', data);
+            });
+
+            // Handle equipment_buffs_updated
+            this.webSocketHook.on('equipment_buffs_updated', (data, context) => {
+                if (!this._isFromActiveSocket(context)) return;
+
+                if (this.characterData) {
+                    if (data.equipmentActionTypeBuffsMap !== undefined) {
+                        this.characterData.equipmentActionTypeBuffsMap = data.equipmentActionTypeBuffsMap;
+                    }
+                    if (data.equipmentTaskActionBuffs !== undefined) {
+                        this.characterData.equipmentTaskActionBuffs = data.equipmentTaskActionBuffs;
+                    }
+                }
+
+                this.emit('equipment_buffs_updated', data);
                 this.emit('buffs_updated', data);
             });
 
@@ -4907,22 +5047,34 @@
             this.webSocketHook.on('personal_buffs_updated', (data, context) => {
                 if (!this._isFromActiveSocket(context)) return;
 
-                if (data.personalActionTypeBuffsMap) {
+                if (data.personalActionTypeBuffsMap !== undefined) {
                     this.personalActionTypeBuffsMap = data.personalActionTypeBuffsMap;
+                    if (this.characterData) {
+                        this.characterData.personalActionTypeBuffsMap = data.personalActionTypeBuffsMap;
+                    }
                 }
+                if (data.characterBuffs !== undefined && this.characterData) {
+                    this.characterData.characterBuffs = data.characterBuffs || [];
+                }
+
                 this.emit('personal_buffs_updated', data);
+                this.emit('buffs_updated', data);
             });
 
-            // Handle house_rooms_updated (when user upgrades house rooms)
-            this.webSocketHook.on('house_rooms_updated', (data, context) => {
+            // Handle guild_buffs_updated (purchased guild buffs + derived action-type buffs).
+            // guildBuildingLevelMap (shrine/building lifecycle) is a separate native message
+            // (guild_updated) and intentionally untouched here - out of scope for this handler.
+            this.webSocketHook.on('guild_buffs_updated', (data, context) => {
                 if (!this._isFromActiveSocket(context)) return;
 
-                // Update house room map with new levels
-                if (data.characterHouseRoomMap) {
-                    this.updateHouseRoomMap(data.characterHouseRoomMap);
+                this.characterGuildBuffMap = data.characterGuildBuffMap || {};
+                if (this.characterData) {
+                    this.characterData.characterGuildBuffMap = this.characterGuildBuffMap;
+                    this.characterData.guildActionTypeBuffsMap = data.guildActionTypeBuffsMap || {};
                 }
 
-                this.emit('house_rooms_updated', data);
+                this.emit('guild_buffs_updated', data);
+                this.emit('buffs_updated', data);
             });
 
             // Handle skills_updated (when user gains skill levels)

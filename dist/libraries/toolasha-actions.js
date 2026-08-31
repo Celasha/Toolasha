@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.98.1
+ * Version: 2.99.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1416,9 +1416,14 @@
     /**
      * Calculate comprehensive profit for a gathering action
      * @param {string} actionHrid - Action HRID (e.g., "/actions/foraging/asteroid_belt")
+     * @param {Object} [options={}]
+     * @param {{equipment: Map, drinks: Array}|null} [options.actionContext=null] - Exact live context
+     *   override (e.g. from resolveCurrentActionContext) for the Current Action Bar. When omitted,
+     *   uses the normal predictive live/saved action context.
      * @returns {Object|null} Profit data or null if not applicable
      */
-    async function calculateGatheringProfit(actionHrid) {
+    async function calculateGatheringProfit(actionHrid, options = {}) {
+        const { actionContext = null } = options;
         const gameData = dataManager.getInitClientData();
         const actionDetail = gameData.actionDetailMap[actionHrid];
 
@@ -1445,7 +1450,11 @@
         // Note: Market API is pre-loaded by caller (max-produceable.js)
         // No need to check or fetch here
 
-        const effCtx = efficiency_js.getActionEfficiencyContext(actionDetail, { isProduction: false, gameData });
+        const effCtx = efficiency_js.getActionEfficiencyContext(actionDetail, {
+            isProduction: false,
+            gameData,
+            actionContextOverride: actionContext,
+        });
 
         const {
             equipment,
@@ -6267,6 +6276,7 @@
     let autoProtectTargetInputs = new WeakSet();
     let itemsUpdatedHandler = null;
     let consumablesUpdatedHandler = null;
+    let buffsUpdatedHandler = null; // Handler for the native live-buff family (TLA-028)
 
     /**
      * Trigger debounced enhancement stats update
@@ -6386,6 +6396,20 @@
                 }, DEBOUNCE_DELAY);
             };
             dataManager.on('consumables_updated', consumablesUpdatedHandler);
+        }
+
+        // House/achievement/MooPass/community/consumable/equipment/personal/guild buff changes
+        // (TLA-028) don't fire items_updated/consumables_updated - success/speed/rare-find/XP
+        // breakdowns in the enhancement calculator and action-panel profit all depend on this state.
+        if (!buffsUpdatedHandler) {
+            buffsUpdatedHandler = () => {
+                clearTimeout(itemsUpdatedDebounceTimer);
+                itemsUpdatedDebounceTimer = setTimeout(() => {
+                    refreshEnhancementCalculator();
+                    refreshProfitPanel();
+                }, DEBOUNCE_DELAY);
+            };
+            dataManager.on('buffs_updated', buffsUpdatedHandler);
         }
     }
 
@@ -7098,6 +7122,88 @@
     const tooltipObserver = new TooltipObserver();
 
     /**
+     * Action context resolver
+     *
+     * Returns the equipment and active drinks to use when predicting an action's
+     * outcome (XP, time, profit, materials). When automatic saved-loadout use is
+     * enabled and a saved loadout matches the action type, the canonical Core
+     * loadout state is resolved against current ownership at read time.
+     *
+     * Resolution priority (handled inside loadoutState.findSnapshotForActionType):
+     *   1. Skill-specific default loadout
+     *   2. All-skills default loadout
+     *   3. Skill-specific non-default
+     *   4. All-skills non-default
+     *   5. Fall back to currently-equipped gear / current drinks
+     *
+     * Intentional empty state is preserved: a matching saved loadout with no
+     * equipment or no drinks resolves to an empty Map/array rather than falling
+     * through to the character's currently equipped setup.
+     *
+     * resolveCurrentActionContext() is the separate live-state counterpart: it always ignores
+     * saved-loadout prediction and returns the character's actual current setup, for surfaces (like
+     * the Current Action Bar) that describe what is actually running now rather than a prediction.
+     */
+
+
+    /**
+     * Resolve the character's proven current live setup, ignoring saved-loadout prediction settings.
+     * Equipment and drinks are returned as one atomic context so callers cannot accidentally mix
+     * current equipment with saved-loadout consumables (or vice versa). Used by live-state surfaces
+     * (e.g. the Current Action Bar) that describe the action actually running now, as opposed to
+     * predictive action cards/future queue entries which use resolveActionContext().
+     * @param {string} actionTypeHrid - e.g. "/action_types/cooking"
+     * @returns {{equipment: Map, drinks: Array, source: string, loadoutSelection: null}}
+     */
+    function resolveCurrentActionContext(actionTypeHrid) {
+        const rawDrinks = dataManager.getActionDrinkSlots(actionTypeHrid);
+        const inventory = dataManager.getInventory();
+        const drinks = (rawDrinks || []).filter(
+            (drink) => drink?.itemHrid && inventory?.some((item) => item.itemHrid === drink.itemHrid && item.count !== 0)
+        );
+
+        return {
+            equipment: dataManager.getEquipment(),
+            drinks,
+            source: 'current',
+            loadoutSelection: null,
+        };
+    }
+
+    /**
+     * @param {string} actionTypeHrid - e.g. "/action_types/cooking"
+     * @returns {{equipment: Map, drinks: Array, source: string, loadoutSelection: Object|null}}
+     */
+    function resolveActionContext(actionTypeHrid) {
+        const selection = config.getSetting('loadoutSnapshot')
+            ? loadoutState.findCalculationSelectionForActionType(actionTypeHrid)
+            : { status: 'disabled', snapshot: null };
+        const snapshot = selection.status === 'usable' ? selection.snapshot : null;
+
+        // A matching-but-unavailable saved loadout is not equivalent to "no loadout" semantically.
+        // We fail closed to the character's proven current setup rather than inventing how the MWI
+        // server would execute missing loadout items. The returned selection metadata lets UIs make
+        // that fallback visible instead of silently claiming the saved loadout was used.
+        let drinks;
+        if (snapshot) {
+            // Core already resolved saved consumables against live inventory and blanked unavailable
+            // slots. Do not rescan the full inventory again on every action calculation.
+            drinks = (snapshot.drinks || []).filter((entry) => entry.itemHrid);
+        } else {
+            drinks = resolveCurrentActionContext(actionTypeHrid).drinks;
+        }
+
+        return {
+            equipment: snapshot
+                ? new Map((snapshot.equipment || []).map((entry) => [entry.itemLocationHrid, entry]))
+                : dataManager.getEquipment(),
+            drinks,
+            source: snapshot ? 'saved-loadout' : 'current',
+            loadoutSelection: selection,
+        };
+    }
+
+    /**
      * Enhancement XP Calculations
      * Based on Ultimate Enhancement Tracker formulas
      */
@@ -7288,6 +7394,9 @@
             this.waitForPanelTimeout = null;
             this.retryUpdateTimeout = null;
             this.settingChangeHandlers = []; // [{key, fn}] for offSettingChange cleanup
+            this.liveStateHandlers = []; // [{event, fn}] for DataManager cleanup
+            this.liveContextRefreshTimeout = null;
+            this.lastLiveContextSignature = null;
             this.cleanupRegistry = cleanupRegistry_js.createCleanupRegistry();
         }
 
@@ -7361,6 +7470,36 @@
                     }
                 });
             }
+
+            // The Current Action Bar is a live-state surface, not a saved-loadout prediction. Refresh
+            // it when inputs to the live calculation may have changed. A lightweight signature gate
+            // (buildLiveContextSignature/scheduleLiveContextRefresh) prevents ordinary gathering loot
+            // (items_updated fires on every completion) from triggering an expensive profit
+            // recalculation when equipment/consumables/buffs are actually unchanged. `buffs_updated`
+            // is DataManager's common semantic invalidation for the whole native live-buff family
+            // (house/achievement/moo pass/community/consumable/equipment/personal/guild) - subscribe
+            // to that one event rather than enumerating individual buff message types (TLA-028).
+            const liveStateEvents = [
+                'items_updated',
+                'consumables_updated',
+                'buffs_updated',
+                'skills_updated',
+                'action_completed',
+            ];
+            for (const event of liveStateEvents) {
+                const fn = () => this.scheduleLiveContextRefresh();
+                dataManager.on(event, fn);
+                this.liveStateHandlers.push({ event, fn });
+            }
+            this.cleanupRegistry.registerCleanup(() => {
+                this.liveStateHandlers.forEach(({ event, fn }) => dataManager.off(event, fn));
+                this.liveStateHandlers = [];
+                if (this.liveContextRefreshTimeout) {
+                    clearTimeout(this.liveContextRefreshTimeout);
+                    this.liveContextRefreshTimeout = null;
+                }
+                this.lastLiveContextSignature = null;
+            });
 
             this.cleanupRegistry.registerCleanup(() => {
                 const actionNameElement = document.querySelector('div[class*="Header_actionName"]');
@@ -7636,7 +7775,12 @@
             const actionDetails = dataManager.getActionDetails(currentAction.actionHrid);
             if (!actionDetails) return null;
 
-            const result = this.calculateSingleQueueActionTime(currentAction, actionDetails, inventoryLookup);
+            const result = this.calculateSingleQueueActionTime(
+                currentAction,
+                actionDetails,
+                inventoryLookup,
+                resolveCurrentActionContext(actionDetails.type)
+            );
 
             return {
                 totalTime: result.actionTimeSeconds,
@@ -7650,9 +7794,12 @@
          * @param {Object} actionObj - Action object from dataManager cache
          * @param {Object} actionDetails - Action details from dataManager
          * @param {Object} inventoryLookup - Inventory lookup map
+         * @param {{equipment: Map, drinks: Array}|null} [actionContext=null] - Atomic context. When
+         *   omitted, defaults to the predictive live/saved action context.
          * @returns {Object} { totalTime, actionTimeSeconds, count, baseActionsNeeded, isTrulyInfinite, isInfinite, materialLimit, limitType, limitLabel, isEnhancing }
          */
-        calculateSingleQueueActionTime(actionObj, actionDetails, inventoryLookup) {
+        calculateSingleQueueActionTime(actionObj, actionDetails, inventoryLookup, actionContext = null) {
+            const context = actionContext ?? resolveActionContext(actionDetails.type);
             const isEnhancing = actionDetails.type === '/action_types/enhancing';
             const isInfinite = !actionObj.hasMaxCount || actionObj.actionHrid.includes('/combat/');
 
@@ -7676,7 +7823,7 @@
                     totalTime = Infinity;
                 }
             } else {
-                const timeData = this.calculateActionTime(actionDetails, actionObj.actionHrid);
+                const timeData = this.calculateActionTime(actionDetails, actionObj.actionHrid, context);
                 if (!timeData) {
                     return {
                         totalTime: 0,
@@ -7695,11 +7842,10 @@
                 const { actionTime, totalEfficiency } = timeData;
 
                 if (isInfinite) {
-                    const equipment = dataManager.getEquipment();
+                    const equipment = context.equipment;
                     const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
                     const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, itemDetailMap);
-                    const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
-                    const artisanBonus = teaParser_js.parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
+                    const artisanBonus = teaParser_js.parseArtisanBonus(context.drinks, itemDetailMap, drinkConcentration);
 
                     const limitResult = this.calculateMaterialLimit(
                         actionDetails,
@@ -8198,10 +8344,15 @@
                 }
             }
 
-            // Get character data
-            const equipment = dataManager.getEquipment();
+            // Current Action Bar describes the action that is actually running now. Ignore
+            // saved-loadout prediction settings and keep current equipment + current drinks as one
+            // atomic context (resolveCurrentActionContext), so this never mixes e.g. current
+            // equipment with saved-loadout drinks.
+            const liveActionContext = resolveCurrentActionContext(actionDetails.type);
+            const equipment = liveActionContext.equipment;
             const skills = dataManager.getSkills();
             const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
+            this.lastLiveContextSignature = this.buildLiveContextSignature(action, actionDetails);
 
             // For alchemy actions, use item level for efficiency calculation (not action requirement)
             let levelRequirementOverride = undefined;
@@ -8219,6 +8370,7 @@
             const stats = actionCalculator_js.calculateActionStats(actionDetails, {
                 skills,
                 equipment,
+                actionContext: liveActionContext,
                 itemDetailMap,
                 actionHrid: action.actionHrid, // Pass action HRID for task detection
                 includeCommunityBuff: true,
@@ -8268,7 +8420,7 @@
                 const baseAvgAmount = (mainDrop.minCount + mainDrop.maxCount) / 2;
 
                 // Calculate gathering quantity bonus (same as gathering-profit.js)
-                const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
+                const activeDrinks = liveActionContext.drinks;
                 const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, itemDetailMap);
                 const gatheringTea = teaParser_js.parseGatheringBonus(activeDrinks, itemDetailMap, drinkConcentration);
 
@@ -8282,8 +8434,11 @@
                     '/buff_types/gathering'
                 );
 
+                // Personal buff (seal)
+                const personalGathering = dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/gathering');
+
                 // Total gathering bonus (all additive)
-                const totalGathering = gatheringTea + communityGathering + achievementGathering;
+                const totalGathering = gatheringTea + communityGathering + achievementGathering + personalGathering;
 
                 // Apply gathering bonus to average amount
                 const avgAmountPerAction = baseAvgAmount * (1 + totalGathering);
@@ -8297,9 +8452,11 @@
 
                 // Apply Gourmet bonus for brewing/cooking (extra items chance)
                 if (PRODUCTION_TYPES.includes(actionDetails.type)) {
-                    const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
+                    const activeDrinks = liveActionContext.drinks;
                     const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, itemDetailMap);
-                    const gourmetBonus = teaParser_js.parseGourmetBonus(activeDrinks, itemDetailMap, drinkConcentration);
+                    const gourmetBonus =
+                        teaParser_js.parseGourmetBonus(activeDrinks, itemDetailMap, drinkConcentration) +
+                        dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/gourmet');
 
                     // Gourmet gives a chance for extra items (e.g., 0.1344 = 13.44% more items)
                     const gourmetBonusItems = itemsPerHour * gourmetBonus;
@@ -8318,8 +8475,7 @@
                 const inventory = dataManager.getInventory();
                 const inventoryLookup = this.buildInventoryLookup(inventory);
                 const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, itemDetailMap);
-                const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
-                const artisanBonus = teaParser_js.parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
+                const artisanBonus = teaParser_js.parseArtisanBonus(liveActionContext.drinks, itemDetailMap, drinkConcentration);
 
                 // Calculate max actions based on materials and costs
                 const limitResult = this.calculateMaterialLimit(actionDetails, inventoryLookup, artisanBonus, action);
@@ -8497,7 +8653,7 @@
             }
 
             // Line 3: Profit display (async, non-blocking)
-            this.updateActionBarProfit(action, remainingQueuedActions);
+            this.updateActionBarProfit(action, remainingQueuedActions, liveActionContext);
 
             // Reconnect observer to watch for game's updates
             this.reconnectActionNameObserver(actionNameElement);
@@ -8996,20 +9152,95 @@
         }
 
         /**
+         * Build a lightweight signature of the current live calculation inputs for the running
+         * action. Deliberately excludes saved-loadout state: the Current Action Bar describes what
+         * is actually equipped/active now, so the signature is built purely from
+         * resolveCurrentActionContext() plus the other live modifiers the calculation reads.
+         * @param {Object} action
+         * @param {Object} actionDetails
+         * @returns {string}
+         */
+        buildLiveContextSignature(action, actionDetails) {
+            const context = resolveCurrentActionContext(actionDetails.type);
+            const equipment = Array.from(context.equipment?.entries?.() || [])
+                .map(([location, item]) => `${location}:${item?.itemHrid || ''}:${item?.enhancementLevel ?? 0}`)
+                .sort();
+            const drinks = (context.drinks || []).map((drink) => drink?.itemHrid || '');
+            const skillHrid = actionDetails.levelRequirement?.skillHrid;
+            const skillLevel = dataManager.getSkills()?.find((skill) => skill.skillHrid === skillHrid)?.level ?? null;
+            const houseRooms = Array.from(dataManager.getHouseRooms?.()?.values?.() || [])
+                .map((room) => `${room.houseRoomHrid}:${room.level || 0}`)
+                .sort();
+            const guildBuffs = (dataManager.characterData?.guildActionTypeBuffsMap?.[actionDetails.type] || [])
+                .map((buff) => `${buff.typeHrid}:${buff.flatBoost || 0}:${buff.ratioBoost || 0}`)
+                .sort();
+
+            return JSON.stringify({
+                actionHrid: action?.actionHrid || '',
+                equipment,
+                drinks,
+                skillLevel,
+                houseRooms,
+                taskSpeed:
+                    action?.actionHrid && dataManager.isTaskAction(action.actionHrid) ? dataManager.getTaskSpeedBonus() : 0,
+                personal: [
+                    dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/action_speed'),
+                    dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/efficiency'),
+                    dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/gathering'),
+                    dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/processing'),
+                    dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/gourmet'),
+                ],
+                achievement: [
+                    dataManager.getAchievementBuffFlatBoost(actionDetails.type, '/buff_types/efficiency'),
+                    dataManager.getAchievementBuffFlatBoost(actionDetails.type, '/buff_types/gathering'),
+                ],
+                community: [
+                    dataManager.getCommunityBuffLevel('/community_buff_types/gathering_quantity'),
+                    dataManager.getCommunityBuffLevel('/community_buff_types/production_efficiency'),
+                ],
+                guildBuffs,
+            });
+        }
+
+        /**
+         * Coalesce live-state notifications (items_updated fires on every gathering completion) and
+         * refresh the Current Action Bar only when the live calculation inputs actually changed.
+         * This is what keeps ordinary loot from reintroducing the TLA-021 hot-path regression.
+         */
+        scheduleLiveContextRefresh() {
+            if (this.liveContextRefreshTimeout) return;
+            this.liveContextRefreshTimeout = setTimeout(() => {
+                this.liveContextRefreshTimeout = null;
+                const currentAction = [...dataManager.getCurrentActions()].sort((a, b) => a.ordinal - b.ordinal)[0];
+                if (!currentAction) return;
+                const actionDetails = dataManager.getActionDetails(currentAction.actionHrid);
+                if (!actionDetails || actionDetails.type === '/action_types/combat') return;
+
+                const signature = this.buildLiveContextSignature(currentAction, actionDetails);
+                if (signature === this.lastLiveContextSignature) return;
+                this.updateDisplay();
+            }, 50);
+        }
+
+        /**
          * Calculate action time for a given action
          * @param {Object} actionDetails - Action details from data manager
          * @param {string} actionHrid - Action HRID for task detection (optional)
+         * @param {{equipment: Map, drinks: Array}|null} [actionContext=null] - Atomic context. When
+         *   omitted, defaults to the normal predictive live/saved action context (used by future
+         *   queue entries); the live Current Action Bar always passes its own explicit context.
          * @returns {Object} {actionTime, totalEfficiency} or null if calculation fails
          */
-        calculateActionTime(actionDetails, actionHrid = null) {
+        calculateActionTime(actionDetails, actionHrid = null, actionContext = null) {
             const skills = dataManager.getSkills();
-            const equipment = dataManager.getEquipment();
+            const context = actionContext ?? resolveActionContext(actionDetails.type);
             const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
 
-            // Use shared calculator with same parameters as main display
+            // Keep one atomic equipment+drinks context for this calculation.
             return actionCalculator_js.calculateActionStats(actionDetails, {
                 skills,
-                equipment,
+                equipment: context.equipment,
+                actionContext: context,
                 itemDetailMap,
                 actionHrid, // Pass action HRID for task detection
                 includeCommunityBuff: true,
@@ -9425,14 +9656,22 @@
                             }
                         } else if (isInfinite) {
                             // Check for material limit on infinite actions
-                            const equipment = dataManager.getEquipment();
+                            const currentContext = resolveCurrentActionContext(actionDetails.type);
+                            const equipment = currentContext.equipment;
                             const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
                             const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, itemDetailMap);
-                            const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
-                            const artisanBonus = teaParser_js.parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
+                            const artisanBonus = teaParser_js.parseArtisanBonus(
+                                currentContext.drinks,
+                                itemDetailMap,
+                                drinkConcentration
+                            );
 
-                            // Calculate action stats to get efficiency
-                            const timeData = this.calculateActionTime(actionDetails, currentAction.actionHrid);
+                            // Current action is already running: use the proven live setup.
+                            const timeData = this.calculateActionTime(
+                                actionDetails,
+                                currentAction.actionHrid,
+                                currentContext
+                            );
                             if (timeData) {
                                 const { actionTime, totalEfficiency } = timeData;
                                 const limitResult = this.calculateMaterialLimit(
@@ -9464,7 +9703,11 @@
                             }
                         } else {
                             count = currentAction.maxCount - currentAction.currentCount;
-                            const timeData = this.calculateActionTime(actionDetails, currentAction.actionHrid);
+                            const timeData = this.calculateActionTime(
+                                actionDetails,
+                                currentAction.actionHrid,
+                                resolveCurrentActionContext(actionDetails.type)
+                            );
                             if (timeData) {
                                 const { actionTime, totalEfficiency } = timeData;
 
@@ -9574,20 +9817,20 @@
                             totalTime = 0;
                         }
                     } else {
-                        // Non-enhancing: use standard calculation
-                        // Calculate action time first to get efficiency
-                        const timeData = this.calculateActionTime(actionDetails, actionObj.actionHrid);
+                        // Non-enhancing future queue entry: use the prediction context selected for
+                        // that action type (saved loadout when enabled, current setup otherwise).
+                        const queuedContext = resolveActionContext(actionDetails.type);
+                        const timeData = this.calculateActionTime(actionDetails, actionObj.actionHrid, queuedContext);
                         if (!timeData) continue;
 
                         const { actionTime, totalEfficiency } = timeData;
 
-                        // Calculate material limit for infinite actions
+                        // Calculate material limit from the same prediction context.
                         if (isInfinite) {
-                            const equipment = dataManager.getEquipment();
+                            const equipment = queuedContext.equipment;
                             const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
                             const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, itemDetailMap);
-                            const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
-                            const artisanBonus = teaParser_js.parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
+                            const artisanBonus = teaParser_js.parseArtisanBonus(queuedContext.drinks, itemDetailMap, drinkConcentration);
 
                             const limitResult = this.calculateMaterialLimit(
                                 actionDetails,
@@ -9939,20 +10182,34 @@
         /**
          * Calculate alchemy profit for a queued action using the alchemy profit calculator.
          * @param {Object} action - Action object with {actionHrid, primaryItemHash}
+         * @param {{equipment: Map, drinks: Array}|null} [actionContext=null] - Exact live context
+         *   override for the Current Action Bar.
          * @returns {Object|null} Profit data with profitPerHour and actionsPerHour, or null
          */
-        calculateAlchemyProfitForAction(action) {
+        calculateAlchemyProfitForAction(action, actionContext = null) {
             const { itemHrid, level: enhancementLevel } = this.parseItemHash(action.primaryItemHash);
             if (!itemHrid) return null;
 
             const actionHrid = action.actionHrid;
 
             if (actionHrid === '/actions/alchemy/coinify') {
-                return alchemyProfitCalculator.calculateCoinifyProfit(itemHrid, enhancementLevel || 0, true);
+                return alchemyProfitCalculator.calculateCoinifyProfit(
+                    itemHrid,
+                    enhancementLevel || 0,
+                    true,
+                    null,
+                    actionContext
+                );
             } else if (actionHrid === '/actions/alchemy/transmute') {
-                return alchemyProfitCalculator.calculateTransmuteProfit(itemHrid, true);
+                return alchemyProfitCalculator.calculateTransmuteProfit(itemHrid, true, null, null, actionContext);
             } else if (actionHrid === '/actions/alchemy/decompose') {
-                return alchemyProfitCalculator.calculateDecomposeProfit(itemHrid, enhancementLevel || 0, true);
+                return alchemyProfitCalculator.calculateDecomposeProfit(
+                    itemHrid,
+                    enhancementLevel || 0,
+                    true,
+                    null,
+                    actionContext
+                );
             }
 
             return null;
@@ -9962,8 +10219,10 @@
          * Calculate and display profit in the action bar for the current action.
          * @param {Object} action - Current action object from dataManager
          * @param {number} remainingActions - Remaining queued actions (Infinity if unlimited)
+         * @param {{equipment: Map, drinks: Array}|null} [actionContext=null] - Current live context;
+         *   defaults to resolveCurrentActionContext() for the action's type when omitted.
          */
-        async updateActionBarProfit(action, remainingActions) {
+        async updateActionBarProfit(action, remainingActions, actionContext = null) {
             if (!this.profitElement) return;
             if (!config.getSetting('actionBar_showProfit')) {
                 this.profitElement.innerHTML = '';
@@ -9980,19 +10239,22 @@
                     this.profitElement.innerHTML = '';
                     return;
                 }
+                const currentContext = actionContext ?? resolveCurrentActionContext(actionDetails.type);
 
                 let profitData = null;
 
                 if (actionDetails.type === '/action_types/alchemy' && action.primaryItemHash) {
-                    profitData = this.calculateAlchemyProfitForAction(action);
+                    profitData = this.calculateAlchemyProfitForAction(action, currentContext);
                 }
 
                 if (!profitData) {
-                    const gatheringProfit = await calculateGatheringProfit(actionHrid);
+                    const gatheringProfit = await calculateGatheringProfit(actionHrid, { actionContext: currentContext });
                     if (gatheringProfit) {
                         profitData = gatheringProfit;
                     } else if (actionDetails.outputItems?.[0]?.itemHrid) {
-                        profitData = await profitCalculator.calculateProfit(actionDetails.outputItems[0].itemHrid);
+                        profitData = await profitCalculator.calculateProfit(actionDetails.outputItems[0].itemHrid, {
+                            actionContext: currentContext,
+                        });
                     }
                 }
 
@@ -12189,6 +12451,7 @@
             this.lastCrimsonMilkCount = null; // For debugging inventory updates
             this.itemsUpdatedHandler = null;
             this.actionCompletedHandler = null;
+            this.buffsUpdatedHandler = null; // Handler for the native live-buff family (TLA-028)
             this.characterSwitchingHandler = null; // Handler for character switch cleanup
             this.pricingModeHandler = null; // Handler for pricing mode changes
             this.maxProduceableHandler = null;
@@ -12233,6 +12496,15 @@
                     this.updateAllCounts();
                 }, this.DEBOUNCE_DELAY);
             };
+            // House/achievement/MooPass/community/consumable/equipment/personal/guild buff changes
+            // (TLA-028) don't fire items_updated/consumables_updated - route through the same
+            // debounce so an achievement tier unlock etc. refreshes profit/hr and exp/hr too.
+            this.buffsUpdatedHandler = () => {
+                clearTimeout(this.itemsUpdatedDebounceTimer);
+                this.itemsUpdatedDebounceTimer = setTimeout(() => {
+                    this.updateAllCounts();
+                }, this.DEBOUNCE_DELAY);
+            };
             this.characterSwitchingHandler = () => {
                 this.clearAllReferences();
             };
@@ -12240,6 +12512,7 @@
             // Event-driven updates (no polling needed)
             dataManager.on('items_updated', this.itemsUpdatedHandler);
             dataManager.on('consumables_updated', this.consumablesUpdatedHandler);
+            dataManager.on('buffs_updated', this.buffsUpdatedHandler);
             dataManager.on('character_switching', this.characterSwitchingHandler);
 
             // Saved-loadout state can change without an items_updated event (editing a loadout,
@@ -13136,6 +13409,11 @@
                 this.consumablesUpdatedHandler = null;
             }
 
+            if (this.buffsUpdatedHandler) {
+                dataManager.off('buffs_updated', this.buffsUpdatedHandler);
+                this.buffsUpdatedHandler = null;
+            }
+
             if (this.characterSwitchingHandler) {
                 dataManager.off('character_switching', this.characterSwitchingHandler);
                 this.characterSwitchingHandler = null;
@@ -13211,6 +13489,7 @@
             this.itemsUpdatedHandler = null;
             this.actionCompletedHandler = null;
             this.consumablesUpdatedHandler = null; // Handler for tea/drink changes
+            this.buffsUpdatedHandler = null; // Handler for the native live-buff family (TLA-028)
             this.characterSwitchingHandler = null; // Handler for character switch cleanup
             this.pricingModeHandler = null; // Handler for pricing mode changes
             this.showProfitPerHourHandler = null;
@@ -13261,6 +13540,16 @@
                 }, this.DEBOUNCE_DELAY);
             };
 
+            // House/achievement/MooPass/community/consumable/equipment/personal/guild buff changes
+            // (TLA-028) don't fire items_updated/consumables_updated - route through the same
+            // debounce so an achievement tier unlock etc. refreshes profit/hr and exp/hr too.
+            this.buffsUpdatedHandler = () => {
+                clearTimeout(this.itemsUpdatedDebounceTimer);
+                this.itemsUpdatedDebounceTimer = setTimeout(() => {
+                    this.updateAllStats();
+                }, this.DEBOUNCE_DELAY);
+            };
+
             this.characterSwitchingHandler = () => {
                 this.clearAllReferences();
             };
@@ -13268,6 +13557,7 @@
             // Event-driven updates (no polling needed)
             dataManager.on('items_updated', this.itemsUpdatedHandler);
             dataManager.on('consumables_updated', this.consumablesUpdatedHandler);
+            dataManager.on('buffs_updated', this.buffsUpdatedHandler);
             dataManager.on('character_switching', this.characterSwitchingHandler);
 
             this.loadoutStateHandler = () => {
@@ -13878,6 +14168,10 @@
             if (this.consumablesUpdatedHandler) {
                 dataManager.off('consumables_updated', this.consumablesUpdatedHandler);
                 this.consumablesUpdatedHandler = null;
+            }
+            if (this.buffsUpdatedHandler) {
+                dataManager.off('buffs_updated', this.buffsUpdatedHandler);
+                this.buffsUpdatedHandler = null;
             }
             if (this.characterSwitchingHandler) {
                 dataManager.off('character_switching', this.characterSwitchingHandler);
@@ -15960,7 +16254,6 @@
             marketplaceSession_js.marketplaceSession.end(capturedSessionId);
             return;
         }
-        setupActionsCleanupObserver();
 
         // Activate the first tradeable missing material automatically (same as manual tab click).
         const firstMaterial = freshMaterials.find((m) => m.isTradeable !== false && m.missing > 0);
@@ -15984,6 +16277,11 @@
             marketplaceSession_js.marketplaceSession.end(capturedSessionId);
             return;
         }
+
+        // Only arm the cleanup/exit observer once our own initial navigation has been
+        // initiated. Arming it earlier lets it see a retained native "My Listings" state
+        // from before this workflow started and tear the session down mid-initialization.
+        setupActionsCleanupObserver();
 
         // Setup inventory listener for live updates
         setupInventoryListener();
@@ -16115,7 +16413,6 @@
             marketplaceSession_js.marketplaceSession.end(capturedSessionId);
             return;
         }
-        setupActionsCleanupObserver();
 
         // Activate the first tradeable missing material automatically (same as manual tab click).
         const firstMaterial = freshMaterials.find((m) => m.isTradeable !== false && m.missing > 0);
@@ -16139,6 +16436,11 @@
             marketplaceSession_js.marketplaceSession.end(capturedSessionId);
             return;
         }
+
+        // Only arm the cleanup/exit observer once our own initial navigation has been
+        // initiated. Arming it earlier lets it see a retained native "My Listings" state
+        // from before this workflow started and tear the session down mid-initialization.
+        setupActionsCleanupObserver();
 
         // Setup inventory listener for live updates
         setupInventoryListener();
@@ -18412,6 +18714,10 @@
                         return;
                     }
 
+                    // Only arm the cleanup/exit observer once our own initial navigation has been
+                    // initiated, so it can never see a retained pre-workflow "My Listings" state.
+                    setupCraftingPlanCleanupObserver(capturedSessionId);
+
                     if (inventoryUpdateHandler) dataManager.off('items_updated', inventoryUpdateHandler);
                     inventoryUpdateHandler = () => {
                         const model = activeWorkflowModel;
@@ -18666,6 +18972,18 @@
             container.appendChild(returnTab);
         }
 
+        return true;
+    }
+
+    /**
+     * Arm the cleanup/exit observer for the CRAFTING_PLAN owner. Must only be called after this
+     * workflow's own initial navigation to the first missing material has been initiated — arming
+     * it any earlier lets it see a retained native "My Listings" state from before the workflow
+     * started and tear the session down mid-initialization. Safe to call multiple times: stops any
+     * existing observer before creating a new one.
+     * @param {number} sessionId
+     */
+    function setupCraftingPlanCleanupObserver(sessionId) {
         cleanupObserver?.();
         cleanupObserver = setupMarketplaceCleanupObserver({
             owner: marketplaceSession_js.MARKETPLACE_OWNER.CRAFTING_PLAN,
@@ -18683,8 +19001,6 @@
                 marketplaceSession_js.marketplaceSession.end(sessionId);
             },
         });
-
-        return true;
     }
 
     class CraftingPlanDisplay {
@@ -18898,18 +19214,15 @@
          */
         getCurrentActionHrid() {
             try {
-                // Get current actions from dataManager
+                // DataManager mirrors native queue order, so index 0 is the action currently at
+                // the front. Never scan forward for "any" Alchemy action: on the Current Action
+                // tab that can select a queued Coinify/Transmute/Decompose action and apply its
+                // calculator to the item that is actually running.
                 const currentActions = dataManager.getCurrentActions();
-                if (!currentActions || currentActions.length === 0) return null;
+                const currentAction = currentActions?.[0];
+                if (!currentAction?.actionHrid?.startsWith('/actions/alchemy/')) return null;
 
-                // Find alchemy action (type = /action_types/alchemy)
-                for (const action of currentActions) {
-                    if (action.actionHrid && action.actionHrid.startsWith('/actions/alchemy/')) {
-                        return action.actionHrid;
-                    }
-                }
-
-                return null;
+                return currentAction.actionHrid;
             } catch (error) {
                 console.error('[AlchemyProfit] Failed to get current action HRID:', error);
                 return null;
@@ -23936,66 +24249,6 @@
     const pinnedActionsPage = new PinnedActionsPage();
 
     /**
-     * Action context resolver
-     *
-     * Returns the equipment and active drinks to use when predicting an action's
-     * outcome (XP, time, profit, materials). When automatic saved-loadout use is
-     * enabled and a saved loadout matches the action type, the canonical Core
-     * loadout state is resolved against current ownership at read time.
-     *
-     * Resolution priority (handled inside loadoutState.findSnapshotForActionType):
-     *   1. Skill-specific default loadout
-     *   2. All-skills default loadout
-     *   3. Skill-specific non-default
-     *   4. All-skills non-default
-     *   5. Fall back to currently-equipped gear / current drinks
-     *
-     * Intentional empty state is preserved: a matching saved loadout with no
-     * equipment or no drinks resolves to an empty Map/array rather than falling
-     * through to the character's currently equipped setup.
-     */
-
-
-    /**
-     * @param {string} actionTypeHrid - e.g. "/action_types/cooking"
-     * @returns {{equipment: Map, drinks: Array, source: string, loadoutSelection: Object|null}}
-     */
-    function resolveActionContext(actionTypeHrid) {
-        const selection = config.getSetting('loadoutSnapshot')
-            ? loadoutState.findCalculationSelectionForActionType(actionTypeHrid)
-            : { status: 'disabled', snapshot: null };
-        const snapshot = selection.status === 'usable' ? selection.snapshot : null;
-
-        // A matching-but-unavailable saved loadout is not equivalent to "no loadout" semantically.
-        // We fail closed to the character's proven current setup rather than inventing how the MWI
-        // server would execute missing loadout items. The returned selection metadata lets UIs make
-        // that fallback visible instead of silently claiming the saved loadout was used.
-        let drinks;
-        if (snapshot) {
-            // Core already resolved saved consumables against live inventory and blanked unavailable
-            // slots. Do not rescan the full inventory again on every action calculation.
-            drinks = (snapshot.drinks || []).filter((entry) => entry.itemHrid);
-        } else {
-            const rawDrinks = dataManager.getActionDrinkSlots(actionTypeHrid);
-            // Current (non-saved-loadout) drink slots still need stock validation here.
-            const inventory = dataManager.getInventory();
-            drinks = (rawDrinks || []).filter(
-                (drink) =>
-                    drink?.itemHrid && inventory?.some((item) => item.itemHrid === drink.itemHrid && item.count !== 0)
-            );
-        }
-
-        return {
-            equipment: snapshot
-                ? new Map((snapshot.equipment || []).map((entry) => [entry.itemLocationHrid, entry]))
-                : dataManager.getEquipment(),
-            drinks,
-            source: snapshot ? 'saved-loadout' : 'current',
-            loadoutSelection: selection,
-        };
-    }
-
-    /**
      * Drink Calculator Utility
      * Calculates remaining drink time and queue coverage for non-combat skill panels.
      *
@@ -24338,6 +24591,20 @@
             };
             dataManager.on('consumables_updated', this.consumablesChangeHandler);
 
+            // House/achievement/MooPass/community/consumable/equipment/personal/guild buff changes
+            // (TLA-028) don't fire items_updated/consumables_updated - success rate, efficiency,
+            // rare/essence find and profit all depend on this state while the panel stays mounted.
+            this.buffsChangeHandler = () => {
+                clearTimeout(this.equipmentChangeTimeout);
+                this.equipmentChangeTimeout = setTimeout(() => {
+                    if (this.isActive) {
+                        this.lastFingerprint = null;
+                        this.checkAndUpdateDisplay();
+                    }
+                }, 100);
+            };
+            dataManager.on('buffs_updated', this.buffsChangeHandler);
+
             this.isActive = true;
         }
 
@@ -24547,9 +24814,9 @@
                 const drops = await alchemyProfit.extractDrops(actionHrid);
                 const requirements = await alchemyProfit.extractRequirements();
 
-                // Determine action type from DOM tab state (primary) or actionHrid (fallback).
-                // Tab detection is preferred because getCurrentActionHrid() returns ANY running
-                // alchemy action across all slots, which may differ from the tab being viewed.
+                // Determine action type from DOM tab state (primary) or the true front/current
+                // action HRID (fallback). Explicit Coinify/Decompose/Transmute tabs describe the
+                // viewed scenario; the Current Action tab intentionally falls back to the live front.
                 let isCoinify = false;
                 let isTransmute = false;
                 let isDecompose = false;
@@ -25779,6 +26046,11 @@
             if (this.consumablesChangeHandler) {
                 dataManager.off('consumables_updated', this.consumablesChangeHandler);
                 this.consumablesChangeHandler = null;
+            }
+
+            if (this.buffsChangeHandler) {
+                dataManager.off('buffs_updated', this.buffsChangeHandler);
+                this.buffsChangeHandler = null;
             }
 
             if (this.contentObserver) {
@@ -28396,7 +28668,8 @@
             const makeRow = (label, checked, disabled, onToggle) => {
                 const row = document.createElement('label');
                 row.style.cssText = `
-                display: flex; align-items: center; gap: 8px; padding: 5px 10px;
+                display: flex !important; width: 100% !important; box-sizing: border-box;
+                align-items: center; gap: 8px; padding: 5px 10px;
                 cursor: ${'pointer'};
                 color: ${'rgba(255,255,255,0.85)'};
                 ${''}
@@ -28437,6 +28710,28 @@
             allRow.style.cssText += ' font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.1);';
             popup.appendChild(allRow);
 
+            const searchWrapper = document.createElement('div');
+            searchWrapper.style.cssText = 'padding: 5px 10px; border-bottom: 1px solid rgba(255,255,255,0.1);';
+            const searchInput = document.createElement('input');
+            searchInput.type = 'text';
+            searchInput.placeholder = 'Search actions...';
+            searchInput.style.cssText = `
+            width: 100%; box-sizing: border-box; background: #2a2a2a; color: rgba(255,255,255,0.85);
+            border: 1px solid rgba(255,255,255,0.15); border-radius: 4px; padding: 4px 8px; font-size: 12px;
+        `;
+            searchInput.addEventListener('input', () => {
+                const query = searchInput.value.trim().toLowerCase();
+                for (const { row, name } of itemRows) {
+                    const visible = !query || name.toLowerCase().includes(query);
+                    // Plain `row.style.display = ...` silently drops the `!important` priority set in
+                    // makeRow's cssText, letting the native page's competing rule win back the moment
+                    // you type. setProperty(...,'important') is the only JS API that preserves it.
+                    row.style.setProperty('display', visible ? 'flex' : 'none', 'important');
+                }
+            });
+            searchWrapper.appendChild(searchInput);
+            popup.appendChild(searchWrapper);
+
             for (const action of actions) {
                 // A locked action can still be explicitly selected - a tea combination the Optimizer
                 // searches (or a manually picked Simulator tea) may unlock it at the boosted level.
@@ -28468,13 +28763,14 @@
                     }
                     anchorBtn.textContent = getBtnLabel();
                 });
-                itemRows.push({ cb, hrid: action.hrid });
+                itemRows.push({ cb, hrid: action.hrid, row, name: action.name });
                 popup.appendChild(row);
             }
 
             anchorBtn.parentElement.style.position = 'relative';
             anchorBtn.parentElement.appendChild(popup);
             this._picker = popup;
+            searchInput.focus();
 
             const closeHandler = (e) => {
                 if (!popup.contains(e.target) && e.target !== anchorBtn) {

@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.98.1
+ * Version: 2.99.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -619,8 +619,36 @@
      * Intentional empty state is preserved: a matching saved loadout with no
      * equipment or no drinks resolves to an empty Map/array rather than falling
      * through to the character's currently equipped setup.
+     *
+     * resolveCurrentActionContext() is the separate live-state counterpart: it always ignores
+     * saved-loadout prediction and returns the character's actual current setup, for surfaces (like
+     * the Current Action Bar) that describe what is actually running now rather than a prediction.
      */
 
+
+    /**
+     * Resolve the character's proven current live setup, ignoring saved-loadout prediction settings.
+     * Equipment and drinks are returned as one atomic context so callers cannot accidentally mix
+     * current equipment with saved-loadout consumables (or vice versa). Used by live-state surfaces
+     * (e.g. the Current Action Bar) that describe the action actually running now, as opposed to
+     * predictive action cards/future queue entries which use resolveActionContext().
+     * @param {string} actionTypeHrid - e.g. "/action_types/cooking"
+     * @returns {{equipment: Map, drinks: Array, source: string, loadoutSelection: null}}
+     */
+    function resolveCurrentActionContext(actionTypeHrid) {
+        const rawDrinks = dataManager.getActionDrinkSlots(actionTypeHrid);
+        const inventory = dataManager.getInventory();
+        const drinks = (rawDrinks || []).filter(
+            (drink) => drink?.itemHrid && inventory?.some((item) => item.itemHrid === drink.itemHrid && item.count !== 0)
+        );
+
+        return {
+            equipment: dataManager.getEquipment(),
+            drinks,
+            source: 'current',
+            loadoutSelection: null,
+        };
+    }
 
     /**
      * @param {string} actionTypeHrid - e.g. "/action_types/cooking"
@@ -642,13 +670,7 @@
             // slots. Do not rescan the full inventory again on every action calculation.
             drinks = (snapshot.drinks || []).filter((entry) => entry.itemHrid);
         } else {
-            const rawDrinks = dataManager.getActionDrinkSlots(actionTypeHrid);
-            // Current (non-saved-loadout) drink slots still need stock validation here.
-            const inventory = dataManager.getInventory();
-            drinks = (rawDrinks || []).filter(
-                (drink) =>
-                    drink?.itemHrid && inventory?.some((item) => item.itemHrid === drink.itemHrid && item.count !== 0)
-            );
+            drinks = resolveCurrentActionContext(actionTypeHrid).drinks;
         }
 
         return {
@@ -2030,6 +2052,10 @@
      * @param {Object} [options.gameData=null] - Pre-fetched gameData (required for gathering path).
      * @param {number} [options.communityEfficiency=0] - Community buff efficiency (production only).
      *   Caller computes this via their own method (e.g. calculateCommunityBuffBonus) and passes it in.
+     * @param {{equipment: Map, drinks: Array}|null} [options.actionContextOverride=null] - Exact proven
+     *   live context supplied by a caller such as the Current Action Bar (see resolveCurrentActionContext).
+     *   Takes priority over equipmentOverride/drinksOverride and the live/saved resolveActionContext()
+     *   path - keeps a caller's atomic current-equipment+current-drinks pairing intact.
      * @param {Map|null} [options.equipmentOverride=null] - When provided (together with
      *   drinksOverride), scores this exact hypothetical equipment instead of resolving the
      *   live/saved action context - for a what-if scenario (e.g. the Skilling Optimizer/Simulator),
@@ -2047,6 +2073,7 @@
             isProduction = false,
             gameData = null,
             communityEfficiency = 0,
+            actionContextOverride = null,
             equipmentOverride = null,
             drinksOverride = null,
             skillLevelOverride = null,
@@ -2057,9 +2084,11 @@
         // never fall through to resolveActionContext()'s live/saved resolution - that would silently
         // mix real character state into a what-if calculation.
         const isHypothetical = equipmentOverride != null || drinksOverride != null;
-        const { equipment, drinks: drinkSlots } = isHypothetical
-            ? { equipment: equipmentOverride ?? new Map(), drinks: drinksOverride ?? [] }
-            : resolveActionContext(actionDetails.type);
+        const { equipment, drinks: drinkSlots } = actionContextOverride
+            ? actionContextOverride
+            : isHypothetical
+              ? { equipment: equipmentOverride ?? new Map(), drinks: drinksOverride ?? [] }
+              : resolveActionContext(actionDetails.type);
         const itemDetailMap = gameData?.itemDetailMap ?? dataManager.getInitClientData()?.itemDetailMap ?? {};
 
         // Drink concentration
@@ -5696,7 +5725,10 @@ self.onmessage = function (e) {
      * @param {Object} actionDetails - Action detail object from game data
      * @param {Object} options - Configuration options
      * @param {Array} options.skills - Character skills array
-     * @param {Array} options.equipment - Character equipment array
+     * @param {Array|Map} options.equipment - Character equipment for legacy callers
+     * @param {{equipment: Map, drinks: Array}|null} [options.actionContext=null] - Atomic equipment+drinks
+     *   context. When provided, both fields are used together and no second live/saved context is
+     *   resolved for drinks - prevents mixing e.g. current equipment with saved-loadout drinks.
      * @param {Object} options.itemDetailMap - Item detail map from game data
      * @param {string} options.actionHrid - Action HRID for task detection (optional)
      * @param {boolean} options.includeCommunityBuff - Include community buff in efficiency (default: false)
@@ -5707,7 +5739,8 @@ self.onmessage = function (e) {
     function calculateActionStats(actionDetails, options = {}) {
         const {
             skills,
-            equipment,
+            equipment: equipmentOption,
+            actionContext = null,
             itemDetailMap,
             actionHrid,
             includeCommunityBuff = false,
@@ -5716,6 +5749,7 @@ self.onmessage = function (e) {
         } = options;
 
         try {
+            const equipment = actionContext?.equipment ?? equipmentOption;
             // Calculate base action time
             const baseTime = actionDetails.baseTimeCost / 1e9; // nanoseconds to seconds
 
@@ -5754,8 +5788,9 @@ self.onmessage = function (e) {
             // Get drink concentration
             const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
 
-            // Get active drinks for this action type (loadout-snapshot aware)
-            const activeDrinks = resolveActionContext(actionDetails.type).drinks;
+            // Keep equipment and drinks atomic when the caller supplied an explicit context. Legacy
+            // callers without actionContext retain the existing loadout-aware drink behavior.
+            const activeDrinks = actionContext?.drinks ?? resolveActionContext(actionDetails.type).drinks;
 
             // Calculate Action Level bonus from teas
             const actionLevelBonus = parseActionLevelBonus(activeDrinks, itemDetailMap, drinkConcentration);
@@ -6471,8 +6506,8 @@ self.onmessage = function (e) {
         // Determine XP per book (50 for starters, 500 for advanced)
         const xpPerBook = isStarterAbility(abilityHrid) ? 50 : 500;
 
-        // Calculate books needed
-        let booksNeeded = targetXp / xpPerBook;
+        // Calculate books needed - always an integer purchase, never fractional (CSIM-AUD-017)
+        let booksNeeded = Math.ceil(targetXp / xpPerBook);
         booksNeeded += 1; // +1 book to learn the ability initially
 
         // Get market price for ability book
@@ -6520,8 +6555,8 @@ self.onmessage = function (e) {
         // Determine XP per book
         const xpPerBook = isStarterAbility(abilityHrid) ? 50 : 500;
 
-        // Calculate books needed
-        let booksNeeded = xpNeeded / xpPerBook;
+        // Calculate books needed - always an integer purchase, never fractional (CSIM-AUD-017)
+        let booksNeeded = Math.max(0, Math.ceil(xpNeeded / xpPerBook));
 
         // If starting from level 0, need +1 book to learn initially
         if (currentLevel === 0) {
@@ -7793,12 +7828,16 @@ self.onmessage = function (e) {
     const ARTISAN_MATERIAL_MODE = {
         EXPECTED: 'expected',
         WORST_CASE: 'worst-case',
+        HYBRID: 'hybrid',
     };
 
+    const HYBRID_WORST_CASE_MAX_ACTIONS = 100;
+
     function normalizeArtisanMode(mode) {
-        return mode === ARTISAN_MATERIAL_MODE.WORST_CASE
-            ? ARTISAN_MATERIAL_MODE.WORST_CASE
-            : ARTISAN_MATERIAL_MODE.EXPECTED;
+        if (mode === ARTISAN_MATERIAL_MODE.WORST_CASE || mode === ARTISAN_MATERIAL_MODE.HYBRID) {
+            return mode;
+        }
+        return ARTISAN_MATERIAL_MODE.EXPECTED;
     }
 
     /**
@@ -7819,7 +7858,10 @@ self.onmessage = function (e) {
      */
     function calculateTotalRequired(basePerAction, artisanBonus, numActions, artisanMode) {
         const materialsPerAction = basePerAction * (1 - artisanBonus);
-        if (artisanMode === ARTISAN_MATERIAL_MODE.WORST_CASE) {
+        const useWorstCase =
+            artisanMode === ARTISAN_MATERIAL_MODE.WORST_CASE ||
+            (artisanMode === ARTISAN_MATERIAL_MODE.HYBRID && numActions < HYBRID_WORST_CASE_MAX_ACTIONS);
+        if (useWorstCase) {
             return Math.ceil(materialsPerAction) * numActions;
         }
         return Math.ceil(materialsPerAction * numActions);
