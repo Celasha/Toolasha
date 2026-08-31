@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.99.2](https://github.com/Celasha/Toolasha/compare/v2.99.1...v2.99.2) (2026-08-31)
+
+
+### Bug Fixes
+
+* read purchased shrine level, not the shrine building's unlocked cap ([a2128d4](https://github.com/Celasha/Toolasha/commit/a2128d421b113306a25a2139ddd1b0c9a27dfa42))
+
 ## [2.99.1](https://github.com/Celasha/Toolasha/compare/v2.99.0...v2.99.1) (2026-08-31)
 
 ### Bug Fixes
