@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.99.1](https://github.com/Celasha/Toolasha/compare/v2.99.0...v2.99.1) (2026-08-31)
+
+
+### Bug Fixes
+
+* sort skilling actions by game order, show upgrade cost/payback in Optimizer ([c438107](https://github.com/Celasha/Toolasha/commit/c43810750b059c52e860d42d06a34ebfcf963639))
+
 ## [2.99.0](https://github.com/Celasha/Toolasha/compare/v2.98.1...v2.99.0) (2026-08-31)
 
 ### Features
