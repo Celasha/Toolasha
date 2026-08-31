@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.99.1
+ * Version: 2.99.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7379,6 +7379,23 @@
     ];
 
     /**
+     * Resolve a shrine's own combat guild-buff hrid (e.g. "/guild_shrines/force" ->
+     * "/guild_buffs/force_combat"). Shrine level evidence (purchased/active level, as opposed to the
+     * shrine building's unlocked cap) is only ever exposed keyed by guild-buff hrid - never by shrine
+     * hrid - in both `characterGuildBuffMap`/`getCharacterGuildBuffLevel` (self) and a shared
+     * profile's `guildBuffLevelMap` (party members), so every caller needs this same resolution first.
+     * @param {string} shrineHrid
+     * @param {Object} guildBuffDetailMap
+     * @returns {string|null}
+     */
+    function getCombatGuildBuffHridForShrine(shrineHrid, guildBuffDetailMap) {
+        for (const [buffHrid, buff] of Object.entries(guildBuffDetailMap || {})) {
+            if (buff.shrineHrid === shrineHrid && buff.isCombat) return buffHrid;
+        }
+        return null;
+    }
+
+    /**
      * Extract all required game data maps from initClientData for the sim engine.
      * @returns {Object|null} Plain object with all 15 game data maps, or null if data unavailable
      */
@@ -7539,12 +7556,18 @@
             experience: dataManager.getCommunityBuffLevel('/community_buff_types/experience') || 0,
         };
 
-        // Extract self Shrine levels from live guild state (CSIM-AUD-021/UI-002). Effective shrine
-        // buffs are constructed generically by the engine's Shrine class from these editable levels -
-        // never from the frozen guildActionTypeBuffsMap snapshot, so the Sim Editor's Shrine section
-        // is the single canonical source and cannot double-apply against a second baked-in path.
+        // Extract self Shrine levels from live guild state. Effective shrine buffs are constructed
+        // generically by the engine's Shrine class from these editable levels - never from the frozen
+        // guildActionTypeBuffsMap snapshot, so the Sim Editor's Shrine section is the single canonical
+        // source and cannot double-apply against a second baked-in path. Uses the character's
+        // purchased/active guild-buff level (getCharacterGuildBuffLevel, from guild_buffs_updated),
+        // not the shrine building's unlocked cap (getGuildBuildingLevel, from guild_updated) - a guild
+        // can unlock a shrine level without having spent the resources to activate it yet.
+        const guildBuffDetailMap = clientData.guildBuffDetailMap || {};
         for (const shrineHrid of COMBAT_SHRINE_HRIDS) {
-            const level = dataManager.getGuildBuildingLevel(shrineHrid);
+            const combatBuffHrid = getCombatGuildBuffHridForShrine(shrineHrid, guildBuffDetailMap);
+            if (!combatBuffHrid) continue;
+            const level = dataManager.getCharacterGuildBuffLevel(combatBuffHrid);
             if (level > 0) {
                 dto.shrineLevels[shrineHrid] = level;
             }
@@ -7882,13 +7905,19 @@
             }
         }
 
-        // Extract teammate context evidence already present in a shared-profile payload (CSIM-AUD-019).
-        // This is genuinely per-player evidence and must never fall back to the current/self player's
-        // values - absent/malformed evidence stays neutral (shrineLevels empty, hasMooPass false,
+        // Extract teammate context evidence already present in a shared-profile payload. This is
+        // genuinely per-player evidence and must never fall back to the current/self player's values -
+        // absent/malformed evidence stays neutral (shrineLevels empty, hasMooPass false,
         // characterAchievements empty) rather than being fabricated. Personal/scroll combat-buff
         // lifetime evidence is not exposed in a shared-profile payload, so it stays explicitly unknown.
+        // A shared profile's guildBuffLevelMap is keyed by guild-buff hrid (e.g.
+        // "/guild_buffs/force_combat"), never by shrine hrid, so it must be resolved the same way as
+        // the self path above before indexing into it.
+        const partyGuildBuffDetailMap = clientData?.guildBuffDetailMap || {};
         for (const shrineHrid of COMBAT_SHRINE_HRIDS) {
-            const level = profile.profile?.guildBuffLevelMap?.[shrineHrid];
+            const combatBuffHrid = getCombatGuildBuffHridForShrine(shrineHrid, partyGuildBuffDetailMap);
+            if (!combatBuffHrid) continue;
+            const level = profile.profile?.guildBuffLevelMap?.[combatBuffHrid];
             if (Number.isFinite(level) && level > 0) {
                 dto.shrineLevels[shrineHrid] = level;
             }
