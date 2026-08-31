@@ -218,7 +218,7 @@ describe('session reset on character/page lifecycle', () => {
 });
 
 describe('granted-buff / non-monetary openings', () => {
-    test('can be counted (session aggregate increments) without fake Luck', async () => {
+    test('a known buff-only/no-loot opening is ignored entirely', async () => {
         mocks.evAvailable = false;
         await lootHandler()(
             lootOpenedEvent({
@@ -228,13 +228,100 @@ describe('granted-buff / non-monetary openings', () => {
             })
         );
 
-        const record = openableAnalyticsDataCollector.getLatestRecord();
-        expect(record.expectedValueAvailable).toBe(false);
-        expect(record.luckValue).toBeNull();
+        expect(openableAnalyticsDataCollector.getLatestRecord()).toBeNull();
+        expect(openableAnalyticsDataCollector.getSessionAggregate('/items/seal_of_rare_find').eventsCount).toBe(0);
+        expect(openableAnalyticsDataCollector.getLifetimeAggregate('/items/seal_of_rare_find').eventsCount).toBe(0);
+        expect(openableAnalyticsDataCollector.getHistory()).toHaveLength(0);
+        expect(mocks.values.has('history:char-a')).toBe(false);
+        expect(mocks.values.has('lifetime:char-a')).toBe(false);
+    });
 
-        const session = openableAnalyticsDataCollector.getSessionAggregate('/items/seal_of_rare_find');
-        expect(session.eventsCount).toBe(1);
-        expect(session.grantedBuffEvents).toBe(1);
+    test('Bag Of 10 Cowbells is ignored when the guaranteed gained-item output matches the model', async () => {
+        mocks.dropTable = {
+            '/items/bag_of_10_cowbells': [{ itemHrid: '/items/cowbell', dropRate: 1, minCount: 10, maxCount: 10 }],
+        };
+        await lootHandler()(
+            lootOpenedEvent({
+                openedItem: { itemHrid: '/items/bag_of_10_cowbells', count: 2 },
+                gainedItems: [{ itemHrid: '/items/cowbell', enhancementLevel: 0, count: 20 }],
+                grantedBuffs: [],
+            })
+        );
+
+        expect(openableAnalyticsDataCollector.getLatestRecord()).toBeNull();
+        expect(openableAnalyticsDataCollector.getSessionAggregate('/items/bag_of_10_cowbells').eventsCount).toBe(0);
+        expect(openableAnalyticsDataCollector.getLifetimeAggregate('/items/bag_of_10_cowbells').eventsCount).toBe(0);
+        expect(openableAnalyticsDataCollector.getHistory()).toHaveLength(0);
+    });
+
+    test('a deterministic-model event is recorded fail-open if the observed output contradicts the model', async () => {
+        mocks.dropTable = {
+            '/items/bag_of_10_cowbells': [{ itemHrid: '/items/cowbell', dropRate: 1, minCount: 10, maxCount: 10 }],
+        };
+        await lootHandler()(
+            lootOpenedEvent({
+                openedItem: { itemHrid: '/items/bag_of_10_cowbells', count: 1 },
+                gainedItems: [{ itemHrid: '/items/cowbell', enhancementLevel: 0, count: 11 }],
+                grantedBuffs: [],
+            })
+        );
+
+        expect(openableAnalyticsDataCollector.getLatestRecord()?.containerHrid).toBe('/items/bag_of_10_cowbells');
+    });
+
+    test('a real gained-item event is still recorded when static drop data has no model', async () => {
+        mocks.dropTable = {};
+        await lootHandler()(
+            lootOpenedEvent({
+                openedItem: { itemHrid: '/items/new_or_stale_model_openable', count: 1 },
+                gainedItems: [{ itemHrid: '/items/coin', enhancementLevel: 0, count: 5 }],
+                grantedBuffs: [],
+            })
+        );
+
+        expect(openableAnalyticsDataCollector.getLatestRecord()?.containerHrid).toBe(
+            '/items/new_or_stale_model_openable'
+        );
+        expect(
+            openableAnalyticsDataCollector.getSessionAggregate('/items/new_or_stale_model_openable').eventsCount
+        ).toBe(1);
+    });
+
+    test('legacy persisted non-random rows are hidden from known-container UI lists without deleting storage', async () => {
+        openableAnalyticsDataCollector.cleanup();
+        mocks.values.set('lifetime:char-a', {
+            '/items/seal_of_rare_find': { eventsCount: 9, containersOpened: 9 },
+            '/items/bag_of_10_cowbells': { eventsCount: 4, containersOpened: 4 },
+            '/items/chimerical_chest': { eventsCount: 2, containersOpened: 2 },
+        });
+        mocks.dropTable = {
+            '/items/chimerical_chest': [{ itemHrid: '/items/coin' }],
+            '/items/bag_of_10_cowbells': [{ itemHrid: '/items/cowbell', dropRate: 1, minCount: 10, maxCount: 10 }],
+        };
+        await openableAnalyticsDataCollector.initialize();
+
+        expect(openableAnalyticsDataCollector.getKnownContainers()).toEqual(['/items/chimerical_chest']);
+        expect(mocks.values.get('lifetime:char-a')['/items/seal_of_rare_find'].eventsCount).toBe(9);
+        expect(mocks.values.get('lifetime:char-a')['/items/bag_of_10_cowbells'].eventsCount).toBe(4);
+    });
+
+    test("a skipped excluded opening clears the latest record and notifies listeners, so a stale record from a previous tracked opening cannot be shown as this excluded opening's own modal footer", async () => {
+        await lootHandler()(lootOpenedEvent()); // a normal tracked chimerical_chest opening
+        expect(openableAnalyticsDataCollector.getLatestRecord()?.containerHrid).toBe('/items/chimerical_chest');
+
+        const seen = [];
+        openableAnalyticsDataCollector.onUpdate((record) => seen.push(record));
+
+        await lootHandler()(
+            lootOpenedEvent({
+                openedItem: { itemHrid: '/items/seal_of_rare_find', count: 1 },
+                gainedItems: [],
+                grantedBuffs: [{ typeHrid: '/buff_types/rare_find', duration: 3600 }],
+            })
+        );
+
+        expect(openableAnalyticsDataCollector.getLatestRecord()).toBeNull();
+        expect(seen).toEqual([null]);
     });
 });
 
@@ -416,6 +503,7 @@ describe('bulk imports (Edible Tools / MWI Combat Suite)', () => {
     });
 
     test('getKnownContainers includes containers that only have imported data, no live openings', async () => {
+        mocks.dropTable['/items/purples_gift'] = [{ itemHrid: '/items/coin' }];
         await openableAnalyticsDataCollector.importContainers('import:edible', [
             { containerHrid: '/items/purples_gift', containerCount: 5, itemTotals: {} },
         ]);

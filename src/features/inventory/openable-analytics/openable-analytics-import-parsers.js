@@ -13,6 +13,7 @@
  */
 
 import dataManager from '../../../core/data-manager.js';
+import { shouldTrackImportedOpenable } from './openable-analytics-eligibility.js';
 
 const ITEM_HRID_PATTERN = /^\/items\/[a-z0-9_]+$/;
 
@@ -32,21 +33,6 @@ function isValidCount(value) {
  */
 function isPlainObject(value) {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-/**
- * A container with real current game data but no monetary loot model and nothing imported for it
- * has no economic information Openable Analytics can display - safe to skip entirely rather than
- * list a permanently empty/unavailable row.
- * @param {string} containerHrid
- * @param {Object} itemTotals
- * @returns {boolean}
- */
-function isKnownNonMonetaryWithNoLoot(containerHrid, itemTotals) {
-    if (Object.keys(itemTotals).length > 0) return false;
-    if (!dataManager.getItemDetails(containerHrid)) return false; // unknown HRID - keep it (section 19)
-    const dropTable = dataManager.getInitClientData?.()?.openableLootDropMap?.[containerHrid];
-    return !Array.isArray(dropTable) || dropTable.length === 0;
 }
 
 /**
@@ -174,7 +160,7 @@ export function parseCombatSuiteExport(rawText) {
             );
         }
 
-        if (isKnownNonMonetaryWithNoLoot(containerHrid, itemTotals)) continue;
+        if (!shouldTrackImportedOpenable(containerHrid, containerCount, itemTotals)) continue;
 
         // MWI Combat Suite is already HRID-keyed and validated above, so nothing here is dropped
         // for being unresolvable - this source's Actual is only marked partial when validation
@@ -322,7 +308,7 @@ export function parseEdibleExport(rawText, { playerId } = {}) {
             warnings.push(`${chestName}: one or more gained items had invalid counts and were excluded.`);
         }
 
-        if (isKnownNonMonetaryWithNoLoot(containerHrid, itemTotals)) continue;
+        if (!shouldTrackImportedOpenable(containerHrid, containerCount, itemTotals)) continue;
 
         // Do not let a warning-only path turn into a falsely precise imported Luck value: an
         // unmatched/invalid gained item means this container's Actual is only a subtotal of the

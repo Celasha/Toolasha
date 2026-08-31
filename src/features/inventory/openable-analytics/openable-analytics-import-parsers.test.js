@@ -27,6 +27,8 @@ beforeEach(() => {
         '/items/large_treasure_chest': { name: 'Large Treasure Chest' },
         '/items/coin': { name: 'Coin' },
         '/items/pearl': { name: 'Pearl' },
+        '/items/bag_of_10_cowbells': { name: 'Bag Of 10 Cowbells' },
+        '/items/cowbell': { name: 'Cowbell' },
     };
     // A non-empty drop table so a resolved container with real itemTotals is never silently
     // treated as "known non-monetary with no loot" purely because a test's itemTotals is empty.
@@ -270,6 +272,44 @@ describe('parseCombatSuiteExport', () => {
         expect(containers).toHaveLength(0);
         expect(warnings).toHaveLength(0);
     });
+
+    test('TLA-030: exact deterministic Bag Of 10 Cowbells history is silently skipped', () => {
+        mocks.openableLootDropMap = {
+            '/items/bag_of_10_cowbells': [{ itemHrid: '/items/cowbell', dropRate: 1, minCount: 10, maxCount: 10 }],
+        };
+        const { containers, warnings } = parseCombatSuiteExport(
+            JSON.stringify({
+                chests: {
+                    '/items/bag_of_10_cowbells': {
+                        name: 'Bag Of 10 Cowbells',
+                        total: { opened: 12, loot: { '/items/cowbell': { count: 120 } } },
+                    },
+                },
+            })
+        );
+
+        expect(containers).toHaveLength(0);
+        expect(warnings).toHaveLength(0);
+    });
+
+    test('TLA-030: contradictory deterministic import data is preserved fail-open', () => {
+        mocks.openableLootDropMap = {
+            '/items/bag_of_10_cowbells': [{ itemHrid: '/items/cowbell', dropRate: 1, minCount: 10, maxCount: 10 }],
+        };
+        const { containers } = parseCombatSuiteExport(
+            JSON.stringify({
+                chests: {
+                    '/items/bag_of_10_cowbells': {
+                        name: 'Bag Of 10 Cowbells',
+                        total: { opened: 12, loot: { '/items/cowbell': { count: 119 } } },
+                    },
+                },
+            })
+        );
+
+        expect(containers).toHaveLength(1);
+        expect(containers[0].containerHrid).toBe('/items/bag_of_10_cowbells');
+    });
 });
 
 describe('parseEdibleExport', () => {
@@ -306,6 +346,30 @@ describe('parseEdibleExport', () => {
                 sourceDataComplete: true,
             },
         ]);
+    });
+
+    test('TLA-030: Edible deterministic Bag Of 10 Cowbells history is skipped too', () => {
+        mocks.openableLootDropMap = {
+            '/items/bag_of_10_cowbells': [{ itemHrid: '/items/cowbell', dropRate: 1, minCount: 10, maxCount: 10 }],
+        };
+        const raw = JSON.stringify({
+            Chest_Open_Data: {
+                p1: {
+                    玩家昵称: 'Celasha',
+                    开箱数据: {
+                        'Bag Of 10 Cowbells': {
+                            总计开箱数量: 7,
+                            获得物品: { Cowbell: { 数量: 70 } },
+                        },
+                    },
+                },
+            },
+        });
+
+        const result = parseEdibleExport(raw);
+        expect(result.status).toBe('empty');
+        expect(result.containers).toHaveLength(0);
+        expect(result.warnings).toHaveLength(0);
     });
 
     test('requests player selection when the export has more than one player and none can be resolved automatically', () => {

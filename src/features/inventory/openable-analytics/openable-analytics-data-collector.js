@@ -8,6 +8,7 @@
 
 import dataManager from '../../../core/data-manager.js';
 import { buildOpeningRecord, buildImportedAggregateRecord } from './openable-analytics-calculator.js';
+import { shouldExposeOpenableContainer, shouldTrackOpenableOpening } from './openable-analytics-eligibility.js';
 import {
     loadLifetime,
     saveLifetime,
@@ -122,10 +123,23 @@ class OpenableAnalyticsDataCollector {
         if (!characterId || characterId !== this.characterId) return;
         if (!data?.openedItem?.itemHrid) return;
 
+        const containerCount = data.openedItem.count || 1;
+        if (!shouldTrackOpenableOpening(data.openedItem.itemHrid, containerCount, data.gainedItems)) {
+            // This opening carries no analytical signal (known no-item-loot/deterministic outcome
+            // that matches the model) - do not record it. Also clear the latest record and notify:
+            // otherwise the modal injector's own footer logic (which trusts getLatestRecord() as a
+            // proxy for "the record belonging to the modal that's now open") could stamp a stale,
+            // unrelated container's Actual/Expected/Luck onto this excluded opening's native modal
+            // (e.g. Bag Of 10 Cowbells still renders real gained-item DOM, unlike a Scroll).
+            this.latestRecord = null;
+            this.notifyListeners(null);
+            return;
+        }
+
         await this.recordOpening(
             {
                 containerHrid: data.openedItem.itemHrid,
-                containerCount: data.openedItem.count || 1,
+                containerCount,
                 gainedItems: data.gainedItems,
                 grantedBuffs: data.grantedBuffs,
                 timestamp: Date.now(),
@@ -252,7 +266,7 @@ class OpenableAnalyticsDataCollector {
      *      Session - never containers that only have Lifetime/imported history.
      */
     getSessionContainers() {
-        return Object.keys(this.session);
+        return Object.keys(this.session).filter(shouldExposeOpenableContainer);
     }
 
     /**
@@ -286,7 +300,7 @@ class OpenableAnalyticsDataCollector {
                 containers.add(containerHrid);
             }
         }
-        return [...containers];
+        return [...containers].filter(shouldExposeOpenableContainer);
     }
 
     /**
