@@ -10,6 +10,8 @@ const {
     mockGetVisibleMarketplaceTabContainer,
     mockNavigateToMarketplace,
     mockClickMarketplaceNavigationButton,
+    mockSetupMarketplaceCleanupObserver,
+    race,
 } = vi.hoisted(() => ({
     mockConfig: {
         getSetting: vi.fn(() => true),
@@ -26,6 +28,9 @@ const {
     mockGetVisibleMarketplaceTabContainer: vi.fn(),
     mockNavigateToMarketplace: vi.fn(() => true),
     mockClickMarketplaceNavigationButton: vi.fn(() => true),
+    mockSetupMarketplaceCleanupObserver: vi.fn(() => vi.fn()),
+    // TLA-033: tracks cleanup-observer arm timing relative to navigateToMarketplace calls.
+    race: { callOrder: [], marketListingsSelected: true, selectedAtObserverInstall: null, capturedOnTabsGone: null },
 }));
 
 vi.mock('../../core/config.js', () => ({ default: mockConfig }));
@@ -34,13 +39,21 @@ vi.mock('../../core/dom-observer.js', () => ({ default: { onClass: mockOnClass }
 vi.mock('../../utils/marketplace-tabs.js', () => ({
     createMaterialTab: mockCreateMaterialTab,
     removeMaterialTabsForOwner: vi.fn(),
-    setupMarketplaceCleanupObserver: vi.fn(() => vi.fn()),
-    navigateToMarketplace: mockNavigateToMarketplace,
+    setupMarketplaceCleanupObserver: vi.fn((opts) => {
+        race.callOrder.push('setupMarketplaceCleanupObserver');
+        race.selectedAtObserverInstall = race.marketListingsSelected;
+        race.capturedOnTabsGone = opts.onTabsGone;
+        return mockSetupMarketplaceCleanupObserver(opts);
+    }),
+    navigateToMarketplace: (...args) => {
+        race.callOrder.push('navigateToMarketplace');
+        return mockNavigateToMarketplace(...args);
+    },
     getVisibleMarketplaceTabContainer: mockGetVisibleMarketplaceTabContainer,
     clickMarketplaceNavigationButton: mockClickMarketplaceNavigationButton,
     watchNativeTabExit: vi.fn(() => vi.fn()),
     MARKETPLACE_REMOUNT_GRACE_MS: 350,
-    isMarketplaceMarketListingsSelected: vi.fn(() => true),
+    isMarketplaceMarketListingsSelected: vi.fn(() => race.marketListingsSelected),
 }));
 
 import { marketplaceSession, MARKETPLACE_OWNER } from '../../core/marketplace-session.js';
@@ -122,8 +135,13 @@ describe('Sell Queue marketplace lifecycle', () => {
         mockCreateMaterialTab.mockClear();
         mockNavigateToMarketplace.mockClear();
         mockClickMarketplaceNavigationButton.mockClear();
+        mockSetupMarketplaceCleanupObserver.mockClear();
         mockDataManager.on.mockClear();
         mockDataManager.off.mockClear();
+        race.callOrder = [];
+        race.marketListingsSelected = true;
+        race.selectedAtObserverInstall = null;
+        race.capturedOnTabsGone = null;
 
         sellQueue.initialize();
     });
@@ -185,5 +203,63 @@ describe('Sell Queue marketplace lifecycle', () => {
         expect(itemHrids).toContain('/items/log');
         expect(mockNavigateToMarketplace).toHaveBeenCalledWith('/items/cheese', 0);
         expect(mockNavigateToMarketplace).toHaveBeenCalledWith('/items/log', 0);
+    });
+
+    test('survives a retained "My Listings" native state and arms the observer only after its own navigation (TLA-033)', async () => {
+        marketplaceVisible = true;
+        race.marketListingsSelected = false; // retained "My Listings" at workflow start
+
+        emitTooltip(tooltipHandler, '/items/cheese');
+        shiftRightClick(inventoryTarget);
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(race.callOrder).toEqual(['navigateToMarketplace', 'setupMarketplaceCleanupObserver']);
+        expect(race.selectedAtObserverInstall).toBe(false);
+        expect(marketplaceSession.getActive()?.owner).toBe(MARKETPLACE_OWNER.SELL_QUEUE);
+    });
+
+    test('a genuine My Listings exit after activation still ends the session promptly (TLA-033)', async () => {
+        marketplaceVisible = true;
+
+        emitTooltip(tooltipHandler, '/items/cheese');
+        shiftRightClick(inventoryTarget);
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(marketplaceSession.getActive()?.owner).toBe(MARKETPLACE_OWNER.SELL_QUEUE);
+        expect(race.capturedOnTabsGone).toBeTypeOf('function');
+
+        race.marketListingsSelected = false;
+        race.capturedOnTabsGone();
+
+        expect(marketplaceSession.getActive()).toBeNull();
+    });
+
+    test('rapid additions never install more than one cleanup observer (TLA-033)', async () => {
+        marketplaceVisible = true;
+
+        emitTooltip(tooltipHandler, '/items/cheese');
+        shiftRightClick(inventoryTarget);
+        emitTooltip(tooltipHandler, '/items/log');
+        shiftRightClick(inventoryTarget);
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(race.callOrder.filter((call) => call === 'setupMarketplaceCleanupObserver')).toHaveLength(1);
+    });
+
+    test('fail-closed: a failed first-item navigation ends the session and never arms the observer (TLA-033)', async () => {
+        marketplaceVisible = true;
+        mockNavigateToMarketplace.mockReturnValueOnce(false);
+
+        emitTooltip(tooltipHandler, '/items/cheese');
+        shiftRightClick(inventoryTarget);
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(race.callOrder).toEqual(['navigateToMarketplace']);
+        expect(marketplaceSession.getActive()).toBeNull();
     });
 });

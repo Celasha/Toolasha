@@ -909,7 +909,6 @@ async function handleEnhancementMissingMaterialsClick(
         marketplaceSession.end(capturedSessionId);
         return;
     }
-    setupActionsCleanupObserver();
 
     // Activate the first tradeable missing material automatically (same as manual tab click).
     const firstMaterial = freshMaterials.find((m) => m.isTradeable !== false && m.missing > 0);
@@ -933,6 +932,11 @@ async function handleEnhancementMissingMaterialsClick(
         marketplaceSession.end(capturedSessionId);
         return;
     }
+
+    // Only arm the cleanup/exit observer once our own initial navigation has been
+    // initiated. Arming it earlier lets it see a retained native "My Listings" state
+    // from before this workflow started and tear the session down mid-initialization.
+    setupActionsCleanupObserver();
 
     // Setup inventory listener for live updates
     setupInventoryListener();
@@ -1064,7 +1068,6 @@ async function handleMissingMaterialsClick(actionHrid, numActions) {
         marketplaceSession.end(capturedSessionId);
         return;
     }
-    setupActionsCleanupObserver();
 
     // Activate the first tradeable missing material automatically (same as manual tab click).
     const firstMaterial = freshMaterials.find((m) => m.isTradeable !== false && m.missing > 0);
@@ -1088,6 +1091,11 @@ async function handleMissingMaterialsClick(actionHrid, numActions) {
         marketplaceSession.end(capturedSessionId);
         return;
     }
+
+    // Only arm the cleanup/exit observer once our own initial navigation has been
+    // initiated. Arming it earlier lets it see a retained native "My Listings" state
+    // from before this workflow started and tear the session down mid-initialization.
+    setupActionsCleanupObserver();
 
     // Setup inventory listener for live updates
     setupInventoryListener();

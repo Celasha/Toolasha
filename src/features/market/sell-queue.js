@@ -226,6 +226,9 @@ function teardownSellQueueMarketplaceSession() {
  * Prepare the Marketplace UI for one captured Sell Queue session.
  * A shared promise lets several rapid queue additions join the same navigation
  * instead of treating the not-yet-mounted tablist as a fatal reinjection failure.
+ * Does not arm the cleanup/exit observer — that happens only after the caller's own
+ * initial navigation to the first queued item succeeds, so it can never see a retained
+ * pre-workflow "My Listings" state.
  * @param {number} sessionId
  * @returns {Promise<boolean>}
  */
@@ -237,8 +240,15 @@ async function prepareSellQueueMarketplace(sessionId) {
     }
 
     if (!marketplaceSession.isActive(sessionId)) return false;
-    if (!injectTabs(getVisibleMarketplaceTabContainer(), sessionId)) return false;
+    return injectTabs(getVisibleMarketplaceTabContainer(), sessionId);
+}
 
+/**
+ * Arm the cleanup/exit observer and inventory listener for the SELL_QUEUE owner.
+ * Must only be called once, after the first queued item's own navigation has succeeded.
+ * @param {number} sessionId
+ */
+function setupSellQueueCleanupObserver(sessionId) {
     cleanupObserver?.();
     cleanupObserver = setupMarketplaceCleanupObserver({
         owner: MARKETPLACE_OWNER.SELL_QUEUE,
@@ -251,7 +261,6 @@ async function prepareSellQueueMarketplace(sessionId) {
         },
     });
     setupInventoryListener();
-    return true;
 }
 
 /**
@@ -303,6 +312,14 @@ async function addToQueue(itemHrid, itemName) {
         !navigateToMarketplace(itemHrid, 0)
     ) {
         if (marketplaceSession.isActive(capturedSessionId)) marketplaceSession.end(capturedSessionId);
+        return;
+    }
+
+    // Only arm the cleanup/exit observer once the first queued item's own navigation has
+    // succeeded, so it can never see a retained pre-workflow "My Listings" state. Later
+    // additions reuse the observer already armed by the first item's activation.
+    if (isFirstItem) {
+        setupSellQueueCleanupObserver(capturedSessionId);
     }
 }
 

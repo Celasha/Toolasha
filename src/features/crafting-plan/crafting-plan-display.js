@@ -618,6 +618,10 @@ function buildPlanUI(actionHrid, onToggle, defaultOpen = false) {
                     return;
                 }
 
+                // Only arm the cleanup/exit observer once our own initial navigation has been
+                // initiated, so it can never see a retained pre-workflow "My Listings" state.
+                setupCraftingPlanCleanupObserver(capturedSessionId);
+
                 if (inventoryUpdateHandler) dataManager.off('items_updated', inventoryUpdateHandler);
                 inventoryUpdateHandler = () => {
                     const model = activeWorkflowModel;
@@ -876,6 +880,18 @@ function createCraftingPlanTabs(missingMaterials, tabsContainer = null, sessionI
         craftingPlanTabs.push(returnTab);
     }
 
+    return true;
+}
+
+/**
+ * Arm the cleanup/exit observer for the CRAFTING_PLAN owner. Must only be called after this
+ * workflow's own initial navigation to the first missing material has been initiated — arming
+ * it any earlier lets it see a retained native "My Listings" state from before the workflow
+ * started and tear the session down mid-initialization. Safe to call multiple times: stops any
+ * existing observer before creating a new one.
+ * @param {number} sessionId
+ */
+function setupCraftingPlanCleanupObserver(sessionId) {
     cleanupObserver?.();
     cleanupObserver = setupMarketplaceCleanupObserver({
         owner: MARKETPLACE_OWNER.CRAFTING_PLAN,
@@ -893,8 +909,6 @@ function createCraftingPlanTabs(missingMaterials, tabsContainer = null, sessionI
             marketplaceSession.end(sessionId);
         },
     });
-
-    return true;
 }
 
 class CraftingPlanDisplay {
