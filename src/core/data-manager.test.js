@@ -404,6 +404,155 @@ describe('DataManager', () => {
         expect(dataManager.getInventory()).toEqual([newItem]);
     });
 
+    test('actions_updated keeps the queue in native ordinal order after front-action swaps', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const actionsUpdated = webSocketHandlers.get('actions_updated');
+
+        dataManager.activeSocket = null;
+        dataManager.characterActions = [
+            {
+                id: 'moonstone',
+                actionHrid: '/actions/alchemy/transmute',
+                ordinal: 0,
+                partyID: 0,
+                isDone: false,
+                currentCount: 0,
+            },
+            {
+                id: 'pirate',
+                actionHrid: '/actions/alchemy/coinify',
+                ordinal: 1,
+                partyID: 0,
+                isDone: false,
+                currentCount: 0,
+            },
+            {
+                id: 'twilight',
+                actionHrid: '/actions/combat/twilight_zone',
+                ordinal: 2,
+                partyID: 0,
+                isDone: false,
+                currentCount: 0,
+            },
+        ];
+
+        // Player video: Pirate Essence is promoted ahead of Moonstone. The server update can
+        // contain both changed rows; array insertion order must not become queue truth.
+        actionsUpdated({
+            endCharacterActions: [
+                {
+                    id: 'moonstone',
+                    actionHrid: '/actions/alchemy/transmute',
+                    ordinal: 1,
+                    partyID: 0,
+                    isDone: false,
+                    currentCount: 0,
+                },
+                {
+                    id: 'pirate',
+                    actionHrid: '/actions/alchemy/coinify',
+                    ordinal: 0,
+                    partyID: 0,
+                    isDone: false,
+                    currentCount: 0,
+                },
+            ],
+        });
+
+        expect(dataManager.getCurrentActions().map((action) => action.id)).toEqual(['pirate', 'moonstone', 'twilight']);
+
+        // Then Moonstone is promoted back ahead of Pirate Essence.
+        actionsUpdated({
+            endCharacterActions: [
+                {
+                    id: 'pirate',
+                    actionHrid: '/actions/alchemy/coinify',
+                    ordinal: 1,
+                    partyID: 0,
+                    isDone: false,
+                    currentCount: 0,
+                },
+                {
+                    id: 'moonstone',
+                    actionHrid: '/actions/alchemy/transmute',
+                    ordinal: 0,
+                    partyID: 0,
+                    isDone: false,
+                    currentCount: 0,
+                },
+            ],
+        });
+
+        expect(dataManager.getCurrentActions().map((action) => action.id)).toEqual(['moonstone', 'pirate', 'twilight']);
+    });
+
+    test('actions_updated replaces existing rows without duplicates and removes completed rows', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const actionsUpdated = webSocketHandlers.get('actions_updated');
+
+        dataManager.activeSocket = null;
+        dataManager.characterActions = [
+            { id: 'a', actionHrid: '/actions/alchemy/coinify', ordinal: 0, partyID: 0, isDone: false, currentCount: 0 },
+            {
+                id: 'b',
+                actionHrid: '/actions/alchemy/transmute',
+                ordinal: 1,
+                partyID: 0,
+                isDone: false,
+                currentCount: 0,
+            },
+        ];
+
+        actionsUpdated({
+            endCharacterActions: [
+                {
+                    id: 'a',
+                    actionHrid: '/actions/alchemy/coinify',
+                    ordinal: 0,
+                    partyID: 0,
+                    isDone: false,
+                    currentCount: 7,
+                },
+            ],
+        });
+
+        expect(dataManager.getCurrentActions()).toHaveLength(2);
+        expect(dataManager.getCurrentActions().filter((action) => action.id === 'a')).toHaveLength(1);
+        expect(dataManager.getCurrentActions()[0].currentCount).toBe(7);
+
+        actionsUpdated({
+            endCharacterActions: [
+                {
+                    id: 'a',
+                    actionHrid: '/actions/alchemy/coinify',
+                    ordinal: 0,
+                    partyID: 0,
+                    isDone: true,
+                    currentCount: 7,
+                },
+            ],
+        });
+
+        expect(dataManager.getCurrentActions().map((action) => action.id)).toEqual(['b']);
+    });
+
+    test('actions_updated preserves native party-before-solo queue ordering', async () => {
+        const { default: dataManager } = await import('./data-manager.js');
+        const actionsUpdated = webSocketHandlers.get('actions_updated');
+
+        dataManager.activeSocket = null;
+        dataManager.characterActions = [];
+
+        actionsUpdated({
+            endCharacterActions: [
+                { id: 'solo', ordinal: 0, partyID: 0, isDone: false, currentCount: 0 },
+                { id: 'party', ordinal: 10, partyID: 123, isDone: false, currentCount: 0 },
+            ],
+        });
+
+        expect(dataManager.getCurrentActions().map((action) => action.id)).toEqual(['party', 'solo']);
+    });
+
     test('merges market listings updates and emits updated list', async () => {
         const { default: dataManager } = await import('./data-manager.js');
         const listener = vi.fn();

@@ -90,18 +90,15 @@ class AlchemyProfit {
      */
     getCurrentActionHrid() {
         try {
-            // Get current actions from dataManager
+            // DataManager mirrors native queue order, so index 0 is the action currently at
+            // the front. Never scan forward for "any" Alchemy action: on the Current Action
+            // tab that can select a queued Coinify/Transmute/Decompose action and apply its
+            // calculator to the item that is actually running.
             const currentActions = dataManager.getCurrentActions();
-            if (!currentActions || currentActions.length === 0) return null;
+            const currentAction = currentActions?.[0];
+            if (!currentAction?.actionHrid?.startsWith('/actions/alchemy/')) return null;
 
-            // Find alchemy action (type = /action_types/alchemy)
-            for (const action of currentActions) {
-                if (action.actionHrid && action.actionHrid.startsWith('/actions/alchemy/')) {
-                    return action.actionHrid;
-                }
-            }
-
-            return null;
+            return currentAction.actionHrid;
         } catch (error) {
             console.error('[AlchemyProfit] Failed to get current action HRID:', error);
             return null;

@@ -346,14 +346,36 @@ class DataManager {
         this.webSocketHook.on('actions_updated', (data, context) => {
             if (!this._isFromActiveSocket(context)) return;
 
-            // Update action list
+            // Mirror native MWI queue-state semantics: replace existing actions in place,
+            // remove completed actions, and re-sort only when a row is new or its ordinal changes.
+            // Removing + appending every update makes array insertion order diverge from the
+            // native queue after a reorder; consumers that inspect the first/current action can
+            // then accidentally read a queued action instead.
+            let queueOrderChanged = false;
             for (const action of data.endCharacterActions) {
-                // Always remove the old entry first to prevent duplicates —
-                // endCharacterActions can contain existing actions alongside new ones.
-                this.characterActions = this.characterActions.filter((a) => a.id !== action.id);
-                if (action.isDone === false) {
-                    this.characterActions.push(action);
+                const index = this.characterActions.findIndex((existing) => existing.id === action.id);
+
+                if (action.isDone === true) {
+                    if (index !== -1) this.characterActions.splice(index, 1);
+                } else if (action.isDone === false) {
+                    if (index !== -1) {
+                        if (this.characterActions[index].ordinal !== action.ordinal) queueOrderChanged = true;
+                        this.characterActions[index] = action;
+                    } else {
+                        this.characterActions.push(action);
+                        queueOrderChanged = true;
+                    }
                 }
+            }
+
+            if (queueOrderChanged) {
+                this.characterActions.sort((a, b) => {
+                    const aPartyId = a?.partyID ?? 0;
+                    const bPartyId = b?.partyID ?? 0;
+                    if (aPartyId !== 0 && bPartyId === 0) return -1;
+                    if (aPartyId === 0 && bPartyId !== 0) return 1;
+                    return (Number(a?.ordinal) || 0) - (Number(b?.ordinal) || 0);
+                });
             }
 
             this._syncActionUnitBoundary();

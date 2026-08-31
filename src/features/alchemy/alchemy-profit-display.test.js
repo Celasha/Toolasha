@@ -96,6 +96,20 @@ describe('Alchemy inline XP/hour calculation', () => {
         mockGetStateFingerprint.mockReset();
     });
 
+    test('keeps player-repro action subtype base XP formulas distinct', () => {
+        const display = Object.create(AlchemyProfitDisplay.prototype);
+
+        // Player video sentinel: Pirate Essence is level 95. Its native Current Action is
+        // Coinify, so 105 is correct; 168 is exactly the wrong Transmute formula seen in the bug.
+        expect(display.getAlchemyBaseXP('coinify', 95)).toBe(105);
+        expect(display.getAlchemyBaseXP('transmute', 95)).toBe(168);
+
+        // Reverse-swap sentinel: Moonstone is level 55. Transmute must be 104, never the
+        // queued Pirate/Coinify formula (65).
+        expect(display.getAlchemyBaseXP('transmute', 55)).toBe(104);
+        expect(display.getAlchemyBaseXP('coinify', 55)).toBe(65);
+    });
+
     test('uses the same expected success/failure XP formula as Level Progress', () => {
         mockGetInitClientData.mockReturnValue({
             itemDetailMap: {

@@ -299,9 +299,9 @@ export class AlchemyProfitDisplay {
             const drops = await alchemyProfit.extractDrops(actionHrid);
             const requirements = await alchemyProfit.extractRequirements();
 
-            // Determine action type from DOM tab state (primary) or actionHrid (fallback).
-            // Tab detection is preferred because getCurrentActionHrid() returns ANY running
-            // alchemy action across all slots, which may differ from the tab being viewed.
+            // Determine action type from DOM tab state (primary) or the true front/current
+            // action HRID (fallback). Explicit Coinify/Decompose/Transmute tabs describe the
+            // viewed scenario; the Current Action tab intentionally falls back to the live front.
             let isCoinify = false;
             let isTransmute = false;
             let isDecompose = false;
