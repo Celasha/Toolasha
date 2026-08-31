@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.99.0
+ * Version: 2.99.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -20769,9 +20769,12 @@
 
     /**
      * Get all actions for a skill for display purposes, including level-locked ones.
+     * Sorted by the game's own sortIndex (same convention used for the combat zone dropdown in
+     * combat-sim-adapter.js) rather than level+name, since actions sharing a level requirement are
+     * not necessarily alphabetical in the game's own action list.
      * @param {string} skillName
      * @param {number} playerLevel
-     * @returns {Array<{ hrid, name, requiredLevel, available }>} Sorted by level requirement
+     * @returns {Array<{ hrid, name, requiredLevel, available, sortIndex }>} Sorted by sortIndex
      */
     function getSkillActionsForDisplay(skillName, playerLevel) {
         const gameData = dataManager.getInitClientData();
@@ -20784,9 +20787,15 @@
         for (const [hrid, action] of Object.entries(gameData.actionDetailMap)) {
             if (action.type !== actionType) continue;
             const requiredLevel = action.levelRequirement?.level || 1;
-            result.push({ hrid, name: action.name, requiredLevel, available: playerLevel >= requiredLevel });
+            result.push({
+                hrid,
+                name: action.name,
+                requiredLevel,
+                available: playerLevel >= requiredLevel,
+                sortIndex: action.sortIndex ?? 0,
+            });
         }
-        return result.sort((a, b) => a.requiredLevel - b.requiredLevel || a.name.localeCompare(b.name));
+        return result.sort((a, b) => a.sortIndex - b.sortIndex || a.name.localeCompare(b.name));
     }
 
     /**
@@ -27264,6 +27273,33 @@
      * @returns {Object|null}
      */
     /**
+     * Cost to move into a recommended item at a given enhancement level, netted against selling
+     * whatever currently occupies that slot (mirrors the Combat Sim Upgrade Advisor's tier-upgrade
+     * cost convention: buy target - sell current). With no current item (empty-baseline mode), this
+     * is simply the full buy price.
+     * @param {string} itemHrid
+     * @param {number} enhancementLevel
+     * @param {{itemHrid: string, enhancementLevel: number}|null} currentEquipped
+     * @returns {{cost: number, costIsIncomplete: boolean}}
+     */
+    function calculateSlotUpgradeCost(itemHrid, enhancementLevel, currentEquipped) {
+        const buyResolved = profitHelpers_js.resolveItemPrice(itemHrid, { side: 'buy', enhancementLevel });
+        let cost = buyResolved.price;
+        let costIsIncomplete = buyResolved.missing;
+
+        if (currentEquipped?.itemHrid) {
+            const sellResolved = profitHelpers_js.resolveItemPrice(currentEquipped.itemHrid, {
+                side: 'sell',
+                enhancementLevel: currentEquipped.enhancementLevel || 0,
+            });
+            if (sellResolved.missing) costIsIncomplete = true;
+            cost = Math.max(0, cost - sellResolved.price);
+        }
+
+        return { cost, costIsIncomplete };
+    }
+
+    /**
      * Run one full per-slot equipment optimization pass, holding the given tea combination fixed for
      * every candidate score (except a narrow Drink-Concentration joint re-check, see FAIL B below).
      * Extracted from optimizeSkill() so it can be re-run against successive tea winners (see the
@@ -27299,6 +27335,7 @@
                 }
             }
             const sortedBreakpoints = [...allBreakpoints].sort((a, b) => a - b);
+            const currentEquipped = compareEquipment.get(locationHrid) || null;
 
             const progression = [];
             let lastWinnerHrid = null;
@@ -27376,6 +27413,10 @@
                     }
                 }
 
+                const { cost, costIsIncomplete } = bestItem
+                    ? calculateSlotUpgradeCost(bestItem.hrid, bestEffectiveLevel, currentEquipped)
+                    : { cost: 0, costIsIncomplete: false };
+
                 progression.push({
                     breakpoint: bp,
                     enhancementLevel: bestItem ? bestEffectiveLevel : bp,
@@ -27386,6 +27427,11 @@
                     // required price - an incomplete number, not a verified exact one. Always false
                     // for XP-goal skills (XP never touches market prices).
                     hasMissingPrice: bestHasMissingPrice,
+                    // Gold cost to acquire this item (netted against selling whatever currently
+                    // occupies the slot, or the full buy price with no current item) - distinct from
+                    // hasMissingPrice above, which is about the *score*, not the *cost*.
+                    cost,
+                    costIsIncomplete,
                     xpScore: (() => {
                         if (!bestItem) return xpBaseline;
                         if (goal === 'xp') return bestScore;
@@ -29020,6 +29066,15 @@
                     );
                     if (gainEl) entryRow.appendChild(gainEl);
 
+                    const costEl = this._makeCostPaybackEl(
+                        suggestedEntry.cost,
+                        suggestedEntry.costIsIncomplete,
+                        suggestedEntry.xpScore - xpBaseline,
+                        suggestedEntry.goldScore - goldBaseline,
+                        spriteUrl
+                    );
+                    if (costEl) entryRow.appendChild(costEl);
+
                     row.appendChild(entryRow);
                 }
             } else {
@@ -29046,6 +29101,15 @@
 
                     const gainEl = this._makeGainEl(tier.xpScore, xpBaseline, tier.goldScore, goldBaseline, spriteUrl);
                     if (gainEl) tierRow.appendChild(gainEl);
+
+                    const costEl = this._makeCostPaybackEl(
+                        tier.cost,
+                        tier.costIsIncomplete,
+                        tier.xpScore - xpBaseline,
+                        tier.goldScore - goldBaseline,
+                        spriteUrl
+                    );
+                    if (costEl) tierRow.appendChild(costEl);
 
                     row.appendChild(tierRow);
                 }
@@ -29130,6 +29194,70 @@
             return wrapper;
         }
 
+        /**
+         * Cost to acquire a recommendation, plus marginal-gain-per-gold and payback-time context so
+         * the player can judge value for money, not just raw XP/Gold gain.
+         * @param {number} cost - Gold cost from the engine (net of selling the current item, if any)
+         * @param {boolean} costIsIncomplete - Whether a required market price was unresolved
+         * @param {number} xpDelta - XP/hr gain over baseline
+         * @param {number} goldDelta - Gold/hr gain over baseline
+         * @param {string|null} spriteUrl
+         * @returns {HTMLElement|null}
+         */
+        _makeCostPaybackEl(cost, costIsIncomplete, xpDelta, goldDelta, spriteUrl) {
+            if (cost <= 0 && !costIsIncomplete) return null;
+
+            const coinNode = () => {
+                if (!spriteUrl) return document.createTextNode(' G');
+                const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                svg.setAttribute('width', '12');
+                svg.setAttribute('height', '12');
+                svg.style.flexShrink = '0';
+                const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+                use.setAttribute('href', `${spriteUrl}#coin`);
+                svg.appendChild(use);
+                return svg;
+            };
+
+            const parts = [];
+
+            const costSpan = document.createElement('span');
+            costSpan.style.cssText = 'display: inline-flex; align-items: center; gap: 2px;';
+            costSpan.appendChild(document.createTextNode('Cost: ' + (costIsIncomplete ? '~' : '') + formatters_js.formatKMB(cost)));
+            costSpan.appendChild(coinNode());
+            if (costIsIncomplete) {
+                costSpan.title = 'A required market price is unresolved, so this cost is not exact.';
+                costSpan.style.cursor = 'help';
+            }
+            parts.push(costSpan);
+
+            // Below, further ratios only make sense against a real, fully-resolved cost.
+            if (cost > 0 && !costIsIncomplete) {
+                if (xpDelta > 0) {
+                    const xpPerMillion = (xpDelta / cost) * 1_000_000;
+                    const span = document.createElement('span');
+                    span.textContent = `${formatters_js.formatKMB(xpPerMillion)} XP/hr per 1M gold`;
+                    parts.push(span);
+                }
+
+                if (goldDelta > 0) {
+                    const paybackHours = cost / goldDelta;
+                    const span = document.createElement('span');
+                    span.textContent = `Payback: ${formatters_js.timeReadable(paybackHours * 3600)}`;
+                    parts.push(span);
+                }
+            }
+
+            const wrapper = document.createElement('span');
+            wrapper.style.cssText =
+                'font-size: 10px; color: rgba(255,255,255,0.4); margin-left: auto; flex-shrink: 0; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;';
+            for (let i = 0; i < parts.length; i++) {
+                if (i > 0) wrapper.appendChild(document.createTextNode(' · '));
+                wrapper.appendChild(parts[i]);
+            }
+            return wrapper;
+        }
+
         _groupTiers(progression) {
             const tiers = [];
             let current = null;
@@ -29149,12 +29277,16 @@
                         hasMissingPrice: entry.hasMissingPrice,
                         xpScore: entry.xpScore,
                         goldScore: entry.goldScore,
+                        cost: entry.cost,
+                        costIsIncomplete: entry.costIsIncomplete,
                     };
                 } else {
                     current.toLevel = entry.enhancementLevel;
                     // Reflects the latest (highest-enhancement) breakpoint's completeness within this
                     // tier, matching toLevel above.
                     current.hasMissingPrice = entry.hasMissingPrice;
+                    current.cost = entry.cost;
+                    current.costIsIncomplete = entry.costIsIncomplete;
                 }
             }
             if (current) tiers.push(current);
