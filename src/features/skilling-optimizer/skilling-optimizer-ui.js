@@ -1094,7 +1094,8 @@ class SkillingSimulatorUI {
         const makeRow = (label, checked, disabled, onToggle) => {
             const row = document.createElement('label');
             row.style.cssText = `
-                display: flex; align-items: center; gap: 8px; padding: 5px 10px;
+                display: flex !important; width: 100% !important; box-sizing: border-box;
+                align-items: center; gap: 8px; padding: 5px 10px;
                 cursor: ${disabled ? 'default' : 'pointer'};
                 color: ${disabled ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.85)'};
                 ${disabled ? 'text-decoration: line-through;' : ''}
@@ -1135,6 +1136,28 @@ class SkillingSimulatorUI {
         allRow.style.cssText += ' font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.1);';
         popup.appendChild(allRow);
 
+        const searchWrapper = document.createElement('div');
+        searchWrapper.style.cssText = 'padding: 5px 10px; border-bottom: 1px solid rgba(255,255,255,0.1);';
+        const searchInput = document.createElement('input');
+        searchInput.type = 'text';
+        searchInput.placeholder = 'Search actions...';
+        searchInput.style.cssText = `
+            width: 100%; box-sizing: border-box; background: #2a2a2a; color: rgba(255,255,255,0.85);
+            border: 1px solid rgba(255,255,255,0.15); border-radius: 4px; padding: 4px 8px; font-size: 12px;
+        `;
+        searchInput.addEventListener('input', () => {
+            const query = searchInput.value.trim().toLowerCase();
+            for (const { row, name } of itemRows) {
+                const visible = !query || name.toLowerCase().includes(query);
+                // Plain `row.style.display = ...` silently drops the `!important` priority set in
+                // makeRow's cssText, letting the native page's competing rule win back the moment
+                // you type. setProperty(...,'important') is the only JS API that preserves it.
+                row.style.setProperty('display', visible ? 'flex' : 'none', 'important');
+            }
+        });
+        searchWrapper.appendChild(searchInput);
+        popup.appendChild(searchWrapper);
+
         for (const action of actions) {
             // A locked action can still be explicitly selected - a tea combination the Optimizer
             // searches (or a manually picked Simulator tea) may unlock it at the boosted level.
@@ -1166,13 +1189,14 @@ class SkillingSimulatorUI {
                 }
                 anchorBtn.textContent = getBtnLabel();
             });
-            itemRows.push({ cb, hrid: action.hrid });
+            itemRows.push({ cb, hrid: action.hrid, row, name: action.name });
             popup.appendChild(row);
         }
 
         anchorBtn.parentElement.style.position = 'relative';
         anchorBtn.parentElement.appendChild(popup);
         this._picker = popup;
+        searchInput.focus();
 
         const closeHandler = (e) => {
             if (!popup.contains(e.target) && e.target !== anchorBtn) {
