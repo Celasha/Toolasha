@@ -2,10 +2,9 @@
 
 ## [2.100.1](https://github.com/Celasha/Toolasha/compare/v2.100.0...v2.100.1) (2026-09-01)
 
-
 ### Bug Fixes
 
-* show item sprite icons in Openable Analytics loot rows ([4e71d5a](https://github.com/Celasha/Toolasha/commit/4e71d5a14d4733a71d8c5d0bf15fb05d3026438c))
+- show item sprite icons in Openable Analytics loot rows ([4e71d5a](https://github.com/Celasha/Toolasha/commit/4e71d5a14d4733a71d8c5d0bf15fb05d3026438c))
 
 ## [2.100.0](https://github.com/Celasha/Toolasha/compare/v2.99.2...v2.100.0) (2026-09-01)
 
