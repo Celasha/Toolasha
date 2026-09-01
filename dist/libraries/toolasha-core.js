@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.99.2
+ * Version: 2.100.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5063,7 +5063,7 @@
 
             // Handle guild_buffs_updated (purchased guild buffs + derived action-type buffs).
             // guildBuildingLevelMap (shrine/building lifecycle) is a separate native message
-            // (guild_updated) and intentionally untouched here - out of scope for this handler.
+            // (guild_updated), handled by its own listener below.
             this.webSocketHook.on('guild_buffs_updated', (data, context) => {
                 if (!this._isFromActiveSocket(context)) return;
 
@@ -5075,6 +5075,22 @@
 
                 this.emit('guild_buffs_updated', data);
                 this.emit('buffs_updated', data);
+            });
+
+            // Handle guild_updated (shrine/building levels + guild info). Without this,
+            // guildBuildingLevelMap would only ever reflect whatever guild was active at the last
+            // init_character_data - going stale the moment a character switches guilds mid-session,
+            // since guild_buffs_updated (above) refreshes the purchased/active buff levels live but
+            // never the shrine building's unlocked cap.
+            this.webSocketHook.on('guild_updated', (data, context) => {
+                if (!this._isFromActiveSocket(context)) return;
+
+                this.guildBuildingLevelMap = data.guildBuildingLevelMap || {};
+                if (this.characterData) {
+                    this.characterData.guildBuildingLevelMap = this.guildBuildingLevelMap;
+                }
+
+                this.emit('guild_updated', data);
             });
 
             // Handle skills_updated (when user gains skill levels)

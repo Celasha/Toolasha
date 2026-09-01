@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.99.2
+ * Version: 2.100.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7159,13 +7159,17 @@ ${starCSS}
         // guildActionTypeBuffsMap snapshot, so the Sim Editor's Shrine section is the single canonical
         // source and cannot double-apply against a second baked-in path. Uses the character's
         // purchased/active guild-buff level (getCharacterGuildBuffLevel, from guild_buffs_updated),
-        // not the shrine building's unlocked cap (getGuildBuildingLevel, from guild_updated) - a guild
-        // can unlock a shrine level without having spent the resources to activate it yet.
+        // clamped to the shrine building's unlocked cap (getGuildBuildingLevel, from guild_updated) -
+        // a purchased level can never legitimately exceed the shrine's current cap for the guild
+        // you're actually in, so if the two ever briefly disagree (e.g. a guild switch mid-session,
+        // where the two live messages can land a moment apart), never simulate the higher figure.
         const guildBuffDetailMap = clientData.guildBuffDetailMap || {};
         for (const shrineHrid of COMBAT_SHRINE_HRIDS) {
             const combatBuffHrid = getCombatGuildBuffHridForShrine(shrineHrid, guildBuffDetailMap);
             if (!combatBuffHrid) continue;
-            const level = dataManager.getCharacterGuildBuffLevel(combatBuffHrid);
+            const purchasedLevel = dataManager.getCharacterGuildBuffLevel(combatBuffHrid);
+            const unlockedCap = dataManager.getGuildBuildingLevel(shrineHrid);
+            const level = Math.min(purchasedLevel, unlockedCap);
             if (level > 0) {
                 dto.shrineLevels[shrineHrid] = level;
             }
@@ -16018,7 +16022,7 @@ ${starCSS}
 
 
     const STORE_NAME$4 = 'lootLogHistory';
-    const MAX_ENTRIES = 500;
+    const MAX_ENTRIES = 5000;
 
     class LootLogHistory {
         _getKey() {
@@ -16084,6 +16088,115 @@ ${starCSS}
     const lootLogHistory = new LootLogHistory();
 
     /**
+     * Loot Log Analytics
+     * Pure aggregation logic for the Loot & XP Log pivot table (current session + stored history).
+     * No DOM/game-data access here - callers resolve names/icons/prices from the returned hrids.
+     */
+
+    const EXCLUDED_XP_SKILL_HRID = '/skills/total_level';
+
+    /**
+     * Real elapsed time for one loot log entry, matching the game's own Duration display:
+     * totalActiveMillis (excludes offline/idle gaps) when present, else wall-clock startTime→endTime.
+     * @param {Object} entry
+     * @returns {number} milliseconds, or 0 if unresolvable
+     */
+    function getEntryDurationMs(entry) {
+        if (entry.totalActiveMillis > 0) return entry.totalActiveMillis;
+        if (!entry.startTime || !entry.endTime) return 0;
+        const ms = new Date(entry.endTime) - new Date(entry.startTime);
+        return ms > 0 ? ms : 0;
+    }
+
+    /**
+     * Union current-session and stored-history entries, deduplicated by characterActionId.
+     * Current-session data wins on overlap, since it's the freshest source for entries still live.
+     * @param {Array} currentEntries
+     * @param {Array} historicalEntries
+     * @returns {Array}
+     */
+    function mergeCurrentAndHistoricalEntries(currentEntries, historicalEntries) {
+        const seen = new Map();
+        for (const entry of historicalEntries || []) {
+            if (entry?.characterActionId != null) seen.set(entry.characterActionId, entry);
+        }
+        for (const entry of currentEntries || []) {
+            if (entry?.characterActionId != null) seen.set(entry.characterActionId, entry);
+        }
+        return Array.from(seen.values());
+    }
+
+    /**
+     * Grouping key for the pivot table: same action, kept separate per difficulty tier so e.g.
+     * different dungeon tiers never get merged into one row.
+     * @param {Object} entry
+     * @returns {string}
+     */
+    function buildActionGroupKey(entry) {
+        return `${entry.actionHrid}::${entry.difficultyTier ?? ''}`;
+    }
+
+    /**
+     * Group loot log entries by action (+ difficulty tier) and sum time/actions/drops/XP.
+     * Enhancement actions are excluded, matching the rest of the Loot Log Stats feature.
+     * @param {Array} entries
+     * @returns {Array<Object>} one row per distinct action/tier combination
+     */
+    function aggregatePivotRows(entries) {
+        const rows = new Map();
+
+        for (const entry of entries || []) {
+            if (!entry?.actionHrid) continue;
+            if (entry.actionHrid === '/actions/enhancing/enhance') continue;
+
+            const key = buildActionGroupKey(entry);
+            let row = rows.get(key);
+            if (!row) {
+                row = {
+                    actionHrid: entry.actionHrid,
+                    difficultyTier: entry.difficultyTier ?? null,
+                    entryCount: 0,
+                    actionCount: 0,
+                    totalTimeMs: 0,
+                    drops: {},
+                    xpGains: {},
+                    earliestStartMs: null,
+                    latestEndMs: null,
+                };
+                rows.set(key, row);
+            }
+
+            row.entryCount += 1;
+            row.actionCount += entry.actionCount || 0;
+            row.totalTimeMs += getEntryDurationMs(entry);
+
+            for (const [dropHrid, count] of Object.entries(entry.drops || {})) {
+                row.drops[dropHrid] = (row.drops[dropHrid] || 0) + count;
+            }
+
+            for (const [skillHrid, amount] of Object.entries(entry.xpGains || {})) {
+                if (skillHrid === EXCLUDED_XP_SKILL_HRID) continue;
+                row.xpGains[skillHrid] = (row.xpGains[skillHrid] || 0) + amount;
+            }
+
+            if (entry.startTime) {
+                const startMs = new Date(entry.startTime).getTime();
+                if (!Number.isNaN(startMs) && (row.earliestStartMs == null || startMs < row.earliestStartMs)) {
+                    row.earliestStartMs = startMs;
+                }
+            }
+            if (entry.endTime) {
+                const endMs = new Date(entry.endTime).getTime();
+                if (!Number.isNaN(endMs) && (row.latestEndMs == null || endMs > row.latestEndMs)) {
+                    row.latestEndMs = endMs;
+                }
+            }
+        }
+
+        return Array.from(rows.values());
+    }
+
+    /**
      * Loot Log Statistics Module
      * Adds total value, average time, and daily output statistics to loot logs
      * Port of Edible Tools loot tracker feature, integrated into Toolasha architecture
@@ -16099,9 +16212,14 @@ ${starCSS}
             this.currentLootLogData = null;
             this.itemsSpriteUrl = null;
             this.actionsSpriteUrl = null;
+            this.skillsSpriteUrl = null;
             this.historyEnabled = false;
             this.historicalBatchSize = 20;
             this.historicalRendered = 0;
+            this.analyticsOverlay = null;
+            this.analyticsEscapeHandler = null;
+            this.analyticsSort = { key: 'totalTimeMs', desc: true };
+            this.analyticsFilter = '';
         }
 
         /**
@@ -16129,6 +16247,14 @@ ${starCSS}
                 this.processLootLogElement(element, index, allElements.length);
             });
             this.unregisterHandlers.push(unregisterObserver);
+
+            // Watch for the panel header to inject the Analytics (pivot table) button next to Refresh
+            const unregisterAnalyticsButton = domObserver.onClass(
+                'LootLogAnalyticsButton',
+                'LootLogPanel_lootLogPanel__2013X',
+                (element) => this.injectAnalyticsButton(element)
+            );
+            this.unregisterHandlers.push(unregisterAnalyticsButton);
 
             // Watch for loot log container to inject historical entries
             if (this.historyEnabled) {
@@ -16913,6 +17039,482 @@ ${starCSS}
         }
 
         /**
+         * Inject the 📊 Analytics (pivot table) button next to the native "Refresh" button.
+         * @param {HTMLElement} panelEl - .LootLogPanel_lootLogPanel__2013X element
+         */
+        injectAnalyticsButton(panelEl) {
+            if (panelEl.querySelector('.mwi-loot-log-analytics-btn')) return;
+
+            const refreshBtn = Array.from(panelEl.querySelectorAll('button')).find(
+                (b) => b.textContent.trim() === 'Refresh'
+            );
+            if (!refreshBtn) return;
+
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'mwi-loot-log-analytics-btn';
+            btn.textContent = '📊';
+            btn.title = 'Loot & XP Log Analytics (pivot table)';
+            btn.style.cssText = `
+            margin-left: 8px;
+            background: none;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1em;
+            padding: 2px 8px;
+            line-height: 1.4;
+        `;
+            btn.addEventListener('click', () => this.openAnalyticsPanel());
+            refreshBtn.insertAdjacentElement('afterend', btn);
+        }
+
+        /**
+         * Build the pivot table from current-session + stored history and show it in an overlay.
+         */
+        async openAnalyticsPanel() {
+            this.closeAnalyticsPanel();
+
+            const historicalEntries = this.historyEnabled ? await lootLogHistory._load() : [];
+            const entries = mergeCurrentAndHistoricalEntries(this.currentLootLogData || [], historicalEntries);
+            const rows = aggregatePivotRows(entries);
+            const enriched = rows.map((row) => this.enrichAnalyticsRow(row));
+
+            this.analyticsOverlay = this.buildAnalyticsOverlay(enriched, historicalEntries.length, this.historyEnabled);
+            document.body.appendChild(this.analyticsOverlay);
+        }
+
+        /**
+         * Remove the Analytics overlay and its Escape-key listener, if open.
+         */
+        closeAnalyticsPanel() {
+            if (this.analyticsOverlay) {
+                this.analyticsOverlay.remove();
+                this.analyticsOverlay = null;
+            }
+            if (this.analyticsEscapeHandler) {
+                document.removeEventListener('keydown', this.analyticsEscapeHandler);
+                this.analyticsEscapeHandler = null;
+            }
+        }
+
+        /**
+         * Derive display/value/rate fields for one pivot row (pure computation over raw sums).
+         * @param {Object} row - Raw aggregated row from aggregatePivotRows()
+         * @returns {Object}
+         */
+        enrichAnalyticsRow(row) {
+            const name = this.getActionName(row.actionHrid);
+            const category = this.getActionCategory(row.actionHrid);
+            const tierLabel = row.difficultyTier ? ` (Tier ${row.difficultyTier})` : '';
+            const { askTotal, bidTotal } = this.calculateTotalValue(row.drops);
+            const hours = row.totalTimeMs / 3_600_000;
+            const goldPerHourAsk = hours > 0 ? askTotal / hours : 0;
+            const goldPerHourBid = hours > 0 ? bidTotal / hours : 0;
+
+            const xpEntries = Object.entries(row.xpGains)
+                .sort(([a], [b]) => this.getSkillSortIndex(a) - this.getSkillSortIndex(b))
+                .map(([skillHrid, amount]) => ({
+                    skillHrid,
+                    amount,
+                    perHour: hours > 0 ? amount / hours : 0,
+                }));
+
+            return {
+                row,
+                displayName: category ? `${category} - ${name}${tierLabel}` : `${name}${tierLabel}`,
+                askTotal,
+                bidTotal,
+                hours,
+                goldPerHourAsk,
+                goldPerHourBid,
+                xpEntries,
+            };
+        }
+
+        /**
+         * Build the overlay + panel shell (header/subtitle/search/table/footer) for the Analytics view.
+         * @param {Array<Object>} enriched - Rows from enrichAnalyticsRow()
+         * @param {number} historicalCount - Number of entries currently in storage
+         * @param {boolean} historyEnabled
+         * @returns {HTMLElement} overlay element (not yet attached to the document)
+         */
+        buildAnalyticsOverlay(enriched, historicalCount, historyEnabled) {
+            const overlay = document.createElement('div');
+            overlay.className = 'mwi-loot-log-analytics-overlay';
+            overlay.style.cssText = `
+            position: fixed; inset: 0; z-index: 20000;
+            background: rgba(0, 0, 0, 0.6);
+            display: flex; align-items: center; justify-content: center;
+        `;
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) this.closeAnalyticsPanel();
+            });
+
+            const panel = document.createElement('div');
+            panel.style.cssText = `
+            background: #1c2128;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 8px;
+            width: min(920px, 92vw);
+            max-height: 85vh;
+            display: flex;
+            flex-direction: column;
+            padding: 16px;
+            box-sizing: border-box;
+        `;
+
+            const header = document.createElement('div');
+            header.style.cssText =
+                'display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;';
+            const title = document.createElement('h2');
+            title.textContent = '📊 Loot & XP Log Analytics';
+            title.style.cssText = 'margin: 0; font-size: 1.1em; color: #fff;';
+            const closeBtn = document.createElement('span');
+            closeBtn.textContent = '✕';
+            closeBtn.style.cssText = 'cursor: pointer; color: rgba(255,255,255,0.6); font-size: 16px; padding: 2px 6px;';
+            closeBtn.addEventListener('click', () => this.closeAnalyticsPanel());
+            header.append(title, closeBtn);
+            panel.appendChild(header);
+
+            const subtitle = document.createElement('div');
+            subtitle.style.cssText = 'color: rgba(255,255,255,0.6); font-size: 0.85em; margin-bottom: 8px;';
+            const entryCountText = `${enriched.length} action${enriched.length === 1 ? '' : 's'}`;
+            subtitle.textContent = historyEnabled
+                ? `${entryCountText} across ${formatters_js.numberFormatter(historicalCount)} stored sessions`
+                : `${entryCountText} from the current session only — enable Loot Log History for full historical coverage`;
+            panel.appendChild(subtitle);
+
+            const search = document.createElement('input');
+            search.type = 'text';
+            search.placeholder = 'Filter by action name…';
+            search.style.cssText = `
+            margin-bottom: 8px; padding: 6px 8px; border-radius: 4px;
+            border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05);
+            color: #fff; font-size: 0.9em;
+        `;
+            search.value = this.analyticsFilter;
+            panel.appendChild(search);
+
+            const tableWrapper = document.createElement('div');
+            tableWrapper.style.cssText = 'overflow-y: auto; flex: 1;';
+            const table = document.createElement('table');
+            table.style.cssText = 'width: 100%; border-collapse: collapse; font-size: 0.85em;';
+            const thead = document.createElement('thead');
+            const tbody = document.createElement('tbody');
+            table.append(thead, tbody);
+            tableWrapper.appendChild(table);
+            panel.appendChild(tableWrapper);
+
+            const columns = [
+                { key: 'displayName', label: 'Action' },
+                { key: 'actionCount', label: 'Actions' },
+                { key: 'totalTimeMs', label: 'Total Time' },
+                { key: 'xp', label: 'XP' },
+                { key: 'value', label: 'Value (ask/bid)' },
+                { key: 'goldPerHour', label: 'Gold/hr' },
+            ];
+
+            const headRow = document.createElement('tr');
+            const labelFor = (col) =>
+                this.analyticsSort.key === col.key ? `${col.label} ${this.analyticsSort.desc ? '▼' : '▲'}` : col.label;
+
+            for (const col of columns) {
+                const th = document.createElement('th');
+                th.textContent = labelFor(col);
+                th.style.cssText = `
+                text-align: left; padding: 6px 8px; border-bottom: 1px solid rgba(255,255,255,0.15);
+                color: rgba(255,255,255,0.8); cursor: pointer; white-space: nowrap;
+            `;
+                th.addEventListener('click', () => {
+                    if (this.analyticsSort.key === col.key) {
+                        this.analyticsSort.desc = !this.analyticsSort.desc;
+                    } else {
+                        this.analyticsSort = { key: col.key, desc: true };
+                    }
+                    Array.from(headRow.children).forEach((cell, i) => {
+                        cell.textContent = labelFor(columns[i]);
+                    });
+                    this.renderAnalyticsRows(tbody, enriched);
+                });
+                headRow.appendChild(th);
+            }
+            thead.appendChild(headRow);
+
+            search.addEventListener('input', () => {
+                this.analyticsFilter = search.value;
+                this.renderAnalyticsRows(tbody, enriched);
+            });
+
+            this.renderAnalyticsRows(tbody, enriched);
+            panel.appendChild(this.buildAnalyticsFooter(enriched));
+
+            overlay.appendChild(panel);
+
+            this.analyticsEscapeHandler = (e) => {
+                if (e.key === 'Escape') this.closeAnalyticsPanel();
+            };
+            document.addEventListener('keydown', this.analyticsEscapeHandler);
+
+            return overlay;
+        }
+
+        /**
+         * Sort + filter the enriched pivot rows and (re)render them into tbody.
+         * @param {HTMLElement} tbody
+         * @param {Array<Object>} enriched
+         */
+        renderAnalyticsRows(tbody, enriched) {
+            tbody.innerHTML = '';
+
+            const filterText = this.analyticsFilter.trim().toLowerCase();
+            const visible = filterText
+                ? enriched.filter((e) => e.displayName.toLowerCase().includes(filterText))
+                : enriched.slice();
+
+            const { key, desc } = this.analyticsSort;
+            const sortValue = (e) => {
+                switch (key) {
+                    case 'displayName':
+                        return e.displayName.toLowerCase();
+                    case 'actionCount':
+                        return e.row.actionCount;
+                    case 'totalTimeMs':
+                        return e.row.totalTimeMs;
+                    case 'value':
+                        return e.askTotal;
+                    case 'goldPerHour':
+                        return e.goldPerHourAsk;
+                    default:
+                        return 0;
+                }
+            };
+            visible.sort((a, b) => {
+                const av = sortValue(a);
+                const bv = sortValue(b);
+                if (av < bv) return desc ? 1 : -1;
+                if (av > bv) return desc ? -1 : 1;
+                return 0;
+            });
+
+            if (visible.length === 0) {
+                const emptyRow = document.createElement('tr');
+                const emptyCell = document.createElement('td');
+                emptyCell.colSpan = 6;
+                emptyCell.textContent = 'No actions match.';
+                emptyCell.style.cssText = 'padding: 16px; text-align: center; color: rgba(255,255,255,0.5);';
+                emptyRow.appendChild(emptyCell);
+                tbody.appendChild(emptyRow);
+                return;
+            }
+
+            for (const entry of visible) {
+                tbody.appendChild(this.buildAnalyticsRowElement(entry));
+            }
+        }
+
+        /**
+         * Build one pivot row's <tr> plus its click-to-expand item/date-range detail <tr>.
+         * @param {Object} entry - From enrichAnalyticsRow()
+         * @returns {DocumentFragment}
+         */
+        buildAnalyticsRowElement(entry) {
+            const { row } = entry;
+            const fragment = document.createDocumentFragment();
+
+            const tr = document.createElement('tr');
+            tr.style.cssText = 'border-bottom: 1px solid rgba(255,255,255,0.06); cursor: pointer;';
+
+            const actionCell = document.createElement('td');
+            actionCell.style.cssText = 'padding: 6px 8px; vertical-align: top;';
+            const actionWrap = document.createElement('div');
+            actionWrap.style.cssText = 'display: flex; align-items: center; gap: 6px;';
+            const icon = this.createActionIcon(row.actionHrid, 18);
+            if (icon) actionWrap.appendChild(icon);
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = entry.displayName;
+            nameSpan.style.color = '#fff';
+            actionWrap.appendChild(nameSpan);
+            actionCell.appendChild(actionWrap);
+            const sessionsSub = document.createElement('div');
+            sessionsSub.textContent = `${formatters_js.numberFormatter(row.entryCount)} session${row.entryCount === 1 ? '' : 's'}`;
+            sessionsSub.style.cssText = 'color: rgba(255,255,255,0.45); font-size: 0.85em; margin-top: 2px;';
+            actionCell.appendChild(sessionsSub);
+            tr.appendChild(actionCell);
+
+            tr.appendChild(this.buildAnalyticsCell(formatters_js.numberFormatter(row.actionCount)));
+            tr.appendChild(this.buildAnalyticsCell(this.formatDuration(row.totalTimeMs / 1000)));
+
+            const xpCell = document.createElement('td');
+            xpCell.style.cssText = 'padding: 6px 8px; vertical-align: top;';
+            if (entry.xpEntries.length === 0) {
+                xpCell.textContent = '—';
+                xpCell.style.color = 'rgba(255,255,255,0.4)';
+            } else {
+                for (const xp of entry.xpEntries) {
+                    const chip = document.createElement('div');
+                    chip.style.cssText = 'display: flex; align-items: center; gap: 4px; white-space: nowrap;';
+                    const skillIcon = this.createSkillIcon(xp.skillHrid, 14);
+                    if (skillIcon) chip.appendChild(skillIcon);
+                    const xpText = document.createElement('span');
+                    xpText.style.color = config.COLOR_INFO;
+                    xpText.textContent = formatters_js.formatKMB(xp.amount);
+                    const perHourText = document.createElement('span');
+                    perHourText.style.cssText = 'color: rgba(255,255,255,0.45); font-size: 0.85em;';
+                    perHourText.textContent = ` (${formatters_js.formatKMB(xp.perHour)}/hr)`;
+                    chip.append(xpText, perHourText);
+                    xpCell.appendChild(chip);
+                }
+            }
+            tr.appendChild(xpCell);
+
+            const valueCell = this.buildAnalyticsCell(
+                entry.askTotal === 0 && entry.bidTotal === 0
+                    ? '—'
+                    : `${formatters_js.formatKMB(entry.askTotal)}/${formatters_js.formatKMB(entry.bidTotal)}`
+            );
+            valueCell.style.color = config.COLOR_GOLD;
+            tr.appendChild(valueCell);
+
+            const goldPerHourCell = this.buildAnalyticsCell(
+                entry.goldPerHourAsk === 0 && entry.goldPerHourBid === 0
+                    ? '—'
+                    : `${formatters_js.formatKMB(entry.goldPerHourAsk)}/${formatters_js.formatKMB(entry.goldPerHourBid)}`
+            );
+            goldPerHourCell.style.color = config.COLOR_GOLD;
+            tr.appendChild(goldPerHourCell);
+
+            const detailRow = document.createElement('tr');
+            const detailCell = document.createElement('td');
+            detailCell.colSpan = 6;
+            detailCell.style.cssText = 'padding: 4px 8px 10px 28px; background: rgba(255,255,255,0.02);';
+
+            if (row.earliestStartMs != null && row.latestEndMs != null) {
+                const rangeDiv = document.createElement('div');
+                rangeDiv.style.cssText = 'color: rgba(255,255,255,0.5); font-size: 0.85em; margin-bottom: 4px;';
+                rangeDiv.textContent = `${formatters_js.formatDateTime(new Date(row.earliestStartMs))} → ${formatters_js.formatDateTime(
+                new Date(row.latestEndMs)
+            )}`;
+                detailCell.appendChild(rangeDiv);
+            }
+            detailCell.appendChild(this.buildItemBreakdown(row.drops));
+            detailRow.appendChild(detailCell);
+            detailRow.style.display = 'none';
+
+            tr.addEventListener('click', () => {
+                detailRow.style.display = detailRow.style.display === 'none' ? 'table-row' : 'none';
+            });
+
+            fragment.append(tr, detailRow);
+            return fragment;
+        }
+
+        /**
+         * @param {string} text
+         * @returns {HTMLElement}
+         */
+        buildAnalyticsCell(text) {
+            const cell = document.createElement('td');
+            cell.textContent = text;
+            cell.style.cssText = 'padding: 6px 8px; vertical-align: top; color: #ddd; white-space: nowrap;';
+            return cell;
+        }
+
+        /**
+         * Grand-total footer row across every aggregated action (ignores the active search filter).
+         * @param {Array<Object>} enriched
+         * @returns {HTMLElement}
+         */
+        buildAnalyticsFooter(enriched) {
+            const footer = document.createElement('div');
+            footer.style.cssText = `
+            display: flex; justify-content: space-between; gap: 16px;
+            margin-top: 8px; padding-top: 8px;
+            border-top: 1px solid rgba(255,255,255,0.15);
+            color: rgba(255,255,255,0.7); font-size: 0.85em;
+        `;
+
+            const totalTimeMs = enriched.reduce((sum, e) => sum + e.row.totalTimeMs, 0);
+            const totalActions = enriched.reduce((sum, e) => sum + e.row.actionCount, 0);
+            const totalAsk = enriched.reduce((sum, e) => sum + e.askTotal, 0);
+            const totalBid = enriched.reduce((sum, e) => sum + e.bidTotal, 0);
+
+            const left = document.createElement('span');
+            left.textContent = `Total: ${formatters_js.numberFormatter(totalActions)} actions over ${this.formatDuration(
+            totalTimeMs / 1000
+        )}`;
+
+            const right = document.createElement('span');
+            right.style.color = config.COLOR_GOLD;
+            right.textContent = `${formatters_js.formatKMB(totalAsk)}/${formatters_js.formatKMB(totalBid)}`;
+
+            footer.append(left, right);
+            return footer;
+        }
+
+        /**
+         * Get the skills sprite URL (cached after first lookup)
+         * @returns {string|null}
+         */
+        getSkillsSpriteUrl() {
+            if (!this.skillsSpriteUrl) {
+                const el = document.querySelector('use[href*="skills_sprite"]');
+                if (el) {
+                    const href = el.getAttribute('href');
+                    this.skillsSpriteUrl = href ? href.split('#')[0] : null;
+                }
+            }
+            return this.skillsSpriteUrl;
+        }
+
+        /**
+         * Create an SVG skill icon element
+         * @param {string} skillHrid - Skill HRID
+         * @param {number} size - Icon size in pixels
+         * @returns {SVGElement|null}
+         */
+        createSkillIcon(skillHrid, size) {
+            const spriteUrl = this.getSkillsSpriteUrl();
+            if (!spriteUrl) return null;
+
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('width', String(size));
+            svg.setAttribute('height', String(size));
+            svg.style.flexShrink = '0';
+
+            const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+            title.textContent = this.getSkillName(skillHrid);
+            svg.appendChild(title);
+
+            const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+            const iconName = skillHrid.split('/').pop();
+            use.setAttribute('href', `${spriteUrl}#${iconName}`);
+            svg.appendChild(use);
+
+            return svg;
+        }
+
+        /**
+         * Get skill display name from HRID
+         * @param {string} skillHrid - Skill HRID
+         * @returns {string}
+         */
+        getSkillName(skillHrid) {
+            const details = dataManager.getInitClientData()?.skillDetailMap?.[skillHrid];
+            return details?.name || skillHrid.split('/').pop().replace(/_/g, ' ');
+        }
+
+        /**
+         * Get the game's own skill display sortIndex, for ordering XP chips consistently
+         * @param {string} skillHrid - Skill HRID
+         * @returns {number}
+         */
+        getSkillSortIndex(skillHrid) {
+            const details = dataManager.getInitClientData()?.skillDetailMap?.[skillHrid];
+            return details?.sortIndex ?? 999;
+        }
+
+        /**
          * Cleanup when disabling feature
          */
         cleanup() {
@@ -16930,6 +17532,11 @@ ${starCSS}
             const historySection = document.querySelectorAll('.mwi-loot-log-history');
             historySection.forEach((el) => el.remove());
 
+            // Remove Analytics button and close the pivot table overlay if open
+            this.closeAnalyticsPanel();
+            const analyticsButtons = document.querySelectorAll('.mwi-loot-log-analytics-btn');
+            analyticsButtons.forEach((btn) => btn.remove());
+
             // Unregister all handlers
             this.unregisterHandlers.forEach((fn) => fn());
             this.unregisterHandlers = [];
@@ -16942,6 +17549,7 @@ ${starCSS}
             this.currentLootLogData = null;
             this.itemsSpriteUrl = null;
             this.actionsSpriteUrl = null;
+            this.skillsSpriteUrl = null;
             this.historicalRendered = 0;
             this.initialized = false;
         }
