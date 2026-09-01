@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.100.0](https://github.com/Celasha/Toolasha/compare/v2.99.2...v2.100.0) (2026-09-01)
+
+
+### Features
+
+* add Loot & XP Log Analytics pivot table ([6797433](https://github.com/Celasha/Toolasha/commit/67974338a97b077651b12a0a2d4dd0a0926dbb05))
+
+
+### Bug Fixes
+
+* keep shrine unlocked cap live and clamp purchased level to it ([1701e07](https://github.com/Celasha/Toolasha/commit/1701e076346e25f1be6b976633d6cf0003438a66))
+
 ## [2.99.2](https://github.com/Celasha/Toolasha/compare/v2.99.1...v2.99.2) (2026-08-31)
 
 ### Bug Fixes
