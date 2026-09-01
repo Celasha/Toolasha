@@ -18,6 +18,7 @@ const itemPrices = {};
 vi.mock('../../core/config.js', () => ({
     default: {
         getSetting: vi.fn((key) => key === 'lootLogStats'),
+        getSettingValue: vi.fn((key, defaultValue) => defaultValue),
         COLOR_GOLD: '#ffd700',
         COLOR_INFO: '#60a5fa',
     },
@@ -32,7 +33,11 @@ vi.mock('../../core/websocket.js', () => ({
 }));
 
 vi.mock('../../core/data-manager.js', () => ({
-    default: { getItemDetails: vi.fn(() => null) },
+    default: {
+        getItemDetails: vi.fn(() => null),
+        getActionDetails: vi.fn(() => null),
+        getInitClientData: vi.fn(() => ({ skillDetailMap: {} })),
+    },
 }));
 
 vi.mock('../../utils/market-data.js', () => ({
@@ -44,7 +49,7 @@ vi.mock('../market/expected-value-calculator.js', () => ({
 }));
 
 vi.mock('./loot-log-history.js', () => ({
-    default: { mergeAndSave: vi.fn(), getHistoricalEntries: vi.fn(async () => []) },
+    default: { mergeAndSave: vi.fn(), getHistoricalEntries: vi.fn(async () => []), _load: vi.fn(async () => []) },
 }));
 
 const { default: lootLogStatsFeature } = await import('./loot-log-stats.js');
@@ -179,5 +184,121 @@ describe('LootLogStats position-based matching', () => {
         instance.processLootLogElement(row, 0, 0);
 
         expect(row.querySelector('.mwi-loot-log-value')).toBe(firstInjection);
+    });
+});
+
+describe('LootLogStats Analytics (pivot table) button and panel', () => {
+    let instance;
+
+    function buildPanelHeader() {
+        const panel = document.createElement('div');
+        panel.className = 'LootLogPanel_lootLogPanel__2013X';
+        const heading = document.createElement('h1');
+        heading.textContent = 'Loot & XP Log';
+        const refreshWrap = document.createElement('div');
+        const refreshBtn = document.createElement('button');
+        refreshBtn.textContent = 'Refresh';
+        refreshWrap.appendChild(refreshBtn);
+        panel.append(heading, refreshWrap);
+        return panel;
+    }
+
+    beforeEach(async () => {
+        document.body.innerHTML = '';
+        instance = await lootLogStatsFeature.initialize();
+    });
+
+    test('injects a 📊 button immediately after the native Refresh button', () => {
+        const panel = buildPanelHeader();
+        document.body.appendChild(panel);
+
+        instance.injectAnalyticsButton(panel);
+
+        const btn = panel.querySelector('.mwi-loot-log-analytics-btn');
+        expect(btn).not.toBeNull();
+        expect(btn.textContent).toBe('📊');
+        expect(btn.previousElementSibling.textContent).toBe('Refresh');
+    });
+
+    test('never injects a second button into the same panel', () => {
+        const panel = buildPanelHeader();
+        document.body.appendChild(panel);
+
+        instance.injectAnalyticsButton(panel);
+        instance.injectAnalyticsButton(panel);
+
+        expect(panel.querySelectorAll('.mwi-loot-log-analytics-btn')).toHaveLength(1);
+    });
+
+    test('does nothing if the panel has no Refresh button (e.g. mid-render)', () => {
+        const panel = document.createElement('div');
+        expect(() => instance.injectAnalyticsButton(panel)).not.toThrow();
+        expect(panel.querySelector('.mwi-loot-log-analytics-btn')).toBeNull();
+    });
+
+    test('clicking the button opens an overlay attached to the document, and the close button removes it', async () => {
+        const panel = buildPanelHeader();
+        document.body.appendChild(panel);
+        instance.injectAnalyticsButton(panel);
+
+        panel.querySelector('.mwi-loot-log-analytics-btn').click();
+        // openAnalyticsPanel is async (awaits lootLogHistory._load()) - flush microtasks.
+        await Promise.resolve();
+        await Promise.resolve();
+
+        const overlay = document.querySelector('.mwi-loot-log-analytics-overlay');
+        expect(overlay).not.toBeNull();
+        expect(overlay.textContent).toContain('Loot & XP Log Analytics');
+
+        overlay.querySelector('h2 + span').click();
+        expect(document.querySelector('.mwi-loot-log-analytics-overlay')).toBeNull();
+    });
+
+    test('the pivot table aggregates current-session entries by action, summing time/XP/drops', async () => {
+        instance.currentLootLogData = [
+            {
+                characterActionId: 1,
+                actionHrid: '/actions/woodcutting/arcane_tree',
+                actionCount: 100,
+                startTime: '2026-08-01T00:00:00Z',
+                endTime: '2026-08-01T01:00:00Z',
+                totalActiveMillis: 3_600_000,
+                drops: { '/items/arcane_log::0': 100 },
+                xpGains: { '/skills/woodcutting': 5000 },
+            },
+            {
+                characterActionId: 2,
+                actionHrid: '/actions/woodcutting/arcane_tree',
+                actionCount: 200,
+                startTime: '2026-08-02T00:00:00Z',
+                endTime: '2026-08-02T02:00:00Z',
+                totalActiveMillis: 7_200_000,
+                drops: { '/items/arcane_log::0': 200 },
+                xpGains: { '/skills/woodcutting': 10000 },
+            },
+        ];
+
+        await instance.openAnalyticsPanel();
+
+        const overlay = document.querySelector('.mwi-loot-log-analytics-overlay');
+        expect(overlay.textContent).toContain('1 action');
+        // Combined actionCount across both entries (100 + 200).
+        expect(overlay.textContent).toContain('300');
+        // Combined active time (1h + 2h).
+        expect(overlay.textContent).toContain('3h');
+
+        instance.closeAnalyticsPanel();
+    });
+
+    test('cleanup removes any injected button and closes an open panel', async () => {
+        const panel = buildPanelHeader();
+        document.body.appendChild(panel);
+        instance.injectAnalyticsButton(panel);
+        await instance.openAnalyticsPanel();
+
+        instance.cleanup();
+
+        expect(document.querySelector('.mwi-loot-log-analytics-btn')).toBeNull();
+        expect(document.querySelector('.mwi-loot-log-analytics-overlay')).toBeNull();
     });
 });

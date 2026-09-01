@@ -7,7 +7,7 @@ import storage from '../../core/storage.js';
 import dataManager from '../../core/data-manager.js';
 
 const STORE_NAME = 'lootLogHistory';
-const MAX_ENTRIES = 500;
+const MAX_ENTRIES = 5000;
 
 class LootLogHistory {
     _getKey() {
