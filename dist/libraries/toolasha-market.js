@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.100.0
+ * Version: 2.100.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -33814,6 +33814,7 @@ self.onmessage = function (e) {
             this.unregisterInventoryButtonObserver = null;
             this.unregisterNetworthButtonObserver = null;
             this.unsubscribeStateChange = null;
+            this.itemsSpriteUrl = null;
         }
 
         initialize() {
@@ -34289,12 +34290,74 @@ self.onmessage = function (e) {
                 const row = document.createElement('tr');
                 const hasValue = itemHrid in itemValueTotals;
                 const valueText = hasValue ? formatters_js.formatLargeNumber(itemValueTotals[itemHrid]) : '—';
-                row.innerHTML = `<td style="padding:2px 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:0;">${itemLabel(itemHrid)}</td><td style="text-align:right; padding:2px 0;">${formatters_js.formatLargeNumber(count)}</td><td style="text-align:right; padding:2px 0;">${valueText}</td>`;
+
+                const itemCell = document.createElement('td');
+                itemCell.style.cssText =
+                    'padding:2px 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:0;';
+                const itemCellInner = document.createElement('div');
+                itemCellInner.style.cssText = 'display:flex; align-items:center; gap:5px; min-width:0;';
+                const icon = this.createItemIcon(itemHrid, 16);
+                if (icon) itemCellInner.appendChild(icon);
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = itemLabel(itemHrid);
+                nameSpan.style.cssText = 'overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;';
+                itemCellInner.appendChild(nameSpan);
+                itemCell.appendChild(itemCellInner);
+
+                const qtyCell = document.createElement('td');
+                qtyCell.style.cssText = 'text-align:right; padding:2px 0;';
+                qtyCell.textContent = formatters_js.formatLargeNumber(count);
+
+                const valueCell = document.createElement('td');
+                valueCell.style.cssText = 'text-align:right; padding:2px 0;';
+                valueCell.textContent = valueText;
+
+                row.appendChild(itemCell);
+                row.appendChild(qtyCell);
+                row.appendChild(valueCell);
                 table.appendChild(row);
             }
 
             wrapper.appendChild(table);
             return wrapper;
+        }
+
+        /**
+         * Create an SVG item icon element, matching Toolasha's existing sprite-icon convention.
+         * @param {string} itemHrid - Item HRID
+         * @param {number} size - Icon size in pixels
+         * @returns {SVGElement|null} SVG element or null if the items sprite URL isn't available yet
+         */
+        createItemIcon(itemHrid, size) {
+            const spriteUrl = this.getItemsSpriteUrl();
+            if (!spriteUrl) return null;
+
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('width', String(size));
+            svg.setAttribute('height', String(size));
+            svg.style.flexShrink = '0';
+
+            const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+            const iconName = itemHrid === '/items/coin' ? 'coin' : itemHrid.split('/').pop();
+            use.setAttribute('href', `${spriteUrl}#${iconName}`);
+            svg.appendChild(use);
+
+            return svg;
+        }
+
+        /**
+         * Get the items sprite URL (cached after first lookup).
+         * @returns {string|null} Sprite URL or null
+         */
+        getItemsSpriteUrl() {
+            if (!this.itemsSpriteUrl) {
+                const el = document.querySelector('use[href*="items_sprite"]');
+                if (el) {
+                    const href = el.getAttribute('href');
+                    this.itemsSpriteUrl = href ? href.split('#')[0] : null;
+                }
+            }
+            return this.itemsSpriteUrl;
         }
 
         destructiveButtonStyle() {
@@ -34776,6 +34839,7 @@ self.onmessage = function (e) {
             this.showPasteArea = false;
             this.deleteContainerError = null;
             this.deleteAllError = null;
+            this.itemsSpriteUrl = null;
         }
     }
 
