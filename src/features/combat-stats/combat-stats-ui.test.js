@@ -47,6 +47,12 @@ describe('formatRunway', () => {
     test('does not cap a runway just under one year', () => {
         expect(formatRunway(364 * 86400)).toBe('~364d');
     });
+
+    test('drops the hours component at 100+ days to avoid wrapping in narrow tiles', () => {
+        expect(formatRunway(142 * 86400 + 10 * 3600)).toBe('~142d');
+        expect(formatRunway(99 * 86400 + 10 * 3600)).toBe('~99d 10h');
+        expect(formatRunway(100 * 86400)).toBe('~100d');
+    });
 });
 
 describe('formatRunwayExact', () => {

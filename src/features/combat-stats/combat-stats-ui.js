@@ -45,6 +45,11 @@ export function formatRunway(seconds) {
         return m > 0 ? `~${h}h ${m}m` : `~${h}h`;
     }
     const d = Math.floor(seconds / 86400);
+    // 3+ digit day counts push "~XXXd Yh" onto two lines in the narrow Combat Consumables tiles -
+    // drop the hours once days alone is already the meaningful precision.
+    if (d >= 100) {
+        return `~${d}d`;
+    }
     const h = Math.floor((seconds % 86400) / 3600);
     return h > 0 ? `~${d}d ${h}h` : `~${d}d`;
 }
