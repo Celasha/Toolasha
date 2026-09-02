@@ -26,6 +26,15 @@ import { getShopCoinCost } from '../../utils/game-lookups.js';
 import { isExcluded, getExclusions } from './networth-exclusions.js';
 import loadoutState from '../../core/loadout-state.js';
 import { MARKET_TAX, COWBELL_BAG_HRID, COWBELL_BAG_TAX } from '../../utils/profit-constants.js';
+import { buildCheapestPerCredit } from '../../utils/guild-credit-conversion.js';
+
+const GUILD_SHRINE_LABELS = {
+    '/guild_shrines/force': 'Force',
+    '/guild_shrines/tempo': 'Tempo',
+    '/guild_shrines/rarity': 'Rarity',
+    '/guild_shrines/scholar': 'Scholar',
+    '/guild_shrines/spirit': 'Spirit',
+};
 
 /**
  * Calculate the value of a single item
@@ -392,6 +401,65 @@ export function calculateAllAbilitiesCost(characterAbilities, abilityCombatTrigg
         equippedBreakdown,
         otherBreakdown,
     };
+}
+
+/**
+ * Build the human-readable display name for a guild shrine buff.
+ * @param {string} buffHrid
+ * @param {Object} buff - Entry from gameData.guildBuffDetailMap
+ * @returns {string}
+ */
+export function buildGuildBuffDisplayName(buffHrid, buff) {
+    const shrineLabel = GUILD_SHRINE_LABELS[buff?.shrineHrid] || buff?.shrineHrid?.split('/').pop() || 'Shrine';
+    const typeLabel = buff?.isCombat ? 'Combat' : 'Skilling';
+    return `Shrine of ${shrineLabel} - ${typeLabel}`;
+}
+
+/**
+ * Calculate total value of all guild shrine buffs, priced at current level (guild-shared state,
+ * not personally owned — every member of the guild sees and would compute the same totals).
+ * Guild Token cost has no gold-equivalent anywhere in the game and is intentionally excluded;
+ * only the Guild Credit portion of each level's cost is priced, via the cheapest tradeable
+ * item that converts into that credit.
+ * @returns {Object} {totalCost, breakdown: [{hrid, name, level, cost}]}
+ */
+export function calculateAllGuildShrinesCost() {
+    const gameData = dataManager.getInitClientData();
+    if (!gameData?.guildBuffDetailMap) return { totalCost: 0, breakdown: [] };
+
+    const pricingMode = config.getSettingValue('networth_pricingMode') || 'ask';
+    const { sell, buy } = buildCheapestPerCredit(gameData.itemDetailMap || {});
+    const cheapestPerCredit = pricingMode === 'bid' ? buy : sell;
+
+    let totalCost = 0;
+    const breakdown = [];
+
+    for (const [buffHrid, buff] of Object.entries(gameData.guildBuffDetailMap)) {
+        const level = dataManager.getCharacterGuildBuffLevel(buffHrid);
+        if (level === 0) continue;
+
+        let cost = 0;
+        for (let lvl = 1; lvl <= level; lvl++) {
+            const levelCost = buff.levelCosts?.[String(lvl)];
+            if (!levelCost) continue;
+            for (const { itemHrid, count } of levelCost.creditCosts || []) {
+                const perCredit = cheapestPerCredit[itemHrid];
+                if (perCredit) cost += perCredit * count;
+            }
+        }
+
+        totalCost += cost;
+        breakdown.push({
+            hrid: buffHrid,
+            name: buildGuildBuffDisplayName(buffHrid, buff),
+            level,
+            cost,
+        });
+    }
+
+    breakdown.sort((a, b) => b.cost - a.cost);
+
+    return { totalCost, breakdown };
 }
 
 /**
@@ -882,13 +950,38 @@ export async function calculateNetworth() {
         }
     }
 
+    // Calculate guild shrines value — apply per-buff and whole-section exclusions
+    let guildShrinesData = calculateAllGuildShrinesCost();
+    if (isExcluded('assetType', 'guildShrines') && guildShrinesData.totalCost > 0) {
+        trackExcluded('assetType', 'guildShrines', 'All Guild Shrines', guildShrinesData.totalCost);
+        guildShrinesData = { totalCost: 0, breakdown: [] };
+    } else {
+        let excludedBuffCost = 0;
+        const remainingBuffs = [];
+        for (const buff of guildShrinesData.breakdown) {
+            if (isExcluded('guildBuff', buff.hrid)) {
+                trackExcluded('guildBuff', buff.hrid, buff.name, buff.cost);
+                excludedBuffCost += buff.cost;
+            } else {
+                remainingBuffs.push(buff);
+            }
+        }
+        if (excludedBuffCost > 0) {
+            guildShrinesData = {
+                totalCost: guildShrinesData.totalCost - excludedBuffCost,
+                breakdown: remainingBuffs,
+            };
+        }
+    }
+
     // Build excluded summary
     const excludedItems = [...excludedByKey.values()].sort((a, b) => b.amount - a.amount);
     const excludedTotal = excludedItems.reduce((sum, e) => sum + e.amount, 0);
 
     // Calculate totals
     const currentAssetsTotal = equippedValue + inventoryValue + listingsValue;
-    const fixedAssetsTotal = housesData.totalCost + abilitiesData.totalCost + abilityBooksValue;
+    const fixedAssetsTotal =
+        housesData.totalCost + abilitiesData.totalCost + abilityBooksValue + guildShrinesData.totalCost;
     const totalNetworth = currentAssetsTotal + fixedAssetsTotal;
 
     // Sort breakdowns by value descending
@@ -917,6 +1010,7 @@ export async function calculateNetworth() {
                 totalCost: abilityBooksValue,
                 breakdown: abilityBooksBreakdown,
             },
+            guildShrines: guildShrinesData,
         },
     };
 }
@@ -950,6 +1044,7 @@ function createEmptyNetworthData() {
                 totalCost: 0,
                 breakdown: [],
             },
+            guildShrines: { totalCost: 0, breakdown: [] },
         },
     };
 }

@@ -321,6 +321,7 @@ class NetworthInventoryDisplay {
             'mwi-equipped-abilities-breakdown',
             'mwi-other-abilities-breakdown',
             'mwi-ability-books-breakdown',
+            'mwi-guild-shrines-breakdown',
             'mwi-excluded-details',
         ];
 
@@ -362,6 +363,7 @@ class NetworthInventoryDisplay {
         const showFixedAssets = fa.total > 0;
         const showHouses = fa.houses.totalCost > 0;
         const showAbilities = fa.abilities.totalCost > 0;
+        const showGuildShrines = fa.guildShrines.totalCost > 0;
         const showExcluded = excl.total > 0;
 
         this.container.innerHTML = `
@@ -500,6 +502,18 @@ class NetworthInventoryDisplay {
                     `
                             : ''
                     }
+
+                    ${
+                        showGuildShrines
+                            ? `
+                    <!-- Guild Shrines -->
+                    <div style="cursor: pointer; margin-top: 4px;" id="mwi-guild-shrines-toggle">
+                        + Guild Shrines: ${networthFormatter(Math.round(fa.guildShrines.totalCost))}
+                    </div>
+                    <div id="mwi-guild-shrines-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderGuildShrinesBreakdown(fa.guildShrines.breakdown)}</div>
+                    `
+                            : ''
+                    }
                 </div>
                 `
                         : ''
@@ -606,6 +620,23 @@ class NetworthInventoryDisplay {
         return breakdown
             .map((book) => {
                 return `${book.name} (${formatKMB(book.count)}): ${networthFormatter(Math.round(book.value))}`;
+            })
+            .join('\n');
+    }
+
+    /**
+     * Render guild shrines breakdown HTML
+     * @param {Array} breakdown - Array of {name, level, cost}
+     * @returns {string} HTML string
+     */
+    renderGuildShrinesBreakdown(breakdown) {
+        if (breakdown.length === 0) {
+            return '<div>No guild shrine buffs purchased</div>';
+        }
+
+        return breakdown
+            .map((buff) => {
+                return `${buff.name} (Lv.${buff.level}): ${networthFormatter(Math.round(buff.cost))}`;
             })
             .join('\n');
     }
@@ -863,6 +894,15 @@ class NetworthInventoryDisplay {
                 'mwi-ability-books-toggle',
                 'mwi-ability-books-breakdown',
                 `Ability Books: ${networthFormatter(Math.round(fa.abilityBooks.totalCost))}`
+            );
+        }
+
+        // Guild Shrines toggle
+        if (fa.guildShrines.totalCost > 0) {
+            this.setupToggle(
+                'mwi-guild-shrines-toggle',
+                'mwi-guild-shrines-breakdown',
+                `Guild Shrines: ${networthFormatter(Math.round(fa.guildShrines.totalCost))}`
             );
         }
 

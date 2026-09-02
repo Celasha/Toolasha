@@ -28,6 +28,7 @@ import {
 } from '../../utils/marketplace-tabs.js';
 import { createAutofillManager } from '../../utils/marketplace-autofill.js';
 import { normalizeGuildShrineReturnLabel } from './guild-marketplace-label.js';
+import { buildCheapestPerCredit } from '../../utils/guild-credit-conversion.js';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
 
 function getVisibleGuildNavigationButton() {
@@ -83,32 +84,6 @@ function createGuildReturnTab(referenceTab, returnLabel, sessionId) {
     });
 
     return returnTab;
-}
-
-/**
- * Build cheapest-gold-per-credit maps for both sell and buy sides.
- * @param {Object} itemDetailMap
- * @returns {{ sell: Object, buy: Object }}
- */
-function buildCheapestPerCredit(itemDetailMap) {
-    const sell = {};
-    const buy = {};
-    for (const [hrid, item] of Object.entries(itemDetailMap)) {
-        for (const conv of item.guildCreditConversions || []) {
-            const creditHrid = conv.creditItemHrid;
-            const sellPrice = getItemPrice(hrid, { mode: 'ask' });
-            const buyPrice = getItemPrice(hrid, { mode: 'bid' });
-            if (sellPrice > 0) {
-                const gpc = (sellPrice * conv.itemCount) / conv.creditCount;
-                if (!sell[creditHrid] || gpc < sell[creditHrid]) sell[creditHrid] = gpc;
-            }
-            if (buyPrice > 0) {
-                const gpc = (buyPrice * conv.itemCount) / conv.creditCount;
-                if (!buy[creditHrid] || gpc < buy[creditHrid]) buy[creditHrid] = gpc;
-            }
-        }
-    }
-    return { sell, buy };
 }
 
 /**
