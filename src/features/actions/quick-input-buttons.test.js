@@ -10,7 +10,7 @@
 /* @vitest-environment jsdom */
 
 import { describe, test, expect, afterEach } from 'vitest';
-import { QuickInputButtons } from './quick-input-buttons.js';
+import { QuickInputButtons, computeProgressiveQueueTime } from './quick-input-buttons.js';
 
 const LEVEL_EXPERIENCE_TABLE = [0, 0, 100, 250, 450, 700, 1000, 1350, 1750, 2200, 2700];
 
@@ -109,5 +109,61 @@ describe('QuickInputButtons.createLevelProgressSection — reverse quantity-to-l
 
         expect(targetLevelResult.textContent).toContain('actions');
         expect(numberInput.value).not.toBe('');
+    });
+});
+
+describe('computeProgressiveQueueTime finite-queue cycle floor (TLA-036)', () => {
+    const noNextLevel = {
+        currentLevel: 200,
+        currentXP: 0,
+        modifiedXP: 10,
+        levelExperienceTable: [],
+    };
+
+    test('one Azure Sword queue action cannot complete before its 8.42s timed cycle', () => {
+        const actionTime = 16 / 1.9;
+        expect(computeProgressiveQueueTime(1, noNextLevel, 65, actionTime)).toBeCloseTo(actionTime, 10);
+    });
+
+    test('zero queued actions stays zero', () => {
+        expect(computeProgressiveQueueTime(0, noNextLevel, 65, 8.42)).toBe(0);
+    });
+
+    test('very high efficiency still requires one full cycle for a positive queue', () => {
+        expect(computeProgressiveQueueTime(1, noNextLevel, 500, 8.42)).toBe(8.42);
+    });
+
+    test('does not change a long-horizon estimate that is already above one cycle', () => {
+        const actionTime = 16 / 1.9;
+        const expectedLegacy = (100 / 1.65) * actionTime;
+        expect(computeProgressiveQueueTime(100, noNextLevel, 65, actionTime)).toBeCloseTo(expectedLegacy, 10);
+    });
+
+    test('does not change progressive level-crossing arithmetic above the cycle floor', () => {
+        const actionTime = 16 / 1.9;
+        const context = {
+            currentLevel: 3,
+            currentXP: 250,
+            modifiedXP: 10,
+            levelExperienceTable: [0, 0, 100, 250, 450, 700, 1000, 1350, 1750],
+        };
+
+        // Legacy arithmetic:
+        // L3: 20 queued completions / 1.65 * actionTime
+        // L4: 25 queued completions / 1.66 * actionTime
+        // L5: remaining 5 queued completions / 1.67 * actionTime
+        const expectedLegacy = (20 / 1.65) * actionTime + (25 / 1.66) * actionTime + (5 / 1.67) * actionTime;
+        expect(computeProgressiveQueueTime(50, context, 65, actionTime)).toBeCloseTo(expectedLegacy, 10);
+    });
+
+    test('one queued action near a level boundary still requires one full timed cycle', () => {
+        const actionTime = 16 / 1.9;
+        const context = {
+            currentLevel: 3,
+            currentXP: 449,
+            modifiedXP: 10,
+            levelExperienceTable: [0, 0, 100, 250, 450, 700, 1000],
+        };
+        expect(computeProgressiveQueueTime(1, context, 65, actionTime)).toBeCloseTo(actionTime, 10);
     });
 });

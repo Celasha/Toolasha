@@ -60,7 +60,7 @@ function scrollSpriteHtml(buffTypeHrid, size = 14) {
  * @param {number} actionTime - Seconds per time-consuming action
  * @returns {number} Total wall-clock seconds
  */
-function computeProgressiveQueueTime(queueCount, levelContext, baseEfficiency, actionTime) {
+export function computeProgressiveQueueTime(queueCount, levelContext, baseEfficiency, actionTime) {
     let remaining = queueCount;
     let totalTime = 0;
     let level = levelContext.currentLevel;
@@ -92,7 +92,10 @@ function computeProgressiveQueueTime(queueCount, levelContext, baseEfficiency, a
         levelsGained++;
     }
 
-    return totalTime;
+    // Efficiency increases average completions per timed cycle; it cannot make a positive
+    // finite queue complete before the first timed cycle itself finishes. Preserve the
+    // existing progressive estimator for all longer horizons, but reject its sub-cycle edge.
+    return queueCount > 0 ? Math.max(actionTime, totalTime) : totalTime;
 }
 
 /**
