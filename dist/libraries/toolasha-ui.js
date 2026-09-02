@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.100.1
+ * Version: 2.101.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -17119,6 +17119,7 @@ ${starCSS}
                     amount,
                     perHour: hours > 0 ? amount / hours : 0,
                 }));
+            const totalXp = xpEntries.reduce((sum, xp) => sum + xp.amount, 0);
 
             return {
                 row,
@@ -17129,6 +17130,8 @@ ${starCSS}
                 goldPerHourAsk,
                 goldPerHourBid,
                 xpEntries,
+                totalXp,
+                totalXpPerHour: hours > 0 ? totalXp / hours : 0,
             };
         }
 
@@ -17364,6 +17367,28 @@ ${starCSS}
                     perHourText.textContent = ` (${formatters_js.formatKMB(xp.perHour)}/hr)`;
                     chip.append(xpText, perHourText);
                     xpCell.appendChild(chip);
+                }
+
+                // Combat/Labyrinth actions grant several skills' XP per run - a single-skill row's
+                // total would just repeat the one chip above it, so only show the sum when it adds
+                // information beyond what's already listed.
+                if (entry.xpEntries.length > 1) {
+                    const totalChip = document.createElement('div');
+                    totalChip.className = 'mwi-loot-log-xp-total';
+                    totalChip.style.cssText =
+                        'display: flex; align-items: center; gap: 4px; white-space: nowrap; ' +
+                        'margin-top: 3px; padding-top: 3px; border-top: 1px solid rgba(255,255,255,0.12);';
+                    const totalLabel = document.createElement('span');
+                    totalLabel.style.cssText = 'color: rgba(255,255,255,0.6); font-size: 0.85em;';
+                    totalLabel.textContent = 'Total:';
+                    const totalXpText = document.createElement('span');
+                    totalXpText.style.cssText = `color: ${config.COLOR_INFO}; font-weight: 600;`;
+                    totalXpText.textContent = formatters_js.formatKMB(entry.totalXp);
+                    const totalPerHourText = document.createElement('span');
+                    totalPerHourText.style.cssText = 'color: rgba(255,255,255,0.45); font-size: 0.85em;';
+                    totalPerHourText.textContent = ` (${formatters_js.formatKMB(entry.totalXpPerHour)}/hr)`;
+                    totalChip.append(totalLabel, totalXpText, totalPerHourText);
+                    xpCell.appendChild(totalChip);
                 }
             }
             tr.appendChild(xpCell);
@@ -20860,8 +20885,9 @@ ${starCSS}
         'market_showTopOrderAge',
         'market_showEstimatedListingAge',
         'market_listingAgeFormat',
-        'market_listingTimeFormat',
-        'market_listingDateFormat',
+        // market_listingTimeFormat / market_listingDateFormat are excluded here on purpose: despite
+        // the market_ prefix, they're general date/time display preferences also consumed by
+        // formatDateTime(), Character Activity Status, and Pop-out Chat, not marketplace-only UI.
         'market_showOrderTotals',
         'market_showHistoryViewer',
         'market_showPhiloCalculator',
@@ -41988,6 +42014,7 @@ self.onmessage = function (e) {
         handleCharacterSwitch() {
             // Cancel any active profit calculations to prevent stale data
             this.activeProfitCalculationId = null;
+            this.activeBarProfitId = null;
 
             // Clear appended stats from old character's action panel (before it's removed)
             const oldActionNameElement = document.querySelector('div[class*="Header_actionName"]');
@@ -42001,7 +42028,9 @@ self.onmessage = function (e) {
                 this.actionNameObserver = null;
             }
 
-            // Clear display element reference (already removed from DOM by game)
+            // Clear display element references. The game doesn't always remove the old container's
+            // Toolasha-owned siblings on remount, so createDisplayPanel() also does an ID-based sweep
+            // for any orphaned time/profit rows left behind.
             this.displayElement = null;
             this.profitElement = null;
 
@@ -42099,11 +42128,13 @@ self.onmessage = function (e) {
                 return; // Already created and still in the DOM
             }
             this.displayElement = null;
+            this.profitElement = null;
 
-            const orphan = document.getElementById('mwi-action-time-display');
-            if (orphan) {
-                orphan.remove();
-            }
+            // Remove every stale Toolasha-owned row, not just the first `getElementById()` match - a
+            // character switch/remount can leave the old container (and its Toolasha siblings)
+            // connected while our own references get cleared, so duplicates can otherwise accumulate.
+            document.querySelectorAll('[id="mwi-action-time-display"]').forEach((node) => node.remove());
+            document.querySelectorAll('[id="mwi-action-profit-display"]').forEach((node) => node.remove());
 
             const actionNameContainer = document.querySelector('div[class*="Header_actionName"]');
             if (!actionNameContainer) {

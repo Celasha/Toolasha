@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.100.1
+ * Version: 2.101.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -25966,6 +25966,11 @@
             return m > 0 ? `~${h}h ${m}m` : `~${h}h`;
         }
         const d = Math.floor(seconds / 86400);
+        // 3+ digit day counts push "~XXXd Yh" onto two lines in the narrow Combat Consumables tiles -
+        // drop the hours once days alone is already the meaningful precision.
+        if (d >= 100) {
+            return `~${d}d`;
+        }
         const h = Math.floor((seconds % 86400) / 3600);
         return h > 0 ? `~${d}d ${h}h` : `~${d}d`;
     }
