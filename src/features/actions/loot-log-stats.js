@@ -1283,7 +1283,7 @@ class LootLogStats {
 
         const right = document.createElement('span');
         right.style.color = config.COLOR_GOLD;
-        right.textContent = `${formatKMB(totalAsk)}/${formatKMB(totalBid)}`;
+        right.textContent = `Total Value (ask/bid): ${formatKMB(totalAsk)}/${formatKMB(totalBid)}`;
 
         footer.append(left, right);
         return footer;
