@@ -528,3 +528,159 @@ describe('ActionTimeDisplay current-unit partial progress (TLA-015)', () => {
         expect(result.totalTime).toBe(420);
     });
 });
+
+describe('ActionTimeDisplay Current Action Bar DOM ownership (TLA-035)', () => {
+    let instance;
+    let actionNameElement;
+
+    function connectedTimeRows() {
+        return document.querySelectorAll('[id="mwi-action-time-display"]');
+    }
+
+    function connectedProfitRows() {
+        return document.querySelectorAll('[id="mwi-action-profit-display"]');
+    }
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        document.body.innerHTML = '';
+        actionNameElement = document.createElement('div');
+        actionNameElement.className = 'Header_actionName__31-L2';
+        actionNameElement.textContent = 'Crushed Amethyst';
+        document.body.appendChild(actionNameElement);
+        instance = new ActionTimeDisplay();
+    });
+
+    test('orphan profit only - stale profit row with no valid panel reference is replaced by exactly one', () => {
+        const staleProfit = document.createElement('div');
+        staleProfit.id = 'mwi-action-profit-display';
+        staleProfit.textContent = 'Profit: +906.7K/hr · remaining +3.53M';
+        document.body.appendChild(staleProfit);
+
+        instance.createDisplayPanel();
+
+        expect(connectedProfitRows()).toHaveLength(1);
+        expect(connectedProfitRows()[0]).not.toBe(staleProfit);
+        expect(staleProfit.isConnected).toBe(false);
+        expect(connectedTimeRows()).toHaveLength(1);
+    });
+
+    test('stale time + profit pair - recreation leaves exactly one of each', () => {
+        const staleTime = document.createElement('div');
+        staleTime.id = 'mwi-action-time-display';
+        document.body.appendChild(staleTime);
+        const staleProfit = document.createElement('div');
+        staleProfit.id = 'mwi-action-profit-display';
+        document.body.appendChild(staleProfit);
+
+        instance.createDisplayPanel();
+
+        expect(connectedTimeRows()).toHaveLength(1);
+        expect(connectedProfitRows()).toHaveLength(1);
+        expect(staleTime.isConnected).toBe(false);
+        expect(staleProfit.isConnected).toBe(false);
+    });
+
+    test('duplicate stale profit rows - recreation removes all stale duplicates, not merely the first match', () => {
+        const staleProfitOne = document.createElement('div');
+        staleProfitOne.id = 'mwi-action-profit-display';
+        document.body.appendChild(staleProfitOne);
+        const staleProfitTwo = document.createElement('div');
+        staleProfitTwo.id = 'mwi-action-profit-display';
+        document.body.appendChild(staleProfitTwo);
+
+        instance.createDisplayPanel();
+
+        expect(connectedProfitRows()).toHaveLength(1);
+        expect(staleProfitOne.isConnected).toBe(false);
+        expect(staleProfitTwo.isConnected).toBe(false);
+    });
+
+    test('repeated recreation/remount never increases the row count above one pair', () => {
+        instance.createDisplayPanel();
+        instance.displayElement = null;
+        instance.profitElement = null;
+        instance.createDisplayPanel();
+        instance.displayElement = null;
+        instance.profitElement = null;
+        instance.createDisplayPanel();
+
+        expect(connectedTimeRows()).toHaveLength(1);
+        expect(connectedProfitRows()).toHaveLength(1);
+    });
+
+    test('character switch / panel replacement - old rows do not remain beside the new character rows', () => {
+        instance.createDisplayPanel();
+        const oldTime = instance.displayElement;
+        const oldProfit = instance.profitElement;
+        expect(oldTime.isConnected).toBe(true);
+        expect(oldProfit.isConnected).toBe(true);
+
+        // Native remount replaces the action name container but leaves our old siblings behind,
+        // exactly as the confirmed runtime evidence shows.
+        const newActionNameElement = document.createElement('div');
+        newActionNameElement.className = 'Header_actionName__31-L2';
+        newActionNameElement.textContent = 'Redwood Tree';
+        oldTime.parentNode.insertBefore(newActionNameElement, oldTime);
+
+        instance.handleCharacterSwitch();
+        instance.createDisplayPanel();
+
+        expect(oldTime.isConnected).toBe(false);
+        expect(oldProfit.isConnected).toBe(false);
+        expect(connectedTimeRows()).toHaveLength(1);
+        expect(connectedProfitRows()).toHaveLength(1);
+        expect(connectedTimeRows()[0]).not.toBe(oldTime);
+        expect(connectedProfitRows()[0]).not.toBe(oldProfit);
+    });
+
+    test('normal steady state - one correct time row and one correct profit row exist side by side', () => {
+        instance.createDisplayPanel();
+
+        expect(connectedTimeRows()).toHaveLength(1);
+        expect(connectedProfitRows()).toHaveLength(1);
+        expect(instance.displayElement.nextSibling).toBe(instance.profitElement);
+    });
+
+    test('disable/cleanup removes Toolasha-owned rows without touching native MWI nodes', async () => {
+        config.getSetting.mockImplementation(() => true);
+        await instance.initialize();
+        instance.createDisplayPanel();
+        expect(connectedTimeRows()).toHaveLength(1);
+        expect(connectedProfitRows()).toHaveLength(1);
+
+        instance.disable();
+
+        expect(connectedTimeRows()).toHaveLength(0);
+        expect(connectedProfitRows()).toHaveLength(0);
+        expect(actionNameElement.isConnected).toBe(true);
+    });
+
+    test('async safety - an in-flight profit calculation from before a character switch cannot populate the new row', async () => {
+        config.getSetting.mockImplementation((key) => key === 'actionBar_showProfit');
+        instance.createDisplayPanel();
+        const oldProfitElement = instance.profitElement;
+
+        dataManager.getActionDetails.mockReturnValue({ type: '/action_types/woodcutting', dropTable: [{}] });
+        let resolveGathering;
+        calculateGatheringProfit.mockReturnValue(
+            new Promise((resolve) => {
+                resolveGathering = resolve;
+            })
+        );
+
+        const staleCall = instance.updateActionBarProfit({ actionHrid: '/actions/old' }, Infinity);
+
+        // Character switch happens while the old calculation is still in flight.
+        instance.handleCharacterSwitch();
+        instance.createDisplayPanel();
+        const newProfitElement = instance.profitElement;
+        expect(newProfitElement).not.toBe(oldProfitElement);
+
+        resolveGathering({ profitPerHour: 999999, actionsPerHour: 100, efficiencyMultiplier: 1 });
+        await staleCall;
+
+        expect(newProfitElement.innerHTML).toBe('');
+        expect(oldProfitElement.innerHTML).toBe('');
+    });
+});

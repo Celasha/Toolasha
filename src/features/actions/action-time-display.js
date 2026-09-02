@@ -647,6 +647,7 @@ export class ActionTimeDisplay {
     handleCharacterSwitch() {
         // Cancel any active profit calculations to prevent stale data
         this.activeProfitCalculationId = null;
+        this.activeBarProfitId = null;
 
         // Clear appended stats from old character's action panel (before it's removed)
         const oldActionNameElement = document.querySelector('div[class*="Header_actionName"]');
@@ -660,7 +661,9 @@ export class ActionTimeDisplay {
             this.actionNameObserver = null;
         }
 
-        // Clear display element reference (already removed from DOM by game)
+        // Clear display element references. The game doesn't always remove the old container's
+        // Toolasha-owned siblings on remount, so createDisplayPanel() also does an ID-based sweep
+        // for any orphaned time/profit rows left behind.
         this.displayElement = null;
         this.profitElement = null;
 
@@ -758,11 +761,13 @@ export class ActionTimeDisplay {
             return; // Already created and still in the DOM
         }
         this.displayElement = null;
+        this.profitElement = null;
 
-        const orphan = document.getElementById('mwi-action-time-display');
-        if (orphan) {
-            orphan.remove();
-        }
+        // Remove every stale Toolasha-owned row, not just the first `getElementById()` match - a
+        // character switch/remount can leave the old container (and its Toolasha siblings)
+        // connected while our own references get cleared, so duplicates can otherwise accumulate.
+        document.querySelectorAll('[id="mwi-action-time-display"]').forEach((node) => node.remove());
+        document.querySelectorAll('[id="mwi-action-profit-display"]').forEach((node) => node.remove());
 
         const actionNameContainer = document.querySelector('div[class*="Header_actionName"]');
         if (!actionNameContainer) {
