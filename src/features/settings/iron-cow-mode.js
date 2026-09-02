@@ -34,8 +34,9 @@ export const IRON_COW_SETTINGS = new Set([
     'market_showTopOrderAge',
     'market_showEstimatedListingAge',
     'market_listingAgeFormat',
-    'market_listingTimeFormat',
-    'market_listingDateFormat',
+    // market_listingTimeFormat / market_listingDateFormat are excluded here on purpose: despite
+    // the market_ prefix, they're general date/time display preferences also consumed by
+    // formatDateTime(), Character Activity Status, and Pop-out Chat, not marketplace-only UI.
     'market_showOrderTotals',
     'market_showHistoryViewer',
     'market_showPhiloCalculator',
