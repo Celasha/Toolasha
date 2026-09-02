@@ -931,6 +931,7 @@ class LootLogStats {
                 amount,
                 perHour: hours > 0 ? amount / hours : 0,
             }));
+        const totalXp = xpEntries.reduce((sum, xp) => sum + xp.amount, 0);
 
         return {
             row,
@@ -941,6 +942,8 @@ class LootLogStats {
             goldPerHourAsk,
             goldPerHourBid,
             xpEntries,
+            totalXp,
+            totalXpPerHour: hours > 0 ? totalXp / hours : 0,
         };
     }
 
@@ -1176,6 +1179,28 @@ class LootLogStats {
                 perHourText.textContent = ` (${formatKMB(xp.perHour)}/hr)`;
                 chip.append(xpText, perHourText);
                 xpCell.appendChild(chip);
+            }
+
+            // Combat/Labyrinth actions grant several skills' XP per run - a single-skill row's
+            // total would just repeat the one chip above it, so only show the sum when it adds
+            // information beyond what's already listed.
+            if (entry.xpEntries.length > 1) {
+                const totalChip = document.createElement('div');
+                totalChip.className = 'mwi-loot-log-xp-total';
+                totalChip.style.cssText =
+                    'display: flex; align-items: center; gap: 4px; white-space: nowrap; ' +
+                    'margin-top: 3px; padding-top: 3px; border-top: 1px solid rgba(255,255,255,0.12);';
+                const totalLabel = document.createElement('span');
+                totalLabel.style.cssText = 'color: rgba(255,255,255,0.6); font-size: 0.85em;';
+                totalLabel.textContent = 'Total:';
+                const totalXpText = document.createElement('span');
+                totalXpText.style.cssText = `color: ${config.COLOR_INFO}; font-weight: 600;`;
+                totalXpText.textContent = formatKMB(entry.totalXp);
+                const totalPerHourText = document.createElement('span');
+                totalPerHourText.style.cssText = 'color: rgba(255,255,255,0.45); font-size: 0.85em;';
+                totalPerHourText.textContent = ` (${formatKMB(entry.totalXpPerHour)}/hr)`;
+                totalChip.append(totalLabel, totalXpText, totalPerHourText);
+                xpCell.appendChild(totalChip);
             }
         }
         tr.appendChild(xpCell);

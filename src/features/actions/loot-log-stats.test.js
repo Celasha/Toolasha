@@ -286,6 +286,46 @@ describe('LootLogStats Analytics (pivot table) button and panel', () => {
         expect(overlay.textContent).toContain('300');
         // Combined active time (1h + 2h).
         expect(overlay.textContent).toContain('3h');
+        // A single-skill action's total would just repeat the one XP chip - must not show one.
+        expect(overlay.querySelector('.mwi-loot-log-xp-total')).toBeNull();
+
+        instance.closeAnalyticsPanel();
+    });
+
+    test('a multi-skill action (e.g. Labyrinth) shows a Total XP/hr line summing every skill, aggregated across all sessions', async () => {
+        instance.currentLootLogData = [
+            {
+                characterActionId: 1,
+                actionHrid: '/actions/labyrinth/explore',
+                actionCount: 10,
+                startTime: '2026-08-01T00:00:00Z',
+                endTime: '2026-08-01T01:00:00Z',
+                totalActiveMillis: 3_600_000, // 1h
+                drops: {},
+                xpGains: { '/skills/stamina': 1000, '/skills/attack': 2000 },
+            },
+            {
+                characterActionId: 2,
+                actionHrid: '/actions/labyrinth/explore',
+                actionCount: 10,
+                startTime: '2026-08-02T00:00:00Z',
+                endTime: '2026-08-02T01:00:00Z',
+                totalActiveMillis: 3_600_000, // 1h - second stored session, same action
+                drops: {},
+                xpGains: { '/skills/stamina': 1000, '/skills/attack': 2000 },
+            },
+        ];
+
+        await instance.openAnalyticsPanel();
+
+        const overlay = document.querySelector('.mwi-loot-log-analytics-overlay');
+        // Total time across both sessions is 2h; total XP across both skills per session is
+        // 3000, summed across sessions is 6000 -> 3000/hr averaged over the whole 2h, not 6000/hr
+        // as it would be if computed per single stored session.
+        const totalChip = overlay.querySelector('.mwi-loot-log-xp-total');
+        expect(totalChip).not.toBeNull();
+        expect(totalChip.textContent).toContain('6.0K');
+        expect(totalChip.textContent).toContain('(3.0K/hr)');
 
         instance.closeAnalyticsPanel();
     });
