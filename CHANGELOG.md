@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.101.0](https://github.com/Celasha/Toolasha/compare/v2.100.1...v2.101.0) (2026-09-02)
+
+
+### Features
+
+* add total XP/hr line for multi-skill actions in Loot & XP Log Analytics ([29688cc](https://github.com/Celasha/Toolasha/commit/29688cc472232392ebb937fbfe7e6e74f3f8e833))
+
+
+### Bug Fixes
+
+* drop hours from 100+ day consumable runway estimates ([123e6ab](https://github.com/Celasha/Toolasha/commit/123e6ab6059c00f6d8621bc7579252d1bc1906e9))
+* preserve date and time formats in Iron Cow mode (TLA-034) ([fe2485a](https://github.com/Celasha/Toolasha/commit/fe2485ae851e7adb6295b562233a9a0fb0428549))
+* prevent duplicate current-action profit rows (TLA-035) ([2817e05](https://github.com/Celasha/Toolasha/commit/2817e05298f0e9417d03dd3edaf4c3c68c96d780))
+
 ## [2.100.1](https://github.com/Celasha/Toolasha/compare/v2.100.0...v2.100.1) (2026-09-01)
 
 ### Bug Fixes
