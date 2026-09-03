@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.104.2](https://github.com/Celasha/Toolasha/compare/v2.104.1...v2.104.2) (2026-09-03)
+
+
+### Bug Fixes
+
+* unify task reroll signals so reroll-worthy tasks override manual protection ([089e7be](https://github.com/Celasha/Toolasha/commit/089e7be295aa89180afcd2c5d1deacbd2adebf3f))
+
 ## [2.104.1](https://github.com/Celasha/Toolasha/compare/v2.104.0...v2.104.1) (2026-09-03)
 
 ### Bug Fixes
