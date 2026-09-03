@@ -12,6 +12,7 @@ import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import storage from '../../core/storage.js';
 import webSocketHook from '../../core/websocket.js';
+import { repaintTaskCard } from './task-card-visual-state.js';
 
 const STORAGE_KEY_PREFIX = 'taskAutoRerollHrids';
 
@@ -85,54 +86,11 @@ class TaskAutoReroll {
         const hrid = quest?.actionHrid || quest?.monsterHrid || '';
         const shouldReroll = hrid && this.autoRerollHrids.has(hrid);
 
-        // Don't show reroll reminder if task is also in protection list (green outline = protected)
-        const isProtected =
-            taskCard.dataset.mwiRerollProtection === '1' && taskCard.style.outline?.includes('76, 175, 80');
-
-        if (shouldReroll && !isProtected) {
-            taskCard.style.setProperty('outline', '2px solid rgba(239, 68, 68, 0.7)', 'important');
-            taskCard.style.setProperty('outline-offset', '-2px');
-            taskCard.style.setProperty('box-shadow', '0 0 8px 2px rgba(239, 68, 68, 0.3)', 'important');
-            this._showBadge(taskCard);
-        } else if (taskCard.querySelector('.mwi-autoreroll-badge')) {
-            taskCard.style.removeProperty('outline');
-            taskCard.style.removeProperty('outline-offset');
-            taskCard.style.removeProperty('box-shadow');
-            this._clearBadge(taskCard);
-        }
-    }
-
-    _showBadge(taskCard) {
-        if (taskCard.querySelector('.mwi-autoreroll-badge')) return;
-
-        const badge = document.createElement('div');
-        badge.className = 'mwi-autoreroll-badge';
-        badge.textContent = 'Reroll!';
-        badge.style.cssText = `
-            position: absolute;
-            top: 4px;
-            right: 4px;
-            font-size: 10px;
-            font-weight: 700;
-            color: #fff;
-            background: rgba(239, 68, 68, 0.85);
-            padding: 2px 6px;
-            border-radius: 3px;
-            z-index: 10;
-            pointer-events: none;
-        `;
-
-        const currentPos = getComputedStyle(taskCard).position;
-        if (currentPos === 'static') {
-            taskCard.style.position = 'relative';
-        }
-
-        taskCard.appendChild(badge);
-    }
-
-    _clearBadge(taskCard) {
-        const badge = taskCard.querySelector('.mwi-autoreroll-badge');
-        if (badge) badge.remove();
+        // Write this feature's own signal; repaintTaskCard resolves the final border/badge
+        // considering Task Reroll Protection and Task Token Threshold too — a manual reroll-list
+        // match always wins the red border/badge, even over manual protection's green border.
+        taskCard.dataset.mwiAutoReroll = shouldReroll ? '1' : '';
+        repaintTaskCard(taskCard);
     }
 
     _getQuestFromCard(taskCard) {
@@ -415,12 +373,8 @@ class TaskAutoReroll {
 
         const cards = document.querySelectorAll('[class*="RandomTask_randomTask"]');
         for (const card of cards) {
-            if (card.querySelector('.mwi-autoreroll-badge')) {
-                card.style.removeProperty('outline');
-                card.style.removeProperty('outline-offset');
-                card.style.removeProperty('box-shadow');
-                this._clearBadge(card);
-            }
+            card.dataset.mwiAutoReroll = '';
+            repaintTaskCard(card);
         }
 
         this.isInitialized = false;
@@ -441,3 +395,4 @@ export default {
         taskAutoReroll.disable();
     },
 };
+export { TaskAutoReroll };

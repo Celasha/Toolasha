@@ -167,3 +167,47 @@ describe('TaskRerollProtection — one-time migration from the legacy global cap
         expect(feature.cowbellThreshold).toBe(32);
     });
 });
+
+describe('TaskRerollProtection — per-card visual state', () => {
+    function makeCard() {
+        const card = document.createElement('div');
+        card.className = 'RandomTask_randomTask';
+        document.body.appendChild(card);
+        return card;
+    }
+
+    beforeEach(async () => {
+        vi.resetModules();
+        Object.keys(storageData).forEach((k) => delete storageData[k]);
+        document.body.innerHTML = '';
+
+        const config = (await import('../../core/config.js')).default;
+        config.getSetting.mockImplementation((key) => key !== 'taskRerollProtection_hideHighlight');
+    });
+
+    test('a protected HRID with no other signal gets the green outline', async () => {
+        const { TaskRerollProtection } = await import('./task-reroll-protection.js');
+        const feature = new TaskRerollProtection();
+        feature.protectedHrids = new Set(['/actions/combat/gloom_moth']);
+        const card = makeCard();
+        vi.spyOn(feature, '_getQuestFromCard').mockReturnValue({ actionHrid: '/actions/combat/gloom_moth' });
+
+        feature._processTaskCard(card);
+
+        expect(card.style.outline).toContain('76, 175, 80');
+    });
+
+    test('a protected HRID that is also flagged elsewhere (e.g. auto-reroll) shows red, not green', async () => {
+        const { TaskRerollProtection } = await import('./task-reroll-protection.js');
+        const feature = new TaskRerollProtection();
+        feature.protectedHrids = new Set(['/actions/combat/gloom_moth']);
+        const card = makeCard();
+        card.dataset.mwiAutoReroll = '1';
+        vi.spyOn(feature, '_getQuestFromCard').mockReturnValue({ actionHrid: '/actions/combat/gloom_moth' });
+
+        feature._processTaskCard(card);
+
+        expect(card.style.outline).toContain('239, 68, 68');
+        expect(card.dataset.mwiProtected).toBe('1');
+    });
+});

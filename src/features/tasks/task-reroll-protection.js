@@ -12,6 +12,7 @@ import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import storage from '../../core/storage.js';
 import webSocketHook from '../../core/websocket.js';
+import { repaintTaskCard } from './task-card-visual-state.js';
 
 const STORAGE_KEY_PREFIX = 'taskProtectedHrids';
 const CAP_ENABLED_KEY = 'taskCapProtection';
@@ -161,20 +162,14 @@ class TaskRerollProtection {
         // Check if this card is currently at the reroll cap
         const isAtCap = this.capProtectionEnabled && this._cardIsAtCap(taskCard);
 
-        // Update visual state — per-task green takes precedence over cap orange
-        if (isProtected && !config.getSetting('taskRerollProtection_hideHighlight')) {
-            taskCard.style.setProperty('outline', '2px solid rgba(76, 175, 80, 0.7)', 'important');
-            taskCard.style.setProperty('outline-offset', '-2px');
-            taskCard.style.setProperty('box-shadow', '0 0 8px 2px rgba(76, 175, 80, 0.3)', 'important');
-        } else if (isAtCap) {
-            taskCard.style.setProperty('outline', '2px solid rgba(251, 146, 60, 0.7)', 'important');
-            taskCard.style.setProperty('outline-offset', '-2px');
-            taskCard.style.setProperty('box-shadow', '0 0 8px 2px rgba(251, 146, 60, 0.3)', 'important');
-        } else {
-            taskCard.style.removeProperty('outline');
-            taskCard.style.removeProperty('outline-offset');
-            taskCard.style.removeProperty('box-shadow');
-        }
+        // Write this feature's own signal; repaintTaskCard resolves the final border/badge
+        // considering Task Auto-Reroll and Task Token Threshold too, so a reroll-worthy signal
+        // from either of those always wins the red border/badge over this green/orange one,
+        // regardless of which feature's DOM hook happens to fire last.
+        taskCard.dataset.mwiProtected =
+            isProtected && !config.getSetting('taskRerollProtection_hideHighlight') ? '1' : '';
+        taskCard.dataset.mwiAtCap = isAtCap ? '1' : '';
+        repaintTaskCard(taskCard);
 
         // Wire reroll button interception (only once per card)
         if (!taskCard.dataset.mwiRerollProtection) {
@@ -789,9 +784,9 @@ class TaskRerollProtection {
         // Remove all visual changes
         const cards = document.querySelectorAll('[class*="RandomTask_randomTask"]');
         for (const card of cards) {
-            card.style.removeProperty('outline');
-            card.style.removeProperty('outline-offset');
-            card.style.removeProperty('box-shadow');
+            card.dataset.mwiProtected = '';
+            card.dataset.mwiAtCap = '';
+            repaintTaskCard(card);
             this._clearWarning(card);
         }
 

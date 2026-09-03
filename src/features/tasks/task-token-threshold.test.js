@@ -160,27 +160,27 @@ describe('TaskTokenThreshold — per-card classification', () => {
         expect(card.querySelector('.mwi-token-badge')).toBeNull();
     });
 
-    test('a manually-protected card is never flagged, even below the threshold', () => {
+    test('a task that is manually protected is still flagged when it qualifies (reroll signal overrides protection)', () => {
         mockParseTaskData.mockReturnValue({ taskTokenReward: 5 });
         const card = makeCard();
-        card.dataset.mwiRerollProtection = '1';
-        card.style.setProperty('outline', '2px solid rgba(76, 175, 80, 0.7)');
+        card.dataset.mwiProtected = '1';
 
         feature._processTaskCard(card);
 
-        expect(card.querySelector('.mwi-token-badge')).toBeNull();
+        expect(card.style.outline).toContain('239, 68, 68');
+        expect(card.querySelector('.mwi-token-badge')?.textContent).toBe('Low tokens!');
     });
 
-    test('a card already carrying the manual auto-reroll badge does not also get the token badge', () => {
+    test('a card with an active manual auto-reroll signal shows the "Reroll!" badge instead of the token badge', () => {
         mockParseTaskData.mockReturnValue({ taskTokenReward: 5 });
         const card = makeCard();
-        const manualBadge = document.createElement('div');
-        manualBadge.className = 'mwi-autoreroll-badge';
-        card.appendChild(manualBadge);
+        card.dataset.mwiAutoReroll = '1';
 
         feature._processTaskCard(card);
 
         expect(card.querySelector('.mwi-token-badge')).toBeNull();
+        expect(card.querySelector('.mwi-autoreroll-badge')?.textContent).toBe('Reroll!');
+        expect(card.style.outline).toContain('239, 68, 68');
     });
 
     test('parseTaskData returning null is a no-op, not a crash', () => {

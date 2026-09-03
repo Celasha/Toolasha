@@ -15,6 +15,7 @@ import domObserver from '../../core/dom-observer.js';
 import storage from '../../core/storage.js';
 import webSocketHook from '../../core/websocket.js';
 import taskProfitDisplay from './task-profit-display.js';
+import { repaintTaskCard } from './task-card-visual-state.js';
 
 const THRESHOLD_STORAGE_KEY_PREFIX = 'taskTokenThreshold_value';
 const DIRECTION_STORAGE_KEY_PREFIX = 'taskTokenThreshold_direction';
@@ -121,82 +122,24 @@ class TaskTokenThreshold {
      * @private
      */
     _processTaskCard(taskCard) {
-        const hasOwnBadge = !!taskCard.querySelector('.mwi-token-badge');
-
         if (this.threshold === null) {
-            if (hasOwnBadge) this._clearBadge(taskCard);
+            taskCard.dataset.mwiTokenFlag = '';
+            repaintTaskCard(taskCard);
             return;
         }
 
         const data = taskProfitDisplay.parseTaskData(taskCard);
         if (!data) return;
 
-        // Never override manual protection (green outline from Task Reroll Protection).
-        const isProtected =
-            taskCard.dataset.mwiRerollProtection === '1' && taskCard.style.outline?.includes('76, 175, 80');
-
-        // Don't stack a second red badge on top of the manual Auto-Reroll reminder.
-        const hasManualBadge = !!taskCard.querySelector('.mwi-autoreroll-badge');
-
         const qualifies =
             this.direction === 'above' ? data.taskTokenReward > this.threshold : data.taskTokenReward < this.threshold;
 
-        if (qualifies && !isProtected && !hasManualBadge) {
-            taskCard.style.setProperty('outline', '2px solid rgba(239, 68, 68, 0.7)', 'important');
-            taskCard.style.setProperty('outline-offset', '-2px');
-            taskCard.style.setProperty('box-shadow', '0 0 8px 2px rgba(239, 68, 68, 0.3)', 'important');
-            this._showBadge(taskCard, this.direction === 'above' ? 'High tokens!' : 'Low tokens!');
-        } else if (hasOwnBadge) {
-            taskCard.style.removeProperty('outline');
-            taskCard.style.removeProperty('outline-offset');
-            taskCard.style.removeProperty('box-shadow');
-            this._clearBadge(taskCard);
-        }
-    }
-
-    /**
-     * Show the token-threshold badge on a task card, creating it if needed.
-     * @param {HTMLElement} taskCard
-     * @param {string} text
-     * @private
-     */
-    _showBadge(taskCard, text) {
-        let badge = taskCard.querySelector('.mwi-token-badge');
-        if (!badge) {
-            badge = document.createElement('div');
-            badge.className = 'mwi-token-badge';
-            badge.style.cssText = `
-                position: absolute;
-                top: 4px;
-                right: 4px;
-                font-size: 10px;
-                font-weight: 700;
-                color: #fff;
-                background: rgba(239, 68, 68, 0.85);
-                padding: 2px 6px;
-                border-radius: 3px;
-                z-index: 10;
-                pointer-events: none;
-            `;
-
-            const currentPos = getComputedStyle(taskCard).position;
-            if (currentPos === 'static') {
-                taskCard.style.position = 'relative';
-            }
-
-            taskCard.appendChild(badge);
-        }
-        badge.textContent = text;
-    }
-
-    /**
-     * Clear the "Low tokens!" badge from a task card.
-     * @param {HTMLElement} taskCard
-     * @private
-     */
-    _clearBadge(taskCard) {
-        const badge = taskCard.querySelector('.mwi-token-badge');
-        if (badge) badge.remove();
+        // Write this feature's own signal; repaintTaskCard resolves the final border/badge
+        // considering Task Reroll Protection and Task Auto-Reroll Reminder too — qualifying here
+        // always wins the red border/badge, even over manual protection's green border.
+        taskCard.dataset.mwiTokenFlag = qualifies ? '1' : '';
+        taskCard.dataset.mwiTokenFlagText = this.direction === 'above' ? 'High tokens!' : 'Low tokens!';
+        repaintTaskCard(taskCard);
     }
 
     /**
@@ -344,12 +287,8 @@ class TaskTokenThreshold {
 
         const cards = document.querySelectorAll('[class*="RandomTask_randomTask"]');
         for (const card of cards) {
-            if (card.querySelector('.mwi-token-badge')) {
-                card.style.removeProperty('outline');
-                card.style.removeProperty('outline-offset');
-                card.style.removeProperty('box-shadow');
-                this._clearBadge(card);
-            }
+            card.dataset.mwiTokenFlag = '';
+            repaintTaskCard(card);
         }
 
         this.isInitialized = false;
