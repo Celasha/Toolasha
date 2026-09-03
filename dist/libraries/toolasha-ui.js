@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.104.1
+ * Version: 2.104.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -11184,6 +11184,101 @@ ${starCSS}
     const taskIcons = new TaskIcons();
 
     /**
+     * Task Card Visual State
+     * Shared repaint for the reroll-related border/badge on a task card. Task Reroll Protection,
+     * Task Auto-Reroll Reminder, and Task Token Threshold each write their own signal to a dataset
+     * flag on the card and then call repaintTaskCard — so whichever of the three DOM-mutation hooks
+     * fires last still produces the correct, order-independent result: a reroll-worthy signal
+     * (manual auto-reroll list match, or token threshold qualifying) always wins the red
+     * border/badge, even over manual protection's green border.
+     */
+
+    const OUTLINE_RED = '2px solid rgba(239, 68, 68, 0.7)';
+    const SHADOW_RED = '0 0 8px 2px rgba(239, 68, 68, 0.3)';
+    const OUTLINE_GREEN = '2px solid rgba(76, 175, 80, 0.7)';
+    const SHADOW_GREEN = '0 0 8px 2px rgba(76, 175, 80, 0.3)';
+    const OUTLINE_ORANGE = '2px solid rgba(251, 146, 60, 0.7)';
+    const SHADOW_ORANGE = '0 0 8px 2px rgba(251, 146, 60, 0.3)';
+
+    /**
+     * Recompute and apply a task card's border/badge from its current dataset signal flags.
+     * @param {HTMLElement} taskCard
+     */
+    function repaintTaskCard(taskCard) {
+        const isAutoReroll = taskCard.dataset.mwiAutoReroll === '1';
+        const isTokenFlagged = taskCard.dataset.mwiTokenFlag === '1';
+        const isProtected = taskCard.dataset.mwiProtected === '1';
+        const isAtCap = taskCard.dataset.mwiAtCap === '1';
+
+        _clearBadge(taskCard, 'mwi-autoreroll-badge');
+        _clearBadge(taskCard, 'mwi-token-badge');
+
+        if (isAutoReroll || isTokenFlagged) {
+            _setOutline(taskCard, OUTLINE_RED, SHADOW_RED);
+            if (isAutoReroll) {
+                _showBadge(taskCard, 'mwi-autoreroll-badge', 'Reroll!');
+            } else {
+                _showBadge(taskCard, 'mwi-token-badge', taskCard.dataset.mwiTokenFlagText || 'Low tokens!');
+            }
+            return;
+        }
+
+        if (isProtected) {
+            _setOutline(taskCard, OUTLINE_GREEN, SHADOW_GREEN);
+            return;
+        }
+
+        if (isAtCap) {
+            _setOutline(taskCard, OUTLINE_ORANGE, SHADOW_ORANGE);
+            return;
+        }
+
+        taskCard.style.removeProperty('outline');
+        taskCard.style.removeProperty('outline-offset');
+        taskCard.style.removeProperty('box-shadow');
+    }
+
+    function _setOutline(taskCard, outline, boxShadow) {
+        taskCard.style.setProperty('outline', outline, 'important');
+        taskCard.style.setProperty('outline-offset', '-2px');
+        taskCard.style.setProperty('box-shadow', boxShadow, 'important');
+    }
+
+    function _showBadge(taskCard, className, text) {
+        let badge = taskCard.querySelector(`.${className}`);
+        if (!badge) {
+            badge = document.createElement('div');
+            badge.className = className;
+            badge.style.cssText = `
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            font-size: 10px;
+            font-weight: 700;
+            color: #fff;
+            background: rgba(239, 68, 68, 0.85);
+            padding: 2px 6px;
+            border-radius: 3px;
+            z-index: 10;
+            pointer-events: none;
+        `;
+
+            const currentPos = getComputedStyle(taskCard).position;
+            if (currentPos === 'static') {
+                taskCard.style.position = 'relative';
+            }
+
+            taskCard.appendChild(badge);
+        }
+        badge.textContent = text;
+    }
+
+    function _clearBadge(taskCard, className) {
+        const badge = taskCard.querySelector(`.${className}`);
+        if (badge) badge.remove();
+    }
+
+    /**
      * Task Reroll Protection
      * Prevents accidental rerolling of desirable tasks by highlighting protected tasks
      * and requiring a confirmation click before rerolling.
@@ -11341,20 +11436,14 @@ ${starCSS}
             // Check if this card is currently at the reroll cap
             const isAtCap = this.capProtectionEnabled && this._cardIsAtCap(taskCard);
 
-            // Update visual state — per-task green takes precedence over cap orange
-            if (isProtected && !config.getSetting('taskRerollProtection_hideHighlight')) {
-                taskCard.style.setProperty('outline', '2px solid rgba(76, 175, 80, 0.7)', 'important');
-                taskCard.style.setProperty('outline-offset', '-2px');
-                taskCard.style.setProperty('box-shadow', '0 0 8px 2px rgba(76, 175, 80, 0.3)', 'important');
-            } else if (isAtCap) {
-                taskCard.style.setProperty('outline', '2px solid rgba(251, 146, 60, 0.7)', 'important');
-                taskCard.style.setProperty('outline-offset', '-2px');
-                taskCard.style.setProperty('box-shadow', '0 0 8px 2px rgba(251, 146, 60, 0.3)', 'important');
-            } else {
-                taskCard.style.removeProperty('outline');
-                taskCard.style.removeProperty('outline-offset');
-                taskCard.style.removeProperty('box-shadow');
-            }
+            // Write this feature's own signal; repaintTaskCard resolves the final border/badge
+            // considering Task Auto-Reroll and Task Token Threshold too, so a reroll-worthy signal
+            // from either of those always wins the red border/badge over this green/orange one,
+            // regardless of which feature's DOM hook happens to fire last.
+            taskCard.dataset.mwiProtected =
+                isProtected && !config.getSetting('taskRerollProtection_hideHighlight') ? '1' : '';
+            taskCard.dataset.mwiAtCap = isAtCap ? '1' : '';
+            repaintTaskCard(taskCard);
 
             // Wire reroll button interception (only once per card)
             if (!taskCard.dataset.mwiRerollProtection) {
@@ -11969,9 +12058,9 @@ ${starCSS}
             // Remove all visual changes
             const cards = document.querySelectorAll('[class*="RandomTask_randomTask"]');
             for (const card of cards) {
-                card.style.removeProperty('outline');
-                card.style.removeProperty('outline-offset');
-                card.style.removeProperty('box-shadow');
+                card.dataset.mwiProtected = '';
+                card.dataset.mwiAtCap = '';
+                repaintTaskCard(card);
                 this._clearWarning(card);
             }
 
@@ -13658,54 +13747,11 @@ ${starCSS}
             const hrid = quest?.actionHrid || quest?.monsterHrid || '';
             const shouldReroll = hrid && this.autoRerollHrids.has(hrid);
 
-            // Don't show reroll reminder if task is also in protection list (green outline = protected)
-            const isProtected =
-                taskCard.dataset.mwiRerollProtection === '1' && taskCard.style.outline?.includes('76, 175, 80');
-
-            if (shouldReroll && !isProtected) {
-                taskCard.style.setProperty('outline', '2px solid rgba(239, 68, 68, 0.7)', 'important');
-                taskCard.style.setProperty('outline-offset', '-2px');
-                taskCard.style.setProperty('box-shadow', '0 0 8px 2px rgba(239, 68, 68, 0.3)', 'important');
-                this._showBadge(taskCard);
-            } else if (taskCard.querySelector('.mwi-autoreroll-badge')) {
-                taskCard.style.removeProperty('outline');
-                taskCard.style.removeProperty('outline-offset');
-                taskCard.style.removeProperty('box-shadow');
-                this._clearBadge(taskCard);
-            }
-        }
-
-        _showBadge(taskCard) {
-            if (taskCard.querySelector('.mwi-autoreroll-badge')) return;
-
-            const badge = document.createElement('div');
-            badge.className = 'mwi-autoreroll-badge';
-            badge.textContent = 'Reroll!';
-            badge.style.cssText = `
-            position: absolute;
-            top: 4px;
-            right: 4px;
-            font-size: 10px;
-            font-weight: 700;
-            color: #fff;
-            background: rgba(239, 68, 68, 0.85);
-            padding: 2px 6px;
-            border-radius: 3px;
-            z-index: 10;
-            pointer-events: none;
-        `;
-
-            const currentPos = getComputedStyle(taskCard).position;
-            if (currentPos === 'static') {
-                taskCard.style.position = 'relative';
-            }
-
-            taskCard.appendChild(badge);
-        }
-
-        _clearBadge(taskCard) {
-            const badge = taskCard.querySelector('.mwi-autoreroll-badge');
-            if (badge) badge.remove();
+            // Write this feature's own signal; repaintTaskCard resolves the final border/badge
+            // considering Task Reroll Protection and Task Token Threshold too — a manual reroll-list
+            // match always wins the red border/badge, even over manual protection's green border.
+            taskCard.dataset.mwiAutoReroll = shouldReroll ? '1' : '';
+            repaintTaskCard(taskCard);
         }
 
         _getQuestFromCard(taskCard) {
@@ -13988,12 +14034,8 @@ ${starCSS}
 
             const cards = document.querySelectorAll('[class*="RandomTask_randomTask"]');
             for (const card of cards) {
-                if (card.querySelector('.mwi-autoreroll-badge')) {
-                    card.style.removeProperty('outline');
-                    card.style.removeProperty('outline-offset');
-                    card.style.removeProperty('box-shadow');
-                    this._clearBadge(card);
-                }
+                card.dataset.mwiAutoReroll = '';
+                repaintTaskCard(card);
             }
 
             this.isInitialized = false;
@@ -14132,82 +14174,24 @@ ${starCSS}
          * @private
          */
         _processTaskCard(taskCard) {
-            const hasOwnBadge = !!taskCard.querySelector('.mwi-token-badge');
-
             if (this.threshold === null) {
-                if (hasOwnBadge) this._clearBadge(taskCard);
+                taskCard.dataset.mwiTokenFlag = '';
+                repaintTaskCard(taskCard);
                 return;
             }
 
             const data = taskProfitDisplay.parseTaskData(taskCard);
             if (!data) return;
 
-            // Never override manual protection (green outline from Task Reroll Protection).
-            const isProtected =
-                taskCard.dataset.mwiRerollProtection === '1' && taskCard.style.outline?.includes('76, 175, 80');
-
-            // Don't stack a second red badge on top of the manual Auto-Reroll reminder.
-            const hasManualBadge = !!taskCard.querySelector('.mwi-autoreroll-badge');
-
             const qualifies =
                 this.direction === 'above' ? data.taskTokenReward > this.threshold : data.taskTokenReward < this.threshold;
 
-            if (qualifies && !isProtected && !hasManualBadge) {
-                taskCard.style.setProperty('outline', '2px solid rgba(239, 68, 68, 0.7)', 'important');
-                taskCard.style.setProperty('outline-offset', '-2px');
-                taskCard.style.setProperty('box-shadow', '0 0 8px 2px rgba(239, 68, 68, 0.3)', 'important');
-                this._showBadge(taskCard, this.direction === 'above' ? 'High tokens!' : 'Low tokens!');
-            } else if (hasOwnBadge) {
-                taskCard.style.removeProperty('outline');
-                taskCard.style.removeProperty('outline-offset');
-                taskCard.style.removeProperty('box-shadow');
-                this._clearBadge(taskCard);
-            }
-        }
-
-        /**
-         * Show the token-threshold badge on a task card, creating it if needed.
-         * @param {HTMLElement} taskCard
-         * @param {string} text
-         * @private
-         */
-        _showBadge(taskCard, text) {
-            let badge = taskCard.querySelector('.mwi-token-badge');
-            if (!badge) {
-                badge = document.createElement('div');
-                badge.className = 'mwi-token-badge';
-                badge.style.cssText = `
-                position: absolute;
-                top: 4px;
-                right: 4px;
-                font-size: 10px;
-                font-weight: 700;
-                color: #fff;
-                background: rgba(239, 68, 68, 0.85);
-                padding: 2px 6px;
-                border-radius: 3px;
-                z-index: 10;
-                pointer-events: none;
-            `;
-
-                const currentPos = getComputedStyle(taskCard).position;
-                if (currentPos === 'static') {
-                    taskCard.style.position = 'relative';
-                }
-
-                taskCard.appendChild(badge);
-            }
-            badge.textContent = text;
-        }
-
-        /**
-         * Clear the "Low tokens!" badge from a task card.
-         * @param {HTMLElement} taskCard
-         * @private
-         */
-        _clearBadge(taskCard) {
-            const badge = taskCard.querySelector('.mwi-token-badge');
-            if (badge) badge.remove();
+            // Write this feature's own signal; repaintTaskCard resolves the final border/badge
+            // considering Task Reroll Protection and Task Auto-Reroll Reminder too — qualifying here
+            // always wins the red border/badge, even over manual protection's green border.
+            taskCard.dataset.mwiTokenFlag = qualifies ? '1' : '';
+            taskCard.dataset.mwiTokenFlagText = this.direction === 'above' ? 'High tokens!' : 'Low tokens!';
+            repaintTaskCard(taskCard);
         }
 
         /**
@@ -14355,12 +14339,8 @@ ${starCSS}
 
             const cards = document.querySelectorAll('[class*="RandomTask_randomTask"]');
             for (const card of cards) {
-                if (card.querySelector('.mwi-token-badge')) {
-                    card.style.removeProperty('outline');
-                    card.style.removeProperty('outline-offset');
-                    card.style.removeProperty('box-shadow');
-                    this._clearBadge(card);
-                }
+                card.dataset.mwiTokenFlag = '';
+                repaintTaskCard(card);
             }
 
             this.isInitialized = false;
