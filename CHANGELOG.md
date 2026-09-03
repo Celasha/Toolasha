@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.103.0](https://github.com/Celasha/Toolasha/compare/v2.102.1...v2.103.0) (2026-09-03)
+
+### Features
+
+- add task token threshold reroll reminder ([b14c529](https://github.com/Celasha/Toolasha/commit/b14c5298f68dbf452cde82a4b21a978270d2c177))
+
+### Bug Fixes
+
+- raise CI bundle-size cap for UI library ([85c2bee](https://github.com/Celasha/Toolasha/commit/85c2beeb49b22ce532e78fa42e28828ed3088bef))
+
 ## [2.102.1](https://github.com/Celasha/Toolasha/compare/v2.102.0...v2.102.1) (2026-09-03)
 
 ### Bug Fixes
