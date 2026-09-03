@@ -1243,4 +1243,40 @@ describe('effective enhancement resolution contract', () => {
             snapshot: null,
         });
     });
+
+    test('an All Skills loadout selected as a fallback reports drinksApplicable: false even though its equipment is usable', () => {
+        const state = new LoadoutState();
+        state.startCapture();
+        setActiveCharacter('A');
+        mocks.inventory = [{ itemHrid: SWORD, enhancementLevel: 5, count: 1, itemLocationHrid: MAIN_HAND }];
+        mocks.wsHandlers.get('init_character_data')(
+            initPayload('A', {
+                allSkills: serverLoadout({ name: 'All Skills Default', actionTypeHrid: '', savedLevel: 5 }),
+            })
+        );
+
+        const selection = state.findCalculationSelectionForActionType('/action_types/tailoring');
+
+        expect(selection.status).toBe('usable');
+        expect(selection.snapshot.drinksApplicable).toBe(false);
+        expect(selection.snapshot.equipment).toEqual([expect.objectContaining({ enhancementLevel: 5 })]);
+    });
+
+    test('a skill-specific loadout with genuinely no drinks still reports drinksApplicable: true', () => {
+        const state = new LoadoutState();
+        state.startCapture();
+        setActiveCharacter('A');
+        mocks.inventory = [{ itemHrid: SWORD, enhancementLevel: 5, count: 1, itemLocationHrid: MAIN_HAND }];
+        mocks.wsHandlers.get('init_character_data')(
+            initPayload('A', {
+                tailoring: serverLoadout({ name: 'Tailoring', actionTypeHrid: '/action_types/tailoring', drinks: [] }),
+            })
+        );
+
+        const selection = state.findCalculationSelectionForActionType('/action_types/tailoring');
+
+        expect(selection.status).toBe('usable');
+        expect(selection.snapshot.drinksApplicable).toBe(true);
+        expect(selection.snapshot.drinks).toEqual([]);
+    });
 });

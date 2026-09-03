@@ -13,9 +13,12 @@
  *   4. All-skills non-default
  *   5. Fall back to currently-equipped gear / current drinks
  *
- * Intentional empty state is preserved: a matching saved loadout with no
- * equipment or no drinks resolves to an empty Map/array rather than falling
- * through to the character's currently equipped setup.
+ * Intentional empty state is preserved: a matching skill-specific saved loadout with no
+ * equipment or no drinks resolves to an empty Map/array rather than falling through to the
+ * character's currently equipped setup. An All Skills loadout (actionTypeHrid === '') is the one
+ * exception for drinks: the game never lets that loadout type carry drink slots at all, so its
+ * always-blank drinks are a structural void, not a player choice, and fall back to the
+ * character's current drinks for that action type instead.
  *
  * resolveCurrentActionContext() is the separate live-state counterpart: it always ignores
  * saved-loadout prediction and returns the character's actual current setup, for surfaces (like
@@ -65,7 +68,7 @@ export function resolveActionContext(actionTypeHrid) {
     // server would execute missing loadout items. The returned selection metadata lets UIs make
     // that fallback visible instead of silently claiming the saved loadout was used.
     let drinks;
-    if (snapshot) {
+    if (snapshot && snapshot.drinksApplicable) {
         // Core already resolved saved consumables against live inventory and blanked unavailable
         // slots. Do not rescan the full inventory again on every action calculation.
         drinks = (snapshot.drinks || []).filter((entry) => entry.itemHrid);

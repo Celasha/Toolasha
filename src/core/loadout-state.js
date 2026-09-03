@@ -728,6 +728,11 @@ class LoadoutState {
             // only consumables is still usable — the resolved food/drinks arrays already blank the
             // missing slots above rather than fabricating an item the character doesn't own.
             isUsableForCalculation: unavailableEquipment.length === 0,
+            // The game only exposes drink slots for a specific action type; an All Skills loadout
+            // (actionTypeHrid === '') can never have real drinks, so its always-blank drinks array
+            // is a structural void, not a player choice, and must not be trusted as "no tea" the
+            // way a skill-specific loadout's genuinely-empty drinks slot is.
+            drinksApplicable: rawSnapshot.actionTypeHrid !== '',
             abilities: (rawSnapshot.abilities || []).map((entry) => ({ ...entry })),
             // Preserve native slot indices, including intentional holes. Missing consumables
             // are blanked in calculation-facing arrays and retained only in the explicit
@@ -862,6 +867,7 @@ class LoadoutState {
             name: resolved.name,
             equipment: (resolved.equipment || []).map((entry) => ({ ...entry })),
             drinks: (resolved.drinks || []).map((entry) => ({ ...entry })),
+            drinksApplicable: resolved.drinksApplicable,
             hasUnavailableEquipment: resolved.hasUnavailableEquipment,
             hasUnavailableConsumables: resolved.hasUnavailableConsumables,
             isUsableForCalculation: resolved.isUsableForCalculation,

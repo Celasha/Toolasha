@@ -37,6 +37,7 @@ function snapshot(overrides = {}) {
         isDefault: true,
         equipment: SNAPSHOT_EQ,
         drinks: SNAPSHOT_DRINKS,
+        drinksApplicable: true,
         ...overrides,
     };
 }
@@ -118,6 +119,19 @@ describe('resolveActionContext', () => {
 
         expect(result.drinks).toEqual([]);
         expect(dataManager.getActionDrinkSlots).not.toHaveBeenCalled();
+    });
+
+    test('an All Skills loadout (drinksApplicable: false) falls back to current drinks while still using its saved equipment', () => {
+        loadoutState.findCalculationSelectionForActionType.mockReturnValue({
+            status: 'usable',
+            snapshot: snapshot({ drinks: [], drinksApplicable: false }),
+        });
+
+        const result = resolveActionContext(TYPE);
+
+        expect(result.equipment).toEqual(new Map([[SNAPSHOT_EQ[0].itemLocationHrid, SNAPSHOT_EQ[0]]]));
+        expect(result.drinks).toEqual(CURRENT_DRINKS);
+        expect(dataManager.getActionDrinkSlots).toHaveBeenCalledWith(TYPE);
     });
 
     test('a slotted drink with an equipped/no-count inventory representation remains available', () => {
