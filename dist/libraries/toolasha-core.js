@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.102.1
+ * Version: 2.103.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2657,6 +2657,13 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Highlights tasks you want to reroll with a red border and reminder badge. Configure per-character via the target icon in the task panel.',
+                },
+                taskTokenThreshold: {
+                    id: 'taskTokenThreshold',
+                    label: 'Flag low-token tasks for reroll',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Highlights tasks whose Task Token reward falls below a configurable cutoff with the same red border and reminder badge as auto-reroll. Does not click or reroll anything automatically. Configure the cutoff per-character via the icon in the task panel.',
                 },
             },
         },
