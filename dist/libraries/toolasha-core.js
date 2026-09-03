@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.103.0
+ * Version: 2.104.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2660,10 +2660,10 @@
                 },
                 taskTokenThreshold: {
                     id: 'taskTokenThreshold',
-                    label: 'Flag low-token tasks for reroll',
+                    label: 'Flag tasks by Task Token reward for reroll',
                     type: 'checkbox',
                     default: true,
-                    help: 'Highlights tasks whose Task Token reward falls below a configurable cutoff with the same red border and reminder badge as auto-reroll. Does not click or reroll anything automatically. Configure the cutoff per-character via the icon in the task panel.',
+                    help: 'Highlights tasks whose Task Token reward crosses a configurable cutoff (below or above) with the same red border and reminder badge as auto-reroll. Does not click or reroll anything automatically. Configure the cutoff and direction per-character via the icon in the task panel.',
                 },
             },
         },
