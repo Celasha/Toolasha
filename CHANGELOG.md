@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.104.1](https://github.com/Celasha/Toolasha/compare/v2.104.0...v2.104.1) (2026-09-03)
+
+### Bug Fixes
+
+- split UI library bundle to stay under the [@require](https://github.com/require) size cap ([57d15b4](https://github.com/Celasha/Toolasha/commit/57d15b4c2278578ad431be5e68960ec49eedbee8))
+
+### Miscellaneous Chores
+
+- sync ui2 library header version to 2.104.0 ([8d62870](https://github.com/Celasha/Toolasha/commit/8d6287066a9a54d95463f8ef45bf2714d6f2f7ec))
+
 ## [2.104.0](https://github.com/Celasha/Toolasha/compare/v2.103.0...v2.104.0) (2026-09-03)
 
 ### Features
