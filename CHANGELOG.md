@@ -2,15 +2,13 @@
 
 ## [2.104.0](https://github.com/Celasha/Toolasha/compare/v2.103.0...v2.104.0) (2026-09-03)
 
-
 ### Features
 
-* add Below/Above direction to task token threshold ([07fb004](https://github.com/Celasha/Toolasha/commit/07fb0044cf765a2693cb18e04ac269be6e5c2b82))
-
+- add Below/Above direction to task token threshold ([07fb004](https://github.com/Celasha/Toolasha/commit/07fb0044cf765a2693cb18e04ac269be6e5c2b82))
 
 ### Bug Fixes
 
-* close popup immediately when saving task token threshold ([0d2532f](https://github.com/Celasha/Toolasha/commit/0d2532faab41829f9de78c6039bf8ba04a0676f1))
+- close popup immediately when saving task token threshold ([0d2532f](https://github.com/Celasha/Toolasha/commit/0d2532faab41829f9de78c6039bf8ba04a0676f1))
 
 ## [2.103.0](https://github.com/Celasha/Toolasha/compare/v2.102.1...v2.103.0) (2026-09-03)
 
