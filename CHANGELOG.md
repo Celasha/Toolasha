@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.102.1](https://github.com/Celasha/Toolasha/compare/v2.102.0...v2.102.1) (2026-09-03)
+
+
+### Bug Fixes
+
+* order Openable Analytics rows game-natively and add item icons ([b987451](https://github.com/Celasha/Toolasha/commit/b987451167f511a0439074c227545aa8aaee2088))
+
+
+### Documentation
+
+* add Moonwisp and Vovchigus to userscript credits ([c5be3c9](https://github.com/Celasha/Toolasha/commit/c5be3c98b5b9c85e007a0b9a64c003fec9645865))
+
 ## [2.102.0](https://github.com/Celasha/Toolasha/compare/v2.101.0...v2.102.0) (2026-09-03)
 
 ### Features
