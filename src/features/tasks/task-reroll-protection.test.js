@@ -210,4 +210,61 @@ describe('TaskRerollProtection — per-card visual state', () => {
         expect(card.style.outline).toContain('239, 68, 68');
         expect(card.dataset.mwiProtected).toBe('1');
     });
+
+    test('a protected task with no reroll-worthy signal still blocks the reroll click for 3s', async () => {
+        const { TaskRerollProtection } = await import('./task-reroll-protection.js');
+        const feature = new TaskRerollProtection();
+        feature.protectedHrids = new Set(['/actions/combat/gloom_moth']);
+        const card = makeCard();
+        vi.spyOn(feature, '_getQuestFromCard').mockReturnValue({ actionHrid: '/actions/combat/gloom_moth' });
+        feature._processTaskCard(card);
+
+        const btn = document.createElement('button');
+        btn.textContent = 'Pay 10K';
+        card.appendChild(btn);
+        const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true });
+        btn.dispatchEvent(clickEvent);
+
+        expect(clickEvent.defaultPrevented).toBe(true);
+        expect(card.dataset.mwiRerollLocked).toBe('1');
+    });
+
+    test('a reroll-worthy protected task (shown red) no longer blocks the reroll click', async () => {
+        const { TaskRerollProtection } = await import('./task-reroll-protection.js');
+        const feature = new TaskRerollProtection();
+        feature.protectedHrids = new Set(['/actions/combat/gloom_moth']);
+        const card = makeCard();
+        card.dataset.mwiAutoReroll = '1';
+        vi.spyOn(feature, '_getQuestFromCard').mockReturnValue({ actionHrid: '/actions/combat/gloom_moth' });
+        feature._processTaskCard(card);
+
+        const btn = document.createElement('button');
+        btn.textContent = 'Pay 10K';
+        card.appendChild(btn);
+        const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true });
+        btn.dispatchEvent(clickEvent);
+
+        expect(clickEvent.defaultPrevented).toBe(false);
+        expect(card.dataset.mwiRerollLocked).not.toBe('1');
+    });
+
+    test('a reroll-worthy task still blocks on the cost cap — only the protected-list block is bypassed', async () => {
+        const { TaskRerollProtection } = await import('./task-reroll-protection.js');
+        const feature = new TaskRerollProtection();
+        feature.capProtectionEnabled = true;
+        feature.coinThreshold = 10000;
+        const card = makeCard();
+        card.dataset.mwiTokenFlag = '1';
+        vi.spyOn(feature, '_getQuestFromCard').mockReturnValue({ actionHrid: '/actions/combat/unrelated' });
+        feature._processTaskCard(card);
+
+        const btn = document.createElement('button');
+        btn.textContent = 'Pay 10K';
+        card.appendChild(btn);
+        const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true });
+        btn.dispatchEvent(clickEvent);
+
+        expect(clickEvent.defaultPrevented).toBe(true);
+        expect(card.dataset.mwiRerollLocked).toBe('1');
+    });
 });
