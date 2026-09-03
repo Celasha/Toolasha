@@ -92,6 +92,22 @@ describe('TaskTokenThreshold — storage is character-scoped', () => {
 
         expect(reloaded.threshold).toBe(8);
     });
+
+    test('saves and reloads the "above" direction alongside the threshold, scoped per character', async () => {
+        const dataManager = (await import('../../core/data-manager.js')).default;
+        dataManager.getCurrentCharacterId.mockReturnValue('111111');
+
+        const { TaskTokenThreshold } = await import('./task-token-threshold.js');
+        const charOne = new TaskTokenThreshold();
+        await charOne.setThreshold(8, 'above');
+
+        expect(storageData['taskTokenThreshold_direction_111111']).toBe('above');
+
+        const reloaded = new TaskTokenThreshold();
+        await reloaded.initialize();
+
+        expect(reloaded.direction).toBe('above');
+    });
 });
 
 describe('TaskTokenThreshold — per-card classification', () => {
@@ -184,5 +200,40 @@ describe('TaskTokenThreshold — per-card classification', () => {
 
         expect(mockParseTaskData).not.toHaveBeenCalled();
         expect(card.querySelector('.mwi-token-badge')).toBeNull();
+    });
+
+    test('"above" direction flags a card whose reward exceeds the cutoff with "High tokens!"', () => {
+        feature.direction = 'above';
+        mockParseTaskData.mockReturnValue({ taskTokenReward: 20 });
+        const card = makeCard();
+
+        feature._processTaskCard(card);
+
+        expect(card.style.outline).toContain('239, 68, 68');
+        expect(card.querySelector('.mwi-token-badge')?.textContent).toBe('High tokens!');
+    });
+
+    test('"above" direction does not flag a card whose reward is at or below the cutoff', () => {
+        feature.direction = 'above';
+        mockParseTaskData.mockReturnValue({ taskTokenReward: 5 });
+        const card = makeCard();
+
+        feature._processTaskCard(card);
+
+        expect(card.style.outline).toBe('');
+        expect(card.querySelector('.mwi-token-badge')).toBeNull();
+    });
+
+    test('switching direction updates the badge text on an already-flagged card', () => {
+        mockParseTaskData.mockReturnValue({ taskTokenReward: 5 });
+        const card = makeCard();
+        feature._processTaskCard(card);
+        expect(card.querySelector('.mwi-token-badge')?.textContent).toBe('Low tokens!');
+
+        feature.direction = 'above';
+        mockParseTaskData.mockReturnValue({ taskTokenReward: 20 });
+        feature._processTaskCard(card);
+
+        expect(card.querySelector('.mwi-token-badge')?.textContent).toBe('High tokens!');
     });
 });
