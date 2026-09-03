@@ -98,6 +98,7 @@ vi.mock('./openable-analytics-data-collector.js', () => ({
     },
 }));
 
+const { default: dataManager } = await import('../../../core/data-manager.js');
 const { default: openableAnalyticsDataCollector } = await import('./openable-analytics-data-collector.js');
 const { detectImportSource, parseEdibleExport, parseCombatSuiteExport } =
     await import('./openable-analytics-import-parsers.js');
@@ -444,11 +445,30 @@ describe('one-open accordion behavior (section 9)', () => {
         expect(openableAnalyticsUI.expandedContainer).toBeNull();
     });
 
-    test('rows are sorted alphabetically by display name, not by recent activity', () => {
+    test('rows are sorted by game-native order (item sortIndex), not alphabetically or by recent activity', () => {
+        const original = dataManager.getItemDetails.getMockImplementation();
+        dataManager.getItemDetails.mockImplementation((hrid) => ({
+            name: hrid.split('/').pop(),
+            sortIndex: hrid === '/items/crate' ? 1 : 2,
+        }));
+
         openableAnalyticsUI.showPopup();
         const names = [...popup().querySelectorAll('summary')].map((el) => el.textContent);
-        // "chest" < "crate" alphabetically
-        expect(names[0]).toContain('chest');
+        // crate has the lower sortIndex, so it must lead even though "chest" < "crate" alphabetically
+        expect(names[0]).toContain('crate');
+
+        dataManager.getItemDetails.mockImplementation(original);
+    });
+
+    test('accordion rows show an item icon when the items sprite is available', () => {
+        const spriteUse = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+        spriteUse.setAttribute('href', 'https://example.com/items_sprite.svg#other_item');
+        document.body.appendChild(spriteUse);
+
+        openableAnalyticsUI.showPopup();
+
+        const icon = accordionRow('/items/chest').querySelector('summary svg use');
+        expect(icon?.getAttribute('href')).toBe('https://example.com/items_sprite.svg#chest');
     });
 });
 
