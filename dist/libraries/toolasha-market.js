@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.102.0
+ * Version: 2.102.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -33952,6 +33952,10 @@ self.onmessage = function (e) {
         return details?.name || containerHrid;
     }
 
+    function containerSortIndex(containerHrid) {
+        return dataManager.getItemDetails(containerHrid)?.sortIndex ?? 9999;
+    }
+
     function itemLabel(itemHrid) {
         const details = dataManager.getItemDetails(itemHrid);
         return details?.name || itemHrid;
@@ -34291,8 +34295,8 @@ self.onmessage = function (e) {
             const wrapper = document.createElement('div');
             wrapper.style.cssText = 'margin-bottom:16px;';
 
-            // Stable alphabetical order - never reordered by Luck/value/count/recent activity.
-            const sorted = [...containers].sort((a, b) => containerLabel(a).localeCompare(containerLabel(b)));
+            // Stable game-native order (item sortIndex) - never reordered by Luck/value/count/recent activity.
+            const sorted = [...containers].sort((a, b) => containerSortIndex(a) - containerSortIndex(b));
 
             for (const containerHrid of sorted) {
                 wrapper.appendChild(this.buildAccordionRow(containerHrid));
@@ -34319,8 +34323,14 @@ self.onmessage = function (e) {
             };
 
             const name = document.createElement('span');
-            name.textContent = containerLabel(containerHrid);
-            name.style.cssText = 'flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+            name.style.cssText =
+                'flex:1; min-width:0; display:flex; align-items:center; gap:5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+            const icon = this.createItemIcon(containerHrid, 16);
+            if (icon) name.appendChild(icon);
+            const nameText = document.createElement('span');
+            nameText.textContent = containerLabel(containerHrid);
+            nameText.style.cssText = 'overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;';
+            name.appendChild(nameText);
 
             const count = document.createElement('span');
             count.textContent = `×${aggregate.containersOpened}`;
