@@ -1,24 +1,17 @@
 /**
  * UI Library
- * UI enhancements, tasks, skills, house, settings, and misc features
+ * Tasks, chat, collection, skills, and settings features. Split from the remaining UI features
+ * (see ui2.js) to stay under the jsDelivr/Tampermonkey @require size cap (2 MiB).
  *
- * Exports to: window.Toolasha.UI
+ * Exports to: window.Toolasha.UI (ui2.js merges its own features into the same namespace)
  */
 
 // UI features
-import equipmentLevelDisplay from '../features/ui/equipment-level-display.js';
-import alchemyItemDimming from '../features/ui/alchemy-item-dimming.js';
 import skillExperiencePercentage from '../features/ui/skill-experience-percentage.js';
-import combatLevelProgress from '../features/ui/combat-level-progress.js';
-import externalLinks from '../features/ui/external-links.js';
-import hideLabyrinthBadge from '../features/ui/hide-labyrinth-badge.js';
 import hideGuildBadge from '../features/ui/hide-guild-badge.js';
-import hideNavBarGlow from '../features/ui/hide-nav-bar-glow.js';
-import tabReorder from '../features/ui/tab-reorder.js';
 import draggableModals from '../features/ui/draggable-modals.js';
 
 // Navigation features
-import altClickNavigation from '../features/navigation/alt-click-navigation.js';
 import collectionNavigation from '../features/collection/collection-navigation.js';
 import collectionFilters from '../features/collection/collection-filters.js';
 
@@ -45,54 +38,16 @@ import taskTokenThreshold from '../features/tasks/task-token-threshold.js';
 import remainingXP from '../features/skills/remaining-xp.js';
 import xpTracker from '../features/skills/xp-tracker.js';
 
-// Action features
-import lootLogStats from '../features/actions/loot-log-stats.js';
-
-// House
-import housePanelObserver from '../features/house/house-panel-observer.js';
-
 // Settings UI
 import settingsUI from '../features/settings/settings-ui.js';
 
-// Dictionary
-import transmuteRates from '../features/dictionary/transmute-rates.js';
-import viewActionButton from '../features/dictionary/view-action-button.js';
-
-// Alchemy History
-import transmuteHistoryTracker from '../features/alchemy/transmute-history-tracker.js';
-import transmuteHistoryViewer from '../features/alchemy/transmute-history-viewer.js';
-import coinifyHistoryTracker from '../features/alchemy/coinify-history-tracker.js';
-import coinifyHistoryViewer from '../features/alchemy/coinify-history-viewer.js';
-import decomposeHistoryTracker from '../features/alchemy/decompose-history-tracker.js';
-import decomposeHistoryViewer from '../features/alchemy/decompose-history-viewer.js';
-import alchemyActionProtection from '../features/alchemy/alchemy-action-protection.js';
-
-// Enhancement
-import enhancementFeature from '../features/enhancement/enhancement-feature.js';
-import xphCalculator from '../features/enhancement/xph-calculator.js';
-
-// Risk of Ruin
-import riskOfRuinUI from '../features/risk-of-ruin/risk-of-ruin-ui.js';
-
-// Guild
-import guildXPTracker from '../features/guild/guild-xp-tracker.js';
-import guildXPDisplay from '../features/guild/guild-xp-display.js';
-import guildCreditValue from '../features/guild/guild-credit-value.js';
-
-// Leaderboard
-import leaderboardXPTracker from '../features/leaderboard/leaderboard-xp-tracker.js';
-import leaderboardXPDisplay from '../features/leaderboard/leaderboard-xp-display.js';
-
-// Notifications
-import emptyQueueNotification from '../features/notifications/empty-queue-notification.js';
-
-// Queue Monitor
-import queueMonitor from '../features/queue-monitor/queue-monitor.js';
-import characterActivity from '../features/character-activity/character-activity.js';
-import characterSelectRenderer from '../features/character-activity/character-select-renderer.js';
-
 // Dev tools
 import pformancePanel from '../features/dev/pformance-panel.js';
+
+// Character Select — always-on bootstrap dependency (started unconditionally before any
+// feature/character logic in entrypoint.js), kept in the primary bundle rather than the
+// secondary one so it never lands on the tail @require.
+import characterSelectRenderer from '../features/character-activity/character-select-renderer.js';
 
 // Export to global namespace
 const toolashaRoot = window.Toolasha || {};
@@ -103,17 +58,9 @@ if (typeof unsafeWindow !== 'undefined') {
 }
 
 toolashaRoot.UI = {
-    equipmentLevelDisplay,
-    alchemyItemDimming,
     skillExperiencePercentage,
-    combatLevelProgress,
-    externalLinks,
-    hideLabyrinthBadge,
     hideGuildBadge,
-    hideNavBarGlow,
-    tabReorder,
     draggableModals,
-    altClickNavigation,
     collectionNavigation,
     collectionFilters,
     chatCommands,
@@ -133,31 +80,9 @@ toolashaRoot.UI = {
     taskTokenThreshold,
     remainingXP,
     xpTracker,
-    lootLogStats,
-    housePanelObserver,
     settingsUI,
-    transmuteRates,
-    viewActionButton,
-    transmuteHistoryTracker,
-    transmuteHistoryViewer,
-    coinifyHistoryTracker,
-    coinifyHistoryViewer,
-    decomposeHistoryTracker,
-    decomposeHistoryViewer,
-    alchemyActionProtection,
-    enhancementFeature,
-    xphCalculator,
-    riskOfRuinUI,
-    guildXPTracker,
-    guildXPDisplay,
-    guildCreditValue,
-    leaderboardXPTracker,
-    leaderboardXPDisplay,
-    emptyQueueNotification,
-    queueMonitor,
-    characterActivity,
-    characterSelectRenderer,
     pformancePanel,
+    characterSelectRenderer,
 };
 
 console.log('[Toolasha] UI library loaded');

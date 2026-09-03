@@ -9,6 +9,7 @@
  * - Actions (production, gathering, alchemy)
  * - Combat (combat, stats, abilities)
  * - UI (tasks, skills, settings, misc)
+ * - UI2 (dictionary, house, guild, leaderboard, alchemy history, and misc UI features)
  */
 
 // Access libraries from global namespace

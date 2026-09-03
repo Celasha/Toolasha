@@ -28,5 +28,6 @@
 // @require      https://UPDATE-THIS-URL/toolasha-actions.js
 // @require      https://UPDATE-THIS-URL/toolasha-combat.js
 // @require      https://UPDATE-THIS-URL/toolasha-ui.js
+// @require      https://UPDATE-THIS-URL/toolasha-ui2.js
 // ==/UserScript==
 // Note: Combat Sim auto-import requires Tampermonkey for cross-domain storage. Not available on Steam (use manual clipboard copy/paste instead).

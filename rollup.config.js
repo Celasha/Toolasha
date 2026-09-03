@@ -16,6 +16,7 @@ const libraryHeaderMarket = readFileSync(join(__dirname, 'library-headers/market
 const libraryHeaderActions = readFileSync(join(__dirname, 'library-headers/actions.txt'), 'utf-8');
 const libraryHeaderCombat = readFileSync(join(__dirname, 'library-headers/combat.txt'), 'utf-8');
 const libraryHeaderUI = readFileSync(join(__dirname, 'library-headers/ui.txt'), 'utf-8');
+const libraryHeaderUI2 = readFileSync(join(__dirname, 'library-headers/ui2.txt'), 'utf-8');
 const entrypointHeader = readFileSync(join(__dirname, 'library-headers/entrypoint.txt'), 'utf-8');
 
 const normalizeModuleId = (id) => (id ? normalize(id.split('?')[0]) : id);
@@ -272,6 +273,16 @@ const prodLibraries = [
             banner: libraryHeaderUI,
         },
     },
+    {
+        key: 'ui2',
+        input: 'src/libraries/ui2.js',
+        output: {
+            file: 'dist/libraries/toolasha-ui2.js',
+            format: 'iife',
+            name: 'ToolashaUI2',
+            banner: libraryHeaderUI2,
+        },
+    },
 ];
 
 const prodEntrypoint = {
@@ -305,7 +316,7 @@ const prodConfig = [
             // actions, combat, ui — need core + utils + market externals
             const allExternals = new Map([...coreExternalGlobals, ...utilsExternalGlobals, ...marketExternalGlobals]);
             // ui and actions also treat combat feature singletons as externals to avoid duplicate instances
-            if (key === 'ui' || key === 'actions') {
+            if (key === 'ui' || key === 'ui2' || key === 'actions') {
                 for (const [k, v] of combatFeatureExternals) allExternals.set(k, v);
             }
             external = buildExternal(allExternals);
