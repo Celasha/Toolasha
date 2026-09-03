@@ -193,7 +193,7 @@ class TaskTokenThreshold {
      */
     async setThreshold(value) {
         this.threshold = value;
-        await storage.set(getCharacterScopedKey(THRESHOLD_STORAGE_KEY_PREFIX), value, 'settings');
+        await storage.set(getCharacterScopedKey(THRESHOLD_STORAGE_KEY_PREFIX), value, 'settings', true);
         this._processAllCards();
     }
 
