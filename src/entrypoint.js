@@ -665,6 +665,13 @@ function registerFeatures() {
             module: UI.taskAutoReroll,
             async: true,
         },
+        {
+            key: 'taskTokenThreshold',
+            name: 'Task Token Threshold',
+            category: 'Tasks',
+            module: UI.taskTokenThreshold,
+            async: true,
+        },
         { key: 'skillRemainingXP', name: 'Remaining XP', category: 'Skills', module: UI.remainingXP, async: false },
         { key: 'xpTracker', name: 'XP/hr Tracker', category: 'Skills', module: UI.xpTracker, async: false },
         {
