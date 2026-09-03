@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.101.0
+ * Version: 2.102.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -17471,7 +17471,7 @@ ${starCSS}
 
             const right = document.createElement('span');
             right.style.color = config.COLOR_GOLD;
-            right.textContent = `${formatters_js.formatKMB(totalAsk)}/${formatters_js.formatKMB(totalBid)}`;
+            right.textContent = `Total Value (ask/bid): ${formatters_js.formatKMB(totalAsk)}/${formatters_js.formatKMB(totalBid)}`;
 
             footer.append(left, right);
             return footer;
@@ -38800,6 +38800,40 @@ self.onmessage = function (e) {
     }
 
     /**
+     * Guild Credit Conversion
+     * Guild Credits (brown/white/red/silver/etc.) are non-tradeable currencies with no
+     * direct market price. Their only gold-equivalent value comes from the cheapest
+     * tradeable item that converts into them via item.guildCreditConversions.
+     */
+
+
+    /**
+     * Build cheapest-gold-per-credit maps for both sell and buy sides.
+     * @param {Object} itemDetailMap
+     * @returns {{ sell: Object, buy: Object }} Map of creditItemHrid -> cheapest gold cost per credit
+     */
+    function buildCheapestPerCredit(itemDetailMap) {
+        const sell = {};
+        const buy = {};
+        for (const [hrid, item] of Object.entries(itemDetailMap)) {
+            for (const conv of item.guildCreditConversions || []) {
+                const creditHrid = conv.creditItemHrid;
+                const sellPrice = marketData_js.getItemPrice(hrid, { mode: 'ask' });
+                const buyPrice = marketData_js.getItemPrice(hrid, { mode: 'bid' });
+                if (sellPrice > 0) {
+                    const gpc = (sellPrice * conv.itemCount) / conv.creditCount;
+                    if (!sell[creditHrid] || gpc < sell[creditHrid]) sell[creditHrid] = gpc;
+                }
+                if (buyPrice > 0) {
+                    const gpc = (buyPrice * conv.itemCount) / conv.creditCount;
+                    if (!buy[creditHrid] || gpc < buy[creditHrid]) buy[creditHrid] = gpc;
+                }
+            }
+        }
+        return { sell, buy };
+    }
+
+    /**
      * Guild Credit Value Display
      *
      * Injects cost-efficiency tables into guild credit exchange modals and shrine
@@ -38862,32 +38896,6 @@ self.onmessage = function (e) {
         });
 
         return returnTab;
-    }
-
-    /**
-     * Build cheapest-gold-per-credit maps for both sell and buy sides.
-     * @param {Object} itemDetailMap
-     * @returns {{ sell: Object, buy: Object }}
-     */
-    function buildCheapestPerCredit(itemDetailMap) {
-        const sell = {};
-        const buy = {};
-        for (const [hrid, item] of Object.entries(itemDetailMap)) {
-            for (const conv of item.guildCreditConversions || []) {
-                const creditHrid = conv.creditItemHrid;
-                const sellPrice = marketData_js.getItemPrice(hrid, { mode: 'ask' });
-                const buyPrice = marketData_js.getItemPrice(hrid, { mode: 'bid' });
-                if (sellPrice > 0) {
-                    const gpc = (sellPrice * conv.itemCount) / conv.creditCount;
-                    if (!sell[creditHrid] || gpc < sell[creditHrid]) sell[creditHrid] = gpc;
-                }
-                if (buyPrice > 0) {
-                    const gpc = (buyPrice * conv.itemCount) / conv.creditCount;
-                    if (!buy[creditHrid] || gpc < buy[creditHrid]) buy[creditHrid] = gpc;
-                }
-            }
-        }
-        return { sell, buy };
     }
 
     /**
@@ -41327,9 +41335,12 @@ self.onmessage = function (e) {
      *   4. All-skills non-default
      *   5. Fall back to currently-equipped gear / current drinks
      *
-     * Intentional empty state is preserved: a matching saved loadout with no
-     * equipment or no drinks resolves to an empty Map/array rather than falling
-     * through to the character's currently equipped setup.
+     * Intentional empty state is preserved: a matching skill-specific saved loadout with no
+     * equipment or no drinks resolves to an empty Map/array rather than falling through to the
+     * character's currently equipped setup. An All Skills loadout (actionTypeHrid === '') is the one
+     * exception for drinks: the game never lets that loadout type carry drink slots at all, so its
+     * always-blank drinks are a structural void, not a player choice, and fall back to the
+     * character's current drinks for that action type instead.
      *
      * resolveCurrentActionContext() is the separate live-state counterpart: it always ignores
      * saved-loadout prediction and returns the character's actual current setup, for surfaces (like
@@ -41376,7 +41387,7 @@ self.onmessage = function (e) {
         // server would execute missing loadout items. The returned selection metadata lets UIs make
         // that fallback visible instead of silently claiming the saved loadout was used.
         let drinks;
-        if (snapshot) {
+        if (snapshot && snapshot.drinksApplicable) {
             // Core already resolved saved consumables against live inventory and blanked unavailable
             // slots. Do not rescan the full inventory again on every action calculation.
             drinks = (snapshot.drinks || []).filter((entry) => entry.itemHrid);

@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.101.0
+ * Version: 2.102.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7136,9 +7136,12 @@
      *   4. All-skills non-default
      *   5. Fall back to currently-equipped gear / current drinks
      *
-     * Intentional empty state is preserved: a matching saved loadout with no
-     * equipment or no drinks resolves to an empty Map/array rather than falling
-     * through to the character's currently equipped setup.
+     * Intentional empty state is preserved: a matching skill-specific saved loadout with no
+     * equipment or no drinks resolves to an empty Map/array rather than falling through to the
+     * character's currently equipped setup. An All Skills loadout (actionTypeHrid === '') is the one
+     * exception for drinks: the game never lets that loadout type carry drink slots at all, so its
+     * always-blank drinks are a structural void, not a player choice, and fall back to the
+     * character's current drinks for that action type instead.
      *
      * resolveCurrentActionContext() is the separate live-state counterpart: it always ignores
      * saved-loadout prediction and returns the character's actual current setup, for surfaces (like
@@ -7185,7 +7188,7 @@
         // server would execute missing loadout items. The returned selection metadata lets UIs make
         // that fallback visible instead of silently claiming the saved loadout was used.
         let drinks;
-        if (snapshot) {
+        if (snapshot && snapshot.drinksApplicable) {
             // Core already resolved saved consumables against live inventory and blanked unavailable
             // slots. Do not rescan the full inventory again on every action calculation.
             drinks = (snapshot.drinks || []).filter((entry) => entry.itemHrid);
@@ -10606,7 +10609,10 @@
             levelsGained++;
         }
 
-        return totalTime;
+        // Efficiency increases average completions per timed cycle; it cannot make a positive
+        // finite queue complete before the first timed cycle itself finishes. Preserve the
+        // existing progressive estimator for all longer horizons, but reject its sub-cycle edge.
+        return queueCount > 0 ? Math.max(actionTime, totalTime) : totalTime;
     }
 
     /**

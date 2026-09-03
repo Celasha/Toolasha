@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.101.0
+ * Version: 2.102.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -20415,11 +20415,12 @@ self.onmessage = function (e) {
      * Persisted per character to IndexedDB (settings store).
      *
      * Exclusion types:
-     *   assetType  - entire section ('houses', 'abilities', 'abilityBooks', 'listings', 'equipped')
+     *   assetType  - entire section ('houses', 'abilities', 'abilityBooks', 'listings', 'equipped', 'guildShrines')
      *   category   - all items in an inventory category ('/item_categories/food', etc.)
      *   item       - all stacks of a specific item type ('/items/...')
      *   houseRoom  - one specific house room ('/house_rooms/...')
      *   ability    - one specific ability ('/abilities/...')
+     *   guildBuff  - one specific guild shrine buff ('/guild_buffs/...')
      *   loadout    - all equipment items in a named loadout snapshot
      */
 
@@ -20467,7 +20468,7 @@ self.onmessage = function (e) {
 
     /**
      * Check whether a given type/value pair is currently excluded.
-     * @param {string} type - 'assetType' | 'category' | 'item' | 'houseRoom' | 'ability' | 'loadout'
+     * @param {string} type - 'assetType' | 'category' | 'item' | 'houseRoom' | 'ability' | 'guildBuff' | 'loadout'
      * @param {string} value - HRID or loadout name
      * @returns {boolean}
      */
@@ -20519,6 +20520,40 @@ self.onmessage = function (e) {
     }
 
     /**
+     * Guild Credit Conversion
+     * Guild Credits (brown/white/red/silver/etc.) are non-tradeable currencies with no
+     * direct market price. Their only gold-equivalent value comes from the cheapest
+     * tradeable item that converts into them via item.guildCreditConversions.
+     */
+
+
+    /**
+     * Build cheapest-gold-per-credit maps for both sell and buy sides.
+     * @param {Object} itemDetailMap
+     * @returns {{ sell: Object, buy: Object }} Map of creditItemHrid -> cheapest gold cost per credit
+     */
+    function buildCheapestPerCredit(itemDetailMap) {
+        const sell = {};
+        const buy = {};
+        for (const [hrid, item] of Object.entries(itemDetailMap)) {
+            for (const conv of item.guildCreditConversions || []) {
+                const creditHrid = conv.creditItemHrid;
+                const sellPrice = marketData_js.getItemPrice(hrid, { mode: 'ask' });
+                const buyPrice = marketData_js.getItemPrice(hrid, { mode: 'bid' });
+                if (sellPrice > 0) {
+                    const gpc = (sellPrice * conv.itemCount) / conv.creditCount;
+                    if (!sell[creditHrid] || gpc < sell[creditHrid]) sell[creditHrid] = gpc;
+                }
+                if (buyPrice > 0) {
+                    const gpc = (buyPrice * conv.itemCount) / conv.creditCount;
+                    if (!buy[creditHrid] || gpc < buy[creditHrid]) buy[creditHrid] = gpc;
+                }
+            }
+        }
+        return { sell, buy };
+    }
+
+    /**
      * Networth Calculator
      * Calculates total character networth including:
      * - Equipped items
@@ -20528,6 +20563,14 @@ self.onmessage = function (e) {
      * - Abilities (equipped + others)
      */
 
+
+    const GUILD_SHRINE_LABELS = {
+        '/guild_shrines/force': 'Force',
+        '/guild_shrines/tempo': 'Tempo',
+        '/guild_shrines/rarity': 'Rarity',
+        '/guild_shrines/scholar': 'Scholar',
+        '/guild_shrines/spirit': 'Spirit',
+    };
 
     /**
      * Calculate the value of a single item
@@ -20894,6 +20937,65 @@ self.onmessage = function (e) {
             equippedBreakdown,
             otherBreakdown,
         };
+    }
+
+    /**
+     * Build the human-readable display name for a guild shrine buff.
+     * @param {string} buffHrid
+     * @param {Object} buff - Entry from gameData.guildBuffDetailMap
+     * @returns {string}
+     */
+    function buildGuildBuffDisplayName(buffHrid, buff) {
+        const shrineLabel = GUILD_SHRINE_LABELS[buff?.shrineHrid] || buff?.shrineHrid?.split('/').pop() || 'Shrine';
+        const typeLabel = buff?.isCombat ? 'Combat' : 'Skilling';
+        return `Shrine of ${shrineLabel} - ${typeLabel}`;
+    }
+
+    /**
+     * Calculate total value of all guild shrine buffs, priced at current level (guild-shared state,
+     * not personally owned — every member of the guild sees and would compute the same totals).
+     * Guild Token cost has no gold-equivalent anywhere in the game and is intentionally excluded;
+     * only the Guild Credit portion of each level's cost is priced, via the cheapest tradeable
+     * item that converts into that credit.
+     * @returns {Object} {totalCost, breakdown: [{hrid, name, level, cost}]}
+     */
+    function calculateAllGuildShrinesCost() {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.guildBuffDetailMap) return { totalCost: 0, breakdown: [] };
+
+        const pricingMode = config.getSettingValue('networth_pricingMode') || 'ask';
+        const { sell, buy } = buildCheapestPerCredit(gameData.itemDetailMap || {});
+        const cheapestPerCredit = pricingMode === 'bid' ? buy : sell;
+
+        let totalCost = 0;
+        const breakdown = [];
+
+        for (const [buffHrid, buff] of Object.entries(gameData.guildBuffDetailMap)) {
+            const level = dataManager.getCharacterGuildBuffLevel(buffHrid);
+            if (level === 0) continue;
+
+            let cost = 0;
+            for (let lvl = 1; lvl <= level; lvl++) {
+                const levelCost = buff.levelCosts?.[String(lvl)];
+                if (!levelCost) continue;
+                for (const { itemHrid, count } of levelCost.creditCosts || []) {
+                    const perCredit = cheapestPerCredit[itemHrid];
+                    if (perCredit) cost += perCredit * count;
+                }
+            }
+
+            totalCost += cost;
+            breakdown.push({
+                hrid: buffHrid,
+                name: buildGuildBuffDisplayName(buffHrid, buff),
+                level,
+                cost,
+            });
+        }
+
+        breakdown.sort((a, b) => b.cost - a.cost);
+
+        return { totalCost, breakdown };
     }
 
     /**
@@ -21384,13 +21486,38 @@ self.onmessage = function (e) {
             }
         }
 
+        // Calculate guild shrines value — apply per-buff and whole-section exclusions
+        let guildShrinesData = calculateAllGuildShrinesCost();
+        if (isExcluded('assetType', 'guildShrines') && guildShrinesData.totalCost > 0) {
+            trackExcluded('assetType', 'guildShrines', 'All Guild Shrines', guildShrinesData.totalCost);
+            guildShrinesData = { totalCost: 0, breakdown: [] };
+        } else {
+            let excludedBuffCost = 0;
+            const remainingBuffs = [];
+            for (const buff of guildShrinesData.breakdown) {
+                if (isExcluded('guildBuff', buff.hrid)) {
+                    trackExcluded('guildBuff', buff.hrid, buff.name, buff.cost);
+                    excludedBuffCost += buff.cost;
+                } else {
+                    remainingBuffs.push(buff);
+                }
+            }
+            if (excludedBuffCost > 0) {
+                guildShrinesData = {
+                    totalCost: guildShrinesData.totalCost - excludedBuffCost,
+                    breakdown: remainingBuffs,
+                };
+            }
+        }
+
         // Build excluded summary
         const excludedItems = [...excludedByKey.values()].sort((a, b) => b.amount - a.amount);
         const excludedTotal = excludedItems.reduce((sum, e) => sum + e.amount, 0);
 
         // Calculate totals
         const currentAssetsTotal = equippedValue + inventoryValue + listingsValue;
-        const fixedAssetsTotal = housesData.totalCost + abilitiesData.totalCost + abilityBooksValue;
+        const fixedAssetsTotal =
+            housesData.totalCost + abilitiesData.totalCost + abilityBooksValue + guildShrinesData.totalCost;
         const totalNetworth = currentAssetsTotal + fixedAssetsTotal;
 
         // Sort breakdowns by value descending
@@ -21419,6 +21546,7 @@ self.onmessage = function (e) {
                     totalCost: abilityBooksValue,
                     breakdown: abilityBooksBreakdown,
                 },
+                guildShrines: guildShrinesData,
             },
         };
     }
@@ -21452,6 +21580,7 @@ self.onmessage = function (e) {
                     totalCost: 0,
                     breakdown: [],
                 },
+                guildShrines: { totalCost: 0, breakdown: [] },
             },
         };
     }
@@ -23436,6 +23565,13 @@ self.onmessage = function (e) {
                     name: 'All Ability Books',
                     amount: fa.abilityBooks.totalCost,
                 });
+            if (!isExcluded('assetType', 'guildShrines') && (fa?.guildShrines?.totalCost ?? 0) > 0)
+                add({
+                    type: 'assetType',
+                    value: 'guildShrines',
+                    name: 'All Guild Shrines',
+                    amount: fa.guildShrines.totalCost,
+                });
 
             // Inventory categories — byCategory already reflects post-exclusion items
             for (const [catName, catData] of Object.entries(ca?.inventory?.byCategory ?? {})) {
@@ -23474,6 +23610,12 @@ self.onmessage = function (e) {
             for (const ability of fa?.abilities?.breakdown ?? []) {
                 if (!ability.hrid || isExcluded('ability', ability.hrid)) continue;
                 add({ type: 'ability', value: ability.hrid, name: ability.name, amount: ability.cost });
+            }
+
+            // Individual guild shrine buffs — breakdown already reflects post-exclusion
+            for (const buff of fa?.guildShrines?.breakdown ?? []) {
+                if (!buff.hrid || isExcluded('guildBuff', buff.hrid)) continue;
+                add({ type: 'guildBuff', value: buff.hrid, name: buff.name, amount: buff.cost });
             }
 
             // Loadout snapshots — only show if not already excluded
@@ -23731,6 +23873,11 @@ self.onmessage = function (e) {
                             name: `${i.name}${i.count > 1 ? ` x${i.count}` : ''}`,
                             value: i.value ?? 0,
                         }));
+                    case 'guildShrines':
+                        return (fa?.guildShrines?.breakdown ?? []).map((i) => ({
+                            name: i.name,
+                            value: i.cost ?? 0,
+                        }));
                 }
             }
 
@@ -23914,6 +24061,7 @@ self.onmessage = function (e) {
                 houses: 'All Houses',
                 abilities: 'All Abilities',
                 abilityBooks: 'All Ability Books',
+                guildShrines: 'All Guild Shrines',
             };
             if (exc.type === 'assetType') return ASSET_TYPE_NAMES[exc.value] ?? exc.value;
             if (exc.type === 'loadout') return `Loadout: ${exc.value}`;
@@ -23928,6 +24076,10 @@ self.onmessage = function (e) {
             if (exc.type === 'item') return gd.itemDetailMap?.[exc.value]?.name ?? exc.value;
             if (exc.type === 'houseRoom') return gd.houseRoomDetailMap?.[exc.value]?.name ?? exc.value;
             if (exc.type === 'ability') return gd.abilityDetailMap?.[exc.value]?.name ?? exc.value;
+            if (exc.type === 'guildBuff') {
+                const buff = gd.guildBuffDetailMap?.[exc.value];
+                return buff ? buildGuildBuffDisplayName(exc.value, buff) : exc.value;
+            }
             return exc.value;
         }
 
@@ -24369,6 +24521,7 @@ self.onmessage = function (e) {
                 'mwi-equipped-abilities-breakdown',
                 'mwi-other-abilities-breakdown',
                 'mwi-ability-books-breakdown',
+                'mwi-guild-shrines-breakdown',
                 'mwi-excluded-details',
             ];
 
@@ -24410,6 +24563,7 @@ self.onmessage = function (e) {
             const showFixedAssets = fa.total > 0;
             const showHouses = fa.houses.totalCost > 0;
             const showAbilities = fa.abilities.totalCost > 0;
+            const showGuildShrines = fa.guildShrines.totalCost > 0;
             const showExcluded = excl.total > 0;
 
             this.container.innerHTML = `
@@ -24548,6 +24702,18 @@ self.onmessage = function (e) {
                     `
                             : ''
                     }
+
+                    ${
+                        showGuildShrines
+                            ? `
+                    <!-- Guild Shrines -->
+                    <div style="cursor: pointer; margin-top: 4px;" id="mwi-guild-shrines-toggle">
+                        + Guild Shrines: ${formatters_js.networthFormatter(Math.round(fa.guildShrines.totalCost))}
+                    </div>
+                    <div id="mwi-guild-shrines-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderGuildShrinesBreakdown(fa.guildShrines.breakdown)}</div>
+                    `
+                            : ''
+                    }
                 </div>
                 `
                         : ''
@@ -24654,6 +24820,23 @@ self.onmessage = function (e) {
             return breakdown
                 .map((book) => {
                     return `${book.name} (${formatters_js.formatKMB(book.count)}): ${formatters_js.networthFormatter(Math.round(book.value))}`;
+                })
+                .join('\n');
+        }
+
+        /**
+         * Render guild shrines breakdown HTML
+         * @param {Array} breakdown - Array of {name, level, cost}
+         * @returns {string} HTML string
+         */
+        renderGuildShrinesBreakdown(breakdown) {
+            if (breakdown.length === 0) {
+                return '<div>No guild shrine buffs purchased</div>';
+            }
+
+            return breakdown
+                .map((buff) => {
+                    return `${buff.name} (Lv.${buff.level}): ${formatters_js.networthFormatter(Math.round(buff.cost))}`;
                 })
                 .join('\n');
         }
@@ -24911,6 +25094,15 @@ self.onmessage = function (e) {
                     'mwi-ability-books-toggle',
                     'mwi-ability-books-breakdown',
                     `Ability Books: ${formatters_js.networthFormatter(Math.round(fa.abilityBooks.totalCost))}`
+                );
+            }
+
+            // Guild Shrines toggle
+            if (fa.guildShrines.totalCost > 0) {
+                this.setupToggle(
+                    'mwi-guild-shrines-toggle',
+                    'mwi-guild-shrines-breakdown',
+                    `Guild Shrines: ${formatters_js.networthFormatter(Math.round(fa.guildShrines.totalCost))}`
                 );
             }
 
