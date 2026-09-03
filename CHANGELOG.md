@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.102.0](https://github.com/Celasha/Toolasha/compare/v2.101.0...v2.102.0) (2026-09-03)
+
+
+### Features
+
+* add Guild Shrines to Net Worth's Fixed Assets ([7e2fef3](https://github.com/Celasha/Toolasha/commit/7e2fef3fa91d612272e179a42e89c0e74d24187f))
+
+
+### Bug Fixes
+
+* don't use All Skills loadout drinks for action predictions ([b9bf7aa](https://github.com/Celasha/Toolasha/commit/b9bf7aa64ace7d7fe417e511006aedc834bf620f))
+* label total value in Loot & XP Log Analytics footer ([5f6dd85](https://github.com/Celasha/Toolasha/commit/5f6dd8529ecdf19ff9edd56c58af039a8eb911f6))
+* prevent sub-cycle action time estimates ([9aa5e92](https://github.com/Celasha/Toolasha/commit/9aa5e926c9771f5d611192f39a6257b589fd2ef7))
+
 ## [2.101.0](https://github.com/Celasha/Toolasha/compare/v2.100.1...v2.101.0) (2026-09-02)
 
 ### Features
