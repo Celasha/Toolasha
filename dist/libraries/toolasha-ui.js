@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.105.0
+ * Version: 2.105.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5363,9 +5363,18 @@ ${starCSS}
 
         _renderList() {
             if (!this.listEl) return;
+
+            // Chat-log convention: oldest at top, newest at bottom. Keep the view pinned to the
+            // bottom across re-renders if the user was already there, so new entries stay visible
+            // without yanking them away from history they scrolled up to read.
+            const wasScrolledToBottom = this.listEl.scrollHeight - this.listEl.scrollTop - this.listEl.clientHeight < 4;
             this.listEl.textContent = '';
 
-            const visible = this.entries.filter((entry) => this.activeFilters.has(getNotificationCategory(entry.message)));
+            // this.entries is stored newest-first (see _onInfoMessage); reverse only for display.
+            const visible = this.entries
+                .filter((entry) => this.activeFilters.has(getNotificationCategory(entry.message)))
+                .slice()
+                .reverse();
 
             if (visible.length === 0) {
                 const empty = document.createElement('div');
@@ -5397,6 +5406,10 @@ ${starCSS}
                 row.appendChild(text);
                 row.appendChild(deleteBtn);
                 this.listEl.appendChild(row);
+            }
+
+            if (wasScrolledToBottom) {
+                this.listEl.scrollTop = this.listEl.scrollHeight;
             }
         }
     }
