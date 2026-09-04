@@ -441,6 +441,7 @@ export function parseShykaiImport(jsonString) {
             drinks: [],
             abilities: [],
             houseRooms: {},
+            shrineLevels: {},
         };
 
         // Equipment: array format [{itemLocationHrid, itemHrid, enhancementLevel}]
@@ -508,6 +509,18 @@ export function parseShykaiImport(jsonString) {
         // House rooms
         if (slotData.houseRooms) {
             dto.houseRooms = { ...slotData.houseRooms };
+        }
+
+        // Guild Shrines (guildCombatBuffLevels: {force, tempo, spirit, rarity, scholar}) - added
+        // by Szerra's fork; Shykai's own exports omit this field, so its absence just leaves
+        // shrineLevels empty rather than being treated as an error.
+        if (slotData.guildCombatBuffLevels) {
+            for (const shrineHrid of COMBAT_SHRINE_HRIDS) {
+                const level = slotData.guildCombatBuffLevels[shrineHrid.split('/').pop()];
+                if (Number.isFinite(level) && level > 0) {
+                    dto.shrineLevels[shrineHrid] = level;
+                }
+            }
         }
 
         players.push(dto);

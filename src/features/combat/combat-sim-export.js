@@ -7,6 +7,59 @@
 
 import dataManager from '../../core/data-manager.js';
 import storage from '../../core/storage.js';
+import { COMBAT_SHRINE_HRIDS, getCombatGuildBuffHridForShrine } from '../combat-sim/combat-sim-adapter.js';
+
+/**
+ * Build the Shykai/Szerra "guildCombatBuffLevels" object ({force, tempo, spirit, rarity,
+ * scholar}) for the current character. Reads shrine evidence directly off the passed-in
+ * characterObj/clientObj rather than dataManager's live characterGuildBuffMap/guildBuildingLevelMap
+ * (mirrors combat-sim-adapter.js's buildPlayerDTO) so this also works when re-derived from
+ * GM-stored data on the Shykai/Szerra page itself, where those live maps are empty.
+ * @param {Object} clientObj
+ * @param {Object} characterObj
+ * @returns {Object}
+ */
+function buildSelfGuildCombatBuffLevels(clientObj, characterObj) {
+    const guildBuffDetailMap = clientObj?.guildBuffDetailMap || {};
+    const characterGuildBuffMap = characterObj.characterGuildBuffMap || {};
+    const guildBuildingLevelMap = characterObj.guildBuildingLevelMap || {};
+    const levels = { force: 0, tempo: 0, spirit: 0, rarity: 0, scholar: 0 };
+
+    for (const shrineHrid of COMBAT_SHRINE_HRIDS) {
+        const combatBuffHrid = getCombatGuildBuffHridForShrine(shrineHrid, guildBuffDetailMap);
+        if (!combatBuffHrid) continue;
+        const purchasedLevel = characterGuildBuffMap[combatBuffHrid]?.level || 0;
+        const unlockedCap = guildBuildingLevelMap[shrineHrid] || 0;
+        levels[shrineHrid.split('/').pop()] = Math.min(purchasedLevel, unlockedCap);
+    }
+
+    return levels;
+}
+
+/**
+ * Same as buildSelfGuildCombatBuffLevels, but for a shared party-member profile, which only
+ * exposes a teammate's purchased shrine levels via profile.profile.guildBuffLevelMap - there is no
+ * unlocked-cap evidence for a teammate's guild, so unlike self this is not clamped.
+ * @param {Object} clientObj
+ * @param {Object} profile
+ * @returns {Object}
+ */
+function buildPartyGuildCombatBuffLevels(clientObj, profile) {
+    const guildBuffDetailMap = clientObj?.guildBuffDetailMap || {};
+    const guildBuffLevelMap = profile.profile?.guildBuffLevelMap || {};
+    const levels = { force: 0, tempo: 0, spirit: 0, rarity: 0, scholar: 0 };
+
+    for (const shrineHrid of COMBAT_SHRINE_HRIDS) {
+        const combatBuffHrid = getCombatGuildBuffHridForShrine(shrineHrid, guildBuffDetailMap);
+        if (!combatBuffHrid) continue;
+        const level = guildBuffLevelMap[combatBuffHrid];
+        if (Number.isFinite(level) && level > 0) {
+            levels[shrineHrid.split('/').pop()] = level;
+        }
+    }
+
+    return levels;
+}
 
 /**
  * Get character data from dataManager (in-memory, always current).
@@ -241,6 +294,9 @@ function constructSelfPlayer(characterObj, clientObj) {
         }
     }
 
+    // Extract Guild Shrine levels
+    playerObj.guildCombatBuffLevels = buildSelfGuildCombatBuffLevels(clientObj, characterObj);
+
     return playerObj;
 }
 
@@ -404,6 +460,9 @@ function constructPartyPlayer(profile, clientObj, battleObj) {
         }
     }
 
+    // Extract Guild Shrine levels from profile
+    playerObj.guildCombatBuffLevels = buildPartyGuildCombatBuffLevels(clientObj, profile);
+
     return playerObj;
 }
 
@@ -425,7 +484,7 @@ export async function constructExportObject(externalProfileId = null, singlePlay
 
     // Blank player template (as string, like MCS)
     const BLANK =
-        '{"player":{"attackLevel":1,"magicLevel":1,"meleeLevel":1,"rangedLevel":1,"defenseLevel":1,"staminaLevel":1,"intelligenceLevel":1,"equipment":[]},"food":{"/action_types/combat":[{"itemHrid":""},{"itemHrid":""},{"itemHrid":""}]},"drinks":{"/action_types/combat":[{"itemHrid":""},{"itemHrid":""},{"itemHrid":""}]},"abilities":[{"abilityHrid":"","level":1},{"abilityHrid":"","level":1},{"abilityHrid":"","level":1},{"abilityHrid":"","level":1},{"abilityHrid":"","level":1}],"triggerMap":{},"zone":"/actions/combat/fly","houseRooms":{"/house_rooms/dairy_barn":0,"/house_rooms/garden":0,"/house_rooms/log_shed":0,"/house_rooms/forge":0,"/house_rooms/workshop":0,"/house_rooms/sewing_parlor":0,"/house_rooms/kitchen":0,"/house_rooms/brewery":0,"/house_rooms/laboratory":0,"/house_rooms/observatory":0,"/house_rooms/dining_room":0,"/house_rooms/library":0,"/house_rooms/dojo":0,"/house_rooms/gym":0,"/house_rooms/armory":0,"/house_rooms/archery_range":0,"/house_rooms/mystical_study":0},"achievements":{}}';
+        '{"player":{"attackLevel":1,"magicLevel":1,"meleeLevel":1,"rangedLevel":1,"defenseLevel":1,"staminaLevel":1,"intelligenceLevel":1,"equipment":[]},"food":{"/action_types/combat":[{"itemHrid":""},{"itemHrid":""},{"itemHrid":""}]},"drinks":{"/action_types/combat":[{"itemHrid":""},{"itemHrid":""},{"itemHrid":""}]},"abilities":[{"abilityHrid":"","level":1},{"abilityHrid":"","level":1},{"abilityHrid":"","level":1},{"abilityHrid":"","level":1},{"abilityHrid":"","level":1}],"triggerMap":{},"zone":"/actions/combat/fly","houseRooms":{"/house_rooms/dairy_barn":0,"/house_rooms/garden":0,"/house_rooms/log_shed":0,"/house_rooms/forge":0,"/house_rooms/workshop":0,"/house_rooms/sewing_parlor":0,"/house_rooms/kitchen":0,"/house_rooms/brewery":0,"/house_rooms/laboratory":0,"/house_rooms/observatory":0,"/house_rooms/dining_room":0,"/house_rooms/library":0,"/house_rooms/dojo":0,"/house_rooms/gym":0,"/house_rooms/armory":0,"/house_rooms/archery_range":0,"/house_rooms/mystical_study":0},"achievements":{},"guildCombatBuffLevels":{"force":0,"tempo":0,"spirit":0,"rarity":0,"scholar":0}}';
 
     // Check if exporting another player's profile
     if (externalProfileId && externalProfileId !== characterObj.character.id) {
