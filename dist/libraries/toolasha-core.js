@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.104.4
+ * Version: 2.105.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -710,6 +710,22 @@
                     label: 'Chat: Max messages to retain per tab',
                     type: 'text',
                     default: '150',
+                },
+                notificationLog: {
+                    id: 'notificationLog',
+                    label: 'Chat: Add Log tab',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Adds a Log tab to the chat panel logging item trades, level-ups, guild events, and other in-game toasts',
+                },
+                notificationLog_maxEntries: {
+                    id: 'notificationLog_maxEntries',
+                    label: 'Chat: Max notifications to keep',
+                    type: 'number',
+                    default: 100,
+                    min: 10,
+                    max: 1000,
+                    help: 'How many notifications to keep in history, per character. Filtering in the tab only changes what is shown, not what is stored.',
                 },
                 altClickNavigation: {
                     id: 'altClickNavigation',
@@ -3885,7 +3901,10 @@
                 messageType === 'labyrinth_room_progress' ||
                 messageType === 'leaderboard_updated' ||
                 messageType === 'guild_updated' ||
-                messageType === 'loot_opened';
+                messageType === 'loot_opened' ||
+                // Two genuine, distinct info toasts (e.g. selling the same item twice in a row)
+                // can share the same first-100-char prefix - see the exact-match branch below.
+                messageType === 'info';
 
             if (!skipDedup) {
                 // Deduplicate by message content to prevent multiple interception paths from
@@ -3905,10 +3924,10 @@
                 if (this.processedMessages.size > 100) {
                     this.cleanupProcessedMessages();
                 }
-            } else if (messageType === 'action_completed' || messageType === 'loot_opened') {
+            } else if (messageType === 'action_completed' || messageType === 'loot_opened' || messageType === 'info') {
                 // These types bypass the lossy first-100-char dedup (Gabriel's fix, commit 1007215,
-                // extended to loot_opened) because two genuine consecutive messages can share the
-                // same prefix while differing later. The WebSocket prototype wrapper can still fire
+                // extended to loot_opened, then info) because two genuine consecutive messages can
+                // share the same prefix while differing later. The WebSocket prototype wrapper can still fire
                 // two listeners for the same physical message object - the WeakSet guard catches
                 // same-object duplicates, but if two independent listeners each receive a distinct
                 // MessageEvent wrapping the same payload, both pass the WeakSet check and

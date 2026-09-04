@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 2.104.4
+ * Version: 2.105.0
  * License: CC-BY-NC-SA-4.0
  */
 
