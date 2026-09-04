@@ -4,7 +4,11 @@
  * for use with LabyrinthClearRate.getSkillingMetricsFromOverrides().
  */
 
-import { parseEquipmentSpeedBonuses, parseEquipmentEfficiencyBonuses } from '../../utils/equipment-parser.js';
+import {
+    parseEquipmentSpeedBonuses,
+    parseEquipmentEfficiencyBonuses,
+    parseEquipmentSuccessBonuses,
+} from '../../utils/equipment-parser.js';
 
 const PRODUCTION_SKILLS = [
     '/action_types/alchemy',
@@ -53,6 +57,12 @@ export function buildEquipmentBuffsForSkill(editorEquipment, actionTypeHrid, ite
     const efficiencyBonus = parseEquipmentEfficiencyBonuses(equipMap, actionTypeHrid, itemDetailMap);
     if (efficiencyBonus > 0) {
         buffs.push({ typeHrid: '/buff_types/efficiency', flatBoost: efficiencyBonus / 100, ratioBoost: 0 });
+    }
+
+    const successBonus = parseEquipmentSuccessBonuses(equipMap, actionTypeHrid, itemDetailMap);
+    if (successBonus > 0) {
+        const skillId = actionTypeHrid.replace('/action_types/', '');
+        buffs.push({ typeHrid: `/buff_types/${skillId}_success`, flatBoost: 0, ratioBoost: successBonus });
     }
 
     return buffs;

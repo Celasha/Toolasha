@@ -670,3 +670,27 @@ describe('_updateApplyButtonState', () => {
         expect(button.disabled).toBe(true);
     });
 });
+
+describe('skilling/enhancing success chance floor matches the in-game guide minimum (5%)', () => {
+    const zeroMetrics = () => ({
+        skillLevelBonus: 0,
+        efficiencyBonus: 0,
+        actionSpeedBonus: 0,
+        successBonus: -1,
+        doubleProgressBonus: 0,
+    });
+
+    test('computeSkillingClearWithParams never reports a success chance below 5%', () => {
+        const feature = new LabyrinthClearRate();
+        const result = feature.computeSkillingClearWithParams(zeroMetrics(), 1, 100);
+
+        expect(result.successChance).toBe(0.05);
+    });
+
+    test('computeEnhancingClearWithParams never reports a success chance below 5%', () => {
+        const feature = new LabyrinthClearRate();
+        const result = feature.computeEnhancingClearWithParams(zeroMetrics(), 1, 100);
+
+        expect(result.successChance).toBe(0.05);
+    });
+});

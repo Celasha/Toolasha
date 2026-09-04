@@ -410,7 +410,7 @@ class LabyrinthClearRate {
         const effectiveLevel = baseLevel + metrics.skillLevelBonus;
         const levelDelta = effectiveLevel - roomLevel;
         const levelBonus = levelDelta >= 0 ? levelDelta * 0.005 : levelDelta * 0.01;
-        const successChance = Math.min(1, Math.max(0, 0.8 * (1 + levelBonus + metrics.successBonus)));
+        const successChance = Math.min(1, Math.max(0.05, 0.8 * (1 + levelBonus + metrics.successBonus)));
         const doubleChance = Math.min(1, Math.max(0, metrics.doubleProgressBonus + (metrics.gatheringBonus || 0)));
 
         const workPower = effectiveLevel * (1 + metrics.efficiencyBonus);
@@ -461,7 +461,7 @@ class LabyrinthClearRate {
         const effectiveLevel = baseLevel + metrics.skillLevelBonus;
         const levelDelta = effectiveLevel - roomLevel;
         const levelBonus = levelDelta >= 0 ? levelDelta * 0.005 : levelDelta * 0.01;
-        const successChance = Math.min(1, Math.max(0, 0.8 * (1 + levelBonus + metrics.successBonus)));
+        const successChance = Math.min(1, Math.max(0.05, 0.8 * (1 + levelBonus + metrics.successBonus)));
         const doubleChance = Math.min(1, Math.max(0, metrics.doubleProgressBonus));
 
         const actionSeconds = BASE_ENHANCING_TIME / Math.max(0.05, 1 + metrics.actionSpeedBonus);
@@ -1664,7 +1664,7 @@ class LabyrinthClearRate {
         const effectiveLevel = baseLevel + metrics.skillLevelBonus;
         const levelDelta = effectiveLevel - roomLevel;
         const levelBonus = levelDelta >= 0 ? levelDelta * 0.005 : levelDelta * 0.01;
-        const successChance = Math.min(1, Math.max(0, 0.8 * (1 + levelBonus + metrics.successBonus)));
+        const successChance = Math.min(1, Math.max(0.05, 0.8 * (1 + levelBonus + metrics.successBonus)));
         const doubleChance = Math.min(1, Math.max(0, metrics.doubleProgressBonus + (metrics.gatheringBonus || 0)));
 
         const workPower = effectiveLevel * (1 + metrics.efficiencyBonus);
@@ -1708,7 +1708,7 @@ class LabyrinthClearRate {
         const effectiveLevel = baseLevel + metrics.skillLevelBonus;
         const levelDelta = effectiveLevel - roomLevel;
         const levelBonus = levelDelta >= 0 ? levelDelta * 0.005 : levelDelta * 0.01;
-        const successChance = Math.min(1, Math.max(0, 0.8 * (1 + levelBonus + metrics.successBonus)));
+        const successChance = Math.min(1, Math.max(0.05, 0.8 * (1 + levelBonus + metrics.successBonus)));
         const doubleChance = Math.min(1, Math.max(0, metrics.doubleProgressBonus));
 
         const actionSeconds = BASE_ENHANCING_TIME / Math.max(0.05, 1 + metrics.actionSpeedBonus);

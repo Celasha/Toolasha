@@ -277,6 +277,33 @@ export function parseEquipmentEfficiencyBonuses(characterEquipment, actionTypeHr
 }
 
 /**
+ * Valid success fields from game data
+ */
+const VALID_SUCCESS_FIELDS = ['enhancingSuccess'];
+
+/**
+ * Parse equipment success chance bonuses for a specific action type
+ * @param {Map} characterEquipment - Equipment map from dataManager.getEquipment()
+ * @param {string} actionTypeHrid - Action type HRID
+ * @param {Object} itemDetailMap - Item details from init_client_data
+ * @returns {number} Total success bonus as decimal (e.g., 0.042 for Celestial Enhancer +0)
+ *
+ * @example
+ * parseEquipmentSuccessBonuses(equipment, "/action_types/enhancing", items)
+ * // Celestial Enhancer (base 0.042) +0: 0.042 (4.2%)
+ * // Celestial Enhancer (base 0.042) +12: scaled by enhancement level
+ */
+export function parseEquipmentSuccessBonuses(characterEquipment, actionTypeHrid, itemDetailMap) {
+    const skillSpecificField = getFieldForActionType(actionTypeHrid, 'Success', VALID_SUCCESS_FIELDS);
+
+    return parseEquipmentStat(characterEquipment, itemDetailMap, {
+        skillSpecificField,
+        genericField: null,
+        returnAsPercentage: false,
+    });
+}
+
+/**
  * Parse Essence Find bonus from equipment
  * @param {Map} characterEquipment - Equipment map from dataManager.getEquipment()
  * @param {Object} itemDetailMap - Item details from init_client_data

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { buildHouseBuffsForSkill } from './skilling-sim-helpers.js';
+import { buildHouseBuffsForSkill, buildEquipmentBuffsForSkill } from './skilling-sim-helpers.js';
 
 function makeRoom({ usableInActionTypeMap, actionBuffs, globalBuffs }) {
     return { usableInActionTypeMap, actionBuffs, globalBuffs };
@@ -106,5 +106,41 @@ describe('buildHouseBuffsForSkill - actionBuffs must be gated by the room-level 
         );
 
         expect(buffs).toEqual([]);
+    });
+});
+
+describe('buildEquipmentBuffsForSkill - equipment success chance stats (e.g. Enhancer tools)', () => {
+    test('an Enhancer tool contributes an enhancing_success buff', () => {
+        const itemDetailMap = {
+            '/items/celestial_enhancer': {
+                equipmentDetail: {
+                    type: '/equipment_types/tool',
+                    noncombatStats: { enhancingSuccess: 0.042 },
+                },
+            },
+        };
+        const equipment = { '/equipment_types/tool': { hrid: '/items/celestial_enhancer', enhancementLevel: 0 } };
+
+        const buffs = buildEquipmentBuffsForSkill(equipment, '/action_types/enhancing', itemDetailMap);
+
+        const successBuff = buffs.find((b) => b.typeHrid === '/buff_types/enhancing_success');
+        expect(successBuff).toBeDefined();
+        expect(successBuff.ratioBoost).toBeCloseTo(0.042);
+    });
+
+    test('a tool with no success stat contributes no success buff for an unrelated skill', () => {
+        const itemDetailMap = {
+            '/items/celestial_hatchet': {
+                equipmentDetail: {
+                    type: '/equipment_types/tool',
+                    noncombatStats: { woodcuttingSpeed: 0.1 },
+                },
+            },
+        };
+        const equipment = { '/equipment_types/tool': { hrid: '/items/celestial_hatchet', enhancementLevel: 0 } };
+
+        const buffs = buildEquipmentBuffsForSkill(equipment, '/action_types/woodcutting', itemDetailMap);
+
+        expect(buffs.some((b) => b.typeHrid.endsWith('_success'))).toBe(false);
     });
 });
