@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.104.2
+ * Version: 2.104.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -11551,10 +11551,15 @@ ${starCSS}
                         const card = btn.closest('[class*="RandomTask_randomTask"]');
                         if (!card) return;
 
-                        // Check if this task is protected
+                        // Check if this task is protected — but a reroll-worthy signal (manual
+                        // auto-reroll list match, or token threshold qualifying) already overrides
+                        // the visual protection border, so it must also bypass the click lockdown;
+                        // otherwise a task shown in red would still block the very reroll it's
+                        // recommending. The cost-based cap lockdown below is unaffected.
                         const quest = this._getQuestFromCard(card);
                         const hrid = quest?.actionHrid || quest?.monsterHrid || '';
-                        const isPerTaskProtected = hrid && this.protectedHrids.has(hrid);
+                        const isRerollWorthy = card.dataset.mwiAutoReroll === '1' || card.dataset.mwiTokenFlag === '1';
+                        const isPerTaskProtected = hrid && this.protectedHrids.has(hrid) && !isRerollWorthy;
 
                         // Check cap protection (320K gold / 32 cowbells)
                         const isCapProtected = this.capProtectionEnabled && this._isRerollAtCap(btnText);
