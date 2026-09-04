@@ -9,4 +9,5 @@ import './libraries/market.js';
 import './libraries/actions.js';
 import './libraries/combat.js';
 import './libraries/ui.js';
+import './libraries/ui2.js';
 import './entrypoint.js';
