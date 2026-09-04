@@ -256,11 +256,12 @@ describe('NotificationLog - manual deletion', () => {
         expect(feature.entries).toHaveLength(2);
 
         const rows = feature.listEl.querySelectorAll('.mwi-notiflog-row');
+        // Display order is oldest-at-top; row 0 is the oldest entry (soldItem).
         rows[0].querySelector('.mwi-notiflog-delete').dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
         expect(feature.entries).toHaveLength(1);
-        // The newest entry (partyCreated) was row 0; soldItem should be the survivor.
-        expect(feature.entries[0].message).toBe('infoNotification.soldItem');
+        // partyCreated (the newer entry) should be the survivor.
+        expect(feature.entries[0].message).toBe('infoNotification.partyCreated');
         expect(storageData['notificationLog_entries_111111']).toHaveLength(1);
     });
 
