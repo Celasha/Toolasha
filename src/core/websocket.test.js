@@ -239,6 +239,59 @@ describe('WebSocket hook — loot_opened dedup (OA-1)', () => {
     });
 });
 
+describe('WebSocket hook — info notification dedup', () => {
+    let webSocketHook;
+
+    beforeEach(async () => {
+        vi.resetModules();
+        const mod = await import('./websocket.js');
+        webSocketHook = mod.default;
+    });
+
+    // A repeated sale of the same item shares its message/count/itemHrid prefix; the field that
+    // actually distinguishes two genuine events (padded here to land past the 100-char boundary)
+    // must not be swallowed by the lossy first-100-char dedup.
+    function soldItemMessage(uniqueSuffix) {
+        return JSON.stringify({
+            type: 'info',
+            message: 'infoNotification.soldItem',
+            variables: [
+                { name: 'count', data: '1' },
+                { name: 'itemHrid', data: '/items/basic_torch' },
+                { name: 'padding', data: 'x'.repeat(80) },
+                { name: 'unique', data: uniqueSuffix },
+            ],
+        });
+    }
+
+    test('two genuine consecutive info messages sharing the first 100 chars both dispatch', () => {
+        const handler = vi.fn();
+        webSocketHook.on('info', handler);
+        const socket = makeFakeWebSocket();
+
+        const first = soldItemMessage('a');
+        const second = soldItemMessage('b');
+        expect(first.substring(0, 100)).toBe(second.substring(0, 100));
+
+        webSocketHook.processMessage(first, socket);
+        webSocketHook.processMessage(second, socket);
+
+        expect(handler).toHaveBeenCalledTimes(2);
+    });
+
+    test('an exact duplicate interception of the same physical message collapses to one dispatch', () => {
+        const handler = vi.fn();
+        webSocketHook.on('info', handler);
+        const socket = makeFakeWebSocket();
+        const message = soldItemMessage('a');
+
+        webSocketHook.processMessage(message, socket);
+        webSocketHook.processMessage(message, socket);
+
+        expect(handler).toHaveBeenCalledTimes(1);
+    });
+});
+
 describe('WebSocket hook — same-event double dispatch via attachSocketListeners (labyrinth Apply Skip regression)', () => {
     let webSocketHook;
 

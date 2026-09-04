@@ -57,6 +57,22 @@ export const settingsGroups = {
                 type: 'text',
                 default: '150',
             },
+            notificationLog: {
+                id: 'notificationLog',
+                label: 'Chat: Add Log tab',
+                type: 'checkbox',
+                default: true,
+                help: 'Adds a Log tab to the chat panel logging item trades, level-ups, guild events, and other in-game toasts',
+            },
+            notificationLog_maxEntries: {
+                id: 'notificationLog_maxEntries',
+                label: 'Chat: Max notifications to keep',
+                type: 'number',
+                default: 100,
+                min: 10,
+                max: 1000,
+                help: 'How many notifications to keep in history, per character. Filtering in the tab only changes what is shown, not what is stored.',
+            },
             altClickNavigation: {
                 id: 'altClickNavigation',
                 label: 'Alt+click items to navigate to crafting/gathering or dictionary',

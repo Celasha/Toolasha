@@ -610,6 +610,13 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'notificationLog',
+            name: 'Notification Log',
+            category: 'Chat',
+            module: UI.notificationLog,
+            async: true,
+        },
+        {
             key: 'taskProfitDisplay',
             name: 'Task Profit Display',
             category: 'Tasks',
