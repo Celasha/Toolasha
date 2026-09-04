@@ -2,15 +2,13 @@
 
 ## [2.105.0](https://github.com/Celasha/Toolasha/compare/v2.104.4...v2.105.0) (2026-09-04)
 
-
 ### Features
 
-* add a Log tab to chat for trades, level-ups, and other game events ([ebb5861](https://github.com/Celasha/Toolasha/commit/ebb5861a66e06845ecf5bce680fe1ee2ad3ae33b))
-
+- add a Log tab to chat for trades, level-ups, and other game events ([ebb5861](https://github.com/Celasha/Toolasha/commit/ebb5861a66e06845ecf5bce680fe1ee2ad3ae33b))
 
 ### Bug Fixes
 
-* include ui2.js in the dev build entrypoint ([918fd82](https://github.com/Celasha/Toolasha/commit/918fd8237158ae48643d332b45dff303123aa064))
+- include ui2.js in the dev build entrypoint ([918fd82](https://github.com/Celasha/Toolasha/commit/918fd8237158ae48643d332b45dff303123aa064))
 
 ## [2.104.4](https://github.com/Celasha/Toolasha/compare/v2.104.3...v2.104.4) (2026-09-04)
 
