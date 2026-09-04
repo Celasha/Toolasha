@@ -2,11 +2,10 @@
 
 ## [2.105.1](https://github.com/Celasha/Toolasha/compare/v2.105.0...v2.105.1) (2026-09-04)
 
-
 ### Bug Fixes
 
-* include Guild Shrine levels in Szerra combat sim import/export ([f2b3629](https://github.com/Celasha/Toolasha/commit/f2b36293509117edc8c812c1970448af76386a23))
-* render Log tab entries oldest-first, newest at bottom ([0eeb9d3](https://github.com/Celasha/Toolasha/commit/0eeb9d35dbebfeb8ad0b0ae5d5e8fa4789469ec7))
+- include Guild Shrine levels in Szerra combat sim import/export ([f2b3629](https://github.com/Celasha/Toolasha/commit/f2b36293509117edc8c812c1970448af76386a23))
+- render Log tab entries oldest-first, newest at bottom ([0eeb9d3](https://github.com/Celasha/Toolasha/commit/0eeb9d35dbebfeb8ad0b0ae5d5e8fa4789469ec7))
 
 ## [2.105.0](https://github.com/Celasha/Toolasha/compare/v2.104.4...v2.105.0) (2026-09-04)
 
