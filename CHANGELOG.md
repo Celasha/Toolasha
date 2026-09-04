@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.104.4](https://github.com/Celasha/Toolasha/compare/v2.104.3...v2.104.4) (2026-09-04)
+
+
+### Bug Fixes
+
+* account for equipment success-chance bonuses in Lab Sim skilling analysis ([ce364bf](https://github.com/Celasha/Toolasha/commit/ce364bfcb00bf4e6511cf1ba44137fc0fb2d32f5))
+
 ## [2.104.3](https://github.com/Celasha/Toolasha/compare/v2.104.2...v2.104.3) (2026-09-03)
 
 ### Bug Fixes
