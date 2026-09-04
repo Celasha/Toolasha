@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.104.3](https://github.com/Celasha/Toolasha/compare/v2.104.2...v2.104.3) (2026-09-03)
+
+### Bug Fixes
+
+- let reroll-worthy tasks bypass the click-lockdown from manual protection ([ae4b970](https://github.com/Celasha/Toolasha/commit/ae4b9709a66d8d0f8d443ae745d56a52b6f66b3d))
+
 ## [2.104.2](https://github.com/Celasha/Toolasha/compare/v2.104.1...v2.104.2) (2026-09-03)
 
 ### Bug Fixes
