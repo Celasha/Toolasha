@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.104.3
+ * Version: 2.104.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -9430,7 +9430,7 @@
             const effectiveLevel = baseLevel + metrics.skillLevelBonus;
             const levelDelta = effectiveLevel - roomLevel;
             const levelBonus = levelDelta >= 0 ? levelDelta * 0.005 : levelDelta * 0.01;
-            const successChance = Math.min(1, Math.max(0, 0.8 * (1 + levelBonus + metrics.successBonus)));
+            const successChance = Math.min(1, Math.max(0.05, 0.8 * (1 + levelBonus + metrics.successBonus)));
             const doubleChance = Math.min(1, Math.max(0, metrics.doubleProgressBonus + (metrics.gatheringBonus || 0)));
 
             const workPower = effectiveLevel * (1 + metrics.efficiencyBonus);
@@ -9481,7 +9481,7 @@
             const effectiveLevel = baseLevel + metrics.skillLevelBonus;
             const levelDelta = effectiveLevel - roomLevel;
             const levelBonus = levelDelta >= 0 ? levelDelta * 0.005 : levelDelta * 0.01;
-            const successChance = Math.min(1, Math.max(0, 0.8 * (1 + levelBonus + metrics.successBonus)));
+            const successChance = Math.min(1, Math.max(0.05, 0.8 * (1 + levelBonus + metrics.successBonus)));
             const doubleChance = Math.min(1, Math.max(0, metrics.doubleProgressBonus));
 
             const actionSeconds = BASE_ENHANCING_TIME / Math.max(0.05, 1 + metrics.actionSpeedBonus);
@@ -10684,7 +10684,7 @@
             const effectiveLevel = baseLevel + metrics.skillLevelBonus;
             const levelDelta = effectiveLevel - roomLevel;
             const levelBonus = levelDelta >= 0 ? levelDelta * 0.005 : levelDelta * 0.01;
-            const successChance = Math.min(1, Math.max(0, 0.8 * (1 + levelBonus + metrics.successBonus)));
+            const successChance = Math.min(1, Math.max(0.05, 0.8 * (1 + levelBonus + metrics.successBonus)));
             const doubleChance = Math.min(1, Math.max(0, metrics.doubleProgressBonus + (metrics.gatheringBonus || 0)));
 
             const workPower = effectiveLevel * (1 + metrics.efficiencyBonus);
@@ -10728,7 +10728,7 @@
             const effectiveLevel = baseLevel + metrics.skillLevelBonus;
             const levelDelta = effectiveLevel - roomLevel;
             const levelBonus = levelDelta >= 0 ? levelDelta * 0.005 : levelDelta * 0.01;
-            const successChance = Math.min(1, Math.max(0, 0.8 * (1 + levelBonus + metrics.successBonus)));
+            const successChance = Math.min(1, Math.max(0.05, 0.8 * (1 + levelBonus + metrics.successBonus)));
             const doubleChance = Math.min(1, Math.max(0, metrics.doubleProgressBonus));
 
             const actionSeconds = BASE_ENHANCING_TIME / Math.max(0.05, 1 + metrics.actionSpeedBonus);
@@ -14885,6 +14885,12 @@
         const efficiencyBonus = equipmentParser_js.parseEquipmentEfficiencyBonuses(equipMap, actionTypeHrid, itemDetailMap);
         if (efficiencyBonus > 0) {
             buffs.push({ typeHrid: '/buff_types/efficiency', flatBoost: efficiencyBonus / 100, ratioBoost: 0 });
+        }
+
+        const successBonus = equipmentParser_js.parseEquipmentSuccessBonuses(equipMap, actionTypeHrid, itemDetailMap);
+        if (successBonus > 0) {
+            const skillId = actionTypeHrid.replace('/action_types/', '');
+            buffs.push({ typeHrid: `/buff_types/${skillId}_success`, flatBoost: 0, ratioBoost: successBonus });
         }
 
         return buffs;
