@@ -2,12 +2,11 @@
 
 ## [2.106.1](https://github.com/Celasha/Toolasha/compare/v2.106.0...v2.106.1) (2026-09-05)
 
-
 ### Bug Fixes
 
-* apply Net Worth exclusions consistently (TLA-037) ([089176d](https://github.com/Celasha/Toolasha/commit/089176dd38d6f4158f2187e18c4e98d7becae769))
-* position profile panel from rendered width (TLA-038) ([61ef23f](https://github.com/Celasha/Toolasha/commit/61ef23fd0155ec9b5e55af21a258d88d07cb70f0))
-* restore Character Activity acceptance correctness (TLA-025) ([#692](https://github.com/Celasha/Toolasha/issues/692)) ([2bfe245](https://github.com/Celasha/Toolasha/commit/2bfe2457be1185384c2bc3835dc3ee17959aa5c3))
+- apply Net Worth exclusions consistently (TLA-037) ([089176d](https://github.com/Celasha/Toolasha/commit/089176dd38d6f4158f2187e18c4e98d7becae769))
+- position profile panel from rendered width (TLA-038) ([61ef23f](https://github.com/Celasha/Toolasha/commit/61ef23fd0155ec9b5e55af21a258d88d07cb70f0))
+- restore Character Activity acceptance correctness (TLA-025) ([#692](https://github.com/Celasha/Toolasha/issues/692)) ([2bfe245](https://github.com/Celasha/Toolasha/commit/2bfe2457be1185384c2bc3835dc3ee17959aa5c3))
 
 ## [2.106.0](https://github.com/Celasha/Toolasha/compare/v2.105.1...v2.106.0) (2026-09-05)
 
