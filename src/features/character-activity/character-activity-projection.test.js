@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
     currentActions: [],
     actionDetailsByHrid: {},
     inventory: [],
+    itemDetailMap: {},
     timingByActionId: {},
     drinkRemainingSecondsByType: {},
     usableSnapshotsById: {},
@@ -15,12 +16,25 @@ vi.mock('../../core/data-manager.js', () => ({
         getActionDetails: vi.fn((hrid) => mocks.actionDetailsByHrid[hrid] || null),
         getInventory: vi.fn(() => mocks.inventory),
         getItemDetails: vi.fn(() => null),
+        getInitClientData: vi.fn(() => ({ itemDetailMap: mocks.itemDetailMap })),
     },
 }));
 
 vi.mock('../actions/action-time-display.js', () => ({
     default: {
-        buildInventoryLookup: vi.fn((inventory) => ({ inventory })),
+        buildInventoryLookup: vi.fn((inventory) => {
+            const byHrid = {};
+            const byEnhancedKey = {};
+            for (const item of inventory || []) {
+                if (item.itemLocationHrid && item.itemLocationHrid !== '/item_locations/inventory') continue;
+                const count = item.count || 0;
+                if (!count) continue;
+                byHrid[item.itemHrid] = (byHrid[item.itemHrid] || 0) + count;
+                const enhancedKey = `${item.itemHrid}::${item.enhancementLevel || 0}`;
+                byEnhancedKey[enhancedKey] = (byEnhancedKey[enhancedKey] || 0) + count;
+            }
+            return { byHrid, byEnhancedKey };
+        }),
         calculateSingleQueueActionTime: vi.fn((actionObj) => mocks.timingByActionId[actionObj.id]),
         parseItemHash: vi.fn((hash) => {
             const parts = String(hash).split('::');
@@ -47,7 +61,13 @@ vi.mock('../../core/loadout-state.js', () => ({
     },
 }));
 
-const { computeLiveProjection, resolveDisplayProjection } = await import('./character-activity-projection.js');
+const {
+    computeLiveProjection,
+    resolveDisplayProjection,
+    getSegmentInventoryFootprint,
+    getLimitHrid,
+    projectOrdinaryDeterministicInventory,
+} = await import('./character-activity-projection.js');
 const { default: actionTimeDisplay } = await import('../actions/action-time-display.js');
 const { resolveCurrentActionContext } = await import('../../utils/action-context.js');
 const { default: dataManager } = await import('../../core/data-manager.js');
@@ -81,14 +101,24 @@ function timing(overrides = {}) {
     };
 }
 
+function inventoryItem(itemHrid, count, overrides = {}) {
+    return { itemLocationHrid: '/item_locations/inventory', itemHrid, count, ...overrides };
+}
+
 beforeEach(() => {
     vi.clearAllMocks();
     mocks.currentActions = [];
     mocks.actionDetailsByHrid = {};
     mocks.inventory = [];
+    mocks.itemDetailMap = {};
     mocks.timingByActionId = {};
     mocks.drinkRemainingSecondsByType = {};
     mocks.usableSnapshotsById = {};
+    // vi.clearAllMocks() clears call history but not a custom mockImplementation() installed by an
+    // earlier test - restore the default canned-lookup-by-actionId behavior every time.
+    actionTimeDisplay.calculateSingleQueueActionTime.mockImplementation(
+        (actionObj) => mocks.timingByActionId[actionObj.id]
+    );
 });
 
 describe('computeLiveProjection - limiter selection', () => {
@@ -641,8 +671,8 @@ describe('computeLiveProjection - resource limiter identity (TLA-025 item 9)', (
     });
 });
 
-describe('computeLiveProjection - sequential inventory dependency across segments (TLA-025 item 11)', () => {
-    test('a later materials-limited segment depending on an earlier segment’s output is no longer trustworthy', () => {
+describe('computeLiveProjection - sequential deterministic inventory projection (TLA-041A)', () => {
+    test('CA-Q2: a later segment consuming an earlier segment’s deterministic output is trustworthy (fix for the old identity-only bug)', () => {
         mocks.currentActions = [
             action({ id: 'a1', actionHrid: '/actions/woodcutting/log' }),
             action({ id: 'a2', actionHrid: '/actions/cheesesmithing/bar' }),
@@ -659,18 +689,163 @@ describe('computeLiveProjection - sequential inventory dependency across segment
         const result = computeLiveProjection(1000);
 
         expect(result.segments).toHaveLength(2);
+        expect(result.segments[1].certainty).toBe('trustworthy');
+        expect(result.segments[1].stopCause).toBe('materials');
+        expect(result.terminalCause).toBe('materials');
+    });
+
+    test('CA-Q1: exact Reptile Tunic -> Gobo Tunic -> Beast Tunic upgrade chain never trips inventory-dependency', () => {
+        mocks.currentActions = [
+            action({ id: 'a1', actionHrid: '/actions/tailoring/reptile_tunic' }),
+            action({ id: 'a2', actionHrid: '/actions/tailoring/gobo_tunic' }),
+            action({ id: 'a3', actionHrid: '/actions/tailoring/beast_tunic' }),
+        ];
+        mocks.actionDetailsByHrid['/actions/tailoring/reptile_tunic'] = actionDetails({
+            type: '/action_types/tailoring',
+            upgradeItemHrid: '/items/rough_tunic',
+            inputItems: [{ itemHrid: '/items/reptile_leather', count: 32 }],
+            outputItems: [{ itemHrid: '/items/reptile_tunic', count: 1 }],
+        });
+        mocks.actionDetailsByHrid['/actions/tailoring/gobo_tunic'] = actionDetails({
+            type: '/action_types/tailoring',
+            upgradeItemHrid: '/items/reptile_tunic',
+            inputItems: [{ itemHrid: '/items/gobo_leather', count: 56 }],
+            outputItems: [{ itemHrid: '/items/gobo_tunic', count: 1 }],
+        });
+        mocks.actionDetailsByHrid['/actions/tailoring/beast_tunic'] = actionDetails({
+            type: '/action_types/tailoring',
+            upgradeItemHrid: '/items/gobo_tunic',
+            inputItems: [{ itemHrid: '/items/beast_leather', count: 96 }],
+            outputItems: [{ itemHrid: '/items/beast_tunic', count: 1 }],
+        });
+        mocks.inventory = [
+            inventoryItem('/items/rough_tunic', 1),
+            inventoryItem('/items/reptile_leather', 32),
+            inventoryItem('/items/gobo_leather', 56),
+            inventoryItem('/items/beast_leather', 96),
+        ];
+        mocks.timingByActionId.a1 = timing({ totalTime: 7, limitType: null });
+        mocks.timingByActionId.a2 = timing({ totalTime: 15, limitType: null });
+        mocks.timingByActionId.a3 = timing({ totalTime: 31, limitType: null });
+
+        const result = computeLiveProjection(1000);
+
+        expect(result.segments).toHaveLength(3);
+        expect(result.segments.every((s) => s.certainty === 'trustworthy')).toBe(true);
+        expect(result.segments.every((s) => s.stopCause !== 'inventory-dependency')).toBe(true);
+        expect(result.terminalCause).toBe('queue');
+        expect(result.terminalAt).toBe(1000 + (7 + 15 + 31) * 1000);
+    });
+
+    test('CA-Q3: repeated consumption of the same item across two segments stays trustworthy when starting balance is enough for both', () => {
+        mocks.currentActions = [
+            action({ id: 'a1', actionHrid: '/actions/cheesesmithing/bar' }),
+            action({ id: 'a2', actionHrid: '/actions/cheesesmithing/bar2' }),
+        ];
+        mocks.actionDetailsByHrid['/actions/cheesesmithing/bar'] = actionDetails({
+            inputItems: [{ itemHrid: '/items/log', count: 40 }],
+        });
+        mocks.actionDetailsByHrid['/actions/cheesesmithing/bar2'] = actionDetails({
+            inputItems: [{ itemHrid: '/items/log', count: 40 }],
+        });
+        mocks.inventory = [inventoryItem('/items/log', 100)];
+        mocks.timingByActionId.a1 = timing({ totalTime: 10, count: 1, limitType: null });
+        mocks.timingByActionId.a2 = timing({ totalTime: 10, count: 1, limitType: null });
+
+        const result = computeLiveProjection(1000);
+
+        expect(result.segments).toHaveLength(2);
+        expect(result.segments.every((s) => s.certainty === 'trustworthy')).toBe(true);
+    });
+
+    test('CA-Q4 (wiring proof): a later segment observes the inventory actually reduced by an earlier segment’s consumption, not the stale starting snapshot', () => {
+        mocks.currentActions = [
+            action({ id: 'a1', actionHrid: '/actions/cheesesmithing/bar' }),
+            action({ id: 'a2', actionHrid: '/actions/cheesesmithing/bar2' }),
+        ];
+        mocks.actionDetailsByHrid['/actions/cheesesmithing/bar'] = actionDetails({
+            inputItems: [{ itemHrid: '/items/log', count: 40 }],
+        });
+        mocks.actionDetailsByHrid['/actions/cheesesmithing/bar2'] = actionDetails({
+            inputItems: [{ itemHrid: '/items/log', count: 40 }],
+        });
+        mocks.inventory = [inventoryItem('/items/log', 60)];
+        mocks.timingByActionId.a1 = timing({ totalTime: 10, count: 1, limitType: null });
+
+        actionTimeDisplay.calculateSingleQueueActionTime.mockImplementation(
+            (actionObj, actionDetails, inventoryLookup) => {
+                if (actionObj.id === 'a1') return mocks.timingByActionId.a1;
+                // a2's own real limiter, derived from whatever balance it actually observes.
+                const available = inventoryLookup.byHrid['/items/log'] || 0;
+                return timing({ totalTime: 10, limitType: available < 40 ? 'material:/items/log' : null });
+            }
+        );
+
+        const result = computeLiveProjection(1000);
+
+        // Starting 60 - a1's 40 = 20 remaining, which is < a2's required 40 -> real materials limit.
+        expect(result.segments).toHaveLength(2);
+        expect(result.segments[1].certainty).toBe('trustworthy');
+        expect(result.segments[1].stopCause).toBe('materials');
+    });
+
+    test('CA-Q5: coin balance propagates across two coin-costing ordinary segments', () => {
+        mocks.currentActions = [
+            action({ id: 'a1', actionHrid: '/actions/cheesesmithing/bar' }),
+            action({ id: 'a2', actionHrid: '/actions/cheesesmithing/bar2' }),
+        ];
+        mocks.actionDetailsByHrid['/actions/cheesesmithing/bar'] = actionDetails({ coinCost: 100 });
+        mocks.actionDetailsByHrid['/actions/cheesesmithing/bar2'] = actionDetails({ coinCost: 100 });
+        mocks.inventory = [inventoryItem('/items/coin', 150)];
+        mocks.timingByActionId.a1 = timing({ totalTime: 10, count: 1, limitType: null });
+
+        actionTimeDisplay.calculateSingleQueueActionTime.mockImplementation(
+            (actionObj, actionDetails, inventoryLookup) => {
+                if (actionObj.id === 'a1') return mocks.timingByActionId.a1;
+                const available = inventoryLookup.byHrid['/items/coin'] || 0;
+                return timing({ totalTime: 10, limitType: available < 100 ? 'gold' : null });
+            }
+        );
+
+        const result = computeLiveProjection(1000);
+
+        // Starting 150 - a1's 100 = 50 remaining, which is < a2's required 100 -> real gold limit.
+        expect(result.segments).toHaveLength(2);
+        expect(result.segments[1].certainty).toBe('trustworthy');
+        expect(result.segments[1].stopCause).toBe('coins');
+    });
+
+    test('CA-Q6: a later segment whose own real limiter resolves to a possibly-extra random-output hrid becomes uncertain', () => {
+        mocks.currentActions = [
+            action({ id: 'a1', actionHrid: '/actions/foraging/berry' }),
+            action({ id: 'a2', actionHrid: '/actions/cheesesmithing/bar' }),
+        ];
+        mocks.actionDetailsByHrid['/actions/foraging/berry'] = actionDetails({
+            type: '/action_types/foraging',
+            dropTable: [{ itemHrid: '/items/rare_gem' }],
+        });
+        mocks.actionDetailsByHrid['/actions/cheesesmithing/bar'] = actionDetails({
+            inputItems: [{ itemHrid: '/items/rare_gem' }],
+        });
+        mocks.timingByActionId.a1 = timing({ totalTime: 100, limitType: null });
+        mocks.timingByActionId.a2 = timing({ totalTime: 50, limitType: 'material:/items/rare_gem' });
+
+        const result = computeLiveProjection(1000);
+
+        expect(result.segments).toHaveLength(2);
         expect(result.segments[1].certainty).toBe('uncertain');
         expect(result.segments[1].stopCause).toBe('inventory-dependency');
         expect(result.terminalCause).toBe('unknown');
     });
 
-    test('a later materials-limited segment on a non-overlapping item stays trustworthy', () => {
+    test('CA-Q7: an unrelated random output does not poison a later segment consuming a different item', () => {
         mocks.currentActions = [
-            action({ id: 'a1', actionHrid: '/actions/woodcutting/log' }),
+            action({ id: 'a1', actionHrid: '/actions/foraging/berry' }),
             action({ id: 'a2', actionHrid: '/actions/cheesesmithing/bar' }),
         ];
-        mocks.actionDetailsByHrid['/actions/woodcutting/log'] = actionDetails({
-            outputItems: [{ itemHrid: '/items/log' }],
+        mocks.actionDetailsByHrid['/actions/foraging/berry'] = actionDetails({
+            type: '/action_types/foraging',
+            dropTable: [{ itemHrid: '/items/rare_gem' }],
         });
         mocks.actionDetailsByHrid['/actions/cheesesmithing/bar'] = actionDetails({
             inputItems: [{ itemHrid: '/items/iron' }],
@@ -685,32 +860,7 @@ describe('computeLiveProjection - sequential inventory dependency across segment
         expect(result.terminalCause).toBe('materials');
     });
 
-    test('TLA-025 rejection fix: a later segment depending on a shared item is flagged even when its OWN calculated stopCause is count (not resource-based)', () => {
-        // Against the stale starting inventory, B's own material check may resolve to a plain
-        // count limit (e.g. plentiful stock at snapshot time) even though B genuinely consumes
-        // the same item A produces - the dependency must not be gated behind B's own stopCause.
-        mocks.currentActions = [
-            action({ id: 'a1', actionHrid: '/actions/woodcutting/log' }),
-            action({ id: 'a2', actionHrid: '/actions/cheesesmithing/bar' }),
-        ];
-        mocks.actionDetailsByHrid['/actions/woodcutting/log'] = actionDetails({
-            outputItems: [{ itemHrid: '/items/log' }],
-        });
-        mocks.actionDetailsByHrid['/actions/cheesesmithing/bar'] = actionDetails({
-            inputItems: [{ itemHrid: '/items/log' }],
-        });
-        mocks.timingByActionId.a1 = timing({ totalTime: 100, limitType: null });
-        mocks.timingByActionId.a2 = timing({ totalTime: 50, limitType: null }); // stale-snapshot count-limited
-
-        const result = computeLiveProjection(1000);
-
-        expect(result.segments).toHaveLength(2);
-        expect(result.segments[1].certainty).toBe('uncertain');
-        expect(result.segments[1].stopCause).toBe('inventory-dependency');
-        expect(result.terminalCause).toBe('unknown');
-    });
-
-    test('a later segment with no item overlap at all stays trustworthy regardless of its own stopCause', () => {
+    test('CA-Q7b: a later segment with no item overlap at all stays trustworthy regardless of its own stopCause', () => {
         mocks.currentActions = [
             action({ id: 'a1', actionHrid: '/actions/woodcutting/log' }),
             action({ id: 'a2', actionHrid: '/actions/foraging/berry' }),
@@ -727,6 +877,263 @@ describe('computeLiveProjection - sequential inventory dependency across segment
         expect(result.segments).toHaveLength(2);
         expect(result.segments[1].certainty).toBe('trustworthy');
         expect(result.terminalCause).toBe('queue');
+    });
+
+    test('CA-Q8: a possible random extra does not poison a later segment whose own count is not actually resource-bound', () => {
+        mocks.currentActions = [
+            action({ id: 'a1', actionHrid: '/actions/foraging/berry' }),
+            action({ id: 'a2', actionHrid: '/actions/cheesesmithing/bar' }),
+        ];
+        mocks.actionDetailsByHrid['/actions/foraging/berry'] = actionDetails({
+            type: '/action_types/foraging',
+            dropTable: [{ itemHrid: '/items/rare_gem' }],
+        });
+        mocks.actionDetailsByHrid['/actions/cheesesmithing/bar'] = actionDetails({
+            inputItems: [{ itemHrid: '/items/rare_gem' }],
+        });
+        mocks.timingByActionId.a1 = timing({ totalTime: 100, limitType: null });
+        // Deterministic stock already fully supports a2's requested count, so its own real
+        // limiter resolved to null (the requested count itself is the binding constraint) - not
+        // 'material:/items/rare_gem'.
+        mocks.timingByActionId.a2 = timing({ totalTime: 50, limitType: null });
+
+        const result = computeLiveProjection(1000);
+
+        expect(result.segments).toHaveLength(2);
+        expect(result.segments[1].certainty).toBe('trustworthy');
+    });
+
+    test('CA-Q12: an Alchemy segment keeps its touched balances fail-closed for later consumers, without poisoning unrelated segments', () => {
+        mocks.currentActions = [
+            action({ id: 'a1', actionHrid: '/actions/alchemy/coinify', primaryItemHash: '/items/junk::0' }),
+            action({ id: 'a2', actionHrid: '/actions/foraging/berry' }),
+            action({ id: 'a3', actionHrid: '/actions/cheesesmithing/bar' }),
+        ];
+        mocks.actionDetailsByHrid['/actions/alchemy/coinify'] = actionDetails({
+            type: '/action_types/alchemy',
+        });
+        mocks.actionDetailsByHrid['/actions/foraging/berry'] = actionDetails({
+            inputItems: [{ itemHrid: '/items/iron' }],
+        });
+        mocks.actionDetailsByHrid['/actions/cheesesmithing/bar'] = actionDetails({
+            coinCost: 50,
+        });
+        mocks.timingByActionId.a1 = timing({ totalTime: 5, limitType: null });
+        mocks.timingByActionId.a2 = timing({ totalTime: 10, limitType: 'material:/items/iron' });
+        mocks.timingByActionId.a3 = timing({ totalTime: 10, limitType: 'gold' });
+
+        const result = computeLiveProjection(1000);
+
+        expect(result.segments).toHaveLength(3);
+        expect(result.segments[0].certainty).toBe('trustworthy');
+        // a2 is unrelated to coin (or the alchemy item) - not poisoned by a1's fail-closed balances.
+        expect(result.segments[1].certainty).toBe('trustworthy');
+        // a3 depends on coin, which Alchemy's dynamic cost is never projected for -> fail closed.
+        expect(result.segments[2].certainty).toBe('uncertain');
+        expect(result.segments[2].stopCause).toBe('inventory-dependency');
+        expect(result.terminalCause).toBe('unknown');
+    });
+
+    test('regression guard: a later segment’s own count-limited stopCause does not trigger inventory-dependency merely from sharing a hrid with an earlier deterministic producer', () => {
+        // This is the exact TLA-025 identity-only overlap bug TLA-041A fixes: A deterministically
+        // produces log, B consumes log and its own real limiter resolved to null (count-bound, not
+        // resource-bound) - neither poisoning set applies, so B must be trustworthy.
+        mocks.currentActions = [
+            action({ id: 'a1', actionHrid: '/actions/woodcutting/log' }),
+            action({ id: 'a2', actionHrid: '/actions/cheesesmithing/bar' }),
+        ];
+        mocks.actionDetailsByHrid['/actions/woodcutting/log'] = actionDetails({
+            outputItems: [{ itemHrid: '/items/log' }],
+        });
+        mocks.actionDetailsByHrid['/actions/cheesesmithing/bar'] = actionDetails({
+            inputItems: [{ itemHrid: '/items/log' }],
+        });
+        mocks.timingByActionId.a1 = timing({ totalTime: 100, limitType: null });
+        mocks.timingByActionId.a2 = timing({ totalTime: 50, limitType: null });
+
+        const result = computeLiveProjection(1000);
+
+        expect(result.segments).toHaveLength(2);
+        expect(result.segments[1].certainty).toBe('trustworthy');
+        expect(result.terminalCause).toBe('queue');
+    });
+
+    test('CA-Q11: the live front segment (i===0) projects the full timing.count worth of consumption regardless of currentCount/elapsed progress', () => {
+        mocks.currentActions = [
+            action({ id: 'a1', actionHrid: '/actions/cheesesmithing/bar', currentCount: 7, maxCount: 20 }),
+            action({ id: 'a2', actionHrid: '/actions/cheesesmithing/bar2' }),
+        ];
+        mocks.actionDetailsByHrid['/actions/cheesesmithing/bar'] = actionDetails({
+            inputItems: [{ itemHrid: '/items/log', count: 30 }],
+        });
+        mocks.actionDetailsByHrid['/actions/cheesesmithing/bar2'] = actionDetails({
+            inputItems: [{ itemHrid: '/items/log', count: 30 }],
+        });
+        mocks.inventory = [inventoryItem('/items/log', 100)];
+        // a1 (the live front action, already 7/20 complete) still has 3 remaining units queued.
+        mocks.timingByActionId.a1 = timing({ totalTime: 10, count: 3, limitType: null });
+
+        actionTimeDisplay.calculateSingleQueueActionTime.mockImplementation(
+            (actionObj, actionDetails, inventoryLookup) => {
+                if (actionObj.id === 'a1') return mocks.timingByActionId.a1;
+                const available = inventoryLookup.byHrid['/items/log'] || 0;
+                return timing({ totalTime: 10, limitType: available < 30 ? 'material:/items/log' : null });
+            }
+        );
+
+        const result = computeLiveProjection(1000);
+
+        // Correct model: 100 - 3*30 = 10 remaining, which is < a2's required 30 -> real materials
+        // limit. A hypothetical "already-paid unit" adjustment (count-1=2) would instead leave
+        // 100 - 2*30 = 40, which is >= 30 and would wrongly report a2 as count-bound - this test
+        // fails under that bug and passes under the correct full-count projection.
+        expect(result.segments).toHaveLength(2);
+        expect(result.segments[1].stopCause).toBe('materials');
+    });
+});
+
+describe('getSegmentInventoryFootprint / getLimitHrid / projectOrdinaryDeterministicInventory (TLA-041A units)', () => {
+    test('getLimitHrid maps gold/material/upgrade limiters to their item hrid, else null', () => {
+        expect(getLimitHrid('gold')).toBe('/items/coin');
+        expect(getLimitHrid('material:/items/log')).toBe('/items/log');
+        expect(getLimitHrid('upgrade:/items/gizmo')).toBe('/items/gizmo');
+        expect(getLimitHrid(null)).toBeNull();
+        expect(getLimitHrid(undefined)).toBeNull();
+    });
+
+    test('getSegmentInventoryFootprint splits deterministic outputItems from stochastic dropTable, and only adds Alchemy-specific consumed identities for Alchemy actions', () => {
+        const ordinary = actionDetails({
+            inputItems: [{ itemHrid: '/items/log' }],
+            upgradeItemHrid: '/items/rough_tunic',
+            coinCost: 10,
+            outputItems: [{ itemHrid: '/items/bar' }],
+            dropTable: [{ itemHrid: '/items/rare_gem' }],
+        });
+        const footprint = getSegmentInventoryFootprint(ordinary, action());
+
+        expect(footprint.consumed).toEqual(new Set(['/items/log', '/items/rough_tunic', '/items/coin']));
+        expect(footprint.deterministicProduced).toEqual(new Set(['/items/bar']));
+        expect(footprint.stochasticProduced).toEqual(new Set(['/items/rare_gem']));
+
+        const alchemy = actionDetails({ type: '/action_types/alchemy' });
+        const alchemyFootprint = getSegmentInventoryFootprint(
+            alchemy,
+            action({ primaryItemHash: '/items/junk::0', secondaryItemHash: '/items/catalyst::0' })
+        );
+        expect(alchemyFootprint.consumed).toEqual(new Set(['/items/junk', '/items/catalyst', '/items/coin']));
+    });
+
+    test('projectOrdinaryDeterministicInventory subtracts inputItems/upgradeItemHrid/coinCost, adds outputItems, and mirrors byHrid/byEnhancedKey', () => {
+        const details = actionDetails({
+            inputItems: [{ itemHrid: '/items/log', count: 10 }],
+            upgradeItemHrid: '/items/rough_tunic',
+            coinCost: 5,
+            outputItems: [{ itemHrid: '/items/bar', count: 2 }],
+        });
+        const lookup = {
+            byHrid: { '/items/log': 100, '/items/rough_tunic': 3, '/items/coin': 50 },
+            byEnhancedKey: { '/items/log::0': 100, '/items/rough_tunic::0': 3, '/items/coin::0': 50 },
+        };
+        const result = projectOrdinaryDeterministicInventory(details, { count: 3 }, lookup, {
+            equipment: new Map(),
+            drinks: [],
+        });
+
+        expect(result.supported).toBe(true);
+        // No drinks configured -> 0 Artisan bonus -> full 10*3=30 consumed.
+        expect(result.inventoryLookup.byHrid['/items/log']).toBe(70);
+        expect(result.inventoryLookup.byEnhancedKey['/items/log::0']).toBe(70);
+        expect(result.inventoryLookup.byHrid['/items/rough_tunic']).toBe(0); // 3 - 1*3, clamped at 0
+        expect(result.inventoryLookup.byHrid['/items/coin']).toBe(35); // 50 - 5*3
+        expect(result.inventoryLookup.byHrid['/items/bar']).toBe(6); // 0 + 2*3
+        expect(result.inventoryLookup.byEnhancedKey['/items/bar::0']).toBe(6);
+        // Original lookup must be untouched (clone, not mutate-in-place).
+        expect(lookup.byHrid['/items/log']).toBe(100);
+    });
+
+    test('projectOrdinaryDeterministicInventory applies Artisan reduction to inputItems only, never to upgradeItemHrid', () => {
+        mocks.itemDetailMap = {
+            '/items/artisan_tea': {
+                consumableDetail: { buffs: [{ typeHrid: '/buff_types/artisan', flatBoost: 0.1 }] },
+            },
+        };
+        const details = actionDetails({
+            inputItems: [{ itemHrid: '/items/log', count: 10 }],
+            upgradeItemHrid: '/items/rough_tunic',
+        });
+        const lookup = {
+            byHrid: { '/items/log': 1000, '/items/rough_tunic': 1000 },
+            byEnhancedKey: {},
+        };
+
+        // 10% Artisan bonus, no Drink Concentration -> input consumption per action is
+        // 10 * (1 - 0.1) = 9, times count 3 = 27. Upgrade item is never Artisan-reduced: 1*3 = 3.
+        const result = projectOrdinaryDeterministicInventory(details, { count: 3 }, lookup, {
+            equipment: new Map(),
+            drinks: [{ itemHrid: '/items/artisan_tea' }],
+        });
+
+        expect(result.inventoryLookup.byHrid['/items/log']).toBe(1000 - 27);
+        expect(result.inventoryLookup.byHrid['/items/rough_tunic']).toBe(1000 - 3);
+    });
+
+    test('CA-Q9: uses timing.count (completed queued actions), never baseActionsNeeded (time-consuming actions after efficiency)', () => {
+        const details = actionDetails({ inputItems: [{ itemHrid: '/items/log', count: 10 }] });
+        const lookup = { byHrid: { '/items/log': 1000 }, byEnhancedKey: {} };
+
+        // Efficiency > 1 collapses many completed actions into few time-consuming ones -
+        // baseActionsNeeded (2) must never be used as the material multiplier instead of count (7).
+        const result = projectOrdinaryDeterministicInventory(details, { count: 7, baseActionsNeeded: 2 }, lookup, {
+            equipment: new Map(),
+            drinks: [],
+        });
+
+        expect(result.inventoryLookup.byHrid['/items/log']).toBe(1000 - 10 * 7);
+    });
+
+    test('dropTable output is never added to the projected deterministic lookup, only deterministic outputItems', () => {
+        const details = actionDetails({
+            outputItems: [{ itemHrid: '/items/log', count: 1 }],
+            dropTable: [{ itemHrid: '/items/rare_gem' }],
+        });
+        const lookup = { byHrid: {}, byEnhancedKey: {} };
+
+        const result = projectOrdinaryDeterministicInventory(details, { count: 5 }, lookup, {
+            equipment: new Map(),
+            drinks: [],
+        });
+
+        expect(result.inventoryLookup.byHrid['/items/log']).toBe(5);
+        expect(result.inventoryLookup.byHrid['/items/rare_gem']).toBeUndefined();
+    });
+
+    test('declines to project Alchemy and Enhancing action types (supported: false)', () => {
+        const lookup = { byHrid: {}, byEnhancedKey: {} };
+        const alchemyResult = projectOrdinaryDeterministicInventory(
+            actionDetails({ type: '/action_types/alchemy' }),
+            { count: 1 },
+            lookup,
+            { equipment: new Map(), drinks: [] }
+        );
+        const enhancingResult = projectOrdinaryDeterministicInventory(
+            actionDetails({ type: '/action_types/enhancing' }),
+            { count: 1 },
+            lookup,
+            { equipment: new Map(), drinks: [] }
+        );
+
+        expect(alchemyResult.supported).toBe(false);
+        expect(alchemyResult.inventoryLookup).toBe(lookup);
+        expect(enhancingResult.supported).toBe(false);
+    });
+
+    test('declines to project when timing.count is not a finite non-negative number', () => {
+        const lookup = { byHrid: {}, byEnhancedKey: {} };
+        const details = actionDetails({ inputItems: [{ itemHrid: '/items/log', count: 1 }] });
+
+        expect(projectOrdinaryDeterministicInventory(details, { count: NaN }, lookup, {}).supported).toBe(false);
+        expect(projectOrdinaryDeterministicInventory(details, { count: -1 }, lookup, {}).supported).toBe(false);
+        expect(projectOrdinaryDeterministicInventory(details, {}, lookup, {}).supported).toBe(false);
     });
 });
 

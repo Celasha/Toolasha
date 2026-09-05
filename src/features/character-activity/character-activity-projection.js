@@ -8,8 +8,9 @@
 import dataManager from '../../core/data-manager.js';
 import actionTimeDisplay from '../actions/action-time-display.js';
 import loadoutState from '../../core/loadout-state.js';
-import { resolveCurrentActionContext } from '../../utils/action-context.js';
+import { resolveActionContext, resolveCurrentActionContext } from '../../utils/action-context.js';
 import { calculateDrinkRemainingSeconds } from '../../utils/drink-calculator.js';
+import { getDrinkConcentration, parseArtisanBonus } from '../../utils/tea-parser.js';
 
 const UNCERTAIN_REASON_BY_TYPE = {
     '/action_types/labyrinth': 'labyrinth',
@@ -62,41 +63,119 @@ function buildDisplayName(actionObj, actionDetails) {
 }
 
 /**
- * Consumed/produced item hrids for one segment - identity overlap only (no quantity simulation),
- * used to detect a LATER resource-limited segment silently depending on stale starting inventory.
+ * Consumed/deterministically-produced/stochastically-produced item hrids for one segment. Alchemy's
+ * primary/secondary item selection and dynamic coin cost are tracked as consumed identities (for
+ * fail-closed dependency purposes) without attempting to reproduce Alchemy's own bulk/catalyst/success
+ * math here - see projectOrdinaryDeterministicInventory, which declines to project Alchemy at all.
  */
-function getSegmentItemFootprint(actionDetails, actionObj) {
+export function getSegmentInventoryFootprint(actionDetails, actionObj) {
     const consumed = new Set();
-    const produced = new Set();
-    if (!actionDetails) return { consumed, produced };
+    const deterministicProduced = new Set();
+    const stochasticProduced = new Set();
+    if (!actionDetails) return { consumed, deterministicProduced, stochasticProduced };
 
     for (const input of actionDetails.inputItems || []) {
         if (input.itemHrid) consumed.add(input.itemHrid);
     }
     if (actionDetails.upgradeItemHrid) consumed.add(actionDetails.upgradeItemHrid);
     if (actionDetails.coinCost > 0) consumed.add('/items/coin');
-    if (actionObj.primaryItemHash) {
-        const { itemHrid } = actionTimeDisplay.parseItemHash(actionObj.primaryItemHash);
-        if (itemHrid) consumed.add(itemHrid);
+
+    if (actionDetails.type === '/action_types/alchemy') {
+        if (actionObj.primaryItemHash) {
+            const { itemHrid } = actionTimeDisplay.parseItemHash(actionObj.primaryItemHash);
+            if (itemHrid) consumed.add(itemHrid);
+        }
+        if (actionObj.secondaryItemHash) {
+            const { itemHrid } = actionTimeDisplay.parseItemHash(actionObj.secondaryItemHash);
+            if (itemHrid) consumed.add(itemHrid);
+        }
+        consumed.add('/items/coin');
     }
-    if (actionObj.secondaryItemHash) {
-        const { itemHrid } = actionTimeDisplay.parseItemHash(actionObj.secondaryItemHash);
-        if (itemHrid) consumed.add(itemHrid);
-    }
+
     for (const output of actionDetails.outputItems || []) {
-        if (output.itemHrid) produced.add(output.itemHrid);
+        if (output.itemHrid) deterministicProduced.add(output.itemHrid);
     }
     for (const drop of actionDetails.dropTable || []) {
-        if (drop.itemHrid) produced.add(drop.itemHrid);
+        if (drop.itemHrid) stochasticProduced.add(drop.itemHrid);
     }
-    return { consumed, produced };
+    return { consumed, deterministicProduced, stochasticProduced };
 }
 
-function footprintOverlapsSeen(footprint, seenFootprint) {
-    for (const hrid of footprint.consumed) {
-        if (seenFootprint.has(hrid)) return true;
+function intersects(left, right) {
+    for (const hrid of left) {
+        if (right.has(hrid)) return true;
     }
     return false;
+}
+
+/** Maps a resolved timing limiter back to the item hrid it actually binds, or null. */
+export function getLimitHrid(limitType) {
+    if (limitType === 'gold') return '/items/coin';
+    if (limitType?.startsWith('material:')) return limitType.slice('material:'.length);
+    if (limitType?.startsWith('upgrade:')) return limitType.slice('upgrade:'.length);
+    return null;
+}
+
+function cloneInventoryLookup(inventoryLookup) {
+    return {
+        byHrid: { ...(inventoryLookup?.byHrid || {}) },
+        byEnhancedKey: { ...(inventoryLookup?.byEnhancedKey || {}) },
+    };
+}
+
+/**
+ * Applies a deterministic delta to a projected inventory lookup, keeping byHrid and byEnhancedKey (at
+ * enhancement level 0 - ordinary recipe inputs/outputs/upgrade items are always base items) in sync.
+ * calculateMaterialLimit()'s Alchemy branch reads byEnhancedKey, not byHrid, so leaving it stale would
+ * let a later Alchemy segment compute a wrong-but-trustworthy result against inconsistent balances.
+ */
+function adjustProjectedItem(lookup, itemHrid, delta) {
+    if (!itemHrid || !Number.isFinite(delta) || delta === 0) return;
+
+    lookup.byHrid[itemHrid] = Math.max(0, (lookup.byHrid[itemHrid] || 0) + delta);
+
+    const enhancedKey = `${itemHrid}::0`;
+    lookup.byEnhancedKey[enhancedKey] = Math.max(0, (lookup.byEnhancedKey[enhancedKey] || 0) + delta);
+}
+
+/**
+ * Projects the deterministic inventory delta of one ordinary recipe/gathering segment. Declines
+ * (supported: false) for Alchemy (dynamic bulk/catalyst/success-rate coin math not replicated here) and
+ * Enhancing (stochastic; already routed to its own uncertainty reason earlier in the loop for a live
+ * queue - kept here only as a defensive guard). Uses timing.count (completed queued actions), never
+ * baseActionsNeeded (time-consuming actions after efficiency) - materials are consumed per queued
+ * action, matching Action Time Display's own resource-limiter semantics.
+ */
+export function projectOrdinaryDeterministicInventory(actionDetails, timing, inventoryLookup, actionContext) {
+    if (!Number.isFinite(timing?.count) || timing.count < 0) {
+        return { supported: false, inventoryLookup };
+    }
+    if (actionDetails.type === '/action_types/alchemy' || actionDetails.type === '/action_types/enhancing') {
+        return { supported: false, inventoryLookup };
+    }
+
+    const next = cloneInventoryLookup(inventoryLookup);
+    const context = actionContext ?? resolveActionContext(actionDetails.type);
+    const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
+    const drinkConcentration = getDrinkConcentration(context.equipment, itemDetailMap);
+    const artisanBonus = parseArtisanBonus(context.drinks, itemDetailMap, drinkConcentration);
+    const count = timing.count;
+
+    for (const input of actionDetails.inputItems || []) {
+        const perAction = input.count * (1 - artisanBonus);
+        adjustProjectedItem(next, input.itemHrid, -(perAction * count));
+    }
+    if (actionDetails.upgradeItemHrid) {
+        adjustProjectedItem(next, actionDetails.upgradeItemHrid, -count);
+    }
+    if (actionDetails.coinCost > 0) {
+        adjustProjectedItem(next, '/items/coin', -(actionDetails.coinCost * count));
+    }
+    for (const output of actionDetails.outputItems || []) {
+        adjustProjectedItem(next, output.itemHrid, output.count * count);
+    }
+
+    return { supported: true, inventoryLookup: next };
 }
 
 /**
@@ -252,9 +331,10 @@ export function computeLiveProjection(now = Date.now()) {
         return { segments: [], terminalCause: 'idle', terminalAt: now, certainty: 'trustworthy' };
     }
 
-    const inventoryLookup = actionTimeDisplay.buildInventoryLookup(dataManager.getInventory());
+    let inventoryLookup = actionTimeDisplay.buildInventoryLookup(dataManager.getInventory());
     const drinkCutoffCache = new Map();
-    const seenFootprint = new Set();
+    const unknownBalanceHrids = new Set();
+    const possibleExtraHrids = new Set();
 
     const segments = [];
     let currentTime = now;
@@ -376,12 +456,17 @@ export function computeLiveProjection(now = Date.now()) {
 
         const stopCause = classifyStopCause(timing.limitType);
 
-        // Check against the ACTUAL item dependency, not merely which limiter won against the
-        // stale starting inventory - a segment whose own calculated stopCause happens to resolve
-        // as 'count' (against that stale snapshot) can still genuinely depend on an earlier
-        // segment's consumption/production of the same item.
-        const footprint = getSegmentItemFootprint(actionDetails, actionObj);
-        if (footprintOverlapsSeen(footprint, seenFootprint)) {
+        const footprint = getSegmentInventoryFootprint(actionDetails, actionObj);
+        if (intersects(footprint.consumed, unknownBalanceHrids)) {
+            pushUncertain(actionObj, actionDetails, i, remainingQueuedCount, currentTime, 'inventory-dependency');
+            break;
+        }
+
+        // A prior random drop is only relevant when the deterministic lower-bound inventory actually
+        // binds this segment. If full finite work is already supported by deterministic stock alone,
+        // possible extra random inventory must not poison an otherwise deterministic queue.
+        const limitingHrid = getLimitHrid(timing.limitType);
+        if (limitingHrid && possibleExtraHrids.has(limitingHrid)) {
             pushUncertain(actionObj, actionDetails, i, remainingQueuedCount, currentTime, 'inventory-dependency');
             break;
         }
@@ -411,10 +496,17 @@ export function computeLiveProjection(now = Date.now()) {
             })
         );
 
-        // Track consumed/produced items so a LATER segment depending on them is recognized as no
-        // longer trustworthy - never applied retroactively to this segment's own accepted time.
-        for (const hrid of footprint.consumed) seenFootprint.add(hrid);
-        for (const hrid of footprint.produced) seenFootprint.add(hrid);
+        const projected = projectOrdinaryDeterministicInventory(actionDetails, timing, inventoryLookup, actionContext);
+        if (projected.supported) {
+            inventoryLookup = projected.inventoryLookup;
+            for (const hrid of footprint.stochasticProduced) possibleExtraHrids.add(hrid);
+        } else {
+            // Keep complex/unsupported balance changes local instead of poisoning unrelated queue
+            // entries. A later consumer of one of these identities fails closed.
+            for (const hrid of footprint.consumed) unknownBalanceHrids.add(hrid);
+            for (const hrid of footprint.deterministicProduced) unknownBalanceHrids.add(hrid);
+            for (const hrid of footprint.stochasticProduced) unknownBalanceHrids.add(hrid);
+        }
 
         currentTime = naturalEndAt;
 
