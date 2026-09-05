@@ -62,7 +62,7 @@ class Player extends CombatUnit {
         });
 
         player.debuffOnLevelGap = dto.debuffOnLevelGap;
-        player.personalCombatBuffs = dto.personalCombatBuffs || { buffs: [], remainingDurationNs: null };
+        player.personalCombatBuffs = dto.personalCombatBuffs || { buffs: [] };
         player.characterAchievements = dto.characterAchievements || [];
         // Active Monster-task target hrids (CSIM-AUD-023) - explicitly empty/unknown for imported
         // party members whose task state is unavailable, never inherited from another player.

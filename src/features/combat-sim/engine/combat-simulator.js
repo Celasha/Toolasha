@@ -183,8 +183,15 @@ class CombatSimulator {
         const combatStartEvent = new CombatStartEvent(0);
         this.eventQueue.addEvent(combatStartEvent);
 
-        while (this.simulationTime < simulationTimeLimit) {
-            const nextEvent = this.eventQueue.getNextEvent();
+        // Strict horizon (TLA-039 HZN): an event later than the requested limit must never be
+        // processed, even if the previous event's time was still inside the horizon. Peeking
+        // before popping keeps that event out of the simulation entirely instead of overshooting.
+        while (true) {
+            const nextEvent = this.eventQueue.peekNextEvent();
+            if (!nextEvent || nextEvent.time > simulationTimeLimit) {
+                break;
+            }
+            this.eventQueue.getNextEvent();
             this.processEvent(nextEvent);
 
             ticks++;
@@ -227,7 +234,9 @@ class CombatSimulator {
             this.simResult.roomLevel = this.labyrinth.roomLevel;
         }
 
-        this.simResult.simulatedTime = this.simulationTime;
+        // Exact requested horizon (TLA-039 HZN-03), not the last processed event's time - rate/DPS
+        // consumers normalize against the full window that was actually requested.
+        this.simResult.simulatedTime = simulationTimeLimit;
 
         for (let i = 0; i < this.players.length; i++) {
             this.simResult.setDropRateMultipliers(this.players[i]);
@@ -253,8 +262,9 @@ class CombatSimulator {
     }
 
     reset() {
-        this.tempDungeonCount = 0;
         this.simulationTime = 0;
+        this.dungeonRunStartTime = 0;
+        this.justCompletedDungeonRun = false;
         this.eventQueue.clear();
         this.simResult = new SimResult(this.zone, this.players.length);
     }
@@ -367,7 +377,11 @@ class CombatSimulator {
     startNewEncounter() {
         if (this.allPlayersDead) {
             this.allPlayersDead = false;
-            if (!this.labyrinth) {
+            // Dungeon failure is now counted immediately at the moment of the wipe itself
+            // (checkEncounterEnd), not here at the delayed restart - failWave()'s dungeonsFailed++
+            // would double-count it. Non-dungeon zones still reset their boss-cycle encountersKilled
+            // counter here exactly as before.
+            if (!this.labyrinth && !this.zone.isDungeon) {
                 this.zone.failWave();
             }
         }
@@ -378,16 +392,19 @@ class CombatSimulator {
         } else if (!this.zone.isDungeon) {
             this.enemies = this.zone.getRandomEncounter();
         } else {
+            // encountersKilled is reset to 1 immediately at the previous run's terminal kill/wipe
+            // (checkEncounterEnd), so seeing it here means wave 1 of a fresh attempt is starting now.
+            if (this.zone.encountersKilled === 1) {
+                this.dungeonRunStartTime = this.simulationTime;
+            }
             this.enemies = this.zone.getNextWave();
             this.simResult.updateTimeSpentAlive(
                 '#' + (this.zone.encountersKilled - 1).toString(),
                 true,
                 this.simulationTime
             );
-            const currentDungeonCount = this.zone.dungeonsCompleted;
-            if (currentDungeonCount > this.tempDungeonCount) {
-                this.tempDungeonCount = currentDungeonCount;
-                this.simResult.recordDungeonCompletion(this.players);
+            if (this.justCompletedDungeonRun) {
+                this.justCompletedDungeonRun = false;
                 for (let i = 0; i < this.players.length; i++) {
                     this.players[i].combatDetails.currentHitpoints = this.players[i].combatDetails.maxHitpoints;
                     this.players[i].combatDetails.currentManapoints = this.players[i].combatDetails.maxManapoints;
@@ -673,11 +690,20 @@ class CombatSimulator {
             this.enemies = null;
 
             if (this.zone.isDungeon) {
-                this.simResult.updateTimeSpentAlive(
-                    '#' + (this.zone.encountersKilled - 1).toString(),
-                    false,
-                    this.simulationTime
-                );
+                const killedWaveNum = this.zone.encountersKilled - 1;
+                this.simResult.updateTimeSpentAlive('#' + killedWaveNum.toString(), false, this.simulationTime);
+
+                // Terminal success (TLA-039 HZN): count the completion, its reward/drop context, and
+                // its duration immediately at the final-wave kill, not ~3s later when the next
+                // attempt's re-entry happens - a kill right at the horizon edge must still count even
+                // if that re-entry falls outside the requested horizon and never runs.
+                if (killedWaveNum === this.zone.dungeonSpawnInfo.maxWaves) {
+                    this.zone.dungeonsCompleted++;
+                    this.zone.encountersKilled = 1;
+                    this.simResult.recordDungeonCompletion(this.players);
+                    this.simResult.addDungeonCompletionDuration(this.simulationTime - this.dungeonRunStartTime);
+                    this.justCompletedDungeonRun = true;
+                }
             }
             this.simResult.addEncounterEnd();
 
@@ -712,6 +738,12 @@ class CombatSimulator {
                 this.saveWipeLogsToSimResult(this.zone.encountersKilled - 1);
                 this.wipeLogs.index = 0;
                 this.wipeLogs.count = 0;
+
+                // Terminal failure (TLA-039 HZN-07): count the wipe immediately, not ~3s later at
+                // the delayed restart - a wipe right at the horizon edge must still count even if
+                // that restart falls outside the requested horizon and never runs.
+                this.zone.dungeonsFailed++;
+                this.zone.encountersKilled = 1;
 
                 // Clear combat events but preserve buff expiration and cooldown events
                 this.eventQueue.clearEventsOfType(AutoAttackEvent.type);
@@ -1661,38 +1693,45 @@ class CombatSimulator {
      * A current-character personal/scroll combat buff with no remaining-lifetime evidence is
      * kept permanent (today's status-quo behavior) - added alongside generatePermanentBuffs()
      * so it is baked into the combatBuffs snapshot the upcoming reset()/clearBuffs() copies from
-     * permanentBuffs (CSIM-AUD-019).
+     * permanentBuffs (CSIM-AUD-019). Each entry is judged independently (TLA-039 defect C) - a
+     * timed sibling elsewhere in the same list never makes this one permanent or vice versa.
      * @param {Player} player
      */
     _applyPersonalPermanentCombatBuffs(player) {
-        const context = player.personalCombatBuffs;
-        if (!context?.buffs?.length || context.remainingDurationNs != null) return;
-        context.buffs.forEach((buff) => player.addPermanentBuff(buff));
+        const entries = player.personalCombatBuffs?.buffs;
+        if (!entries?.length) return;
+        entries
+            .filter((entry) => entry.remainingDurationNs == null)
+            .forEach((entry) => player.addPermanentBuff(entry.buff));
     }
 
     /**
      * A current-character personal/scroll combat buff with known remaining lifetime is modeled as
      * a timed buff for exactly that many nanoseconds of simulated time, then expires on the same
      * logical timeline - never as an eternal permanent buff. Applied AFTER reset()/clearBuffs()
-     * so it is not wiped by the permanentBuffs snapshot copy (CSIM-AUD-019).
+     * so it is not wiped by the permanentBuffs snapshot copy (CSIM-AUD-019). Each entry keeps its
+     * own independently-resolved duration (TLA-039 defect C) - one buff's expiry is never borrowed
+     * for another, so a 20m buff outlives a 10m buff exactly as their own evidence says.
      * @param {Player} player
      */
     _applyPersonalTimedCombatBuffs(player) {
-        const context = player.personalCombatBuffs;
-        if (!context?.buffs?.length || context.remainingDurationNs == null) return;
-        context.buffs.forEach((buff, index) => {
+        const entries = player.personalCombatBuffs?.buffs;
+        if (!entries?.length) return;
+        entries.forEach((entry, index) => {
+            if (entry.remainingDurationNs == null) return;
+            const buff = entry.buff;
             const timedBuff = {
                 uniqueHrid: buff.uniqueHrid || `/buff_uniques/personal_combat_${index}`,
                 typeHrid: buff.typeHrid,
                 ratioBoost: buff.ratioBoost || 0,
                 flatBoost: buff.flatBoost || 0,
-                duration: context.remainingDurationNs,
+                duration: entry.remainingDurationNs,
             };
             player.addBuff(timedBuff, this.simulationTime);
+            this.eventQueue.addEvent(
+                new CheckBuffExpirationEvent(this.simulationTime + entry.remainingDurationNs, player)
+            );
         });
-        this.eventQueue.addEvent(
-            new CheckBuffExpirationEvent(this.simulationTime + context.remainingDurationNs, player)
-        );
     }
 
     processAbilityReviveEffect(source, ability, abilityEffect) {

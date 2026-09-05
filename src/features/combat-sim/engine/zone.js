@@ -72,11 +72,6 @@ class Zone {
     }
 
     getNextWave() {
-        if (this.encountersKilled > this.dungeonSpawnInfo.maxWaves) {
-            this.dungeonsCompleted++;
-            this.encountersKilled = 1;
-        }
-
         const waveNum = this.encountersKilled;
         const fixedSpawns = this.dungeonSpawnInfo.fixedSpawnsMap[waveNum.toString()];
 

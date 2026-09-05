@@ -5,7 +5,6 @@ class SimResult {
         this.deaths = {};
         this.experienceGained = {};
         this.encounters = 0;
-        this.attacks = {};
         this.consumablesUsed = {};
         this.hitpointsGained = {};
         this.manapointsGained = {};
@@ -44,6 +43,20 @@ class SimResult {
         this.killDropContext = {};
         // Same idea for dungeon completion rewards, which only use combatDropQuantity.
         this.dungeonCompletionDropContext = { count: 0, byPlayer: {} };
+
+        // Sum of successful completed-run durations (terminal kill time - run start time), in ns
+        // (TLA-039 HZN). Excludes any unfinished final attempt and the inter-run restart interval,
+        // so totalDungeonCompletionDuration / dungeonsCompleted is a true average clear time.
+        this.totalDungeonCompletionDuration = 0;
+    }
+
+    /**
+     * Accumulate one successful dungeon run's duration, measured from that run's wave-1 start to
+     * its final-wave terminal kill (TLA-039 HZN).
+     * @param {number} durationNs
+     */
+    addDungeonCompletionDuration(durationNs) {
+        this.totalDungeonCompletionDuration += durationNs;
     }
 
     addWipeEvent(logs, simulationTime, wave) {
@@ -188,23 +201,18 @@ class SimResult {
         this.encounters++;
     }
 
-    addAttack(source, target, ability, hit) {
-        if (!this.attacks[source.hrid]) {
-            this.attacks[source.hrid] = {};
-        }
-        if (!this.attacks[source.hrid][target.hrid]) {
-            this.attacks[source.hrid][target.hrid] = {};
-        }
-        if (!this.attacks[source.hrid][target.hrid][ability]) {
-            this.attacks[source.hrid][target.hrid][ability] = {};
-        }
-
-        if (!this.attacks[source.hrid][target.hrid][ability][hit]) {
-            this.attacks[source.hrid][target.hrid][ability][hit] = 0;
-        }
-
-        this.attacks[source.hrid][target.hrid][ability][hit] += 1;
-
+    /**
+     * Accumulate total damage dealt (TLA-039 PERF). A per-attack exact-damage histogram
+     * (source -> target -> ability -> exact damage -> count) used to be written here too, but a
+     * full-repo consumer search found no reader of it - DPS/Upgrade Advisor only ever used
+     * totalDamageDealt - and a warmed benchmark showed the histogram writes were ~84% of this
+     * method's cost, so it was removed rather than kept as write-only dead weight.
+     * @param {CombatUnit} source
+     * @param {CombatUnit} _target
+     * @param {string} _ability
+     * @param {number|'miss'} hit
+     */
+    addAttack(source, _target, _ability, hit) {
         if (hit !== 'miss') {
             this.totalDamageDealt[source.hrid] = (this.totalDamageDealt[source.hrid] || 0) + hit;
         }

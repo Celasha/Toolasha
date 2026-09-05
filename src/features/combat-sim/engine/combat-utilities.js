@@ -193,8 +193,7 @@ class CombatUtilities {
         }
 
         let damageRoll = CombatUtilities.randomInt(sourceMinDamage, sourceMaxDamage);
-        // taskDamage intentionally excluded — trinket slot not exported by reference sims
-        // damageRoll *= 1 + source.combatDetails.combatStats.taskDamage;
+        damageRoll *= 1 + CombatUtilities.getEffectiveTaskDamage(source, target);
         damageRoll *= 1 + target.combatDetails.combatStats.damageTaken;
         if (!abilityEffect) {
             damageRoll += damageRoll * source.combatDetails.combatStats.autoAttackDamage;

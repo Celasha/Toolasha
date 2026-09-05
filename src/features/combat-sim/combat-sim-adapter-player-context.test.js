@@ -24,6 +24,28 @@ const GUILD_BUFF_DETAIL_MAP = {
     '/guild_buffs/scholar_skilling': { shrineHrid: '/guild_shrines/scholar', isCombat: false },
 };
 
+// Mirrors the real game's personalBuffTypeDetailMap shape (TLA-039 defect C) - each entry carries
+// whether it's usable in combat and the buff.uniqueHrid identity that both characterBuffs[].hrid
+// (via this map) and the personalActionTypeBuffsMap aggregate entries resolve to.
+const PERSONAL_BUFF_TYPE_DETAIL_MAP = {
+    '/personal_buff_types/wisdom': {
+        usableInActionTypeMap: { '/action_types/combat': true },
+        buff: { uniqueHrid: '/buff_uniques/personal_wisdom' },
+    },
+    '/personal_buff_types/damage': {
+        usableInActionTypeMap: { '/action_types/combat': true },
+        buff: { uniqueHrid: '/buff_uniques/personal_damage' },
+    },
+    '/personal_buff_types/attack_speed': {
+        usableInActionTypeMap: { '/action_types/combat': true },
+        buff: { uniqueHrid: '/buff_uniques/personal_attack_speed' },
+    },
+    '/personal_buff_types/gathering': {
+        usableInActionTypeMap: { '/action_types/foraging': true },
+        buff: { uniqueHrid: '/buff_uniques/personal_gathering' },
+    },
+};
+
 vi.mock('../../core/loadout-state.js', () => ({
     default: {
         getUsableSnapshotByName: vi.fn(() => null),
@@ -38,7 +60,11 @@ vi.mock('../../core/data-manager.js', () => ({
         get personalActionTypeBuffsMap() {
             return mocks.personalActionTypeBuffsMap;
         },
-        getInitClientData: vi.fn(() => ({ itemDetailMap: {}, guildBuffDetailMap: GUILD_BUFF_DETAIL_MAP })),
+        getInitClientData: vi.fn(() => ({
+            itemDetailMap: {},
+            guildBuffDetailMap: GUILD_BUFF_DETAIL_MAP,
+            personalBuffTypeDetailMap: PERSONAL_BUFF_TYPE_DETAIL_MAP,
+        })),
         getCommunityBuffLevel: vi.fn(() => 0),
         getCharacterGuildBuffLevel: vi.fn((hrid) => mocks.characterGuildBuffMap[hrid] || 0),
         getGuildBuildingLevel: vi.fn((hrid) => mocks.guildBuildingLevelMap[hrid] ?? 20),
@@ -141,35 +167,88 @@ describe('buildPlayerDTO - per-player Shrine/MooPass/achievement/personal-buff c
         ]);
     });
 
-    test('personalCombatBuffs stays permanent (remainingDurationNs: null) when there is no expiry evidence', () => {
+    test('PB-04 (no expiry evidence): personalCombatBuffs stays permanent (remainingDurationNs: null) when no matching instance exists', () => {
         mocks.personalActionTypeBuffsMap = {
-            '/action_types/combat': [{ typeHrid: '/buff_types/wisdom', flatBoost: 0.05, ratioBoost: 0 }],
+            '/action_types/combat': [{ uniqueHrid: '/buff_uniques/personal_wisdom', typeHrid: '/buff_types/wisdom' }],
         };
         mocks.characterData = baseCharacterData({ characterBuffs: [] });
 
         const dto = buildPlayerDTO();
         expect(dto.personalCombatBuffs.buffs).toHaveLength(1);
-        expect(dto.personalCombatBuffs.remainingDurationNs).toBeNull();
+        expect(dto.personalCombatBuffs.buffs[0].remainingDurationNs).toBeNull();
     });
 
-    test('personalCombatBuffs models the remaining lifetime from characterBuffs.expiresAt', () => {
+    test('PB-01/PB-06: personalCombatBuffs models the remaining lifetime from characterBuffs.expiresAt, matched by identity', () => {
         mocks.personalActionTypeBuffsMap = {
-            '/action_types/combat': [{ typeHrid: '/buff_types/wisdom', flatBoost: 0.05, ratioBoost: 0 }],
+            '/action_types/combat': [{ uniqueHrid: '/buff_uniques/personal_wisdom', typeHrid: '/buff_types/wisdom' }],
         };
         const now = Date.now();
         mocks.characterData = baseCharacterData({
-            characterBuffs: [{ hrid: '/personal_buffs/x', expiresAt: new Date(now + 60_000).toISOString() }],
+            characterBuffs: [{ hrid: '/personal_buff_types/wisdom', expiresAt: new Date(now + 60_000).toISOString() }],
         });
 
         const dto = buildPlayerDTO();
-        expect(dto.personalCombatBuffs.remainingDurationNs).toBeGreaterThan(0);
-        expect(dto.personalCombatBuffs.remainingDurationNs).toBeLessThanOrEqual(60_000 * 1e6);
+        expect(dto.personalCombatBuffs.buffs[0].remainingDurationNs).toBeGreaterThan(0);
+        expect(dto.personalCombatBuffs.buffs[0].remainingDurationNs).toBeLessThanOrEqual(60_000 * 1e6);
+    });
+
+    test('PB-02/PB-07: two independent combat buffs each keep their own expiry - the shorter-lived one never steals/grants the other its expiry', () => {
+        mocks.personalActionTypeBuffsMap = {
+            '/action_types/combat': [
+                { uniqueHrid: '/buff_uniques/personal_wisdom', typeHrid: '/buff_types/wisdom' },
+                { uniqueHrid: '/buff_uniques/personal_damage', typeHrid: '/buff_types/damage' },
+            ],
+        };
+        const now = Date.now();
+        mocks.characterData = baseCharacterData({
+            characterBuffs: [
+                { hrid: '/personal_buff_types/wisdom', expiresAt: new Date(now + 60_000).toISOString() }, // ~1min
+                { hrid: '/personal_buff_types/damage', expiresAt: new Date(now + 1_200_000).toISOString() }, // ~20min
+            ],
+        });
+
+        const dto = buildPlayerDTO();
+        const wisdom = dto.personalCombatBuffs.buffs.find((e) => e.buff.uniqueHrid === '/buff_uniques/personal_wisdom');
+        const damage = dto.personalCombatBuffs.buffs.find((e) => e.buff.uniqueHrid === '/buff_uniques/personal_damage');
+
+        expect(wisdom.remainingDurationNs).toBeLessThanOrEqual(60_000 * 1e6);
+        expect(damage.remainingDurationNs).toBeGreaterThan(60_000 * 1e6);
+        expect(damage.remainingDurationNs).toBeLessThanOrEqual(1_200_000 * 1e6);
+    });
+
+    test('PB-05: a skilling-only personal buff instance (not usable in combat) never grants a combat buff an expiry', () => {
+        mocks.personalActionTypeBuffsMap = {
+            '/action_types/combat': [{ uniqueHrid: '/buff_uniques/personal_wisdom', typeHrid: '/buff_types/wisdom' }],
+        };
+        const now = Date.now();
+        mocks.characterData = baseCharacterData({
+            // Only a skilling-only Gathering instance is active - no combat-applicable evidence exists.
+            characterBuffs: [
+                { hrid: '/personal_buff_types/gathering', expiresAt: new Date(now + 60_000).toISOString() },
+            ],
+        });
+
+        const dto = buildPlayerDTO();
+        expect(dto.personalCombatBuffs.buffs[0].remainingDurationNs).toBeNull();
+    });
+
+    test('PB-04: an already-expired instance is ignored, the buff stays permanent rather than instantly gone', () => {
+        mocks.personalActionTypeBuffsMap = {
+            '/action_types/combat': [{ uniqueHrid: '/buff_uniques/personal_wisdom', typeHrid: '/buff_types/wisdom' }],
+        };
+        const now = Date.now();
+        mocks.characterData = baseCharacterData({
+            characterBuffs: [{ hrid: '/personal_buff_types/wisdom', expiresAt: new Date(now - 60_000).toISOString() }],
+        });
+
+        const dto = buildPlayerDTO();
+        expect(dto.personalCombatBuffs.buffs[0].remainingDurationNs).toBeNull();
     });
 
     test('an empty personal combat buff aggregate never fabricates an expiry', () => {
         mocks.personalActionTypeBuffsMap = {};
         const dto = buildPlayerDTO();
-        expect(dto.personalCombatBuffs).toEqual({ buffs: [], remainingDurationNs: null });
+        expect(dto.personalCombatBuffs).toEqual({ buffs: [] });
     });
 });
 
@@ -193,7 +272,7 @@ describe('buildPlayerDTOFromProfile (teammate) - never inherits self/Player 1 co
         expect(dto.characterAchievements).toEqual([{ achievementHrid: '/achievements/teammate_only' }]);
         // Personal/scroll buff lifetime evidence is not present in a shared-profile payload -
         // stays explicitly neutral/unknown, never inherited from self.
-        expect(dto.personalCombatBuffs).toEqual({ buffs: [], remainingDurationNs: null });
+        expect(dto.personalCombatBuffs).toEqual({ buffs: [] });
     });
 
     test('a teammate with no guild/MooPass/achievement evidence stays neutral, not fabricated from self', () => {

@@ -1888,7 +1888,9 @@ class CombatSimUI {
             html += `<span style="${valueStyle}">${formatWithSeparator(simResult.dungeonsCompleted)} / ${formatWithSeparator(simResult.dungeonsFailed)}</span>`;
             html += '</div>';
             if (simResult.dungeonsCompleted > 0) {
-                const avgTimeNs = simResult.simulatedTime / simResult.dungeonsCompleted;
+                // Sum of completed-run durations only (TLA-039 HZN) - excludes the unfinished tail
+                // attempt and the ~3s inter-run restart gap, unlike simResult.simulatedTime.
+                const avgTimeNs = simResult.totalDungeonCompletionDuration / simResult.dungeonsCompleted;
                 const avgTimeSec = avgTimeNs / 1e9;
                 let avgTimeStr;
                 if (config.getSettingValue('combatSim_decimalMinutes', false)) {

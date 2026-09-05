@@ -98,33 +98,51 @@ function resolveTaskEligibleMonsterHrids() {
 
 /**
  * Model the current character's active personal/scroll combat buffs for their real remaining
- * lifetime rather than as an eternal permanent buff (CSIM-AUD-019). `personalActionTypeBuffsMap`
- * is the already-aggregated buff total for the combat action type; `characterBuffs[].expiresAt`
- * is the only per-instance timing evidence available, so the combined aggregate is modeled as
- * expiring at the EARLIEST active personal buff's expiry - a conservative simplification that
- * never overstates the buff's simulated benefit. If no expiry evidence exists at all (e.g. stale
- * cache), the aggregate is kept permanent rather than inventing an expiry from no evidence.
- * Automatic scroll purchase/renewal is explicitly out of scope.
- * @returns {{buffs: Array<Object>, remainingDurationNs: number|null}}
+ * lifetime rather than as an eternal permanent buff (CSIM-AUD-019, TLA-039 defect C).
+ * `personalActionTypeBuffsMap` is the already-aggregated buff magnitude total for the combat
+ * action type and stays the canonical magnitude source; `characterBuffs[]` is the only
+ * per-instance timing evidence available, each entry independently resolved via
+ * `personalBuffTypeDetailMap[instance.hrid]` to its `buff.uniqueHrid` (the identity the
+ * aggregate entries also carry) and its own `expiresAt` - never one shared earliest expiry
+ * borrowed across unrelated buffs. Only instances usable in `/action_types/combat` are
+ * considered; already-expired instances are ignored. Two active instances of the exact same
+ * identity (an ambiguous stacking case with no way to split the already-summed magnitude between
+ * them) conservatively keep the earliest of that pair's expiries rather than inventing a split.
+ * A buff with no matching un-expired instance (e.g. stale cache) is kept permanent rather than
+ * inventing an expiry from no evidence. Automatic scroll purchase/renewal is explicitly out of scope.
+ * @returns {{buffs: Array<{buff: Object, remainingDurationNs: number|null}>}}
  */
 function getSelfPersonalCombatBuffContext() {
     const buffs = dataManager.personalActionTypeBuffsMap?.['/action_types/combat'] || [];
     if (buffs.length === 0) {
-        return { buffs: [], remainingDurationNs: null };
+        return { buffs: [] };
     }
 
+    const personalBuffTypeDetailMap = dataManager.getInitClientData()?.personalBuffTypeDetailMap || {};
     const characterBuffs = dataManager.characterData?.characterBuffs || [];
     const now = Date.now();
-    const remainingMs = characterBuffs
-        .map((buff) => buff?.expiresAt)
-        .map((expiresAt) => new Date(expiresAt).getTime() - now)
-        .filter((ms) => Number.isFinite(ms) && ms > 0);
 
-    if (remainingMs.length === 0) {
-        return { buffs, remainingDurationNs: null };
+    const remainingNsByUniqueHrid = new Map();
+    for (const instance of characterBuffs) {
+        const detail = personalBuffTypeDetailMap[instance?.hrid];
+        if (!detail?.usableInActionTypeMap?.['/action_types/combat']) continue;
+        const uniqueHrid = detail.buff?.uniqueHrid;
+        if (!uniqueHrid) continue;
+
+        const remainingMs = new Date(instance.expiresAt).getTime() - now;
+        if (!Number.isFinite(remainingMs) || remainingMs <= 0) continue;
+
+        const remainingNs = remainingMs * 1e6;
+        const existing = remainingNsByUniqueHrid.get(uniqueHrid);
+        remainingNsByUniqueHrid.set(uniqueHrid, existing == null ? remainingNs : Math.min(existing, remainingNs));
     }
 
-    return { buffs, remainingDurationNs: Math.min(...remainingMs) * 1e6 };
+    return {
+        buffs: buffs.map((buff) => ({
+            buff,
+            remainingDurationNs: remainingNsByUniqueHrid.get(buff.uniqueHrid) ?? null,
+        })),
+    };
 }
 
 /**
@@ -175,7 +193,7 @@ export function buildPlayerDTO() {
         shrineLevels: {},
         hasMooPass: false,
         characterAchievements: [],
-        personalCombatBuffs: { buffs: [], remainingDurationNs: null },
+        personalCombatBuffs: { buffs: [] },
         taskEligibleMonsterHrids: [],
     };
 
@@ -560,7 +578,7 @@ function buildPartyMemberDTO(profile, clientData, battleData) {
         shrineLevels: {},
         hasMooPass: false,
         characterAchievements: [],
-        personalCombatBuffs: { buffs: [], remainingDurationNs: null },
+        personalCombatBuffs: { buffs: [] },
         taskEligibleMonsterHrids: [],
     };
 

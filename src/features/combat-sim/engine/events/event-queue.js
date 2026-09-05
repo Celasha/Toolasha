@@ -122,6 +122,14 @@ class EventQueue {
     }
 
     /**
+     * Non-destructively read the earliest event without removing it.
+     * @returns {Object|undefined}
+     */
+    peekNextEvent() {
+        return this.minHeap.data[0];
+    }
+
+    /**
      * Check if any event of the given type exists.
      * @param {string} type
      * @returns {boolean}
