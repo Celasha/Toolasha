@@ -171,3 +171,181 @@ describe('_makeCostPaybackEl - recommendation price / marginal gain / payback di
         expect(el.textContent).not.toContain('Payback');
     });
 });
+
+describe('_computeSlotMetrics - Equipment Progression sort metrics', () => {
+    function makeSlotData(entryOverrides) {
+        return {
+            name: 'Test Slot',
+            candidateCount: 1,
+            progression: [
+                {
+                    breakpoint: 7,
+                    enhancementLevel: 7,
+                    itemHrid: '/items/test_item',
+                    itemName: 'Test Item',
+                    score: 0,
+                    hasMissingPrice: false,
+                    cost: 0,
+                    costIsIncomplete: false,
+                    xpScore: 0,
+                    goldScore: 0,
+                    isChange: true,
+                    ...entryOverrides,
+                },
+            ],
+        };
+    }
+
+    test('no breakpoint beats baseline -> entry is null and every derived metric is unranked', () => {
+        const ui = new SkillingSimulatorUI();
+        const slotData = makeSlotData({ xpScore: 100, goldScore: 0 });
+        const metrics = ui._computeSlotMetrics(slotData, /* xpBaseline */ 100, /* goldBaseline */ 0);
+        expect(metrics.entry).toBeNull();
+        expect(metrics.xpPerMillion).toBeNull();
+        expect(metrics.paybackHours).toBeNull();
+    });
+
+    test('XP gain over a real cost produces XP/hr-per-1M-gold and a gain percentage', () => {
+        const ui = new SkillingSimulatorUI();
+        const slotData = makeSlotData({ cost: 2_000_000, xpScore: 10_600, goldScore: 0 });
+        const metrics = ui._computeSlotMetrics(slotData, 10_000, 0);
+        expect(metrics.entry).not.toBeNull();
+        expect(metrics.xpDelta).toBe(600);
+        expect(metrics.xpPct).toBeCloseTo(6);
+        expect(metrics.xpPerMillion).toBeCloseTo(300);
+        expect(metrics.paybackHours).toBeNull();
+    });
+
+    test('Gold gain over a real cost produces a payback time in hours', () => {
+        const ui = new SkillingSimulatorUI();
+        const slotData = makeSlotData({ cost: 1_000_000, xpScore: 0, goldScore: 100_000 });
+        const metrics = ui._computeSlotMetrics(slotData, 0, 0);
+        expect(metrics.paybackHours).toBe(10);
+        expect(metrics.xpPerMillion).toBeNull();
+    });
+
+    test('a zero net cost with a real gain is the best possible ratio, not an absent one', () => {
+        const ui = new SkillingSimulatorUI();
+        const slotData = makeSlotData({ cost: 0, xpScore: 500, goldScore: 500 });
+        const metrics = ui._computeSlotMetrics(slotData, 0, 0);
+        expect(metrics.xpPerMillion).toBe(Infinity);
+        expect(metrics.paybackHours).toBe(0);
+    });
+
+    test('an unresolved required price never backs a ratio, even with a positive delta', () => {
+        const ui = new SkillingSimulatorUI();
+        const slotData = makeSlotData({ cost: 1_000_000, costIsIncomplete: true, xpScore: 500, goldScore: 500 });
+        const metrics = ui._computeSlotMetrics(slotData, 0, 0);
+        expect(metrics.xpPerMillion).toBeNull();
+        expect(metrics.paybackHours).toBeNull();
+    });
+});
+
+describe('_sortValueFor - Equipment Progression sort ordering', () => {
+    test('a slot with nothing actionable always sorts last, regardless of mode', () => {
+        const ui = new SkillingSimulatorUI();
+        for (const mode of ['value', 'payback', 'cost', 'xpGain', 'goldGain']) {
+            expect(ui._sortValueFor({ entry: null }, 'xp', mode)).toBe(Infinity);
+        }
+    });
+
+    test('"payback" mode ranks by paybackHours ascending, with no-payback rows unranked', () => {
+        const ui = new SkillingSimulatorUI();
+        expect(ui._sortValueFor({ entry: {}, paybackHours: 5 }, 'xp', 'payback')).toBe(5);
+        expect(ui._sortValueFor({ entry: {}, paybackHours: null }, 'xp', 'payback')).toBe(Infinity);
+    });
+
+    test('"cost" mode ranks by raw cost ascending', () => {
+        const ui = new SkillingSimulatorUI();
+        expect(ui._sortValueFor({ entry: {}, cost: 2_000_000 }, 'xp', 'cost')).toBe(2_000_000);
+    });
+
+    test('"xpGain"/"goldGain" modes rank by percentage descending (negated for ascending sort)', () => {
+        const ui = new SkillingSimulatorUI();
+        expect(ui._sortValueFor({ entry: {}, xpPct: 6 }, 'xp', 'xpGain')).toBe(-6);
+        expect(ui._sortValueFor({ entry: {}, goldPct: 12 }, 'xp', 'goldGain')).toBe(-12);
+    });
+
+    test('"value" mode uses XP/hr-per-gold for an XP-goal skill and payback for a Gold-goal skill', () => {
+        const ui = new SkillingSimulatorUI();
+        expect(ui._sortValueFor({ entry: {}, xpPerMillion: 300 }, 'xp', 'value')).toBe(-300);
+        expect(ui._sortValueFor({ entry: {}, xpPerMillion: null }, 'xp', 'value')).toBe(Infinity);
+        expect(ui._sortValueFor({ entry: {}, paybackHours: 10 }, 'gold', 'value')).toBe(10);
+        expect(ui._sortValueFor({ entry: {}, paybackHours: null }, 'gold', 'value')).toBe(Infinity);
+    });
+});
+
+describe('_renderOptimizerResults - Equipment Progression sort control', () => {
+    function makeSlot(name, { cost, xpDelta, xpBaseline }) {
+        return {
+            name,
+            candidateCount: 1,
+            progression: [
+                {
+                    breakpoint: 7,
+                    enhancementLevel: 7,
+                    itemHrid: `/items/${name.toLowerCase()}`,
+                    itemName: name,
+                    score: xpBaseline + xpDelta,
+                    hasMissingPrice: false,
+                    cost,
+                    costIsIncomplete: false,
+                    xpScore: xpBaseline + xpDelta,
+                    goldScore: 0,
+                    isChange: true,
+                },
+            ],
+        };
+    }
+
+    function slotLabelOrder(container) {
+        return [...container.querySelectorAll('div')]
+            .filter((d) => d.children.length === 0)
+            .map((d) => d.textContent)
+            .filter((t) => ['Alpha', 'Bravo', 'Charlie'].includes(t));
+    }
+
+    function buildResult() {
+        const xpBaseline = 10_000;
+        return {
+            goal: 'xp',
+            xpBaseline,
+            goldBaseline: 0,
+            slots: {
+                '/item_locations/a': makeSlot('Alpha', { cost: 3_000_000, xpDelta: 600, xpBaseline }),
+                '/item_locations/b': makeSlot('Bravo', { cost: 1_000_000, xpDelta: 100, xpBaseline }),
+                '/item_locations/c': makeSlot('Charlie', { cost: 500_000, xpDelta: 1_000, xpBaseline }),
+            },
+        };
+    }
+
+    test('defaults to "Best Value" (XP/hr per gold, descending) ahead of raw slot order', () => {
+        const ui = new SkillingSimulatorUI();
+        const container = document.createElement('div');
+        ui._renderOptimizerResults(container, buildResult(), null, null);
+        // Ratios: Charlie 2000, Alpha 200, Bravo 100 - not the raw a/b/c insertion order.
+        expect(slotLabelOrder(container)).toEqual(['Charlie', 'Alpha', 'Bravo']);
+    });
+
+    test('switching to "Cost (cheapest)" re-renders in ascending cost order without re-Optimizing', () => {
+        const ui = new SkillingSimulatorUI();
+        const container = document.createElement('div');
+        ui._renderOptimizerResults(container, buildResult(), null, null);
+
+        const select = container.querySelector('select');
+        select.value = 'cost';
+        select.dispatchEvent(new Event('change'));
+
+        // Costs: Charlie 500k, Bravo 1M, Alpha 3M.
+        expect(slotLabelOrder(container)).toEqual(['Charlie', 'Bravo', 'Alpha']);
+        expect(ui.optimizerSortMode).toBe('cost');
+    });
+
+    test('"Slot Order" preserves the original insertion order', () => {
+        const ui = new SkillingSimulatorUI();
+        const container = document.createElement('div');
+        ui.optimizerSortMode = 'slot';
+        ui._renderOptimizerResults(container, buildResult(), null, null);
+        expect(slotLabelOrder(container)).toEqual(['Alpha', 'Bravo', 'Charlie']);
+    });
+});
