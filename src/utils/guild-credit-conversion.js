@@ -10,12 +10,16 @@ import { getItemPrice } from './market-data.js';
 /**
  * Build cheapest-gold-per-credit maps for both sell and buy sides.
  * @param {Object} itemDetailMap
+ * @param {string[]} [excludeHrids=[]] - Source item hrids to skip (e.g. Guild Token itself, which
+ *   carries its own guildCreditConversions and would otherwise create a circular credit value —
+ *   TLA-041).
  * @returns {{ sell: Object, buy: Object }} Map of creditItemHrid -> cheapest gold cost per credit
  */
-export function buildCheapestPerCredit(itemDetailMap) {
+export function buildCheapestPerCredit(itemDetailMap, excludeHrids = []) {
     const sell = {};
     const buy = {};
     for (const [hrid, item] of Object.entries(itemDetailMap)) {
+        if (excludeHrids.includes(hrid)) continue;
         for (const conv of item.guildCreditConversions || []) {
             const creditHrid = conv.creditItemHrid;
             const sellPrice = getItemPrice(hrid, { mode: 'ask' });

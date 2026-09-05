@@ -191,3 +191,125 @@ describe('showScorePanel lifecycle (PROF-LAYOUT-09/10/11)', () => {
         expect(panel.innerHTML).toContain('Combat Score: 100');
     });
 });
+
+describe('showScorePanel TLA-041 additions (Shrines / Skiller Houses / partial suffix)', () => {
+    function makeFullScoreData(overrides = {}) {
+        return {
+            equipmentHidden: false,
+            hasEquipmentData: true,
+            total: 930,
+            complete: true,
+            house: 100,
+            ability: 50,
+            equipment: 700,
+            shrine: 80,
+            breakdown: {
+                houses: [{ name: 'Dojo 3', value: '100.0' }],
+                abilities: [{ name: 'Fireball 5', value: '50.0' }],
+                equipment: [{ name: 'Sword +10', value: '700.0' }],
+                shrines: [{ name: 'Shrine of Force 1', value: '80.0' }],
+            },
+            skillerTotal: 40,
+            skillerComplete: true,
+            skillerHouse: 20,
+            skillerEquipment: 15,
+            skillerShrine: 5,
+            skillerBreakdown: {
+                houses: [{ name: 'Garden 1', value: '20.0' }],
+                equipment: [{ name: 'Hoe', value: '15.0' }],
+                shrines: [{ name: 'Shrine of Wisdom 1', value: '5.0' }],
+            },
+            ...overrides,
+        };
+    }
+
+    beforeEach(() => {
+        document.body.innerHTML = '';
+        Element.prototype.getBoundingClientRect = function () {
+            if (this.id === 'mwi-combat-score-panel') return mockRect({ width: 235 });
+            return mockRect({ left: 500, right: 700, top: 30 });
+        };
+    });
+
+    test('renders Combat Shrines, Skiller Houses, and Skiller Shrines rows', () => {
+        const modal = document.createElement('div');
+        document.body.appendChild(modal);
+        combatScore.showScorePanel({ profile: {} }, makeFullScoreData(), modal);
+
+        const panel = document.getElementById('mwi-combat-score-panel');
+        expect(panel.querySelector('#mwi-shrine-toggle')).not.toBeNull();
+        expect(panel.querySelector('#mwi-skiller-house-toggle')).not.toBeNull();
+        expect(panel.querySelector('#mwi-skiller-shrine-toggle')).not.toBeNull();
+        expect(panel.innerHTML).toContain('Shrine of Force 1: 80.0');
+        expect(panel.innerHTML).toContain('Garden 1: 20.0');
+        expect(panel.innerHTML).toContain('Shrine of Wisdom 1: 5.0');
+    });
+
+    test('all new detail sections start collapsed, matching the existing sections', () => {
+        const modal = document.createElement('div');
+        document.body.appendChild(modal);
+        combatScore.showScorePanel({ profile: {} }, makeFullScoreData(), modal);
+
+        const panel = document.getElementById('mwi-combat-score-panel');
+        expect(panel.querySelector('#mwi-shrine-breakdown').style.display).toBe('none');
+        expect(panel.querySelector('#mwi-skiller-house-breakdown').style.display).toBe('none');
+        expect(panel.querySelector('#mwi-skiller-shrine-breakdown').style.display).toBe('none');
+    });
+
+    test('a complete result shows no "+" suffix on either top-level total', () => {
+        const modal = document.createElement('div');
+        document.body.appendChild(modal);
+        combatScore.showScorePanel({ profile: {} }, makeFullScoreData(), modal);
+
+        const panel = document.getElementById('mwi-combat-score-panel');
+        expect(panel.innerHTML).toContain('Combat Score: 930.0');
+        expect(panel.innerHTML).not.toContain('930.0+');
+        expect(panel.innerHTML).toContain('Skiller Score: 40.0');
+        expect(panel.innerHTML).not.toContain('40.0+');
+    });
+
+    test('F-13: an incomplete Combat result shows the "+" lower-bound suffix on the top-level total only', () => {
+        const modal = document.createElement('div');
+        document.body.appendChild(modal);
+        combatScore.showScorePanel({ profile: {} }, makeFullScoreData({ complete: false }), modal);
+
+        const panel = document.getElementById('mwi-combat-score-panel');
+        expect(panel.innerHTML).toContain('Combat Score: 930.0+');
+        // Category rows stay plain numbers - no "+" on House/Ability/Equipment/Shrines themselves.
+        expect(panel.innerHTML).toContain('House: 100.0');
+        expect(panel.innerHTML).not.toContain('House: 100.0+');
+    });
+
+    test('an incomplete Skiller result shows the "+" suffix on the Skiller total only, independent of Combat', () => {
+        const modal = document.createElement('div');
+        document.body.appendChild(modal);
+        combatScore.showScorePanel({ profile: {} }, makeFullScoreData({ skillerComplete: false }), modal);
+
+        const panel = document.getElementById('mwi-combat-score-panel');
+        expect(panel.innerHTML).toContain('Skiller Score: 40.0+');
+        expect(panel.innerHTML).toContain('Combat Score: 930.0');
+        expect(panel.innerHTML).not.toContain('930.0+');
+    });
+
+    test('the explanatory viewer-relative tooltip is present on both top-level toggles', () => {
+        const modal = document.createElement('div');
+        document.body.appendChild(modal);
+        combatScore.showScorePanel({ profile: {} }, makeFullScoreData(), modal);
+
+        const panel = document.getElementById('mwi-combat-score-panel');
+        const scoreToggle = panel.querySelector('#mwi-score-toggle');
+        const skillerToggle = panel.querySelector('#mwi-skiller-score-toggle');
+        expect(scoreToggle.getAttribute('title')).toContain('reproduce this persistent build');
+        expect(skillerToggle.getAttribute('title')).toContain('reproduce this persistent build');
+    });
+
+    test('no Achievements row and no combined grand total are rendered', () => {
+        const modal = document.createElement('div');
+        document.body.appendChild(modal);
+        combatScore.showScorePanel({ profile: {} }, makeFullScoreData(), modal);
+
+        const panel = document.getElementById('mwi-combat-score-panel');
+        expect(panel.innerHTML).not.toContain('Achievement');
+        expect(panel.innerHTML).not.toContain('Grand Total');
+    });
+});

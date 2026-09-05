@@ -6,6 +6,7 @@
 
 import dataManager from '../core/data-manager.js';
 import marketAPI from '../api/marketplace.js';
+import { getItemPrice } from './market-data.js';
 
 /**
  * List of starter abilities that give 50 XP per book (others give 500)
@@ -127,4 +128,31 @@ export function calculateAbilityLevelUpCost(abilityHrid, currentLevel, currentXp
     const weightedPrice = (ask + bid) / 2;
 
     return booksNeeded * weightedPrice;
+}
+
+/**
+ * Calculate the cost to reach a specific ability level from level 0, reading real per-item
+ * `abilityBookDetail.experienceGain` instead of a hardcoded starter/non-starter split, and
+ * pricing the book with pure Ask (TLA-041 / F-11). Never falls back to 0 silently — a missing
+ * `experienceGain` or Ask price marks the result incomplete.
+ * @param {string} abilityHrid - Ability HRID
+ * @param {number} targetLevel - Target level to reach
+ * @returns {{cost: number|null, complete: boolean}}
+ */
+export function calculateAbilityBookCostDataDriven(abilityHrid, targetLevel) {
+    const gameData = dataManager.getInitClientData();
+    const levelXpTable = gameData?.levelExperienceTable;
+    if (!levelXpTable) return { cost: null, complete: false };
+
+    const itemHrid = abilityHrid.replace('/abilities/', '/items/');
+    const xpPerBook = gameData.itemDetailMap?.[itemHrid]?.abilityBookDetail?.experienceGain;
+    if (!(xpPerBook > 0)) return { cost: null, complete: false };
+
+    const targetXp = levelXpTable[targetLevel] || 0;
+    const booksNeeded = Math.ceil(targetXp / xpPerBook) + 1; // +1 = initial learn book
+
+    const ask = getItemPrice(itemHrid, { mode: 'ask' });
+    if (!(ask > 0)) return { cost: null, complete: false };
+
+    return { cost: booksNeeded * ask, complete: true };
 }

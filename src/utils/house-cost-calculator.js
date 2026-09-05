@@ -6,6 +6,7 @@
 
 import dataManager from '../core/data-manager.js';
 import marketAPI from '../api/marketplace.js';
+import { getItemPrice } from './market-data.js';
 
 /**
  * Calculate the total cost to build a house room to a specific level
@@ -111,4 +112,91 @@ export function calculateBattleHousesCost(characterHouseRooms) {
     breakdown.sort((a, b) => b.cost - a.cost);
 
     return { totalCost, breakdown };
+}
+
+/**
+ * Determine whether a house room is Combat or Skiller domain, from actual game data
+ * (`usableInActionTypeMap`) rather than a hardcoded room-name list (TLA-041 / PB-08).
+ * @param {string} houseRoomHrid - House room HRID
+ * @returns {'combat'|'skilling'|null} null if the room is unknown
+ */
+export function getHouseRoomDomain(houseRoomHrid) {
+    const gameData = dataManager.getInitClientData();
+    const houseDetail = gameData?.houseRoomDetailMap?.[houseRoomHrid];
+    if (!houseDetail) return null;
+
+    const usableInActionTypeMap = houseDetail.usableInActionTypeMap || {};
+    return usableInActionTypeMap['/action_types/combat'] ? 'combat' : 'skilling';
+}
+
+/**
+ * Calculate the cost to build a house room to a specific level using pure Ask pricing
+ * (never `(ask+bid)/2` — TLA-041 / F-10). A required material with no positive Ask marks the
+ * whole room incomplete instead of silently contributing 0.
+ * @param {string} houseRoomHrid - House room HRID
+ * @param {number} currentLevel - Target level
+ * @returns {{cost: number, complete: boolean}}
+ */
+export function calculateHouseRoomCostAskOnly(houseRoomHrid, currentLevel) {
+    const gameData = dataManager.getInitClientData();
+    const upgradeCostsMap = gameData?.houseRoomDetailMap?.[houseRoomHrid]?.upgradeCostsMap;
+    if (!upgradeCostsMap) return { cost: 0, complete: false };
+
+    let cost = 0;
+    let complete = true;
+
+    for (let level = 1; level <= currentLevel; level++) {
+        const levelUpgrades = upgradeCostsMap[level];
+        if (!levelUpgrades) {
+            complete = false;
+            continue;
+        }
+
+        for (const item of levelUpgrades) {
+            if (item.itemHrid === '/items/coin') {
+                cost += item.count;
+                continue;
+            }
+
+            const ask = getItemPrice(item.itemHrid, { mode: 'ask' });
+            if (!(ask > 0)) {
+                complete = false;
+                continue;
+            }
+            cost += item.count * ask;
+        }
+    }
+
+    return { cost, complete };
+}
+
+/**
+ * Sum Ask-only build cost across every owned room in the given domain.
+ * @param {Object} characterHouseRooms - Map of character house rooms from profile data
+ * @param {'combat'|'skilling'} domain
+ * @returns {{totalCost: number, complete: boolean, breakdown: Array<{name: string, level: number, cost: number}>}}
+ */
+export function calculateHousesCostByDomain(characterHouseRooms, domain) {
+    const gameData = dataManager.getInitClientData();
+    const houseRoomDetailMap = gameData?.houseRoomDetailMap || {};
+
+    let totalCost = 0;
+    let complete = true;
+    const breakdown = [];
+
+    for (const [houseRoomHrid, houseData] of Object.entries(characterHouseRooms || {})) {
+        const level = houseData.level || 0;
+        if (level === 0) continue;
+        if (getHouseRoomDomain(houseRoomHrid) !== domain) continue;
+
+        const { cost, complete: roomComplete } = calculateHouseRoomCostAskOnly(houseRoomHrid, level);
+        totalCost += cost;
+        complete = complete && roomComplete;
+
+        const houseName = houseRoomDetailMap[houseRoomHrid]?.name || houseRoomHrid.replace('/house_rooms/', '');
+        breakdown.push({ name: houseName, level, cost });
+    }
+
+    breakdown.sort((a, b) => b.cost - a.cost);
+    return { totalCost, complete, breakdown };
 }
