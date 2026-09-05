@@ -391,7 +391,7 @@ class CombatScore {
      */
     positionPanel(panel, modal) {
         const modalRect = modal.getBoundingClientRect();
-        const panelWidth = 220;
+        const panelWidth = panel.getBoundingClientRect().width;
         const gap = 8;
 
         // Try left side first
