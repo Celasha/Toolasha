@@ -76,6 +76,12 @@ describe('lifecycle registration', () => {
         expect(mocks.savedRecords.get('char-a').record.projection).toBe(mocks.liveProjection);
     });
 
+    test('TLA-025 item 16: the initial persist is immediate, not the normal 3s-debounced write', async () => {
+        await characterActivityCollector.initialize();
+
+        expect(mocks.savedRecords.get('char-a').immediate).toBe(true);
+    });
+
     test('persisted record captures the current offline cap and MooPass expiry', async () => {
         mocks.offlineHourCap = 14;
         mocks.mooPassExpireTime = 99999;

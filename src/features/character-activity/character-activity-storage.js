@@ -61,11 +61,13 @@ export async function loadAccountPreferences() {
  * scoped values currently in effect for the active character, so Character Select later shows
  * whatever was last actually used rather than a schema default.
  * @param {Partial<{enabled: boolean, dateFormat: string, timeFormat: string}>} prefs
+ * @param {boolean} [immediate=false] - Skip the normal debounce (e.g. a rare presentation-setting
+ *      change made just before navigating to Character Select, where a delayed write could miss it)
  * @returns {Promise<boolean>}
  */
-export async function saveAccountPreferences(prefs) {
+export async function saveAccountPreferences(prefs, immediate = false) {
     const current = await loadAccountPreferences();
-    return storage.setJSON(ACCOUNT_PREFS_KEY, { ...current, ...prefs }, STORE_NAME);
+    return storage.setJSON(ACCOUNT_PREFS_KEY, { ...current, ...prefs }, STORE_NAME, immediate);
 }
 
 export const CHARACTER_ACTIVITY_STORE = STORE_NAME;

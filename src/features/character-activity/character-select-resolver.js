@@ -90,7 +90,9 @@ export function findPopulatedCharacterSlots(rootElement) {
     const slotsById = new Map();
 
     for (const slot of slots) {
-        const link = slot.querySelector('a[href*="characterId="]');
+        // The populated native slot may be the `<a href="...characterId=...">` itself, not just a
+        // wrapper containing one - querySelector alone never matches the calling element.
+        const link = slot.matches?.('a[href*="characterId="]') ? slot : slot.querySelector('a[href*="characterId="]');
         if (!link) continue;
 
         const characterId = getCharacterIdFromSlotLink(link);

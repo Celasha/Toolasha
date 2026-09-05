@@ -39,7 +39,9 @@ class CharacterActivityCollector {
         this.beforeUnloadHandler = () => this.recomputeAndPersist(generation, true);
         window.addEventListener('beforeunload', this.beforeUnloadHandler);
 
-        await this.recomputeAndPersist(generation);
+        // Immediate so a previously-unseen character's first observation is visible right away on
+        // Character Select, without waiting for the normal 3s debounce or a later action update.
+        await this.recomputeAndPersist(generation, true);
     }
 
     /**

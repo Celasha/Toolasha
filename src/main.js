@@ -15,6 +15,7 @@ import settingsUI from './features/settings/settings-ui.js';
 import { setupScrollTooltipDismissal } from './utils/dom.js';
 import guildXPTrackerFeature from './features/guild/guild-xp-tracker.js';
 import characterSelectRenderer from './features/character-activity/character-select-renderer.js';
+import { startAccountPreferencesSync } from './features/character-activity/character-activity-account-prefs-sync.js';
 
 /**
  * Detect if running on a supported Combat Simulator page
@@ -43,6 +44,10 @@ if (isCombatSimulatorPage()) {
     // Always-on Character Select renderer: must run before any character ever initializes,
     // since Character Select can be the very first page shown in a session.
     characterSelectRenderer.startWatching();
+
+    // Keeps the account-level preference mirror Character Select reads fresh independently of
+    // whether the character-scoped Character Activity collector is currently running.
+    startAccountPreferencesSync();
 
     // Set up scroll listener to dismiss stuck tooltips
     setupScrollTooltipDismissal();

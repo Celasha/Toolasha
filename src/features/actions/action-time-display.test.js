@@ -684,3 +684,100 @@ describe('ActionTimeDisplay Current Action Bar DOM ownership (TLA-035)', () => {
         expect(oldProfitElement.innerHTML).toBe('');
     });
 });
+
+describe('ActionTimeDisplay finite-count actions also respect the material/resource limit (TLA-025)', () => {
+    let instance;
+
+    const actionDetails = {
+        type: '/action_types/cheesesmithing',
+        inputItems: [{ itemHrid: '/items/iron', count: 1 }],
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        instance = new ActionTimeDisplay();
+        calculateActionStats.mockReturnValue({ actionTime: 10, totalEfficiency: 0 });
+        calculateEfficiencyMultiplier.mockReturnValue(1);
+        dataManager.getElapsedSecondsInCurrentUnit.mockReturnValue(0);
+    });
+
+    function makeAction(overrides = {}) {
+        return {
+            id: 1,
+            hasMaxCount: true,
+            maxCount: 100,
+            currentCount: 0,
+            actionHrid: '/actions/cheesesmithing/iron_bar',
+            ...overrides,
+        };
+    }
+
+    test('materials run out before the requested count: count/time reflect the material limit, not maxCount', () => {
+        const inventoryLookup = { byHrid: { '/items/iron': 40 }, byEnhancedKey: {} };
+        const result = instance.calculateSingleQueueActionTime(makeAction(), actionDetails, inventoryLookup);
+        expect(result.count).toBe(40);
+        expect(result.totalTime).toBe(400); // 40 actions * 10s
+        expect(result.limitType).toBe('material:/items/iron');
+    });
+
+    test('materials are plentiful: count/time reflect maxCount, and limitType is cleared (not misreported as materials)', () => {
+        const inventoryLookup = { byHrid: { '/items/iron': 1000 }, byEnhancedKey: {} };
+        const result = instance.calculateSingleQueueActionTime(makeAction(), actionDetails, inventoryLookup);
+        expect(result.count).toBe(100);
+        expect(result.totalTime).toBe(1000);
+        expect(result.limitType).toBeNull();
+    });
+
+    test('no input items at all: unaffected by the material-limit check (still just maxCount-currentCount)', () => {
+        const inventoryLookup = { byHrid: {}, byEnhancedKey: {} };
+        const result = instance.calculateSingleQueueActionTime(
+            makeAction(),
+            { type: '/action_types/cheesesmithing' },
+            inventoryLookup
+        );
+        expect(result.count).toBe(100);
+        expect(result.totalTime).toBe(1000);
+        expect(result.limitType).toBeNull();
+    });
+});
+
+describe('ActionTimeDisplay calculation failure fails closed instead of a fake zero-duration result (TLA-025)', () => {
+    let instance;
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        instance = new ActionTimeDisplay();
+    });
+
+    test('calculateActionTime returning null (e.g. unresolvable action stats) sets timingUnavailable, not a real 0s result', () => {
+        calculateActionStats.mockReturnValue(null);
+        const inventoryLookup = { byHrid: {}, byEnhancedKey: {} };
+        const action = { id: 1, hasMaxCount: true, maxCount: 5, currentCount: 0, actionHrid: '/actions/woodcutting/x' };
+
+        const result = instance.calculateSingleQueueActionTime(
+            action,
+            { type: '/action_types/woodcutting' },
+            inventoryLookup
+        );
+
+        expect(result.timingUnavailable).toBe(true);
+        expect(result.totalTime).toBe(0);
+    });
+
+    test('a genuinely successful calculation never sets timingUnavailable', () => {
+        calculateActionStats.mockReturnValue({ actionTime: 10, totalEfficiency: 0 });
+        calculateEfficiencyMultiplier.mockReturnValue(1);
+        dataManager.getElapsedSecondsInCurrentUnit.mockReturnValue(0);
+        const inventoryLookup = { byHrid: {}, byEnhancedKey: {} };
+        const action = { id: 1, hasMaxCount: true, maxCount: 5, currentCount: 0, actionHrid: '/actions/woodcutting/x' };
+
+        const result = instance.calculateSingleQueueActionTime(
+            action,
+            { type: '/action_types/woodcutting' },
+            inventoryLookup
+        );
+
+        expect(result.timingUnavailable).toBeUndefined();
+        expect(result.totalTime).toBe(50);
+    });
+});

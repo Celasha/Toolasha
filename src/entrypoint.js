@@ -862,6 +862,10 @@ if (isCombatSimulatorPage()) {
     // since Character Select can be the very first page shown in a session.
     UI.characterSelectRenderer.startWatching();
 
+    // Keeps the account-level preference mirror Character Select reads fresh independently of
+    // whether the character-scoped Character Activity collector is currently running.
+    UI.startAccountPreferencesSync();
+
     // Set up scroll listener to dismiss stuck tooltips
     setupScrollTooltipDismissal();
 

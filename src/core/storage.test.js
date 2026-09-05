@@ -172,6 +172,40 @@ describe('Storage write durability (TLA-007)', () => {
         expect(goodDb._store['z']).toBe('new');
     });
 
+    test('TLA-025: an immediate write supersedes an older still-pending debounced write to the same key', async () => {
+        const s = await makeStorage();
+        const goodDb = makeFakeDb(false);
+        s.db = goodDb;
+
+        const debouncedPromise = s.set('shared', 'A', 'settings'); // pending, timer not fired yet
+        const immediatePromise = s.set('shared', 'B', 'settings', true); // supersedes it right away
+
+        expect(await immediatePromise).toBe(true);
+        expect(goodDb._store['shared']).toBe('B');
+
+        // Let the old debounce timer's opportunity pass - it must be a no-op, not overwrite B with A.
+        await vi.runAllTimersAsync();
+        expect(goodDb._store['shared']).toBe('B');
+
+        // The superseded debounced caller must still resolve rather than hang forever.
+        expect(await debouncedPromise).toBe(true);
+        expect(s.pendingWrites.has('settings:shared')).toBe(false);
+    });
+
+    test('TLA-025: normal debounce coalescing is unaffected by the immediate-write path', async () => {
+        const s = await makeStorage();
+        const goodDb = makeFakeDb(false);
+        s.db = goodDb;
+
+        const p1 = s.set('k', 'v1', 'settings');
+        const p2 = s.set('k', 'v2', 'settings');
+        await vi.runAllTimersAsync();
+
+        expect(goodDb._store['k']).toBe('v2');
+        expect(await p1).toBe(true);
+        expect(await p2).toBe(true);
+    });
+
     test('cleanupPendingWrites resolves all pending promises with false', async () => {
         const s = await makeStorage();
         s.db = makeFakeDb(false);
