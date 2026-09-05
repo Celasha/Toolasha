@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.106.0](https://github.com/Celasha/Toolasha/compare/v2.105.1...v2.106.0) (2026-09-05)
+
+### Features
+
+- mirror [@mentions](https://github.com/mentions) into the chat Log tab ([2cd397a](https://github.com/Celasha/Toolasha/commit/2cd397aa68263d514c168cf7d86e16c0fd102d17))
+
 ## [2.105.1](https://github.com/Celasha/Toolasha/compare/v2.105.0...v2.105.1) (2026-09-04)
 
 ### Bug Fixes
