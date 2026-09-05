@@ -255,10 +255,36 @@ class Storage {
         }
 
         if (immediate) {
-            return this._saveToIndexedDB(key, value, storeName);
+            return this._saveImmediate(key, value, storeName);
         } else {
             return this._debouncedSave(key, value, storeName);
         }
+    }
+
+    /**
+     * Internal: Save immediately, superseding any pending debounced write for the same key so it
+     * can never later overwrite this value with stale data.
+     * @private
+     */
+    async _saveImmediate(key, value, storeName) {
+        const timerKey = `${storeName}:${key}`;
+
+        if (this.saveDebounceTimers.has(timerKey)) {
+            clearTimeout(this.saveDebounceTimers.get(timerKey));
+            this.saveDebounceTimers.delete(timerKey);
+        }
+        // Claim the slot so a same-tick-scheduled old timer sees `!pending` and no-ops, and bump
+        // the generation as a second guard against any already-in-flight timer callback.
+        const pending = this.pendingWrites.get(timerKey);
+        this.pendingWrites.delete(timerKey);
+        this._writeGeneration.set(timerKey, (this._writeGeneration.get(timerKey) || 0) + 1);
+
+        const success = await this._saveToIndexedDB(key, value, storeName);
+
+        if (pending) {
+            for (const resolve of pending.resolvers) resolve(success);
+        }
+        return success;
     }
 
     /**

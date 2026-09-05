@@ -25,6 +25,9 @@ const FUTURE_LABELS = {
     action: 'Action ends',
     queue: 'Queue ends',
     materials: 'Materials run out',
+    coins: 'Coins run out',
+    'upgrade-materials': 'Upgrade materials run out',
+    drink: 'Buff expiring',
     offline: 'Offline limit',
 };
 
@@ -32,8 +35,25 @@ const PAST_LABELS = {
     action: 'Action ended',
     queue: 'Queue ended',
     materials: 'Materials ran out',
+    coins: 'Coins ran out',
+    'upgrade-materials': 'Upgrade materials ran out',
+    drink: 'Buff expired',
     offline: 'Offline progress stopped',
 };
+
+// Per-cause text for the neutral "unknown" branch, keyed by the active uncertain segment's own
+// `stopCause`. Locked copy per the approved UX contract - do not abbreviate the suffix.
+const UNCERTAIN_REASON_TEXT = {
+    combat: 'Variable duration · ETA unavailable',
+    labyrinth: 'Variable duration · ETA unavailable',
+    enhancing: 'Stochastic outcome · ETA unavailable',
+    special: 'Waiting for party · ETA unavailable',
+    'loadout-unavailable': 'Configured loadout unavailable · ETA unavailable',
+};
+// Current segment is still a trustworthy earlier one, but a later segment in the same queue is
+// uncertain - the deadline itself (not the current action) is what's unknowable.
+const QUEUE_UNCERTAIN_TEXT = 'Queue duration uncertain · ETA unavailable';
+const DEFAULT_UNCERTAIN_TEXT = 'End time unavailable';
 
 const COLOR_HEX = {
     green: '#51cf66',
@@ -41,6 +61,17 @@ const COLOR_HEX = {
     red: '#ff6b6b',
     neutral: '#888888',
 };
+
+// Native ActionTypeIcons: the 10 skilling types live in skills_sprite, Combat/Labyrinth live in
+// misc_sprite, and Special (Party Ready) has no native type icon at all.
+const MISC_SPRITE_TYPES = new Set(['/action_types/combat', '/action_types/labyrinth']);
+const NO_ICON_TYPES = new Set(['/action_types/special']);
+
+/** Sprite sheet for a segment's icon, or null for action types with no native icon (Special). */
+function spriteFamilyForType(actionTypeHrid) {
+    if (!actionTypeHrid || NO_ICON_TYPES.has(actionTypeHrid)) return null;
+    return MISC_SPRITE_TYPES.has(actionTypeHrid) ? 'misc' : 'skills';
+}
 
 /**
  * Find whichever segment covers a given instant (its own `startAt`-`endAt` range covers `time`,
@@ -61,7 +92,7 @@ function findSegmentAtTime(segments, time) {
 }
 
 function formatActivityLine(segment, isPaused, queuedCount) {
-    let text = segment.actionName;
+    let text = segment.displayName || segment.actionName;
     if (isPaused) text += ' ⏸';
     if (queuedCount > 0) text += ` +${queuedCount} queued`;
     return text;
@@ -74,7 +105,7 @@ function formatActivityLine(segment, isPaused, queuedCount) {
  * @param {Object} character - Native character object (id, name, lastOfflineTime, isOnline)
  * @param {Object} prefs - Account-level date/time preferences
  * @param {number} [now]
- * @returns {{firstLineText: string, limiterColor: string, limiterText: string}}
+ * @returns {{firstLineText: string, limiterColor: string, limiterText: string, activeSegment: Object|null}}
  */
 export function computeSlotDisplayState(record, character, prefs, now = Date.now()) {
     if (!record) {
@@ -82,6 +113,7 @@ export function computeSlotDisplayState(record, character, prefs, now = Date.now
             firstLineText: 'No activity data yet',
             limiterColor: 'neutral',
             limiterText: 'Open character once to enable status',
+            activeSegment: null,
         };
     }
 
@@ -90,21 +122,49 @@ export function computeSlotDisplayState(record, character, prefs, now = Date.now
             firstLineText: 'Activity status outdated',
             limiterColor: 'neutral',
             limiterText: 'Open character to refresh',
+            activeSegment: null,
         };
     }
 
-    const { segments, terminalCause, terminalAt } = resolveDisplayProjection(record, character.lastOfflineTime);
+    // A currently-online character must never get an offline deadline from a stale lastOfflineTime.
+    const effectiveLastOfflineTime = character.isOnline ? null : character.lastOfflineTime;
+    const { segments, terminalCause, terminalAt } = resolveDisplayProjection(record, effectiveLastOfflineTime);
 
     if (terminalCause === 'idle') {
-        return { firstLineText: 'No active action', limiterColor: 'red', limiterText: 'Character is idle' };
+        return {
+            firstLineText: 'No active action',
+            limiterColor: 'red',
+            limiterText: 'Character is idle',
+            activeSegment: null,
+        };
     }
 
     if (terminalCause === 'unknown' || segments.length === 0) {
-        const last = segments[segments.length - 1];
+        const found = findSegmentAtTime(segments, now);
+        const activeSegment = found ? found.segment : null;
+
+        if (!activeSegment) {
+            return {
+                firstLineText: 'No active action expected',
+                limiterColor: 'neutral',
+                limiterText: DEFAULT_UNCERTAIN_TEXT,
+                activeSegment: null,
+            };
+        }
+
+        // The currently active segment may still be an earlier trustworthy one - the queue only
+        // becomes uncertain at a LATER segment. Line 1 must keep showing what's actually running
+        // now, not the future segment that made the total deadline unknowable.
+        const limiterText =
+            activeSegment.certainty === 'uncertain'
+                ? UNCERTAIN_REASON_TEXT[activeSegment.stopCause] || DEFAULT_UNCERTAIN_TEXT
+                : QUEUE_UNCERTAIN_TEXT;
+
         return {
-            firstLineText: last ? formatActivityLine(last, false, 0) : 'No active action expected',
+            firstLineText: formatActivityLine(activeSegment, false, activeSegment.remainingQueuedCount ?? 0),
             limiterColor: 'neutral',
-            limiterText: 'End time unavailable',
+            limiterText,
+            activeSegment,
         };
     }
 
@@ -117,28 +177,31 @@ export function computeSlotDisplayState(record, character, prefs, now = Date.now
                 segment: segments[segments.length - 1],
                 index: segments.length - 1,
             };
-            const queuedCount = segments.length - found.index - 1;
             return {
-                firstLineText: formatActivityLine(found.segment, true, queuedCount),
+                firstLineText: formatActivityLine(found.segment, true, found.segment.remainingQueuedCount ?? 0),
                 limiterColor: 'red',
                 limiterText: `${PAST_LABELS.offline} · ${time}`,
+                activeSegment: found.segment,
             };
         }
         return {
             firstLineText: 'No active action expected',
             limiterColor: 'red',
             limiterText: `${PAST_LABELS[terminalCause]} · ${time}`,
+            activeSegment: null,
         };
     }
 
     const found = findSegmentAtTime(segments, now);
-    const queuedCount = found ? segments.length - found.index - 1 : 0;
     const color = terminalAt - now > ONE_HOUR_MS ? 'green' : 'yellow';
 
     return {
-        firstLineText: found ? formatActivityLine(found.segment, false, queuedCount) : 'No active action expected',
+        firstLineText: found
+            ? formatActivityLine(found.segment, false, found.segment.remainingQueuedCount ?? 0)
+            : 'No active action expected',
         limiterColor: color,
         limiterText: `${FUTURE_LABELS[terminalCause]} · ${time}`,
+        activeSegment: found ? found.segment : null,
     };
 }
 
@@ -149,6 +212,7 @@ class CharacterSelectRenderer {
         this.unregisterReady = null;
         this.refreshTimer = null;
         this.trackedSlots = new Map(); // characterId -> {slotElement, character}
+        this.renderGeneration = 0;
     }
 
     /**
@@ -204,36 +268,59 @@ class CharacterSelectRenderer {
     }
 
     async onCharacterSelectMounted(rootElement) {
+        // Bumped before any await - every in-flight continuation below checks it before touching
+        // the DOM, so a stale render from this mount can never overwrite a newer one.
+        const generation = ++this.renderGeneration;
+
         const resolved = resolveCharacterSelectSlots(rootElement);
         if (!resolved) return;
+        if (generation !== this.renderGeneration) return;
 
         this.trackedSlots.clear();
         for (const { slotElement, character } of resolved) {
             this.trackedSlots.set(character.id, { slotElement, character });
         }
 
-        await this.renderAllTrackedSlots();
+        await this.renderAllTrackedSlots(generation);
         this.startRefreshTimer();
     }
 
-    async renderAllTrackedSlots() {
+    async renderAllTrackedSlots(generation = this.renderGeneration) {
         const prefs = await loadAccountPreferences();
+        if (generation !== this.renderGeneration) return;
+
         if (!prefs.enabled) {
             this.clearAllInjectedBlocks();
             return;
         }
 
-        const spriteUrl = await assetManifest.getSpriteUrl('skills');
+        // Sprite resolution can hit the network (asset-manifest.json) - kick it off without
+        // blocking the text render below. Text must never wait on, or be suppressed by, icons.
+        const spriteUrlsPromise = Promise.all([
+            assetManifest.getSpriteUrl('skills'),
+            assetManifest.getSpriteUrl('misc'),
+        ]).then(([skills, misc]) => ({ skills, misc }));
 
+        const rendered = [];
         for (const { slotElement, character } of this.trackedSlots.values()) {
+            if (generation !== this.renderGeneration) return;
             if (!slotElement.isConnected) continue;
             const record = await loadCharacterActivity(character.id);
+            if (generation !== this.renderGeneration) return;
             const state = computeSlotDisplayState(record, character, prefs);
-            this.renderSlotBlock(slotElement, state, record, spriteUrl);
+            this.renderSlotBlock(slotElement, state, null);
+            rendered.push({ slotElement, state });
+        }
+
+        const spriteUrls = await spriteUrlsPromise;
+        if (generation !== this.renderGeneration) return;
+        for (const { slotElement, state } of rendered) {
+            if (!slotElement.isConnected) continue;
+            this.renderSlotBlock(slotElement, state, spriteUrls);
         }
     }
 
-    renderSlotBlock(slotElement, state, record, spriteUrl) {
+    renderSlotBlock(slotElement, state, spriteUrls) {
         let block = slotElement.querySelector(`.${BLOCK_CLASS}`);
         if (!block) {
             block = document.createElement('div');
@@ -242,10 +329,11 @@ class CharacterSelectRenderer {
             slotElement.appendChild(block);
         }
 
-        const iconHtml =
-            spriteUrl && record?.projection?.segments?.length
-                ? `<svg width="16" height="16" style="vertical-align:middle;margin-right:3px;"><use href="${spriteUrl}#${skillSlugFromSegment(record.projection.segments[0])}"></use></svg>`
-                : '';
+        const family = spriteFamilyForType(state.activeSegment?.actionTypeHrid);
+        const spriteUrl = family && spriteUrls ? spriteUrls[family] : null;
+        const iconHtml = spriteUrl
+            ? `<svg width="16" height="16" style="vertical-align:middle;margin-right:3px;"><use href="${spriteUrl}#${skillSlugFromSegment(state.activeSegment)}"></use></svg>`
+            : '';
 
         block.innerHTML = `
             <div style="display:flex;align-items:center;overflow:hidden;">
@@ -265,8 +353,26 @@ class CharacterSelectRenderer {
                 this.stopRefreshTimer();
                 return;
             }
-            this.renderAllTrackedSlots();
+            this.renderAllTrackedSlots(this.renderGeneration);
         }, REFRESH_INTERVAL_MS);
+    }
+
+    /**
+     * Explicitly invalidate any in-flight render and immediately re-read the account preference
+     * mirror. Used only for rare presentation-setting changes, so their effect (enabled toggle,
+     * date/time format) is visible on an already-mounted Character Select without waiting for the
+     * periodic refresh timer or an unrelated action event.
+     */
+    async refreshNow() {
+        if (!this.isWatching) return;
+
+        const generation = ++this.renderGeneration;
+
+        if (this.trackedSlots.size === 0 || !this.anySlotStillConnected()) {
+            return;
+        }
+
+        await this.renderAllTrackedSlots(generation);
     }
 
     anySlotStillConnected() {
@@ -304,6 +410,7 @@ class CharacterSelectRenderer {
         this.stopRefreshTimer();
         this.clearAllInjectedBlocks();
         this.trackedSlots.clear();
+        this.renderGeneration += 1;
         this.isWatching = false;
     }
 }

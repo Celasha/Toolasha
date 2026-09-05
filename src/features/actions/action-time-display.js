@@ -512,33 +512,41 @@ export class ActionTimeDisplay {
                     limitType: null,
                     limitLabel: '',
                     isEnhancing,
+                    // Calculation failure, not a genuine zero-duration/zero-work result - callers
+                    // must fail closed to uncertain rather than treat this as an ended action.
+                    timingUnavailable: true,
                 };
             }
 
             const { actionTime, totalEfficiency } = timeData;
 
-            if (isInfinite) {
-                const equipment = context.equipment;
-                const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
-                const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
-                const artisanBonus = parseArtisanBonus(context.drinks, itemDetailMap, drinkConcentration);
+            // Native header logic always computes the resource/gold/upgrade limit and, when the
+            // action hasMaxCount, takes min(resourceLimit, maxCount-currentCount) - a finite action
+            // can still end on exhausted materials before reaching its requested count.
+            const equipment = context.equipment;
+            const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
+            const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
+            const artisanBonus = parseArtisanBonus(context.drinks, itemDetailMap, drinkConcentration);
 
-                const limitResult = this.calculateMaterialLimit(
-                    actionDetails,
-                    inventoryLookup,
-                    artisanBonus,
-                    actionObj
-                );
-                if (limitResult) {
-                    materialLimit = limitResult.maxActions;
-                    limitType = limitResult.limitType;
-                }
+            const limitResult = this.calculateMaterialLimit(actionDetails, inventoryLookup, artisanBonus, actionObj);
+            if (limitResult) {
+                materialLimit = limitResult.maxActions;
+                limitType = limitResult.limitType;
             }
 
             isTrulyInfinite = isInfinite && materialLimit === null;
 
             if (!isInfinite) {
-                count = actionObj.maxCount - actionObj.currentCount;
+                const requestedCount = actionObj.maxCount - actionObj.currentCount;
+                if (materialLimit !== null && materialLimit < requestedCount) {
+                    count = materialLimit;
+                } else {
+                    count = requestedCount;
+                    // The requested count itself is the binding constraint here, not the resource
+                    // limit (if any) - clear limitType so callers don't misreport this as a
+                    // materials/gold/upgrade-item cause when the queue count is what actually ends it.
+                    limitType = null;
+                }
             } else if (materialLimit !== null) {
                 count = materialLimit;
             }

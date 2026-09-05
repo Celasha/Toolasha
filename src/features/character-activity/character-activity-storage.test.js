@@ -1,14 +1,15 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ values: new Map() }));
+const mocks = vi.hoisted(() => ({ values: new Map(), setJSONCalls: [] }));
 
 vi.mock('../../core/storage.js', () => ({
     default: {
         getJSON: vi.fn(async (key, _store, defaultValue = null) =>
             mocks.values.has(key) ? mocks.values.get(key) : defaultValue
         ),
-        setJSON: vi.fn(async (key, value) => {
+        setJSON: vi.fn(async (key, value, storeName, immediate = false) => {
             mocks.values.set(key, value);
+            mocks.setJSONCalls.push({ key, value, storeName, immediate });
             return true;
         }),
     },
@@ -24,6 +25,7 @@ const {
 
 beforeEach(() => {
     mocks.values.clear();
+    mocks.setJSONCalls = [];
 });
 
 describe('character activity persistence', () => {
@@ -82,5 +84,19 @@ describe('account-level preferences', () => {
         await saveAccountPreferences({ enabled: false });
 
         expect(await loadAccountPreferences()).toEqual({ enabled: false, dateFormat: 'DD-MM', timeFormat: '12hour' });
+    });
+
+    test('TLA-025 DEV4 fix: the immediate flag forwards to Storage while partial-merge semantics are preserved', async () => {
+        await saveAccountPreferences({ dateFormat: 'DD-MM', timeFormat: '12hour' }, true);
+        await saveAccountPreferences({ enabled: false }, true);
+
+        expect(mocks.setJSONCalls.every((call) => call.immediate === true)).toBe(true);
+        expect(await loadAccountPreferences()).toEqual({ enabled: false, dateFormat: 'DD-MM', timeFormat: '12hour' });
+    });
+
+    test('TLA-025 DEV4 fix: immediate defaults to false when omitted, matching prior debounced behavior', async () => {
+        await saveAccountPreferences({ enabled: false });
+
+        expect(mocks.setJSONCalls[0].immediate).toBe(false);
     });
 });

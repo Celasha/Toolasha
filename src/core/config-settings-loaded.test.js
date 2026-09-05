@@ -78,6 +78,26 @@ describe('Config — onSettingsLoaded (character-switch settings resync)', () =>
         expect(changeSpy).not.toHaveBeenCalled();
     });
 
+    test('CA-50: fires within the synchronous tail of loadSettings(), strictly before anything the caller sequences after awaiting it (e.g. character-scoped feature init)', async () => {
+        settingsStorage.loadSettings.mockResolvedValueOnce({
+            profitCalc_pricingMode: { value: 'optimistic' },
+        });
+        const order = [];
+        // Mirrors character-activity-account-prefs-sync.js registering via onSettingsLoaded to
+        // keep the account preference mirror fresh before Character Activity's character-scoped
+        // feature initializes.
+        config.onSettingsLoaded(() => order.push('account-prefs-mirror-synced'));
+
+        const loadPromise = config.loadSettings({ notifyChanges: false });
+        order.push('load-in-flight');
+        await loadPromise;
+        // Caller code (main.js / feature-registry.js) always sequences feature initialization
+        // strictly after awaiting loadSettings() - simulated here as the next step.
+        order.push('character-scoped-feature-init');
+
+        expect(order).toEqual(['load-in-flight', 'account-prefs-mirror-synced', 'character-scoped-feature-init']);
+    });
+
     test('offSettingsLoaded unregisters the callback', async () => {
         settingsStorage.loadSettings.mockResolvedValueOnce({
             profitCalc_pricingMode: { value: 'optimistic' },

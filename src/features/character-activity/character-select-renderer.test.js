@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     accountPrefs: { enabled: true, dateFormat: 'MM-DD', timeFormat: '24hour' },
     activityRecords: new Map(),
     spriteUrl: 'https://example.com/skills_sprite.svg',
+    miscSpriteUrl: 'https://example.com/misc_sprite.svg',
 }));
 
 vi.mock('../../core/dom-observer.js', () => ({
@@ -44,7 +45,7 @@ vi.mock('../../core/dom-observer.js', () => ({
 }));
 
 vi.mock('../../utils/asset-manifest.js', () => ({
-    default: { getSpriteUrl: vi.fn(async () => mocks.spriteUrl) },
+    default: { getSpriteUrl: vi.fn(async (key) => (key === 'misc' ? mocks.miscSpriteUrl : mocks.spriteUrl)) },
 }));
 
 vi.mock('./character-select-resolver.js', () => ({
@@ -130,6 +131,78 @@ describe('computeSlotDisplayState', () => {
         expect(state.firstLineText).toBe('Aqua Planet');
         expect(state.limiterColor).toBe('neutral');
         expect(state.limiterText).toBe('End time unavailable');
+    });
+
+    test.each([
+        ['combat', 'Variable duration · ETA unavailable'],
+        ['labyrinth', 'Variable duration · ETA unavailable'],
+        ['enhancing', 'Stochastic outcome · ETA unavailable'],
+        ['special', 'Waiting for party · ETA unavailable'],
+    ])('TLA-025: approved locked copy for stopCause=%s includes the ETA-unavailable suffix', (stopCause, expected) => {
+        const rec = record({
+            projection: {
+                segments: [
+                    {
+                        actionName: 'X',
+                        startAt: 1000,
+                        endAt: null,
+                        queuedIndex: 0,
+                        certainty: 'uncertain',
+                        stopCause,
+                    },
+                ],
+                terminalCause: 'unknown',
+                terminalAt: null,
+            },
+        });
+
+        const state = computeSlotDisplayState(rec, character(), PREFS, 2000);
+
+        expect(state.limiterText).toBe(expected);
+    });
+
+    test('TLA-025 item 4/5: a currently-running trustworthy segment stays on line 1 even though the queue later becomes uncertain', () => {
+        const rec = record({
+            projection: {
+                segments: [
+                    {
+                        actionName: 'Crafting',
+                        actionTypeHrid: '/action_types/crafting',
+                        startAt: 0,
+                        endAt: 10_000,
+                        queuedIndex: 0,
+                        certainty: 'trustworthy',
+                        stopCause: 'count',
+                        remainingQueuedCount: 1,
+                    },
+                    {
+                        actionName: 'Explore Labyrinth',
+                        actionTypeHrid: '/action_types/labyrinth',
+                        startAt: 10_000,
+                        endAt: null,
+                        queuedIndex: 1,
+                        certainty: 'uncertain',
+                        stopCause: 'labyrinth',
+                        remainingQueuedCount: 0,
+                    },
+                ],
+                terminalCause: 'unknown',
+                terminalAt: null,
+            },
+        });
+
+        // now = 5000, still inside the Crafting segment - Labyrinth hasn't started yet.
+        const state = computeSlotDisplayState(rec, character(), PREFS, 5000);
+
+        expect(state.firstLineText).toBe('Crafting +1 queued');
+        expect(state.limiterText).toBe('Queue duration uncertain · ETA unavailable');
+        expect(state.activeSegment.actionName).toBe('Crafting');
+
+        // Once time actually reaches the Labyrinth segment, line 1 switches to it.
+        const laterState = computeSlotDisplayState(rec, character(), PREFS, 15_000);
+        expect(laterState.firstLineText).toBe('Explore Labyrinth');
+        expect(laterState.limiterText).toBe('Variable duration · ETA unavailable');
+        expect(laterState.activeSegment.actionName).toBe('Explore Labyrinth');
     });
 
     test('one finite action not yet ended, more than 1h away -> green Action ends', () => {
@@ -272,9 +345,9 @@ describe('computeSlotDisplayState', () => {
             offline: { hourCap: null, mooPassExpireTime: null },
             projection: {
                 segments: [
-                    { actionName: 'First', startAt: 0, endAt: 1000, queuedIndex: 0 },
-                    { actionName: 'Second', startAt: 1000, endAt: 2000, queuedIndex: 1 },
-                    { actionName: 'Third', startAt: 2000, endAt: 3000, queuedIndex: 2 },
+                    { actionName: 'First', startAt: 0, endAt: 1000, queuedIndex: 0, remainingQueuedCount: 2 },
+                    { actionName: 'Second', startAt: 1000, endAt: 2000, queuedIndex: 1, remainingQueuedCount: 1 },
+                    { actionName: 'Third', startAt: 2000, endAt: 3000, queuedIndex: 2, remainingQueuedCount: 0 },
                 ],
                 terminalCause: 'queue',
                 terminalAt: 3000,
@@ -284,6 +357,88 @@ describe('computeSlotDisplayState', () => {
         const state = computeSlotDisplayState(rec, character(), PREFS, 1500); // mid-way through segment 2
 
         expect(state.firstLineText).toBe('Second +1 queued');
+    });
+
+    test('the active segment (not always segment 0) is returned for icon resolution', () => {
+        const rec = record({
+            offline: { hourCap: null, mooPassExpireTime: null },
+            projection: {
+                segments: [
+                    {
+                        actionName: 'First',
+                        actionTypeHrid: '/action_types/woodcutting',
+                        startAt: 0,
+                        endAt: 1000,
+                        queuedIndex: 0,
+                    },
+                    {
+                        actionName: 'Second',
+                        actionTypeHrid: '/action_types/combat',
+                        startAt: 1000,
+                        endAt: 2000,
+                        queuedIndex: 1,
+                    },
+                ],
+                terminalCause: 'queue',
+                terminalAt: 2000,
+            },
+        });
+
+        const state = computeSlotDisplayState(rec, character(), PREFS, 1500);
+
+        expect(state.activeSegment.actionTypeHrid).toBe('/action_types/combat');
+    });
+
+    test('an online character never receives an offline-cap deadline derived from a stale lastOfflineTime', () => {
+        const rec = record({
+            offline: { hourCap: 1, mooPassExpireTime: null },
+            projection: {
+                segments: [
+                    {
+                        actionName: 'Cheese',
+                        startAt: 1000,
+                        endAt: null,
+                        queuedIndex: 0,
+                        certainty: 'trustworthy',
+                        stopCause: 'infinite',
+                    },
+                ],
+                terminalCause: 'infinite',
+                terminalAt: null,
+            },
+        });
+        const char = character({ isOnline: true, lastOfflineTime: 1000 }); // stale offline stretch, but online now
+        const offlineLimitAt = 1000 + 1 * 3600 * 1000;
+
+        const state = computeSlotDisplayState(rec, char, PREFS, offlineLimitAt + 10000);
+
+        expect(state.limiterText).not.toContain('Offline progress stopped');
+    });
+
+    test('an offline character with the same lastOfflineTime does get the offline-cap deadline', () => {
+        const rec = record({
+            offline: { hourCap: 1, mooPassExpireTime: null },
+            projection: {
+                segments: [
+                    {
+                        actionName: 'Cheese',
+                        startAt: 1000,
+                        endAt: null,
+                        queuedIndex: 0,
+                        certainty: 'trustworthy',
+                        stopCause: 'infinite',
+                    },
+                ],
+                terminalCause: 'infinite',
+                terminalAt: null,
+            },
+        });
+        const char = character({ isOnline: false, lastOfflineTime: 1000 });
+        const offlineLimitAt = 1000 + 1 * 3600 * 1000;
+
+        const state = computeSlotDisplayState(rec, char, PREFS, offlineLimitAt + 10000);
+
+        expect(state.limiterText).toContain('Offline progress stopped');
     });
 });
 
@@ -350,6 +505,73 @@ describe('idempotent Character Select injection and lifecycle', () => {
         await mocks.onClassRegistrations[0].callback(root);
 
         expect(slot.querySelector('.toolasha-character-activity-status')).toBeNull();
+    });
+
+    test('TLA-025 DEV4 fix: refreshNow() removes blocks immediately when the mirror flips to disabled, without waiting for the timer/an action event', async () => {
+        const root = buildRoot();
+        const slot = buildSlot(root);
+        mocks.resolvedSlots = [{ slotElement: slot, character: character() }];
+        mocks.activityRecords.set('char-a', record());
+
+        characterSelectRenderer.startWatching();
+        await mocks.onClassRegistrations[0].callback(root);
+        expect(slot.querySelector('.toolasha-character-activity-status')).not.toBeNull();
+
+        mocks.accountPrefs = { enabled: false, dateFormat: 'MM-DD', timeFormat: '24hour' };
+        await characterSelectRenderer.refreshNow();
+
+        expect(slot.querySelector('.toolasha-character-activity-status')).toBeNull();
+    });
+
+    test('TLA-025 DEV4 fix: refreshNow() restores blocks immediately when the mirror flips back to enabled', async () => {
+        const root = buildRoot();
+        const slot = buildSlot(root);
+        mocks.resolvedSlots = [{ slotElement: slot, character: character() }];
+        mocks.activityRecords.set('char-a', record());
+        mocks.accountPrefs = { enabled: false, dateFormat: 'MM-DD', timeFormat: '24hour' };
+
+        characterSelectRenderer.startWatching();
+        await mocks.onClassRegistrations[0].callback(root);
+        expect(slot.querySelector('.toolasha-character-activity-status')).toBeNull();
+
+        mocks.accountPrefs = { enabled: true, dateFormat: 'MM-DD', timeFormat: '24hour' };
+        await characterSelectRenderer.refreshNow();
+
+        expect(slot.querySelector('.toolasha-character-activity-status')).not.toBeNull();
+        expect(slot.textContent).toContain('Character is idle');
+    });
+
+    test('TLA-025 DEV4 fix: refreshNow() re-renders with a newly changed date/time format, and never duplicates the block', async () => {
+        const root = buildRoot();
+        const slot = buildSlot(root);
+        mocks.resolvedSlots = [{ slotElement: slot, character: character() }];
+        mocks.activityRecords.set(
+            'char-a',
+            record({
+                offline: { hourCap: null, mooPassExpireTime: null },
+                projection: {
+                    segments: [{ actionName: 'Redwood Tree', startAt: 1000, endAt: 1000 + 7200_000, queuedIndex: 0 }],
+                    terminalCause: 'action',
+                    terminalAt: 1000 + 7200_000,
+                },
+            })
+        );
+
+        characterSelectRenderer.startWatching();
+        await mocks.onClassRegistrations[0].callback(root);
+        const firstText = slot.querySelector('.toolasha-character-activity-status').textContent;
+
+        mocks.accountPrefs = { enabled: true, dateFormat: 'DD-MM', timeFormat: '12hour' };
+        await characterSelectRenderer.refreshNow();
+
+        expect(slot.querySelectorAll('.toolasha-character-activity-status')).toHaveLength(1);
+        // The limiter line embeds the formatted deadline, which depends on the prefs just changed.
+        expect(slot.querySelector('.toolasha-character-activity-status').textContent).not.toBe(firstText);
+    });
+
+    test('TLA-025 DEV4 fix: refreshNow() is a no-op before startWatching() / after stopWatching()', async () => {
+        characterSelectRenderer.stopWatching();
+        await expect(characterSelectRenderer.refreshNow()).resolves.toBeUndefined();
     });
 
     test('stopWatching removes injected blocks and unregisters the observer', async () => {
@@ -452,5 +674,200 @@ describe('idempotent Character Select injection and lifecycle', () => {
         // Re-notification/remount catch-up remains idempotent.
         await mocks.onReadyRegistrations[0].callback();
         expect(slot.querySelectorAll('.toolasha-character-activity-status')).toHaveLength(1);
+    });
+
+    test('TLA-025 item 6: text renders immediately even when sprite resolution hangs - icons are non-blocking', async () => {
+        const root = buildRoot();
+        const slot = buildSlot(root);
+        mocks.resolvedSlots = [{ slotElement: slot, character: character() }];
+        mocks.activityRecords.set(
+            'char-a',
+            record({ projection: { segments: [], terminalCause: 'idle', terminalAt: 1000 } })
+        );
+
+        const { default: assetManifest } = await import('../../utils/asset-manifest.js');
+        let releaseSprites;
+        const spriteGate = new Promise((resolve) => {
+            releaseSprites = resolve;
+        });
+        assetManifest.getSpriteUrl.mockImplementation(() => spriteGate.then(() => mocks.spriteUrl));
+
+        characterSelectRenderer.startWatching();
+        const mountPromise = mocks.onClassRegistrations[0].callback(root);
+        // Flush the per-slot record load (not sprite-gated) without resolving the sprite gate.
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(slot.textContent).toContain('Character is idle');
+        expect(slot.querySelector('svg')).toBeNull();
+
+        releaseSprites();
+        await mountPromise;
+        expect(slot.textContent).toContain('Character is idle');
+
+        // Restore the default implementation so later tests in this file aren't affected.
+        assetManifest.getSpriteUrl.mockImplementation(async (key) =>
+            key === 'misc' ? mocks.miscSpriteUrl : mocks.spriteUrl
+        );
+    });
+
+    test('CA-46: sprite lookup failure/empty sprite leaves already-rendered status text correct and visible', async () => {
+        const root = buildRoot();
+        const slot = buildSlot(root);
+        mocks.resolvedSlots = [{ slotElement: slot, character: character() }];
+        mocks.activityRecords.set(
+            'char-a',
+            record({ projection: { segments: [], terminalCause: 'idle', terminalAt: 1000 } })
+        );
+
+        const { default: assetManifest } = await import('../../utils/asset-manifest.js');
+        // getSpriteUrl never actually rejects in production (asset-manifest.js swallows fetch
+        // errors internally) - the observable failure mode is an empty/null resolved URL.
+        assetManifest.getSpriteUrl.mockImplementation(async () => null);
+
+        characterSelectRenderer.startWatching();
+        await mocks.onClassRegistrations[0].callback(root);
+
+        expect(slot.textContent).toContain('Character is idle');
+        expect(slot.querySelector('svg')).toBeNull();
+
+        // Restore the default implementation so later tests in this file aren't affected.
+        assetManifest.getSpriteUrl.mockImplementation(async (key) =>
+            key === 'misc' ? mocks.miscSpriteUrl : mocks.spriteUrl
+        );
+    });
+
+    test('TLA-025 item 1: Combat/Labyrinth icons resolve from the misc sprite sheet, not skills', async () => {
+        const root = buildRoot();
+        const slot = buildSlot(root);
+        mocks.resolvedSlots = [{ slotElement: slot, character: character() }];
+        mocks.activityRecords.set(
+            'char-a',
+            record({
+                projection: {
+                    segments: [
+                        {
+                            actionName: 'Aqua Planet',
+                            actionTypeHrid: '/action_types/combat',
+                            startAt: 1000,
+                            endAt: null,
+                            queuedIndex: 0,
+                            certainty: 'uncertain',
+                            stopCause: 'combat',
+                        },
+                    ],
+                    terminalCause: 'unknown',
+                    terminalAt: null,
+                },
+            })
+        );
+
+        characterSelectRenderer.startWatching();
+        await mocks.onClassRegistrations[0].callback(root);
+
+        expect(slot.innerHTML).toContain(`${mocks.miscSpriteUrl}#combat`);
+        expect(slot.innerHTML).not.toContain(`${mocks.spriteUrl}#combat`);
+    });
+
+    test('TLA-025 item 1: an ordinary skilling type still resolves from the skills sprite sheet', async () => {
+        const root = buildRoot();
+        const slot = buildSlot(root);
+        mocks.resolvedSlots = [{ slotElement: slot, character: character() }];
+        mocks.activityRecords.set(
+            'char-a',
+            record({
+                projection: {
+                    segments: [
+                        {
+                            actionName: 'Redwood Tree',
+                            actionTypeHrid: '/action_types/woodcutting',
+                            startAt: 1000,
+                            endAt: null,
+                            queuedIndex: 0,
+                            certainty: 'trustworthy',
+                            stopCause: 'infinite',
+                        },
+                    ],
+                    terminalCause: 'infinite',
+                    terminalAt: null,
+                },
+            })
+        );
+
+        characterSelectRenderer.startWatching();
+        await mocks.onClassRegistrations[0].callback(root);
+
+        expect(slot.innerHTML).toContain(`${mocks.spriteUrl}#woodcutting`);
+    });
+
+    test('TLA-025 item 1: Special (Party Ready) never renders an icon, matching native behavior', async () => {
+        const root = buildRoot();
+        const slot = buildSlot(root);
+        mocks.resolvedSlots = [{ slotElement: slot, character: character() }];
+        mocks.activityRecords.set(
+            'char-a',
+            record({
+                projection: {
+                    segments: [
+                        {
+                            actionName: 'Party Ready',
+                            actionTypeHrid: '/action_types/special',
+                            startAt: 1000,
+                            endAt: null,
+                            queuedIndex: 0,
+                            certainty: 'uncertain',
+                            stopCause: 'special',
+                        },
+                    ],
+                    terminalCause: 'unknown',
+                    terminalAt: null,
+                },
+            })
+        );
+
+        characterSelectRenderer.startWatching();
+        await mocks.onClassRegistrations[0].callback(root);
+
+        expect(slot.innerHTML).not.toContain('<svg');
+        expect(slot.textContent).toContain('Waiting for party');
+    });
+
+    test('TLA-025 item 18: a stale async render from an earlier mount cannot overwrite a newer mount', async () => {
+        const rootA = buildRoot();
+        const slotA = buildSlot(rootA);
+        const rootB = buildRoot();
+        const slotB = buildSlot(rootB);
+
+        let releaseFirstLoad;
+        const firstLoadGate = new Promise((resolve) => {
+            releaseFirstLoad = resolve;
+        });
+
+        mocks.resolvedSlots = [{ slotElement: slotA, character: character({ id: 'char-a', name: 'Alice' }) }];
+        mocks.activityRecords.set('char-a', record());
+
+        const { loadAccountPreferences } = await import('./character-activity-storage.js');
+        // The FIRST mount's preferences load hangs until explicitly released, simulating a slow
+        // async continuation that resolves only after a second, newer mount has already rendered.
+        loadAccountPreferences.mockImplementationOnce(() => firstLoadGate.then(() => mocks.accountPrefs));
+
+        characterSelectRenderer.startWatching();
+        const firstMountPromise = mocks.onClassRegistrations[0].callback(rootA);
+
+        // A second, newer mount arrives and completes fully before the first one's gate opens.
+        mocks.resolvedSlots = [{ slotElement: slotB, character: character({ id: 'char-b', name: 'Bob' }) }];
+        mocks.activityRecords.set('char-b', record());
+        await mocks.onClassRegistrations[0].callback(rootB);
+
+        expect(slotB.querySelector('.toolasha-character-activity-status')).not.toBeNull();
+        expect(slotA.querySelector('.toolasha-character-activity-status')).toBeNull();
+
+        // Now let the first mount's stale continuation resolve - it must be a no-op.
+        releaseFirstLoad();
+        await firstMountPromise;
+        await Promise.resolve();
+
+        expect(slotA.querySelector('.toolasha-character-activity-status')).toBeNull();
+        expect(slotB.querySelector('.toolasha-character-activity-status')).not.toBeNull();
     });
 });

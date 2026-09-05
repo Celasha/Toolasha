@@ -140,6 +140,37 @@ describe('findPopulatedCharacterSlots', () => {
 
         expect(findPopulatedCharacterSlots(root)).toEqual([]);
     });
+
+    test('resolves when the populated slot IS the native <a> anchor itself, not just a wrapper containing one', () => {
+        const root = document.createElement('div');
+        const slot = document.createElement('a');
+        slot.className = 'CharacterSelectPage_slot__abc';
+        slot.setAttribute('href', '/game?characterId=char-a');
+        root.appendChild(slot);
+
+        const result = findPopulatedCharacterSlots(root);
+
+        expect(result).toEqual([{ slotElement: slot, characterId: 'char-a' }]);
+    });
+
+    test('still resolves the wrapper-with-descendant-anchor shape alongside a self-anchor slot', () => {
+        const root = document.createElement('div');
+        const wrapperSlot = buildSlot('char-a');
+        const selfAnchorSlot = document.createElement('a');
+        selfAnchorSlot.className = 'CharacterSelectPage_slot__abc';
+        selfAnchorSlot.setAttribute('href', '/game?characterId=char-b');
+        root.append(wrapperSlot, selfAnchorSlot);
+
+        const result = findPopulatedCharacterSlots(root);
+
+        expect(result).toEqual(
+            expect.arrayContaining([
+                { slotElement: wrapperSlot, characterId: 'char-a' },
+                { slotElement: selfAnchorSlot, characterId: 'char-b' },
+            ])
+        );
+        expect(result).toHaveLength(2);
+    });
 });
 
 describe('resolveCharacterSelectSlots', () => {

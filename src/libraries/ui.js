@@ -49,6 +49,9 @@ import pformancePanel from '../features/dev/pformance-panel.js';
 // feature/character logic in entrypoint.js), kept in the primary bundle rather than the
 // secondary one so it never lands on the tail @require.
 import characterSelectRenderer from '../features/character-activity/character-select-renderer.js';
+// Same reasoning as characterSelectRenderer above - started unconditionally right after it in
+// entrypoint.js/main.js, so it must live in the primary bundle too.
+import { startAccountPreferencesSync } from '../features/character-activity/character-activity-account-prefs-sync.js';
 
 // Export to global namespace
 const toolashaRoot = window.Toolasha || {};
@@ -85,6 +88,7 @@ toolashaRoot.UI = {
     settingsUI,
     pformancePanel,
     characterSelectRenderer,
+    startAccountPreferencesSync,
 };
 
 console.log('[Toolasha] UI library loaded');
