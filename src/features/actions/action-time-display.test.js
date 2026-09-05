@@ -109,6 +109,7 @@ vi.mock('../../utils/enhancement-calculator.js', () => ({
 import { ActionTimeDisplay } from './action-time-display.js';
 import dataManager from '../../core/data-manager.js';
 import config from '../../core/config.js';
+import domObserver from '../../core/dom-observer.js';
 import { calculateActionStats } from '../../utils/action-calculator.js';
 import { resolveActionContext, resolveCurrentActionContext } from '../../utils/action-context.js';
 import { calculateGatheringProfit } from './gathering-profit.js';
@@ -682,6 +683,159 @@ describe('ActionTimeDisplay Current Action Bar DOM ownership (TLA-035)', () => {
 
         expect(newProfitElement.innerHTML).toBe('');
         expect(oldProfitElement.innerHTML).toBe('');
+    });
+});
+
+describe('ActionTimeDisplay Queued Actions edit-menu width stability (TLA-040)', () => {
+    let instance;
+
+    const STYLE_ID = 'toolasha-queue-edit-menu-width-styles';
+    const MARKER_CLASS = 'toolasha-queue-edit-menu-enhanced';
+
+    function getQueueMountCallback() {
+        const call = domObserver.onClass.mock.calls.find(
+            ([featureId, className]) =>
+                featureId === 'ActionTimeDisplay-Queue' && className === 'QueuedActions_queuedActionsEditMenu'
+        );
+        return call?.[2];
+    }
+
+    function makeQueueMenu() {
+        const queueMenu = document.createElement('div');
+        queueMenu.className = 'QueuedActions_queuedActionsEditMenu__abc';
+
+        const actionDiv = document.createElement('div');
+        actionDiv.className = 'QueuedActions_action__xyz';
+
+        const actionTextContainer = document.createElement('div');
+        actionTextContainer.className = 'QueuedActions_actionText__xyz';
+
+        const textDiv = document.createElement('div');
+        textDiv.className = 'QueuedActions_text__xyz';
+        textDiv.textContent = '#1Chop Redwood Tree';
+
+        actionTextContainer.appendChild(textDiv);
+        actionDiv.appendChild(actionTextContainer);
+        queueMenu.appendChild(actionDiv);
+
+        document.body.appendChild(queueMenu);
+        return queueMenu;
+    }
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        document.body.innerHTML = '';
+        document.head.querySelectorAll('style').forEach((el) => el.remove());
+        instance = new ActionTimeDisplay();
+
+        dataManager.getCurrentActions.mockReturnValue([
+            {
+                id: 1,
+                hasMaxCount: true,
+                maxCount: 10,
+                currentCount: 0,
+                actionHrid: '/actions/woodcutting/redwood',
+                ordinal: 1,
+            },
+        ]);
+        dataManager.getActionDetails.mockReturnValue({ type: '/action_types/woodcutting', name: 'Chop Redwood Tree' });
+        calculateActionStats.mockReturnValue({ actionTime: 10, totalEfficiency: 0 });
+        calculateEfficiencyMultiplier.mockReturnValue(1);
+        dataManager.getElapsedSecondsInCurrentUnit.mockReturnValue(0);
+    });
+
+    test('QW-01/QW-02: injected stylesheet gives the marker class one fixed 414px preferred inner width', () => {
+        instance.initializeQueueObserver();
+        const css = document.getElementById(STYLE_ID).textContent;
+
+        expect(css).toContain(`.${MARKER_CLASS} {`);
+        expect(css).toContain('width: min(414px, calc(100vw - 64px));');
+        expect(css).toContain('max-width: min(414px, calc(100vw - 64px));');
+    });
+
+    test('QW-07/QW-08: min-width formula preserves the native 280px floor and only shrinks below it when the viewport cannot fit it', () => {
+        instance.initializeQueueObserver();
+        const css = document.getElementById(STYLE_ID).textContent;
+
+        expect(css).toContain('min-width: min(280px, calc(100vw - 64px));');
+    });
+
+    test('QW-14: uses dvw with a vw fallback rather than a stale one-time JS pixel measurement', () => {
+        instance.initializeQueueObserver();
+        const css = document.getElementById(STYLE_ID).textContent;
+
+        expect(css).toContain('@supports (width: 100dvw)');
+        expect(css).toContain('calc(100dvw - 64px)');
+    });
+
+    test('QW-05: Toolasha timing/profit rows are constrained to wrap inside the marker width instead of driving it', () => {
+        instance.initializeQueueObserver();
+        const css = document.getElementById(STYLE_ID).textContent;
+
+        expect(css).toContain(`.${MARKER_CLASS} .mwi-queue-action-time`);
+        expect(css).toContain(`.${MARKER_CLASS} .mwi-queue-action-profit`);
+        expect(css).toContain('overflow-wrap: anywhere;');
+        expect(css).toContain('white-space: normal;');
+    });
+
+    test('QW-15: no global MUI tooltip/popper selector, and the separate hover-tooltip surface, is touched', () => {
+        instance.initializeQueueObserver();
+        const css = document.getElementById(STYLE_ID).textContent;
+
+        expect(css).not.toContain('MuiTooltip');
+        expect(css).not.toContain('MuiPopper');
+        expect(css).not.toContain('QueuedActions_queuedActionsTooltip');
+    });
+
+    test('QW-01/QW-03/QW-04: the marker is applied to every mounted edit menu regardless of its content, so width never depends on queue order/content', () => {
+        instance.initializeQueueObserver();
+        const onMount = getQueueMountCallback();
+        const queueMenu = makeQueueMenu();
+
+        onMount(queueMenu);
+
+        expect(queueMenu.classList.contains(MARKER_CLASS)).toBe(true);
+    });
+
+    test('QW-06: native timing calculation is unchanged — the injected row still carries the real computed time text', () => {
+        instance.initializeQueueObserver();
+        const onMount = getQueueMountCallback();
+        const queueMenu = makeQueueMenu();
+
+        onMount(queueMenu);
+
+        const timeDiv = queueMenu.querySelector('.mwi-queue-action-time');
+        expect(timeDiv).not.toBeNull();
+        expect(timeDiv.textContent).toMatch(/^\[.+\]/);
+    });
+
+    test('QW-16: re-initializing never appends a duplicate stylesheet', () => {
+        instance.initializeQueueObserver();
+        instance.ensureQueueEditMenuStyles();
+        instance.ensureQueueEditMenuStyles();
+
+        expect(document.head.querySelectorAll(`#${STYLE_ID}`)).toHaveLength(1);
+    });
+
+    test('QW-16: remounting/reordering the same menu never duplicates the marker class', () => {
+        instance.initializeQueueObserver();
+        const onMount = getQueueMountCallback();
+        const queueMenu = makeQueueMenu();
+
+        onMount(queueMenu);
+        onMount(queueMenu);
+
+        const markerOccurrences = queueMenu.className.split(/\s+/).filter((c) => c === MARKER_CLASS);
+        expect(markerOccurrences).toHaveLength(1);
+    });
+
+    test('QW-16: disable() removes the stylesheet, leaving no stale width override behind', () => {
+        instance.initializeQueueObserver();
+        expect(document.getElementById(STYLE_ID)).not.toBeNull();
+
+        instance.disable();
+
+        expect(document.getElementById(STYLE_ID)).toBeNull();
     });
 });
 
