@@ -2,14 +2,13 @@
 
 ## [2.106.1](https://github.com/Celasha/Toolasha/compare/v2.106.0...v2.106.1) (2026-09-05)
 
-
 ### Bug Fixes
 
-* apply Net Worth exclusions consistently (TLA-037) ([089176d](https://github.com/Celasha/Toolasha/commit/089176dd38d6f4158f2187e18c4e98d7becae769))
-* correct Combat Sim horizon, task damage, and buffs (TLA-039) ([d61a265](https://github.com/Celasha/Toolasha/commit/d61a26581da8b20b186e46deda31b24c1418810b))
-* position profile panel from rendered width (TLA-038) ([61ef23f](https://github.com/Celasha/Toolasha/commit/61ef23fd0155ec9b5e55af21a258d88d07cb70f0))
-* restore Character Activity acceptance correctness (TLA-025) ([#692](https://github.com/Celasha/Toolasha/issues/692)) ([2bfe245](https://github.com/Celasha/Toolasha/commit/2bfe2457be1185384c2bc3835dc3ee17959aa5c3))
-* sort Optimizer's Equipment Progression by value instead of fixed slot order ([e3772ac](https://github.com/Celasha/Toolasha/commit/e3772ac1f0d2bc912ae06786f88f6cb0dcaca360))
+- apply Net Worth exclusions consistently (TLA-037) ([089176d](https://github.com/Celasha/Toolasha/commit/089176dd38d6f4158f2187e18c4e98d7becae769))
+- correct Combat Sim horizon, task damage, and buffs (TLA-039) ([d61a265](https://github.com/Celasha/Toolasha/commit/d61a26581da8b20b186e46deda31b24c1418810b))
+- position profile panel from rendered width (TLA-038) ([61ef23f](https://github.com/Celasha/Toolasha/commit/61ef23fd0155ec9b5e55af21a258d88d07cb70f0))
+- restore Character Activity acceptance correctness (TLA-025) ([#692](https://github.com/Celasha/Toolasha/issues/692)) ([2bfe245](https://github.com/Celasha/Toolasha/commit/2bfe2457be1185384c2bc3835dc3ee17959aa5c3))
+- sort Optimizer's Equipment Progression by value instead of fixed slot order ([e3772ac](https://github.com/Celasha/Toolasha/commit/e3772ac1f0d2bc912ae06786f88f6cb0dcaca360))
 
 ## [2.106.0](https://github.com/Celasha/Toolasha/compare/v2.105.1...v2.106.0) (2026-09-05)
 
