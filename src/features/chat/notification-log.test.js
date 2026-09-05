@@ -323,6 +323,150 @@ describe('NotificationLog - manual deletion', () => {
     });
 });
 
+describe('NotificationLog - @mentions (logMention)', () => {
+    beforeEach(async () => {
+        vi.resetModules();
+        Object.keys(storageData).forEach((k) => delete storageData[k]);
+        const config = (await import('../../core/config.js')).default;
+        config.getSetting.mockReturnValue(true);
+        config.getSettingValue.mockReturnValue(100);
+        const dataManager = (await import('../../core/data-manager.js')).default;
+        dataManager.getCurrentCharacterId.mockReturnValue('111111');
+    });
+
+    test('logMention adds a formatted entry distinct from infoNotification entries', async () => {
+        const { NotificationLog } = await import('./notification-log.js');
+        const feature = new NotificationLog();
+        await feature.initialize();
+
+        feature.logMention({
+            channel: '/chat_channel_types/guild',
+            channelName: 'Guild',
+            sName: 'Someone',
+            text: 'hey @You check this out',
+            timestamp: 1000,
+        });
+
+        expect(feature.entries).toHaveLength(1);
+        expect(feature.entries[0]).toMatchObject({
+            type: 'mention',
+            channel: '/chat_channel_types/guild',
+            channelName: 'Guild',
+            sName: 'Someone',
+            text: 'hey @You check this out',
+        });
+        expect(storageData['notificationLog_entries_111111']).toHaveLength(1);
+    });
+
+    test('a mention is rendered with the sender, channel, and message text', async () => {
+        const { NotificationLog } = await import('./notification-log.js');
+        const feature = new NotificationLog();
+        await feature.initialize();
+
+        const container = buildChatDom();
+        feature._ensureTabInjected(container);
+
+        feature.logMention({
+            channel: '/chat_channel_types/guild',
+            channelName: 'Guild',
+            sName: 'Someone',
+            text: 'hey @You check this out',
+            timestamp: 1000,
+        });
+
+        const rowText = feature.listEl.querySelector('.mwi-notiflog-row-text').textContent;
+        expect(rowText).toBe('Mentioned by Someone in Guild: hey @You check this out');
+    });
+
+    test('mentions and info notifications share the same max-entries cap', async () => {
+        const config = (await import('../../core/config.js')).default;
+        config.getSettingValue.mockReturnValue(2);
+
+        const { NotificationLog } = await import('./notification-log.js');
+        const feature = new NotificationLog();
+        await feature.initialize();
+
+        feature.logMention({ channel: 'c', channelName: 'C', sName: 'A', text: 'first', timestamp: 1 });
+        await feature._onInfoMessage({ message: 'infoNotification.partyCreated', variables: [] });
+        feature.logMention({ channel: 'c', channelName: 'C', sName: 'B', text: 'second', timestamp: 2 });
+
+        expect(feature.entries).toHaveLength(2);
+        expect(feature.entries[0].type).toBe('mention');
+        expect(feature.entries[0].sName).toBe('B');
+    });
+
+    test('unchecking the Mentions filter hides mention rows but leaves them in storage', async () => {
+        const { NotificationLog } = await import('./notification-log.js');
+        const feature = new NotificationLog();
+        await feature.initialize();
+
+        const container = buildChatDom();
+        feature._ensureTabInjected(container);
+
+        feature.logMention({ channel: 'c', channelName: 'C', sName: 'A', text: 'hi', timestamp: 1 });
+        await feature._onInfoMessage({ message: 'infoNotification.partyCreated', variables: [] });
+
+        expect(feature.listEl.querySelectorAll('.mwi-notiflog-row')).toHaveLength(2);
+
+        feature.activeFilters.delete('mentions');
+        feature._renderList();
+
+        expect(feature.listEl.querySelectorAll('.mwi-notiflog-row')).toHaveLength(1);
+        expect(feature.entries).toHaveLength(2);
+    });
+
+    test('a "Mentions" filter checkbox is offered in the filter bar', async () => {
+        const { NotificationLog } = await import('./notification-log.js');
+        const feature = new NotificationLog();
+        await feature.initialize();
+
+        const container = buildChatDom();
+        feature._ensureTabInjected(container);
+
+        const label = Array.from(feature.panel.querySelectorAll('.mwi-notiflog-filter')).find((el) =>
+            el.textContent.includes('Mentions')
+        );
+        expect(label).toBeTruthy();
+    });
+
+    test('logMention is a no-op when the Log feature itself is disabled', async () => {
+        const config = (await import('../../core/config.js')).default;
+        config.getSetting.mockReturnValue(false);
+
+        const { NotificationLog } = await import('./notification-log.js');
+        const feature = new NotificationLog();
+        await feature.initialize();
+
+        feature.logMention({ channel: 'c', channelName: 'C', sName: 'A', text: 'hi', timestamp: 1 });
+
+        expect(feature.entries).toHaveLength(0);
+    });
+
+    test("a mention's X button removes only that entry", async () => {
+        vi.stubGlobal(
+            'confirm',
+            vi.fn(() => true)
+        );
+        const { NotificationLog } = await import('./notification-log.js');
+        const feature = new NotificationLog();
+        await feature.initialize();
+
+        const container = buildChatDom();
+        feature._ensureTabInjected(container);
+
+        feature.logMention({ channel: 'c', channelName: 'C', sName: 'A', text: 'hi', timestamp: 1 });
+        await feature._onInfoMessage({ message: 'infoNotification.partyCreated', variables: [] });
+        expect(feature.entries).toHaveLength(2);
+
+        // Display order is oldest-at-top; row 0 is the mention (logged first).
+        const rows = feature.listEl.querySelectorAll('.mwi-notiflog-row');
+        rows[0].querySelector('.mwi-notiflog-delete').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+        expect(feature.entries).toHaveLength(1);
+        expect(feature.entries[0].message).toBe('infoNotification.partyCreated');
+    });
+});
+
 describe('NotificationLog - tab activation', () => {
     beforeEach(async () => {
         vi.resetModules();

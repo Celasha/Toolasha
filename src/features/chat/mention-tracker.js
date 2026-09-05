@@ -8,6 +8,7 @@ import dataManager from '../../core/data-manager.js';
 import webSocketHook from '../../core/websocket.js';
 import domObserver from '../../core/dom-observer.js';
 import mentionPopup from './mention-popup.js';
+import notificationLog from './notification-log.js';
 
 class MentionTracker {
     constructor() {
@@ -75,6 +76,14 @@ class MentionTracker {
             log.push({ sName: message.sName, m: text, t: message.t });
             this.mentionLog.set(channel, log);
             this.updateBadge(channel);
+
+            notificationLog.logMention({
+                channel,
+                channelName: this.getChannelDisplayName(channel),
+                sName: message.sName,
+                text,
+                timestamp: message.t ? new Date(message.t).getTime() : Date.now(),
+            });
         }
     }
 

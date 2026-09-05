@@ -27,6 +27,7 @@ import {
 
 const ENTRIES_KEY_PREFIX = 'notificationLog_entries';
 const FILTERS_KEY_PREFIX = 'notificationLog_filters';
+const MENTION_CATEGORY = 'mentions';
 const TAB_ID = 'mwi-notification-log-tab';
 const PANEL_ID = 'mwi-notification-log-panel';
 const ACTIVE_CLASS = 'mwi-notification-log-active';
@@ -100,11 +101,44 @@ function formatTimestamp(ts) {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
+/**
+ * All filter categories the Log tab offers, including the "mentions" category which is Log-only
+ * (mention-tracker.js's @mention detection, not an infoNotification.* WebSocket message, so it
+ * lives outside notification-formatter.js's CATEGORIES).
+ * @returns {string[]}
+ */
+function getAllLogCategories() {
+    return [...getAllNotificationCategories(), MENTION_CATEGORY];
+}
+
+/**
+ * Resolve the filter category for a log entry - a mention entry is always "mentions",
+ * everything else is an infoNotification.* message resolved through the formatter.
+ * @param {Object} entry
+ * @returns {string}
+ */
+function getEntryCategory(entry) {
+    return entry.type === 'mention' ? MENTION_CATEGORY : getNotificationCategory(entry.message);
+}
+
+/**
+ * Render a log entry's display text - a mention entry has no infoNotification.* template, so it
+ * is formatted directly from the chat message evidence captured at the time it was mentioned.
+ * @param {Object} entry
+ * @returns {string}
+ */
+function formatEntryText(entry) {
+    if (entry.type === 'mention') {
+        return `Mentioned by ${entry.sName} in ${entry.channelName}: ${entry.text}`;
+    }
+    return formatNotificationMessage(entry.message, entry.variables);
+}
+
 class NotificationLog {
     constructor() {
         this.isInitialized = false;
         this.entries = [];
-        this.activeFilters = new Set(getAllNotificationCategories());
+        this.activeFilters = new Set(getAllLogCategories());
         this.wsHandler = null;
         this.unregisterObserver = null;
         this.tabButton = null;
@@ -123,7 +157,7 @@ class NotificationLog {
 
         const filtersKey = getCharacterScopedKey(FILTERS_KEY_PREFIX);
         const savedFilters = await storage.getJSON(filtersKey, 'settings', null);
-        this.activeFilters = new Set(Array.isArray(savedFilters) ? savedFilters : getAllNotificationCategories());
+        this.activeFilters = new Set(Array.isArray(savedFilters) ? savedFilters : getAllLogCategories());
 
         addStyles(CSS, STYLE_ID);
 
@@ -165,11 +199,37 @@ class NotificationLog {
         const message = data?.message;
         if (!message) return;
 
-        this.entries.unshift({
+        this._addEntry({
             timestamp: Date.now(),
             message,
             variables: Array.isArray(data.variables) ? data.variables : [],
         });
+    }
+
+    /**
+     * Log an @mention detected by mention-tracker.js. Kept as its own method (rather than
+     * subscribing to chat_message_received directly) so mention detection stays single-sourced in
+     * mention-tracker.js - this only mirrors what it already found, never re-derives it.
+     * @param {Object} mention
+     * @param {string} mention.channel - Channel HRID
+     * @param {string} mention.channelName - Human-readable channel name
+     * @param {string} mention.sName - Sender's character name
+     * @param {string} mention.text - Full message text
+     * @param {number} mention.timestamp - Epoch ms
+     */
+    logMention({ channel, channelName, sName, text, timestamp }) {
+        if (!this.isInitialized) return;
+
+        this._addEntry({ timestamp, type: 'mention', channel, channelName, sName, text });
+    }
+
+    /**
+     * Add an entry (info notification or mention) to the in-memory log, trim to the configured
+     * cap, render immediately, and persist in the background.
+     * @param {Object} entry
+     */
+    _addEntry(entry) {
+        this.entries.unshift(entry);
 
         const maxEntries = this._getMaxEntries();
         if (this.entries.length > maxEntries) {
@@ -258,7 +318,7 @@ class NotificationLog {
         const filtersEl = document.createElement('div');
         filtersEl.className = 'mwi-notiflog-filters';
 
-        for (const category of getAllNotificationCategories()) {
+        for (const category of getAllLogCategories()) {
             const label = document.createElement('label');
             label.className = 'mwi-notiflog-filter';
 
@@ -375,9 +435,9 @@ class NotificationLog {
         const wasScrolledToBottom = this.listEl.scrollHeight - this.listEl.scrollTop - this.listEl.clientHeight < 4;
         this.listEl.textContent = '';
 
-        // this.entries is stored newest-first (see _onInfoMessage); reverse only for display.
+        // this.entries is stored newest-first (see _addEntry); reverse only for display.
         const visible = this.entries
-            .filter((entry) => this.activeFilters.has(getNotificationCategory(entry.message)))
+            .filter((entry) => this.activeFilters.has(getEntryCategory(entry)))
             .slice()
             .reverse();
 
@@ -399,7 +459,7 @@ class NotificationLog {
 
             const text = document.createElement('span');
             text.className = 'mwi-notiflog-row-text';
-            text.textContent = formatNotificationMessage(entry.message, entry.variables);
+            text.textContent = formatEntryText(entry);
 
             const deleteBtn = document.createElement('button');
             deleteBtn.className = 'mwi-notiflog-delete';
