@@ -4,11 +4,12 @@
     "description": "Toolasha - Enhanced tools for Milky Way Idle",
     "type": "module",
     "scripts": {
-        "build": "BUILD_MODE=production rollup -c && node scripts/check-loadout-state-integrity.js",
+        "build": "BUILD_MODE=production rollup -c && node scripts/check-loadout-state-integrity.js && node scripts/check-tooltip-observer-singleton.js",
         "build:dev": "BUILD_TARGET=dev-standalone rollup -c",
         "build:enhancement": "rollup -c rollup.config.enhancement.js",
         "build:all": "npm run build && npm run build:enhancement",
         "check:loadout-state": "node scripts/check-loadout-state-integrity.js",
+        "check:tooltip-singleton": "node scripts/check-tooltip-observer-singleton.js",
         "watch": "rollup -c -w",
         "dev": "rollup -c -w",
         "test": "vitest run",

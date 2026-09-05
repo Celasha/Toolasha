@@ -26,6 +26,7 @@ const coreExternalGlobals = new Map([
     [normalize(join(__dirname, 'src/core/config.js')), 'Toolasha.Core.config'],
     [normalize(join(__dirname, 'src/core/websocket.js')), 'Toolasha.Core.webSocketHook'],
     [normalize(join(__dirname, 'src/core/dom-observer.js')), 'Toolasha.Core.domObserver'],
+    [normalize(join(__dirname, 'src/core/tooltip-observer.js')), 'Toolasha.Core.tooltipObserver'],
     [normalize(join(__dirname, 'src/core/data-manager.js')), 'Toolasha.Core.dataManager'],
     [normalize(join(__dirname, 'src/core/loadout-state.js')), 'Toolasha.Core.loadoutState'],
     [normalize(join(__dirname, 'src/core/feature-registry.js')), 'Toolasha.Core.featureRegistry'],
