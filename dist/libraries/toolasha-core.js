@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.106.0
+ * Version: 2.106.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -265,10 +265,36 @@
             }
 
             if (immediate) {
-                return this._saveToIndexedDB(key, value, storeName);
+                return this._saveImmediate(key, value, storeName);
             } else {
                 return this._debouncedSave(key, value, storeName);
             }
+        }
+
+        /**
+         * Internal: Save immediately, superseding any pending debounced write for the same key so it
+         * can never later overwrite this value with stale data.
+         * @private
+         */
+        async _saveImmediate(key, value, storeName) {
+            const timerKey = `${storeName}:${key}`;
+
+            if (this.saveDebounceTimers.has(timerKey)) {
+                clearTimeout(this.saveDebounceTimers.get(timerKey));
+                this.saveDebounceTimers.delete(timerKey);
+            }
+            // Claim the slot so a same-tick-scheduled old timer sees `!pending` and no-ops, and bump
+            // the generation as a second guard against any already-in-flight timer callback.
+            const pending = this.pendingWrites.get(timerKey);
+            this.pendingWrites.delete(timerKey);
+            this._writeGeneration.set(timerKey, (this._writeGeneration.get(timerKey) || 0) + 1);
+
+            const success = await this._saveToIndexedDB(key, value, storeName);
+
+            if (pending) {
+                for (const resolve of pending.resolvers) resolve(success);
+            }
+            return success;
         }
 
         /**
@@ -8520,6 +8546,12 @@
                 break;
             }
 
+            // Unique provisional ownership token for this initialize() attempt. A plain sentinel
+            // (e.g. `null`) cannot distinguish "still owned by this attempt" from "reclaimed by a
+            // later attempt after cleanup ran" - only an object identity comparison against this
+            // exact token can. Declared outside the try so the catch block can also identify it.
+            let ownershipToken;
+
             try {
                 const isEnabled = feature.customCheck ? feature.customCheck() : config.isFeatureEnabled(feature.key);
 
@@ -8527,10 +8559,18 @@
                     continue;
                 }
 
-                // Skip if already initialized (idempotency — same-character resync guard)
+                // Skip if already initialized (idempotency — same-character resync guard, and also
+                // what stops a concurrent second init pass from starting the same feature twice).
                 if (featureInstances.has(feature.key)) {
                     continue;
                 }
+
+                // Claim ownership synchronously, before awaiting, so cleanupFeatures() can find and
+                // tear down this feature even if a character switch begins while initialize() is
+                // still in flight - slow persistence inside a feature must never decide whether
+                // cleanup can see it.
+                ownershipToken = Symbol(feature.key);
+                featureInstances.set(feature.key, ownershipToken);
 
                 // Initialize feature; always await the result so async flag is not required for correctness
                 const start = performance.now();
@@ -8538,9 +8578,20 @@
                 const elapsed = performance.now() - start;
                 performanceMonitor.snapshot(`init:${feature.key}`, elapsed);
 
-                // Store the returned instance (may be undefined for module-singleton features)
-                featureInstances.set(feature.key, instance ?? null);
+                // A concurrent cleanupFeatures() may have already reclaimed and deleted this entry
+                // (and possibly torn the feature back down), or a later attempt may have re-claimed
+                // the key, while initialize() was in flight - only replace the entry if it's still
+                // the exact token this attempt claimed; otherwise a stale resolve must not resurrect
+                // or overwrite ownership that has since moved on.
+                if (featureInstances.get(feature.key) === ownershipToken) {
+                    featureInstances.set(feature.key, instance ?? null);
+                }
             } catch (error) {
+                // Release ownership on rejection only if this attempt's token still owns the key -
+                // a concurrent cleanup/reclaim may have already replaced it, in which case leave it alone.
+                if (ownershipToken !== undefined && featureInstances.get(feature.key) === ownershipToken) {
+                    featureInstances.delete(feature.key);
+                }
                 errors.push({
                     feature: feature.name,
                     error: error.message,
@@ -8566,9 +8617,14 @@
         for (const feature of featureRegistry) {
             if (!featureInstances.has(feature.key)) continue;
 
-            const instance = featureInstances.get(feature.key);
+            const rawEntry = featureInstances.get(feature.key);
             featureInstances.delete(feature.key);
             performanceMonitor.clearSnapshot(`init:${feature.key}`);
+
+            // While initialize() is still pending, the stored entry is a provisional ownership
+            // token (a Symbol), never a real feature instance - module cleanup must see "no instance
+            // yet" (null), not leak the internal token as if it were the feature's returned value.
+            const instance = typeof rawEntry === 'symbol' ? null : rawEntry;
 
             try {
                 const featureModule = feature.module || feature;
@@ -8779,12 +8835,19 @@
             const feature = getFeature(failed.key);
             if (!feature) continue;
 
-            // Clear stale instance state so initializeFeatures won't skip it
+            // Clear any stale entry so initializeFeatures won't skip it, then immediately reclaim
+            // ownership with a fresh unique token (see initializeFeatures) so cleanupFeatures() can
+            // still find this feature - and only this retry attempt can resolve its own claim - if a
+            // character switch begins while this retry's initialize() is in flight.
             featureInstances.delete(feature.key);
+            const ownershipToken = Symbol(feature.key);
+            featureInstances.set(feature.key, ownershipToken);
 
             try {
                 const instance = await Promise.resolve(feature.initialize());
-                featureInstances.set(feature.key, instance ?? null);
+                if (featureInstances.get(feature.key) === ownershipToken) {
+                    featureInstances.set(feature.key, instance ?? null);
+                }
 
                 // Verify the retry actually worked by running health check
                 if (feature.healthCheck) {
@@ -8794,6 +8857,9 @@
                     }
                 }
             } catch (error) {
+                if (featureInstances.get(feature.key) === ownershipToken) {
+                    featureInstances.delete(feature.key);
+                }
                 console.error(`[Toolasha] ${feature.name} retry failed:`, error);
             }
         }

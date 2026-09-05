@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.106.0
+ * Version: 2.106.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -21313,13 +21313,17 @@ self.onmessage = function (e) {
             const isAbilityBook = categoryHrid === '/item_categories/ability_book';
             const booksAsInventory = config.getSetting('networth_abilityBooksAsInventory') === true;
 
-            // Check item-level and category-level exclusions
+            // Check item-level, loadout-identity, and category-level exclusions
             if (isExcluded('item', item.itemHrid)) {
                 trackExcluded('item', item.itemHrid, displayName, value);
                 continue;
             }
-            // Coin is never excluded by category — it must be excluded individually
-            if (item.itemHrid !== '/items/coin' && isExcluded('category', categoryHrid)) {
+            const loadoutName = loadoutExcludedHridToName.get(item.itemHrid);
+            if (loadoutName) {
+                trackExcluded('loadout', loadoutName, `Loadout: ${loadoutName}`, value);
+                continue;
+            }
+            if (isExcluded('category', categoryHrid)) {
                 const categoryName = gameData.itemCategoryDetailMap?.[categoryHrid]?.name || 'Other';
                 trackExcluded('category', categoryHrid, `${categoryName} (category)`, value);
                 continue;
