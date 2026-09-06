@@ -2,14 +2,13 @@
 
 ## [2.106.3](https://github.com/Celasha/Toolasha/compare/v2.106.2...v2.106.3) (2026-09-06)
 
-
 ### Bug Fixes
 
-* account for owned intermediates in Crafting Plan missing mats (TLA-042) ([576db92](https://github.com/Celasha/Toolasha/commit/576db92bbcd60760732142171b52598b5c5d0ea8))
-* apply achievement tier buffs in Combat Simulator (TLA-044) ([77bb651](https://github.com/Celasha/Toolasha/commit/77bb6511633c8fe7661c238c027083adbde4b13c))
-* bootstrap Enhancement Tracker during active runs (TLA-043) ([f902dbb](https://github.com/Celasha/Toolasha/commit/f902dbbfe93368f86aed6bf0d537039fe0ff5fef))
-* distinguish queue duration certainty from offline attention continuity (TLA-025A) ([c1a06e6](https://github.com/Celasha/Toolasha/commit/c1a06e62e3a621c3341b1886ef9fca8f81cad668))
-* remove Profile Score hot-path blocking and expose lower-bound provenance (TLA-041C) ([83632ab](https://github.com/Celasha/Toolasha/commit/83632ab92a3eb0dd9bb53409be924ffe3446a9df))
+- account for owned intermediates in Crafting Plan missing mats (TLA-042) ([576db92](https://github.com/Celasha/Toolasha/commit/576db92bbcd60760732142171b52598b5c5d0ea8))
+- apply achievement tier buffs in Combat Simulator (TLA-044) ([77bb651](https://github.com/Celasha/Toolasha/commit/77bb6511633c8fe7661c238c027083adbde4b13c))
+- bootstrap Enhancement Tracker during active runs (TLA-043) ([f902dbb](https://github.com/Celasha/Toolasha/commit/f902dbbfe93368f86aed6bf0d537039fe0ff5fef))
+- distinguish queue duration certainty from offline attention continuity (TLA-025A) ([c1a06e6](https://github.com/Celasha/Toolasha/commit/c1a06e62e3a621c3341b1886ef9fca8f81cad668))
+- remove Profile Score hot-path blocking and expose lower-bound provenance (TLA-041C) ([83632ab](https://github.com/Celasha/Toolasha/commit/83632ab92a3eb0dd9bb53409be924ffe3446a9df))
 
 ## [2.106.2](https://github.com/Celasha/Toolasha/compare/v2.106.1...v2.106.2) (2026-09-05)
 
