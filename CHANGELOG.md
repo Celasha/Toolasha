@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.106.2](https://github.com/Celasha/Toolasha/compare/v2.106.1...v2.106.2) (2026-09-05)
+
+### Bug Fixes
+
+- project Character Activity queue inventory sequentially (TLA-041A) ([4fa5ce9](https://github.com/Celasha/Toolasha/commit/4fa5ce91b483b89459542b4dfa6b94383c751bfc))
+- share TooltipObserver across production bundles (TLA-041B) ([f623241](https://github.com/Celasha/Toolasha/commit/f623241112b3fd6ee0d25f341a95f21d3b96f38f))
+- stabilize queued actions popup width (TLA-040) ([66c70b5](https://github.com/Celasha/Toolasha/commit/66c70b58055441645ba069f944c2fd1c521b0ebc))
+
 ## [2.106.1](https://github.com/Celasha/Toolasha/compare/v2.106.0...v2.106.1) (2026-09-05)
 
 ### Bug Fixes
