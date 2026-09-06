@@ -55,6 +55,23 @@ const UNCERTAIN_REASON_TEXT = {
 const QUEUE_UNCERTAIN_TEXT = 'Queue duration uncertain · ETA unavailable';
 const DEFAULT_UNCERTAIN_TEXT = 'End time unavailable';
 
+// TLA-025A locked copy - see evidence/COPY_MATRIX_LOCKED.md. `runs-infinite` is only used when the
+// currently active segment itself is proven truly infinite; `queue-infinite` is only used when a
+// later queued segment is, reached only through structurally non-blocking steps. Exact intermediate
+// duration is never implied by either variant.
+const INFINITE_COPY = {
+    'runs-infinite': {
+        known: (time) => `Runs ∞ · Offline limit · ${time}`,
+        unavailable: 'Runs ∞ · Offline ETA unavailable',
+        uncertain: 'Runs ∞ · Offline limit uncertain',
+    },
+    'queue-infinite': {
+        known: (time) => `Queue → ∞ · Offline limit · ${time}`,
+        unavailable: 'Queue → ∞ · Offline ETA unavailable',
+        uncertain: 'Queue → ∞ · Offline limit uncertain',
+    },
+};
+
 const COLOR_HEX = {
     green: '#51cf66',
     yellow: '#f0a830',
@@ -128,7 +145,13 @@ export function computeSlotDisplayState(record, character, prefs, now = Date.now
 
     // A currently-online character must never get an offline deadline from a stale lastOfflineTime.
     const effectiveLastOfflineTime = character.isOnline ? null : character.lastOfflineTime;
-    const { segments, terminalCause, terminalAt } = resolveDisplayProjection(record, effectiveLastOfflineTime);
+    const {
+        segments,
+        terminalCause,
+        terminalAt,
+        attentionMode = null,
+        offlineLimitState = null,
+    } = resolveDisplayProjection(record, effectiveLastOfflineTime);
 
     if (terminalCause === 'idle') {
         return {
@@ -149,6 +172,18 @@ export function computeSlotDisplayState(record, character, prefs, now = Date.now
                 limiterColor: 'neutral',
                 limiterText: DEFAULT_UNCERTAIN_TEXT,
                 activeSegment: null,
+            };
+        }
+
+        // TLA-025A: a proven non-blocking path to a later true-infinite tail overrides the generic
+        // uncertain copy for the whole span up to that tail, regardless of which segment (an
+        // earlier trustworthy one, or the inventory-dependent one itself) happens to be active now.
+        if (attentionMode && (offlineLimitState === 'unavailable' || offlineLimitState === 'uncertain')) {
+            return {
+                firstLineText: formatActivityLine(activeSegment, false, activeSegment.remainingQueuedCount ?? 0),
+                limiterColor: 'neutral',
+                limiterText: INFINITE_COPY[attentionMode][offlineLimitState],
+                activeSegment,
             };
         }
 
@@ -200,7 +235,10 @@ export function computeSlotDisplayState(record, character, prefs, now = Date.now
             ? formatActivityLine(found.segment, false, found.segment.remainingQueuedCount ?? 0)
             : 'No active action expected',
         limiterColor: color,
-        limiterText: `${FUTURE_LABELS[terminalCause]} · ${time}`,
+        limiterText:
+            terminalCause === 'offline' && attentionMode && offlineLimitState === 'known'
+                ? INFINITE_COPY[attentionMode].known(time)
+                : `${FUTURE_LABELS[terminalCause]} · ${time}`,
         activeSegment: found ? found.segment : null,
     };
 }

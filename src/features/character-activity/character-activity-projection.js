@@ -20,6 +20,12 @@ const UNCERTAIN_REASON_BY_TYPE = {
 
 const RESOURCE_STOP_CAUSES = new Set(['materials', 'coins', 'upgrade-materials']);
 
+// TLA-025A: exact queue timing and offline-attention continuity are different questions. A queue
+// can lose exact-duration trust (e.g. an unsupported Alchemy inventory dependency) while still
+// staying provably busy up to a later true-infinite segment - see findGuaranteedInfiniteAttentionTail.
+const ATTENTION_MODE_RUNS_INFINITE = 'runs-infinite';
+const ATTENTION_MODE_QUEUE_INFINITE = 'queue-infinite';
+
 // Combat has no dedicated action type of its own - identified by hrid, checked before the map.
 function classifyUncertainty(actionObj, actionDetails) {
     if (actionObj.actionHrid?.includes('/combat/')) return 'combat';
@@ -234,6 +240,33 @@ function resolveExplicitQueuedLoadoutContext(loadoutId, actionTypeHrid) {
 }
 
 /**
+ * Shared front/queued action-context resolution used by both the exact projection loop and the
+ * TLA-025A continuity lookahead, so the two can never drift on characterLoadoutID semantics: front
+ * action -> live resolveCurrentActionContext; queued explicit native characterLoadoutID -> exact
+ * saved snapshot or fail closed; queued action with no explicit loadout -> predictive default
+ * (`context: undefined`, the same signal the underlying resource-limiter math already expects).
+ * @param {Object} actionObj
+ * @param {Object} actionDetails
+ * @param {number} queuedIndex
+ * @returns {{context: Object|undefined, unresolvable: false}|{context: null, unresolvable: true}}
+ */
+function resolveProjectionActionContext(actionObj, actionDetails, queuedIndex) {
+    if (queuedIndex === 0) {
+        return { context: resolveCurrentActionContext(actionDetails.type), unresolvable: false };
+    }
+
+    const nativeLoadout = getNativeQueuedLoadoutIdentity(actionObj);
+    if (nativeLoadout.malformed) {
+        return { context: null, unresolvable: true };
+    }
+    if (nativeLoadout.hasExplicitLoadout) {
+        return resolveExplicitQueuedLoadoutContext(nativeLoadout.loadoutId, actionDetails.type);
+    }
+
+    return { context: undefined, unresolvable: false };
+}
+
+/**
  * Character Activity may publish an ETA only from a structurally valid timing result. Genuine
  * zero-work/zero-resource boundaries are valid; `Infinity` is valid only when the helper
  * explicitly proved a truly-unbounded action. Everything else non-finite, negative, or
@@ -294,6 +327,58 @@ function getDrinkCutoffAt(actionTypeHrid, now, cache) {
     return cutoffAt;
 }
 
+/**
+ * TLA-025A conservative continuity lookahead. Runs only after the exact projection loop has
+ * already stopped on a non-blocking resource/inventory-dependency uncertainty (the action at
+ * `startIndex - 1` is itself known to structurally proceed/auto-advance - it just isn't safe to
+ * publish an exact duration/count for it). Answers only: "is there a later queued segment that can
+ * independently be proven truly infinite, reached through only structurally non-blocking steps?"
+ * Never derives or publishes a duration/count from this scan - a finite/resource-limited
+ * intervening action is treated as auto-advancing and skipped over, not timed.
+ * @param {Array} actions
+ * @param {number} startIndex
+ * @param {Object} inventoryLookup - Last known (possibly stale past this point) balances, used only
+ *   for the same structural trust checks calculateSingleQueueActionTime already performs.
+ * @param {number} now
+ * @param {Map} drinkCutoffCache
+ * @returns {{mode: string}|null}
+ */
+function findGuaranteedInfiniteAttentionTail(actions, startIndex, inventoryLookup, now, drinkCutoffCache) {
+    for (let i = startIndex; i < actions.length; i++) {
+        const actionObj = actions[i];
+        const actionDetails = dataManager.getActionDetails(actionObj.actionHrid);
+        if (!actionDetails) return null;
+
+        if (classifyUncertainty(actionObj, actionDetails)) return null;
+
+        const resolvedContext = resolveProjectionActionContext(actionObj, actionDetails, i);
+        if (resolvedContext.unresolvable) return null;
+
+        // A drink/buff boundary for this action type might land before the eventual offline cap,
+        // which this scan has no way to prove one way or the other - fail closed rather than hide
+        // a possible earlier attention boundary behind a Queue -> infinity claim.
+        const drinkCutoffAt = getDrinkCutoffAt(actionDetails.type, now, drinkCutoffCache);
+        if (drinkCutoffAt != null) return null;
+
+        const timing = actionTimeDisplay.calculateSingleQueueActionTime(
+            actionObj,
+            actionDetails,
+            inventoryLookup,
+            resolvedContext.context
+        );
+        if (!isTrustworthyTimingResult(timing, actionObj)) return null;
+
+        if (timing.isTrulyInfinite) {
+            return { mode: ATTENTION_MODE_QUEUE_INFINITE };
+        }
+
+        // Finite/resource-limited: structurally non-blocking under existing queue semantics (it
+        // auto-advances once done), so keep scanning without treating its stale-inventory duration
+        // as part of any published timeline.
+    }
+    return null;
+}
+
 function buildSegment({
     actionObj,
     actionDetails,
@@ -320,9 +405,12 @@ function buildSegment({
 
 /**
  * Project the queue forward from `now`. Does not consider the offline-progress cap - see
- * `resolveDisplayProjection`, resolved separately against a live `lastOfflineTime`.
+ * `resolveDisplayProjection`, resolved separately against a live `lastOfflineTime`. `attention`
+ * (TLA-025A) is a separate, conservative signal from `terminalCause`/`certainty`: it answers only
+ * whether the character is guaranteed to stay busy up to a later true-infinite segment, even when
+ * the exact intermediate duration is uncertain - see findGuaranteedInfiniteAttentionTail.
  * @param {number} [now]
- * @returns {{segments: Array, terminalCause: string, terminalAt: number|null, certainty: string}}
+ * @returns {{segments: Array, terminalCause: string, terminalAt: number|null, certainty: string, attention: {mode: string}|null}}
  */
 export function computeLiveProjection(now = Date.now()) {
     const actions = dataManager.getCurrentActions();
@@ -341,6 +429,7 @@ export function computeLiveProjection(now = Date.now()) {
     let terminalCause = null;
     let terminalAt = null;
     let certainty = 'trustworthy';
+    let attention = null;
 
     function pushUncertain(actionObj, actionDetails, i, remainingQueuedCount, startAt, stopCause) {
         segments.push(
@@ -393,31 +482,12 @@ export function computeLiveProjection(now = Date.now()) {
         // characterLoadoutID must use exactly that loadout or fail closed if it's unresolvable -
         // never an unrelated Toolasha predictive default. With no explicit loadout, the
         // predictive default is the only justifiable context for that eventual action.
-        let actionContext;
-        if (i === 0) {
-            actionContext = resolveCurrentActionContext(actionDetails.type);
-        } else {
-            const nativeLoadout = getNativeQueuedLoadoutIdentity(actionObj);
-            if (nativeLoadout.malformed) {
-                pushUncertain(actionObj, actionDetails, i, remainingQueuedCount, currentTime, 'loadout-unavailable');
-                break;
-            }
-            if (nativeLoadout.hasExplicitLoadout) {
-                const resolved = resolveExplicitQueuedLoadoutContext(nativeLoadout.loadoutId, actionDetails.type);
-                if (resolved.unresolvable) {
-                    pushUncertain(
-                        actionObj,
-                        actionDetails,
-                        i,
-                        remainingQueuedCount,
-                        currentTime,
-                        'loadout-unavailable'
-                    );
-                    break;
-                }
-                actionContext = resolved.context;
-            }
+        const resolvedContext = resolveProjectionActionContext(actionObj, actionDetails, i);
+        if (resolvedContext.unresolvable) {
+            pushUncertain(actionObj, actionDetails, i, remainingQueuedCount, currentTime, 'loadout-unavailable');
+            break;
         }
+        const actionContext = resolvedContext.context;
         const timing = actionTimeDisplay.calculateSingleQueueActionTime(
             actionObj,
             actionDetails,
@@ -451,6 +521,7 @@ export function computeLiveProjection(now = Date.now()) {
             );
             terminalCause = 'infinite';
             terminalAt = null;
+            attention = { mode: i === 0 ? ATTENTION_MODE_RUNS_INFINITE : ATTENTION_MODE_QUEUE_INFINITE };
             break;
         }
 
@@ -459,6 +530,7 @@ export function computeLiveProjection(now = Date.now()) {
         const footprint = getSegmentInventoryFootprint(actionDetails, actionObj);
         if (intersects(footprint.consumed, unknownBalanceHrids)) {
             pushUncertain(actionObj, actionDetails, i, remainingQueuedCount, currentTime, 'inventory-dependency');
+            attention = findGuaranteedInfiniteAttentionTail(actions, i + 1, inventoryLookup, now, drinkCutoffCache);
             break;
         }
 
@@ -468,6 +540,7 @@ export function computeLiveProjection(now = Date.now()) {
         const limitingHrid = getLimitHrid(timing.limitType);
         if (limitingHrid && possibleExtraHrids.has(limitingHrid)) {
             pushUncertain(actionObj, actionDetails, i, remainingQueuedCount, currentTime, 'inventory-dependency');
+            attention = findGuaranteedInfiniteAttentionTail(actions, i + 1, inventoryLookup, now, drinkCutoffCache);
             break;
         }
 
@@ -520,7 +593,7 @@ export function computeLiveProjection(now = Date.now()) {
         }
     }
 
-    return { segments, terminalCause, terminalAt, certainty };
+    return { segments, terminalCause, terminalAt, certainty, attention };
 }
 
 /**
@@ -530,9 +603,17 @@ export function computeLiveProjection(now = Date.now()) {
  * still finds a trustworthy deterministic prefix (segments before the first uncertain one) even
  * when the whole chain is 'unknown' - an early uncertain segment must not hide an earlier,
  * perfectly knowable offline-cap deadline.
+ *
+ * TLA-025A: `attentionMode`/`offlineLimitState` are additive and answer a different question than
+ * `terminalCause` - whether the character is guaranteed to stay busy up to a proven true-infinite
+ * segment even though the exact queue duration itself stays 'unknown'/fail-closed. They are only
+ * ever populated from `stored.projection.attention`, which `computeLiveProjection` sets solely from
+ * either its own exact `isTrulyInfinite` segment or the conservative continuity lookahead - never
+ * derived here from a weaker terminalCause.
  */
 export function resolveDisplayProjection(stored, freshLastOfflineTime) {
-    const { segments, terminalCause, terminalAt } = stored.projection;
+    const { segments, terminalCause, terminalAt, attention = null } = stored.projection;
+    const attentionMode = attention?.mode || null;
 
     if (terminalCause === 'idle') {
         return { segments, terminalCause, terminalAt };
@@ -545,6 +626,34 @@ export function resolveDisplayProjection(stored, freshLastOfflineTime) {
     const mooPassAmbiguous = hasTrustworthyCap && mooPassExpireTime != null && mooPassExpireTime < offlineLimitAt;
 
     if (terminalCause === 'unknown') {
+        if (attentionMode) {
+            if (!hasTrustworthyCap) {
+                return {
+                    segments,
+                    terminalCause: 'unknown',
+                    terminalAt: null,
+                    attentionMode,
+                    offlineLimitState: 'unavailable',
+                };
+            }
+            if (mooPassAmbiguous) {
+                return {
+                    segments,
+                    terminalCause: 'unknown',
+                    terminalAt: null,
+                    attentionMode,
+                    offlineLimitState: 'uncertain',
+                };
+            }
+            return {
+                segments,
+                terminalCause: 'offline',
+                terminalAt: offlineLimitAt,
+                attentionMode,
+                offlineLimitState: 'known',
+            };
+        }
+
         const trustworthySegments = segments.filter((s) => s.certainty === 'trustworthy');
         if (trustworthySegments.length === 0 || !hasTrustworthyCap || mooPassAmbiguous) {
             return { segments, terminalCause, terminalAt };
@@ -558,12 +667,20 @@ export function resolveDisplayProjection(stored, freshLastOfflineTime) {
 
     if (!hasTrustworthyCap) {
         return terminalCause === 'infinite'
-            ? { segments, terminalCause: 'unknown', terminalAt: null }
+            ? { segments, terminalCause: 'unknown', terminalAt: null, attentionMode, offlineLimitState: 'unavailable' }
             : { segments, terminalCause, terminalAt };
     }
 
     if (mooPassAmbiguous) {
-        if (terminalCause === 'infinite') return { segments, terminalCause: 'unknown', terminalAt: null };
+        if (terminalCause === 'infinite') {
+            return {
+                segments,
+                terminalCause: 'unknown',
+                terminalAt: null,
+                attentionMode,
+                offlineLimitState: 'uncertain',
+            };
+        }
         if (terminalAt != null && terminalAt > mooPassExpireTime) {
             return { segments, terminalCause: 'unknown', terminalAt: null };
         }
@@ -571,7 +688,13 @@ export function resolveDisplayProjection(stored, freshLastOfflineTime) {
     }
 
     if (terminalCause === 'infinite' || terminalAt === null || offlineLimitAt < terminalAt) {
-        return { segments, terminalCause: 'offline', terminalAt: offlineLimitAt };
+        return {
+            segments,
+            terminalCause: 'offline',
+            terminalAt: offlineLimitAt,
+            attentionMode,
+            offlineLimitState: attentionMode ? 'known' : undefined,
+        };
     }
 
     return { segments, terminalCause, terminalAt };

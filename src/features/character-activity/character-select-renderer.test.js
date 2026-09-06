@@ -59,6 +59,7 @@ vi.mock('./character-activity-storage.js', () => ({
 
 const characterSelectRendererModule = await import('./character-select-renderer.js');
 const { default: characterSelectRenderer, computeSlotDisplayState } = characterSelectRendererModule;
+const { formatActivityStatusTime } = await import('../../utils/formatters.js');
 
 const PREFS = { dateFormat: 'MM-DD', timeFormat: '24hour' };
 
@@ -439,6 +440,249 @@ describe('computeSlotDisplayState', () => {
         const state = computeSlotDisplayState(rec, char, PREFS, offlineLimitAt + 10000);
 
         expect(state.limiterText).toContain('Offline progress stopped');
+    });
+
+    describe('TLA-025A: locked infinite-tail attention copy - evidence/COPY_MATRIX_LOCKED.md', () => {
+        test('CA-A01: direct runs-infinite + known offline cap -> exact locked "Runs ∞ · Offline limit · <time>"', () => {
+            const rec = record({
+                offline: { hourCap: 10, mooPassExpireTime: null },
+                projection: {
+                    segments: [
+                        {
+                            actionName: 'Redwood Tree',
+                            startAt: 1000,
+                            endAt: null,
+                            queuedIndex: 0,
+                            certainty: 'trustworthy',
+                            stopCause: 'infinite',
+                        },
+                    ],
+                    terminalCause: 'infinite',
+                    terminalAt: null,
+                    attention: { mode: 'runs-infinite' },
+                },
+            });
+            const char = character({ lastOfflineTime: 1000 });
+            const offlineLimitAt = 1000 + 10 * 3600 * 1000;
+
+            const state = computeSlotDisplayState(rec, char, PREFS, 1000);
+
+            expect(state.firstLineText).toBe('Redwood Tree');
+            expect(state.limiterText).toBe(
+                `Runs ∞ · Offline limit · ${formatActivityStatusTime(offlineLimitAt, PREFS, 1000)}`
+            );
+        });
+
+        test('CA-A03: queue-infinite reached via an inventory-dependency stop + known offline cap -> exact locked "Queue → ∞ · Offline limit · <time>"', () => {
+            const rec = record({
+                offline: { hourCap: 10, mooPassExpireTime: null },
+                projection: {
+                    segments: [
+                        {
+                            actionName: 'Decompose',
+                            startAt: 1000,
+                            endAt: 1500,
+                            queuedIndex: 0,
+                            certainty: 'trustworthy',
+                            stopCause: 'count',
+                            remainingQueuedCount: 1,
+                        },
+                        {
+                            actionName: 'Coinify',
+                            startAt: 1500,
+                            endAt: null,
+                            queuedIndex: 1,
+                            certainty: 'uncertain',
+                            stopCause: 'inventory-dependency',
+                            remainingQueuedCount: 0,
+                        },
+                    ],
+                    terminalCause: 'unknown',
+                    terminalAt: null,
+                    attention: { mode: 'queue-infinite' },
+                },
+            });
+            const char = character({ lastOfflineTime: 1000 });
+            const offlineLimitAt = 1000 + 10 * 3600 * 1000;
+
+            // now = 2000, inside the uncertain Coinify segment (its own endAt is null).
+            const state = computeSlotDisplayState(rec, char, PREFS, 2000);
+
+            expect(state.firstLineText).toBe('Coinify');
+            expect(state.limiterText).toBe(
+                `Queue → ∞ · Offline limit · ${formatActivityStatusTime(offlineLimitAt, PREFS, 2000)}`
+            );
+        });
+
+        test('CA-A04: direct runs-infinite + no trustworthy offline cap -> exact locked "Runs ∞ · Offline ETA unavailable"', () => {
+            const rec = record({
+                offline: { hourCap: null, mooPassExpireTime: null },
+                projection: {
+                    segments: [
+                        {
+                            actionName: 'Redwood Tree',
+                            startAt: 1000,
+                            endAt: null,
+                            queuedIndex: 0,
+                            certainty: 'trustworthy',
+                        },
+                    ],
+                    terminalCause: 'infinite',
+                    terminalAt: null,
+                    attention: { mode: 'runs-infinite' },
+                },
+            });
+
+            const state = computeSlotDisplayState(rec, character(), PREFS, 1000);
+
+            expect(state.firstLineText).toBe('Redwood Tree');
+            expect(state.limiterText).toBe('Runs ∞ · Offline ETA unavailable');
+        });
+
+        test('CA-A05: queue-infinite + no trustworthy offline cap -> exact locked "Queue → ∞ · Offline ETA unavailable"', () => {
+            const rec = record({
+                offline: { hourCap: null, mooPassExpireTime: null },
+                projection: {
+                    segments: [
+                        {
+                            actionName: 'Coinify',
+                            startAt: 1000,
+                            endAt: null,
+                            queuedIndex: 0,
+                            certainty: 'uncertain',
+                            stopCause: 'inventory-dependency',
+                            remainingQueuedCount: 0,
+                        },
+                    ],
+                    terminalCause: 'unknown',
+                    terminalAt: null,
+                    attention: { mode: 'queue-infinite' },
+                },
+            });
+
+            const state = computeSlotDisplayState(rec, character(), PREFS, 1000);
+
+            expect(state.limiterText).toBe('Queue → ∞ · Offline ETA unavailable');
+        });
+
+        test('CA-A06: direct runs-infinite + MooPass/cap ambiguity -> exact locked "Runs ∞ · Offline limit uncertain"', () => {
+            const rec = record({
+                offline: { hourCap: 10, mooPassExpireTime: 6000 }, // expires well before lastOfflineTime + 10h
+                projection: {
+                    segments: [
+                        {
+                            actionName: 'Redwood Tree',
+                            startAt: 1000,
+                            endAt: null,
+                            queuedIndex: 0,
+                            certainty: 'trustworthy',
+                        },
+                    ],
+                    terminalCause: 'infinite',
+                    terminalAt: null,
+                    attention: { mode: 'runs-infinite' },
+                },
+            });
+            const char = character({ lastOfflineTime: 5000 });
+
+            const state = computeSlotDisplayState(rec, char, PREFS, 5000);
+
+            expect(state.limiterText).toBe('Runs ∞ · Offline limit uncertain');
+        });
+
+        test('CA-A07: queue-infinite + MooPass/cap ambiguity -> exact locked "Queue → ∞ · Offline limit uncertain"', () => {
+            const rec = record({
+                offline: { hourCap: 10, mooPassExpireTime: 6000 },
+                projection: {
+                    segments: [
+                        {
+                            actionName: 'Coinify',
+                            startAt: 1000,
+                            endAt: null,
+                            queuedIndex: 0,
+                            certainty: 'uncertain',
+                            stopCause: 'inventory-dependency',
+                            remainingQueuedCount: 0,
+                        },
+                    ],
+                    terminalCause: 'unknown',
+                    terminalAt: null,
+                    attention: { mode: 'queue-infinite' },
+                },
+            });
+            const char = character({ lastOfflineTime: 5000 });
+
+            const state = computeSlotDisplayState(rec, char, PREFS, 5000);
+
+            expect(state.limiterText).toBe('Queue → ∞ · Offline limit uncertain');
+        });
+
+        test('CA-A08: a passed offline cap on a runs-infinite record keeps the plain locked "Offline progress stopped · <time>" - no ∞ prefix', () => {
+            const rec = record({
+                offline: { hourCap: 1, mooPassExpireTime: null },
+                projection: {
+                    segments: [
+                        {
+                            actionName: 'Redwood Tree',
+                            startAt: 1000,
+                            endAt: null,
+                            queuedIndex: 0,
+                            certainty: 'trustworthy',
+                            stopCause: 'infinite',
+                        },
+                    ],
+                    terminalCause: 'infinite',
+                    terminalAt: null,
+                    attention: { mode: 'runs-infinite' },
+                },
+            });
+            const char = character({ lastOfflineTime: 1000 });
+            const offlineLimitAt = 1000 + 1 * 3600 * 1000;
+
+            const state = computeSlotDisplayState(rec, char, PREFS, offlineLimitAt + 10000);
+
+            expect(state.limiterText).toBe(
+                `Offline progress stopped · ${formatActivityStatusTime(offlineLimitAt, PREFS, offlineLimitAt + 10000)}`
+            );
+            expect(state.limiterText).not.toContain('∞');
+        });
+
+        test('CA-A10: resource/inventory uncertainty with no infinite tail keeps the plain locked "Queue duration uncertain · ETA unavailable" - no ∞ claim', () => {
+            const rec = record({
+                offline: { hourCap: 10, mooPassExpireTime: null },
+                projection: {
+                    segments: [
+                        {
+                            actionName: 'Decompose',
+                            startAt: 1000,
+                            endAt: 1500,
+                            queuedIndex: 0,
+                            certainty: 'trustworthy',
+                            stopCause: 'count',
+                            remainingQueuedCount: 1,
+                        },
+                        {
+                            actionName: 'Cheesesmithing',
+                            startAt: 1500,
+                            endAt: null,
+                            queuedIndex: 1,
+                            certainty: 'uncertain',
+                            stopCause: 'inventory-dependency',
+                            remainingQueuedCount: 0,
+                        },
+                    ],
+                    terminalCause: 'unknown',
+                    terminalAt: null,
+                    // No attention field at all - the continuity lookahead found no later true-∞ tail.
+                },
+            });
+            const char = character({ lastOfflineTime: 1000 });
+
+            // now = 1200, still inside the earlier trustworthy Decompose segment.
+            const state = computeSlotDisplayState(rec, char, PREFS, 1200);
+
+            expect(state.limiterText).toBe('Queue duration uncertain · ETA unavailable');
+        });
     });
 });
 

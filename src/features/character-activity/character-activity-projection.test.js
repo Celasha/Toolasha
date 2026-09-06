@@ -992,6 +992,291 @@ describe('computeLiveProjection - sequential deterministic inventory projection 
     });
 });
 
+describe('computeLiveProjection - infinite-tail attention continuity (TLA-025A)', () => {
+    test('CA-A01: the current active segment itself proven truly infinite sets attention runs-infinite', () => {
+        mocks.currentActions = [action({ id: 'a1', hasMaxCount: false })];
+        mocks.actionDetailsByHrid['/actions/woodcutting/redwood'] = actionDetails();
+        mocks.timingByActionId.a1 = timing({
+            isTrulyInfinite: true,
+            totalTime: Infinity,
+            count: 0,
+            baseActionsNeeded: 0,
+        });
+
+        const result = computeLiveProjection(1000);
+
+        expect(result.terminalCause).toBe('infinite');
+        expect(result.attention).toEqual({ mode: 'runs-infinite' });
+    });
+
+    test('CA-A02: an exact finite prefix leading into a later truly infinite segment sets attention queue-infinite, not runs-infinite', () => {
+        mocks.currentActions = [action({ id: 'a1' }), action({ id: 'a2', hasMaxCount: false })];
+        mocks.actionDetailsByHrid['/actions/woodcutting/redwood'] = actionDetails();
+        mocks.timingByActionId.a1 = timing({ totalTime: 100 });
+        mocks.timingByActionId.a2 = timing({
+            isTrulyInfinite: true,
+            totalTime: Infinity,
+            count: 0,
+            baseActionsNeeded: 0,
+        });
+
+        const result = computeLiveProjection(1000);
+
+        expect(result.terminalCause).toBe('infinite');
+        expect(result.attention).toEqual({ mode: 'queue-infinite' });
+    });
+
+    test('CA-A03: reproduced case - Decompose makes coin unknown, Coinify trips inventory-dependency on coin, but Star Fruit true-∞ gathering after it sets attention queue-infinite', () => {
+        mocks.currentActions = [
+            action({ id: 'a1', actionHrid: '/actions/alchemy/decompose', primaryItemHash: '/items/junk::0' }),
+            action({ id: 'a2', actionHrid: '/actions/alchemy/coinify', primaryItemHash: '/items/foraging_essence::0' }),
+            action({ id: 'a3', actionHrid: '/actions/foraging/star_fruit', hasMaxCount: false }),
+        ];
+        mocks.actionDetailsByHrid['/actions/alchemy/decompose'] = actionDetails({ type: '/action_types/alchemy' });
+        mocks.actionDetailsByHrid['/actions/alchemy/coinify'] = actionDetails({ type: '/action_types/alchemy' });
+        mocks.actionDetailsByHrid['/actions/foraging/star_fruit'] = actionDetails({ type: '/action_types/foraging' });
+        mocks.timingByActionId.a1 = timing({ totalTime: 30, limitType: null });
+        mocks.timingByActionId.a2 = timing({ totalTime: 30, limitType: null });
+        mocks.timingByActionId.a3 = timing({
+            isTrulyInfinite: true,
+            totalTime: Infinity,
+            count: 0,
+            baseActionsNeeded: 0,
+        });
+
+        const result = computeLiveProjection(1000);
+
+        // Exact duration stays fail-closed - Coinify's own coin balance is unknown after Decompose.
+        expect(result.terminalCause).toBe('unknown');
+        expect(result.segments).toHaveLength(2);
+        expect(result.segments[1].stopCause).toBe('inventory-dependency');
+        // But the guaranteed non-blocking path to the true-∞ gathering tail is still recorded.
+        expect(result.attention).toEqual({ mode: 'queue-infinite' });
+    });
+
+    test('CA-A10/A18: resource/inventory uncertainty followed only by a finite queue end never sets attention', () => {
+        mocks.currentActions = [
+            action({ id: 'a1', actionHrid: '/actions/foraging/berry' }),
+            action({ id: 'a2', actionHrid: '/actions/cheesesmithing/bar' }),
+        ];
+        mocks.actionDetailsByHrid['/actions/foraging/berry'] = actionDetails({
+            type: '/action_types/foraging',
+            dropTable: [{ itemHrid: '/items/rare_gem' }],
+        });
+        mocks.actionDetailsByHrid['/actions/cheesesmithing/bar'] = actionDetails({
+            inputItems: [{ itemHrid: '/items/rare_gem' }],
+        });
+        mocks.timingByActionId.a1 = timing({ totalTime: 100, limitType: null });
+        mocks.timingByActionId.a2 = timing({ totalTime: 50, limitType: 'material:/items/rare_gem' });
+
+        const result = computeLiveProjection(1000);
+
+        expect(result.terminalCause).toBe('unknown');
+        expect(result.attention).toBeNull();
+    });
+
+    test.each([
+        ['CA-A11 Combat', { actionHrid: '/actions/combat/aqua_planet' }, {}],
+        ['CA-A12 Labyrinth', { actionHrid: '/actions/labyrinth/explore' }, { type: '/action_types/labyrinth' }],
+        ['CA-A13 Enhancing', { actionHrid: '/actions/enhancing/sword' }, { type: '/action_types/enhancing' }],
+        [
+            'CA-A14 Party Ready / Special',
+            { actionHrid: '/actions/special/party_ready' },
+            { type: '/action_types/special' },
+        ],
+    ])(
+        '%s between the uncertain segment and a later true-∞ tail blocks attention',
+        (_label, actionOverrides, detailsOverrides) => {
+            mocks.currentActions = [
+                action({ id: 'a1', actionHrid: '/actions/foraging/berry' }),
+                action({ id: 'a2', actionHrid: '/actions/cheesesmithing/bar' }),
+                action({ id: 'a3', ...actionOverrides }),
+                action({ id: 'a4', actionHrid: '/actions/foraging/star_fruit', hasMaxCount: false }),
+            ];
+            mocks.actionDetailsByHrid['/actions/foraging/berry'] = actionDetails({
+                type: '/action_types/foraging',
+                dropTable: [{ itemHrid: '/items/rare_gem' }],
+            });
+            mocks.actionDetailsByHrid['/actions/cheesesmithing/bar'] = actionDetails({
+                inputItems: [{ itemHrid: '/items/rare_gem' }],
+            });
+            mocks.actionDetailsByHrid[actionOverrides.actionHrid] = actionDetails(detailsOverrides);
+            mocks.actionDetailsByHrid['/actions/foraging/star_fruit'] = actionDetails({
+                type: '/action_types/foraging',
+            });
+            mocks.timingByActionId.a1 = timing({ totalTime: 100, limitType: null });
+            mocks.timingByActionId.a2 = timing({ totalTime: 50, limitType: 'material:/items/rare_gem' });
+            mocks.timingByActionId.a4 = timing({
+                isTrulyInfinite: true,
+                totalTime: Infinity,
+                count: 0,
+                baseActionsNeeded: 0,
+            });
+
+            const result = computeLiveProjection(1000);
+
+            expect(result.attention).toBeNull();
+        }
+    );
+
+    test('CA-A15: an unresolvable explicit loadout between the uncertain segment and a later true-∞ tail blocks attention', () => {
+        mocks.currentActions = [
+            action({ id: 'a1', actionHrid: '/actions/foraging/berry' }),
+            action({ id: 'a2', actionHrid: '/actions/cheesesmithing/bar' }),
+            action({ id: 'a3', characterLoadoutID: 99 }),
+            action({ id: 'a4', actionHrid: '/actions/foraging/star_fruit', hasMaxCount: false }),
+        ];
+        mocks.actionDetailsByHrid['/actions/foraging/berry'] = actionDetails({
+            type: '/action_types/foraging',
+            dropTable: [{ itemHrid: '/items/rare_gem' }],
+        });
+        mocks.actionDetailsByHrid['/actions/cheesesmithing/bar'] = actionDetails({
+            inputItems: [{ itemHrid: '/items/rare_gem' }],
+        });
+        mocks.actionDetailsByHrid['/actions/woodcutting/redwood'] = actionDetails();
+        mocks.actionDetailsByHrid['/actions/foraging/star_fruit'] = actionDetails({ type: '/action_types/foraging' });
+        mocks.timingByActionId.a1 = timing({ totalTime: 100, limitType: null });
+        mocks.timingByActionId.a2 = timing({ totalTime: 50, limitType: 'material:/items/rare_gem' });
+        mocks.timingByActionId.a4 = timing({
+            isTrulyInfinite: true,
+            totalTime: Infinity,
+            count: 0,
+            baseActionsNeeded: 0,
+        });
+        // No entry in usableSnapshotsById for id 99 - deleted/unusable/missing equipment.
+
+        const result = computeLiveProjection(1000);
+
+        expect(result.attention).toBeNull();
+    });
+
+    test('CA-A16: a timing-unavailable action between the uncertain segment and a later true-∞ tail blocks attention', () => {
+        mocks.currentActions = [
+            action({ id: 'a1', actionHrid: '/actions/foraging/berry' }),
+            action({ id: 'a2', actionHrid: '/actions/cheesesmithing/bar' }),
+            action({ id: 'a3' }),
+            action({ id: 'a4', actionHrid: '/actions/foraging/star_fruit', hasMaxCount: false }),
+        ];
+        mocks.actionDetailsByHrid['/actions/foraging/berry'] = actionDetails({
+            type: '/action_types/foraging',
+            dropTable: [{ itemHrid: '/items/rare_gem' }],
+        });
+        mocks.actionDetailsByHrid['/actions/cheesesmithing/bar'] = actionDetails({
+            inputItems: [{ itemHrid: '/items/rare_gem' }],
+        });
+        mocks.actionDetailsByHrid['/actions/woodcutting/redwood'] = actionDetails();
+        mocks.actionDetailsByHrid['/actions/foraging/star_fruit'] = actionDetails({ type: '/action_types/foraging' });
+        mocks.timingByActionId.a1 = timing({ totalTime: 100, limitType: null });
+        mocks.timingByActionId.a2 = timing({ totalTime: 50, limitType: 'material:/items/rare_gem' });
+        // a3 intentionally has no timingByActionId entry - the default mock returns undefined.
+        mocks.timingByActionId.a4 = timing({
+            isTrulyInfinite: true,
+            totalTime: Infinity,
+            count: 0,
+            baseActionsNeeded: 0,
+        });
+
+        const result = computeLiveProjection(1000);
+
+        expect(result.attention).toBeNull();
+    });
+
+    test('CA-A17: missing action details between the uncertain segment and a later true-∞ tail blocks attention', () => {
+        mocks.currentActions = [
+            action({ id: 'a1', actionHrid: '/actions/foraging/berry' }),
+            action({ id: 'a2', actionHrid: '/actions/cheesesmithing/bar' }),
+            action({ id: 'a3', actionHrid: '/actions/unknown/thing' }),
+            action({ id: 'a4', actionHrid: '/actions/foraging/star_fruit', hasMaxCount: false }),
+        ];
+        mocks.actionDetailsByHrid['/actions/foraging/berry'] = actionDetails({
+            type: '/action_types/foraging',
+            dropTable: [{ itemHrid: '/items/rare_gem' }],
+        });
+        mocks.actionDetailsByHrid['/actions/cheesesmithing/bar'] = actionDetails({
+            inputItems: [{ itemHrid: '/items/rare_gem' }],
+        });
+        mocks.actionDetailsByHrid['/actions/foraging/star_fruit'] = actionDetails({ type: '/action_types/foraging' });
+        mocks.timingByActionId.a1 = timing({ totalTime: 100, limitType: null });
+        mocks.timingByActionId.a2 = timing({ totalTime: 50, limitType: 'material:/items/rare_gem' });
+        mocks.timingByActionId.a4 = timing({
+            isTrulyInfinite: true,
+            totalTime: Infinity,
+            count: 0,
+            baseActionsNeeded: 0,
+        });
+
+        const result = computeLiveProjection(1000);
+
+        expect(result.attention).toBeNull();
+    });
+
+    test('CA-A09: an active drink for an intervening action type blocks attention even though a later true-∞ tail exists', () => {
+        mocks.currentActions = [
+            action({ id: 'a1', actionHrid: '/actions/foraging/berry' }),
+            action({ id: 'a2', actionHrid: '/actions/cheesesmithing/bar' }),
+            action({ id: 'a3', actionHrid: '/actions/woodcutting/redwood' }),
+            action({ id: 'a4', actionHrid: '/actions/foraging/star_fruit', hasMaxCount: false }),
+        ];
+        mocks.actionDetailsByHrid['/actions/foraging/berry'] = actionDetails({
+            type: '/action_types/foraging',
+            dropTable: [{ itemHrid: '/items/rare_gem' }],
+        });
+        mocks.actionDetailsByHrid['/actions/cheesesmithing/bar'] = actionDetails({
+            inputItems: [{ itemHrid: '/items/rare_gem' }],
+        });
+        mocks.actionDetailsByHrid['/actions/woodcutting/redwood'] = actionDetails();
+        mocks.actionDetailsByHrid['/actions/foraging/star_fruit'] = actionDetails({ type: '/action_types/foraging' });
+        mocks.timingByActionId.a1 = timing({ totalTime: 100, limitType: null });
+        mocks.timingByActionId.a2 = timing({ totalTime: 50, limitType: 'material:/items/rare_gem' });
+        mocks.timingByActionId.a3 = timing({ totalTime: 999_999, limitType: null });
+        mocks.timingByActionId.a4 = timing({
+            isTrulyInfinite: true,
+            totalTime: Infinity,
+            count: 0,
+            baseActionsNeeded: 0,
+        });
+        // A drink is slotted for a3's type - even though it outlasts everything, this scan cannot
+        // prove the eventual offline deadline falls after its cutoff, so it must fail closed.
+        mocks.drinkRemainingSecondsByType['/action_types/woodcutting'] = [
+            { itemHrid: '/items/gathering_tea', totalSeconds: 999_999 },
+        ];
+
+        const result = computeLiveProjection(1000);
+
+        expect(result.attention).toBeNull();
+    });
+
+    test('a later segment whose own real limiter binds a possibly-extra random-output hrid can still find a guaranteed true-∞ tail beyond it', () => {
+        mocks.currentActions = [
+            action({ id: 'a1', actionHrid: '/actions/foraging/berry' }),
+            action({ id: 'a2', actionHrid: '/actions/cheesesmithing/bar' }),
+            action({ id: 'a3', actionHrid: '/actions/foraging/star_fruit', hasMaxCount: false }),
+        ];
+        mocks.actionDetailsByHrid['/actions/foraging/berry'] = actionDetails({
+            type: '/action_types/foraging',
+            dropTable: [{ itemHrid: '/items/rare_gem' }],
+        });
+        mocks.actionDetailsByHrid['/actions/cheesesmithing/bar'] = actionDetails({
+            inputItems: [{ itemHrid: '/items/rare_gem' }],
+        });
+        mocks.actionDetailsByHrid['/actions/foraging/star_fruit'] = actionDetails({ type: '/action_types/foraging' });
+        mocks.timingByActionId.a1 = timing({ totalTime: 100, limitType: null });
+        mocks.timingByActionId.a2 = timing({ totalTime: 50, limitType: 'material:/items/rare_gem' });
+        mocks.timingByActionId.a3 = timing({
+            isTrulyInfinite: true,
+            totalTime: Infinity,
+            count: 0,
+            baseActionsNeeded: 0,
+        });
+
+        const result = computeLiveProjection(1000);
+
+        expect(result.segments).toHaveLength(2);
+        expect(result.segments[1].stopCause).toBe('inventory-dependency');
+        expect(result.attention).toEqual({ mode: 'queue-infinite' });
+    });
+});
+
 describe('getSegmentInventoryFootprint / getLimitHrid / projectOrdinaryDeterministicInventory (TLA-041A units)', () => {
     test('getLimitHrid maps gold/material/upgrade limiters to their item hrid, else null', () => {
         expect(getLimitHrid('gold')).toBe('/items/coin');
@@ -1448,5 +1733,157 @@ describe('resolveDisplayProjection - offline cap overlay', () => {
 
         expect(result.terminalCause).toBe('action');
         expect(result.terminalAt).toBe(3000);
+    });
+});
+
+describe('resolveDisplayProjection - attention/offline continuity overlay (TLA-025A)', () => {
+    function attentionRecord(mode, overrides = {}) {
+        return {
+            offline: { hourCap: 10, mooPassExpireTime: null },
+            projection: {
+                segments: [
+                    { startAt: 1000, endAt: null, queuedIndex: 0, certainty: 'trustworthy', stopCause: 'infinite' },
+                ],
+                terminalCause: 'infinite',
+                terminalAt: null,
+                attention: { mode },
+                ...overrides.projection,
+            },
+            ...overrides,
+        };
+    }
+
+    test('CA-A01: direct runs-infinite + known trustworthy cap resolves to offline/known', () => {
+        const result = resolveDisplayProjection(attentionRecord('runs-infinite'), 5000);
+
+        expect(result.terminalCause).toBe('offline');
+        expect(result.terminalAt).toBe(5000 + 10 * 3600 * 1000);
+        expect(result.attentionMode).toBe('runs-infinite');
+        expect(result.offlineLimitState).toBe('known');
+    });
+
+    test('CA-A04: direct runs-infinite + no trustworthy cap resolves to unknown/unavailable, never a fake reassurance', () => {
+        const result = resolveDisplayProjection(attentionRecord('runs-infinite'), null);
+
+        expect(result.terminalCause).toBe('unknown');
+        expect(result.terminalAt).toBeNull();
+        expect(result.attentionMode).toBe('runs-infinite');
+        expect(result.offlineLimitState).toBe('unavailable');
+    });
+
+    test('CA-A06: direct runs-infinite + MooPass ambiguity resolves to unknown/uncertain', () => {
+        const record = attentionRecord('runs-infinite', { offline: { hourCap: 10, mooPassExpireTime: 6000 } });
+
+        const result = resolveDisplayProjection(record, 5000);
+
+        expect(result.terminalCause).toBe('unknown');
+        expect(result.terminalAt).toBeNull();
+        expect(result.attentionMode).toBe('runs-infinite');
+        expect(result.offlineLimitState).toBe('uncertain');
+    });
+
+    test('CA-A02/A03: queue-infinite (terminalCause already unknown from an inventory-dependency stop) + known cap resolves to offline/known', () => {
+        const record = attentionRecord('queue-infinite', {
+            projection: {
+                segments: [
+                    { startAt: 1000, endAt: 1500, queuedIndex: 0, certainty: 'trustworthy', stopCause: 'count' },
+                    {
+                        startAt: 1500,
+                        endAt: null,
+                        queuedIndex: 1,
+                        certainty: 'uncertain',
+                        stopCause: 'inventory-dependency',
+                    },
+                ],
+                terminalCause: 'unknown',
+                terminalAt: null,
+                attention: { mode: 'queue-infinite' },
+            },
+        });
+
+        const result = resolveDisplayProjection(record, 5000);
+
+        expect(result.terminalCause).toBe('offline');
+        expect(result.terminalAt).toBe(5000 + 10 * 3600 * 1000);
+        expect(result.attentionMode).toBe('queue-infinite');
+        expect(result.offlineLimitState).toBe('known');
+    });
+
+    test('CA-A05: queue-infinite (terminalCause unknown) + no trustworthy cap resolves to unknown/unavailable', () => {
+        const record = attentionRecord('queue-infinite', {
+            offline: { hourCap: null, mooPassExpireTime: null },
+            projection: {
+                segments: [
+                    {
+                        startAt: 1000,
+                        endAt: null,
+                        queuedIndex: 0,
+                        certainty: 'uncertain',
+                        stopCause: 'inventory-dependency',
+                    },
+                ],
+                terminalCause: 'unknown',
+                terminalAt: null,
+                attention: { mode: 'queue-infinite' },
+            },
+        });
+
+        const result = resolveDisplayProjection(record, 5000);
+
+        expect(result.terminalCause).toBe('unknown');
+        expect(result.attentionMode).toBe('queue-infinite');
+        expect(result.offlineLimitState).toBe('unavailable');
+    });
+
+    test('CA-A07: queue-infinite (terminalCause unknown) + MooPass ambiguity resolves to unknown/uncertain', () => {
+        const record = attentionRecord('queue-infinite', {
+            offline: { hourCap: 10, mooPassExpireTime: 6000 },
+            projection: {
+                segments: [
+                    {
+                        startAt: 1000,
+                        endAt: null,
+                        queuedIndex: 0,
+                        certainty: 'uncertain',
+                        stopCause: 'inventory-dependency',
+                    },
+                ],
+                terminalCause: 'unknown',
+                terminalAt: null,
+                attention: { mode: 'queue-infinite' },
+            },
+        });
+
+        const result = resolveDisplayProjection(record, 5000);
+
+        expect(result.terminalCause).toBe('unknown');
+        expect(result.attentionMode).toBe('queue-infinite');
+        expect(result.offlineLimitState).toBe('uncertain');
+    });
+
+    test('CA-A08: a passed offline cap keeps the ordinary offline terminalCause/terminalAt untouched by attentionMode (no ∞ prefix locked at the renderer)', () => {
+        const result = resolveDisplayProjection(attentionRecord('runs-infinite'), 1000);
+
+        // lastOfflineTime(1000) + 10h cap is far in the future relative to terminalAt: null (infinite),
+        // so this just confirms the same 'offline' shape used by the existing passed-cap path.
+        expect(result.terminalCause).toBe('offline');
+        expect(result.attentionMode).toBe('runs-infinite');
+    });
+
+    test('an ordinary unknown terminalCause with no attention recorded (e.g. Combat) never synthesizes an attentionMode', () => {
+        const stored = {
+            offline: { hourCap: 10, mooPassExpireTime: null },
+            projection: {
+                segments: [{ startAt: 1000, endAt: null, queuedIndex: 0, certainty: 'uncertain', stopCause: 'combat' }],
+                terminalCause: 'unknown',
+                terminalAt: null,
+            },
+        };
+
+        const result = resolveDisplayProjection(stored, 5000);
+
+        expect(result.terminalCause).toBe('unknown');
+        expect(result.attentionMode).toBeUndefined();
+        expect(result.offlineLimitState).toBeUndefined();
     });
 });
