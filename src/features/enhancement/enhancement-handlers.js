@@ -24,6 +24,32 @@ export function setupEnhancementHandlers() {
 
     // Listen for wildcard to catch all messages for debugging
     webSocketHook.on('*', handleDebugMessage);
+
+    // TLA-043 Layer A: handlers are registered above FIRST so a completion can never land in a
+    // gap between subscribing and inspecting current state. Only now do we check DataManager's
+    // already-cached current action for an Enhance queue that was already running before these
+    // handlers existed (enable/reload/re-enable mid-run).
+    bootstrapFromCurrentEnhancingAction();
+}
+
+/**
+ * Layer A of the mid-run bootstrap (TLA-043): if Enhancing is already active per DataManager's
+ * cached current character actions and there is no usable tracker session yet, mark a pending
+ * mid-run start so the next action_completed creates a session regardless of currentCount. Does
+ * not create historical attempts from the cached action.
+ */
+function bootstrapFromCurrentEnhancingAction() {
+    if (!config.getSetting('enhancementTracker')) return;
+    if (!enhancementTracker.isInitialized) return;
+    if (enhancementTracker.getCurrentSession()) return;
+
+    const activeEnhancingAction = dataManager
+        .getCurrentActions()
+        .find((action) => action?.actionHrid === '/actions/enhancing/enhance' && action?.isDone !== true);
+
+    if (activeEnhancingAction) {
+        enhancementTracker.setPendingStart();
+    }
 }
 
 /**
@@ -334,11 +360,26 @@ async function handleEnhancementResult(action, _data) {
             enhancementUI.scheduleUpdate();
         }
 
+        // If no active session, a completed session for the same item/level may be extendable
+        // instead of starting from scratch (Priority 2). This must be checked before falling back
+        // to a from-scratch mid-run bootstrap so an extendable session is never shadowed.
+        const extendableSessionId = !currentSession
+            ? enhancementTracker.findExtendableSession(itemHrid, newLevel)
+            : null;
+
         // On first attempt (rawCount === 1) OR after a clear/new-queue (pendingSessionStart),
-        // start a session if none is active yet.
-        const startedViaPending = enhancementTracker.pendingSessionStart && rawCount !== 1;
+        // start a session if none is active yet. TLA-043 Layer B: a proven enhancement
+        // completion with no active session and no extendable completed session is itself
+        // sufficient evidence Enhancing is already running — it must not depend forever on a
+        // pendingSessionStart that may already have been missed (e.g. handlers installed after
+        // the queue's actions_updated was delivered).
+        const midRunBootstrap =
+            !currentSession && !extendableSessionId && rawCount !== 1 && !enhancementTracker.pendingSessionStart;
+        const startedViaPending = rawCount !== 1 && (enhancementTracker.pendingSessionStart || midRunBootstrap);
         const shouldStartNew =
-            (rawCount === 1 || enhancementTracker.pendingSessionStart) && !justCreatedNewSession && !currentSession;
+            (rawCount === 1 || enhancementTracker.pendingSessionStart || midRunBootstrap) &&
+            !justCreatedNewSession &&
+            !currentSession;
 
         if (shouldStartNew) {
             enhancementTracker.pendingSessionStart = false;
@@ -374,10 +415,9 @@ async function handleEnhancementResult(action, _data) {
             }
         }
 
-        // If no active session, check if we can extend a completed session
+        // If no active session, extend a completed session for the same item instead of dropping
+        // the result.
         if (!currentSession) {
-            // Try to extend a completed session for the same item
-            const extendableSessionId = enhancementTracker.findExtendableSession(itemHrid, newLevel);
             if (extendableSessionId) {
                 const newTarget = action.enhancingMaxLevel || Math.min(newLevel + 5, 20);
                 await enhancementTracker.extendSessionTarget(extendableSessionId, newTarget);
