@@ -5,7 +5,7 @@
 // native modal when the Equipment-hidden panel expanded to 280px. positionPanel() now measures the
 // panel's actual rendered width instead of assuming a constant.
 
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 vi.mock('../../core/config.js', () => ({
     default: {
@@ -42,6 +42,10 @@ vi.mock('../combat-sim/combat-sim-adapter.js', () => ({
 }));
 
 const { default: combatScore } = await import('./combat-score.js');
+const { default: config } = await import('../../core/config.js');
+const { calculateCombatScore } = await import('./score-calculator.js');
+const { default: loadoutState } = await import('../../core/loadout-state.js');
+loadoutState.getAllSnapshots = vi.fn(() => []);
 
 function mockRect({ left = 0, right = 0, top = 0, width = 0 } = {}) {
     return { left, right, top, width, bottom: 0, height: 0, x: left, y: top, toJSON: () => ({}) };
@@ -127,22 +131,54 @@ describe('positionAbilitiesPanel companion audit (TLA-038 PROF-LAYOUT-12)', () =
     });
 });
 
-describe('showScorePanel lifecycle (PROF-LAYOUT-09/10/11)', () => {
-    function makeScoreData({ equipmentHidden = false, hasEquipmentData = true } = {}) {
-        return {
-            equipmentHidden,
-            hasEquipmentData,
-            total: 100,
-            house: 10,
-            ability: 20,
-            equipment: 70,
-            skillerTotal: 5,
-            skillerEquipment: 5,
-            breakdown: { houses: [], abilities: [], equipment: [] },
-            skillerBreakdown: { equipment: [] },
-        };
-    }
+function makeScoreData({ equipmentHidden = false, hasEquipmentData = true, total = 100 } = {}) {
+    return {
+        equipmentHidden,
+        hasEquipmentData,
+        total,
+        complete: true,
+        house: 10,
+        ability: 20,
+        equipment: 70,
+        skillerTotal: 5,
+        skillerComplete: true,
+        skillerEquipment: 5,
+        breakdown: { houses: [], abilities: [], equipment: [] },
+        skillerBreakdown: { equipment: [] },
+    };
+}
 
+function makeFullScoreData(overrides = {}) {
+    return {
+        equipmentHidden: false,
+        hasEquipmentData: true,
+        total: 930,
+        complete: true,
+        house: 100,
+        ability: 50,
+        equipment: 700,
+        shrine: 80,
+        breakdown: {
+            houses: [{ name: 'Dojo 3', value: '100.0' }],
+            abilities: [{ name: 'Fireball 5', value: '50.0' }],
+            equipment: [{ name: 'Sword +10', value: '700.0' }],
+            shrines: [{ name: 'Shrine of Force 1', value: '80.0' }],
+        },
+        skillerTotal: 40,
+        skillerComplete: true,
+        skillerHouse: 20,
+        skillerEquipment: 15,
+        skillerShrine: 5,
+        skillerBreakdown: {
+            houses: [{ name: 'Garden 1', value: '20.0' }],
+            equipment: [{ name: 'Hoe', value: '15.0' }],
+            shrines: [{ name: 'Shrine of Wisdom 1', value: '5.0' }],
+        },
+        ...overrides,
+    };
+}
+
+describe('showScorePanel lifecycle (PROF-LAYOUT-09/10/11)', () => {
     beforeEach(() => {
         document.body.innerHTML = '';
         // jsdom performs no layout, so every element reports a zero-rect unless told otherwise.
@@ -176,7 +212,7 @@ describe('showScorePanel lifecycle (PROF-LAYOUT-09/10/11)', () => {
         expect(createMutationWatcher).toHaveBeenCalled();
     });
 
-    test('PROF-LAYOUT-11: Equipment-hidden text remains present and score math is unchanged by the geometry fix', () => {
+    test('PROF-LAYOUT-11 / LB-08: no "(Equipment hidden)" top-line phrase; expanded Equipment renders N/A + tooltip', () => {
         const modal = document.createElement('div');
         document.body.appendChild(modal);
 
@@ -187,42 +223,16 @@ describe('showScorePanel lifecycle (PROF-LAYOUT-09/10/11)', () => {
         );
 
         const panel = document.getElementById('mwi-combat-score-panel');
-        expect(panel.innerHTML).toContain('(Equipment hidden)');
+        expect(panel.innerHTML).not.toContain('(Equipment hidden)');
         expect(panel.innerHTML).toContain('Combat Score: 100');
+        expect(panel.querySelector('#mwi-equipment-toggle').innerHTML).toContain('N/A');
+        expect(panel.querySelector('#mwi-equipment-toggle').innerHTML).toContain(
+            'Equipment is hidden in this profile, so it is not included in the Score.'
+        );
     });
 });
 
 describe('showScorePanel TLA-041 additions (Shrines / Skiller Houses / partial suffix)', () => {
-    function makeFullScoreData(overrides = {}) {
-        return {
-            equipmentHidden: false,
-            hasEquipmentData: true,
-            total: 930,
-            complete: true,
-            house: 100,
-            ability: 50,
-            equipment: 700,
-            shrine: 80,
-            breakdown: {
-                houses: [{ name: 'Dojo 3', value: '100.0' }],
-                abilities: [{ name: 'Fireball 5', value: '50.0' }],
-                equipment: [{ name: 'Sword +10', value: '700.0' }],
-                shrines: [{ name: 'Shrine of Force 1', value: '80.0' }],
-            },
-            skillerTotal: 40,
-            skillerComplete: true,
-            skillerHouse: 20,
-            skillerEquipment: 15,
-            skillerShrine: 5,
-            skillerBreakdown: {
-                houses: [{ name: 'Garden 1', value: '20.0' }],
-                equipment: [{ name: 'Hoe', value: '15.0' }],
-                shrines: [{ name: 'Shrine of Wisdom 1', value: '5.0' }],
-            },
-            ...overrides,
-        };
-    }
-
     beforeEach(() => {
         document.body.innerHTML = '';
         Element.prototype.getBoundingClientRect = function () {
@@ -311,5 +321,311 @@ describe('showScorePanel TLA-041 additions (Shrines / Skiller Houses / partial s
         const panel = document.getElementById('mwi-combat-score-panel');
         expect(panel.innerHTML).not.toContain('Achievement');
         expect(panel.innerHTML).not.toContain('Grand Total');
+    });
+});
+
+describe('handleProfileOpen - async shell lifecycle (TLA-041C PSP-01/02/16/17)', () => {
+    beforeEach(() => {
+        document.body.innerHTML = '';
+        Element.prototype.getBoundingClientRect = function () {
+            if (this.id === 'mwi-combat-score-panel') return mockRect({ width: 280 });
+            return mockRect({ left: 500, right: 700, top: 30 });
+        };
+        vi.stubGlobal('requestAnimationFrame', (cb) => {
+            cb();
+            return 0;
+        });
+        calculateCombatScore.mockReset();
+        config.getSetting.mockImplementation(() => false);
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
+        config.getSetting.mockImplementation(() => false);
+    });
+
+    test('PSP-01: the Score shell (loading text + action buttons) exists before the Score promise resolves', async () => {
+        calculateCombatScore.mockResolvedValueOnce(makeScoreData());
+        const modal = document.createElement('div');
+        document.body.appendChild(modal);
+        const generation = ++combatScore.profileGeneration;
+
+        const openPromise = combatScore.handleProfileOpen({ profile: {} }, modal, generation);
+
+        // Shell creation happens synchronously, before the function's first await.
+        const panel = document.getElementById('mwi-combat-score-panel');
+        expect(panel).not.toBeNull();
+        expect(panel.innerHTML).toContain('Combat Score: Calculating');
+        expect(panel.innerHTML).toContain('Skiller Score: Calculating');
+        expect(panel.querySelector('#mwi-sim-character-btn')).not.toBeNull();
+        expect(panel.querySelector('#mwi-score-details')).toBeNull(); // nothing to expand yet
+
+        await openPromise;
+        expect(document.getElementById('mwi-combat-score-panel').innerHTML).toContain('Combat Score: 100');
+    });
+
+    test('PSP-02: Abilities & Triggers panel is not gated behind Score resolution', async () => {
+        config.getSetting.mockImplementation((key) => key === 'abilitiesTriggers');
+        const spy = vi.spyOn(combatScore, 'showAbilitiesTriggersPanel').mockImplementation(() => {});
+        calculateCombatScore.mockResolvedValueOnce(makeScoreData());
+        const modal = document.createElement('div');
+        document.body.appendChild(modal);
+        const generation = ++combatScore.profileGeneration;
+
+        const openPromise = combatScore.handleProfileOpen({ profile: {} }, modal, generation);
+        expect(spy).toHaveBeenCalledTimes(1); // called before Score is even requested to resolve
+
+        await openPromise;
+    });
+
+    test("PSP-16: a stale profile A resolving after profile B opened must never overwrite B's panel", async () => {
+        let resolveA;
+        let resolveB;
+        calculateCombatScore.mockImplementationOnce(() => new Promise((r) => (resolveA = r)));
+        calculateCombatScore.mockImplementationOnce(() => new Promise((r) => (resolveB = r)));
+
+        const modalA = document.createElement('div');
+        document.body.appendChild(modalA);
+        const genA = ++combatScore.profileGeneration;
+        const openA = combatScore.handleProfileOpen(
+            { profile: { sharableCharacter: { name: 'Alice' } } },
+            modalA,
+            genA
+        );
+
+        const modalB = document.createElement('div');
+        document.body.appendChild(modalB);
+        const genB = ++combatScore.profileGeneration;
+        const openB = combatScore.handleProfileOpen({ profile: { sharableCharacter: { name: 'Bob' } } }, modalB, genB);
+
+        await vi.waitFor(() => expect(resolveB).toBeTypeOf('function'));
+
+        resolveB(makeScoreData({ total: 42 }));
+        await openB;
+        resolveA(makeScoreData({ total: 999 }));
+        await openA;
+
+        expect(document.querySelectorAll('#mwi-combat-score-panel')).toHaveLength(1);
+        const panel = document.getElementById('mwi-combat-score-panel');
+        expect(panel.innerHTML).toContain('Combat Score: 42');
+        expect(panel.innerHTML).not.toContain('999');
+    });
+
+    test('PSP-17: closing the panel while Score is pending does not resurrect it', async () => {
+        calculateCombatScore.mockResolvedValueOnce(makeScoreData());
+        const modal = document.createElement('div');
+        document.body.appendChild(modal);
+        const generation = ++combatScore.profileGeneration;
+
+        const openPromise = combatScore.handleProfileOpen({ profile: {} }, modal, generation);
+
+        // User closes the panel while Score is still pending.
+        combatScore.currentPanel.remove();
+        combatScore.currentPanel = null;
+
+        await openPromise;
+
+        expect(document.getElementById('mwi-combat-score-panel')).toBeNull();
+    });
+});
+
+describe('findNativeProfileModal - outer modal anchor (TLA-041C rev2 PSP-23)', () => {
+    test('resolves the visible outer SharableProfile modal, not the inner Overview TabPanel', () => {
+        document.body.innerHTML = `
+            <div class="SharableProfile_modalContainer__abc">
+                <div class="SharableProfile_modal__xyz" id="outer-modal">
+                    <div class="SharableProfile_modalContent__def">
+                        <div class="TabPanel_tabPanel__ghi">
+                            <div class="SharableProfile_overviewTab__W4dCV" id="profile-panel"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        const profilePanel = document.getElementById('profile-panel');
+        const resolved = combatScore.findNativeProfileModal(profilePanel);
+        expect(resolved.id).toBe('outer-modal');
+    });
+
+    test('falls back to the generic Modal chain when no outer SharableProfile modal class exists', () => {
+        document.body.innerHTML = `
+            <div class="Modal_modalContent__Iw0Yv" id="fallback-modal">
+                <div class="SharableProfile_overviewTab__W4dCV" id="profile-panel"></div>
+            </div>
+        `;
+        const profilePanel = document.getElementById('profile-panel');
+        const resolved = combatScore.findNativeProfileModal(profilePanel);
+        expect(resolved.id).toBe('fallback-modal');
+    });
+});
+
+describe('positionPanel - rev2 exact runtime geometry fixture (PSP-23/24/25)', () => {
+    test('280px panel anchored to the outer modal rect produces exactly an 8px gap and top-edge alignment', () => {
+        const panel = makePanel(280);
+        combatScore.positionPanel(panel, makeModal({ left: 652.5, right: 1074.5, top: 212.5 }));
+        expect(panel.style.left).toBe('364.5px'); // 652.5 - 280 - 8
+        expect(panel.style.top).toBe('212.5px');
+        expect(parseFloat(panel.style.left) + 280 + 8).toBeCloseTo(652.5);
+    });
+
+    test("never anchors to the inner TabPanel rect (right=655.5 is the old bug's signature)", () => {
+        const panel = makePanel(280);
+        combatScore.positionPanel(panel, makeModal({ left: 652.5, right: 1074.5, top: 212.5 }));
+        const right = parseFloat(panel.style.left) + 280;
+        expect(right).not.toBeCloseTo(655.5);
+        expect(right).toBeCloseTo(644.5);
+    });
+
+    test('PSP-26: a viewport too narrow for either side shrinks only for viewport safety, never overlapping the modal', () => {
+        vi.stubGlobal('innerWidth', 700);
+        const panel = makePanel(280);
+        combatScore.positionPanel(panel, makeModal({ left: 50, right: 650, top: 20 }));
+
+        const width = parseFloat(panel.style.width);
+        expect(width).toBeGreaterThan(0);
+        expect(width).toBeLessThan(280);
+        const left = parseFloat(panel.style.left);
+        // Fully inside the viewport and not overlapping the modal on whichever side was chosen.
+        expect(left).toBeGreaterThanOrEqual(0);
+        expect(left + width <= 50 - 8 + 0.001 || left >= 650 + 8 - 0.001).toBe(true);
+
+        vi.unstubAllGlobals();
+    });
+});
+
+describe('rev2 stable geometry - width invariance across every panel state (PSP-18/21/22)', () => {
+    beforeEach(() => {
+        document.body.innerHTML = '';
+        Element.prototype.getBoundingClientRect = function () {
+            if (this.id === 'mwi-combat-score-panel') return mockRect({ width: 280 });
+            return mockRect({ left: 500, right: 700, top: 30 });
+        };
+    });
+
+    afterEach(() => {
+        config.getSetting.mockImplementation(() => false);
+    });
+
+    test('PSP-18: the loading shell and the final resolved Score share the exact same CSS width', () => {
+        const modal = document.createElement('div');
+        document.body.appendChild(modal);
+
+        const panel = combatScore.showScorePanel({ profile: {} }, null, modal);
+        expect(panel.style.width).toBe('280px');
+
+        combatScore.updateScorePanel(panel, { profile: {} }, makeFullScoreData(), modal);
+        expect(panel.style.width).toBe('280px');
+    });
+
+    test('PSP-21: own-profile loadout buttons becoming visible does not change the panel CSS width', () => {
+        config.getSetting.mockImplementation((key) => key === 'characterCard');
+        loadoutState.getAllSnapshots.mockReturnValue([
+            { name: 'Loadout 1', isUsableForCalculation: true, actionTypeHrid: '/action_types/combat' },
+        ]);
+        const modal = document.createElement('div');
+        document.body.appendChild(modal);
+        const profileData = { profile: { sharableCharacter: { id: '__not_own__', name: 'Me' } } };
+
+        combatScore.showScorePanel(profileData, makeFullScoreData(), modal);
+        const panel = document.getElementById('mwi-combat-score-panel');
+        expect(panel.style.width).toBe('280px');
+
+        const loadoutBtn = panel.querySelector('#mwi-character-card-loadout-btn');
+        expect(loadoutBtn.style.display).toBe(''); // revealed for own character
+        expect(panel.style.width).toBe('280px'); // unchanged after reveal
+
+        loadoutState.getAllSnapshots.mockReturnValue([]);
+    });
+
+    test('PSP-22: a 16-character (incl. wide-character) name does not change panel width', () => {
+        const modal = document.createElement('div');
+        document.body.appendChild(modal);
+        const profileData = { profile: { sharableCharacter: { name: '⒲ⒾⒹⒺⒸⒽⒶⒹⒺⒹⓝⓐⓝⓝⓒⓘ' } } };
+
+        const panel = combatScore.showScorePanel(profileData, makeFullScoreData(), modal);
+        expect(panel.style.width).toBe('280px');
+    });
+
+    test('equipment-hidden state does not change panel width', () => {
+        const modal = document.createElement('div');
+        document.body.appendChild(modal);
+
+        const panel = combatScore.showScorePanel(
+            { profile: {} },
+            makeFullScoreData({ equipmentHidden: true, hasEquipmentData: false }),
+            modal
+        );
+        expect(panel.style.width).toBe('280px');
+    });
+
+    test('collapsed vs expanded top-level rows does not change panel width (expansion is display:none toggling only)', () => {
+        const modal = document.createElement('div');
+        document.body.appendChild(modal);
+        combatScore.showScorePanel({ profile: {} }, makeFullScoreData(), modal);
+        const panel = document.getElementById('mwi-combat-score-panel');
+
+        panel.querySelector('#mwi-score-toggle').click();
+        expect(panel.style.width).toBe('280px');
+    });
+});
+
+describe('lower-bound leaf rendering (TLA-041C LB-01/02/03/08)', () => {
+    beforeEach(() => {
+        document.body.innerHTML = '';
+        Element.prototype.getBoundingClientRect = function () {
+            if (this.id === 'mwi-combat-score-panel') return mockRect({ width: 280 });
+            return mockRect({ left: 500, right: 700, top: 30 });
+        };
+    });
+
+    test('LB-02/03: an N/A leaf and a positive-partial "+" leaf both render distinctly in the breakdown', () => {
+        const modal = document.createElement('div');
+        document.body.appendChild(modal);
+        const scoreData = makeFullScoreData({
+            breakdown: {
+                houses: [{ name: 'Dojo 3', value: '100.0', complete: true, reason: null }],
+                abilities: [{ name: 'Fireball 5', value: '50.0', complete: true, reason: null }],
+                equipment: [
+                    { name: 'Item A', value: '410.0', complete: true, reason: null },
+                    {
+                        name: 'Item B',
+                        value: null,
+                        complete: false,
+                        reason: 'No complete acquisition route could be priced',
+                    },
+                    { name: 'Item C', value: '300.0', complete: false, reason: null },
+                ],
+                shrines: [{ name: 'Shrine of Force 1', value: '80.0', complete: true, reason: null }],
+            },
+        });
+
+        combatScore.showScorePanel({ profile: {} }, scoreData, modal);
+        const panel = document.getElementById('mwi-combat-score-panel');
+
+        expect(panel.innerHTML).toContain('Item A: 410.0');
+        expect(panel.innerHTML).toContain('Item B: N/A');
+        expect(panel.innerHTML).toContain('No complete acquisition route could be priced');
+        expect(panel.innerHTML).toContain('Item C: 300.0+');
+    });
+
+    test('LB-08: hidden equipment with no payload renders "Equipment: N/A" with an info tooltip, never a numeric 0', () => {
+        const modal = document.createElement('div');
+        document.body.appendChild(modal);
+        combatScore.showScorePanel(
+            { profile: {} },
+            makeFullScoreData({ equipmentHidden: true, hasEquipmentData: false, equipment: 0, skillerEquipment: 0 }),
+            modal
+        );
+
+        const panel = document.getElementById('mwi-combat-score-panel');
+        const equipmentToggle = panel.querySelector('#mwi-equipment-toggle');
+        const skillerEquipmentToggle = panel.querySelector('#mwi-skiller-equipment-toggle');
+
+        expect(equipmentToggle.innerHTML).toContain('N/A');
+        expect(equipmentToggle.innerHTML).not.toContain('0.0');
+        expect(equipmentToggle.innerHTML).toContain('Equipment is hidden in this profile');
+        expect(skillerEquipmentToggle.innerHTML).toContain('N/A');
+        expect(skillerEquipmentToggle.innerHTML).not.toContain('0.0');
     });
 });

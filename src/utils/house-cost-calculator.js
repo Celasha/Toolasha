@@ -194,7 +194,7 @@ export function calculateHousesCostByDomain(characterHouseRooms, domain) {
         complete = complete && roomComplete;
 
         const houseName = houseRoomDetailMap[houseRoomHrid]?.name || houseRoomHrid.replace('/house_rooms/', '');
-        breakdown.push({ name: houseName, level, cost });
+        breakdown.push({ name: houseName, level, cost, complete: roomComplete });
     }
 
     breakdown.sort((a, b) => b.cost - a.cost);

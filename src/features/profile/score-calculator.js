@@ -22,9 +22,10 @@ import { mergeCategory } from './score/score-result.js';
 /**
  * Calculate combat/skiller score from profile data.
  * @param {Object} profileData - Profile data from game
- * @returns {Promise<Object>} {total, complete, house, ability, equipment, shrine, breakdown,
- *   skillerTotal, skillerComplete, skillerHouse, skillerEquipment, skillerShrine, skillerBreakdown,
- *   equipmentHidden, hasEquipmentData}
+ * @returns {Promise<Object>} {total, complete, house, houseComplete, ability, abilityComplete,
+ *   equipment, equipmentComplete, shrine, shrineComplete, breakdown, skillerTotal, skillerComplete,
+ *   skillerHouse, skillerHouseComplete, skillerEquipment, skillerEquipmentComplete, skillerShrine,
+ *   skillerShrineComplete, skillerBreakdown, equipmentHidden, hasEquipmentData}
  */
 export async function calculateCombatScore(profileData) {
     try {
@@ -33,7 +34,7 @@ export async function calculateCombatScore(profileData) {
         const houses = calculateHouseScore(profileData);
         const abilities = calculateAbilityScore(profileData);
         const shrines = calculateShrineScore(profileData);
-        const equipment = calculateEquipmentScore(profileData, enhancingParams);
+        const equipment = await calculateEquipmentScore(profileData, enhancingParams);
 
         const combat = mergeCategory([houses.combat, abilities, equipment.combat, shrines.combat]);
         const skiller = mergeCategory([houses.skiller, equipment.skiller, shrines.skiller]);
@@ -43,9 +44,13 @@ export async function calculateCombatScore(profileData) {
             total: combat.score,
             complete: combat.complete,
             house: houses.combat.score,
+            houseComplete: houses.combat.complete,
             ability: abilities.score,
+            abilityComplete: abilities.complete,
             equipment: equipment.combat.score,
+            equipmentComplete: equipment.combat.complete,
             shrine: shrines.combat.score,
+            shrineComplete: shrines.combat.complete,
             equipmentHidden: profileData.profile?.hideWearableItems || false,
             hasEquipmentData: equipment.hasEquipmentData,
             breakdown: {
@@ -58,8 +63,11 @@ export async function calculateCombatScore(profileData) {
             skillerTotal: skiller.score,
             skillerComplete: skiller.complete,
             skillerHouse: houses.skiller.score,
+            skillerHouseComplete: houses.skiller.complete,
             skillerEquipment: equipment.skiller.score,
+            skillerEquipmentComplete: equipment.skiller.complete,
             skillerShrine: shrines.skiller.score,
+            skillerShrineComplete: shrines.skiller.complete,
             skillerBreakdown: {
                 houses: houses.skiller.breakdown,
                 equipment: equipment.skiller.breakdown,
@@ -72,17 +80,24 @@ export async function calculateCombatScore(profileData) {
             total: 0,
             complete: false,
             house: 0,
+            houseComplete: false,
             ability: 0,
+            abilityComplete: false,
             equipment: 0,
+            equipmentComplete: false,
             shrine: 0,
+            shrineComplete: false,
             equipmentHidden: false,
             hasEquipmentData: false,
             breakdown: { houses: [], abilities: [], equipment: [], shrines: [] },
             skillerTotal: 0,
             skillerComplete: false,
             skillerHouse: 0,
+            skillerHouseComplete: false,
             skillerEquipment: 0,
+            skillerEquipmentComplete: false,
             skillerShrine: 0,
+            skillerShrineComplete: false,
             skillerBreakdown: { houses: [], equipment: [], shrines: [] },
         };
     }

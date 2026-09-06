@@ -1,17 +1,22 @@
 /**
- * Equipment Replacement Resolver (TLA-041)
+ * Equipment Replacement Resolver (TLA-041 / TLA-041C)
  *
  * For a viewed `Item +N`, computes the cheapest COMPLETE reproduction candidate using the
  * viewer's own current/manual Enhancing setup:
  *   (a) exact positive Ask for Item +N;
- *   (b) base-item acquisition + viewer-relative 0->N reconstruction (Mirror-aware where the
- *       shared enhancement-tooltip machinery applies; token items use a direct, non-mirror
- *       0->N path on top of their real token-opportunity base value instead - see below);
+ *   (b) base-item acquisition + viewer-relative 0->N reconstruction (Mirror-aware for ordinary
+ *       tradeable items; token items use a direct, non-mirror 0->N path on top of their real
+ *       token-opportunity base value instead - see below);
  *   (c) for every actual live lower-enhancement Ask +K (0 < K < N): Ask(+K) + direct
  *       viewer-relative K->N enhancement (never a 0-based subtraction shortcut).
  * The minimum among candidates that price COMPLETELY wins. Zero complete candidates -> the item
  * is `{cost: null, complete: false}`; missing some candidates is not global failure as long as at
  * least one full candidate prices.
+ *
+ * (b) and (c) share one cached, off-main-thread enhancement expectation table per
+ * itemLevel/viewer-params combination (`score-enhancement-worker.js`) instead of each performing
+ * its own synchronous Markov matrix inversion (TLA-041C) - see `score-enhancement-pricing.js` for
+ * the pure arithmetic that turns that table into leg costs.
  */
 
 import dataManager from '../../../core/data-manager.js';
@@ -19,9 +24,11 @@ import { getItemPrice } from '../../../utils/market-data.js';
 import { getShopCoinCost } from '../../../utils/game-lookups.js';
 import {
     getProductionCost,
-    calculateEnhancementPath,
-    calculateDirectEnhancementCost,
+    calculatePerAttemptMaterialCost,
+    getCheapestProtectionPrice,
 } from '../../enhancement/tooltip-enhancement.js';
+import { getScoreEnhancementExpectationTable } from './score-enhancement-worker.js';
+import { priceLegFromTable, buildTargetCostLadder, applyMirrorOptimization } from './score-enhancement-pricing.js';
 
 /**
  * Untradeable dungeon-shop back-slot items. Each item's own token PURCHASE COST is read
@@ -114,72 +121,104 @@ function resolveBaseItemCost(itemHrid) {
 }
 
 /**
- * Candidate (b): base acquisition + viewer-relative 0->N reconstruction.
- *
- * For ordinary tradeable items, prefers the shared Mirror-aware `calculateEnhancementPath` (its
- * own base-price heuristic is existing, shared, Net-Worth-tested logic - left untouched) but also
- * compares against our own min-based base cost + a direct (non-mirror) 0->N path, taking whichever
- * is cheaper.
- *
- * For token items, `calculateEnhancementPath`'s internal base pricing has no concept of token
- * opportunity value and would price the base leg near zero - using it would silently reintroduce
- * the F-09 bug. Token items therefore use ONLY the direct (non-mirror) path on top of the correct
- * token-opportunity base value.
- * @returns {{cost: number|null, complete: boolean}}
- */
-function resolveBaseReconstructionCost(itemHrid, targetLevel, enhancingParams, isTokenItem) {
-    const candidates = [];
-
-    if (!isTokenItem) {
-        try {
-            const path = calculateEnhancementPath(itemHrid, targetLevel, enhancingParams);
-            if (path?.optimalStrategy?.totalCost > 0) candidates.push(path.optimalStrategy.totalCost);
-        } catch {
-            // Not enhanceable via the shared path helper - fall through to the direct route below.
-        }
-    }
-
-    const base = resolveBaseItemCost(itemHrid);
-    if (base.complete) {
-        const direct = calculateDirectEnhancementCost(itemHrid, 0, targetLevel, enhancingParams);
-        if (direct.complete) candidates.push(base.cost + direct.cost);
-    }
-
-    if (candidates.length === 0) return { cost: null, complete: false };
-    return { cost: Math.min(...candidates), complete: true };
-}
-
-/**
  * Resolve the cheapest complete reproduction cost for a viewed equipped item at enhancement +N.
+ *
+ * `async` because a complete reproduction may need one shared, cached, off-main-thread enhancement
+ * expectation table (`score-enhancement-worker.js`) - the exact same Markov statistics the
+ * canonical enhancement calculator produces, but solved once for every start level/target/strategy
+ * combination instead of once per protection strategy per target level (TLA-041C). Exact pruning
+ * (report §3.5 / PSP-14): once a known-complete candidate exists, any acquisition-origin candidate
+ * whose own live Ask is already >= that candidate can never win (enhancement cost is non-negative),
+ * so its enhancement math - and the shared table request itself - is skipped entirely.
  * @param {string} itemHrid
  * @param {number} N - Enhancement level (0-20)
  * @param {Object} itemDetails - gameData.itemDetailMap[itemHrid]
  * @param {Object} enhancingParams - Viewer's own params from getEnhancingParams()
- * @returns {{cost: number|null, complete: boolean}}
+ * @returns {Promise<{cost: number|null, complete: boolean, reason?: string}>}
  */
-export function resolveEquipmentItemCost(itemHrid, N, itemDetails, enhancingParams) {
+export async function resolveEquipmentItemCost(itemHrid, N, itemDetails, enhancingParams) {
     if (N === 0) {
         return resolveBaseItemCost(itemHrid);
     }
 
     const isTokenItem = getTokenPurchaseInfo(itemHrid) !== null;
-    const candidates = [];
 
+    // Phase 1 (cheap, synchronous, no enhancement math): exact Ask, live lower-K Asks, base
+    // acquisition price.
     const exactAsk = getItemPrice(itemHrid, { enhancementLevel: N, mode: 'ask' });
-    if (exactAsk > 0) candidates.push(exactAsk);
-
-    const reconstruction = resolveBaseReconstructionCost(itemHrid, N, enhancingParams, isTokenItem);
-    if (reconstruction.complete) candidates.push(reconstruction.cost);
-
+    const base = resolveBaseItemCost(itemHrid);
+    const lowerAsks = [];
     if (itemDetails?.enhancementCosts?.length) {
         for (let K = 1; K < N; K++) {
             const kAsk = getItemPrice(itemHrid, { enhancementLevel: K, mode: 'ask' });
-            if (!(kAsk > 0)) continue;
-            const direct = calculateDirectEnhancementCost(itemHrid, K, N, enhancingParams);
-            if (direct.complete) candidates.push(kAsk + direct.cost);
+            if (kAsk > 0) lowerAsks.push({ K, ask: kAsk });
         }
     }
 
-    if (candidates.length === 0) return { cost: null, complete: false };
+    const candidates = [];
+    if (exactAsk > 0) candidates.push(exactAsk);
+    const best = exactAsk > 0 ? exactAsk : Infinity;
+
+    // Phase 2: exact pruning.
+    const needsReconstruction = !(base.complete && base.cost >= best);
+    const survivingLowerAsks = lowerAsks.filter(({ ask }) => ask < best);
+
+    if (needsReconstruction || survivingLowerAsks.length > 0) {
+        // Phase 3: only request the shared expectation table if something enhancement-dependent
+        // survived pruning.
+        let table = null;
+        try {
+            table = await getScoreEnhancementExpectationTable({
+                enhancingLevel: enhancingParams.enhancingLevel,
+                toolBonus: enhancingParams.toolBonus || 0,
+                itemLevel: itemDetails?.itemLevel || 1,
+                blessedTea: enhancingParams.teas?.blessed || false,
+                guzzlingBonus: enhancingParams.guzzlingBonus || 1,
+            });
+        } catch (error) {
+            // Worker failure fails closed for every enhancement-dependent candidate below - never a
+            // synchronous fallback to the heavy legacy path.
+            console.error('[EquipmentResolver] Enhancement expectation table request failed:', error);
+        }
+
+        const { cost: perAttemptMaterialCost, hasCost, costPartial } = calculatePerAttemptMaterialCost(itemDetails);
+        const materialCostKnown = hasCost && !costPartial;
+
+        if (table && materialCostKnown) {
+            const { price: protectionUnitPrice } = getCheapestProtectionPrice(itemHrid);
+
+            if (needsReconstruction && base.complete) {
+                if (isTokenItem) {
+                    // Token items skip Mirror entirely - their real value is in the token
+                    // opportunity base, not a mirror-tier consumption chain (matches the existing
+                    // direct-only token behavior, F-09).
+                    const leg = priceLegFromTable(table, N, 0, perAttemptMaterialCost, protectionUnitPrice);
+                    if (leg.complete) candidates.push(base.cost + leg.cost);
+                } else {
+                    // Never getRealisticBaseItemPrice() here - it mixes Bid data; the Score
+                    // contract is Ask/acquisition-only (report's pricing guard).
+                    const mirrorPrice = getItemPrice('/items/philosophers_mirror', { mode: 'ask' });
+                    const ladder = buildTargetCostLadder(
+                        table,
+                        N,
+                        base.cost,
+                        perAttemptMaterialCost,
+                        protectionUnitPrice
+                    );
+                    const optimized = applyMirrorOptimization(ladder, mirrorPrice);
+                    if (optimized[N] !== null) candidates.push(optimized[N]);
+                }
+            }
+
+            for (const { K, ask } of survivingLowerAsks) {
+                const leg = priceLegFromTable(table, N, K, perAttemptMaterialCost, protectionUnitPrice);
+                if (leg.complete) candidates.push(ask + leg.cost);
+            }
+        }
+    }
+
+    if (candidates.length === 0) {
+        return { cost: null, complete: false, reason: 'No complete acquisition route could be priced' };
+    }
     return { cost: Math.min(...candidates), complete: true };
 }

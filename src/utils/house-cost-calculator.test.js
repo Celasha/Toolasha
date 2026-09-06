@@ -110,14 +110,14 @@ describe('calculateHousesCostByDomain - sums only owned rooms in the requested d
         const rooms = { '/house_rooms/dojo': { level: 1 }, '/house_rooms/garden': { level: 1 } };
         const result = calculateHousesCostByDomain(rooms, 'combat');
         expect(result.totalCost).toBe(1000);
-        expect(result.breakdown).toEqual([{ name: 'Dojo', level: 1, cost: 1000 }]);
+        expect(result.breakdown).toEqual([{ name: 'Dojo', level: 1, cost: 1000, complete: true }]);
     });
 
     test('skilling domain sums only the skilling room, combat room excluded', () => {
         const rooms = { '/house_rooms/dojo': { level: 1 }, '/house_rooms/garden': { level: 1 } };
         const result = calculateHousesCostByDomain(rooms, 'skilling');
         expect(result.totalCost).toBe(500);
-        expect(result.breakdown).toEqual([{ name: 'Garden', level: 1, cost: 500 }]);
+        expect(result.breakdown).toEqual([{ name: 'Garden', level: 1, cost: 500, complete: true }]);
     });
 
     test('a room owned at level 0 is not counted', () => {

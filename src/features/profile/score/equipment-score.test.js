@@ -27,9 +27,9 @@ function resetMocks() {
 describe('calculateEquipmentScore - value-once-fan-out (TLA-041 / PB-19, PB-20)', () => {
     beforeEach(resetMocks);
 
-    test('same itemHrid+level equipped in two slots, classified both combat+skiller, is priced exactly once and contributes to both totals', () => {
+    test('same itemHrid+level equipped in two slots, classified both combat+skiller, is priced exactly once and contributes to both totals', async () => {
         mocks.itemDetailMap['/items/ring'] = { name: 'Ring', equipmentDetail: {} };
-        resolveEquipmentItemCost.mockReturnValue({ cost: 10_000_000, complete: true });
+        resolveEquipmentItemCost.mockResolvedValue({ cost: 10_000_000, complete: true });
         classifyEquipmentItem.mockReturnValue({ combat: true, skiller: true });
 
         const profileData = {
@@ -41,18 +41,20 @@ describe('calculateEquipmentScore - value-once-fan-out (TLA-041 / PB-19, PB-20)'
             },
         };
 
-        const result = calculateEquipmentScore(profileData, {});
+        const result = await calculateEquipmentScore(profileData, {});
 
         expect(resolveEquipmentItemCost).toHaveBeenCalledTimes(1); // priced once, not twice
         expect(result.combat.score).toBeCloseTo(10);
         expect(result.skiller.score).toBeCloseTo(10); // same computed cost fans into both (PB-19)
     });
 
-    test('combat-only and skiller-only items each contribute to only their own domain', () => {
+    test('combat-only and skiller-only items each contribute to only their own domain', async () => {
         mocks.itemDetailMap['/items/sword'] = { name: 'Sword', equipmentDetail: {} };
         mocks.itemDetailMap['/items/hoe'] = { name: 'Hoe', equipmentDetail: {} };
         resolveEquipmentItemCost.mockImplementation((itemHrid) =>
-            itemHrid === '/items/sword' ? { cost: 5_000_000, complete: true } : { cost: 2_000_000, complete: true }
+            Promise.resolve(
+                itemHrid === '/items/sword' ? { cost: 5_000_000, complete: true } : { cost: 2_000_000, complete: true }
+            )
         );
         classifyEquipmentItem.mockImplementation((equipmentDetail) =>
             equipmentDetail === mocks.itemDetailMap['/items/sword'].equipmentDetail
@@ -69,15 +71,15 @@ describe('calculateEquipmentScore - value-once-fan-out (TLA-041 / PB-19, PB-20)'
             },
         };
 
-        const result = calculateEquipmentScore(profileData, {});
+        const result = await calculateEquipmentScore(profileData, {});
         expect(result.combat.score).toBeCloseTo(5);
         expect(result.skiller.score).toBeCloseTo(2);
     });
 
-    test('two different itemHrids are each priced once (dedup key is itemHrid+level, not just level)', () => {
+    test('two different itemHrids are each priced once (dedup key is itemHrid+level, not just level)', async () => {
         mocks.itemDetailMap['/items/a'] = { name: 'A', equipmentDetail: {} };
         mocks.itemDetailMap['/items/b'] = { name: 'B', equipmentDetail: {} };
-        resolveEquipmentItemCost.mockReturnValue({ cost: 1_000_000, complete: true });
+        resolveEquipmentItemCost.mockResolvedValue({ cost: 1_000_000, complete: true });
         classifyEquipmentItem.mockReturnValue({ combat: true, skiller: false });
 
         const profileData = {
@@ -89,15 +91,17 @@ describe('calculateEquipmentScore - value-once-fan-out (TLA-041 / PB-19, PB-20)'
             },
         };
 
-        calculateEquipmentScore(profileData, {});
+        await calculateEquipmentScore(profileData, {});
         expect(resolveEquipmentItemCost).toHaveBeenCalledTimes(2);
     });
 
-    test('an incomplete leaf marks its category incomplete without discarding priced leaves', () => {
+    test('an incomplete leaf marks its category incomplete without discarding priced leaves', async () => {
         mocks.itemDetailMap['/items/priced'] = { name: 'Priced', equipmentDetail: {} };
         mocks.itemDetailMap['/items/unpriced'] = { name: 'Unpriced', equipmentDetail: {} };
         resolveEquipmentItemCost.mockImplementation((itemHrid) =>
-            itemHrid === '/items/priced' ? { cost: 3_000_000, complete: true } : { cost: null, complete: false }
+            Promise.resolve(
+                itemHrid === '/items/priced' ? { cost: 3_000_000, complete: true } : { cost: null, complete: false }
+            )
         );
         classifyEquipmentItem.mockReturnValue({ combat: true, skiller: false });
 
@@ -110,7 +114,7 @@ describe('calculateEquipmentScore - value-once-fan-out (TLA-041 / PB-19, PB-20)'
             },
         };
 
-        const result = calculateEquipmentScore(profileData, {});
+        const result = await calculateEquipmentScore(profileData, {});
         expect(result.combat.complete).toBe(false);
         expect(result.combat.score).toBeCloseTo(3);
     });
@@ -119,18 +123,18 @@ describe('calculateEquipmentScore - value-once-fan-out (TLA-041 / PB-19, PB-20)'
 describe('calculateEquipmentScore - hidden equipment (PB-48, PB-49)', () => {
     beforeEach(resetMocks);
 
-    test('hidden with no wearable payload yields a lower-bound result, not a deceptively exact 0', () => {
+    test('hidden with no wearable payload yields a lower-bound result, not a deceptively exact 0', async () => {
         const profileData = { profile: { hideWearableItems: true, wearableItemMap: {} } };
-        const result = calculateEquipmentScore(profileData, {});
+        const result = await calculateEquipmentScore(profileData, {});
         expect(result.hasEquipmentData).toBe(false);
         expect(result.combat.complete).toBe(false);
         expect(result.skiller.complete).toBe(false);
         expect(result.combat.score).toBe(0);
     });
 
-    test('hidden flag does not force partial when the payload actually contains wearable data (party member case)', () => {
+    test('hidden flag does not force partial when the payload actually contains wearable data (party member case)', async () => {
         mocks.itemDetailMap['/items/ring'] = { name: 'Ring', equipmentDetail: {} };
-        resolveEquipmentItemCost.mockReturnValue({ cost: 1_000_000, complete: true });
+        resolveEquipmentItemCost.mockResolvedValue({ cost: 1_000_000, complete: true });
         classifyEquipmentItem.mockReturnValue({ combat: true, skiller: false });
 
         const profileData = {
@@ -140,7 +144,7 @@ describe('calculateEquipmentScore - hidden equipment (PB-48, PB-49)', () => {
             },
         };
 
-        const result = calculateEquipmentScore(profileData, {});
+        const result = await calculateEquipmentScore(profileData, {});
         expect(result.hasEquipmentData).toBe(true);
         expect(result.combat.complete).toBe(true);
         expect(result.combat.score).toBeCloseTo(1);

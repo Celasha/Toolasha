@@ -22,7 +22,7 @@ describe('calculateAbilityScore (TLA-041)', () => {
         const result = calculateAbilityScore(profileData);
         expect(calculateAbilityBookCostDataDriven).toHaveBeenCalledTimes(1);
         expect(result.score).toBeCloseTo(3);
-        expect(result.breakdown).toEqual([{ name: 'Fireball 5', value: '3.0' }]);
+        expect(result.breakdown).toEqual([{ name: 'Fireball 5', value: '3.0', complete: true, reason: null }]);
     });
 
     test('an unpriceable ability book propagates partial state (PB-39)', () => {

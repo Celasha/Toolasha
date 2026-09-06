@@ -18,6 +18,15 @@ import loadoutState from '../../core/loadout-state.js';
 import combatSimUI from '../combat-sim/combat-sim-ui.js';
 import { buildPlayerDTOFromProfile, mapLoadoutAbilitiesToNativeSlots } from '../combat-sim/combat-sim-adapter.js';
 
+// TLA-041C: stable desktop Score-panel geometry. The panel is a fixed border-box width in every
+// state (loading shell, final Score, own-profile loadout buttons visible/hidden, hidden equipment,
+// any name length, collapsed/expanded rows) - no content ever changes the outer panel boundary,
+// which is what let the own-profile loadout buttons silently widen the panel after positioning.
+const SCORE_PANEL_DESKTOP_WIDTH = 280;
+const SCORE_PANEL_GAP = 8;
+const SCORE_PANEL_VIEWPORT_MARGIN = 10;
+const HIDDEN_EQUIPMENT_TOOLTIP = 'Equipment is hidden in this profile, so it is not included in the Score.';
+
 /**
  * CombatScore class manages combat score display on profiles
  */
@@ -29,6 +38,9 @@ class CombatScore {
         this.isInitialized = false;
         this.profileSharedHandler = null; // Store handler reference for cleanup
         this.timerRegistry = createTimerRegistry();
+        // Bumped on every new profile open; async continuations compare against the live value so
+        // a stale profile's resolved Score can never overwrite a newer one (PSP-16).
+        this.profileGeneration = 0;
     }
 
     /**
@@ -83,14 +95,21 @@ class CombatScore {
      * @param {Object} profileData - Profile data from WebSocket
      */
     async handleProfileShared(profileData) {
+        // Bumped before any await - every async continuation below (including handleProfileOpen's)
+        // checks it before touching the DOM/panel, so a stale profile can never win a race.
+        const generation = ++this.profileGeneration;
+
         // Extract character ID from profile data
         const characterId =
             profileData.profile.sharableCharacter?.id ||
             profileData.profile.characterSkills?.[0]?.characterID ||
             profileData.profile.character?.id;
 
-        // Store the profile ID so export button can find it
-        await storage.set('currentProfileId', characterId, 'combatExport', true);
+        // Preserve the export-button lookup, but do not make it a visual-render prerequisite -
+        // Score/panel work below must not wait on this write (TLA-041C).
+        storage
+            .set('currentProfileId', characterId, 'combatExport', true)
+            .catch((error) => console.error('[CombatScore] Failed to store currentProfileId:', error));
 
         // Note: Memory cache is handled by websocket.js listener (don't duplicate here)
 
@@ -101,15 +120,28 @@ class CombatScore {
             return;
         }
 
-        // Find the modal container
-        const modalContainer =
-            profilePanel.closest('.Modal_modalContent__Iw0Yv') ||
-            profilePanel.closest('[class*="Modal"]') ||
-            profilePanel.parentElement;
+        // Find the modal container - the visible OUTER native Sharable Profile modal, not the
+        // inner Overview TabPanel (TLA-041C rev2 geometry fix).
+        const modalContainer = this.findNativeProfileModal(profilePanel);
 
         if (modalContainer) {
-            await this.handleProfileOpen(profileData, modalContainer);
+            await this.handleProfileOpen(profileData, modalContainer, generation);
         }
+    }
+
+    /**
+     * Resolve the visible OUTER native Sharable Profile modal for a given profile panel, so
+     * geometry anchors to the real modal border instead of an inner content boundary.
+     * @param {Element} profilePanel
+     * @returns {Element|null}
+     */
+    findNativeProfileModal(profilePanel) {
+        return (
+            profilePanel.closest('div[class*="SharableProfile_modal__"]') ||
+            profilePanel.closest('.Modal_modalContent__Iw0Yv') ||
+            profilePanel.closest('[class*="Modal"]') ||
+            profilePanel.parentElement
+        );
     }
 
     /**
@@ -128,117 +160,180 @@ class CombatScore {
     }
 
     /**
-     * Handle profile modal opening
+     * Handle profile modal opening. Shows the Score shell (and Abilities & Triggers panel)
+     * immediately, then fills in the Score asynchronously once it resolves (TLA-041C) - profile
+     * paint is never blocked behind the enhancement-heavy Score calculation.
      * @param {Object} profileData - Profile data from WebSocket
      * @param {Element} modalContainer - Modal container element
+     * @param {number} generation - This profile's generation, from handleProfileShared
      */
-    async handleProfileOpen(profileData, modalContainer) {
+    async handleProfileOpen(profileData, modalContainer, generation) {
         try {
-            // Calculate combat score
-            const scoreData = await calculateCombatScore(profileData);
+            // Render shell/buttons first. Do not await Score before first paint.
+            const panel = this.showScorePanel(profileData, null, modalContainer);
 
-            // Display score panel
-            this.showScorePanel(profileData, scoreData, modalContainer);
-
-            // Display abilities & triggers panel below profile (if enabled)
+            // Display abilities & triggers panel below profile (if enabled) - not gated behind
+            // Score resolution either.
             if (config.getSetting('abilitiesTriggers')) {
                 this.showAbilitiesTriggersPanel(profileData, modalContainer);
             }
+
+            // Yield one paint before starting any remaining main-thread preparation.
+            await new Promise((resolve) => requestAnimationFrame(resolve));
+
+            const scoreData = await calculateCombatScore(profileData);
+
+            // A newer profile opened while this one was calculating (PSP-16), or this panel was
+            // closed/replaced while pending (PSP-17) - never resurrect/overwrite in either case.
+            if (generation !== this.profileGeneration) return;
+            if (this.currentPanel !== panel || !panel.isConnected) return;
+
+            this.updateScorePanel(panel, profileData, scoreData, modalContainer);
         } catch (error) {
             console.error('[CombatScore] Error handling profile:', error);
         }
     }
 
     /**
-     * Show combat score panel next to profile
-     * @param {Object} profileData - Profile data
-     * @param {Object} scoreData - Calculated score data
-     * @param {Element} modalContainer - Modal container element
+     * Format one breakdown leaf's value for display (TLA-041C lower-bound provenance):
+     * `N/A` for a leaf with no defensible price, `value+` for a positive-but-incomplete leaf,
+     * plain `value` for a complete leaf. A leaf `reason` renders as a small info tooltip.
+     * @param {{value: string|null, complete: boolean, reason?: string|null}} item
+     * @returns {string}
      */
-    showScorePanel(profileData, scoreData, modalContainer) {
-        // Remove existing panel if any
-        if (this.currentPanel) {
-            this.currentPanel.remove();
-            this.currentPanel = null;
-        }
+    formatBreakdownLeaf(item) {
+        const reasonInfo = item.reason
+            ? ` <span title="${item.reason.replace(/"/g, '&quot;')}" style="cursor: help; opacity: 0.7;">ⓘ</span>`
+            : '';
+        if (item.value === null) return `N/A${reasonInfo}`;
+        return `${item.value}${item.complete === false ? '+' : ''}${reasonInfo}`;
+    }
 
-        const playerName = profileData.profile?.sharableCharacter?.name || 'Player';
-        const equipmentHiddenText =
-            scoreData.equipmentHidden && !scoreData.hasEquipmentData ? ' (Equipment hidden)' : '';
+    /**
+     * Build one breakdown section's inner HTML from its leaves, using `formatBreakdownLeaf` for
+     * lower-bound provenance (TLA-041C).
+     * @param {Array} items
+     * @returns {string}
+     */
+    buildBreakdownHTML(items) {
+        return (items || [])
+            .map(
+                (item) =>
+                    `<div style="margin-left: 10px; font-size: 0.8rem; color: ${config.COLOR_TEXT_SECONDARY};">${item.name}: ${this.formatBreakdownLeaf(item)}</div>`
+            )
+            .join('');
+    }
+
+    /**
+     * Render one category's `+ Category: value` toggle line value - `N/A` with an info tooltip for
+     * wholly hidden Equipment (rev2 LB-08; never a deceptive numeric `0`/`0+`), otherwise the plain
+     * formatted number.
+     * @param {Object} scoreData
+     * @param {number} categoryValue
+     * @returns {string}
+     */
+    formatCategoryHeaderValue(scoreData, categoryValue) {
+        if (scoreData.equipmentHidden && !scoreData.hasEquipmentData) {
+            return `N/A <span title="${HIDDEN_EQUIPMENT_TOOLTIP}" style="cursor: help; opacity: 0.7;">ⓘ</span>`;
+        }
+        return numberFormatter(categoryValue.toFixed(1));
+    }
+
+    /**
+     * Build the two Score toggle blocks (Combat/Skiller) and their detail sections. Returns a
+     * loading placeholder (no expandable detail - there is nothing to expand yet) when `scoreData`
+     * is `null` (TLA-041C shell-before-Score lifecycle).
+     * @param {Object|null} scoreData
+     * @returns {string}
+     */
+    buildScoreSectionsHTML(scoreData) {
         const scoreTooltip =
             'Estimated cost for you to reproduce this persistent build now, using current acquisition prices and your current Enhancing setup. Market values use current best Ask/unit estimates and are not order-book-depth adjusted.';
+        const scoreVisibility = !config.getSetting('combatScore') ? 'display: none;' : '';
 
-        // Create panel element
-        const panel = document.createElement('div');
-        panel.id = 'mwi-combat-score-panel';
-        panel.style.cssText = `
-            position: fixed;
-            background: rgba(30, 30, 30, 0.98);
-            border: 1px solid #444;
-            border-radius: 8px;
-            padding: 12px;
-            min-width: 180px;
-            max-width: 280px;
-            font-size: 0.875rem;
-            z-index: ${config.Z_FLOATING_PANEL};
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        if (!scoreData) {
+            return `
+                <div style="font-weight: bold; margin-bottom: 8px; color: ${config.COLOR_PROFIT}; ${scoreVisibility}" id="mwi-score-toggle" title="${scoreTooltip}">
+                    Combat Score: Calculating…
+                </div>
+                <div style="font-weight: bold; margin-top: 12px; margin-bottom: 8px; color: ${config.COLOR_PROFIT}; ${scoreVisibility}" id="mwi-skiller-score-toggle" title="${scoreTooltip}">
+                    Skiller Score: Calculating…
+                </div>
+            `;
+        }
+
+        return `
+            <div style="cursor: pointer; font-weight: bold; margin-bottom: 8px; color: ${config.COLOR_PROFIT}; ${scoreVisibility}" id="mwi-score-toggle" title="${scoreTooltip}">
+                + Combat Score: ${numberFormatter(scoreData.total.toFixed(1))}${scoreData.complete === false ? '+' : ''}
+            </div>
+            <div id="mwi-score-details" style="display: none; margin-left: 10px; color: ${config.COLOR_TEXT_PRIMARY};">
+                <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-house-toggle">
+                    + House: ${numberFormatter(scoreData.house.toFixed(1))}
+                </div>
+                <div id="mwi-house-breakdown" style="display: none; margin-bottom: 6px;">
+                    ${this.buildBreakdownHTML(scoreData.breakdown.houses)}
+                </div>
+
+                <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-ability-toggle">
+                    + Ability: ${numberFormatter(scoreData.ability.toFixed(1))}
+                </div>
+                <div id="mwi-ability-breakdown" style="display: none; margin-bottom: 6px;">
+                    ${this.buildBreakdownHTML(scoreData.breakdown.abilities)}
+                </div>
+
+                <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-equipment-toggle">
+                    + Equipment: ${this.formatCategoryHeaderValue(scoreData, scoreData.equipment)}
+                </div>
+                <div id="mwi-equipment-breakdown" style="display: none; margin-bottom: 6px;">
+                    ${this.buildBreakdownHTML(scoreData.breakdown.equipment)}
+                </div>
+
+                <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-shrine-toggle">
+                    + Shrines: ${numberFormatter((scoreData.shrine || 0).toFixed(1))}
+                </div>
+                <div id="mwi-shrine-breakdown" style="display: none;">
+                    ${this.buildBreakdownHTML(scoreData.breakdown.shrines)}
+                </div>
+            </div>
+
+            <div style="cursor: pointer; font-weight: bold; margin-top: 12px; margin-bottom: 8px; color: ${config.COLOR_PROFIT}; ${scoreVisibility}" id="mwi-skiller-score-toggle" title="${scoreTooltip}">
+                + Skiller Score: ${numberFormatter(scoreData.skillerTotal.toFixed(1))}${scoreData.skillerComplete === false ? '+' : ''}
+            </div>
+            <div id="mwi-skiller-score-details" style="display: none; margin-left: 10px; color: ${config.COLOR_TEXT_PRIMARY};">
+                <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-skiller-house-toggle">
+                    + House: ${numberFormatter((scoreData.skillerHouse || 0).toFixed(1))}
+                </div>
+                <div id="mwi-skiller-house-breakdown" style="display: none; margin-bottom: 6px;">
+                    ${this.buildBreakdownHTML(scoreData.skillerBreakdown.houses)}
+                </div>
+
+                <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-skiller-equipment-toggle">
+                    + Equipment: ${this.formatCategoryHeaderValue(scoreData, scoreData.skillerEquipment)}
+                </div>
+                <div id="mwi-skiller-equipment-breakdown" style="display: none; margin-bottom: 6px;">
+                    ${this.buildBreakdownHTML(scoreData.skillerBreakdown.equipment)}
+                </div>
+
+                <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-skiller-shrine-toggle">
+                    + Shrines: ${numberFormatter((scoreData.skillerShrine || 0).toFixed(1))}
+                </div>
+                <div id="mwi-skiller-shrine-breakdown" style="display: none;">
+                    ${this.buildBreakdownHTML(scoreData.skillerBreakdown.shrines)}
+                </div>
+            </div>
         `;
+    }
 
-        // Build house breakdown HTML
-        const houseBreakdownHTML = scoreData.breakdown.houses
-            .map(
-                (item) =>
-                    `<div style="margin-left: 10px; font-size: 0.8rem; color: ${config.COLOR_TEXT_SECONDARY};">${item.name}: ${item.value}</div>`
-            )
-            .join('');
-
-        // Build ability breakdown HTML
-        const abilityBreakdownHTML = scoreData.breakdown.abilities
-            .map(
-                (item) =>
-                    `<div style="margin-left: 10px; font-size: 0.8rem; color: ${config.COLOR_TEXT_SECONDARY};">${item.name}: ${item.value}</div>`
-            )
-            .join('');
-
-        // Build equipment breakdown HTML
-        const equipmentBreakdownHTML = scoreData.breakdown.equipment
-            .map(
-                (item) =>
-                    `<div style="margin-left: 10px; font-size: 0.8rem; color: ${config.COLOR_TEXT_SECONDARY};">${item.name}: ${item.value}</div>`
-            )
-            .join('');
-
-        // Build skiller equipment breakdown HTML
-        const skillerEquipmentBreakdownHTML = scoreData.skillerBreakdown.equipment
-            .map(
-                (item) =>
-                    `<div style="margin-left: 10px; font-size: 0.8rem; color: ${config.COLOR_TEXT_SECONDARY};">${item.name}: ${item.value}</div>`
-            )
-            .join('');
-
-        // Build shrine breakdown HTML (Combat)
-        const shrineBreakdownHTML = (scoreData.breakdown.shrines || [])
-            .map(
-                (item) =>
-                    `<div style="margin-left: 10px; font-size: 0.8rem; color: ${config.COLOR_TEXT_SECONDARY};">${item.name}: ${item.value}</div>`
-            )
-            .join('');
-
-        // Build skiller house breakdown HTML
-        const skillerHouseBreakdownHTML = (scoreData.skillerBreakdown.houses || [])
-            .map(
-                (item) =>
-                    `<div style="margin-left: 10px; font-size: 0.8rem; color: ${config.COLOR_TEXT_SECONDARY};">${item.name}: ${item.value}</div>`
-            )
-            .join('');
-
-        // Build skiller shrine breakdown HTML
-        const skillerShrineBreakdownHTML = (scoreData.skillerBreakdown.shrines || [])
-            .map(
-                (item) =>
-                    `<div style="margin-left: 10px; font-size: 0.8rem; color: ${config.COLOR_TEXT_SECONDARY};">${item.name}: ${item.value}</div>`
-            )
-            .join('');
+    /**
+     * Build the Score panel's full inner HTML for one render pass. `scoreData === null` renders
+     * the loading shell (TLA-041C) - shared by `showScorePanel` (initial) and `updateScorePanel`
+     * (final), so both states are guaranteed to share the same header/button markup.
+     * @param {Object} profileData
+     * @param {Object|null} scoreData
+     * @returns {string}
+     */
+    buildPanelInnerHTML(profileData, scoreData) {
+        const playerName = profileData.profile?.sharableCharacter?.name || 'Player';
 
         // Build View Card button HTML (only if characterCard setting is enabled)
         const viewCardButtonHTML = config.getSetting('characterCard')
@@ -282,8 +377,7 @@ class CombatScore {
             </div>`
             : '';
 
-        // Create panel HTML
-        panel.innerHTML = `
+        return `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                 <div style="font-weight: bold; color: ${config.COLOR_ACCENT}; font-size: 0.9rem;">${playerName}</div>
                 <span id="mwi-score-close-btn" style="
@@ -294,65 +388,7 @@ class CombatScore {
                     line-height: 1;
                 " title="Close">×</span>
             </div>
-            <div style="cursor: pointer; font-weight: bold; margin-bottom: 8px; color: ${config.COLOR_PROFIT}; ${!config.getSetting('combatScore') ? 'display: none;' : ''}" id="mwi-score-toggle" title="${scoreTooltip}">
-                + Combat Score: ${numberFormatter(scoreData.total.toFixed(1))}${scoreData.complete === false ? '+' : ''}${equipmentHiddenText}
-            </div>
-            <div id="mwi-score-details" style="display: none; margin-left: 10px; color: ${config.COLOR_TEXT_PRIMARY};">
-                <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-house-toggle">
-                    + House: ${numberFormatter(scoreData.house.toFixed(1))}
-                </div>
-                <div id="mwi-house-breakdown" style="display: none; margin-bottom: 6px;">
-                    ${houseBreakdownHTML}
-                </div>
-
-                <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-ability-toggle">
-                    + Ability: ${numberFormatter(scoreData.ability.toFixed(1))}
-                </div>
-                <div id="mwi-ability-breakdown" style="display: none; margin-bottom: 6px;">
-                    ${abilityBreakdownHTML}
-                </div>
-
-                <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-equipment-toggle">
-                    + Equipment: ${numberFormatter(scoreData.equipment.toFixed(1))}
-                </div>
-                <div id="mwi-equipment-breakdown" style="display: none; margin-bottom: 6px;">
-                    ${equipmentBreakdownHTML}
-                </div>
-
-                <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-shrine-toggle">
-                    + Shrines: ${numberFormatter((scoreData.shrine || 0).toFixed(1))}
-                </div>
-                <div id="mwi-shrine-breakdown" style="display: none;">
-                    ${shrineBreakdownHTML}
-                </div>
-            </div>
-
-            <div style="cursor: pointer; font-weight: bold; margin-top: 12px; margin-bottom: 8px; color: ${config.COLOR_PROFIT}; ${!config.getSetting('combatScore') ? 'display: none;' : ''}" id="mwi-skiller-score-toggle" title="${scoreTooltip}">
-                + Skiller Score: ${numberFormatter(scoreData.skillerTotal.toFixed(1))}${scoreData.skillerComplete === false ? '+' : ''}
-            </div>
-            <div id="mwi-skiller-score-details" style="display: none; margin-left: 10px; color: ${config.COLOR_TEXT_PRIMARY};">
-                <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-skiller-house-toggle">
-                    + House: ${numberFormatter((scoreData.skillerHouse || 0).toFixed(1))}
-                </div>
-                <div id="mwi-skiller-house-breakdown" style="display: none; margin-bottom: 6px;">
-                    ${skillerHouseBreakdownHTML}
-                </div>
-
-                <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-skiller-equipment-toggle">
-                    + Equipment: ${numberFormatter(scoreData.skillerEquipment.toFixed(1))}
-                </div>
-                <div id="mwi-skiller-equipment-breakdown" style="display: none; margin-bottom: 6px;">
-                    ${skillerEquipmentBreakdownHTML}
-                </div>
-
-                <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-skiller-shrine-toggle">
-                    + Shrines: ${numberFormatter((scoreData.skillerShrine || 0).toFixed(1))}
-                </div>
-                <div id="mwi-skiller-shrine-breakdown" style="display: none;">
-                    ${skillerShrineBreakdownHTML}
-                </div>
-            </div>
-
+            ${this.buildScoreSectionsHTML(scoreData)}
             <div id="mwi-button-container" style="margin-top: 12px; display: flex; flex-direction: column; gap: 6px;">
                 <div id="mwi-combat-sim-wrapper" style="position: relative; display: flex; gap: 4px;">
                     <button id="mwi-combat-sim-export-btn" style="
@@ -417,18 +453,72 @@ class CombatScore {
                 ${viewCardButtonHTML}
             </div>
         `;
+    }
+
+    /**
+     * Show combat score panel next to profile. `scoreData === null` renders the loading shell
+     * (TLA-041C) - callers pass the resolved Score to `updateScorePanel` once it's ready.
+     * @param {Object} profileData - Profile data
+     * @param {Object|null} scoreData - Calculated score data, or null for the loading shell
+     * @param {Element} modalContainer - Modal container element
+     * @returns {Element} the created panel, for lifecycle guard checks
+     */
+    showScorePanel(profileData, scoreData, modalContainer) {
+        // Remove existing panel if any
+        if (this.currentPanel) {
+            this.currentPanel.remove();
+            this.currentPanel = null;
+        }
+
+        // Create panel element - a fixed desktop border-box width in every state (TLA-041C rev2).
+        // No loading/final/hidden-equipment/own-profile-button/name-length/expanded-row content is
+        // ever allowed to change this outer boundary.
+        const panel = document.createElement('div');
+        panel.id = 'mwi-combat-score-panel';
+        panel.style.cssText = `
+            position: fixed;
+            background: rgba(30, 30, 30, 0.98);
+            border: 1px solid #444;
+            border-radius: 8px;
+            padding: 12px;
+            box-sizing: border-box;
+            width: ${SCORE_PANEL_DESKTOP_WIDTH}px;
+            max-width: calc(100vw - ${SCORE_PANEL_VIEWPORT_MARGIN * 2}px);
+            font-size: 0.875rem;
+            z-index: ${config.Z_FLOATING_PANEL};
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        `;
+
+        panel.innerHTML = this.buildPanelInnerHTML(profileData, scoreData);
 
         document.body.appendChild(panel);
         this.currentPanel = panel;
 
-        // Position panel next to modal
+        // Position panel next to modal - the outer width above is fixed, so this never needs to
+        // run again for this panel (see updateScorePanel).
         this.positionPanel(panel, modalContainer);
 
         // Set up event listeners
-        this.setupPanelEvents(panel, modalContainer, scoreData, equipmentHiddenText, profileData);
+        this.setupPanelEvents(panel, modalContainer, scoreData, profileData);
 
         // Set up cleanup observer
         this.setupCleanupObserver(panel, modalContainer);
+
+        return panel;
+    }
+
+    /**
+     * Replace an existing (loading-shell) panel's content in place once its Score has resolved.
+     * Never repositions - the panel's outer width is fixed, so nothing here can move/overlap the
+     * native modal (TLA-041C).
+     * @param {Element} panel
+     * @param {Object} profileData
+     * @param {Object} scoreData
+     * @param {Element} modalContainer
+     */
+    updateScorePanel(panel, profileData, scoreData, modalContainer) {
+        panel.innerHTML = this.buildPanelInnerHTML(profileData, scoreData);
+        this.setupPanelEvents(panel, modalContainer, scoreData, profileData);
     }
 
     /**
@@ -439,14 +529,29 @@ class CombatScore {
     positionPanel(panel, modal) {
         const modalRect = modal.getBoundingClientRect();
         const panelWidth = panel.getBoundingClientRect().width;
-        const gap = 8;
+        const gap = SCORE_PANEL_GAP;
 
-        // Try left side first
-        if (modalRect.left - gap - panelWidth >= 10) {
+        const fitsLeft = modalRect.left - gap - panelWidth >= SCORE_PANEL_VIEWPORT_MARGIN;
+        const fitsRight =
+            modalRect.right + gap + panelWidth <= (window.innerWidth || Infinity) - SCORE_PANEL_VIEWPORT_MARGIN;
+
+        if (fitsLeft) {
             panel.style.left = modalRect.left - panelWidth - gap + 'px';
-        } else {
-            // Fall back to right side
+        } else if (fitsRight) {
             panel.style.left = modalRect.right + gap + 'px';
+        } else {
+            // Neither side keeps the panel fully inside the viewport at its rendered width - shrink
+            // only for viewport safety (PSP-26), never for content, and prefer the side with more
+            // room.
+            const leftRoom = modalRect.left - gap - SCORE_PANEL_VIEWPORT_MARGIN;
+            const rightRoom = (window.innerWidth || Infinity) - SCORE_PANEL_VIEWPORT_MARGIN - modalRect.right - gap;
+            if (leftRoom >= rightRoom) {
+                panel.style.width = Math.max(0, leftRoom) + 'px';
+                panel.style.left = SCORE_PANEL_VIEWPORT_MARGIN + 'px';
+            } else {
+                panel.style.width = Math.max(0, rightRoom) + 'px';
+                panel.style.left = modalRect.right + gap + 'px';
+            }
         }
 
         panel.style.top = modalRect.top + 'px';
@@ -457,10 +562,9 @@ class CombatScore {
      * @param {Element} panel - Score panel element
      * @param {Element} modal - Modal container element
      * @param {Object} scoreData - Score data
-     * @param {string} equipmentHiddenText - Equipment hidden text
      * @param {Object} profileData - Profile data from WebSocket
      */
-    setupPanelEvents(panel, modal, scoreData, equipmentHiddenText, profileData) {
+    setupPanelEvents(panel, modal, scoreData, profileData) {
         // Close button
         const closeBtn = panel.querySelector('#mwi-score-close-btn');
         if (closeBtn) {
@@ -485,7 +589,7 @@ class CombatScore {
                 details.style.display = isCollapsed ? 'block' : 'none';
                 toggleBtn.textContent =
                     (isCollapsed ? '- ' : '+ ') +
-                    `Combat Score: ${numberFormatter(scoreData.total.toFixed(1))}${scoreData.complete === false ? '+' : ''}${equipmentHiddenText}`;
+                    `Combat Score: ${numberFormatter(scoreData.total.toFixed(1))}${scoreData.complete === false ? '+' : ''}`;
             });
         }
 
@@ -520,8 +624,9 @@ class CombatScore {
             equipmentToggle.addEventListener('click', () => {
                 const isCollapsed = equipmentBreakdown.style.display === 'none';
                 equipmentBreakdown.style.display = isCollapsed ? 'block' : 'none';
-                equipmentToggle.textContent =
-                    (isCollapsed ? '- ' : '+ ') + `Equipment: ${numberFormatter(scoreData.equipment.toFixed(1))}`;
+                equipmentToggle.innerHTML =
+                    (isCollapsed ? '- ' : '+ ') +
+                    `Equipment: ${this.formatCategoryHeaderValue(scoreData, scoreData.equipment)}`;
             });
         }
 
@@ -569,9 +674,9 @@ class CombatScore {
             skillerEquipmentToggle.addEventListener('click', () => {
                 const isCollapsed = skillerEquipmentBreakdown.style.display === 'none';
                 skillerEquipmentBreakdown.style.display = isCollapsed ? 'block' : 'none';
-                skillerEquipmentToggle.textContent =
+                skillerEquipmentToggle.innerHTML =
                     (isCollapsed ? '- ' : '+ ') +
-                    `Equipment: ${numberFormatter(scoreData.skillerEquipment.toFixed(1))}`;
+                    `Equipment: ${this.formatCategoryHeaderValue(scoreData, scoreData.skillerEquipment)}`;
             });
         }
 
