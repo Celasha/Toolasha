@@ -9,6 +9,7 @@ import domObserver from '../../core/dom-observer.js';
 import dataManager from '../../core/data-manager.js';
 import { marketplaceSession, MARKETPLACE_OWNER } from '../../core/marketplace-session.js';
 import { computeBestCraftingPlan } from './crafting-plan-calculator.js';
+import { computeInventoryAwareMissingMaterials } from './inventory-aware-fulfillment.js';
 import { createCollapsibleSection } from '../../utils/ui-components.js';
 import { formatKMB, formatWithSeparator, timeReadable } from '../../utils/formatters.js';
 import { getActionHridFromName } from '../../utils/game-lookups.js';
@@ -532,33 +533,19 @@ function buildPlanUI(actionHrid, onToggle, defaultOpen = false) {
                 const inputField = findActionInput(panel);
                 const numActions = parseInt(inputField?.value) || 1;
                 const outputCount = output.count || 1;
-                const totalQty = numActions * outputCount;
-                const inventory = dataManager.getInventory() || [];
 
-                const missingMaterials = [];
-                for (const [itemHrid, item] of buyItems) {
-                    const needed = Math.ceil(item.quantity * totalQty);
-                    const have = inventory
-                        .filter(
-                            (inventoryItem) =>
-                                inventoryItem.itemHrid === itemHrid &&
-                                inventoryItem.itemLocationHrid === '/item_locations/inventory' &&
-                                !inventoryItem.enhancementLevel
-                        )
-                        .reduce((sum, i) => sum + (i.count || 0), 0);
-                    const missing = Math.max(0, needed - have);
-                    const itemDetails = dataManager.getItemDetails(itemHrid);
-                    const isTradeable = itemDetails?.isTradable === true;
-                    if (missing > 0 && isTradeable) {
-                        missingMaterials.push({
-                            itemHrid,
-                            itemName: item.itemName,
-                            missing,
-                            required: needed,
-                            isTradeable,
-                        });
-                    }
-                }
+                const fulfillment = computeInventoryAwareMissingMaterials({
+                    rootActionHrid: actionHrid,
+                    rootItemHrid: output.itemHrid,
+                    rootOutputCount: outputCount,
+                    numActions,
+                    mode,
+                    buyRawOnly: buyIntermediates,
+                    forceRootCraft: taskMode,
+                    timeCostPerHour: timeCostEnabled ? goldPerHour : 0,
+                    skipProcessing: noProcessing,
+                });
+                const missingMaterials = fulfillment.filter((material) => material.isTradeable && material.missing > 0);
 
                 if (missingMaterials.length === 0) return;
 

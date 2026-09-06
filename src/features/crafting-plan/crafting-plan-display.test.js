@@ -28,7 +28,11 @@ vi.mock('../../core/marketplace-session.js', () => ({
     MARKETPLACE_OWNER: { CRAFTING_PLAN: 'CRAFTING_PLAN' },
     marketplaceSession: { isActive: vi.fn(), end: vi.fn(), start: vi.fn() },
 }));
-vi.mock('./crafting-plan-calculator.js', () => ({ computeBestCraftingPlan: vi.fn() }));
+vi.mock('./crafting-plan-calculator.js', () => ({
+    computeBestCraftingPlan: vi.fn(),
+    getArtisanBonus: vi.fn(() => 0),
+    MAX_DEPTH: 15,
+}));
 vi.mock('../../utils/ui-components.js', () => ({ createCollapsibleSection: vi.fn() }));
 vi.mock('../../utils/formatters.js', () => ({
     formatKMB: vi.fn((value) => (value === 1700 ? '1.7K' : String(value))),

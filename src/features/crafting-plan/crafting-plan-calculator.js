@@ -11,7 +11,7 @@ import { parseArtisanBonus, getDrinkConcentration } from '../../utils/tea-parser
 import { calculateActionStats } from '../../utils/action-calculator.js';
 import { calculateEfficiencyMultiplier } from '../../utils/efficiency.js';
 
-const MAX_DEPTH = 15;
+export const MAX_DEPTH = 15;
 
 /**
  * Find the production action that creates a given item.
@@ -38,7 +38,7 @@ function findProductionAction(itemHrid) {
  * @param {string} actionType - e.g. '/action_types/brewing'
  * @returns {number} Reduction as decimal (e.g. 0.112 for 11.2%)
  */
-function getArtisanBonus(actionType) {
+export function getArtisanBonus(actionType) {
     try {
         const gameData = dataManager.getInitClientData();
         const equipment = dataManager.getEquipment();

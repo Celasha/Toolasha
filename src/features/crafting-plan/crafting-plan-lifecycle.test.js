@@ -49,7 +49,11 @@ vi.mock('../../core/data-manager.js', () => ({ default: mockDataManager }));
 
 import { marketplaceSession, MARKETPLACE_OWNER } from '../../core/marketplace-session.js';
 
-vi.mock('./crafting-plan-calculator.js', () => ({ computeBestCraftingPlan: mockComputeBestCraftingPlan }));
+vi.mock('./crafting-plan-calculator.js', () => ({
+    computeBestCraftingPlan: mockComputeBestCraftingPlan,
+    getArtisanBonus: vi.fn(() => 0),
+    MAX_DEPTH: 15,
+}));
 vi.mock('../../utils/ui-components.js', () => ({
     createCollapsibleSection: vi.fn((_a, _b, _c, content) => {
         const section = document.createElement('div');
@@ -133,6 +137,7 @@ beforeEach(() => {
             '/actions/crafting/sword': {
                 type: '/action_types/crafting',
                 outputItems: [{ itemHrid: '/items/sword', count: 1 }],
+                inputItems: [{ itemHrid: '/items/mat', count: 5 }],
             },
         },
         itemDetailMap: {},
