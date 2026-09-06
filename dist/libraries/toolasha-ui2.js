@@ -2,11 +2,11 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 2.106.1
+ * Version: 2.106.2
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, dom_js, storage, webSocketHook, marketData_js, formatters_js, timerRegistry_js, expectedValueCalculator, marketAPI, marketplaceSession_js, domObserverHelpers_js, cleanupRegistry_js, reactInput_js, materialCalculator_js, enhancementCalculator_js, enhancementConfig_js, profitConstants_js, teaParser_js, profitHelpers_js, loadoutState, alchemyProfitCalculator, actionCalculator_js, bonusRevenueCalculator_js, efficiency_js, profitCalculator, buffParser_js) {
+(function (config, dataManager, domObserver, dom_js, storage, webSocketHook, marketData_js, formatters_js, timerRegistry_js, expectedValueCalculator, marketAPI, marketplaceSession_js, domObserverHelpers_js, cleanupRegistry_js, reactInput_js, materialCalculator_js, enhancementCalculator_js, enhancementConfig_js, profitConstants_js, teaParser_js, profitHelpers_js, loadoutState, alchemyProfitCalculator, actionCalculator_js, tooltipObserver, bonusRevenueCalculator_js, efficiency_js, profitCalculator, buffParser_js) {
     'use strict';
 
     /**
@@ -20369,12 +20369,16 @@ self.onmessage = function (e) {
     /**
      * Build cheapest-gold-per-credit maps for both sell and buy sides.
      * @param {Object} itemDetailMap
+     * @param {string[]} [excludeHrids=[]] - Source item hrids to skip (e.g. Guild Token itself, which
+     *   carries its own guildCreditConversions and would otherwise create a circular credit value —
+     *   TLA-041).
      * @returns {{ sell: Object, buy: Object }} Map of creditItemHrid -> cheapest gold cost per credit
      */
-    function buildCheapestPerCredit(itemDetailMap) {
+    function buildCheapestPerCredit(itemDetailMap, excludeHrids = []) {
         const sell = {};
         const buy = {};
         for (const [hrid, item] of Object.entries(itemDetailMap)) {
+            if (excludeHrids.includes(hrid)) continue;
             for (const conv of item.guildCreditConversions || []) {
                 const creditHrid = conv.creditItemHrid;
                 const sellPrice = marketData_js.getItemPrice(hrid, { mode: 'ask' });
@@ -22745,141 +22749,6 @@ self.onmessage = function (e) {
     };
 
     /**
-     * Tooltip Observer
-     * Centralized observer for tooltip/popper appearances
-     * Any feature can subscribe to be notified when tooltips appear
-     */
-
-
-    class TooltipObserver {
-        constructor() {
-            this.subscribers = new Map(); // name -> { callback, notifyClose }
-            this.unregisterObserver = null;
-            this.isInitialized = false;
-            this.activeRemovalObservers = new Set();
-            this.observedElements = new WeakSet();
-        }
-
-        /**
-         * Initialize the observer (call once)
-         */
-        initialize() {
-            if (this.isInitialized) {
-                return;
-            }
-
-            this.isInitialized = true;
-
-            // Watch for tooltip/popper elements appearing
-            // These are the common classes used by MUI tooltips/poppers
-            this.unregisterObserver = domObserver.onClass('TooltipObserver', ['MuiPopper', 'MuiTooltip'], (element) => {
-                this.notifySubscribers(element);
-            });
-        }
-
-        /**
-         * Subscribe to tooltip appearance events
-         * @param {string} name - Unique subscriber name
-         * @param {Function} callback - Function(element, eventType) to call when tooltip appears
-         * @param {Object} options - Subscription options
-         * @param {boolean} options.notifyClose - Observe and report tooltip removal (default false)
-         */
-        subscribe(name, callback, options = {}) {
-            this.subscribers.set(name, {
-                callback,
-                notifyClose: options.notifyClose === true,
-            });
-
-            // Auto-initialize if first subscriber
-            if (!this.isInitialized) {
-                this.initialize();
-            }
-        }
-
-        /**
-         * Unsubscribe from tooltip events
-         * @param {string} name - Subscriber name
-         */
-        unsubscribe(name) {
-            this.subscribers.delete(name);
-
-            if (this.subscribers.size === 0) {
-                this.disable();
-            }
-        }
-
-        /**
-         * Notify all subscribers that a tooltip appeared
-         * @param {Element} element - The tooltip/popper element
-         * @private
-         */
-        notifySubscribers(element) {
-            const needsCloseNotification = Array.from(this.subscribers.values()).some(
-                (subscriber) => subscriber.notifyClose
-            );
-
-            // Current production subscribers only need open notifications. Avoid creating
-            // one MutationObserver per transient tooltip unless close events are requested.
-            if (needsCloseNotification && !this.observedElements.has(element)) {
-                const observationRoot = document.body || element.parentNode;
-                if (observationRoot) {
-                    this.observedElements.add(element);
-                    const removalObserver = new MutationObserver(() => {
-                        if (element.isConnected) return;
-
-                        for (const [name, subscriber] of this.subscribers.entries()) {
-                            if (!subscriber.notifyClose) continue;
-                            try {
-                                subscriber.callback(element, 'closed');
-                            } catch (error) {
-                                console.error(`[TooltipObserver] Error in subscriber "${name}" (close):`, error);
-                            }
-                        }
-
-                        removalObserver.disconnect();
-                        this.activeRemovalObservers.delete(removalObserver);
-                        this.observedElements.delete(element);
-                    });
-
-                    this.activeRemovalObservers.add(removalObserver);
-                    removalObserver.observe(observationRoot, {
-                        childList: true,
-                        subtree: true,
-                    });
-                }
-            }
-
-            // Notify subscribers that tooltip opened
-            for (const [name, subscriber] of this.subscribers.entries()) {
-                try {
-                    subscriber.callback(element, 'opened');
-                } catch (error) {
-                    console.error(`[TooltipObserver] Error in subscriber "${name}" (open):`, error);
-                }
-            }
-        }
-
-        /**
-         * Cleanup and disable
-         */
-        disable() {
-            if (this.unregisterObserver) {
-                this.unregisterObserver();
-                this.unregisterObserver = null;
-            }
-            for (const observer of this.activeRemovalObservers) {
-                observer.disconnect();
-            }
-            this.activeRemovalObservers.clear();
-            this.observedElements = new WeakSet();
-            this.subscribers.clear();
-            this.isInitialized = false;
-        }
-    }
-
-    const tooltipObserver = new TooltipObserver();
-
-    /**
      * Gathering Profit Calculator
      *
      * Calculates comprehensive profit/hour for gathering actions (Foraging, Woodcutting, Milking) including:
@@ -23346,6 +23215,41 @@ self.onmessage = function (e) {
         return formatters_js.formatDateTime(completionTime, { includeDate, includeTime: true, includeSeconds: true });
     }
 
+    // Marks a native QueuedActions edit-menu once Toolasha has enhanced it, so the width contract
+    // below and the row-wrapping rules only ever apply to that specific popup (TLA-040) — never to
+    // unrelated MUI tooltips/poppers elsewhere in the game.
+    const QUEUE_EDIT_MENU_MARKER_CLASS = 'toolasha-queue-edit-menu-enhanced';
+    const QUEUE_EDIT_MENU_STYLE_ID = 'toolasha-queue-edit-menu-width-styles';
+
+    // Preferred desktop inner width (414px) matches the pre-existing wide-state geometry so the popup
+    // no longer flips between ~312px/~445px purely from queue order/content. On constrained viewports
+    // it shrinks continuously (min() formula) rather than switching at a fixed breakpoint, staying
+    // fully on-screen; dvw is preferred where supported, falling back to vw.
+    const QUEUE_EDIT_MENU_CSS = `
+.${QUEUE_EDIT_MENU_MARKER_CLASS} {
+    width: min(414px, calc(100vw - 64px));
+    max-width: min(414px, calc(100vw - 64px));
+    min-width: min(280px, calc(100vw - 64px));
+    box-sizing: border-box;
+}
+@supports (width: 100dvw) {
+    .${QUEUE_EDIT_MENU_MARKER_CLASS} {
+        width: min(414px, calc(100dvw - 64px));
+        max-width: min(414px, calc(100dvw - 64px));
+        min-width: min(280px, calc(100dvw - 64px));
+    }
+}
+.${QUEUE_EDIT_MENU_MARKER_CLASS} .mwi-queue-action-time,
+.${QUEUE_EDIT_MENU_MARKER_CLASS} .mwi-queue-action-profit {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    box-sizing: border-box;
+}
+`;
+
     /**
      * ActionTimeDisplay class manages the time display panel and queue tooltips
      */
@@ -23558,11 +23462,17 @@ self.onmessage = function (e) {
          * Initialize observer for queue tooltip
          */
         initializeQueueObserver() {
+            this.ensureQueueEditMenuStyles();
+
             // Register with centralized DOM observer to watch for queue menu
             this.unregisterQueueObserver = domObserver.onClass(
                 'ActionTimeDisplay-Queue',
                 'QueuedActions_queuedActionsEditMenu',
                 (queueMenu) => {
+                    // classList.add is a no-op if already present, so repeated mounts/reorders of the
+                    // same element can never duplicate the marker.
+                    queueMenu.classList.add(QUEUE_EDIT_MENU_MARKER_CLASS);
+
                     this.injectQueueTimes(queueMenu);
 
                     this.setupQueueMenuObserver(queueMenu);
@@ -23575,6 +23485,21 @@ self.onmessage = function (e) {
                     this.unregisterQueueObserver = null;
                 }
             });
+
+            this.cleanupRegistry.registerCleanup(() => {
+                dom_js.removeStyles(QUEUE_EDIT_MENU_STYLE_ID);
+            });
+        }
+
+        /**
+         * Inject the Queued Actions edit-menu width stylesheet once. Idempotent so re-initializing
+         * (e.g. disabling and re-enabling the feature) never appends a duplicate `<style>` element.
+         */
+        ensureQueueEditMenuStyles() {
+            if (document.getElementById(QUEUE_EDIT_MENU_STYLE_ID)) {
+                return;
+            }
+            dom_js.addStyles(QUEUE_EDIT_MENU_CSS, QUEUE_EDIT_MENU_STYLE_ID);
         }
 
         /**
@@ -26425,41 +26350,119 @@ self.onmessage = function (e) {
     }
 
     /**
-     * Consumed/produced item hrids for one segment - identity overlap only (no quantity simulation),
-     * used to detect a LATER resource-limited segment silently depending on stale starting inventory.
+     * Consumed/deterministically-produced/stochastically-produced item hrids for one segment. Alchemy's
+     * primary/secondary item selection and dynamic coin cost are tracked as consumed identities (for
+     * fail-closed dependency purposes) without attempting to reproduce Alchemy's own bulk/catalyst/success
+     * math here - see projectOrdinaryDeterministicInventory, which declines to project Alchemy at all.
      */
-    function getSegmentItemFootprint(actionDetails, actionObj) {
+    function getSegmentInventoryFootprint(actionDetails, actionObj) {
         const consumed = new Set();
-        const produced = new Set();
-        if (!actionDetails) return { consumed, produced };
+        const deterministicProduced = new Set();
+        const stochasticProduced = new Set();
+        if (!actionDetails) return { consumed, deterministicProduced, stochasticProduced };
 
         for (const input of actionDetails.inputItems || []) {
             if (input.itemHrid) consumed.add(input.itemHrid);
         }
         if (actionDetails.upgradeItemHrid) consumed.add(actionDetails.upgradeItemHrid);
         if (actionDetails.coinCost > 0) consumed.add('/items/coin');
-        if (actionObj.primaryItemHash) {
-            const { itemHrid } = actionTimeDisplay.parseItemHash(actionObj.primaryItemHash);
-            if (itemHrid) consumed.add(itemHrid);
+
+        if (actionDetails.type === '/action_types/alchemy') {
+            if (actionObj.primaryItemHash) {
+                const { itemHrid } = actionTimeDisplay.parseItemHash(actionObj.primaryItemHash);
+                if (itemHrid) consumed.add(itemHrid);
+            }
+            if (actionObj.secondaryItemHash) {
+                const { itemHrid } = actionTimeDisplay.parseItemHash(actionObj.secondaryItemHash);
+                if (itemHrid) consumed.add(itemHrid);
+            }
+            consumed.add('/items/coin');
         }
-        if (actionObj.secondaryItemHash) {
-            const { itemHrid } = actionTimeDisplay.parseItemHash(actionObj.secondaryItemHash);
-            if (itemHrid) consumed.add(itemHrid);
-        }
+
         for (const output of actionDetails.outputItems || []) {
-            if (output.itemHrid) produced.add(output.itemHrid);
+            if (output.itemHrid) deterministicProduced.add(output.itemHrid);
         }
         for (const drop of actionDetails.dropTable || []) {
-            if (drop.itemHrid) produced.add(drop.itemHrid);
+            if (drop.itemHrid) stochasticProduced.add(drop.itemHrid);
         }
-        return { consumed, produced };
+        return { consumed, deterministicProduced, stochasticProduced };
     }
 
-    function footprintOverlapsSeen(footprint, seenFootprint) {
-        for (const hrid of footprint.consumed) {
-            if (seenFootprint.has(hrid)) return true;
+    function intersects(left, right) {
+        for (const hrid of left) {
+            if (right.has(hrid)) return true;
         }
         return false;
+    }
+
+    /** Maps a resolved timing limiter back to the item hrid it actually binds, or null. */
+    function getLimitHrid(limitType) {
+        if (limitType === 'gold') return '/items/coin';
+        if (limitType?.startsWith('material:')) return limitType.slice('material:'.length);
+        if (limitType?.startsWith('upgrade:')) return limitType.slice('upgrade:'.length);
+        return null;
+    }
+
+    function cloneInventoryLookup(inventoryLookup) {
+        return {
+            byHrid: { ...(inventoryLookup?.byHrid || {}) },
+            byEnhancedKey: { ...(inventoryLookup?.byEnhancedKey || {}) },
+        };
+    }
+
+    /**
+     * Applies a deterministic delta to a projected inventory lookup, keeping byHrid and byEnhancedKey (at
+     * enhancement level 0 - ordinary recipe inputs/outputs/upgrade items are always base items) in sync.
+     * calculateMaterialLimit()'s Alchemy branch reads byEnhancedKey, not byHrid, so leaving it stale would
+     * let a later Alchemy segment compute a wrong-but-trustworthy result against inconsistent balances.
+     */
+    function adjustProjectedItem(lookup, itemHrid, delta) {
+        if (!itemHrid || !Number.isFinite(delta) || delta === 0) return;
+
+        lookup.byHrid[itemHrid] = Math.max(0, (lookup.byHrid[itemHrid] || 0) + delta);
+
+        const enhancedKey = `${itemHrid}::0`;
+        lookup.byEnhancedKey[enhancedKey] = Math.max(0, (lookup.byEnhancedKey[enhancedKey] || 0) + delta);
+    }
+
+    /**
+     * Projects the deterministic inventory delta of one ordinary recipe/gathering segment. Declines
+     * (supported: false) for Alchemy (dynamic bulk/catalyst/success-rate coin math not replicated here) and
+     * Enhancing (stochastic; already routed to its own uncertainty reason earlier in the loop for a live
+     * queue - kept here only as a defensive guard). Uses timing.count (completed queued actions), never
+     * baseActionsNeeded (time-consuming actions after efficiency) - materials are consumed per queued
+     * action, matching Action Time Display's own resource-limiter semantics.
+     */
+    function projectOrdinaryDeterministicInventory(actionDetails, timing, inventoryLookup, actionContext) {
+        if (!Number.isFinite(timing?.count) || timing.count < 0) {
+            return { supported: false, inventoryLookup };
+        }
+        if (actionDetails.type === '/action_types/alchemy' || actionDetails.type === '/action_types/enhancing') {
+            return { supported: false, inventoryLookup };
+        }
+
+        const next = cloneInventoryLookup(inventoryLookup);
+        const context = actionContext ?? resolveActionContext(actionDetails.type);
+        const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
+        const drinkConcentration = teaParser_js.getDrinkConcentration(context.equipment, itemDetailMap);
+        const artisanBonus = teaParser_js.parseArtisanBonus(context.drinks, itemDetailMap, drinkConcentration);
+        const count = timing.count;
+
+        for (const input of actionDetails.inputItems || []) {
+            const perAction = input.count * (1 - artisanBonus);
+            adjustProjectedItem(next, input.itemHrid, -(perAction * count));
+        }
+        if (actionDetails.upgradeItemHrid) {
+            adjustProjectedItem(next, actionDetails.upgradeItemHrid, -count);
+        }
+        if (actionDetails.coinCost > 0) {
+            adjustProjectedItem(next, '/items/coin', -(actionDetails.coinCost * count));
+        }
+        for (const output of actionDetails.outputItems || []) {
+            adjustProjectedItem(next, output.itemHrid, output.count * count);
+        }
+
+        return { supported: true, inventoryLookup: next };
     }
 
     /**
@@ -26615,9 +26618,10 @@ self.onmessage = function (e) {
             return { segments: [], terminalCause: 'idle', terminalAt: now, certainty: 'trustworthy' };
         }
 
-        const inventoryLookup = actionTimeDisplay.buildInventoryLookup(dataManager.getInventory());
+        let inventoryLookup = actionTimeDisplay.buildInventoryLookup(dataManager.getInventory());
         const drinkCutoffCache = new Map();
-        const seenFootprint = new Set();
+        const unknownBalanceHrids = new Set();
+        const possibleExtraHrids = new Set();
 
         const segments = [];
         let currentTime = now;
@@ -26739,12 +26743,17 @@ self.onmessage = function (e) {
 
             const stopCause = classifyStopCause(timing.limitType);
 
-            // Check against the ACTUAL item dependency, not merely which limiter won against the
-            // stale starting inventory - a segment whose own calculated stopCause happens to resolve
-            // as 'count' (against that stale snapshot) can still genuinely depend on an earlier
-            // segment's consumption/production of the same item.
-            const footprint = getSegmentItemFootprint(actionDetails, actionObj);
-            if (footprintOverlapsSeen(footprint, seenFootprint)) {
+            const footprint = getSegmentInventoryFootprint(actionDetails, actionObj);
+            if (intersects(footprint.consumed, unknownBalanceHrids)) {
+                pushUncertain(actionObj, actionDetails, i, remainingQueuedCount, currentTime, 'inventory-dependency');
+                break;
+            }
+
+            // A prior random drop is only relevant when the deterministic lower-bound inventory actually
+            // binds this segment. If full finite work is already supported by deterministic stock alone,
+            // possible extra random inventory must not poison an otherwise deterministic queue.
+            const limitingHrid = getLimitHrid(timing.limitType);
+            if (limitingHrid && possibleExtraHrids.has(limitingHrid)) {
                 pushUncertain(actionObj, actionDetails, i, remainingQueuedCount, currentTime, 'inventory-dependency');
                 break;
             }
@@ -26774,10 +26783,17 @@ self.onmessage = function (e) {
                 })
             );
 
-            // Track consumed/produced items so a LATER segment depending on them is recognized as no
-            // longer trustworthy - never applied retroactively to this segment's own accepted time.
-            for (const hrid of footprint.consumed) seenFootprint.add(hrid);
-            for (const hrid of footprint.produced) seenFootprint.add(hrid);
+            const projected = projectOrdinaryDeterministicInventory(actionDetails, timing, inventoryLookup, actionContext);
+            if (projected.supported) {
+                inventoryLookup = projected.inventoryLookup;
+                for (const hrid of footprint.stochasticProduced) possibleExtraHrids.add(hrid);
+            } else {
+                // Keep complex/unsupported balance changes local instead of poisoning unrelated queue
+                // entries. A later consumer of one of these identities fails closed.
+                for (const hrid of footprint.consumed) unknownBalanceHrids.add(hrid);
+                for (const hrid of footprint.deterministicProduced) unknownBalanceHrids.add(hrid);
+                for (const hrid of footprint.stochasticProduced) unknownBalanceHrids.add(hrid);
+            }
 
             currentTime = naturalEndAt;
 
@@ -27025,4 +27041,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] UI library 2 loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core.webSocketHook, Toolasha.Utils.marketData, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Market.expectedValueCalculator, Toolasha.Core.marketAPI, Toolasha.Core, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.reactInput, Toolasha.Utils.materialCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.profitConstants, Toolasha.Utils.teaParser, Toolasha.Utils.profitHelpers, Toolasha.Core.loadoutState, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.actionCalculator, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.efficiency, Toolasha.Market.profitCalculator, Toolasha.Utils.buffParser);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core.webSocketHook, Toolasha.Utils.marketData, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Market.expectedValueCalculator, Toolasha.Core.marketAPI, Toolasha.Core, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.reactInput, Toolasha.Utils.materialCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.profitConstants, Toolasha.Utils.teaParser, Toolasha.Utils.profitHelpers, Toolasha.Core.loadoutState, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.actionCalculator, Toolasha.Core.tooltipObserver, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.efficiency, Toolasha.Market.profitCalculator, Toolasha.Utils.buffParser);

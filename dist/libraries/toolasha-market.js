@@ -1,11 +1,11 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.106.1
+ * Version: 2.106.2
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, enhancementCalculator_js, formatters_js, marketData_js, teaParser_js, profitConstants_js, profitHelpers_js, buffParser_js, equipmentParser_js, actionCalculator_js, tokenValuation_js, storage, enhancementConfig_js, dom, materialCalculator_js, timerRegistry_js, cleanupRegistry_js, loadoutState, domObserverHelpers_js, enhancementMultipliers_js, marketplaceSession_js, reactInput_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js) {
+(function (config, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, enhancementCalculator_js, formatters_js, marketData_js, teaParser_js, profitConstants_js, profitHelpers_js, buffParser_js, equipmentParser_js, actionCalculator_js, tokenValuation_js, storage, enhancementConfig_js, dom, materialCalculator_js, timerRegistry_js, cleanupRegistry_js, loadoutState, domObserverHelpers_js, enhancementMultipliers_js, marketplaceSession_js, reactInput_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js, tooltipObserver) {
     'use strict';
 
     function _interopNamespaceDefault(e) {
@@ -20530,12 +20530,16 @@ self.onmessage = function (e) {
     /**
      * Build cheapest-gold-per-credit maps for both sell and buy sides.
      * @param {Object} itemDetailMap
+     * @param {string[]} [excludeHrids=[]] - Source item hrids to skip (e.g. Guild Token itself, which
+     *   carries its own guildCreditConversions and would otherwise create a circular credit value —
+     *   TLA-041).
      * @returns {{ sell: Object, buy: Object }} Map of creditItemHrid -> cheapest gold cost per credit
      */
-    function buildCheapestPerCredit(itemDetailMap) {
+    function buildCheapestPerCredit(itemDetailMap, excludeHrids = []) {
         const sell = {};
         const buy = {};
         for (const [hrid, item] of Object.entries(itemDetailMap)) {
+            if (excludeHrids.includes(hrid)) continue;
             for (const conv of item.guildCreditConversions || []) {
                 const creditHrid = conv.creditItemHrid;
                 const sellPrice = marketData_js.getItemPrice(hrid, { mode: 'ask' });
@@ -28030,141 +28034,6 @@ self.onmessage = function (e) {
     };
 
     /**
-     * Tooltip Observer
-     * Centralized observer for tooltip/popper appearances
-     * Any feature can subscribe to be notified when tooltips appear
-     */
-
-
-    class TooltipObserver {
-        constructor() {
-            this.subscribers = new Map(); // name -> { callback, notifyClose }
-            this.unregisterObserver = null;
-            this.isInitialized = false;
-            this.activeRemovalObservers = new Set();
-            this.observedElements = new WeakSet();
-        }
-
-        /**
-         * Initialize the observer (call once)
-         */
-        initialize() {
-            if (this.isInitialized) {
-                return;
-            }
-
-            this.isInitialized = true;
-
-            // Watch for tooltip/popper elements appearing
-            // These are the common classes used by MUI tooltips/poppers
-            this.unregisterObserver = domObserver.onClass('TooltipObserver', ['MuiPopper', 'MuiTooltip'], (element) => {
-                this.notifySubscribers(element);
-            });
-        }
-
-        /**
-         * Subscribe to tooltip appearance events
-         * @param {string} name - Unique subscriber name
-         * @param {Function} callback - Function(element, eventType) to call when tooltip appears
-         * @param {Object} options - Subscription options
-         * @param {boolean} options.notifyClose - Observe and report tooltip removal (default false)
-         */
-        subscribe(name, callback, options = {}) {
-            this.subscribers.set(name, {
-                callback,
-                notifyClose: options.notifyClose === true,
-            });
-
-            // Auto-initialize if first subscriber
-            if (!this.isInitialized) {
-                this.initialize();
-            }
-        }
-
-        /**
-         * Unsubscribe from tooltip events
-         * @param {string} name - Subscriber name
-         */
-        unsubscribe(name) {
-            this.subscribers.delete(name);
-
-            if (this.subscribers.size === 0) {
-                this.disable();
-            }
-        }
-
-        /**
-         * Notify all subscribers that a tooltip appeared
-         * @param {Element} element - The tooltip/popper element
-         * @private
-         */
-        notifySubscribers(element) {
-            const needsCloseNotification = Array.from(this.subscribers.values()).some(
-                (subscriber) => subscriber.notifyClose
-            );
-
-            // Current production subscribers only need open notifications. Avoid creating
-            // one MutationObserver per transient tooltip unless close events are requested.
-            if (needsCloseNotification && !this.observedElements.has(element)) {
-                const observationRoot = document.body || element.parentNode;
-                if (observationRoot) {
-                    this.observedElements.add(element);
-                    const removalObserver = new MutationObserver(() => {
-                        if (element.isConnected) return;
-
-                        for (const [name, subscriber] of this.subscribers.entries()) {
-                            if (!subscriber.notifyClose) continue;
-                            try {
-                                subscriber.callback(element, 'closed');
-                            } catch (error) {
-                                console.error(`[TooltipObserver] Error in subscriber "${name}" (close):`, error);
-                            }
-                        }
-
-                        removalObserver.disconnect();
-                        this.activeRemovalObservers.delete(removalObserver);
-                        this.observedElements.delete(element);
-                    });
-
-                    this.activeRemovalObservers.add(removalObserver);
-                    removalObserver.observe(observationRoot, {
-                        childList: true,
-                        subtree: true,
-                    });
-                }
-            }
-
-            // Notify subscribers that tooltip opened
-            for (const [name, subscriber] of this.subscribers.entries()) {
-                try {
-                    subscriber.callback(element, 'opened');
-                } catch (error) {
-                    console.error(`[TooltipObserver] Error in subscriber "${name}" (open):`, error);
-                }
-            }
-        }
-
-        /**
-         * Cleanup and disable
-         */
-        disable() {
-            if (this.unregisterObserver) {
-                this.unregisterObserver();
-                this.unregisterObserver = null;
-            }
-            for (const observer of this.activeRemovalObservers) {
-                observer.disconnect();
-            }
-            this.activeRemovalObservers.clear();
-            this.observedElements = new WeakSet();
-            this.subscribers.clear();
-            this.isInitialized = false;
-        }
-    }
-
-    const tooltipObserver = new TooltipObserver();
-
-    /**
      * Auto All Button Feature
      * Automatically clicks the "All" button when opening loot boxes/containers
      */
@@ -35129,4 +34998,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] Market library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.tokenValuation, Toolasha.Core.storage, Toolasha.Utils.enhancementConfig, Toolasha.Utils.dom, Toolasha.Utils.materialCalculator, Toolasha.Utils.timerRegistry, Toolasha.Utils.cleanupRegistry, Toolasha.Core.loadoutState, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Core, Toolasha.Utils.reactInput, Toolasha.Core.webSocketHook, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.tokenValuation, Toolasha.Core.storage, Toolasha.Utils.enhancementConfig, Toolasha.Utils.dom, Toolasha.Utils.materialCalculator, Toolasha.Utils.timerRegistry, Toolasha.Utils.cleanupRegistry, Toolasha.Core.loadoutState, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Core, Toolasha.Utils.reactInput, Toolasha.Core.webSocketHook, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator, Toolasha.Core.tooltipObserver);

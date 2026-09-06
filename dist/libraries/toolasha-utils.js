@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.106.1
+ * Version: 2.106.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6617,8 +6617,36 @@ self.onmessage = function (e) {
         return booksNeeded * weightedPrice;
     }
 
+    /**
+     * Calculate the cost to reach a specific ability level from level 0, reading real per-item
+     * `abilityBookDetail.experienceGain` instead of a hardcoded starter/non-starter split, and
+     * pricing the book with pure Ask (TLA-041 / F-11). Never falls back to 0 silently — a missing
+     * `experienceGain` or Ask price marks the result incomplete.
+     * @param {string} abilityHrid - Ability HRID
+     * @param {number} targetLevel - Target level to reach
+     * @returns {{cost: number|null, complete: boolean}}
+     */
+    function calculateAbilityBookCostDataDriven(abilityHrid, targetLevel) {
+        const gameData = dataManager.getInitClientData();
+        const levelXpTable = gameData?.levelExperienceTable;
+        if (!levelXpTable) return { cost: null, complete: false };
+
+        const itemHrid = abilityHrid.replace('/abilities/', '/items/');
+        const xpPerBook = gameData.itemDetailMap?.[itemHrid]?.abilityBookDetail?.experienceGain;
+        if (!(xpPerBook > 0)) return { cost: null, complete: false };
+
+        const targetXp = levelXpTable[targetLevel] || 0;
+        const booksNeeded = Math.ceil(targetXp / xpPerBook) + 1; // +1 = initial learn book
+
+        const ask = getItemPrice(itemHrid, { mode: 'ask' });
+        if (!(ask > 0)) return { cost: null, complete: false };
+
+        return { cost: booksNeeded * ask, complete: true };
+    }
+
     var abilityCalc = /*#__PURE__*/Object.freeze({
         __proto__: null,
+        calculateAbilityBookCostDataDriven: calculateAbilityBookCostDataDriven,
         calculateAbilityCost: calculateAbilityCost,
         calculateAbilityLevelUpCost: calculateAbilityLevelUpCost,
         isStarterAbility: isStarterAbility
@@ -8547,10 +8575,100 @@ self.onmessage = function (e) {
         return { totalCost, breakdown };
     }
 
+    /**
+     * Determine whether a house room is Combat or Skiller domain, from actual game data
+     * (`usableInActionTypeMap`) rather than a hardcoded room-name list (TLA-041 / PB-08).
+     * @param {string} houseRoomHrid - House room HRID
+     * @returns {'combat'|'skilling'|null} null if the room is unknown
+     */
+    function getHouseRoomDomain(houseRoomHrid) {
+        const gameData = dataManager.getInitClientData();
+        const houseDetail = gameData?.houseRoomDetailMap?.[houseRoomHrid];
+        if (!houseDetail) return null;
+
+        const usableInActionTypeMap = houseDetail.usableInActionTypeMap || {};
+        return usableInActionTypeMap['/action_types/combat'] ? 'combat' : 'skilling';
+    }
+
+    /**
+     * Calculate the cost to build a house room to a specific level using pure Ask pricing
+     * (never `(ask+bid)/2` — TLA-041 / F-10). A required material with no positive Ask marks the
+     * whole room incomplete instead of silently contributing 0.
+     * @param {string} houseRoomHrid - House room HRID
+     * @param {number} currentLevel - Target level
+     * @returns {{cost: number, complete: boolean}}
+     */
+    function calculateHouseRoomCostAskOnly(houseRoomHrid, currentLevel) {
+        const gameData = dataManager.getInitClientData();
+        const upgradeCostsMap = gameData?.houseRoomDetailMap?.[houseRoomHrid]?.upgradeCostsMap;
+        if (!upgradeCostsMap) return { cost: 0, complete: false };
+
+        let cost = 0;
+        let complete = true;
+
+        for (let level = 1; level <= currentLevel; level++) {
+            const levelUpgrades = upgradeCostsMap[level];
+            if (!levelUpgrades) {
+                complete = false;
+                continue;
+            }
+
+            for (const item of levelUpgrades) {
+                if (item.itemHrid === '/items/coin') {
+                    cost += item.count;
+                    continue;
+                }
+
+                const ask = getItemPrice(item.itemHrid, { mode: 'ask' });
+                if (!(ask > 0)) {
+                    complete = false;
+                    continue;
+                }
+                cost += item.count * ask;
+            }
+        }
+
+        return { cost, complete };
+    }
+
+    /**
+     * Sum Ask-only build cost across every owned room in the given domain.
+     * @param {Object} characterHouseRooms - Map of character house rooms from profile data
+     * @param {'combat'|'skilling'} domain
+     * @returns {{totalCost: number, complete: boolean, breakdown: Array<{name: string, level: number, cost: number}>}}
+     */
+    function calculateHousesCostByDomain(characterHouseRooms, domain) {
+        const gameData = dataManager.getInitClientData();
+        const houseRoomDetailMap = gameData?.houseRoomDetailMap || {};
+
+        let totalCost = 0;
+        let complete = true;
+        const breakdown = [];
+
+        for (const [houseRoomHrid, houseData] of Object.entries(characterHouseRooms || {})) {
+            const level = houseData.level || 0;
+            if (level === 0) continue;
+            if (getHouseRoomDomain(houseRoomHrid) !== domain) continue;
+
+            const { cost, complete: roomComplete } = calculateHouseRoomCostAskOnly(houseRoomHrid, level);
+            totalCost += cost;
+            complete = complete && roomComplete;
+
+            const houseName = houseRoomDetailMap[houseRoomHrid]?.name || houseRoomHrid.replace('/house_rooms/', '');
+            breakdown.push({ name: houseName, level, cost });
+        }
+
+        breakdown.sort((a, b) => b.cost - a.cost);
+        return { totalCost, complete, breakdown };
+    }
+
     var houseCostCalculator = /*#__PURE__*/Object.freeze({
         __proto__: null,
         calculateBattleHousesCost: calculateBattleHousesCost,
-        calculateHouseBuildCost: calculateHouseBuildCost
+        calculateHouseBuildCost: calculateHouseBuildCost,
+        calculateHouseRoomCostAskOnly: calculateHouseRoomCostAskOnly,
+        calculateHousesCostByDomain: calculateHousesCostByDomain,
+        getHouseRoomDomain: getHouseRoomDomain
     });
 
     /**

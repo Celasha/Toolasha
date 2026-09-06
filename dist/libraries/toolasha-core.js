@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.106.1
+ * Version: 2.106.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8892,8 +8892,11 @@
      */
 
 
+    const TOOLTIP_OBSERVER_IMPLEMENTATION_ID = 'toolasha-core-tooltip-observer-v1';
+
     class TooltipObserver {
         constructor() {
+            this.implementationId = TOOLTIP_OBSERVER_IMPLEMENTATION_ID;
             this.subscribers = new Map(); // name -> { callback, notifyClose }
             this.unregisterObserver = null;
             this.isInitialized = false;

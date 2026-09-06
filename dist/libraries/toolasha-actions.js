@@ -1,11 +1,11 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.106.1
+ * Version: 2.106.2
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (dataManager, config, domObserver, enhancementConfig_js, enhancementCalculator_js, profitConstants_js, formatters_js, marketAPI, domObserverHelpers_js, bonusRevenueCalculator_js, marketData_js, efficiency_js, profitHelpers_js, profitCalculator, uiComponents_js, actionPanelHelper_js, loadoutState, storage, dom_js, timerRegistry_js, teaParser_js, alchemyProfitCalculator, actionCalculator_js, cleanupRegistry_js, buffParser_js, equipmentParser_js, experienceParser_js, reactInput_js, experienceCalculator_js, materialCalculator_js, marketplaceSession_js, expectedValueCalculator) {
+(function (dataManager, config, domObserver, enhancementConfig_js, enhancementCalculator_js, profitConstants_js, formatters_js, marketAPI, domObserverHelpers_js, bonusRevenueCalculator_js, marketData_js, efficiency_js, profitHelpers_js, profitCalculator, uiComponents_js, actionPanelHelper_js, loadoutState, storage, dom_js, timerRegistry_js, teaParser_js, tooltipObserver, alchemyProfitCalculator, actionCalculator_js, cleanupRegistry_js, buffParser_js, equipmentParser_js, experienceParser_js, reactInput_js, experienceCalculator_js, materialCalculator_js, marketplaceSession_js, expectedValueCalculator) {
     'use strict';
 
     /**
@@ -6987,141 +6987,6 @@
     }
 
     /**
-     * Tooltip Observer
-     * Centralized observer for tooltip/popper appearances
-     * Any feature can subscribe to be notified when tooltips appear
-     */
-
-
-    class TooltipObserver {
-        constructor() {
-            this.subscribers = new Map(); // name -> { callback, notifyClose }
-            this.unregisterObserver = null;
-            this.isInitialized = false;
-            this.activeRemovalObservers = new Set();
-            this.observedElements = new WeakSet();
-        }
-
-        /**
-         * Initialize the observer (call once)
-         */
-        initialize() {
-            if (this.isInitialized) {
-                return;
-            }
-
-            this.isInitialized = true;
-
-            // Watch for tooltip/popper elements appearing
-            // These are the common classes used by MUI tooltips/poppers
-            this.unregisterObserver = domObserver.onClass('TooltipObserver', ['MuiPopper', 'MuiTooltip'], (element) => {
-                this.notifySubscribers(element);
-            });
-        }
-
-        /**
-         * Subscribe to tooltip appearance events
-         * @param {string} name - Unique subscriber name
-         * @param {Function} callback - Function(element, eventType) to call when tooltip appears
-         * @param {Object} options - Subscription options
-         * @param {boolean} options.notifyClose - Observe and report tooltip removal (default false)
-         */
-        subscribe(name, callback, options = {}) {
-            this.subscribers.set(name, {
-                callback,
-                notifyClose: options.notifyClose === true,
-            });
-
-            // Auto-initialize if first subscriber
-            if (!this.isInitialized) {
-                this.initialize();
-            }
-        }
-
-        /**
-         * Unsubscribe from tooltip events
-         * @param {string} name - Subscriber name
-         */
-        unsubscribe(name) {
-            this.subscribers.delete(name);
-
-            if (this.subscribers.size === 0) {
-                this.disable();
-            }
-        }
-
-        /**
-         * Notify all subscribers that a tooltip appeared
-         * @param {Element} element - The tooltip/popper element
-         * @private
-         */
-        notifySubscribers(element) {
-            const needsCloseNotification = Array.from(this.subscribers.values()).some(
-                (subscriber) => subscriber.notifyClose
-            );
-
-            // Current production subscribers only need open notifications. Avoid creating
-            // one MutationObserver per transient tooltip unless close events are requested.
-            if (needsCloseNotification && !this.observedElements.has(element)) {
-                const observationRoot = document.body || element.parentNode;
-                if (observationRoot) {
-                    this.observedElements.add(element);
-                    const removalObserver = new MutationObserver(() => {
-                        if (element.isConnected) return;
-
-                        for (const [name, subscriber] of this.subscribers.entries()) {
-                            if (!subscriber.notifyClose) continue;
-                            try {
-                                subscriber.callback(element, 'closed');
-                            } catch (error) {
-                                console.error(`[TooltipObserver] Error in subscriber "${name}" (close):`, error);
-                            }
-                        }
-
-                        removalObserver.disconnect();
-                        this.activeRemovalObservers.delete(removalObserver);
-                        this.observedElements.delete(element);
-                    });
-
-                    this.activeRemovalObservers.add(removalObserver);
-                    removalObserver.observe(observationRoot, {
-                        childList: true,
-                        subtree: true,
-                    });
-                }
-            }
-
-            // Notify subscribers that tooltip opened
-            for (const [name, subscriber] of this.subscribers.entries()) {
-                try {
-                    subscriber.callback(element, 'opened');
-                } catch (error) {
-                    console.error(`[TooltipObserver] Error in subscriber "${name}" (open):`, error);
-                }
-            }
-        }
-
-        /**
-         * Cleanup and disable
-         */
-        disable() {
-            if (this.unregisterObserver) {
-                this.unregisterObserver();
-                this.unregisterObserver = null;
-            }
-            for (const observer of this.activeRemovalObservers) {
-                observer.disconnect();
-            }
-            this.activeRemovalObservers.clear();
-            this.observedElements = new WeakSet();
-            this.subscribers.clear();
-            this.isInitialized = false;
-        }
-    }
-
-    const tooltipObserver = new TooltipObserver();
-
-    /**
      * Action context resolver
      *
      * Returns the equipment and active drinks to use when predicting an action's
@@ -7378,6 +7243,41 @@
         return formatters_js.formatDateTime(completionTime, { includeDate, includeTime: true, includeSeconds: true });
     }
 
+    // Marks a native QueuedActions edit-menu once Toolasha has enhanced it, so the width contract
+    // below and the row-wrapping rules only ever apply to that specific popup (TLA-040) — never to
+    // unrelated MUI tooltips/poppers elsewhere in the game.
+    const QUEUE_EDIT_MENU_MARKER_CLASS = 'toolasha-queue-edit-menu-enhanced';
+    const QUEUE_EDIT_MENU_STYLE_ID = 'toolasha-queue-edit-menu-width-styles';
+
+    // Preferred desktop inner width (414px) matches the pre-existing wide-state geometry so the popup
+    // no longer flips between ~312px/~445px purely from queue order/content. On constrained viewports
+    // it shrinks continuously (min() formula) rather than switching at a fixed breakpoint, staying
+    // fully on-screen; dvw is preferred where supported, falling back to vw.
+    const QUEUE_EDIT_MENU_CSS = `
+.${QUEUE_EDIT_MENU_MARKER_CLASS} {
+    width: min(414px, calc(100vw - 64px));
+    max-width: min(414px, calc(100vw - 64px));
+    min-width: min(280px, calc(100vw - 64px));
+    box-sizing: border-box;
+}
+@supports (width: 100dvw) {
+    .${QUEUE_EDIT_MENU_MARKER_CLASS} {
+        width: min(414px, calc(100dvw - 64px));
+        max-width: min(414px, calc(100dvw - 64px));
+        min-width: min(280px, calc(100dvw - 64px));
+    }
+}
+.${QUEUE_EDIT_MENU_MARKER_CLASS} .mwi-queue-action-time,
+.${QUEUE_EDIT_MENU_MARKER_CLASS} .mwi-queue-action-profit {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    box-sizing: border-box;
+}
+`;
+
     /**
      * ActionTimeDisplay class manages the time display panel and queue tooltips
      */
@@ -7590,11 +7490,17 @@
          * Initialize observer for queue tooltip
          */
         initializeQueueObserver() {
+            this.ensureQueueEditMenuStyles();
+
             // Register with centralized DOM observer to watch for queue menu
             this.unregisterQueueObserver = domObserver.onClass(
                 'ActionTimeDisplay-Queue',
                 'QueuedActions_queuedActionsEditMenu',
                 (queueMenu) => {
+                    // classList.add is a no-op if already present, so repeated mounts/reorders of the
+                    // same element can never duplicate the marker.
+                    queueMenu.classList.add(QUEUE_EDIT_MENU_MARKER_CLASS);
+
                     this.injectQueueTimes(queueMenu);
 
                     this.setupQueueMenuObserver(queueMenu);
@@ -7607,6 +7513,21 @@
                     this.unregisterQueueObserver = null;
                 }
             });
+
+            this.cleanupRegistry.registerCleanup(() => {
+                dom_js.removeStyles(QUEUE_EDIT_MENU_STYLE_ID);
+            });
+        }
+
+        /**
+         * Inject the Queued Actions edit-menu width stylesheet once. Idempotent so re-initializing
+         * (e.g. disabling and re-enabling the feature) never appends a duplicate `<style>` element.
+         */
+        ensureQueueEditMenuStyles() {
+            if (document.getElementById(QUEUE_EDIT_MENU_STYLE_ID)) {
+                return;
+            }
+            dom_js.addStyles(QUEUE_EDIT_MENU_CSS, QUEUE_EDIT_MENU_STYLE_ID);
         }
 
         /**
@@ -29556,4 +29477,4 @@
 
     console.log('[Toolasha] Actions library loaded');
 
-})(Toolasha.Core.dataManager, Toolasha.Core.config, Toolasha.Core.domObserver, Toolasha.Utils.enhancementConfig, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.profitConstants, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.efficiency, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.uiComponents, Toolasha.Utils.actionPanelHelper, Toolasha.Core.loadoutState, Toolasha.Core.storage, Toolasha.Utils.dom, Toolasha.Utils.timerRegistry, Toolasha.Utils.teaParser, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.actionCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.experienceParser, Toolasha.Utils.reactInput, Toolasha.Utils.experienceCalculator, Toolasha.Utils.materialCalculator, Toolasha.Core, Toolasha.Market.expectedValueCalculator);
+})(Toolasha.Core.dataManager, Toolasha.Core.config, Toolasha.Core.domObserver, Toolasha.Utils.enhancementConfig, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.profitConstants, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.efficiency, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.uiComponents, Toolasha.Utils.actionPanelHelper, Toolasha.Core.loadoutState, Toolasha.Core.storage, Toolasha.Utils.dom, Toolasha.Utils.timerRegistry, Toolasha.Utils.teaParser, Toolasha.Core.tooltipObserver, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.actionCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.experienceParser, Toolasha.Utils.reactInput, Toolasha.Utils.experienceCalculator, Toolasha.Utils.materialCalculator, Toolasha.Core, Toolasha.Market.expectedValueCalculator);
