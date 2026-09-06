@@ -104,6 +104,35 @@ describe('CombatUnit.addPermanentBuff ownership (CSIM-AUD-020B)', () => {
     });
 });
 
+describe('CombatUnit.generatePermanentBuffs - Achievement Tier wiring (TLA-044)', () => {
+    test('TLA044-08: an Achievement Damage buff and an existing extraBuffs Damage source stack through addPermanentBuff exactly once', () => {
+        const unit = makeUnit();
+        unit.extraBuffs = [{ typeHrid: '/buff_types/damage', flatBoost: 0, ratioBoost: 0.03 }]; // e.g. synthetic Shrine/extra source
+        unit.achievements = {
+            buffs: [
+                {
+                    uniqueHrid: '/buff_uniques/tier_damage',
+                    typeHrid: '/buff_types/damage',
+                    flatBoost: 0,
+                    ratioBoost: 0.02,
+                },
+            ],
+        };
+
+        unit.generatePermanentBuffs();
+
+        expect(unit.permanentBuffs['/buff_types/damage'].ratioBoost).toBeCloseTo(0.05);
+    });
+
+    test('no achievements assigned (e.g. Monster units) never crashes and contributes nothing', () => {
+        const unit = makeUnit();
+        unit.extraBuffs = [];
+        expect(unit.achievements).toBeNull();
+        expect(() => unit.generatePermanentBuffs()).not.toThrow();
+        expect(unit.permanentBuffs['/buff_types/damage']).toBeUndefined();
+    });
+});
+
 describe('CombatUnit.updateCombatDetails - effective Threat (CSIM-AUD-022)', () => {
     test('no gear threat, no buff -> 100', () => {
         const unit = makeUnit();

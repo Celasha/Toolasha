@@ -105,3 +105,53 @@ describe('parseShykaiImport - Guild Shrines (guildCombatBuffLevels)', () => {
         expect(result.players[0].shrineLevels).toEqual({ '/guild_shrines/scholar': 4 });
     });
 });
+
+describe('parseShykaiImport - Achievements (TLA044-10/11)', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    test('TLA044-10: slotData.achievements true/false map is normalized into characterAchievements', () => {
+        const json = JSON.stringify(
+            slotPlayer({
+                achievements: {
+                    '/achievements/novice_x': true,
+                    '/achievements/elite_y': false,
+                },
+            })
+        );
+
+        const result = parseShykaiImport(json);
+
+        expect(result.players[0].characterAchievements).toEqual(
+            expect.arrayContaining([
+                { achievementHrid: '/achievements/novice_x', isCompleted: true },
+                { achievementHrid: '/achievements/elite_y', isCompleted: false },
+            ])
+        );
+    });
+
+    test('TLA044-11: no slotData.achievements field leaves characterAchievements empty, not an error, and never borrows self state', () => {
+        const json = JSON.stringify(slotPlayer());
+
+        const result = parseShykaiImport(json);
+
+        expect(result.players[0].characterAchievements).toEqual([]);
+    });
+
+    test('multi-slot format: each player keeps their own independent achievement completion', () => {
+        const parsed = {
+            1: JSON.stringify(slotPlayer({ achievements: { '/achievements/novice_x': true } })),
+            2: JSON.stringify(slotPlayer({ achievements: { '/achievements/novice_x': false } })),
+        };
+
+        const result = parseShykaiImport(JSON.stringify(parsed));
+
+        expect(result.players[0].characterAchievements).toEqual([
+            { achievementHrid: '/achievements/novice_x', isCompleted: true },
+        ]);
+        expect(result.players[1].characterAchievements).toEqual([
+            { achievementHrid: '/achievements/novice_x', isCompleted: false },
+        ]);
+    });
+});

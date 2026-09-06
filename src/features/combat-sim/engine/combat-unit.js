@@ -27,6 +27,7 @@ class CombatUnit {
     drinks = [null, null, null];
     houseRooms = [];
     shrines = [];
+    achievements = null;
     dropTable = [];
     rareDropTable = [];
     abilityManaCosts = new Map();
@@ -485,6 +486,11 @@ class CombatUnit {
         }
         if (this.extraBuffs) {
             this.extraBuffs.forEach((buff) => {
+                this.addPermanentBuff(buff);
+            });
+        }
+        if (this.achievements) {
+            this.achievements.buffs.forEach((buff) => {
                 this.addPermanentBuff(buff);
             });
         }

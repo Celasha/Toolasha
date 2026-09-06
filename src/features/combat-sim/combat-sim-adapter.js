@@ -74,6 +74,8 @@ export function buildGameDataPayload() {
         labyrinthCrateDetailMap: clientData.labyrinthCrateDetailMap,
         guildBuffDetailMap: clientData.guildBuffDetailMap,
         guildShrineDetailMap: clientData.guildShrineDetailMap,
+        achievementDetailMap: clientData.achievementDetailMap,
+        achievementTierDetailMap: clientData.achievementTierDetailMap,
     };
 }
 
@@ -460,7 +462,21 @@ export function parseShykaiImport(jsonString) {
             abilities: [],
             houseRooms: {},
             shrineLevels: {},
+            characterAchievements: [],
         };
+
+        // Achievements (TLA-044): Szerra/Shykai exports carry a per-slot completion map
+        // (achievementHrid -> true/false) rather than Toolasha's native array-of-objects shape.
+        // Normalize it into the same {achievementHrid, isCompleted} representation
+        // buildPlayerDTO()/buildPartyMemberDTO() already produce, so the engine never needs
+        // import-specific logic. Missing/malformed evidence stays the neutral empty array set
+        // above rather than borrowing another player's/session's completion state.
+        if (slotData.achievements && typeof slotData.achievements === 'object') {
+            dto.characterAchievements = Object.entries(slotData.achievements).map(([achievementHrid, isCompleted]) => ({
+                achievementHrid,
+                isCompleted: !!isCompleted,
+            }));
+        }
 
         // Equipment: array format [{itemLocationHrid, itemHrid, enhancementLevel}]
         if (Array.isArray(p.equipment)) {

@@ -52,6 +52,17 @@ vi.mock('../../core/loadout-state.js', () => ({
     },
 }));
 
+// Minimal current-shape achievement maps (TLA044-01) - a single combat-usable tier with one member.
+const ACHIEVEMENT_DETAIL_MAP = {
+    '/achievements/novice_x': { tierHrid: '/achievement_tiers/novice' },
+};
+const ACHIEVEMENT_TIER_DETAIL_MAP = {
+    '/achievement_tiers/novice': {
+        buff: { uniqueHrid: '/buff_uniques/achievement_novice_experience', typeHrid: '/buff_types/wisdom' },
+        usableInActionTypeMap: { '/action_types/combat': true },
+    },
+};
+
 vi.mock('../../core/data-manager.js', () => ({
     default: {
         get characterData() {
@@ -64,6 +75,8 @@ vi.mock('../../core/data-manager.js', () => ({
             itemDetailMap: {},
             guildBuffDetailMap: GUILD_BUFF_DETAIL_MAP,
             personalBuffTypeDetailMap: PERSONAL_BUFF_TYPE_DETAIL_MAP,
+            achievementDetailMap: ACHIEVEMENT_DETAIL_MAP,
+            achievementTierDetailMap: ACHIEVEMENT_TIER_DETAIL_MAP,
         })),
         getCommunityBuffLevel: vi.fn(() => 0),
         getCharacterGuildBuffLevel: vi.fn((hrid) => mocks.characterGuildBuffMap[hrid] || 0),
@@ -74,6 +87,7 @@ vi.mock('../../core/data-manager.js', () => ({
 }));
 
 import {
+    buildGameDataPayload,
     buildPlayerDTO,
     buildPlayerDTOFromProfile,
     COMBAT_SHRINE_HRIDS,
@@ -165,6 +179,12 @@ describe('buildPlayerDTO - per-player Shrine/MooPass/achievement/personal-buff c
         expect(buildPlayerDTO().characterAchievements).toEqual([
             { achievementHrid: '/achievements/x', isCompleted: true },
         ]);
+    });
+
+    test('TLA044-01: buildGameDataPayload carries achievementDetailMap and achievementTierDetailMap', () => {
+        const payload = buildGameDataPayload();
+        expect(payload.achievementDetailMap).toBe(ACHIEVEMENT_DETAIL_MAP);
+        expect(payload.achievementTierDetailMap).toBe(ACHIEVEMENT_TIER_DETAIL_MAP);
     });
 
     test('PB-04 (no expiry evidence): personalCombatBuffs stays permanent (remainingDurationNs: null) when no matching instance exists', () => {
