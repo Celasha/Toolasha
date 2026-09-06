@@ -64,4 +64,33 @@ describe('buildCheapestPerCredit', () => {
         expect(sell[CREDIT]).toBeUndefined();
         expect(buy[CREDIT]).toBeCloseTo(0.5);
     });
+
+    test('excludeHrids skips a source item entirely, e.g. Guild Token pricing itself into the credit table (TLA-041)', () => {
+        const GUILD_TOKEN = '/items/guild_token';
+        mockGetItemPrice.mockImplementation((hrid, opts) => {
+            if (opts.mode !== 'ask') return 0;
+            if (hrid === GUILD_TOKEN) return 1; // would win as "cheapest" if not excluded
+            if (hrid === ITEM_A) return 100;
+            return 0;
+        });
+
+        const itemDetailMap = {
+            [GUILD_TOKEN]: { guildCreditConversions: [{ creditItemHrid: CREDIT, itemCount: 1, creditCount: 10 }] },
+            [ITEM_A]: { guildCreditConversions: [{ creditItemHrid: CREDIT, itemCount: 1, creditCount: 10 }] },
+        };
+
+        const withoutExclusion = buildCheapestPerCredit(itemDetailMap);
+        expect(withoutExclusion.sell[CREDIT]).toBeCloseTo(0.1); // guild_token's own price leaks in
+
+        const { sell } = buildCheapestPerCredit(itemDetailMap, [GUILD_TOKEN]);
+        expect(sell[CREDIT]).toBeCloseTo(10); // only ITEM_A considered
+    });
+
+    test('default excludeHrids ([]) preserves existing behavior for the sole existing caller', () => {
+        mockGetItemPrice.mockImplementation((hrid, opts) => (opts.mode === 'ask' ? 100 : 0));
+        const itemDetailMap = {
+            [ITEM_A]: { guildCreditConversions: [{ creditItemHrid: CREDIT, itemCount: 1, creditCount: 10 }] },
+        };
+        expect(buildCheapestPerCredit(itemDetailMap)).toEqual(buildCheapestPerCredit(itemDetailMap, []));
+    });
 });

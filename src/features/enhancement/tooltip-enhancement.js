@@ -743,6 +743,71 @@ export function calculatePerAttemptMaterialCost(itemDetails) {
 }
 
 /**
+ * Calculate the cheapest viewer-relative expected coin cost to enhance an item directly from
+ * `startLevel` to `targetLevel` (K->N), sweeping protection strategies itself and calling
+ * `calculateEnhancement()` with `startLevel` set on every call. Never approximates K->N via two
+ * independently-optimized 0-based totals (TLA-041 / F-04). Composed entirely from already-exported
+ * primitives (`calculatePerAttemptMaterialCost`, `getCheapestProtectionPrice`, `calculateEnhancement`)
+ * — it does not call `calculateEnhancementPath`/`calculateCostForStrategy`/`calculateTotalCost`, so
+ * no existing consumer of this file is affected by this addition.
+ * @param {string} itemHrid
+ * @param {number} startLevel - Current enhancement level to start from (0 <= startLevel < targetLevel)
+ * @param {number} targetLevel - Desired enhancement level
+ * @param {Object} enhancingParams - Viewer's own params from getEnhancingParams()
+ * @returns {{cost: number|null, complete: boolean, protectFrom: number|null}}
+ */
+export function calculateDirectEnhancementCost(itemHrid, startLevel, targetLevel, enhancingParams) {
+    const gameData = dataManager.getInitClientData();
+    const itemDetails = gameData?.itemDetailMap?.[itemHrid];
+    if (!itemDetails?.enhancementCosts?.length) {
+        return { cost: null, complete: false, protectFrom: null };
+    }
+
+    const { cost: perAttemptCost, hasCost, costPartial } = calculatePerAttemptMaterialCost(itemDetails);
+    if (!hasCost || costPartial) {
+        return { cost: null, complete: false, protectFrom: null };
+    }
+
+    const itemLevel = itemDetails.itemLevel || 1;
+    const protectFromCandidates = [0];
+    for (let pf = 2; pf <= targetLevel; pf++) protectFromCandidates.push(pf);
+
+    let best = null;
+    for (const protectFrom of protectFromCandidates) {
+        let stats;
+        try {
+            stats = calculateEnhancement({
+                enhancingLevel: enhancingParams.enhancingLevel,
+                toolBonus: enhancingParams.toolBonus || 0,
+                speedBonus: enhancingParams.speedBonus || 0,
+                itemLevel,
+                targetLevel,
+                startLevel,
+                protectFrom,
+                blessedTea: enhancingParams.teas?.blessed,
+                guzzlingBonus: enhancingParams.guzzlingBonus,
+            });
+        } catch {
+            continue;
+        }
+
+        let protectionCost = 0;
+        if (protectFrom > 0 && stats.protectionCount > 0) {
+            const { price } = getCheapestProtectionPrice(itemHrid);
+            if (!(price > 0)) continue; // protection needed but unpriceable - strategy unusable
+            protectionCost = price * stats.protectionCount;
+        }
+
+        const totalCost = perAttemptCost * stats.attempts + protectionCost;
+        if (best === null || totalCost < best.cost) {
+            best = { cost: totalCost, protectFrom };
+        }
+    }
+
+    return best ? { ...best, complete: true } : { cost: null, complete: false, protectFrom: null };
+}
+
+/**
  * Fibonacci calculation for item quantities (from Enhancelator)
  * @private
  */

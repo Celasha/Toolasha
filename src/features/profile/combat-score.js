@@ -165,6 +165,8 @@ class CombatScore {
         const playerName = profileData.profile?.sharableCharacter?.name || 'Player';
         const equipmentHiddenText =
             scoreData.equipmentHidden && !scoreData.hasEquipmentData ? ' (Equipment hidden)' : '';
+        const scoreTooltip =
+            'Estimated cost for you to reproduce this persistent build now, using current acquisition prices and your current Enhancing setup. Market values use current best Ask/unit estimates and are not order-book-depth adjusted.';
 
         // Create panel element
         const panel = document.createElement('div');
@@ -208,6 +210,30 @@ class CombatScore {
 
         // Build skiller equipment breakdown HTML
         const skillerEquipmentBreakdownHTML = scoreData.skillerBreakdown.equipment
+            .map(
+                (item) =>
+                    `<div style="margin-left: 10px; font-size: 0.8rem; color: ${config.COLOR_TEXT_SECONDARY};">${item.name}: ${item.value}</div>`
+            )
+            .join('');
+
+        // Build shrine breakdown HTML (Combat)
+        const shrineBreakdownHTML = (scoreData.breakdown.shrines || [])
+            .map(
+                (item) =>
+                    `<div style="margin-left: 10px; font-size: 0.8rem; color: ${config.COLOR_TEXT_SECONDARY};">${item.name}: ${item.value}</div>`
+            )
+            .join('');
+
+        // Build skiller house breakdown HTML
+        const skillerHouseBreakdownHTML = (scoreData.skillerBreakdown.houses || [])
+            .map(
+                (item) =>
+                    `<div style="margin-left: 10px; font-size: 0.8rem; color: ${config.COLOR_TEXT_SECONDARY};">${item.name}: ${item.value}</div>`
+            )
+            .join('');
+
+        // Build skiller shrine breakdown HTML
+        const skillerShrineBreakdownHTML = (scoreData.skillerBreakdown.shrines || [])
             .map(
                 (item) =>
                     `<div style="margin-left: 10px; font-size: 0.8rem; color: ${config.COLOR_TEXT_SECONDARY};">${item.name}: ${item.value}</div>`
@@ -268,8 +294,8 @@ class CombatScore {
                     line-height: 1;
                 " title="Close">×</span>
             </div>
-            <div style="cursor: pointer; font-weight: bold; margin-bottom: 8px; color: ${config.COLOR_PROFIT}; ${!config.getSetting('combatScore') ? 'display: none;' : ''}" id="mwi-score-toggle">
-                + Combat Score: ${numberFormatter(scoreData.total.toFixed(1))}${equipmentHiddenText}
+            <div style="cursor: pointer; font-weight: bold; margin-bottom: 8px; color: ${config.COLOR_PROFIT}; ${!config.getSetting('combatScore') ? 'display: none;' : ''}" id="mwi-score-toggle" title="${scoreTooltip}">
+                + Combat Score: ${numberFormatter(scoreData.total.toFixed(1))}${scoreData.complete === false ? '+' : ''}${equipmentHiddenText}
             </div>
             <div id="mwi-score-details" style="display: none; margin-left: 10px; color: ${config.COLOR_TEXT_PRIMARY};">
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-house-toggle">
@@ -289,20 +315,41 @@ class CombatScore {
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-equipment-toggle">
                     + Equipment: ${numberFormatter(scoreData.equipment.toFixed(1))}
                 </div>
-                <div id="mwi-equipment-breakdown" style="display: none;">
+                <div id="mwi-equipment-breakdown" style="display: none; margin-bottom: 6px;">
                     ${equipmentBreakdownHTML}
+                </div>
+
+                <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-shrine-toggle">
+                    + Shrines: ${numberFormatter((scoreData.shrine || 0).toFixed(1))}
+                </div>
+                <div id="mwi-shrine-breakdown" style="display: none;">
+                    ${shrineBreakdownHTML}
                 </div>
             </div>
 
-            <div style="cursor: pointer; font-weight: bold; margin-top: 12px; margin-bottom: 8px; color: ${config.COLOR_PROFIT}; ${!config.getSetting('combatScore') ? 'display: none;' : ''}" id="mwi-skiller-score-toggle">
-                + Skiller Score: ${numberFormatter(scoreData.skillerTotal.toFixed(1))}
+            <div style="cursor: pointer; font-weight: bold; margin-top: 12px; margin-bottom: 8px; color: ${config.COLOR_PROFIT}; ${!config.getSetting('combatScore') ? 'display: none;' : ''}" id="mwi-skiller-score-toggle" title="${scoreTooltip}">
+                + Skiller Score: ${numberFormatter(scoreData.skillerTotal.toFixed(1))}${scoreData.skillerComplete === false ? '+' : ''}
             </div>
             <div id="mwi-skiller-score-details" style="display: none; margin-left: 10px; color: ${config.COLOR_TEXT_PRIMARY};">
+                <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-skiller-house-toggle">
+                    + House: ${numberFormatter((scoreData.skillerHouse || 0).toFixed(1))}
+                </div>
+                <div id="mwi-skiller-house-breakdown" style="display: none; margin-bottom: 6px;">
+                    ${skillerHouseBreakdownHTML}
+                </div>
+
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-skiller-equipment-toggle">
                     + Equipment: ${numberFormatter(scoreData.skillerEquipment.toFixed(1))}
                 </div>
-                <div id="mwi-skiller-equipment-breakdown" style="display: none;">
+                <div id="mwi-skiller-equipment-breakdown" style="display: none; margin-bottom: 6px;">
                     ${skillerEquipmentBreakdownHTML}
+                </div>
+
+                <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-skiller-shrine-toggle">
+                    + Shrines: ${numberFormatter((scoreData.skillerShrine || 0).toFixed(1))}
+                </div>
+                <div id="mwi-skiller-shrine-breakdown" style="display: none;">
+                    ${skillerShrineBreakdownHTML}
                 </div>
             </div>
 
@@ -438,7 +485,7 @@ class CombatScore {
                 details.style.display = isCollapsed ? 'block' : 'none';
                 toggleBtn.textContent =
                     (isCollapsed ? '- ' : '+ ') +
-                    `Combat Score: ${numberFormatter(scoreData.total.toFixed(1))}${equipmentHiddenText}`;
+                    `Combat Score: ${numberFormatter(scoreData.total.toFixed(1))}${scoreData.complete === false ? '+' : ''}${equipmentHiddenText}`;
             });
         }
 
@@ -478,6 +525,18 @@ class CombatScore {
             });
         }
 
+        // Toggle shrine breakdown (Combat)
+        const shrineToggle = panel.querySelector('#mwi-shrine-toggle');
+        const shrineBreakdown = panel.querySelector('#mwi-shrine-breakdown');
+        if (shrineToggle && shrineBreakdown) {
+            shrineToggle.addEventListener('click', () => {
+                const isCollapsed = shrineBreakdown.style.display === 'none';
+                shrineBreakdown.style.display = isCollapsed ? 'block' : 'none';
+                shrineToggle.textContent =
+                    (isCollapsed ? '- ' : '+ ') + `Shrines: ${numberFormatter((scoreData.shrine || 0).toFixed(1))}`;
+            });
+        }
+
         // Toggle skiller score details
         const skillerScoreToggle = panel.querySelector('#mwi-skiller-score-toggle');
         const skillerScoreDetails = panel.querySelector('#mwi-skiller-score-details');
@@ -487,7 +546,19 @@ class CombatScore {
                 skillerScoreDetails.style.display = isCollapsed ? 'block' : 'none';
                 skillerScoreToggle.textContent =
                     (isCollapsed ? '- ' : '+ ') +
-                    `Skiller Score: ${numberFormatter(scoreData.skillerTotal.toFixed(1))}`;
+                    `Skiller Score: ${numberFormatter(scoreData.skillerTotal.toFixed(1))}${scoreData.skillerComplete === false ? '+' : ''}`;
+            });
+        }
+
+        // Toggle skiller house breakdown
+        const skillerHouseToggle = panel.querySelector('#mwi-skiller-house-toggle');
+        const skillerHouseBreakdown = panel.querySelector('#mwi-skiller-house-breakdown');
+        if (skillerHouseToggle && skillerHouseBreakdown) {
+            skillerHouseToggle.addEventListener('click', () => {
+                const isCollapsed = skillerHouseBreakdown.style.display === 'none';
+                skillerHouseBreakdown.style.display = isCollapsed ? 'block' : 'none';
+                skillerHouseToggle.textContent =
+                    (isCollapsed ? '- ' : '+ ') + `House: ${numberFormatter((scoreData.skillerHouse || 0).toFixed(1))}`;
             });
         }
 
@@ -501,6 +572,19 @@ class CombatScore {
                 skillerEquipmentToggle.textContent =
                     (isCollapsed ? '- ' : '+ ') +
                     `Equipment: ${numberFormatter(scoreData.skillerEquipment.toFixed(1))}`;
+            });
+        }
+
+        // Toggle skiller shrine breakdown
+        const skillerShrineToggle = panel.querySelector('#mwi-skiller-shrine-toggle');
+        const skillerShrineBreakdown = panel.querySelector('#mwi-skiller-shrine-breakdown');
+        if (skillerShrineToggle && skillerShrineBreakdown) {
+            skillerShrineToggle.addEventListener('click', () => {
+                const isCollapsed = skillerShrineBreakdown.style.display === 'none';
+                skillerShrineBreakdown.style.display = isCollapsed ? 'block' : 'none';
+                skillerShrineToggle.textContent =
+                    (isCollapsed ? '- ' : '+ ') +
+                    `Shrines: ${numberFormatter((scoreData.skillerShrine || 0).toFixed(1))}`;
             });
         }
 

@@ -3,11 +3,16 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
     levelExperienceTable: [],
     prices: {},
+    itemDetailMap: {},
+    askPrice: 0,
 }));
 
 vi.mock('../core/data-manager.js', () => ({
     default: {
-        getInitClientData: vi.fn(() => ({ levelExperienceTable: mocks.levelExperienceTable })),
+        getInitClientData: vi.fn(() => ({
+            levelExperienceTable: mocks.levelExperienceTable,
+            itemDetailMap: mocks.itemDetailMap,
+        })),
     },
 }));
 
@@ -17,7 +22,16 @@ vi.mock('../api/marketplace.js', () => ({
     },
 }));
 
-import { calculateAbilityCost, calculateAbilityLevelUpCost, isStarterAbility } from './ability-cost-calculator.js';
+vi.mock('./market-data.js', () => ({
+    getItemPrice: vi.fn(() => mocks.askPrice),
+}));
+
+import {
+    calculateAbilityCost,
+    calculateAbilityLevelUpCost,
+    isStarterAbility,
+    calculateAbilityBookCostDataDriven,
+} from './ability-cost-calculator.js';
 
 describe('isStarterAbility', () => {
     test('starter abilities give 50 XP per book', () => {
@@ -93,5 +107,36 @@ describe('calculateAbilityCost / calculateAbilityLevelUpCost - integer book coun
         const xpNeeded = targetXp - mocks.levelExperienceTable[5];
         const weightedPrice = (mocks.prices.ask + mocks.prices.bid) / 2;
         expect(cost).toBeCloseTo(Math.ceil(xpNeeded / 500) * weightedPrice);
+    });
+});
+
+describe('calculateAbilityBookCostDataDriven - data-driven XP/book, Ask-only (TLA-041 / F-11)', () => {
+    beforeEach(() => {
+        mocks.levelExperienceTable = [0, 1001]; // index 1 = target level used below
+        mocks.itemDetailMap = { '/items/speed_aura': { abilityBookDetail: { experienceGain: 125 } } };
+        mocks.askPrice = 10000;
+    });
+
+    test('F-11: 125 XP/book, target 1001 XP, Ask 10,000/book -> 10 books = 100,000', () => {
+        const result = calculateAbilityBookCostDataDriven('/abilities/speed_aura', 1);
+        expect(result).toEqual({ cost: 100000, complete: true });
+    });
+
+    test('is not hardwired to 50/500 - a starter-named ability still uses its own experienceGain', () => {
+        mocks.itemDetailMap = { '/items/fireball': { abilityBookDetail: { experienceGain: 125 } } };
+        const result = calculateAbilityBookCostDataDriven('/abilities/fireball', 1);
+        expect(result).toEqual({ cost: 100000, complete: true });
+    });
+
+    test('missing experienceGain marks the result incomplete instead of falling back to a hardcoded value', () => {
+        mocks.itemDetailMap = { '/items/speed_aura': {} };
+        const result = calculateAbilityBookCostDataDriven('/abilities/speed_aura', 1);
+        expect(result).toEqual({ cost: null, complete: false });
+    });
+
+    test('missing Ask price marks the result incomplete rather than returning a zero cost', () => {
+        mocks.askPrice = 0;
+        const result = calculateAbilityBookCostDataDriven('/abilities/speed_aura', 1);
+        expect(result).toEqual({ cost: null, complete: false });
     });
 });

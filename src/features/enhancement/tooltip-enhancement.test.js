@@ -2,8 +2,14 @@
  * Tests for the enhancement tooltip's minimum-sell-price calculation
  */
 
-import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { describe, test, expect, vi, beforeEach, beforeAll } from 'vitest';
+import * as mathJs from 'mathjs';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
+import { calculateEnhancement } from '../../utils/enhancement-calculator.js';
+
+beforeAll(() => {
+    globalThis.math = mathJs;
+});
 
 const settingsMap = {};
 
@@ -22,13 +28,14 @@ vi.mock('../../core/config.js', () => ({
     },
 }));
 
+const itemDetailMap = {};
 vi.mock('../../core/data-manager.js', () => ({
-    default: { getInitClientData: () => ({ itemDetailMap: {} }) },
+    default: { getInitClientData: () => ({ itemDetailMap }) },
 }));
 
 vi.mock('../../utils/market-data.js', () => ({
-    getItemPrice: () => 0,
-    getItemPrices: () => ({ ask: 400_000_000, bid: 390_000_000 }),
+    getItemPrice: vi.fn(() => 0),
+    getItemPrices: vi.fn(() => ({ ask: 400_000_000, bid: 390_000_000 })),
 }));
 
 const marketPrices = {};
@@ -36,8 +43,14 @@ vi.mock('../../api/marketplace.js', () => ({
     default: { getPrice: (itemHrid) => marketPrices[itemHrid], on: () => {} },
 }));
 
-const { buildEnhancementTooltipHTML, calculateMinimumSellPrice, calculatePerAttemptMaterialCost } =
-    await import('./tooltip-enhancement.js');
+import { getItemPrices } from '../../utils/market-data.js';
+
+const {
+    buildEnhancementTooltipHTML,
+    calculateMinimumSellPrice,
+    calculatePerAttemptMaterialCost,
+    calculateDirectEnhancementCost,
+} = await import('./tooltip-enhancement.js');
 
 function makeEnhancementData(overrides = {}) {
     return {
@@ -190,5 +203,129 @@ describe('calculatePerAttemptMaterialCost', () => {
         const result = calculatePerAttemptMaterialCost({ enhancementCosts: [] });
 
         expect(result).toEqual({ cost: 0, hasCost: false, costPartial: false });
+    });
+});
+
+describe('calculateDirectEnhancementCost - K->N direct Markov cost (TLA-041 / F-04)', () => {
+    const enhancingParams = {
+        enhancingLevel: 50,
+        toolBonus: 0,
+        speedBonus: 0,
+        teas: { blessed: false },
+        guzzlingBonus: 1,
+    };
+
+    beforeEach(() => {
+        for (const key of Object.keys(marketPrices)) delete marketPrices[key];
+        for (const key of Object.keys(itemDetailMap)) delete itemDetailMap[key];
+        getItemPrices.mockReturnValue({ ask: 400_000_000, bid: 390_000_000 });
+    });
+
+    test('returns incomplete for an item with no enhancementCosts, never a fake zero', () => {
+        itemDetailMap['/items/no_enh'] = { itemLevel: 1, enhancementCosts: [] };
+        const result = calculateDirectEnhancementCost('/items/no_enh', 1, 4, enhancingParams);
+        expect(result).toEqual({ cost: null, complete: false, protectFrom: null });
+    });
+
+    test('returns incomplete when a required material has no ask price, instead of a partial number', () => {
+        itemDetailMap['/items/partial'] = {
+            itemLevel: 1,
+            enhancementCosts: [{ itemHrid: '/items/unpriced', count: 1 }],
+        };
+        const result = calculateDirectEnhancementCost('/items/partial', 1, 4, enhancingParams);
+        expect(result).toEqual({ cost: null, complete: false, protectFrom: null });
+    });
+
+    test('F-04: uses calculateEnhancement with startLevel set directly, never defaulting to a 0-based computation', () => {
+        marketPrices['/items/mat'] = { ask: 1000, bid: 900 };
+        itemDetailMap['/items/testitem'] = {
+            itemLevel: 1,
+            enhancementCosts: [{ itemHrid: '/items/mat', count: 1 }],
+        };
+
+        const direct = calculateDirectEnhancementCost('/items/testitem', 1, 4, enhancingParams);
+        expect(direct.complete).toBe(true);
+
+        const baseParams = {
+            enhancingLevel: enhancingParams.enhancingLevel,
+            toolBonus: 0,
+            speedBonus: 0,
+            itemLevel: 1,
+            targetLevel: 4,
+            protectFrom: direct.protectFrom,
+            blessedTea: false,
+            guzzlingBonus: 1,
+        };
+        const attemptsFromK = calculateEnhancement({ ...baseParams, startLevel: 1 }).attempts;
+        const attemptsFrom0 = calculateEnhancement({ ...baseParams, startLevel: 0 }).attempts;
+
+        // startLevel actually changes the answer - ruling out a bug where it's silently ignored.
+        expect(attemptsFromK).not.toBeCloseTo(attemptsFrom0, 2);
+
+        // The function's result matches the real startLevel=K computation, never the startLevel=0 one.
+        expect(direct.cost).toBeCloseTo(1000 * attemptsFromK, 5);
+        expect(direct.cost).not.toBeCloseTo(1000 * attemptsFrom0, 0);
+    });
+
+    test('sweeps protectFrom and reports the winning strategy alongside the cost', () => {
+        marketPrices['/items/mat'] = { ask: 1000, bid: 900 };
+        itemDetailMap['/items/testitem'] = {
+            itemLevel: 1,
+            enhancementCosts: [{ itemHrid: '/items/mat', count: 1 }],
+        };
+
+        const result = calculateDirectEnhancementCost('/items/testitem', 1, 4, enhancingParams);
+        expect(result.complete).toBe(true);
+        expect([0, 2, 3, 4]).toContain(result.protectFrom);
+        expect(result.cost).toBeGreaterThan(0);
+    });
+
+    test('a protection-requiring strategy with no priceable protection item is excluded, not zero-substituted', () => {
+        marketPrices['/items/mat'] = { ask: 1000, bid: 900 };
+        itemDetailMap['/items/testitem'] = {
+            itemLevel: 1,
+            enhancementCosts: [{ itemHrid: '/items/mat', count: 1 }],
+            protectionItemHrids: [],
+        };
+        // No positive price anywhere -> getCheapestProtectionPrice resolves to 0 for every
+        // candidate, so every protectFrom>0 strategy must be excluded, leaving only protectFrom=0.
+        getItemPrices.mockReturnValue({ ask: 0, bid: 0 });
+
+        const result = calculateDirectEnhancementCost('/items/testitem', 1, 4, enhancingParams);
+        expect(result.complete).toBe(true);
+        expect(result.protectFrom).toBe(0);
+    });
+
+    test('F-08 (Option B): a temporary Blessed Tea setup changes the expected cost, but its own purchase price is never added', () => {
+        marketPrices['/items/mat'] = { ask: 1000, bid: 900 };
+        itemDetailMap['/items/testitem'] = {
+            itemLevel: 1,
+            enhancementCosts: [{ itemHrid: '/items/mat', count: 1 }],
+        };
+
+        const withoutBlessed = calculateDirectEnhancementCost('/items/testitem', 1, 4, {
+            ...enhancingParams,
+            teas: { blessed: false },
+        });
+        const withBlessed = calculateDirectEnhancementCost('/items/testitem', 1, 4, {
+            ...enhancingParams,
+            teas: { blessed: true },
+            guzzlingBonus: 2, // scales the blessed-tea skip chance, making the effect measurable
+        });
+
+        expect(withoutBlessed.complete).toBe(true);
+        expect(withBlessed.complete).toBe(true);
+        // The setup measurably changes the expected math...
+        expect(withBlessed.cost).not.toBeCloseTo(withoutBlessed.cost, 5);
+        // ...but the cost is still built purely from enhancementCosts materials (1000/attempt) -
+        // no separate line item for the Blessed Tea's own purchase price was ever added, since
+        // this function never reads/prices any tea item at all.
+        marketPrices['/items/blessed_tea'] = { ask: 999_999_999, bid: 999_999_999 };
+        const withBlessedAgain = calculateDirectEnhancementCost('/items/testitem', 1, 4, {
+            ...enhancingParams,
+            teas: { blessed: true },
+            guzzlingBonus: 2,
+        });
+        expect(withBlessedAgain.cost).toBeCloseTo(withBlessed.cost, 5);
     });
 });
