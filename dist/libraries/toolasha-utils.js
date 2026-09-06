@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.106.2
+ * Version: 2.106.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8655,7 +8655,7 @@ self.onmessage = function (e) {
             complete = complete && roomComplete;
 
             const houseName = houseRoomDetailMap[houseRoomHrid]?.name || houseRoomHrid.replace('/house_rooms/', '');
-            breakdown.push({ name: houseName, level, cost });
+            breakdown.push({ name: houseName, level, cost, complete: roomComplete });
         }
 
         breakdown.sort((a, b) => b.cost - a.cost);

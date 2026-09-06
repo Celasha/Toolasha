@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 2.106.2
+ * Version: 2.106.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -15068,6 +15068,32 @@
 
         // Listen for wildcard to catch all messages for debugging
         webSocketHook.on('*', handleDebugMessage);
+
+        // TLA-043 Layer A: handlers are registered above FIRST so a completion can never land in a
+        // gap between subscribing and inspecting current state. Only now do we check DataManager's
+        // already-cached current action for an Enhance queue that was already running before these
+        // handlers existed (enable/reload/re-enable mid-run).
+        bootstrapFromCurrentEnhancingAction();
+    }
+
+    /**
+     * Layer A of the mid-run bootstrap (TLA-043): if Enhancing is already active per DataManager's
+     * cached current character actions and there is no usable tracker session yet, mark a pending
+     * mid-run start so the next action_completed creates a session regardless of currentCount. Does
+     * not create historical attempts from the cached action.
+     */
+    function bootstrapFromCurrentEnhancingAction() {
+        if (!config.getSetting('enhancementTracker')) return;
+        if (!enhancementTracker.isInitialized) return;
+        if (enhancementTracker.getCurrentSession()) return;
+
+        const activeEnhancingAction = dataManager
+            .getCurrentActions()
+            .find((action) => action?.actionHrid === '/actions/enhancing/enhance' && action?.isDone !== true);
+
+        if (activeEnhancingAction) {
+            enhancementTracker.setPendingStart();
+        }
     }
 
     /**
@@ -15320,11 +15346,26 @@
                 enhancementUI.scheduleUpdate();
             }
 
+            // If no active session, a completed session for the same item/level may be extendable
+            // instead of starting from scratch (Priority 2). This must be checked before falling back
+            // to a from-scratch mid-run bootstrap so an extendable session is never shadowed.
+            const extendableSessionId = !currentSession
+                ? enhancementTracker.findExtendableSession(itemHrid, newLevel)
+                : null;
+
             // On first attempt (rawCount === 1) OR after a clear/new-queue (pendingSessionStart),
-            // start a session if none is active yet.
-            const startedViaPending = enhancementTracker.pendingSessionStart && rawCount !== 1;
+            // start a session if none is active yet. TLA-043 Layer B: a proven enhancement
+            // completion with no active session and no extendable completed session is itself
+            // sufficient evidence Enhancing is already running — it must not depend forever on a
+            // pendingSessionStart that may already have been missed (e.g. handlers installed after
+            // the queue's actions_updated was delivered).
+            const midRunBootstrap =
+                !currentSession && !extendableSessionId && rawCount !== 1 && !enhancementTracker.pendingSessionStart;
+            const startedViaPending = rawCount !== 1 && (enhancementTracker.pendingSessionStart || midRunBootstrap);
             const shouldStartNew =
-                (rawCount === 1 || enhancementTracker.pendingSessionStart) && !justCreatedNewSession && !currentSession;
+                (rawCount === 1 || enhancementTracker.pendingSessionStart || midRunBootstrap) &&
+                !justCreatedNewSession &&
+                !currentSession;
 
             if (shouldStartNew) {
                 enhancementTracker.pendingSessionStart = false;
@@ -15360,10 +15401,9 @@
                 }
             }
 
-            // If no active session, check if we can extend a completed session
+            // If no active session, extend a completed session for the same item instead of dropping
+            // the result.
             if (!currentSession) {
-                // Try to extend a completed session for the same item
-                const extendableSessionId = enhancementTracker.findExtendableSession(itemHrid, newLevel);
                 if (extendableSessionId) {
                     const newTarget = action.enhancingMaxLevel || Math.min(newLevel + 5, 20);
                     await enhancementTracker.extendSessionTarget(extendableSessionId, newTarget);
@@ -26307,6 +26347,12 @@ self.onmessage = function (e) {
 
     const RESOURCE_STOP_CAUSES = new Set(['materials', 'coins', 'upgrade-materials']);
 
+    // TLA-025A: exact queue timing and offline-attention continuity are different questions. A queue
+    // can lose exact-duration trust (e.g. an unsupported Alchemy inventory dependency) while still
+    // staying provably busy up to a later true-infinite segment - see findGuaranteedInfiniteAttentionTail.
+    const ATTENTION_MODE_RUNS_INFINITE = 'runs-infinite';
+    const ATTENTION_MODE_QUEUE_INFINITE = 'queue-infinite';
+
     // Combat has no dedicated action type of its own - identified by hrid, checked before the map.
     function classifyUncertainty(actionObj, actionDetails) {
         if (actionObj.actionHrid?.includes('/combat/')) return 'combat';
@@ -26521,6 +26567,33 @@ self.onmessage = function (e) {
     }
 
     /**
+     * Shared front/queued action-context resolution used by both the exact projection loop and the
+     * TLA-025A continuity lookahead, so the two can never drift on characterLoadoutID semantics: front
+     * action -> live resolveCurrentActionContext; queued explicit native characterLoadoutID -> exact
+     * saved snapshot or fail closed; queued action with no explicit loadout -> predictive default
+     * (`context: undefined`, the same signal the underlying resource-limiter math already expects).
+     * @param {Object} actionObj
+     * @param {Object} actionDetails
+     * @param {number} queuedIndex
+     * @returns {{context: Object|undefined, unresolvable: false}|{context: null, unresolvable: true}}
+     */
+    function resolveProjectionActionContext(actionObj, actionDetails, queuedIndex) {
+        if (queuedIndex === 0) {
+            return { context: resolveCurrentActionContext(actionDetails.type), unresolvable: false };
+        }
+
+        const nativeLoadout = getNativeQueuedLoadoutIdentity(actionObj);
+        if (nativeLoadout.malformed) {
+            return { context: null, unresolvable: true };
+        }
+        if (nativeLoadout.hasExplicitLoadout) {
+            return resolveExplicitQueuedLoadoutContext(nativeLoadout.loadoutId, actionDetails.type);
+        }
+
+        return { context: undefined, unresolvable: false };
+    }
+
+    /**
      * Character Activity may publish an ETA only from a structurally valid timing result. Genuine
      * zero-work/zero-resource boundaries are valid; `Infinity` is valid only when the helper
      * explicitly proved a truly-unbounded action. Everything else non-finite, negative, or
@@ -26581,6 +26654,58 @@ self.onmessage = function (e) {
         return cutoffAt;
     }
 
+    /**
+     * TLA-025A conservative continuity lookahead. Runs only after the exact projection loop has
+     * already stopped on a non-blocking resource/inventory-dependency uncertainty (the action at
+     * `startIndex - 1` is itself known to structurally proceed/auto-advance - it just isn't safe to
+     * publish an exact duration/count for it). Answers only: "is there a later queued segment that can
+     * independently be proven truly infinite, reached through only structurally non-blocking steps?"
+     * Never derives or publishes a duration/count from this scan - a finite/resource-limited
+     * intervening action is treated as auto-advancing and skipped over, not timed.
+     * @param {Array} actions
+     * @param {number} startIndex
+     * @param {Object} inventoryLookup - Last known (possibly stale past this point) balances, used only
+     *   for the same structural trust checks calculateSingleQueueActionTime already performs.
+     * @param {number} now
+     * @param {Map} drinkCutoffCache
+     * @returns {{mode: string}|null}
+     */
+    function findGuaranteedInfiniteAttentionTail(actions, startIndex, inventoryLookup, now, drinkCutoffCache) {
+        for (let i = startIndex; i < actions.length; i++) {
+            const actionObj = actions[i];
+            const actionDetails = dataManager.getActionDetails(actionObj.actionHrid);
+            if (!actionDetails) return null;
+
+            if (classifyUncertainty(actionObj, actionDetails)) return null;
+
+            const resolvedContext = resolveProjectionActionContext(actionObj, actionDetails, i);
+            if (resolvedContext.unresolvable) return null;
+
+            // A drink/buff boundary for this action type might land before the eventual offline cap,
+            // which this scan has no way to prove one way or the other - fail closed rather than hide
+            // a possible earlier attention boundary behind a Queue -> infinity claim.
+            const drinkCutoffAt = getDrinkCutoffAt(actionDetails.type, now, drinkCutoffCache);
+            if (drinkCutoffAt != null) return null;
+
+            const timing = actionTimeDisplay.calculateSingleQueueActionTime(
+                actionObj,
+                actionDetails,
+                inventoryLookup,
+                resolvedContext.context
+            );
+            if (!isTrustworthyTimingResult(timing, actionObj)) return null;
+
+            if (timing.isTrulyInfinite) {
+                return { mode: ATTENTION_MODE_QUEUE_INFINITE };
+            }
+
+            // Finite/resource-limited: structurally non-blocking under existing queue semantics (it
+            // auto-advances once done), so keep scanning without treating its stale-inventory duration
+            // as part of any published timeline.
+        }
+        return null;
+    }
+
     function buildSegment({
         actionObj,
         actionDetails,
@@ -26607,9 +26732,12 @@ self.onmessage = function (e) {
 
     /**
      * Project the queue forward from `now`. Does not consider the offline-progress cap - see
-     * `resolveDisplayProjection`, resolved separately against a live `lastOfflineTime`.
+     * `resolveDisplayProjection`, resolved separately against a live `lastOfflineTime`. `attention`
+     * (TLA-025A) is a separate, conservative signal from `terminalCause`/`certainty`: it answers only
+     * whether the character is guaranteed to stay busy up to a later true-infinite segment, even when
+     * the exact intermediate duration is uncertain - see findGuaranteedInfiniteAttentionTail.
      * @param {number} [now]
-     * @returns {{segments: Array, terminalCause: string, terminalAt: number|null, certainty: string}}
+     * @returns {{segments: Array, terminalCause: string, terminalAt: number|null, certainty: string, attention: {mode: string}|null}}
      */
     function computeLiveProjection(now = Date.now()) {
         const actions = dataManager.getCurrentActions();
@@ -26628,6 +26756,7 @@ self.onmessage = function (e) {
         let terminalCause = null;
         let terminalAt = null;
         let certainty = 'trustworthy';
+        let attention = null;
 
         function pushUncertain(actionObj, actionDetails, i, remainingQueuedCount, startAt, stopCause) {
             segments.push(
@@ -26680,31 +26809,12 @@ self.onmessage = function (e) {
             // characterLoadoutID must use exactly that loadout or fail closed if it's unresolvable -
             // never an unrelated Toolasha predictive default. With no explicit loadout, the
             // predictive default is the only justifiable context for that eventual action.
-            let actionContext;
-            if (i === 0) {
-                actionContext = resolveCurrentActionContext(actionDetails.type);
-            } else {
-                const nativeLoadout = getNativeQueuedLoadoutIdentity(actionObj);
-                if (nativeLoadout.malformed) {
-                    pushUncertain(actionObj, actionDetails, i, remainingQueuedCount, currentTime, 'loadout-unavailable');
-                    break;
-                }
-                if (nativeLoadout.hasExplicitLoadout) {
-                    const resolved = resolveExplicitQueuedLoadoutContext(nativeLoadout.loadoutId, actionDetails.type);
-                    if (resolved.unresolvable) {
-                        pushUncertain(
-                            actionObj,
-                            actionDetails,
-                            i,
-                            remainingQueuedCount,
-                            currentTime,
-                            'loadout-unavailable'
-                        );
-                        break;
-                    }
-                    actionContext = resolved.context;
-                }
+            const resolvedContext = resolveProjectionActionContext(actionObj, actionDetails, i);
+            if (resolvedContext.unresolvable) {
+                pushUncertain(actionObj, actionDetails, i, remainingQueuedCount, currentTime, 'loadout-unavailable');
+                break;
             }
+            const actionContext = resolvedContext.context;
             const timing = actionTimeDisplay.calculateSingleQueueActionTime(
                 actionObj,
                 actionDetails,
@@ -26738,6 +26848,7 @@ self.onmessage = function (e) {
                 );
                 terminalCause = 'infinite';
                 terminalAt = null;
+                attention = { mode: i === 0 ? ATTENTION_MODE_RUNS_INFINITE : ATTENTION_MODE_QUEUE_INFINITE };
                 break;
             }
 
@@ -26746,6 +26857,7 @@ self.onmessage = function (e) {
             const footprint = getSegmentInventoryFootprint(actionDetails, actionObj);
             if (intersects(footprint.consumed, unknownBalanceHrids)) {
                 pushUncertain(actionObj, actionDetails, i, remainingQueuedCount, currentTime, 'inventory-dependency');
+                attention = findGuaranteedInfiniteAttentionTail(actions, i + 1, inventoryLookup, now, drinkCutoffCache);
                 break;
             }
 
@@ -26755,6 +26867,7 @@ self.onmessage = function (e) {
             const limitingHrid = getLimitHrid(timing.limitType);
             if (limitingHrid && possibleExtraHrids.has(limitingHrid)) {
                 pushUncertain(actionObj, actionDetails, i, remainingQueuedCount, currentTime, 'inventory-dependency');
+                attention = findGuaranteedInfiniteAttentionTail(actions, i + 1, inventoryLookup, now, drinkCutoffCache);
                 break;
             }
 
@@ -26807,7 +26920,7 @@ self.onmessage = function (e) {
             }
         }
 
-        return { segments, terminalCause, terminalAt, certainty };
+        return { segments, terminalCause, terminalAt, certainty, attention };
     }
 
     /**
