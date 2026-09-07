@@ -138,11 +138,15 @@ function makeScoreData({ equipmentHidden = false, hasEquipmentData = true, total
         total,
         complete: true,
         house: 10,
+        houseComplete: true,
         ability: 20,
+        abilityComplete: true,
         equipment: 70,
+        equipmentComplete: true,
         skillerTotal: 5,
         skillerComplete: true,
         skillerEquipment: 5,
+        skillerEquipmentComplete: true,
         breakdown: { houses: [], abilities: [], equipment: [] },
         skillerBreakdown: { equipment: [] },
     };
@@ -155,24 +159,31 @@ function makeFullScoreData(overrides = {}) {
         total: 930,
         complete: true,
         house: 100,
+        houseComplete: true,
         ability: 50,
+        abilityComplete: true,
         equipment: 700,
+        equipmentComplete: true,
         shrine: 80,
+        shrineComplete: true,
         breakdown: {
-            houses: [{ name: 'Dojo 3', value: '100.0' }],
-            abilities: [{ name: 'Fireball 5', value: '50.0' }],
-            equipment: [{ name: 'Sword +10', value: '700.0' }],
-            shrines: [{ name: 'Shrine of Force 1', value: '80.0' }],
+            houses: [{ name: 'Dojo 3', value: '100.0', complete: true }],
+            abilities: [{ name: 'Fireball 5', value: '50.0', complete: true }],
+            equipment: [{ name: 'Sword +10', value: '700.0', complete: true }],
+            shrines: [{ name: 'Shrine of Force 1', value: '80.0', complete: true }],
         },
         skillerTotal: 40,
         skillerComplete: true,
         skillerHouse: 20,
+        skillerHouseComplete: true,
         skillerEquipment: 15,
+        skillerEquipmentComplete: true,
         skillerShrine: 5,
+        skillerShrineComplete: true,
         skillerBreakdown: {
-            houses: [{ name: 'Garden 1', value: '20.0' }],
-            equipment: [{ name: 'Hoe', value: '15.0' }],
-            shrines: [{ name: 'Shrine of Wisdom 1', value: '5.0' }],
+            houses: [{ name: 'Garden 1', value: '20.0', complete: true }],
+            equipment: [{ name: 'Hoe', value: '15.0', complete: true }],
+            shrines: [{ name: 'Shrine of Wisdom 1', value: '5.0', complete: true }],
         },
         ...overrides,
     };
@@ -266,7 +277,7 @@ describe('showScorePanel TLA-041 additions (Shrines / Skiller Houses / partial s
         expect(panel.querySelector('#mwi-skiller-shrine-breakdown').style.display).toBe('none');
     });
 
-    test('a complete result shows no "+" suffix on either top-level total', () => {
+    test('TLA041D-01: a complete result shows no "+" suffix on either top-level total', () => {
         const modal = document.createElement('div');
         document.body.appendChild(modal);
         combatScore.showScorePanel({ profile: {} }, makeFullScoreData(), modal);
@@ -276,18 +287,32 @@ describe('showScorePanel TLA-041 additions (Shrines / Skiller Houses / partial s
         expect(panel.innerHTML).not.toContain('930.0+');
         expect(panel.innerHTML).toContain('Skiller Score: 40.0');
         expect(panel.innerHTML).not.toContain('40.0+');
+        expect(panel.innerHTML).toContain('House: 100.0');
+        expect(panel.innerHTML).not.toContain('House: 100.0+');
     });
 
-    test('F-13: an incomplete Combat result shows the "+" lower-bound suffix on the top-level total only', () => {
+    test('TLA041D-02: only Combat House incomplete propagates top -> House only', () => {
         const modal = document.createElement('div');
         document.body.appendChild(modal);
-        combatScore.showScorePanel({ profile: {} }, makeFullScoreData({ complete: false }), modal);
+        combatScore.showScorePanel(
+            { profile: {} },
+            makeFullScoreData({ complete: false, houseComplete: false }),
+            modal
+        );
 
         const panel = document.getElementById('mwi-combat-score-panel');
         expect(panel.innerHTML).toContain('Combat Score: 930.0+');
-        // Category rows stay plain numbers - no "+" on House/Ability/Equipment/Shrines themselves.
-        expect(panel.innerHTML).toContain('House: 100.0');
-        expect(panel.innerHTML).not.toContain('House: 100.0+');
+        expect(panel.innerHTML).toContain('House: 100.0+');
+        // Unaffected Combat categories stay exact-looking.
+        expect(panel.innerHTML).toContain('Ability: 50.0');
+        expect(panel.innerHTML).not.toContain('Ability: 50.0+');
+        expect(panel.innerHTML).toContain('Equipment: 700.0');
+        expect(panel.innerHTML).not.toContain('Equipment: 700.0+');
+        expect(panel.innerHTML).toContain('Shrines: 80.0');
+        expect(panel.innerHTML).not.toContain('Shrines: 80.0+');
+        // Skiller branch is independent.
+        expect(panel.innerHTML).toContain('Skiller Score: 40.0');
+        expect(panel.innerHTML).not.toContain('Skiller Score: 40.0+');
     });
 
     test('an incomplete Skiller result shows the "+" suffix on the Skiller total only, independent of Combat', () => {
@@ -321,6 +346,243 @@ describe('showScorePanel TLA-041 additions (Shrines / Skiller Houses / partial s
         const panel = document.getElementById('mwi-combat-score-panel');
         expect(panel.innerHTML).not.toContain('Achievement');
         expect(panel.innerHTML).not.toContain('Grand Total');
+    });
+});
+
+describe('Profile Score category lower-bound propagation matrix (TLA-041D)', () => {
+    beforeEach(() => {
+        document.body.innerHTML = '';
+        Element.prototype.getBoundingClientRect = function () {
+            if (this.id === 'mwi-combat-score-panel') return mockRect({ width: 280 });
+            return mockRect({ left: 500, right: 700, top: 30 });
+        };
+    });
+
+    test('TLA041D-03: only Combat Ability incomplete propagates top -> Ability only, with the affected leaf marked', () => {
+        const modal = document.createElement('div');
+        document.body.appendChild(modal);
+        const scoreData = makeFullScoreData({
+            complete: false,
+            abilityComplete: false,
+            breakdown: {
+                houses: [{ name: 'Dojo 3', value: '100.0', complete: true }],
+                abilities: [{ name: 'Fireball 5', value: '50.0', complete: false }],
+                equipment: [{ name: 'Sword +10', value: '700.0', complete: true }],
+                shrines: [{ name: 'Shrine of Force 1', value: '80.0', complete: true }],
+            },
+        });
+        combatScore.showScorePanel({ profile: {} }, scoreData, modal);
+
+        const panel = document.getElementById('mwi-combat-score-panel');
+        expect(panel.innerHTML).toContain('Combat Score: 930.0+');
+        expect(panel.innerHTML).toContain('Ability: 50.0+');
+        expect(panel.innerHTML).toContain('Fireball 5: 50.0+');
+        expect(panel.innerHTML).toContain('House: 100.0');
+        expect(panel.innerHTML).not.toContain('House: 100.0+');
+        expect(panel.innerHTML).toContain('Equipment: 700.0');
+        expect(panel.innerHTML).not.toContain('Equipment: 700.0+');
+    });
+
+    test('TLA041D-04: only Combat Equipment incomplete with a numeric lower-bound leaf', () => {
+        const modal = document.createElement('div');
+        document.body.appendChild(modal);
+        const scoreData = makeFullScoreData({
+            complete: false,
+            equipmentComplete: false,
+            breakdown: {
+                houses: [{ name: 'Dojo 3', value: '100.0', complete: true }],
+                abilities: [{ name: 'Fireball 5', value: '50.0', complete: true }],
+                equipment: [
+                    { name: 'Sword +10', value: '400.0', complete: true },
+                    { name: 'Shield +8', value: '300.0', complete: false },
+                ],
+                shrines: [{ name: 'Shrine of Force 1', value: '80.0', complete: true }],
+            },
+        });
+        combatScore.showScorePanel({ profile: {} }, scoreData, modal);
+
+        const panel = document.getElementById('mwi-combat-score-panel');
+        expect(panel.innerHTML).toContain('Combat Score: 930.0+');
+        expect(panel.innerHTML).toContain('Equipment: 700.0+');
+        expect(panel.innerHTML).toContain('Sword +10: 400.0');
+        expect(panel.innerHTML).not.toContain('Sword +10: 400.0+');
+        expect(panel.innerHTML).toContain('Shield +8: 300.0+');
+        expect(panel.innerHTML).toContain('House: 100.0');
+        expect(panel.innerHTML).not.toContain('House: 100.0+');
+    });
+
+    test('TLA041D-05: Combat Equipment has an unpriceable leaf - N/A, never a substituted zero', () => {
+        const modal = document.createElement('div');
+        document.body.appendChild(modal);
+        const scoreData = makeFullScoreData({
+            complete: false,
+            equipmentComplete: false,
+            breakdown: {
+                houses: [{ name: 'Dojo 3', value: '100.0', complete: true }],
+                abilities: [{ name: 'Fireball 5', value: '50.0', complete: true }],
+                equipment: [
+                    { name: 'Sword +10', value: '400.0', complete: true },
+                    { name: 'Cursed Ring', value: null, complete: false, reason: 'No route priced' },
+                ],
+                shrines: [{ name: 'Shrine of Force 1', value: '80.0', complete: true }],
+            },
+        });
+        combatScore.showScorePanel({ profile: {} }, scoreData, modal);
+
+        const panel = document.getElementById('mwi-combat-score-panel');
+        expect(panel.innerHTML).toContain('Equipment: 700.0+');
+        expect(panel.innerHTML).toContain('Cursed Ring: N/A');
+        expect(panel.innerHTML).not.toContain('Cursed Ring: 0');
+    });
+
+    test('TLA041D-06: only Combat Shrine incomplete propagates top -> Shrines only', () => {
+        const modal = document.createElement('div');
+        document.body.appendChild(modal);
+        const scoreData = makeFullScoreData({
+            complete: false,
+            shrineComplete: false,
+            breakdown: {
+                houses: [{ name: 'Dojo 3', value: '100.0', complete: true }],
+                abilities: [{ name: 'Fireball 5', value: '50.0', complete: true }],
+                equipment: [{ name: 'Sword +10', value: '700.0', complete: true }],
+                shrines: [{ name: 'Shrine of Force 1', value: '80.0', complete: false }],
+            },
+        });
+        combatScore.showScorePanel({ profile: {} }, scoreData, modal);
+
+        const panel = document.getElementById('mwi-combat-score-panel');
+        expect(panel.innerHTML).toContain('Combat Score: 930.0+');
+        expect(panel.innerHTML).toContain('Shrines: 80.0+');
+        expect(panel.innerHTML).toContain('Shrine of Force 1: 80.0+');
+        expect(panel.innerHTML).toContain('House: 100.0');
+        expect(panel.innerHTML).not.toContain('House: 100.0+');
+        expect(panel.innerHTML).toContain('Equipment: 700.0');
+        expect(panel.innerHTML).not.toContain('Equipment: 700.0+');
+    });
+
+    test('TLA041D-08: only Skiller Equipment incomplete propagates Skiller top -> Skiller Equipment, leaf provenance visible', () => {
+        const modal = document.createElement('div');
+        document.body.appendChild(modal);
+        const scoreData = makeFullScoreData({
+            skillerComplete: false,
+            skillerEquipmentComplete: false,
+            skillerBreakdown: {
+                houses: [{ name: 'Garden 1', value: '20.0', complete: true }],
+                equipment: [{ name: 'Hoe', value: '15.0', complete: false }],
+                shrines: [{ name: 'Shrine of Wisdom 1', value: '5.0', complete: true }],
+            },
+        });
+        combatScore.showScorePanel({ profile: {} }, scoreData, modal);
+
+        const panel = document.getElementById('mwi-combat-score-panel');
+        expect(panel.innerHTML).toContain('Skiller Score: 40.0+');
+        const skillerEquipmentToggle = panel.querySelector('#mwi-skiller-equipment-toggle');
+        expect(skillerEquipmentToggle.innerHTML).toContain('15.0+');
+        expect(panel.innerHTML).toContain('Hoe: 15.0+');
+        // Skiller House/Shrines and the Combat branch remain unaffected.
+        const skillerHouseToggle = panel.querySelector('#mwi-skiller-house-toggle');
+        expect(skillerHouseToggle.textContent).toContain('20.0');
+        expect(skillerHouseToggle.textContent).not.toContain('20.0+');
+        expect(panel.innerHTML).toContain('Combat Score: 930.0');
+        expect(panel.innerHTML).not.toContain('930.0+');
+    });
+
+    test('TLA041D-09: only Skiller Shrine incomplete propagates Skiller top -> Skiller Shrines only', () => {
+        const modal = document.createElement('div');
+        document.body.appendChild(modal);
+        const scoreData = makeFullScoreData({
+            skillerComplete: false,
+            skillerShrineComplete: false,
+        });
+        combatScore.showScorePanel({ profile: {} }, scoreData, modal);
+
+        const panel = document.getElementById('mwi-combat-score-panel');
+        expect(panel.innerHTML).toContain('Skiller Score: 40.0+');
+        const skillerShrineToggle = panel.querySelector('#mwi-skiller-shrine-toggle');
+        expect(skillerShrineToggle.textContent).toContain('5.0+');
+        expect(panel.innerHTML).toContain('House: 20.0');
+        expect(panel.innerHTML).not.toContain('House: 20.0+');
+        const skillerEquipmentToggle = panel.querySelector('#mwi-skiller-equipment-toggle');
+        expect(skillerEquipmentToggle.innerHTML).toContain('15.0');
+        expect(skillerEquipmentToggle.innerHTML).not.toContain('15.0+');
+    });
+
+    test('TLA041D-10: the same incomplete equipment leaf classified into both domains marks both Equipment categories and both top totals', () => {
+        const modal = document.createElement('div');
+        document.body.appendChild(modal);
+        const scoreData = makeFullScoreData({
+            complete: false,
+            equipmentComplete: false,
+            skillerComplete: false,
+            skillerEquipmentComplete: false,
+            breakdown: {
+                houses: [{ name: 'Dojo 3', value: '100.0', complete: true }],
+                abilities: [{ name: 'Fireball 5', value: '50.0', complete: true }],
+                equipment: [{ name: 'Dual-Purpose Tool +5', value: '300.0', complete: false }],
+                shrines: [{ name: 'Shrine of Force 1', value: '80.0', complete: true }],
+            },
+            skillerBreakdown: {
+                houses: [{ name: 'Garden 1', value: '20.0', complete: true }],
+                equipment: [{ name: 'Dual-Purpose Tool +5', value: '300.0', complete: false }],
+                shrines: [{ name: 'Shrine of Wisdom 1', value: '5.0', complete: true }],
+            },
+        });
+        combatScore.showScorePanel({ profile: {} }, scoreData, modal);
+
+        const panel = document.getElementById('mwi-combat-score-panel');
+        expect(panel.innerHTML).toContain('Combat Score: 930.0+');
+        expect(panel.innerHTML).toContain('Skiller Score: 40.0+');
+        expect(panel.innerHTML).toContain('Equipment: 700.0+');
+        const skillerEquipmentToggle = panel.querySelector('#mwi-skiller-equipment-toggle');
+        expect(skillerEquipmentToggle.innerHTML).toContain('15.0+');
+    });
+
+    test('TLA041D-11: wholly hidden Equipment keeps both top totals "+" and Equipment N/A + info, never N/A+ or a deceptive zero', () => {
+        const modal = document.createElement('div');
+        document.body.appendChild(modal);
+        const scoreData = makeFullScoreData({
+            complete: false,
+            skillerComplete: false,
+            equipmentHidden: true,
+            hasEquipmentData: false,
+            equipment: 0,
+            skillerEquipment: 0,
+        });
+        combatScore.showScorePanel({ profile: {} }, scoreData, modal);
+
+        const panel = document.getElementById('mwi-combat-score-panel');
+        expect(panel.innerHTML).toContain('Combat Score: 930.0+');
+        expect(panel.innerHTML).toContain('Skiller Score: 40.0+');
+        const equipmentToggle = panel.querySelector('#mwi-equipment-toggle');
+        expect(equipmentToggle.innerHTML).toContain('N/A');
+        expect(equipmentToggle.innerHTML).not.toContain('N/A+');
+        expect(equipmentToggle.innerHTML).not.toContain('0.0');
+        expect(equipmentToggle.innerHTML).toContain('Equipment is hidden in this profile');
+    });
+
+    test('TLA041D-12: aggregate-only incompleteness still marks category and top total without a fabricated leaf', () => {
+        const modal = document.createElement('div');
+        document.body.appendChild(modal);
+        // The calculator can only prove House incompleteness at the aggregate level here - every
+        // individual room leaf still reports complete: true, matching a real "aggregate-only"
+        // calculator result. No leaf is invented merely to satisfy provenance depth.
+        const scoreData = makeFullScoreData({
+            complete: false,
+            houseComplete: false,
+            breakdown: {
+                houses: [{ name: 'Dojo 3', value: '100.0', complete: true }],
+                abilities: [{ name: 'Fireball 5', value: '50.0', complete: true }],
+                equipment: [{ name: 'Sword +10', value: '700.0', complete: true }],
+                shrines: [{ name: 'Shrine of Force 1', value: '80.0', complete: true }],
+            },
+        });
+        combatScore.showScorePanel({ profile: {} }, scoreData, modal);
+
+        const panel = document.getElementById('mwi-combat-score-panel');
+        expect(panel.innerHTML).toContain('Combat Score: 930.0+');
+        expect(panel.innerHTML).toContain('House: 100.0+');
+        expect(panel.innerHTML).toContain('Dojo 3: 100.0');
+        expect(panel.innerHTML).not.toContain('Dojo 3: 100.0+');
     });
 });
 

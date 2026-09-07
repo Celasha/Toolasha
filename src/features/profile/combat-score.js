@@ -225,18 +225,20 @@ class CombatScore {
     }
 
     /**
-     * Render one category's `+ Category: value` toggle line value - `N/A` with an info tooltip for
-     * wholly hidden Equipment (rev2 LB-08; never a deceptive numeric `0`/`0+`), otherwise the plain
-     * formatted number.
-     * @param {Object} scoreData
+     * Render one category's `+ Category: value` toggle line value (TLA-041D): `value+` when the
+     * category's own completeness flag is false, plain `value` when true. `N/A` with an info
+     * tooltip for wholly hidden Equipment (rev2 LB-08; never a deceptive `N/A+`/`0`/`0+`) takes
+     * priority over the completeness suffix since there is no defensible numeric amount at all.
      * @param {number} categoryValue
+     * @param {boolean} complete
+     * @param {{hidden?: boolean}} [options]
      * @returns {string}
      */
-    formatCategoryHeaderValue(scoreData, categoryValue) {
-        if (scoreData.equipmentHidden && !scoreData.hasEquipmentData) {
+    formatCategoryHeaderValue(categoryValue, complete, { hidden = false } = {}) {
+        if (hidden) {
             return `N/A <span title="${HIDDEN_EQUIPMENT_TOOLTIP}" style="cursor: help; opacity: 0.7;">ⓘ</span>`;
         }
-        return numberFormatter(categoryValue.toFixed(1));
+        return `${numberFormatter(categoryValue.toFixed(1))}${complete === false ? '+' : ''}`;
     }
 
     /**
@@ -268,28 +270,28 @@ class CombatScore {
             </div>
             <div id="mwi-score-details" style="display: none; margin-left: 10px; color: ${config.COLOR_TEXT_PRIMARY};">
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-house-toggle">
-                    + House: ${numberFormatter(scoreData.house.toFixed(1))}
+                    + House: ${this.formatCategoryHeaderValue(scoreData.house, scoreData.houseComplete)}
                 </div>
                 <div id="mwi-house-breakdown" style="display: none; margin-bottom: 6px;">
                     ${this.buildBreakdownHTML(scoreData.breakdown.houses)}
                 </div>
 
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-ability-toggle">
-                    + Ability: ${numberFormatter(scoreData.ability.toFixed(1))}
+                    + Ability: ${this.formatCategoryHeaderValue(scoreData.ability, scoreData.abilityComplete)}
                 </div>
                 <div id="mwi-ability-breakdown" style="display: none; margin-bottom: 6px;">
                     ${this.buildBreakdownHTML(scoreData.breakdown.abilities)}
                 </div>
 
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-equipment-toggle">
-                    + Equipment: ${this.formatCategoryHeaderValue(scoreData, scoreData.equipment)}
+                    + Equipment: ${this.formatCategoryHeaderValue(scoreData.equipment, scoreData.equipmentComplete, { hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData })}
                 </div>
                 <div id="mwi-equipment-breakdown" style="display: none; margin-bottom: 6px;">
                     ${this.buildBreakdownHTML(scoreData.breakdown.equipment)}
                 </div>
 
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-shrine-toggle">
-                    + Shrines: ${numberFormatter((scoreData.shrine || 0).toFixed(1))}
+                    + Shrines: ${this.formatCategoryHeaderValue(scoreData.shrine || 0, scoreData.shrineComplete)}
                 </div>
                 <div id="mwi-shrine-breakdown" style="display: none;">
                     ${this.buildBreakdownHTML(scoreData.breakdown.shrines)}
@@ -301,21 +303,21 @@ class CombatScore {
             </div>
             <div id="mwi-skiller-score-details" style="display: none; margin-left: 10px; color: ${config.COLOR_TEXT_PRIMARY};">
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-skiller-house-toggle">
-                    + House: ${numberFormatter((scoreData.skillerHouse || 0).toFixed(1))}
+                    + House: ${this.formatCategoryHeaderValue(scoreData.skillerHouse || 0, scoreData.skillerHouseComplete)}
                 </div>
                 <div id="mwi-skiller-house-breakdown" style="display: none; margin-bottom: 6px;">
                     ${this.buildBreakdownHTML(scoreData.skillerBreakdown.houses)}
                 </div>
 
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-skiller-equipment-toggle">
-                    + Equipment: ${this.formatCategoryHeaderValue(scoreData, scoreData.skillerEquipment)}
+                    + Equipment: ${this.formatCategoryHeaderValue(scoreData.skillerEquipment, scoreData.skillerEquipmentComplete, { hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData })}
                 </div>
                 <div id="mwi-skiller-equipment-breakdown" style="display: none; margin-bottom: 6px;">
                     ${this.buildBreakdownHTML(scoreData.skillerBreakdown.equipment)}
                 </div>
 
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-skiller-shrine-toggle">
-                    + Shrines: ${numberFormatter((scoreData.skillerShrine || 0).toFixed(1))}
+                    + Shrines: ${this.formatCategoryHeaderValue(scoreData.skillerShrine || 0, scoreData.skillerShrineComplete)}
                 </div>
                 <div id="mwi-skiller-shrine-breakdown" style="display: none;">
                     ${this.buildBreakdownHTML(scoreData.skillerBreakdown.shrines)}
@@ -601,7 +603,8 @@ class CombatScore {
                 const isCollapsed = houseBreakdown.style.display === 'none';
                 houseBreakdown.style.display = isCollapsed ? 'block' : 'none';
                 houseToggle.textContent =
-                    (isCollapsed ? '- ' : '+ ') + `House: ${numberFormatter(scoreData.house.toFixed(1))}`;
+                    (isCollapsed ? '- ' : '+ ') +
+                    `House: ${this.formatCategoryHeaderValue(scoreData.house, scoreData.houseComplete)}`;
             });
         }
 
@@ -613,7 +616,8 @@ class CombatScore {
                 const isCollapsed = abilityBreakdown.style.display === 'none';
                 abilityBreakdown.style.display = isCollapsed ? 'block' : 'none';
                 abilityToggle.textContent =
-                    (isCollapsed ? '- ' : '+ ') + `Ability: ${numberFormatter(scoreData.ability.toFixed(1))}`;
+                    (isCollapsed ? '- ' : '+ ') +
+                    `Ability: ${this.formatCategoryHeaderValue(scoreData.ability, scoreData.abilityComplete)}`;
             });
         }
 
@@ -626,7 +630,7 @@ class CombatScore {
                 equipmentBreakdown.style.display = isCollapsed ? 'block' : 'none';
                 equipmentToggle.innerHTML =
                     (isCollapsed ? '- ' : '+ ') +
-                    `Equipment: ${this.formatCategoryHeaderValue(scoreData, scoreData.equipment)}`;
+                    `Equipment: ${this.formatCategoryHeaderValue(scoreData.equipment, scoreData.equipmentComplete, { hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData })}`;
             });
         }
 
@@ -638,7 +642,8 @@ class CombatScore {
                 const isCollapsed = shrineBreakdown.style.display === 'none';
                 shrineBreakdown.style.display = isCollapsed ? 'block' : 'none';
                 shrineToggle.textContent =
-                    (isCollapsed ? '- ' : '+ ') + `Shrines: ${numberFormatter((scoreData.shrine || 0).toFixed(1))}`;
+                    (isCollapsed ? '- ' : '+ ') +
+                    `Shrines: ${this.formatCategoryHeaderValue(scoreData.shrine || 0, scoreData.shrineComplete)}`;
             });
         }
 
@@ -663,7 +668,8 @@ class CombatScore {
                 const isCollapsed = skillerHouseBreakdown.style.display === 'none';
                 skillerHouseBreakdown.style.display = isCollapsed ? 'block' : 'none';
                 skillerHouseToggle.textContent =
-                    (isCollapsed ? '- ' : '+ ') + `House: ${numberFormatter((scoreData.skillerHouse || 0).toFixed(1))}`;
+                    (isCollapsed ? '- ' : '+ ') +
+                    `House: ${this.formatCategoryHeaderValue(scoreData.skillerHouse || 0, scoreData.skillerHouseComplete)}`;
             });
         }
 
@@ -676,7 +682,7 @@ class CombatScore {
                 skillerEquipmentBreakdown.style.display = isCollapsed ? 'block' : 'none';
                 skillerEquipmentToggle.innerHTML =
                     (isCollapsed ? '- ' : '+ ') +
-                    `Equipment: ${this.formatCategoryHeaderValue(scoreData, scoreData.skillerEquipment)}`;
+                    `Equipment: ${this.formatCategoryHeaderValue(scoreData.skillerEquipment, scoreData.skillerEquipmentComplete, { hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData })}`;
             });
         }
 
@@ -689,7 +695,7 @@ class CombatScore {
                 skillerShrineBreakdown.style.display = isCollapsed ? 'block' : 'none';
                 skillerShrineToggle.textContent =
                     (isCollapsed ? '- ' : '+ ') +
-                    `Shrines: ${numberFormatter((scoreData.skillerShrine || 0).toFixed(1))}`;
+                    `Shrines: ${this.formatCategoryHeaderValue(scoreData.skillerShrine || 0, scoreData.skillerShrineComplete)}`;
             });
         }
 
