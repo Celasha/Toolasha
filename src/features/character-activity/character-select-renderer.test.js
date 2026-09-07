@@ -617,6 +617,64 @@ describe('computeSlotDisplayState', () => {
             expect(state.limiterText).toBe('Queue → ∞ · Offline limit uncertain');
         });
 
+        test('TLA025B-06: direct runs-infinite + historical (already-inactive) MooPass expiry -> exact locked known copy, not uncertain', () => {
+            const rec = record({
+                offline: { hourCap: 10, mooPassExpireTime: 3000 }, // expired before lastOfflineTime
+                projection: {
+                    segments: [
+                        {
+                            actionName: 'Redwood Tree',
+                            startAt: 1000,
+                            endAt: null,
+                            queuedIndex: 0,
+                            certainty: 'trustworthy',
+                        },
+                    ],
+                    terminalCause: 'infinite',
+                    terminalAt: null,
+                    attention: { mode: 'runs-infinite' },
+                },
+            });
+            const char = character({ lastOfflineTime: 5000 });
+            const offlineLimitAt = 5000 + 10 * 3600 * 1000;
+
+            const state = computeSlotDisplayState(rec, char, PREFS, 5000);
+
+            expect(state.limiterText).toBe(
+                `Runs ∞ · Offline limit · ${formatActivityStatusTime(offlineLimitAt, PREFS, 5000)}`
+            );
+        });
+
+        test('TLA025B-01: queue-infinite + historical (already-inactive) MooPass expiry -> exact locked known copy, not uncertain', () => {
+            const rec = record({
+                offline: { hourCap: 10, mooPassExpireTime: 3000 }, // expired before lastOfflineTime
+                projection: {
+                    segments: [
+                        {
+                            actionName: 'Coinify',
+                            startAt: 1000,
+                            endAt: null,
+                            queuedIndex: 0,
+                            certainty: 'uncertain',
+                            stopCause: 'inventory-dependency',
+                            remainingQueuedCount: 0,
+                        },
+                    ],
+                    terminalCause: 'unknown',
+                    terminalAt: null,
+                    attention: { mode: 'queue-infinite' },
+                },
+            });
+            const char = character({ lastOfflineTime: 5000 });
+            const offlineLimitAt = 5000 + 10 * 3600 * 1000;
+
+            const state = computeSlotDisplayState(rec, char, PREFS, 5000);
+
+            expect(state.limiterText).toBe(
+                `Queue → ∞ · Offline limit · ${formatActivityStatusTime(offlineLimitAt, PREFS, 5000)}`
+            );
+        });
+
         test('CA-A08: a passed offline cap on a runs-infinite record keeps the plain locked "Offline progress stopped · <time>" - no ∞ prefix', () => {
             const rec = record({
                 offline: { hourCap: 1, mooPassExpireTime: null },

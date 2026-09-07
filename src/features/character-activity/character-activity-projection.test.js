@@ -1736,6 +1736,207 @@ describe('resolveDisplayProjection - offline cap overlay', () => {
     });
 });
 
+describe('resolveDisplayProjection - MooPass historical-expiry matrix (TLA-025B)', () => {
+    test('TLA025B-01: historical MooPass expiry before offline start resolves queue-infinite to offline/known, not uncertain', () => {
+        const record = {
+            offline: { hourCap: 10, mooPassExpireTime: 3000 }, // expired well before lastOfflineTime
+            projection: {
+                segments: [
+                    {
+                        startAt: 1000,
+                        endAt: null,
+                        queuedIndex: 0,
+                        certainty: 'uncertain',
+                        stopCause: 'inventory-dependency',
+                    },
+                ],
+                terminalCause: 'unknown',
+                terminalAt: null,
+                attention: { mode: 'queue-infinite' },
+            },
+        };
+        const lastOfflineTime = 5000;
+
+        const result = resolveDisplayProjection(record, lastOfflineTime);
+
+        expect(result.terminalCause).toBe('offline');
+        expect(result.terminalAt).toBe(lastOfflineTime + 10 * 3600 * 1000);
+        expect(result.attentionMode).toBe('queue-infinite');
+        expect(result.offlineLimitState).toBe('known');
+    });
+
+    test('TLA025B-02: MooPass expiry exactly at offline start is treated as not active during the new interval', () => {
+        const record = {
+            offline: { hourCap: 10, mooPassExpireTime: 5000 },
+            projection: {
+                segments: [
+                    { startAt: 5000, endAt: null, queuedIndex: 0, certainty: 'trustworthy', stopCause: 'infinite' },
+                ],
+                terminalCause: 'infinite',
+                terminalAt: null,
+                attention: { mode: 'runs-infinite' },
+            },
+        };
+        const lastOfflineTime = 5000;
+
+        const result = resolveDisplayProjection(record, lastOfflineTime);
+
+        expect(result.terminalCause).toBe('offline');
+        expect(result.terminalAt).toBe(lastOfflineTime + 10 * 3600 * 1000);
+        expect(result.offlineLimitState).toBe('known');
+    });
+
+    test('TLA025B-03: MooPass active at offline start and expiring inside the projected window remains the protected true ambiguity', () => {
+        const lastOfflineTime = 5000;
+        const record = {
+            offline: { hourCap: 10, mooPassExpireTime: lastOfflineTime + 1000 }, // active at start, expires inside window
+            projection: {
+                segments: [
+                    {
+                        startAt: 1000,
+                        endAt: null,
+                        queuedIndex: 0,
+                        certainty: 'uncertain',
+                        stopCause: 'inventory-dependency',
+                    },
+                ],
+                terminalCause: 'unknown',
+                terminalAt: null,
+                attention: { mode: 'queue-infinite' },
+            },
+        };
+
+        const result = resolveDisplayProjection(record, lastOfflineTime);
+
+        expect(result.terminalCause).toBe('unknown');
+        expect(result.terminalAt).toBeNull();
+        expect(result.offlineLimitState).toBe('uncertain');
+    });
+
+    test('TLA025B-04: MooPass still active beyond the offline deadline resolves to the normal known deadline', () => {
+        const lastOfflineTime = 5000;
+        const offlineLimitAt = lastOfflineTime + 10 * 3600 * 1000;
+        const record = {
+            offline: { hourCap: 10, mooPassExpireTime: offlineLimitAt + 1000 },
+            projection: {
+                segments: [
+                    { startAt: 1000, endAt: null, queuedIndex: 0, certainty: 'trustworthy', stopCause: 'infinite' },
+                ],
+                terminalCause: 'infinite',
+                terminalAt: null,
+                attention: { mode: 'runs-infinite' },
+            },
+        };
+
+        const result = resolveDisplayProjection(record, lastOfflineTime);
+
+        expect(result.terminalCause).toBe('offline');
+        expect(result.terminalAt).toBe(offlineLimitAt);
+        expect(result.offlineLimitState).toBe('known');
+    });
+
+    test('TLA025B-05: no MooPass expiry recorded resolves to the normal known deadline', () => {
+        const lastOfflineTime = 5000;
+        const record = {
+            offline: { hourCap: 10, mooPassExpireTime: null },
+            projection: {
+                segments: [
+                    { startAt: 1000, endAt: null, queuedIndex: 0, certainty: 'trustworthy', stopCause: 'infinite' },
+                ],
+                terminalCause: 'infinite',
+                terminalAt: null,
+                attention: { mode: 'runs-infinite' },
+            },
+        };
+
+        const result = resolveDisplayProjection(record, lastOfflineTime);
+
+        expect(result.terminalCause).toBe('offline');
+        expect(result.terminalAt).toBe(lastOfflineTime + 10 * 3600 * 1000);
+        expect(result.offlineLimitState).toBe('known');
+    });
+
+    test('TLA025B-06: historical MooPass expiry on a direct runs-infinite terminal resolves to offline/known', () => {
+        const lastOfflineTime = 5000;
+        const record = {
+            offline: { hourCap: 10, mooPassExpireTime: 3000 },
+            projection: {
+                segments: [
+                    { startAt: 1000, endAt: null, queuedIndex: 0, certainty: 'trustworthy', stopCause: 'infinite' },
+                ],
+                terminalCause: 'infinite',
+                terminalAt: null,
+                attention: { mode: 'runs-infinite' },
+            },
+        };
+
+        const result = resolveDisplayProjection(record, lastOfflineTime);
+
+        expect(result.terminalCause).toBe('offline');
+        expect(result.terminalAt).toBe(lastOfflineTime + 10 * 3600 * 1000);
+        expect(result.attentionMode).toBe('runs-infinite');
+        expect(result.offlineLimitState).toBe('known');
+    });
+
+    test('TLA025B-07: historical MooPass expiry with no trustworthy cap stays unavailable, never a fabricated ETA', () => {
+        const lastOfflineTime = 5000;
+        const record = {
+            offline: { hourCap: null, mooPassExpireTime: 3000 },
+            projection: {
+                segments: [
+                    { startAt: 1000, endAt: null, queuedIndex: 0, certainty: 'trustworthy', stopCause: 'infinite' },
+                ],
+                terminalCause: 'infinite',
+                terminalAt: null,
+                attention: { mode: 'runs-infinite' },
+            },
+        };
+
+        const result = resolveDisplayProjection(record, lastOfflineTime);
+
+        expect(result.terminalCause).toBe('unknown');
+        expect(result.terminalAt).toBeNull();
+        expect(result.attentionMode).toBe('runs-infinite');
+        expect(result.offlineLimitState).toBe('unavailable');
+    });
+
+    test('TLA025B-01b: historical MooPass expiry no longer poisons the no-attentionMode trustworthy-prefix offline overlay', () => {
+        const record = {
+            offline: { hourCap: 0.01, mooPassExpireTime: -1000 }, // ~36s cap, expired before the current offline interval began
+            projection: {
+                segments: [
+                    { startAt: 0, endAt: 100_000, certainty: 'trustworthy', stopCause: 'count' },
+                    { startAt: 100_000, endAt: null, certainty: 'uncertain', stopCause: 'labyrinth' },
+                ],
+                terminalCause: 'unknown',
+                terminalAt: null,
+            },
+        };
+
+        const result = resolveDisplayProjection(record, 0);
+
+        expect(result.terminalCause).toBe('offline');
+        expect(result.terminalAt).toBe(36_000);
+    });
+
+    test('TLA025B-06b: historical MooPass expiry no longer fails closed a finite terminal that crosses it', () => {
+        const lastOfflineTime = 5000;
+        const record = {
+            offline: { hourCap: 10, mooPassExpireTime: 3000 }, // expired before lastOfflineTime
+            projection: {
+                segments: [{ endAt: 100_000_000 }],
+                terminalCause: 'queue',
+                terminalAt: 100_000_000, // far past the historical MooPass expiry
+            },
+        };
+
+        const result = resolveDisplayProjection(record, lastOfflineTime);
+
+        expect(result.terminalCause).toBe('offline');
+        expect(result.terminalAt).toBe(lastOfflineTime + 10 * 3600 * 1000);
+    });
+});
+
 describe('resolveDisplayProjection - attention/offline continuity overlay (TLA-025A)', () => {
     function attentionRecord(mode, overrides = {}) {
         return {

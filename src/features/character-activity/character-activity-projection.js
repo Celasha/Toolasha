@@ -623,7 +623,15 @@ export function resolveDisplayProjection(stored, freshLastOfflineTime) {
     const mooPassExpireTime = stored.offline?.mooPassExpireTime;
     const hasTrustworthyCap = offlineHourCap > 0 && freshLastOfflineTime != null;
     const offlineLimitAt = hasTrustworthyCap ? freshLastOfflineTime + offlineHourCap * 3600 * 1000 : null;
-    const mooPassAmbiguous = hasTrustworthyCap && mooPassExpireTime != null && mooPassExpireTime < offlineLimitAt;
+    // TLA-025B: MooPass must have been active when this offline interval started (strictly after
+    // freshLastOfflineTime) and expire before the projected cap - a historical/past expiry at or
+    // before freshLastOfflineTime was already inactive before this offline period began and cannot
+    // make its deadline ambiguous.
+    const mooPassAmbiguous =
+        hasTrustworthyCap &&
+        mooPassExpireTime != null &&
+        mooPassExpireTime > freshLastOfflineTime &&
+        mooPassExpireTime < offlineLimitAt;
 
     if (terminalCause === 'unknown') {
         if (attentionMode) {
