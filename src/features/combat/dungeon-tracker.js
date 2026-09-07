@@ -264,9 +264,9 @@ class DungeonTracker {
     }
 
     /**
-     * Check if there's an active dungeon on page load and restore tracking
+     * Check if there's an active dungeon on page load and record it as pending dungeon context
      */
-    async checkForActiveDungeon() {
+    checkForActiveDungeon() {
         // Check if already tracking (shouldn't be, but just in case)
         if (this.isTracking) {
             return;
@@ -282,41 +282,18 @@ class DungeonTracker {
             return;
         }
 
-        // Try to restore saved state from IndexedDB
-        const saved = await storage.getJSON('dungeonTracker_inProgressRun', 'settings', null);
-
-        if (saved && saved.dungeonHrid === dungeonAction.actionHrid) {
-            // Restore state immediately so UI appears
-            this.isTracking = true;
-            this.currentBattleId = saved.battleId;
-            this.waveTimes = saved.waveTimes || [];
-            this.waveStartTime = saved.waveStartTime ? new Date(saved.waveStartTime) : null;
-
-            // Restore timestamp tracking fields
-            this.firstKeyCountTimestamp = saved.firstKeyCountTimestamp || null;
-            this.lastKeyCountTimestamp = saved.lastKeyCountTimestamp || null;
-            this.battleStartedTimestamp = saved.battleStartedTimestamp || null;
-            this.keyCountMessages = saved.keyCountMessages || [];
-
-            this.currentRun = {
-                dungeonHrid: saved.dungeonHrid,
-                tier: saved.tier,
-                startTime: saved.startTime,
-                currentWave: saved.currentWave,
-                maxWaves: saved.maxWaves,
-                wavesCompleted: saved.wavesCompleted,
-                keyCountsMap: saved.keyCountsMap || {},
-            };
-
-            // Trigger UI update to show immediately
-            this.notifyUpdate();
-        } else {
-            // Store pending dungeon info for when new_battle fires
-            this.pendingDungeonInfo = {
-                dungeonHrid: dungeonAction.actionHrid,
-                tier: dungeonAction.difficultyTier,
-            };
-        }
+        // TLA-047: Do not restore saved timing state as authoritative here. Page load has no
+        // authoritative current battleId to verify against (battleId is only known from a live
+        // new_battle message) - matching on dungeonHrid alone let a stale pre-offline/pre-close
+        // run become "isTracking" before identity was known, letting its old key-count timestamp
+        // survive into a completely different battle and get persisted as a huge "validated"
+        // duration. Only remember the pending dungeon context; the next mid-dungeon new_battle
+        // already routes !isTracking through the guarded restoreInProgressRun(battleId) check,
+        // which validates battle identity, active-action match, and staleness before restoring.
+        this.pendingDungeonInfo = {
+            dungeonHrid: dungeonAction.actionHrid,
+            tier: dungeonAction.difficultyTier,
+        };
     }
 
     /**
