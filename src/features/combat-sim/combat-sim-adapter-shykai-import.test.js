@@ -6,9 +6,11 @@ vi.mock('../../core/loadout-state.js', () => ({
     },
 }));
 
+const mockItemDetailMap = {};
+
 vi.mock('../../core/data-manager.js', () => ({
     default: {
-        getInitClientData: vi.fn(() => ({ itemDetailMap: {} })),
+        getInitClientData: vi.fn(() => ({ itemDetailMap: mockItemDetailMap })),
     },
 }));
 
@@ -153,5 +155,206 @@ describe('parseShykaiImport - Achievements (TLA044-10/11)', () => {
         expect(result.players[1].characterAchievements).toEqual([
             { achievementHrid: '/achievements/novice_x', isCompleted: false },
         ]);
+    });
+});
+
+describe('parseShykaiImport - Equipment slot normalization (TLA-045)', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        for (const key of Object.keys(mockItemDetailMap)) delete mockItemDetailMap[key];
+    });
+
+    test('TLA045-01: raw two-hand location is canonicalized to the item metadata slot', () => {
+        mockItemDetailMap['/items/griffin_bulwark_refined'] = {
+            equipmentDetail: { type: '/equipment_types/two_hand' },
+        };
+        const json = JSON.stringify(
+            slotPlayer({
+                player: {
+                    ...slotPlayer().player,
+                    equipment: [
+                        {
+                            itemLocationHrid: '/item_locations/two_hand',
+                            itemHrid: '/items/griffin_bulwark_refined',
+                            enhancementLevel: 13,
+                        },
+                    ],
+                },
+            })
+        );
+
+        const result = parseShykaiImport(json);
+
+        expect(result.players[0].equipment['/equipment_types/two_hand']).toEqual({
+            hrid: '/items/griffin_bulwark_refined',
+            enhancementLevel: 13,
+        });
+        expect(result.players[0].equipment['/item_locations/two_hand']).toBeUndefined();
+    });
+
+    test('TLA045-02: authoritative metadata beats a disagreeing raw location', () => {
+        // Deliberately disagreeing fixture: raw location claims off_hand, current item
+        // metadata says the item is actually a pouch. The final key must follow metadata,
+        // proving this isn't string substitution or raw-key preference.
+        mockItemDetailMap['/items/some_pouch'] = {
+            equipmentDetail: { type: '/equipment_types/pouch' },
+        };
+        const json = JSON.stringify(
+            slotPlayer({
+                player: {
+                    ...slotPlayer().player,
+                    equipment: [
+                        {
+                            itemLocationHrid: '/item_locations/off_hand',
+                            itemHrid: '/items/some_pouch',
+                            enhancementLevel: 0,
+                        },
+                    ],
+                },
+            })
+        );
+
+        const result = parseShykaiImport(json);
+
+        expect(result.players[0].equipment['/equipment_types/pouch']).toEqual({
+            hrid: '/items/some_pouch',
+            enhancementLevel: 0,
+        });
+        expect(result.players[0].equipment['/equipment_types/off_hand']).toBeUndefined();
+        expect(result.players[0].equipment['/item_locations/off_hand']).toBeUndefined();
+    });
+
+    test('TLA045-04: enhancement level is preserved through normalization', () => {
+        mockItemDetailMap['/items/griffin_bulwark_refined'] = {
+            equipmentDetail: { type: '/equipment_types/two_hand' },
+        };
+        const json = JSON.stringify(
+            slotPlayer({
+                player: {
+                    ...slotPlayer().player,
+                    equipment: [
+                        {
+                            itemLocationHrid: '/item_locations/two_hand',
+                            itemHrid: '/items/griffin_bulwark_refined',
+                            enhancementLevel: 13,
+                        },
+                    ],
+                },
+            })
+        );
+
+        const result = parseShykaiImport(json);
+
+        expect(result.players[0].equipment['/equipment_types/two_hand'].enhancementLevel).toBe(13);
+    });
+
+    test('TLA045-05: canonicalization does not mutate hrid/enhancement or duplicate the item', () => {
+        mockItemDetailMap['/items/griffin_bulwark_refined'] = {
+            equipmentDetail: { type: '/equipment_types/two_hand' },
+        };
+        const json = JSON.stringify(
+            slotPlayer({
+                player: {
+                    ...slotPlayer().player,
+                    equipment: [
+                        {
+                            itemLocationHrid: '/item_locations/two_hand',
+                            itemHrid: '/items/griffin_bulwark_refined',
+                            enhancementLevel: 13,
+                        },
+                    ],
+                },
+            })
+        );
+
+        const result = parseShykaiImport(json);
+
+        expect(Object.keys(result.players[0].equipment)).toEqual(['/equipment_types/two_hand']);
+        expect(result.players[0].equipment['/equipment_types/two_hand'].hrid).toBe('/items/griffin_bulwark_refined');
+        expect(result.players[0].equipment['/equipment_types/two_hand'].enhancementLevel).toBe(13);
+    });
+
+    test('TLA045-06: generic current equipment-slot coverage across the full canonical slot set', () => {
+        const slots = [
+            'head',
+            'body',
+            'legs',
+            'feet',
+            'hands',
+            'main_hand',
+            'off_hand',
+            'pouch',
+            'back',
+            'neck',
+            'earrings',
+            'ring',
+            'charm',
+        ];
+        const equipment = slots.map((slot) => {
+            const hrid = `/items/fixture_${slot}`;
+            mockItemDetailMap[hrid] = { equipmentDetail: { type: `/equipment_types/${slot}` } };
+            return { itemLocationHrid: `/item_locations/${slot}`, itemHrid: hrid, enhancementLevel: 0 };
+        });
+        const json = JSON.stringify(slotPlayer({ player: { ...slotPlayer().player, equipment } }));
+
+        const result = parseShykaiImport(json);
+
+        for (const slot of slots) {
+            expect(result.players[0].equipment[`/equipment_types/${slot}`]).toEqual({
+                hrid: `/items/fixture_${slot}`,
+                enhancementLevel: 0,
+            });
+            expect(result.players[0].equipment[`/item_locations/${slot}`]).toBeUndefined();
+        }
+    });
+
+    test('TLA045-07: unresolved/non-equipment HRID fails closed with a diagnosable warning, no crash', () => {
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        // No entry in mockItemDetailMap for this hrid - unresolved.
+        const json = JSON.stringify(
+            slotPlayer({
+                player: {
+                    ...slotPlayer().player,
+                    equipment: [
+                        {
+                            itemLocationHrid: '/item_locations/two_hand',
+                            itemHrid: '/items/unknown_item',
+                            enhancementLevel: 5,
+                        },
+                    ],
+                },
+            })
+        );
+
+        const result = parseShykaiImport(json);
+
+        expect(result.players[0].equipment).toEqual({});
+        expect(result.players[0].equipment['/item_locations/two_hand']).toBeUndefined();
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('/items/unknown_item'));
+        warnSpy.mockRestore();
+    });
+
+    test('TLA045-07b: an item resolved but lacking equipmentDetail.type also fails closed', () => {
+        mockItemDetailMap['/items/non_equipment_item'] = {};
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const json = JSON.stringify(
+            slotPlayer({
+                player: {
+                    ...slotPlayer().player,
+                    equipment: [
+                        {
+                            itemLocationHrid: '/item_locations/two_hand',
+                            itemHrid: '/items/non_equipment_item',
+                            enhancementLevel: 0,
+                        },
+                    ],
+                },
+            })
+        );
+
+        const result = parseShykaiImport(json);
+
+        expect(result.players[0].equipment).toEqual({});
+        warnSpy.mockRestore();
     });
 });

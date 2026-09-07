@@ -196,3 +196,55 @@ describe('Player.createFromDTO - Achievement Tier wiring (TLA-044)', () => {
         expect(playerB.permanentBuffs['/buff_types/damage']).toBeUndefined();
     });
 });
+
+describe('Player.createFromDTO - Griffin Bulwark Refined +13 identity semantics (TLA045-03)', () => {
+    test('a normalized /equipment_types/two_hand DTO key restores full Bulwark weapon identity', () => {
+        setGameData({
+            houseRoomDetailMap: {},
+            guildBuffDetailMap: {},
+            itemDetailMap: {
+                '/items/griffin_bulwark_refined': {
+                    equipmentDetail: {
+                        type: '/equipment_types/two_hand',
+                        combatStats: {
+                            combatStyleHrids: ['/combat_styles/smash'],
+                            damageType: '/damage_types/physical',
+                            attackInterval: 3600000000,
+                            defensiveDamage: 1.188,
+                            primaryTraining: '/skills/defense',
+                        },
+                        combatEnhancementBonuses: { defensiveDamage: 0.02376 },
+                    },
+                },
+            },
+            enhancementLevelTotalBonusMultiplierTable: Array.from({ length: 21 }, (_, i) => i),
+        });
+
+        // This is the normalized TLA-045 shape parseShykaiImport() must now produce: the
+        // canonical /equipment_types/two_hand key, never the raw /item_locations/two_hand
+        // export key the importer used to pass straight through.
+        const player = Player.createFromDTO(
+            baseDTO({
+                equipment: {
+                    '/equipment_types/two_hand': { hrid: '/items/griffin_bulwark_refined', enhancementLevel: 13 },
+                },
+            })
+        );
+        player.zoneBuffs = [];
+        player.extraBuffs = [];
+        player.generatePermanentBuffs();
+        player.clearBuffs();
+
+        expect(player.combatDetails.combatStats.combatStyleHrid).toBe('/combat_styles/smash');
+        expect(player.combatDetails.combatStats.damageType).toBe('/damage_types/physical');
+        // Base weapon interval before the generic attack-level speed formula (untouched by
+        // TLA-045) is applied - this is the identity value the canonical slot lookup restores.
+        expect(player.equipment['/equipment_types/two_hand'].getCombatStat('attackInterval')).toBe(3600000000);
+        expect(player.combatDetails.combatStats.primaryTraining).toBe('/skills/defense');
+        expect(player.equipment['/equipment_types/two_hand'].enhancementLevel).toBe(13);
+        // Bulwark-specific defensive-damage contribution to Smash (combat-unit.js) is only
+        // reachable when the item lives under the canonical two_hand slot.
+        expect(player.combatDetails.smashMaxDamage).toBeGreaterThan(0);
+        expect(player.combatDetails.defensiveMaxDamage).toBeGreaterThan(0);
+    });
+});

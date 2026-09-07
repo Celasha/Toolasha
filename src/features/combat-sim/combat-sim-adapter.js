@@ -479,16 +479,27 @@ export function parseShykaiImport(jsonString) {
         }
 
         // Equipment: array format [{itemLocationHrid, itemHrid, enhancementLevel}]
+        // (TLA-045) The export's itemLocationHrid is a raw Szerra/Shykai location (e.g.
+        // /item_locations/two_hand), not Toolasha's canonical equipment slot. The engine's
+        // slot-specific identity checks (weapon/pouch/charm) read canonical /equipment_types/*
+        // keys, so the raw location must never be used as the final DTO key - only current
+        // item metadata (the same authority buildPlayerDTO() uses for the live/self path) can
+        // determine canonical slot ownership. An item that can't be resolved to valid equipment
+        // metadata is skipped rather than guessed, so it fails closed instead of silently
+        // landing under a noncanonical key.
         if (Array.isArray(p.equipment)) {
             for (const eq of p.equipment) {
                 if (!eq.itemHrid) continue;
-                // Map itemLocationHrid (e.g. /equipment_types/head) to equipment type
-                const eqType = eq.itemLocationHrid || itemDetailMap[eq.itemHrid]?.equipmentDetail?.type;
+                const eqType = itemDetailMap[eq.itemHrid]?.equipmentDetail?.type;
                 if (eqType) {
                     dto.equipment[eqType] = {
                         hrid: eq.itemHrid,
                         enhancementLevel: eq.enhancementLevel || 0,
                     };
+                } else {
+                    console.warn(
+                        `[CombatSimAdapter] Shykai import: could not resolve equipment slot for itemHrid "${eq.itemHrid}" (itemLocationHrid "${eq.itemLocationHrid}"); skipping.`
+                    );
                 }
             }
         }
