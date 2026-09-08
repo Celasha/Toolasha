@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.106.3
+ * Version: 2.107.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2927,6 +2927,9 @@ ${starCSS}
      */
 
 
+    /** Variable names whose values are plain quantities, not names/codes/hrids - format with thousand separators. */
+    const NUMERIC_VARS = new Set(['count', 'coins', 'filled', 'total', 'minutes', 'level', 'days', 'limit', 'boundary']);
+
     const TEMPLATES = {
         addedFriend: 'Added friend: {{name}}',
         removedFriend: 'Removed friend: {{name}}',
@@ -3165,9 +3168,16 @@ ${starCSS}
             resolveNestedName(tableName, varMap[varName])
         );
 
-        return withNested.replace(/\{\{([a-zA-Z]+)\}\}/g, (_match, varName) =>
-            varMap[varName] !== undefined ? String(varMap[varName]) : ''
-        );
+        return withNested.replace(/\{\{([a-zA-Z]+)\}\}/g, (_match, varName) => {
+            const value = varMap[varName];
+            if (value === undefined) {
+                return '';
+            }
+            if (NUMERIC_VARS.has(varName) && value !== '' && Number.isFinite(Number(value))) {
+                return formatters_js.formatWithSeparator(Number(value));
+            }
+            return String(value);
+        });
     }
 
     /**
@@ -23447,7 +23457,15 @@ ${starCSS}
         const mooPassExpireTime = stored.offline?.mooPassExpireTime;
         const hasTrustworthyCap = offlineHourCap > 0 && freshLastOfflineTime != null;
         const offlineLimitAt = hasTrustworthyCap ? freshLastOfflineTime + offlineHourCap * 3600 * 1000 : null;
-        const mooPassAmbiguous = hasTrustworthyCap && mooPassExpireTime != null && mooPassExpireTime < offlineLimitAt;
+        // TLA-025B: MooPass must have been active when this offline interval started (strictly after
+        // freshLastOfflineTime) and expire before the projected cap - a historical/past expiry at or
+        // before freshLastOfflineTime was already inactive before this offline period began and cannot
+        // make its deadline ambiguous.
+        const mooPassAmbiguous =
+            hasTrustworthyCap &&
+            mooPassExpireTime != null &&
+            mooPassExpireTime > freshLastOfflineTime &&
+            mooPassExpireTime < offlineLimitAt;
 
         if (terminalCause === 'unknown') {
             if (attentionMode) {
