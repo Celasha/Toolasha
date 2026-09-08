@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.107.0](https://github.com/Celasha/Toolasha/compare/v2.106.3...v2.107.0) (2026-09-08)
+
+### Features
+
+- add achievement what-if modes to Combat Simulator (TLA-046) ([811576a](https://github.com/Celasha/Toolasha/commit/811576a98703ad7845a0fbde8bd39318db87096e))
+
+### Bug Fixes
+
+- add thousand separators to Notification Log quantities ([2cc6031](https://github.com/Celasha/Toolasha/commit/2cc60319ee2310828ee2c0603ecf8f929417f49f))
+- ignore expired MooPass before offline activity window (TLA-025B) ([22c22cc](https://github.com/Celasha/Toolasha/commit/22c22cc53084fa4fa5dc5062ff2c6b261eafb6a7))
+- normalize direct-import equipment slots (TLA-045) ([629d2df](https://github.com/Celasha/Toolasha/commit/629d2df4a04fd631c03dc964847e338ba65c23e8))
+- prevent offline gaps from corrupting dungeon run history (TLA-047) ([229861a](https://github.com/Celasha/Toolasha/commit/229861a79b59977a0eb26ea2c65b0d419458b619))
+- propagate Profile Score lower bounds to categories (TLA-041D) ([2f8aa41](https://github.com/Celasha/Toolasha/commit/2f8aa412ff0e9b610bd050e3ad09b31deebd007a))
+- stop an enhanced item stack from masking its +0 stock in Can Produce ([df479c3](https://github.com/Celasha/Toolasha/commit/df479c3b4467e45737259a7a1bdf293775af197e))
+
 ## [2.106.3](https://github.com/Celasha/Toolasha/compare/v2.106.2...v2.106.3) (2026-09-06)
 
 ### Bug Fixes
