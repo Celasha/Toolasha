@@ -145,6 +145,18 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: true,
             },
+            actionBar_completionTimeStyle: {
+                id: 'actionBar_completionTimeStyle',
+                label: 'Action bar: Queue completion display',
+                type: 'select',
+                default: 'absolute',
+                options: [
+                    { value: 'absolute', label: 'Clock time only (Complete at 14:32)' },
+                    { value: 'relative', label: 'Cumulative duration only (Complete in 3h 40m)' },
+                    { value: 'both', label: 'Both' },
+                ],
+                help: 'How queued-action completion is shown in the Queued Actions popup and hover tooltip',
+            },
             actionBar_showRecycleTime: {
                 id: 'actionBar_showRecycleTime',
                 label: 'Action bar: Transmute recycle time estimate',

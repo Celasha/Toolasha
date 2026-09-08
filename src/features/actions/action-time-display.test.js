@@ -935,3 +935,177 @@ describe('ActionTimeDisplay calculation failure fails closed instead of a fake z
         expect(result.totalTime).toBe(50);
     });
 });
+
+describe('ActionTimeDisplay queue completion display style setting (actionBar_completionTimeStyle)', () => {
+    let instance;
+
+    // Three queued actions whose durations (1h05m, 2h35m, 1h43m) sum to the same running totals
+    // (1h05m -> 3h40m -> 5h23m) used as the worked example when this setting was requested.
+    const ACTION_DETAILS_BY_HRID = {
+        '/actions/woodcutting/redwood': { type: '/action_types/woodcutting', name: 'Chop Redwood Tree' },
+        '/actions/woodcutting/oak': { type: '/action_types/woodcutting', name: 'Chop Oak Tree' },
+        '/actions/woodcutting/birch': { type: '/action_types/woodcutting', name: 'Chop Birch Tree' },
+    };
+
+    function makeQueueMenuWithActions(entries) {
+        const queueMenu = document.createElement('div');
+        queueMenu.className = 'QueuedActions_queuedActionsEditMenu__abc';
+
+        entries.forEach(({ ordinal, name }) => {
+            const actionDiv = document.createElement('div');
+            actionDiv.className = 'QueuedActions_action__xyz';
+
+            const actionTextContainer = document.createElement('div');
+            actionTextContainer.className = 'QueuedActions_actionText__xyz';
+
+            const textDiv = document.createElement('div');
+            textDiv.className = 'QueuedActions_text__xyz';
+            textDiv.textContent = `#${ordinal}${name}`;
+
+            actionTextContainer.appendChild(textDiv);
+            actionDiv.appendChild(actionTextContainer);
+            queueMenu.appendChild(actionDiv);
+        });
+
+        document.body.appendChild(queueMenu);
+        return queueMenu;
+    }
+
+    function getQueueMountCallback() {
+        const call = domObserver.onClass.mock.calls.find(
+            ([featureId, className]) =>
+                featureId === 'ActionTimeDisplay-Queue' && className === 'QueuedActions_queuedActionsEditMenu'
+        );
+        return call?.[2];
+    }
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        document.body.innerHTML = '';
+        document.head.querySelectorAll('style').forEach((el) => el.remove());
+        instance = new ActionTimeDisplay();
+
+        dataManager.getCurrentActions.mockReturnValue([
+            {
+                id: 1,
+                hasMaxCount: true,
+                maxCount: 3900,
+                currentCount: 0,
+                actionHrid: '/actions/woodcutting/redwood',
+                ordinal: 1,
+            },
+            {
+                id: 2,
+                hasMaxCount: true,
+                maxCount: 9300,
+                currentCount: 0,
+                actionHrid: '/actions/woodcutting/oak',
+                ordinal: 2,
+            },
+            {
+                id: 3,
+                hasMaxCount: true,
+                maxCount: 6180,
+                currentCount: 0,
+                actionHrid: '/actions/woodcutting/birch',
+                ordinal: 3,
+            },
+        ]);
+        dataManager.getActionDetails.mockImplementation((hrid) => ACTION_DETAILS_BY_HRID[hrid]);
+        calculateActionStats.mockReturnValue({ actionTime: 1, totalEfficiency: 0 });
+        calculateEfficiencyMultiplier.mockReturnValue(1);
+        dataManager.getElapsedSecondsInCurrentUnit.mockReturnValue(0);
+    });
+
+    function renderQueueMenu() {
+        instance.initializeQueueObserver();
+        const onMount = getQueueMountCallback();
+        const queueMenu = makeQueueMenuWithActions([
+            { ordinal: 1, name: 'Chop Redwood Tree' },
+            { ordinal: 2, name: 'Chop Oak Tree' },
+            { ordinal: 3, name: 'Chop Birch Tree' },
+        ]);
+        onMount(queueMenu);
+        return [...queueMenu.querySelectorAll('.mwi-queue-action-time')].map((el) => el.textContent);
+    }
+
+    test('default (no setting set) preserves prior behavior: clock time only, no "Complete in"', () => {
+        config.getSettingValue.mockImplementation((_key, fallback) => fallback);
+
+        const rows = renderQueueMenu();
+
+        rows.forEach((text) => {
+            expect(text).toContain('Complete at');
+            expect(text).not.toContain('Complete in');
+        });
+    });
+
+    // formatters.js is mocked above (timeReadable -> `${s}s`, formatDateTime -> ''), matching the
+    // rest of this test file's convention of asserting on raw seconds rather than locale-formatted
+    // strings. In real usage timeReadable renders these as "1h 05m 00s" / "3h 40m 00s" / "5h 23m 00s".
+    test("style 'relative' shows cumulative running duration per row (1h05m -> 3h40m -> 5h23m), no clock time", () => {
+        config.getSettingValue.mockImplementation((key, fallback) =>
+            key === 'actionBar_completionTimeStyle' ? 'relative' : fallback
+        );
+
+        const [row1, row2, row3] = renderQueueMenu();
+
+        expect(row1).toContain('Complete in 3900s');
+        expect(row2).toContain('Complete in 13200s');
+        expect(row3).toContain('Complete in 19380s');
+        [row1, row2, row3].forEach((text) => expect(text).not.toContain('Complete at'));
+    });
+
+    test("style 'both' shows cumulative duration and clock time together on every row", () => {
+        config.getSettingValue.mockImplementation((key, fallback) =>
+            key === 'actionBar_completionTimeStyle' ? 'both' : fallback
+        );
+
+        const [row1, row2, row3] = renderQueueMenu();
+
+        expect(row1).toContain('Complete in 3900s');
+        expect(row1).toContain('Complete at');
+        expect(row2).toContain('Complete in 13200s');
+        expect(row2).toContain('Complete at');
+        expect(row3).toContain('Complete in 19380s');
+        expect(row3).toContain('Complete at');
+    });
+
+    test('a truly-infinite action still suppresses completion text for itself and every later row, under every style', () => {
+        dataManager.getCurrentActions.mockReturnValue([
+            {
+                id: 1,
+                hasMaxCount: false,
+                maxCount: 0,
+                currentCount: 0,
+                actionHrid: '/actions/woodcutting/redwood',
+                ordinal: 1,
+            },
+            {
+                id: 2,
+                hasMaxCount: true,
+                maxCount: 9300,
+                currentCount: 0,
+                actionHrid: '/actions/woodcutting/oak',
+                ordinal: 2,
+            },
+        ]);
+        config.getSettingValue.mockImplementation((key, fallback) =>
+            key === 'actionBar_completionTimeStyle' ? 'both' : fallback
+        );
+
+        instance.initializeQueueObserver();
+        const onMount = getQueueMountCallback();
+        const queueMenu = makeQueueMenuWithActions([
+            { ordinal: 1, name: 'Chop Redwood Tree' },
+            { ordinal: 2, name: 'Chop Oak Tree' },
+        ]);
+        onMount(queueMenu);
+
+        const rows = [...queueMenu.querySelectorAll('.mwi-queue-action-time')].map((el) => el.textContent);
+
+        expect(rows[0]).toBe('[∞]');
+        expect(rows[1]).not.toContain('Complete in');
+        expect(rows[1]).not.toContain('Complete at');
+    });
+});
