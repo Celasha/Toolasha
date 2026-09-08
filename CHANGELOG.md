@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.107.2](https://github.com/Celasha/Toolasha/compare/v2.107.1...v2.107.2) (2026-09-08)
+
+
+### Bug Fixes
+
+* guard Labyrinth Apply Skip against rapid clicks (TLA-048) ([37b91d3](https://github.com/Celasha/Toolasha/commit/37b91d339d4cbb1b400da496615a0961db8ba8b5))
+* move queue completion display setting to Action Queue section ([70f4019](https://github.com/Celasha/Toolasha/commit/70f4019e824dcfead55b80316b80b04dcd1abc91))
+* normalize Character Activity native timestamps (TLA-025C) ([b9342a0](https://github.com/Celasha/Toolasha/commit/b9342a01b2559257543d5e6518c25fdd968332cc))
+* price special-currency equipment in Profile Score (TLA-041E) ([dbd8e21](https://github.com/Celasha/Toolasha/commit/dbd8e211eb41bd3a58e0f6e4fc2d10bbae9d6b11))
+
 ## [2.107.1](https://github.com/Celasha/Toolasha/compare/v2.107.0...v2.107.1) (2026-09-08)
 
 ### Bug Fixes
