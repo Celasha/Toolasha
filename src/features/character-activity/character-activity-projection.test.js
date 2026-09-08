@@ -2088,3 +2088,196 @@ describe('resolveDisplayProjection - attention/offline continuity overlay (TLA-0
         expect(result.offlineLimitState).toBeUndefined();
     });
 });
+
+describe('resolveDisplayProjection - native timestamp normalization (TLA-025C)', () => {
+    function infiniteRecord(overrides = {}) {
+        return {
+            offline: { hourCap: 10, mooPassExpireTime: null },
+            projection: {
+                segments: [
+                    { startAt: 1000, endAt: null, queuedIndex: 0, certainty: 'trustworthy', stopCause: 'infinite' },
+                ],
+                terminalCause: 'infinite',
+                terminalAt: null,
+                attention: { mode: 'runs-infinite' },
+                ...overrides.projection,
+            },
+            ...overrides,
+        };
+    }
+
+    function queueInfiniteRecord(overrides = {}) {
+        return {
+            offline: { hourCap: 10, mooPassExpireTime: null },
+            projection: {
+                segments: [
+                    {
+                        startAt: 1000,
+                        endAt: null,
+                        queuedIndex: 0,
+                        certainty: 'uncertain',
+                        stopCause: 'inventory-dependency',
+                    },
+                ],
+                terminalCause: 'unknown',
+                terminalAt: null,
+                attention: { mode: 'queue-infinite' },
+                ...overrides.projection,
+            },
+            ...overrides,
+        };
+    }
+
+    test('TLA025C-01: ISO lastOfflineTime string + direct runs-infinite resolves to a finite known deadline', () => {
+        const lastOfflineTime = '2026-01-15T12:00:00.000Z';
+        const expectedStart = new Date(lastOfflineTime).getTime();
+
+        const result = resolveDisplayProjection(infiniteRecord(), lastOfflineTime);
+
+        expect(result.terminalCause).toBe('offline');
+        expect(result.terminalAt).toBe(expectedStart + 10 * 3600 * 1000);
+        expect(Number.isFinite(result.terminalAt)).toBe(true);
+    });
+
+    test('TLA025C-02: ISO lastOfflineTime string + queue-infinite resolves to a finite known deadline', () => {
+        const lastOfflineTime = '2026-01-15T12:00:00.000Z';
+        const expectedStart = new Date(lastOfflineTime).getTime();
+
+        const result = resolveDisplayProjection(queueInfiniteRecord(), lastOfflineTime);
+
+        expect(result.terminalCause).toBe('offline');
+        expect(result.attentionMode).toBe('queue-infinite');
+        expect(result.terminalAt).toBe(expectedStart + 10 * 3600 * 1000);
+        expect(Number.isFinite(result.terminalAt)).toBe(true);
+    });
+
+    test('TLA025C-03: a plain numeric epoch lastOfflineTime is completely unaffected', () => {
+        const result = resolveDisplayProjection(infiniteRecord(), 5000);
+
+        expect(result.terminalCause).toBe('offline');
+        expect(result.terminalAt).toBe(5000 + 10 * 3600 * 1000);
+    });
+
+    test('TLA025C-04: a Date object lastOfflineTime normalizes to its finite epoch ms', () => {
+        const lastOfflineTime = new Date('2026-01-15T12:00:00.000Z');
+
+        const result = resolveDisplayProjection(infiniteRecord(), lastOfflineTime);
+
+        expect(result.terminalCause).toBe('offline');
+        expect(result.terminalAt).toBe(lastOfflineTime.getTime() + 10 * 3600 * 1000);
+    });
+
+    test('TLA025C-05: a malformed lastOfflineTime string fails closed to unavailable, never NaN/Invalid Date', () => {
+        const result = resolveDisplayProjection(infiniteRecord(), 'not-a-date');
+
+        expect(result.terminalCause).toBe('unknown');
+        expect(result.terminalAt).toBeNull();
+        expect(result.offlineLimitState).toBe('unavailable');
+    });
+
+    test('TLA025C-08: a historical ISO MooPass expiry before offline start preserves the known exact deadline', () => {
+        const lastOfflineTime = '2026-01-15T12:00:00.000Z';
+        const startMs = new Date(lastOfflineTime).getTime();
+        const record = infiniteRecord({ offline: { hourCap: 10, mooPassExpireTime: startMs - 1000 } });
+
+        const result = resolveDisplayProjection(record, lastOfflineTime);
+
+        expect(result.terminalCause).toBe('offline');
+        expect(result.terminalAt).toBe(startMs + 10 * 3600 * 1000);
+        expect(result.offlineLimitState).toBe('known');
+    });
+
+    test('TLA025C-09: an active ISO MooPass expiry inside the current offline window preserves the protected true ambiguity', () => {
+        const lastOfflineTime = '2026-01-15T12:00:00.000Z';
+        const startMs = new Date(lastOfflineTime).getTime();
+        const record = infiniteRecord({ offline: { hourCap: 10, mooPassExpireTime: startMs + 1000 } });
+
+        const result = resolveDisplayProjection(record, lastOfflineTime);
+
+        expect(result.terminalCause).toBe('unknown');
+        expect(result.terminalAt).toBeNull();
+        expect(result.offlineLimitState).toBe('uncertain');
+    });
+
+    test('TLA025C-10: an ISO MooPass expiry after the offline deadline resolves to the normal known deadline', () => {
+        const lastOfflineTime = '2026-01-15T12:00:00.000Z';
+        const startMs = new Date(lastOfflineTime).getTime();
+        const offlineLimitAt = startMs + 10 * 3600 * 1000;
+        const record = infiniteRecord({ offline: { hourCap: 10, mooPassExpireTime: offlineLimitAt + 1000 } });
+
+        const result = resolveDisplayProjection(record, lastOfflineTime);
+
+        expect(result.terminalCause).toBe('offline');
+        expect(result.terminalAt).toBe(offlineLimitAt);
+        expect(result.offlineLimitState).toBe('known');
+    });
+
+    test('TLA025C-11: a null MooPass expiry with a native ISO lastOfflineTime resolves to the known exact deadline', () => {
+        const lastOfflineTime = '2026-01-15T12:00:00.000Z';
+        const startMs = new Date(lastOfflineTime).getTime();
+        const record = infiniteRecord({ offline: { hourCap: 10, mooPassExpireTime: null } });
+
+        const result = resolveDisplayProjection(record, lastOfflineTime);
+
+        expect(result.terminalCause).toBe('offline');
+        expect(result.terminalAt).toBe(startMs + 10 * 3600 * 1000);
+        expect(result.offlineLimitState).toBe('known');
+    });
+
+    test('TLA025C-12: a malformed non-null MooPass expiry fails closed to the protected ambiguity, never a fabricated known deadline', () => {
+        const lastOfflineTime = 5000;
+        const record = infiniteRecord({ offline: { hourCap: 10, mooPassExpireTime: 'not-a-date' } });
+
+        const result = resolveDisplayProjection(record, lastOfflineTime);
+
+        expect(result.terminalCause).toBe('unknown');
+        expect(result.terminalAt).toBeNull();
+        expect(result.offlineLimitState).toBe('uncertain');
+    });
+
+    test('TLA025C-12b: a malformed non-null MooPass expiry on a finite terminal fails closed to unknown, not a fabricated known deadline', () => {
+        const lastOfflineTime = 5000;
+        const stored = {
+            offline: { hourCap: 10, mooPassExpireTime: 'garbage' },
+            projection: {
+                segments: [{ endAt: 100_000_000 }],
+                terminalCause: 'queue',
+                terminalAt: 100_000_000,
+            },
+        };
+
+        const result = resolveDisplayProjection(stored, lastOfflineTime);
+
+        expect(result.terminalCause).toBe('unknown');
+        expect(result.terminalAt).toBeNull();
+    });
+
+    test('TLA025C-14: passed offline cap with an ISO lastOfflineTime start resolves to a finite past deadline', () => {
+        const lastOfflineTime = '2026-01-15T12:00:00.000Z';
+        const startMs = new Date(lastOfflineTime).getTime();
+        const record = infiniteRecord();
+
+        const result = resolveDisplayProjection(record, lastOfflineTime);
+
+        expect(result.terminalCause).toBe('offline');
+        expect(result.terminalAt).toBe(startMs + 10 * 3600 * 1000);
+        expect(Number.isFinite(result.terminalAt)).toBe(true);
+    });
+
+    test('a malformed queue-infinite lastOfflineTime fails closed to unavailable rather than an unresolvable arithmetic result', () => {
+        const result = resolveDisplayProjection(queueInfiniteRecord(), '2026-99-99');
+
+        expect(result.terminalCause).toBe('unknown');
+        expect(result.terminalAt).toBeNull();
+        expect(result.attentionMode).toBe('queue-infinite');
+        expect(result.offlineLimitState).toBe('unavailable');
+    });
+
+    test('an empty-string lastOfflineTime is treated the same as null (unavailable), never a raw-string-concat arithmetic result', () => {
+        const result = resolveDisplayProjection(infiniteRecord(), '');
+
+        expect(result.terminalCause).toBe('unknown');
+        expect(result.terminalAt).toBeNull();
+        expect(result.offlineLimitState).toBe('unavailable');
+    });
+});

@@ -11,6 +11,7 @@ import loadoutState from '../../core/loadout-state.js';
 import { resolveActionContext, resolveCurrentActionContext } from '../../utils/action-context.js';
 import { calculateDrinkRemainingSeconds } from '../../utils/drink-calculator.js';
 import { getDrinkConcentration, parseArtisanBonus } from '../../utils/tea-parser.js';
+import { normalizeNativeTimestamp } from './native-timestamp.js';
 
 const UNCERTAIN_REASON_BY_TYPE = {
     '/action_types/labyrinth': 'labyrinth',
@@ -611,7 +612,7 @@ export function computeLiveProjection(now = Date.now()) {
  * either its own exact `isTrulyInfinite` segment or the conservative continuity lookahead - never
  * derived here from a weaker terminalCause.
  */
-export function resolveDisplayProjection(stored, freshLastOfflineTime) {
+export function resolveDisplayProjection(stored, rawFreshLastOfflineTime) {
     const { segments, terminalCause, terminalAt, attention = null } = stored.projection;
     const attentionMode = attention?.mode || null;
 
@@ -619,8 +620,17 @@ export function resolveDisplayProjection(stored, freshLastOfflineTime) {
         return { segments, terminalCause, terminalAt };
     }
 
+    // TLA-025C: this is a pure public/tested boundary and must stay defensive even though the
+    // renderer already normalizes lastOfflineTime before calling in - never assume a native
+    // date-like value is already an epoch-ms number here either.
+    const freshLastOfflineTime = normalizeNativeTimestamp(rawFreshLastOfflineTime);
     const offlineHourCap = stored.offline?.hourCap;
-    const mooPassExpireTime = stored.offline?.mooPassExpireTime;
+    const rawMooPassExpireTime = stored.offline?.mooPassExpireTime;
+    const mooPassExpireTime = normalizeNativeTimestamp(rawMooPassExpireTime);
+    // A non-null raw MooPass expiry that fails to normalize is evidence a MooPass window may
+    // exist/have existed - unlike a genuine null (no MooPass), it must never collapse into "no
+    // MooPass" (a false-known deadline). Fail closed into the same protected TLA-025B ambiguity.
+    const mooPassMalformed = rawMooPassExpireTime != null && mooPassExpireTime === null;
     const hasTrustworthyCap = offlineHourCap > 0 && freshLastOfflineTime != null;
     const offlineLimitAt = hasTrustworthyCap ? freshLastOfflineTime + offlineHourCap * 3600 * 1000 : null;
     // TLA-025B: MooPass must have been active when this offline interval started (strictly after
@@ -629,9 +639,10 @@ export function resolveDisplayProjection(stored, freshLastOfflineTime) {
     // make its deadline ambiguous.
     const mooPassAmbiguous =
         hasTrustworthyCap &&
-        mooPassExpireTime != null &&
-        mooPassExpireTime > freshLastOfflineTime &&
-        mooPassExpireTime < offlineLimitAt;
+        (mooPassMalformed ||
+            (mooPassExpireTime != null &&
+                mooPassExpireTime > freshLastOfflineTime &&
+                mooPassExpireTime < offlineLimitAt));
 
     if (terminalCause === 'unknown') {
         if (attentionMode) {

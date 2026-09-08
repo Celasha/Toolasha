@@ -744,6 +744,165 @@ describe('computeSlotDisplayState', () => {
     });
 });
 
+describe('computeSlotDisplayState - native timestamp normalization (TLA-025C)', () => {
+    test('TLA025C-06: an ISO lastOfflineTime newer than observedAt + tolerance correctly marks the record stale', () => {
+        const rec = record({ observedAt: 1000 });
+        const char = character({ lastOfflineTime: '2026-01-15T12:00:01.000Z' }); // far after observedAt
+        const now = new Date('2026-01-15T12:00:02.000Z').getTime();
+
+        const state = computeSlotDisplayState(rec, char, PREFS, now);
+
+        expect(state.firstLineText).toBe('Activity status outdated');
+        expect(state.limiterText).toBe('Open character to refresh');
+    });
+
+    test('TLA025C-07: an older ISO lastOfflineTime does not falsely mark the record stale', () => {
+        const observedAt = new Date('2026-01-15T12:00:10.000Z').getTime();
+        const rec = record({ observedAt });
+        const char = character({ lastOfflineTime: '2026-01-15T12:00:00.000Z' }); // well before observedAt
+
+        const state = computeSlotDisplayState(rec, char, PREFS, observedAt + 1000);
+
+        expect(state.limiterText).not.toBe('Open character to refresh');
+    });
+
+    test('a malformed lastOfflineTime never falsely marks the record stale (fails closed, treated like no evidence)', () => {
+        const rec = record({ observedAt: 1000 });
+        const char = character({ lastOfflineTime: 'not-a-date' });
+
+        const state = computeSlotDisplayState(rec, char, PREFS, 60000);
+
+        expect(state.limiterText).not.toBe('Open character to refresh');
+    });
+
+    test('TLA025C-13: a currently-online character still never receives an offline deadline from an ISO lastOfflineTime', () => {
+        const lastOfflineTime = '2026-01-15T12:00:00.000Z';
+        const rec = record({
+            observedAt: new Date(lastOfflineTime).getTime(),
+            offline: { hourCap: 1, mooPassExpireTime: null },
+            projection: {
+                segments: [
+                    {
+                        actionName: 'Cheese',
+                        startAt: 1000,
+                        endAt: null,
+                        queuedIndex: 0,
+                        certainty: 'trustworthy',
+                        stopCause: 'infinite',
+                    },
+                ],
+                terminalCause: 'infinite',
+                terminalAt: null,
+            },
+        });
+        const char = character({ isOnline: true, lastOfflineTime });
+        const offlineLimitAt = new Date(lastOfflineTime).getTime() + 1 * 3600 * 1000;
+
+        const state = computeSlotDisplayState(rec, char, PREFS, offlineLimitAt + 10000);
+
+        expect(state.limiterText).not.toContain('Offline progress stopped');
+        expect(state.firstLineText).toBe('Cheese');
+        expect(state.limiterColor).not.toBe('red');
+    });
+
+    test('TLA025C-14: an offline character with a passed offline cap and ISO lastOfflineTime renders a valid formatted time, never NaN/Invalid Date', () => {
+        const lastOfflineTime = '2026-01-15T12:00:00.000Z';
+        const rec = record({
+            observedAt: new Date(lastOfflineTime).getTime(),
+            offline: { hourCap: 1, mooPassExpireTime: null },
+            projection: {
+                segments: [
+                    {
+                        actionName: 'Cheese',
+                        startAt: 1000,
+                        endAt: null,
+                        queuedIndex: 0,
+                        certainty: 'trustworthy',
+                        stopCause: 'infinite',
+                    },
+                ],
+                terminalCause: 'infinite',
+                terminalAt: null,
+            },
+        });
+        const char = character({ isOnline: false, lastOfflineTime });
+        const offlineLimitAt = new Date(lastOfflineTime).getTime() + 1 * 3600 * 1000;
+
+        const state = computeSlotDisplayState(rec, char, PREFS, offlineLimitAt + 10000);
+
+        expect(state.limiterText).toContain('Offline progress stopped');
+        expect(state.limiterText).not.toContain('NaN');
+        expect(state.limiterText).not.toContain('Invalid Date');
+    });
+
+    describe('TLA025C-15: formatter safety invariant - never NaN/Invalid Date/undefined across malformed timestamp fixtures', () => {
+        const MALFORMED_VALUES = ['not-a-date', '2026-99-99', '', NaN, Infinity, {}, []];
+
+        test.each(MALFORMED_VALUES)('malformed lastOfflineTime %p never renders NaN/Invalid Date/undefined', (bad) => {
+            const rec = record({
+                offline: { hourCap: 10, mooPassExpireTime: null },
+                projection: {
+                    segments: [
+                        {
+                            actionName: 'Redwood Tree',
+                            startAt: 1000,
+                            endAt: null,
+                            queuedIndex: 0,
+                            certainty: 'trustworthy',
+                            stopCause: 'infinite',
+                        },
+                    ],
+                    terminalCause: 'infinite',
+                    terminalAt: null,
+                    attention: { mode: 'runs-infinite' },
+                },
+            });
+            const char = character({ lastOfflineTime: bad });
+
+            const state = computeSlotDisplayState(rec, char, PREFS, 60000);
+
+            expect(state.limiterText).not.toContain('NaN');
+            expect(state.limiterText).not.toContain('Invalid Date');
+            expect(state.limiterText).not.toContain('undefined');
+            expect(state.limiterText).toBe('Runs ∞ · Offline ETA unavailable');
+        });
+
+        test.each(MALFORMED_VALUES)(
+            'malformed mooPassExpireTime %p with a valid lastOfflineTime never renders NaN/Invalid Date/undefined',
+            (bad) => {
+                const rec = record({
+                    offline: { hourCap: 10, mooPassExpireTime: bad },
+                    projection: {
+                        segments: [
+                            {
+                                actionName: 'Redwood Tree',
+                                startAt: 1000,
+                                endAt: null,
+                                queuedIndex: 0,
+                                certainty: 'trustworthy',
+                                stopCause: 'infinite',
+                            },
+                        ],
+                        terminalCause: 'infinite',
+                        terminalAt: null,
+                        attention: { mode: 'runs-infinite' },
+                    },
+                });
+                const char = character({ lastOfflineTime: 1000 });
+
+                const state = computeSlotDisplayState(rec, char, PREFS, 60000);
+
+                expect(state.limiterText).not.toContain('NaN');
+                expect(state.limiterText).not.toContain('Invalid Date');
+                expect(state.limiterText).not.toContain('undefined');
+                // A malformed non-null MooPass expiry fails closed to the protected true-ambiguity copy,
+                // never a fabricated known deadline.
+                expect(state.limiterText).toBe('Runs ∞ · Offline limit uncertain');
+            }
+        );
+    });
+});
+
 describe('idempotent Character Select injection and lifecycle', () => {
     beforeEach(() => {
         document.body.innerHTML = '';

@@ -13,6 +13,7 @@ import { formatActivityStatusTime } from '../../utils/formatters.js';
 import { resolveCharacterSelectSlots } from './character-select-resolver.js';
 import { resolveDisplayProjection } from './character-activity-projection.js';
 import { loadCharacterActivity, loadAccountPreferences } from './character-activity-storage.js';
+import { normalizeNativeTimestamp } from './native-timestamp.js';
 
 const CHARACTER_SELECT_ROOT_CLASS = 'CharacterSelectPage_characterSelectPage';
 const CHARACTER_SLOTS_CLASS = 'CharacterSelectPage_characterSlots';
@@ -134,7 +135,12 @@ export function computeSlotDisplayState(record, character, prefs, now = Date.now
         };
     }
 
-    if (character.lastOfflineTime != null && character.lastOfflineTime > record.observedAt + STALE_TOLERANCE_MS) {
+    // TLA-025C: native `lastOfflineTime` is not guaranteed to already be an epoch-ms number - the
+    // official client explicitly wraps it in `new Date(...)` before any arithmetic. Normalize once
+    // at this trust boundary; a malformed value fails closed to null, same as if it were never sent.
+    const normalizedLastOfflineTime = normalizeNativeTimestamp(character.lastOfflineTime);
+
+    if (normalizedLastOfflineTime != null && normalizedLastOfflineTime > record.observedAt + STALE_TOLERANCE_MS) {
         return {
             firstLineText: 'Activity status outdated',
             limiterColor: 'neutral',
@@ -144,7 +150,7 @@ export function computeSlotDisplayState(record, character, prefs, now = Date.now
     }
 
     // A currently-online character must never get an offline deadline from a stale lastOfflineTime.
-    const effectiveLastOfflineTime = character.isOnline ? null : character.lastOfflineTime;
+    const effectiveLastOfflineTime = character.isOnline ? null : normalizedLastOfflineTime;
     const {
         segments,
         terminalCause,
