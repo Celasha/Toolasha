@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.107.1
+ * Version: 2.107.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7245,13 +7245,13 @@
 
     /**
      * Build the " Complete in X · Complete at Y" suffix for a queued action, per the
-     * actionBar_completionTimeStyle setting. Returns '' when the row has no reachable completion
+     * actionQueue_completionTimeStyle setting. Returns '' when the row has no reachable completion
      * (i.e. a truly-infinite action is queued at or before this row).
      * @param {number} accumulatedTime - Cumulative seconds from now until this row finishes.
      * @returns {string}
      */
     function buildCompletionText(accumulatedTime) {
-        const style = config.getSettingValue('actionBar_completionTimeStyle', 'absolute');
+        const style = config.getSettingValue('actionQueue_completionTimeStyle', 'absolute');
         const parts = [];
 
         if (style === 'relative' || style === 'both') {

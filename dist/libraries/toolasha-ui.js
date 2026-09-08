@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.107.1
+ * Version: 2.107.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -20414,13 +20414,13 @@ ${starCSS}
 
     /**
      * Build the " Complete in X · Complete at Y" suffix for a queued action, per the
-     * actionBar_completionTimeStyle setting. Returns '' when the row has no reachable completion
+     * actionQueue_completionTimeStyle setting. Returns '' when the row has no reachable completion
      * (i.e. a truly-infinite action is queued at or before this row).
      * @param {number} accumulatedTime - Cumulative seconds from now until this row finishes.
      * @returns {string}
      */
     function buildCompletionText(accumulatedTime) {
-        const style = config.getSettingValue('actionBar_completionTimeStyle', 'absolute');
+        const style = config.getSettingValue('actionQueue_completionTimeStyle', 'absolute');
         const parts = [];
 
         if (style === 'relative' || style === 'both') {
@@ -23440,6 +23440,42 @@ ${starCSS}
     new ActionTimeDisplay();
 
     /**
+     * Native Timestamp Normalization (TLA-025C)
+     * Character Activity's native date-like fields (`character.lastOfflineTime`,
+     * `characterInfo.mooPassExpireTime`) are not guaranteed to already be epoch-ms numbers - the
+     * official MWI client explicitly wraps them in `new Date(...)` before any arithmetic/comparison.
+     * This is the one narrow, pure, fail-closed boundary Character Activity normalizes them through
+     * before any stale comparison, offline-cap arithmetic, or MooPass-window comparison.
+     */
+
+    /**
+     * Normalize a native date-like value to a finite epoch-ms number, or null if it cannot be
+     * trusted. Never relies on implicit numeric/string coercion.
+     * @param {number|string|Date|null|undefined} value
+     * @returns {number|null}
+     */
+    function normalizeNativeTimestamp(value) {
+        if (value == null) return null;
+
+        if (typeof value === 'number') {
+            return Number.isFinite(value) ? value : null;
+        }
+
+        if (value instanceof Date) {
+            const ms = value.getTime();
+            return Number.isFinite(ms) ? ms : null;
+        }
+
+        if (typeof value === 'string') {
+            if (value.trim() === '') return null;
+            const ms = new Date(value).getTime();
+            return Number.isFinite(ms) ? ms : null;
+        }
+
+        return null;
+    }
+
+    /**
      * Character Activity Projection Engine
      * Pure functions that project a character's current action + queue forward in time to find the
      * earliest trustworthy point at which useful progress stops. Reuses Action Time Display's
@@ -23462,7 +23498,7 @@ ${starCSS}
      * either its own exact `isTrulyInfinite` segment or the conservative continuity lookahead - never
      * derived here from a weaker terminalCause.
      */
-    function resolveDisplayProjection(stored, freshLastOfflineTime) {
+    function resolveDisplayProjection(stored, rawFreshLastOfflineTime) {
         const { segments, terminalCause, terminalAt, attention = null } = stored.projection;
         const attentionMode = attention?.mode || null;
 
@@ -23470,8 +23506,17 @@ ${starCSS}
             return { segments, terminalCause, terminalAt };
         }
 
+        // TLA-025C: this is a pure public/tested boundary and must stay defensive even though the
+        // renderer already normalizes lastOfflineTime before calling in - never assume a native
+        // date-like value is already an epoch-ms number here either.
+        const freshLastOfflineTime = normalizeNativeTimestamp(rawFreshLastOfflineTime);
         const offlineHourCap = stored.offline?.hourCap;
-        const mooPassExpireTime = stored.offline?.mooPassExpireTime;
+        const rawMooPassExpireTime = stored.offline?.mooPassExpireTime;
+        const mooPassExpireTime = normalizeNativeTimestamp(rawMooPassExpireTime);
+        // A non-null raw MooPass expiry that fails to normalize is evidence a MooPass window may
+        // exist/have existed - unlike a genuine null (no MooPass), it must never collapse into "no
+        // MooPass" (a false-known deadline). Fail closed into the same protected TLA-025B ambiguity.
+        const mooPassMalformed = rawMooPassExpireTime != null && mooPassExpireTime === null;
         const hasTrustworthyCap = offlineHourCap > 0 && freshLastOfflineTime != null;
         const offlineLimitAt = hasTrustworthyCap ? freshLastOfflineTime + offlineHourCap * 3600 * 1000 : null;
         // TLA-025B: MooPass must have been active when this offline interval started (strictly after
@@ -23480,9 +23525,10 @@ ${starCSS}
         // make its deadline ambiguous.
         const mooPassAmbiguous =
             hasTrustworthyCap &&
-            mooPassExpireTime != null &&
-            mooPassExpireTime > freshLastOfflineTime &&
-            mooPassExpireTime < offlineLimitAt;
+            (mooPassMalformed ||
+                (mooPassExpireTime != null &&
+                    mooPassExpireTime > freshLastOfflineTime &&
+                    mooPassExpireTime < offlineLimitAt));
 
         if (terminalCause === 'unknown') {
             if (attentionMode) {
@@ -23748,7 +23794,12 @@ ${starCSS}
             };
         }
 
-        if (character.lastOfflineTime != null && character.lastOfflineTime > record.observedAt + STALE_TOLERANCE_MS) {
+        // TLA-025C: native `lastOfflineTime` is not guaranteed to already be an epoch-ms number - the
+        // official client explicitly wraps it in `new Date(...)` before any arithmetic. Normalize once
+        // at this trust boundary; a malformed value fails closed to null, same as if it were never sent.
+        const normalizedLastOfflineTime = normalizeNativeTimestamp(character.lastOfflineTime);
+
+        if (normalizedLastOfflineTime != null && normalizedLastOfflineTime > record.observedAt + STALE_TOLERANCE_MS) {
             return {
                 firstLineText: 'Activity status outdated',
                 limiterColor: 'neutral',
@@ -23758,7 +23809,7 @@ ${starCSS}
         }
 
         // A currently-online character must never get an offline deadline from a stale lastOfflineTime.
-        const effectiveLastOfflineTime = character.isOnline ? null : character.lastOfflineTime;
+        const effectiveLastOfflineTime = character.isOnline ? null : normalizedLastOfflineTime;
         const {
             segments,
             terminalCause,

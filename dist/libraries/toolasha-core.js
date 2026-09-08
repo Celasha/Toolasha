@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.107.1
+ * Version: 2.107.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -825,18 +825,6 @@
                     type: 'checkbox',
                     default: true,
                 },
-                actionBar_completionTimeStyle: {
-                    id: 'actionBar_completionTimeStyle',
-                    label: 'Action bar: Queue completion display',
-                    type: 'select',
-                    default: 'absolute',
-                    options: [
-                        { value: 'absolute', label: 'Clock time only (Complete at 14:32)' },
-                        { value: 'relative', label: 'Cumulative duration only (Complete in 3h 40m)' },
-                        { value: 'both', label: 'Both' },
-                    ],
-                    help: 'How queued-action completion is shown in the Queued Actions popup and hover tooltip',
-                },
                 actionBar_showRecycleTime: {
                     id: 'actionBar_showRecycleTime',
                     label: 'Action bar: Transmute recycle time estimate',
@@ -1053,6 +1041,18 @@
                         { value: 'estimated_value', label: 'Estimated Value (revenue after tax)' },
                     ],
                     help: 'Choose how to calculate the total value for queued actions. Profit shows net earnings after materials and drinks. Estimated Value shows gross revenue after market tax (always positive).',
+                },
+                actionQueue_completionTimeStyle: {
+                    id: 'actionQueue_completionTimeStyle',
+                    label: 'Queued actions: Completion display',
+                    type: 'select',
+                    default: 'absolute',
+                    options: [
+                        { value: 'absolute', label: 'Clock time only (Complete at 14:32)' },
+                        { value: 'relative', label: 'Cumulative duration only (Complete in 3h 40m)' },
+                        { value: 'both', label: 'Both' },
+                    ],
+                    help: 'How queued-action completion is shown in the Queued Actions popup and hover tooltip',
                 },
             },
         },

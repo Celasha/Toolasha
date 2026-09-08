@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.107.1
+ * Version: 2.107.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -9093,6 +9093,8 @@
             this.recommendRunning = false;
             this._recommendSimHours = 1;
             this._recommendTargetPct = 70;
+            // Non-null exactly while one Apply Skip save is awaiting its authoritative setting_updated
+            // confirmation - doubles as the one-save-in-flight reentrancy guard (TLA-048).
             this._pendingSelfAppliedKey = null;
             this._pendingSelfAppliedValue = null;
             this.liveProgressHandler = null;
@@ -10179,8 +10181,21 @@
          * room's real Edit button, writes the recommended value into the game's own input, then
          * forwards a click to the real Save button. Exactly one Save click, one server request, per
          * call -- the user repeats the click to work through the rest.
+         *
+         * Native MWI exits edit mode synchronously inside its own Save handler, well before the
+         * authoritative `setting_updated` confirmation arrives (TLA-048) -- so "is a native edit input
+         * currently visible?" cannot be used as the reentrancy boundary. `_pendingSelfAppliedKey` is
+         * therefore also the one-save-in-flight transaction flag: non-null from the moment a save is
+         * accepted here until `settingHandler` clears it on the next `setting_updated` event (self-match
+         * or not). A rapid second call while it is still non-null is ignored outright -- never queued,
+         * never a second native Edit/Save -- so an accepted save can never be silently overwritten.
          */
         applyNextRecommendedSkip() {
+            if (this._pendingSelfAppliedKey !== null) {
+                console.warn('[Toolasha] Apply Skip: a save is already awaiting confirmation; ignoring this click.');
+                return;
+            }
+
             const alreadyEditing = document.querySelector('[class*="LabyrinthPanel_skipThreshold"] input[type="number"]');
             if (alreadyEditing) {
                 console.warn(
@@ -10218,18 +10233,27 @@
 
             this._pendingSelfAppliedKey = this._getSkipSettingKey(roomHrid, isSkill);
             this._pendingSelfAppliedValue = recommendedThreshold;
-            saveButton.click();
-
             this._updateApplyButtonState();
+            saveButton.click();
         }
 
         /**
          * Refresh the Apply Skip button's label and enabled state to reflect the current mismatch
-         * count.
+         * count, or a busy/disabled state while a save is awaiting its authoritative confirmation
+         * (TLA-048) -- checked ahead of the mismatch count so a rapid click cannot see a misleadingly
+         * enabled button in the gap between native Save and `setting_updated`.
          */
         _updateApplyButtonState() {
             const button = document.getElementById(APPLY_SKIP_BUTTON_ID);
             if (!button) return;
+
+            if (this._pendingSelfAppliedKey !== null) {
+                button.textContent = 'Apply Skip (saving...)';
+                button.disabled = true;
+                button.style.opacity = '0.5';
+                button.style.cursor = 'default';
+                return;
+            }
 
             const remaining = this.getRoomsNeedingSkipUpdate().length;
             button.textContent = `Apply Skip (${remaining})`;
@@ -14978,41 +15002,6 @@
             price: cheapestPrice === Infinity ? 0 : cheapestPrice,
             itemHrid: cheapestItemHrid,
         };
-    }
-
-    /**
-     * Calculate the gold cost of a single enhancement attempt's consumed materials (ask-side
-     * market price), including any direct coin line item in enhancementCosts. Materials are
-     * consumed on every attempt regardless of success/failure, and this cost is the same at every
-     * enhancement level (enhancementCosts is not level-indexed).
-     * @param {Object} itemDetails - Item details containing enhancementCosts.
-     * @returns {{cost: number, hasCost: boolean, costPartial: boolean}}
-     */
-    function calculatePerAttemptMaterialCost(itemDetails) {
-        let cost = 0;
-        let hasCost = false;
-        let costPartial = false;
-
-        if (!itemDetails.enhancementCosts?.length) {
-            return { cost: 0, hasCost: false, costPartial: false };
-        }
-
-        for (const material of itemDetails.enhancementCosts) {
-            if (material.itemHrid === '/items/coin') {
-                cost += material.count;
-                hasCost = true;
-                continue;
-            }
-            const price = marketAPI.getPrice(material.itemHrid);
-            if (price?.ask > 0) {
-                cost += material.count * price.ask;
-                hasCost = true;
-            } else {
-                costPartial = true;
-            }
-        }
-
-        return { cost, hasCost, costPartial };
     }
 
     /**
@@ -29619,6 +29608,104 @@
     }
 
     /**
+     * Special-Currency Shop Data (TLA-041E)
+     *
+     * Pure data normalization over the game's official special-currency shops
+     * (`shopItemDetailMap` for dungeon tokens, `taskShopItemDetailMap`, `labyrinthShopItemDetailMap`).
+     * No valuation logic lives here (no Ask/EV/opportunity math) - just "what can be bought, with which
+     * currency, at what cost/outputCount" - so both Profile Score's acquisition resolver and the
+     * existing Token Tooltip feature can read the same shop facts without duplicating the map-scanning.
+     */
+
+
+    let cachedEntries = null;
+    let cachedSource = null;
+
+    /**
+     * @param {Object} shopItem
+     * @param {string} costItemHrid
+     * @param {number} costCount
+     * @param {number} outputCount
+     * @param {Object} itemDetailMap
+     * @returns {{itemHrid: string, currencyHrid: string, tokenCost: number, outputCount: number, isOpenable: boolean}}
+     */
+    function normalizeEntry(shopItem, costItemHrid, costCount, outputCount, itemDetailMap) {
+        return {
+            itemHrid: shopItem.itemHrid,
+            currencyHrid: costItemHrid,
+            tokenCost: costCount,
+            outputCount: outputCount || 1,
+            isOpenable: !!itemDetailMap?.[shopItem.itemHrid]?.isOpenable,
+        };
+    }
+
+    /**
+     * @param {Object} gameData
+     * @returns {Array<{itemHrid: string, currencyHrid: string, tokenCost: number, outputCount: number, isOpenable: boolean}>}
+     */
+    function computeEntries(gameData) {
+        const itemDetailMap = gameData.itemDetailMap || {};
+        const entries = [];
+
+        for (const shopItem of Object.values(gameData.shopItemDetailMap || {})) {
+            const cost = shopItem.costs?.[0];
+            if (!cost || !cost.itemHrid || cost.itemHrid === '/items/coin' || !(cost.count > 0)) continue;
+            entries.push(normalizeEntry(shopItem, cost.itemHrid, cost.count, shopItem.outputCount, itemDetailMap));
+        }
+
+        for (const shopItem of Object.values(gameData.taskShopItemDetailMap || {})) {
+            const cost = shopItem.cost;
+            if (!cost?.itemHrid || !(cost.count > 0)) continue;
+            entries.push(normalizeEntry(shopItem, cost.itemHrid, cost.count, shopItem.outputCount, itemDetailMap));
+        }
+
+        for (const shopItem of Object.values(gameData.labyrinthShopItemDetailMap || {})) {
+            const cost = shopItem.cost;
+            if (!cost?.itemHrid || !(cost.count > 0)) continue;
+            entries.push(normalizeEntry(shopItem, cost.itemHrid, cost.count, shopItem.outputCount, itemDetailMap));
+        }
+
+        return entries;
+    }
+
+    /**
+     * All official special-currency shop outputs across dungeon/task/labyrinth shops, normalized to one
+     * shape. Cached per game-data snapshot (invalidated automatically when `dataManager` hands out a new
+     * client-data object, e.g. on character switch), since these are static shop facts, not market prices.
+     * @returns {Array<{itemHrid: string, currencyHrid: string, tokenCost: number, outputCount: number, isOpenable: boolean}>}
+     */
+    function getAllSpecialCurrencyShopEntries() {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData) return [];
+
+        if (cachedSource === gameData) return cachedEntries;
+
+        cachedEntries = computeEntries(gameData);
+        cachedSource = gameData;
+        return cachedEntries;
+    }
+
+    /**
+     * @param {string} currencyHrid - e.g. '/items/task_token'
+     * @returns {Array<{itemHrid: string, currencyHrid: string, tokenCost: number, outputCount: number, isOpenable: boolean}>}
+     */
+    function getShopEntriesForCurrency(currencyHrid) {
+        return getAllSpecialCurrencyShopEntries().filter((entry) => entry.currencyHrid === currencyHrid);
+    }
+
+    /**
+     * Look up an item's own official special-currency purchase, if it is directly buyable from any of
+     * the three special-currency shops.
+     * @param {string} itemHrid
+     * @returns {{currencyHrid: string, tokenCost: number, outputCount: number}|null}
+     */
+    function findShopPurchaseInfo(itemHrid) {
+        const entry = getAllSpecialCurrencyShopEntries().find((e) => e.itemHrid === itemHrid);
+        if (!entry) return null;
+        return { currencyHrid: entry.currencyHrid, tokenCost: entry.tokenCost, outputCount: entry.outputCount };
+    }
+
+    /**
      * Game Data Lookup Utilities
      *
      * Centralized functions for resolving display names to HRIDs.
@@ -29649,6 +29736,284 @@
         }
 
         return 0;
+    }
+
+    /**
+     * Special-Currency Valuation (TLA-041E)
+     *
+     * Generic, data-driven replacement for the old `TOKEN_SHOP_ALTERNATIVES` hardcoded three-item map in
+     * `equipment-resolver.js`. Answers "what is one Task/Labyrinth/Dungeon token worth in gold?" using the
+     * same economics `dungeon-token-tooltips.js` already applies (live Ask, expected-value for openable
+     * Task Shop crates, official shop cost/`outputCount`), independently re-derived here as a pure,
+     * unit-tested module so Profile Score can consume it without depending on that DOM-coupled tooltip
+     * feature. Never uses a token-derived price as an input to that same token's own opportunity value
+     * (report's anti-circularity rule) - every candidate below is sourced from live market Ask or the
+     * existing expected-value calculator, never from this module's own output.
+     *
+     * Results are cached per acquisition context (see `score-acquisition-resolver.js`) so a Score
+     * generation computes each currency's opportunity value, and each Task Shop openable's expected
+     * value, at most once (TLA041E-28/29) no matter how many equipped items depend on it.
+     */
+
+
+    /**
+     * Best independently-priceable native shop output value per unit of one special currency: the
+     * maximum, across every official shop entry purchased with that currency, of
+     * `(ask-or-EV * outputCount) / tokenCost`. Memoized on `context.opportunityCache`.
+     * @param {string} currencyHrid
+     * @param {{opportunityCache: Map}} context
+     * @returns {{value: number|null, complete: boolean}}
+     */
+    function getCurrencyOpportunityValue(currencyHrid, context) {
+        if (context.opportunityCache.has(currencyHrid)) return context.opportunityCache.get(currencyHrid);
+
+        let bestValuePerUnit = 0;
+        for (const entry of getShopEntriesForCurrency(currencyHrid)) {
+            let itemValue = 0;
+
+            const ask = marketData_js.getItemPrice(entry.itemHrid, { mode: 'ask' });
+            if (ask > 0) itemValue = ask;
+
+            if (entry.isOpenable) {
+                const evData = expectedValueCalculator.calculateExpectedValue(entry.itemHrid);
+                if (evData?.expectedValue > itemValue) itemValue = evData.expectedValue;
+            }
+
+            if (!(itemValue > 0) || !(entry.tokenCost > 0)) continue;
+
+            const valuePerUnit = (itemValue * entry.outputCount) / entry.tokenCost;
+            if (valuePerUnit > bestValuePerUnit) bestValuePerUnit = valuePerUnit;
+        }
+
+        const result =
+            bestValuePerUnit > 0 ? { value: bestValuePerUnit, complete: true } : { value: null, complete: false };
+        context.opportunityCache.set(currencyHrid, result);
+        return result;
+    }
+
+    /**
+     * Coin-equivalent acquisition cost of one unit of `itemHrid`, if it is directly purchasable from an
+     * official special-currency shop: `currency opportunity value * shop token cost / outputCount`.
+     * @param {string} itemHrid
+     * @param {{opportunityCache: Map}} context
+     * @returns {{cost: number|null, complete: boolean}}
+     */
+    function getSpecialCurrencyAcquisitionCost(itemHrid, context) {
+        const purchaseInfo = findShopPurchaseInfo(itemHrid);
+        if (!purchaseInfo) return { cost: null, complete: false };
+
+        const opportunity = getCurrencyOpportunityValue(purchaseInfo.currencyHrid, context);
+        if (!opportunity.complete) return { cost: null, complete: false };
+
+        return { cost: (opportunity.value * purchaseInfo.tokenCost) / purchaseInfo.outputCount, complete: true };
+    }
+
+    /**
+     * Score Acquisition Resolver (TLA-041E)
+     *
+     * Completeness-aware replacement for the legacy, number-only
+     * `tooltip-enhancement.js#getProductionCost()` for Profile Score's purposes. That legacy function
+     * silently substitutes 0 for any input it can't price and keeps summing the recipe, so a mixed
+     * recipe (e.g. Pathbreaker Boots: 10 Lodestones + ordinary Bear Shoes) could return a positive,
+     * apparently-complete cost even though a required special-currency leg was actually unpriced. Score
+     * needs every crafting candidate to carry `{cost, complete}` so a missing required input can never
+     * silently become free (report's completeness-aware crafting requirement).
+     *
+     * `resolveItemAcquisitionCost` is the single recursive, memoized entry point used for BOTH a
+     * top-level equipped item's base (+0) acquisition AND every material/upgrade input encountered while
+     * pricing its production chain - the same "cheapest complete route" minimum (exact Ask / shop coin
+     * cost / special-currency shop opportunity / crafted) applies at every layer, not just the top. A
+     * repeated shared material (Task Crystal, Labyrinth Essence, a Lodestone, a Refinement Shard, a
+     * dungeon Essence) is therefore resolved once per acquisition context and reused through every base/
+     * refined/enhancement chain that needs it (TLA041E-30).
+     */
+
+
+    let cachedActionIndex = null;
+    let cachedActionIndexSource = null;
+
+    /**
+     * Index of "which action produces this item" over `actionDetailMap`, built once per game-data
+     * snapshot (static data, safe to share across every acquisition context) instead of rescanning every
+     * action for every unpriced material.
+     * @param {Object} gameData
+     * @returns {Map<string, Object>} itemHrid -> action
+     */
+    function getActionOutputIndex(gameData) {
+        if (cachedActionIndexSource === gameData) return cachedActionIndex;
+
+        const index = new Map();
+        for (const action of Object.values(gameData.actionDetailMap || {})) {
+            const output = action.outputItems?.[0];
+            if (output?.itemHrid && !index.has(output.itemHrid)) {
+                index.set(output.itemHrid, action);
+            }
+        }
+
+        cachedActionIndex = index;
+        cachedActionIndexSource = gameData;
+        return index;
+    }
+
+    /**
+     * Create a fresh per-Score-generation acquisition context. Market prices/opportunity values are
+     * never persisted across profile opens - a new context per `calculateEquipmentScore` call is
+     * sufficient and safer than stale global state (report's own allowance).
+     * @returns {{acquisitionCache: Map, opportunityCache: Map, resolving: Set}}
+     */
+    function createAcquisitionContext() {
+        return {
+            acquisitionCache: new Map(), // itemHrid -> {cost, complete}
+            opportunityCache: new Map(), // currencyHrid -> {value, complete}
+            resolving: new Set(), // itemHrid currently being resolved - cycle guard
+        };
+    }
+
+    /**
+     * Cheapest defensible acquisition cost for one unit of `itemHrid`, memoized per context: minimum
+     * across every candidate that prices COMPLETELY (exact Ask, official shop coin cost, special-currency
+     * shop opportunity, or a fully-priced crafting recipe). A candidate that only partially prices never
+     * contributes 0 - it is simply excluded from the minimum.
+     * @param {string} itemHrid
+     * @param {{acquisitionCache: Map, opportunityCache: Map, resolving: Set}} context
+     * @returns {{cost: number|null, complete: boolean}}
+     */
+    function resolveItemAcquisitionCost(itemHrid, context) {
+        const cached = context.acquisitionCache.get(itemHrid);
+        if (cached) return cached;
+
+        if (context.resolving.has(itemHrid)) {
+            // Defensive cycle guard - not cached, since a future call outside the cycle may still resolve.
+            return { cost: null, complete: false };
+        }
+
+        context.resolving.add(itemHrid);
+        let result;
+        try {
+            result = computeItemAcquisitionCost(itemHrid, context);
+        } finally {
+            context.resolving.delete(itemHrid);
+        }
+
+        context.acquisitionCache.set(itemHrid, result);
+        return result;
+    }
+
+    /**
+     * @param {string} itemHrid
+     * @param {Object} context
+     * @returns {{cost: number|null, complete: boolean}}
+     */
+    function computeItemAcquisitionCost(itemHrid, context) {
+        const candidates = [];
+
+        const special = getSpecialCurrencyAcquisitionCost(itemHrid, context);
+        if (special.complete) candidates.push(special.cost);
+
+        const ask = marketData_js.getItemPrice(itemHrid, { mode: 'ask' });
+        if (ask > 0) candidates.push(ask);
+
+        const shopCost = getShopCoinCost(itemHrid);
+        if (shopCost > 0) candidates.push(shopCost);
+
+        const craft = resolveProductionCraftCost(itemHrid, context);
+        if (craft.complete) candidates.push(craft.cost);
+
+        if (candidates.length === 0) return { cost: null, complete: false };
+        return { cost: Math.min(...candidates), complete: true };
+    }
+
+    /**
+     * Completeness-aware production cost: recursively prices every required input material and upgrade
+     * item via `resolveItemAcquisitionCost` (so special-currency materials, and materials that are
+     * themselves crafted, resolve through the same cheapest-complete-route logic) and requires every one
+     * of them to price completely - a missing required input excludes the whole candidate rather than
+     * contributing 0 (report's completeness-aware crafting requirement / TLA041E-19).
+     * @param {string} itemHrid
+     * @param {Object} context
+     * @returns {{cost: number|null, complete: boolean}}
+     */
+    function resolveProductionCraftCost(itemHrid, context) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData) return { cost: null, complete: false };
+
+        const action = getActionOutputIndex(gameData).get(itemHrid);
+        if (!action) return { cost: null, complete: false };
+
+        const outputCount = action.outputItems?.[0]?.count || 1;
+
+        let artisanBonus = 0;
+        try {
+            const equipment = dataManager.getEquipment();
+            const itemDetailMap = gameData.itemDetailMap || {};
+            const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, itemDetailMap);
+            const activeDrinks = dataManager.getActionDrinkSlots(action.type);
+            artisanBonus = teaParser_js.parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
+        } catch {
+            // Fall back to no reduction if viewer equipment/drink data is unavailable.
+        }
+
+        let total = 0;
+        let complete = true;
+
+        for (const input of action.inputItems || []) {
+            if (input.itemHrid === '/items/coin') {
+                total += input.count * (1 - artisanBonus);
+                continue;
+            }
+
+            const materialCost = resolveItemAcquisitionCost(input.itemHrid, context);
+            if (!materialCost.complete) {
+                complete = false;
+                continue;
+            }
+            total += materialCost.cost * input.count * (1 - artisanBonus);
+        }
+
+        if (action.upgradeItemHrid) {
+            const upgradeCost = resolveItemAcquisitionCost(action.upgradeItemHrid, context);
+            if (!upgradeCost.complete) {
+                complete = false;
+            } else {
+                total += upgradeCost.cost;
+            }
+        }
+
+        if (!complete) return { cost: null, complete: false };
+        return { cost: total / outputCount, complete: true };
+    }
+
+    /**
+     * Completeness-aware replacement for `tooltip-enhancement.js#calculatePerAttemptMaterialCost` for
+     * Score's purposes: a missing-Ask enhancement material (e.g. Task Crystal, Labyrinth/dungeon Essence)
+     * can still resolve through the same special-currency/crafting acquisition logic instead of forcing
+     * the whole enhancement leg to N/A.
+     * @param {Object} itemDetails - Item details containing `enhancementCosts`
+     * @param {Object} context
+     * @returns {{cost: number|null, complete: boolean}}
+     */
+    function resolvePerAttemptMaterialCost(itemDetails, context) {
+        if (!itemDetails?.enhancementCosts?.length) return { cost: null, complete: false };
+
+        let cost = 0;
+        let complete = true;
+
+        for (const material of itemDetails.enhancementCosts) {
+            if (material.itemHrid === '/items/coin') {
+                cost += material.count;
+                continue;
+            }
+
+            const materialCost = resolveItemAcquisitionCost(material.itemHrid, context);
+            if (!materialCost.complete) {
+                complete = false;
+                continue;
+            }
+            cost += material.count * materialCost.cost;
+        }
+
+        if (!complete) return { cost: null, complete: false };
+        return { cost, complete: true };
     }
 
     /**
@@ -30152,7 +30517,7 @@ self.onmessage = function (e) {
     }
 
     /**
-     * Equipment Replacement Resolver (TLA-041 / TLA-041C)
+     * Equipment Replacement Resolver (TLA-041 / TLA-041C / TLA-041E)
      *
      * For a viewed `Item +N`, computes the cheapest COMPLETE reproduction candidate using the
      * viewer's own current/manual Enhancing setup:
@@ -30169,99 +30534,12 @@ self.onmessage = function (e) {
      * (b) and (c) share one cached, off-main-thread enhancement expectation table per
      * itemLevel/viewer-params combination (`score-enhancement-worker.js`) instead of each performing
      * its own synchronous Markov matrix inversion (TLA-041C) - see `score-enhancement-pricing.js` for
-     * the pure arithmetic that turns that table into leg costs.
+     * the pure arithmetic that turns that table into leg costs. Base acquisition and every crafting
+     * material (including special-currency shop materials) go through the completeness-aware, per-
+     * generation-memoized `score-acquisition-resolver.js` (TLA-041E) instead of the legacy number-only
+     * `getProductionCost()`, so a missing required material can never silently become free.
      */
 
-
-    /**
-     * Untradeable dungeon-shop back-slot items. Each item's own token PURCHASE COST is read
-     * generically from `shopItemDetailMap` (PB-35) via `getTokenPurchaseInfo`; the list of
-     * alternative token-shop items used to derive the best foregone value per token is kept as data
-     * (discovering that set generically is out of scope for this ticket).
-     */
-    const TOKEN_SHOP_ALTERNATIVES = {
-        '/items/chimerical_quiver': [
-            { hrid: '/items/griffin_leather', cost: 600 },
-            { hrid: '/items/manticore_sting', cost: 1000 },
-            { hrid: '/items/jackalope_antler', cost: 1200 },
-            { hrid: '/items/dodocamel_plume', cost: 3000 },
-            { hrid: '/items/griffin_talon', cost: 3000 },
-        ],
-        '/items/sinister_cape': [
-            { hrid: '/items/acrobats_ribbon', cost: 2000 },
-            { hrid: '/items/magicians_cloth', cost: 2000 },
-            { hrid: '/items/chaotic_chain', cost: 3000 },
-            { hrid: '/items/cursed_ball', cost: 3000 },
-        ],
-        '/items/enchanted_cloak': [
-            { hrid: '/items/royal_cloth', cost: 2000 },
-            { hrid: '/items/knights_ingot', cost: 2000 },
-            { hrid: '/items/bishops_scroll', cost: 2000 },
-            { hrid: '/items/regal_jewel', cost: 3000 },
-            { hrid: '/items/sundering_jewel', cost: 3000 },
-        ],
-    };
-
-    /**
-     * @param {string} itemHrid
-     * @returns {{tokenItemHrid: string, tokenCost: number}|null} null if not a token-shop-purchased item
-     */
-    function getTokenPurchaseInfo(itemHrid) {
-        const gameData = dataManager.getInitClientData();
-        const shopItem = Object.values(gameData?.shopItemDetailMap || {}).find((s) => s.itemHrid === itemHrid);
-        const cost = shopItem?.costs?.[0];
-        if (!cost || cost.itemHrid === '/items/coin') return null;
-        return { tokenItemHrid: cost.itemHrid, tokenCost: cost.count };
-    }
-
-    /**
-     * Opportunity-equivalent value of a token-purchased item's base acquisition: best foregone
-     * alternative use of the same tokens, times the item's own token cost.
-     * @param {string} itemHrid
-     * @returns {{cost: number|null, complete: boolean}}
-     */
-    function calculateTokenOpportunityValue(itemHrid) {
-        const purchaseInfo = getTokenPurchaseInfo(itemHrid);
-        const alternatives = TOKEN_SHOP_ALTERNATIVES[itemHrid];
-        if (!purchaseInfo || !alternatives) return { cost: null, complete: false };
-
-        let bestValuePerToken = 0;
-        for (const alt of alternatives) {
-            const ask = marketData_js.getItemPrice(alt.hrid, { mode: 'ask' });
-            if (ask > 0) {
-                const perToken = ask / alt.cost;
-                if (perToken > bestValuePerToken) bestValuePerToken = perToken;
-            }
-        }
-        if (!(bestValuePerToken > 0)) return { cost: null, complete: false };
-        return { cost: bestValuePerToken * purchaseInfo.tokenCost, complete: true };
-    }
-
-    /**
-     * Cheapest defensible base (+0) acquisition cost: direct comparison across every proven source,
-     * never an inflated-Ask heuristic (TLA-041 base-item resolver rule: "If Ask=2.5B and a complete
-     * reproduction path is 650M, use 650M").
-     * @param {string} itemHrid
-     * @returns {{cost: number|null, complete: boolean}}
-     */
-    function resolveBaseItemCost(itemHrid) {
-        const candidates = [];
-
-        const tokenValue = calculateTokenOpportunityValue(itemHrid);
-        if (tokenValue.complete) candidates.push(tokenValue.cost);
-
-        const ask = marketData_js.getItemPrice(itemHrid, { mode: 'ask' });
-        if (ask > 0) candidates.push(ask);
-
-        const shopCost = getShopCoinCost(itemHrid);
-        if (shopCost > 0) candidates.push(shopCost);
-
-        const craftCost = getProductionCost(itemHrid, 'ask');
-        if (craftCost > 0) candidates.push(craftCost);
-
-        if (candidates.length === 0) return { cost: null, complete: false };
-        return { cost: Math.min(...candidates), complete: true };
-    }
 
     /**
      * Resolve the cheapest complete reproduction cost for a viewed equipped item at enhancement +N.
@@ -30277,19 +30555,21 @@ self.onmessage = function (e) {
      * @param {number} N - Enhancement level (0-20)
      * @param {Object} itemDetails - gameData.itemDetailMap[itemHrid]
      * @param {Object} enhancingParams - Viewer's own params from getEnhancingParams()
+     * @param {{acquisitionCache: Map, opportunityCache: Map, resolving: Set}} context - one shared,
+     *   per-Score-generation acquisition context from `createAcquisitionContext()` (TLA-041E)
      * @returns {Promise<{cost: number|null, complete: boolean, reason?: string}>}
      */
-    async function resolveEquipmentItemCost(itemHrid, N, itemDetails, enhancingParams) {
+    async function resolveEquipmentItemCost(itemHrid, N, itemDetails, enhancingParams, context) {
         if (N === 0) {
-            return resolveBaseItemCost(itemHrid);
+            return resolveItemAcquisitionCost(itemHrid, context);
         }
 
-        const isTokenItem = getTokenPurchaseInfo(itemHrid) !== null;
+        const isTokenItem = findShopPurchaseInfo(itemHrid) !== null;
 
         // Phase 1 (cheap, synchronous, no enhancement math): exact Ask, live lower-K Asks, base
         // acquisition price.
         const exactAsk = marketData_js.getItemPrice(itemHrid, { enhancementLevel: N, mode: 'ask' });
-        const base = resolveBaseItemCost(itemHrid);
+        const base = resolveItemAcquisitionCost(itemHrid, context);
         const lowerAsks = [];
         if (itemDetails?.enhancementCosts?.length) {
             for (let K = 1; K < N; K++) {
@@ -30324,8 +30604,10 @@ self.onmessage = function (e) {
                 console.error('[EquipmentResolver] Enhancement expectation table request failed:', error);
             }
 
-            const { cost: perAttemptMaterialCost, hasCost, costPartial } = calculatePerAttemptMaterialCost(itemDetails);
-            const materialCostKnown = hasCost && !costPartial;
+            const { cost: perAttemptMaterialCost, complete: materialCostKnown } = resolvePerAttemptMaterialCost(
+                itemDetails,
+                context
+            );
 
             if (table && materialCostKnown) {
                 const { price: protectionUnitPrice } = getCheapestProtectionPrice(itemHrid);
@@ -30375,7 +30657,10 @@ self.onmessage = function (e) {
      * computed cost to both totals - intentional, not a bug to dedupe away). Unique items are resolved
      * concurrently (TLA-041C); `resolveEquipmentItemCost` is async because it may await one shared,
      * cached enhancement expectation table per itemLevel/viewer-params combination, and that cache
-     * naturally dedupes same-itemLevel items across concurrent calls.
+     * naturally dedupes same-itemLevel items across concurrent calls. One `createAcquisitionContext()`
+     * (TLA-041E) is shared across every item resolved in this call, so special-currency opportunity
+     * values, Task Shop openable EVs, and recursive material acquisition are each computed at most once
+     * per Score generation rather than once per equipped item.
      */
 
 
@@ -30425,13 +30710,19 @@ self.onmessage = function (e) {
             });
         }
 
+        // One acquisition context per Score generation (TLA-041E) - shared special-currency
+        // opportunity values, Task Shop openable EVs, and recursive material acquisition results are
+        // each computed at most once here, no matter how many equipped items depend on them.
+        const context = createAcquisitionContext();
+
         const priced = await Promise.all(
             Array.from(uniqueItems.values()).map(async (entry) => {
                 const resolved = await resolveEquipmentItemCost(
                     entry.itemHrid,
                     entry.enhancementLevel,
                     entry.itemDetails,
-                    enhancingParams
+                    enhancingParams,
+                    context
                 );
                 return { ...resolved, name: entry.displayName, classification: entry.classification };
             })
