@@ -456,7 +456,7 @@ describe('applyNextRecommendedSkip', () => {
         expect(dataManager.characterData.characterSetting.labyrinthSkipMilking).toBe(15);
     });
 
-    test('applies a negative recommendation once, then advances to the next mismatched room', () => {
+    test('applies a negative recommendation once, then advances to the next mismatched room after confirmation', () => {
         const feature = new LabyrinthClearRate();
         buildAutomationTable([
             {
@@ -474,12 +474,17 @@ describe('applyNextRecommendedSkip', () => {
         ]);
         feature.recommendations.set('/monsters/pyre_hunter', { threshold: -22 });
         feature.recommendations.set('/monsters/frost_sniper', { threshold: 44 });
+        feature.initialize();
 
         feature.applyNextRecommendedSkip();
         expect(savedCalls).toEqual([
             { roomHrid: '/monsters/pyre_hunter', settingKey: 'labyrinthSkipPyreHunter', value: -22 },
         ]);
         expect(feature.getRoomsNeedingSkipUpdate().map((room) => room.roomHrid)).toEqual(['/monsters/frost_sniper']);
+
+        // Authoritative confirmation for the first save must arrive before a second Apply Skip
+        // click is allowed to submit anything (TLA-048).
+        feature.settingHandler({ characterSetting: { ...dataManager.characterData.characterSetting } });
 
         feature.applyNextRecommendedSkip();
         expect(savedCalls[1]).toEqual({
@@ -536,6 +541,120 @@ describe('applyNextRecommendedSkip', () => {
         expect(savedCalls).toEqual([
             { roomHrid: '/monsters/fire_sprite', settingKey: 'labyrinthSkipFireSprite', value: 42 },
         ]);
+    });
+});
+
+describe('TLA-048: Apply Skip one-save-in-flight reentrancy guard', () => {
+    test('TLA048-01: an immediate second invocation before ACK is ignored - exactly one Save, first room only', () => {
+        const feature = new LabyrinthClearRate();
+        buildAutomationTable([
+            { roomHrid: '/skills/milking', isSkill: true, settingKey: 'labyrinthSkipMilking', currentValue: 5 },
+            { roomHrid: '/skills/foraging', isSkill: true, settingKey: 'labyrinthSkipForaging', currentValue: 20 },
+        ]);
+        feature.recommendations.set('/skills/milking', { threshold: 15 });
+        feature.recommendations.set('/skills/foraging', { threshold: 30 });
+
+        feature.applyNextRecommendedSkip();
+        feature.applyNextRecommendedSkip(); // immediate second call, before any setting_updated
+
+        expect(savedCalls).toHaveLength(1);
+        expect(savedCalls[0]).toEqual({ roomHrid: '/skills/milking', settingKey: 'labyrinthSkipMilking', value: 15 });
+        expect(feature._pendingSelfAppliedKey).toBe('labyrinthSkipMilking');
+        expect(feature._pendingSelfAppliedValue).toBe(15);
+        expect(feature.recommendations.size).toBe(2); // not corrupted by the ignored invocation
+    });
+
+    test('TLA048-02: a real DOM double-click on the Apply Skip button before ACK produces only one Save', () => {
+        const feature = new LabyrinthClearRate();
+        buildAutomationTable([
+            { roomHrid: '/skills/milking', isSkill: true, settingKey: 'labyrinthSkipMilking', currentValue: 5 },
+        ]);
+        feature.recommendations.set('/skills/milking', { threshold: 15 });
+        feature.injectRecommendControls();
+
+        const button = document.getElementById('mwi-apply-skip-btn');
+        expect(button.disabled).toBe(false);
+
+        button.click();
+        expect(savedCalls).toHaveLength(1);
+        expect(button.disabled).toBe(true); // busy state reflected immediately, before any ACK
+        expect(button.textContent).toBe('Apply Skip (saving...)');
+
+        button.click(); // second real click while still awaiting ACK
+        expect(savedCalls).toHaveLength(1); // no second Save
+    });
+
+    test('TLA048-03: exact self ACK preserves recommendations, releases the guard, and unlocks the next room', () => {
+        const feature = new LabyrinthClearRate();
+        buildAutomationTable([
+            { roomHrid: '/skills/milking', isSkill: true, settingKey: 'labyrinthSkipMilking', currentValue: 5 },
+            { roomHrid: '/skills/foraging', isSkill: true, settingKey: 'labyrinthSkipForaging', currentValue: 20 },
+        ]);
+        feature.recommendations.set('/skills/milking', { threshold: 15 });
+        feature.recommendations.set('/skills/foraging', { threshold: 30 });
+        feature.initialize();
+        feature.injectRecommendControls();
+
+        feature.applyNextRecommendedSkip();
+        feature.settingHandler({ characterSetting: { ...dataManager.characterData.characterSetting } });
+
+        expect(feature.recommendations.size).toBe(2);
+        expect(feature._pendingSelfAppliedKey).toBeNull();
+        const button = document.getElementById('mwi-apply-skip-btn');
+        expect(button.disabled).toBe(false);
+        expect(button.textContent).toBe('Apply Skip (1)');
+
+        feature.applyNextRecommendedSkip();
+        expect(savedCalls[1]).toEqual({ roomHrid: '/skills/foraging', settingKey: 'labyrinthSkipForaging', value: 30 });
+    });
+
+    test('TLA048-04: an unrelated setting update arriving mid-flight still invalidates and releases the guard', () => {
+        const feature = new LabyrinthClearRate();
+        buildAutomationTable([
+            { roomHrid: '/skills/milking', isSkill: true, settingKey: 'labyrinthSkipMilking', currentValue: 5 },
+        ]);
+        feature.recommendations.set('/skills/milking', { threshold: 15 });
+        feature.initialize();
+
+        feature.applyNextRecommendedSkip();
+        expect(feature._pendingSelfAppliedKey).not.toBeNull();
+
+        // A crate/unrelated setting change arrives before our own ACK.
+        feature.settingHandler({ characterSetting: { labyrinthTeaCrateHrid: '/items/some_crate' } });
+
+        expect(feature.recommendations.size).toBe(0); // still invalidated, exactly as before this fix
+        expect(feature._pendingSelfAppliedKey).toBeNull(); // guard released, not stuck forever
+    });
+
+    test('TLA048-05: a mismatched/stale self confirmation still fails closed and does not leave the guard stuck', () => {
+        const feature = new LabyrinthClearRate();
+        buildAutomationTable([
+            { roomHrid: '/skills/milking', isSkill: true, settingKey: 'labyrinthSkipMilking', currentValue: 5 },
+        ]);
+        feature.recommendations.set('/skills/milking', { threshold: 15 });
+        feature.initialize();
+
+        feature.applyNextRecommendedSkip();
+        feature.settingHandler({ characterSetting: { labyrinthSkipMilking: 999 } }); // wrong value
+
+        expect(feature.recommendations.size).toBe(0); // fails closed, not a fabricated success
+        expect(feature._pendingSelfAppliedKey).toBeNull(); // released regardless, not permanently stuck
+    });
+
+    test('TLA048-06: disable() clears in-flight transaction state so reinitialization cannot inherit a phantom busy button', () => {
+        const feature = new LabyrinthClearRate();
+        buildAutomationTable([
+            { roomHrid: '/skills/milking', isSkill: true, settingKey: 'labyrinthSkipMilking', currentValue: 5 },
+        ]);
+        feature.recommendations.set('/skills/milking', { threshold: 15 });
+
+        feature.applyNextRecommendedSkip();
+        expect(feature._pendingSelfAppliedKey).not.toBeNull();
+
+        feature.disable();
+
+        expect(feature._pendingSelfAppliedKey).toBeNull();
+        expect(feature._pendingSelfAppliedValue).toBeNull();
     });
 });
 

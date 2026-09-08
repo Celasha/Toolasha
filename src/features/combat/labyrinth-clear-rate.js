@@ -38,6 +38,8 @@ class LabyrinthClearRate {
         this.recommendRunning = false;
         this._recommendSimHours = 1;
         this._recommendTargetPct = 70;
+        // Non-null exactly while one Apply Skip save is awaiting its authoritative setting_updated
+        // confirmation - doubles as the one-save-in-flight reentrancy guard (TLA-048).
         this._pendingSelfAppliedKey = null;
         this._pendingSelfAppliedValue = null;
         this.liveProgressHandler = null;
@@ -1124,8 +1126,21 @@ class LabyrinthClearRate {
      * room's real Edit button, writes the recommended value into the game's own input, then
      * forwards a click to the real Save button. Exactly one Save click, one server request, per
      * call -- the user repeats the click to work through the rest.
+     *
+     * Native MWI exits edit mode synchronously inside its own Save handler, well before the
+     * authoritative `setting_updated` confirmation arrives (TLA-048) -- so "is a native edit input
+     * currently visible?" cannot be used as the reentrancy boundary. `_pendingSelfAppliedKey` is
+     * therefore also the one-save-in-flight transaction flag: non-null from the moment a save is
+     * accepted here until `settingHandler` clears it on the next `setting_updated` event (self-match
+     * or not). A rapid second call while it is still non-null is ignored outright -- never queued,
+     * never a second native Edit/Save -- so an accepted save can never be silently overwritten.
      */
     applyNextRecommendedSkip() {
+        if (this._pendingSelfAppliedKey !== null) {
+            console.warn('[Toolasha] Apply Skip: a save is already awaiting confirmation; ignoring this click.');
+            return;
+        }
+
         const alreadyEditing = document.querySelector('[class*="LabyrinthPanel_skipThreshold"] input[type="number"]');
         if (alreadyEditing) {
             console.warn(
@@ -1163,18 +1178,27 @@ class LabyrinthClearRate {
 
         this._pendingSelfAppliedKey = this._getSkipSettingKey(roomHrid, isSkill);
         this._pendingSelfAppliedValue = recommendedThreshold;
-        saveButton.click();
-
         this._updateApplyButtonState();
+        saveButton.click();
     }
 
     /**
      * Refresh the Apply Skip button's label and enabled state to reflect the current mismatch
-     * count.
+     * count, or a busy/disabled state while a save is awaiting its authoritative confirmation
+     * (TLA-048) -- checked ahead of the mismatch count so a rapid click cannot see a misleadingly
+     * enabled button in the gap between native Save and `setting_updated`.
      */
     _updateApplyButtonState() {
         const button = document.getElementById(APPLY_SKIP_BUTTON_ID);
         if (!button) return;
+
+        if (this._pendingSelfAppliedKey !== null) {
+            button.textContent = 'Apply Skip (saving...)';
+            button.disabled = true;
+            button.style.opacity = '0.5';
+            button.style.cursor = 'default';
+            return;
+        }
 
         const remaining = this.getRoomsNeedingSkipUpdate().length;
         button.textContent = `Apply Skip (${remaining})`;
