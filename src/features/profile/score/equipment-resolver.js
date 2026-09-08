@@ -1,5 +1,5 @@
 /**
- * Equipment Replacement Resolver (TLA-041 / TLA-041C)
+ * Equipment Replacement Resolver (TLA-041 / TLA-041C / TLA-041E)
  *
  * For a viewed `Item +N`, computes the cheapest COMPLETE reproduction candidate using the
  * viewer's own current/manual Enhancing setup:
@@ -16,109 +16,18 @@
  * (b) and (c) share one cached, off-main-thread enhancement expectation table per
  * itemLevel/viewer-params combination (`score-enhancement-worker.js`) instead of each performing
  * its own synchronous Markov matrix inversion (TLA-041C) - see `score-enhancement-pricing.js` for
- * the pure arithmetic that turns that table into leg costs.
+ * the pure arithmetic that turns that table into leg costs. Base acquisition and every crafting
+ * material (including special-currency shop materials) go through the completeness-aware, per-
+ * generation-memoized `score-acquisition-resolver.js` (TLA-041E) instead of the legacy number-only
+ * `getProductionCost()`, so a missing required material can never silently become free.
  */
 
-import dataManager from '../../../core/data-manager.js';
 import { getItemPrice } from '../../../utils/market-data.js';
-import { getShopCoinCost } from '../../../utils/game-lookups.js';
-import {
-    getProductionCost,
-    calculatePerAttemptMaterialCost,
-    getCheapestProtectionPrice,
-} from '../../enhancement/tooltip-enhancement.js';
+import { getCheapestProtectionPrice } from '../../enhancement/tooltip-enhancement.js';
+import { findShopPurchaseInfo } from '../../../utils/special-currency-shop.js';
+import { resolveItemAcquisitionCost, resolvePerAttemptMaterialCost } from './score-acquisition-resolver.js';
 import { getScoreEnhancementExpectationTable } from './score-enhancement-worker.js';
 import { priceLegFromTable, buildTargetCostLadder, applyMirrorOptimization } from './score-enhancement-pricing.js';
-
-/**
- * Untradeable dungeon-shop back-slot items. Each item's own token PURCHASE COST is read
- * generically from `shopItemDetailMap` (PB-35) via `getTokenPurchaseInfo`; the list of
- * alternative token-shop items used to derive the best foregone value per token is kept as data
- * (discovering that set generically is out of scope for this ticket).
- */
-const TOKEN_SHOP_ALTERNATIVES = {
-    '/items/chimerical_quiver': [
-        { hrid: '/items/griffin_leather', cost: 600 },
-        { hrid: '/items/manticore_sting', cost: 1000 },
-        { hrid: '/items/jackalope_antler', cost: 1200 },
-        { hrid: '/items/dodocamel_plume', cost: 3000 },
-        { hrid: '/items/griffin_talon', cost: 3000 },
-    ],
-    '/items/sinister_cape': [
-        { hrid: '/items/acrobats_ribbon', cost: 2000 },
-        { hrid: '/items/magicians_cloth', cost: 2000 },
-        { hrid: '/items/chaotic_chain', cost: 3000 },
-        { hrid: '/items/cursed_ball', cost: 3000 },
-    ],
-    '/items/enchanted_cloak': [
-        { hrid: '/items/royal_cloth', cost: 2000 },
-        { hrid: '/items/knights_ingot', cost: 2000 },
-        { hrid: '/items/bishops_scroll', cost: 2000 },
-        { hrid: '/items/regal_jewel', cost: 3000 },
-        { hrid: '/items/sundering_jewel', cost: 3000 },
-    ],
-};
-
-/**
- * @param {string} itemHrid
- * @returns {{tokenItemHrid: string, tokenCost: number}|null} null if not a token-shop-purchased item
- */
-function getTokenPurchaseInfo(itemHrid) {
-    const gameData = dataManager.getInitClientData();
-    const shopItem = Object.values(gameData?.shopItemDetailMap || {}).find((s) => s.itemHrid === itemHrid);
-    const cost = shopItem?.costs?.[0];
-    if (!cost || cost.itemHrid === '/items/coin') return null;
-    return { tokenItemHrid: cost.itemHrid, tokenCost: cost.count };
-}
-
-/**
- * Opportunity-equivalent value of a token-purchased item's base acquisition: best foregone
- * alternative use of the same tokens, times the item's own token cost.
- * @param {string} itemHrid
- * @returns {{cost: number|null, complete: boolean}}
- */
-function calculateTokenOpportunityValue(itemHrid) {
-    const purchaseInfo = getTokenPurchaseInfo(itemHrid);
-    const alternatives = TOKEN_SHOP_ALTERNATIVES[itemHrid];
-    if (!purchaseInfo || !alternatives) return { cost: null, complete: false };
-
-    let bestValuePerToken = 0;
-    for (const alt of alternatives) {
-        const ask = getItemPrice(alt.hrid, { mode: 'ask' });
-        if (ask > 0) {
-            const perToken = ask / alt.cost;
-            if (perToken > bestValuePerToken) bestValuePerToken = perToken;
-        }
-    }
-    if (!(bestValuePerToken > 0)) return { cost: null, complete: false };
-    return { cost: bestValuePerToken * purchaseInfo.tokenCost, complete: true };
-}
-
-/**
- * Cheapest defensible base (+0) acquisition cost: direct comparison across every proven source,
- * never an inflated-Ask heuristic (TLA-041 base-item resolver rule: "If Ask=2.5B and a complete
- * reproduction path is 650M, use 650M").
- * @param {string} itemHrid
- * @returns {{cost: number|null, complete: boolean}}
- */
-function resolveBaseItemCost(itemHrid) {
-    const candidates = [];
-
-    const tokenValue = calculateTokenOpportunityValue(itemHrid);
-    if (tokenValue.complete) candidates.push(tokenValue.cost);
-
-    const ask = getItemPrice(itemHrid, { mode: 'ask' });
-    if (ask > 0) candidates.push(ask);
-
-    const shopCost = getShopCoinCost(itemHrid);
-    if (shopCost > 0) candidates.push(shopCost);
-
-    const craftCost = getProductionCost(itemHrid, 'ask');
-    if (craftCost > 0) candidates.push(craftCost);
-
-    if (candidates.length === 0) return { cost: null, complete: false };
-    return { cost: Math.min(...candidates), complete: true };
-}
 
 /**
  * Resolve the cheapest complete reproduction cost for a viewed equipped item at enhancement +N.
@@ -134,19 +43,21 @@ function resolveBaseItemCost(itemHrid) {
  * @param {number} N - Enhancement level (0-20)
  * @param {Object} itemDetails - gameData.itemDetailMap[itemHrid]
  * @param {Object} enhancingParams - Viewer's own params from getEnhancingParams()
+ * @param {{acquisitionCache: Map, opportunityCache: Map, resolving: Set}} context - one shared,
+ *   per-Score-generation acquisition context from `createAcquisitionContext()` (TLA-041E)
  * @returns {Promise<{cost: number|null, complete: boolean, reason?: string}>}
  */
-export async function resolveEquipmentItemCost(itemHrid, N, itemDetails, enhancingParams) {
+export async function resolveEquipmentItemCost(itemHrid, N, itemDetails, enhancingParams, context) {
     if (N === 0) {
-        return resolveBaseItemCost(itemHrid);
+        return resolveItemAcquisitionCost(itemHrid, context);
     }
 
-    const isTokenItem = getTokenPurchaseInfo(itemHrid) !== null;
+    const isTokenItem = findShopPurchaseInfo(itemHrid) !== null;
 
     // Phase 1 (cheap, synchronous, no enhancement math): exact Ask, live lower-K Asks, base
     // acquisition price.
     const exactAsk = getItemPrice(itemHrid, { enhancementLevel: N, mode: 'ask' });
-    const base = resolveBaseItemCost(itemHrid);
+    const base = resolveItemAcquisitionCost(itemHrid, context);
     const lowerAsks = [];
     if (itemDetails?.enhancementCosts?.length) {
         for (let K = 1; K < N; K++) {
@@ -181,8 +92,10 @@ export async function resolveEquipmentItemCost(itemHrid, N, itemDetails, enhanci
             console.error('[EquipmentResolver] Enhancement expectation table request failed:', error);
         }
 
-        const { cost: perAttemptMaterialCost, hasCost, costPartial } = calculatePerAttemptMaterialCost(itemDetails);
-        const materialCostKnown = hasCost && !costPartial;
+        const { cost: perAttemptMaterialCost, complete: materialCostKnown } = resolvePerAttemptMaterialCost(
+            itemDetails,
+            context
+        );
 
         if (table && materialCostKnown) {
             const { price: protectionUnitPrice } = getCheapestProtectionPrice(itemHrid);

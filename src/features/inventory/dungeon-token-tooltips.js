@@ -458,6 +458,11 @@ class DungeonTokenTooltips {
 
 const dungeonTokenTooltips = new DungeonTokenTooltips();
 
+// Named export purely for test access (TLA-041E parity check against the shared special-currency
+// valuation formulas in `score/special-currency-valuation.js`) - does not change any behavior of the
+// default export below.
+export { dungeonTokenTooltips };
+
 export default {
     name: 'Dungeon Token Tooltips',
     initialize: async () => {

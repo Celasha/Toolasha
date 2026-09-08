@@ -7,12 +7,16 @@
  * computed cost to both totals - intentional, not a bug to dedupe away). Unique items are resolved
  * concurrently (TLA-041C); `resolveEquipmentItemCost` is async because it may await one shared,
  * cached enhancement expectation table per itemLevel/viewer-params combination, and that cache
- * naturally dedupes same-itemLevel items across concurrent calls.
+ * naturally dedupes same-itemLevel items across concurrent calls. One `createAcquisitionContext()`
+ * (TLA-041E) is shared across every item resolved in this call, so special-currency opportunity
+ * values, Task Shop openable EVs, and recursive material acquisition are each computed at most once
+ * per Score generation rather than once per equipped item.
  */
 
 import dataManager from '../../../core/data-manager.js';
 import { classifyEquipmentItem } from './equipment-classifier.js';
 import { resolveEquipmentItemCost } from './equipment-resolver.js';
+import { createAcquisitionContext } from './score-acquisition-resolver.js';
 import { emptyCategory, attribute } from './score-result.js';
 
 /**
@@ -61,13 +65,19 @@ export async function calculateEquipmentScore(profileData, enhancingParams) {
         });
     }
 
+    // One acquisition context per Score generation (TLA-041E) - shared special-currency
+    // opportunity values, Task Shop openable EVs, and recursive material acquisition results are
+    // each computed at most once here, no matter how many equipped items depend on them.
+    const context = createAcquisitionContext();
+
     const priced = await Promise.all(
         Array.from(uniqueItems.values()).map(async (entry) => {
             const resolved = await resolveEquipmentItemCost(
                 entry.itemHrid,
                 entry.enhancementLevel,
                 entry.itemDetails,
-                enhancingParams
+                enhancingParams,
+                context
             );
             return { ...resolved, name: entry.displayName, classification: entry.classification };
         })

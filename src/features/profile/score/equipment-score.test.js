@@ -120,6 +120,51 @@ describe('calculateEquipmentScore - value-once-fan-out (TLA-041 / PB-19, PB-20)'
     });
 });
 
+describe('calculateEquipmentScore - TLA-041E: one shared acquisition context per Score generation', () => {
+    beforeEach(resetMocks);
+
+    test('every equipped item is resolved with the SAME acquisition context object (TLA041E-27/28/30)', async () => {
+        mocks.itemDetailMap['/items/a'] = { name: 'A', equipmentDetail: {} };
+        mocks.itemDetailMap['/items/b'] = { name: 'B', equipmentDetail: {} };
+        resolveEquipmentItemCost.mockResolvedValue({ cost: 1_000_000, complete: true });
+        classifyEquipmentItem.mockReturnValue({ combat: true, skiller: false });
+
+        const profileData = {
+            profile: {
+                wearableItemMap: {
+                    slotA: { itemHrid: '/items/a', enhancementLevel: 0 },
+                    slotB: { itemHrid: '/items/b', enhancementLevel: 0 },
+                },
+            },
+        };
+
+        await calculateEquipmentScore(profileData, {});
+
+        expect(resolveEquipmentItemCost).toHaveBeenCalledTimes(2);
+        const contextA = resolveEquipmentItemCost.mock.calls[0][4];
+        const contextB = resolveEquipmentItemCost.mock.calls[1][4];
+        expect(contextA).toBeDefined();
+        expect(contextA).toBe(contextB); // one context shared across every item this generation
+    });
+
+    test('two separate calculateEquipmentScore calls (two Score generations) each get their own fresh context', async () => {
+        mocks.itemDetailMap['/items/a'] = { name: 'A', equipmentDetail: {} };
+        resolveEquipmentItemCost.mockResolvedValue({ cost: 1_000_000, complete: true });
+        classifyEquipmentItem.mockReturnValue({ combat: true, skiller: false });
+
+        const profileData = {
+            profile: { wearableItemMap: { slotA: { itemHrid: '/items/a', enhancementLevel: 0 } } },
+        };
+
+        await calculateEquipmentScore(profileData, {});
+        await calculateEquipmentScore(profileData, {});
+
+        const firstContext = resolveEquipmentItemCost.mock.calls[0][4];
+        const secondContext = resolveEquipmentItemCost.mock.calls[1][4];
+        expect(firstContext).not.toBe(secondContext);
+    });
+});
+
 describe('calculateEquipmentScore - hidden equipment (PB-48, PB-49)', () => {
     beforeEach(resetMocks);
 
