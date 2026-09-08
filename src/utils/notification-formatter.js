@@ -8,6 +8,10 @@
  */
 
 import dataManager from '../core/data-manager.js';
+import { formatWithSeparator } from './formatters.js';
+
+/** Variable names whose values are plain quantities, not names/codes/hrids - format with thousand separators. */
+const NUMERIC_VARS = new Set(['count', 'coins', 'filled', 'total', 'minutes', 'level', 'days', 'limit', 'boundary']);
 
 const TEMPLATES = {
     addedFriend: 'Added friend: {{name}}',
@@ -247,9 +251,16 @@ export function formatNotificationMessage(message, variables) {
         resolveNestedName(tableName, varMap[varName])
     );
 
-    return withNested.replace(/\{\{([a-zA-Z]+)\}\}/g, (_match, varName) =>
-        varMap[varName] !== undefined ? String(varMap[varName]) : ''
-    );
+    return withNested.replace(/\{\{([a-zA-Z]+)\}\}/g, (_match, varName) => {
+        const value = varMap[varName];
+        if (value === undefined) {
+            return '';
+        }
+        if (NUMERIC_VARS.has(varName) && value !== '' && Number.isFinite(Number(value))) {
+            return formatWithSeparator(Number(value));
+        }
+        return String(value);
+    });
 }
 
 /**

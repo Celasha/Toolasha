@@ -83,6 +83,41 @@ describe('formatNotificationMessage', () => {
         ).toBe('You have reached level 50 Milking!');
     });
 
+    test('formats large quantity variables with thousand separators', async () => {
+        mockGetItemDetails.mockReturnValue({ name: 'Radiant Fiber' });
+        const { formatNotificationMessage } = await import('./notification-formatter.js');
+
+        expect(
+            formatNotificationMessage('infoNotification.buyOrderCompleted', [
+                { name: 'count', data: '10000' },
+                { name: 'itemHrid', data: '/items/radiant_fiber' },
+                { name: 'enhancement', data: '' },
+                { name: 'coins', data: '12900000' },
+            ])
+        ).toBe('Bought 10,000 Radiant Fiber - Spent 12,900,000 Coins');
+
+        expect(
+            formatNotificationMessage('infoNotification.buyListingProgress', [
+                { name: 'itemHrid', data: '/items/radiant_fiber' },
+                { name: 'enhancement', data: '' },
+                { name: 'filled', data: '10000' },
+                { name: 'total', data: '10000' },
+            ])
+        ).toBe('Buy listing: Radiant Fiber - Progress: 10,000/10,000');
+    });
+
+    test('does not add separators to non-numeric variables like names and guild names', async () => {
+        const { formatNotificationMessage } = await import('./notification-formatter.js');
+
+        expect(
+            formatNotificationMessage('infoNotification.guildCreated', [{ name: 'guildName', data: 'The 1000 Club' }])
+        ).toBe('Created guild: The 1000 Club');
+
+        expect(formatNotificationMessage('infoNotification.nameChanged', [{ name: 'name', data: '12345' }])).toBe(
+            'Name changed: 12345'
+        );
+    });
+
     test('guildCharacterRoleNames is keyed by plain role string, not a hrid', async () => {
         mockGetInitClientData.mockReturnValue({
             guildCharacterRoleDetailMap: { officer: { name: 'Officer' } },
