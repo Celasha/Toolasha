@@ -936,7 +936,7 @@ describe('ActionTimeDisplay calculation failure fails closed instead of a fake z
     });
 });
 
-describe('ActionTimeDisplay queue completion display style setting (actionBar_completionTimeStyle)', () => {
+describe('ActionTimeDisplay queue completion display style setting (actionQueue_completionTimeStyle)', () => {
     let instance;
 
     // Three queued actions whose durations (1h05m, 2h35m, 1h43m) sum to the same running totals
@@ -1045,7 +1045,7 @@ describe('ActionTimeDisplay queue completion display style setting (actionBar_co
     // strings. In real usage timeReadable renders these as "1h 05m 00s" / "3h 40m 00s" / "5h 23m 00s".
     test("style 'relative' shows cumulative running duration per row (1h05m -> 3h40m -> 5h23m), no clock time", () => {
         config.getSettingValue.mockImplementation((key, fallback) =>
-            key === 'actionBar_completionTimeStyle' ? 'relative' : fallback
+            key === 'actionQueue_completionTimeStyle' ? 'relative' : fallback
         );
 
         const [row1, row2, row3] = renderQueueMenu();
@@ -1058,7 +1058,7 @@ describe('ActionTimeDisplay queue completion display style setting (actionBar_co
 
     test("style 'both' shows cumulative duration and clock time together on every row", () => {
         config.getSettingValue.mockImplementation((key, fallback) =>
-            key === 'actionBar_completionTimeStyle' ? 'both' : fallback
+            key === 'actionQueue_completionTimeStyle' ? 'both' : fallback
         );
 
         const [row1, row2, row3] = renderQueueMenu();
@@ -1091,7 +1091,7 @@ describe('ActionTimeDisplay queue completion display style setting (actionBar_co
             },
         ]);
         config.getSettingValue.mockImplementation((key, fallback) =>
-            key === 'actionBar_completionTimeStyle' ? 'both' : fallback
+            key === 'actionQueue_completionTimeStyle' ? 'both' : fallback
         );
 
         instance.initializeQueueObserver();
