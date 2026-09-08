@@ -14,6 +14,10 @@ vi.mock('../../core/data-manager.js', () => ({
             if (mocks.dataHandlers.get(event) === handler) mocks.dataHandlers.delete(event);
         }),
         getInventory: vi.fn(() => []),
+        getActionDetails: vi.fn(() => null),
+        getEquipment: vi.fn(() => new Map()),
+        getActionDrinkSlots: vi.fn(() => []),
+        getInitClientData: vi.fn(() => ({ itemDetailMap: {} })),
     },
 }));
 
@@ -50,6 +54,7 @@ vi.mock('./action-filter.js', () => ({ default: {} }));
 
 import config from '../../core/config.js';
 import loadoutState from '../../core/loadout-state.js';
+import dataManager from '../../core/data-manager.js';
 import maxProduceable from './max-produceable.js';
 
 describe('MaxProduceable saved-loadout hot-path refresh wiring', () => {
@@ -133,5 +138,96 @@ describe('MaxProduceable saved-loadout hot-path refresh wiring', () => {
         await maxProduceable.disable();
 
         expect(mocks.dataHandlers.has('buffs_updated')).toBe(false);
+    });
+});
+
+describe('MaxProduceable.calculateMaxProduceable - upgrade item enhancement-level collision', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        dataManager.getEquipment.mockReturnValue(new Map());
+        dataManager.getActionDrinkSlots.mockReturnValue([]);
+        dataManager.getInitClientData.mockReturnValue({ itemDetailMap: {} });
+        dataManager.getActionDetails.mockReturnValue({
+            type: '/action_types/tailoring',
+            inputItems: [{ itemHrid: '/items/icy_cloth', count: 6 }],
+            upgradeItemHrid: '/items/bamboo_robe_top',
+        });
+    });
+
+    test('a single owned +5 upgrade item never masks a much larger +0 stack of the same item', () => {
+        dataManager.getInventory.mockReturnValue([
+            { itemHrid: '/items/icy_cloth', itemLocationHrid: '/item_locations/inventory', count: 999999 },
+            {
+                itemHrid: '/items/bamboo_robe_top',
+                itemLocationHrid: '/item_locations/inventory',
+                enhancementLevel: 0,
+                count: 13545,
+            },
+            {
+                itemHrid: '/items/bamboo_robe_top',
+                itemLocationHrid: '/item_locations/inventory',
+                enhancementLevel: 5,
+                count: 1,
+            },
+        ]);
+
+        expect(maxProduceable.calculateMaxProduceable('/actions/tailoring/icy_robe_top')).toBe(13545);
+    });
+
+    test('array order does not change which stack is counted - the +0 stack always wins', () => {
+        dataManager.getInventory.mockReturnValue([
+            {
+                itemHrid: '/items/bamboo_robe_top',
+                itemLocationHrid: '/item_locations/inventory',
+                enhancementLevel: 5,
+                count: 1,
+            },
+            { itemHrid: '/items/icy_cloth', itemLocationHrid: '/item_locations/inventory', count: 999999 },
+            {
+                itemHrid: '/items/bamboo_robe_top',
+                itemLocationHrid: '/item_locations/inventory',
+                enhancementLevel: 0,
+                count: 13545,
+            },
+        ]);
+
+        expect(maxProduceable.calculateMaxProduceable('/actions/tailoring/icy_robe_top')).toBe(13545);
+    });
+
+    test('owning only an enhanced copy (no +0) is treated as having none of the upgrade item', () => {
+        dataManager.getInventory.mockReturnValue([
+            { itemHrid: '/items/icy_cloth', itemLocationHrid: '/item_locations/inventory', count: 999999 },
+            {
+                itemHrid: '/items/bamboo_robe_top',
+                itemLocationHrid: '/item_locations/inventory',
+                enhancementLevel: 5,
+                count: 1,
+            },
+        ]);
+
+        expect(maxProduceable.calculateMaxProduceable('/actions/tailoring/icy_robe_top')).toBe(0);
+    });
+
+    test('the same collision protection applies to an ordinary (non-upgrade) input item', () => {
+        dataManager.getActionDetails.mockReturnValue({
+            type: '/action_types/tailoring',
+            inputItems: [{ itemHrid: '/items/bamboo_robe_top', count: 1 }],
+        });
+        dataManager.getInventory.mockReturnValue([
+            {
+                itemHrid: '/items/bamboo_robe_top',
+                itemLocationHrid: '/item_locations/inventory',
+                enhancementLevel: 0,
+                count: 13545,
+            },
+            {
+                itemHrid: '/items/bamboo_robe_top',
+                itemLocationHrid: '/item_locations/inventory',
+                enhancementLevel: 5,
+                count: 1,
+            },
+        ]);
+
+        expect(maxProduceable.calculateMaxProduceable('/actions/tailoring/icy_robe_top')).toBe(13545);
     });
 });

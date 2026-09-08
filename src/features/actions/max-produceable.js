@@ -36,14 +36,16 @@ const PRODUCTION_TYPES = [
 ];
 
 /**
- * Build inventory index map for O(1) lookups
+ * Build inventory index map for O(1) lookups. Only indexes the unenhanced (+0) stack of each
+ * item: nobody spends an enhanced copy as crafting/upgrade material, so an enhanced stack must
+ * never collide with (and silently replace) the +0 entry for the same itemHrid.
  * @param {Array} inventory - Inventory array from dataManager
  * @returns {Map} Map of itemHrid → inventory item
  */
 function buildInventoryIndex(inventory) {
     const index = new Map();
     for (const item of inventory) {
-        if (item.itemLocationHrid === '/item_locations/inventory') {
+        if (item.itemLocationHrid === '/item_locations/inventory' && !item.enhancementLevel) {
             index.set(item.itemHrid, item);
         }
     }
