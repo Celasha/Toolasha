@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.107.1](https://github.com/Celasha/Toolasha/compare/v2.107.0...v2.107.1) (2026-09-08)
+
+### Bug Fixes
+
+- add cumulative queue-completion duration display option ([e9ae416](https://github.com/Celasha/Toolasha/commit/e9ae416a62a85e1198c0f935adb833d51e6c6b88))
+
 ## [2.107.0](https://github.com/Celasha/Toolasha/compare/v2.106.3...v2.107.0) (2026-09-08)
 
 ### Features
