@@ -42,6 +42,9 @@ export class SimEditor {
         this._selectedLoadoutName = '';
         this._unavailableLoadoutName = '';
         this._loadoutStatusMessage = '';
+        // TLA-046: per-player Achievement what-if scenario (Current/None/Custom), keyed by
+        // player hrid. Never the new Current authority - _originalDTOs remains that.
+        this._achievementScenarioByPlayer = new Map();
     }
 
     getEditedDTOs() {
@@ -79,6 +82,11 @@ export class SimEditor {
             const activePlayer = this._activeEditPlayer;
             if (this._originalDTOs?.[activePlayer]) {
                 this._editedDTOs[activePlayer] = structuredClone(this._originalDTOs[activePlayer]);
+                // A fresh clone of the original DTO is already exact Current by construction;
+                // only a non-Current scenario needs to overlay its overrides back on top.
+                if (this.getAchievementMode(activePlayer) !== 'current') {
+                    this._applyAchievementScenario(activePlayer);
+                }
             }
             this._selectedLoadoutName = '';
             this._unavailableLoadoutName = '';
@@ -113,6 +121,9 @@ export class SimEditor {
             const activePlayer = this._activeEditPlayer;
             if (this._originalDTOs?.[activePlayer]) {
                 this._editedDTOs[activePlayer] = structuredClone(this._originalDTOs[activePlayer]);
+                if (this.getAchievementMode(activePlayer) !== 'current') {
+                    this._applyAchievementScenario(activePlayer);
+                }
             }
             this._selectedLoadoutName = '';
             this._unavailableLoadoutName = '';
@@ -160,6 +171,7 @@ export class SimEditor {
             this._activeEditPlayer = selfHrid;
             this._missingMembers = missingMembers;
             this._editorInitialized = true;
+            this._achievementScenarioByPlayer = new Map();
 
             this.renderEditor();
         } catch (error) {
@@ -184,6 +196,7 @@ export class SimEditor {
         this._activeEditPlayer = 'player1';
         this._missingMembers = [];
         this._editorInitialized = true;
+        this._achievementScenarioByPlayer = new Map();
         this.renderEditor();
     }
 
@@ -238,6 +251,7 @@ export class SimEditor {
         this._selectedLoadoutName = '';
         this._unavailableLoadoutName = '';
         this._loadoutStatusMessage = '';
+        this._achievementScenarioByPlayer = new Map();
     }
 
     /**
@@ -426,6 +440,9 @@ export class SimEditor {
         html += this._renderSkillLevelsSection(dto);
         html += this._renderHouseRoomsSection(dto, gameData);
         html += this._renderShrinesSection(dto, gameData);
+        if (!this.skillingMode) {
+            html += this._renderAchievementsSection(dto, gameData);
+        }
         if (this.skillingMode) {
             html += this._renderTokenUpgradesSection(dto);
             html += this._renderCommunityBuffsSection(dto);
@@ -1229,6 +1246,71 @@ export class SimEditor {
         return html;
     }
 
+    /**
+     * TLA-046: Achievements what-if scenario control. The mode selector (Current/None/Custom)
+     * is always visible for a combat player; only the Custom tier/achievement breakdown is
+     * collapsible. Tier names/members/buffs are discovered from current game data - never a
+     * hardcoded tier list.
+     * @private
+     */
+    _renderAchievementsSection(dto, gameData) {
+        const playerHrid = this._activeEditPlayer;
+        const mode = this.getAchievementMode(playerHrid);
+        const tiers = this._getCombatRelevantAchievementTiers(gameData);
+
+        let html = `<div style="margin-bottom:10px;">`;
+        html += `<div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">`;
+        html += `<span style="color:${ACCENT}; font-weight:700; font-size:12px;">Achievements</span>`;
+        html += `<div style="display:flex; gap:4px;">`;
+        for (const [value, label] of [
+            ['current', 'Current'],
+            ['none', 'None'],
+            ['custom', 'Custom'],
+        ]) {
+            const isActive = mode === value;
+            const btnStyle = isActive
+                ? `background:${ACCENT_BG}; border:1px solid ${ACCENT_BORDER}; color:${ACCENT}; font-weight:700;`
+                : 'background:rgba(255,255,255,0.04); border:1px solid #333; color:#aaa;';
+            html += `<button data-achievement-mode="${value}" style="${btnStyle} padding:2px 10px; border-radius:5px; font-size:11px; cursor:pointer; font-family:inherit;">${label}</button>`;
+        }
+        html += '</div></div>';
+
+        if (mode === 'custom') {
+            if (tiers.length === 0) {
+                html += `<div style="color:#666; font-size:11px; font-style:italic;">No combat-relevant Achievement Tiers found in current game data.</div>`;
+            } else {
+                const scenario = this._getAchievementScenario(playerHrid);
+                const completedHrids = scenario.customCompletedHrids || new Set();
+
+                html += `<div style="color:#666; font-size:10px; font-style:italic; margin-bottom:6px;">Simulation only - does not change your account.</div>`;
+
+                for (const tier of tiers) {
+                    const tierId = 'achv-' + tier.tierHrid.replace(/[^a-zA-Z0-9]/g, '_');
+                    const completedCount = tier.members.filter((m) => completedHrids.has(m.hrid)).length;
+                    const buffText = this._formatTierBuffDescription(tier.buff);
+                    const summary = `${completedCount} / ${tier.members.length}` + (buffText ? ` · ${buffText}` : '');
+
+                    html += `<div style="margin-bottom:4px;">`;
+                    html += `<div style="color:#ccc; font-weight:600; font-size:12px; margin-bottom:2px; cursor:pointer; user-select:none;" data-toggle="${tierId}">`;
+                    html += `<span data-arrow="${tierId}" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> ${tier.name}`;
+                    html += `<span style="color:#888; font-weight:400; font-size:11px; margin-left:6px;">${summary}</span>`;
+                    html += '</div>';
+                    html += `<div id="mwi-csim-${tierId}" style="display:none; padding-left:18px;">`;
+                    for (const member of tier.members) {
+                        const checked = completedHrids.has(member.hrid) ? ' checked' : '';
+                        html += `<label style="display:flex; align-items:center; gap:6px; padding:1px 0; font-size:12px; color:#bbb; cursor:pointer;">`;
+                        html += `<input type="checkbox" data-achievement-hrid="${member.hrid}"${checked}> ${member.name}`;
+                        html += '</label>';
+                    }
+                    html += '</div></div>';
+                }
+            }
+        }
+
+        html += '</div>';
+        return html;
+    }
+
     /** @private */
     _renderTokenUpgradesSection(dto) {
         const upgrades = [
@@ -1406,6 +1488,22 @@ export class SimEditor {
             });
         });
 
+        editorArea.querySelectorAll('[data-achievement-mode]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                this.setAchievementMode(this._activeEditPlayer, btn.dataset.achievementMode);
+            });
+        });
+
+        editorArea.querySelectorAll('[data-achievement-hrid]').forEach((checkbox) => {
+            checkbox.addEventListener('change', () => {
+                this.toggleCustomAchievementCompletion(
+                    this._activeEditPlayer,
+                    checkbox.dataset.achievementHrid,
+                    checkbox.checked
+                );
+            });
+        });
+
         editorArea.querySelectorAll('[data-consumable-slot]').forEach((btn) => {
             btn.addEventListener('click', () => {
                 const [slotType, idx] = btn.dataset.consumableSlot.split('-');
@@ -1437,6 +1535,7 @@ export class SimEditor {
                 this._selectedLoadoutName = '';
                 this._unavailableLoadoutName = '';
                 this._loadoutStatusMessage = '';
+                this._reapplyAllAchievementScenarios();
                 this.renderEditor();
             });
         }
@@ -1456,6 +1555,7 @@ export class SimEditor {
                 if (!this._editedDTOs) return;
                 delete this._editedDTOs[hrid];
                 if (this._originalDTOs) delete this._originalDTOs[hrid];
+                this._achievementScenarioByPlayer.delete(hrid);
                 this._editedPlayerInfo = this._editedPlayerInfo.filter((p) => p.hrid !== hrid);
                 if (this._activeEditPlayer === hrid) {
                     this._activeEditPlayer = this._editedPlayerInfo[0]?.hrid || null;
@@ -1467,6 +1567,7 @@ export class SimEditor {
                     this._editorInitialized = true;
                     this._activeEditPlayer = null;
                     this._selfHrid = null;
+                    this._achievementScenarioByPlayer = new Map();
                     this.renderEditor();
                     return;
                 }
@@ -1648,6 +1749,218 @@ export class SimEditor {
         if (changes.length === 0) return loadoutPrefix || 'Current Gear';
         const changesStr = changes.join(', ');
         return loadoutPrefix ? loadoutPrefix + ': ' + changesStr : changesStr;
+    }
+
+    /**
+     * Current Achievement what-if mode for a player ('current' | 'none' | 'custom').
+     * @param {string} [playerHrid]
+     * @returns {string}
+     */
+    getAchievementMode(playerHrid = this._activeEditPlayer) {
+        return this._getAchievementScenario(playerHrid).mode;
+    }
+
+    /**
+     * Switch a player's Achievement scenario mode (TLA-046). Custom seeds from that player's
+     * Current completion state on first entry only; later switches reuse the saved Custom set.
+     * @param {string} playerHrid
+     * @param {string} mode - 'current' | 'none' | 'custom'
+     */
+    setAchievementMode(playerHrid, mode) {
+        if (!playerHrid || !['current', 'none', 'custom'].includes(mode)) return;
+        const scenario = this._getAchievementScenario(playerHrid);
+        if (mode === 'custom' && scenario.customCompletedHrids === null) {
+            scenario.customCompletedHrids = this._seedCustomAchievementCompletion(playerHrid);
+        }
+        scenario.mode = mode;
+        this._applyAchievementScenario(playerHrid);
+        this.renderEditor();
+    }
+
+    /**
+     * Toggle simulated completion of one achievement in a player's Custom scenario. Only takes
+     * effect on the resolved DTO while that player's mode is already 'custom'.
+     * @param {string} playerHrid
+     * @param {string} achievementHrid
+     * @param {boolean} isCompleted
+     */
+    toggleCustomAchievementCompletion(playerHrid, achievementHrid, isCompleted) {
+        if (!playerHrid || !achievementHrid) return;
+        const scenario = this._getAchievementScenario(playerHrid);
+        if (!scenario.customCompletedHrids) {
+            scenario.customCompletedHrids = this._seedCustomAchievementCompletion(playerHrid);
+        }
+        if (isCompleted) {
+            scenario.customCompletedHrids.add(achievementHrid);
+        } else {
+            scenario.customCompletedHrids.delete(achievementHrid);
+        }
+        if (scenario.mode === 'custom') this._applyAchievementScenario(playerHrid);
+        this.renderEditor();
+    }
+
+    /** @private */
+    _getAchievementScenario(playerHrid) {
+        if (!this._achievementScenarioByPlayer) this._achievementScenarioByPlayer = new Map();
+        let scenario = this._achievementScenarioByPlayer.get(playerHrid);
+        if (!scenario) {
+            scenario = { mode: 'current', customCompletedHrids: null };
+            this._achievementScenarioByPlayer.set(playerHrid, scenario);
+        }
+        return scenario;
+    }
+
+    /**
+     * Resolve `_editedDTOs[playerHrid].characterAchievements` from that player's current mode.
+     * This is the sole hand-off to the unchanged TLA-044 Achievement engine - no scenario
+     * metadata is threaded into the engine itself.
+     * @private
+     */
+    _applyAchievementScenario(playerHrid) {
+        const dto = this._editedDTOs?.[playerHrid];
+        if (!dto) return;
+        const original = this._originalDTOs?.[playerHrid]?.characterAchievements || [];
+        const scenario = this._getAchievementScenario(playerHrid);
+
+        if (scenario.mode === 'none') {
+            dto.characterAchievements = [];
+            return;
+        }
+
+        if (scenario.mode === 'custom') {
+            dto.characterAchievements = this._resolveCustomCharacterAchievements(
+                original,
+                scenario.customCompletedHrids || new Set()
+            );
+            return;
+        }
+
+        dto.characterAchievements = structuredClone(original);
+    }
+
+    /** @private */
+    _reapplyAllAchievementScenarios() {
+        if (!this._editedDTOs) return;
+        for (const playerHrid of Object.keys(this._editedDTOs)) {
+            if (this.getAchievementMode(playerHrid) !== 'current') {
+                this._applyAchievementScenario(playerHrid);
+            }
+        }
+    }
+
+    /**
+     * Seed a player's first-ever Custom completion set from their loaded Current completion
+     * state, restricted to combat-relevant achievements (the only ones Custom can edit).
+     * @private
+     */
+    _seedCustomAchievementCompletion(playerHrid) {
+        const gameData = buildGameDataPayload();
+        const relevantHrids = this._getCombatRelevantAchievementHrids(gameData);
+        const original = this._originalDTOs?.[playerHrid]?.characterAchievements || [];
+        const completed = new Set();
+        for (const entry of original) {
+            if (entry?.isCompleted && entry.achievementHrid && relevantHrids.has(entry.achievementHrid)) {
+                completed.add(entry.achievementHrid);
+            }
+        }
+        return completed;
+    }
+
+    /**
+     * Overlay simulated completion for combat-relevant achievements onto the player's original
+     * loaded evidence, preserving unrelated/noncombat baseline evidence untouched. Never invents
+     * a tier/buff for an unknown hrid - only known current combat-relevant hrids are overridden.
+     * @private
+     */
+    _resolveCustomCharacterAchievements(original, customCompletedHrids) {
+        const gameData = buildGameDataPayload();
+        const relevantHrids = this._getCombatRelevantAchievementHrids(gameData);
+
+        const resolved = new Map();
+        for (const entry of original || []) {
+            if (entry?.achievementHrid) resolved.set(entry.achievementHrid, { ...entry });
+        }
+        for (const hrid of relevantHrids) {
+            const isCompleted = customCompletedHrids.has(hrid);
+            const existing = resolved.get(hrid);
+            if (existing) {
+                existing.isCompleted = isCompleted;
+            } else {
+                resolved.set(hrid, { achievementHrid: hrid, isCompleted });
+            }
+        }
+        return Array.from(resolved.values());
+    }
+
+    /**
+     * Discover the current combat-usable Achievement Tiers and their achievement members from
+     * live game data, sorted by each achievement's current sortIndex. Mirrors the exact
+     * usableInActionTypeMap/buff-presence gating engine/achievement.js already applies (TLA-044) -
+     * never a hardcoded tier list.
+     * @private
+     */
+    _getCombatRelevantAchievementTiers(gameData) {
+        const achievementDetailMap = gameData?.achievementDetailMap || {};
+        const achievementTierDetailMap = gameData?.achievementTierDetailMap || {};
+
+        const membersByTier = new Map();
+        for (const [hrid, detail] of Object.entries(achievementDetailMap)) {
+            const tierHrid = detail?.tierHrid;
+            if (!tierHrid) continue;
+            if (!membersByTier.has(tierHrid)) membersByTier.set(tierHrid, []);
+            membersByTier.get(tierHrid).push({
+                hrid,
+                sortIndex: detail.sortIndex ?? 0,
+                name: detail.name || this._titleCaseFromHrid(hrid),
+            });
+        }
+
+        const tiers = [];
+        for (const [tierHrid, tierDetail] of Object.entries(achievementTierDetailMap)) {
+            if (!tierDetail?.buff) continue;
+            if (!tierDetail.usableInActionTypeMap?.['/action_types/combat']) continue;
+            const members = membersByTier.get(tierHrid) || [];
+            if (members.length === 0) continue;
+            members.sort((a, b) => a.sortIndex - b.sortIndex);
+            tiers.push({
+                tierHrid,
+                name: tierDetail.name || this._titleCaseFromHrid(tierHrid),
+                buff: tierDetail.buff,
+                members,
+            });
+        }
+        return tiers;
+    }
+
+    /** @private */
+    _getCombatRelevantAchievementHrids(gameData) {
+        const hrids = new Set();
+        for (const tier of this._getCombatRelevantAchievementTiers(gameData)) {
+            for (const member of tier.members) hrids.add(member.hrid);
+        }
+        return hrids;
+    }
+
+    /**
+     * Compact, data-driven buff description for a tier (e.g. "+2% Damage"). Never hardcodes a
+     * buff type/tier name - falls back to a generic label derived from the buff's own typeHrid.
+     * @private
+     */
+    _formatTierBuffDescription(buff) {
+        if (!buff?.typeHrid) return '';
+        const label = this._titleCaseFromHrid(buff.typeHrid);
+        if (buff.ratioBoost) return `+${(buff.ratioBoost * 100).toFixed(0)}% ${label}`;
+        if (buff.flatBoost) return `+${buff.flatBoost} ${label}`;
+        return label;
+    }
+
+    /** @private */
+    _titleCaseFromHrid(hrid) {
+        return (hrid || '')
+            .split('/')
+            .pop()
+            .replace(/_/g, ' ')
+            .replace(/\b\w/g, (c) => c.toUpperCase());
     }
 
     /** @private */
