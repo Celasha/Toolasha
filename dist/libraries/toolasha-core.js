@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.107.0
+ * Version: 2.107.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -824,6 +824,18 @@
                     label: 'Action bar: Time remaining and completion ETA',
                     type: 'checkbox',
                     default: true,
+                },
+                actionBar_completionTimeStyle: {
+                    id: 'actionBar_completionTimeStyle',
+                    label: 'Action bar: Queue completion display',
+                    type: 'select',
+                    default: 'absolute',
+                    options: [
+                        { value: 'absolute', label: 'Clock time only (Complete at 14:32)' },
+                        { value: 'relative', label: 'Cumulative duration only (Complete in 3h 40m)' },
+                        { value: 'both', label: 'Both' },
+                    ],
+                    help: 'How queued-action completion is shown in the Queued Actions popup and hover tooltip',
                 },
                 actionBar_showRecycleTime: {
                     id: 'actionBar_showRecycleTime',

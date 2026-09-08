@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 2.107.0
+ * Version: 2.107.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -23255,6 +23255,30 @@ self.onmessage = function (e) {
         return formatters_js.formatDateTime(completionTime, { includeDate, includeTime: true, includeSeconds: true });
     }
 
+    /**
+     * Build the " Complete in X · Complete at Y" suffix for a queued action, per the
+     * actionBar_completionTimeStyle setting. Returns '' when the row has no reachable completion
+     * (i.e. a truly-infinite action is queued at or before this row).
+     * @param {number} accumulatedTime - Cumulative seconds from now until this row finishes.
+     * @returns {string}
+     */
+    function buildCompletionText(accumulatedTime) {
+        const style = config.getSettingValue('actionBar_completionTimeStyle', 'absolute');
+        const parts = [];
+
+        if (style === 'relative' || style === 'both') {
+            parts.push(`Complete in ${formatters_js.timeReadable(accumulatedTime)}`);
+        }
+        if (style === 'absolute' || style === 'both') {
+            const completionDate = new Date();
+            completionDate.setSeconds(completionDate.getSeconds() + accumulatedTime);
+            const isToday = completionDate.toDateString() === new Date().toDateString();
+            parts.push(`Complete at ${formatCompletionTime(completionDate, !isToday)}`);
+        }
+
+        return parts.length ? ` ${parts.join(' · ')}` : '';
+    }
+
     // Marks a native QueuedActions edit-menu once Toolasha has enhanced it, so the width contract
     // below and the row-wrapping rules only ever apply to that specific popup (TLA-040) — never to
     // unrelated MUI tooltips/poppers elsewhere in the game.
@@ -23631,10 +23655,7 @@ self.onmessage = function (e) {
 
                     // Add completion time
                     if (!hasInfinite && !result.isTrulyInfinite) {
-                        const completionDate = new Date();
-                        completionDate.setSeconds(completionDate.getSeconds() + accumulatedTime);
-                        const isToday = completionDate.toDateString() === new Date().toDateString();
-                        timeText += ` Complete at ${formatCompletionTime(completionDate, !isToday)}`;
+                        timeText += buildCompletionText(accumulatedTime);
                     }
 
                     this.appendTimeToActionDiv(actionDiv, timeText);
@@ -25837,11 +25858,7 @@ self.onmessage = function (e) {
                     // Format completion time
                     let completionText = '';
                     if (!hasInfinite && !isTrulyInfinite) {
-                        const completionDate = new Date();
-                        completionDate.setSeconds(completionDate.getSeconds() + accumulatedTime);
-                        const isToday = completionDate.toDateString() === new Date().toDateString();
-
-                        completionText = ` Complete at ${formatCompletionTime(completionDate, !isToday)}`;
+                        completionText = buildCompletionText(accumulatedTime);
                     }
 
                     // Create time display element
