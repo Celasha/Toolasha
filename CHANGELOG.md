@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.107.8](https://github.com/Celasha/Toolasha/compare/v2.107.7...v2.107.8) (2026-09-10)
+
+
+### Bug Fixes
+
+* allow time remaining and completion ETA to be shown independently ([0f9af6f](https://github.com/Celasha/Toolasha/commit/0f9af6f45e9fdd5fb544d0cef24e1994317feb72))
+
 ## [2.107.7](https://github.com/Celasha/Toolasha/compare/v2.107.6...v2.107.7) (2026-09-10)
 
 ### Bug Fixes
