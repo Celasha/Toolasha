@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.107.5
+ * Version: 2.107.6
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -20692,13 +20692,26 @@
      * Calculate Gold/hour for an alchemy action with a specific tea combination
      * @param {Object} alchemyContext - { actionType: 'coinify'|'decompose'|'transmute', itemHrid, enhancementLevel }
      * @param {Object} buffs - Parsed tea buffs (includes alchemySuccess)
+     * @param {Object} calcContext - { equipment, itemDetailMap } - the hypothetical equipment being
+     *   scored (candidate or baseline), never the player's live gear
      * @returns {{profitPerHour: number, hasMissingPrice: boolean}} Profit after all costs, and whether
      *   the underlying calculator had to bail for lack of market data (e.g. no price for the item) -
      *   distinct from a genuine, priced 0/negative profit.
      */
-    function calculateAlchemyGoldPerHour(alchemyContext, buffs) {
+    function calculateAlchemyGoldPerHour(alchemyContext, buffs, calcContext) {
         const { actionType, itemHrid, enhancementLevel = 0 } = alchemyContext;
         const teaBonusOverride = buffs.alchemySuccess || 0;
+
+        // Speed/efficiency must reflect the hypothetical equipment actually being scored (this
+        // candidate/baseline), never the player's live-equipped gear - and tea COST must come only
+        // from the caller (scoreEquipmentSetup/findOptimalTeas already deduct it for whichever combo
+        // is actually under test), never from whatever the player happens to be drinking live right
+        // now. An explicit actionContext with empty drinks pins both atomically - the same
+        // {equipment, drinks} convention already used for the Current Action Bar - so the underlying
+        // calculator can't silently fall back to dataManager.getEquipment()/getActionDrinkSlots().
+        // teaBonusOverride still carries this combo's own alchemy_success bonus for the success-rate
+        // search, which is a separate axis from tea cost.
+        const actionContext = { equipment: calcContext.equipment, drinks: [] };
 
         let profitData = null;
         if (actionType === 'coinify') {
@@ -20706,23 +20719,32 @@
                 itemHrid,
                 enhancementLevel,
                 false,
-                teaBonusOverride
+                teaBonusOverride,
+                actionContext
             );
         } else if (actionType === 'decompose') {
             profitData = alchemyProfitCalculator.calculateDecomposeProfit(
                 itemHrid,
                 enhancementLevel,
                 false,
-                teaBonusOverride
+                teaBonusOverride,
+                actionContext
             );
         } else if (actionType === 'transmute') {
-            profitData = alchemyProfitCalculator.calculateTransmuteProfit(itemHrid, false, teaBonusOverride);
+            profitData = alchemyProfitCalculator.calculateTransmuteProfit(
+                itemHrid,
+                false,
+                teaBonusOverride,
+                null,
+                actionContext
+            );
         } else if (actionType === 'unrefine') {
             profitData = alchemyProfitCalculator.calculateUnrefineProfit(
                 itemHrid,
                 enhancementLevel,
                 false,
-                teaBonusOverride
+                teaBonusOverride,
+                actionContext
             );
         }
 
@@ -21259,7 +21281,7 @@
                 if (goal === 'xp') {
                     score = calculateAlchemyXpPerHour(alchemyContext, buffs, playerLevel, otherEfficiency, calcContext);
                 } else {
-                    const goldResult = calculateAlchemyGoldPerHour(alchemyContext, buffs);
+                    const goldResult = calculateAlchemyGoldPerHour(alchemyContext, buffs, calcContext);
                     score = goldResult.profitPerHour - teaCostPerHour.total;
                     if (goldResult.hasMissingPrice) hasMissingPrice = true;
                 }
@@ -21532,7 +21554,7 @@
                 };
             }
 
-            const goldResult = calculateAlchemyGoldPerHour(alchemyContext, buffs);
+            const goldResult = calculateAlchemyGoldPerHour(alchemyContext, buffs, calcContext);
             return { score: goldResult.profitPerHour - teaCostPerHour, hasMissingPrice: goldResult.hasMissingPrice };
         }
 
@@ -27569,9 +27591,14 @@
 
     /**
      * Run one full per-slot equipment optimization pass, holding the given tea combination fixed for
-     * every candidate score (except a narrow Drink-Concentration joint re-check, see FAIL B below).
+     * every candidate score. With no Compare loadout, a narrow Drink-Concentration joint re-check
+     * (see FAIL B below) may still raise a candidate's score via its own best tea search - but with a
+     * Compare loadout active, that joint re-check is disabled entirely (see allowJointTeaRecheck):
+     * the TLA-024 one-slot-replacement invariant ("holding everything else - including its own real
+     * drinks - constant") must hold for every candidate, not just non-DC ones.
      * Extracted from optimizeSkill() so it can be re-run against successive tea winners (see the
      * coordinate-ascent loop in optimizeSkill) without duplicating the breakpoint scan.
+     * @param {boolean} allowJointTeaRecheck - false when a Compare loadout is active (see doc above)
      * @returns {{slots: Object, optimalEquipmentAtMax: Map}}
      */
     function runEquipmentSlotRound(
@@ -27587,7 +27614,8 @@
         baselineHasMissingPrice,
         xpBaseline,
         goldBaseline,
-        alchemyContext
+        alchemyContext,
+        allowJointTeaRecheck
     ) {
         const slots = {};
         const optimalEquipmentAtMax = new Map();
@@ -27645,7 +27673,14 @@
                     // DC-bearing candidates against their own best tea response - scoped to just these
                     // rare items rather than a full per-candidate tea search for every item in every
                     // slot, which would be far too expensive to run interactively.
-                    if (candidateHasDrinkConcentration(candidate.hrid, itemDetailMap)) {
+                    //
+                    // Only when there's no Compare loadout: with one active, this candidate must be
+                    // held to the exact same fixed real-loadout teas as the baseline and every other
+                    // candidate (the TLA-024 one-slot-replacement invariant) - letting a DC candidate
+                    // borrow a better tea assumption than the baseline ever gets to use let a strictly
+                    // lower enhancement level of the SAME item look like it "beat baseline" purely
+                    // from that mismatch, not from any real gain.
+                    if (allowJointTeaRecheck && candidateHasDrinkConcentration(candidate.hrid, itemDetailMap)) {
                         const jointEquipment = new Map(compareEquipment);
                         jointEquipment.set(locationHrid, { itemHrid: candidate.hrid, enhancementLevel: effectiveLevel });
                         const jointTeaResult = findOptimalTeas(
@@ -27821,17 +27856,21 @@
         // improve further) - never a certified global optimum over the full equipment x tea
         // combination space, which is combinatorially far too large to search exhaustively here.
         // (runEquipmentSlotRound additionally jointly re-checks Drink-Concentration candidates
-        // specifically against their own best tea, so this loop isn't the only defense against a
-        // pouch-style interaction slipping through a single fixed-tea assumption.)
+        // specifically against their own best tea when there's no Compare loadout - see
+        // allowJointTeaRecheck below - so this loop isn't the only defense against a pouch-style
+        // interaction slipping through a single fixed-tea assumption.)
         //
         // A Compare loadout is a different product concept: "which single-slot swap beats this exact
         // real loadout, holding everything else - including its own real drinks - constant" (the
         // already-accepted TLA-024 one-slot-replacement invariant). So when compareLoadout is active,
         // the round below runs exactly once against compareDrinks, unchanged from the original
-        // single-pass behavior - the iterative tea search only applies to the no-Compare, free
+        // single-pass behavior, AND the Drink-Concentration joint tea recheck is disabled too (a DC
+        // candidate must be held to the exact same fixed loadout teas as every other candidate) - the
+        // iterative tea search and the joint DC recheck both only apply to the no-Compare, free
         // equipment+tea recommendation scenario.
         const hasCompareLoadout = compareLoadout != null;
         const MAX_ROUNDS = hasCompareLoadout ? 1 : 3;
+        const allowJointTeaRecheck = !hasCompareLoadout;
 
         let teaHridsForRound = compareDrinks;
         let slots = {};
@@ -27852,7 +27891,8 @@
                 baselineHasMissingPrice,
                 xpBaseline,
                 goldBaseline,
-                alchemyContext
+                alchemyContext,
+                allowJointTeaRecheck
             );
             slots = roundOutcome.slots;
             optimalEquipmentAtMax = roundOutcome.optimalEquipmentAtMax;
