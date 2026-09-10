@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.107.4
+ * Version: 2.107.5
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -20717,6 +20717,13 @@
             );
         } else if (actionType === 'transmute') {
             profitData = alchemyProfitCalculator.calculateTransmuteProfit(itemHrid, false, teaBonusOverride);
+        } else if (actionType === 'unrefine') {
+            profitData = alchemyProfitCalculator.calculateUnrefineProfit(
+                itemHrid,
+                enhancementLevel,
+                false,
+                teaBonusOverride
+            );
         }
 
         if (!profitData) return { profitPerHour: 0, hasMissingPrice: true };
@@ -20760,7 +20767,7 @@
         if (!front?.actionHrid?.startsWith('/actions/alchemy/')) return null;
 
         const actionType = front.actionHrid.replace('/actions/alchemy/', '');
-        if (!['coinify', 'decompose', 'transmute'].includes(actionType)) return null;
+        if (!['coinify', 'decompose', 'transmute', 'unrefine'].includes(actionType)) return null;
 
         const { itemHrid, level } = parseAlchemyItemHash(front.primaryItemHash);
         if (!itemHrid) return null;
@@ -20798,6 +20805,7 @@
                 baseXP = itemLevel + 10;
                 break;
             case 'decompose':
+            case 'unrefine': // Same XP multiplier as decompose (AlchemyExpMultiplierMap: 1.4 for both)
                 baseXP = itemLevel * 1.4 + 14;
                 break;
             case 'transmute':
@@ -20812,6 +20820,8 @@
         let baseSuccessRate;
         if (actionType === 'coinify') baseSuccessRate = 0.7;
         else if (actionType === 'decompose') baseSuccessRate = 0.6;
+        else if (actionType === 'unrefine')
+            baseSuccessRate = 1; // Fixed 100% (AlchemyUnrefineSuccessRate)
         else baseSuccessRate = itemDetails.alchemyDetail?.transmuteSuccessRate || 0;
 
         // Level penalty (transmute only)
@@ -27453,6 +27463,33 @@
         return result.sort((a, b) => a.name.localeCompare(b.name));
     }
 
+    /**
+     * Build the equipment map for the "achievable" AVG XP/HR-AVG GOLD/HR stats: what you'd actually
+     * get by applying every owned upgrade optimizeSkill() found, on top of the real Compare loadout -
+     * not an empty Map. Without seeding from loadoutItemMap, a slot with no owned upgrade would drop
+     * out of this scenario entirely (no item at all there) rather than keeping whatever the compared
+     * loadout actually has equipped, silently disconnecting this stat from the loadout the player
+     * selected. A recommended item the player doesn't own at all still can't apply as an upgrade -
+     * that slot just keeps its existing (Compare loadout, or absent) item instead of a fictitious +0.
+     * @param {Object} slots - optimizeSkill() result.slots
+     * @param {Map<string, number>} enhMap - itemHrid -> highest owned enhancement level
+     * @param {Map|null} [loadoutItemMap] - Compare loadout equipment, or null/empty with none selected
+     * @returns {Map} locationHrid -> { itemHrid, enhancementLevel }
+     */
+    function buildAchievableEquipment(slots, enhMap, loadoutItemMap = null) {
+        const achievableEquipment = new Map(loadoutItemMap || []);
+        for (const [locationHrid, slotData] of Object.entries(slots || {})) {
+            const best = slotData.progression[slotData.progression.length - 1];
+            if (best?.itemHrid && enhMap.has(best.itemHrid)) {
+                achievableEquipment.set(locationHrid, {
+                    itemHrid: best.itemHrid,
+                    enhancementLevel: enhMap.get(best.itemHrid),
+                });
+            }
+        }
+        return achievableEquipment;
+    }
+
     const SKILLING_BUFF_TYPES = new Set([
         '/buff_types/efficiency',
         '/buff_types/wisdom',
@@ -28296,22 +28333,19 @@
                             );
                             this.lastOptimizerResult = result;
 
-                            // Build equipment map using player's actual owned enhancement levels.
-                            // A recommended item the player doesn't own at all is unavailable, never
-                            // a fictitious achievable +0 - exclude it rather than fabricate ownership.
+                            // Build equipment map using player's actual owned enhancement levels,
+                            // starting from the Compare loadout (when selected) rather than an empty
+                            // Map - otherwise any slot without an owned upgrade silently drops out of
+                            // this scenario entirely (no item at all), instead of keeping whatever the
+                            // compared loadout actually has equipped there. A recommended item the
+                            // player doesn't own at all is still unavailable, never a fictitious
+                            // achievable +0 - it's excluded from the *upgrade*, not from the baseline.
                             const enhMap = buildOwnedEnhancementLevelMap();
-                            const achievableEquipment = new Map();
-                            if (result) {
-                                for (const [locationHrid, slotData] of Object.entries(result.slots)) {
-                                    const best = slotData.progression[slotData.progression.length - 1];
-                                    if (best?.itemHrid && enhMap.has(best.itemHrid)) {
-                                        achievableEquipment.set(locationHrid, {
-                                            itemHrid: best.itemHrid,
-                                            enhancementLevel: enhMap.get(best.itemHrid),
-                                        });
-                                    }
-                                }
-                            }
+                            const achievableEquipment = buildAchievableEquipment(
+                                result?.slots,
+                                enhMap,
+                                hasUsableComparison ? loadoutItemMap : null
+                            );
 
                             // Performance with achievable equipment and optimal teas for each goal.
                             // result.alchemyContext (resolved once inside optimizeSkill, from the
@@ -28419,6 +28453,7 @@
                 ['decompose', 'Decompose'],
                 ['coinify', 'Coinify'],
                 ['transmute', 'Transmute'],
+                ['unrefine', 'Unrefine'],
             ]) {
                 const opt = document.createElement('option');
                 opt.value = value;
@@ -28535,41 +28570,49 @@
                     }
                 });
             }
-            // Actions
-            const actionsRow = makeRow('Actions:');
-            actionsRow.style.position = 'relative';
-            const actionBtn = document.createElement('button');
-            actionBtn.type = 'button';
-            actionBtn.style.cssText = inputCss + ' flex: 1; cursor: pointer; text-align: left;';
+            // Actions - meaningless for Alchemy: its "actions" are just 4 generic action-type
+            // templates with no item baked in (see getAlchemyItemOptions's doc), so this selector
+            // can't narrow anything the Alchemy Item row above doesn't already cover, and having both
+            // visible reads as two competing controls for the same thing.
+            if (this.currentSkill !== 'Alchemy') {
+                const actionsRow = makeRow('Actions:');
+                actionsRow.style.position = 'relative';
+                const actionBtn = document.createElement('button');
+                actionBtn.type = 'button';
+                actionBtn.style.cssText = inputCss + ' flex: 1; cursor: pointer; text-align: left;';
 
-            const getActionLabel = () => {
-                const all = getSkillActionsForDisplay(this.currentSkill, this.currentLevel);
-                const avail = all.filter((a) => a.available);
-                if (!this.selectedActionHrids) return `All (${avail.length})`;
-                // Counts against the full action list (not just avail) so an explicitly selected
-                // locked action - pending a tea unlock - is still reflected in the count.
-                const n = [...this.selectedActionHrids].filter((h) => all.some((a) => a.hrid === h)).length;
-                return `${n} / ${all.length}`;
-            };
-            actionBtn.textContent = getActionLabel();
-            this._actionBtn = actionBtn;
-            this._actionBtnGetLabel = getActionLabel;
+                const getActionLabel = () => {
+                    const all = getSkillActionsForDisplay(this.currentSkill, this.currentLevel);
+                    const avail = all.filter((a) => a.available);
+                    if (!this.selectedActionHrids) return `All (${avail.length})`;
+                    // Counts against the full action list (not just avail) so an explicitly selected
+                    // locked action - pending a tea unlock - is still reflected in the count.
+                    const n = [...this.selectedActionHrids].filter((h) => all.some((a) => a.hrid === h)).length;
+                    return `${n} / ${all.length}`;
+                };
+                actionBtn.textContent = getActionLabel();
+                this._actionBtn = actionBtn;
+                this._actionBtnGetLabel = getActionLabel;
 
-            actionBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (this._picker) {
-                    this._closePicker();
-                    return;
-                }
-                this._openActionPicker(actionBtn, getActionLabel);
-            });
-            actionsRow.appendChild(actionBtn);
-            wrap.appendChild(actionsRow);
+                actionBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (this._picker) {
+                        this._closePicker();
+                        return;
+                    }
+                    this._openActionPicker(actionBtn, getActionLabel);
+                });
+                actionsRow.appendChild(actionBtn);
+                wrap.appendChild(actionsRow);
+            } else {
+                this._actionBtn = null;
+                this._actionBtnGetLabel = null;
+            }
 
             // Wire up skill/level changes
             const resetActions = () => {
                 this.selectedActionHrids = null;
-                actionBtn.textContent = getActionLabel();
+                if (this._actionBtn) this._actionBtn.textContent = this._actionBtnGetLabel();
                 this._closePicker();
             };
 
