@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.107.6
+ * Version: 2.107.7
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -3394,11 +3394,13 @@
 
     /**
      * Resolve the best available price for an item through the full resolution chain:
-     * custom override → shop floor → market price → production cost fallback
+     * custom override → shop floor → market price → production cost fallback (+0 only - see below)
      *
      * @param {string} itemHrid - Item HRID
      * @param {Object} options - Configuration options
-     * @param {number} [options.enhancementLevel=0] - Enhancement level
+     * @param {number} [options.enhancementLevel=0] - Enhancement level. The production-cost fallback
+     *   only ever prices a fresh +0 craft, so it's skipped for any other level - reporting `missing`
+     *   instead of silently substituting a cheaper base-level cost for the level actually requested.
      * @param {string} [options.mode] - Pricing mode ('ask'|'bid'|'average')
      * @param {string} [options.context] - Context for pricing mode ('profit'|'networth')
      * @param {string} [options.side='sell'] - Transaction side ('buy'|'sell')
@@ -3428,10 +3430,16 @@
             return { price: marketPrice, custom: false, missing: false };
         }
 
-        // 4. Production cost fallback
-        const prodCost = getProductionCost(itemHrid, mode || 'ask');
-        if (prodCost > 0) {
-            return { price: prodCost, custom: false, missing: false };
+        // 4. Production cost fallback - getProductionCost has no notion of enhancement level, it
+        // only ever prices a fresh +0 craft. Applying it when a specific enhancementLevel was
+        // requested would silently substitute the (much cheaper) base-level cost and label it
+        // complete, mismatching the level actually being priced - so this fallback only applies at
+        // +0, where a base craft cost genuinely is the right substitute.
+        if (enhancementLevel === 0) {
+            const prodCost = getProductionCost(itemHrid, mode || 'ask');
+            if (prodCost > 0) {
+                return { price: prodCost, custom: false, missing: false };
+            }
         }
 
         // 5. No price found

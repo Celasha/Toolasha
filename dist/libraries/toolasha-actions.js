@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.107.6
+ * Version: 2.107.7
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6201,6 +6201,106 @@
             price: cheapestPrice === Infinity ? 0 : cheapestPrice,
             itemHrid: cheapestItemHrid,
         };
+    }
+
+    /**
+     * Calculate the gold cost of a single enhancement attempt's consumed materials (ask-side
+     * market price), including any direct coin line item in enhancementCosts. Materials are
+     * consumed on every attempt regardless of success/failure, and this cost is the same at every
+     * enhancement level (enhancementCosts is not level-indexed).
+     * @param {Object} itemDetails - Item details containing enhancementCosts.
+     * @returns {{cost: number, hasCost: boolean, costPartial: boolean}}
+     */
+    function calculatePerAttemptMaterialCost(itemDetails) {
+        let cost = 0;
+        let hasCost = false;
+        let costPartial = false;
+
+        if (!itemDetails.enhancementCosts?.length) {
+            return { cost: 0, hasCost: false, costPartial: false };
+        }
+
+        for (const material of itemDetails.enhancementCosts) {
+            if (material.itemHrid === '/items/coin') {
+                cost += material.count;
+                hasCost = true;
+                continue;
+            }
+            const price = marketAPI.getPrice(material.itemHrid);
+            if (price?.ask > 0) {
+                cost += material.count * price.ask;
+                hasCost = true;
+            } else {
+                costPartial = true;
+            }
+        }
+
+        return { cost, hasCost, costPartial };
+    }
+
+    /**
+     * Calculate the cheapest viewer-relative expected coin cost to enhance an item directly from
+     * `startLevel` to `targetLevel` (K->N), sweeping protection strategies itself and calling
+     * `calculateEnhancement()` with `startLevel` set on every call. Never approximates K->N via two
+     * independently-optimized 0-based totals (TLA-041 / F-04). Composed entirely from already-exported
+     * primitives (`calculatePerAttemptMaterialCost`, `getCheapestProtectionPrice`, `calculateEnhancement`)
+     * — it does not call `calculateEnhancementPath`/`calculateCostForStrategy`/`calculateTotalCost`, so
+     * no existing consumer of this file is affected by this addition.
+     * @param {string} itemHrid
+     * @param {number} startLevel - Current enhancement level to start from (0 <= startLevel < targetLevel)
+     * @param {number} targetLevel - Desired enhancement level
+     * @param {Object} enhancingParams - Viewer's own params from getEnhancingParams()
+     * @returns {{cost: number|null, complete: boolean, protectFrom: number|null}}
+     */
+    function calculateDirectEnhancementCost(itemHrid, startLevel, targetLevel, enhancingParams) {
+        const gameData = dataManager.getInitClientData();
+        const itemDetails = gameData?.itemDetailMap?.[itemHrid];
+        if (!itemDetails?.enhancementCosts?.length) {
+            return { cost: null, complete: false, protectFrom: null };
+        }
+
+        const { cost: perAttemptCost, hasCost, costPartial } = calculatePerAttemptMaterialCost(itemDetails);
+        if (!hasCost || costPartial) {
+            return { cost: null, complete: false, protectFrom: null };
+        }
+
+        const itemLevel = itemDetails.itemLevel || 1;
+        const protectFromCandidates = [0];
+        for (let pf = 2; pf <= targetLevel; pf++) protectFromCandidates.push(pf);
+
+        let best = null;
+        for (const protectFrom of protectFromCandidates) {
+            let stats;
+            try {
+                stats = enhancementCalculator_js.calculateEnhancement({
+                    enhancingLevel: enhancingParams.enhancingLevel,
+                    toolBonus: enhancingParams.toolBonus || 0,
+                    speedBonus: enhancingParams.speedBonus || 0,
+                    itemLevel,
+                    targetLevel,
+                    startLevel,
+                    protectFrom,
+                    blessedTea: enhancingParams.teas?.blessed,
+                    guzzlingBonus: enhancingParams.guzzlingBonus,
+                });
+            } catch {
+                continue;
+            }
+
+            let protectionCost = 0;
+            if (protectFrom > 0 && stats.protectionCount > 0) {
+                const { price } = getCheapestProtectionPrice(itemHrid);
+                if (!(price > 0)) continue; // protection needed but unpriceable - strategy unusable
+                protectionCost = price * stats.protectionCount;
+            }
+
+            const totalCost = perAttemptCost * stats.attempts + protectionCost;
+            if (best === null || totalCost < best.cost) {
+                best = { cost: totalCost, protectFrom };
+            }
+        }
+
+        return best ? { ...best, complete: true } : { cost: null, complete: false, protectFrom: null };
     }
 
     /**
@@ -20694,24 +20794,30 @@
      * @param {Object} buffs - Parsed tea buffs (includes alchemySuccess)
      * @param {Object} calcContext - { equipment, itemDetailMap } - the hypothetical equipment being
      *   scored (candidate or baseline), never the player's live gear
+     * @param {string[]} teaHrids - The exact tea combination being scored (never the player's live
+     *   drinks) - besides alchemy_success (carried separately via buffs/teaBonusOverride), this
+     *   combo's own efficiency/wisdom/etc. contribution and its own tea cost both come from here.
      * @returns {{profitPerHour: number, hasMissingPrice: boolean}} Profit after all costs, and whether
      *   the underlying calculator had to bail for lack of market data (e.g. no price for the item) -
      *   distinct from a genuine, priced 0/negative profit.
      */
-    function calculateAlchemyGoldPerHour(alchemyContext, buffs, calcContext) {
+    function calculateAlchemyGoldPerHour(alchemyContext, buffs, calcContext, teaHrids) {
         const { actionType, itemHrid, enhancementLevel = 0 } = alchemyContext;
         const teaBonusOverride = buffs.alchemySuccess || 0;
 
         // Speed/efficiency must reflect the hypothetical equipment actually being scored (this
-        // candidate/baseline), never the player's live-equipped gear - and tea COST must come only
-        // from the caller (scoreEquipmentSetup/findOptimalTeas already deduct it for whichever combo
-        // is actually under test), never from whatever the player happens to be drinking live right
-        // now. An explicit actionContext with empty drinks pins both atomically - the same
-        // {equipment, drinks} convention already used for the Current Action Bar - so the underlying
-        // calculator can't silently fall back to dataManager.getEquipment()/getActionDrinkSlots().
-        // teaBonusOverride still carries this combo's own alchemy_success bonus for the success-rate
-        // search, which is a separate axis from tea cost.
-        const actionContext = { equipment: calcContext.equipment, drinks: [] };
+        // candidate/baseline), never the player's live-equipped gear - and drinks must be exactly the
+        // combo under test, never whatever the player happens to be drinking live right now. Passing
+        // this combo's own real drinks (not an empty array) lets the underlying calculator credit its
+        // real efficiency/wisdom contribution and charge its real tea cost - both derived from the
+        // SAME activeDrinks internally, so a combo can't get efficiency credit for a tea it wasn't
+        // actually charged for, or vice versa. teaBonusOverride still separately carries this combo's
+        // alchemy_success bonus for the success-rate search, which the calculator can't derive from
+        // the drink list alone (that's a `ratioBoost`, not a flat/efficiency buff).
+        const actionContext = {
+            equipment: calcContext.equipment,
+            drinks: (teaHrids || []).filter(Boolean).map((hrid) => ({ itemHrid: hrid })),
+        };
 
         let profitData = null;
         if (actionType === 'coinify') {
@@ -21281,8 +21387,13 @@
                 if (goal === 'xp') {
                     score = calculateAlchemyXpPerHour(alchemyContext, buffs, playerLevel, otherEfficiency, calcContext);
                 } else {
-                    const goldResult = calculateAlchemyGoldPerHour(alchemyContext, buffs, calcContext);
-                    score = goldResult.profitPerHour - teaCostPerHour.total;
+                    // Tea cost for this combo is already charged internally (calculateAlchemyGoldPerHour
+                    // now passes the combo's own real drinks through, so the underlying calculator
+                    // both credits its efficiency/wisdom contribution AND charges its real cost) -
+                    // teaCostPerHour here must NOT also be subtracted, or this combo's tea cost would
+                    // be double-counted.
+                    const goldResult = calculateAlchemyGoldPerHour(alchemyContext, buffs, calcContext, combo);
+                    score = goldResult.profitPerHour;
                     if (goldResult.hasMissingPrice) hasMissingPrice = true;
                 }
                 totalScore += score;
@@ -21554,8 +21665,12 @@
                 };
             }
 
-            const goldResult = calculateAlchemyGoldPerHour(alchemyContext, buffs, calcContext);
-            return { score: goldResult.profitPerHour - teaCostPerHour, hasMissingPrice: goldResult.hasMissingPrice };
+            // Tea cost for this combo is already charged internally (calculateAlchemyGoldPerHour
+            // passes the combo's own real drinks through, so the underlying calculator both credits
+            // its efficiency/wisdom contribution AND charges its real cost) - teaCostPerHour here
+            // must NOT also be subtracted, or this combo's tea cost would be double-counted.
+            const goldResult = calculateAlchemyGoldPerHour(alchemyContext, buffs, calcContext, filteredTeas);
+            return { score: goldResult.profitPerHour, hasMissingPrice: goldResult.hasMissingPrice };
         }
 
         let totalScore = 0;
@@ -27567,23 +27682,52 @@
      * whatever currently occupies that slot (mirrors the Combat Sim Upgrade Advisor's tier-upgrade
      * cost convention: buy target - sell current). With no current item (empty-baseline mode), this
      * is simply the full buy price.
+     *
+     * Two refinements over a plain market-only lookup:
+     * - An enhancement-level upgrade of the SAME item, when there's no market listing at the target
+     *   level, falls back to a real materials-cost estimate (calculateDirectEnhancementCost - the
+     *   same primitive Combat Sim's own Upgrade Advisor already uses for this) instead of reporting
+     *   the whole recommendation as unpriceable.
+     * - Never nets against a "sell current" value for an item that isn't tradable at all (e.g.
+     *   refined equipment, which can't be sold on the market) - there's no way to actually recover
+     *   that value, so subtracting a price that doesn't correspond to anything real would understate
+     *   the true cost of the target.
      * @param {string} itemHrid
      * @param {number} enhancementLevel
      * @param {{itemHrid: string, enhancementLevel: number}|null} currentEquipped
+     * @param {Object} itemDetailMap
      * @returns {{cost: number, costIsIncomplete: boolean}}
      */
-    function calculateSlotUpgradeCost(itemHrid, enhancementLevel, currentEquipped) {
+    function calculateSlotUpgradeCost(itemHrid, enhancementLevel, currentEquipped, itemDetailMap) {
         const buyResolved = profitHelpers_js.resolveItemPrice(itemHrid, { side: 'buy', enhancementLevel });
         let cost = buyResolved.price;
         let costIsIncomplete = buyResolved.missing;
 
+        if (buyResolved.missing && currentEquipped?.itemHrid === itemHrid) {
+            const enhancementResult = calculateDirectEnhancementCost(
+                itemHrid,
+                currentEquipped.enhancementLevel || 0,
+                enhancementLevel,
+                enhancementConfig_js.getEnhancingParams()
+            );
+            if (enhancementResult.complete && enhancementResult.cost !== null) {
+                return { cost: enhancementResult.cost, costIsIncomplete: false };
+            }
+            return { cost: 0, costIsIncomplete: true };
+        }
+
         if (currentEquipped?.itemHrid) {
-            const sellResolved = profitHelpers_js.resolveItemPrice(currentEquipped.itemHrid, {
-                side: 'sell',
-                enhancementLevel: currentEquipped.enhancementLevel || 0,
-            });
-            if (sellResolved.missing) costIsIncomplete = true;
-            cost = Math.max(0, cost - sellResolved.price);
+            const isCurrentTradable = itemDetailMap[currentEquipped.itemHrid]?.isTradable === true;
+            if (isCurrentTradable) {
+                const sellResolved = profitHelpers_js.resolveItemPrice(currentEquipped.itemHrid, {
+                    side: 'sell',
+                    enhancementLevel: currentEquipped.enhancementLevel || 0,
+                });
+                if (sellResolved.missing) costIsIncomplete = true;
+                cost = Math.max(0, cost - sellResolved.price);
+            }
+            // Not tradable: no sell-side value can ever be recovered, so the full buy cost above is
+            // already the real answer - never net against a fabricated/nonexistent sell price.
         }
 
         return { cost, costIsIncomplete };
@@ -27719,7 +27863,7 @@
                 }
 
                 const { cost, costIsIncomplete } = bestItem
-                    ? calculateSlotUpgradeCost(bestItem.hrid, bestEffectiveLevel, currentEquipped)
+                    ? calculateSlotUpgradeCost(bestItem.hrid, bestEffectiveLevel, currentEquipped, itemDetailMap)
                     : { cost: 0, costIsIncomplete: false };
 
                 progression.push({
