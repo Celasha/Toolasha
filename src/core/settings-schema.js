@@ -141,9 +141,15 @@ export const settingsGroups = {
             },
             actionBar_showTimeRemaining: {
                 id: 'actionBar_showTimeRemaining',
-                label: 'Action bar: Time remaining and completion ETA',
-                type: 'checkbox',
-                default: true,
+                label: 'Action bar: Time remaining display',
+                type: 'select',
+                default: 'both',
+                options: [
+                    { value: 'both', label: 'Time remaining and completion ETA' },
+                    { value: 'relative', label: 'Time remaining only' },
+                    { value: 'absolute', label: 'Completion ETA only' },
+                    { value: 'none', label: 'Neither' },
+                ],
             },
             actionBar_showRecycleTime: {
                 id: 'actionBar_showRecycleTime',

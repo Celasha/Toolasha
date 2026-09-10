@@ -119,6 +119,16 @@ class SettingsStorage {
             if (fmtSaved && fmtSaved.hasOwnProperty('isTrue') && !fmtSaved.hasOwnProperty('value')) {
                 settings['formatting_useKMBFormat'].value = fmtSaved.isTrue ? 'compact' : 'full';
             }
+
+            // Migrate: actionBar_showTimeRemaining changed from checkbox to select
+            const timeRemainingSaved = saved['actionBar_showTimeRemaining'];
+            if (
+                timeRemainingSaved &&
+                timeRemainingSaved.hasOwnProperty('isTrue') &&
+                !timeRemainingSaved.hasOwnProperty('value')
+            ) {
+                settings['actionBar_showTimeRemaining'].value = timeRemainingSaved.isTrue ? 'both' : 'none';
+            }
         }
 
         return settings;
