@@ -527,13 +527,26 @@ function calculateProductionGoldPerHour(actionDetails, buffs, playerLevel, other
  * Calculate Gold/hour for an alchemy action with a specific tea combination
  * @param {Object} alchemyContext - { actionType: 'coinify'|'decompose'|'transmute', itemHrid, enhancementLevel }
  * @param {Object} buffs - Parsed tea buffs (includes alchemySuccess)
+ * @param {Object} calcContext - { equipment, itemDetailMap } - the hypothetical equipment being
+ *   scored (candidate or baseline), never the player's live gear
  * @returns {{profitPerHour: number, hasMissingPrice: boolean}} Profit after all costs, and whether
  *   the underlying calculator had to bail for lack of market data (e.g. no price for the item) -
  *   distinct from a genuine, priced 0/negative profit.
  */
-function calculateAlchemyGoldPerHour(alchemyContext, buffs) {
+function calculateAlchemyGoldPerHour(alchemyContext, buffs, calcContext) {
     const { actionType, itemHrid, enhancementLevel = 0 } = alchemyContext;
     const teaBonusOverride = buffs.alchemySuccess || 0;
+
+    // Speed/efficiency must reflect the hypothetical equipment actually being scored (this
+    // candidate/baseline), never the player's live-equipped gear - and tea COST must come only
+    // from the caller (scoreEquipmentSetup/findOptimalTeas already deduct it for whichever combo
+    // is actually under test), never from whatever the player happens to be drinking live right
+    // now. An explicit actionContext with empty drinks pins both atomically - the same
+    // {equipment, drinks} convention already used for the Current Action Bar - so the underlying
+    // calculator can't silently fall back to dataManager.getEquipment()/getActionDrinkSlots().
+    // teaBonusOverride still carries this combo's own alchemy_success bonus for the success-rate
+    // search, which is a separate axis from tea cost.
+    const actionContext = { equipment: calcContext.equipment, drinks: [] };
 
     let profitData = null;
     if (actionType === 'coinify') {
@@ -541,23 +554,32 @@ function calculateAlchemyGoldPerHour(alchemyContext, buffs) {
             itemHrid,
             enhancementLevel,
             false,
-            teaBonusOverride
+            teaBonusOverride,
+            actionContext
         );
     } else if (actionType === 'decompose') {
         profitData = alchemyProfitCalculator.calculateDecomposeProfit(
             itemHrid,
             enhancementLevel,
             false,
-            teaBonusOverride
+            teaBonusOverride,
+            actionContext
         );
     } else if (actionType === 'transmute') {
-        profitData = alchemyProfitCalculator.calculateTransmuteProfit(itemHrid, false, teaBonusOverride);
+        profitData = alchemyProfitCalculator.calculateTransmuteProfit(
+            itemHrid,
+            false,
+            teaBonusOverride,
+            null,
+            actionContext
+        );
     } else if (actionType === 'unrefine') {
         profitData = alchemyProfitCalculator.calculateUnrefineProfit(
             itemHrid,
             enhancementLevel,
             false,
-            teaBonusOverride
+            teaBonusOverride,
+            actionContext
         );
     }
 
@@ -1094,7 +1116,7 @@ export function findOptimalTeas(
             if (goal === 'xp') {
                 score = calculateAlchemyXpPerHour(alchemyContext, buffs, playerLevel, otherEfficiency, calcContext);
             } else {
-                const goldResult = calculateAlchemyGoldPerHour(alchemyContext, buffs);
+                const goldResult = calculateAlchemyGoldPerHour(alchemyContext, buffs, calcContext);
                 score = goldResult.profitPerHour - teaCostPerHour.total;
                 if (goldResult.hasMissingPrice) hasMissingPrice = true;
             }
@@ -1367,7 +1389,7 @@ export function scoreEquipmentSetup(
             };
         }
 
-        const goldResult = calculateAlchemyGoldPerHour(alchemyContext, buffs);
+        const goldResult = calculateAlchemyGoldPerHour(alchemyContext, buffs, calcContext);
         return { score: goldResult.profitPerHour - teaCostPerHour, hasMissingPrice: goldResult.hasMissingPrice };
     }
 

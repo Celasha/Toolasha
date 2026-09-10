@@ -358,6 +358,34 @@ describe('optimizeSkill - Guzzling Pouch / Drink Concentration joint interaction
         expect(maxEntry.itemHrid).toBe(GUZZLING_POUCH_HRID);
         expect(maxEntry.score).toBe(100);
     });
+
+    test('with a Compare loadout active, the joint tea recheck is disabled - a DC candidate is held to the same fixed loadout teas as everything else', () => {
+        // Same fixed-tea scores as above (Guzzling Pouch loses 1 vs 10), and the SAME
+        // favorable-looking joint tea mock is still wired up - but with a Compare loadout active,
+        // the engine must never call into it: every candidate, DC or not, is scored purely
+        // against the loadout's own real teas. If this regressed, Guzzling Pouch would wrongly
+        // win at 100 here exactly like the no-Compare case above.
+        scoreEquipmentSetup.mockImplementation((_skillName, _goal, equipment) => {
+            const entry = equipment.get(POUCH_LOCATION);
+            if (!entry) return { score: 0, hasMissingPrice: false };
+            if (entry.itemHrid === GUZZLING_POUCH_HRID) return { score: 1, hasMissingPrice: false };
+            if (entry.itemHrid === NO_DC_POUCH_HRID) return { score: 10, hasMissingPrice: false };
+            return { score: 0, hasMissingPrice: false };
+        });
+
+        findOptimalTeas.mockImplementation((_skillName, _goal, _l, _a, _c, _al, equipmentOverride) => {
+            const hasPouch = equipmentOverride?.get(POUCH_LOCATION)?.itemHrid === GUZZLING_POUCH_HRID;
+            if (!hasPouch) return { optimal: null };
+            return { optimal: { teas: [{ hrid: GUZZLING_TEA_HRID, name: 'Some Tea' }], avgScore: 100 } };
+        });
+
+        const result = optimizeSkill('Crafting', 50, null, { equipment: new Map(), drinks: [] });
+
+        const pouchProgression = result.slots[POUCH_LOCATION].progression;
+        const maxEntry = pouchProgression[pouchProgression.length - 1];
+        expect(maxEntry.itemHrid).toBe(NO_DC_POUCH_HRID);
+        expect(maxEntry.score).toBe(10);
+    });
 });
 
 describe('optimizeSkill - missing-price completeness through equipment Gold ranking (TLA-024 REOPEN/OPT-27)', () => {

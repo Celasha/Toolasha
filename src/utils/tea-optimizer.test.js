@@ -102,6 +102,7 @@ const {
     getSkillActionsForDisplay,
     resolveActiveAlchemyItemContext,
 } = await import('./tea-optimizer.js');
+const { default: alchemyProfitCalculator } = await import('../features/market/alchemy-profit-calculator.js');
 
 describe('tea-optimizer scenario math (TLA-024)', () => {
     beforeEach(() => {
@@ -431,6 +432,27 @@ describe('resolveActiveAlchemyItemContext + item-aware Alchemy Gold/XP scoring',
         // (vs Decompose's 60%) means its expected XP per action is strictly higher.
         expect(unrefine.score).toBeGreaterThan(decompose.score);
         expect(unrefine.hasMissingPrice).toBe(false);
+    });
+
+    test('scoreEquipmentSetup: Alchemy Gold scores the candidate/baseline equipment actually under test, never falls back to live gear/drinks', () => {
+        // Regression: calculateAlchemyGoldPerHour used to call the profit calculator with no
+        // actionContext at all, so it silently fell back to dataManager.getEquipment() (the
+        // player's LIVE gear) for every candidate - making Gold identical regardless of which
+        // item was actually being scored, and double-counting tea cost against whatever the
+        // player happens to be drinking live, on top of the caller's own teaCostPerHour deduction.
+        mocks.alchemyProfit.decompose = { profitPerHour: 500 };
+        alchemyProfitCalculator.calculateDecomposeProfit.mockClear();
+        const context = { actionType: 'decompose', itemHrid: ITEM, enhancementLevel: 0 };
+        const testedEquipment = new Map([
+            ['/item_locations/alchemy_tool', { itemHrid: '/items/holy_alembic', enhancementLevel: 5 }],
+        ]);
+
+        scoreEquipmentSetup('Alchemy', 'gold', testedEquipment, 30, null, [], context);
+
+        expect(alchemyProfitCalculator.calculateDecomposeProfit).toHaveBeenCalledTimes(1);
+        const [, , , , actionContext] = alchemyProfitCalculator.calculateDecomposeProfit.mock.calls[0];
+        expect(actionContext.equipment).toBe(testedEquipment);
+        expect(actionContext.drinks).toEqual([]);
     });
 });
 

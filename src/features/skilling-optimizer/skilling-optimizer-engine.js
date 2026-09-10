@@ -471,9 +471,14 @@ function calculateSlotUpgradeCost(itemHrid, enhancementLevel, currentEquipped) {
 
 /**
  * Run one full per-slot equipment optimization pass, holding the given tea combination fixed for
- * every candidate score (except a narrow Drink-Concentration joint re-check, see FAIL B below).
+ * every candidate score. With no Compare loadout, a narrow Drink-Concentration joint re-check
+ * (see FAIL B below) may still raise a candidate's score via its own best tea search - but with a
+ * Compare loadout active, that joint re-check is disabled entirely (see allowJointTeaRecheck):
+ * the TLA-024 one-slot-replacement invariant ("holding everything else - including its own real
+ * drinks - constant") must hold for every candidate, not just non-DC ones.
  * Extracted from optimizeSkill() so it can be re-run against successive tea winners (see the
  * coordinate-ascent loop in optimizeSkill) without duplicating the breakpoint scan.
+ * @param {boolean} allowJointTeaRecheck - false when a Compare loadout is active (see doc above)
  * @returns {{slots: Object, optimalEquipmentAtMax: Map}}
  */
 function runEquipmentSlotRound(
@@ -489,7 +494,8 @@ function runEquipmentSlotRound(
     baselineHasMissingPrice,
     xpBaseline,
     goldBaseline,
-    alchemyContext
+    alchemyContext,
+    allowJointTeaRecheck
 ) {
     const slots = {};
     const optimalEquipmentAtMax = new Map();
@@ -547,7 +553,14 @@ function runEquipmentSlotRound(
                 // DC-bearing candidates against their own best tea response - scoped to just these
                 // rare items rather than a full per-candidate tea search for every item in every
                 // slot, which would be far too expensive to run interactively.
-                if (candidateHasDrinkConcentration(candidate.hrid, itemDetailMap)) {
+                //
+                // Only when there's no Compare loadout: with one active, this candidate must be
+                // held to the exact same fixed real-loadout teas as the baseline and every other
+                // candidate (the TLA-024 one-slot-replacement invariant) - letting a DC candidate
+                // borrow a better tea assumption than the baseline ever gets to use let a strictly
+                // lower enhancement level of the SAME item look like it "beat baseline" purely
+                // from that mismatch, not from any real gain.
+                if (allowJointTeaRecheck && candidateHasDrinkConcentration(candidate.hrid, itemDetailMap)) {
                     const jointEquipment = new Map(compareEquipment);
                     jointEquipment.set(locationHrid, { itemHrid: candidate.hrid, enhancementLevel: effectiveLevel });
                     const jointTeaResult = findOptimalTeas(
@@ -723,17 +736,21 @@ export function optimizeSkill(
     // improve further) - never a certified global optimum over the full equipment x tea
     // combination space, which is combinatorially far too large to search exhaustively here.
     // (runEquipmentSlotRound additionally jointly re-checks Drink-Concentration candidates
-    // specifically against their own best tea, so this loop isn't the only defense against a
-    // pouch-style interaction slipping through a single fixed-tea assumption.)
+    // specifically against their own best tea when there's no Compare loadout - see
+    // allowJointTeaRecheck below - so this loop isn't the only defense against a pouch-style
+    // interaction slipping through a single fixed-tea assumption.)
     //
     // A Compare loadout is a different product concept: "which single-slot swap beats this exact
     // real loadout, holding everything else - including its own real drinks - constant" (the
     // already-accepted TLA-024 one-slot-replacement invariant). So when compareLoadout is active,
     // the round below runs exactly once against compareDrinks, unchanged from the original
-    // single-pass behavior - the iterative tea search only applies to the no-Compare, free
+    // single-pass behavior, AND the Drink-Concentration joint tea recheck is disabled too (a DC
+    // candidate must be held to the exact same fixed loadout teas as every other candidate) - the
+    // iterative tea search and the joint DC recheck both only apply to the no-Compare, free
     // equipment+tea recommendation scenario.
     const hasCompareLoadout = compareLoadout != null;
     const MAX_ROUNDS = hasCompareLoadout ? 1 : 3;
+    const allowJointTeaRecheck = !hasCompareLoadout;
 
     let teaHridsForRound = compareDrinks;
     let slots = {};
@@ -754,7 +771,8 @@ export function optimizeSkill(
             baselineHasMissingPrice,
             xpBaseline,
             goldBaseline,
-            alchemyContext
+            alchemyContext,
+            allowJointTeaRecheck
         );
         slots = roundOutcome.slots;
         optimalEquipmentAtMax = roundOutcome.optimalEquipmentAtMax;
