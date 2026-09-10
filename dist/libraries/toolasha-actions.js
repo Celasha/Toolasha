@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.107.3
+ * Version: 2.107.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -20692,7 +20692,9 @@
      * Calculate Gold/hour for an alchemy action with a specific tea combination
      * @param {Object} alchemyContext - { actionType: 'coinify'|'decompose'|'transmute', itemHrid, enhancementLevel }
      * @param {Object} buffs - Parsed tea buffs (includes alchemySuccess)
-     * @returns {number} Gold per hour (profit after all costs)
+     * @returns {{profitPerHour: number, hasMissingPrice: boolean}} Profit after all costs, and whether
+     *   the underlying calculator had to bail for lack of market data (e.g. no price for the item) -
+     *   distinct from a genuine, priced 0/negative profit.
      */
     function calculateAlchemyGoldPerHour(alchemyContext, buffs) {
         const { actionType, itemHrid, enhancementLevel = 0 } = alchemyContext;
@@ -20717,8 +20719,53 @@
             profitData = alchemyProfitCalculator.calculateTransmuteProfit(itemHrid, false, teaBonusOverride);
         }
 
-        if (!profitData) return 0;
-        return profitData.profitPerHour || 0;
+        if (!profitData) return { profitPerHour: 0, hasMissingPrice: true };
+        return { profitPerHour: profitData.profitPerHour || 0, hasMissingPrice: false };
+    }
+
+    /**
+     * Parse a character-action queue entry's primaryItemHash/secondaryItemHash
+     * ("{charId}::{locationHrid}::{itemHrid}::{level}") into item + enhancement level. Reimplemented
+     * locally (rather than importing actionTimeDisplay, a feature module) so this utils module's
+     * dependency direction stays one-way (utils never import features).
+     * @param {string} hash
+     * @returns {{itemHrid: string|null, level: number}}
+     */
+    function parseAlchemyItemHash(hash) {
+        if (!hash) return { itemHrid: null, level: 0 };
+        const parts = hash.split('::');
+        const itemHrid = parts.find((part) => part.startsWith('/items/')) || null;
+        let level = 0;
+        const lastPart = parts[parts.length - 1];
+        if (lastPart && !lastPart.startsWith('/')) {
+            const parsed = parseInt(lastPart, 10);
+            if (!isNaN(parsed)) level = parsed;
+        }
+        return { itemHrid, level };
+    }
+
+    /**
+     * Resolve the item/action type the player's front-of-queue Alchemy action is currently operating
+     * on, read entirely from character queue state (no DOM), so it works regardless of which panel is
+     * open. Mirrors the front-of-queue convention already used elsewhere for the current action
+     * (alchemy-profit.js#getCurrentActionHrid: DataManager mirrors native queue order, so index 0
+     * after sorting by ordinal is the action currently in progress).
+     * @returns {{actionType: string, itemHrid: string, enhancementLevel: number}|null}
+     */
+    function resolveActiveAlchemyItemContext() {
+        const actions = dataManager.getCurrentActions();
+        if (!actions.length) return null;
+
+        const front = [...actions].sort((a, b) => a.ordinal - b.ordinal)[0];
+        if (!front?.actionHrid?.startsWith('/actions/alchemy/')) return null;
+
+        const actionType = front.actionHrid.replace('/actions/alchemy/', '');
+        if (!['coinify', 'decompose', 'transmute'].includes(actionType)) return null;
+
+        const { itemHrid, level } = parseAlchemyItemHash(front.primaryItemHash);
+        if (!itemHrid) return null;
+
+        return { actionType, itemHrid, enhancementLevel: level || 0 };
     }
 
     /**
@@ -21202,7 +21249,9 @@
                 if (goal === 'xp') {
                     score = calculateAlchemyXpPerHour(alchemyContext, buffs, playerLevel, otherEfficiency, calcContext);
                 } else {
-                    score = calculateAlchemyGoldPerHour(alchemyContext, buffs) - teaCostPerHour.total;
+                    const goldResult = calculateAlchemyGoldPerHour(alchemyContext, buffs);
+                    score = goldResult.profitPerHour - teaCostPerHour.total;
+                    if (goldResult.hasMissingPrice) hasMissingPrice = true;
                 }
                 totalScore += score;
                 if (score > 0) profitableCount++;
@@ -21384,6 +21433,10 @@
      * @param {number} playerLevel
      * @param {Set<string>|null} [selectedActionHrids]
      * @param {string[]} [teaHrids] - Tea item HRIDs to score alongside the equipment (default: none)
+     * @param {{actionType: string, itemHrid: string, enhancementLevel: number}|null} [alchemyContext] -
+     *   For Alchemy only: which real item/action-type to score Gold against (see
+     *   resolveActiveAlchemyItemContext). Without it, Gold ranking fails closed to 0 (no item to price)
+     *   and XP falls back to a representative-item estimate, same as before this param existed.
      * @returns {{score: number, hasMissingPrice: boolean}} Average XP/hr or Gold/hr across the
      *   selected action cohort, plus whether a required Gold price was unresolved (always false for
      *   'xp' goal, which never touches market prices)
@@ -21394,7 +21447,8 @@
         equipment,
         playerLevel,
         selectedActionHrids = null,
-        teaHrids = []
+        teaHrids = [],
+        alchemyContext = null
     ) {
         const normalizedSkill = skillName.toLowerCase();
         const isGathering = GATHERING_SKILLS$1.includes(normalizedSkill);
@@ -21439,24 +21493,37 @@
         const calcContext = { equipment, itemDetailMap: gameData.itemDetailMap };
 
         // Alchemy XP is derived from item level, not from action data — standard calculateXpPerHour
-        // always returns 0 for alchemy. Use a dedicated path with a representative item instead.
-        // Alchemy Gold needs full item+action-type context this equipment-only ranking doesn't have -
-        // fail closed rather than mistakenly returning an XP value for a Gold request (never silently
-        // wrong-typed).
+        // always returns 0 for alchemy. Alchemy Gold needs a real item+action-type to price against
+        // (Coinify/Decompose/Transmute economics are entirely item-specific) - with a resolved
+        // alchemyContext (the player's active/queued action, or a manual override), score both goals
+        // against it directly. Without one, XP falls back to a representative-item estimate and Gold
+        // fails closed to 0 rather than mistakenly returning an XP value for a Gold request.
         if (normalizedSkill === 'alchemy') {
-            if (goal === 'gold') return { score: 0, hasMissingPrice: false };
-            const repItemHrid = getRepresentativeAlchemyItemHrid(playerLevel, gameData.itemDetailMap);
-            if (!repItemHrid) return { score: 0, hasMissingPrice: false };
-            return {
-                score: calculateAlchemyXpPerHour(
-                    { actionType: 'decompose', itemHrid: repItemHrid },
-                    buffs,
-                    playerLevel,
-                    otherEfficiency,
-                    calcContext
-                ),
-                hasMissingPrice: false,
-            };
+            if (!alchemyContext) {
+                if (goal === 'gold') return { score: 0, hasMissingPrice: false };
+                const repItemHrid = getRepresentativeAlchemyItemHrid(playerLevel, gameData.itemDetailMap);
+                if (!repItemHrid) return { score: 0, hasMissingPrice: false };
+                return {
+                    score: calculateAlchemyXpPerHour(
+                        { actionType: 'decompose', itemHrid: repItemHrid },
+                        buffs,
+                        playerLevel,
+                        otherEfficiency,
+                        calcContext
+                    ),
+                    hasMissingPrice: false,
+                };
+            }
+
+            if (goal === 'xp') {
+                return {
+                    score: calculateAlchemyXpPerHour(alchemyContext, buffs, playerLevel, otherEfficiency, calcContext),
+                    hasMissingPrice: false,
+                };
+            }
+
+            const goldResult = calculateAlchemyGoldPerHour(alchemyContext, buffs);
+            return { score: goldResult.profitPerHour - teaCostPerHour, hasMissingPrice: goldResult.hasMissingPrice };
         }
 
         let totalScore = 0;
@@ -27280,6 +27347,8 @@
      * @param {Set<string>|null} selectedActionHrids
      * @param {Map} [baseEquipment] - Full loadout equipment to copy and overwrite one slot in
      * @param {string[]} [teaHrids] - Drinks to score alongside (the base loadout's own drinks)
+     * @param {{actionType: string, itemHrid: string, enhancementLevel: number}|null} [alchemyContext] -
+     *   Alchemy-only: real item/action-type to score Gold against (see resolveActiveAlchemyItemContext)
      * @returns {{score: number, hasMissingPrice: boolean}}
      */
     function scoreCandidate(
@@ -27291,11 +27360,12 @@
         playerLevel,
         selectedActionHrids,
         baseEquipment = null,
-        teaHrids = []
+        teaHrids = [],
+        alchemyContext = null
     ) {
         const equipment = new Map(baseEquipment || []);
         equipment.set(locationHrid, { itemHrid, enhancementLevel });
-        return scoreEquipmentSetup(skillName, goal, equipment, playerLevel, selectedActionHrids, teaHrids);
+        return scoreEquipmentSetup(skillName, goal, equipment, playerLevel, selectedActionHrids, teaHrids, alchemyContext);
     }
 
     /**
@@ -27363,6 +27433,26 @@
         return result.sort((a, b) => b.itemLevel - a.itemLevel || a.name.localeCompare(b.name));
     }
 
+    /**
+     * Every item the player can run through Alchemy, for the Optimizer's manual item-basis picker.
+     * Unlike getRepresentativeAlchemyItemHrid (tea-optimizer.js, an internal scoring fallback), this
+     * lists every real option for a user-facing dropdown rather than picking just one substitute.
+     * Validity of a specific action type (e.g. not every item is Coinifiable) is left to the actual
+     * profit calculator to fail closed on - not pre-filtered here, to keep this a plain item list.
+     * @returns {Array<{hrid: string, name: string}>} Sorted by name
+     */
+    function getAlchemyItemOptions() {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.itemDetailMap) return [];
+
+        const result = [];
+        for (const [hrid, detail] of Object.entries(gameData.itemDetailMap)) {
+            if (!detail.alchemyDetail) continue;
+            result.push({ hrid, name: detail.name });
+        }
+        return result.sort((a, b) => a.name.localeCompare(b.name));
+    }
+
     const SKILLING_BUFF_TYPES = new Set([
         '/buff_types/efficiency',
         '/buff_types/wisdom',
@@ -27407,6 +27497,10 @@
      *   the full loadout (equipment + its drinks) and every CANDIDATE is an exact copy of that same
      *   loadout with only the one slot under test replaced - never an otherwise-empty Map. When null
      *   (no Compare loadout selected), preserves the original empty-baseline/no-drinks behavior.
+     * @param {{actionType: string, itemHrid: string, enhancementLevel: number}|null} [alchemyItemOverride] -
+     *   Alchemy only: a manually chosen item/action-type to price Gold/XP against, overriding
+     *   auto-detection of the player's live queued action (see resolveActiveAlchemyItemContext).
+     *   Ignored for every other skill.
      * @returns {Object|null}
      */
     /**
@@ -27455,7 +27549,8 @@
         baseline,
         baselineHasMissingPrice,
         xpBaseline,
-        goldBaseline
+        goldBaseline,
+        alchemyContext
     ) {
         const slots = {};
         const optimalEquipmentAtMax = new Map();
@@ -27499,7 +27594,8 @@
                         playerLevel,
                         selectedActionHrids,
                         compareEquipment,
-                        teaHridsForRound
+                        teaHridsForRound,
+                        alchemyContext
                     );
                     let candidateScore = candidateResult.score;
                     let candidateHasMissingPrice = candidateResult.hasMissingPrice;
@@ -27521,7 +27617,7 @@
                             null,
                             null,
                             null,
-                            null,
+                            alchemyContext,
                             jointEquipment,
                             selectedActionHrids,
                             playerLevel
@@ -27581,7 +27677,8 @@
                             playerLevel,
                             selectedActionHrids,
                             compareEquipment,
-                            bestItemTeaHrids
+                            bestItemTeaHrids,
+                            alchemyContext
                         ).score;
                     })(),
                     goldScore: (() => {
@@ -27596,7 +27693,8 @@
                             playerLevel,
                             selectedActionHrids,
                             compareEquipment,
-                            bestItemTeaHrids
+                            bestItemTeaHrids,
+                            alchemyContext
                         ).score;
                     })(),
                     isChange: (bestItem?.hrid ?? null) !== lastWinnerHrid,
@@ -27624,7 +27722,13 @@
         return { slots, optimalEquipmentAtMax };
     }
 
-    function optimizeSkill(skillName, playerLevel, selectedActionHrids = null, compareLoadout = null) {
+    function optimizeSkill(
+        skillName,
+        playerLevel,
+        selectedActionHrids = null,
+        compareLoadout = null,
+        alchemyItemOverride = null
+    ) {
         // Gathering skills: score for Gold — captures gathering quantity, rare/essence find + speed/efficiency.
         // Production skills: score for XP — more reliable since it doesn't depend on market prices.
         const goal = GATHERING_SKILLS.has(skillName.toLowerCase()) ? 'gold' : 'xp';
@@ -27637,13 +27741,21 @@
         const compareEquipment = compareLoadout?.equipment ?? new Map();
         const compareDrinks = compareLoadout?.drinks ?? [];
 
+        // Alchemy Gold/XP are priced against one real item, not averaged across every action of the
+        // skill (see resolveActiveAlchemyItemContext's doc) - a manual override wins over the player's
+        // live queue, which wins over having no basis at all (score falls back to the pre-existing
+        // representative-item XP estimate / Gold-unavailable behavior, see scoreEquipmentSetup).
+        const alchemyContext =
+            skillName.toLowerCase() === 'alchemy' ? alchemyItemOverride || resolveActiveAlchemyItemContext() : null;
+
         const xpBaselineResult = scoreEquipmentSetup(
             skillName,
             'xp',
             compareEquipment,
             playerLevel,
             selectedActionHrids,
-            compareDrinks
+            compareDrinks,
+            alchemyContext
         );
         const goldBaselineResult = scoreEquipmentSetup(
             skillName,
@@ -27651,7 +27763,8 @@
             compareEquipment,
             playerLevel,
             selectedActionHrids,
-            compareDrinks
+            compareDrinks,
+            alchemyContext
         );
         const xpBaseline = xpBaselineResult.score;
         const goldBaseline = goldBaselineResult.score;
@@ -27701,7 +27814,8 @@
                 baseline,
                 baselineHasMissingPrice,
                 xpBaseline,
-                goldBaseline
+                goldBaseline,
+                alchemyContext
             );
             slots = roundOutcome.slots;
             optimalEquipmentAtMax = roundOutcome.optimalEquipmentAtMax;
@@ -27712,7 +27826,7 @@
                 null,
                 null,
                 null,
-                null,
+                alchemyContext,
                 optimalEquipmentAtMax,
                 selectedActionHrids,
                 playerLevel
@@ -27736,7 +27850,7 @@
             null,
             null,
             null,
-            null,
+            alchemyContext,
             optimalEquipmentAtMax,
             selectedActionHrids,
             playerLevel
@@ -27753,6 +27867,8 @@
             slots,
             xpTeaResult: xpTeaResult?.error ? null : xpTeaResult,
             goldTeaResult: goldTeaResult?.error ? null : goldTeaResult,
+            alchemyContext,
+            alchemyContextIsManual: skillName.toLowerCase() === 'alchemy' && alchemyItemOverride != null,
         };
     }
 
@@ -27815,6 +27931,12 @@
             this.lastOptimizerResult = null;
             this.optimizerLoadout = null;
             this.optimizerSortMode = 'value';
+
+            // Alchemy-only: manual override for which item/action-type the Optimizer's Equipment
+            // Progression + Optimal Teas score Gold/XP against, when the player doesn't have (or
+            // doesn't want to rely on) a live queued Alchemy action to auto-detect. Session-only,
+            // like the other Optimizer-mode fields above.
+            this.alchemyItemOverride = null;
 
             // Simulator state
             this.currentSkill = 'Woodcutting';
@@ -28099,6 +28221,16 @@
                 compareRow.appendChild(compareSelect);
                 panel.appendChild(compareRow);
 
+                // Alchemy Gold/XP are priced against one real item (Coinify/Decompose/Transmute
+                // economics are entirely item-specific), so this Optimizer needs to know which one -
+                // it can't average across "all Alchemy actions" the way every other skill does (game
+                // data only defines 3 generic action templates for Alchemy, with no item baked in).
+                // Default to whatever the player's live queue is running (see
+                // resolveActiveAlchemyItemContext); this picker lets them override it to plan ahead.
+                if (this.currentSkill === 'Alchemy') {
+                    panel.appendChild(this._buildAlchemyItemOverrideRow());
+                }
+
                 const optimizeBtn = document.createElement('button');
                 optimizeBtn.type = 'button';
                 optimizeBtn.textContent = 'Optimize';
@@ -28159,7 +28291,8 @@
                                 this.currentSkill,
                                 this.currentLevel,
                                 this.selectedActionHrids,
-                                hasUsableComparison ? { equipment: loadoutItemMap, drinks: compareDrinks } : null
+                                hasUsableComparison ? { equipment: loadoutItemMap, drinks: compareDrinks } : null,
+                                this.alchemyItemOverride
                             );
                             this.lastOptimizerResult = result;
 
@@ -28180,7 +28313,10 @@
                                 }
                             }
 
-                            // Performance with achievable equipment and optimal teas for each goal
+                            // Performance with achievable equipment and optimal teas for each goal.
+                            // result.alchemyContext (resolved once inside optimizeSkill, from the
+                            // manual override or the player's live queue) must be reused here too, or
+                            // this second pass would silently fall back to the item-agnostic estimate.
                             const xpAchievable = result
                                 ? findOptimalTeas(
                                       this.currentSkill,
@@ -28188,7 +28324,7 @@
                                       null,
                                       null,
                                       null,
-                                      null,
+                                      result.alchemyContext,
                                       achievableEquipment,
                                       this.selectedActionHrids,
                                       this.currentLevel
@@ -28201,7 +28337,7 @@
                                       null,
                                       null,
                                       null,
-                                      null,
+                                      result.alchemyContext,
                                       achievableEquipment,
                                       this.selectedActionHrids,
                                       this.currentLevel
@@ -28237,6 +28373,93 @@
             }
 
             return panel;
+        }
+
+        /**
+         * Alchemy-only row letting the player override which item/action-type the Optimizer prices
+         * Gold/XP against, instead of relying on auto-detecting their live queued Alchemy action
+         * (which is unavailable if nothing's queued, or if they want to plan ahead for a different
+         * item). Selecting an item+type applies immediately, matching the Compare select's convention
+         * of no separate "Apply" step; "Use Active Action" clears back to auto-detection.
+         * @returns {HTMLElement}
+         */
+        _buildAlchemyItemOverrideRow() {
+            const wrap = document.createElement('div');
+            wrap.style.cssText = 'display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px;';
+
+            const row = document.createElement('div');
+            row.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+            const label = document.createElement('span');
+            label.textContent = 'Alchemy Item:';
+            label.style.cssText = 'color: rgba(255,255,255,0.5); font-size: 12px; width: 56px; flex-shrink: 0;';
+            row.appendChild(label);
+
+            const selectCss =
+                'background: #2a2a2a; color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; padding: 4px 8px; font-size: 12px; cursor: pointer;';
+
+            const itemSelect = document.createElement('select');
+            itemSelect.style.cssText = selectCss + ' flex: 1; min-width: 0;';
+            const autoOpt = document.createElement('option');
+            autoOpt.value = '';
+            autoOpt.textContent = '— Auto (from active action) —';
+            itemSelect.appendChild(autoOpt);
+            const items = getAlchemyItemOptions();
+            for (const item of items) {
+                const opt = document.createElement('option');
+                opt.value = item.hrid;
+                opt.textContent = item.name;
+                if (this.alchemyItemOverride?.itemHrid === item.hrid) opt.selected = true;
+                itemSelect.appendChild(opt);
+            }
+            row.appendChild(itemSelect);
+
+            const typeSelect = document.createElement('select');
+            typeSelect.style.cssText = selectCss + ' width: 100px; flex-shrink: 0;';
+            for (const [value, name] of [
+                ['decompose', 'Decompose'],
+                ['coinify', 'Coinify'],
+                ['transmute', 'Transmute'],
+            ]) {
+                const opt = document.createElement('option');
+                opt.value = value;
+                opt.textContent = name;
+                if ((this.alchemyItemOverride?.actionType || 'decompose') === value) opt.selected = true;
+                typeSelect.appendChild(opt);
+            }
+            row.appendChild(typeSelect);
+
+            const levelInput = document.createElement('input');
+            levelInput.type = 'number';
+            levelInput.min = '0';
+            levelInput.max = '20';
+            levelInput.value = String(this.alchemyItemOverride?.enhancementLevel || 0);
+            levelInput.title = 'Enhancement level (ignored for Transmute)';
+            levelInput.style.cssText = selectCss + ' width: 44px; flex-shrink: 0; cursor: text;';
+            row.appendChild(levelInput);
+            wrap.appendChild(row);
+
+            const applyOverride = () => {
+                if (!itemSelect.value) {
+                    this.alchemyItemOverride = null;
+                } else {
+                    this.alchemyItemOverride = {
+                        itemHrid: itemSelect.value,
+                        actionType: typeSelect.value,
+                        enhancementLevel: parseInt(levelInput.value, 10) || 0,
+                    };
+                }
+            };
+            itemSelect.addEventListener('change', applyOverride);
+            typeSelect.addEventListener('change', applyOverride);
+            levelInput.addEventListener('change', applyOverride);
+
+            const hint = document.createElement('div');
+            hint.style.cssText = 'color: rgba(255,255,255,0.35); font-size: 10px; font-style: italic;';
+            hint.textContent =
+                'Alchemy Gold/XP are priced against one item - pick one, or leave on Auto to use whatever your character is currently queued to Alchemize.';
+            wrap.appendChild(hint);
+
+            return wrap;
         }
 
         _buildTopControls() {
@@ -29060,6 +29283,33 @@
         // Optimizer results rendering
         // -------------------------------------------------------------------------
 
+        /**
+         * Small status line for Alchemy showing which item/action-type the Gold/XP numbers below were
+         * priced against - auto-detected from the live queue, manually overridden, or unavailable
+         * (falls back to the pre-existing item-agnostic XP estimate, Gold unavailable).
+         * @param {Object} result - optimizeSkill() return value
+         * @returns {HTMLElement}
+         */
+        _buildAlchemyBasisLabel(result) {
+            const label = document.createElement('div');
+            label.style.cssText = 'font-size: 11px; margin-bottom: 10px;';
+            const ctx = result.alchemyContext;
+            if (!ctx) {
+                label.style.color = '#f0ad4e';
+                label.textContent =
+                    'Based on: nothing queued - XP is an item-agnostic estimate, Gold is unavailable. ' +
+                    'Pick an item above, or start an Alchemy action.';
+            } else {
+                label.style.color = 'rgba(255,255,255,0.5)';
+                const itemName = this._getItemName(ctx.itemHrid) || ctx.itemHrid;
+                const typeName = ctx.actionType.charAt(0).toUpperCase() + ctx.actionType.slice(1);
+                const levelSuffix = ctx.enhancementLevel ? ` +${ctx.enhancementLevel}` : '';
+                const source = result.alchemyContextIsManual ? 'manually selected' : 'from your active/queued action';
+                label.textContent = `Based on: ${typeName} ${itemName}${levelSuffix} (${source})`;
+            }
+            return label;
+        }
+
         _renderOptimizerResults(container, result, achievableStats, loadoutItemMap) {
             const { slots, goal, xpBaseline, goldBaseline } = result;
             const slotEntries = Object.entries(slots);
@@ -29070,6 +29320,10 @@
                 empty.textContent = 'No relevant equipment found for this skill at the selected level.';
                 container.appendChild(empty);
                 return;
+            }
+
+            if (result.skill?.toLowerCase() === 'alchemy') {
+                container.appendChild(this._buildAlchemyBasisLabel(result));
             }
 
             // Ranked by the same "first breakpoint that beats baseline" upgrade the row itself
