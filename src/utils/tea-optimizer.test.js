@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
     personalBuffs: {}, // buffTypeHrid -> decimal flat boost
     guildBuffs: {}, // actionType -> [{typeHrid, flatBoost}]
     currentActions: [], // character action queue, for resolveActiveAlchemyItemContext
-    alchemyProfit: { coinify: null, decompose: null, transmute: null }, // stubbed profit results
+    alchemyProfit: { coinify: null, decompose: null, transmute: null, unrefine: null }, // stubbed profit results
 }));
 
 vi.mock('../core/data-manager.js', () => ({
@@ -41,6 +41,7 @@ vi.mock('../features/market/alchemy-profit-calculator.js', () => ({
         calculateCoinifyProfit: vi.fn(() => mocks.alchemyProfit.coinify),
         calculateDecomposeProfit: vi.fn(() => mocks.alchemyProfit.decompose),
         calculateTransmuteProfit: vi.fn(() => mocks.alchemyProfit.transmute),
+        calculateUnrefineProfit: vi.fn(() => mocks.alchemyProfit.unrefine),
     },
 }));
 
@@ -109,7 +110,7 @@ describe('tea-optimizer scenario math (TLA-024)', () => {
         mocks.personalBuffs = {};
         mocks.guildBuffs = {};
         mocks.currentActions = [];
-        mocks.alchemyProfit = { coinify: null, decompose: null, transmute: null };
+        mocks.alchemyProfit = { coinify: null, decompose: null, transmute: null, unrefine: null };
     });
 
     test('OPT-5/6: Force (guild efficiency) + Tempo (guild speed) + Personal Gathering flow into the local efficiency context', () => {
@@ -314,9 +315,10 @@ describe('resolveActiveAlchemyItemContext + item-aware Alchemy Gold/XP scoring',
             '/actions/alchemy/coinify': { type: '/action_types/alchemy', name: 'Coinify', baseTimeCost: 20e9 },
             '/actions/alchemy/decompose': { type: '/action_types/alchemy', name: 'Decompose', baseTimeCost: 20e9 },
             '/actions/alchemy/transmute': { type: '/action_types/alchemy', name: 'Transmute', baseTimeCost: 20e9 },
+            '/actions/alchemy/unrefine': { type: '/action_types/alchemy', name: 'Unrefine', baseTimeCost: 20e9 },
         };
         mocks.currentActions = [];
-        mocks.alchemyProfit = { coinify: null, decompose: null, transmute: null };
+        mocks.alchemyProfit = { coinify: null, decompose: null, transmute: null, unrefine: null };
     });
 
     test('returns null with an empty action queue', () => {
@@ -385,6 +387,50 @@ describe('resolveActiveAlchemyItemContext + item-aware Alchemy Gold/XP scoring',
 
         expect(withContext.score).toBeGreaterThan(0);
         expect(withContext.hasMissingPrice).toBe(false);
+    });
+
+    test('resolveActiveAlchemyItemContext recognizes Unrefine as a valid 4th action type', () => {
+        mocks.currentActions = [
+            {
+                ordinal: 0,
+                actionHrid: '/actions/alchemy/unrefine',
+                primaryItemHash: `c::/item_locations/inventory::${ITEM}::12`,
+            },
+        ];
+
+        expect(resolveActiveAlchemyItemContext()).toEqual({
+            actionType: 'unrefine',
+            itemHrid: ITEM,
+            enhancementLevel: 12,
+        });
+    });
+
+    test('scoreEquipmentSetup: Alchemy Gold routes Unrefine to calculateUnrefineProfit, not the generic 0 fallback', () => {
+        mocks.alchemyProfit.unrefine = { profitPerHour: 750 };
+        const context = { actionType: 'unrefine', itemHrid: ITEM, enhancementLevel: 12 };
+
+        const result = scoreEquipmentSetup('Alchemy', 'gold', new Map(), 30, null, [], context);
+
+        expect(result.score).toBe(750);
+        expect(result.hasMissingPrice).toBe(false);
+    });
+
+    test('scoreEquipmentSetup: Alchemy XP for Unrefine uses the same 1.4x formula as Decompose (AlchemyExpMultiplierMap)', () => {
+        const unrefine = scoreEquipmentSetup('Alchemy', 'xp', new Map(), 30, null, [], {
+            actionType: 'unrefine',
+            itemHrid: ITEM,
+            enhancementLevel: 0,
+        });
+        const decompose = scoreEquipmentSetup('Alchemy', 'xp', new Map(), 30, null, [], {
+            actionType: 'decompose',
+            itemHrid: ITEM,
+            enhancementLevel: 0,
+        });
+
+        // Both share baseXP = itemLevel*1.4+14, but Unrefine's fixed 100% base success rate
+        // (vs Decompose's 60%) means its expected XP per action is strictly higher.
+        expect(unrefine.score).toBeGreaterThan(decompose.score);
+        expect(unrefine.hasMissingPrice).toBe(false);
     });
 });
 

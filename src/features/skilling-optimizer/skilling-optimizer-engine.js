@@ -365,6 +365,33 @@ export function getAlchemyItemOptions() {
     return result.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * Build the equipment map for the "achievable" AVG XP/HR-AVG GOLD/HR stats: what you'd actually
+ * get by applying every owned upgrade optimizeSkill() found, on top of the real Compare loadout -
+ * not an empty Map. Without seeding from loadoutItemMap, a slot with no owned upgrade would drop
+ * out of this scenario entirely (no item at all there) rather than keeping whatever the compared
+ * loadout actually has equipped, silently disconnecting this stat from the loadout the player
+ * selected. A recommended item the player doesn't own at all still can't apply as an upgrade -
+ * that slot just keeps its existing (Compare loadout, or absent) item instead of a fictitious +0.
+ * @param {Object} slots - optimizeSkill() result.slots
+ * @param {Map<string, number>} enhMap - itemHrid -> highest owned enhancement level
+ * @param {Map|null} [loadoutItemMap] - Compare loadout equipment, or null/empty with none selected
+ * @returns {Map} locationHrid -> { itemHrid, enhancementLevel }
+ */
+export function buildAchievableEquipment(slots, enhMap, loadoutItemMap = null) {
+    const achievableEquipment = new Map(loadoutItemMap || []);
+    for (const [locationHrid, slotData] of Object.entries(slots || {})) {
+        const best = slotData.progression[slotData.progression.length - 1];
+        if (best?.itemHrid && enhMap.has(best.itemHrid)) {
+            achievableEquipment.set(locationHrid, {
+                itemHrid: best.itemHrid,
+                enhancementLevel: enhMap.get(best.itemHrid),
+            });
+        }
+    }
+    return achievableEquipment;
+}
+
 const SKILLING_BUFF_TYPES = new Set([
     '/buff_types/efficiency',
     '/buff_types/wisdom',

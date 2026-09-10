@@ -177,6 +177,135 @@ describe('calculateDecomposeProfit', () => {
     });
 });
 
+describe('calculateUnrefineProfit', () => {
+    const REFINED_ITEM = '/items/test_refined_item';
+    const BASE_ITEM = '/items/test_base_item';
+    const SHARD_ITEM = '/items/test_refinement_shard';
+    const TEA_ITEM = '/items/test_alchemy_success_tea';
+
+    function setup({ bulkMultiplier = 1, shardReturn = { itemHrid: SHARD_ITEM, count: 3 } } = {}) {
+        const itemDetailMap = {
+            [REFINED_ITEM]: {
+                itemLevel: 10,
+                alchemyDetail: {
+                    bulkMultiplier,
+                    unrefineDetail: { baseItemHrid: BASE_ITEM, shardReturn },
+                },
+            },
+        };
+        const actionDetailMap = {
+            '/actions/alchemy/unrefine': {
+                type: '/action_types/alchemy',
+                baseTimeCost: 20e9,
+                levelRequirement: { level: 1 },
+            },
+        };
+
+        dataManagerMock.getInitClientData.mockReturnValue({ itemDetailMap, actionDetailMap });
+        dataManagerMock.getItemDetails.mockReturnValue(itemDetailMap[REFINED_ITEM]);
+        dataManagerMock.getSkills.mockReturnValue([{ skillHrid: '/skills/alchemy', level: 10 }]);
+
+        marketPrices[REFINED_ITEM] = 1000;
+        marketPrices[BASE_ITEM] = 400;
+        marketPrices[SHARD_ITEM] = 20;
+    }
+
+    test('returns null for an item with no unrefineDetail (not a refined item)', () => {
+        dataManagerMock.getInitClientData.mockReturnValue({
+            itemDetailMap: { [REFINED_ITEM]: { itemLevel: 10, alchemyDetail: {} } },
+            actionDetailMap: {},
+        });
+        dataManagerMock.getItemDetails.mockReturnValue({ itemLevel: 10, alchemyDetail: {} });
+
+        expect(alchemyProfitCalculator.calculateUnrefineProfit(REFINED_ITEM, 5, false, 0)).toBeNull();
+    });
+
+    test('success rate is a fixed 100%, unaffected by a tea bonus that can only clamp back to the same max', () => {
+        setup();
+
+        const noTea = alchemyProfitCalculator.calculateUnrefineProfit(REFINED_ITEM, 0, false, 0);
+        const withTea = alchemyProfitCalculator.calculateUnrefineProfit(REFINED_ITEM, 0, false, 0.5);
+
+        expect(noTea.successRate).toBe(1);
+        expect(withTea.successRate).toBe(1);
+    });
+
+    test('outputs the base item plus refinement shards, valued after market tax', () => {
+        setup();
+
+        const profit = alchemyProfitCalculator.calculateUnrefineProfit(REFINED_ITEM, 0, false, 0);
+
+        const baseDrop = profit.dropRevenues.find((d) => d.itemHrid === BASE_ITEM);
+        const shardDrop = profit.dropRevenues.find((d) => d.itemHrid === SHARD_ITEM);
+        expect(baseDrop.count).toBe(1);
+        expect(baseDrop.price).toBe(400);
+        expect(shardDrop.count).toBe(3);
+        expect(shardDrop.price).toBe(20);
+        // 100% success rate, so revenuePerAttempt = full after-tax value.
+        expect(profit.incomePerAttempt).toBeCloseTo(400 * (1 - MARKET_TAX) + 3 * 20 * (1 - MARKET_TAX), 8);
+    });
+
+    test('with no shardReturn, only the base item is produced', () => {
+        setup({ shardReturn: null });
+
+        const profit = alchemyProfitCalculator.calculateUnrefineProfit(REFINED_ITEM, 0, false, 0);
+
+        expect(profit.dropRevenues.some((d) => d.itemHrid === SHARD_ITEM)).toBe(false);
+        expect(profit.dropRevenues.some((d) => d.itemHrid === BASE_ITEM)).toBe(true);
+    });
+
+    test('bulkMultiplier scales the consumed input but NOT the base item/shard output (equipment is never bulk-processed)', () => {
+        setup({ bulkMultiplier: 3 });
+
+        const profit = alchemyProfitCalculator.calculateUnrefineProfit(REFINED_ITEM, 0, false, 0);
+
+        expect(profit.requirementCosts[0]).toMatchObject({ itemHrid: REFINED_ITEM, count: 3, costPerAction: 3000 });
+        const baseDrop = profit.dropRevenues.find((d) => d.itemHrid === BASE_ITEM);
+        const shardDrop = profit.dropRevenues.find((d) => d.itemHrid === SHARD_ITEM);
+        expect(baseDrop.count).toBe(1); // not 3
+        expect(shardDrop.count).toBe(3); // shardReturn's own count, not scaled by bulk (also 3)
+    });
+
+    test('a live/override alchemy_success tea is still deducted as a real cost, even though it cannot improve the already-maxed success rate', () => {
+        setup();
+        marketPrices[TEA_ITEM] = 1000;
+        const context = { equipment: new Map(), drinks: [{ itemHrid: TEA_ITEM }] };
+
+        const withoutTea = alchemyProfitCalculator.calculateUnrefineProfit(REFINED_ITEM, 0, false, 0, context);
+        const withTea = alchemyProfitCalculator.calculateUnrefineProfit(REFINED_ITEM, 0, false, 0.5, context);
+
+        expect(withoutTea.totalTeaCostPerHour).toBe(0);
+        expect(withTea.totalTeaCostPerHour).toBeGreaterThan(0);
+        // Same success rate (both 1.0), but the tea-drinking scenario is strictly worse by
+        // exactly its own cost - never silently credited as if it helped.
+        expect(withTea.profitPerHour).toBeCloseTo(withoutTea.profitPerHour - withTea.totalTeaCostPerHour, 6);
+    });
+
+    test('a missing market price for the consumed refined item returns null', () => {
+        setup();
+        delete marketPrices[REFINED_ITEM];
+
+        expect(alchemyProfitCalculator.calculateUnrefineProfit(REFINED_ITEM, 0, false, 0)).toBeNull();
+    });
+
+    test('a missing market price for the produced base item returns null', () => {
+        setup();
+        delete marketPrices[BASE_ITEM];
+
+        expect(alchemyProfitCalculator.calculateUnrefineProfit(REFINED_ITEM, 0, false, 0)).toBeNull();
+    });
+
+    test('has no catalyst - catalystCost/catalystPrice are explicitly zeroed, not a fabricated non-null value', () => {
+        setup();
+
+        const profit = alchemyProfitCalculator.calculateUnrefineProfit(REFINED_ITEM, 0, false, 0);
+
+        expect(profit.catalystCost.itemHrid).toBeNull();
+        expect(profit.catalystPrice).toBe(0);
+        expect(profit.catalystCostPerHour).toBe(0);
+    });
+});
+
 describe('actionContext atomicity for Coinify/Decompose/Transmute (TLA-027)', () => {
     // The Current Action Bar passes an explicit {equipment, drinks} context (resolveCurrentActionContext)
     // so these calculators must use it instead of independently reading dataManager's live equipment/drinks -
@@ -260,6 +389,36 @@ describe('actionContext atomicity for Coinify/Decompose/Transmute (TLA-027)', ()
         marketPrices[TRANSMUTE_ITEM] = 5;
 
         const profit = alchemyProfitCalculator.calculateTransmuteProfit(TRANSMUTE_ITEM, false, null, null, CONTEXT);
+
+        expect(profit).not.toBeNull();
+        expect(dataManagerMock.getEquipment).not.toHaveBeenCalled();
+        expect(dataManagerMock.getActionDrinkSlots).not.toHaveBeenCalled();
+    });
+
+    test('calculateUnrefineProfit uses the supplied actionContext instead of reading live equipment/drinks', () => {
+        const UNREFINE_ITEM = '/items/test_context_unrefine';
+        const itemDetailMap = {
+            [UNREFINE_ITEM]: {
+                itemLevel: 5,
+                alchemyDetail: { unrefineDetail: { baseItemHrid: '/items/output' } },
+            },
+        };
+        dataManagerMock.getInitClientData.mockReturnValue({
+            itemDetailMap,
+            actionDetailMap: {
+                ...baseActionDetailMap(),
+                '/actions/alchemy/unrefine': {
+                    type: '/action_types/alchemy',
+                    baseTimeCost: 20e9,
+                    levelRequirement: { level: 1 },
+                },
+            },
+        });
+        dataManagerMock.getItemDetails.mockReturnValue(itemDetailMap[UNREFINE_ITEM]);
+        marketPrices[UNREFINE_ITEM] = 5;
+        marketPrices['/items/output'] = 5;
+
+        const profit = alchemyProfitCalculator.calculateUnrefineProfit(UNREFINE_ITEM, 0, false, 0, CONTEXT);
 
         expect(profit).not.toBeNull();
         expect(dataManagerMock.getEquipment).not.toHaveBeenCalled();

@@ -1226,6 +1226,317 @@ class AlchemyProfitCalculator {
     }
 
     /**
+     * Calculate Unrefine profit for an item with full detailed breakdown.
+     * Unrefine converts a refined item back to its base (non-refined) version, preserving
+     * enhancement level, and returns some refinement shards. Its base success rate is a fixed
+     * 100% (AlchemyUnrefineSuccessRate in the native client) - there is no Unrefine-specific
+     * catalyst in game data, and any tea bonus only clamps back to the same 100%, so unlike
+     * Coinify/Decompose/Transmute there is no catalyst/tea combination to search for. A live tea
+     * that boosts alchemy_success is still a real, wasted cost here though - it's deducted the
+     * same way, which correctly ranks a Catalytic-Tea combo as strictly worse than no tea for
+     * this action.
+     * @param {string} itemHrid - Item HRID (the refined item being unrefined)
+     * @param {number} enhancementLevel - Enhancement level (default 0), preserved on the output
+     * @param {boolean} [useLiveSetup=false] - Read the live action panel's tea instead of the
+     *   caller-supplied teaBonusOverride
+     * @param {number|null} [teaBonusOverride=null]
+     * @param {{equipment: Map, drinks: Array}|null} [actionContext=null] - Exact live context
+     *   override (e.g. from resolveCurrentActionContext) for the Current Action Bar.
+     * @returns {Object|null} Profit data or null if not unrefinable
+     */
+    calculateUnrefineProfit(
+        itemHrid,
+        enhancementLevel = 0,
+        useLiveSetup = false,
+        teaBonusOverride = null,
+        actionContext = null
+    ) {
+        try {
+            const gameData = dataManager.getInitClientData();
+            const itemDetails = dataManager.getItemDetails(itemHrid);
+
+            if (!gameData || !itemDetails) {
+                return null;
+            }
+
+            // Check if item is unrefinable
+            const unrefineDetail = itemDetails.alchemyDetail?.unrefineDetail;
+            if (!unrefineDetail?.baseItemHrid) {
+                return null;
+            }
+
+            // Get alchemy action details
+            const actionDetails = gameData.actionDetailMap['/actions/alchemy/unrefine'];
+            if (!actionDetails) {
+                return null;
+            }
+
+            // Get pricing mode
+            const pricingMode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
+
+            // Keep a caller-supplied live context atomic (used by the Current Action Bar). Legacy
+            // callers without an override retain the existing calculator behavior.
+            const equipment = actionContext?.equipment ?? dataManager.getEquipment();
+            const activeDrinks = actionContext?.drinks ?? dataManager.getActionDrinkSlots('/action_types/alchemy');
+
+            // Calculate action stats (time + efficiency) using shared helper. Alchemy uses item
+            // level (not action requirement) for efficiency calculation.
+            const actionStats = calculateActionStats(actionDetails, {
+                skills: dataManager.getSkills(),
+                equipment,
+                actionContext,
+                itemDetailMap: gameData.itemDetailMap,
+                includeCommunityBuff: true,
+                includeBreakdown: true,
+                levelRequirementOverride: itemDetails.itemLevel || 1,
+            });
+
+            const { actionTime, totalEfficiency, efficiencyBreakdown } = actionStats;
+
+            // Calculate action speed breakdown with details
+            const _baseTime = actionDetails.baseTimeCost / 1e9;
+            const speedBonus = parseEquipmentSpeedBonuses(equipment, actionDetails.type, gameData.itemDetailMap);
+
+            // Get detailed equipment speed breakdown
+            const allSpeedBonuses = debugEquipmentSpeedBonuses(equipment, gameData.itemDetailMap);
+            const skillName = actionDetails.type.replace('/action_types/', '');
+            const skillSpecificSpeed = skillName + 'Speed';
+            const relevantSpeeds = allSpeedBonuses.filter((item) => {
+                return item.speedType === skillSpecificSpeed || item.speedType === 'skillingSpeed';
+            });
+
+            // TODO: Add tea speed bonuses when tea-parser supports it
+            const teaSpeed = 0;
+            const actionSpeedBreakdown = {
+                total: speedBonus + teaSpeed,
+                equipment: speedBonus,
+                tea: teaSpeed,
+                equipmentDetails: relevantSpeeds.map((item) => ({
+                    name: item.itemName,
+                    enhancementLevel: item.enhancementLevel,
+                    speedBonus: item.scaledBonus,
+                })),
+                teaDetails: [], // TODO: Add when tea speed is supported
+            };
+            const drinkConcentration = getDrinkConcentration(equipment, gameData.itemDetailMap);
+
+            // Get input cost (market price of the refined item being unrefined, at its own level)
+            const bulkMultiplier = itemDetails.alchemyDetail?.bulkMultiplier || 1;
+            const pricePerItem = getItemPrice(itemHrid, { context: 'profit', side: 'buy', enhancementLevel });
+            if (pricePerItem === null) {
+                return null; // No market data
+            }
+            const inputPrice = pricePerItem * bulkMultiplier;
+
+            // Output: the base (non-refined) item, at the SAME enhancement level as the input
+            // (enhancement level is preserved, per the native client's Unrefine drop table), plus
+            // refinement shards. Neither output scales with bulkMultiplier there - equipment is
+            // never bulk-processed the way stackable materials are.
+            const outputPrice = getItemPrice(unrefineDetail.baseItemHrid, {
+                context: 'profit',
+                side: 'sell',
+                enhancementLevel,
+            });
+            if (outputPrice === null) {
+                return null; // No market data
+            }
+            const baseItemAfterTax = calculatePriceAfterTax(outputPrice);
+
+            const dropDetails = [
+                {
+                    itemHrid: unrefineDetail.baseItemHrid,
+                    count: 1,
+                    price: outputPrice,
+                    afterTax: baseItemAfterTax,
+                    isEssence: false,
+                    expectedValue: baseItemAfterTax,
+                    enhancementLevel,
+                },
+            ];
+            let outputValue = baseItemAfterTax;
+
+            const shardReturn = unrefineDetail.shardReturn;
+            if (shardReturn?.itemHrid && shardReturn.count > 0) {
+                const shardPrice = getItemPrice(shardReturn.itemHrid, { context: 'profit', side: 'sell' });
+                if (shardPrice !== null) {
+                    const shardAfterTax = calculatePriceAfterTax(shardPrice);
+                    const shardValue = shardAfterTax * shardReturn.count;
+                    outputValue += shardValue;
+                    dropDetails.push({
+                        itemHrid: shardReturn.itemHrid,
+                        count: shardReturn.count,
+                        price: shardPrice,
+                        afterTax: shardAfterTax,
+                        isEssence: false,
+                        expectedValue: shardValue,
+                    });
+                }
+            }
+
+            const coinCost = calculateAlchemyCoinCost(itemDetails, 'unrefine');
+
+            // Calculate per-hour values
+            const efficiencyDecimal = totalEfficiency / 100;
+            const actionsPerHourWithEfficiency = calculateActionsPerHour(actionTime) * (1 + efficiencyDecimal);
+
+            // Calculate bonus revenue (essences + rares) from item level - applies uniformly
+            // across all four alchemy action types (see calculateAlchemyBonusDrops's own doc: this
+            // is a Toolasha-side reverse-engineered formula from item level, not a native
+            // per-action drop table entry).
+            const itemLevel = itemDetails.itemLevel || 1;
+            const alchemyBonus = calculateAlchemyBonusDrops(
+                itemLevel,
+                actionsPerHourWithEfficiency,
+                equipment,
+                gameData.itemDetailMap
+            );
+
+            // Calculate live tea cost (used for tea combinations)
+            const teaCostData = calculateTeaCostsPerHour({
+                drinkSlots: activeDrinks,
+                drinkConcentration,
+                itemDetailMap: gameData.itemDetailMap,
+                getItemPrice: (hrid) => getItemPrice(hrid, { context: 'profit', side: 'buy' }),
+            });
+
+            // Fixed 100% base success rate, clamped there regardless of tea/catalyst - no combo
+            // search needed (see this method's doc). Tea cost is still deducted if a live/override
+            // alchemy_success tea is active, since it's a real cost even though it does nothing.
+            const liveTeaBonus = teaBonusOverride !== null ? teaBonusOverride : getAlchemySuccessBonus();
+            const successRateBreakdown = this.calculateSuccessRateBreakdown(1, 0, liveTeaBonus, 0);
+            const successRate = successRateBreakdown.total;
+            const teaCostPerHour = !useLiveSetup && liveTeaBonus > 0 ? teaCostData.totalCostPerHour : 0;
+
+            const netProfitPerAttempt = outputValue * successRate - (inputPrice + coinCost);
+            const profitPerSecond = (netProfitPerAttempt * (1 + efficiencyDecimal)) / actionTime;
+            const profitPerHour = profitPerSecond * SECONDS_PER_HOUR + alchemyBonus.totalBonusRevenue - teaCostPerHour;
+            const profitPerDay = calculateProfitPerDay(profitPerHour);
+
+            // Revenue and cost at the (fixed) success rate
+            const revenuePerAttempt = outputValue * successRate;
+            const costPerAttempt = inputPrice + coinCost;
+
+            // Per-hour totals
+            const materialCostPerHour = (inputPrice + coinCost) * actionsPerHourWithEfficiency;
+            const revenuePerHour = revenuePerAttempt * actionsPerHourWithEfficiency + alchemyBonus.totalBonusRevenue;
+
+            // Build detailed breakdowns
+            const requirementCosts = [
+                {
+                    itemHrid,
+                    count: bulkMultiplier,
+                    price: pricePerItem,
+                    costPerAction: inputPrice,
+                    costPerHour: inputPrice * actionsPerHourWithEfficiency,
+                    enhancementLevel: enhancementLevel || 0,
+                },
+            ];
+
+            if (coinCost > 0) {
+                requirementCosts.push({
+                    itemHrid: '/items/coin',
+                    count: coinCost,
+                    price: 1,
+                    costPerAction: coinCost,
+                    costPerHour: coinCost * actionsPerHourWithEfficiency,
+                    enhancementLevel: 0,
+                });
+            }
+
+            const dropRevenues = dropDetails.map((drop) => ({
+                itemHrid: drop.itemHrid,
+                count: drop.count,
+                dropRate: 1.0, // Unrefine's own outputs are guaranteed on success
+                effectiveDropRate: 1.0,
+                price: drop.price,
+                isEssence: drop.isEssence,
+                isRare: false,
+                revenuePerAttempt: drop.expectedValue * successRate,
+                revenuePerHour: drop.expectedValue * successRate * actionsPerHourWithEfficiency,
+                dropsPerHour: drop.count * successRate * actionsPerHourWithEfficiency,
+            }));
+
+            for (const drop of alchemyBonus.bonusDrops) {
+                dropRevenues.push(drop);
+            }
+
+            // No catalyst exists for Unrefine (see method doc) - represent that explicitly rather
+            // than a fabricated one, so consumers reading this shape generically stay correct.
+            const catalystCost = {
+                itemHrid: null,
+                price: 0,
+                costPerSuccess: 0,
+                costPerAttempt: 0,
+                costPerHour: 0,
+            };
+
+            const consumableCosts = teaCostData.costs.map((cost) => ({
+                itemHrid: cost.itemHrid,
+                price: cost.pricePerDrink,
+                drinksPerHour: cost.drinksPerHour,
+                costPerHour: cost.totalCost,
+            }));
+
+            return {
+                // Basic info
+                actionType: 'unrefine',
+                itemHrid,
+                enhancementLevel,
+
+                // Summary totals
+                profitPerHour,
+                profitPerDay,
+                revenuePerHour,
+
+                // Actions and rates
+                actionsPerHour: actionsPerHourWithEfficiency,
+                actionTime,
+
+                // Per-attempt economics
+                materialCost: inputPrice,
+                catalystPrice: 0,
+                costPerAttempt,
+                incomePerAttempt: revenuePerAttempt,
+                netProfitPerAttempt,
+                profitPerAction: profitPerHour / actionsPerHourWithEfficiency,
+
+                // Per-hour costs
+                materialCostPerHour,
+                catalystCostPerHour: 0,
+                totalTeaCostPerHour: teaCostPerHour,
+
+                // Detailed breakdowns
+                requirementCosts,
+                dropRevenues,
+                catalystCost,
+                consumableCosts,
+
+                // Core stats
+                successRate,
+                efficiency: efficiencyDecimal,
+
+                // Modifier breakdowns
+                successRateBreakdown,
+                efficiencyBreakdown,
+                actionSpeedBreakdown,
+                rareFindBreakdown: alchemyBonus.rareFindBreakdown,
+                essenceFindBreakdown: alchemyBonus.essenceFindBreakdown,
+
+                // Winning catalyst/tea combo indicators (for tooltip icons) - no catalyst exists;
+                // "winning" tea is whatever was passed in/live, not a search result.
+                winningCatalystHrid: null,
+                winningTeaUsed: liveTeaBonus > 0,
+
+                // Pricing info
+                pricingMode,
+            };
+        } catch (error) {
+            console.error('[AlchemyProfitCalculator] Failed to calculate unrefine profit:', error);
+            return null;
+        }
+    }
+
+    /**
      * Calculate Transmute profit for an item with full detailed breakdown
      * @param {string} itemHrid - Item HRID
      * @param {boolean} [useLiveSetup] - Read the live action panel's catalyst/tea instead of
@@ -1602,6 +1913,13 @@ class AlchemyProfitCalculator {
             if (transmuteProfit) {
                 results.transmute = transmuteProfit;
             }
+        }
+
+        // Try unrefine (applies at any enhancement level - it preserves the level, unlike
+        // transmute which only operates on base/unenhanced items)
+        const unrefineProfit = this.calculateUnrefineProfit(itemHrid, enhancementLevel);
+        if (unrefineProfit) {
+            results.unrefine = unrefineProfit;
         }
 
         return results;

@@ -552,6 +552,13 @@ function calculateAlchemyGoldPerHour(alchemyContext, buffs) {
         );
     } else if (actionType === 'transmute') {
         profitData = alchemyProfitCalculator.calculateTransmuteProfit(itemHrid, false, teaBonusOverride);
+    } else if (actionType === 'unrefine') {
+        profitData = alchemyProfitCalculator.calculateUnrefineProfit(
+            itemHrid,
+            enhancementLevel,
+            false,
+            teaBonusOverride
+        );
     }
 
     if (!profitData) return { profitPerHour: 0, hasMissingPrice: true };
@@ -595,7 +602,7 @@ export function resolveActiveAlchemyItemContext() {
     if (!front?.actionHrid?.startsWith('/actions/alchemy/')) return null;
 
     const actionType = front.actionHrid.replace('/actions/alchemy/', '');
-    if (!['coinify', 'decompose', 'transmute'].includes(actionType)) return null;
+    if (!['coinify', 'decompose', 'transmute', 'unrefine'].includes(actionType)) return null;
 
     const { itemHrid, level } = parseAlchemyItemHash(front.primaryItemHash);
     if (!itemHrid) return null;
@@ -633,6 +640,7 @@ function calculateAlchemyXpPerHour(alchemyContext, buffs, playerLevel, otherEffi
             baseXP = itemLevel + 10;
             break;
         case 'decompose':
+        case 'unrefine': // Same XP multiplier as decompose (AlchemyExpMultiplierMap: 1.4 for both)
             baseXP = itemLevel * 1.4 + 14;
             break;
         case 'transmute':
@@ -647,6 +655,8 @@ function calculateAlchemyXpPerHour(alchemyContext, buffs, playerLevel, otherEffi
     let baseSuccessRate;
     if (actionType === 'coinify') baseSuccessRate = 0.7;
     else if (actionType === 'decompose') baseSuccessRate = 0.6;
+    else if (actionType === 'unrefine')
+        baseSuccessRate = 1; // Fixed 100% (AlchemyUnrefineSuccessRate)
     else baseSuccessRate = itemDetails.alchemyDetail?.transmuteSuccessRate || 0;
 
     // Level penalty (transmute only)

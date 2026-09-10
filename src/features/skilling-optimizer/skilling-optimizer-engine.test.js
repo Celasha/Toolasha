@@ -70,7 +70,7 @@ vi.mock('../../utils/profit-helpers.js', () => ({
     resolveItemPrice: vi.fn(() => ({ price: 0, custom: false, missing: false })),
 }));
 
-const { optimizeSkill } = await import('./skilling-optimizer-engine.js');
+const { optimizeSkill, buildAchievableEquipment } = await import('./skilling-optimizer-engine.js');
 const { scoreEquipmentSetup, findOptimalTeas, resolveActiveAlchemyItemContext } =
     await import('../../utils/tea-optimizer.js');
 const { resolveItemPrice } = await import('../../utils/profit-helpers.js');
@@ -475,5 +475,60 @@ describe('optimizeSkill - Alchemy item-basis resolution (auto-detect vs manual o
 
         expect(result.alchemyContext).toBeNull();
         expect(result.alchemyContextIsManual).toBe(false);
+    });
+});
+
+describe('buildAchievableEquipment - AVG XP/HR-AVG GOLD/HR must not silently disconnect from the Compare loadout', () => {
+    const HEAD_LOCATION = '/item_locations/head';
+    const OWNED_UPGRADE_HRID = '/items/owned_upgrade';
+    const UNOWNED_UPGRADE_HRID = '/items/unowned_upgrade';
+    const LOADOUT_BACK_ITEM = '/items/loadout_back_item';
+    const LOADOUT_HEAD_ITEM = '/items/loadout_head_item';
+
+    function makeSlots(overrides) {
+        return {
+            [BACK_LOCATION]: { progression: [{ itemHrid: OWNED_UPGRADE_HRID }] },
+            [HEAD_LOCATION]: { progression: [{ itemHrid: UNOWNED_UPGRADE_HRID }] },
+            ...overrides,
+        };
+    }
+
+    test('a slot with no owned upgrade keeps the Compare loadout item instead of dropping out', () => {
+        const enhMap = new Map([[OWNED_UPGRADE_HRID, 10]]); // UNOWNED_UPGRADE_HRID not owned
+        const loadoutItemMap = new Map([
+            [BACK_LOCATION, { itemHrid: LOADOUT_BACK_ITEM, enhancementLevel: 3 }],
+            [HEAD_LOCATION, { itemHrid: LOADOUT_HEAD_ITEM, enhancementLevel: 5 }],
+        ]);
+
+        const result = buildAchievableEquipment(makeSlots(), enhMap, loadoutItemMap);
+
+        // BACK has an owned upgrade - it replaces the loadout's item.
+        expect(result.get(BACK_LOCATION)).toEqual({ itemHrid: OWNED_UPGRADE_HRID, enhancementLevel: 10 });
+        // HEAD's recommended upgrade isn't owned - it must keep the loadout's real item, not be
+        // empty/absent (the bug: previously this slot vanished from the achievable scenario).
+        expect(result.get(HEAD_LOCATION)).toEqual({ itemHrid: LOADOUT_HEAD_ITEM, enhancementLevel: 5 });
+    });
+
+    test('with no Compare loadout selected, a slot with no owned upgrade stays empty (unchanged pre-existing behavior)', () => {
+        const enhMap = new Map([[OWNED_UPGRADE_HRID, 10]]);
+
+        const result = buildAchievableEquipment(makeSlots(), enhMap, null);
+
+        expect(result.get(BACK_LOCATION)).toEqual({ itemHrid: OWNED_UPGRADE_HRID, enhancementLevel: 10 });
+        expect(result.has(HEAD_LOCATION)).toBe(false);
+    });
+
+    test('a slot present in the Compare loadout but absent from optimizeSkill results (nothing beat baseline) keeps its loadout item untouched', () => {
+        const enhMap = new Map();
+        const loadoutItemMap = new Map([[BACK_LOCATION, { itemHrid: LOADOUT_BACK_ITEM, enhancementLevel: 7 }]]);
+
+        const result = buildAchievableEquipment({}, enhMap, loadoutItemMap);
+
+        expect(result.get(BACK_LOCATION)).toEqual({ itemHrid: LOADOUT_BACK_ITEM, enhancementLevel: 7 });
+    });
+
+    test('handles a null/undefined slots argument without throwing', () => {
+        expect(() => buildAchievableEquipment(null, new Map(), null)).not.toThrow();
+        expect(() => buildAchievableEquipment(undefined, new Map(), null)).not.toThrow();
     });
 });
