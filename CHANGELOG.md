@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.107.3](https://github.com/Celasha/Toolasha/compare/v2.107.2...v2.107.3) (2026-09-09)
+
+### Bug Fixes
+
+- resync Notification Log scroll position when tab is reactivated ([a36b75b](https://github.com/Celasha/Toolasha/commit/a36b75b6912e96e822997905f0a98fa892d512a3))
+
 ## [2.107.2](https://github.com/Celasha/Toolasha/compare/v2.107.1...v2.107.2) (2026-09-08)
 
 ### Bug Fixes
