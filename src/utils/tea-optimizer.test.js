@@ -454,6 +454,30 @@ describe('resolveActiveAlchemyItemContext + item-aware Alchemy Gold/XP scoring',
         expect(actionContext.equipment).toBe(testedEquipment);
         expect(actionContext.drinks).toEqual([]);
     });
+
+    test('scoreEquipmentSetup: Alchemy Gold passes the exact combo being scored as drinks (not empty, not live) so its own efficiency/wisdom contribution is credited, and never double-subtracts tea cost', () => {
+        // Regression: passing drinks:[] unconditionally fixed the live-gear/live-drink leak, but
+        // also zeroed out the ACTUAL combo's own tea-derived efficiency (e.g. Efficiency Tea)
+        // since calculateActionStats reads efficiency straight off actionContext.drinks - every
+        // combo was scored as if it had no tea efficiency at all, regardless of which teas it
+        // contained, systematically undervaluing efficiency-relevant combos.
+        mocks.alchemyProfit.decompose = { profitPerHour: 1000 };
+        alchemyProfitCalculator.calculateDecomposeProfit.mockClear();
+        const context = { actionType: 'decompose', itemHrid: ITEM, enhancementLevel: 0 };
+        const teaHrids = ['/items/efficiency_tea', '/items/catalytic_tea'];
+
+        const result = scoreEquipmentSetup('Alchemy', 'gold', new Map(), 30, null, teaHrids, context);
+
+        const [, , , , actionContext] = alchemyProfitCalculator.calculateDecomposeProfit.mock.calls[0];
+        expect(actionContext.drinks).toEqual([
+            { itemHrid: '/items/efficiency_tea' },
+            { itemHrid: '/items/catalytic_tea' },
+        ]);
+        // The mocked profitPerHour (1000) must be used as-is - never additionally reduced by a
+        // second, external teaCostPerHour subtraction, which would double-charge this combo's own
+        // tea cost on top of what the underlying calculator already charged via activeDrinks.
+        expect(result.score).toBe(1000);
+    });
 });
 
 describe('REOPEN/OPT-28 architecture: shared getActionEfficiencyContext ownership', () => {

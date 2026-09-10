@@ -11,6 +11,7 @@ const GUZZLING_TEA_HRID = '/items/some_tea';
 const itemDetailMap = {
     [REFINED_HRID]: {
         name: 'Chance Cape ★',
+        isTradable: true,
         equipmentDetail: {
             type: '/equipment_types/back',
             noncombatStats: { skillingSpeed: 0.05 },
@@ -19,6 +20,7 @@ const itemDetailMap = {
     },
     [NONREFINED_HRID]: {
         name: 'Chance Cape',
+        isTradable: true,
         equipmentDetail: {
             type: '/equipment_types/back',
             noncombatStats: { skillingSpeed: 0.02 },
@@ -70,10 +72,19 @@ vi.mock('../../utils/profit-helpers.js', () => ({
     resolveItemPrice: vi.fn(() => ({ price: 0, custom: false, missing: false })),
 }));
 
+vi.mock('../enhancement/tooltip-enhancement.js', () => ({
+    calculateDirectEnhancementCost: vi.fn(() => ({ cost: null, complete: false, protectFrom: null })),
+}));
+
+vi.mock('../../utils/enhancement-config.js', () => ({
+    getEnhancingParams: vi.fn(() => ({ enhancingLevel: 100 })),
+}));
+
 const { optimizeSkill, buildAchievableEquipment } = await import('./skilling-optimizer-engine.js');
 const { scoreEquipmentSetup, findOptimalTeas, resolveActiveAlchemyItemContext } =
     await import('../../utils/tea-optimizer.js');
 const { resolveItemPrice } = await import('../../utils/profit-helpers.js');
+const { calculateDirectEnhancementCost } = await import('../enhancement/tooltip-enhancement.js');
 
 describe('optimizeSkill - refined item breakpoint labeling', () => {
     test('records the effective scored level separately from the nominal breakpoint bucket', () => {
@@ -198,9 +209,11 @@ describe('optimizeSkill - Compare is a one-slot replacement of the full loadout 
 
 describe('optimizeSkill - equipment recommendation cost (marginal gain per gold / payback support)', () => {
     const originalResolveImpl = resolveItemPrice.getMockImplementation();
+    const originalEnhCostImpl = calculateDirectEnhancementCost.getMockImplementation();
 
     afterEach(() => {
         resolveItemPrice.mockImplementation(originalResolveImpl);
+        calculateDirectEnhancementCost.mockImplementation(originalEnhCostImpl);
     });
 
     test('with no current item in the slot, cost is the full buy price of the winning item', () => {
@@ -268,6 +281,66 @@ describe('optimizeSkill - equipment recommendation cost (marginal gain per gold 
         const entry = result.slots[BACK_LOCATION].progression.find((e) => e.breakpoint === 12);
 
         expect(entry.costIsIncomplete).toBe(true);
+    });
+
+    test('an enhancement-level upgrade of the same item, with no market listing at the target level, falls back to a real materials-cost estimate', () => {
+        resolveItemPrice.mockImplementation((itemHrid, { side, enhancementLevel }) => {
+            if (itemHrid === NONREFINED_HRID && side === 'buy' && enhancementLevel === 12) {
+                return { price: 0, custom: false, missing: true }; // no listing at +12
+            }
+            return { price: 0, custom: false, missing: false };
+        });
+        calculateDirectEnhancementCost.mockReturnValue({ cost: 7500, complete: true, protectFrom: 0 });
+
+        const compareEquipment = new Map([[BACK_LOCATION, { itemHrid: NONREFINED_HRID, enhancementLevel: 7 }]]);
+        const result = optimizeSkill('Crafting', 50, null, { equipment: compareEquipment, drinks: [] });
+        const entry = result.slots[BACK_LOCATION].progression.find((e) => e.breakpoint === 12);
+
+        expect(entry.itemHrid).toBe(NONREFINED_HRID);
+        expect(entry.cost).toBe(7500);
+        expect(entry.costIsIncomplete).toBe(false);
+        expect(calculateDirectEnhancementCost).toHaveBeenCalledWith(NONREFINED_HRID, 7, 12, { enhancingLevel: 100 });
+    });
+
+    test('when the enhancement-cost estimate itself cannot complete either, cost is incomplete rather than a fabricated number', () => {
+        resolveItemPrice.mockImplementation((itemHrid, { side, enhancementLevel }) => {
+            if (itemHrid === NONREFINED_HRID && side === 'buy' && enhancementLevel === 12) {
+                return { price: 0, custom: false, missing: true };
+            }
+            return { price: 0, custom: false, missing: false };
+        });
+        calculateDirectEnhancementCost.mockReturnValue({ cost: null, complete: false, protectFrom: null });
+
+        const compareEquipment = new Map([[BACK_LOCATION, { itemHrid: NONREFINED_HRID, enhancementLevel: 7 }]]);
+        const result = optimizeSkill('Crafting', 50, null, { equipment: compareEquipment, drinks: [] });
+        const entry = result.slots[BACK_LOCATION].progression.find((e) => e.breakpoint === 12);
+
+        expect(entry.cost).toBe(0);
+        expect(entry.costIsIncomplete).toBe(true);
+    });
+
+    test('a current item that is not tradable is never netted off - the full buy cost of the target stands as-is', () => {
+        itemDetailMap[REFINED_HRID].isTradable = false;
+        try {
+            resolveItemPrice.mockImplementation((itemHrid, { side, enhancementLevel }) => {
+                if (itemHrid === NONREFINED_HRID && side === 'buy') {
+                    return { price: 1000 * enhancementLevel, custom: false, missing: false };
+                }
+                if (itemHrid === REFINED_HRID && side === 'sell') {
+                    return { price: 4000, custom: false, missing: false }; // must never be used
+                }
+                return { price: 0, custom: false, missing: false };
+            });
+
+            const compareEquipment = new Map([[BACK_LOCATION, { itemHrid: REFINED_HRID, enhancementLevel: 5 }]]);
+            const result = optimizeSkill('Crafting', 50, null, { equipment: compareEquipment, drinks: [] });
+            const entry = result.slots[BACK_LOCATION].progression.find((e) => e.breakpoint === 12);
+
+            expect(entry.itemHrid).toBe(NONREFINED_HRID);
+            expect(entry.cost).toBe(12000); // full buy price, no netting against the untradable current item
+        } finally {
+            itemDetailMap[REFINED_HRID].isTradable = true;
+        }
     });
 });
 

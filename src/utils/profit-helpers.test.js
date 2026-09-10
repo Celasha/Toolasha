@@ -3,7 +3,7 @@
  * Testing profit/rate calculations used across features
  */
 
-import { describe, test, expect } from 'vitest';
+import { describe, test, expect, vi, beforeEach } from 'vitest';
 import {
     calculateActionsPerHour,
     calculateHoursForActions,
@@ -16,9 +16,30 @@ import {
     calculatePriceAfterTax,
     calculateProductionActionTotalsFromBase,
     calculateGatheringActionTotalsFromBase,
+    resolveItemPrice,
 } from './profit-helpers.js';
 import { MARKET_TAX } from './profit-constants.js';
 import { calculateEfficiencyMultiplier } from './efficiency.js';
+
+const priceMocks = vi.hoisted(() => ({
+    marketPrice: null,
+    customPrice: null,
+    shopCost: 0,
+    productionCost: 0,
+}));
+
+vi.mock('./market-data.js', () => ({
+    getItemPrice: vi.fn(() => priceMocks.marketPrice),
+}));
+vi.mock('../features/settings/custom-price-overrides.js', () => ({
+    getCustomPrice: vi.fn(() => priceMocks.customPrice),
+}));
+vi.mock('./game-lookups.js', () => ({
+    getShopCoinCost: vi.fn(() => priceMocks.shopCost),
+}));
+vi.mock('../features/enhancement/tooltip-enhancement.js', () => ({
+    getProductionCost: vi.fn(() => priceMocks.productionCost),
+}));
 
 describe('calculateActionsPerHour', () => {
     test('calculates actions per hour from action time', () => {
@@ -438,5 +459,64 @@ describe('Real-world profit scenarios', () => {
         });
 
         expect(result.totalProfit).toBe(-2000);
+    });
+});
+
+describe('resolveItemPrice', () => {
+    const ITEM = '/items/test_item';
+
+    beforeEach(() => {
+        priceMocks.marketPrice = null;
+        priceMocks.customPrice = null;
+        priceMocks.shopCost = 0;
+        priceMocks.productionCost = 0;
+    });
+
+    test('a real market price at the requested enhancement level resolves normally', () => {
+        priceMocks.marketPrice = 500;
+
+        const result = resolveItemPrice(ITEM, { side: 'buy', enhancementLevel: 7 });
+
+        expect(result).toEqual({ price: 500, custom: false, missing: false });
+    });
+
+    test('a custom override always wins regardless of enhancement level', () => {
+        priceMocks.customPrice = 999;
+        priceMocks.marketPrice = 500;
+
+        const result = resolveItemPrice(ITEM, { side: 'buy', enhancementLevel: 7 });
+
+        expect(result).toEqual({ price: 999, custom: true, missing: false });
+    });
+
+    test('the production-cost fallback applies at +0 - no listing there falls back to a fresh craft cost', () => {
+        priceMocks.marketPrice = null;
+        priceMocks.productionCost = 250;
+
+        const result = resolveItemPrice(ITEM, { side: 'buy', enhancementLevel: 0 });
+
+        expect(result).toEqual({ price: 250, custom: false, missing: false });
+    });
+
+    test('the production-cost fallback is skipped above +0 - no listing there reports missing, never a mislabeled base-craft cost', () => {
+        // Regression: getProductionCost only ever prices a fresh +0 craft, so applying it when a
+        // specific higher enhancementLevel was requested silently substituted the (much cheaper)
+        // base cost and marked it complete, even though it has nothing to do with the level
+        // actually being priced (e.g. no listing for Enchanted Gloves +13).
+        priceMocks.marketPrice = null;
+        priceMocks.productionCost = 250; // would incorrectly win here if the level guard regressed
+
+        const result = resolveItemPrice(ITEM, { side: 'buy', enhancementLevel: 13 });
+
+        expect(result).toEqual({ price: 0, custom: false, missing: true });
+    });
+
+    test('a shop floor price still only applies to the buy side, independent of the +0 guard', () => {
+        priceMocks.marketPrice = null;
+        priceMocks.shopCost = 100;
+
+        const result = resolveItemPrice(ITEM, { side: 'buy', enhancementLevel: 0 });
+
+        expect(result).toEqual({ price: 100, custom: false, missing: false });
     });
 });

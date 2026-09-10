@@ -6,6 +6,7 @@
  */
 
 import dataManager from '../../core/data-manager.js';
+import { calculateDirectEnhancementCost } from '../enhancement/tooltip-enhancement.js';
 import {
     scoreEquipmentSetup,
     findOptimalTeas,
@@ -13,6 +14,7 @@ import {
     calculateSkillPerformance,
     resolveActiveAlchemyItemContext,
 } from '../../utils/tea-optimizer.js';
+import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import { resolveItemPrice } from '../../utils/profit-helpers.js';
 
 export { getSkillActionsForDisplay, calculateSkillPerformance, findOptimalTeas, resolveActiveAlchemyItemContext };
@@ -447,23 +449,52 @@ export function getSkillDrinkItems() {
  * whatever currently occupies that slot (mirrors the Combat Sim Upgrade Advisor's tier-upgrade
  * cost convention: buy target - sell current). With no current item (empty-baseline mode), this
  * is simply the full buy price.
+ *
+ * Two refinements over a plain market-only lookup:
+ * - An enhancement-level upgrade of the SAME item, when there's no market listing at the target
+ *   level, falls back to a real materials-cost estimate (calculateDirectEnhancementCost - the
+ *   same primitive Combat Sim's own Upgrade Advisor already uses for this) instead of reporting
+ *   the whole recommendation as unpriceable.
+ * - Never nets against a "sell current" value for an item that isn't tradable at all (e.g.
+ *   refined equipment, which can't be sold on the market) - there's no way to actually recover
+ *   that value, so subtracting a price that doesn't correspond to anything real would understate
+ *   the true cost of the target.
  * @param {string} itemHrid
  * @param {number} enhancementLevel
  * @param {{itemHrid: string, enhancementLevel: number}|null} currentEquipped
+ * @param {Object} itemDetailMap
  * @returns {{cost: number, costIsIncomplete: boolean}}
  */
-function calculateSlotUpgradeCost(itemHrid, enhancementLevel, currentEquipped) {
+function calculateSlotUpgradeCost(itemHrid, enhancementLevel, currentEquipped, itemDetailMap) {
     const buyResolved = resolveItemPrice(itemHrid, { side: 'buy', enhancementLevel });
     let cost = buyResolved.price;
     let costIsIncomplete = buyResolved.missing;
 
+    if (buyResolved.missing && currentEquipped?.itemHrid === itemHrid) {
+        const enhancementResult = calculateDirectEnhancementCost(
+            itemHrid,
+            currentEquipped.enhancementLevel || 0,
+            enhancementLevel,
+            getEnhancingParams()
+        );
+        if (enhancementResult.complete && enhancementResult.cost !== null) {
+            return { cost: enhancementResult.cost, costIsIncomplete: false };
+        }
+        return { cost: 0, costIsIncomplete: true };
+    }
+
     if (currentEquipped?.itemHrid) {
-        const sellResolved = resolveItemPrice(currentEquipped.itemHrid, {
-            side: 'sell',
-            enhancementLevel: currentEquipped.enhancementLevel || 0,
-        });
-        if (sellResolved.missing) costIsIncomplete = true;
-        cost = Math.max(0, cost - sellResolved.price);
+        const isCurrentTradable = itemDetailMap[currentEquipped.itemHrid]?.isTradable === true;
+        if (isCurrentTradable) {
+            const sellResolved = resolveItemPrice(currentEquipped.itemHrid, {
+                side: 'sell',
+                enhancementLevel: currentEquipped.enhancementLevel || 0,
+            });
+            if (sellResolved.missing) costIsIncomplete = true;
+            cost = Math.max(0, cost - sellResolved.price);
+        }
+        // Not tradable: no sell-side value can ever be recovered, so the full buy cost above is
+        // already the real answer - never net against a fabricated/nonexistent sell price.
     }
 
     return { cost, costIsIncomplete };
@@ -599,7 +630,7 @@ function runEquipmentSlotRound(
             }
 
             const { cost, costIsIncomplete } = bestItem
-                ? calculateSlotUpgradeCost(bestItem.hrid, bestEffectiveLevel, currentEquipped)
+                ? calculateSlotUpgradeCost(bestItem.hrid, bestEffectiveLevel, currentEquipped, itemDetailMap)
                 : { cost: 0, costIsIncomplete: false };
 
             progression.push({

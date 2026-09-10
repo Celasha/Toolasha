@@ -529,24 +529,30 @@ function calculateProductionGoldPerHour(actionDetails, buffs, playerLevel, other
  * @param {Object} buffs - Parsed tea buffs (includes alchemySuccess)
  * @param {Object} calcContext - { equipment, itemDetailMap } - the hypothetical equipment being
  *   scored (candidate or baseline), never the player's live gear
+ * @param {string[]} teaHrids - The exact tea combination being scored (never the player's live
+ *   drinks) - besides alchemy_success (carried separately via buffs/teaBonusOverride), this
+ *   combo's own efficiency/wisdom/etc. contribution and its own tea cost both come from here.
  * @returns {{profitPerHour: number, hasMissingPrice: boolean}} Profit after all costs, and whether
  *   the underlying calculator had to bail for lack of market data (e.g. no price for the item) -
  *   distinct from a genuine, priced 0/negative profit.
  */
-function calculateAlchemyGoldPerHour(alchemyContext, buffs, calcContext) {
+function calculateAlchemyGoldPerHour(alchemyContext, buffs, calcContext, teaHrids) {
     const { actionType, itemHrid, enhancementLevel = 0 } = alchemyContext;
     const teaBonusOverride = buffs.alchemySuccess || 0;
 
     // Speed/efficiency must reflect the hypothetical equipment actually being scored (this
-    // candidate/baseline), never the player's live-equipped gear - and tea COST must come only
-    // from the caller (scoreEquipmentSetup/findOptimalTeas already deduct it for whichever combo
-    // is actually under test), never from whatever the player happens to be drinking live right
-    // now. An explicit actionContext with empty drinks pins both atomically - the same
-    // {equipment, drinks} convention already used for the Current Action Bar - so the underlying
-    // calculator can't silently fall back to dataManager.getEquipment()/getActionDrinkSlots().
-    // teaBonusOverride still carries this combo's own alchemy_success bonus for the success-rate
-    // search, which is a separate axis from tea cost.
-    const actionContext = { equipment: calcContext.equipment, drinks: [] };
+    // candidate/baseline), never the player's live-equipped gear - and drinks must be exactly the
+    // combo under test, never whatever the player happens to be drinking live right now. Passing
+    // this combo's own real drinks (not an empty array) lets the underlying calculator credit its
+    // real efficiency/wisdom contribution and charge its real tea cost - both derived from the
+    // SAME activeDrinks internally, so a combo can't get efficiency credit for a tea it wasn't
+    // actually charged for, or vice versa. teaBonusOverride still separately carries this combo's
+    // alchemy_success bonus for the success-rate search, which the calculator can't derive from
+    // the drink list alone (that's a `ratioBoost`, not a flat/efficiency buff).
+    const actionContext = {
+        equipment: calcContext.equipment,
+        drinks: (teaHrids || []).filter(Boolean).map((hrid) => ({ itemHrid: hrid })),
+    };
 
     let profitData = null;
     if (actionType === 'coinify') {
@@ -1116,8 +1122,13 @@ export function findOptimalTeas(
             if (goal === 'xp') {
                 score = calculateAlchemyXpPerHour(alchemyContext, buffs, playerLevel, otherEfficiency, calcContext);
             } else {
-                const goldResult = calculateAlchemyGoldPerHour(alchemyContext, buffs, calcContext);
-                score = goldResult.profitPerHour - teaCostPerHour.total;
+                // Tea cost for this combo is already charged internally (calculateAlchemyGoldPerHour
+                // now passes the combo's own real drinks through, so the underlying calculator
+                // both credits its efficiency/wisdom contribution AND charges its real cost) -
+                // teaCostPerHour here must NOT also be subtracted, or this combo's tea cost would
+                // be double-counted.
+                const goldResult = calculateAlchemyGoldPerHour(alchemyContext, buffs, calcContext, combo);
+                score = goldResult.profitPerHour;
                 if (goldResult.hasMissingPrice) hasMissingPrice = true;
             }
             totalScore += score;
@@ -1389,8 +1400,12 @@ export function scoreEquipmentSetup(
             };
         }
 
-        const goldResult = calculateAlchemyGoldPerHour(alchemyContext, buffs, calcContext);
-        return { score: goldResult.profitPerHour - teaCostPerHour, hasMissingPrice: goldResult.hasMissingPrice };
+        // Tea cost for this combo is already charged internally (calculateAlchemyGoldPerHour
+        // passes the combo's own real drinks through, so the underlying calculator both credits
+        // its efficiency/wisdom contribution AND charges its real cost) - teaCostPerHour here
+        // must NOT also be subtracted, or this combo's tea cost would be double-counted.
+        const goldResult = calculateAlchemyGoldPerHour(alchemyContext, buffs, calcContext, filteredTeas);
+        return { score: goldResult.profitPerHour, hasMissingPrice: goldResult.hasMissingPrice };
     }
 
     let totalScore = 0;
