@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.107.6](https://github.com/Celasha/Toolasha/compare/v2.107.5...v2.107.6) (2026-09-10)
+
+
+### Bug Fixes
+
+* score Alchemy Gold against tested equipment, not live gear ([f8e5bdf](https://github.com/Celasha/Toolasha/commit/f8e5bdfeb806101e3132356f3eb902ce59cdc0f6))
+
 ## [2.107.5](https://github.com/Celasha/Toolasha/compare/v2.107.4...v2.107.5) (2026-09-10)
 
 ### Bug Fixes
