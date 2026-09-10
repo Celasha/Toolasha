@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.107.5](https://github.com/Celasha/Toolasha/compare/v2.107.4...v2.107.5) (2026-09-10)
+
+### Bug Fixes
+
+- complete Skilling Optimizer's Alchemy support ([0a014d6](https://github.com/Celasha/Toolasha/commit/0a014d60ec4b96d830c2e00b710cc7e294157601))
+
 ## [2.107.4](https://github.com/Celasha/Toolasha/compare/v2.107.3...v2.107.4) (2026-09-10)
 
 ### Bug Fixes
