@@ -11,6 +11,7 @@ import {
     calculateSkillPerformance,
     getSkillActionsForDisplay,
     getItemsForSlot,
+    getAlchemyItemOptions,
     getSkillDrinkItems,
     getPlayerSkillLevel,
     optimizeSkill,
@@ -58,6 +59,12 @@ class SkillingSimulatorUI {
         this.lastOptimizerResult = null;
         this.optimizerLoadout = null;
         this.optimizerSortMode = 'value';
+
+        // Alchemy-only: manual override for which item/action-type the Optimizer's Equipment
+        // Progression + Optimal Teas score Gold/XP against, when the player doesn't have (or
+        // doesn't want to rely on) a live queued Alchemy action to auto-detect. Session-only,
+        // like the other Optimizer-mode fields above.
+        this.alchemyItemOverride = null;
 
         // Simulator state
         this.currentSkill = 'Woodcutting';
@@ -342,6 +349,16 @@ class SkillingSimulatorUI {
             compareRow.appendChild(compareSelect);
             panel.appendChild(compareRow);
 
+            // Alchemy Gold/XP are priced against one real item (Coinify/Decompose/Transmute
+            // economics are entirely item-specific), so this Optimizer needs to know which one -
+            // it can't average across "all Alchemy actions" the way every other skill does (game
+            // data only defines 3 generic action templates for Alchemy, with no item baked in).
+            // Default to whatever the player's live queue is running (see
+            // resolveActiveAlchemyItemContext); this picker lets them override it to plan ahead.
+            if (this.currentSkill === 'Alchemy') {
+                panel.appendChild(this._buildAlchemyItemOverrideRow());
+            }
+
             const optimizeBtn = document.createElement('button');
             optimizeBtn.type = 'button';
             optimizeBtn.textContent = 'Optimize';
@@ -402,7 +419,8 @@ class SkillingSimulatorUI {
                             this.currentSkill,
                             this.currentLevel,
                             this.selectedActionHrids,
-                            hasUsableComparison ? { equipment: loadoutItemMap, drinks: compareDrinks } : null
+                            hasUsableComparison ? { equipment: loadoutItemMap, drinks: compareDrinks } : null,
+                            this.alchemyItemOverride
                         );
                         this.lastOptimizerResult = result;
 
@@ -423,7 +441,10 @@ class SkillingSimulatorUI {
                             }
                         }
 
-                        // Performance with achievable equipment and optimal teas for each goal
+                        // Performance with achievable equipment and optimal teas for each goal.
+                        // result.alchemyContext (resolved once inside optimizeSkill, from the
+                        // manual override or the player's live queue) must be reused here too, or
+                        // this second pass would silently fall back to the item-agnostic estimate.
                         const xpAchievable = result
                             ? findOptimalTeas(
                                   this.currentSkill,
@@ -431,7 +452,7 @@ class SkillingSimulatorUI {
                                   null,
                                   null,
                                   null,
-                                  null,
+                                  result.alchemyContext,
                                   achievableEquipment,
                                   this.selectedActionHrids,
                                   this.currentLevel
@@ -444,7 +465,7 @@ class SkillingSimulatorUI {
                                   null,
                                   null,
                                   null,
-                                  null,
+                                  result.alchemyContext,
                                   achievableEquipment,
                                   this.selectedActionHrids,
                                   this.currentLevel
@@ -480,6 +501,93 @@ class SkillingSimulatorUI {
         }
 
         return panel;
+    }
+
+    /**
+     * Alchemy-only row letting the player override which item/action-type the Optimizer prices
+     * Gold/XP against, instead of relying on auto-detecting their live queued Alchemy action
+     * (which is unavailable if nothing's queued, or if they want to plan ahead for a different
+     * item). Selecting an item+type applies immediately, matching the Compare select's convention
+     * of no separate "Apply" step; "Use Active Action" clears back to auto-detection.
+     * @returns {HTMLElement}
+     */
+    _buildAlchemyItemOverrideRow() {
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px;';
+
+        const row = document.createElement('div');
+        row.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+        const label = document.createElement('span');
+        label.textContent = 'Alchemy Item:';
+        label.style.cssText = 'color: rgba(255,255,255,0.5); font-size: 12px; width: 56px; flex-shrink: 0;';
+        row.appendChild(label);
+
+        const selectCss =
+            'background: #2a2a2a; color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; padding: 4px 8px; font-size: 12px; cursor: pointer;';
+
+        const itemSelect = document.createElement('select');
+        itemSelect.style.cssText = selectCss + ' flex: 1; min-width: 0;';
+        const autoOpt = document.createElement('option');
+        autoOpt.value = '';
+        autoOpt.textContent = '— Auto (from active action) —';
+        itemSelect.appendChild(autoOpt);
+        const items = getAlchemyItemOptions();
+        for (const item of items) {
+            const opt = document.createElement('option');
+            opt.value = item.hrid;
+            opt.textContent = item.name;
+            if (this.alchemyItemOverride?.itemHrid === item.hrid) opt.selected = true;
+            itemSelect.appendChild(opt);
+        }
+        row.appendChild(itemSelect);
+
+        const typeSelect = document.createElement('select');
+        typeSelect.style.cssText = selectCss + ' width: 100px; flex-shrink: 0;';
+        for (const [value, name] of [
+            ['decompose', 'Decompose'],
+            ['coinify', 'Coinify'],
+            ['transmute', 'Transmute'],
+        ]) {
+            const opt = document.createElement('option');
+            opt.value = value;
+            opt.textContent = name;
+            if ((this.alchemyItemOverride?.actionType || 'decompose') === value) opt.selected = true;
+            typeSelect.appendChild(opt);
+        }
+        row.appendChild(typeSelect);
+
+        const levelInput = document.createElement('input');
+        levelInput.type = 'number';
+        levelInput.min = '0';
+        levelInput.max = '20';
+        levelInput.value = String(this.alchemyItemOverride?.enhancementLevel || 0);
+        levelInput.title = 'Enhancement level (ignored for Transmute)';
+        levelInput.style.cssText = selectCss + ' width: 44px; flex-shrink: 0; cursor: text;';
+        row.appendChild(levelInput);
+        wrap.appendChild(row);
+
+        const applyOverride = () => {
+            if (!itemSelect.value) {
+                this.alchemyItemOverride = null;
+            } else {
+                this.alchemyItemOverride = {
+                    itemHrid: itemSelect.value,
+                    actionType: typeSelect.value,
+                    enhancementLevel: parseInt(levelInput.value, 10) || 0,
+                };
+            }
+        };
+        itemSelect.addEventListener('change', applyOverride);
+        typeSelect.addEventListener('change', applyOverride);
+        levelInput.addEventListener('change', applyOverride);
+
+        const hint = document.createElement('div');
+        hint.style.cssText = 'color: rgba(255,255,255,0.35); font-size: 10px; font-style: italic;';
+        hint.textContent =
+            'Alchemy Gold/XP are priced against one item - pick one, or leave on Auto to use whatever your character is currently queued to Alchemize.';
+        wrap.appendChild(hint);
+
+        return wrap;
     }
 
     _buildTopControls() {
@@ -1303,6 +1411,33 @@ class SkillingSimulatorUI {
     // Optimizer results rendering
     // -------------------------------------------------------------------------
 
+    /**
+     * Small status line for Alchemy showing which item/action-type the Gold/XP numbers below were
+     * priced against - auto-detected from the live queue, manually overridden, or unavailable
+     * (falls back to the pre-existing item-agnostic XP estimate, Gold unavailable).
+     * @param {Object} result - optimizeSkill() return value
+     * @returns {HTMLElement}
+     */
+    _buildAlchemyBasisLabel(result) {
+        const label = document.createElement('div');
+        label.style.cssText = 'font-size: 11px; margin-bottom: 10px;';
+        const ctx = result.alchemyContext;
+        if (!ctx) {
+            label.style.color = '#f0ad4e';
+            label.textContent =
+                'Based on: nothing queued - XP is an item-agnostic estimate, Gold is unavailable. ' +
+                'Pick an item above, or start an Alchemy action.';
+        } else {
+            label.style.color = 'rgba(255,255,255,0.5)';
+            const itemName = this._getItemName(ctx.itemHrid) || ctx.itemHrid;
+            const typeName = ctx.actionType.charAt(0).toUpperCase() + ctx.actionType.slice(1);
+            const levelSuffix = ctx.enhancementLevel ? ` +${ctx.enhancementLevel}` : '';
+            const source = result.alchemyContextIsManual ? 'manually selected' : 'from your active/queued action';
+            label.textContent = `Based on: ${typeName} ${itemName}${levelSuffix} (${source})`;
+        }
+        return label;
+    }
+
     _renderOptimizerResults(container, result, achievableStats, loadoutItemMap) {
         const { slots, goal, xpBaseline, goldBaseline } = result;
         const slotEntries = Object.entries(slots);
@@ -1313,6 +1448,10 @@ class SkillingSimulatorUI {
             empty.textContent = 'No relevant equipment found for this skill at the selected level.';
             container.appendChild(empty);
             return;
+        }
+
+        if (result.skill?.toLowerCase() === 'alchemy') {
+            container.appendChild(this._buildAlchemyBasisLabel(result));
         }
 
         // Ranked by the same "first breakpoint that beats baseline" upgrade the row itself

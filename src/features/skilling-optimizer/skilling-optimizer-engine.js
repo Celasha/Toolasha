@@ -11,10 +11,11 @@ import {
     findOptimalTeas,
     getSkillActionsForDisplay,
     calculateSkillPerformance,
+    resolveActiveAlchemyItemContext,
 } from '../../utils/tea-optimizer.js';
 import { resolveItemPrice } from '../../utils/profit-helpers.js';
 
-export { getSkillActionsForDisplay, calculateSkillPerformance, findOptimalTeas };
+export { getSkillActionsForDisplay, calculateSkillPerformance, findOptimalTeas, resolveActiveAlchemyItemContext };
 
 // Equipment type → item location mapping (two_hand maps to main_hand slot)
 const EQUIPMENT_TYPE_TO_LOCATION = {
@@ -258,6 +259,8 @@ function getCandidatesForSlot(locationHrid, playerLevels, itemDetailMap) {
  * @param {Set<string>|null} selectedActionHrids
  * @param {Map} [baseEquipment] - Full loadout equipment to copy and overwrite one slot in
  * @param {string[]} [teaHrids] - Drinks to score alongside (the base loadout's own drinks)
+ * @param {{actionType: string, itemHrid: string, enhancementLevel: number}|null} [alchemyContext] -
+ *   Alchemy-only: real item/action-type to score Gold against (see resolveActiveAlchemyItemContext)
  * @returns {{score: number, hasMissingPrice: boolean}}
  */
 function scoreCandidate(
@@ -269,11 +272,12 @@ function scoreCandidate(
     playerLevel,
     selectedActionHrids,
     baseEquipment = null,
-    teaHrids = []
+    teaHrids = [],
+    alchemyContext = null
 ) {
     const equipment = new Map(baseEquipment || []);
     equipment.set(locationHrid, { itemHrid, enhancementLevel });
-    return scoreEquipmentSetup(skillName, goal, equipment, playerLevel, selectedActionHrids, teaHrids);
+    return scoreEquipmentSetup(skillName, goal, equipment, playerLevel, selectedActionHrids, teaHrids, alchemyContext);
 }
 
 /**
@@ -341,6 +345,26 @@ export function getItemsForSlot(locationHrid, skillName) {
     return result.sort((a, b) => b.itemLevel - a.itemLevel || a.name.localeCompare(b.name));
 }
 
+/**
+ * Every item the player can run through Alchemy, for the Optimizer's manual item-basis picker.
+ * Unlike getRepresentativeAlchemyItemHrid (tea-optimizer.js, an internal scoring fallback), this
+ * lists every real option for a user-facing dropdown rather than picking just one substitute.
+ * Validity of a specific action type (e.g. not every item is Coinifiable) is left to the actual
+ * profit calculator to fail closed on - not pre-filtered here, to keep this a plain item list.
+ * @returns {Array<{hrid: string, name: string}>} Sorted by name
+ */
+export function getAlchemyItemOptions() {
+    const gameData = dataManager.getInitClientData();
+    if (!gameData?.itemDetailMap) return [];
+
+    const result = [];
+    for (const [hrid, detail] of Object.entries(gameData.itemDetailMap)) {
+        if (!detail.alchemyDetail) continue;
+        result.push({ hrid, name: detail.name });
+    }
+    return result.sort((a, b) => a.name.localeCompare(b.name));
+}
+
 const SKILLING_BUFF_TYPES = new Set([
     '/buff_types/efficiency',
     '/buff_types/wisdom',
@@ -385,6 +409,10 @@ export function getSkillDrinkItems() {
  *   the full loadout (equipment + its drinks) and every CANDIDATE is an exact copy of that same
  *   loadout with only the one slot under test replaced - never an otherwise-empty Map. When null
  *   (no Compare loadout selected), preserves the original empty-baseline/no-drinks behavior.
+ * @param {{actionType: string, itemHrid: string, enhancementLevel: number}|null} [alchemyItemOverride] -
+ *   Alchemy only: a manually chosen item/action-type to price Gold/XP against, overriding
+ *   auto-detection of the player's live queued action (see resolveActiveAlchemyItemContext).
+ *   Ignored for every other skill.
  * @returns {Object|null}
  */
 /**
@@ -433,7 +461,8 @@ function runEquipmentSlotRound(
     baseline,
     baselineHasMissingPrice,
     xpBaseline,
-    goldBaseline
+    goldBaseline,
+    alchemyContext
 ) {
     const slots = {};
     const optimalEquipmentAtMax = new Map();
@@ -477,7 +506,8 @@ function runEquipmentSlotRound(
                     playerLevel,
                     selectedActionHrids,
                     compareEquipment,
-                    teaHridsForRound
+                    teaHridsForRound,
+                    alchemyContext
                 );
                 let candidateScore = candidateResult.score;
                 let candidateHasMissingPrice = candidateResult.hasMissingPrice;
@@ -499,7 +529,7 @@ function runEquipmentSlotRound(
                         null,
                         null,
                         null,
-                        null,
+                        alchemyContext,
                         jointEquipment,
                         selectedActionHrids,
                         playerLevel
@@ -559,7 +589,8 @@ function runEquipmentSlotRound(
                         playerLevel,
                         selectedActionHrids,
                         compareEquipment,
-                        bestItemTeaHrids
+                        bestItemTeaHrids,
+                        alchemyContext
                     ).score;
                 })(),
                 goldScore: (() => {
@@ -574,7 +605,8 @@ function runEquipmentSlotRound(
                         playerLevel,
                         selectedActionHrids,
                         compareEquipment,
-                        bestItemTeaHrids
+                        bestItemTeaHrids,
+                        alchemyContext
                     ).score;
                 })(),
                 isChange: (bestItem?.hrid ?? null) !== lastWinnerHrid,
@@ -602,7 +634,13 @@ function runEquipmentSlotRound(
     return { slots, optimalEquipmentAtMax };
 }
 
-export function optimizeSkill(skillName, playerLevel, selectedActionHrids = null, compareLoadout = null) {
+export function optimizeSkill(
+    skillName,
+    playerLevel,
+    selectedActionHrids = null,
+    compareLoadout = null,
+    alchemyItemOverride = null
+) {
     // Gathering skills: score for Gold — captures gathering quantity, rare/essence find + speed/efficiency.
     // Production skills: score for XP — more reliable since it doesn't depend on market prices.
     const goal = GATHERING_SKILLS.has(skillName.toLowerCase()) ? 'gold' : 'xp';
@@ -615,13 +653,21 @@ export function optimizeSkill(skillName, playerLevel, selectedActionHrids = null
     const compareEquipment = compareLoadout?.equipment ?? new Map();
     const compareDrinks = compareLoadout?.drinks ?? [];
 
+    // Alchemy Gold/XP are priced against one real item, not averaged across every action of the
+    // skill (see resolveActiveAlchemyItemContext's doc) - a manual override wins over the player's
+    // live queue, which wins over having no basis at all (score falls back to the pre-existing
+    // representative-item XP estimate / Gold-unavailable behavior, see scoreEquipmentSetup).
+    const alchemyContext =
+        skillName.toLowerCase() === 'alchemy' ? alchemyItemOverride || resolveActiveAlchemyItemContext() : null;
+
     const xpBaselineResult = scoreEquipmentSetup(
         skillName,
         'xp',
         compareEquipment,
         playerLevel,
         selectedActionHrids,
-        compareDrinks
+        compareDrinks,
+        alchemyContext
     );
     const goldBaselineResult = scoreEquipmentSetup(
         skillName,
@@ -629,7 +675,8 @@ export function optimizeSkill(skillName, playerLevel, selectedActionHrids = null
         compareEquipment,
         playerLevel,
         selectedActionHrids,
-        compareDrinks
+        compareDrinks,
+        alchemyContext
     );
     const xpBaseline = xpBaselineResult.score;
     const goldBaseline = goldBaselineResult.score;
@@ -679,7 +726,8 @@ export function optimizeSkill(skillName, playerLevel, selectedActionHrids = null
             baseline,
             baselineHasMissingPrice,
             xpBaseline,
-            goldBaseline
+            goldBaseline,
+            alchemyContext
         );
         slots = roundOutcome.slots;
         optimalEquipmentAtMax = roundOutcome.optimalEquipmentAtMax;
@@ -690,7 +738,7 @@ export function optimizeSkill(skillName, playerLevel, selectedActionHrids = null
             null,
             null,
             null,
-            null,
+            alchemyContext,
             optimalEquipmentAtMax,
             selectedActionHrids,
             playerLevel
@@ -714,7 +762,7 @@ export function optimizeSkill(skillName, playerLevel, selectedActionHrids = null
         null,
         null,
         null,
-        null,
+        alchemyContext,
         optimalEquipmentAtMax,
         selectedActionHrids,
         playerLevel
@@ -731,5 +779,7 @@ export function optimizeSkill(skillName, playerLevel, selectedActionHrids = null
         slots,
         xpTeaResult: xpTeaResult?.error ? null : xpTeaResult,
         goldTeaResult: goldTeaResult?.error ? null : goldTeaResult,
+        alchemyContext,
+        alchemyContextIsManual: skillName.toLowerCase() === 'alchemy' && alchemyItemOverride != null,
     };
 }

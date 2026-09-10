@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
     prices: {},
     personalBuffs: {}, // buffTypeHrid -> decimal flat boost
     guildBuffs: {}, // actionType -> [{typeHrid, flatBoost}]
+    currentActions: [], // character action queue, for resolveActiveAlchemyItemContext
+    alchemyProfit: { coinify: null, decompose: null, transmute: null }, // stubbed profit results
 }));
 
 vi.mock('../core/data-manager.js', () => ({
@@ -27,9 +29,18 @@ vi.mock('../core/data-manager.js', () => ({
         getAchievementBuffFlatBoost: vi.fn(() => 0),
         getPersonalBuffFlatBoost: vi.fn((_actionType, buffType) => mocks.personalBuffs[buffType] || 0),
         getMooPassBuffs: vi.fn(() => []),
+        getCurrentActions: vi.fn(() => mocks.currentActions),
         get characterData() {
             return { guildActionTypeBuffsMap: mocks.guildBuffs };
         },
+    },
+}));
+
+vi.mock('../features/market/alchemy-profit-calculator.js', () => ({
+    default: {
+        calculateCoinifyProfit: vi.fn(() => mocks.alchemyProfit.coinify),
+        calculateDecomposeProfit: vi.fn(() => mocks.alchemyProfit.decompose),
+        calculateTransmuteProfit: vi.fn(() => mocks.alchemyProfit.transmute),
     },
 }));
 
@@ -83,8 +94,13 @@ mocks.actionDetailMap = {
     },
 };
 
-const { calculateSkillPerformance, findOptimalTeas, scoreEquipmentSetup, getSkillActionsForDisplay } =
-    await import('./tea-optimizer.js');
+const {
+    calculateSkillPerformance,
+    findOptimalTeas,
+    scoreEquipmentSetup,
+    getSkillActionsForDisplay,
+    resolveActiveAlchemyItemContext,
+} = await import('./tea-optimizer.js');
 
 describe('tea-optimizer scenario math (TLA-024)', () => {
     beforeEach(() => {
@@ -92,6 +108,8 @@ describe('tea-optimizer scenario math (TLA-024)', () => {
         mocks.prices = { [GOOD_DROP]: 100, [BAD_DROP]: 0.001, [FORAGING_TEA]: 1 };
         mocks.personalBuffs = {};
         mocks.guildBuffs = {};
+        mocks.currentActions = [];
+        mocks.alchemyProfit = { coinify: null, decompose: null, transmute: null };
     });
 
     test('OPT-5/6: Force (guild efficiency) + Tempo (guild speed) + Personal Gathering flow into the local efficiency context', () => {
@@ -278,6 +296,95 @@ describe('tea-optimizer scenario math (TLA-024)', () => {
         const goldScore = scoreEquipmentSetup('Alchemy', 'gold', new Map(), 30);
 
         expect(goldScore.score).toBe(0);
+    });
+});
+
+describe('resolveActiveAlchemyItemContext + item-aware Alchemy Gold/XP scoring', () => {
+    const ITEM = '/items/moonstone';
+
+    beforeEach(() => {
+        mocks.skills = [{ skillHrid: '/skills/alchemy', level: 30 }];
+        mocks.itemDetailMap[ITEM] = {
+            name: 'Moonstone',
+            itemLevel: 10,
+            alchemyDetail: { isCoinifiable: true, transmuteSuccessRate: 0.5 },
+            sellPrice: 100,
+        };
+        mocks.actionDetailMap = {
+            '/actions/alchemy/coinify': { type: '/action_types/alchemy', name: 'Coinify', baseTimeCost: 20e9 },
+            '/actions/alchemy/decompose': { type: '/action_types/alchemy', name: 'Decompose', baseTimeCost: 20e9 },
+            '/actions/alchemy/transmute': { type: '/action_types/alchemy', name: 'Transmute', baseTimeCost: 20e9 },
+        };
+        mocks.currentActions = [];
+        mocks.alchemyProfit = { coinify: null, decompose: null, transmute: null };
+    });
+
+    test('returns null with an empty action queue', () => {
+        expect(resolveActiveAlchemyItemContext()).toBeNull();
+    });
+
+    test('returns null when the front-of-queue action is not Alchemy', () => {
+        mocks.currentActions = [{ ordinal: 0, actionHrid: '/actions/foraging/good', primaryItemHash: '' }];
+        expect(resolveActiveAlchemyItemContext()).toBeNull();
+    });
+
+    test('parses actionType/item/enhancement level from the lowest-ordinal (front) queue entry, ignoring later ones', () => {
+        mocks.currentActions = [
+            {
+                ordinal: 1,
+                actionHrid: '/actions/alchemy/coinify',
+                primaryItemHash: `c::/item_locations/inventory::${ITEM}::0`,
+            },
+            {
+                ordinal: 0,
+                actionHrid: '/actions/alchemy/decompose',
+                primaryItemHash: `c::/item_locations/inventory::${ITEM}::7`,
+            },
+        ];
+
+        expect(resolveActiveAlchemyItemContext()).toEqual({
+            actionType: 'decompose',
+            itemHrid: ITEM,
+            enhancementLevel: 7,
+        });
+    });
+
+    test('scoreEquipmentSetup: Alchemy Gold with a resolved context prices a real item instead of failing closed to 0', () => {
+        mocks.alchemyProfit.decompose = { profitPerHour: 500 };
+        const context = { actionType: 'decompose', itemHrid: ITEM, enhancementLevel: 0 };
+
+        const result = scoreEquipmentSetup('Alchemy', 'gold', new Map(), 30, null, [], context);
+
+        expect(result.score).toBe(500);
+        expect(result.hasMissingPrice).toBe(false);
+    });
+
+    test('scoreEquipmentSetup: Alchemy Gold without a context still fails closed to 0 (pre-existing behavior preserved)', () => {
+        const result = scoreEquipmentSetup('Alchemy', 'gold', new Map(), 30);
+
+        expect(result.score).toBe(0);
+        expect(result.hasMissingPrice).toBe(false);
+    });
+
+    test('scoreEquipmentSetup: Alchemy Gold reports hasMissingPrice when the profit calculator has no price for the item', () => {
+        mocks.alchemyProfit.decompose = null; // e.g. no market data for this item
+        const context = { actionType: 'decompose', itemHrid: ITEM, enhancementLevel: 0 };
+
+        const result = scoreEquipmentSetup('Alchemy', 'gold', new Map(), 30, null, [], context);
+
+        expect(result.score).toBe(0);
+        expect(result.hasMissingPrice).toBe(true);
+    });
+
+    test('scoreEquipmentSetup: Alchemy XP scores real actionType-specific formula against a resolved context', () => {
+        const withContext = scoreEquipmentSetup('Alchemy', 'xp', new Map(), 30, null, [], {
+            actionType: 'decompose',
+            itemHrid: ITEM,
+            enhancementLevel: 0,
+        });
+
+        expect(withContext.score).toBeGreaterThan(0);
+        expect(withContext.hasMissingPrice).toBe(false);
     });
 });
 

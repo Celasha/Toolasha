@@ -63,6 +63,7 @@ vi.mock('../../utils/tea-optimizer.js', () => ({
     findOptimalTeas: vi.fn(() => null),
     getSkillActionsForDisplay: vi.fn(),
     calculateSkillPerformance: vi.fn(),
+    resolveActiveAlchemyItemContext: vi.fn(() => null),
 }));
 
 vi.mock('../../utils/profit-helpers.js', () => ({
@@ -70,7 +71,8 @@ vi.mock('../../utils/profit-helpers.js', () => ({
 }));
 
 const { optimizeSkill } = await import('./skilling-optimizer-engine.js');
-const { scoreEquipmentSetup, findOptimalTeas } = await import('../../utils/tea-optimizer.js');
+const { scoreEquipmentSetup, findOptimalTeas, resolveActiveAlchemyItemContext } =
+    await import('../../utils/tea-optimizer.js');
 const { resolveItemPrice } = await import('../../utils/profit-helpers.js');
 
 describe('optimizeSkill - refined item breakpoint labeling', () => {
@@ -401,5 +403,77 @@ describe('optimizeSkill - missing-price completeness through equipment Gold rank
         const maxEntry = progression[progression.length - 1];
         expect(maxEntry.itemHrid).toBe(REFINED_HRID);
         expect(maxEntry.hasMissingPrice).toBe(true);
+    });
+});
+
+describe('optimizeSkill - Alchemy item-basis resolution (auto-detect vs manual override)', () => {
+    const originalScoreImpl = scoreEquipmentSetup.getMockImplementation();
+    const originalTeaImpl = findOptimalTeas.getMockImplementation();
+    const originalResolveActiveImpl = resolveActiveAlchemyItemContext.getMockImplementation();
+
+    afterEach(() => {
+        scoreEquipmentSetup.mockImplementation(originalScoreImpl);
+        findOptimalTeas.mockImplementation(originalTeaImpl);
+        resolveActiveAlchemyItemContext.mockImplementation(originalResolveActiveImpl);
+    });
+
+    test('auto-detects from the live queue and threads it into scoreEquipmentSetup/findOptimalTeas', () => {
+        const liveContext = { actionType: 'decompose', itemHrid: '/items/moonstone', enhancementLevel: 3 };
+        resolveActiveAlchemyItemContext.mockImplementation(() => liveContext);
+
+        const scoreCalls = [];
+        scoreEquipmentSetup.mockImplementation((_skillName, _goal, _equipment, _playerLevel, _sel, _teas, ctx) => {
+            scoreCalls.push(ctx);
+            return { score: 0, hasMissingPrice: false };
+        });
+        const teaCalls = [];
+        findOptimalTeas.mockImplementation((_skillName, _goal, _l, _a, _c, ctx) => {
+            teaCalls.push(ctx);
+            return { optimal: null };
+        });
+
+        const result = optimizeSkill('Alchemy', 30, null);
+
+        expect(result.alchemyContext).toEqual(liveContext);
+        expect(result.alchemyContextIsManual).toBe(false);
+        expect(scoreCalls.every((ctx) => ctx === liveContext)).toBe(true);
+        expect(teaCalls.length).toBeGreaterThan(0);
+        expect(teaCalls.every((ctx) => ctx === liveContext)).toBe(true);
+    });
+
+    test('a manual override wins over the live queue', () => {
+        resolveActiveAlchemyItemContext.mockImplementation(() => ({
+            actionType: 'coinify',
+            itemHrid: '/items/live_item',
+            enhancementLevel: 0,
+        }));
+        const manualContext = { actionType: 'transmute', itemHrid: '/items/manual_item', enhancementLevel: 5 };
+
+        const result = optimizeSkill('Alchemy', 30, null, null, manualContext);
+
+        expect(result.alchemyContext).toEqual(manualContext);
+        expect(result.alchemyContextIsManual).toBe(true);
+    });
+
+    test('never resolves or applies an Alchemy context for a different skill', () => {
+        resolveActiveAlchemyItemContext.mockClear();
+        resolveActiveAlchemyItemContext.mockImplementation(() => {
+            throw new Error('must not be called for non-Alchemy skills');
+        });
+
+        const result = optimizeSkill('Crafting', 50, null);
+
+        expect(result.alchemyContext).toBeNull();
+        expect(result.alchemyContextIsManual).toBe(false);
+        expect(resolveActiveAlchemyItemContext).not.toHaveBeenCalled();
+    });
+
+    test('with no live queue and no override, falls back to null context (pre-existing behavior)', () => {
+        resolveActiveAlchemyItemContext.mockImplementation(() => null);
+
+        const result = optimizeSkill('Alchemy', 30, null);
+
+        expect(result.alchemyContext).toBeNull();
+        expect(result.alchemyContextIsManual).toBe(false);
     });
 });
