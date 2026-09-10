@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.107.4](https://github.com/Celasha/Toolasha/compare/v2.107.3...v2.107.4) (2026-09-10)
+
+
+### Bug Fixes
+
+* price Alchemy Gold/XP against a real item in the Skilling Optimizer ([8feec2c](https://github.com/Celasha/Toolasha/commit/8feec2ceb1b18d0f7656cc6f57793af5716e4087))
+
 ## [2.107.3](https://github.com/Celasha/Toolasha/compare/v2.107.2...v2.107.3) (2026-09-09)
 
 ### Bug Fixes
