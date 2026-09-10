@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.107.2
+ * Version: 2.107.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -3333,6 +3333,7 @@ ${starCSS}
             this.panel = null;
             this.listEl = null;
             this.tabActive = false;
+            this.pinnedToBottom = true;
         }
 
         async initialize() {
@@ -3589,6 +3590,12 @@ ${starCSS}
                 this.tabButton.setAttribute('aria-selected', 'true');
                 this.tabButton.setAttribute('tabindex', '0');
             }
+
+            // Entries added while this tab was hidden couldn't be measured for scroll position (see
+            // _renderList), so re-sync now that the panel has a real layout box.
+            if (this.listEl && this.pinnedToBottom) {
+                this.listEl.scrollTop = this.listEl.scrollHeight;
+            }
         }
 
         _deactivateTab() {
@@ -3620,7 +3627,12 @@ ${starCSS}
             // Chat-log convention: oldest at top, newest at bottom. Keep the view pinned to the
             // bottom across re-renders if the user was already there, so new entries stay visible
             // without yanking them away from history they scrolled up to read.
-            const wasScrolledToBottom = this.listEl.scrollHeight - this.listEl.scrollTop - this.listEl.clientHeight < 4;
+            // Only measure while the panel is actually visible - while hidden (the tab isn't
+            // active), scrollHeight/scrollTop/clientHeight all read 0 per the CSS box model, which
+            // would misreport "at bottom" and stomp the real pinned state.
+            if (this.tabActive) {
+                this.pinnedToBottom = this.listEl.scrollHeight - this.listEl.scrollTop - this.listEl.clientHeight < 4;
+            }
             this.listEl.textContent = '';
 
             // this.entries is stored newest-first (see _addEntry); reverse only for display.
@@ -3661,7 +3673,7 @@ ${starCSS}
                 this.listEl.appendChild(row);
             }
 
-            if (wasScrolledToBottom) {
+            if (this.pinnedToBottom) {
                 this.listEl.scrollTop = this.listEl.scrollHeight;
             }
         }
