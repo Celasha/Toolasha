@@ -2,10 +2,9 @@
 
 ## [2.107.7](https://github.com/Celasha/Toolasha/compare/v2.107.6...v2.107.7) (2026-09-10)
 
-
 ### Bug Fixes
 
-* credit real enhancement/tradeability costs and each tea combo's own efficiency ([c2b7355](https://github.com/Celasha/Toolasha/commit/c2b73556735fe5da56f244611fa00cd44b8d8445))
+- credit real enhancement/tradeability costs and each tea combo's own efficiency ([c2b7355](https://github.com/Celasha/Toolasha/commit/c2b73556735fe5da56f244611fa00cd44b8d8445))
 
 ## [2.107.6](https://github.com/Celasha/Toolasha/compare/v2.107.5...v2.107.6) (2026-09-10)
 
