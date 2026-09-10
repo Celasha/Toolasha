@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.107.7
+ * Version: 2.107.8
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7344,6 +7344,20 @@
     }
 
     /**
+     * Build the time-remaining text per the actionBar_showTimeRemaining setting ('relative' = time
+     * remaining only, 'absolute' = completion ETA only, otherwise both joined with an arrow).
+     * @param {string} mode
+     * @param {string} relativeStr - e.g. "3h 40m"
+     * @param {string} absoluteStr - e.g. "14:32"
+     * @returns {string}
+     */
+    function buildTimeRemainingText(mode, relativeStr, absoluteStr) {
+        if (mode === 'relative') return relativeStr;
+        if (mode === 'absolute') return absoluteStr;
+        return `${relativeStr} → ${absoluteStr}`;
+    }
+
+    /**
      * Build the " Complete in X · Complete at Y" suffix for a queued action, per the
      * actionQueue_completionTimeStyle setting. Returns '' when the row has no reachable completion
      * (i.e. a truly-infinite action is queued at or before this row).
@@ -8688,8 +8702,9 @@
             this.appendStatsToActionName(actionNameElement, statsToAppend.join(' · '));
 
             // Line 2: Time estimates in our div
+            const timeRemainingMode = config.getSettingValue('actionBar_showTimeRemaining', 'both');
             if (
-                config.getSetting('actionBar_showTimeRemaining') &&
+                timeRemainingMode !== 'none' &&
                 remainingQueuedActions !== Infinity &&
                 !isNaN(remainingQueuedActions) &&
                 remainingQueuedActions > 0
@@ -8703,9 +8718,11 @@
                     const recycleTimeStr = formatters_js.timeReadable(recycleTimeSeconds);
                     const recycleIsToday = recycleCompletion.toDateString() === new Date().toDateString();
                     const recycleClockTime = formatCompletionTime(recycleCompletion, !recycleIsToday);
-                    recycleHtml = `<span style="color:#4dd0a0; margin-left:12px; font-size:11px;">Est. w/ recycle: ${recycleTimeStr} → ${recycleClockTime}</span>`;
+                    const recycleText = buildTimeRemainingText(timeRemainingMode, recycleTimeStr, recycleClockTime);
+                    recycleHtml = `<span style="color:#4dd0a0; margin-left:12px; font-size:11px;">Est. w/ recycle: ${recycleText}</span>`;
                 }
-                this.displayElement.innerHTML = `<span style="display: inline-flex; flex-wrap: nowrap; align-items: baseline; gap: 0.25em;"><span>⏱</span>${matsLabel} ${timeStr} → ${clockTime}</span>${recycleHtml}`;
+                const timeText = buildTimeRemainingText(timeRemainingMode, timeStr, clockTime);
+                this.displayElement.innerHTML = `<span style="display: inline-flex; flex-wrap: nowrap; align-items: baseline; gap: 0.25em;"><span>⏱</span>${matsLabel} ${timeText}</span>${recycleHtml}`;
             } else {
                 this.displayElement.innerHTML = '';
             }
@@ -8917,12 +8934,8 @@
             this.appendStatsToActionName(actionNameElement, statsToAppend.join(' · '));
 
             // Line 2: Time estimate — always material-based for enhancing
-            if (
-                config.getSetting('actionBar_showTimeRemaining') &&
-                materialTime !== null &&
-                materialTime > 0 &&
-                isFinite(materialTime)
-            ) {
+            const timeRemainingMode = config.getSettingValue('actionBar_showTimeRemaining', 'both');
+            if (timeRemainingMode !== 'none' && materialTime !== null && materialTime > 0 && isFinite(materialTime)) {
                 const timeStr = formatters_js.timeReadable(materialTime);
 
                 const completionTime = new Date();
@@ -8934,7 +8947,8 @@
 
                 const itemIconHtml = this.getItemIconHtml(limitingItemHrid);
                 const matsLabel = itemIconHtml ? `${itemIconHtml}:` : 'Mats:';
-                this.displayElement.innerHTML = `<span style="display: inline-flex; flex-wrap: nowrap; align-items: baseline; gap: 0.25em;"><span>⏱</span>${matsLabel} ${timeStr} → ${clockTime} (${formatters_js.formatWithSeparator(materialLimit)} actions)</span>`;
+                const timeText = buildTimeRemainingText(timeRemainingMode, timeStr, clockTime);
+                this.displayElement.innerHTML = `<span style="display: inline-flex; flex-wrap: nowrap; align-items: baseline; gap: 0.25em;"><span>⏱</span>${matsLabel} ${timeText} (${formatters_js.formatWithSeparator(materialLimit)} actions)</span>`;
             } else {
                 this.displayElement.innerHTML = '';
             }

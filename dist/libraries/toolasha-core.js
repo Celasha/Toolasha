@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.107.7
+ * Version: 2.107.8
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -821,9 +821,15 @@
                 },
                 actionBar_showTimeRemaining: {
                     id: 'actionBar_showTimeRemaining',
-                    label: 'Action bar: Time remaining and completion ETA',
-                    type: 'checkbox',
-                    default: true,
+                    label: 'Action bar: Time remaining display',
+                    type: 'select',
+                    default: 'both',
+                    options: [
+                        { value: 'both', label: 'Time remaining and completion ETA' },
+                        { value: 'relative', label: 'Time remaining only' },
+                        { value: 'absolute', label: 'Completion ETA only' },
+                        { value: 'none', label: 'Neither' },
+                    ],
                 },
                 actionBar_showRecycleTime: {
                     id: 'actionBar_showRecycleTime',
@@ -3346,6 +3352,16 @@
                 const fmtSaved = saved['formatting_useKMBFormat'];
                 if (fmtSaved && fmtSaved.hasOwnProperty('isTrue') && !fmtSaved.hasOwnProperty('value')) {
                     settings['formatting_useKMBFormat'].value = fmtSaved.isTrue ? 'compact' : 'full';
+                }
+
+                // Migrate: actionBar_showTimeRemaining changed from checkbox to select
+                const timeRemainingSaved = saved['actionBar_showTimeRemaining'];
+                if (
+                    timeRemainingSaved &&
+                    timeRemainingSaved.hasOwnProperty('isTrue') &&
+                    !timeRemainingSaved.hasOwnProperty('value')
+                ) {
+                    settings['actionBar_showTimeRemaining'].value = timeRemainingSaved.isTrue ? 'both' : 'none';
                 }
             }
 
