@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 2.107.8
+ * Version: 2.107.9
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -27083,6 +27083,35 @@ self.onmessage = function (e) {
             });
         }
 
+        /**
+         * TLA-025D: native "Switch Character" is a plain `history.push("/characterSelect")` - it never
+         * fires `character_switching` or `beforeunload`, so the just-departed character's activity
+         * record can still be stale by the time Character Select reads it. Called from Character
+         * Select's own mount lifecycle as a final checkpoint before those reads.
+         *
+         * Persists ONLY the activity projection, immediately - deliberately does not also mirror
+         * account preferences (unlike recomputeAndPersist), so a caller awaiting this can never inherit
+         * the normal 3s storage debounce that a preference write would otherwise wait on.
+         * @returns {Promise<void>}
+         */
+        async checkpointForCharacterSelect() {
+            if (!this.isInitialized || !this.characterId) return;
+            if (dataManager.getCurrentCharacterId() !== this.characterId) return;
+
+            const record = {
+                characterId: this.characterId,
+                characterName: this.characterName,
+                observedAt: Date.now(),
+                offline: {
+                    hourCap: dataManager.getOfflineHourCap(),
+                    mooPassExpireTime: dataManager.getMooPassExpireTime(),
+                },
+                projection: computeLiveProjection(),
+            };
+
+            await saveCharacterActivity(this.characterId, record, true);
+        }
+
         cleanup() {
             this.lifecycleGeneration += 1;
 
@@ -27181,6 +27210,11 @@ self.onmessage = function (e) {
         emptyQueueNotification,
         queueMonitor,
         characterActivity,
+        // Raw collector singleton (as opposed to the wrapped characterActivity feature module above) -
+        // exposed so character-select-renderer.js in the ui.js bundle (loaded BEFORE this one) can
+        // reach it lazily at runtime via window.Toolasha.UI, since Rollup's externals/globals binding
+        // only works for forward dependencies (owner loads before consumer).
+        characterActivityCollector,
     });
 
     console.log('[Toolasha] UI library 2 loaded');

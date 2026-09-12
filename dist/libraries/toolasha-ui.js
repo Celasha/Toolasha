@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.107.8
+ * Version: 2.107.9
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -23942,6 +23942,11 @@ ${starCSS}
             this.refreshTimer = null;
             this.trackedSlots = new Map(); // characterId -> {slotElement, character}
             this.renderGeneration = 0;
+            // TLA-025D: dedup key is the mounted root element itself, not the collector's lifecycle -
+            // repeated observations of the same mount (root, then later slots-container insertion)
+            // must checkpoint at most once, but a later, fresh Character Select entry (a new root node)
+            // must still be able to checkpoint again.
+            this.checkpointedRoots = new WeakSet();
         }
 
         /**
@@ -24004,6 +24009,26 @@ ${starCSS}
             const resolved = resolveCharacterSelectSlots(rootElement);
             if (!resolved) return;
             if (generation !== this.renderGeneration) return;
+
+            // TLA-025D: native Switch Character is a plain `history.push("/characterSelect")` - it
+            // never fires the collector's own character_switching/beforeunload departure paths, so the
+            // just-departed character's activity record can still be stale by the time slot text is
+            // read below. Checkpoint the current character once per real (populated) mount, before
+            // those reads - not gated on the loading-phase mount where `resolved` is an empty array.
+            // The collector lives in the ui2.js bundle (loaded after this ui.js bundle), so it's reached
+            // lazily via window.Toolasha.UI rather than a static import, which would bundle a second,
+            // independent singleton instance here instead of the one actually running.
+            if (resolved.length > 0 && !this.checkpointedRoots.has(rootElement)) {
+                this.checkpointedRoots.add(rootElement);
+                const characterActivityCollector = window.Toolasha?.UI?.characterActivityCollector;
+                if (
+                    characterActivityCollector &&
+                    typeof characterActivityCollector.checkpointForCharacterSelect === 'function'
+                ) {
+                    await characterActivityCollector.checkpointForCharacterSelect();
+                }
+                if (generation !== this.renderGeneration) return;
+            }
 
             this.trackedSlots.clear();
             for (const { slotElement, character } of resolved) {
@@ -24139,6 +24164,7 @@ ${starCSS}
             this.stopRefreshTimer();
             this.clearAllInjectedBlocks();
             this.trackedSlots.clear();
+            this.checkpointedRoots = new WeakSet();
             this.renderGeneration += 1;
             this.isWatching = false;
         }

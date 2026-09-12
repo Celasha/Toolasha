@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.107.8
+ * Version: 2.107.9
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -29996,19 +29996,22 @@
             }
             parts.push(costSpan);
 
-            // Below, further ratios only make sense against a real, fully-resolved cost.
-            if (cost > 0 && !costIsIncomplete) {
+            // Below, further ratios need a nonzero cost to divide by, but a cost that's merely
+            // approximate (costIsIncomplete) still yields a meaningful approximate ratio - mirrors
+            // the '~' already used for the Cost line above rather than hiding the ratios outright.
+            if (cost > 0) {
+                const approxPrefix = costIsIncomplete ? '~' : '';
                 if (xpDelta > 0) {
                     const xpPerMillion = (xpDelta / cost) * 1_000_000;
                     const span = document.createElement('span');
-                    span.textContent = `${formatters_js.formatKMB(xpPerMillion)} XP/hr per 1M gold`;
+                    span.textContent = `${approxPrefix}${formatters_js.formatKMB(xpPerMillion)} XP/hr per 1M gold`;
                     parts.push(span);
                 }
 
                 if (goldDelta > 0) {
                     const paybackHours = cost / goldDelta;
                     const span = document.createElement('span');
-                    span.textContent = `Payback: ${formatters_js.timeReadable(paybackHours * 3600)}`;
+                    span.textContent = `Payback: ${approxPrefix}${formatters_js.timeReadable(paybackHours * 3600)}`;
                     parts.push(span);
                 }
             }
