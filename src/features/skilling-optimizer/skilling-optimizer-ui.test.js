@@ -127,48 +127,82 @@ describe('per-Skill loadout retargeting (TLA-024/OPT-24)', () => {
     });
 });
 
-describe('_makeCostPaybackEl - recommendation price / marginal gain / payback display', () => {
-    test('returns null when there is no cost and no incomplete-price flag', () => {
+describe('Equipment Progression table cell builders (Cost/Profit/XP-ratio/Payback columns)', () => {
+    test('_makeCostCell shows a dash placeholder when there is no cost and no incomplete-price flag', () => {
         const ui = new SkillingSimulatorUI();
-        expect(ui._makeCostPaybackEl(0, false, 100, 0, null)).toBeNull();
+        expect(ui._makeCostCell(0, false, null).textContent).toBe('—');
     });
 
-    test('shows just the cost when there is no XP or Gold gain to rate it against', () => {
+    test('_makeCostCell shows the formatted cost', () => {
         const ui = new SkillingSimulatorUI();
-        const el = ui._makeCostPaybackEl(2_000_000, false, 0, 0, null);
-        expect(el.textContent).toContain('Cost: 2.0M');
-        expect(el.textContent).not.toContain('Payback');
-        expect(el.textContent).not.toContain('per 1M gold');
+        expect(ui._makeCostCell(2_000_000, false, null).textContent).toContain('2.0M');
     });
 
-    test('shows marginal XP gain per gold spent alongside cost', () => {
+    test('_makeCostCell marks an unresolved price as approximate with a leading "~"', () => {
         const ui = new SkillingSimulatorUI();
-        // 500 XP/hr gained for a 2M gold cost -> 250 XP/hr per 1M gold spent.
-        const el = ui._makeCostPaybackEl(2_000_000, false, 500, 0, null);
-        expect(el.textContent).toContain('250 XP/hr per 1M gold');
+        expect(ui._makeCostCell(0, true, null).textContent).toContain('~');
     });
 
-    test('shows payback time derived from the Gold/hr gain', () => {
+    test('_makeDeltaCell shows a dash when there is no gain over baseline', () => {
+        const ui = new SkillingSimulatorUI();
+        expect(ui._makeDeltaCell(0, 10_000, null).textContent).toBe('—');
+        expect(ui._makeDeltaCell(-50, 10_000, null).textContent).toBe('—');
+        expect(ui._makeDeltaCell(50, 0, null).textContent).toBe('—');
+    });
+
+    test('_makeDeltaCell shows the raw gain and a gain percentage', () => {
+        const ui = new SkillingSimulatorUI();
+        expect(ui._makeDeltaCell(600, 10_000, null).textContent).toBe('+600 (+6.0%)');
+    });
+
+    test('_makeXpRatioCell shows a dash without a cost, a gain, or a baseline to divide by', () => {
+        const ui = new SkillingSimulatorUI();
+        expect(ui._makeXpRatioCell(500, 100_000, 0, false).textContent).toBe('—');
+        expect(ui._makeXpRatioCell(-50, 100_000, 1_000_000, false).textContent).toBe('—');
+        expect(ui._makeXpRatioCell(500, 0, 1_000_000, false).textContent).toBe('—');
+    });
+
+    test('_makeXpRatioCell shows gold cost per 0.01 percentage point of XP/hr gain', () => {
+        const ui = new SkillingSimulatorUI();
+        // 5% XP gain (pctPoints = (5,000/100,000)*100 = 5) for a 1M gold cost.
+        // 5 / 0.01 = 500 increments; 1M / 500 = 2,000.
+        expect(ui._makeXpRatioCell(5_000, 100_000, 1_000_000, false).textContent).toBe('2.0K');
+    });
+
+    test('_makeXpRatioCell marks an incomplete cost as approximate', () => {
+        const ui = new SkillingSimulatorUI();
+        expect(ui._makeXpRatioCell(5_000, 100_000, 1_000_000, true).textContent).toBe('~2.0K');
+    });
+
+    test('_makeProfitRatioCell shows a dash without a cost, a gain, or a baseline to divide by', () => {
+        const ui = new SkillingSimulatorUI();
+        expect(ui._makeProfitRatioCell(0, 10_000, 1_000_000, false).textContent).toBe('—');
+        expect(ui._makeProfitRatioCell(500, 0, 1_000_000, false).textContent).toBe('—');
+        expect(ui._makeProfitRatioCell(500, 10_000, 0, false).textContent).toBe('—');
+    });
+
+    test('_makeProfitRatioCell shows gold cost per 0.01 percentage point of Gold/hr gain', () => {
+        const ui = new SkillingSimulatorUI();
+        // 5% gold gain (500 pct-points... i.e. 500 * 0.01% increments) for a 1M gold cost.
+        // pctPoints = (5_000/100_000)*100 = 5; 5 / 0.01 = 500 increments; 1M / 500 = 2,000.
+        expect(ui._makeProfitRatioCell(5_000, 100_000, 1_000_000, false).textContent).toBe('2.0K');
+    });
+
+    test('_makePaybackCell shows a dash without a cost or a real Gold/hr gain', () => {
+        const ui = new SkillingSimulatorUI();
+        expect(ui._makePaybackCell(0, false, 100_000).textContent).toBe('—');
+        expect(ui._makePaybackCell(1_000_000, false, 0).textContent).toBe('—');
+    });
+
+    test('_makePaybackCell shows a compact payback time derived from the Gold/hr gain', () => {
         const ui = new SkillingSimulatorUI();
         // 1,000,000 gold cost / 100,000 gold/hr gain = 10 hours to break even.
-        const el = ui._makeCostPaybackEl(1_000_000, false, 0, 100_000, null);
-        expect(el.textContent).toContain('Payback: 10h');
+        expect(ui._makePaybackCell(1_000_000, false, 100_000).textContent).toBe('10h');
     });
 
-    test('an unresolved price is marked incomplete and never backs a ratio built on an unknown number', () => {
+    test('_makePaybackCell marks an unresolved price as approximate', () => {
         const ui = new SkillingSimulatorUI();
-        const el = ui._makeCostPaybackEl(0, true, 500, 100_000, null);
-        expect(el.textContent).toContain('~');
-        expect(el.textContent).not.toContain('per 1M gold');
-        expect(el.textContent).not.toContain('Payback');
-    });
-
-    test('a negative or zero gain never produces a ratio, even when cost is known', () => {
-        const ui = new SkillingSimulatorUI();
-        const el = ui._makeCostPaybackEl(1_000_000, false, -50, 0, null);
-        expect(el.textContent).toContain('Cost: 1.0M');
-        expect(el.textContent).not.toContain('per 1M gold');
-        expect(el.textContent).not.toContain('Payback');
+        expect(ui._makePaybackCell(1_000_000, true, 100_000).textContent).toBe('~10h');
     });
 });
 
@@ -299,9 +333,8 @@ describe('_renderOptimizerResults - Equipment Progression sort control', () => {
     }
 
     function slotLabelOrder(container) {
-        return [...container.querySelectorAll('div')]
-            .filter((d) => d.children.length === 0)
-            .map((d) => d.textContent)
+        return [...container.querySelectorAll('tbody tr')]
+            .map((tr) => tr.querySelector('td')?.querySelector('span')?.textContent)
             .filter((t) => ['Alpha', 'Bravo', 'Charlie'].includes(t));
     }
 

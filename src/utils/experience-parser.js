@@ -98,19 +98,28 @@ export function parseCharmExperience(equipment, skillHrid, itemDetailMap) {
 /**
  * Parse house room wisdom bonus
  * All house rooms provide +0.05% wisdom per level
+ * @param {{hrid: string, level: number}|null} [roomLevelOverride=null] - Hypothetical level for
+ *   one specific house room, substituted in place of that room's live level - never mutates real
+ *   state. Applies whether or not the room currently has a nonzero entry in the live map.
  * @returns {number} Total wisdom from house rooms (e.g., 0.4 for 8 total levels)
  */
-export function parseHouseRoomWisdom() {
+export function parseHouseRoomWisdom(roomLevelOverride = null) {
     const houseRooms = dataManager.getHouseRooms();
-    if (!houseRooms || houseRooms.size === 0) {
-        return 0;
-    }
 
-    // Sum all house room levels
+    // Sum all house room levels, substituting the override's level for its one matching room.
     let totalLevels = 0;
-    for (const [_hrid, room] of houseRooms) {
-        totalLevels += room.level || 0;
+    let overrideApplied = false;
+    if (houseRooms) {
+        for (const [hrid, room] of houseRooms) {
+            if (roomLevelOverride?.hrid === hrid) {
+                totalLevels += roomLevelOverride.level;
+                overrideApplied = true;
+            } else {
+                totalLevels += room.level || 0;
+            }
+        }
     }
+    if (roomLevelOverride && !overrideApplied) totalLevels += roomLevelOverride.level;
 
     // Formula: totalLevels × 0.05% per level
     return totalLevels * 0.05;
@@ -196,12 +205,13 @@ export function parseConsumableWisdom(drinkSlots, itemDetailMap, drinkConcentrat
  * Calculate total experience multiplier and breakdown
  * @param {string} skillHrid - Skill HRID (e.g., "/skills/foraging")
  * @param {string} actionTypeHrid - Action type HRID (e.g., "/action_types/foraging")
- * @param {{equipment: Map, drinks: Array}|null} [scenarioOverride] - When provided, use this
+ * @param {{equipment: Map, drinks: Array, houseRoomLevelOverride?: {hrid: string, level: number}}|null} [scenarioOverride] - When provided, use this
  *   explicit equipment/drinks instead of resolving the live/saved action context. For hypothetical
  *   calculations (Skilling Simulator/Optimizer) so candidate gear's Wisdom/Charm XP is scored
  *   instead of the character's actual current/saved gear. Global sources (house, community,
  *   achievement, MooPass, personal, guild) still reflect the real current character - only
- *   equipment/drinks are hypothetical.
+ *   equipment/drinks are hypothetical, unless `houseRoomLevelOverride` is also supplied, in which
+ *   case only that one specific house room's level becomes hypothetical too.
  * @returns {Object} Experience data with breakdown
  */
 export function calculateExperienceMultiplier(skillHrid, actionTypeHrid, scenarioOverride = null) {
@@ -217,7 +227,7 @@ export function calculateExperienceMultiplier(skillHrid, actionTypeHrid, scenari
     // Parse wisdom from all sources
     const equipmentWisdomData = parseEquipmentWisdom(equipment, itemDetailMap);
     const equipmentWisdom = equipmentWisdomData.total;
-    const houseWisdom = parseHouseRoomWisdom();
+    const houseWisdom = parseHouseRoomWisdom(scenarioOverride?.houseRoomLevelOverride ?? null);
     const communityWisdom = parseCommunityBuffWisdom();
     const consumableWisdom = parseConsumableWisdom(activeDrinks, itemDetailMap, drinkConcentration);
     const achievementWisdom = dataManager.getAchievementBuffFlatBoost(actionTypeHrid, '/buff_types/wisdom') * 100;

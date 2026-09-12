@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, afterEach } from 'vitest';
+import dataManager from '../../core/data-manager.js';
 
 const BACK_LOCATION = '/item_locations/back';
 const REFINED_HRID = '/items/chance_cape_refined';
@@ -7,6 +8,22 @@ const POUCH_LOCATION = '/item_locations/pouch';
 const NO_DC_POUCH_HRID = '/items/plain_pouch';
 const GUZZLING_POUCH_HRID = '/items/guzzling_pouch';
 const GUZZLING_TEA_HRID = '/items/some_tea';
+const LOG_SHED_HRID = '/house_rooms/log_shed';
+
+const houseRoomDetailMap = {
+    [LOG_SHED_HRID]: {
+        name: 'Log Shed',
+        usableInActionTypeMap: { '/action_types/woodcutting': true },
+        // Level 3 deliberately omitted - exercises the "gap in upgradeCostsMap" fail-safe below
+        // (target level 3 is still under maxLevel 4, so it's a priceable-but-missing-data case,
+        // not an "already at max" case).
+        upgradeCostsMap: {
+            1: [{ itemHrid: '/items/coin', count: 1000 }],
+            2: [{ itemHrid: '/items/coin', count: 5000 }],
+            4: [{ itemHrid: '/items/plank', count: 10 }],
+        },
+    },
+};
 
 const itemDetailMap = {
     [REFINED_HRID]: {
@@ -47,25 +64,56 @@ const itemDetailMap = {
 
 vi.mock('../../core/data-manager.js', () => ({
     default: {
-        getInitClientData: vi.fn(() => ({ itemDetailMap })),
+        getInitClientData: vi.fn(() => ({ itemDetailMap, houseRoomDetailMap })),
         getSkills: vi.fn(() => [{ skillHrid: '/skills/crafting', level: 50 }]),
+        getHouseRoomLevel: vi.fn(() => 0),
     },
 }));
 
-// Refined items keep their per-level XP contribution even when clamped to their effective
-// level, so a regression back to scoring at the nominal breakpoint is numerically detectable.
+// Refined items keep a real per-level XP contribution (100 + 1*level) distinct from non-refined
+// items' steeper per-level scaling (12*level), so a regression in which level a candidate is
+// actually scored at (nominal bp vs a floored level) is numerically detectable.
 vi.mock('../../utils/tea-optimizer.js', () => ({
-    scoreEquipmentSetup: vi.fn((skillName, goal, equipment) => {
-        const entry = equipment.get(BACK_LOCATION);
-        if (!entry) return { score: 0, hasMissingPrice: false };
-        const isRefined = entry.itemHrid === REFINED_HRID;
-        const xpRaw = isRefined ? 100 + 1 * entry.enhancementLevel : 0 + 12 * entry.enhancementLevel;
-        return { score: goal === 'xp' ? xpRaw : xpRaw * 2, hasMissingPrice: false };
-    }),
+    scoreEquipmentSetup: vi.fn(
+        (
+            skillName,
+            goal,
+            equipment,
+            playerLevel,
+            selectedActionHrids,
+            teaHrids,
+            alchemyContext,
+            houseRoomLevelOverride
+        ) => {
+            // House-room candidate scoring (getHouseRoomCandidate) - keyed off the override's
+            // hypothetical level rather than equipment, so its callers can assert exactly what
+            // level was requested without needing a real efficiency/wisdom/rare-find pipeline here.
+            if (houseRoomLevelOverride) {
+                const base = houseRoomLevelOverride.level * 10;
+                return { score: goal === 'xp' ? base : base * 2, hasMissingPrice: false };
+            }
+            const entry = equipment.get(BACK_LOCATION);
+            if (!entry) return { score: 0, hasMissingPrice: false };
+            const isRefined = entry.itemHrid === REFINED_HRID;
+            const xpRaw = isRefined ? 100 + 1 * entry.enhancementLevel : 0 + 12 * entry.enhancementLevel;
+            return { score: goal === 'xp' ? xpRaw : xpRaw * 2, hasMissingPrice: false };
+        }
+    ),
     findOptimalTeas: vi.fn(() => null),
     getSkillActionsForDisplay: vi.fn(),
     calculateSkillPerformance: vi.fn(),
     resolveActiveAlchemyItemContext: vi.fn(() => null),
+    SKILL_TO_ACTION_TYPE: {
+        milking: '/action_types/milking',
+        foraging: '/action_types/foraging',
+        woodcutting: '/action_types/woodcutting',
+        cheesesmithing: '/action_types/cheesesmithing',
+        crafting: '/action_types/crafting',
+        tailoring: '/action_types/tailoring',
+        cooking: '/action_types/cooking',
+        brewing: '/action_types/brewing',
+        alchemy: '/action_types/alchemy',
+    },
 }));
 
 vi.mock('../../utils/profit-helpers.js', () => ({
@@ -80,31 +128,32 @@ vi.mock('../../utils/enhancement-config.js', () => ({
     getEnhancingParams: vi.fn(() => ({ enhancingLevel: 100 })),
 }));
 
-const { optimizeSkill, buildAchievableEquipment } = await import('./skilling-optimizer-engine.js');
+const { optimizeSkill, buildAchievableEquipment, getHouseRoomCandidate } =
+    await import('./skilling-optimizer-engine.js');
 const { scoreEquipmentSetup, findOptimalTeas, resolveActiveAlchemyItemContext } =
     await import('../../utils/tea-optimizer.js');
 const { resolveItemPrice } = await import('../../utils/profit-helpers.js');
 const { calculateDirectEnhancementCost } = await import('../enhancement/tooltip-enhancement.js');
 
 describe('optimizeSkill - refined item breakpoint labeling', () => {
-    test('records the effective scored level separately from the nominal breakpoint bucket', () => {
+    test('a cape (back slot) is the deliberate exception to the refined-item +10 floor', () => {
         const result = optimizeSkill('Crafting', 50, null);
         const progression = result.slots[BACK_LOCATION].progression;
 
         const byBreakpoint = new Map(progression.map((entry) => [entry.breakpoint, entry]));
 
-        // Below the refined item's real minimum (+10), it still wins on the strength of its
-        // higher base stats - but is only ever actually scored at its effective level (+10),
-        // not at the nominal bucket shown in `breakpoint`.
+        // Real cape breakpoints below +10 (+3, +5, +7 per BREAKPOINTS_BACK) are common enough in
+        // practice that a refined cape is scored at its real nominal level there, not clamped to
+        // +10 the way other refined slots are - it still wins here purely on higher base stats.
         for (const bp of [3, 5, 7]) {
             const entry = byBreakpoint.get(bp);
             expect(entry.itemHrid).toBe(REFINED_HRID);
             expect(entry.breakpoint).toBe(bp);
-            expect(entry.enhancementLevel).toBe(10);
+            expect(entry.enhancementLevel).toBe(bp);
         }
 
         // Once the nominal bucket reaches/exceeds +10, the non-refined item's steeper
-        // per-level scaling overtakes the refined item, and no clamping applies to either.
+        // per-level scaling overtakes the refined item.
         for (const bp of [10, 12]) {
             const entry = byBreakpoint.get(bp);
             expect(entry.itemHrid).toBe(NONREFINED_HRID);
@@ -113,16 +162,16 @@ describe('optimizeSkill - refined item breakpoint labeling', () => {
         }
     });
 
-    test('computes the non-primary goal score at the effective level, not the nominal breakpoint', () => {
+    test('computes the non-primary goal score at the real nominal level for a cape, never a +10 floor', () => {
         const result = optimizeSkill('Crafting', 50, null);
         const progression = result.slots[BACK_LOCATION].progression;
         const entry = progression.find((e) => e.breakpoint === 3);
 
-        // xpScore is the primary goal (Crafting -> 'xp'), computed at the effective level (10):
-        // 100 + 1*10 = 110. goldScore must reuse that same effective level, not the nominal
-        // bucket (3) - which would have wrongly produced (100 + 1*3) * 2 = 206 instead of 220.
-        expect(entry.xpScore).toBe(110);
-        expect(entry.goldScore).toBe(220);
+        // xpScore is the primary goal (Crafting -> 'xp'), computed at the real nominal level (3):
+        // 100 + 1*3 = 103. goldScore must reuse that same real level, not a +10 floor - which
+        // would have wrongly produced (100 + 1*10) * 2 = 220 instead of 206.
+        expect(entry.xpScore).toBe(103);
+        expect(entry.goldScore).toBe(206);
     });
 });
 
@@ -631,5 +680,74 @@ describe('buildAchievableEquipment - AVG XP/HR-AVG GOLD/HR must not silently dis
     test('handles a null/undefined slots argument without throwing', () => {
         expect(() => buildAchievableEquipment(null, new Map(), null)).not.toThrow();
         expect(() => buildAchievableEquipment(undefined, new Map(), null)).not.toThrow();
+    });
+});
+
+describe('getHouseRoomCandidate - house room upgrade suggestion (§5)', () => {
+    afterEach(() => {
+        dataManager.getHouseRoomLevel.mockReturnValue(0);
+        resolveItemPrice.mockReturnValue({ price: 0, custom: false, missing: false });
+    });
+
+    test('returns null when the skill has no dedicated house room mapping', () => {
+        expect(getHouseRoomCandidate('Combat', 50, null, new Map(), [], null)).toBeNull();
+    });
+
+    test('returns null when the mapped room has no upgradeCostsMap in game data (Cheesesmithing -> Forge, not fixtured)', () => {
+        expect(getHouseRoomCandidate('Cheesesmithing', 50, null, new Map(), [], null)).toBeNull();
+    });
+
+    test('returns null when the room is already at its max level', () => {
+        dataManager.getHouseRoomLevel.mockReturnValue(4); // maxLevel from the fixture is 4
+        expect(getHouseRoomCandidate('Woodcutting', 50, null, new Map(), [], null)).toBeNull();
+    });
+
+    test('prices the upgrade and scores both goals at the hypothetical next level, not equipment', () => {
+        dataManager.getHouseRoomLevel.mockReturnValue(1); // -> target level 2, coin-only cost
+        const compareEquipment = new Map([[BACK_LOCATION, { itemHrid: REFINED_HRID, enhancementLevel: 10 }]]);
+
+        const candidate = getHouseRoomCandidate('Woodcutting', 50, null, compareEquipment, [], null);
+
+        expect(candidate.houseRoomHrid).toBe(LOG_SHED_HRID);
+        expect(candidate.roomName).toBe('Log Shed');
+        expect(candidate.currentLevel).toBe(1);
+        expect(candidate.targetLevel).toBe(2);
+        expect(candidate.cost).toBe(5000);
+        expect(candidate.costIsIncomplete).toBe(false);
+        // Mocked scoreEquipmentSetup keys off houseRoomLevelOverride.level (2), not equipment -
+        // proves the equipment map is passed through unmodified but the room level is what varies.
+        expect(candidate.xpScore).toBe(20);
+        expect(candidate.goldScore).toBe(40);
+    });
+
+    test('marks the cost incomplete when upgradeCostsMap has no entry for the target level (gap in game data)', () => {
+        dataManager.getHouseRoomLevel.mockReturnValue(2); // -> target level 3, deliberately absent from the fixture
+
+        const candidate = getHouseRoomCandidate('Woodcutting', 50, null, new Map(), [], null);
+
+        expect(candidate.targetLevel).toBe(3);
+        expect(candidate.cost).toBe(0);
+        expect(candidate.costIsIncomplete).toBe(true);
+    });
+
+    test('resolves a non-coin material cost via resolveItemPrice, buy side', () => {
+        dataManager.getHouseRoomLevel.mockReturnValue(3); // -> target level 4, priced in planks
+        resolveItemPrice.mockReturnValue({ price: 50, custom: false, missing: false });
+
+        const candidate = getHouseRoomCandidate('Woodcutting', 50, null, new Map(), [], null);
+
+        expect(resolveItemPrice).toHaveBeenCalledWith('/items/plank', { side: 'buy' });
+        expect(candidate.cost).toBe(500); // 10 planks * 50
+        expect(candidate.costIsIncomplete).toBe(false);
+    });
+
+    test('marks cost incomplete (never silently free) when a required material price is unresolved', () => {
+        dataManager.getHouseRoomLevel.mockReturnValue(3); // -> target level 4, priced in planks
+        resolveItemPrice.mockReturnValue({ price: 0, custom: false, missing: true });
+
+        const candidate = getHouseRoomCandidate('Woodcutting', 50, null, new Map(), [], null);
+
+        expect(candidate.cost).toBe(0);
+        expect(candidate.costIsIncomplete).toBe(true);
     });
 });

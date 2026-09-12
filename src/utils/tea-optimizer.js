@@ -281,7 +281,11 @@ function calculateXpPerHour(actionDetails, buffs, playerLevel, otherEfficiency, 
     // the live/saved action context. Tea wisdom is excluded here (drinks: []) since this
     // hypothetical combo's tea wisdom is already tracked separately in buffs.wisdom.
     const skillHrid = actionDetails.experienceGain.skillHrid;
-    const xpData = calculateExperienceMultiplier(skillHrid, actionDetails.type, { equipment, drinks: [] });
+    const xpData = calculateExperienceMultiplier(skillHrid, actionDetails.type, {
+        equipment,
+        drinks: [],
+        houseRoomLevelOverride: otherEfficiency.houseRoomLevelOverride,
+    });
 
     const totalWisdomWithOurTea = xpData.totalWisdom + buffs.wisdom;
     const charmExperience = xpData.charmExperience || 0;
@@ -399,7 +403,13 @@ function calculateGatheringGoldPerHour(actionDetails, buffs, playerLevel, otherE
     }
 
     // Add bonus revenue from essence and rare find drops
-    const bonusRevenue = calculateBonusRevenue(actionDetails, actionsPerHour, equipment, itemDetailMap);
+    const bonusRevenue = calculateBonusRevenue(
+        actionDetails,
+        actionsPerHour,
+        equipment,
+        itemDetailMap,
+        otherEfficiency.houseRoomLevelOverride
+    );
     if (bonusRevenue?.hasMissingPrices) hasMissingPrice = true;
     const efficiencyBoostedBonusRevenue = bonusRevenue.totalBonusRevenue * efficiencyMultiplier;
     totalRevenue += efficiencyBoostedBonusRevenue;
@@ -511,7 +521,13 @@ function calculateProductionGoldPerHour(actionDetails, buffs, playerLevel, other
     const grossProfitPerHour = actionsPerHour * profitPerAction * efficiencyMultiplier;
 
     // Add bonus revenue from essence and rare find drops (same as tile calculation)
-    const bonusRevenue = calculateBonusRevenue(actionDetails, actionsPerHour, equipment, itemDetailMap);
+    const bonusRevenue = calculateBonusRevenue(
+        actionDetails,
+        actionsPerHour,
+        equipment,
+        itemDetailMap,
+        otherEfficiency.houseRoomLevelOverride
+    );
     if (bonusRevenue?.hasMissingPrices) hasMissingPrice = true;
     const efficiencyBoostedBonusRevenue = (bonusRevenue?.totalBonusRevenue || 0) * efficiencyMultiplier;
 
@@ -700,6 +716,7 @@ function calculateAlchemyXpPerHour(alchemyContext, buffs, playerLevel, otherEffi
     const xpData = calculateExperienceMultiplier('/skills/alchemy', '/action_types/alchemy', {
         equipment,
         drinks: [],
+        houseRoomLevelOverride: otherEfficiency.houseRoomLevelOverride,
     });
     const totalWisdomWithOurTea = xpData.totalWisdom + buffs.wisdom;
     const charmExperience = xpData.charmExperience || 0;
@@ -931,9 +948,13 @@ function getCommunityEfficiencyForActionType(actionType, isProduction, gameData)
  * whichever specific candidate/action happens to be under evaluation.
  * @param {string} actionType - Action type HRID
  * @param {boolean} isProduction
+ * @param {{hrid: string, level: number}|null} [houseRoomLevelOverride=null] - Hypothetical level
+ *   for one specific house room (Skilling Optimizer house-room upgrade candidate scoring), passed
+ *   straight through to getActionEfficiencyContext and, via the returned object, to the
+ *   Rare-Find-dependent bonus-revenue calculators below - never mutates real dataManager state.
  * @returns {Object} Other efficiency values
  */
-function buildNonTeaEfficiencySources(actionType, isProduction) {
+function buildNonTeaEfficiencySources(actionType, isProduction, houseRoomLevelOverride = null) {
     const gameData = dataManager.getInitClientData();
     const result = {
         house: 0,
@@ -945,6 +966,7 @@ function buildNonTeaEfficiencySources(actionType, isProduction) {
         personal: 0,
         guild: 0,
         speed: 0,
+        houseRoomLevelOverride,
     };
     if (!gameData) return result;
 
@@ -957,6 +979,7 @@ function buildNonTeaEfficiencySources(actionType, isProduction) {
         equipmentOverride: new Map(),
         drinksOverride: [],
         skillLevelOverride: 1,
+        houseRoomLevelOverride,
     });
 
     const { communityGathering = 0, achievementGathering = 0, personalGathering = 0 } = effCtx.gatheringDetails ?? {};
@@ -1315,6 +1338,9 @@ function getRepresentativeAlchemyItemHrid(playerLevel, itemDetailMap) {
  *   For Alchemy only: which real item/action-type to score Gold against (see
  *   resolveActiveAlchemyItemContext). Without it, Gold ranking fails closed to 0 (no item to price)
  *   and XP falls back to a representative-item estimate, same as before this param existed.
+ * @param {{hrid: string, level: number}|null} [houseRoomLevelOverride] - Hypothetical level for
+ *   one specific house room (Skilling Optimizer house-room upgrade candidate scoring), applied on
+ *   top of the character's real current levels for every other room - never mutates real state.
  * @returns {{score: number, hasMissingPrice: boolean}} Average XP/hr or Gold/hr across the
  *   selected action cohort, plus whether a required Gold price was unresolved (always false for
  *   'xp' goal, which never touches market prices)
@@ -1326,7 +1352,8 @@ export function scoreEquipmentSetup(
     playerLevel,
     selectedActionHrids = null,
     teaHrids = [],
-    alchemyContext = null
+    alchemyContext = null,
+    houseRoomLevelOverride = null
 ) {
     const normalizedSkill = skillName.toLowerCase();
     const isGathering = GATHERING_SKILLS.includes(normalizedSkill);
@@ -1340,7 +1367,7 @@ export function scoreEquipmentSetup(
     const actionType = SKILL_TO_ACTION_TYPE[normalizedSkill];
     if (!actionType) return { score: 0, hasMissingPrice: false };
 
-    const otherEfficiency = buildNonTeaEfficiencySources(actionType, isProduction);
+    const otherEfficiency = buildNonTeaEfficiencySources(actionType, isProduction, houseRoomLevelOverride);
 
     // Add equipment gathering quantity bonus — not captured by the standard speed/efficiency parsers
     if (isGathering) {

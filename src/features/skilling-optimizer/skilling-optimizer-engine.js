@@ -13,9 +13,11 @@ import {
     getSkillActionsForDisplay,
     calculateSkillPerformance,
     resolveActiveAlchemyItemContext,
+    SKILL_TO_ACTION_TYPE,
 } from '../../utils/tea-optimizer.js';
 import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import { resolveItemPrice } from '../../utils/profit-helpers.js';
+import { getHouseRoomForActionType } from '../../utils/house-efficiency.js';
 
 export { getSkillActionsForDisplay, calculateSkillPerformance, findOptimalTeas, resolveActiveAlchemyItemContext };
 
@@ -501,6 +503,116 @@ function calculateSlotUpgradeCost(itemHrid, enhancementLevel, currentEquipped, i
 }
 
 /**
+ * Gold cost to upgrade one house room to a specific target level (the single increment
+ * `upgradeCostsMap[targetLevel]`, NOT the cumulative cost from level 1 - matches the equipment
+ * progression rows above, which likewise price only the one step being suggested). Coins are
+ * face-value; every other material is resolved the same way equipment prices are
+ * (`resolveItemPrice`, buy side), marking the result incomplete rather than silently treating a
+ * missing price as free.
+ * @param {string} houseRoomHrid
+ * @param {number} targetLevel
+ * @param {Object} gameData
+ * @returns {{cost: number, costIsIncomplete: boolean}}
+ */
+function calculateHouseRoomUpgradeCost(houseRoomHrid, targetLevel, gameData) {
+    const levelCosts = gameData?.houseRoomDetailMap?.[houseRoomHrid]?.upgradeCostsMap?.[targetLevel];
+    if (!levelCosts) return { cost: 0, costIsIncomplete: true };
+
+    let cost = 0;
+    let costIsIncomplete = false;
+    for (const { itemHrid, count } of levelCosts) {
+        if (itemHrid === '/items/coin') {
+            cost += count;
+            continue;
+        }
+        const { price, missing } = resolveItemPrice(itemHrid, { side: 'buy' });
+        if (missing) costIsIncomplete = true;
+        cost += count * price;
+    }
+    return { cost, costIsIncomplete };
+}
+
+/**
+ * A one-off "upgrade the skill's own dedicated house room by one level" recommendation, shaped
+ * like an equipment progression entry (cost/costIsIncomplete/xpScore/goldScore) so the UI can
+ * reuse the exact same Cost/Profit/XP/Payback cell builders. Deliberately scoped to just this one
+ * room (not every room's Wisdom-only contribution) per the room->skill mapping in
+ * house-efficiency.js - other rooms' Wisdom/Rare-Find contribution to this skill is real but very
+ * minor, and would otherwise clutter the table with near-identical low-value rows.
+ *
+ * Reuses scoreEquipmentSetup's houseRoomLevelOverride (threaded through
+ * tea-optimizer.js/efficiency.js/house-efficiency.js/experience-parser.js) rather than a
+ * hand-derived formula, so this candidate is scored by the exact same live pipeline as every
+ * other recommendation - never mutates the character's real house room state.
+ * @param {string} skillName
+ * @param {number} playerLevel
+ * @param {Set<string>|null} selectedActionHrids
+ * @param {Map} compareEquipment - Same equipment (and teaHridsForRound below) the baseline/every
+ *   equipment candidate was scored against - only the house room level differs for this candidate.
+ * @param {string[]} teaHridsForRound
+ * @param {{actionType: string, itemHrid: string, enhancementLevel: number}|null} alchemyContext
+ * @returns {Object|null} null when the skill has no dedicated room, or that room is already at
+ *   its max level (nothing to suggest)
+ */
+export function getHouseRoomCandidate(
+    skillName,
+    playerLevel,
+    selectedActionHrids,
+    compareEquipment,
+    teaHridsForRound,
+    alchemyContext
+) {
+    const actionType = SKILL_TO_ACTION_TYPE[skillName.toLowerCase()];
+    const houseRoomHrid = actionType ? getHouseRoomForActionType(actionType) : null;
+    if (!houseRoomHrid) return null;
+
+    const gameData = dataManager.getInitClientData();
+    const upgradeCostsMap = gameData?.houseRoomDetailMap?.[houseRoomHrid]?.upgradeCostsMap;
+    if (!upgradeCostsMap) return null;
+
+    const currentLevel = dataManager.getHouseRoomLevel(houseRoomHrid);
+    const maxLevel = Math.max(0, ...Object.keys(upgradeCostsMap).map(Number));
+    const targetLevel = currentLevel + 1;
+    if (targetLevel > maxLevel) return null;
+
+    const { cost, costIsIncomplete } = calculateHouseRoomUpgradeCost(houseRoomHrid, targetLevel, gameData);
+    const roomLevelOverride = { hrid: houseRoomHrid, level: targetLevel };
+
+    const xpResult = scoreEquipmentSetup(
+        skillName,
+        'xp',
+        compareEquipment,
+        playerLevel,
+        selectedActionHrids,
+        teaHridsForRound,
+        alchemyContext,
+        roomLevelOverride
+    );
+    const goldResult = scoreEquipmentSetup(
+        skillName,
+        'gold',
+        compareEquipment,
+        playerLevel,
+        selectedActionHrids,
+        teaHridsForRound,
+        alchemyContext,
+        roomLevelOverride
+    );
+
+    return {
+        houseRoomHrid,
+        roomName: gameData.houseRoomDetailMap[houseRoomHrid]?.name || houseRoomHrid,
+        currentLevel,
+        targetLevel,
+        cost,
+        costIsIncomplete,
+        hasMissingPrice: xpResult.hasMissingPrice || goldResult.hasMissingPrice,
+        xpScore: xpResult.score,
+        goldScore: goldResult.score,
+    };
+}
+
+/**
  * Run one full per-slot equipment optimization pass, holding the given tea combination fixed for
  * every candidate score. With no Compare loadout, a narrow Drink-Concentration joint re-check
  * (see FAIL B below) may still raise a candidate's score via its own best tea search - but with a
@@ -560,7 +672,11 @@ function runEquipmentSlotRound(
                 // wastes materials for no benefit), so credit them at a realistic minimum of +10
                 // even when checking lower breakpoint buckets - bestEffectiveLevel below records
                 // what was actually scored, since it can differ from the nominal bucket `bp`.
-                const effectiveLevel = candidate.hrid.includes('_refined') ? Math.max(bp, 10) : bp;
+                // Capes are the deliberate exception: real cape breakpoints below +10 (+3, +5,
+                // +7 per BREAKPOINTS_BACK) are common enough in practice that a refined cape
+                // should still be scored at its real nominal level there, not clamped to +10.
+                const isBackSlot = locationHrid === '/item_locations/back';
+                const effectiveLevel = candidate.hrid.includes('_refined') && !isBackSlot ? Math.max(bp, 10) : bp;
                 const candidateResult = scoreCandidate(
                     candidate.hrid,
                     locationHrid,
@@ -846,6 +962,17 @@ export function optimizeSkill(
     const xpTeaResult = goal === 'xp' ? teaResult : otherTeaResult;
     const goldTeaResult = goal === 'gold' ? teaResult : otherTeaResult;
 
+    // Same equipment + final winning tea combo every equipment slot above was scored against -
+    // only the house room's level differs for this one extra recommendation.
+    const houseRoomCandidate = getHouseRoomCandidate(
+        skillName,
+        playerLevel,
+        selectedActionHrids,
+        compareEquipment,
+        teaHridsForRound,
+        alchemyContext
+    );
+
     return {
         skill: skillName,
         playerLevel,
@@ -853,6 +980,7 @@ export function optimizeSkill(
         xpBaseline,
         goldBaseline,
         slots,
+        houseRoomCandidate,
         xpTeaResult: xpTeaResult?.error ? null : xpTeaResult,
         goldTeaResult: goldTeaResult?.error ? null : goldTeaResult,
         alchemyContext,

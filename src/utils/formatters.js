@@ -105,6 +105,46 @@ export function timeReadable(sec) {
 }
 
 /**
+ * Compact variant of timeReadable: always at most 2 abbreviated units, no seconds precision past
+ * a minute. Intended for table/column contexts (e.g. a "Payback" column) where timeReadable's
+ * full "3 years 2 months 3 days" wording is too long to keep a column narrow.
+ * @param {number} sec - Seconds to convert
+ * @returns {string} Formatted time (e.g., "1h 05m", "3d 4h", "2y 1mo")
+ *
+ * @example
+ * timeReadableCompact(45) // "45s"
+ * timeReadableCompact(3661) // "1h 01m"
+ * timeReadableCompact(90000) // "1d 1h"
+ * timeReadableCompact(31536000) // "1y"
+ * timeReadableCompact(100000000) // "3y 2mo"
+ */
+export function timeReadableCompact(sec) {
+    if (sec >= 31536000) {
+        const years = Math.floor(sec / 31536000);
+        const months = Math.floor((sec - years * 31536000) / 2592000);
+        return months > 0 ? `${years}y ${months}mo` : `${years}y`;
+    }
+
+    if (sec >= 86400) {
+        const days = Math.floor(sec / 86400);
+        const hours = Math.floor((sec - days * 86400) / 3600);
+        return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
+    }
+
+    if (sec >= 3600) {
+        const hours = Math.floor(sec / 3600);
+        const minutes = Math.floor((sec - hours * 3600) / 60);
+        return minutes > 0 ? `${hours}h ${String(minutes).padStart(2, '0')}m` : `${hours}h`;
+    }
+
+    if (sec >= 60) {
+        return `${Math.floor(sec / 60)}m`;
+    }
+
+    return `${Math.round(sec)}s`;
+}
+
+/**
  * Format a number with thousand separators based on locale
  * @param {number} num - The number to format
  * @param {number} [decimals] - Fixed number of decimal places (omit for locale default, integers)

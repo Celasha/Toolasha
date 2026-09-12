@@ -7,6 +7,7 @@ import { describe, test, expect, vi } from 'vitest';
 import {
     numberFormatter,
     timeReadable,
+    timeReadableCompact,
     formatWithSeparator,
     formatKMB,
     formatKMB3Digits,
@@ -111,6 +112,33 @@ describe('timeReadable', () => {
             const result = timeReadable(63072000); // 2 years
             expect(result).toBe('2 years');
         });
+    });
+});
+
+describe('timeReadableCompact', () => {
+    test('formats seconds only', () => {
+        expect(timeReadableCompact(30)).toBe('30s');
+        expect(timeReadableCompact(59)).toBe('59s');
+    });
+
+    test('formats minutes without seconds', () => {
+        expect(timeReadableCompact(125)).toBe('2m');
+        expect(timeReadableCompact(3599)).toBe('59m');
+    });
+
+    test('formats hours and minutes, dropping minutes when zero', () => {
+        expect(timeReadableCompact(3661)).toBe('1h 01m');
+        expect(timeReadableCompact(3600)).toBe('1h');
+    });
+
+    test('formats days and hours, dropping hours when zero', () => {
+        expect(timeReadableCompact(90000)).toBe('1d 1h');
+        expect(timeReadableCompact(86400)).toBe('1d');
+    });
+
+    test('formats years and months, dropping months when zero - always at most 2 units', () => {
+        expect(timeReadableCompact(100000000)).toBe('3y 2mo');
+        expect(timeReadableCompact(31536000)).toBe('1y');
     });
 });
 

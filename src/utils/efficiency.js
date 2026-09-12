@@ -148,6 +148,10 @@ export function calculateEfficiencyBreakdown({
  *   effect together with equipmentOverride.
  * @param {number|null} [options.skillLevelOverride=null] - Hypothetical skill level (e.g. a
  *   Simulator "Level" field) instead of the character's real current level for this skill.
+ * @param {{hrid: string, level: number}|null} [options.houseRoomLevelOverride=null] - Hypothetical
+ *   level for one specific house room (e.g. the Skilling Optimizer scoring "what if this room were
+ *   level+1"), substituted in place of that room's live level. Every other room's live level (and
+ *   every other efficiency source) is unaffected - never mutates real dataManager state.
  * @returns {Object} Efficiency context with all computed values
  */
 export function getActionEfficiencyContext(actionDetails, options = {}) {
@@ -159,6 +163,7 @@ export function getActionEfficiencyContext(actionDetails, options = {}) {
         equipmentOverride = null,
         drinksOverride = null,
         skillLevelOverride = null,
+        houseRoomLevelOverride = null,
     } = options;
 
     const skills = dataManager.getSkills();
@@ -242,15 +247,27 @@ export function getActionEfficiencyContext(actionDetails, options = {}) {
     if (isProduction) {
         artisanBonus = parseArtisanBonus(drinkSlots, itemDetailMap, drinkConcentration);
         actionLevelBonus = parseActionLevelBonus(drinkSlots, itemDetailMap, drinkConcentration);
-        houseEfficiency = calculateHouseEfficiency(actionDetails.type);
+        houseEfficiency = calculateHouseEfficiency(actionDetails.type, houseRoomLevelOverride);
     } else {
         // Gathering: compute house efficiency from houseRooms + houseRoomDetailMap
         const houseRooms = Array.from(dataManager.getHouseRooms().values());
         const initData = gameData ?? dataManager.getInitClientData();
+        let overrideApplied = false;
         for (const room of houseRooms) {
             const roomDetail = initData?.houseRoomDetailMap?.[room.houseRoomHrid];
-            if (roomDetail?.usableInActionTypeMap?.[actionDetails.type]) {
+            if (!roomDetail?.usableInActionTypeMap?.[actionDetails.type]) continue;
+            if (houseRoomLevelOverride?.hrid === room.houseRoomHrid) {
+                houseEfficiency += houseRoomLevelOverride.level * 1.5;
+                overrideApplied = true;
+            } else {
                 houseEfficiency += (room.level || 0) * 1.5;
+            }
+        }
+        // The overridden room may not appear in the live map at all yet (e.g. currently level 0).
+        if (houseRoomLevelOverride && !overrideApplied) {
+            const overrideRoomDetail = initData?.houseRoomDetailMap?.[houseRoomLevelOverride.hrid];
+            if (overrideRoomDetail?.usableInActionTypeMap?.[actionDetails.type]) {
+                houseEfficiency += houseRoomLevelOverride.level * 1.5;
             }
         }
     }

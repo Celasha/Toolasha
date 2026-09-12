@@ -15,7 +15,7 @@ import dataManager from '../core/data-manager.js';
  * @param {string} actionTypeHrid - Action type HRID (e.g., "/action_types/brewing")
  * @returns {string|null} House room HRID or null
  */
-function getHouseRoomForActionType(actionTypeHrid) {
+export function getHouseRoomForActionType(actionTypeHrid) {
     // Mapping matches original MWI Tools
     const actionTypeToHouseRoomMap = {
         '/action_types/brewing': '/house_rooms/brewery',
@@ -35,13 +35,16 @@ function getHouseRoomForActionType(actionTypeHrid) {
 /**
  * Calculate house efficiency bonus for an action type
  * @param {string} actionTypeHrid - Action type HRID
+ * @param {{hrid: string, level: number}|null} [roomLevelOverride=null] - Hypothetical level for
+ *   one specific house room (e.g. the Skilling Optimizer scoring "what if this room were
+ *   level+1"), substituted in place of that room's live level - never mutates real state.
  * @returns {number} Efficiency bonus percentage (e.g., 12 for 12%)
  *
  * @example
  * calculateHouseEfficiency("/action_types/brewing")
  * // Returns: 12 (if brewery is level 8: 8 × 1.5% = 12%)
  */
-export function calculateHouseEfficiency(actionTypeHrid) {
+export function calculateHouseEfficiency(actionTypeHrid, roomLevelOverride = null) {
     // Get the house room for this action type
     const houseRoomHrid = getHouseRoomForActionType(actionTypeHrid);
 
@@ -49,8 +52,12 @@ export function calculateHouseEfficiency(actionTypeHrid) {
         return 0; // No house room for this action type
     }
 
-    // Get house room level from game data (via dataManager)
-    const roomLevel = dataManager.getHouseRoomLevel(houseRoomHrid);
+    // Get house room level from game data (via dataManager), unless a hypothetical override for
+    // this exact room was supplied.
+    const roomLevel =
+        roomLevelOverride?.hrid === houseRoomHrid
+            ? roomLevelOverride.level
+            : dataManager.getHouseRoomLevel(houseRoomHrid);
 
     // Formula: houseLevel × 1.5%
     // Returns as percentage (e.g., 12 for 12%)
@@ -80,6 +87,9 @@ export function getHouseRoomName(houseRoomHrid) {
 
 /**
  * Calculate total Rare Find bonus from all house rooms
+ * @param {{hrid: string, level: number}|null} [roomLevelOverride=null] - Hypothetical level for
+ *   one specific house room, substituted in place of that room's live level - never mutates real
+ *   state. Applies whether or not the room currently has a nonzero entry in the live map.
  * @returns {number} Total rare find bonus as percentage (e.g., 1.6 for 1.6%)
  *
  * @example
@@ -91,19 +101,24 @@ export function getHouseRoomName(houseRoomHrid) {
  * - Total: totalLevels × 0.2%
  * - Max: 8 rooms × 8 levels = 64 × 0.2% = 12.8%
  */
-export function calculateHouseRareFind() {
+export function calculateHouseRareFind(roomLevelOverride = null) {
     // Get all house rooms
     const houseRooms = dataManager.getHouseRooms();
 
-    if (!houseRooms || houseRooms.size === 0) {
-        return 0; // No house rooms
-    }
-
-    // Sum all house room levels
+    // Sum all house room levels, substituting the override's level for its one matching room.
     let totalLevels = 0;
-    for (const [_hrid, room] of houseRooms) {
-        totalLevels += room.level || 0;
+    let overrideApplied = false;
+    if (houseRooms) {
+        for (const [hrid, room] of houseRooms) {
+            if (roomLevelOverride?.hrid === hrid) {
+                totalLevels += roomLevelOverride.level;
+                overrideApplied = true;
+            } else {
+                totalLevels += room.level || 0;
+            }
+        }
     }
+    if (roomLevelOverride && !overrideApplied) totalLevels += roomLevelOverride.level;
 
     // Formula: totalLevels × flatBoostLevelBonus
     // flatBoostLevelBonus: 0.2% per level (no base bonus)
@@ -115,5 +130,6 @@ export function calculateHouseRareFind() {
 export default {
     calculateHouseEfficiency,
     getHouseRoomName,
+    getHouseRoomForActionType,
     calculateHouseRareFind,
 };

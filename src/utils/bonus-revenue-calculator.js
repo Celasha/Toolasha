@@ -16,15 +16,24 @@ import { calculateHouseRareFind } from './house-efficiency.js';
  * @param {number} actionsPerHour - Base actions per hour (efficiency not applied)
  * @param {Map} characterEquipment - Equipment map
  * @param {Object} itemDetailMap - Item details map
+ * @param {{hrid: string, level: number}|null} [houseRoomLevelOverride=null] - Hypothetical level
+ *   for one specific house room (Skilling Optimizer house-room upgrade candidate scoring) -
+ *   never mutates real dataManager state.
  * @returns {Object} Bonus revenue data with essence and rare find drops
  */
-export function calculateBonusRevenue(actionDetails, actionsPerHour, characterEquipment, itemDetailMap) {
+export function calculateBonusRevenue(
+    actionDetails,
+    actionsPerHour,
+    characterEquipment,
+    itemDetailMap,
+    houseRoomLevelOverride = null
+) {
     // Get Essence Find bonus from equipment
     const essenceFindBonus = parseEssenceFindBonus(characterEquipment, itemDetailMap);
 
     // Get Rare Find bonus from BOTH equipment and house rooms
     const equipmentRareFindBonus = parseRareFindBonus(characterEquipment, actionDetails.type, itemDetailMap);
-    const houseRareFindBonus = calculateHouseRareFind();
+    const houseRareFindBonus = calculateHouseRareFind(houseRoomLevelOverride);
     const achievementRareFindBonus =
         dataManager.getAchievementBuffFlatBoost(actionDetails.type, '/buff_types/rare_find') * 100;
     const personalRareFindBonus =
