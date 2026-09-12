@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.107.9](https://github.com/Celasha/Toolasha/compare/v2.107.8...v2.107.9) (2026-09-12)
+
+### Bug Fixes
+
+- checkpoint Character Activity on Character Select entry (TLA-025D) ([b7e83b1](https://github.com/Celasha/Toolasha/commit/b7e83b1ea5e8bd3c02659f99c23c9ddd243f5591))
+- show approximate payback when upgrade cost is partially unresolved ([31082af](https://github.com/Celasha/Toolasha/commit/31082af8028ff91e81e2e7e0a323f1ce347af56e))
+
 ## [2.107.8](https://github.com/Celasha/Toolasha/compare/v2.107.7...v2.107.8) (2026-09-10)
 
 ### Bug Fixes
