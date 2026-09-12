@@ -124,6 +124,69 @@ describe('refresh triggers', () => {
     });
 });
 
+describe('checkpointForCharacterSelect (TLA-025D)', () => {
+    test('TLA025D-01: persists the current activity snapshot immediately', async () => {
+        await characterActivityCollector.initialize();
+        mocks.savedRecords.clear();
+
+        await characterActivityCollector.checkpointForCharacterSelect();
+
+        expect(mocks.savedRecords.get('char-a').immediate).toBe(true);
+        expect(mocks.savedRecords.get('char-a').record.characterId).toBe('char-a');
+        expect(mocks.savedRecords.get('char-a').record.projection).toBe(mocks.liveProjection);
+    });
+
+    test('TLA025D-09: does not also persist the account-preferences mirror (no 3s-debounce dependency)', async () => {
+        await characterActivityCollector.initialize();
+        mocks.savedPrefs = null;
+
+        await characterActivityCollector.checkpointForCharacterSelect();
+
+        expect(mocks.savedPrefs).toBeNull();
+    });
+
+    test('TLA025D-03: does not persist when DataManager reports a different current character', async () => {
+        await characterActivityCollector.initialize();
+        mocks.savedRecords.clear();
+        mocks.currentCharacterId = 'char-b';
+
+        await characterActivityCollector.checkpointForCharacterSelect();
+
+        expect(mocks.savedRecords.has('char-a')).toBe(false);
+        expect(mocks.savedRecords.has('char-b')).toBe(false);
+    });
+
+    test('TLA025D-04: no-op when the collector was never initialized', async () => {
+        mocks.savedRecords.clear();
+
+        await characterActivityCollector.checkpointForCharacterSelect();
+
+        expect(mocks.savedRecords.size).toBe(0);
+    });
+
+    test('TLA025D-10: a checkpoint invoked after cleanup() cannot write for the old character', async () => {
+        await characterActivityCollector.initialize();
+        characterActivityCollector.cleanup();
+        mocks.savedRecords.clear();
+
+        await characterActivityCollector.checkpointForCharacterSelect();
+
+        expect(mocks.savedRecords.has('char-a')).toBe(false);
+    });
+
+    test('TLA025D-07: a later checkpoint after re-initialize can persist again', async () => {
+        await characterActivityCollector.initialize();
+        await characterActivityCollector.checkpointForCharacterSelect();
+        characterActivityCollector.cleanup();
+        await characterActivityCollector.initialize();
+        mocks.savedRecords.clear();
+
+        await characterActivityCollector.checkpointForCharacterSelect();
+
+        expect(mocks.savedRecords.get('char-a').immediate).toBe(true);
+    });
+});
+
 describe('lifecycle generation guard', () => {
     test('a stale handler from before cleanup() cannot persist after a new initialize()', async () => {
         await characterActivityCollector.initialize();

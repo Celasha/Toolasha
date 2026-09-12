@@ -76,6 +76,35 @@ class CharacterActivityCollector {
         });
     }
 
+    /**
+     * TLA-025D: native "Switch Character" is a plain `history.push("/characterSelect")` - it never
+     * fires `character_switching` or `beforeunload`, so the just-departed character's activity
+     * record can still be stale by the time Character Select reads it. Called from Character
+     * Select's own mount lifecycle as a final checkpoint before those reads.
+     *
+     * Persists ONLY the activity projection, immediately - deliberately does not also mirror
+     * account preferences (unlike recomputeAndPersist), so a caller awaiting this can never inherit
+     * the normal 3s storage debounce that a preference write would otherwise wait on.
+     * @returns {Promise<void>}
+     */
+    async checkpointForCharacterSelect() {
+        if (!this.isInitialized || !this.characterId) return;
+        if (dataManager.getCurrentCharacterId() !== this.characterId) return;
+
+        const record = {
+            characterId: this.characterId,
+            characterName: this.characterName,
+            observedAt: Date.now(),
+            offline: {
+                hourCap: dataManager.getOfflineHourCap(),
+                mooPassExpireTime: dataManager.getMooPassExpireTime(),
+            },
+            projection: computeLiveProjection(),
+        };
+
+        await saveCharacterActivity(this.characterId, record, true);
+    }
+
     cleanup() {
         this.lifecycleGeneration += 1;
 

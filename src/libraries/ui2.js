@@ -62,6 +62,7 @@ import emptyQueueNotification from '../features/notifications/empty-queue-notifi
 // Queue Monitor
 import queueMonitor from '../features/queue-monitor/queue-monitor.js';
 import characterActivity from '../features/character-activity/character-activity.js';
+import characterActivityCollector from '../features/character-activity/character-activity-collector.js';
 
 // Export to global namespace (merge into the UI namespace the primary UI library created)
 const toolashaRoot = window.Toolasha || {};
@@ -102,6 +103,11 @@ toolashaRoot.UI = Object.assign(toolashaRoot.UI || {}, {
     emptyQueueNotification,
     queueMonitor,
     characterActivity,
+    // Raw collector singleton (as opposed to the wrapped characterActivity feature module above) -
+    // exposed so character-select-renderer.js in the ui.js bundle (loaded BEFORE this one) can
+    // reach it lazily at runtime via window.Toolasha.UI, since Rollup's externals/globals binding
+    // only works for forward dependencies (owner loads before consumer).
+    characterActivityCollector,
 });
 
 console.log('[Toolasha] UI library 2 loaded');

@@ -61,6 +61,10 @@ const characterSelectRendererModule = await import('./character-select-renderer.
 const { default: characterSelectRenderer, computeSlotDisplayState } = characterSelectRendererModule;
 const { formatActivityStatusTime } = await import('../../utils/formatters.js');
 
+// The real collector lives in a different bundle (ui2.js) and is reached lazily at runtime via
+// window.Toolasha.UI, not a static import - see character-select-renderer.js. Stub that lookup.
+const characterActivityCollectorMock = { checkpointForCharacterSelect: vi.fn(async () => {}) };
+
 const PREFS = { dateFormat: 'MM-DD', timeFormat: '24hour' };
 
 function record(overrides = {}) {
@@ -912,6 +916,8 @@ describe('idempotent Character Select injection and lifecycle', () => {
         mocks.resolvedSlots = null;
         mocks.accountPrefs = { enabled: true, dateFormat: 'MM-DD', timeFormat: '24hour' };
         mocks.activityRecords = new Map();
+        window.Toolasha = { UI: { characterActivityCollector: characterActivityCollectorMock } };
+        characterActivityCollectorMock.checkpointForCharacterSelect.mockClear();
         characterSelectRenderer.stopWatching();
     });
 
@@ -1330,5 +1336,84 @@ describe('idempotent Character Select injection and lifecycle', () => {
 
         expect(slotA.querySelector('.toolasha-character-activity-status')).toBeNull();
         expect(slotB.querySelector('.toolasha-character-activity-status')).not.toBeNull();
+    });
+
+    describe('TLA-025D: final activity checkpoint on Character Select mount', () => {
+        test('TLA025D-01: checkpoints the current character before the first activity-record read used for text render', async () => {
+            const root = buildRoot();
+            const slot = buildSlot(root);
+            mocks.resolvedSlots = [{ slotElement: slot, character: character() }];
+            mocks.activityRecords.set('char-a', record());
+
+            const { loadCharacterActivity } = await import('./character-activity-storage.js');
+            const callOrder = [];
+            characterActivityCollectorMock.checkpointForCharacterSelect.mockImplementationOnce(async () => {
+                callOrder.push('checkpoint');
+            });
+            loadCharacterActivity.mockImplementationOnce(async (id) => {
+                callOrder.push('read');
+                return mocks.activityRecords.get(id) || null;
+            });
+
+            characterSelectRenderer.startWatching();
+            await mocks.onClassRegistrations[0].callback(root);
+
+            expect(callOrder).toEqual(['checkpoint', 'read']);
+        });
+
+        test('TLA025D-04: a mount with no populated slots does not checkpoint', async () => {
+            mocks.resolvedSlots = [];
+            const root = buildRoot();
+
+            characterSelectRenderer.startWatching();
+            await mocks.onClassRegistrations[0].callback(root);
+
+            expect(characterActivityCollectorMock.checkpointForCharacterSelect).not.toHaveBeenCalled();
+        });
+
+        test('TLA025D-06: repeated observations of the same mounted root checkpoint only once', async () => {
+            const root = buildRoot();
+            const slot = buildSlot(root);
+            mocks.resolvedSlots = [{ slotElement: slot, character: character() }];
+            mocks.activityRecords.set('char-a', record());
+
+            characterSelectRenderer.startWatching();
+            const callback = mocks.onClassRegistrations[0].callback;
+            await callback(root);
+            await callback(root);
+
+            expect(characterActivityCollectorMock.checkpointForCharacterSelect).toHaveBeenCalledTimes(1);
+        });
+
+        test('TLA025D-07: a later, fresh Character Select mount checkpoints again', async () => {
+            const rootA = buildRoot();
+            const slotA = buildSlot(rootA);
+            mocks.resolvedSlots = [{ slotElement: slotA, character: character() }];
+            mocks.activityRecords.set('char-a', record());
+
+            characterSelectRenderer.startWatching();
+            await mocks.onClassRegistrations[0].callback(rootA);
+
+            const rootB = buildRoot();
+            const slotB = buildSlot(rootB);
+            mocks.resolvedSlots = [{ slotElement: slotB, character: character() }];
+
+            await mocks.onClassRegistrations[0].callback(rootB);
+
+            expect(characterActivityCollectorMock.checkpointForCharacterSelect).toHaveBeenCalledTimes(2);
+        });
+
+        test('TLA025D: does not throw when window.Toolasha (or the cross-bundle collector) is unavailable', async () => {
+            window.Toolasha = undefined;
+            const root = buildRoot();
+            const slot = buildSlot(root);
+            mocks.resolvedSlots = [{ slotElement: slot, character: character() }];
+            mocks.activityRecords.set('char-a', record());
+
+            characterSelectRenderer.startWatching();
+            await expect(mocks.onClassRegistrations[0].callback(root)).resolves.not.toThrow();
+
+            expect(slot.querySelector('.toolasha-character-activity-status')).not.toBeNull();
+        });
     });
 });
