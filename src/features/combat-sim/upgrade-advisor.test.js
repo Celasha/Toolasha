@@ -180,6 +180,9 @@ describe('generateCandidates - ability_swap mode prunes provably-wasted candidat
             '/items/fire_staff': {
                 equipmentDetail: { combatStats: { magicDamage: 1 } },
             },
+            '/items/sword': {
+                equipmentDetail: { combatStats: { slashDamage: 1 } },
+            },
         },
         abilityDetailMap: {
             '/abilities/smash': {
@@ -224,12 +227,49 @@ describe('generateCandidates - ability_swap mode prunes provably-wasted candidat
                 cooldownDuration: 60_000_000_000,
                 abilityEffects: [{ effectType: '/ability_effect_types/buff', buffs: [] }],
             },
+            '/abilities/spike_shell': {
+                name: 'Spike Shell',
+                isSpecialAbility: false,
+                cooldownDuration: 60_000_000_000,
+                abilityEffects: [{ effectType: '/ability_effect_types/buff', buffs: [] }],
+            },
+            '/abilities/retribution': {
+                name: 'Retribution',
+                isSpecialAbility: false,
+                cooldownDuration: 60_000_000_000,
+                abilityEffects: [{ effectType: '/ability_effect_types/buff', buffs: [] }],
+            },
+            '/abilities/invincible': {
+                name: 'Invincible',
+                isSpecialAbility: false,
+                cooldownDuration: 60_000_000_000,
+                abilityEffects: [{ effectType: '/ability_effect_types/buff', buffs: [] }],
+            },
+            '/abilities/toughness': {
+                name: 'Toughness',
+                isSpecialAbility: false,
+                cooldownDuration: 60_000_000_000,
+                abilityEffects: [{ effectType: '/ability_effect_types/buff', buffs: [] }],
+            },
+            '/abilities/elusiveness': {
+                name: 'Elusiveness',
+                isSpecialAbility: false,
+                cooldownDuration: 60_000_000_000,
+                abilityEffects: [{ effectType: '/ability_effect_types/buff', buffs: [] }],
+            },
         },
     };
 
     function basePlayerDTO(abilities) {
         return {
             equipment: { '/equipment_types/main_hand': { hrid: '/items/fire_staff' } },
+            abilities,
+        };
+    }
+
+    function meleePlayerDTO(abilities) {
+        return {
+            equipment: { '/equipment_types/main_hand': { hrid: '/items/sword' } },
             abilities,
         };
     }
@@ -280,6 +320,28 @@ describe('generateCandidates - ability_swap mode prunes provably-wasted candidat
         const candidates = generateCandidates(dto, gameData, 'ability_swap', 0, 'increment', false, 1);
         const slot1Suggestions = candidates.filter((c) => c.slot === 'ability_1').map((c) => c.upgradeHrid);
         expect(slot1Suggestions).toContain('/abilities/fireball');
+    });
+
+    test('a magic weapon never suggests swapping into the tank-only defensive abilities', () => {
+        const dto = basePlayerDTO([null, { hrid: '/abilities/smash', level: 10 }, null, null, null]);
+        const candidates = generateCandidates(dto, gameData, 'ability_swap', 0, 'increment', false, 1);
+        const suggestedHrids = candidates.map((c) => c.upgradeHrid);
+        expect(suggestedHrids).not.toContain('/abilities/spike_shell');
+        expect(suggestedHrids).not.toContain('/abilities/retribution');
+        expect(suggestedHrids).not.toContain('/abilities/invincible');
+        expect(suggestedHrids).not.toContain('/abilities/toughness');
+        expect(suggestedHrids).not.toContain('/abilities/elusiveness');
+    });
+
+    test('a melee weapon can still be suggested the tank-only defensive abilities', () => {
+        const dto = meleePlayerDTO([null, { hrid: '/abilities/smash', level: 10 }, null, null, null]);
+        const candidates = generateCandidates(dto, gameData, 'ability_swap', 0, 'increment', false, 1);
+        const suggestedHrids = candidates.map((c) => c.upgradeHrid);
+        expect(suggestedHrids).toContain('/abilities/spike_shell');
+        expect(suggestedHrids).toContain('/abilities/retribution');
+        expect(suggestedHrids).toContain('/abilities/invincible');
+        expect(suggestedHrids).toContain('/abilities/toughness');
+        expect(suggestedHrids).toContain('/abilities/elusiveness');
     });
 });
 
