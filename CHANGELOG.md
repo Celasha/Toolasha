@@ -2,16 +2,14 @@
 
 ## [2.108.0](https://github.com/Celasha/Toolasha/compare/v2.107.9...v2.108.0) (2026-09-13)
 
-
 ### Features
 
-* rebuild Skilling Optimizer as a floating table with a house-room upgrade candidate ([032b74d](https://github.com/Celasha/Toolasha/commit/032b74df5d24925584c83b92409a489ada028ecd))
-
+- rebuild Skilling Optimizer as a floating table with a house-room upgrade candidate ([032b74d](https://github.com/Celasha/Toolasha/commit/032b74df5d24925584c83b92409a489ada028ecd))
 
 ### Bug Fixes
 
-* auto-expand collapsed native inventory categories in Custom Tabs ([1c0d704](https://github.com/Celasha/Toolasha/commit/1c0d7043bdccee52418a6234888d9dd2c010c0f4))
-* prune provably-wasted candidates from Combat Sim Ability Swaps ([5cfc800](https://github.com/Celasha/Toolasha/commit/5cfc8001a5bcf91a2713be6c6939674c7e0dae50))
+- auto-expand collapsed native inventory categories in Custom Tabs ([1c0d704](https://github.com/Celasha/Toolasha/commit/1c0d7043bdccee52418a6234888d9dd2c010c0f4))
+- prune provably-wasted candidates from Combat Sim Ability Swaps ([5cfc800](https://github.com/Celasha/Toolasha/commit/5cfc8001a5bcf91a2713be6c6939674c7e0dae50))
 
 ## [2.107.9](https://github.com/Celasha/Toolasha/compare/v2.107.8...v2.107.9) (2026-09-12)
 
