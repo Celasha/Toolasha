@@ -6,6 +6,7 @@
  */
 
 import dataManager from '../../core/data-manager.js';
+import config from '../../core/config.js';
 import { buildGameDataPayload, calculateSimRevenue } from './combat-sim-adapter.js';
 import { runSimulation, runLabyrinthSimulation, buildExtraBuffs } from './combat-sim-runner.js';
 import { setGameData } from './engine/game-data.js';
@@ -1149,7 +1150,17 @@ export async function runUpgradeAnalysis(params, onProgress, options = {}) {
         return { ...c, cost, costIsIncomplete };
     });
 
-    const total = candidatesWithCost.length + 1; // +1 for baseline
+    // Skilling-only house rooms (no /action_types/combat actionBuffs) can never move DPS,
+    // encounters, or deaths - only their small shared Wisdom/Rare Find bonus affects EXP/Profit,
+    // identically to every other room. Simulating all of them wastes time that could go toward a
+    // longer, more accurate run of the rooms that actually matter. Filtering happens before the
+    // sim loop (not just at display time) so skipped candidates cost zero simulation time.
+    const skipSkillingRooms = upgradeMode === 'house' && config.getSetting('combatSim_upgradeSkipSkillingRooms');
+    const filteredCandidatesWithCost = skipSkillingRooms
+        ? candidatesWithCost.filter((c) => c.isCombatRelevant !== false)
+        : candidatesWithCost;
+
+    const total = filteredCandidatesWithCost.length + 1; // +1 for baseline
     let current = 0;
 
     // Run baseline sim
@@ -1169,7 +1180,7 @@ export async function runUpgradeAnalysis(params, onProgress, options = {}) {
 
     // Run sim for each candidate
     const results = [];
-    for (const candidate of candidatesWithCost) {
+    for (const candidate of filteredCandidatesWithCost) {
         if (abortSignal?.()) break;
 
         onProgress?.({ current, total, description: `Simulating: ${candidate.description}` });
