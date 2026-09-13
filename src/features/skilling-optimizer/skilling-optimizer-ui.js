@@ -42,6 +42,8 @@ const SORT_MODES = [
     { value: 'cost', label: 'Cost (cheapest)' },
     { value: 'xpGain', label: 'XP Gain %' },
     { value: 'goldGain', label: 'Gold Gain %' },
+    { value: 'xpRatio', label: 'G/0.01% Exp/Hr (cheapest)' },
+    { value: 'profitRatio', label: 'G/0.01% Profit (cheapest)' },
     { value: 'slot', label: 'Slot Order' },
 ];
 
@@ -1697,7 +1699,7 @@ class SkillingSimulatorUI {
      * @param {Object} slotData
      * @param {number} xpBaseline
      * @param {number} goldBaseline
-     * @returns {{entry: Object|null, xpDelta: number, goldDelta: number, cost: number, xpPct: number, goldPct: number, xpPerMillion: number|null, paybackHours: number|null}}
+     * @returns {{entry: Object|null, xpDelta: number, goldDelta: number, cost: number, xpPct: number, goldPct: number, xpPerMillion: number|null, paybackHours: number|null, xpRatio: number|null, profitRatio: number|null}}
      */
     _computeSlotMetrics(slotData, xpBaseline, goldBaseline) {
         const entry = slotData.progression.find((e) => {
@@ -1714,6 +1716,8 @@ class SkillingSimulatorUI {
                 goldPct: 0,
                 xpPerMillion: null,
                 paybackHours: null,
+                xpRatio: null,
+                profitRatio: null,
             };
         }
 
@@ -1732,8 +1736,29 @@ class SkillingSimulatorUI {
                   : Infinity;
         const paybackHours =
             entry.costIsIncomplete || goldDelta <= 0 ? null : entry.cost > 0 ? entry.cost / goldDelta : 0;
+        // Same gating and formula as _makeXpRatioCell/_makeProfitRatioCell (the table's own
+        // displayed columns) - cost must be strictly positive since the gold-per-fixed-gain ratio
+        // is meaningless at zero cost, unlike xpPerMillion/paybackHours above which treat a free
+        // gain as the best case.
+        const xpRatio =
+            entry.cost > 0 && xpDelta > 0 && xpBaseline > 0 ? entry.cost / ((xpDelta / xpBaseline) * 100 * 100) : null;
+        const profitRatio =
+            entry.cost > 0 && goldDelta > 0 && goldBaseline > 0
+                ? entry.cost / ((goldDelta / goldBaseline) * 100 * 100)
+                : null;
 
-        return { entry, xpDelta, goldDelta, cost: entry.cost, xpPct, goldPct, xpPerMillion, paybackHours };
+        return {
+            entry,
+            xpDelta,
+            goldDelta,
+            cost: entry.cost,
+            xpPct,
+            goldPct,
+            xpPerMillion,
+            paybackHours,
+            xpRatio,
+            profitRatio,
+        };
     }
 
     /**
@@ -1756,6 +1781,10 @@ class SkillingSimulatorUI {
                 return -metrics.xpPct;
             case 'goldGain':
                 return -metrics.goldPct;
+            case 'xpRatio':
+                return metrics.xpRatio ?? Infinity;
+            case 'profitRatio':
+                return metrics.profitRatio ?? Infinity;
             case 'value':
             default:
                 return goal === 'gold' ? (metrics.paybackHours ?? Infinity) : -(metrics.xpPerMillion ?? -Infinity);
