@@ -5,15 +5,18 @@
 
 import openableAnalyticsDataCollector from './openable-analytics-data-collector.js';
 import openableAnalyticsUI from './openable-analytics-ui.js';
+import openableAnalyticsSidePanel from './openable-analytics-side-panel.js';
 
 async function initialize() {
     await openableAnalyticsDataCollector.initialize();
     openableAnalyticsUI.initialize();
+    openableAnalyticsSidePanel.initialize();
 }
 
 function cleanup() {
     openableAnalyticsDataCollector.cleanup();
     openableAnalyticsUI.cleanup();
+    openableAnalyticsSidePanel.cleanup();
 }
 
 export default {

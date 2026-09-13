@@ -59,6 +59,24 @@ function luckColor(luckValue) {
 }
 
 /**
+ * Never trust a generic `Inventory_modalContent` match alone. Only treat a mounted container as
+ * the current monetary reward result when the DOM structurally proves it: it must contain a
+ * real, non-empty gained-items section, and the given record must itself be a monetary opening
+ * (at least one gained item). This also naturally excludes buff-only openables, which never
+ * render a gained-items section at all.
+ * @param {HTMLElement} container - Candidate `Inventory_modalContent` root
+ * @param {Object|null} record - Latest normalized opening record
+ * @returns {boolean}
+ */
+function isMonetaryRewardModal(container, record) {
+    const gainedItemsContainer = container.querySelector(`[class*="${GAINED_ITEMS_CLASS}"]`);
+    const itemContainers = gainedItemsContainer
+        ? gainedItemsContainer.querySelectorAll(`[class*="${ITEM_CONTAINER_CLASS}"]`)
+        : [];
+    return Boolean(record) && record.gainedItems?.length > 0 && itemContainers.length > 0;
+}
+
+/**
  * Build the inner HTML for the injected footer from the latest opening record + its lifetime
  * aggregate. The container/opened-count wording is intentionally omitted - the native result
  * already communicates what was opened and how many.
@@ -165,29 +183,25 @@ class OpenableAnalyticsModalInjector {
     }
 
     /**
-     * Never trust a generic `Inventory_modalContent` match alone. Only treat a mounted container
-     * as the current monetary reward result when the DOM structurally proves it: it must contain
-     * a real, non-empty gained-items section, and the collector's latest record must itself be a
-     * monetary opening (at least one gained item). This also naturally excludes buff-only
-     * openables, which never render a gained-items section at all. If ownership cannot be
-     * established, any previously injected OA content is stripped instead of left stale - this
-     * also handles the native modal being reused from a monetary opening into a buff-only result.
+     * If ownership cannot be established (not a monetary reward modal), any previously injected
+     * OA content is stripped instead of left stale - this also handles the native modal being
+     * reused from a monetary opening into a buff-only result.
      * @param {HTMLElement} container - Candidate `Inventory_modalContent` root
      */
     reconcileModal(container) {
         if (!this.isInitialized) return;
 
         const record = openableAnalyticsDataCollector.getLatestRecord();
+
+        if (!isMonetaryRewardModal(container, record)) {
+            this.clearOwnedDom(container);
+            return;
+        }
+
         const gainedItemsContainer = container.querySelector(`[class*="${GAINED_ITEMS_CLASS}"]`);
         const itemContainers = gainedItemsContainer
             ? gainedItemsContainer.querySelectorAll(`[class*="${ITEM_CONTAINER_CLASS}"]`)
             : [];
-        const isMonetaryRewardModal = Boolean(record) && record.gainedItems?.length > 0 && itemContainers.length > 0;
-
-        if (!isMonetaryRewardModal) {
-            this.clearOwnedDom(container);
-            return;
-        }
 
         this.renderFooter(container, record);
         this.renderItemValueLabels(container, record, itemContainers);
@@ -287,6 +301,7 @@ export {
     formatLuckValue,
     formatLuckPercent,
     luckColor,
+    isMonetaryRewardModal,
     MODAL_CONTENT_CLASS,
     LINE_CLASS,
     GAINED_ITEMS_CLASS,
