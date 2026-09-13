@@ -14,6 +14,7 @@ import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import storage from '../../core/storage.js';
 import webSocketHook from '../../core/websocket.js';
+import assetManifest from '../../utils/asset-manifest.js';
 import taskProfitDisplay from './task-profit-display.js';
 import { repaintTaskCard } from './task-card-visual-state.js';
 
@@ -39,6 +40,7 @@ class TaskTokenThreshold {
         this.threshold = null;
         this.direction = 'below';
         this.unregisterHandlers = [];
+        this.itemSpriteUrl = null;
     }
 
     async initialize() {
@@ -46,6 +48,12 @@ class TaskTokenThreshold {
         if (!config.getSetting('taskTokenThreshold')) return;
 
         this.isInitialized = true;
+
+        // Pre-fetch the items sprite URL so the config button's Task Token icon is ready by
+        // the time the panel renders, rather than relying on an emoji glyph that some embedded
+        // browsers (e.g. Steam's client) may not have a font for.
+        const spriteUrls = await assetManifest.fetchManifest();
+        this.itemSpriteUrl = spriteUrls.items || null;
 
         const saved = await storage.get(
             getCharacterScopedKey(THRESHOLD_STORAGE_KEY_PREFIX),
@@ -102,9 +110,26 @@ class TaskTokenThreshold {
 
         const btn = document.createElement('span');
         btn.className = 'mwi-task-token-threshold-btn';
-        btn.textContent = '\u{1FA99}';
         btn.title = 'Configure Task Token reroll threshold';
-        btn.style.cssText = 'cursor:pointer; font-size:16px; margin-left:6px; opacity:0.7; transition:opacity 0.1s;';
+        btn.style.cssText =
+            'cursor:pointer; display:inline-flex; align-items:center; margin-left:6px; opacity:0.7; transition:opacity 0.1s;';
+
+        if (this.itemSpriteUrl) {
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('width', '16');
+            svg.setAttribute('height', '16');
+            svg.setAttribute('viewBox', '0 0 1024 1024');
+            const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+            const href = `${this.itemSpriteUrl}#task_token`;
+            use.setAttribute('href', href);
+            use.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', href);
+            svg.appendChild(use);
+            btn.appendChild(svg);
+        } else {
+            btn.textContent = '\u{1FA99}';
+            btn.style.fontSize = '16px';
+        }
+
         btn.addEventListener('mouseover', () => {
             btn.style.opacity = '1';
         });

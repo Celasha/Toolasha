@@ -9,6 +9,7 @@ import { describe, test, expect, vi, beforeEach } from 'vitest';
 const storageData = {};
 
 const mockParseTaskData = vi.fn();
+const mocks = vi.hoisted(() => ({ itemSpriteUrl: 'https://example.com/items_sprite.abc123.svg' }));
 
 vi.mock('../../core/config.js', () => ({
     default: { getSetting: vi.fn(() => true) },
@@ -37,6 +38,10 @@ vi.mock('../../core/websocket.js', () => ({
 
 vi.mock('./task-profit-display.js', () => ({
     default: { parseTaskData: mockParseTaskData },
+}));
+
+vi.mock('../../utils/asset-manifest.js', () => ({
+    default: { fetchManifest: vi.fn(async () => ({ items: mocks.itemSpriteUrl })) },
 }));
 
 function makeCard() {
@@ -235,5 +240,64 @@ describe('TaskTokenThreshold — per-card classification', () => {
         feature._processTaskCard(card);
 
         expect(card.querySelector('.mwi-token-badge')?.textContent).toBe('High tokens!');
+    });
+});
+
+describe('TaskTokenThreshold — config button icon', () => {
+    beforeEach(() => {
+        vi.resetModules();
+        Object.keys(storageData).forEach((k) => delete storageData[k]);
+        document.body.innerHTML = '';
+    });
+
+    function makePanel() {
+        const parent = document.createElement('div');
+        const panel = document.createElement('div');
+        panel.className = 'TasksPanel_taskSlotCount';
+        parent.appendChild(panel);
+        document.body.appendChild(parent);
+        return panel;
+    }
+
+    test('renders the real Task Token sprite icon once the asset manifest resolves, not the emoji glyph', async () => {
+        const { TaskTokenThreshold } = await import('./task-token-threshold.js');
+        const feature = new TaskTokenThreshold();
+        await feature.initialize();
+
+        const panel = makePanel();
+        feature._injectConfigButton(panel);
+
+        const btn = panel.parentElement.querySelector('.mwi-task-token-threshold-btn');
+        const use = btn.querySelector('svg use');
+        expect(use.getAttribute('href')).toBe(`${mocks.itemSpriteUrl}#task_token`);
+        expect(btn.textContent).toBe('');
+    });
+
+    test('falls back to the emoji glyph if the asset manifest has no items sprite URL', async () => {
+        const assetManifest = (await import('../../utils/asset-manifest.js')).default;
+        assetManifest.fetchManifest.mockResolvedValueOnce({});
+
+        const { TaskTokenThreshold } = await import('./task-token-threshold.js');
+        const feature = new TaskTokenThreshold();
+        await feature.initialize();
+
+        const panel = makePanel();
+        feature._injectConfigButton(panel);
+
+        const btn = panel.parentElement.querySelector('.mwi-task-token-threshold-btn');
+        expect(btn.querySelector('svg')).toBeNull();
+        expect(btn.textContent).toBe('\u{1FA99}');
+    });
+
+    test('does not inject a second button if one already exists', async () => {
+        const { TaskTokenThreshold } = await import('./task-token-threshold.js');
+        const feature = new TaskTokenThreshold();
+        await feature.initialize();
+
+        const panel = makePanel();
+        feature._injectConfigButton(panel);
+        feature._injectConfigButton(panel);
+
+        expect(panel.parentElement.querySelectorAll('.mwi-task-token-threshold-btn')).toHaveLength(1);
     });
 });
