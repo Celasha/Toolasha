@@ -190,9 +190,8 @@ function buildPlayerLevelMap(skillName, overrideLevel) {
  */
 function meetsLevelRequirements(itemDetail, playerLevels) {
     for (const req of itemDetail.equipmentDetail?.levelRequirements || []) {
-        if (!req.levelTypeHrid) continue;
-        const skillHrid = req.levelTypeHrid.replace('/level_types/', '/skills/');
-        const playerLevel = playerLevels.get(skillHrid) ?? 1;
+        if (!req.skillHrid) continue;
+        const playerLevel = playerLevels.get(req.skillHrid) ?? 1;
         if (playerLevel < req.level) return false;
     }
     return true;
@@ -337,10 +336,9 @@ export function getItemsForSlot(locationHrid, skillName) {
         let available = true;
         let maxReq = 1;
         for (const req of detail.equipmentDetail.levelRequirements || []) {
-            if (!req.levelTypeHrid) continue;
-            const skillHrid = req.levelTypeHrid.replace('/level_types/', '/skills/');
+            if (!req.skillHrid) continue;
             if (req.level > maxReq) maxReq = req.level;
-            if ((playerLevels.get(skillHrid) ?? 1) < req.level) available = false;
+            if ((playerLevels.get(req.skillHrid) ?? 1) < req.level) available = false;
         }
 
         result.push({ hrid, name: detail.name, available, maxReq, itemLevel: detail.itemLevel || 0 });
@@ -457,6 +455,10 @@ export function getSkillDrinkItems() {
  *   level, falls back to a real materials-cost estimate (calculateDirectEnhancementCost - the
  *   same primitive Combat Sim's own Upgrade Advisor already uses for this) instead of reporting
  *   the whole recommendation as unpriceable.
+ * - A DIFFERENT item (a cross-tier upgrade) with no market listing at the target level falls back
+ *   to that item's own +0 price plus the real materials cost to enhance +0 -> target, rather than
+ *   reporting the whole recommendation as unpriceable just because that one specific enhancement
+ *   level has no active listing.
  * - Never nets against a "sell current" value for an item that isn't tradable at all (e.g.
  *   refined equipment, which can't be sold on the market) - there's no way to actually recover
  *   that value, so subtracting a price that doesn't correspond to anything real would understate
@@ -483,6 +485,22 @@ function calculateSlotUpgradeCost(itemHrid, enhancementLevel, currentEquipped, i
             return { cost: enhancementResult.cost, costIsIncomplete: false };
         }
         return { cost: 0, costIsIncomplete: true };
+    }
+
+    if (buyResolved.missing && currentEquipped?.itemHrid !== itemHrid) {
+        const baseResolved = resolveItemPrice(itemHrid, { side: 'buy', enhancementLevel: 0 });
+        if (!baseResolved.missing) {
+            const enhancementResult = calculateDirectEnhancementCost(
+                itemHrid,
+                0,
+                enhancementLevel,
+                getEnhancingParams()
+            );
+            if (enhancementResult.complete && enhancementResult.cost !== null) {
+                cost = baseResolved.price + enhancementResult.cost;
+                costIsIncomplete = false;
+            }
+        }
     }
 
     if (currentEquipped?.itemHrid) {

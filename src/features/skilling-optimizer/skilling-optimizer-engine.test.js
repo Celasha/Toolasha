@@ -391,6 +391,50 @@ describe('optimizeSkill - equipment recommendation cost (marginal gain per gold 
             itemDetailMap[REFINED_HRID].isTradable = true;
         }
     });
+
+    test("a cross-item (cross-tier) upgrade with no listing at the target level falls back to the target's own +0 price plus real enhancement materials, still netted against selling the current item", () => {
+        resolveItemPrice.mockImplementation((itemHrid, { side, enhancementLevel }) => {
+            if (itemHrid === NONREFINED_HRID && side === 'buy' && enhancementLevel === 12) {
+                return { price: 0, custom: false, missing: true }; // no listing at the target level
+            }
+            if (itemHrid === NONREFINED_HRID && side === 'buy' && enhancementLevel === 0) {
+                return { price: 500, custom: false, missing: false }; // +0 price is resolvable
+            }
+            if (itemHrid === REFINED_HRID && side === 'sell') {
+                return { price: 200, custom: false, missing: false };
+            }
+            return { price: 0, custom: false, missing: false };
+        });
+        calculateDirectEnhancementCost.mockReturnValue({ cost: 1000, complete: true, protectFrom: 0 });
+
+        const compareEquipment = new Map([[BACK_LOCATION, { itemHrid: REFINED_HRID, enhancementLevel: 5 }]]);
+        const result = optimizeSkill('Crafting', 50, null, { equipment: compareEquipment, drinks: [] });
+        const entry = result.slots[BACK_LOCATION].progression.find((e) => e.breakpoint === 12);
+
+        expect(entry.itemHrid).toBe(NONREFINED_HRID);
+        expect(entry.cost).toBe(500 + 1000 - 200);
+        expect(entry.costIsIncomplete).toBe(false);
+        expect(calculateDirectEnhancementCost).toHaveBeenCalledWith(NONREFINED_HRID, 0, 12, { enhancingLevel: 100 });
+    });
+
+    test('a cross-item upgrade whose target has no resolvable price even at +0 stays incomplete rather than a fabricated number', () => {
+        resolveItemPrice.mockImplementation((itemHrid, { side }) => {
+            if (itemHrid === NONREFINED_HRID && side === 'buy') {
+                return { price: 0, custom: false, missing: true }; // missing at every enhancement level
+            }
+            return { price: 0, custom: false, missing: false };
+        });
+        calculateDirectEnhancementCost.mockClear();
+
+        const compareEquipment = new Map([[BACK_LOCATION, { itemHrid: REFINED_HRID, enhancementLevel: 5 }]]);
+        const result = optimizeSkill('Crafting', 50, null, { equipment: compareEquipment, drinks: [] });
+        const entry = result.slots[BACK_LOCATION].progression.find((e) => e.breakpoint === 12);
+
+        expect(entry.itemHrid).toBe(NONREFINED_HRID);
+        expect(entry.cost).toBe(0);
+        expect(entry.costIsIncomplete).toBe(true);
+        expect(calculateDirectEnhancementCost).not.toHaveBeenCalled();
+    });
 });
 
 describe('getRelevantStatsForSkill via getItemsForSlot (TLA-024/OPT-17)', () => {
@@ -442,6 +486,64 @@ describe('getRelevantStatsForSkill via getItemsForSlot (TLA-024/OPT-17)', () => 
 
         const pouchItems = getItemsForSlot('/item_locations/pouch', 'Crafting').map((i) => i.hrid);
         expect(pouchItems).toContain(pouchHrid);
+    });
+});
+
+describe('getItemsForSlot - level requirement gating uses the real skillHrid field', () => {
+    test('an item whose skillHrid level requirement the player does not meet is marked unavailable', async () => {
+        const highReqHrid = '/items/high_req_charm_test';
+        const extendedItemDetailMap = {
+            ...itemDetailMap,
+            [highReqHrid]: {
+                name: 'High Req Charm',
+                equipmentDetail: {
+                    type: '/equipment_types/charm',
+                    noncombatStats: { skillingSpeed: 0.01 },
+                    levelRequirements: [{ skillHrid: '/skills/crafting', level: 999 }],
+                },
+            },
+        };
+
+        vi.doMock('../../core/data-manager.js', () => ({
+            default: {
+                getInitClientData: vi.fn(() => ({ itemDetailMap: extendedItemDetailMap })),
+                getSkills: vi.fn(() => [{ skillHrid: '/skills/crafting', level: 50 }]),
+            },
+        }));
+        vi.resetModules();
+        const { getItemsForSlot } = await import('./skilling-optimizer-engine.js');
+
+        const entry = getItemsForSlot('/item_locations/charm', 'Crafting').find((i) => i.hrid === highReqHrid);
+        expect(entry.available).toBe(false);
+        expect(entry.maxReq).toBe(999);
+    });
+
+    test('an item whose skillHrid level requirement the player meets is marked available', async () => {
+        const lowReqHrid = '/items/low_req_charm_test';
+        const extendedItemDetailMap = {
+            ...itemDetailMap,
+            [lowReqHrid]: {
+                name: 'Low Req Charm',
+                equipmentDetail: {
+                    type: '/equipment_types/charm',
+                    noncombatStats: { skillingSpeed: 0.01 },
+                    levelRequirements: [{ skillHrid: '/skills/crafting', level: 10 }],
+                },
+            },
+        };
+
+        vi.doMock('../../core/data-manager.js', () => ({
+            default: {
+                getInitClientData: vi.fn(() => ({ itemDetailMap: extendedItemDetailMap })),
+                getSkills: vi.fn(() => [{ skillHrid: '/skills/crafting', level: 50 }]),
+            },
+        }));
+        vi.resetModules();
+        const { getItemsForSlot } = await import('./skilling-optimizer-engine.js');
+
+        const entry = getItemsForSlot('/item_locations/charm', 'Crafting').find((i) => i.hrid === lowReqHrid);
+        expect(entry.available).toBe(true);
+        expect(entry.maxReq).toBe(10);
     });
 });
 
