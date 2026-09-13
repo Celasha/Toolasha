@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.108.1](https://github.com/Celasha/Toolasha/compare/v2.108.0...v2.108.1) (2026-09-13)
+
+
+### Bug Fixes
+
+* add Current/History side panel to Openable Analytics box openings ([f5dc86f](https://github.com/Celasha/Toolasha/commit/f5dc86f439d15e92ac50af4922968438b674c8cc))
+* add missing G/0.01% Exp/Hr and G/0.01% Profit Skilling Optimizer sort options ([9c55d68](https://github.com/Celasha/Toolasha/commit/9c55d68fb23634fcbf82c19f3a4255f9d5127d9e))
+* exclude tank-only defensive abilities from mage/ranged Ability Swap candidates ([b402dad](https://github.com/Celasha/Toolasha/commit/b402dad55c10a25639bebede3e7d03d8eb341dbf))
+* price cross-item Skilling Optimizer upgrades and fix level-requirement gating ([8465e69](https://github.com/Celasha/Toolasha/commit/8465e69077e8483c17c03f6b5a5136e5bd79fced))
+* stop the game's action menu from clipping the Marketplace Action dropdown ([cdd38d8](https://github.com/Celasha/Toolasha/commit/cdd38d8280c3dafcaf998ba3420c52ce11620057))
+* use the real Task Token sprite icon instead of an emoji glyph ([6ce6d92](https://github.com/Celasha/Toolasha/commit/6ce6d927f8fdfbd619bfaf0e7a547134a1311533))
+
 ## [2.108.0](https://github.com/Celasha/Toolasha/compare/v2.107.9...v2.108.0) (2026-09-13)
 
 ### Features
