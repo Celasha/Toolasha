@@ -172,6 +172,115 @@ describe('applyCandidateToDTO - one canonical candidate-application helper (CSIM
     });
 });
 
+describe('generateCandidates - ability_swap mode prunes provably-wasted candidates', () => {
+    const gameData = {
+        itemDetailMap: {
+            '/items/fire_staff': {
+                equipmentDetail: { combatStats: { magicDamage: 1 } },
+            },
+        },
+        abilityDetailMap: {
+            '/abilities/smash': {
+                name: 'Smash',
+                isSpecialAbility: false,
+                cooldownDuration: 5_000_000_000,
+                abilityEffects: [{ combatStyleHrid: '/combat_styles/magic' }],
+            },
+            '/abilities/fireball': {
+                name: 'Fireball',
+                isSpecialAbility: false,
+                cooldownDuration: 0,
+                abilityEffects: [{ combatStyleHrid: '/combat_styles/magic' }],
+            },
+            '/abilities/water_strike': {
+                name: 'Water Strike',
+                isSpecialAbility: false,
+                cooldownDuration: 0,
+                abilityEffects: [{ combatStyleHrid: '/combat_styles/magic' }],
+            },
+            '/abilities/provoke': {
+                name: 'Provoke',
+                isSpecialAbility: false,
+                cooldownDuration: 60_000_000_000,
+                abilityEffects: [{ effectType: '/ability_effect_types/buff', buffs: [] }],
+            },
+            '/abilities/taunt': {
+                name: 'Taunt',
+                isSpecialAbility: false,
+                cooldownDuration: 60_000_000_000,
+                abilityEffects: [{ effectType: '/ability_effect_types/buff', buffs: [] }],
+            },
+            '/abilities/revive': {
+                name: 'Revive',
+                isSpecialAbility: false,
+                cooldownDuration: 300_000_000_000,
+                abilityEffects: [{ effectType: '/ability_effect_types/buff', buffs: [] }],
+            },
+            '/abilities/promote': {
+                name: 'Promote',
+                isSpecialAbility: false,
+                cooldownDuration: 60_000_000_000,
+                abilityEffects: [{ effectType: '/ability_effect_types/buff', buffs: [] }],
+            },
+        },
+    };
+
+    function basePlayerDTO(abilities) {
+        return {
+            equipment: { '/equipment_types/main_hand': { hrid: '/items/fire_staff' } },
+            abilities,
+        };
+    }
+
+    test('solo (playerCount=1) never suggests swapping into Provoke/Taunt/Revive', () => {
+        const dto = basePlayerDTO([null, { hrid: '/abilities/smash', level: 10 }, null, null, null]);
+        const candidates = generateCandidates(dto, gameData, 'ability_swap', 0, 'increment', false, 1);
+        const suggestedHrids = candidates.map((c) => c.upgradeHrid);
+        expect(suggestedHrids).not.toContain('/abilities/provoke');
+        expect(suggestedHrids).not.toContain('/abilities/taunt');
+        expect(suggestedHrids).not.toContain('/abilities/revive');
+    });
+
+    test('a party of 2+ can still be suggested Provoke/Taunt/Revive', () => {
+        const dto = basePlayerDTO([null, { hrid: '/abilities/smash', level: 10 }, null, null, null]);
+        const candidates = generateCandidates(dto, gameData, 'ability_swap', 0, 'increment', false, 2);
+        const suggestedHrids = candidates.map((c) => c.upgradeHrid);
+        expect(suggestedHrids).toContain('/abilities/provoke');
+        expect(suggestedHrids).toContain('/abilities/taunt');
+        expect(suggestedHrids).toContain('/abilities/revive');
+    });
+
+    test('never suggests a swap that would create a second zero-cooldown ability', () => {
+        // Slot 2 already has water_strike (cooldownDuration: 0); swapping slot 1 (smash) into
+        // fireball (also cooldownDuration: 0) would create a dead-weight second 0-CD ability.
+        const dto = basePlayerDTO([
+            null,
+            { hrid: '/abilities/smash', level: 10 },
+            { hrid: '/abilities/water_strike', level: 10 },
+            null,
+            null,
+        ]);
+        const candidates = generateCandidates(dto, gameData, 'ability_swap', 0, 'increment', false, 1);
+        const slot1Suggestions = candidates.filter((c) => c.slot === 'ability_1').map((c) => c.upgradeHrid);
+        expect(slot1Suggestions).not.toContain('/abilities/fireball');
+    });
+
+    test('swapping a zero-cooldown ability for another zero-cooldown one is still allowed when it is the only 0-CD slot', () => {
+        // Slot 1 itself holds the only zero-CD ability (water_strike); replacing it with
+        // fireball is a like-for-like swap, not an addition of a second 0-CD ability.
+        const dto = basePlayerDTO([
+            null,
+            { hrid: '/abilities/water_strike', level: 10 },
+            { hrid: '/abilities/smash', level: 10 },
+            null,
+            null,
+        ]);
+        const candidates = generateCandidates(dto, gameData, 'ability_swap', 0, 'increment', false, 1);
+        const slot1Suggestions = candidates.filter((c) => c.slot === 'ability_1').map((c) => c.upgradeHrid);
+        expect(slot1Suggestions).toContain('/abilities/fireball');
+    });
+});
+
 describe('computeOtherWisdomMultiplier - marginal Wisdom base excludes only Lab Experience (CSIM-AUD-018)', () => {
     function minimalPlayerDTO(overrides = {}) {
         return {

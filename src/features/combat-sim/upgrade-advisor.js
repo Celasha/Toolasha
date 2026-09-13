@@ -30,6 +30,11 @@ const HOUSE_ROOM_MAX_LEVEL = 8;
 
 const JEWELRY_SLOTS = new Set(['/equipment_types/earrings', '/equipment_types/ring', '/equipment_types/neck']);
 
+// Provoke/Taunt grant a threat buff read only when choosing a monster's target among 2+ alive
+// players; Revive's trigger condition (an ally is dead) can never be satisfied when the caster
+// is the only unit in the party. All three are pure dead weight in a solo sim.
+const NO_SOLO_EFFECT_ABILITY_HRIDS = new Set(['/abilities/provoke', '/abilities/taunt', '/abilities/revive']);
+
 /**
  * Get the next ability level target (next multiple of 10) above the current level.
  * Used as fallback when no explicit target level is provided.
@@ -593,6 +598,8 @@ function findBestOffHand(gameData, damageStyle, maxItemLevel) {
  * @param {string} [mode='equipment'] - 'equipment', 'ability_level', 'ability_swap', or 'house'
  * @param {number} [abilityTargetLevel=0] - Target level or increment for ability upgrades
  * @param {string} [abilityLevelType='increment'] - 'increment' (add N levels) or 'target' (absolute level)
+ * @param {boolean} [skipBackSlot=false]
+ * @param {number} [playerCount=1] - Number of players in the simulated group (solo vs. party)
  * @returns {Array} Candidates: [{slot, currentHrid, currentLevel, upgradeHrid, upgradeLevel, description, type}]
  */
 export function generateCandidates(
@@ -601,7 +608,8 @@ export function generateCandidates(
     mode = 'equipment',
     abilityTargetLevel = 0,
     abilityLevelType = 'increment',
-    skipBackSlot = false
+    skipBackSlot = false,
+    playerCount = 1
 ) {
     const candidates = [];
 
@@ -889,11 +897,21 @@ export function generateCandidates(
                 }
             } else {
                 // Swap candidates: other compatible abilities not already equipped
+                const otherEquippedHasZeroCd = playerDTO.abilities.some((a, i) => {
+                    if (i === slotIdx || !a) return false;
+                    return gameData.abilityDetailMap[a.hrid]?.cooldownDuration === 0;
+                });
+
                 for (const [abHrid, abDetail] of Object.entries(gameData.abilityDetailMap)) {
                     if (equippedAbilityHrids.has(abHrid)) continue;
                     if (abDetail.isSpecialAbility && slotIdx !== 0) continue;
                     if (!abDetail.isSpecialAbility && slotIdx === 0) continue;
                     if (abHrid === '/abilities/promote') continue;
+                    if (playerCount <= 1 && NO_SOLO_EFFECT_ABILITY_HRIDS.has(abHrid)) continue;
+                    // A second zero-cooldown ability can never fire under default triggers —
+                    // Ability.shouldTrigger picks the first ready match in slot order, and an
+                    // out-of-mana first ability skips the rest rather than falling back to it.
+                    if (abDetail.cooldownDuration === 0 && otherEquippedHasZeroCd) continue;
 
                     const abStyle = getAbilityCombatStyle(abDetail);
                     if (!isAbilityCompatible(abStyle, playerStyle)) continue;
@@ -1123,7 +1141,8 @@ export async function runUpgradeAnalysis(params, onProgress, options = {}) {
         upgradeMode,
         abilityTargetLevel,
         abilityLevelType,
-        skipBackSlot
+        skipBackSlot,
+        playerDTOs.length
     );
     const candidatesWithCost = candidates.map((c) => {
         const { cost, costIsIncomplete } = calculateUpgradeCost(c, gameData);
