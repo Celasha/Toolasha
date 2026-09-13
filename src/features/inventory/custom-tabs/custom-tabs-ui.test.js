@@ -44,6 +44,7 @@ vi.mock('../../../core/data-manager.js', () => ({
         on: vi.fn(),
         off: vi.fn(),
         getCurrentCharacterId: vi.fn(() => 'char-1'),
+        getInventory: vi.fn(() => []),
         getInitClientData: vi.fn(() => ({
             itemDetailMap: {
                 '/items/apple_gummy': { name: 'Apple Gummy', categoryHrid: '/item_categories/food', sortIndex: 1 },

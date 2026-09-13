@@ -953,6 +953,18 @@ export default class CustomTabsUI {
         // Build tile map from all tiles currently in invContainer
         const tileMap = this._buildTileMap(invContainer);
 
+        // A native category the player has collapsed renders none of its item tiles into the
+        // DOM at all (not just visually hidden) — so any owned item inside one is invisible to
+        // every check below, regardless of tab assignment. Auto-expand collapsed categories by
+        // clicking the game's own (CSS-hidden but still present) toggle button — a plain
+        // client-side UI interaction, not a server action — and let the tile observer pick up
+        // the newly-rendered tiles on the pass it triggers. Only short-circuit when a button was
+        // actually clicked; otherwise a missing tile has some other cause and the normal pass
+        // (including the existing per-tab warning below) still runs.
+        if (this._hasOwnedItemsMissingFromDom(tileMap) && this._expandCollapsedNativeCategories(invContainer) > 0) {
+            return;
+        }
+
         // Reset all tiles: remove visible class, clear inline order, and drag state
         const allTiles = invContainer.querySelectorAll('[class*="Item_itemContainer"]');
         for (const tile of allTiles) {
@@ -1387,6 +1399,49 @@ export default class CustomTabsUI {
             }
         }
         return map;
+    }
+
+    /**
+     * True when the player owns an inventory item that produced zero DOM tiles at all. The game
+     * omits a collapsed category's item tiles from the DOM entirely (not just visually hides
+     * them), so this is the DOM-level signature of "some category is currently collapsed and
+     * hiding owned items" — independent of whether those items are assigned to a custom tab or
+     * would fall into Unorganized.
+     * @param {Map} tileMap
+     * @returns {boolean}
+     */
+    _hasOwnedItemsMissingFromDom(tileMap) {
+        const inventory = dataManager.getInventory() || [];
+        for (const item of inventory) {
+            if (item.itemLocationHrid !== '/item_locations/inventory') continue;
+            const base = item.itemHrid;
+            const lvl = item.enhancementLevel || 0;
+            const hrid = lvl > 0 ? `${base}+${lvl}` : base;
+            if (!tileMap.has(hrid)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Click any native inventory category toggle currently in the collapsed state. The label
+     * text is the game's own tell for collapsed vs. expanded (see main.*.chunk.js's Inventory
+     * component: collapsed renders as "+ CategoryName (N)", expanded as plain "CategoryName").
+     * The button itself is CSS-hidden while Toolasha's flattened layout is active
+     * (`.toolasha-ct-active [class*="Inventory_categoryButton"]`) but remains present in the DOM,
+     * so `.click()` still reaches the game's own click handler.
+     * @param {HTMLElement} invContainer
+     * @returns {number} number of categories expanded
+     */
+    _expandCollapsedNativeCategories(invContainer) {
+        const buttons = invContainer.querySelectorAll('[class*="Inventory_categoryButton"]');
+        let expanded = 0;
+        for (const btn of buttons) {
+            if (btn.textContent.trim().startsWith('+')) {
+                btn.click();
+                expanded++;
+            }
+        }
+        return expanded;
     }
 
     /**
