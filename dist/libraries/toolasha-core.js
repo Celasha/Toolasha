@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.107.9
+ * Version: 2.108.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2489,6 +2489,16 @@
                     min: 0,
                     max: 32,
                     help: 'Maximum Web Worker threads for simulations (0 = auto, uses all available cores)',
+                },
+                combatSim_upgradeSkipSkillingRooms: {
+                    id: 'combatSim_upgradeSkipSkillingRooms',
+                    label: 'Combat Simulator: Upgrade Advisor - skip skilling house rooms',
+                    type: 'checkbox',
+                    default: true,
+                    help:
+                        'House Rooms Upgrade mode: skip simulating rooms with no combat stat bonus (Brewery, Garden, ' +
+                        'etc.) to save sim time. They still get a tiny Wisdom/Rare Find bonus like every room, so ' +
+                        'turn this off to see their (usually negligible) Gold/EXP and Gold/Profit values too.',
                 },
                 combatStats: {
                     id: 'combatStats',

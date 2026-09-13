@@ -1,11 +1,11 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.107.9
+ * Version: 2.108.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (dataManager, config, domObserver, enhancementConfig_js, enhancementCalculator_js, profitConstants_js, formatters_js, marketAPI, domObserverHelpers_js, bonusRevenueCalculator_js, marketData_js, efficiency_js, profitHelpers_js, profitCalculator, uiComponents_js, actionPanelHelper_js, loadoutState, storage, dom_js, timerRegistry_js, teaParser_js, tooltipObserver, alchemyProfitCalculator, actionCalculator_js, cleanupRegistry_js, buffParser_js, equipmentParser_js, experienceParser_js, reactInput_js, experienceCalculator_js, materialCalculator_js, marketplaceSession_js, expectedValueCalculator) {
+(function (dataManager, config, domObserver, enhancementConfig_js, enhancementCalculator_js, profitConstants_js, formatters_js, marketAPI, domObserverHelpers_js, bonusRevenueCalculator_js, marketData_js, efficiency_js, profitHelpers_js, profitCalculator, uiComponents_js, actionPanelHelper_js, loadoutState, storage, dom_js, timerRegistry_js, teaParser_js, tooltipObserver, alchemyProfitCalculator, actionCalculator_js, cleanupRegistry_js, buffParser_js, equipmentParser_js, experienceParser_js, reactInput_js, experienceCalculator_js, materialCalculator_js, marketplaceSession_js, expectedValueCalculator, houseEfficiency_js) {
     'use strict';
 
     /**
@@ -20560,7 +20560,11 @@
         // the live/saved action context. Tea wisdom is excluded here (drinks: []) since this
         // hypothetical combo's tea wisdom is already tracked separately in buffs.wisdom.
         const skillHrid = actionDetails.experienceGain.skillHrid;
-        const xpData = experienceParser_js.calculateExperienceMultiplier(skillHrid, actionDetails.type, { equipment, drinks: [] });
+        const xpData = experienceParser_js.calculateExperienceMultiplier(skillHrid, actionDetails.type, {
+            equipment,
+            drinks: [],
+            houseRoomLevelOverride: otherEfficiency.houseRoomLevelOverride,
+        });
 
         const totalWisdomWithOurTea = xpData.totalWisdom + buffs.wisdom;
         const charmExperience = xpData.charmExperience || 0;
@@ -20678,7 +20682,13 @@
         }
 
         // Add bonus revenue from essence and rare find drops
-        const bonusRevenue = bonusRevenueCalculator_js.calculateBonusRevenue(actionDetails, actionsPerHour, equipment, itemDetailMap);
+        const bonusRevenue = bonusRevenueCalculator_js.calculateBonusRevenue(
+            actionDetails,
+            actionsPerHour,
+            equipment,
+            itemDetailMap,
+            otherEfficiency.houseRoomLevelOverride
+        );
         if (bonusRevenue?.hasMissingPrices) hasMissingPrice = true;
         const efficiencyBoostedBonusRevenue = bonusRevenue.totalBonusRevenue * efficiencyMultiplier;
         totalRevenue += efficiencyBoostedBonusRevenue;
@@ -20790,7 +20800,13 @@
         const grossProfitPerHour = actionsPerHour * profitPerAction * efficiencyMultiplier;
 
         // Add bonus revenue from essence and rare find drops (same as tile calculation)
-        const bonusRevenue = bonusRevenueCalculator_js.calculateBonusRevenue(actionDetails, actionsPerHour, equipment, itemDetailMap);
+        const bonusRevenue = bonusRevenueCalculator_js.calculateBonusRevenue(
+            actionDetails,
+            actionsPerHour,
+            equipment,
+            itemDetailMap,
+            otherEfficiency.houseRoomLevelOverride
+        );
         if (bonusRevenue?.hasMissingPrices) hasMissingPrice = true;
         const efficiencyBoostedBonusRevenue = (bonusRevenue?.totalBonusRevenue || 0) * efficiencyMultiplier;
 
@@ -20979,6 +20995,7 @@
         const xpData = experienceParser_js.calculateExperienceMultiplier('/skills/alchemy', '/action_types/alchemy', {
             equipment,
             drinks: [],
+            houseRoomLevelOverride: otherEfficiency.houseRoomLevelOverride,
         });
         const totalWisdomWithOurTea = xpData.totalWisdom + buffs.wisdom;
         const charmExperience = xpData.charmExperience || 0;
@@ -21210,9 +21227,13 @@
      * whichever specific candidate/action happens to be under evaluation.
      * @param {string} actionType - Action type HRID
      * @param {boolean} isProduction
+     * @param {{hrid: string, level: number}|null} [houseRoomLevelOverride=null] - Hypothetical level
+     *   for one specific house room (Skilling Optimizer house-room upgrade candidate scoring), passed
+     *   straight through to getActionEfficiencyContext and, via the returned object, to the
+     *   Rare-Find-dependent bonus-revenue calculators below - never mutates real dataManager state.
      * @returns {Object} Other efficiency values
      */
-    function buildNonTeaEfficiencySources(actionType, isProduction) {
+    function buildNonTeaEfficiencySources(actionType, isProduction, houseRoomLevelOverride = null) {
         const gameData = dataManager.getInitClientData();
         const result = {
             house: 0,
@@ -21224,6 +21245,7 @@
             personal: 0,
             guild: 0,
             speed: 0,
+            houseRoomLevelOverride,
         };
         if (!gameData) return result;
 
@@ -21236,6 +21258,7 @@
             equipmentOverride: new Map(),
             drinksOverride: [],
             skillLevelOverride: 1,
+            houseRoomLevelOverride,
         });
 
         const { communityGathering = 0, achievementGathering = 0, personalGathering = 0 } = effCtx.gatheringDetails ?? {};
@@ -21594,6 +21617,9 @@
      *   For Alchemy only: which real item/action-type to score Gold against (see
      *   resolveActiveAlchemyItemContext). Without it, Gold ranking fails closed to 0 (no item to price)
      *   and XP falls back to a representative-item estimate, same as before this param existed.
+     * @param {{hrid: string, level: number}|null} [houseRoomLevelOverride] - Hypothetical level for
+     *   one specific house room (Skilling Optimizer house-room upgrade candidate scoring), applied on
+     *   top of the character's real current levels for every other room - never mutates real state.
      * @returns {{score: number, hasMissingPrice: boolean}} Average XP/hr or Gold/hr across the
      *   selected action cohort, plus whether a required Gold price was unresolved (always false for
      *   'xp' goal, which never touches market prices)
@@ -21605,7 +21631,8 @@
         playerLevel,
         selectedActionHrids = null,
         teaHrids = [],
-        alchemyContext = null
+        alchemyContext = null,
+        houseRoomLevelOverride = null
     ) {
         const normalizedSkill = skillName.toLowerCase();
         const isGathering = GATHERING_SKILLS$1.includes(normalizedSkill);
@@ -21619,7 +21646,7 @@
         const actionType = SKILL_TO_ACTION_TYPE[normalizedSkill];
         if (!actionType) return { score: 0, hasMissingPrice: false };
 
-        const otherEfficiency = buildNonTeaEfficiencySources(actionType, isProduction);
+        const otherEfficiency = buildNonTeaEfficiencySources(actionType, isProduction, houseRoomLevelOverride);
 
         // Add equipment gathering quantity bonus — not captured by the standard speed/efficiency parsers
         if (isGathering) {
@@ -27748,6 +27775,116 @@
     }
 
     /**
+     * Gold cost to upgrade one house room to a specific target level (the single increment
+     * `upgradeCostsMap[targetLevel]`, NOT the cumulative cost from level 1 - matches the equipment
+     * progression rows above, which likewise price only the one step being suggested). Coins are
+     * face-value; every other material is resolved the same way equipment prices are
+     * (`resolveItemPrice`, buy side), marking the result incomplete rather than silently treating a
+     * missing price as free.
+     * @param {string} houseRoomHrid
+     * @param {number} targetLevel
+     * @param {Object} gameData
+     * @returns {{cost: number, costIsIncomplete: boolean}}
+     */
+    function calculateHouseRoomUpgradeCost(houseRoomHrid, targetLevel, gameData) {
+        const levelCosts = gameData?.houseRoomDetailMap?.[houseRoomHrid]?.upgradeCostsMap?.[targetLevel];
+        if (!levelCosts) return { cost: 0, costIsIncomplete: true };
+
+        let cost = 0;
+        let costIsIncomplete = false;
+        for (const { itemHrid, count } of levelCosts) {
+            if (itemHrid === '/items/coin') {
+                cost += count;
+                continue;
+            }
+            const { price, missing } = profitHelpers_js.resolveItemPrice(itemHrid, { side: 'buy' });
+            if (missing) costIsIncomplete = true;
+            cost += count * price;
+        }
+        return { cost, costIsIncomplete };
+    }
+
+    /**
+     * A one-off "upgrade the skill's own dedicated house room by one level" recommendation, shaped
+     * like an equipment progression entry (cost/costIsIncomplete/xpScore/goldScore) so the UI can
+     * reuse the exact same Cost/Profit/XP/Payback cell builders. Deliberately scoped to just this one
+     * room (not every room's Wisdom-only contribution) per the room->skill mapping in
+     * house-efficiency.js - other rooms' Wisdom/Rare-Find contribution to this skill is real but very
+     * minor, and would otherwise clutter the table with near-identical low-value rows.
+     *
+     * Reuses scoreEquipmentSetup's houseRoomLevelOverride (threaded through
+     * tea-optimizer.js/efficiency.js/house-efficiency.js/experience-parser.js) rather than a
+     * hand-derived formula, so this candidate is scored by the exact same live pipeline as every
+     * other recommendation - never mutates the character's real house room state.
+     * @param {string} skillName
+     * @param {number} playerLevel
+     * @param {Set<string>|null} selectedActionHrids
+     * @param {Map} compareEquipment - Same equipment (and teaHridsForRound below) the baseline/every
+     *   equipment candidate was scored against - only the house room level differs for this candidate.
+     * @param {string[]} teaHridsForRound
+     * @param {{actionType: string, itemHrid: string, enhancementLevel: number}|null} alchemyContext
+     * @returns {Object|null} null when the skill has no dedicated room, or that room is already at
+     *   its max level (nothing to suggest)
+     */
+    function getHouseRoomCandidate(
+        skillName,
+        playerLevel,
+        selectedActionHrids,
+        compareEquipment,
+        teaHridsForRound,
+        alchemyContext
+    ) {
+        const actionType = SKILL_TO_ACTION_TYPE[skillName.toLowerCase()];
+        const houseRoomHrid = actionType ? houseEfficiency_js.getHouseRoomForActionType(actionType) : null;
+        if (!houseRoomHrid) return null;
+
+        const gameData = dataManager.getInitClientData();
+        const upgradeCostsMap = gameData?.houseRoomDetailMap?.[houseRoomHrid]?.upgradeCostsMap;
+        if (!upgradeCostsMap) return null;
+
+        const currentLevel = dataManager.getHouseRoomLevel(houseRoomHrid);
+        const maxLevel = Math.max(0, ...Object.keys(upgradeCostsMap).map(Number));
+        const targetLevel = currentLevel + 1;
+        if (targetLevel > maxLevel) return null;
+
+        const { cost, costIsIncomplete } = calculateHouseRoomUpgradeCost(houseRoomHrid, targetLevel, gameData);
+        const roomLevelOverride = { hrid: houseRoomHrid, level: targetLevel };
+
+        const xpResult = scoreEquipmentSetup(
+            skillName,
+            'xp',
+            compareEquipment,
+            playerLevel,
+            selectedActionHrids,
+            teaHridsForRound,
+            alchemyContext,
+            roomLevelOverride
+        );
+        const goldResult = scoreEquipmentSetup(
+            skillName,
+            'gold',
+            compareEquipment,
+            playerLevel,
+            selectedActionHrids,
+            teaHridsForRound,
+            alchemyContext,
+            roomLevelOverride
+        );
+
+        return {
+            houseRoomHrid,
+            roomName: gameData.houseRoomDetailMap[houseRoomHrid]?.name || houseRoomHrid,
+            currentLevel,
+            targetLevel,
+            cost,
+            costIsIncomplete,
+            hasMissingPrice: xpResult.hasMissingPrice || goldResult.hasMissingPrice,
+            xpScore: xpResult.score,
+            goldScore: goldResult.score,
+        };
+    }
+
+    /**
      * Run one full per-slot equipment optimization pass, holding the given tea combination fixed for
      * every candidate score. With no Compare loadout, a narrow Drink-Concentration joint re-check
      * (see FAIL B below) may still raise a candidate's score via its own best tea search - but with a
@@ -27807,7 +27944,11 @@
                     // wastes materials for no benefit), so credit them at a realistic minimum of +10
                     // even when checking lower breakpoint buckets - bestEffectiveLevel below records
                     // what was actually scored, since it can differ from the nominal bucket `bp`.
-                    const effectiveLevel = candidate.hrid.includes('_refined') ? Math.max(bp, 10) : bp;
+                    // Capes are the deliberate exception: real cape breakpoints below +10 (+3, +5,
+                    // +7 per BREAKPOINTS_BACK) are common enough in practice that a refined cape
+                    // should still be scored at its real nominal level there, not clamped to +10.
+                    const isBackSlot = locationHrid === '/item_locations/back';
+                    const effectiveLevel = candidate.hrid.includes('_refined') && !isBackSlot ? Math.max(bp, 10) : bp;
                     const candidateResult = scoreCandidate(
                         candidate.hrid,
                         locationHrid,
@@ -28093,6 +28234,17 @@
         const xpTeaResult = goal === 'xp' ? teaResult : otherTeaResult;
         const goldTeaResult = goal === 'gold' ? teaResult : otherTeaResult;
 
+        // Same equipment + final winning tea combo every equipment slot above was scored against -
+        // only the house room's level differs for this one extra recommendation.
+        const houseRoomCandidate = getHouseRoomCandidate(
+            skillName,
+            playerLevel,
+            selectedActionHrids,
+            compareEquipment,
+            teaHridsForRound,
+            alchemyContext
+        );
+
         return {
             skill: skillName,
             playerLevel,
@@ -28100,6 +28252,7 @@
             xpBaseline,
             goldBaseline,
             slots,
+            houseRoomCandidate,
             xpTeaResult: xpTeaResult?.error ? null : xpTeaResult,
             goldTeaResult: goldTeaResult?.error ? null : goldTeaResult,
             alchemyContext,
@@ -28126,19 +28279,70 @@
     }
 
     /**
+     * Floating Panel Z-Index Manager
+     * Manages bring-to-front ordering for persistent floating panels.
+     * All panels are capped below config.Z_FLOATING_PANEL + 99 (1199)
+     * so they never cross the game's MUI modal layer (~1300).
+     */
+
+
+    const panels = new Set();
+
+    /**
+     * Register a floating panel element for z-index management
+     * @param {HTMLElement} el - The panel element
+     */
+    function registerFloatingPanel(el) {
+        panels.add(el);
+    }
+
+    /**
+     * Unregister a floating panel element
+     * @param {HTMLElement} el - The panel element
+     */
+    function unregisterFloatingPanel(el) {
+        panels.delete(el);
+    }
+
+    /**
+     * Bring a panel to the front among all registered panels,
+     * without exceeding config.Z_FLOATING_PANEL + 99.
+     * @param {HTMLElement} el - The panel to bring forward
+     */
+    function bringPanelToFront(el) {
+        const base = config.Z_FLOATING_PANEL;
+        const cap = base + 99;
+
+        let maxZ = base;
+        for (const p of panels) {
+            const z = parseInt(p.style.zIndex) || base;
+            if (z > maxZ) maxZ = z;
+        }
+
+        const next = maxZ + 1;
+        if (next > cap) {
+            // Overflow — reassign all from base upward, put el last
+            let i = base;
+            for (const p of panels) {
+                if (p !== el) p.style.zIndex = String(i++);
+            }
+            el.style.zIndex = String(i);
+        } else {
+            el.style.zIndex = String(next);
+        }
+    }
+
+    /**
      * Skilling Simulator UI
-     * Injects a "Optimizer" tab next to Loadouts in the character panel.
-     * Lets the user configure equipment + teas (optionally loading from a saved loadout),
-     * pick which actions to include, and simulate XP/hr + Gold/hr.
+     * Injects a "Skilling Sim" tab next to Loadouts in the character panel, with a Simulator mode
+     * and an Upgrade mode. Lets the user configure equipment + teas (optionally loading from a saved
+     * loadout), pick which actions to include, and simulate XP/hr + Gold/hr.
      */
 
 
     const TAB_CLASS = 'toolasha-skilling-opt-tab';
     const PANEL_CLASS = 'toolasha-skilling-opt-panel';
-    const HIDE_CLASS = 'toolasha-opt-hide-content';
-
-    const STYLE_EL = document.createElement('style');
-    STYLE_EL.textContent = `.${HIDE_CLASS} [class*="TabsComponent_tabPanelsContainer"] { display: none !important; }`;
+    const INNER_CONTENT_CLASS = 'toolasha-skilling-opt-inner';
 
     // Equipment Progression sort control. 'value' picks whichever ratio matches the
     // skill's own optimization goal (XP/hr per gold for XP-goal skills, payback time for Gold-goal
@@ -28156,10 +28360,13 @@
     class SkillingSimulatorUI {
         constructor() {
             this.tabBtn = null;
-            this.panel = null;
+            this.panel = null; // Floating chrome (fixed, draggable) - built once, reused
+            this._contentEl = null; // Scrollable body inside the floating chrome
+            this._innerPanel = null; // Rebuilt on every mode/skill/result change
             this.isActive = false;
+            this.isDragging = false;
+            this.dragOffset = { x: 0, y: 0 };
             this.watcher = null;
-            this.contentParent = null;
 
             // Mode
             this.currentMode = 'simulator'; // 'simulator' | 'optimizer'
@@ -28230,11 +28437,11 @@
             btn.className = `${TAB_CLASS} ${existingTab ? existingTab.className.replace(/Mui-selected/g, '').trim() : ''}`;
             btn.setAttribute('role', 'tab');
             btn.setAttribute('type', 'button');
-            btn.textContent = 'Optimizer';
+            btn.textContent = 'Skilling Sim';
             btn.style.minWidth = 'auto';
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                this._activatePanel();
+                this._toggleFloatingPanel();
             });
 
             const loadoutsTab = [...tabList.querySelectorAll('[role="tab"]')].find((t) =>
@@ -28247,79 +28454,185 @@
             const scroller = tabList.parentElement;
             if (scroller?.className?.includes('MuiTabs-scroller')) scroller.style.overflow = 'auto';
 
-            for (const tab of tabList.querySelectorAll(`[role="tab"]:not(.${TAB_CLASS})`)) {
-                tab.addEventListener('click', (e) => this._deactivatePanel(e.currentTarget));
-            }
-
-            if (this.isActive) this._activatePanel();
-        }
-
-        _findContentContainer() {
-            const tabList = this._findTabList();
-            if (!tabList) return null;
-            return tabList.closest('[class*="TabsComponent_tabsContainer"]')?.nextElementSibling || null;
+            this._reflectActiveState();
         }
 
         // -------------------------------------------------------------------------
-        // Activation
+        // Floating panel lifecycle
         // -------------------------------------------------------------------------
 
-        _activatePanel() {
-            this.isActive = true;
-
-            if (this.tabBtn) {
+        /**
+         * Reflects `isActive` onto the injected tab button's selected styling. Kept separate from
+         * opening/closing the panel itself since the game's own React re-renders can tear down and
+         * re-inject the tab button while the floating panel stays open the whole time - unlike the
+         * previous docked-in-the-sidebar-tab behavior, the panel no longer shares a lifecycle with
+         * any native tab-content element.
+         */
+        _reflectActiveState() {
+            if (!this.tabBtn) return;
+            if (this.isActive) {
                 this.tabBtn.classList.add('Mui-selected');
                 this.tabBtn.setAttribute('aria-selected', 'true');
-            }
-
-            const tabList = this.tabBtn?.parentElement;
-            if (tabList) {
-                for (const tab of tabList.querySelectorAll(`[role="tab"]:not(.${TAB_CLASS})`)) {
-                    tab.classList.remove('Mui-selected');
-                    tab.setAttribute('aria-selected', 'false');
-                }
-            }
-
-            const contentContainer = this._findContentContainer();
-            if (contentContainer?.parentElement) {
-                this.contentParent = contentContainer.parentElement;
-                this.contentParent.classList.add(HIDE_CLASS);
-            }
-
-            this.panel?.remove();
-            this._picker?.remove();
-            this._picker = null;
-
-            if (contentContainer) {
-                this.panel = this._buildPanel();
-                contentContainer.parentElement?.insertBefore(this.panel, contentContainer.nextSibling);
-            }
-        }
-
-        _rebuildPanel() {
-            const contentContainer = this._findContentContainer();
-            if (!contentContainer) return;
-            this._closePicker();
-            this.panel?.remove();
-            this.panel = this._buildPanel();
-            contentContainer.parentElement?.insertBefore(this.panel, contentContainer.nextSibling);
-        }
-
-        _deactivatePanel(clickedTab = null) {
-            this.isActive = false;
-            this._closePicker();
-            this.panel?.remove();
-            this.panel = null;
-            this.contentParent?.classList.remove(HIDE_CLASS);
-            this.contentParent = null;
-            if (this.tabBtn) {
+            } else {
                 this.tabBtn.classList.remove('Mui-selected');
                 this.tabBtn.setAttribute('aria-selected', 'false');
             }
-            if (clickedTab) {
-                clickedTab.classList.add('Mui-selected');
-                clickedTab.setAttribute('aria-selected', 'true');
-            }
+        }
+
+        /**
+         * Builds the floating chrome (fixed position, draggable header, resize handle, close button)
+         * exactly once - mirrors Combat Sim's floating panel (combat-sim-ui.js) so Skilling Sim gets
+         * the same draggable/resizable/z-ordered window instead of being docked inline into the
+         * narrow character-panel sidebar tab area. `_buildPanel()`'s existing content div is rebuilt
+         * on demand and mounted into `_contentEl` below, unchanged from before.
+         */
+        _ensureFloatingPanel() {
+            if (this.panel) return;
+
+            this.panel = document.createElement('div');
+            this.panel.className = PANEL_CLASS;
+            this.panel.style.cssText = `
+            position: fixed; top: 60px; right: 60px;
+            z-index: ${config.Z_FLOATING_PANEL};
+            background: rgba(10, 10, 20, 0.97);
+            border: 2px solid ${config.COLOR_ACCENT}80;
+            border-radius: 10px;
+            width: 560px; height: 640px;
+            min-width: 380px; min-height: 320px;
+            max-width: 90vw; max-height: 90vh;
+            display: none; flex-direction: column;
+            color: rgba(255,255,255,0.85); font-size: 13px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+        `;
+
+            const header = document.createElement('div');
+            header.style.cssText = `
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 10px 14px; cursor: grab;
+            background: ${config.COLOR_ACCENT}22;
+            border-bottom: 1px solid ${config.COLOR_ACCENT}80;
+            border-radius: 8px 8px 0 0; flex-shrink: 0;
+        `;
+            const title = document.createElement('span');
+            title.textContent = 'Skilling Sim';
+            title.style.cssText = `font-weight: 700; font-size: 14px; color: ${config.COLOR_ACCENT};`;
+            const closeBtn = document.createElement('button');
+            closeBtn.type = 'button';
+            closeBtn.textContent = '×';
+            closeBtn.style.cssText =
+                'background:none; border:none; color:#aaa; font-size:22px; cursor:pointer; padding:0; line-height:1;';
+            closeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this._deactivatePanel();
+            });
+            header.appendChild(title);
+            header.appendChild(closeBtn);
+            this._setupDrag(header, closeBtn);
+            this.panel.appendChild(header);
+
+            const contentEl = document.createElement('div');
+            contentEl.style.cssText = 'display: flex; flex-direction: column; flex: 1; min-height: 0;';
+            this.panel.appendChild(contentEl);
+            this._contentEl = contentEl;
+
+            const resizeHandle = document.createElement('div');
+            resizeHandle.style.cssText = `
+            position: absolute; bottom: 0; right: 0; width: 16px; height: 16px;
+            cursor: nwse-resize; z-index: 1;
+            background: linear-gradient(135deg, transparent 50%, ${config.COLOR_ACCENT}66 50%);
+            border-radius: 0 0 8px 0;
+        `;
+            this.panel.appendChild(resizeHandle);
+            this._setupResize(resizeHandle);
+
+            document.body.appendChild(this.panel);
+            registerFloatingPanel(this.panel);
+            this.panel.addEventListener('mousedown', () => bringPanelToFront(this.panel));
+        }
+
+        /**
+         * @param {HTMLElement} header
+         * @param {HTMLElement} closeBtn - Excluded from drag so clicking it doesn't also move the panel
+         */
+        _setupDrag(header, closeBtn) {
+            header.addEventListener('mousedown', (e) => {
+                if (e.target === closeBtn) return;
+                this.isDragging = true;
+                header.style.cursor = 'grabbing';
+                const rect = this.panel.getBoundingClientRect();
+                this.dragOffset = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+                bringPanelToFront(this.panel);
+
+                const onMove = (ev) => {
+                    if (!this.isDragging) return;
+                    this.panel.style.left = `${ev.clientX - this.dragOffset.x}px`;
+                    this.panel.style.top = `${ev.clientY - this.dragOffset.y}px`;
+                    this.panel.style.right = 'auto';
+                };
+                const onUp = () => {
+                    this.isDragging = false;
+                    header.style.cursor = 'grab';
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                };
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            });
+        }
+
+        _setupResize(handle) {
+            handle.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const startX = e.clientX;
+                const startY = e.clientY;
+                const startWidth = this.panel.offsetWidth;
+                const startHeight = this.panel.offsetHeight;
+                bringPanelToFront(this.panel);
+
+                const onMove = (ev) => {
+                    const newWidth = Math.max(380, startWidth + (ev.clientX - startX));
+                    const newHeight = Math.max(320, startHeight + (ev.clientY - startY));
+                    this.panel.style.width = `${newWidth}px`;
+                    this.panel.style.height = `${newHeight}px`;
+                };
+                const onUp = () => {
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                };
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            });
+        }
+
+        _toggleFloatingPanel() {
+            this._ensureFloatingPanel();
+            if (this.isActive) this._deactivatePanel();
+            else this._activatePanel();
+        }
+
+        _activatePanel() {
+            this._ensureFloatingPanel();
+            this.isActive = true;
+            this._reflectActiveState();
+            this.panel.style.display = 'flex';
+            bringPanelToFront(this.panel);
+            this._rebuildPanel();
+        }
+
+        _rebuildPanel() {
+            if (!this._contentEl) return;
+            this._closePicker();
+            this._innerPanel?.remove();
+            this._innerPanel = this._buildPanel();
+            this._contentEl.appendChild(this._innerPanel);
+        }
+
+        _deactivatePanel() {
+            this.isActive = false;
+            this._closePicker();
+            this._reflectActiveState();
+            if (this.panel) this.panel.style.display = 'none';
         }
 
         // -------------------------------------------------------------------------
@@ -28327,13 +28640,12 @@
         // -------------------------------------------------------------------------
 
         _buildPanel() {
-            if (!STYLE_EL.isConnected) document.head.appendChild(STYLE_EL);
             this._ensureRetargetedForCurrentSkill();
             this._slotBtns.clear();
             this._teaBtns = [];
 
             const panel = document.createElement('div');
-            panel.className = PANEL_CLASS;
+            panel.className = INNER_CONTENT_CLASS;
             panel.style.cssText = `
             padding: 12px;
             color: rgba(255,255,255,0.85);
@@ -28354,7 +28666,7 @@
 
             for (const [mode, label] of [
                 ['simulator', 'Simulator'],
-                ['optimizer', 'Optimizer'],
+                ['optimizer', 'Upgrade'],
             ]) {
                 const btn = document.createElement('button');
                 btn.type = 'button';
@@ -28629,21 +28941,42 @@
             const selectCss =
                 'background: #2a2a2a; color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; padding: 4px 8px; font-size: 12px; cursor: pointer;';
 
-            const itemSelect = document.createElement('select');
-            itemSelect.style.cssText = selectCss + ' flex: 1; min-width: 0;';
-            const autoOpt = document.createElement('option');
-            autoOpt.value = '';
-            autoOpt.textContent = '— Auto (from active action) —';
-            itemSelect.appendChild(autoOpt);
+            // A plain native <select> with ~900 alphabetically-sorted items (every alchemyDetail item
+            // in the game) is unusable to scroll through - reuses the same searchable single-select
+            // popup already used for equipment/tea slots (_openItemPicker) instead of a flat dropdown.
+            const itemBtn = document.createElement('button');
+            itemBtn.type = 'button';
+            itemBtn.style.cssText = `
+            flex: 1; min-width: 0; padding: 4px 8px; font-size: 12px; text-align: left;
+            background: #2a2a2a; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px;
+            cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        `;
             const items = getAlchemyItemOptions();
-            for (const item of items) {
-                const opt = document.createElement('option');
-                opt.value = item.hrid;
-                opt.textContent = item.name;
-                if (this.alchemyItemOverride?.itemHrid === item.hrid) opt.selected = true;
-                itemSelect.appendChild(opt);
-            }
-            row.appendChild(itemSelect);
+            const currentItemLabel = () => {
+                if (!this.alchemyItemOverride?.itemHrid) return '— Auto (from active action) —';
+                return this._getItemName(this.alchemyItemOverride.itemHrid) || this.alchemyItemOverride.itemHrid;
+            };
+            itemBtn.textContent = currentItemLabel();
+            itemBtn.style.color = this.alchemyItemOverride?.itemHrid ? '#fff' : 'rgba(255,255,255,0.5)';
+            itemBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (this._picker) {
+                    this._closePicker();
+                    return;
+                }
+                this._openItemPicker(
+                    itemBtn,
+                    items,
+                    this.alchemyItemOverride?.itemHrid || null,
+                    (hrid) => {
+                        applyOverride(hrid);
+                        itemBtn.textContent = currentItemLabel();
+                        itemBtn.style.color = this.alchemyItemOverride?.itemHrid ? '#fff' : 'rgba(255,255,255,0.5)';
+                    },
+                    '— Auto (from active action) —'
+                );
+            });
+            row.appendChild(itemBtn);
 
             const typeSelect = document.createElement('select');
             typeSelect.style.cssText = selectCss + ' width: 100px; flex-shrink: 0;';
@@ -28671,20 +29004,19 @@
             row.appendChild(levelInput);
             wrap.appendChild(row);
 
-            const applyOverride = () => {
-                if (!itemSelect.value) {
+            const applyOverride = (itemHrid) => {
+                if (!itemHrid) {
                     this.alchemyItemOverride = null;
                 } else {
                     this.alchemyItemOverride = {
-                        itemHrid: itemSelect.value,
+                        itemHrid,
                         actionType: typeSelect.value,
                         enhancementLevel: parseInt(levelInput.value, 10) || 0,
                     };
                 }
             };
-            itemSelect.addEventListener('change', applyOverride);
-            typeSelect.addEventListener('change', applyOverride);
-            levelInput.addEventListener('change', applyOverride);
+            typeSelect.addEventListener('change', () => applyOverride(this.alchemyItemOverride?.itemHrid || null));
+            levelInput.addEventListener('change', () => applyOverride(this.alchemyItemOverride?.itemHrid || null));
 
             const hint = document.createElement('div');
             hint.style.cssText = 'color: rgba(255,255,255,0.35); font-size: 10px; font-style: italic;';
@@ -29173,7 +29505,14 @@
         // Item picker popup
         // -------------------------------------------------------------------------
 
-        _openItemPicker(anchorEl, items, currentHrid, onSelect) {
+        /**
+         * @param {HTMLElement} anchorEl
+         * @param {Array<{hrid: string, name: string, available?: boolean, itemLevel?: number}>} items
+         * @param {string|null} currentHrid
+         * @param {(hrid: string|null) => void} onSelect
+         * @param {string} [emptyLabel] - Label for the "clear selection" row (default '— Empty —')
+         */
+        _openItemPicker(anchorEl, items, currentHrid, onSelect, emptyLabel = '— Empty —') {
             this._closePicker();
 
             const popup = document.createElement('div');
@@ -29213,7 +29552,7 @@
 
                 // Empty option
                 const emptyRow = document.createElement('div');
-                emptyRow.textContent = '— Empty —';
+                emptyRow.textContent = emptyLabel;
                 emptyRow.style.cssText =
                     'padding: 6px 10px; cursor: pointer; font-size: 12px; color: rgba(255,255,255,0.35); font-style: italic; border-bottom: 1px solid rgba(255,255,255,0.08);';
                 emptyRow.addEventListener('mouseenter', () => (emptyRow.style.background = 'rgba(255,255,255,0.05)'));
@@ -29552,7 +29891,7 @@
         }
 
         _renderOptimizerResults(container, result, achievableStats, loadoutItemMap) {
-            const { slots, goal, xpBaseline, goldBaseline } = result;
+            const { slots, goal, xpBaseline, goldBaseline, houseRoomCandidate } = result;
             const slotEntries = Object.entries(slots);
 
             if (!slotEntries.length) {
@@ -29612,15 +29951,9 @@
                       });
 
             container.appendChild(this._makeSectionHeader('Equipment Progression'));
-            for (const [locationHrid, slotData] of orderedEntries) {
-                const loadoutEntry = loadoutItemMap?.get(locationHrid) ?? null;
-
-                // xpBaseline/goldBaseline already reflect the full Compare loadout + its drinks (or
-                // the empty-slot baseline when no Compare is selected) - optimizeSkill() computed it
-                // once against the same scenario every candidate in slotData.progression was scored
-                // against, so it's reused as-is rather than re-scored per slot.
-                this._renderSlotRow(container, slotData, loadoutEntry, xpBaseline, goldBaseline);
-            }
+            container.appendChild(
+                this._renderProgressionTable(orderedEntries, loadoutItemMap, xpBaseline, goldBaseline, houseRoomCandidate)
+            );
 
             const xpResult = achievableStats?.xpResult;
             const goldResult = achievableStats?.goldResult;
@@ -29741,43 +30074,143 @@
             }
         }
 
-        _renderSlotRow(container, slotData, loadoutEntry = null, xpBaseline = 0, goldBaseline = 0) {
-            const loadoutItemHrid = loadoutEntry?.itemHrid ?? null;
-            const optimalItemHrid = slotData.progression[slotData.progression.length - 1]?.itemHrid;
-
-            const row = document.createElement('div');
-            row.style.cssText = 'margin-bottom: 10px;';
-
-            // Slot label + loadout diff indicator
-            const headerRow = document.createElement('div');
-            headerRow.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-bottom: 2px;';
-
-            const slotLabel = document.createElement('div');
-            slotLabel.style.cssText =
-                'font-size: 10px; color: rgba(255,255,255,0.38); text-transform: uppercase; letter-spacing: 0.04em;';
-            slotLabel.textContent = slotData.name;
-            headerRow.appendChild(slotLabel);
-
-            if (loadoutItemHrid !== null) {
-                const enhStr = ` +${loadoutEntry.enhancementLevel}`;
-                if (loadoutItemHrid === optimalItemHrid) {
-                    const check = document.createElement('span');
-                    check.textContent = `✓${enhStr}`;
-                    check.style.cssText = `font-size: 10px; color: ${config.COLOR_PROFIT};`;
-                    headerRow.appendChild(check);
-                } else {
-                    const diff = document.createElement('span');
-                    const loadoutName = loadoutItemHrid ? this._getItemName(loadoutItemHrid) || loadoutItemHrid : 'empty';
-                    diff.textContent = `≠ ${loadoutName}${enhStr}`;
-                    diff.style.cssText = `font-size: 10px; color: ${config.COLOR_WARNING}; font-style: italic;`;
-                    headerRow.appendChild(diff);
-                }
-            }
-
-            row.appendChild(headerRow);
-
+        /**
+         * Builds the Equipment Progression results as a real <table> (spreadsheet-style columns) so
+         * Cost/Profit/XP/Payback figures line up across every slot, instead of each row's text
+         * pushing its own numbers out of alignment.
+         * @param {Array<[string, Object]>} orderedEntries - [locationHrid, slotData] pairs, already sorted
+         * @param {Map|null} loadoutItemMap - Compare loadout equipment, or null with none selected
+         * @param {number} xpBaseline
+         * @param {number} goldBaseline
+         * @returns {HTMLTableElement}
+         */
+        /**
+         * @param {Array<[string, Object]>} orderedEntries
+         * @param {Map|null} loadoutItemMap
+         * @param {number} xpBaseline
+         * @param {number} goldBaseline
+         * @param {Object|null} [houseRoomCandidate] - optimizeSkill()'s one-off house-room upgrade
+         *   suggestion (see skilling-optimizer-engine.js's getHouseRoomCandidate), or null when the
+         *   skill has no dedicated room or that room is already at its max level.
+         * @returns {HTMLTableElement}
+         */
+        _renderProgressionTable(orderedEntries, loadoutItemMap, xpBaseline, goldBaseline, houseRoomCandidate = null) {
             const spriteUrl =
                 document.querySelector('use[href*="items_sprite"]')?.getAttribute('href')?.split('#')[0] ?? null;
+
+            const table = document.createElement('table');
+            table.style.cssText = 'width: 100%; border-collapse: collapse; font-size: 11px;';
+
+            const thStyle =
+                'padding: 4px 8px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.15); ' +
+                'color: rgba(255,255,255,0.4); font-weight: 600; white-space: nowrap;';
+            const thead = document.createElement('thead');
+            thead.innerHTML = `<tr>
+            <th style="${thStyle}">Item</th>
+            <th style="${thStyle}">Cost</th>
+            <th style="${thStyle}">Profit Δ</th>
+            <th style="${thStyle}">G/0.01% Profit</th>
+            <th style="${thStyle}">Exp/Hr Δ</th>
+            <th style="${thStyle}">G/0.01% Exp/Hr</th>
+            <th style="${thStyle}">Payback</th>
+        </tr>`;
+            table.appendChild(thead);
+
+            const tbody = document.createElement('tbody');
+            for (const [locationHrid, slotData] of orderedEntries) {
+                const loadoutEntry = loadoutItemMap?.get(locationHrid) ?? null;
+                // xpBaseline/goldBaseline already reflect the full Compare loadout + its drinks (or
+                // the empty-slot baseline when no Compare is selected) - optimizeSkill() computed it
+                // once against the same scenario every candidate in slotData.progression was scored
+                // against, so it's reused as-is rather than re-scored per slot.
+                this._appendSlotTableRows(tbody, slotData, loadoutEntry, xpBaseline, goldBaseline, spriteUrl);
+            }
+            if (houseRoomCandidate) {
+                this._appendHouseRoomRow(tbody, houseRoomCandidate, xpBaseline, goldBaseline, spriteUrl);
+            }
+            table.appendChild(tbody);
+
+            return table;
+        }
+
+        /**
+         * One row suggesting "upgrade the skill's dedicated house room by one level" - a candidate
+         * that isn't tied to any equipment slot, so it always renders as its own single row below
+         * every equipment slot's rows, reusing the same metric cell builders.
+         * @param {HTMLElement} tbody
+         * @param {Object} houseRoomCandidate - See skilling-optimizer-engine.js's getHouseRoomCandidate
+         * @param {number} xpBaseline
+         * @param {number} goldBaseline
+         * @param {string|null} spriteUrl
+         */
+        _appendHouseRoomRow(tbody, houseRoomCandidate, xpBaseline, goldBaseline, spriteUrl) {
+            const tr = document.createElement('tr');
+            tr.style.cssText = 'border-top: 1px solid rgba(255,255,255,0.06);';
+
+            const nameTd = document.createElement('td');
+            nameTd.style.cssText = 'padding: 4px 8px;';
+
+            const label = document.createElement('span');
+            label.style.cssText =
+                'font-size: 10px; color: rgba(255,255,255,0.38); text-transform: uppercase; letter-spacing: 0.04em;';
+            label.textContent = 'House Room';
+            nameTd.appendChild(label);
+
+            const transition = document.createElement('span');
+            transition.style.cssText = 'margin-left: 8px;';
+            const fromSpan = document.createElement('span');
+            fromSpan.style.cssText = 'color: rgba(255,255,255,0.5);';
+            fromSpan.textContent = `${houseRoomCandidate.roomName} +${houseRoomCandidate.currentLevel}`;
+            transition.appendChild(fromSpan);
+            transition.appendChild(document.createTextNode(' → '));
+            const toSpan = document.createElement('span');
+            toSpan.style.cssText = `color: ${config.COLOR_ACCENT}; font-weight: 600;`;
+            toSpan.textContent = `+${houseRoomCandidate.targetLevel}`;
+            this._applyIncompleteTooltip(toSpan, houseRoomCandidate.hasMissingPrice);
+            transition.appendChild(toSpan);
+            nameTd.appendChild(transition);
+            tr.appendChild(nameTd);
+
+            this._appendMetricCells(tr, houseRoomCandidate, xpBaseline, goldBaseline, spriteUrl);
+            tbody.appendChild(tr);
+        }
+
+        /**
+         * Slot label + ✓/≠ Compare-loadout diff indicator, shared by both the Compare-mode single row
+         * and the first tier row of the no-compare grouped view.
+         * @param {HTMLElement} nameTd
+         */
+        _appendSlotLabelWithDiff(nameTd, slotName, loadoutItemHrid, optimalItemHrid, loadoutEntry) {
+            const slotLabel = document.createElement('span');
+            slotLabel.style.cssText =
+                'font-size: 10px; color: rgba(255,255,255,0.38); text-transform: uppercase; letter-spacing: 0.04em;';
+            slotLabel.textContent = slotName;
+            nameTd.appendChild(slotLabel);
+
+            if (loadoutItemHrid === null) return;
+            const enhStr = ` +${loadoutEntry.enhancementLevel}`;
+            const indicator = document.createElement('span');
+            indicator.style.cssText = 'margin-left: 6px; font-size: 10px;';
+            if (loadoutItemHrid === optimalItemHrid) {
+                indicator.textContent = `✓${enhStr}`;
+                indicator.style.color = config.COLOR_PROFIT;
+            } else {
+                const loadoutName = loadoutItemHrid ? this._getItemName(loadoutItemHrid) || loadoutItemHrid : 'empty';
+                indicator.textContent = `≠ ${loadoutName}${enhStr}`;
+                indicator.style.color = config.COLOR_WARNING;
+                indicator.style.fontStyle = 'italic';
+            }
+            nameTd.appendChild(indicator);
+        }
+
+        /**
+         * Appends one or more <tr> for a single equipment slot: one row in Compare mode (current →
+         * suggested), or one row per grouped enhancement tier with no Compare loadout selected.
+         */
+        _appendSlotTableRows(tbody, slotData, loadoutEntry, xpBaseline, goldBaseline, spriteUrl) {
+            const loadoutItemHrid = loadoutEntry?.itemHrid ?? null;
+            const optimalItemHrid = slotData.progression[slotData.progression.length - 1]?.itemHrid;
+            const topBorder = 'border-top: 1px solid rgba(255,255,255,0.06);';
 
             if (loadoutEntry) {
                 // Single-line "current → suggested" comparison, matching the Combat Sim Upgrade
@@ -29787,100 +30220,90 @@
                     return entry.xpScore - xpBaseline > 0 || entry.goldScore - goldBaseline > 0;
                 });
 
+                const tr = document.createElement('tr');
+                tr.style.cssText = topBorder;
+                const nameTd = document.createElement('td');
+                nameTd.style.cssText = 'padding: 4px 8px;';
+                this._appendSlotLabelWithDiff(nameTd, slotData.name, loadoutItemHrid, optimalItemHrid, loadoutEntry);
+
                 if (!suggestedEntry) {
-                    const none = document.createElement('div');
+                    const none = document.createElement('span');
                     none.style.cssText =
-                        'padding: 1px 0 1px 6px; font-size: 11px; color: rgba(255,255,255,0.25); font-style: italic;';
+                        'margin-left: 8px; font-size: 11px; color: rgba(255,255,255,0.25); font-style: italic;';
                     none.textContent = 'Already at optimal enhancement';
-                    row.appendChild(none);
-                } else {
-                    const entryRow = document.createElement('div');
-                    entryRow.style.cssText =
-                        'display: flex; align-items: baseline; gap: 6px; padding: 1px 0 1px 6px; flex-wrap: wrap;';
-
-                    const sameBaseItem = suggestedEntry.itemHrid === loadoutItemHrid;
-                    const fromSpan = document.createElement('span');
-                    fromSpan.style.cssText = 'font-size: 12px; color: rgba(255,255,255,0.5);';
-                    fromSpan.textContent = loadoutItemHrid
-                        ? sameBaseItem
-                            ? `${suggestedEntry.itemName} +${loadoutEntry.enhancementLevel}`
-                            : `${this._getItemName(loadoutItemHrid) || loadoutItemHrid} +${loadoutEntry.enhancementLevel}`
-                        : 'Empty';
-                    entryRow.appendChild(fromSpan);
-
-                    const arrow = document.createElement('span');
-                    arrow.style.cssText = 'font-size: 12px; color: rgba(255,255,255,0.35);';
-                    arrow.textContent = '→';
-                    entryRow.appendChild(arrow);
-
-                    const nameSpan = document.createElement('span');
-                    nameSpan.style.cssText = `font-size: 12px; color: ${config.COLOR_ACCENT}; font-weight: 600;`;
-                    nameSpan.textContent = sameBaseItem
-                        ? `+${suggestedEntry.enhancementLevel}`
-                        : `${suggestedEntry.itemName} +${suggestedEntry.enhancementLevel}`;
-                    this._applyRefinedTooltip(nameSpan, suggestedEntry.itemHrid);
-                    this._applyIncompleteTooltip(nameSpan, suggestedEntry.hasMissingPrice);
-                    entryRow.appendChild(nameSpan);
-
-                    const gainEl = this._makeGainEl(
-                        suggestedEntry.xpScore,
-                        xpBaseline,
-                        suggestedEntry.goldScore,
-                        goldBaseline,
-                        spriteUrl
-                    );
-                    if (gainEl) entryRow.appendChild(gainEl);
-
-                    const costEl = this._makeCostPaybackEl(
-                        suggestedEntry.cost,
-                        suggestedEntry.costIsIncomplete,
-                        suggestedEntry.xpScore - xpBaseline,
-                        suggestedEntry.goldScore - goldBaseline,
-                        spriteUrl
-                    );
-                    if (costEl) entryRow.appendChild(costEl);
-
-                    row.appendChild(entryRow);
+                    nameTd.appendChild(none);
+                    tr.appendChild(nameTd);
+                    const restTd = document.createElement('td');
+                    restTd.colSpan = 6;
+                    tr.appendChild(restTd);
+                    tbody.appendChild(tr);
+                    return;
                 }
+
+                const sameBaseItem = suggestedEntry.itemHrid === loadoutItemHrid;
+                const transition = document.createElement('span');
+                transition.style.cssText = 'margin-left: 8px;';
+
+                const fromSpan = document.createElement('span');
+                fromSpan.style.cssText = 'color: rgba(255,255,255,0.5);';
+                fromSpan.textContent = loadoutItemHrid
+                    ? sameBaseItem
+                        ? `${suggestedEntry.itemName} +${loadoutEntry.enhancementLevel}`
+                        : `${this._getItemName(loadoutItemHrid) || loadoutItemHrid} +${loadoutEntry.enhancementLevel}`
+                    : 'Empty';
+                transition.appendChild(fromSpan);
+                transition.appendChild(document.createTextNode(' → '));
+
+                const toSpan = document.createElement('span');
+                toSpan.style.cssText = `color: ${config.COLOR_ACCENT}; font-weight: 600;`;
+                toSpan.textContent = sameBaseItem
+                    ? `+${suggestedEntry.enhancementLevel}`
+                    : `${suggestedEntry.itemName} +${suggestedEntry.enhancementLevel}`;
+                this._applyRefinedTooltip(toSpan, suggestedEntry.itemHrid);
+                this._applyIncompleteTooltip(toSpan, suggestedEntry.hasMissingPrice);
+                transition.appendChild(toSpan);
+                nameTd.appendChild(transition);
+                tr.appendChild(nameTd);
+
+                this._appendMetricCells(tr, suggestedEntry, xpBaseline, goldBaseline, spriteUrl);
+                tbody.appendChild(tr);
             } else {
-                // Grouped tier view (no compare selected): collapse same-item runs into one row
+                // Grouped tier view (no compare selected): collapse same-item runs into one row each
                 const tiers = this._groupTiers(slotData.progression);
                 for (let i = 0; i < tiers.length; i++) {
                     const tier = tiers[i];
-                    const tierRow = document.createElement('div');
-                    tierRow.style.cssText = 'display: flex; align-items: baseline; gap: 8px; padding: 1px 0 1px 6px;';
+                    const tr = document.createElement('tr');
+                    if (i === 0) tr.style.cssText = topBorder;
 
-                    const range = document.createElement('span');
-                    range.style.cssText =
-                        'font-size: 10px; color: rgba(255,255,255,0.35); flex-shrink: 0; min-width: 56px;';
+                    const nameTd = document.createElement('td');
+                    nameTd.style.cssText = 'padding: 4px 8px;';
+                    if (i === 0) {
+                        const slotLabel = document.createElement('span');
+                        slotLabel.style.cssText =
+                            'font-size: 10px; color: rgba(255,255,255,0.38); text-transform: uppercase; ' +
+                            'letter-spacing: 0.04em; margin-right: 8px;';
+                        slotLabel.textContent = slotData.name;
+                        nameTd.appendChild(slotLabel);
+                    }
+
                     const isLast = i === tiers.length - 1;
-                    range.textContent = isLast ? `+${tier.fromLevel}+` : `+${tier.fromLevel} – +${tier.toLevel}`;
-                    tierRow.appendChild(range);
+                    const range = document.createElement('span');
+                    range.style.cssText = 'color: rgba(255,255,255,0.35); margin-right: 6px;';
+                    range.textContent = isLast ? `+${tier.fromLevel}+` : `+${tier.fromLevel}–+${tier.toLevel}`;
+                    nameTd.appendChild(range);
 
-                    const name = document.createElement('span');
-                    name.style.cssText = `font-size: 12px; color: ${i === 0 ? 'rgba(255,255,255,0.85)' : config.COLOR_ACCENT}; font-weight: ${i > 0 ? '600' : '400'};`;
-                    name.textContent = tier.itemName;
-                    this._applyRefinedTooltip(name, tier.itemHrid);
-                    this._applyIncompleteTooltip(name, tier.hasMissingPrice);
-                    tierRow.appendChild(name);
+                    const nameSpan = document.createElement('span');
+                    nameSpan.style.cssText = `color: ${i === 0 ? 'rgba(255,255,255,0.85)' : config.COLOR_ACCENT}; font-weight: ${i > 0 ? '600' : '400'};`;
+                    nameSpan.textContent = tier.itemName;
+                    this._applyRefinedTooltip(nameSpan, tier.itemHrid);
+                    this._applyIncompleteTooltip(nameSpan, tier.hasMissingPrice);
+                    nameTd.appendChild(nameSpan);
+                    tr.appendChild(nameTd);
 
-                    const gainEl = this._makeGainEl(tier.xpScore, xpBaseline, tier.goldScore, goldBaseline, spriteUrl);
-                    if (gainEl) tierRow.appendChild(gainEl);
-
-                    const costEl = this._makeCostPaybackEl(
-                        tier.cost,
-                        tier.costIsIncomplete,
-                        tier.xpScore - xpBaseline,
-                        tier.goldScore - goldBaseline,
-                        spriteUrl
-                    );
-                    if (costEl) tierRow.appendChild(costEl);
-
-                    row.appendChild(tierRow);
+                    this._appendMetricCells(tr, tier, xpBaseline, goldBaseline, spriteUrl);
+                    tbody.appendChild(tr);
                 }
             }
-
-            container.appendChild(row);
         }
 
         /**
@@ -29914,66 +30337,61 @@
             nameEl.style.color = config.COLOR_WARNING;
         }
 
-        _makeGainEl(xpScore, xpBaseline, goldScore, goldBaseline, spriteUrl) {
-            const gainParts = [];
+        /**
+         * Appends the six metric <td>s shared by every progression row: Cost, Profit Δ,
+         * G/0.01% Profit, Exp/Hr Δ, G/0.01% Exp/Hr, Payback.
+         * @param {HTMLElement} tr
+         * @param {Object} entry - A progression entry (or grouped tier) with cost/costIsIncomplete/xpScore/goldScore
+         * @param {number} xpBaseline
+         * @param {number} goldBaseline
+         * @param {string|null} spriteUrl
+         */
+        _appendMetricCells(tr, entry, xpBaseline, goldBaseline, spriteUrl) {
+            const xpDelta = entry.xpScore - xpBaseline;
+            const goldDelta = entry.goldScore - goldBaseline;
+            const { cost, costIsIncomplete } = entry;
 
-            if (xpBaseline > 0 && xpScore > xpBaseline) {
-                const delta = xpScore - xpBaseline;
-                const pct = ((delta / xpBaseline) * 100).toFixed(1);
-                const span = document.createElement('span');
-                span.textContent = `+${formatters_js.formatKMB(delta)} XP (+${pct}%)`;
-                gainParts.push(span);
-            }
-
-            if (goldBaseline > 0 && goldScore > goldBaseline) {
-                const delta = goldScore - goldBaseline;
-                const pct = ((delta / goldBaseline) * 100).toFixed(1);
-                const span = document.createElement('span');
-                span.style.cssText = 'display: inline-flex; align-items: center; gap: 2px;';
-                span.appendChild(document.createTextNode(`+${formatters_js.formatKMB(delta)}`));
-                if (spriteUrl) {
-                    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-                    svg.setAttribute('width', '12');
-                    svg.setAttribute('height', '12');
-                    svg.style.flexShrink = '0';
-                    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-                    use.setAttribute('href', `${spriteUrl}#coin`);
-                    svg.appendChild(use);
-                    span.appendChild(svg);
-                } else {
-                    span.appendChild(document.createTextNode(' G'));
-                }
-                span.appendChild(document.createTextNode(` (+${pct}%)`));
-                gainParts.push(span);
-            }
-
-            if (!gainParts.length) return null;
-
-            const wrapper = document.createElement('span');
-            wrapper.style.cssText =
-                'font-size: 10px; color: rgba(140,210,140,0.65); margin-left: auto; flex-shrink: 0; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;';
-            for (let i = 0; i < gainParts.length; i++) {
-                if (i > 0) wrapper.appendChild(document.createTextNode(' · '));
-                wrapper.appendChild(gainParts[i]);
-            }
-            return wrapper;
+            tr.appendChild(this._makeCostCell(cost, costIsIncomplete, spriteUrl));
+            tr.appendChild(this._makeDeltaCell(goldDelta, goldBaseline, spriteUrl));
+            tr.appendChild(this._makeProfitRatioCell(goldDelta, goldBaseline, cost, costIsIncomplete));
+            tr.appendChild(this._makeDeltaCell(xpDelta, xpBaseline, null));
+            tr.appendChild(this._makeXpRatioCell(xpDelta, xpBaseline, cost, costIsIncomplete));
+            tr.appendChild(this._makePaybackCell(cost, costIsIncomplete, goldDelta));
         }
 
         /**
-         * Cost to acquire a recommendation, plus marginal-gain-per-gold and payback-time context so
-         * the player can judge value for money, not just raw XP/Gold gain.
-         * @param {number} cost - Gold cost from the engine (net of selling the current item, if any)
-         * @param {boolean} costIsIncomplete - Whether a required market price was unresolved
-         * @param {number} xpDelta - XP/hr gain over baseline
-         * @param {number} goldDelta - Gold/hr gain over baseline
-         * @param {string|null} spriteUrl
-         * @returns {HTMLElement|null}
+         * @returns {HTMLElement} A <td> placeholder for a column that doesn't apply to this row
          */
-        _makeCostPaybackEl(cost, costIsIncomplete, xpDelta, goldDelta, spriteUrl) {
-            if (cost <= 0 && !costIsIncomplete) return null;
+        _dashCell() {
+            const td = document.createElement('td');
+            td.style.cssText = 'padding: 4px 8px; color: rgba(255,255,255,0.25);';
+            td.textContent = '—';
+            return td;
+        }
 
-            const coinNode = () => {
-                if (!spriteUrl) return document.createTextNode(' G');
+        /**
+         * @param {string} text
+         * @param {string} styleExtra
+         * @returns {HTMLElement}
+         */
+        _tdText(text, styleExtra = '') {
+            const td = document.createElement('td');
+            td.style.cssText = `padding: 4px 8px; white-space: nowrap; ${styleExtra}`;
+            td.textContent = text;
+            return td;
+        }
+
+        /**
+         * A value with an inline coin icon (or " G" fallback text when the sprite sheet isn't found).
+         * @param {string} text
+         * @param {string|null} spriteUrl
+         * @returns {HTMLElement}
+         */
+        _makeCoinValueSpan(text, spriteUrl) {
+            const span = document.createElement('span');
+            span.style.cssText = 'display: inline-flex; align-items: center; gap: 2px;';
+            span.appendChild(document.createTextNode(text));
+            if (spriteUrl) {
                 const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
                 svg.setAttribute('width', '12');
                 svg.setAttribute('height', '12');
@@ -29981,49 +30399,112 @@
                 const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
                 use.setAttribute('href', `${spriteUrl}#coin`);
                 svg.appendChild(use);
-                return svg;
-            };
+                span.appendChild(svg);
+            } else {
+                span.appendChild(document.createTextNode(' G'));
+            }
+            return span;
+        }
 
-            const parts = [];
-
-            const costSpan = document.createElement('span');
-            costSpan.style.cssText = 'display: inline-flex; align-items: center; gap: 2px;';
-            costSpan.appendChild(document.createTextNode('Cost: ' + (costIsIncomplete ? '~' : '') + formatters_js.formatKMB(cost)));
-            costSpan.appendChild(coinNode());
+        /**
+         * Cost cell - shows the recommendation's gold cost, marked with '~' whenever a required
+         * market price was unresolved so this cost is not exact.
+         * @param {number} cost
+         * @param {boolean} costIsIncomplete
+         * @param {string|null} spriteUrl
+         * @returns {HTMLElement}
+         */
+        _makeCostCell(cost, costIsIncomplete, spriteUrl) {
+            if (cost <= 0 && !costIsIncomplete) return this._dashCell();
+            const td = document.createElement('td');
+            td.style.cssText = 'padding: 4px 8px; white-space: nowrap; color: rgba(255,255,255,0.75);';
+            const span = this._makeCoinValueSpan((costIsIncomplete ? '~' : '') + formatters_js.formatKMB(cost), spriteUrl);
             if (costIsIncomplete) {
-                costSpan.title = 'A required market price is unresolved, so this cost is not exact.';
-                costSpan.style.cursor = 'help';
+                span.title = 'A required market price is unresolved, so this cost is not exact.';
+                span.style.cursor = 'help';
             }
-            parts.push(costSpan);
+            td.appendChild(span);
+            return td;
+        }
 
-            // Below, further ratios need a nonzero cost to divide by, but a cost that's merely
-            // approximate (costIsIncomplete) still yields a meaningful approximate ratio - mirrors
-            // the '~' already used for the Cost line above rather than hiding the ratios outright.
-            if (cost > 0) {
-                const approxPrefix = costIsIncomplete ? '~' : '';
-                if (xpDelta > 0) {
-                    const xpPerMillion = (xpDelta / cost) * 1_000_000;
-                    const span = document.createElement('span');
-                    span.textContent = `${approxPrefix}${formatters_js.formatKMB(xpPerMillion)} XP/hr per 1M gold`;
-                    parts.push(span);
-                }
-
-                if (goldDelta > 0) {
-                    const paybackHours = cost / goldDelta;
-                    const span = document.createElement('span');
-                    span.textContent = `Payback: ${approxPrefix}${formatters_js.timeReadable(paybackHours * 3600)}`;
-                    parts.push(span);
-                }
+        /**
+         * Profit Δ / Exp/Hr Δ cell - the raw gain over baseline plus a gain percentage. Shared by
+         * both columns; pass a spriteUrl for the Gold column, null for the XP column (no coin icon).
+         * @param {number} delta
+         * @param {number} baseline
+         * @param {string|null} spriteUrl
+         * @returns {HTMLElement}
+         */
+        _makeDeltaCell(delta, baseline, spriteUrl) {
+            if (!(baseline > 0 && delta > 0)) return this._dashCell();
+            const pct = ((delta / baseline) * 100).toFixed(1);
+            const td = document.createElement('td');
+            td.style.cssText = 'padding: 4px 8px; white-space: nowrap; color: rgba(140,210,140,0.85);';
+            if (spriteUrl !== null) {
+                const span = this._makeCoinValueSpan(`+${formatters_js.formatKMB(delta)}`, spriteUrl);
+                span.appendChild(document.createTextNode(` (+${pct}%)`));
+                td.appendChild(span);
+            } else {
+                td.textContent = `+${formatters_js.formatKMB(delta)} (+${pct}%)`;
             }
+            return td;
+        }
 
-            const wrapper = document.createElement('span');
-            wrapper.style.cssText =
-                'font-size: 10px; color: rgba(255,255,255,0.4); margin-left: auto; flex-shrink: 0; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;';
-            for (let i = 0; i < parts.length; i++) {
-                if (i > 0) wrapper.appendChild(document.createTextNode(' · '));
-                wrapper.appendChild(parts[i]);
-            }
-            return wrapper;
+        /**
+         * "G/0.01% Exp/Hr" cell - how much gold this recommendation costs per 0.01 percentage point
+         * of XP/hr gain over baseline (lower is better). Mirrors "G/0.01% Profit" below exactly -
+         * previously this column showed XP/hr gained per fixed 1M gold spent, which reads as ~0-1
+         * for most upgrades once XP/hr baselines are large, losing precision exactly where it
+         * mattered; this fixed-percentage-of-gain framing stays meaningful regardless of scale.
+         * @param {number} xpDelta
+         * @param {number} xpBaseline
+         * @param {number} cost
+         * @param {boolean} costIsIncomplete
+         * @returns {HTMLElement}
+         */
+        _makeXpRatioCell(xpDelta, xpBaseline, cost, costIsIncomplete) {
+            if (!(cost > 0 && xpDelta > 0 && xpBaseline > 0)) return this._dashCell();
+            const pctPoints = (xpDelta / xpBaseline) * 100;
+            const goldPer001Pct = cost / (pctPoints / 0.01);
+            const approxPrefix = costIsIncomplete ? '~' : '';
+            return this._tdText(`${approxPrefix}${formatters_js.formatKMB(goldPer001Pct)}`, 'color: rgba(255,255,255,0.6);');
+        }
+
+        /**
+         * "G/0.01% Profit" cell - how much gold this recommendation costs per 0.01 percentage point
+         * of Gold/hr gain over baseline (lower is better). Same cost-per-fixed-gain formula as the
+         * XP ratio column above, just against the Gold/hr baseline instead of XP/hr.
+         * @param {number} goldDelta
+         * @param {number} goldBaseline
+         * @param {number} cost
+         * @param {boolean} costIsIncomplete
+         * @returns {HTMLElement}
+         */
+        _makeProfitRatioCell(goldDelta, goldBaseline, cost, costIsIncomplete) {
+            if (!(cost > 0 && goldDelta > 0 && goldBaseline > 0)) return this._dashCell();
+            const pctPoints = (goldDelta / goldBaseline) * 100;
+            const goldPer001Pct = cost / (pctPoints / 0.01);
+            const approxPrefix = costIsIncomplete ? '~' : '';
+            return this._tdText(`${approxPrefix}${formatters_js.formatKMB(goldPer001Pct)}`, 'color: rgba(255,255,255,0.6);');
+        }
+
+        /**
+         * Payback cell - time to break even on this recommendation's cost from its Gold/hr gain,
+         * using the compact time formatter (e.g. "1y 2mo", "14d 6h") rather than timeReadable's full
+         * "x Years x Months x Days" wording, which was too long for a table column.
+         * @param {number} cost
+         * @param {boolean} costIsIncomplete
+         * @param {number} goldDelta
+         * @returns {HTMLElement}
+         */
+        _makePaybackCell(cost, costIsIncomplete, goldDelta) {
+            if (!(cost > 0 && goldDelta > 0)) return this._dashCell();
+            const paybackHours = cost / goldDelta;
+            const approxPrefix = costIsIncomplete ? '~' : '';
+            return this._tdText(
+                `${approxPrefix}${formatters_js.timeReadableCompact(paybackHours * 3600)}`,
+                'color: rgba(255,255,255,0.6);'
+            );
         }
 
         _groupTiers(progression) {
@@ -30115,12 +30596,14 @@
             }
             this._closePicker();
             this.tabBtn?.remove();
-            this.panel?.remove();
-            this.contentParent?.classList.remove(HIDE_CLASS);
-            STYLE_EL.remove();
+            if (this.panel) {
+                unregisterFloatingPanel(this.panel);
+                this.panel.remove();
+            }
             this.tabBtn = null;
             this.panel = null;
-            this.contentParent = null;
+            this._contentEl = null;
+            this._innerPanel = null;
             this.isActive = false;
         }
     }
@@ -30172,4 +30655,4 @@
 
     console.log('[Toolasha] Actions library loaded');
 
-})(Toolasha.Core.dataManager, Toolasha.Core.config, Toolasha.Core.domObserver, Toolasha.Utils.enhancementConfig, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.profitConstants, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.efficiency, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.uiComponents, Toolasha.Utils.actionPanelHelper, Toolasha.Core.loadoutState, Toolasha.Core.storage, Toolasha.Utils.dom, Toolasha.Utils.timerRegistry, Toolasha.Utils.teaParser, Toolasha.Core.tooltipObserver, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.actionCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.experienceParser, Toolasha.Utils.reactInput, Toolasha.Utils.experienceCalculator, Toolasha.Utils.materialCalculator, Toolasha.Core, Toolasha.Market.expectedValueCalculator);
+})(Toolasha.Core.dataManager, Toolasha.Core.config, Toolasha.Core.domObserver, Toolasha.Utils.enhancementConfig, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.profitConstants, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.efficiency, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.uiComponents, Toolasha.Utils.actionPanelHelper, Toolasha.Core.loadoutState, Toolasha.Core.storage, Toolasha.Utils.dom, Toolasha.Utils.timerRegistry, Toolasha.Utils.teaParser, Toolasha.Core.tooltipObserver, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.actionCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.experienceParser, Toolasha.Utils.reactInput, Toolasha.Utils.experienceCalculator, Toolasha.Utils.materialCalculator, Toolasha.Core, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.houseEfficiency);

@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.107.9
+ * Version: 2.108.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -15198,6 +15198,11 @@
 
     const JEWELRY_SLOTS = new Set(['/equipment_types/earrings', '/equipment_types/ring', '/equipment_types/neck']);
 
+    // Provoke/Taunt grant a threat buff read only when choosing a monster's target among 2+ alive
+    // players; Revive's trigger condition (an ally is dead) can never be satisfied when the caster
+    // is the only unit in the party. All three are pure dead weight in a solo sim.
+    const NO_SOLO_EFFECT_ABILITY_HRIDS = new Set(['/abilities/provoke', '/abilities/taunt', '/abilities/revive']);
+
     /**
      * Get the next ability level target (next multiple of 10) above the current level.
      * Used as fallback when no explicit target level is provided.
@@ -15761,6 +15766,8 @@
      * @param {string} [mode='equipment'] - 'equipment', 'ability_level', 'ability_swap', or 'house'
      * @param {number} [abilityTargetLevel=0] - Target level or increment for ability upgrades
      * @param {string} [abilityLevelType='increment'] - 'increment' (add N levels) or 'target' (absolute level)
+     * @param {boolean} [skipBackSlot=false]
+     * @param {number} [playerCount=1] - Number of players in the simulated group (solo vs. party)
      * @returns {Array} Candidates: [{slot, currentHrid, currentLevel, upgradeHrid, upgradeLevel, description, type}]
      */
     function generateCandidates(
@@ -15769,7 +15776,8 @@
         mode = 'equipment',
         abilityTargetLevel = 0,
         abilityLevelType = 'increment',
-        skipBackSlot = false
+        skipBackSlot = false,
+        playerCount = 1
     ) {
         const candidates = [];
 
@@ -16057,11 +16065,21 @@
                     }
                 } else {
                     // Swap candidates: other compatible abilities not already equipped
+                    const otherEquippedHasZeroCd = playerDTO.abilities.some((a, i) => {
+                        if (i === slotIdx || !a) return false;
+                        return gameData.abilityDetailMap[a.hrid]?.cooldownDuration === 0;
+                    });
+
                     for (const [abHrid, abDetail] of Object.entries(gameData.abilityDetailMap)) {
                         if (equippedAbilityHrids.has(abHrid)) continue;
                         if (abDetail.isSpecialAbility && slotIdx !== 0) continue;
                         if (!abDetail.isSpecialAbility && slotIdx === 0) continue;
                         if (abHrid === '/abilities/promote') continue;
+                        if (playerCount <= 1 && NO_SOLO_EFFECT_ABILITY_HRIDS.has(abHrid)) continue;
+                        // A second zero-cooldown ability can never fire under default triggers —
+                        // Ability.shouldTrigger picks the first ready match in slot order, and an
+                        // out-of-mana first ability skips the rest rather than falling back to it.
+                        if (abDetail.cooldownDuration === 0 && otherEquippedHasZeroCd) continue;
 
                         const abStyle = getAbilityCombatStyle(abDetail);
                         if (!isAbilityCompatible(abStyle, playerStyle)) continue;
@@ -16291,14 +16309,25 @@
             upgradeMode,
             abilityTargetLevel,
             abilityLevelType,
-            skipBackSlot
+            skipBackSlot,
+            playerDTOs.length
         );
         const candidatesWithCost = candidates.map((c) => {
             const { cost, costIsIncomplete } = calculateUpgradeCost(c, gameData);
             return { ...c, cost, costIsIncomplete };
         });
 
-        const total = candidatesWithCost.length + 1; // +1 for baseline
+        // Skilling-only house rooms (no /action_types/combat actionBuffs) can never move DPS,
+        // encounters, or deaths - only their small shared Wisdom/Rare Find bonus affects EXP/Profit,
+        // identically to every other room. Simulating all of them wastes time that could go toward a
+        // longer, more accurate run of the rooms that actually matter. Filtering happens before the
+        // sim loop (not just at display time) so skipped candidates cost zero simulation time.
+        const skipSkillingRooms = upgradeMode === 'house' && config.getSetting('combatSim_upgradeSkipSkillingRooms');
+        const filteredCandidatesWithCost = skipSkillingRooms
+            ? candidatesWithCost.filter((c) => c.isCombatRelevant !== false)
+            : candidatesWithCost;
+
+        const total = filteredCandidatesWithCost.length + 1; // +1 for baseline
         let current = 0;
 
         // Run baseline sim
@@ -16318,7 +16347,7 @@
 
         // Run sim for each candidate
         const results = [];
-        for (const candidate of candidatesWithCost) {
+        for (const candidate of filteredCandidatesWithCost) {
             if (abortSignal?.()) break;
 
             onProgress?.({ current, total, description: `Simulating: ${candidate.description}` });

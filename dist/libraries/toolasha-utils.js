@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.107.9
+ * Version: 2.108.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -111,6 +111,46 @@
 
         const str = hours + 'h ' + pad(minutes) + 'm ' + pad(seconds) + 's';
         return str;
+    }
+
+    /**
+     * Compact variant of timeReadable: always at most 2 abbreviated units, no seconds precision past
+     * a minute. Intended for table/column contexts (e.g. a "Payback" column) where timeReadable's
+     * full "3 years 2 months 3 days" wording is too long to keep a column narrow.
+     * @param {number} sec - Seconds to convert
+     * @returns {string} Formatted time (e.g., "1h 05m", "3d 4h", "2y 1mo")
+     *
+     * @example
+     * timeReadableCompact(45) // "45s"
+     * timeReadableCompact(3661) // "1h 01m"
+     * timeReadableCompact(90000) // "1d 1h"
+     * timeReadableCompact(31536000) // "1y"
+     * timeReadableCompact(100000000) // "3y 2mo"
+     */
+    function timeReadableCompact(sec) {
+        if (sec >= 31536000) {
+            const years = Math.floor(sec / 31536000);
+            const months = Math.floor((sec - years * 31536000) / 2592000);
+            return months > 0 ? `${years}y ${months}mo` : `${years}y`;
+        }
+
+        if (sec >= 86400) {
+            const days = Math.floor(sec / 86400);
+            const hours = Math.floor((sec - days * 86400) / 3600);
+            return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
+        }
+
+        if (sec >= 3600) {
+            const hours = Math.floor(sec / 3600);
+            const minutes = Math.floor((sec - hours * 3600) / 60);
+            return minutes > 0 ? `${hours}h ${String(minutes).padStart(2, '0')}m` : `${hours}h`;
+        }
+
+        if (sec >= 60) {
+            return `${Math.floor(sec / 60)}m`;
+        }
+
+        return `${Math.round(sec)}s`;
     }
 
     /**
@@ -598,7 +638,8 @@
         isSameLocalDay: isSameLocalDay,
         networthFormatter: networthFormatter,
         numberFormatter: numberFormatter,
-        timeReadable: timeReadable
+        timeReadable: timeReadable,
+        timeReadableCompact: timeReadableCompact
     });
 
     /**
@@ -1784,13 +1825,16 @@
     /**
      * Calculate house efficiency bonus for an action type
      * @param {string} actionTypeHrid - Action type HRID
+     * @param {{hrid: string, level: number}|null} [roomLevelOverride=null] - Hypothetical level for
+     *   one specific house room (e.g. the Skilling Optimizer scoring "what if this room were
+     *   level+1"), substituted in place of that room's live level - never mutates real state.
      * @returns {number} Efficiency bonus percentage (e.g., 12 for 12%)
      *
      * @example
      * calculateHouseEfficiency("/action_types/brewing")
      * // Returns: 12 (if brewery is level 8: 8 × 1.5% = 12%)
      */
-    function calculateHouseEfficiency(actionTypeHrid) {
+    function calculateHouseEfficiency(actionTypeHrid, roomLevelOverride = null) {
         // Get the house room for this action type
         const houseRoomHrid = getHouseRoomForActionType(actionTypeHrid);
 
@@ -1798,8 +1842,12 @@
             return 0; // No house room for this action type
         }
 
-        // Get house room level from game data (via dataManager)
-        const roomLevel = dataManager.getHouseRoomLevel(houseRoomHrid);
+        // Get house room level from game data (via dataManager), unless a hypothetical override for
+        // this exact room was supplied.
+        const roomLevel =
+            roomLevelOverride?.hrid === houseRoomHrid
+                ? roomLevelOverride.level
+                : dataManager.getHouseRoomLevel(houseRoomHrid);
 
         // Formula: houseLevel × 1.5%
         // Returns as percentage (e.g., 12 for 12%)
@@ -1829,6 +1877,9 @@
 
     /**
      * Calculate total Rare Find bonus from all house rooms
+     * @param {{hrid: string, level: number}|null} [roomLevelOverride=null] - Hypothetical level for
+     *   one specific house room, substituted in place of that room's live level - never mutates real
+     *   state. Applies whether or not the room currently has a nonzero entry in the live map.
      * @returns {number} Total rare find bonus as percentage (e.g., 1.6 for 1.6%)
      *
      * @example
@@ -1840,19 +1891,24 @@
      * - Total: totalLevels × 0.2%
      * - Max: 8 rooms × 8 levels = 64 × 0.2% = 12.8%
      */
-    function calculateHouseRareFind() {
+    function calculateHouseRareFind(roomLevelOverride = null) {
         // Get all house rooms
         const houseRooms = dataManager.getHouseRooms();
 
-        if (!houseRooms || houseRooms.size === 0) {
-            return 0; // No house rooms
-        }
-
-        // Sum all house room levels
+        // Sum all house room levels, substituting the override's level for its one matching room.
         let totalLevels = 0;
-        for (const [_hrid, room] of houseRooms) {
-            totalLevels += room.level || 0;
+        let overrideApplied = false;
+        if (houseRooms) {
+            for (const [hrid, room] of houseRooms) {
+                if (roomLevelOverride?.hrid === hrid) {
+                    totalLevels += roomLevelOverride.level;
+                    overrideApplied = true;
+                } else {
+                    totalLevels += room.level || 0;
+                }
+            }
         }
+        if (roomLevelOverride && !overrideApplied) totalLevels += roomLevelOverride.level;
 
         // Formula: totalLevels × flatBoostLevelBonus
         // flatBoostLevelBonus: 0.2% per level (no base bonus)
@@ -1864,6 +1920,7 @@
     var houseEfficiency = {
         calculateHouseEfficiency,
         getHouseRoomName,
+        getHouseRoomForActionType,
         calculateHouseRareFind,
     };
 
@@ -1872,6 +1929,7 @@
         calculateHouseEfficiency: calculateHouseEfficiency,
         calculateHouseRareFind: calculateHouseRareFind,
         default: houseEfficiency,
+        getHouseRoomForActionType: getHouseRoomForActionType,
         getHouseRoomName: getHouseRoomName
     });
 
@@ -2097,6 +2155,10 @@
      *   effect together with equipmentOverride.
      * @param {number|null} [options.skillLevelOverride=null] - Hypothetical skill level (e.g. a
      *   Simulator "Level" field) instead of the character's real current level for this skill.
+     * @param {{hrid: string, level: number}|null} [options.houseRoomLevelOverride=null] - Hypothetical
+     *   level for one specific house room (e.g. the Skilling Optimizer scoring "what if this room were
+     *   level+1"), substituted in place of that room's live level. Every other room's live level (and
+     *   every other efficiency source) is unaffected - never mutates real dataManager state.
      * @returns {Object} Efficiency context with all computed values
      */
     function getActionEfficiencyContext(actionDetails, options = {}) {
@@ -2108,6 +2170,7 @@
             equipmentOverride = null,
             drinksOverride = null,
             skillLevelOverride = null,
+            houseRoomLevelOverride = null,
         } = options;
 
         const skills = dataManager.getSkills();
@@ -2191,15 +2254,27 @@
         if (isProduction) {
             artisanBonus = parseArtisanBonus(drinkSlots, itemDetailMap, drinkConcentration);
             actionLevelBonus = parseActionLevelBonus(drinkSlots, itemDetailMap, drinkConcentration);
-            houseEfficiency = calculateHouseEfficiency(actionDetails.type);
+            houseEfficiency = calculateHouseEfficiency(actionDetails.type, houseRoomLevelOverride);
         } else {
             // Gathering: compute house efficiency from houseRooms + houseRoomDetailMap
             const houseRooms = Array.from(dataManager.getHouseRooms().values());
             const initData = gameData ?? dataManager.getInitClientData();
+            let overrideApplied = false;
             for (const room of houseRooms) {
                 const roomDetail = initData?.houseRoomDetailMap?.[room.houseRoomHrid];
-                if (roomDetail?.usableInActionTypeMap?.[actionDetails.type]) {
+                if (!roomDetail?.usableInActionTypeMap?.[actionDetails.type]) continue;
+                if (houseRoomLevelOverride?.hrid === room.houseRoomHrid) {
+                    houseEfficiency += houseRoomLevelOverride.level * 1.5;
+                    overrideApplied = true;
+                } else {
                     houseEfficiency += (room.level || 0) * 1.5;
+                }
+            }
+            // The overridden room may not appear in the live map at all yet (e.g. currently level 0).
+            if (houseRoomLevelOverride && !overrideApplied) {
+                const overrideRoomDetail = initData?.houseRoomDetailMap?.[houseRoomLevelOverride.hrid];
+                if (overrideRoomDetail?.usableInActionTypeMap?.[actionDetails.type]) {
+                    houseEfficiency += houseRoomLevelOverride.level * 1.5;
                 }
             }
         }
@@ -5188,15 +5263,24 @@ self.onmessage = function (e) {
      * @param {number} actionsPerHour - Base actions per hour (efficiency not applied)
      * @param {Map} characterEquipment - Equipment map
      * @param {Object} itemDetailMap - Item details map
+     * @param {{hrid: string, level: number}|null} [houseRoomLevelOverride=null] - Hypothetical level
+     *   for one specific house room (Skilling Optimizer house-room upgrade candidate scoring) -
+     *   never mutates real dataManager state.
      * @returns {Object} Bonus revenue data with essence and rare find drops
      */
-    function calculateBonusRevenue(actionDetails, actionsPerHour, characterEquipment, itemDetailMap) {
+    function calculateBonusRevenue(
+        actionDetails,
+        actionsPerHour,
+        characterEquipment,
+        itemDetailMap,
+        houseRoomLevelOverride = null
+    ) {
         // Get Essence Find bonus from equipment
         const essenceFindBonus = parseEssenceFindBonus(characterEquipment, itemDetailMap);
 
         // Get Rare Find bonus from BOTH equipment and house rooms
         const equipmentRareFindBonus = parseRareFindBonus(characterEquipment, actionDetails.type, itemDetailMap);
-        const houseRareFindBonus = calculateHouseRareFind();
+        const houseRareFindBonus = calculateHouseRareFind(houseRoomLevelOverride);
         const achievementRareFindBonus =
             dataManager.getAchievementBuffFlatBoost(actionDetails.type, '/buff_types/rare_find') * 100;
         const personalRareFindBonus =
@@ -5468,19 +5552,28 @@ self.onmessage = function (e) {
     /**
      * Parse house room wisdom bonus
      * All house rooms provide +0.05% wisdom per level
+     * @param {{hrid: string, level: number}|null} [roomLevelOverride=null] - Hypothetical level for
+     *   one specific house room, substituted in place of that room's live level - never mutates real
+     *   state. Applies whether or not the room currently has a nonzero entry in the live map.
      * @returns {number} Total wisdom from house rooms (e.g., 0.4 for 8 total levels)
      */
-    function parseHouseRoomWisdom() {
+    function parseHouseRoomWisdom(roomLevelOverride = null) {
         const houseRooms = dataManager.getHouseRooms();
-        if (!houseRooms || houseRooms.size === 0) {
-            return 0;
-        }
 
-        // Sum all house room levels
+        // Sum all house room levels, substituting the override's level for its one matching room.
         let totalLevels = 0;
-        for (const [_hrid, room] of houseRooms) {
-            totalLevels += room.level || 0;
+        let overrideApplied = false;
+        if (houseRooms) {
+            for (const [hrid, room] of houseRooms) {
+                if (roomLevelOverride?.hrid === hrid) {
+                    totalLevels += roomLevelOverride.level;
+                    overrideApplied = true;
+                } else {
+                    totalLevels += room.level || 0;
+                }
+            }
         }
+        if (roomLevelOverride && !overrideApplied) totalLevels += roomLevelOverride.level;
 
         // Formula: totalLevels × 0.05% per level
         return totalLevels * 0.05;
@@ -5566,12 +5659,13 @@ self.onmessage = function (e) {
      * Calculate total experience multiplier and breakdown
      * @param {string} skillHrid - Skill HRID (e.g., "/skills/foraging")
      * @param {string} actionTypeHrid - Action type HRID (e.g., "/action_types/foraging")
-     * @param {{equipment: Map, drinks: Array}|null} [scenarioOverride] - When provided, use this
+     * @param {{equipment: Map, drinks: Array, houseRoomLevelOverride?: {hrid: string, level: number}}|null} [scenarioOverride] - When provided, use this
      *   explicit equipment/drinks instead of resolving the live/saved action context. For hypothetical
      *   calculations (Skilling Simulator/Optimizer) so candidate gear's Wisdom/Charm XP is scored
      *   instead of the character's actual current/saved gear. Global sources (house, community,
      *   achievement, MooPass, personal, guild) still reflect the real current character - only
-     *   equipment/drinks are hypothetical.
+     *   equipment/drinks are hypothetical, unless `houseRoomLevelOverride` is also supplied, in which
+     *   case only that one specific house room's level becomes hypothetical too.
      * @returns {Object} Experience data with breakdown
      */
     function calculateExperienceMultiplier(skillHrid, actionTypeHrid, scenarioOverride = null) {
@@ -5587,7 +5681,7 @@ self.onmessage = function (e) {
         // Parse wisdom from all sources
         const equipmentWisdomData = parseEquipmentWisdom(equipment, itemDetailMap);
         const equipmentWisdom = equipmentWisdomData.total;
-        const houseWisdom = parseHouseRoomWisdom();
+        const houseWisdom = parseHouseRoomWisdom(scenarioOverride?.houseRoomLevelOverride ?? null);
         const communityWisdom = parseCommunityBuffWisdom();
         const consumableWisdom = parseConsumableWisdom(activeDrinks, itemDetailMap, drinkConcentration);
         const achievementWisdom = dataManager.getAchievementBuffFlatBoost(actionTypeHrid, '/buff_types/wisdom') * 100;
