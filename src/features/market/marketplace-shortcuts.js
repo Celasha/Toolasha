@@ -69,7 +69,7 @@ class MarketplaceShortcuts {
      */
     closeAllDropdowns() {
         document.querySelectorAll('.mwi-marketplace-dropdown').forEach((wrapper) => {
-            const panel = wrapper.querySelector('.mwi-marketplace-dropdown-panel');
+            const panel = wrapper._dropdownPanel;
             if (panel) panel.style.display = 'none';
             const chevron = wrapper.querySelector('.mwi-mp-chevron');
             if (chevron) chevron.style.transform = '';
@@ -171,15 +171,15 @@ class MarketplaceShortcuts {
             '</span>' +
             '<span class="mwi-mp-chevron" style="font-size: 0.65em; transition: transform 0.15s; display: inline-block;">▼</span>';
 
-        // Create dropdown panel (hidden by default)
+        // Create dropdown panel (hidden by default). Rendered as a fixed-position portal
+        // appended to <body> rather than nested inside the game's own action menu, since that
+        // native menu is a short, overflow-clipped popup that would otherwise clip the panel's
+        // extra buttons off-screen.
         const panel = document.createElement('div');
         panel.classList.add('mwi-marketplace-dropdown-panel');
         panel.style.cssText = `
             display: none;
-            position: absolute;
-            top: calc(100% + 4px);
-            left: 0;
-            width: 100%;
+            position: fixed;
             z-index: 9999;
             flex-direction: column;
             background: var(--color-surface, #1e1e2e);
@@ -257,13 +257,20 @@ class MarketplaceShortcuts {
             e.stopPropagation();
             e.preventDefault();
             open = !open;
+            if (open) {
+                const rect = toggle.getBoundingClientRect();
+                panel.style.top = `${rect.bottom + 4}px`;
+                panel.style.left = `${rect.left}px`;
+                panel.style.width = `${rect.width}px`;
+            }
             panel.style.display = open ? 'flex' : 'none';
             const chevron = toggle.querySelector('.mwi-mp-chevron');
             if (chevron) chevron.style.transform = open ? 'rotate(180deg)' : '';
         });
 
         wrapper.appendChild(toggle);
-        wrapper.appendChild(panel);
+        document.body.appendChild(panel);
+        wrapper._dropdownPanel = panel;
         return wrapper;
     }
 
@@ -930,6 +937,7 @@ class MarketplaceShortcuts {
         this.timerRegistry.clearAll();
 
         document.querySelectorAll('.mwi-marketplace-dropdown').forEach((el) => el.remove());
+        document.querySelectorAll('.mwi-marketplace-dropdown-panel').forEach((el) => el.remove());
         document.querySelectorAll('.mwi-mp-quick-input').forEach((el) => el.remove());
         document.querySelectorAll('.mwi-mp-multiplier').forEach((el) => el.remove());
 

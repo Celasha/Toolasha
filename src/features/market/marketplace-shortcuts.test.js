@@ -90,13 +90,30 @@ describe('MarketplaceShortcuts dropdown lifecycle', () => {
 
         first.querySelector('.mwi-marketplace-dropdown-toggle').click();
         second.querySelector('.mwi-marketplace-dropdown-toggle').click();
-        expect(first.querySelector('.mwi-marketplace-dropdown-panel').style.display).toBe('flex');
-        expect(second.querySelector('.mwi-marketplace-dropdown-panel').style.display).toBe('flex');
+        expect(first._dropdownPanel.style.display).toBe('flex');
+        expect(second._dropdownPanel.style.display).toBe('flex');
 
         feature.closeAllDropdowns();
 
-        expect(first.querySelector('.mwi-marketplace-dropdown-panel').style.display).toBe('none');
-        expect(second.querySelector('.mwi-marketplace-dropdown-panel').style.display).toBe('none');
+        expect(first._dropdownPanel.style.display).toBe('none');
+        expect(second._dropdownPanel.style.display).toBe('none');
+    });
+
+    test("the dropdown panel is portaled to <body> as a fixed-position element positioned under its toggle, escaping the game action menu's own clipped/scrollable box", () => {
+        const feature = new MarketplaceShortcuts();
+        const actionMenu = createActionMenu();
+        document.body.appendChild(actionMenu);
+        const dropdown = feature.buildDropdown(actionMenu, '/items/test_item', 0);
+        actionMenu.appendChild(dropdown);
+
+        const panel = dropdown._dropdownPanel;
+        expect(panel.parentElement).toBe(document.body);
+        expect(actionMenu.contains(panel)).toBe(false);
+
+        dropdown.querySelector('.mwi-marketplace-dropdown-toggle').click();
+
+        expect(panel.style.position).toBe('fixed');
+        expect(panel.style.display).toBe('flex');
     });
 });
 
