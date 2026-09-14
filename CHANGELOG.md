@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.108.3](https://github.com/Celasha/Toolasha/compare/v2.108.2...v2.108.3) (2026-09-14)
+
+
+### Bug Fixes
+
+* add item icons and a cumulative Income breakdown to Openable Analytics History ([d733f97](https://github.com/Celasha/Toolasha/commit/d733f9729ae8104c19d3c778316626efc291ed9b))
+* warn clearly when math.js fails to load instead of zeroing enhancement times ([31a42aa](https://github.com/Celasha/Toolasha/commit/31a42aaae4a7f6a53580fead6b46d8308806c857))
+
 ## [2.108.2](https://github.com/Celasha/Toolasha/compare/v2.108.1...v2.108.2) (2026-09-14)
 
 ### Bug Fixes
