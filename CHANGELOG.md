@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.108.2](https://github.com/Celasha/Toolasha/compare/v2.108.1...v2.108.2) (2026-09-14)
+
+
+### Bug Fixes
+
+* clarify Openable Analytics side panel wording and make stats expandable ([8edac8c](https://github.com/Celasha/Toolasha/commit/8edac8c175d79b77a06a34e12af575ddfd484a77))
+* retry protection-slot observer setup until the slot actually renders ([52bf058](https://github.com/Celasha/Toolasha/commit/52bf05893f22383de1977a56e2149f991d74099b))
+
 ## [2.108.1](https://github.com/Celasha/Toolasha/compare/v2.108.0...v2.108.1) (2026-09-13)
 
 ### Bug Fixes
