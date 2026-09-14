@@ -14,6 +14,7 @@ import { isMonetaryRewardModal, MODAL_CONTENT_CLASS } from './openable-analytics
 import { calculateOpeningCost } from './openable-analytics-cost.js';
 import { calculateIncomeStdDev } from './openable-analytics-variance.js';
 import expectedValueCalculator from '../../market/expected-value-calculator.js';
+import assetManifest from '../../../utils/asset-manifest.js';
 import { createMutationWatcher } from '../../../utils/dom-observer-helpers.js';
 import { coinFormatter, formatWithSeparator } from '../../../utils/formatters.js';
 
@@ -147,14 +148,31 @@ function buildExpandableStatRow(label, valueHtml, toggleKey, contentHtml, expand
     `;
 }
 
-function buildDropBreakdownRows(drops, amount) {
+/**
+ * Inline SVG icon referencing the game's own items sprite sheet, matching the
+ * `<svg><use href="{spriteUrl}#{slug}"></use></svg>` convention used elsewhere in Toolasha (e.g.
+ * pinned-actions-page.js) rather than an `<img>` tag. Renders nothing if the manifest fetch
+ * hasn't resolved yet or the item has no hrid, so breakdown rows never show a broken image.
+ * @param {string|null} spriteUrl
+ * @param {string} itemHrid
+ * @param {number} [size]
+ * @returns {string}
+ */
+function buildItemIconHtml(spriteUrl, itemHrid, size = 16) {
+    if (!spriteUrl || !itemHrid) return '';
+    const slug = itemHrid.replace('/items/', '');
+    return `<span style="display:inline-flex; align-items:center; justify-content:center; width:${size}px; height:${size}px; margin-right:4px; flex-shrink:0;"><svg width="${size}" height="${size}"><use href="${spriteUrl}#${slug}"></use></svg></span>`;
+}
+
+function buildDropBreakdownRows(drops, amount, spriteUrl) {
     return drops
         .map((drop) => {
             const total = drop.expectedValue * (amount || 0);
             const priceNote = drop.hasPriceData
                 ? ''
                 : ` <span style="color:${config.COLOR_WARNING || '#ffa500'};">(no price yet)</span>`;
-            return `<div style="display:flex; justify-content:space-between; gap:8px; padding:1px 0;"><span>${drop.itemName}${priceNote}</span><span>${formatMoney(total)}</span></div>`;
+            const icon = buildItemIconHtml(spriteUrl, drop.itemHrid);
+            return `<div style="display:flex; justify-content:space-between; gap:8px; padding:1px 0;"><span style="display:flex; align-items:center;">${icon}${drop.itemName}${priceNote}</span><span>${formatMoney(total)}</span></div>`;
         })
         .join('');
 }
@@ -165,9 +183,10 @@ function buildDropBreakdownRows(drops, amount) {
  * both the Current and History cards, only the scaling amount differs.
  * @param {string} containerHrid
  * @param {number} amount
+ * @param {string|null} spriteUrl
  * @returns {string}
  */
-function buildExpectedBreakdownContent(containerHrid, amount) {
+function buildExpectedBreakdownContent(containerHrid, amount, spriteUrl) {
     const drops = expectedValueCalculator.getDropBreakdown(containerHrid);
     if (!drops.length) {
         return '<div>No drop data available for this container.</div>';
@@ -182,21 +201,20 @@ function buildExpectedBreakdownContent(containerHrid, amount) {
 
     return `
         <div style="margin-bottom:4px;">What this container can drop, valued at today's market prices for ${formatWithSeparator(Math.round(amount || 0))} opened:</div>
-        ${buildDropBreakdownRows(shown, amount)}
+        ${buildDropBreakdownRows(shown, amount, spriteUrl)}
         ${omittedNote}
     `;
 }
 
 /**
- * Breakdown for the "Income" row: the actual items received this opening. Only available on the
- * Current card - the History card is a lifetime total across many openings with no single
- * item-by-item breakdown to show.
- * @param {Object|null} record
+ * Breakdown for the Current card's "Income" row: the actual items received this opening.
+ * @param {Object} record
+ * @param {string|null} spriteUrl
  * @returns {string}
  */
-function buildIncomeBreakdownContent(record) {
+function buildCurrentIncomeBreakdownContent(record, spriteUrl) {
     if (!record?.actualValueBreakdown?.length) {
-        return '<div>Item-by-item detail is only available for the current opening, not the lifetime total.</div>';
+        return '<div>No item data available for this opening.</div>';
     }
 
     const rows = record.actualValueBreakdown
@@ -205,11 +223,58 @@ function buildIncomeBreakdownContent(record) {
             const priceNote = item.resolved
                 ? ''
                 : ` <span style="color:${config.COLOR_WARNING || '#ffa500'};">(no price yet)</span>`;
-            return `<div style="display:flex; justify-content:space-between; gap:8px; padding:1px 0;"><span>${name} ×${formatWithSeparator(item.count)}${priceNote}</span><span>${formatMoney(item.value)}</span></div>`;
+            const icon = buildItemIconHtml(spriteUrl, item.itemHrid);
+            return `<div style="display:flex; justify-content:space-between; gap:8px; padding:1px 0;"><span style="display:flex; align-items:center;">${icon}${name} ×${formatWithSeparator(item.count)}${priceNote}</span><span>${formatMoney(item.value)}</span></div>`;
         })
         .join('');
 
     return `<div style="margin-bottom:4px;">Items received this opening:</div>${rows}`;
+}
+
+/**
+ * Breakdown for the History card's "Income" row: cumulative item counts/values across every
+ * lifetime opening of this container. Sourced from the same `itemTotals`/`itemValueTotals` the
+ * lifetime aggregate already accumulates per opening (see `foldRecordIntoAggregate` in
+ * openable-analytics-storage.js) - no new tracking needed, just surfacing what's already recorded.
+ * An item present in `itemTotals` but missing from `itemValueTotals` was never resolved to a
+ * price across any opening and is flagged rather than silently valued at 0.
+ * @param {Object|null} aggregate - Lifetime aggregate (see mapAggregateToCardInputs)
+ * @param {string|null} spriteUrl
+ * @returns {string}
+ */
+function buildHistoryIncomeBreakdownContent(aggregate, spriteUrl) {
+    const itemHrids = Object.keys(aggregate?.itemTotals || {});
+    if (!itemHrids.length) {
+        return '<div>No item data recorded yet.</div>';
+    }
+
+    const items = itemHrids
+        .map((itemHrid) => {
+            const count = aggregate.itemTotals[itemHrid] || 0;
+            const value = aggregate.itemValueTotals?.[itemHrid];
+            return { itemHrid, count, value: value || 0, resolved: value !== undefined };
+        })
+        .sort((a, b) => b.value - a.value);
+
+    const shown = items.slice(0, MAX_BREAKDOWN_ROWS);
+    const omittedCount = items.length - shown.length;
+    const omittedNote =
+        omittedCount > 0
+            ? `<div style="opacity:0.7; margin-top:2px;">+ ${omittedCount} more item${omittedCount === 1 ? '' : 's'} not shown</div>`
+            : '';
+
+    const rows = shown
+        .map((item) => {
+            const name = dataManager.getItemDetails(item.itemHrid)?.name || item.itemHrid;
+            const priceNote = item.resolved
+                ? ''
+                : ` <span style="color:${config.COLOR_WARNING || '#ffa500'};">(no price yet)</span>`;
+            const icon = buildItemIconHtml(spriteUrl, item.itemHrid);
+            return `<div style="display:flex; justify-content:space-between; gap:8px; padding:1px 0;"><span style="display:flex; align-items:center;">${icon}${name} ×${formatWithSeparator(item.count)}${priceNote}</span><span>${formatMoney(item.value)}</span></div>`;
+        })
+        .join('');
+
+    return `<div style="margin-bottom:4px;">Cumulative items received across all lifetime openings:</div>${rows}${omittedNote}`;
 }
 
 /**
@@ -219,10 +284,12 @@ function buildIncomeBreakdownContent(record) {
  * @param {string} options.keyPrefix - 'current' or 'history', keeps the two cards' toggle keys distinct
  * @param {string} options.containerHrid
  * @param {Object|null} options.record - Single opening record (Current card only, null for History)
+ * @param {Object|null} options.aggregate - Lifetime aggregate (History card only, null for Current)
  * @param {Set<string>} options.expandedSections
+ * @param {string|null} options.spriteUrl
  * @returns {string}
  */
-function buildCard(title, stats, { keyPrefix, containerHrid, record, expandedSections }) {
+function buildCard(title, stats, { keyPrefix, containerHrid, record, aggregate, expandedSections, spriteUrl }) {
     const incomeKey = `${keyPrefix}-income`;
     const expectedKey = `${keyPrefix}-expected`;
 
@@ -245,21 +312,23 @@ function buildCard(title, stats, { keyPrefix, containerHrid, record, expandedSec
             ? '—'
             : `<span style="color:${luckColor(stats.higher)}">${formatSignedMoney(stats.higher)}</span>`;
 
-    const incomeRowHtml = record
-        ? buildExpandableStatRow(
-              'Income',
-              incomeValueHtml,
-              incomeKey,
-              buildIncomeBreakdownContent(record),
-              expandedSections.has(incomeKey)
-          )
-        : buildStatRow('Income', incomeValueHtml);
+    const incomeBreakdownHtml = record
+        ? buildCurrentIncomeBreakdownContent(record, spriteUrl)
+        : buildHistoryIncomeBreakdownContent(aggregate, spriteUrl);
+
+    const incomeRowHtml = buildExpandableStatRow(
+        'Income',
+        incomeValueHtml,
+        incomeKey,
+        incomeBreakdownHtml,
+        expandedSections.has(incomeKey)
+    );
 
     const expectedRowHtml = buildExpandableStatRow(
         'Expected income',
         expectedValueHtml,
         expectedKey,
-        buildExpectedBreakdownContent(containerHrid, stats.amount),
+        buildExpectedBreakdownContent(containerHrid, stats.amount, spriteUrl),
         expandedSections.has(expectedKey)
     );
 
@@ -284,12 +353,18 @@ function buildCard(title, stats, { keyPrefix, containerHrid, record, expandedSec
                 border-bottom: 1px solid rgba(255, 255, 255, 0.09);
             ">${title}</div>
             ${buildStatRow('Opened', formatWithSeparator(Math.round(stats.amount || 0)))}
-            ${incomeRowHtml}
-            ${buildStatRow('Profit', profitHtml)}
-            ${buildStatRow('Luck', luckHtml)}
+            <div style="display:flex; gap:12px; align-items:flex-start;">
+                <div style="flex:1; min-width:0;">
+                    ${incomeRowHtml}
+                    ${buildStatRow('Profit', profitHtml)}
+                </div>
+                <div style="flex:1; min-width:0; border-left:1px solid rgba(255, 255, 255, 0.08); padding-left:12px;">
+                    ${expectedRowHtml}
+                    ${buildStatRow('vs. expected', vsExpectedHtml)}
+                </div>
+            </div>
             <div style="height:1px; background:rgba(255, 255, 255, 0.08); margin:8px 0;"></div>
-            ${expectedRowHtml}
-            ${buildStatRow('vs. expected', vsExpectedHtml)}
+            ${buildStatRow('Luck', luckHtml)}
         </div>
     `;
 }
@@ -303,6 +378,7 @@ class OpenableAnalyticsSidePanel {
         this.currentModal = null;
         this.stopWatchingModal = null;
         this.expandedSections = new Set();
+        this.itemsSpriteUrl = null;
         this.handlePanelClick = this.handlePanelClick.bind(this);
     }
 
@@ -315,6 +391,14 @@ class OpenableAnalyticsSidePanel {
         );
 
         this.unsubscribeCollector = openableAnalyticsDataCollector.onUpdate(() => this.refreshMountedModal());
+
+        // Item icons are a visual nice-to-have, not a data dependency - the panel renders fine
+        // without them while this resolves, then re-renders once the sprite sheet URL is known.
+        assetManifest.getSpriteUrl('items').then((url) => {
+            if (!this.isInitialized) return;
+            this.itemsSpriteUrl = url;
+            this.refreshMountedModal();
+        });
     }
 
     refreshMountedModal() {
@@ -368,13 +452,17 @@ class OpenableAnalyticsSidePanel {
                 keyPrefix: 'current',
                 containerHrid: record.containerHrid,
                 record,
+                aggregate: null,
                 expandedSections: this.expandedSections,
+                spriteUrl: this.itemsSpriteUrl,
             }) +
             buildCard('History', historyStats, {
                 keyPrefix: 'history',
                 containerHrid: record.containerHrid,
                 record: null,
+                aggregate: lifetimeAggregate,
                 expandedSections: this.expandedSections,
+                spriteUrl: this.itemsSpriteUrl,
             });
         this.positionPanel(this.currentPanel, modal);
     }
@@ -459,6 +547,7 @@ class OpenableAnalyticsSidePanel {
         }
         this.removePanel();
         this.expandedSections.clear();
+        this.itemsSpriteUrl = null;
         this.isInitialized = false;
     }
 }

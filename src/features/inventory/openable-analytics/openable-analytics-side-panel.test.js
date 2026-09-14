@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
     openingCost: { cost: 0, complete: true },
     incomeStdDev: 100,
     onUpdateCallback: null,
+    itemsSpriteUrl: 'https://example.com/items-sprite.svg',
 }));
 
 vi.mock('../../../core/dom-observer.js', () => ({
@@ -76,7 +77,12 @@ vi.mock('./openable-analytics-variance.js', () => ({
     calculateIncomeStdDev: vi.fn(() => mocks.incomeStdDev),
 }));
 
+vi.mock('../../../utils/asset-manifest.js', () => ({
+    default: { getSpriteUrl: vi.fn(async () => mocks.itemsSpriteUrl) },
+}));
+
 const { default: openableAnalyticsSidePanel, PANEL_ID } = await import('./openable-analytics-side-panel.js');
+const { default: assetManifest } = await import('../../../utils/asset-manifest.js');
 const { default: dataManager } = await import('../../../core/data-manager.js');
 const { default: expectedValueCalculator } = await import('../../market/expected-value-calculator.js');
 
@@ -107,6 +113,18 @@ function buildModal({ left = 500, top = 100 } = {}) {
 beforeEach(() => {
     mocks.registrations = [];
     mocks.latestRecord = monetaryRecord();
+    mocks.lifetimeAggregate = {
+        containersOpened: 0,
+        actualValueTotal: 0,
+        actualValuePartialEvents: 0,
+        expectedValueTotal: 0,
+        expectedValueAvailableEvents: 0,
+        expectedValuePartialEvents: 0,
+        valuationRecordCount: 0,
+        luckEligibleRecordCount: 0,
+        eventsCount: 0,
+        hasImportedData: false,
+    };
     mocks.isMonetaryRewardModal.mockReturnValue(true);
     mocks.settings.openableAnalytics_sidePanel = true;
     mocks.openingCost = { cost: 0, complete: true };
@@ -225,10 +243,15 @@ describe('OpenableAnalyticsSidePanel expandable breakdown rows', () => {
         expect(content.style.display).toBe('none');
     });
 
-    test('"Income" is expandable on Current with an item-by-item breakdown, but not on History', () => {
+    test('"Income" is expandable on both Current (per-opening) and History (cumulative lifetime)', () => {
         mocks.latestRecord = monetaryRecord({
             actualValueBreakdown: [{ itemHrid: '/items/foo', count: 3, value: 300, resolved: true }],
         });
+        mocks.lifetimeAggregate = {
+            ...mocks.lifetimeAggregate,
+            itemTotals: { '/items/foo': 12 },
+            itemValueTotals: { '/items/foo': 1200 },
+        };
         dataManager.getItemDetails.mockReturnValue({ name: 'Foo' });
         const modal = buildModal();
         modalCallback()(modal);
@@ -236,9 +259,33 @@ describe('OpenableAnalyticsSidePanel expandable breakdown rows', () => {
         const currentToggle = document.querySelector('[data-toggle-key="current-income"]');
         expect(currentToggle).not.toBeNull();
         currentToggle.click();
-        expect(document.querySelector('[data-content-key="current-income"]').textContent).toContain('Foo');
+        const currentContent = document.querySelector('[data-content-key="current-income"]');
+        expect(currentContent.textContent).toContain('Foo');
+        expect(currentContent.textContent).toContain('this opening');
 
-        expect(document.querySelector('[data-toggle-key="history-income"]')).toBeNull();
+        const historyToggle = document.querySelector('[data-toggle-key="history-income"]');
+        expect(historyToggle).not.toBeNull();
+        historyToggle.click();
+        const historyContent = document.querySelector('[data-content-key="history-income"]');
+        expect(historyContent.textContent).toContain('Foo');
+        expect(historyContent.textContent).toContain('×12');
+        expect(historyContent.textContent).toContain('lifetime openings');
+    });
+
+    test('History Income breakdown flags an item that has never been resolved to a price', () => {
+        mocks.lifetimeAggregate = {
+            ...mocks.lifetimeAggregate,
+            itemTotals: { '/items/mystery': 5 },
+            itemValueTotals: {},
+        };
+        dataManager.getItemDetails.mockReturnValue({ name: 'Mystery Item' });
+        const modal = buildModal();
+        modalCallback()(modal);
+
+        document.querySelector('[data-toggle-key="history-income"]').click();
+        const content = document.querySelector('[data-content-key="history-income"]');
+        expect(content.textContent).toContain('Mystery Item');
+        expect(content.textContent).toContain('no price yet');
     });
 
     test('an unpriced item in the Income breakdown is flagged instead of silently shown as priced', () => {
@@ -265,5 +312,81 @@ describe('OpenableAnalyticsSidePanel expandable breakdown rows', () => {
         mocks.onUpdateCallback();
 
         expect(document.querySelector('[data-content-key="current-expected"]').style.display).toBe('block');
+    });
+});
+
+describe('OpenableAnalyticsSidePanel item icons', () => {
+    afterEach(() => {
+        openableAnalyticsSidePanel.cleanup();
+    });
+
+    // Flushes the async asset-manifest fetch kicked off by initialize() so itemsSpriteUrl is
+    // cached before the panel renders, matching the real-world "manifest already resolved" case.
+    async function flushSpriteUrlFetch() {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    test('renders an item icon next to each row in the Expected income breakdown', async () => {
+        expectedValueCalculator.getDropBreakdown.mockReturnValue([
+            {
+                itemHrid: '/items/foo',
+                itemName: 'Foo',
+                dropRate: 0.5,
+                avgCount: 2,
+                priceEach: 100,
+                expectedValue: 100,
+                hasPriceData: true,
+            },
+        ]);
+        await flushSpriteUrlFetch();
+        const modal = buildModal();
+        modalCallback()(modal);
+
+        document.querySelector('[data-toggle-key="current-expected"]').click();
+        const content = document.querySelector('[data-content-key="current-expected"]');
+        const use = content.querySelector('svg use');
+        expect(use.getAttribute('href')).toBe(`${mocks.itemsSpriteUrl}#foo`);
+    });
+
+    test('renders an item icon next to each row in the Income breakdown', async () => {
+        mocks.latestRecord = monetaryRecord({
+            actualValueBreakdown: [{ itemHrid: '/items/foo', count: 3, value: 300, resolved: true }],
+        });
+        dataManager.getItemDetails.mockReturnValue({ name: 'Foo' });
+        await flushSpriteUrlFetch();
+        const modal = buildModal();
+        modalCallback()(modal);
+
+        document.querySelector('[data-toggle-key="current-income"]').click();
+        const content = document.querySelector('[data-content-key="current-income"]');
+        const use = content.querySelector('svg use');
+        expect(use.getAttribute('href')).toBe(`${mocks.itemsSpriteUrl}#foo`);
+    });
+
+    test('renders no icon (and no broken image) when the sprite manifest has not resolved yet', () => {
+        expectedValueCalculator.getDropBreakdown.mockReturnValue([
+            {
+                itemHrid: '/items/foo',
+                itemName: 'Foo',
+                dropRate: 0.5,
+                avgCount: 2,
+                priceEach: 100,
+                expectedValue: 100,
+                hasPriceData: true,
+            },
+        ]);
+        // Re-initialize with a never-resolving fetch so itemsSpriteUrl deterministically stays
+        // null at render time, instead of racing the mock's normally-immediate resolution.
+        openableAnalyticsSidePanel.cleanup();
+        assetManifest.getSpriteUrl.mockImplementationOnce(() => new Promise(() => {}));
+        openableAnalyticsSidePanel.initialize();
+
+        const modal = buildModal();
+        modalCallback()(modal);
+
+        document.querySelector('[data-toggle-key="current-expected"]').click();
+        const content = document.querySelector('[data-content-key="current-expected"]');
+        expect(content.querySelector('svg')).toBeNull();
+        expect(content.textContent).toContain('Foo');
     });
 });
