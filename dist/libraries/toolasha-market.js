@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.108.0
+ * Version: 2.108.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -11730,7 +11730,7 @@ self.onmessage = function (e) {
      */
 
 
-    const PANEL_ID = 'mwi-risk-of-ruin-panel';
+    const PANEL_ID$1 = 'mwi-risk-of-ruin-panel';
     const LAUNCHER_ID = 'mwi-risk-of-ruin-launcher';
     const MAX_STEPS = 20000;
 
@@ -11833,7 +11833,7 @@ self.onmessage = function (e) {
 
         _buildPanel() {
             this.panel = document.createElement('div');
-            this.panel.id = PANEL_ID;
+            this.panel.id = PANEL_ID$1;
             this.panel.style.cssText = `
             position: fixed;
             top: 60px;
@@ -18543,7 +18543,7 @@ self.onmessage = function (e) {
          */
         closeAllDropdowns() {
             document.querySelectorAll('.mwi-marketplace-dropdown').forEach((wrapper) => {
-                const panel = wrapper.querySelector('.mwi-marketplace-dropdown-panel');
+                const panel = wrapper._dropdownPanel;
                 if (panel) panel.style.display = 'none';
                 const chevron = wrapper.querySelector('.mwi-mp-chevron');
                 if (chevron) chevron.style.transform = '';
@@ -18645,15 +18645,15 @@ self.onmessage = function (e) {
                 '</span>' +
                 '<span class="mwi-mp-chevron" style="font-size: 0.65em; transition: transform 0.15s; display: inline-block;">▼</span>';
 
-            // Create dropdown panel (hidden by default)
+            // Create dropdown panel (hidden by default). Rendered as a fixed-position portal
+            // appended to <body> rather than nested inside the game's own action menu, since that
+            // native menu is a short, overflow-clipped popup that would otherwise clip the panel's
+            // extra buttons off-screen.
             const panel = document.createElement('div');
             panel.classList.add('mwi-marketplace-dropdown-panel');
             panel.style.cssText = `
             display: none;
-            position: absolute;
-            top: calc(100% + 4px);
-            left: 0;
-            width: 100%;
+            position: fixed;
             z-index: 9999;
             flex-direction: column;
             background: var(--color-surface, #1e1e2e);
@@ -18731,13 +18731,20 @@ self.onmessage = function (e) {
                 e.stopPropagation();
                 e.preventDefault();
                 open = !open;
+                if (open) {
+                    const rect = toggle.getBoundingClientRect();
+                    panel.style.top = `${rect.bottom + 4}px`;
+                    panel.style.left = `${rect.left}px`;
+                    panel.style.width = `${rect.width}px`;
+                }
                 panel.style.display = open ? 'flex' : 'none';
                 const chevron = toggle.querySelector('.mwi-mp-chevron');
                 if (chevron) chevron.style.transform = open ? 'rotate(180deg)' : '';
             });
 
             wrapper.appendChild(toggle);
-            wrapper.appendChild(panel);
+            document.body.appendChild(panel);
+            wrapper._dropdownPanel = panel;
             return wrapper;
         }
 
@@ -19404,6 +19411,7 @@ self.onmessage = function (e) {
             this.timerRegistry.clearAll();
 
             document.querySelectorAll('.mwi-marketplace-dropdown').forEach((el) => el.remove());
+            document.querySelectorAll('.mwi-marketplace-dropdown-panel').forEach((el) => el.remove());
             document.querySelectorAll('.mwi-mp-quick-input').forEach((el) => el.remove());
             document.querySelectorAll('.mwi-mp-multiplier').forEach((el) => el.remove());
 
@@ -33600,10 +33608,28 @@ self.onmessage = function (e) {
         return ` (${sign}${rounded}%)`;
     }
 
-    function luckColor(luckValue) {
+    function luckColor$1(luckValue) {
         if (luckValue > 0) return config.COLOR_PROFIT;
         if (luckValue < 0) return config.COLOR_LOSS;
         return config.COLOR_TEXT_SECONDARY || '#888888';
+    }
+
+    /**
+     * Never trust a generic `Inventory_modalContent` match alone. Only treat a mounted container as
+     * the current monetary reward result when the DOM structurally proves it: it must contain a
+     * real, non-empty gained-items section, and the given record must itself be a monetary opening
+     * (at least one gained item). This also naturally excludes buff-only openables, which never
+     * render a gained-items section at all.
+     * @param {HTMLElement} container - Candidate `Inventory_modalContent` root
+     * @param {Object|null} record - Latest normalized opening record
+     * @returns {boolean}
+     */
+    function isMonetaryRewardModal(container, record) {
+        const gainedItemsContainer = container.querySelector(`[class*="${GAINED_ITEMS_CLASS}"]`);
+        const itemContainers = gainedItemsContainer
+            ? gainedItemsContainer.querySelectorAll(`[class*="${ITEM_CONTAINER_CLASS}"]`)
+            : [];
+        return Boolean(record) && record.gainedItems?.length > 0 && itemContainers.length > 0;
     }
 
     /**
@@ -33624,7 +33650,7 @@ self.onmessage = function (e) {
         const luckAvailable = record.luckValue !== null && record.luckValue !== undefined;
         const luckTitle = luckAvailable ? LUCK_TOOLTIP : LUCK_UNAVAILABLE_TOOLTIP;
         const luckText = luckAvailable
-            ? `<span style="color:${luckColor(record.luckValue)}">${formatLuckValue(record.luckValue)}${formatLuckPercent(record.luckPercent)}</span>`
+            ? `<span style="color:${luckColor$1(record.luckValue)}">${formatLuckValue(record.luckValue)}${formatLuckPercent(record.luckPercent)}</span>`
             : '—';
 
         const currentLine = `Actual ${actualText} · Expected ${expectedText} · <span title="${luckTitle}">Luck</span> ${luckText}`;
@@ -33649,7 +33675,7 @@ self.onmessage = function (e) {
             ? viewLink
             : `Lifetime ×${lifetimeAggregate.containersOpened}${
               lifetimeLuckAvailable
-                  ? ` · Luck <span style="color:${luckColor(lifetimeLuckValue)}">${formatLuckValue(lifetimeLuckValue)}${formatLuckPercent(lifetimeLuckPercent)}</span>`
+                  ? ` · Luck <span style="color:${luckColor$1(lifetimeLuckValue)}">${formatLuckValue(lifetimeLuckValue)}${formatLuckPercent(lifetimeLuckPercent)}</span>`
                   : ''
           } · ${viewLink}`;
 
@@ -33713,29 +33739,25 @@ self.onmessage = function (e) {
         }
 
         /**
-         * Never trust a generic `Inventory_modalContent` match alone. Only treat a mounted container
-         * as the current monetary reward result when the DOM structurally proves it: it must contain
-         * a real, non-empty gained-items section, and the collector's latest record must itself be a
-         * monetary opening (at least one gained item). This also naturally excludes buff-only
-         * openables, which never render a gained-items section at all. If ownership cannot be
-         * established, any previously injected OA content is stripped instead of left stale - this
-         * also handles the native modal being reused from a monetary opening into a buff-only result.
+         * If ownership cannot be established (not a monetary reward modal), any previously injected
+         * OA content is stripped instead of left stale - this also handles the native modal being
+         * reused from a monetary opening into a buff-only result.
          * @param {HTMLElement} container - Candidate `Inventory_modalContent` root
          */
         reconcileModal(container) {
             if (!this.isInitialized) return;
 
             const record = openableAnalyticsDataCollector.getLatestRecord();
+
+            if (!isMonetaryRewardModal(container, record)) {
+                this.clearOwnedDom(container);
+                return;
+            }
+
             const gainedItemsContainer = container.querySelector(`[class*="${GAINED_ITEMS_CLASS}"]`);
             const itemContainers = gainedItemsContainer
                 ? gainedItemsContainer.querySelectorAll(`[class*="${ITEM_CONTAINER_CLASS}"]`)
                 : [];
-            const isMonetaryRewardModal = Boolean(record) && record.gainedItems?.length > 0 && itemContainers.length > 0;
-
-            if (!isMonetaryRewardModal) {
-                this.clearOwnedDom(container);
-                return;
-            }
 
             this.renderFooter(container, record);
             this.renderItemValueLabels(container, record, itemContainers);
@@ -34606,12 +34628,12 @@ self.onmessage = function (e) {
                 luck.textContent = formatLuckPercent(luckPercent)
                     .trim()
                     .replace(/^\(|\)$/g, '');
-                luck.style.color = luckColor(luckValue);
+                luck.style.color = luckColor$1(luckValue);
             } else {
                 // Complete Expected of exactly zero: percent is meaningless, but the absolute Luck
                 // value is still valid - show that instead of making the row look unavailable.
                 luck.textContent = formatSignedLargeNumber(luckValue);
-                luck.style.color = luckColor(luckValue);
+                luck.style.color = luckColor$1(luckValue);
             }
 
             summary.appendChild(name);
@@ -34662,7 +34684,7 @@ self.onmessage = function (e) {
             } else {
                 luckValueEl.textContent =
                     formatSignedLargeNumber(luckValue) + (luckPercent !== null ? formatLuckPercent(luckPercent) : '');
-                luckValueEl.style.color = luckColor(luckValue);
+                luckValueEl.style.color = luckColor$1(luckValue);
             }
             luckCol.appendChild(luckHeader);
             luckCol.appendChild(luckValueEl);
@@ -35294,6 +35316,375 @@ self.onmessage = function (e) {
     const openableAnalyticsUI = new OpenableAnalyticsUI();
 
     /**
+     * Openable Analytics Cost
+     * Resolves the recurring cost of opening a container: the current buy price of its required key
+     * item (`openKeyItemHrid`), if any. Containers themselves are typically earned as drops/rewards
+     * rather than purchased, so only the consumable key - the one thing actually spent on every
+     * single opening - counts as cost here.
+     */
+
+
+    /**
+     * Calculate the total cost of opening `containerCount` copies of this container.
+     * @param {string} containerHrid
+     * @param {number} containerCount
+     * @returns {{cost: number, complete: boolean}} Total key cost, and whether it could be fully
+     *      priced (a container with no key requirement is always complete with cost 0).
+     */
+    function calculateOpeningCost(containerHrid, containerCount) {
+        if (!(containerCount > 0)) return { cost: 0, complete: true };
+
+        const keyItemHrid = dataManager.getItemDetails(containerHrid)?.openKeyItemHrid;
+        if (!keyItemHrid) return { cost: 0, complete: true };
+
+        const resolved = expectedValueCalculator.resolveBuySideValue(keyItemHrid);
+        if (!resolved) return { cost: 0, complete: false };
+
+        return { cost: resolved.value * containerCount, complete: true };
+    }
+
+    /**
+     * Openable Analytics Variance
+     * Derives the standard deviation of total income from N openings of a container, purely from
+     * its drop table (`openableLootDropMap`) - no historical sampling required. Reuses the same
+     * per-item sell-side pricing/tax convention as the Expected Value calculator so this stays
+     * consistent with the E[income] figure it's paired with.
+     */
+
+
+    /**
+     * Variance of one drop table row's value contribution to a single container opening.
+     *
+     * Modeled as X = Occurs * Q * price, where Occurs ~ Bernoulli(dropRate) and Q is a discrete
+     * uniform count over [minCount, maxCount], independent of Occurs. For independent B and Q:
+     *   Var[B*Q] = p*Var[Q] + p*(1-p)*E[Q]^2
+     * (derived from Var[B*Q] = E[B]*E[Q^2] - (E[B]*E[Q])^2 using E[B^2] = E[B] = p for a 0/1 variable)
+     * Var[Q] for a discrete uniform over n = maxCount - minCount + 1 integers is (n^2 - 1) / 12.
+     * @param {Object} drop - One `openableLootDropMap` entry
+     * @returns {number} Variance contribution in currency^2, or 0 if the drop can't be priced
+     */
+    function dropValueVariance(drop) {
+        const p = drop?.dropRate || 0;
+        if (p <= 0) return 0;
+
+        const minCount = drop?.minCount || 0;
+        const maxCount = drop?.maxCount || 0;
+        const n = maxCount - minCount + 1;
+        const countVariance = n > 1 ? (n * n - 1) / 12 : 0;
+        const avgCount = (minCount + maxCount) / 2;
+
+        const resolved = expectedValueCalculator.resolveSellSideValue(drop.itemHrid);
+        if (!resolved) return 0;
+
+        const itemDetails = dataManager.getItemDetails(drop.itemHrid);
+        const isTradable = itemDetails?.isTradable !== false;
+        const isCoin = drop.itemHrid === expectedValueCalculator.COIN_HRID;
+        const perUnitValue = isCoin || !isTradable ? resolved.value : profitHelpers_js.calculatePriceAfterTax(resolved.value, profitConstants_js.MARKET_TAX);
+
+        return perUnitValue * perUnitValue * (p * countVariance + p * (1 - p) * avgCount * avgCount);
+    }
+
+    /**
+     * Variance of total income from a single opening of this container, summing every drop table
+     * row's contribution under an independence assumption across rows (the same assumption the
+     * existing Expected Value calculator makes when summing each row's mean contribution).
+     * @param {string} containerHrid
+     * @returns {number|null} Variance in currency^2, or null if there's no drop table to model
+     */
+    function calculatePerOpeningVariance(containerHrid) {
+        const dropTable = dataManager.getInitClientData?.()?.openableLootDropMap?.[containerHrid];
+        if (!Array.isArray(dropTable) || dropTable.length === 0) return null;
+
+        return dropTable.reduce((sum, drop) => sum + dropValueVariance(drop), 0);
+    }
+
+    /**
+     * Standard deviation of total income from `containerCount` independent openings of this
+     * container (variance scales linearly with the number of i.i.d. openings).
+     * @param {string} containerHrid
+     * @param {number} containerCount
+     * @returns {number|null} Standard deviation in currency, or null if unavailable
+     */
+    function calculateIncomeStdDev(containerHrid, containerCount) {
+        if (!(containerCount > 0)) return null;
+        const perOpeningVariance = calculatePerOpeningVariance(containerHrid);
+        if (perOpeningVariance === null) return null;
+
+        return Math.sqrt(perOpeningVariance * containerCount);
+    }
+
+    /**
+     * Openable Analytics Side Panel
+     * Pins a Current/History stat-card panel to the LEFT of the native "Opened Loot" modal whenever
+     * a monetary box opening occurs, alongside the existing inline footer. Always anchored on the
+     * left (shrinking rather than flipping to the right when space is tight), matching the fixed
+     * modal-anchoring technique already used by the Sharable Profile Score panel.
+     */
+
+
+    const PANEL_GAP = 8;
+    const PANEL_VIEWPORT_MARGIN = 10;
+    const MIN_PANEL_WIDTH = 150;
+    const NATURAL_PANEL_WIDTH = 300;
+    const PANEL_ID = 'mwi-openable-analytics-side-panel';
+
+    function formatMoney(value) {
+        if (value === null || value === undefined) return '—';
+        return formatters_js.coinFormatter(Math.round(value));
+    }
+
+    function formatSignedMoney(value) {
+        if (value === null || value === undefined) return '—';
+        const rounded = Math.round(value);
+        const sign = rounded > 0 ? '+' : '';
+        return sign + formatters_js.coinFormatter(rounded);
+    }
+
+    function formatPercent(percent) {
+        if (percent === null || percent === undefined) return '—';
+        let rounded = percent.toFixed(1);
+        if (rounded === '-0.0') rounded = '0.0';
+        const sign = parseFloat(rounded) > 0 ? '+' : '';
+        return `${sign}${rounded}%`;
+    }
+
+    function luckColor(value) {
+        if (value === null || value === undefined) return config.COLOR_TEXT_SECONDARY || '#888888';
+        if (value > 0) return config.COLOR_PROFIT;
+        if (value < 0) return config.COLOR_LOSS;
+        return config.COLOR_TEXT_SECONDARY || '#888888';
+    }
+
+    /**
+     * Derive the card's stat set from a container HRID, an amount-opened count, and the same
+     * {actualValue, actualValueComplete/PartialEvents, expectedValue*, luck*} shape shared by both a
+     * single normalized opening record and a lifetime aggregate (see `mapRecordToCardInputs` /
+     * `mapAggregateToCardInputs` below).
+     * @param {string} containerHrid
+     * @param {Object} input
+     * @returns {Object} Stat values ready for `buildCard`
+     */
+    function computeStats(containerHrid, input) {
+        const cost = calculateOpeningCost(containerHrid, input.amount);
+        const profit = input.incomeComplete && cost.complete ? input.income - cost.cost : null;
+        const stdDev = calculateIncomeStdDev(containerHrid, input.amount);
+
+        return {
+            amount: input.amount,
+            income: input.income,
+            incomeIncomplete: !input.incomeComplete,
+            profit,
+            luckPercent: input.luckAvailable ? input.luckPercent : null,
+            expectedIncome: input.expectedIncomeAvailable ? input.expectedIncome : null,
+            expectedIncomeIncomplete: input.expectedIncomeAvailable && !input.expectedIncomeComplete,
+            stdDev,
+            higher: input.luckAvailable ? input.luckValue : null,
+        };
+    }
+
+    function mapRecordToCardInputs(record) {
+        return {
+            amount: record.containerCount,
+            income: record.actualValue,
+            incomeComplete: record.actualValueComplete,
+            expectedIncome: record.expectedValue,
+            expectedIncomeAvailable: record.expectedValueAvailable,
+            expectedIncomeComplete: record.expectedValueComplete,
+            luckAvailable: record.luckValue !== null && record.luckValue !== undefined,
+            luckValue: record.luckValue,
+            luckPercent: record.luckPercent,
+        };
+    }
+
+    function mapAggregateToCardInputs(lifetimeAggregate) {
+        const luckAvailable =
+            (lifetimeAggregate.valuationRecordCount || 0) > 0 &&
+            lifetimeAggregate.luckEligibleRecordCount === lifetimeAggregate.valuationRecordCount;
+        const luckValue = luckAvailable ? lifetimeAggregate.actualValueTotal - lifetimeAggregate.expectedValueTotal : null;
+        const luckPercent =
+            luckAvailable && lifetimeAggregate.expectedValueTotal > 0
+                ? (luckValue / lifetimeAggregate.expectedValueTotal) * 100
+                : null;
+
+        return {
+            amount: lifetimeAggregate.containersOpened,
+            income: lifetimeAggregate.actualValueTotal,
+            incomeComplete: (lifetimeAggregate.actualValuePartialEvents || 0) === 0,
+            expectedIncome: lifetimeAggregate.expectedValueTotal,
+            expectedIncomeAvailable: (lifetimeAggregate.expectedValueAvailableEvents || 0) > 0,
+            expectedIncomeComplete: (lifetimeAggregate.expectedValuePartialEvents || 0) === 0,
+            luckAvailable,
+            luckValue,
+            luckPercent,
+        };
+    }
+
+    function buildStatRow(label, valueHtml, { indent = false } = {}) {
+        return `<div style="display:flex; justify-content:space-between; gap:8px; font-size:12px; ${
+        indent ? 'margin-left:12px; border-left:2px solid #4a4a4a; padding-left:6px;' : ''
+    }"><span style="color:${config.COLOR_TEXT_SECONDARY || '#aaa'};">${label}:</span><span>${valueHtml}</span></div>`;
+    }
+
+    function buildCard(title, stats) {
+        const incomeHtml = `${formatMoney(stats.income)}${stats.incomeIncomplete ? ' <span title="Some gained items could not be priced">[Partial]</span>' : ''}`;
+        const profitHtml =
+            stats.profit === null
+                ? '—'
+                : `<span style="color:${luckColor(stats.profit)}">${formatSignedMoney(stats.profit)}</span>`;
+        const luckHtml =
+            stats.luckPercent === null
+                ? '—'
+                : `<span style="color:${luckColor(stats.luckPercent)}">${formatPercent(stats.luckPercent)}</span>`;
+        const expectedHtml = `${formatMoney(stats.expectedIncome)}${stats.expectedIncomeIncomplete ? ' <span title="One or more openings could not be fully priced">[Partial]</span>' : ''}`;
+        const stdDevHtml = formatMoney(stats.stdDev);
+        const higherHtml =
+            stats.higher === null
+                ? '—'
+                : `<span style="color:${luckColor(stats.higher)}">${formatSignedMoney(stats.higher)}</span>`;
+
+        return `
+        <div style="background:#2a2a2a; border:2px solid #4a4a4a; border-radius:8px; padding:10px; min-width:140px; flex:1;">
+            <div style="font-size:13px; font-weight:bold; text-align:center; border-bottom:1px solid #4a4a4a; padding-bottom:6px; margin-bottom:6px;">${title}</div>
+            ${buildStatRow('Amount', formatters_js.formatWithSeparator(Math.round(stats.amount || 0)))}
+            ${buildStatRow('Income', incomeHtml)}
+            ${buildStatRow('Profit', profitHtml)}
+            ${buildStatRow('Luck', luckHtml)}
+            <div style="height:6px;"></div>
+            ${buildStatRow('E[income]', expectedHtml)}
+            ${buildStatRow('std. dev.', stdDevHtml, { indent: true })}
+            ${buildStatRow('Higher', higherHtml)}
+        </div>
+    `;
+    }
+
+    class OpenableAnalyticsSidePanel {
+        constructor() {
+            this.isInitialized = false;
+            this.unregisterObserver = null;
+            this.unsubscribeCollector = null;
+            this.currentPanel = null;
+            this.currentModal = null;
+            this.stopWatchingModal = null;
+        }
+
+        initialize() {
+            if (this.isInitialized) return;
+            this.isInitialized = true;
+
+            this.unregisterObserver = domObserver.onClass('openableAnalyticsSidePanel', MODAL_CONTENT_CLASS, (node) =>
+                this.tryShow(node)
+            );
+
+            this.unsubscribeCollector = openableAnalyticsDataCollector.onUpdate(() => this.refreshMountedModal());
+        }
+
+        refreshMountedModal() {
+            if (!this.isInitialized) return;
+            const container = document.querySelector(`[class*="${MODAL_CONTENT_CLASS}"]`);
+            if (!container) return;
+            this.tryShow(container);
+        }
+
+        tryShow(container) {
+            if (!this.isInitialized) return;
+            if (!config.getSetting('openableAnalytics_sidePanel')) {
+                this.removePanel();
+                return;
+            }
+
+            const record = openableAnalyticsDataCollector.getLatestRecord();
+            if (!isMonetaryRewardModal(container, record)) {
+                this.removePanel();
+                return;
+            }
+
+            this.renderPanel(container, record);
+        }
+
+        renderPanel(modal, record) {
+            const lifetimeAggregate = openableAnalyticsDataCollector.getLifetimeAggregate(record.containerHrid);
+
+            if (!this.currentPanel || this.currentModal !== modal) {
+                this.removePanel();
+                this.currentPanel = document.createElement('div');
+                this.currentPanel.id = PANEL_ID;
+                this.currentPanel.style.cssText = `
+                position: fixed;
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                z-index: ${config.Z_FLOATING_PANEL};
+            `;
+                document.body.appendChild(this.currentPanel);
+                this.currentModal = modal;
+                this.setupCleanupObserver(modal);
+            }
+
+            const currentStats = computeStats(record.containerHrid, mapRecordToCardInputs(record));
+            const historyStats = computeStats(record.containerHrid, mapAggregateToCardInputs(lifetimeAggregate));
+
+            this.currentPanel.innerHTML = buildCard('Current', currentStats) + buildCard('History', historyStats);
+            this.positionPanel(this.currentPanel, modal);
+        }
+
+        /**
+         * Always anchor to the left of the modal (never the right): shrink the panel width to
+         * whatever room is available on the left before it would cross the viewport margin.
+         * @param {HTMLElement} panel
+         * @param {HTMLElement} modal
+         */
+        positionPanel(panel, modal) {
+            const modalRect = modal.getBoundingClientRect();
+            const naturalWidth = panel.scrollWidth || NATURAL_PANEL_WIDTH;
+            const availableLeft = modalRect.left - PANEL_GAP - PANEL_VIEWPORT_MARGIN;
+            const width = Math.max(MIN_PANEL_WIDTH, Math.min(naturalWidth, availableLeft));
+
+            panel.style.width = `${width}px`;
+            panel.style.left = `${Math.max(PANEL_VIEWPORT_MARGIN, modalRect.left - PANEL_GAP - width)}px`;
+            panel.style.top = `${modalRect.top}px`;
+        }
+
+        setupCleanupObserver(modal) {
+            this.stopWatchingModal = domObserverHelpers_js.createMutationWatcher(
+                document.body,
+                () => {
+                    if (!document.body.contains(modal)) {
+                        this.removePanel();
+                    }
+                },
+                { childList: true, subtree: true }
+            );
+        }
+
+        removePanel() {
+            if (this.stopWatchingModal) {
+                this.stopWatchingModal();
+                this.stopWatchingModal = null;
+            }
+            if (this.currentPanel) {
+                this.currentPanel.remove();
+                this.currentPanel = null;
+            }
+            this.currentModal = null;
+        }
+
+        cleanup() {
+            if (this.unregisterObserver) {
+                this.unregisterObserver();
+                this.unregisterObserver = null;
+            }
+            if (this.unsubscribeCollector) {
+                this.unsubscribeCollector();
+                this.unsubscribeCollector = null;
+            }
+            this.removePanel();
+            this.isInitialized = false;
+        }
+    }
+
+    const openableAnalyticsSidePanel = new OpenableAnalyticsSidePanel();
+
+    /**
      * Openable Analytics Feature
      * Main entry point for Actual vs Expected Value + Luck tracking on openable containers.
      */
@@ -35302,11 +35693,13 @@ self.onmessage = function (e) {
     async function initialize() {
         await openableAnalyticsDataCollector.initialize();
         openableAnalyticsUI.initialize();
+        openableAnalyticsSidePanel.initialize();
     }
 
     function cleanup() {
         openableAnalyticsDataCollector.cleanup();
         openableAnalyticsUI.cleanup();
+        openableAnalyticsSidePanel.cleanup();
     }
 
     var openableAnalytics = {

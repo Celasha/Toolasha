@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.108.0
+ * Version: 2.108.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -15203,6 +15203,21 @@
     // is the only unit in the party. All three are pure dead weight in a solo sim.
     const NO_SOLO_EFFECT_ABILITY_HRIDS = new Set(['/abilities/provoke', '/abilities/taunt', '/abilities/revive']);
 
+    // Spike Shell/Retribution/Invincible/Toughness/Elusiveness only pay off if the caster is actually
+    // tanking hits; the game imposes no weapon restriction on them (empty combatStyleHrid, so
+    // getAbilityCombatStyle classifies all five as universal), and there's no build-role signal in
+    // scope to tell a tank mage/ranged apart from the far more common pure-DPS one. Excluding them for
+    // magic/ranged weapon styles trades away that niche tank build for cutting dead-weight candidates
+    // out of the far more common case, matching the same weapon-style signal that already gates every
+    // other ability-swap candidate below (getPlayerCombatStyle/isAbilityCompatible).
+    const TANK_ONLY_ABILITY_HRIDS = new Set([
+        '/abilities/spike_shell',
+        '/abilities/retribution',
+        '/abilities/invincible',
+        '/abilities/toughness',
+        '/abilities/elusiveness',
+    ]);
+
     /**
      * Get the next ability level target (next multiple of 10) above the current level.
      * Used as fallback when no explicit target level is provided.
@@ -16076,6 +16091,8 @@
                         if (!abDetail.isSpecialAbility && slotIdx === 0) continue;
                         if (abHrid === '/abilities/promote') continue;
                         if (playerCount <= 1 && NO_SOLO_EFFECT_ABILITY_HRIDS.has(abHrid)) continue;
+                        if (TANK_ONLY_ABILITY_HRIDS.has(abHrid) && (playerStyle === 'magic' || playerStyle === 'ranged'))
+                            continue;
                         // A second zero-cooldown ability can never fire under default triggers —
                         // Ability.shouldTrigger picks the first ready match in slot order, and an
                         // out-of-mana first ability skips the rest rather than falling back to it.

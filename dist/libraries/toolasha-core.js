@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.108.0
+ * Version: 2.108.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2145,6 +2145,13 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Shows Actual Value, Expected Value, and Luck for chests/crates/caches you open, plus a character-scoped Analytics view with session/lifetime history',
+                },
+                openableAnalytics_sidePanel: {
+                    id: 'openableAnalytics_sidePanel',
+                    label: 'Openable Analytics: Show Current/History side panel',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Pins a panel to the left of the Opened Loot window with Amount, Income, Profit, Luck, E[income], std. dev., and Higher for the current opening and its lifetime history',
                 },
             },
         },
