@@ -1,5 +1,5 @@
 /* @vitest-environment jsdom */
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     registrations: [],
@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
     settings: { openableAnalytics_sidePanel: true },
     openingCost: { cost: 0, complete: true },
     incomeStdDev: 100,
+    onUpdateCallback: null,
 }));
 
 vi.mock('../../../core/dom-observer.js', () => ({
@@ -35,17 +36,30 @@ vi.mock('../../../core/config.js', () => ({
     default: {
         COLOR_PROFIT: '#047857',
         COLOR_LOSS: '#f87171',
+        COLOR_WARNING: '#ffa500',
         COLOR_TEXT_SECONDARY: '#888888',
+        COLOR_TEXT_PRIMARY: '#ffffff',
         Z_FLOATING_PANEL: 1100,
         getSetting: vi.fn((key) => mocks.settings[key]),
     },
+}));
+
+vi.mock('../../../core/data-manager.js', () => ({
+    default: { getItemDetails: vi.fn() },
+}));
+
+vi.mock('../../market/expected-value-calculator.js', () => ({
+    default: { getDropBreakdown: vi.fn(() => []) },
 }));
 
 vi.mock('./openable-analytics-data-collector.js', () => ({
     default: {
         getLatestRecord: vi.fn(() => mocks.latestRecord),
         getLifetimeAggregate: vi.fn(() => mocks.lifetimeAggregate),
-        onUpdate: vi.fn(() => vi.fn()),
+        onUpdate: vi.fn((callback) => {
+            mocks.onUpdateCallback = callback;
+            return vi.fn();
+        }),
     },
 }));
 
@@ -63,6 +77,8 @@ vi.mock('./openable-analytics-variance.js', () => ({
 }));
 
 const { default: openableAnalyticsSidePanel, PANEL_ID } = await import('./openable-analytics-side-panel.js');
+const { default: dataManager } = await import('../../../core/data-manager.js');
+const { default: expectedValueCalculator } = await import('../../market/expected-value-calculator.js');
 
 function monetaryRecord(overrides = {}) {
     return {
@@ -95,6 +111,8 @@ beforeEach(() => {
     mocks.settings.openableAnalytics_sidePanel = true;
     mocks.openingCost = { cost: 0, complete: true };
     mocks.incomeStdDev = 100;
+    dataManager.getItemDetails.mockReset();
+    expectedValueCalculator.getDropBreakdown.mockReset().mockReturnValue([]);
     document.body.innerHTML = '';
     openableAnalyticsSidePanel.cleanup();
     openableAnalyticsSidePanel.initialize();
@@ -171,5 +189,81 @@ describe('OpenableAnalyticsSidePanel', () => {
         openableAnalyticsSidePanel.cleanup();
 
         expect(document.getElementById(PANEL_ID)).toBeNull();
+    });
+});
+
+describe('OpenableAnalyticsSidePanel expandable breakdown rows', () => {
+    afterEach(() => {
+        openableAnalyticsSidePanel.cleanup();
+    });
+
+    test('clicking "Expected income" toggles its drop breakdown open and closed', () => {
+        expectedValueCalculator.getDropBreakdown.mockReturnValue([
+            {
+                itemHrid: '/items/foo',
+                itemName: 'Foo',
+                dropRate: 0.5,
+                avgCount: 2,
+                priceEach: 100,
+                expectedValue: 100,
+                hasPriceData: true,
+            },
+        ]);
+        const modal = buildModal();
+        modalCallback()(modal);
+
+        const toggle = document.querySelector('[data-toggle-key="current-expected"]');
+        const content = document.querySelector('[data-content-key="current-expected"]');
+        expect(toggle).not.toBeNull();
+        expect(content.style.display).toBe('none');
+
+        toggle.click();
+        expect(content.style.display).toBe('block');
+        expect(content.textContent).toContain('Foo');
+
+        toggle.click();
+        expect(content.style.display).toBe('none');
+    });
+
+    test('"Income" is expandable on Current with an item-by-item breakdown, but not on History', () => {
+        mocks.latestRecord = monetaryRecord({
+            actualValueBreakdown: [{ itemHrid: '/items/foo', count: 3, value: 300, resolved: true }],
+        });
+        dataManager.getItemDetails.mockReturnValue({ name: 'Foo' });
+        const modal = buildModal();
+        modalCallback()(modal);
+
+        const currentToggle = document.querySelector('[data-toggle-key="current-income"]');
+        expect(currentToggle).not.toBeNull();
+        currentToggle.click();
+        expect(document.querySelector('[data-content-key="current-income"]').textContent).toContain('Foo');
+
+        expect(document.querySelector('[data-toggle-key="history-income"]')).toBeNull();
+    });
+
+    test('an unpriced item in the Income breakdown is flagged instead of silently shown as priced', () => {
+        mocks.latestRecord = monetaryRecord({
+            actualValueBreakdown: [{ itemHrid: '/items/mystery', count: 1, value: 0, resolved: false }],
+        });
+        dataManager.getItemDetails.mockReturnValue({ name: 'Mystery Item' });
+        const modal = buildModal();
+        modalCallback()(modal);
+
+        document.querySelector('[data-toggle-key="current-income"]').click();
+        const content = document.querySelector('[data-content-key="current-income"]');
+        expect(content.textContent).toContain('Mystery Item');
+        expect(content.textContent).toContain('no price yet');
+    });
+
+    test('expanded state survives a full re-render triggered by a data refresh', () => {
+        const modal = buildModal();
+        modalCallback()(modal);
+
+        document.querySelector('[data-toggle-key="current-expected"]').click();
+        expect(document.querySelector('[data-content-key="current-expected"]').style.display).toBe('block');
+
+        mocks.onUpdateCallback();
+
+        expect(document.querySelector('[data-content-key="current-expected"]').style.display).toBe('block');
     });
 });

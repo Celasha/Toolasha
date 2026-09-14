@@ -1471,7 +1471,7 @@ export const settingsGroups = {
                 label: 'Openable Analytics: Show Current/History side panel',
                 type: 'checkbox',
                 default: true,
-                help: 'Pins a panel to the left of the Opened Loot window with Amount, Income, Profit, Luck, E[income], std. dev., and Higher for the current opening and its lifetime history',
+                help: 'Pins a panel to the left of the Opened Loot window with Opened, Income, Profit, Luck, Expected income, and vs. expected for the current opening and its lifetime history',
             },
         },
     },
