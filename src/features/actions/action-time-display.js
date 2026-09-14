@@ -40,7 +40,7 @@ import {
     calculateEffectiveActionsPerHour,
 } from '../../utils/profit-helpers.js';
 import { calculateEnhancementPredictions } from '../enhancement/enhancement-xp.js';
-import { BASE_SUCCESS_RATES } from '../../utils/enhancement-calculator.js';
+import { BASE_SUCCESS_RATES, isMathJsAvailable } from '../../utils/enhancement-calculator.js';
 
 /**
  * Format a completion Date as a clock string, respecting user's time/date format settings.
@@ -417,12 +417,14 @@ export class ActionTimeDisplay {
 
             let accumulatedTime = 0;
             let hasInfinite = false;
+            let hasTimingUnavailable = false;
 
             // Include current action time in total (same as edit menu)
             const currentActionTime = this.calculateCurrentActionTime(currentActions, inventoryLookup);
             if (currentActionTime) {
                 accumulatedTime += currentActionTime.totalTime;
                 if (currentActionTime.hasInfinite) hasInfinite = true;
+                if (currentActionTime.timingUnavailable) hasTimingUnavailable = true;
             }
 
             // Track used action IDs to prevent duplicate matching
@@ -446,7 +448,9 @@ export class ActionTimeDisplay {
 
                 const result = this.calculateSingleQueueActionTime(actionObj, actionDetails, inventoryLookup);
 
-                if (result.isTrulyInfinite) {
+                if (result.timingUnavailable) {
+                    hasTimingUnavailable = true;
+                } else if (result.isTrulyInfinite) {
                     hasInfinite = true;
                 } else {
                     accumulatedTime += result.actionTimeSeconds;
@@ -454,7 +458,9 @@ export class ActionTimeDisplay {
 
                 // Format time text
                 let timeText;
-                if (result.isTrulyInfinite) {
+                if (result.timingUnavailable) {
+                    timeText = '[?]';
+                } else if (result.isTrulyInfinite) {
                     timeText = '[∞]';
                 } else if (result.isInfinite && result.materialLimit !== null) {
                     const timeStr = timeReadable(result.totalTime);
@@ -465,7 +471,7 @@ export class ActionTimeDisplay {
                 }
 
                 // Add completion time
-                if (!hasInfinite && !result.isTrulyInfinite) {
+                if (!hasInfinite && !hasTimingUnavailable && !result.isTrulyInfinite && !result.timingUnavailable) {
                     timeText += buildCompletionText(accumulatedTime);
                 }
 
@@ -488,7 +494,12 @@ export class ActionTimeDisplay {
                 `;
 
                 let totalText;
-                if (hasInfinite) {
+                if (hasTimingUnavailable) {
+                    totalText =
+                        accumulatedTime > 0
+                            ? `Total: ${timeReadable(accumulatedTime)} + [?]`
+                            : 'Total: [?] (enhancement estimate unavailable)';
+                } else if (hasInfinite) {
                     totalText = accumulatedTime > 0 ? `Total: ${timeReadable(accumulatedTime)} + [∞]` : 'Total: [∞]';
                 } else {
                     totalText = `Total: ${timeReadable(accumulatedTime)}`;
@@ -553,6 +564,7 @@ export class ActionTimeDisplay {
         return {
             totalTime: result.actionTimeSeconds,
             hasInfinite: result.isTrulyInfinite,
+            timingUnavailable: result.timingUnavailable,
             actionId: currentAction.id,
         };
     }
@@ -582,7 +594,21 @@ export class ActionTimeDisplay {
 
         if (isEnhancing) {
             const enhancingTime = this.calculateEnhancingQueueTime(actionObj, actionDetails, inventoryLookup);
-            if (enhancingTime) {
+            if (enhancingTime?.timingUnavailable) {
+                return {
+                    totalTime: 0,
+                    actionTimeSeconds: 0,
+                    count: 0,
+                    baseActionsNeeded: 0,
+                    isTrulyInfinite: isInfinite,
+                    isInfinite,
+                    materialLimit: null,
+                    limitType: null,
+                    limitLabel: '',
+                    isEnhancing,
+                    timingUnavailable: true,
+                };
+            } else if (enhancingTime) {
                 count = enhancingTime.count;
                 totalTime = enhancingTime.totalTime;
                 actionTimeSeconds = enhancingTime.totalTime;
@@ -1683,7 +1709,13 @@ export class ActionTimeDisplay {
         if (targetLevel <= currentLevel) return null;
 
         const predictions = calculateEnhancementPredictions(itemHrid, currentLevel, targetLevel, protectFrom);
-        if (!predictions || predictions.expectedAttempts <= 0) return null;
+        if (!predictions || predictions.expectedAttempts <= 0) {
+            // A missing math.js (blocked CDN @require) makes every enhancement prediction throw and
+            // fall back to null here indistinguishably from "nothing to compute" - tag this case so
+            // callers can fail closed to "unknown" instead of silently defaulting the queue time to 0s.
+            if (!isMathJsAvailable()) return { timingUnavailable: true };
+            return null;
+        }
 
         const perActionTime = predictions.perActionTime;
 
@@ -2396,6 +2428,7 @@ export class ActionTimeDisplay {
 
             let accumulatedTime = 0;
             let hasInfinite = false;
+            let hasTimingUnavailable = false;
             const actionsToCalculate = []; // Store actions for async profit calculation (with time in seconds)
 
             // Detect current action from DOM so we can avoid double-counting
@@ -2428,7 +2461,9 @@ export class ActionTimeDisplay {
                             actionDetails,
                             inventoryLookup
                         );
-                        if (enhancingTime) {
+                        if (enhancingTime?.timingUnavailable) {
+                            hasTimingUnavailable = true;
+                        } else if (enhancingTime) {
                             count = enhancingTime.count;
                             actionTimeSeconds = enhancingTime.totalTime;
                             accumulatedTime += enhancingTime.totalTime;
@@ -2579,13 +2614,18 @@ export class ActionTimeDisplay {
                 let baseActionsNeeded = 0;
                 let count = 0;
                 let isTrulyInfinite = false;
+                let isRowTimingUnavailable = false;
                 let materialLimit = null;
                 let limitType = null;
 
                 if (isEnhancing) {
                     // Enhancing: use enhancement-specific time calculation
                     const enhancingTime = this.calculateEnhancingQueueTime(actionObj, actionDetails, inventoryLookup);
-                    if (enhancingTime) {
+                    if (enhancingTime?.timingUnavailable) {
+                        isRowTimingUnavailable = true;
+                        hasTimingUnavailable = true;
+                        totalTime = 0;
+                    } else if (enhancingTime) {
                         count = enhancingTime.count;
                         totalTime = enhancingTime.totalTime;
                         actionTimeSeconds = enhancingTime.totalTime;
@@ -2668,7 +2708,7 @@ export class ActionTimeDisplay {
 
                 // Format completion time
                 let completionText = '';
-                if (!hasInfinite && !isTrulyInfinite) {
+                if (!hasInfinite && !hasTimingUnavailable && !isTrulyInfinite && !isRowTimingUnavailable) {
                     completionText = buildCompletionText(accumulatedTime);
                 }
 
@@ -2681,7 +2721,9 @@ export class ActionTimeDisplay {
                     margin-top: 2px;
                 `;
 
-                if (isTrulyInfinite) {
+                if (isRowTimingUnavailable) {
+                    timeDiv.textContent = '[?]';
+                } else if (isTrulyInfinite) {
                     timeDiv.textContent = '[∞]';
                 } else if (isInfinite && materialLimit !== null) {
                     // Material-limited infinite action
@@ -2752,7 +2794,12 @@ export class ActionTimeDisplay {
 
             // Build total time text
             let totalText = '';
-            if (hasInfinite) {
+            if (hasTimingUnavailable) {
+                totalText =
+                    accumulatedTime > 0
+                        ? `Total time: ${timeReadable(accumulatedTime)} + [?]`
+                        : 'Total time: [?] (enhancement estimate unavailable)';
+            } else if (hasInfinite) {
                 // Show finite time first, then add infinity indicator
                 if (accumulatedTime > 0) {
                     totalText = `Total time: ${timeReadable(accumulatedTime)} + [∞]`;

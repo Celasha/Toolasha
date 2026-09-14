@@ -1,7 +1,7 @@
-import { beforeAll, describe, expect, test } from 'vitest';
+import { afterEach, beforeAll, describe, expect, test } from 'vitest';
 import * as mathJs from 'mathjs';
 
-import { calculateEnhancement } from './enhancement-calculator.js';
+import { calculateEnhancement, isMathJsAvailable } from './enhancement-calculator.js';
 
 beforeAll(() => {
     globalThis.math = mathJs;
@@ -86,5 +86,29 @@ describe('calculateEnhancement non-zero starting level', () => {
                 protectFrom: 0,
             })
         ).toThrow(/Start level/);
+    });
+});
+
+describe('calculateEnhancement when math.js failed to load (e.g. blocked cdnjs.cloudflare.com @require)', () => {
+    afterEach(() => {
+        globalThis.math = mathJs;
+    });
+
+    test('isMathJsAvailable reflects the missing global', () => {
+        delete globalThis.math;
+        expect(isMathJsAvailable()).toBe(false);
+    });
+
+    test('calculateEnhancement throws a distinctly-tagged error instead of a raw "math is not defined" ReferenceError', () => {
+        delete globalThis.math;
+
+        expect(() =>
+            calculateEnhancement({
+                ...BASE_PARAMS,
+                startLevel: 0,
+                targetLevel: 5,
+                protectFrom: 0,
+            })
+        ).toThrow('math.js is not loaded');
     });
 });

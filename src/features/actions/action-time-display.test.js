@@ -104,6 +104,7 @@ vi.mock('../enhancement/enhancement-xp.js', () => ({
 
 vi.mock('../../utils/enhancement-calculator.js', () => ({
     BASE_SUCCESS_RATES: [],
+    isMathJsAvailable: vi.fn(() => true),
 }));
 
 import { ActionTimeDisplay } from './action-time-display.js';
@@ -116,6 +117,7 @@ import { calculateGatheringProfit } from './gathering-profit.js';
 import profitCalculator from '../market/profit-calculator.js';
 import { calculateEfficiencyMultiplier } from '../../utils/efficiency.js';
 import { calculateEnhancementPredictions } from '../enhancement/enhancement-xp.js';
+import { isMathJsAvailable } from '../../utils/enhancement-calculator.js';
 
 /**
  * MutationObserver callbacks fire on the microtask queue — flush it before asserting.
@@ -527,6 +529,77 @@ describe('ActionTimeDisplay current-unit partial progress (TLA-015)', () => {
         const result = instance.calculateEnhancingQueueTime(enhancingAction, enhancingDetails, inventoryLookup);
         // Guaranteed success: targetLevel(5) - currentLevel(0) = 5 attempts of 90s = 450s, minus 30s.
         expect(result.totalTime).toBe(420);
+    });
+});
+
+describe('ActionTimeDisplay enhancing queue time when math.js failed to load', () => {
+    let instance;
+    const inventoryLookup = { byHrid: {}, byEnhancedKey: {} };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        instance = new ActionTimeDisplay();
+    });
+
+    function makeEnhancingAction(overrides = {}) {
+        return {
+            id: 4,
+            hasMaxCount: true,
+            maxCount: 800,
+            currentCount: 0,
+            enhancingMaxLevel: 10,
+            actionHrid: '/actions/enhancing/enhance',
+            primaryItemHash: '/item_locations/inventory::/items/cheese_sword::0',
+            ...overrides,
+        };
+    }
+    const enhancingDetails = { type: '/action_types/enhancing' };
+
+    test('calculateEnhancingQueueTime tags a math.js-caused null prediction as timingUnavailable, not a genuine "nothing to compute"', () => {
+        calculateEnhancementPredictions.mockReturnValue(null);
+        isMathJsAvailable.mockReturnValue(false);
+
+        const result = instance.calculateEnhancingQueueTime(makeEnhancingAction(), enhancingDetails, inventoryLookup);
+
+        expect(result).toEqual({ timingUnavailable: true });
+    });
+
+    test('a null prediction with math.js available is left as a genuine null (unchanged behavior)', () => {
+        calculateEnhancementPredictions.mockReturnValue(null);
+        isMathJsAvailable.mockReturnValue(true);
+
+        const result = instance.calculateEnhancingQueueTime(makeEnhancingAction(), enhancingDetails, inventoryLookup);
+
+        expect(result).toBeNull();
+    });
+
+    test('calculateSingleQueueActionTime surfaces timingUnavailable instead of silently reporting 0s for a finite enhancing action', () => {
+        calculateEnhancementPredictions.mockReturnValue(null);
+        isMathJsAvailable.mockReturnValue(false);
+
+        const result = instance.calculateSingleQueueActionTime(
+            makeEnhancingAction(),
+            enhancingDetails,
+            inventoryLookup
+        );
+
+        expect(result.timingUnavailable).toBe(true);
+        expect(result.totalTime).toBe(0);
+    });
+
+    test('calculateSingleQueueActionTime still reports [∞] (not timingUnavailable) for an unbounded enhancing action with a genuine null prediction', () => {
+        calculateEnhancementPredictions.mockReturnValue(null);
+        isMathJsAvailable.mockReturnValue(true);
+
+        const result = instance.calculateSingleQueueActionTime(
+            makeEnhancingAction({ hasMaxCount: false }),
+            enhancingDetails,
+            inventoryLookup
+        );
+
+        expect(result.timingUnavailable).toBeUndefined();
+        expect(result.isTrulyInfinite).toBe(true);
+        expect(result.totalTime).toBe(Infinity);
     });
 });
 

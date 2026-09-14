@@ -9,6 +9,30 @@
 
 import { MIN_ACTION_TIME_SECONDS } from './profit-constants.js';
 
+let warnedMathJsMissing = false;
+
+/**
+ * math.js is loaded via the userscript's `@require` header from an external CDN, not bundled -
+ * a blocked/failed fetch (ad blocker, DNS filtering, offline CDN) leaves the global `math` object
+ * undefined. Every caller of calculateEnhancement() already wraps it in try/catch and treats a
+ * thrown error the same as "no data available", which silently degrades enhancement time/cost/XP
+ * displays to 0 or hidden instead of surfacing the real cause. Call this before touching `math` so
+ * that failure is at least logged once with an actionable message.
+ * @returns {boolean}
+ */
+export function isMathJsAvailable() {
+    if (typeof math !== 'undefined') return true;
+    if (!warnedMathJsMissing) {
+        warnedMathJsMissing = true;
+        console.error(
+            '[Toolasha] math.js failed to load (required for enhancement calculations). ' +
+                'Enhancement time/cost/XP estimates will be unavailable. This is usually caused by an ' +
+                'ad blocker or network filter blocking cdnjs.cloudflare.com.'
+        );
+    }
+    return false;
+}
+
 /**
  * Base success rates by enhancement level (before bonuses)
  */
@@ -117,6 +141,12 @@ export function calculateEnhancement(params) {
         blessedTea = false,
         guzzlingBonus = 1.0,
     } = params;
+
+    if (!isMathJsAvailable()) {
+        const error = new Error('math.js is not loaded');
+        error.code = 'MATH_JS_UNAVAILABLE';
+        throw error;
+    }
 
     // Validate inputs
     if (targetLevel < 1 || targetLevel > 20) {
