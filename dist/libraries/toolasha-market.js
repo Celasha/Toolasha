@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.108.1
+ * Version: 2.108.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -35427,6 +35427,7 @@ self.onmessage = function (e) {
     const MIN_PANEL_WIDTH = 150;
     const NATURAL_PANEL_WIDTH = 300;
     const PANEL_ID = 'mwi-openable-analytics-side-panel';
+    const MAX_BREAKDOWN_ROWS = 8;
 
     function formatMoney(value) {
         if (value === null || value === undefined) return '—';
@@ -35519,14 +35520,118 @@ self.onmessage = function (e) {
         };
     }
 
-    function buildStatRow(label, valueHtml, { indent = false } = {}) {
-        return `<div style="display:flex; justify-content:space-between; gap:8px; font-size:12px; ${
-        indent ? 'margin-left:12px; border-left:2px solid #4a4a4a; padding-left:6px;' : ''
-    }"><span style="color:${config.COLOR_TEXT_SECONDARY || '#aaa'};">${label}:</span><span>${valueHtml}</span></div>`;
+    function buildPartialBadge() {
+        return ` <span style="color:${config.COLOR_WARNING || '#ffa500'}; font-size:10px;">(partial)</span>`;
     }
 
-    function buildCard(title, stats) {
-        const incomeHtml = `${formatMoney(stats.income)}${stats.incomeIncomplete ? ' <span title="Some gained items could not be priced">[Partial]</span>' : ''}`;
+    function buildStatRow(label, valueHtml) {
+        return `<div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px; font-size:13px; padding:3px 0;"><span style="color:${config.COLOR_TEXT_SECONDARY || '#aaa'};">${label}</span><span style="color:${config.COLOR_TEXT_PRIMARY || '#fff'};">${valueHtml}</span></div>`;
+    }
+
+    /**
+     * A stat row that can be clicked to reveal a breakdown underneath it (e.g. which items made up
+     * this total, or why it's marked "(partial)"). The expand/collapse state is tracked by the
+     * caller (`OpenableAnalyticsSidePanel.expandedSections`) so it survives the panel's frequent
+     * full re-renders instead of silently collapsing every time new loot data comes in.
+     * @param {string} label
+     * @param {string} valueHtml
+     * @param {string} toggleKey - Unique key for this row's expand state
+     * @param {string} contentHtml - Breakdown HTML shown when expanded
+     * @param {boolean} expanded
+     * @returns {string}
+     */
+    function buildExpandableStatRow(label, valueHtml, toggleKey, contentHtml, expanded) {
+        return `
+        <div data-toggle-key="${toggleKey}" style="display:flex; justify-content:space-between; align-items:baseline; gap:10px; font-size:13px; padding:3px 0; cursor:pointer;" title="Click for details">
+            <span style="color:${config.COLOR_TEXT_SECONDARY || '#aaa'};"><span class="mwi-oa-chevron" style="display:inline-block; width:11px;">${expanded ? '▾' : '▸'}</span>${label}</span>
+            <span style="color:${config.COLOR_TEXT_PRIMARY || '#fff'};">${valueHtml}</span>
+        </div>
+        <div data-content-key="${toggleKey}" style="display:${expanded ? 'block' : 'none'}; padding:2px 0 6px 17px; font-size:11px; color:${config.COLOR_TEXT_SECONDARY || '#aaa'}; line-height:1.5;">
+            ${contentHtml}
+        </div>
+    `;
+    }
+
+    function buildDropBreakdownRows(drops, amount) {
+        return drops
+            .map((drop) => {
+                const total = drop.expectedValue * (amount || 0);
+                const priceNote = drop.hasPriceData
+                    ? ''
+                    : ` <span style="color:${config.COLOR_WARNING || '#ffa500'};">(no price yet)</span>`;
+                return `<div style="display:flex; justify-content:space-between; gap:8px; padding:1px 0;"><span>${drop.itemName}${priceNote}</span><span>${formatMoney(total)}</span></div>`;
+            })
+            .join('');
+    }
+
+    /**
+     * Breakdown for the "Expected income" row: every item this container can drop, valued at
+     * current market prices and scaled to the card's own opened count - the same drop table backs
+     * both the Current and History cards, only the scaling amount differs.
+     * @param {string} containerHrid
+     * @param {number} amount
+     * @returns {string}
+     */
+    function buildExpectedBreakdownContent(containerHrid, amount) {
+        const drops = expectedValueCalculator.getDropBreakdown(containerHrid);
+        if (!drops.length) {
+            return '<div>No drop data available for this container.</div>';
+        }
+
+        const shown = drops.slice(0, MAX_BREAKDOWN_ROWS);
+        const omittedCount = drops.length - shown.length;
+        const omittedNote =
+            omittedCount > 0
+                ? `<div style="opacity:0.7; margin-top:2px;">+ ${omittedCount} more possible drop${omittedCount === 1 ? '' : 's'} not shown</div>`
+                : '';
+
+        return `
+        <div style="margin-bottom:4px;">What this container can drop, valued at today's market prices for ${formatters_js.formatWithSeparator(Math.round(amount || 0))} opened:</div>
+        ${buildDropBreakdownRows(shown, amount)}
+        ${omittedNote}
+    `;
+    }
+
+    /**
+     * Breakdown for the "Income" row: the actual items received this opening. Only available on the
+     * Current card - the History card is a lifetime total across many openings with no single
+     * item-by-item breakdown to show.
+     * @param {Object|null} record
+     * @returns {string}
+     */
+    function buildIncomeBreakdownContent(record) {
+        if (!record?.actualValueBreakdown?.length) {
+            return '<div>Item-by-item detail is only available for the current opening, not the lifetime total.</div>';
+        }
+
+        const rows = record.actualValueBreakdown
+            .map((item) => {
+                const name = dataManager.getItemDetails(item.itemHrid)?.name || item.itemHrid;
+                const priceNote = item.resolved
+                    ? ''
+                    : ` <span style="color:${config.COLOR_WARNING || '#ffa500'};">(no price yet)</span>`;
+                return `<div style="display:flex; justify-content:space-between; gap:8px; padding:1px 0;"><span>${name} ×${formatters_js.formatWithSeparator(item.count)}${priceNote}</span><span>${formatMoney(item.value)}</span></div>`;
+            })
+            .join('');
+
+        return `<div style="margin-bottom:4px;">Items received this opening:</div>${rows}`;
+    }
+
+    /**
+     * @param {string} title
+     * @param {Object} stats
+     * @param {Object} options
+     * @param {string} options.keyPrefix - 'current' or 'history', keeps the two cards' toggle keys distinct
+     * @param {string} options.containerHrid
+     * @param {Object|null} options.record - Single opening record (Current card only, null for History)
+     * @param {Set<string>} options.expandedSections
+     * @returns {string}
+     */
+    function buildCard(title, stats, { keyPrefix, containerHrid, record, expandedSections }) {
+        const incomeKey = `${keyPrefix}-income`;
+        const expectedKey = `${keyPrefix}-expected`;
+
+        const incomeValueHtml = `${formatMoney(stats.income)}${stats.incomeIncomplete ? buildPartialBadge() : ''}`;
         const profitHtml =
             stats.profit === null
                 ? '—'
@@ -35535,24 +35640,61 @@ self.onmessage = function (e) {
             stats.luckPercent === null
                 ? '—'
                 : `<span style="color:${luckColor(stats.luckPercent)}">${formatPercent(stats.luckPercent)}</span>`;
-        const expectedHtml = `${formatMoney(stats.expectedIncome)}${stats.expectedIncomeIncomplete ? ' <span title="One or more openings could not be fully priced">[Partial]</span>' : ''}`;
-        const stdDevHtml = formatMoney(stats.stdDev);
-        const higherHtml =
+        const rangeHtml =
+            stats.stdDev === null || stats.stdDev === undefined
+                ? ''
+                : ` <span style="color:${config.COLOR_TEXT_SECONDARY || '#aaa'}; font-size:11px;" title="Actual income for a batch this size usually lands within this range of the expected amount">± ${formatMoney(stats.stdDev)}</span>`;
+        const expectedValueHtml = `${formatMoney(stats.expectedIncome)}${rangeHtml}${stats.expectedIncomeIncomplete ? buildPartialBadge() : ''}`;
+        const vsExpectedHtml =
             stats.higher === null
                 ? '—'
                 : `<span style="color:${luckColor(stats.higher)}">${formatSignedMoney(stats.higher)}</span>`;
 
+        const incomeRowHtml = record
+            ? buildExpandableStatRow(
+                  'Income',
+                  incomeValueHtml,
+                  incomeKey,
+                  buildIncomeBreakdownContent(record),
+                  expandedSections.has(incomeKey)
+              )
+            : buildStatRow('Income', incomeValueHtml);
+
+        const expectedRowHtml = buildExpandableStatRow(
+            'Expected income',
+            expectedValueHtml,
+            expectedKey,
+            buildExpectedBreakdownContent(containerHrid, stats.amount),
+            expandedSections.has(expectedKey)
+        );
+
         return `
-        <div style="background:#2a2a2a; border:2px solid #4a4a4a; border-radius:8px; padding:10px; min-width:140px; flex:1;">
-            <div style="font-size:13px; font-weight:bold; text-align:center; border-bottom:1px solid #4a4a4a; padding-bottom:6px; margin-bottom:6px;">${title}</div>
-            ${buildStatRow('Amount', formatters_js.formatWithSeparator(Math.round(stats.amount || 0)))}
-            ${buildStatRow('Income', incomeHtml)}
+        <div style="
+            background: rgba(26, 26, 26, 0.97);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 10px;
+            padding: 14px;
+            min-width: 160px;
+            flex: 1;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+        ">
+            <div style="
+                font-size: 14px;
+                font-weight: 700;
+                text-align: center;
+                letter-spacing: 0.3px;
+                color: ${config.COLOR_TEXT_PRIMARY || '#fff'};
+                padding-bottom: 8px;
+                margin-bottom: 6px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+            ">${title}</div>
+            ${buildStatRow('Opened', formatters_js.formatWithSeparator(Math.round(stats.amount || 0)))}
+            ${incomeRowHtml}
             ${buildStatRow('Profit', profitHtml)}
             ${buildStatRow('Luck', luckHtml)}
-            <div style="height:6px;"></div>
-            ${buildStatRow('E[income]', expectedHtml)}
-            ${buildStatRow('std. dev.', stdDevHtml, { indent: true })}
-            ${buildStatRow('Higher', higherHtml)}
+            <div style="height:1px; background:rgba(255, 255, 255, 0.08); margin:8px 0;"></div>
+            ${expectedRowHtml}
+            ${buildStatRow('vs. expected', vsExpectedHtml)}
         </div>
     `;
     }
@@ -35565,6 +35707,8 @@ self.onmessage = function (e) {
             this.currentPanel = null;
             this.currentModal = null;
             this.stopWatchingModal = null;
+            this.expandedSections = new Set();
+            this.handlePanelClick = this.handlePanelClick.bind(this);
         }
 
         initialize() {
@@ -35615,6 +35759,7 @@ self.onmessage = function (e) {
                 gap: 8px;
                 z-index: ${config.Z_FLOATING_PANEL};
             `;
+                this.currentPanel.addEventListener('click', this.handlePanelClick);
                 document.body.appendChild(this.currentPanel);
                 this.currentModal = modal;
                 this.setupCleanupObserver(modal);
@@ -35623,8 +35768,48 @@ self.onmessage = function (e) {
             const currentStats = computeStats(record.containerHrid, mapRecordToCardInputs(record));
             const historyStats = computeStats(record.containerHrid, mapAggregateToCardInputs(lifetimeAggregate));
 
-            this.currentPanel.innerHTML = buildCard('Current', currentStats) + buildCard('History', historyStats);
+            this.currentPanel.innerHTML =
+                buildCard('Current', currentStats, {
+                    keyPrefix: 'current',
+                    containerHrid: record.containerHrid,
+                    record,
+                    expandedSections: this.expandedSections,
+                }) +
+                buildCard('History', historyStats, {
+                    keyPrefix: 'history',
+                    containerHrid: record.containerHrid,
+                    record: null,
+                    expandedSections: this.expandedSections,
+                });
             this.positionPanel(this.currentPanel, modal);
+        }
+
+        /**
+         * Delegated click handler for every expandable stat row in the panel (bound once per panel
+         * element in `renderPanel`, since `innerHTML` gets fully replaced on every data refresh).
+         * Toggles the row's breakdown content and remembers the open/closed state in
+         * `expandedSections` so the next refresh renders it back the way the user left it.
+         * @param {MouseEvent} event
+         */
+        handlePanelClick(event) {
+            const toggle = event.target.closest('[data-toggle-key]');
+            if (!toggle) return;
+
+            const key = toggle.dataset.toggleKey;
+            const content = toggle.nextElementSibling;
+            if (!content || content.dataset.contentKey !== key) return;
+
+            const nowExpanded = content.style.display === 'none';
+            content.style.display = nowExpanded ? 'block' : 'none';
+
+            const chevron = toggle.querySelector('.mwi-oa-chevron');
+            if (chevron) chevron.textContent = nowExpanded ? '▾' : '▸';
+
+            if (nowExpanded) {
+                this.expandedSections.add(key);
+            } else {
+                this.expandedSections.delete(key);
+            }
         }
 
         /**
@@ -35678,6 +35863,7 @@ self.onmessage = function (e) {
                 this.unsubscribeCollector = null;
             }
             this.removePanel();
+            this.expandedSections.clear();
             this.isInitialized = false;
         }
     }
