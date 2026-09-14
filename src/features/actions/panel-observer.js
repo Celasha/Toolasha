@@ -520,10 +520,14 @@ function autoFillProtectFrom(panel, itemHrid) {
  */
 function setupProtectionSlotObserver(panel) {
     if (panel.dataset.mwiProtectObserverAdded) return;
-    panel.dataset.mwiProtectObserverAdded = 'true';
 
+    // The protection-item slot can still be rendering (e.g. Inventory-opened panels mount inside
+    // a modal, adding an extra async pass) - only mark this panel as "done" once the observer is
+    // actually attached, so a later handleEnhancingPanel() re-run gets another chance to attach it
+    // instead of being permanently skipped.
     const protectionContainer = panel.querySelector('[class*="protectionItemInputContainer"]');
     if (!protectionContainer) return;
+    panel.dataset.mwiProtectObserverAdded = 'true';
 
     let debounceTimer = null;
     const unwatch = createMutationWatcher(

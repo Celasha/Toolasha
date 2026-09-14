@@ -10,7 +10,7 @@
  */
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ dataHandlers: new Map() }));
+const mocks = vi.hoisted(() => ({ dataHandlers: new Map(), registrations: [] }));
 
 vi.mock('../../core/data-manager.js', () => ({
     default: {
@@ -18,13 +18,24 @@ vi.mock('../../core/data-manager.js', () => ({
         off: vi.fn((event, handler) => {
             if (mocks.dataHandlers.get(event) === handler) mocks.dataHandlers.delete(event);
         }),
+        getInitClientData: vi.fn(() => ({ itemDetailMap: {} })),
     },
 }));
 
-vi.mock('../../core/config.js', () => ({ default: { getSetting: vi.fn(() => true) } }));
+vi.mock('../../core/config.js', () => ({
+    default: {
+        getSetting: vi.fn(() => true),
+        getSettingValue: vi.fn((_key, defaultValue) => defaultValue),
+    },
+}));
 
 vi.mock('../../core/dom-observer.js', () => ({
-    default: { onClass: vi.fn(() => vi.fn()) },
+    default: {
+        onClass: vi.fn((_name, classNames, callback) => {
+            mocks.registrations.push({ classNames, callback });
+            return vi.fn();
+        }),
+    },
 }));
 
 vi.mock('./enhancement-display.js', () => ({
@@ -50,6 +61,8 @@ vi.mock('../../utils/enhancement-config.js', () => ({ getEnhancingParams: vi.fn(
 vi.mock('../enhancement/tooltip-enhancement.js', () => ({ calculateEnhancementPath: vi.fn() }));
 
 import dataManager from '../../core/data-manager.js';
+import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
+import { getItemHridFromName } from '../../utils/game-lookups.js';
 import { initActionPanelObserver, disablePanelObserver } from './panel-observer.js';
 
 describe('panel-observer enhancement refresh subscribes to the common buffs_updated event (TLA-028)', () => {
@@ -90,5 +103,68 @@ describe('panel-observer enhancement refresh subscribes to the common buffs_upda
 
         const buffsUpdatedCalls = dataManager.on.mock.calls.filter(([event]) => event === 'buffs_updated');
         expect(buffsUpdatedCalls).toHaveLength(1);
+    });
+});
+
+function buildEnhancingPanel() {
+    const panel = document.createElement('div');
+    const output = document.createElement('div');
+    output.className = 'SkillActionDetail_enhancingOutput__VPHbY';
+    output.appendChild(document.createElement('img'));
+    const nameEl = document.createElement('div');
+    nameEl.className = 'Item_name__2C42x';
+    nameEl.textContent = 'Gator Vest';
+    output.appendChild(nameEl);
+    panel.appendChild(output);
+    return panel;
+}
+
+function getEnhancingPanelCallback() {
+    return mocks.registrations.find((r) => r.classNames === 'SkillActionDetail_enhancingComponent__17bOx').callback;
+}
+
+describe('setupProtectionSlotObserver only marks itself done once actually attached (protection-level autofill race fix)', () => {
+    beforeEach(() => {
+        document.body.innerHTML = '';
+        vi.clearAllMocks();
+        mocks.dataHandlers.clear();
+        mocks.registrations = [];
+        dataManager.getInitClientData.mockReturnValue({
+            itemDetailMap: { '/items/gator_vest': { itemLevel: 1 } },
+        });
+        getItemHridFromName.mockReturnValue('/items/gator_vest');
+        initActionPanelObserver();
+    });
+
+    afterEach(() => {
+        disablePanelObserver();
+    });
+
+    test('does not mark itself done when the protection-item slot has not rendered yet', () => {
+        const panel = buildEnhancingPanel();
+        const onEnhancingPanel = getEnhancingPanelCallback();
+
+        onEnhancingPanel(panel);
+
+        expect(panel.dataset.mwiProtectObserverAdded).toBeUndefined();
+    });
+
+    test('attaches the observer on a later pass once the protection-item slot exists, instead of being permanently skipped', () => {
+        const panel = buildEnhancingPanel();
+        const onEnhancingPanel = getEnhancingPanelCallback();
+
+        onEnhancingPanel(panel); // first pass: protection-item slot not rendered yet
+
+        const protectionContainer = document.createElement('div');
+        protectionContainer.className = 'protectionItemInputContainer__abc123';
+        panel.appendChild(protectionContainer);
+
+        onEnhancingPanel(panel); // second pass: slot now exists
+
+        expect(panel.dataset.mwiProtectObserverAdded).toBe('true');
+        const watcherCallsOnProtectionSlot = createMutationWatcher.mock.calls.filter(
+            ([target]) => target === protectionContainer
+        );
+        expect(watcherCallsOnProtectionSlot).toHaveLength(1);
     });
 });
