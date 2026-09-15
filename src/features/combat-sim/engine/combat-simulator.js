@@ -26,7 +26,12 @@ const ONE_SECOND = 1e9;
 const HOT_TICK_INTERVAL = 5 * ONE_SECOND;
 const DOT_TICK_INTERVAL = 3 * ONE_SECOND;
 const REGEN_TICK_INTERVAL = 10 * ONE_SECOND;
-const ENEMY_RESPAWN_INTERVAL = 3 * ONE_SECOND;
+// Empirically measured from real gameplay captures (4,235 clean single-target auto-attack
+// cycles across 3 independent sessions): the real post-kill respawn delay baseline is ~3024ms,
+// not a flat 3000ms. A phase-dependent pattern also exists (some 10s windows in a 120s cycle run
+// measurably longer), but our own captures didn't reproduce the same bins a third-party analysis
+// (MWI Insight) published, so only this corrected constant is applied here, not a phase model.
+const ENEMY_RESPAWN_INTERVAL = 3.024 * ONE_SECOND;
 const PLAYER_RESPAWN_INTERVAL = 150 * ONE_SECOND;
 const RESTART_INTERVAL = 3 * ONE_SECOND;
 const ENRAGE_TICK_INTERVAL = 60 * ONE_SECOND;
