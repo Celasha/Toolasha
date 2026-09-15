@@ -2,10 +2,9 @@
 
 ## [2.108.4](https://github.com/Celasha/Toolasha/compare/v2.108.3...v2.108.4) (2026-09-15)
 
-
 ### Bug Fixes
 
-* correct enemy respawn delay from a flat 3000ms to the measured 3024ms ([c1aaf19](https://github.com/Celasha/Toolasha/commit/c1aaf192a4659896fafb0fa77408062bf7e2b4fb))
+- correct enemy respawn delay from a flat 3000ms to the measured 3024ms ([c1aaf19](https://github.com/Celasha/Toolasha/commit/c1aaf192a4659896fafb0fa77408062bf7e2b4fb))
 
 ## [2.108.3](https://github.com/Celasha/Toolasha/compare/v2.108.2...v2.108.3) (2026-09-14)
 
