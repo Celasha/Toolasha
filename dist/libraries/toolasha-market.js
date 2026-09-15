@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.108.2
+ * Version: 2.108.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -35414,6 +35414,84 @@ self.onmessage = function (e) {
     }
 
     /**
+     * Asset Manifest Utility
+     *
+     * Fetches the game's asset-manifest.json to resolve current webpack hashed
+     * sprite URLs without hardcoding hashes that break on game updates.
+     */
+
+    const MANIFEST_URL = 'https://www.milkywayidle.com/asset-manifest.json';
+
+    // Sprite keys to extract from the manifest (key → sprite name)
+    const SPRITE_KEYS = {
+        actions: 'actions_sprite',
+        items: 'items_sprite',
+        monsters: 'combat_monsters_sprite',
+        misc: 'misc_sprite',
+        abilities: 'abilities_sprite',
+        skills: 'skills_sprite',
+    };
+
+    let manifestPromise = null;
+    let cachedUrls = null;
+
+    /**
+     * Fetch and parse the asset manifest, returning a map of sprite name → URL.
+     * Result is cached for the lifetime of the page.
+     * @returns {Promise<Object>} Map of sprite key → full URL
+     */
+    async function fetchManifest() {
+        if (cachedUrls) return cachedUrls;
+        if (manifestPromise) return manifestPromise;
+
+        manifestPromise = (async () => {
+            try {
+                const response = await fetch(MANIFEST_URL);
+                if (!response.ok) {
+                    console.warn('[AssetManifest] Failed to fetch manifest:', response.status);
+                    return {};
+                }
+
+                const manifest = await response.json();
+                const files = manifest.files || manifest; // handle both formats
+
+                const urls = {};
+                for (const [key, spriteName] of Object.entries(SPRITE_KEYS)) {
+                    // Find the entry whose key contains the sprite name and ends in .svg
+                    const entry = Object.entries(files).find(([k]) => k.includes(spriteName) && k.endsWith('.svg'));
+                    if (entry) {
+                        // Values may be relative paths like /static/media/...
+                        urls[key] = entry[1];
+                    }
+                }
+
+                cachedUrls = urls;
+                return urls;
+            } catch (error) {
+                console.warn('[AssetManifest] Error fetching manifest:', error);
+                return {};
+            }
+        })();
+
+        return manifestPromise;
+    }
+
+    /**
+     * Get a specific sprite URL by key.
+     * @param {'actions'|'items'|'monsters'|'misc'|'abilities'|'skills'} key
+     * @returns {Promise<string|null>}
+     */
+    async function getSpriteUrl(key) {
+        const urls = await fetchManifest();
+        return urls[key] || null;
+    }
+
+    var assetManifest = {
+        fetchManifest,
+        getSpriteUrl,
+    };
+
+    /**
      * Openable Analytics Side Panel
      * Pins a Current/History stat-card panel to the LEFT of the native "Opened Loot" modal whenever
      * a monetary box opening occurs, alongside the existing inline footer. Always anchored on the
@@ -35552,14 +35630,31 @@ self.onmessage = function (e) {
     `;
     }
 
-    function buildDropBreakdownRows(drops, amount) {
+    /**
+     * Inline SVG icon referencing the game's own items sprite sheet, matching the
+     * `<svg><use href="{spriteUrl}#{slug}"></use></svg>` convention used elsewhere in Toolasha (e.g.
+     * pinned-actions-page.js) rather than an `<img>` tag. Renders nothing if the manifest fetch
+     * hasn't resolved yet or the item has no hrid, so breakdown rows never show a broken image.
+     * @param {string|null} spriteUrl
+     * @param {string} itemHrid
+     * @param {number} [size]
+     * @returns {string}
+     */
+    function buildItemIconHtml(spriteUrl, itemHrid, size = 16) {
+        if (!spriteUrl || !itemHrid) return '';
+        const slug = itemHrid.replace('/items/', '');
+        return `<span style="display:inline-flex; align-items:center; justify-content:center; width:${size}px; height:${size}px; margin-right:4px; flex-shrink:0;"><svg width="${size}" height="${size}"><use href="${spriteUrl}#${slug}"></use></svg></span>`;
+    }
+
+    function buildDropBreakdownRows(drops, amount, spriteUrl) {
         return drops
             .map((drop) => {
                 const total = drop.expectedValue * (amount || 0);
                 const priceNote = drop.hasPriceData
                     ? ''
                     : ` <span style="color:${config.COLOR_WARNING || '#ffa500'};">(no price yet)</span>`;
-                return `<div style="display:flex; justify-content:space-between; gap:8px; padding:1px 0;"><span>${drop.itemName}${priceNote}</span><span>${formatMoney(total)}</span></div>`;
+                const icon = buildItemIconHtml(spriteUrl, drop.itemHrid);
+                return `<div style="display:flex; justify-content:space-between; gap:8px; padding:1px 0;"><span style="display:flex; align-items:center;">${icon}${drop.itemName}${priceNote}</span><span>${formatMoney(total)}</span></div>`;
             })
             .join('');
     }
@@ -35570,9 +35665,10 @@ self.onmessage = function (e) {
      * both the Current and History cards, only the scaling amount differs.
      * @param {string} containerHrid
      * @param {number} amount
+     * @param {string|null} spriteUrl
      * @returns {string}
      */
-    function buildExpectedBreakdownContent(containerHrid, amount) {
+    function buildExpectedBreakdownContent(containerHrid, amount, spriteUrl) {
         const drops = expectedValueCalculator.getDropBreakdown(containerHrid);
         if (!drops.length) {
             return '<div>No drop data available for this container.</div>';
@@ -35587,21 +35683,20 @@ self.onmessage = function (e) {
 
         return `
         <div style="margin-bottom:4px;">What this container can drop, valued at today's market prices for ${formatters_js.formatWithSeparator(Math.round(amount || 0))} opened:</div>
-        ${buildDropBreakdownRows(shown, amount)}
+        ${buildDropBreakdownRows(shown, amount, spriteUrl)}
         ${omittedNote}
     `;
     }
 
     /**
-     * Breakdown for the "Income" row: the actual items received this opening. Only available on the
-     * Current card - the History card is a lifetime total across many openings with no single
-     * item-by-item breakdown to show.
-     * @param {Object|null} record
+     * Breakdown for the Current card's "Income" row: the actual items received this opening.
+     * @param {Object} record
+     * @param {string|null} spriteUrl
      * @returns {string}
      */
-    function buildIncomeBreakdownContent(record) {
+    function buildCurrentIncomeBreakdownContent(record, spriteUrl) {
         if (!record?.actualValueBreakdown?.length) {
-            return '<div>Item-by-item detail is only available for the current opening, not the lifetime total.</div>';
+            return '<div>No item data available for this opening.</div>';
         }
 
         const rows = record.actualValueBreakdown
@@ -35610,11 +35705,58 @@ self.onmessage = function (e) {
                 const priceNote = item.resolved
                     ? ''
                     : ` <span style="color:${config.COLOR_WARNING || '#ffa500'};">(no price yet)</span>`;
-                return `<div style="display:flex; justify-content:space-between; gap:8px; padding:1px 0;"><span>${name} ×${formatters_js.formatWithSeparator(item.count)}${priceNote}</span><span>${formatMoney(item.value)}</span></div>`;
+                const icon = buildItemIconHtml(spriteUrl, item.itemHrid);
+                return `<div style="display:flex; justify-content:space-between; gap:8px; padding:1px 0;"><span style="display:flex; align-items:center;">${icon}${name} ×${formatters_js.formatWithSeparator(item.count)}${priceNote}</span><span>${formatMoney(item.value)}</span></div>`;
             })
             .join('');
 
         return `<div style="margin-bottom:4px;">Items received this opening:</div>${rows}`;
+    }
+
+    /**
+     * Breakdown for the History card's "Income" row: cumulative item counts/values across every
+     * lifetime opening of this container. Sourced from the same `itemTotals`/`itemValueTotals` the
+     * lifetime aggregate already accumulates per opening (see `foldRecordIntoAggregate` in
+     * openable-analytics-storage.js) - no new tracking needed, just surfacing what's already recorded.
+     * An item present in `itemTotals` but missing from `itemValueTotals` was never resolved to a
+     * price across any opening and is flagged rather than silently valued at 0.
+     * @param {Object|null} aggregate - Lifetime aggregate (see mapAggregateToCardInputs)
+     * @param {string|null} spriteUrl
+     * @returns {string}
+     */
+    function buildHistoryIncomeBreakdownContent(aggregate, spriteUrl) {
+        const itemHrids = Object.keys(aggregate?.itemTotals || {});
+        if (!itemHrids.length) {
+            return '<div>No item data recorded yet.</div>';
+        }
+
+        const items = itemHrids
+            .map((itemHrid) => {
+                const count = aggregate.itemTotals[itemHrid] || 0;
+                const value = aggregate.itemValueTotals?.[itemHrid];
+                return { itemHrid, count, value: value || 0, resolved: value !== undefined };
+            })
+            .sort((a, b) => b.value - a.value);
+
+        const shown = items.slice(0, MAX_BREAKDOWN_ROWS);
+        const omittedCount = items.length - shown.length;
+        const omittedNote =
+            omittedCount > 0
+                ? `<div style="opacity:0.7; margin-top:2px;">+ ${omittedCount} more item${omittedCount === 1 ? '' : 's'} not shown</div>`
+                : '';
+
+        const rows = shown
+            .map((item) => {
+                const name = dataManager.getItemDetails(item.itemHrid)?.name || item.itemHrid;
+                const priceNote = item.resolved
+                    ? ''
+                    : ` <span style="color:${config.COLOR_WARNING || '#ffa500'};">(no price yet)</span>`;
+                const icon = buildItemIconHtml(spriteUrl, item.itemHrid);
+                return `<div style="display:flex; justify-content:space-between; gap:8px; padding:1px 0;"><span style="display:flex; align-items:center;">${icon}${name} ×${formatters_js.formatWithSeparator(item.count)}${priceNote}</span><span>${formatMoney(item.value)}</span></div>`;
+            })
+            .join('');
+
+        return `<div style="margin-bottom:4px;">Cumulative items received across all lifetime openings:</div>${rows}${omittedNote}`;
     }
 
     /**
@@ -35624,10 +35766,12 @@ self.onmessage = function (e) {
      * @param {string} options.keyPrefix - 'current' or 'history', keeps the two cards' toggle keys distinct
      * @param {string} options.containerHrid
      * @param {Object|null} options.record - Single opening record (Current card only, null for History)
+     * @param {Object|null} options.aggregate - Lifetime aggregate (History card only, null for Current)
      * @param {Set<string>} options.expandedSections
+     * @param {string|null} options.spriteUrl
      * @returns {string}
      */
-    function buildCard(title, stats, { keyPrefix, containerHrid, record, expandedSections }) {
+    function buildCard(title, stats, { keyPrefix, containerHrid, record, aggregate, expandedSections, spriteUrl }) {
         const incomeKey = `${keyPrefix}-income`;
         const expectedKey = `${keyPrefix}-expected`;
 
@@ -35650,21 +35794,23 @@ self.onmessage = function (e) {
                 ? '—'
                 : `<span style="color:${luckColor(stats.higher)}">${formatSignedMoney(stats.higher)}</span>`;
 
-        const incomeRowHtml = record
-            ? buildExpandableStatRow(
-                  'Income',
-                  incomeValueHtml,
-                  incomeKey,
-                  buildIncomeBreakdownContent(record),
-                  expandedSections.has(incomeKey)
-              )
-            : buildStatRow('Income', incomeValueHtml);
+        const incomeBreakdownHtml = record
+            ? buildCurrentIncomeBreakdownContent(record, spriteUrl)
+            : buildHistoryIncomeBreakdownContent(aggregate, spriteUrl);
+
+        const incomeRowHtml = buildExpandableStatRow(
+            'Income',
+            incomeValueHtml,
+            incomeKey,
+            incomeBreakdownHtml,
+            expandedSections.has(incomeKey)
+        );
 
         const expectedRowHtml = buildExpandableStatRow(
             'Expected income',
             expectedValueHtml,
             expectedKey,
-            buildExpectedBreakdownContent(containerHrid, stats.amount),
+            buildExpectedBreakdownContent(containerHrid, stats.amount, spriteUrl),
             expandedSections.has(expectedKey)
         );
 
@@ -35689,12 +35835,18 @@ self.onmessage = function (e) {
                 border-bottom: 1px solid rgba(255, 255, 255, 0.09);
             ">${title}</div>
             ${buildStatRow('Opened', formatters_js.formatWithSeparator(Math.round(stats.amount || 0)))}
-            ${incomeRowHtml}
-            ${buildStatRow('Profit', profitHtml)}
-            ${buildStatRow('Luck', luckHtml)}
+            <div style="display:flex; gap:12px; align-items:flex-start;">
+                <div style="flex:1; min-width:0;">
+                    ${incomeRowHtml}
+                    ${buildStatRow('Profit', profitHtml)}
+                </div>
+                <div style="flex:1; min-width:0; border-left:1px solid rgba(255, 255, 255, 0.08); padding-left:12px;">
+                    ${expectedRowHtml}
+                    ${buildStatRow('vs. expected', vsExpectedHtml)}
+                </div>
+            </div>
             <div style="height:1px; background:rgba(255, 255, 255, 0.08); margin:8px 0;"></div>
-            ${expectedRowHtml}
-            ${buildStatRow('vs. expected', vsExpectedHtml)}
+            ${buildStatRow('Luck', luckHtml)}
         </div>
     `;
     }
@@ -35708,6 +35860,7 @@ self.onmessage = function (e) {
             this.currentModal = null;
             this.stopWatchingModal = null;
             this.expandedSections = new Set();
+            this.itemsSpriteUrl = null;
             this.handlePanelClick = this.handlePanelClick.bind(this);
         }
 
@@ -35720,6 +35873,14 @@ self.onmessage = function (e) {
             );
 
             this.unsubscribeCollector = openableAnalyticsDataCollector.onUpdate(() => this.refreshMountedModal());
+
+            // Item icons are a visual nice-to-have, not a data dependency - the panel renders fine
+            // without them while this resolves, then re-renders once the sprite sheet URL is known.
+            assetManifest.getSpriteUrl('items').then((url) => {
+                if (!this.isInitialized) return;
+                this.itemsSpriteUrl = url;
+                this.refreshMountedModal();
+            });
         }
 
         refreshMountedModal() {
@@ -35773,13 +35934,17 @@ self.onmessage = function (e) {
                     keyPrefix: 'current',
                     containerHrid: record.containerHrid,
                     record,
+                    aggregate: null,
                     expandedSections: this.expandedSections,
+                    spriteUrl: this.itemsSpriteUrl,
                 }) +
                 buildCard('History', historyStats, {
                     keyPrefix: 'history',
                     containerHrid: record.containerHrid,
                     record: null,
+                    aggregate: lifetimeAggregate,
                     expandedSections: this.expandedSections,
+                    spriteUrl: this.itemsSpriteUrl,
                 });
             this.positionPanel(this.currentPanel, modal);
         }
@@ -35864,6 +36029,7 @@ self.onmessage = function (e) {
             }
             this.removePanel();
             this.expandedSections.clear();
+            this.itemsSpriteUrl = null;
             this.isInitialized = false;
         }
     }
