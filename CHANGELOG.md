@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.108.5](https://github.com/Celasha/Toolasha/compare/v2.108.4...v2.108.5) (2026-09-16)
+
+### Bug Fixes
+
+- stack label/value in Openable Analytics two-column stat rows ([c6039bf](https://github.com/Celasha/Toolasha/commit/c6039bfbb4e441a24be1eb880038961e5e70fbfe))
+
 ## [2.108.4](https://github.com/Celasha/Toolasha/compare/v2.108.3...v2.108.4) (2026-09-15)
 
 ### Bug Fixes
