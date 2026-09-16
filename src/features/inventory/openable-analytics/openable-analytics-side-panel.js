@@ -120,7 +120,10 @@ function buildPartialBadge() {
     return ` <span style="color:${config.COLOR_WARNING || '#ffa500'}; font-size:10px;">(partial)</span>`;
 }
 
-function buildStatRow(label, valueHtml) {
+function buildStatRow(label, valueHtml, { stacked = false } = {}) {
+    if (stacked) {
+        return `<div style="padding:3px 0;"><div style="font-size:12px; color:${config.COLOR_TEXT_SECONDARY || '#aaa'};">${label}</div><div style="font-size:13px; color:${config.COLOR_TEXT_PRIMARY || '#fff'};">${valueHtml}</div></div>`;
+    }
     return `<div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px; font-size:13px; padding:3px 0;"><span style="color:${config.COLOR_TEXT_SECONDARY || '#aaa'};">${label}</span><span style="color:${config.COLOR_TEXT_PRIMARY || '#fff'};">${valueHtml}</span></div>`;
 }
 
@@ -129,18 +132,29 @@ function buildStatRow(label, valueHtml) {
  * this total, or why it's marked "(partial)"). The expand/collapse state is tracked by the
  * caller (`OpenableAnalyticsSidePanel.expandedSections`) so it survives the panel's frequent
  * full re-renders instead of silently collapsing every time new loot data comes in.
+ *
+ * `stacked` renders the label above the value instead of side-by-side - needed inside the narrow
+ * two-column layout, where a space-between row has no room for both a wrapping label ("Expected
+ * income") and a wide value ("-1,531K") without clipping.
  * @param {string} label
  * @param {string} valueHtml
  * @param {string} toggleKey - Unique key for this row's expand state
  * @param {string} contentHtml - Breakdown HTML shown when expanded
  * @param {boolean} expanded
+ * @param {{stacked?: boolean}} [options]
  * @returns {string}
  */
-function buildExpandableStatRow(label, valueHtml, toggleKey, contentHtml, expanded) {
+function buildExpandableStatRow(label, valueHtml, toggleKey, contentHtml, expanded, { stacked = false } = {}) {
+    const chevron = `<span class="mwi-oa-chevron" style="display:inline-block; width:11px;">${expanded ? '▾' : '▸'}</span>`;
+    const toggleRowHtml = stacked
+        ? `<div style="font-size:12px; color:${config.COLOR_TEXT_SECONDARY || '#aaa'};">${chevron}${label}</div><div style="font-size:13px; color:${config.COLOR_TEXT_PRIMARY || '#fff'};">${valueHtml}</div>`
+        : `<span style="color:${config.COLOR_TEXT_SECONDARY || '#aaa'};">${chevron}${label}</span><span style="color:${config.COLOR_TEXT_PRIMARY || '#fff'};">${valueHtml}</span>`;
+    const toggleRowStyle = stacked
+        ? 'padding:3px 0; cursor:pointer;'
+        : 'display:flex; justify-content:space-between; align-items:baseline; gap:10px; font-size:13px; padding:3px 0; cursor:pointer;';
     return `
-        <div data-toggle-key="${toggleKey}" style="display:flex; justify-content:space-between; align-items:baseline; gap:10px; font-size:13px; padding:3px 0; cursor:pointer;" title="Click for details">
-            <span style="color:${config.COLOR_TEXT_SECONDARY || '#aaa'};"><span class="mwi-oa-chevron" style="display:inline-block; width:11px;">${expanded ? '▾' : '▸'}</span>${label}</span>
-            <span style="color:${config.COLOR_TEXT_PRIMARY || '#fff'};">${valueHtml}</span>
+        <div data-toggle-key="${toggleKey}" style="${toggleRowStyle}" title="Click for details">
+            ${toggleRowHtml}
         </div>
         <div data-content-key="${toggleKey}" style="display:${expanded ? 'block' : 'none'}; padding:2px 0 6px 17px; font-size:11px; color:${config.COLOR_TEXT_SECONDARY || '#aaa'}; line-height:1.5;">
             ${contentHtml}
@@ -321,7 +335,8 @@ function buildCard(title, stats, { keyPrefix, containerHrid, record, aggregate, 
         incomeValueHtml,
         incomeKey,
         incomeBreakdownHtml,
-        expandedSections.has(incomeKey)
+        expandedSections.has(incomeKey),
+        { stacked: true }
     );
 
     const expectedRowHtml = buildExpandableStatRow(
@@ -329,7 +344,8 @@ function buildCard(title, stats, { keyPrefix, containerHrid, record, aggregate, 
         expectedValueHtml,
         expectedKey,
         buildExpectedBreakdownContent(containerHrid, stats.amount, spriteUrl),
-        expandedSections.has(expectedKey)
+        expandedSections.has(expectedKey),
+        { stacked: true }
     );
 
     return `
@@ -356,11 +372,11 @@ function buildCard(title, stats, { keyPrefix, containerHrid, record, aggregate, 
             <div style="display:flex; gap:12px; align-items:flex-start;">
                 <div style="flex:1; min-width:0;">
                     ${incomeRowHtml}
-                    ${buildStatRow('Profit', profitHtml)}
+                    ${buildStatRow('Profit', profitHtml, { stacked: true })}
                 </div>
                 <div style="flex:1; min-width:0; border-left:1px solid rgba(255, 255, 255, 0.08); padding-left:12px;">
                     ${expectedRowHtml}
-                    ${buildStatRow('vs. expected', vsExpectedHtml)}
+                    ${buildStatRow('vs. expected', vsExpectedHtml, { stacked: true })}
                 </div>
             </div>
             <div style="height:1px; background:rgba(255, 255, 255, 0.08); margin:8px 0;"></div>
