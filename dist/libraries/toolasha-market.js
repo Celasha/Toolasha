@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.108.5
+ * Version: 2.108.6
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -35615,16 +35615,17 @@ self.onmessage = function (e) {
      * caller (`OpenableAnalyticsSidePanel.expandedSections`) so it survives the panel's frequent
      * full re-renders instead of silently collapsing every time new loot data comes in.
      *
-     * `stacked` renders the label above the value instead of side-by-side - needed inside the narrow
-     * two-column layout, where a space-between row has no room for both a wrapping label ("Expected
-     * income") and a wide value ("-1,531K") without clipping.
+     * Returns the toggle row and its breakdown content as separate strings (rather than one
+     * concatenated block) so the caller can place the breakdown content outside the narrow
+     * two-column layout - item rows inside a breakdown (icon + name + value) need much more
+     * horizontal room than a half-width column can offer, or their values get clipped.
      * @param {string} label
      * @param {string} valueHtml
      * @param {string} toggleKey - Unique key for this row's expand state
      * @param {string} contentHtml - Breakdown HTML shown when expanded
      * @param {boolean} expanded
      * @param {{stacked?: boolean}} [options]
-     * @returns {string}
+     * @returns {{toggleHtml: string, detailHtml: string}}
      */
     function buildExpandableStatRow(label, valueHtml, toggleKey, contentHtml, expanded, { stacked = false } = {}) {
         const chevron = `<span class="mwi-oa-chevron" style="display:inline-block; width:11px;">${expanded ? '▾' : '▸'}</span>`;
@@ -35634,14 +35635,17 @@ self.onmessage = function (e) {
         const toggleRowStyle = stacked
             ? 'padding:3px 0; cursor:pointer;'
             : 'display:flex; justify-content:space-between; align-items:baseline; gap:10px; font-size:13px; padding:3px 0; cursor:pointer;';
-        return `
+        const toggleHtml = `
         <div data-toggle-key="${toggleKey}" style="${toggleRowStyle}" title="Click for details">
             ${toggleRowHtml}
         </div>
-        <div data-content-key="${toggleKey}" style="display:${expanded ? 'block' : 'none'}; padding:2px 0 6px 17px; font-size:11px; color:${config.COLOR_TEXT_SECONDARY || '#aaa'}; line-height:1.5;">
+    `;
+        const detailHtml = `
+        <div data-content-key="${toggleKey}" style="display:${expanded ? 'block' : 'none'}; padding:2px 0 6px 4px; font-size:11px; color:${config.COLOR_TEXT_SECONDARY || '#aaa'}; line-height:1.5;">
             ${contentHtml}
         </div>
     `;
+        return { toggleHtml, detailHtml };
     }
 
     /**
@@ -35668,7 +35672,7 @@ self.onmessage = function (e) {
                     ? ''
                     : ` <span style="color:${config.COLOR_WARNING || '#ffa500'};">(no price yet)</span>`;
                 const icon = buildItemIconHtml(spriteUrl, drop.itemHrid);
-                return `<div style="display:flex; justify-content:space-between; gap:8px; padding:1px 0;"><span style="display:flex; align-items:center;">${icon}${drop.itemName}${priceNote}</span><span>${formatMoney(total)}</span></div>`;
+                return `<div style="display:flex; justify-content:space-between; gap:8px; padding:1px 0;"><span style="display:flex; align-items:center; min-width:0;">${icon}${drop.itemName}${priceNote}</span><span style="flex-shrink:0;">${formatMoney(total)}</span></div>`;
             })
             .join('');
     }
@@ -35720,7 +35724,7 @@ self.onmessage = function (e) {
                     ? ''
                     : ` <span style="color:${config.COLOR_WARNING || '#ffa500'};">(no price yet)</span>`;
                 const icon = buildItemIconHtml(spriteUrl, item.itemHrid);
-                return `<div style="display:flex; justify-content:space-between; gap:8px; padding:1px 0;"><span style="display:flex; align-items:center;">${icon}${name} ×${formatters_js.formatWithSeparator(item.count)}${priceNote}</span><span>${formatMoney(item.value)}</span></div>`;
+                return `<div style="display:flex; justify-content:space-between; gap:8px; padding:1px 0;"><span style="display:flex; align-items:center; min-width:0;">${icon}${name} ×${formatters_js.formatWithSeparator(item.count)}${priceNote}</span><span style="flex-shrink:0;">${formatMoney(item.value)}</span></div>`;
             })
             .join('');
 
@@ -35766,7 +35770,7 @@ self.onmessage = function (e) {
                     ? ''
                     : ` <span style="color:${config.COLOR_WARNING || '#ffa500'};">(no price yet)</span>`;
                 const icon = buildItemIconHtml(spriteUrl, item.itemHrid);
-                return `<div style="display:flex; justify-content:space-between; gap:8px; padding:1px 0;"><span style="display:flex; align-items:center;">${icon}${name} ×${formatters_js.formatWithSeparator(item.count)}${priceNote}</span><span>${formatMoney(item.value)}</span></div>`;
+                return `<div style="display:flex; justify-content:space-between; gap:8px; padding:1px 0;"><span style="display:flex; align-items:center; min-width:0;">${icon}${name} ×${formatters_js.formatWithSeparator(item.count)}${priceNote}</span><span style="flex-shrink:0;">${formatMoney(item.value)}</span></div>`;
             })
             .join('');
 
@@ -35812,7 +35816,7 @@ self.onmessage = function (e) {
             ? buildCurrentIncomeBreakdownContent(record, spriteUrl)
             : buildHistoryIncomeBreakdownContent(aggregate, spriteUrl);
 
-        const incomeRowHtml = buildExpandableStatRow(
+        const incomeRow = buildExpandableStatRow(
             'Income',
             incomeValueHtml,
             incomeKey,
@@ -35821,7 +35825,7 @@ self.onmessage = function (e) {
             { stacked: true }
         );
 
-        const expectedRowHtml = buildExpandableStatRow(
+        const expectedRow = buildExpandableStatRow(
             'Expected income',
             expectedValueHtml,
             expectedKey,
@@ -35853,14 +35857,16 @@ self.onmessage = function (e) {
             ${buildStatRow('Opened', formatters_js.formatWithSeparator(Math.round(stats.amount || 0)))}
             <div style="display:flex; gap:12px; align-items:flex-start;">
                 <div style="flex:1; min-width:0;">
-                    ${incomeRowHtml}
+                    ${incomeRow.toggleHtml}
                     ${buildStatRow('Profit', profitHtml, { stacked: true })}
                 </div>
                 <div style="flex:1; min-width:0; border-left:1px solid rgba(255, 255, 255, 0.08); padding-left:12px;">
-                    ${expectedRowHtml}
+                    ${expectedRow.toggleHtml}
                     ${buildStatRow('vs. expected', vsExpectedHtml, { stacked: true })}
                 </div>
             </div>
+            ${incomeRow.detailHtml}
+            ${expectedRow.detailHtml}
             <div style="height:1px; background:rgba(255, 255, 255, 0.08); margin:8px 0;"></div>
             ${buildStatRow('Luck', luckHtml)}
         </div>
@@ -35977,8 +35983,8 @@ self.onmessage = function (e) {
             if (!toggle) return;
 
             const key = toggle.dataset.toggleKey;
-            const content = toggle.nextElementSibling;
-            if (!content || content.dataset.contentKey !== key) return;
+            const content = this.currentPanel?.querySelector(`[data-content-key="${key}"]`);
+            if (!content) return;
 
             const nowExpanded = content.style.display === 'none';
             content.style.display = nowExpanded ? 'block' : 'none';
