@@ -243,6 +243,38 @@ describe('OpenableAnalyticsSidePanel expandable breakdown rows', () => {
         expect(content.style.display).toBe('none');
     });
 
+    test('"Expected income" breakdown merges multiple drop-table rows for the same item into one', () => {
+        expectedValueCalculator.getDropBreakdown.mockReturnValue([
+            {
+                itemHrid: '/items/foo',
+                itemName: 'Foo',
+                dropRate: 0.5,
+                avgCount: 2,
+                priceEach: 100,
+                expectedValue: 100,
+                hasPriceData: true,
+            },
+            {
+                itemHrid: '/items/foo',
+                itemName: 'Foo',
+                dropRate: 0.1,
+                avgCount: 1,
+                priceEach: 100,
+                expectedValue: 25,
+                hasPriceData: true,
+            },
+        ]);
+        const modal = buildModal();
+        modalCallback()(modal);
+
+        document.querySelector('[data-toggle-key="current-expected"]').click();
+        const content = document.querySelector('[data-content-key="current-expected"]');
+
+        expect(content.textContent.match(/Foo/g)).toHaveLength(1);
+        // monetaryRecord() defaults containerCount to 6; merged expectedValue (100 + 25) × 6 = 750.
+        expect(content.textContent).toContain('750');
+    });
+
     test('"Income" is expandable on both Current (per-opening) and History (cumulative lifetime)', () => {
         mocks.latestRecord = monetaryRecord({
             actualValueBreakdown: [{ itemHrid: '/items/foo', count: 3, value: 300, resolved: true }],
