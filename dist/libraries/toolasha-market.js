@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.108.6
+ * Version: 2.108.7
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -35678,6 +35678,27 @@ self.onmessage = function (e) {
     }
 
     /**
+     * A container can have multiple raw drop-table rows for the same item (e.g. a guaranteed roll
+     * and a separate bonus-roll tier) - `getDropBreakdown()` returns those as-is since other
+     * consumers (risk-of-ruin-ui.js) need the per-tier `avgCount`/`dropRate` for their own math. This
+     * display only cares about "what can this item drop", so same-item rows are summed into one.
+     * @param {Array} drops
+     * @returns {Array}
+     */
+    function mergeDropsByItem(drops) {
+        const byItemHrid = new Map();
+        for (const drop of drops) {
+            const existing = byItemHrid.get(drop.itemHrid);
+            if (existing) {
+                existing.expectedValue += drop.expectedValue;
+            } else {
+                byItemHrid.set(drop.itemHrid, { ...drop });
+            }
+        }
+        return Array.from(byItemHrid.values()).sort((a, b) => b.expectedValue - a.expectedValue);
+    }
+
+    /**
      * Breakdown for the "Expected income" row: every item this container can drop, valued at
      * current market prices and scaled to the card's own opened count - the same drop table backs
      * both the Current and History cards, only the scaling amount differs.
@@ -35687,7 +35708,7 @@ self.onmessage = function (e) {
      * @returns {string}
      */
     function buildExpectedBreakdownContent(containerHrid, amount, spriteUrl) {
-        const drops = expectedValueCalculator.getDropBreakdown(containerHrid);
+        const drops = mergeDropsByItem(expectedValueCalculator.getDropBreakdown(containerHrid));
         if (!drops.length) {
             return '<div>No drop data available for this container.</div>';
         }

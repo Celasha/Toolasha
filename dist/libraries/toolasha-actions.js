@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.108.6
+ * Version: 2.108.7
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -17710,6 +17710,7 @@
         const itemDetails = dataManager.getItemDetails(itemHrid);
         const itemName = itemDetails?.name || itemHrid.split('/').pop();
         const isTradable = itemDetails?.isTradable ?? false;
+        const artisanMode = materialCalculator_js.getArtisanMaterialMode();
 
         // Get market buy price (min of market ask and shop cost)
         let buyPrice = null;
@@ -17744,6 +17745,8 @@
         // Check memo for previously computed unit cost
         if (memo.has(itemHrid)) {
             const cachedUnitCost = memo.get(itemHrid);
+            const actionsNeeded =
+                cachedUnitCost.strategy === 'craft' ? Math.ceil(quantity / (cachedUnitCost.outputCount || 1)) : 0;
             return {
                 itemHrid,
                 itemName,
@@ -17754,14 +17757,20 @@
                 buyPrice,
                 craftCost: cachedUnitCost.craftCost,
                 actionHrid: cachedUnitCost.actionHrid,
-                actionsNeeded:
-                    cachedUnitCost.strategy === 'craft' ? Math.ceil(quantity / (cachedUnitCost.outputCount || 1)) : 0,
+                actionsNeeded,
                 children:
                     cachedUnitCost.strategy === 'craft'
                         ? cachedUnitCost.childrenTemplate.map((c) =>
                               computeBestCraftingPlan(
                                   c.itemHrid,
-                                  c.qtyPerUnit * quantity,
+                                  c.isUpgrade
+                                      ? actionsNeeded
+                                      : materialCalculator_js.calculateTotalRequired(
+                                            c.basePerAction,
+                                            cachedUnitCost.artisanBonus,
+                                            actionsNeeded,
+                                            artisanMode
+                                        ),
                                   mode,
                                   visited,
                                   memo,
@@ -17857,18 +17866,18 @@
         const { actionHrid, action, outputCount } = production;
         const artisanBonus = getArtisanBonus(action.type);
         const actionsForOne = 1 / outputCount; // actions per 1 output item
+        const actionsNeeded = Math.ceil(quantity / outputCount);
 
         let craftCostPerUnit = 0;
-        const childrenTemplate = []; // { itemHrid, qtyPerUnit } for memo reconstruction
+        const childrenTemplate = []; // { itemHrid, basePerAction, isUpgrade } for memo reconstruction
 
         // Input items (affected by artisan bonus)
         if (action.inputItems) {
             for (const input of action.inputItems) {
                 const inputCountPerAction = input.count || 1;
-                const reducedCount = inputCountPerAction * (1 - artisanBonus);
-                const qtyPerUnit = reducedCount * actionsForOne;
+                const qtyPerUnit = inputCountPerAction * (1 - artisanBonus) * actionsForOne;
 
-                const inputQty = Math.ceil(reducedCount * Math.ceil(quantity / outputCount));
+                const inputQty = materialCalculator_js.calculateTotalRequired(inputCountPerAction, artisanBonus, actionsNeeded, artisanMode);
                 const childPlan = computeBestCraftingPlan(
                     input.itemHrid,
                     inputQty,
@@ -17884,17 +17893,16 @@
                 );
 
                 craftCostPerUnit += childPlan.unitCost * qtyPerUnit;
-                childrenTemplate.push({ itemHrid: input.itemHrid, qtyPerUnit });
+                childrenTemplate.push({ itemHrid: input.itemHrid, basePerAction: inputCountPerAction, isUpgrade: false });
             }
         }
 
         // Upgrade item (NOT affected by artisan bonus)
         if (action.upgradeItemHrid) {
             const qtyPerUnit = actionsForOne; // 1 upgrade per action
-            const upgradeQty = Math.ceil(quantity / outputCount);
             const upgradePlan = computeBestCraftingPlan(
                 action.upgradeItemHrid,
-                upgradeQty,
+                actionsNeeded,
                 mode,
                 visited,
                 memo,
@@ -17907,7 +17915,7 @@
             );
 
             craftCostPerUnit += upgradePlan.unitCost * qtyPerUnit;
-            childrenTemplate.push({ itemHrid: action.upgradeItemHrid, qtyPerUnit });
+            childrenTemplate.push({ itemHrid: action.upgradeItemHrid, basePerAction: 1, isUpgrade: true });
         }
 
         visited.delete(itemHrid);
@@ -17943,19 +17951,18 @@
             craftCost: craftCostPerUnit,
             actionHrid: strategy === 'craft' ? actionHrid : null,
             outputCount,
+            artisanBonus,
             childrenTemplate: strategy === 'craft' ? childrenTemplate : [],
         });
 
         // Build children for the actual quantities
         let children = [];
         if (!shouldBuy) {
-            const actionsNeeded = Math.ceil(quantity / outputCount);
             children = [];
             if (action.inputItems) {
                 for (const input of action.inputItems) {
                     const inputCountPerAction = input.count || 1;
-                    const reducedCount = inputCountPerAction * (1 - artisanBonus);
-                    const inputQty = Math.ceil(reducedCount * actionsNeeded);
+                    const inputQty = materialCalculator_js.calculateTotalRequired(inputCountPerAction, artisanBonus, actionsNeeded, artisanMode);
                     children.push(
                         computeBestCraftingPlan(
                             input.itemHrid,
@@ -18002,7 +18009,7 @@
             buyPrice,
             craftCost: craftCostPerUnit,
             actionHrid: strategy === 'craft' ? actionHrid : null,
-            actionsNeeded: strategy === 'craft' ? Math.ceil(quantity / outputCount) : 0,
+            actionsNeeded: strategy === 'craft' ? actionsNeeded : 0,
             children,
         };
     }
@@ -18333,6 +18340,7 @@
     }) {
         const gameData = dataManager.getInitClientData();
         const actionDetailMap = gameData?.actionDetailMap || {};
+        const artisanMode = materialCalculator_js.getArtisanMaterialMode();
 
         const ledger = buildInventoryLedger();
         const buyRequirements = new Map(); // itemHrid -> total missing
@@ -18404,8 +18412,9 @@
 
             visited.add(itemHrid);
             for (const input of recipe.inputItems) {
-                // Preserve current Best Crafting Plan expected-material rounding semantics.
-                const required = Math.ceil((input.count || 1) * (1 - recipe.artisanBonus) * actionsNeeded);
+                // Match the artisan mode selected on the Best Crafting Plan panel, so purchase
+                // quantities agree with what's displayed there.
+                const required = materialCalculator_js.calculateTotalRequired(input.count || 1, recipe.artisanBonus, actionsNeeded, artisanMode);
                 fulfill(input.itemHrid, required, depth + 1, visited, false, null);
             }
             if (recipe.upgradeItemHrid) {
@@ -18451,6 +18460,11 @@
         { value: 'hybrid', label: 'Instant Buy / Patient Sell' },
         { value: 'optimistic', label: 'Patient Buy / Patient Sell' },
         { value: 'patientBuy', label: 'Patient Buy' },
+    ];
+    const ARTISAN_MODES = [
+        { value: materialCalculator_js.ARTISAN_MATERIAL_MODE.EXPECTED, label: 'Expected' },
+        { value: materialCalculator_js.ARTISAN_MATERIAL_MODE.WORST_CASE, label: 'Worst-case' },
+        { value: materialCalculator_js.ARTISAN_MATERIAL_MODE.HYBRID, label: 'Hybrid' },
     ];
     let cleanupObserver = null;
     let nativeTabExitCleanup = null;
@@ -18640,6 +18654,44 @@
     }
 
     /**
+     * Create a small clickable pill row for cycling through a mode setting (Pricing, Artisan mode).
+     * @param {string} label
+     * @param {string} currentLabel
+     * @param {Function} onClick
+     * @param {string} [title] - Optional tooltip explaining the setting
+     * @returns {HTMLElement}
+     */
+    function createModePillRow(label, currentLabel, onClick, title = '') {
+        const row = document.createElement('div');
+        row.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.85em;
+        color: var(--text-color-secondary, #888);
+        margin-bottom: 4px;
+    `;
+        if (title) row.title = title;
+        const labelEl = document.createElement('span');
+        labelEl.textContent = label;
+        const btn = document.createElement('button');
+        btn.textContent = currentLabel;
+        btn.style.cssText = `
+        font-size: 0.85em;
+        padding: 1px 6px;
+        background: var(--bg-color-tertiary, #1a1a1a);
+        color: var(--text-color-secondary, #ccc);
+        border: 1px solid var(--border-color, #444);
+        border-radius: 3px;
+        cursor: pointer;
+    `;
+        btn.addEventListener('click', onClick);
+        row.appendChild(labelEl);
+        row.appendChild(btn);
+        return row;
+    }
+
+    /**
      * Format the collapsed Best Crafting Plan summary.
      * Cost is per item (`ea` = each); time is the total for every craft step.
      * @param {Object} plan
@@ -18649,17 +18701,22 @@
     function formatCraftingPlanSummary(plan, totalCraftSeconds = 0) {
         const cost = plan.unitCost === Infinity ? '?' : `${formatters_js.formatKMB(Math.round(plan.unitCost))}/ea`;
         const totalTime = formatTotalCraftTime(totalCraftSeconds);
-        return totalTime ? `${cost} · ${totalTime}` : cost;
+        const totalText =
+            plan.quantity > 1 && plan.unitCost !== Infinity
+                ? ` (×${formatters_js.formatKMB(plan.quantity)}: ${formatters_js.formatKMB(Math.round(plan.totalCost))})`
+                : '';
+        return totalTime ? `${cost}${totalText} · ${totalTime}` : `${cost}${totalText}`;
     }
 
     /**
      * Build the full crafting plan UI for an action.
      * @param {string} actionHrid
+     * @param {HTMLElement} panel - The action detail panel (used to read the quantity input)
      * @param {Function} [onToggle] - Callback when buy-intermediates toggle changes
      * @param {boolean} [defaultOpen=false] - Whether the section should be open
      * @returns {HTMLElement|null}
      */
-    function buildPlanUI(actionHrid, onToggle, defaultOpen = false) {
+    function buildPlanUI(actionHrid, panel, onToggle, defaultOpen = false) {
         const gameData = dataManager.getInitClientData();
         const actionDetail = gameData?.actionDetailMap?.[actionHrid];
         if (!actionDetail) return null;
@@ -18671,16 +18728,26 @@
         if (!output) return null;
 
         const mode = getPricingMode();
+        const artisanMode = materialCalculator_js.getArtisanMaterialMode();
+        const matchQuantity = config.getSetting('actionPanel_craftingPlanMatchQuantity');
         const buyIntermediates = config.getSetting('actionPanel_craftingPlanBuyIntermediates');
         const noProcessing = config.getSetting('actionPanel_craftingPlanNoProcessing');
         const taskMode = config.getSetting('actionPanel_craftingPlanTaskMode');
         const timeCostEnabled = config.getSetting('actionPanel_craftingPlanTimeCost');
         const goldPerHour = Number(config.getSettingValue('actionPanel_craftingPlanGoldPerHour', 0)) || 0;
+
+        let requestedQuantity = 1;
+        if (matchQuantity) {
+            const inputField = actionPanelHelper_js.findActionInput(panel);
+            const parsed = parseInt(inputField?.value, 10);
+            requestedQuantity = Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+        }
+
         let plan;
         try {
             plan = computeBestCraftingPlan(
                 output.itemHrid,
-                1,
+                requestedQuantity,
                 mode,
                 new Set(),
                 new Map(),
@@ -18714,6 +18781,13 @@
         const buyText = plan.buyPrice !== null ? formatters_js.formatWithSeparator(Math.round(plan.buyPrice)) : 'N/A';
         const craftText = plan.craftCost !== null ? formatters_js.formatWithSeparator(Math.round(plan.craftCost)) : 'N/A';
         const strategyText = plan.strategy === 'buy' ? 'Buy from market' : 'Craft from materials';
+        const quantityRow =
+            requestedQuantity > 1 && plan.unitCost !== Infinity
+                ? `<div style="display: flex; justify-content: space-between; color: var(--text-color-secondary, #888); font-size: 0.9em;">
+                   <span>Quantity: ${formatters_js.formatWithSeparator(requestedQuantity)}</span>
+                   <span>Total: ${formatters_js.formatWithSeparator(Math.round(plan.totalCost))}</span>
+               </div>`
+                : '';
 
         const summary = document.createElement('div');
         summary.style.cssText = 'margin-bottom: 6px;';
@@ -18726,42 +18800,62 @@
             <span>Market buy: ${buyText}</span>
             <span>Craft cost: ${craftText}</span>
         </div>
+        ${quantityRow}
     `;
         content.appendChild(summary);
 
         // === Pricing mode toggle ===
         const currentMode = PRICING_MODES.find((m) => m.value === mode) || PRICING_MODES[0];
-        const pricingRow = document.createElement('div');
-        pricingRow.style.cssText = `
+        content.appendChild(
+            createModePillRow('Pricing:', currentMode.label, () => {
+                const idx = PRICING_MODES.findIndex((m) => m.value === mode);
+                const next = PRICING_MODES[(idx + 1) % PRICING_MODES.length];
+                config.setSettingValue('profitCalc_pricingMode', next.value);
+                if (onToggle) onToggle();
+            })
+        );
+
+        // === Artisan material mode toggle ===
+        const currentArtisanMode = ARTISAN_MODES.find((m) => m.value === artisanMode) || ARTISAN_MODES[0];
+        content.appendChild(
+            createModePillRow(
+                'Artisan mode:',
+                currentArtisanMode.label,
+                () => {
+                    const idx = ARTISAN_MODES.findIndex((m) => m.value === artisanMode);
+                    const next = ARTISAN_MODES[(idx + 1) % ARTISAN_MODES.length];
+                    config.setSettingValue('actions_artisanMaterialMode', next.value);
+                    if (onToggle) onToggle();
+                },
+                'How Artisan Tea savings are rounded into material quantities:\n' +
+                    'Expected — pools the savings across the whole batch (average, may run short on a bad action).\n' +
+                    'Worst-case — rounds up every single action before multiplying (safest, may over-buy).\n' +
+                    'Hybrid — worst-case under 100 actions, expected at 100+.'
+            )
+        );
+
+        // === Match action quantity toggle ===
+        const matchQuantityRow = document.createElement('label');
+        matchQuantityRow.style.cssText = `
         display: flex;
         align-items: center;
         gap: 6px;
         font-size: 0.85em;
         color: var(--text-color-secondary, #888);
+        cursor: pointer;
         margin-bottom: 4px;
     `;
-        const pricingLabel = document.createElement('span');
-        pricingLabel.textContent = 'Pricing:';
-        const pricingBtn = document.createElement('button');
-        pricingBtn.textContent = currentMode.label;
-        pricingBtn.style.cssText = `
-        font-size: 0.85em;
-        padding: 1px 6px;
-        background: var(--bg-color-tertiary, #1a1a1a);
-        color: var(--text-color-secondary, #ccc);
-        border: 1px solid var(--border-color, #444);
-        border-radius: 3px;
-        cursor: pointer;
-    `;
-        pricingBtn.addEventListener('click', () => {
-            const idx = PRICING_MODES.findIndex((m) => m.value === mode);
-            const next = PRICING_MODES[(idx + 1) % PRICING_MODES.length];
-            config.setSettingValue('profitCalc_pricingMode', next.value);
+        const matchQuantityCheckbox = document.createElement('input');
+        matchQuantityCheckbox.type = 'checkbox';
+        matchQuantityCheckbox.checked = matchQuantity;
+        matchQuantityCheckbox.style.cssText = 'margin: 0; cursor: pointer;';
+        matchQuantityCheckbox.addEventListener('change', () => {
+            config.setSetting('actionPanel_craftingPlanMatchQuantity', matchQuantityCheckbox.checked);
             if (onToggle) onToggle();
         });
-        pricingRow.appendChild(pricingLabel);
-        pricingRow.appendChild(pricingBtn);
-        content.appendChild(pricingRow);
+        matchQuantityRow.appendChild(matchQuantityCheckbox);
+        matchQuantityRow.appendChild(document.createTextNode('Match action panel quantity'));
+        content.appendChild(matchQuantityRow);
 
         // === Buy intermediates toggle ===
         const toggleRow = document.createElement('label');
@@ -19344,7 +19438,7 @@
                 const wasOpen = existing?.querySelector('.mwi-section-header span')?.textContent === '▼';
                 if (existing) existing.remove();
 
-                const newUI = buildPlanUI(actionHrid, rebuild, wasOpen);
+                const newUI = buildPlanUI(actionHrid, panel, rebuild, wasOpen);
                 if (!newUI) return;
 
                 const profitSection = panel.querySelector('[data-mwi-profit-display]');
@@ -19355,8 +19449,11 @@
                 }
             };
 
-            const ui = buildPlanUI(actionHrid, rebuild);
+            const ui = buildPlanUI(actionHrid, panel, rebuild);
             if (!ui) return;
+
+            const inputField = actionPanelHelper_js.findActionInput(panel);
+            if (inputField) actionPanelHelper_js.attachInputListeners(panel, inputField, () => rebuild());
 
             const position = () => {
                 const existing = panel.querySelector(`#${UI_ID}`);

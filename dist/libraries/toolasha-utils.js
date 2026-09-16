@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.108.6
+ * Version: 2.108.7
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8424,6 +8424,8 @@ self.onmessage = function (e) {
         calculateEnhancementMaterialRequirements: calculateEnhancementMaterialRequirements,
         calculateMaterialRequirements: calculateMaterialRequirements,
         calculateQueuedMaterialsForAction: calculateQueuedMaterialsForAction,
+        calculateTotalRequired: calculateTotalRequired,
+        getArtisanMaterialMode: getArtisanMaterialMode,
         isArtisanTeaOutOfStock: isArtisanTeaOutOfStock
     });
 

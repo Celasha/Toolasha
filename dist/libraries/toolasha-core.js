@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.108.6
+ * Version: 2.108.7
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1191,6 +1191,13 @@
                     type: 'number',
                     default: 0,
                     help: 'Your time value in gold per hour. Used to calculate if crafting intermediates is worth the time. Set to your typical hourly profit (e.g., 500000).',
+                },
+                actionPanel_craftingPlanMatchQuantity: {
+                    id: 'actionPanel_craftingPlanMatchQuantity',
+                    label: 'Action panel: Crafting plan matches action quantity',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'Scale the Best Crafting Plan (shopping list, craft steps, totals) to the quantity entered in the action panel instead of always planning for 1.',
                 },
                 actions_artisanMaterialMode: {
                     id: 'actions_artisanMaterialMode',
