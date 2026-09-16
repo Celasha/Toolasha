@@ -44,7 +44,7 @@ vi.mock('../../utils/formatters.js', () => ({
     }),
 }));
 vi.mock('../../utils/game-lookups.js', () => ({ getActionHridFromName: vi.fn() }));
-vi.mock('../../utils/action-panel-helper.js', () => ({ findActionInput: vi.fn() }));
+vi.mock('../../utils/action-panel-helper.js', () => ({ findActionInput: vi.fn(), attachInputListeners: vi.fn() }));
 vi.mock('../../utils/marketplace-tabs.js', () => ({
     createMaterialTab: vi.fn(),
     removeMaterialTabsForOwner: vi.fn(),
@@ -119,5 +119,15 @@ describe('formatCraftingPlanSummary', () => {
 
     test('shows cost only when the plan has no craft time', () => {
         expect(formatCraftingPlanSummary({ strategy: 'buy', unitCost: 1700 }, 0)).toBe('1.7K/ea');
+    });
+
+    test('appends the total for a multi-unit plan', () => {
+        const plan = { strategy: 'craft', unitCost: 500, quantity: 3, totalCost: 1500 };
+        expect(formatCraftingPlanSummary(plan, 0)).toBe('500/ea (×3: 1500)');
+    });
+
+    test('omits the total when the plan cannot be priced', () => {
+        const plan = { strategy: 'craft', unitCost: Infinity, quantity: 3, totalCost: Infinity };
+        expect(formatCraftingPlanSummary(plan, 0)).toBe('?');
     });
 });

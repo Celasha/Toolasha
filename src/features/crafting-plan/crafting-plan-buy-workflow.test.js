@@ -79,7 +79,10 @@ vi.mock('../../utils/formatters.js', () => ({
     formatWithSeparator: vi.fn((v) => String(v)),
     timeReadable: vi.fn((v) => `${v}s`),
 }));
-vi.mock('../../utils/action-panel-helper.js', () => ({ findActionInput: mockFindActionInput }));
+vi.mock('../../utils/action-panel-helper.js', () => ({
+    findActionInput: mockFindActionInput,
+    attachInputListeners: vi.fn(),
+}));
 
 function buildMockTabContainer() {
     const container = document.createElement('div');

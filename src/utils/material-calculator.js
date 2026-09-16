@@ -29,7 +29,7 @@ function normalizeArtisanMode(mode) {
  * Get artisan material mode setting.
  * @returns {string}
  */
-function getArtisanMaterialMode() {
+export function getArtisanMaterialMode() {
     const setting = config.getSettingValue('actions_artisanMaterialMode', ARTISAN_MATERIAL_MODE.EXPECTED);
     return normalizeArtisanMode(setting);
 }
@@ -41,7 +41,7 @@ function getArtisanMaterialMode() {
  * @param {string} artisanMode
  * @returns {number}
  */
-function calculateTotalRequired(basePerAction, artisanBonus, numActions, artisanMode) {
+export function calculateTotalRequired(basePerAction, artisanBonus, numActions, artisanMode) {
     const materialsPerAction = basePerAction * (1 - artisanBonus);
     const useWorstCase =
         artisanMode === ARTISAN_MATERIAL_MODE.WORST_CASE ||

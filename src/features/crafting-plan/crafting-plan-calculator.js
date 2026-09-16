@@ -10,6 +10,7 @@ import { getShopCoinCost } from '../../utils/game-lookups.js';
 import { parseArtisanBonus, getDrinkConcentration } from '../../utils/tea-parser.js';
 import { calculateActionStats } from '../../utils/action-calculator.js';
 import { calculateEfficiencyMultiplier } from '../../utils/efficiency.js';
+import { calculateTotalRequired, getArtisanMaterialMode } from '../../utils/material-calculator.js';
 
 export const MAX_DEPTH = 15;
 
@@ -84,6 +85,7 @@ export function computeBestCraftingPlan(
     const itemDetails = dataManager.getItemDetails(itemHrid);
     const itemName = itemDetails?.name || itemHrid.split('/').pop();
     const isTradable = itemDetails?.isTradable ?? false;
+    const artisanMode = getArtisanMaterialMode();
 
     // Get market buy price (min of market ask and shop cost)
     let buyPrice = null;
@@ -118,6 +120,8 @@ export function computeBestCraftingPlan(
     // Check memo for previously computed unit cost
     if (memo.has(itemHrid)) {
         const cachedUnitCost = memo.get(itemHrid);
+        const actionsNeeded =
+            cachedUnitCost.strategy === 'craft' ? Math.ceil(quantity / (cachedUnitCost.outputCount || 1)) : 0;
         return {
             itemHrid,
             itemName,
@@ -128,14 +132,20 @@ export function computeBestCraftingPlan(
             buyPrice,
             craftCost: cachedUnitCost.craftCost,
             actionHrid: cachedUnitCost.actionHrid,
-            actionsNeeded:
-                cachedUnitCost.strategy === 'craft' ? Math.ceil(quantity / (cachedUnitCost.outputCount || 1)) : 0,
+            actionsNeeded,
             children:
                 cachedUnitCost.strategy === 'craft'
                     ? cachedUnitCost.childrenTemplate.map((c) =>
                           computeBestCraftingPlan(
                               c.itemHrid,
-                              c.qtyPerUnit * quantity,
+                              c.isUpgrade
+                                  ? actionsNeeded
+                                  : calculateTotalRequired(
+                                        c.basePerAction,
+                                        cachedUnitCost.artisanBonus,
+                                        actionsNeeded,
+                                        artisanMode
+                                    ),
                               mode,
                               visited,
                               memo,
@@ -231,18 +241,18 @@ export function computeBestCraftingPlan(
     const { actionHrid, action, outputCount } = production;
     const artisanBonus = getArtisanBonus(action.type);
     const actionsForOne = 1 / outputCount; // actions per 1 output item
+    const actionsNeeded = Math.ceil(quantity / outputCount);
 
     let craftCostPerUnit = 0;
-    const childrenTemplate = []; // { itemHrid, qtyPerUnit } for memo reconstruction
+    const childrenTemplate = []; // { itemHrid, basePerAction, isUpgrade } for memo reconstruction
 
     // Input items (affected by artisan bonus)
     if (action.inputItems) {
         for (const input of action.inputItems) {
             const inputCountPerAction = input.count || 1;
-            const reducedCount = inputCountPerAction * (1 - artisanBonus);
-            const qtyPerUnit = reducedCount * actionsForOne;
+            const qtyPerUnit = inputCountPerAction * (1 - artisanBonus) * actionsForOne;
 
-            const inputQty = Math.ceil(reducedCount * Math.ceil(quantity / outputCount));
+            const inputQty = calculateTotalRequired(inputCountPerAction, artisanBonus, actionsNeeded, artisanMode);
             const childPlan = computeBestCraftingPlan(
                 input.itemHrid,
                 inputQty,
@@ -258,17 +268,16 @@ export function computeBestCraftingPlan(
             );
 
             craftCostPerUnit += childPlan.unitCost * qtyPerUnit;
-            childrenTemplate.push({ itemHrid: input.itemHrid, qtyPerUnit });
+            childrenTemplate.push({ itemHrid: input.itemHrid, basePerAction: inputCountPerAction, isUpgrade: false });
         }
     }
 
     // Upgrade item (NOT affected by artisan bonus)
     if (action.upgradeItemHrid) {
         const qtyPerUnit = actionsForOne; // 1 upgrade per action
-        const upgradeQty = Math.ceil(quantity / outputCount);
         const upgradePlan = computeBestCraftingPlan(
             action.upgradeItemHrid,
-            upgradeQty,
+            actionsNeeded,
             mode,
             visited,
             memo,
@@ -281,7 +290,7 @@ export function computeBestCraftingPlan(
         );
 
         craftCostPerUnit += upgradePlan.unitCost * qtyPerUnit;
-        childrenTemplate.push({ itemHrid: action.upgradeItemHrid, qtyPerUnit });
+        childrenTemplate.push({ itemHrid: action.upgradeItemHrid, basePerAction: 1, isUpgrade: true });
     }
 
     visited.delete(itemHrid);
@@ -317,19 +326,18 @@ export function computeBestCraftingPlan(
         craftCost: craftCostPerUnit,
         actionHrid: strategy === 'craft' ? actionHrid : null,
         outputCount,
+        artisanBonus,
         childrenTemplate: strategy === 'craft' ? childrenTemplate : [],
     });
 
     // Build children for the actual quantities
     let children = [];
     if (!shouldBuy) {
-        const actionsNeeded = Math.ceil(quantity / outputCount);
         children = [];
         if (action.inputItems) {
             for (const input of action.inputItems) {
                 const inputCountPerAction = input.count || 1;
-                const reducedCount = inputCountPerAction * (1 - artisanBonus);
-                const inputQty = Math.ceil(reducedCount * actionsNeeded);
+                const inputQty = calculateTotalRequired(inputCountPerAction, artisanBonus, actionsNeeded, artisanMode);
                 children.push(
                     computeBestCraftingPlan(
                         input.itemHrid,
@@ -376,7 +384,7 @@ export function computeBestCraftingPlan(
         buyPrice,
         craftCost: craftCostPerUnit,
         actionHrid: strategy === 'craft' ? actionHrid : null,
-        actionsNeeded: strategy === 'craft' ? Math.ceil(quantity / outputCount) : 0,
+        actionsNeeded: strategy === 'craft' ? actionsNeeded : 0,
         children,
     };
 }

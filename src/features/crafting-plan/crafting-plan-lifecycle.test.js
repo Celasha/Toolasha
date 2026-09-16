@@ -67,7 +67,10 @@ vi.mock('../../utils/formatters.js', () => ({
     timeReadable: vi.fn((v) => `${v}s`),
 }));
 vi.mock('../../utils/game-lookups.js', () => ({ getActionHridFromName: vi.fn(() => '/actions/crafting/sword') }));
-vi.mock('../../utils/action-panel-helper.js', () => ({ findActionInput: mockFindActionInput }));
+vi.mock('../../utils/action-panel-helper.js', () => ({
+    findActionInput: mockFindActionInput,
+    attachInputListeners: vi.fn(),
+}));
 
 function buildMockTabContainer() {
     const container = document.createElement('div');

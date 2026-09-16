@@ -21,6 +21,7 @@
 
 import dataManager from '../../core/data-manager.js';
 import { computeBestCraftingPlan, getArtisanBonus, MAX_DEPTH } from './crafting-plan-calculator.js';
+import { calculateTotalRequired, getArtisanMaterialMode } from '../../utils/material-calculator.js';
 
 /**
  * Build the initial projected inventory ledger from the player's current unenhanced inventory.
@@ -88,6 +89,7 @@ export function computeInventoryAwareMissingMaterials({
 }) {
     const gameData = dataManager.getInitClientData();
     const actionDetailMap = gameData?.actionDetailMap || {};
+    const artisanMode = getArtisanMaterialMode();
 
     const ledger = buildInventoryLedger();
     const buyRequirements = new Map(); // itemHrid -> total missing
@@ -159,8 +161,9 @@ export function computeInventoryAwareMissingMaterials({
 
         visited.add(itemHrid);
         for (const input of recipe.inputItems) {
-            // Preserve current Best Crafting Plan expected-material rounding semantics.
-            const required = Math.ceil((input.count || 1) * (1 - recipe.artisanBonus) * actionsNeeded);
+            // Match the artisan mode selected on the Best Crafting Plan panel, so purchase
+            // quantities agree with what's displayed there.
+            const required = calculateTotalRequired(input.count || 1, recipe.artisanBonus, actionsNeeded, artisanMode);
             fulfill(input.itemHrid, required, depth + 1, visited, false, null);
         }
         if (recipe.upgradeItemHrid) {
