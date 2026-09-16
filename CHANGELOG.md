@@ -2,10 +2,9 @@
 
 ## [2.108.6](https://github.com/Celasha/Toolasha/compare/v2.108.5...v2.108.6) (2026-09-16)
 
-
 ### Bug Fixes
 
-* stop Openable Analytics breakdown items clipping off the panel edge ([b1b933d](https://github.com/Celasha/Toolasha/commit/b1b933d9cf323073c30b069aae6c880e033fbba9))
+- stop Openable Analytics breakdown items clipping off the panel edge ([b1b933d](https://github.com/Celasha/Toolasha/commit/b1b933d9cf323073c30b069aae6c880e033fbba9))
 
 ## [2.108.5](https://github.com/Celasha/Toolasha/compare/v2.108.4...v2.108.5) (2026-09-16)
 
