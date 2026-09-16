@@ -2,11 +2,10 @@
 
 ## [2.108.7](https://github.com/Celasha/Toolasha/compare/v2.108.6...v2.108.7) (2026-09-16)
 
-
 ### Bug Fixes
 
-* make Best Crafting Plan quantity- and artisan-mode-aware ([2c2af17](https://github.com/Celasha/Toolasha/commit/2c2af17b001eb6824db24c8897ee2b9cef351129))
-* merge duplicate-item rows in Openable Analytics drop breakdown ([049893a](https://github.com/Celasha/Toolasha/commit/049893a209351e5a468bd01b8c96e1d9f119ee6f))
+- make Best Crafting Plan quantity- and artisan-mode-aware ([2c2af17](https://github.com/Celasha/Toolasha/commit/2c2af17b001eb6824db24c8897ee2b9cef351129))
+- merge duplicate-item rows in Openable Analytics drop breakdown ([049893a](https://github.com/Celasha/Toolasha/commit/049893a209351e5a468bd01b8c96e1d9f119ee6f))
 
 ## [2.108.6](https://github.com/Celasha/Toolasha/compare/v2.108.5...v2.108.6) (2026-09-16)
 
