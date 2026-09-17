@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 2.108.8
+ * Version: 2.109.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -20910,6 +20910,28 @@ self.onmessage = function (e) {
 
     const CSS_CLASS = 'mwi-guild-credit-value';
 
+    // Mirrors the game's own MAX_GUILD_CREDIT_EXCHANGE_BATCH_COUNT constant (client_code
+    // main chunk), which caps the exchange modal's displayed "You give (Max: ...)" value.
+    const MAX_GUILD_CREDIT_EXCHANGE_BATCH_COUNT = 1_000_000;
+
+    /**
+     * Find the give-item's conversion rate for the credit type currently open in the exchange
+     * modal. Deliberately independent of market price data (unlike `rows` in _render, which
+     * skips unpriced items) since filling "ALL" shouldn't depend on the item having a listing.
+     * @param {Object} itemDetailMap
+     * @param {string} creditHrid
+     * @param {string} selectedItemName
+     * @returns {{hrid: string, itemCount: number}|null}
+     */
+    function findExchangeConversion(itemDetailMap, creditHrid, selectedItemName) {
+        for (const [hrid, item] of Object.entries(itemDetailMap)) {
+            if (item.name !== selectedItemName) continue;
+            const conv = (item.guildCreditConversions || []).find((c) => c.creditItemHrid === creditHrid);
+            if (conv) return { hrid, itemCount: conv.itemCount };
+        }
+        return null;
+    }
+
     function createGuildReturnTab(referenceTab, returnLabel, sessionId) {
         const returnTab = referenceTab.cloneNode(true);
         returnTab.setAttribute('data-mwi-custom-tab', 'true');
@@ -21260,10 +21282,15 @@ self.onmessage = function (e) {
                 if (itemSelector) {
                     const observer = new MutationObserver(() => {
                         this._renderExchangeAdvisor(modalEl, creditHrid, rows);
+                        this._renderExchangeAllButton(modalEl, creditHrid);
                     });
                     observer.observe(itemSelector, { subtree: true, childList: true, attributes: true });
                 }
             }
+
+            // "ALL" quick-fill button — the two quantity inputs only exist once an item is
+            // selected, so this also needs the initial call here (covers a pre-selected item).
+            this._renderExchangeAllButton(modalEl, creditHrid);
 
             // Shrine upgrade planner
             if (config.getSetting('guildShrineUpgradePlanner', true)) {
@@ -21557,6 +21584,78 @@ self.onmessage = function (e) {
     `;
 
             modalEl.querySelector(`.${CSS_CLASS}`)?.insertAdjacentElement('afterend', advisor);
+        }
+
+        /**
+         * Inject an "ALL" button next to the "You give" quantity input that fills it with the
+         * maximum the player can exchange (owned count floored to a whole batch), matching the
+         * game's own "You give (Max: ...)" label exactly.
+         * @param {HTMLElement} modalEl
+         * @param {string} creditHrid
+         */
+        _renderExchangeAllButton(modalEl, creditHrid) {
+            modalEl.querySelectorAll('.mwi-guild-exchange-all-btn').forEach((el) => el.remove());
+
+            // The "You give"/"You receive" fields render as type="text" inputs sharing the shared
+            // Input component's class (verified via live DOM: `Input_input__<hash>`), NOT
+            // type="number" — the Shrine Upgrade Planner injected lower in this same modal owns
+            // the type="number" inputs instead. Fixed JSX order: give-input first, receive second.
+            const giveInput = modalEl.querySelectorAll('input[class*="Input_input"]')[0];
+            if (!giveInput) return;
+
+            const gameData = dataManager.getInitClientData();
+            if (!gameData) return;
+
+            const selectorContainer = modalEl.querySelector('[class*="ItemSelector_itemContainer"]');
+            const itemSvg = selectorContainer?.querySelector('svg[aria-label]');
+            const selectedItemName = itemSvg?.getAttribute('aria-label') || null;
+            if (!selectedItemName) return;
+
+            const conversion = findExchangeConversion(gameData.itemDetailMap, creditHrid, selectedItemName);
+            if (!conversion) return;
+
+            const inventory = dataManager.getInventory() || [];
+            const owned = inventory
+                .filter(
+                    (item) => item.itemHrid === conversion.hrid && item.itemLocationHrid === '/item_locations/inventory'
+                )
+                .reduce((sum, item) => sum + (item.count || 0), 0);
+
+            const maxBatches = Math.min(Math.floor(owned / conversion.itemCount), MAX_GUILD_CREDIT_EXCHANGE_BATCH_COUNT);
+            const maxUnits = maxBatches * conversion.itemCount;
+            if (maxUnits <= 0) return;
+
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'mwi-guild-exchange-all-btn';
+            btn.textContent = 'ALL';
+            btn.title = `Fill max: ${maxUnits.toLocaleString()}`;
+            btn.style.cssText = `
+            flex-shrink: 0; padding: 6px 10px; font-size: 12px; font-weight: 700;
+            border-radius: 6px; border: none; background: #6366f1; color: #fff;
+            cursor: pointer; line-height: 1;
+        `;
+            btn.addEventListener('mouseenter', () => {
+                btn.style.background = '#4f46e5';
+            });
+            btn.addEventListener('mouseleave', () => {
+                btn.style.background = '#6366f1';
+            });
+            btn.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                reactInput_js.setReactInputValue(giveInput, maxUnits);
+            });
+
+            // Put the button and the input's own generic wrapper side by side in the same cell
+            // (one level up from the input) so it sits inline to the left, matching the native
+            // Marketplace quantity row's Min/-/+/Max buttons rather than floating above the input.
+            const inputCell = giveInput.parentElement?.parentElement;
+            if (!inputCell) return;
+            inputCell.style.display = 'flex';
+            inputCell.style.alignItems = 'center';
+            inputCell.style.gap = '6px';
+            inputCell.insertBefore(btn, inputCell.firstChild);
         }
 
         _renderTrialSignup(modalEl) {
@@ -22111,6 +22210,7 @@ self.onmessage = function (e) {
             document.querySelectorAll('.mwi-trial-tier').forEach((el) => el.remove());
             document.querySelectorAll('.mwi-exchange-advisor').forEach((el) => el.remove());
             document.querySelectorAll('.mwi-shrine-planner').forEach((el) => el.remove());
+            document.querySelectorAll('.mwi-guild-exchange-all-btn').forEach((el) => el.remove());
             this.initialized = false;
         }
     }
