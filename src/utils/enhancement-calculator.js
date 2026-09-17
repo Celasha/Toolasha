@@ -67,7 +67,7 @@ export const BASE_SUCCESS_RATES = [
  * @param {number} params.itemLevel - Item level being enhanced
  * @returns {number} Success rate multiplier (e.g., 1.0519 = 105.19% of base rates)
  */
-function calculateSuccessMultiplier(params) {
+export function calculateSuccessMultiplier(params) {
     const { enhancingLevel, toolBonus, itemLevel } = params;
 
     // Total bonus calculation
@@ -86,6 +86,27 @@ function calculateSuccessMultiplier(params) {
     }
 
     return totalBonus;
+}
+
+/**
+ * Calculate the expected success chance for a single enhancement attempt, without the Markov
+ * chain machinery calculateEnhancement() needs (no math.js dependency) - just the base rate for
+ * this level scaled by the success multiplier. Used to compare an attempt's actual outcome
+ * against the chance the game modeled for it (Enhancing Luck).
+ * @param {number} level - Current enhancement level being attempted (0-indexed, e.g. 0 = a +0→+1 attempt)
+ * @param {number} enhancingLevel - Effective enhancing level (base + tea bonus)
+ * @param {number} toolBonus - Tool success bonus % (already includes equipment + house bonus)
+ * @param {number} itemLevel - Item level being enhanced
+ * @returns {number|null} Success chance in [0, 1], or null if this level has no base rate (e.g. beyond +20)
+ */
+export function calculateSingleLevelSuccessChance(level, enhancingLevel, toolBonus, itemLevel) {
+    const baseRate = BASE_SUCCESS_RATES[level];
+    if (baseRate === undefined) {
+        return null;
+    }
+
+    const successMultiplier = calculateSuccessMultiplier({ enhancingLevel, toolBonus, itemLevel });
+    return Math.max(0, Math.min(1, (baseRate / 100) * successMultiplier));
 }
 
 /**

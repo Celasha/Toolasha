@@ -10,6 +10,8 @@ import enhancementUI from './enhancement-ui.js';
 import config from '../../core/config.js';
 import marketAPI from '../../api/marketplace.js';
 import { calculateSuccessXP, calculateFailureXP, calculateAdjustedAttemptCount } from './enhancement-xp.js';
+import { calculateSingleLevelSuccessChance } from '../../utils/enhancement-calculator.js';
+import { getAutoDetectedParams } from '../../utils/enhancement-config.js';
 
 /**
  * Setup enhancement event handlers
@@ -319,6 +321,28 @@ async function trackMaterialCosts(itemHrid) {
 }
 
 /**
+ * Compute the game's modeled success chance for an attempt at the given item/level, using live
+ * auto-detected character state (not the enhance-sim's manual/simulator settings, which may not
+ * reflect what actually happened). Returns null if it can't be computed (e.g. item level unknown).
+ * @param {string} itemHrid - Item HRID being enhanced
+ * @param {number} level - Enhancement level being attempted (0-indexed)
+ * @returns {number|null} Success chance in [0, 1], or null
+ */
+function getExpectedSuccessChance(itemHrid, level) {
+    try {
+        const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
+        const itemLevel = itemDetailMap[itemHrid]?.itemLevel;
+        if (typeof itemLevel !== 'number') return null;
+
+        const { enhancingLevel, toolBonus } = getAutoDetectedParams();
+        return calculateSingleLevelSuccessChance(level, enhancingLevel, toolBonus, itemLevel);
+    } catch (error) {
+        console.error('[EnhancementHandlers] Failed to compute expected success chance:', error);
+        return null;
+    }
+}
+
+/**
  * Handle enhancement result (success or failure)
  * @param {Object} action - Enhancement action data
  * @param {Object} _data - Full WebSocket message data
@@ -498,11 +522,13 @@ async function handleEnhancementResult(action, _data) {
         // Skip on the first attempt of a newly created session — we don't have a reliable
         // baseline level yet, but lastAttempt is still set so the next attempt works correctly.
         if (!justCreatedNewSession) {
+            const expectedChance = getExpectedSuccessChance(itemHrid, previousLevel);
+
             if (wasSuccess) {
                 const xpGain = calculateSuccessXP(previousLevel, itemHrid);
                 currentSession.totalXP += xpGain;
 
-                await enhancementTracker.recordSuccess(previousLevel, newLevel, wasBlessed);
+                await enhancementTracker.recordSuccess(previousLevel, newLevel, wasBlessed, expectedChance);
                 enhancementUI.scheduleUpdate(); // Update UI after success
 
                 // Check if we've reached target
@@ -513,7 +539,7 @@ async function handleEnhancementResult(action, _data) {
                 const xpGain = calculateFailureXP(previousLevel, itemHrid);
                 currentSession.totalXP += xpGain;
 
-                await enhancementTracker.recordFailure(previousLevel, newLevel);
+                await enhancementTracker.recordFailure(previousLevel, newLevel, expectedChance);
                 enhancementUI.scheduleUpdate(); // Update UI after failure
             }
         }

@@ -300,9 +300,11 @@ export class EnhancementTracker {
      * @param {number} previousLevel - Level before success
      * @param {number} newLevel - New level after success
      * @param {boolean} wasBlessed - Whether this success jumped +2 or more levels (Blessed Tea)
+     * @param {number|null} [expectedChance] - The game's modeled success chance for this
+     *   attempt (0-1), for Enhancing Luck
      * @returns {Promise<void>}
      */
-    async recordSuccess(previousLevel, newLevel, wasBlessed = false) {
+    async recordSuccess(previousLevel, newLevel, wasBlessed = false, expectedChance = null) {
         const context = this._captureContext();
         if (!context) {
             return;
@@ -313,7 +315,7 @@ export class EnhancementTracker {
             return;
         }
 
-        recordSuccess(session, previousLevel, newLevel, wasBlessed);
+        recordSuccess(session, previousLevel, newLevel, wasBlessed, expectedChance);
 
         // Check if target reached
         if (session.state === SessionState.COMPLETED) {
@@ -334,9 +336,11 @@ export class EnhancementTracker {
      * Record a failed enhancement attempt
      * @param {number} previousLevel - Level that failed
      * @param {number} newLevel - Actual level after failure
+     * @param {number|null} [expectedChance] - The game's modeled success chance for this
+     *   attempt (0-1), for Enhancing Luck
      * @returns {Promise<void>}
      */
-    async recordFailure(previousLevel, newLevel) {
+    async recordFailure(previousLevel, newLevel, expectedChance = null) {
         const context = this._captureContext();
         if (!context) {
             return;
@@ -347,7 +351,7 @@ export class EnhancementTracker {
             return;
         }
 
-        recordFailure(session, previousLevel, newLevel);
+        recordFailure(session, previousLevel, newLevel, expectedChance);
         await saveSessions(context.sessions, context.characterId);
     }
 

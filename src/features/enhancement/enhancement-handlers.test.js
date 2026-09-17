@@ -83,24 +83,26 @@ const mocks = vi.hoisted(() => {
             this.currentSessionId = sessionId;
             return true;
         },
-        async recordSuccess(previousLevel, newLevel, wasBlessed = false) {
+        async recordSuccess(previousLevel, newLevel, wasBlessed = false, expectedChance = null) {
             const session = this.getCurrentSession();
             if (!session) return;
             session.totalAttempts += 1;
             session.totalSuccesses += 1;
             if (wasBlessed) session.totalBlessed += 1;
             session.currentLevel = newLevel;
+            session.lastExpectedChance = expectedChance;
             if (newLevel >= session.targetLevel) {
                 session.state = 'completed';
                 this.currentSessionId = null;
             }
         },
-        async recordFailure(previousLevel, newLevel) {
+        async recordFailure(previousLevel, newLevel, expectedChance = null) {
             const session = this.getCurrentSession();
             if (!session) return;
             session.totalAttempts += 1;
             session.totalFailures += 1;
             session.currentLevel = newLevel;
+            session.lastExpectedChance = expectedChance;
         },
         async trackMaterialCost() {},
         async trackCoinCost() {},
@@ -113,6 +115,14 @@ const mocks = vi.hoisted(() => {
             return [];
         }),
         getInitClientData: vi.fn(() => ({ itemDetailMap: {} })),
+        getEquipment: vi.fn(() => new Map()),
+        getSkills: vi.fn(() => [{ skillHrid: '/skills/enhancing', level: 50 }]),
+        getActionDrinkSlots: vi.fn(() => []),
+        getHouseRoomLevel: vi.fn(() => 0),
+        getHouseRooms: vi.fn(() => new Map()),
+        getCommunityBuffLevel: vi.fn(() => 0),
+        getAchievementBuffFlatBoost: vi.fn(() => 0),
+        getAchievementBuffRatioBoost: vi.fn(() => 0),
     };
 
     const config = { getSetting: vi.fn(() => true) };
@@ -185,6 +195,7 @@ beforeEach(() => {
         mocks.callOrder.push('inspect:getCurrentActions');
         return [];
     });
+    mocks.dataManager.getInitClientData.mockReturnValue({ itemDetailMap: {} });
     mocks.config.getSetting.mockReturnValue(true);
 });
 
@@ -248,6 +259,32 @@ describe('Enhancement Tracker mid-run bootstrap (TLA-043)', () => {
         const session = tracker.getCurrentSession();
         expect(session).toBeTruthy();
         expect(session.totalAttempts).toBe(1);
+    });
+
+    test('ET-MR21: a known item level computes and passes a live expected success chance to the tracker', async () => {
+        mocks.dataManager.getInitClientData.mockReturnValue({
+            itemDetailMap: { '/items/tome': { itemLevel: 10 } },
+        });
+
+        setupEnhancementHandlers();
+        await invoke('action_completed', completedPayload({ currentCount: 1, primaryItemHash: '/items/tome::0' }));
+
+        const session = tracker.getCurrentSession();
+        // previousLevel 0, enhancingLevel 50 (mocked skill), toolBonus 0, itemLevel 10 - above item
+        // level, so multiplier > 1; base rate for level 0 is 50%.
+        expect(session.lastExpectedChance).not.toBeNull();
+        expect(session.lastExpectedChance).toBeGreaterThan(0.5);
+        expect(session.lastExpectedChance).toBeLessThanOrEqual(1);
+    });
+
+    test('ET-MR22: an unknown item level (not in itemDetailMap) passes a null expected chance rather than throwing', async () => {
+        setupEnhancementHandlers();
+
+        await invoke('action_completed', completedPayload({ currentCount: 1, primaryItemHash: '/items/tome::0' }));
+
+        const session = tracker.getCurrentSession();
+        expect(session).toBeTruthy();
+        expect(session.lastExpectedChance).toBeNull();
     });
 
     test('ET-MR04: unrelated action_completed never creates an Enhancement Tracker session', async () => {

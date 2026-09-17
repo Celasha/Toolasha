@@ -1,7 +1,11 @@
 import { afterEach, beforeAll, describe, expect, test } from 'vitest';
 import * as mathJs from 'mathjs';
 
-import { calculateEnhancement, isMathJsAvailable } from './enhancement-calculator.js';
+import {
+    calculateEnhancement,
+    isMathJsAvailable,
+    calculateSingleLevelSuccessChance,
+} from './enhancement-calculator.js';
 
 beforeAll(() => {
     globalThis.math = mathJs;
@@ -110,5 +114,38 @@ describe('calculateEnhancement when math.js failed to load (e.g. blocked cdnjs.c
                 protectFrom: 0,
             })
         ).toThrow('math.js is not loaded');
+    });
+});
+
+describe('calculateSingleLevelSuccessChance - no math.js dependency, used for Enhancing Luck', () => {
+    test('matches the base rate exactly with no bonuses and no level advantage', () => {
+        // Level 0 (+0->+1): base rate 50%. enhancingLevel === itemLevel, toolBonus 0 -> multiplier 1.
+        const chance = calculateSingleLevelSuccessChance(0, 10, 0, 10);
+        expect(chance).toBeCloseTo(0.5, 10);
+    });
+
+    test('a tool success bonus scales the base rate up', () => {
+        // 45% base (+2) * 1.20 (20% tool bonus) = 54%
+        const chance = calculateSingleLevelSuccessChance(1, 10, 20, 10);
+        expect(chance).toBeCloseTo(0.54, 10);
+    });
+
+    test('being below the item level applies the deficit penalty', () => {
+        const atLevel = calculateSingleLevelSuccessChance(0, 10, 0, 10);
+        const belowLevel = calculateSingleLevelSuccessChance(0, 5, 0, 10);
+        expect(belowLevel).toBeLessThan(atLevel);
+    });
+
+    test('is clamped to [0, 1] even with an extreme penalty or bonus', () => {
+        const veryLow = calculateSingleLevelSuccessChance(0, 1, 0, 1000);
+        expect(veryLow).toBeGreaterThanOrEqual(0);
+
+        const veryHigh = calculateSingleLevelSuccessChance(0, 10000, 500, 1);
+        expect(veryHigh).toBeLessThanOrEqual(1);
+    });
+
+    test('returns null for a level with no base rate (out of the modeled +1..+20 range)', () => {
+        expect(calculateSingleLevelSuccessChance(20, 10, 0, 10)).toBeNull();
+        expect(calculateSingleLevelSuccessChance(-1, 10, 0, 10)).toBeNull();
     });
 });

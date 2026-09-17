@@ -66,6 +66,7 @@ export function createSession(itemHrid, itemName, startLevel, targetLevel, prote
         totalSuccesses: 0,
         totalFailures: 0,
         totalBlessed: 0, // Successes that jumped +2 or more levels (Blessed Tea)
+        totalExpectedSuccesses: 0, // Sum of the game's modeled success chance across all attempts (Enhancing Luck)
         totalXP: 0, // Total XP gained from enhancements
         longestSuccessStreak: 0,
         longestFailureStreak: 0,
@@ -91,6 +92,7 @@ export function initializeLevelTracking(session, level) {
             fail: 0,
             blessed: 0,
             successRate: 0,
+            expectedSuccessSum: 0, // Sum of the game's modeled success chance across attempts at this level
         };
     }
 }
@@ -115,8 +117,11 @@ export function updateSuccessRate(session, level) {
  * @param {number} newLevel - New level after success
  * @param {boolean} wasBlessed - Whether this success jumped +2 or more levels (Blessed Tea).
  *   A subtype of success, not counted as an additional attempt/success on top of it.
+ * @param {number|null} [expectedChance] - The game's modeled success chance for this attempt
+ *   (0-1), for Enhancing Luck. Omitted/null when it couldn't be computed (e.g. live context
+ *   unavailable) - the attempt still counts toward success/fail totals, just not luck.
  */
-export function recordSuccess(session, previousLevel, newLevel, wasBlessed = false) {
+export function recordSuccess(session, previousLevel, newLevel, wasBlessed = false, expectedChance = null) {
     // Initialize tracking if needed for the level that succeeded
     initializeLevelTracking(session, previousLevel);
 
@@ -124,6 +129,11 @@ export function recordSuccess(session, previousLevel, newLevel, wasBlessed = fal
     session.attemptsPerLevel[previousLevel].success++;
     session.totalAttempts++;
     session.totalSuccesses++;
+
+    if (typeof expectedChance === 'number') {
+        session.attemptsPerLevel[previousLevel].expectedSuccessSum += expectedChance;
+        session.totalExpectedSuccesses += expectedChance;
+    }
 
     if (wasBlessed) {
         session.attemptsPerLevel[previousLevel].blessed++;
@@ -166,8 +176,11 @@ export function recordSuccess(session, previousLevel, newLevel, wasBlessed = fal
  * Record a failed enhancement attempt
  * @param {Object} session - Session object
  * @param {number} previousLevel - Level that failed (level we tried to enhance from)
+ * @param {number} newLevel - Actual level after failure
+ * @param {number|null} [expectedChance] - The game's modeled success chance for this attempt
+ *   (0-1), for Enhancing Luck. See recordSuccess() for when this is omitted.
  */
-export function recordFailure(session, previousLevel, newLevel) {
+export function recordFailure(session, previousLevel, newLevel, expectedChance = null) {
     // Initialize tracking if needed for the level that failed
     initializeLevelTracking(session, previousLevel);
 
@@ -175,6 +188,11 @@ export function recordFailure(session, previousLevel, newLevel) {
     session.attemptsPerLevel[previousLevel].fail++;
     session.totalAttempts++;
     session.totalFailures++;
+
+    if (typeof expectedChance === 'number') {
+        session.attemptsPerLevel[previousLevel].expectedSuccessSum += expectedChance;
+        session.totalExpectedSuccesses += expectedChance;
+    }
 
     // Update success rate for this level
     updateSuccessRate(session, previousLevel);
@@ -292,6 +310,41 @@ export function getLevelSuccessRate(session, level) {
 export function getOverallSuccessRate(session) {
     if (session.totalAttempts === 0) return 0;
     return (session.totalSuccesses / session.totalAttempts) * 100;
+}
+
+/**
+ * Calculate Enhancing Luck for a specific level: actual successes vs. the game's modeled
+ * expected successes, mirroring Loot Luck's actual-vs-expected percentage. Requires at least one
+ * attempt with a recorded expected chance; older attempts recorded before this feature existed
+ * have no expected data and are excluded rather than shown as a misleading 0% or infinite luck.
+ * @param {Object} session - Session object
+ * @param {number} level - Enhancement level
+ * @returns {{luckPercent: number, actualSuccesses: number, expectedSuccesses: number}|null}
+ */
+export function getLevelEnhancingLuck(session, level) {
+    const levelData = session.attemptsPerLevel[level];
+    if (!levelData || !levelData.expectedSuccessSum) return null;
+
+    return {
+        luckPercent: (levelData.success / levelData.expectedSuccessSum - 1) * 100,
+        actualSuccesses: levelData.success,
+        expectedSuccesses: levelData.expectedSuccessSum,
+    };
+}
+
+/**
+ * Calculate overall Enhancing Luck across the whole session. See getLevelEnhancingLuck().
+ * @param {Object} session - Session object
+ * @returns {{luckPercent: number, actualSuccesses: number, expectedSuccesses: number}|null}
+ */
+export function getOverallEnhancingLuck(session) {
+    if (!session.totalExpectedSuccesses) return null;
+
+    return {
+        luckPercent: (session.totalSuccesses / session.totalExpectedSuccesses - 1) * 100,
+        actualSuccesses: session.totalSuccesses,
+        expectedSuccesses: session.totalExpectedSuccesses,
+    };
 }
 
 /**
@@ -426,10 +479,16 @@ export function normalizeSession(session) {
     if (typeof session.totalBlessed !== 'number') {
         session.totalBlessed = 0;
     }
+    if (typeof session.totalExpectedSuccesses !== 'number') {
+        session.totalExpectedSuccesses = 0;
+    }
 
     for (const levelData of Object.values(session.attemptsPerLevel || {})) {
         if (typeof levelData.blessed !== 'number') {
             levelData.blessed = 0;
+        }
+        if (typeof levelData.expectedSuccessSum !== 'number') {
+            levelData.expectedSuccessSum = 0;
         }
     }
 

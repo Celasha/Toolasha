@@ -5,7 +5,12 @@
  */
 
 import enhancementTracker from './enhancement-tracker.js';
-import { SessionState, getSessionDuration } from './enhancement-session.js';
+import {
+    SessionState,
+    getSessionDuration,
+    getLevelEnhancingLuck,
+    getOverallEnhancingLuck,
+} from './enhancement-session.js';
 import dataManager from '../../core/data-manager.js';
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
@@ -930,6 +935,18 @@ class EnhancementUI {
             </div>
         `;
 
+        const overallLuck = getOverallEnhancingLuck(session);
+        if (overallLuck) {
+            const luckColor = overallLuck.luckPercent >= 0 ? STYLE.colors.success : STYLE.colors.danger;
+            const luckSign = overallLuck.luckPercent >= 0 ? '+' : '';
+            html += `
+            <div style="margin-top: 8px; display: flex; justify-content: space-between; font-size: 13px;">
+                <span>Enhancing Luck:</span>
+                <strong style="color: ${luckColor};" title="${overallLuck.actualSuccesses} actual vs ${overallLuck.expectedSuccesses.toFixed(2)} expected successes">${luckSign}${overallLuck.luckPercent.toFixed(1)}%</strong>
+            </div>
+            `;
+        }
+
         // Material costs
         html += this.generateMaterialCostsHTML(session);
 
@@ -973,12 +990,21 @@ class EnhancementUI {
             const blessedSuffix =
                 blessedCount > 0 ? ` <span style="color: ${STYLE.colors.accent};">(${blessedCount}✦)</span>` : '';
 
+            const levelLuck = getLevelEnhancingLuck(session, level);
+            let luckCell = '—';
+            if (levelLuck) {
+                const luckColor = levelLuck.luckPercent >= 0 ? STYLE.colors.success : STYLE.colors.danger;
+                const luckSign = levelLuck.luckPercent >= 0 ? '+' : '';
+                luckCell = `<span style="color: ${luckColor};">${luckSign}${levelLuck.luckPercent.toFixed(0)}%</span>`;
+            }
+
             rows += `
                 <tr style="${rowStyle}">
                     <td style="${compactCellStyle} text-align: center;">${level}</td>
                     <td style="${compactCellStyle} text-align: right;">${levelData.success}${blessedSuffix}</td>
                     <td style="${compactCellStyle} text-align: right;">${levelData.fail}</td>
                     <td style="${compactCellStyle} text-align: right;">${rate}</td>
+                    <td style="${compactCellStyle} text-align: right;">${luckCell}</td>
                 </tr>
             `;
         }
@@ -991,6 +1017,7 @@ class EnhancementUI {
                         <th style="${compactHeaderStyle}">Success</th>
                         <th style="${compactHeaderStyle}">Fail</th>
                         <th style="${compactHeaderStyle}">%</th>
+                        <th style="${compactHeaderStyle}">Luck</th>
                     </tr>
                 </thead>
                 <tbody>
