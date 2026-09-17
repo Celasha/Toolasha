@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.109.0](https://github.com/Celasha/Toolasha/compare/v2.108.8...v2.109.0) (2026-09-17)
+
+### Features
+
+- add ALL button to guild credit exchange "You give" input ([5f2e2c6](https://github.com/Celasha/Toolasha/commit/5f2e2c668567b3e7d0d71393676b9c3dcfd28937))
+
 ## [2.108.8](https://github.com/Celasha/Toolasha/compare/v2.108.7...v2.108.8) (2026-09-17)
 
 ### Bug Fixes
