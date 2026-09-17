@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.108.8](https://github.com/Celasha/Toolasha/compare/v2.108.7...v2.108.8) (2026-09-17)
+
+### Bug Fixes
+
+- capture failed/canceled dungeon runs so Avg Run reflects real time cost ([512d910](https://github.com/Celasha/Toolasha/commit/512d91094815b17607530a335445b2cb0d003b8b))
+- respect buy-side pricing mode in Best Crafting Plan; add cheapest dungeon key pricing ([8b51e3c](https://github.com/Celasha/Toolasha/commit/8b51e3c1f62a8b203e0bec22e54033bd10d98fcb))
+
 ## [2.108.7](https://github.com/Celasha/Toolasha/compare/v2.108.6...v2.108.7) (2026-09-16)
 
 ### Bug Fixes
