@@ -8,7 +8,7 @@
  * dungeon match, and 10-minute freshness all pass.
  */
 
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     currentActions: [],
@@ -17,16 +17,27 @@ const mocks = vi.hoisted(() => ({
     dungeonInfoByHrid: {},
     savedTeamRuns: [],
     scrubCalls: 0,
+    socketEventHandlers: {},
 }));
 
 vi.mock('../../core/websocket.js', () => ({
-    default: { on: vi.fn(), off: vi.fn() },
+    default: {
+        on: vi.fn(),
+        off: vi.fn(),
+        onSocketEvent: vi.fn((eventType, handler) => {
+            mocks.socketEventHandlers[eventType] = handler;
+        }),
+        offSocketEvent: vi.fn((eventType) => {
+            delete mocks.socketEventHandlers[eventType];
+        }),
+    },
 }));
 
 vi.mock('../../core/data-manager.js', () => ({
     default: {
         getCurrentActions: vi.fn(() => mocks.currentActions),
         getActionDetails: vi.fn((hrid) => mocks.actionDetailsByHrid[hrid] || null),
+        getCurrentCharacterId: vi.fn(() => 'test-character'),
     },
 }));
 
@@ -64,6 +75,7 @@ vi.mock('../../utils/timer-registry.js', () => ({
 const { default: dungeonTracker } = await import('./dungeon-tracker.js');
 const { default: storage } = await import('../../core/storage.js');
 const { default: dungeonTrackerStorage } = await import('./dungeon-tracker-storage.js');
+const { default: webSocketHook } = await import('../../core/websocket.js');
 
 const DUNGEON_HRID = '/actions/combat/pirate_cove_dungeon';
 
@@ -89,6 +101,7 @@ beforeEach(() => {
     mocks.dungeonInfoByHrid = { [DUNGEON_HRID]: { name: 'Pirate Cove', maxWaves: 10 } };
     mocks.savedTeamRuns = [];
     mocks.scrubCalls = 0;
+    mocks.socketEventHandlers = {};
 
     dungeonTracker.isTracking = false;
     dungeonTracker.currentRun = null;
@@ -427,6 +440,28 @@ describe('Fail/cancel capture: real time cost of unsuccessful attempts is persis
         expect(saved.validated).toBe(false);
     });
 
+    test('a hibernation flag detected mid-run is carried into the persisted fail record', async () => {
+        await dungeonTracker.onNewBattle({ wave: 0, battleId: 607, combatStartTime: 0 });
+        dungeonTracker.currentRun.hibernationDetected = true;
+
+        const failTimestamp = 90 * 1000;
+        dungeonTracker.onPartyFailed(failTimestamp, {});
+        await flushAsync();
+
+        expect(mocks.savedTeamRuns).toHaveLength(1);
+        expect(mocks.savedTeamRuns[0].run.hibernationDetected).toBe(true);
+    });
+
+    test('no hibernation flag defaults to false in the persisted record', async () => {
+        await dungeonTracker.onNewBattle({ wave: 0, battleId: 608, combatStartTime: 0 });
+
+        dungeonTracker.onPartyFailed(90 * 1000, {});
+        await flushAsync();
+
+        expect(mocks.savedTeamRuns).toHaveLength(1);
+        expect(mocks.savedTeamRuns[0].run.hibernationDetected).toBe(false);
+    });
+
     test('resetTracking() still fully clears tracking state after capturing a fail', async () => {
         await dungeonTracker.onNewBattle({ wave: 0, battleId: 602, combatStartTime: 0 });
         dungeonTracker.onPartyFailed(Date.now(), {});
@@ -490,5 +525,223 @@ describe('Fail/cancel capture: real time cost of unsuccessful attempts is persis
         await flushAsync();
 
         expect(mocks.savedTeamRuns).toHaveLength(0);
+    });
+});
+
+describe('Fresh-start false-completion guard: wavesCompleted, not startTime truthiness', () => {
+    test('a realistic nonzero combatStartTime does not make the first Key counts message look like a completion', async () => {
+        // Regression for a real bug: the old guard checked currentRun.startTime truthiness, which
+        // is true for every run (restored or fresh) once combatStartTime is a real epoch value -
+        // only the test suite's convenience use of combatStartTime: 0 masked it (0 is falsy).
+        const realisticStart = new Date('2026-09-10T12:00:00Z').getTime();
+        await dungeonTracker.onNewBattle({ wave: 0, battleId: 700, combatStartTime: realisticStart });
+
+        dungeonTracker.onKeyCountsMessage(realisticStart + 5000, keyCountMessage('[Alice - 1]'));
+        await flushAsync();
+
+        expect(mocks.savedTeamRuns).toHaveLength(0);
+        expect(dungeonTracker.isTracking).toBe(true);
+        expect(dungeonTracker.firstKeyCountTimestamp).toBe(realisticStart + 5000);
+        expect(dungeonTracker.lastKeyCountTimestamp).toBe(realisticStart + 5000);
+    });
+
+    test('a restored run that already completed a wave without ever capturing Key counts treats the next message as completion', async () => {
+        mocks.savedInProgressRun = {
+            battleId: 800,
+            dungeonHrid: DUNGEON_HRID,
+            tier: 0,
+            startTime: 1000,
+            currentWave: 3,
+            maxWaves: 10,
+            wavesCompleted: 2, // a wave completed under our tracking, but no anchor was ever captured
+            waveTimes: [1000, 1200],
+            waveStartTime: 2000,
+            lastUpdateTime: Date.now() - 1000,
+            firstKeyCountTimestamp: null,
+            lastKeyCountTimestamp: null,
+            keyCountsMap: {},
+            keyCountMessages: [],
+        };
+
+        dungeonTracker.checkForActiveDungeon();
+        await dungeonTracker.onNewBattle({ wave: 3, battleId: 800, combatStartTime: Date.now() });
+
+        expect(dungeonTracker.isTracking).toBe(true);
+        expect(dungeonTracker.firstKeyCountTimestamp).toBeNull();
+        expect(dungeonTracker.currentRun.wavesCompleted).toBe(2);
+
+        dungeonTracker.onKeyCountsMessage(Date.now() + 5000, keyCountMessage('[Alice - 9]'));
+        await flushAsync();
+
+        expect(mocks.savedTeamRuns).toHaveLength(1);
+        expect(mocks.savedTeamRuns[0].run.result).toBeUndefined(); // successful completion, not a fail
+    });
+});
+
+describe('buildTimestampFromParts: year-rollover for DOM-reconstructed chat timestamps', () => {
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    test('a message from December is attributed to the previous year when parsed in January', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date(2027, 0, 5, 12, 0, 0)); // "now" = Jan 5, 2027
+
+        const timestamp = dungeonTracker.buildTimestampFromParts(12, 20, 18, 30, 0); // Dec 20, no year in source
+
+        expect(timestamp.getFullYear()).toBe(2026);
+        expect(timestamp.getMonth()).toBe(11); // December
+        expect(timestamp.getDate()).toBe(20);
+    });
+
+    test('an ordinary same-year message is not shifted', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date(2026, 5, 15, 12, 0, 0)); // "now" = June 15, 2026
+
+        const timestamp = dungeonTracker.buildTimestampFromParts(6, 10, 9, 0, 0); // June 10, same year
+
+        expect(timestamp.getFullYear()).toBe(2026);
+        expect(timestamp.getMonth()).toBe(5);
+        expect(timestamp.getDate()).toBe(10);
+    });
+
+    test('a timestamp exactly equal to now is not shifted to the previous year', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date(2026, 5, 15, 12, 0, 0));
+
+        const timestamp = dungeonTracker.buildTimestampFromParts(6, 15, 12, 0, 0);
+
+        expect(timestamp.getFullYear()).toBe(2026);
+    });
+});
+
+describe('Wave-number monotonicity guard', () => {
+    test('startWave ignores a wave number that goes backward', async () => {
+        await dungeonTracker.onNewBattle({ wave: 3, battleId: 900, combatStartTime: 1000 });
+        dungeonTracker.startWave({ wave: 5, combatStartTime: 2000 });
+        expect(dungeonTracker.currentRun.currentWave).toBe(5);
+
+        // A stale/reordered wave arriving after wave 5 must not roll currentWave back.
+        dungeonTracker.startWave({ wave: 4, combatStartTime: 3000 });
+        expect(dungeonTracker.currentRun.currentWave).toBe(5);
+        expect(dungeonTracker.waveStartTime.getTime()).toBe(2000);
+    });
+
+    test('startWave still accepts a repeat of the same wave number', async () => {
+        await dungeonTracker.onNewBattle({ wave: 3, battleId: 902, combatStartTime: 1000 });
+        dungeonTracker.startWave({ wave: 3, combatStartTime: 2000 });
+
+        expect(dungeonTracker.currentRun.currentWave).toBe(3);
+        expect(dungeonTracker.waveStartTime.getTime()).toBe(2000);
+    });
+
+    test('onActionCompleted ignores a completed-wave number that goes backward', async () => {
+        await dungeonTracker.onNewBattle({ wave: 0, battleId: 901, combatStartTime: 0 });
+
+        dungeonTracker.onActionCompleted({
+            endCharacterAction: { actionHrid: DUNGEON_HRID, wave: 5, isDone: false, difficultyTier: 0 },
+        });
+        expect(dungeonTracker.currentRun.wavesCompleted).toBe(5);
+        expect(dungeonTracker.waveTimes).toHaveLength(1);
+
+        dungeonTracker.onActionCompleted({
+            endCharacterAction: { actionHrid: DUNGEON_HRID, wave: 3, isDone: false, difficultyTier: 0 },
+        });
+        expect(dungeonTracker.currentRun.wavesCompleted).toBe(5); // unchanged
+        expect(dungeonTracker.waveTimes).toHaveLength(1); // no spurious sample added
+    });
+});
+
+describe('Heartbeat watchdog: detects a stall visibilitychange might miss', () => {
+    beforeEach(() => {
+        // initialize()/cleanup() touch document.addEventListener/removeEventListener for the
+        // visibilitychange listener - this suite runs under vitest's 'node' environment (no real
+        // DOM), so stub the minimum surface needed rather than pulling in jsdom for one describe.
+        globalThis.document = {
+            addEventListener: vi.fn(),
+            removeEventListener: vi.fn(),
+            querySelectorAll: vi.fn(() => []),
+        };
+    });
+
+    afterEach(async () => {
+        await dungeonTracker.cleanup();
+        vi.useRealTimers();
+        delete globalThis.document;
+    });
+
+    test('a large gap between heartbeat ticks flags hibernationDetected mid-run', async () => {
+        const start = new Date(2026, 0, 1, 12, 0, 0);
+        vi.useFakeTimers();
+        vi.setSystemTime(start);
+
+        await dungeonTracker.initialize();
+        await dungeonTracker.onNewBattle({ wave: 0, battleId: 950, combatStartTime: start.getTime() });
+        expect(dungeonTracker.hibernationDetected).toBe(false);
+
+        // Jump the clock forward to simulate a long OS-sleep stall, then let the already-
+        // scheduled heartbeat tick fire and observe the huge elapsed gap.
+        vi.setSystemTime(new Date(start.getTime() + 90000));
+        await vi.advanceTimersByTimeAsync(15000);
+
+        expect(dungeonTracker.hibernationDetected).toBe(true);
+        expect(dungeonTracker.currentRun.hibernationDetected).toBe(true);
+    });
+
+    test('normal on-schedule ticks with no real stall do not flag hibernation', async () => {
+        const start = new Date(2026, 0, 1, 12, 0, 0);
+        vi.useFakeTimers();
+        vi.setSystemTime(start);
+
+        await dungeonTracker.initialize();
+        await dungeonTracker.onNewBattle({ wave: 0, battleId: 951, combatStartTime: start.getTime() });
+
+        // Advance through several on-schedule heartbeat ticks - no stall, clock and timers move
+        // together exactly as they would during ordinary uninterrupted play.
+        await vi.advanceTimersByTimeAsync(15000 * 3);
+
+        expect(dungeonTracker.hibernationDetected).toBe(false);
+    });
+});
+
+describe('WS disconnect flagging', () => {
+    beforeEach(() => {
+        globalThis.document = {
+            addEventListener: vi.fn(),
+            removeEventListener: vi.fn(),
+            querySelectorAll: vi.fn(() => []),
+        };
+    });
+
+    afterEach(async () => {
+        await dungeonTracker.cleanup();
+        delete globalThis.document;
+    });
+
+    test('a socket close mid-run flags hibernationDetected, same as a hibernation/stall', async () => {
+        await dungeonTracker.initialize();
+        await dungeonTracker.onNewBattle({ wave: 0, battleId: 960, combatStartTime: Date.now() });
+        expect(dungeonTracker.hibernationDetected).toBe(false);
+
+        mocks.socketEventHandlers.close();
+
+        expect(dungeonTracker.hibernationDetected).toBe(true);
+        expect(dungeonTracker.currentRun.hibernationDetected).toBe(true);
+    });
+
+    test('a socket close while not tracking is a no-op', async () => {
+        await dungeonTracker.initialize();
+        expect(dungeonTracker.isTracking).toBe(false);
+
+        mocks.socketEventHandlers.close();
+
+        expect(dungeonTracker.hibernationDetected).toBe(false);
+    });
+
+    test('cleanup() unregisters the socket close handler', async () => {
+        await dungeonTracker.initialize();
+        await dungeonTracker.cleanup();
+
+        expect(webSocketHook.offSocketEvent).toHaveBeenCalledWith('close', expect.any(Function));
     });
 });

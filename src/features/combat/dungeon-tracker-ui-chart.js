@@ -37,6 +37,11 @@ class DungeonTrackerUIChart {
         // on the same line (matches the history/stats views treating fails separately).
         filteredRuns = filteredRuns.filter((r) => !r.result || r.result === 'success');
 
+        // A run's duration is untrustworthy only when it's both unvalidated (wall-clock) AND
+        // flagged for a sleep/background hibernation gap during tracking - a single inflated
+        // point would otherwise dominate the chart's scale and skew avg/fastest/slowest below.
+        filteredRuns = filteredRuns.filter((r) => !r.hibernationDetected || r.validated);
+
         if (filteredRuns.length === 0) {
             // Destroy existing chart
             if (this.chartInstance) {
@@ -306,6 +311,9 @@ class DungeonTrackerUIChart {
 
         // Exclude fails/cancels - see render() for why.
         filteredRuns = filteredRuns.filter((r) => !r.result || r.result === 'success');
+
+        // Exclude hibernation-flagged unvalidated runs - see render() for why.
+        filteredRuns = filteredRuns.filter((r) => !r.hibernationDetected || r.validated);
 
         if (filteredRuns.length === 0) return;
 

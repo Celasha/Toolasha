@@ -5,13 +5,13 @@
  */
 
 import dungeonTracker from './dungeon-tracker.js';
+import dungeonTrackerStorage from './dungeon-tracker-storage.js';
 import dungeonTrackerChatAnnotations from './dungeon-tracker-chat-annotations.js';
 import dungeonTrackerUIState from './dungeon-tracker-ui-state.js';
 import DungeonTrackerUIChart from './dungeon-tracker-ui-chart.js';
 import DungeonTrackerUIHistory from './dungeon-tracker-ui-history.js';
 import DungeonTrackerUIInteractions from './dungeon-tracker-ui-interactions.js';
 import dataManager from '../../core/data-manager.js';
-import storage from '../../core/storage.js';
 import config from '../../core/config.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { registerFloatingPanel, unregisterFloatingPanel } from '../../utils/panel-z-index.js';
@@ -453,7 +453,7 @@ class DungeonTrackerUI {
         let stats, lastRunTime;
 
         // Get all runs and apply filters (EXACT SAME LOGIC as chart)
-        const allRuns = await storage.getJSON('allRuns', 'unifiedRuns', []);
+        const allRuns = await dungeonTrackerStorage.getAllRuns();
         let allAttempts = allRuns;
 
         // Apply dungeon filter
@@ -465,6 +465,11 @@ class DungeonTrackerUI {
         if (this.state.filterTeam !== 'all') {
             allAttempts = allAttempts.filter((r) => r.teamKey === this.state.filterTeam);
         }
+
+        // A run's duration is untrustworthy only when it's both unvalidated (wall-clock) AND
+        // flagged for a sleep/background hibernation gap during tracking - exclude it from time
+        // math entirely rather than let it skew avg/fastest/slowest/last.
+        allAttempts = allAttempts.filter((r) => !r.hibernationDetected || r.validated);
 
         // Failed/canceled attempts cost real time but aren't clears - keep the existing
         // clear-only stats (avg/fastest/slowest/last) unaffected by them.

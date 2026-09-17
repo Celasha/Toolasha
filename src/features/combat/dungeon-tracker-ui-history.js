@@ -4,7 +4,6 @@
  */
 
 import dungeonTrackerStorage from './dungeon-tracker-storage.js';
-import storage from '../../core/storage.js';
 import { formatDateTime } from '../../utils/formatters.js';
 
 class DungeonTrackerUIHistory {
@@ -75,8 +74,12 @@ class DungeonTrackerUIHistory {
      * @returns {Object} Stats object
      */
     calculateStatsForRuns(allAttempts) {
-        const runs = (allAttempts || []).filter((r) => !r.result || r.result === 'success');
-        const failedAttempts = (allAttempts || []).filter((r) => r.result === 'fail' || r.result === 'cancel');
+        // A run's duration is untrustworthy only when it's both unvalidated (wall-clock) AND
+        // flagged for a sleep/background hibernation gap during tracking - exclude it entirely
+        // rather than let it skew avg/fastest/slowest.
+        const reliableAttempts = (allAttempts || []).filter((r) => !r.hibernationDetected || r.validated);
+        const runs = reliableAttempts.filter((r) => !r.result || r.result === 'success');
+        const failedAttempts = reliableAttempts.filter((r) => r.result === 'fail' || r.result === 'cancel');
 
         if (runs.length === 0) {
             return {
@@ -278,10 +281,7 @@ class DungeonTrackerUIHistory {
             btn.addEventListener('click', async (e) => {
                 const runTimestamp = e.target.closest('[data-run-timestamp]').dataset.runTimestamp;
 
-                // Find and delete the run from unified storage
-                const allRuns = await dungeonTrackerStorage.getAllRuns();
-                const filteredRuns = allRuns.filter((r) => r.timestamp !== runTimestamp);
-                await storage.setJSON('allRuns', filteredRuns, 'unifiedRuns', true);
+                await dungeonTrackerStorage.deleteRunByTimestamp(runTimestamp);
 
                 // Trigger refresh via callback
                 if (this.onDeleteCallback) {

@@ -9,6 +9,12 @@ import dataManager from '../../core/data-manager.js';
 import storage from '../../core/storage.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 
+// Heartbeat watchdog: visibilitychange doesn't reliably fire for every stall (a long GC pause, or
+// some OS/browser combinations delaying the event on wake) - checked independently by noticing
+// the interval itself ran much later than scheduled.
+const HEARTBEAT_INTERVAL_MS = 15000;
+const HEARTBEAT_STALL_THRESHOLD_MS = 60000;
+
 class DungeonTracker {
     constructor() {
         this.isTracking = false;
@@ -49,15 +55,7 @@ class DungeonTracker {
             actionsUpdated: null,
             chatMessage: null,
         };
-    }
-
-    /**
-     * Get character ID from URL
-     * @returns {string|null} Character ID or null
-     */
-    getCharacterIdFromURL() {
-        const urlParams = new URLSearchParams(window.location.search);
-        return urlParams.get('characterId');
+        this.socketCloseHandler = null;
     }
 
     /**
@@ -115,7 +113,7 @@ class DungeonTracker {
             hibernationDetected: this.hibernationDetected,
         };
 
-        return storage.setJSON('dungeonTracker_inProgressRun', stateToSave, 'settings', true);
+        return storage.setJSON(this.getCharacterKey('dungeonTracker_inProgressRun'), stateToSave, 'settings', true);
     }
 
     /**
@@ -124,7 +122,7 @@ class DungeonTracker {
      * @returns {Promise<boolean>} True if restored successfully
      */
     async restoreInProgressRun(currentBattleId) {
-        const saved = await storage.getJSON('dungeonTracker_inProgressRun', 'settings', null);
+        const saved = await storage.getJSON(this.getCharacterKey('dungeonTracker_inProgressRun'), 'settings', null);
 
         if (!saved) {
             return false; // No saved state
@@ -193,7 +191,7 @@ class DungeonTracker {
      * @returns {Promise<boolean>} Success status
      */
     async clearInProgressRun() {
-        return storage.delete('dungeonTracker_inProgressRun', 'settings');
+        return storage.delete(this.getCharacterKey('dungeonTracker_inProgressRun'), 'settings');
     }
 
     /**
@@ -207,8 +205,10 @@ class DungeonTracker {
 
         this.isInitialized = true;
 
-        // Get character ID from URL for data isolation
-        this.characterId = this.getCharacterIdFromURL();
+        // Character-scope in-progress-run storage so it can't be restored against the wrong
+        // character. dataManager's live character id (not a URL param, which can go stale across
+        // an in-app character switch that doesn't reload the page).
+        this.characterId = dataManager.getCurrentCharacterId();
 
         // Create and store handler references for cleanup
         this.handlers.newBattle = (data) => this.onNewBattle(data);
@@ -227,6 +227,11 @@ class DungeonTracker {
 
         // Listen for party chat messages (for server-validated duration and battle started)
         webSocketHook.on('chat_message_received', this.handlers.chatMessage);
+
+        // A mid-run disconnect means some wave/chat messages during the gap may have been missed
+        // - flag the run's elapsed time as potentially inaccurate, same as a hibernation/stall.
+        this.socketCloseHandler = () => this.markHibernationDetected();
+        webSocketHook.onSocketEvent('close', this.socketCloseHandler);
 
         // Setup hibernation detection using Visibility API
         this.setupHibernationDetection();
@@ -249,18 +254,42 @@ class DungeonTracker {
                 wasHidden = true;
             } else if (wasHidden && this.isTracking) {
                 // Tab visible again after being hidden during active run
-                // Mark hibernation detected (elapsed time may be wrong)
-                this.hibernationDetected = true;
-                if (this.currentRun) {
-                    this.currentRun.hibernationDetected = true;
-                }
-                this.notifyUpdate();
-                this.saveInProgressRun(); // Persist flag to IndexedDB
+                this.markHibernationDetected();
                 wasHidden = false;
             }
         };
 
         document.addEventListener('visibilitychange', this.visibilityHandler);
+
+        // Independent watchdog for stalls visibilitychange might miss.
+        let lastHeartbeat = Date.now();
+        const heartbeatInterval = setInterval(() => {
+            const now = Date.now();
+            const elapsed = now - lastHeartbeat;
+            lastHeartbeat = now;
+
+            if (this.isTracking && elapsed > HEARTBEAT_STALL_THRESHOLD_MS) {
+                this.markHibernationDetected();
+            }
+        }, HEARTBEAT_INTERVAL_MS);
+        this.timerRegistry.registerInterval(heartbeatInterval);
+    }
+
+    /**
+     * Flag the current run's elapsed time as potentially inaccurate (sleep/background gap
+     * detected mid-run) and persist the flag immediately.
+     */
+    markHibernationDetected() {
+        if (!this.isTracking) {
+            return;
+        }
+
+        this.hibernationDetected = true;
+        if (this.currentRun) {
+            this.currentRun.hibernationDetected = true;
+        }
+        this.notifyUpdate();
+        this.saveInProgressRun(); // Persist flag to IndexedDB
     }
 
     /**
@@ -398,9 +427,7 @@ class DungeonTracker {
                             if (period === 'PM' && hour < 12) hour += 12;
                             if (period === 'AM' && hour === 12) hour = 0;
 
-                            // Create timestamp (assumes current year)
-                            const now = new Date();
-                            const timestamp = new Date(now.getFullYear(), month - 1, day, hour, min, sec, 0);
+                            const timestamp = this.buildTimestampFromParts(month, day, hour, min, sec);
 
                             this.battleStartedTimestamp = timestamp.getTime();
                             battleStartedFound = true;
@@ -449,9 +476,7 @@ class DungeonTracker {
                                 if (period === 'PM' && hour < 12) hour += 12;
                                 if (period === 'AM' && hour === 12) hour = 0;
 
-                                // Create timestamp (assumes current year)
-                                const now = new Date();
-                                const timestamp = new Date(now.getFullYear(), month - 1, day, hour, min, sec, 0);
+                                const timestamp = this.buildTimestampFromParts(month, day, hour, min, sec);
 
                                 // Keep this as the latest (will be overwritten if we find a newer one)
                                 latestKeyCountsMap = keyCountsMap;
@@ -714,10 +739,15 @@ class DungeonTracker {
 
         // First "Key counts" message = dungeon start
         if (this.firstKeyCountTimestamp === null) {
-            // FALLBACK: If we're already tracking and have a currentRun.startTime,
-            // this is probably the COMPLETION message, not the start!
-            // This happens when state was restored but first message wasn't captured.
-            if (this.currentRun && this.currentRun.startTime) {
+            // FALLBACK: If a wave has already completed under our own tracking without ever
+            // seeing a Key counts message (state was restored mid-run, or we joined after missing
+            // the run's true start message), this message is far more likely to be the COMPLETION
+            // than the start. A fresh run's real first message always arrives before its first
+            // wave completes, so wavesCompleted > 0 is a genuine restore/late-join signal - unlike
+            // currentRun.startTime, which is truthy for every run and can't tell a restore apart
+            // from an ordinary fresh start (the bug this replaced: it misfired on live key-count
+            // messages for brand-new runs too, silently fragmenting them).
+            if (this.currentRun && this.currentRun.wavesCompleted > 0) {
                 // Use the currentRun.startTime as the first timestamp (best estimate)
                 this.firstKeyCountTimestamp = this.currentRun.startTime;
                 this.lastKeyCountTimestamp = timestamp; // Current message is completion
@@ -785,6 +815,25 @@ class DungeonTracker {
         }
 
         return keyCountsMap;
+    }
+
+    /**
+     * Reconstruct a Date from chat-message display parts (no year in the source text). Chat
+     * messages are always in the past, so if assuming the current year would put the timestamp
+     * in the future, the message must actually be from the previous year (e.g. a message sent in
+     * December, parsed after the new year rolled over).
+     * @param {number} month - 1-indexed month
+     * @param {number} day
+     * @param {number} hour
+     * @param {number} min
+     * @param {number} sec
+     * @returns {Date}
+     */
+    buildTimestampFromParts(month, day, hour, min, sec) {
+        const now = new Date();
+        const year = now.getFullYear();
+        const timestamp = new Date(year, month - 1, day, hour, min, sec, 0);
+        return timestamp.getTime() > now.getTime() ? new Date(year - 1, month - 1, day, hour, min, sec, 0) : timestamp;
     }
 
     /**
@@ -938,6 +987,15 @@ class DungeonTracker {
             return;
         }
 
+        // Defense-in-depth: a wave number that goes backward indicates a duplicate/reordered/
+        // stale event, not real progress - ignore it rather than let it corrupt currentWave/ETA.
+        if (data.wave < this.currentRun.currentWave) {
+            console.warn(
+                `[Dungeon Tracker] Ignoring out-of-order wave (got ${data.wave}, currently on ${this.currentRun.currentWave})`
+            );
+            return;
+        }
+
         // Update current wave
         this.waveStartTime = new Date(data.combatStartTime);
         this.currentRun.currentWave = data.wave;
@@ -983,14 +1041,26 @@ class DungeonTracker {
             this.notifyUpdate();
         }
 
+        // BUGFIX: Wave 50 completion sends wave: 0, so use currentWave instead
+        const actualWaveNumber = action.wave === 0 ? this.currentRun.currentWave : action.wave;
+
+        // Defense-in-depth: a completed-wave number that goes backward indicates a duplicate/
+        // reordered/stale event, not real progress - ignore it entirely (including the wave-time
+        // sample below) rather than let it corrupt wavesCompleted, avgWaveTime, or the
+        // allWavesCompleted check.
+        if (actualWaveNumber < this.currentRun.wavesCompleted) {
+            console.warn(
+                `[Dungeon Tracker] Ignoring out-of-order wave completion (got ${actualWaveNumber}, already at ${this.currentRun.wavesCompleted})`
+            );
+            return;
+        }
+
         // Calculate wave time
         const waveEndTime = Date.now();
         const waveTime = waveEndTime - this.waveStartTime.getTime();
         this.waveTimes.push(waveTime);
 
         // Update waves completed
-        // BUGFIX: Wave 50 completion sends wave: 0, so use currentWave instead
-        const actualWaveNumber = action.wave === 0 ? this.currentRun.currentWave : action.wave;
         this.currentRun.wavesCompleted = actualWaveNumber;
 
         // Save state after wave completion
@@ -1104,6 +1174,7 @@ class DungeonTracker {
                     duration: partyMessageDuration, // Server-validated duration
                     dungeonName: dungeonName,
                     keyCountsMap: completedRunData.keyCountsMap, // Include key counts
+                    hibernationDetected: completedRunData.hibernationDetected || false,
                 };
 
                 // Save to database (with duplicate detection)
@@ -1219,6 +1290,7 @@ class DungeonTracker {
             result,
             wavesCompleted: currentRun.wavesCompleted,
             validated,
+            hibernationDetected: currentRun.hibernationDetected || false,
         });
     }
 
@@ -1343,6 +1415,10 @@ class DungeonTracker {
             webSocketHook.off('chat_message_received', this.handlers.chatMessage);
             this.handlers.chatMessage = null;
         }
+        if (this.socketCloseHandler) {
+            webSocketHook.offSocketEvent('close', this.socketCloseHandler);
+            this.socketCloseHandler = null;
+        }
 
         // Reset all tracking state
         this.isTracking = false;
@@ -1439,9 +1515,7 @@ class DungeonTracker {
                 if (period === 'PM' && hour < 12) hour += 12;
                 if (period === 'AM' && hour === 12) hour = 0;
 
-                // Create timestamp (assumes current year)
-                const now = new Date();
-                const timestamp = new Date(now.getFullYear(), month - 1, day, hour, min, sec, 0);
+                const timestamp = this.buildTimestampFromParts(month, day, hour, min, sec);
 
                 // Extract "Battle started:" messages
                 if (text.includes('Battle started:')) {

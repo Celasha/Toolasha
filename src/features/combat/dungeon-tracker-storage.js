@@ -19,6 +19,58 @@ const DUNGEON_MAX_WAVES = {
 class DungeonTrackerStorage {
     constructor() {
         this.unifiedStoreName = 'unifiedRuns'; // Unified storage for all runs
+        this._legacyMigrationDone = false;
+    }
+
+    /**
+     * Character-scoped storage key for the run-history array. Falls back to 'default' if the
+     * character id isn't resolvable yet, matching the fallback used elsewhere (e.g. labyrinth
+     * tracker) rather than failing closed.
+     * @returns {string}
+     */
+    getRunsKey() {
+        const characterId = dataManager.getCurrentCharacterId() || 'default';
+        return `allRuns_${characterId}`;
+    }
+
+    /**
+     * One-time best-effort migration: runs saved before storage was character-scoped lived under
+     * a single global 'allRuns' key shared by every character on the account. There's no way to
+     * retroactively attribute old runs to a specific character, so the first character to load
+     * after this upgrade claims that history; the legacy key is cleared immediately after so a
+     * second character never re-claims (and duplicates) it.
+     */
+    async _migrateLegacyRunsIfNeeded() {
+        if (this._legacyMigrationDone) return;
+        this._legacyMigrationDone = true;
+
+        const legacyRuns = await storage.getJSON('allRuns', this.unifiedStoreName, null);
+        if (!legacyRuns) return;
+
+        const scopedKey = this.getRunsKey();
+        const existing = await storage.getJSON(scopedKey, this.unifiedStoreName, null);
+        if (existing === null) {
+            await storage.setJSON(scopedKey, legacyRuns, this.unifiedStoreName, true);
+        }
+        await storage.delete('allRuns', this.unifiedStoreName);
+    }
+
+    /**
+     * Read the current character's run history array.
+     * @returns {Promise<Array>}
+     */
+    async _readRuns() {
+        await this._migrateLegacyRunsIfNeeded();
+        return storage.getJSON(this.getRunsKey(), this.unifiedStoreName, []);
+    }
+
+    /**
+     * Persist the current character's run history array.
+     * @param {Array} runs
+     * @returns {Promise<boolean>}
+     */
+    async _writeRuns(runs) {
+        return storage.setJSON(this.getRunsKey(), runs, this.unifiedStoreName, true);
     }
 
     /**
@@ -72,7 +124,7 @@ class DungeonTrackerStorage {
      */
     async getRunHistory(dungeonHrid, tier, limit = 0) {
         // Get all runs from unified storage
-        const allRuns = await storage.getJSON('allRuns', this.unifiedStoreName, []);
+        const allRuns = await this._readRuns();
 
         // Filter by dungeon HRID and tier
         const runs = allRuns.filter((r) => r.dungeonHrid === dungeonHrid && r.tier === tier);
@@ -126,12 +178,19 @@ class DungeonTrackerStorage {
      * @returns {Promise<Object>} Statistics
      */
     async getStatsByName(dungeonName) {
-        const allRuns = await storage.getJSON('allRuns', this.unifiedStoreName, []);
+        const allRuns = await this._readRuns();
         const allAttempts = allRuns.filter((r) => r.dungeonName === dungeonName);
+
+        // A run's duration is untrustworthy only when it's both unvalidated (wall-clock, not
+        // server-timestamp-anchored) AND flagged for a sleep/background hibernation gap during
+        // tracking - validated runs use a server-anchored duration immune to wall-clock drift.
+        const unreliableAttempts = allAttempts.filter((r) => r.hibernationDetected && !r.validated);
+        const reliableAttempts = allAttempts.filter((r) => !r.hibernationDetected || r.validated);
+
         // Runs saved before the result field existed have no result — treat as success (only
         // successful clears were ever saved back then).
-        const runs = allAttempts.filter((r) => !r.result || r.result === 'success');
-        const failedAttempts = allAttempts.filter((r) => r.result === 'fail' || r.result === 'cancel');
+        const runs = reliableAttempts.filter((r) => !r.result || r.result === 'success');
+        const failedAttempts = reliableAttempts.filter((r) => r.result === 'fail' || r.result === 'cancel');
 
         if (runs.length === 0) {
             return {
@@ -143,6 +202,7 @@ class DungeonTrackerStorage {
                 avgTimePerAttempt: 0,
                 failCount: failedAttempts.length,
                 totalAttempts: allAttempts.length,
+                hibernationFlaggedCount: unreliableAttempts.length,
             };
         }
 
@@ -169,6 +229,7 @@ class DungeonTrackerStorage {
             avgTimePerAttempt,
             failCount: failedAttempts.length,
             totalAttempts: allAttempts.length,
+            hibernationFlaggedCount: unreliableAttempts.length,
         };
     }
 
@@ -214,7 +275,7 @@ class DungeonTrackerStorage {
      */
     async deleteRun(dungeonHrid, tier, runIndex) {
         // Get all runs from unified storage
-        const allRuns = await storage.getJSON('allRuns', this.unifiedStoreName, []);
+        const allRuns = await this._readRuns();
 
         // Filter to this dungeon+tier
         const dungeonRuns = allRuns.filter((r) => r.dungeonHrid === dungeonHrid && r.tier === tier);
@@ -242,7 +303,7 @@ class DungeonTrackerStorage {
         allRuns.splice(indexInAllRuns, 1);
 
         // Save updated list
-        return storage.setJSON('allRuns', allRuns, this.unifiedStoreName, true);
+        return this._writeRuns(allRuns);
     }
 
     /**
@@ -253,13 +314,13 @@ class DungeonTrackerStorage {
      */
     async clearHistory(dungeonHrid, tier) {
         // Get all runs from unified storage
-        const allRuns = await storage.getJSON('allRuns', this.unifiedStoreName, []);
+        const allRuns = await this._readRuns();
 
         // Filter OUT the runs we want to delete
         const filteredRuns = allRuns.filter((r) => !(r.dungeonHrid === dungeonHrid && r.tier === tier));
 
         // Save back the filtered list
-        return storage.setJSON('allRuns', filteredRuns, this.unifiedStoreName, true);
+        return this._writeRuns(filteredRuns);
     }
 
     /**
@@ -319,11 +380,14 @@ class DungeonTrackerStorage {
      * @param {number} [run.wavesCompleted] - Waves completed before the run ended.
      * @param {boolean} [run.validated] - Whether duration is anchored to a real server-side
      *   chat-message timestamp vs. a client-clock estimate. Defaults to true.
+     * @param {boolean} [run.hibernationDetected] - Whether a sleep/background gap was detected
+     *   during tracking. Only makes an unvalidated run's duration untrustworthy (a validated
+     *   duration is server-timestamp-anchored and immune to wall-clock drift either way).
      * @returns {Promise<boolean>} Success status
      */
     async saveTeamRun(teamKey, run) {
         // Get all runs from unified storage
-        const allRuns = await storage.getJSON('allRuns', this.unifiedStoreName, []);
+        const allRuns = await this._readRuns();
 
         // Parse incoming timestamp
         const newTimestamp = new Date(run.timestamp).getTime();
@@ -359,13 +423,14 @@ class DungeonTrackerStorage {
                 keyCountsMap: run.keyCountsMap || null, // Include key counts if available
                 result: run.result || 'success',
                 wavesCompleted: run.wavesCompleted ?? null,
+                hibernationDetected: run.hibernationDetected ?? false,
             };
 
             // Add to front of list (most recent first)
             allRuns.unshift(unifiedRun);
 
             // Save to unified storage
-            await storage.setJSON('allRuns', allRuns, this.unifiedStoreName, true);
+            await this._writeRuns(allRuns);
 
             return true;
         }
@@ -378,7 +443,28 @@ class DungeonTrackerStorage {
      * @returns {Promise<Array>} All runs
      */
     async getAllRuns() {
-        return storage.getJSON('allRuns', this.unifiedStoreName, []);
+        return this._readRuns();
+    }
+
+    /**
+     * Delete a single run by its exact timestamp (used by the history UI's per-run delete
+     * button). Routes through the character-scoped read/write pair so it can never write back
+     * to the legacy unscoped key.
+     * @param {string} timestamp - ISO timestamp of the run to remove
+     * @returns {Promise<boolean>} Success status
+     */
+    async deleteRunByTimestamp(timestamp) {
+        const allRuns = await this._readRuns();
+        const filtered = allRuns.filter((r) => r.timestamp !== timestamp);
+        return this._writeRuns(filtered);
+    }
+
+    /**
+     * Delete all run history for the current character.
+     * @returns {Promise<boolean>} Success status
+     */
+    async clearAllRuns() {
+        return this._writeRuns([]);
     }
 
     /**
@@ -434,7 +520,7 @@ class DungeonTrackerStorage {
         if (outlierIndices.size === 0) return 0;
 
         const cleaned = allRuns.filter((_, i) => !outlierIndices.has(i));
-        await storage.setJSON('allRuns', cleaned, this.unifiedStoreName, true);
+        await this._writeRuns(cleaned);
         console.log(`[DungeonTrackerStorage] Scrubbed ${outlierIndices.size} outlier run(s) from storage`);
         return outlierIndices.size;
     }
@@ -469,7 +555,7 @@ class DungeonTrackerStorage {
      */
     async getAllTeamStats() {
         // Get all runs from unified storage
-        const allRuns = await storage.getJSON('allRuns', this.unifiedStoreName, []);
+        const allRuns = await this._readRuns();
 
         // Group by teamKey
         const teamGroups = {};
@@ -485,8 +571,12 @@ class DungeonTrackerStorage {
         // Calculate stats for each team
         const results = [];
         for (const [teamKey, allAttempts] of Object.entries(teamGroups)) {
-            const runs = allAttempts.filter((r) => !r.result || r.result === 'success');
-            const failedAttempts = allAttempts.filter((r) => r.result === 'fail' || r.result === 'cancel');
+            // Same hibernation-reliability split as getStatsByName - see comment there.
+            const unreliableAttempts = allAttempts.filter((r) => r.hibernationDetected && !r.validated);
+            const reliableAttempts = allAttempts.filter((r) => !r.hibernationDetected || r.validated);
+
+            const runs = reliableAttempts.filter((r) => !r.result || r.result === 'success');
+            const failedAttempts = reliableAttempts.filter((r) => r.result === 'fail' || r.result === 'cancel');
             if (runs.length === 0) continue;
 
             const durations = runs.map((r) => r.duration);
@@ -506,6 +596,7 @@ class DungeonTrackerStorage {
                 avgTimePerAttempt,
                 failCount: failedAttempts.length,
                 totalAttempts: allAttempts.length,
+                hibernationFlaggedCount: unreliableAttempts.length,
             });
         }
 
