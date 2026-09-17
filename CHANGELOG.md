@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.110.0](https://github.com/Celasha/Toolasha/compare/v2.109.0...v2.110.0) (2026-09-17)
+
+### Features
+
+- add Enhancing Luck metric ([bfe5ff2](https://github.com/Celasha/Toolasha/commit/bfe5ff2c62cb29fb1c6e13f433ae75a63470c525))
+
+### Bug Fixes
+
+- flag interrupted combat-stats sessions and character-scope task reroll tracking ([7542801](https://github.com/Celasha/Toolasha/commit/7542801bb336b9fb2f63689f86643e822fdbee9a))
+- harden dungeon tracker against cross-character mixing and false completions ([e6ddbe2](https://github.com/Celasha/Toolasha/commit/e6ddbe24fcf9b946dd2e088ee86c45328d6921aa))
+
+### Documentation
+
+- add Weylan to userscript credits and reconcile header drift ([a40f252](https://github.com/Celasha/Toolasha/commit/a40f2522d678cb05bf57f09541c912f78a3d3a4b))
+
 ## [2.109.0](https://github.com/Celasha/Toolasha/compare/v2.108.8...v2.109.0) (2026-09-17)
 
 ### Features
