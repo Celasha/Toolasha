@@ -5,9 +5,13 @@
 
 import marketAPI from '../../api/marketplace.js';
 import dataManager from '../../core/data-manager.js';
-import config from '../../core/config.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 import { calculatePriceAfterTax } from '../../utils/profit-helpers.js';
+import {
+    getKeyPricingModeSetting,
+    getCheapestKeyCost,
+    KEY_PRICING_MODE_CHEAPEST,
+} from '../../utils/dungeon-key-cost.js';
 
 // Maps regular dungeon chest HRIDs to their required entry key HRIDs (1:1 relationship)
 const DUNGEON_CHEST_KEYS = {
@@ -164,17 +168,27 @@ export function calculateKeyCosts(lootMap, durationSeconds) {
         return { ask: 0, bid: 0, dailyCost: 0, breakdown: [] };
     }
 
-    const keyPricingSetting = config.getSettingValue('profitCalc_keyPricingMode') || 'ask';
+    const keyPricingSetting = getKeyPricingModeSetting();
+    const isCheapest = keyPricingSetting === KEY_PRICING_MODE_CHEAPEST;
+
+    const priceKey = (keyHrid) => {
+        if (isCheapest) {
+            const { unitCost, plan } = getCheapestKeyCost(keyHrid);
+            return { price: Number.isFinite(unitCost) ? unitCost : null, plan };
+        }
+        const keyPrices = marketAPI.getPrice(keyHrid);
+        if (!keyPrices) return { price: null, plan: null };
+        return { price: keyPrices[keyPricingSetting] ?? keyPrices.ask, plan: null };
+    };
 
     for (const loot of Object.values(lootMap)) {
         const keyHrid = DUNGEON_CHEST_KEYS[loot.itemHrid];
         if (!keyHrid) continue;
 
         const chestCount = loot.count;
-        const keyPrices = marketAPI.getPrice(keyHrid);
-        if (!keyPrices) continue;
+        const { price: keyPrice, plan } = priceKey(keyHrid);
+        if (keyPrice === null) continue;
 
-        const keyPrice = keyPrices[keyPricingSetting] ?? keyPrices.ask;
         const itemCost = keyPrice * chestCount;
 
         totalCost += itemCost;
@@ -191,6 +205,7 @@ export function calculateKeyCosts(lootMap, durationSeconds) {
             consumedPerDay,
             pricePerItem: keyPrice,
             totalCost: itemCost,
+            craftPlan: plan,
         });
     }
 
@@ -203,10 +218,9 @@ export function calculateKeyCosts(lootMap, durationSeconds) {
     }
 
     for (const [keyHrid, count] of Object.entries(chestKeyCounts)) {
-        const keyPrices = marketAPI.getPrice(keyHrid);
-        if (!keyPrices) continue;
+        const { price: keyPrice, plan } = priceKey(keyHrid);
+        if (keyPrice === null) continue;
 
-        const keyPrice = keyPrices[keyPricingSetting] ?? keyPrices.ask;
         const itemCost = keyPrice * count;
 
         totalCost += itemCost;
@@ -222,6 +236,7 @@ export function calculateKeyCosts(lootMap, durationSeconds) {
             consumedPerDay,
             pricePerItem: keyPrice,
             totalCost: itemCost,
+            craftPlan: plan,
         });
     }
 

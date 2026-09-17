@@ -226,3 +226,18 @@ describe('Crafting Plan — Buy Missing Materials initialization/cleanup race (T
         expect(marketplaceSession.getActive()).toBeNull();
     });
 });
+
+describe('Crafting Plan — buy-side pricing mode resolution', () => {
+    test('resolves profitCalc_pricingMode to a concrete ask/bid string before calling the calculator', () => {
+        // config.getSettingValue is mocked to return 'hybrid' for every key, including
+        // profitCalc_pricingMode — a raw compound value, never a valid ask/bid/average mode.
+        // getItemPrice would silently default to ask if this ever reached it unresolved; this
+        // proves the display layer resolves it (via market-data.js's real getPricingMode) first.
+        renderAndClickBuyButton();
+
+        expect(mockComputeBestCraftingPlan).toHaveBeenCalled();
+        const mode = mockComputeBestCraftingPlan.mock.calls[0][2];
+        expect(mode).toBe('ask');
+        expect(mode).not.toBe('hybrid');
+    });
+});

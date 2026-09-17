@@ -16,8 +16,22 @@ import {
     isAbbreviationEnabled,
 } from '../../utils/formatters.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
+import { getKeyPricingModeSetting, KEY_PRICING_MODE_CHEAPEST } from '../../utils/dungeon-key-cost.js';
+import { renderCraftingPlanBreakdown } from '../crafting-plan/crafting-plan-tree-renderer.js';
 
 const YEAR_SECONDS = 365 * 86400;
+
+/**
+ * `priceKey` selects which of an ask/bid-only stats field (income, dailyIncome, dailyProfit,
+ * keyCosts) to display. Those fields never carry a 'cheapest' entry — key-cost math already
+ * resolves 'cheapest' to a concrete number in `calculateKeyCosts()` and stores the identical
+ * value under both `.ask`/`.bid`, so any general ask/bid-only indexing falls back to 'ask'.
+ * @param {string} settingValue - Raw `profitCalc_keyPricingMode` value
+ * @returns {'ask'|'bid'}
+ */
+function resolveDisplayPriceKey(settingValue) {
+    return settingValue === 'bid' ? 'bid' : 'ask';
+}
 
 /**
  * Format a consumable's remaining runway for display. Capped at >1y - beyond that the estimate
@@ -247,7 +261,7 @@ class CombatStatsUI {
     shareStatsToChat(stats) {
         // Get chat message format from config (use getSettingValue for template type)
         const messageTemplate = config.getSettingValue('combatStatsChatMessage');
-        const priceKey = config.getSettingValue('profitCalc_keyPricingMode') || 'ask';
+        const priceKey = resolveDisplayPriceKey(getKeyPricingModeSetting());
 
         // Convert array format to string if needed
         let message = '';
@@ -654,7 +668,7 @@ class CombatStatsUI {
                 ? coinFormatter(Math.round(num))
                 : new Intl.NumberFormat('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 }).format(num);
 
-        const priceKey = config.getSettingValue('profitCalc_keyPricingMode') || 'ask';
+        const priceKey = resolveDisplayPriceKey(getKeyPricingModeSetting());
 
         const statsRows = [
             { label: 'Duration', value: stats.durationFormatted || '0s' },
@@ -1066,14 +1080,20 @@ class CombatStatsUI {
                         } else if (row.breakdown && row.breakdown.length > 0) {
                             // Add key pricing note if applicable
                             if (row.showKeyPricingNote) {
-                                const keyPricing = config.getSettingValue('profitCalc_keyPricingMode') || 'ask';
+                                const keyPricing = getKeyPricingModeSetting();
                                 const keyPricingNote = document.createElement('div');
                                 keyPricingNote.style.cssText = `
                                     font-size: 11px;
                                     color: #aaa;
                                     margin-bottom: 6px;
                                 `;
-                                keyPricingNote.textContent = `Pricing: ${keyPricing === 'bid' ? 'Bid (patient buy)' : 'Ask (instant buy)'}`;
+                                const keyPricingLabel =
+                                    keyPricing === 'bid'
+                                        ? 'Bid (patient buy)'
+                                        : keyPricing === KEY_PRICING_MODE_CHEAPEST
+                                          ? 'Cheapest (buy or craft)'
+                                          : 'Ask (instant buy)';
+                                keyPricingNote.textContent = `Pricing: ${keyPricingLabel}`;
                                 breakdownDiv.appendChild(keyPricingNote);
                             }
 
@@ -1125,6 +1145,21 @@ class CombatStatsUI {
                                     <span style="text-align: right; color: #ff6b6b;">${formatNum(displayCost)}</span>
                                 `;
                                 breakdownDiv.appendChild(itemRow);
+
+                                // Cheapest key pricing (row.showKeyPricingNote): when crafting the
+                                // key beats buying it, show the same materials/craft-steps
+                                // breakdown Best Crafting Plan itself renders in the action panel.
+                                if (row.showKeyPricingNote && item.craftPlan) {
+                                    const craftBreakdown = renderCraftingPlanBreakdown(item.craftPlan);
+                                    craftBreakdown.style.cssText = `
+                                        margin: 2px 0 6px 16px;
+                                        padding: 6px 8px;
+                                        border-left: 2px solid #4a4a4a;
+                                        font-size: 12px;
+                                        color: ${textColor};
+                                    `;
+                                    breakdownDiv.appendChild(craftBreakdown);
+                                }
 
                                 if (!row.isDaily && item.timeToZeroSeconds !== undefined) {
                                     const remainingRow = document.createElement('div');

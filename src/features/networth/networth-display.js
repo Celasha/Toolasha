@@ -8,11 +8,11 @@
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
-import marketAPI from '../../api/marketplace.js';
 import { networthFormatter, formatKMB } from '../../utils/formatters.js';
 import networthHistoryChart from './networth-history-chart.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 import { DUNGEON_CHEST_CHEST_KEYS } from '../combat-stats/combat-stats-calculator.js';
+import { getKeyPrice } from '../../utils/dungeon-key-cost.js';
 import networthExclusionPopup from './networth-exclusion-popup.js';
 import { removeExclusion } from './networth-exclusions.js';
 
@@ -952,9 +952,7 @@ class NetworthInventoryDisplay {
             let keyPrice = 0;
             let keyName = null;
             if (chestKeyHrid) {
-                const setting = config.getSettingValue('profitCalc_keyPricingMode') || 'ask';
-                const keyPrices = marketAPI.getPrice(chestKeyHrid);
-                keyPrice = keyPrices?.[setting] ?? keyPrices?.ask ?? 0;
+                keyPrice = getKeyPrice(chestKeyHrid) ?? 0;
                 keyName = dataManager.getItemDetails(chestKeyHrid)?.name;
             }
             detailsHTML = this.buildChestDropsHTML(evData, keyPrice, keyName);

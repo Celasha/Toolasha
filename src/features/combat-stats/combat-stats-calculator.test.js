@@ -29,9 +29,19 @@ vi.mock('../market/expected-value-calculator.js', () => ({
     },
 }));
 
-import { calculateConsumableCosts, calculatePlayerStats, calculateValuedRevenue } from './combat-stats-calculator.js';
+vi.mock('../../utils/market-data.js', () => ({ getPricingMode: vi.fn(() => 'ask') }));
+vi.mock('../crafting-plan/crafting-plan-calculator.js', () => ({ computeBestCraftingPlan: vi.fn() }));
+
+import {
+    calculateConsumableCosts,
+    calculatePlayerStats,
+    calculateValuedRevenue,
+    calculateKeyCosts,
+} from './combat-stats-calculator.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 import dataManager from '../../core/data-manager.js';
+import config from '../../core/config.js';
+import { computeBestCraftingPlan } from '../crafting-plan/crafting-plan-calculator.js';
 
 describe('calculateConsumableCosts - timeToZeroSeconds zero-safe fallback', () => {
     beforeEach(() => {
@@ -410,5 +420,57 @@ describe('calculatePlayerStats - actualVsExpected (RNG Delta)', () => {
 
         const row = stats.actualVsExpected.itemDeltas.find((item) => item.itemHrid === '/items/rare_drop');
         expect(row.expectedCount).toBeCloseTo(0.72, 5);
+    });
+});
+
+describe('calculateKeyCosts - cheapest pricing mode (buy vs craft)', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        dataManager.getItemDetails.mockReturnValue({ name: 'Chimerical Entry Key' });
+    });
+
+    test('uses the craft unit cost and attaches the plan when crafting beats buying', () => {
+        config.getSettingValue.mockReturnValue('cheapest');
+        const plan = { strategy: 'craft', unitCost: 300, children: [{ itemHrid: '/items/blue_key_fragment' }] };
+        computeBestCraftingPlan.mockReturnValue(plan);
+
+        // A regular dungeon chest consumes both an entry key and a chest key — both rows should
+        // resolve through the same cheapest-mode logic.
+        const lootMap = { a: { itemHrid: '/items/chimerical_chest', count: 2 } };
+        const { breakdown, ask, bid } = calculateKeyCosts(lootMap, 0);
+
+        expect(breakdown).toHaveLength(2);
+        for (const row of breakdown) {
+            expect(row.pricePerItem).toBe(300);
+            expect(row.craftPlan).toBe(plan);
+            expect(row.totalCost).toBe(600);
+        }
+        expect(ask).toBe(1200);
+        expect(bid).toBe(1200);
+    });
+
+    test('uses the buy price and no plan when buying beats crafting', () => {
+        config.getSettingValue.mockReturnValue('cheapest');
+        computeBestCraftingPlan.mockReturnValue({ strategy: 'buy', unitCost: 500, children: [] });
+
+        const lootMap = { a: { itemHrid: '/items/chimerical_chest', count: 1 } };
+        const { breakdown } = calculateKeyCosts(lootMap, 0);
+
+        expect(breakdown).toHaveLength(2);
+        for (const row of breakdown) {
+            expect(row.pricePerItem).toBe(500);
+            expect(row.craftPlan).toBeNull();
+        }
+    });
+
+    test('skips a key entirely when cheapest mode cannot resolve any cost', () => {
+        config.getSettingValue.mockReturnValue('cheapest');
+        computeBestCraftingPlan.mockReturnValue({ strategy: 'buy', unitCost: Infinity, children: [] });
+
+        const lootMap = { a: { itemHrid: '/items/chimerical_chest', count: 1 } };
+        const { breakdown, ask } = calculateKeyCosts(lootMap, 0);
+
+        expect(breakdown).toHaveLength(0);
+        expect(ask).toBe(0);
     });
 });

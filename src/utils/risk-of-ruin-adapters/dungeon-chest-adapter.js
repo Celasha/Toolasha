@@ -20,26 +20,14 @@
  */
 
 import dataManager from '../../core/data-manager.js';
-import marketAPI from '../../api/marketplace.js';
-import config from '../../core/config.js';
 import expectedValueCalculator from '../../features/market/expected-value-calculator.js';
 import { calculatePriceAfterTax } from '../profit-helpers.js';
 import { createSeededRng, drawFromDistribution } from '../risk-of-ruin-engine.js';
 import { DUNGEON_ENTRY_KEYS, DUNGEON_CHEST_KEYS } from '../../features/combat-sim/combat-sim-adapter.js';
+import { getKeyPrice } from '../dungeon-key-cost.js';
 
 const COIN_HRID = '/items/coin';
 const DEFAULT_EMPIRICAL_SAMPLE_SIZE = 5000;
-
-function getKeyPricingMode() {
-    return config.getSettingValue('profitCalc_keyPricingMode') || 'ask';
-}
-
-function getKeyPrice(keyHrid) {
-    const priceData = marketAPI.getPrice(keyHrid);
-    if (!priceData) return 0;
-    const priceKey = getKeyPricingMode();
-    return priceData[priceKey] ?? priceData.ask ?? 0;
-}
 
 /**
  * Gold cost to open one chest: entry key (regular, non-refinement chests only) + chest key,
@@ -52,10 +40,10 @@ export function getChestOpenCost(containerHrid) {
     let cost = 0;
 
     const entryKeyHrid = DUNGEON_ENTRY_KEYS[containerHrid];
-    if (entryKeyHrid) cost += getKeyPrice(entryKeyHrid);
+    if (entryKeyHrid) cost += getKeyPrice(entryKeyHrid) ?? 0;
 
     const chestKeyHrid = DUNGEON_CHEST_KEYS[containerHrid];
-    if (chestKeyHrid) cost += getKeyPrice(chestKeyHrid);
+    if (chestKeyHrid) cost += getKeyPrice(chestKeyHrid) ?? 0;
 
     return cost;
 }
@@ -78,14 +66,14 @@ export function getChestCostBreakdown(containerHrid) {
         ? {
               hrid: entryKeyHrid,
               name: dataManager.getItemDetails(entryKeyHrid)?.name || entryKeyHrid,
-              price: getKeyPrice(entryKeyHrid),
+              price: getKeyPrice(entryKeyHrid) ?? 0,
           }
         : null;
     const chestKey = chestKeyHrid
         ? {
               hrid: chestKeyHrid,
               name: dataManager.getItemDetails(chestKeyHrid)?.name || chestKeyHrid,
-              price: getKeyPrice(chestKeyHrid),
+              price: getKeyPrice(chestKeyHrid) ?? 0,
           }
         : null;
 

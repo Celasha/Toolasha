@@ -1302,8 +1302,12 @@ export const settingsGroups = {
                 label: 'Key pricing mode',
                 type: 'select',
                 default: 'ask',
-                options: ['ask', 'bid'],
-                help: 'Whether to use ask (instant buy) or bid (patient buy) prices when valuing dungeon keys in tooltips, networth, and combat income calculations.',
+                options: [
+                    { value: 'ask', label: 'Ask (instant buy)' },
+                    { value: 'bid', label: 'Bid (patient buy)' },
+                    { value: 'cheapest', label: 'Cheapest (buy or craft)' },
+                ],
+                help: 'How to value dungeon keys in tooltips, networth, and combat income calculations: ask (instant buy), bid (patient buy), or cheapest (compares buying to crafting the key yourself, using Best Crafting Plan’s engine and your Profit calculation pricing mode’s buy-side basis).',
             },
             profitCalc_customPriceOverrides: {
                 id: 'profitCalc_customPriceOverrides',
