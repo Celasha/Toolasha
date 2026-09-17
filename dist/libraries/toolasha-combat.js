@@ -1,11 +1,11 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.108.7
+ * Version: 2.108.8
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, loadoutState, storage, webSocketHook, timerRegistry_js, domObserverHelpers_js, formatters_js, marketAPI, expectedValueCalculator, profitHelpers_js, profitConstants_js, reactInput_js, marketData_js, enhancementCalculator_js, enhancementConfig_js, teaParser_js, abilityCostCalculator_js, equipmentParser_js, marketplaceSession_js, dom, tooltipObserver, houseCostCalculator_js) {
+(function (config, dataManager, domObserver, loadoutState, storage, webSocketHook, timerRegistry_js, domObserverHelpers_js, formatters_js, marketAPI, expectedValueCalculator, profitHelpers_js, profitConstants_js, reactInput_js, marketData_js, enhancementCalculator_js, enhancementConfig_js, teaParser_js, abilityCostCalculator_js, equipmentParser_js, actionCalculator_js, efficiency_js, materialCalculator_js, experienceCalculator_js, marketplaceSession_js, dom, tooltipObserver, houseCostCalculator_js) {
     'use strict';
 
     /**
@@ -1260,7 +1260,11 @@
          */
         async getStatsByName(dungeonName) {
             const allRuns = await storage.getJSON('allRuns', this.unifiedStoreName, []);
-            const runs = allRuns.filter((r) => r.dungeonName === dungeonName);
+            const allAttempts = allRuns.filter((r) => r.dungeonName === dungeonName);
+            // Runs saved before the result field existed have no result — treat as success (only
+            // successful clears were ever saved back then).
+            const runs = allAttempts.filter((r) => !r.result || r.result === 'success');
+            const failedAttempts = allAttempts.filter((r) => r.result === 'fail' || r.result === 'cancel');
 
             if (runs.length === 0) {
                 return {
@@ -1269,6 +1273,9 @@
                     fastestTime: 0,
                     slowestTime: 0,
                     avgWaveTime: 0,
+                    avgTimePerAttempt: 0,
+                    failCount: failedAttempts.length,
+                    totalAttempts: allAttempts.length,
                 };
             }
 
@@ -1281,12 +1288,20 @@
 
             const avgWaveTime = runs.reduce((sum, run) => sum + (run.avgWaveTime || 0), 0) / runs.length;
 
+            // Attempt-inclusive time cost: failed/canceled attempts still cost real time, but only
+            // successful clears count as output, so the denominator stays the clear count.
+            const failedTime = failedAttempts.reduce((sum, r) => sum + (r.duration || r.totalTime || 0), 0);
+            const avgTimePerAttempt = (totalTime + failedTime) / runs.length;
+
             return {
                 totalRuns: runs.length,
                 avgTime,
                 fastestTime,
                 slowestTime,
                 avgWaveTime,
+                avgTimePerAttempt,
+                failCount: failedAttempts.length,
+                totalAttempts: allAttempts.length,
             };
         }
 
@@ -1433,6 +1448,10 @@
          * @param {string} run.timestamp - Run start timestamp (ISO string)
          * @param {number} run.duration - Run duration (ms)
          * @param {string} run.dungeonName - Dungeon name (from Phase 2)
+         * @param {string} [run.result] - 'success' | 'fail' | 'cancel'. Defaults to 'success'.
+         * @param {number} [run.wavesCompleted] - Waves completed before the run ended.
+         * @param {boolean} [run.validated] - Whether duration is anchored to a real server-side
+         *   chat-message timestamp vs. a client-clock estimate. Defaults to true.
          * @returns {Promise<boolean>} Success status
          */
         async saveTeamRun(teamKey, run) {
@@ -1466,11 +1485,13 @@
                     team: team,
                     teamKey: teamKey,
                     duration: run.duration,
-                    validated: true,
+                    validated: run.validated ?? true,
                     source: 'chat',
                     waveTimes: null,
                     avgWaveTime: null,
                     keyCountsMap: run.keyCountsMap || null, // Include key counts if available
+                    result: run.result || 'success',
+                    wavesCompleted: run.wavesCompleted ?? null,
                 };
 
                 // Add to front of list (most recent first)
@@ -1502,10 +1523,13 @@
             const allRuns = await this.getAllRuns();
             if (allRuns.length === 0) return 0;
 
-            // Group by dungeonName + teamKey
+            // Group by dungeonName + teamKey. Fail/cancel attempts are excluded — their durations
+            // aren't drawn from the same distribution as clears, so mixing them in would skew the
+            // median this scrub uses to flag outliers.
             const groups = new Map();
             for (let i = 0; i < allRuns.length; i++) {
                 const run = allRuns[i];
+                if (run.result === 'fail' || run.result === 'cancel') continue;
                 const key = `${run.dungeonName}||${run.teamKey}`;
                 if (!groups.has(key)) groups.set(key, []);
                 groups.get(key).push({ run, index: i });
@@ -1573,7 +1597,8 @@
 
         /**
          * Get all teams with stored runs
-         * @returns {Promise<Array>} Array of {teamKey, runCount, avgTime, bestTime, worstTime}
+         * @returns {Promise<Array>} Array of {teamKey, runCount, avgTime, bestTime, worstTime,
+         *   avgTimePerAttempt, failCount, totalAttempts}
          */
         async getAllTeamStats() {
             // Get all runs from unified storage
@@ -1592,11 +1617,18 @@
 
             // Calculate stats for each team
             const results = [];
-            for (const [teamKey, runs] of Object.entries(teamGroups)) {
+            for (const [teamKey, allAttempts] of Object.entries(teamGroups)) {
+                const runs = allAttempts.filter((r) => !r.result || r.result === 'success');
+                const failedAttempts = allAttempts.filter((r) => r.result === 'fail' || r.result === 'cancel');
+                if (runs.length === 0) continue;
+
                 const durations = runs.map((r) => r.duration);
-                const avgTime = durations.reduce((a, b) => a + b, 0) / durations.length;
+                const totalTime = durations.reduce((a, b) => a + b, 0);
+                const avgTime = totalTime / durations.length;
                 const bestTime = Math.min(...durations);
                 const worstTime = Math.max(...durations);
+                const failedTime = failedAttempts.reduce((sum, r) => sum + (r.duration || 0), 0);
+                const avgTimePerAttempt = (totalTime + failedTime) / runs.length;
 
                 results.push({
                     teamKey,
@@ -1604,6 +1636,9 @@
                     avgTime,
                     bestTime,
                     worstTime,
+                    avgTimePerAttempt,
+                    failCount: failedAttempts.length,
+                    totalAttempts: allAttempts.length,
                 });
             }
 
@@ -2168,7 +2203,7 @@
 
                             if (!allWavesCompleted) {
                                 // Early exit (fled, died, or failed)
-                                this.resetTracking();
+                                this.resetTracking({ result: 'fail', endTimestamp: Date.now() });
                             }
                             // If it was a successful completion, action_completed will handle it
                             return;
@@ -2257,16 +2292,16 @@
 
         /**
          * Handle "Party failed" message
-         * @param {number} _timestamp - Message timestamp in milliseconds
+         * @param {number} timestamp - Message timestamp in milliseconds
          * @param {Object} _message - Message object
          */
-        onPartyFailed(_timestamp, _message) {
+        onPartyFailed(timestamp, _message) {
             if (!this.isTracking || !this.currentRun) {
                 return;
             }
 
             // Mark run as failed and reset tracking
-            this.resetTracking();
+            this.resetTracking({ result: 'fail', endTimestamp: timestamp });
         }
 
         /**
@@ -2611,7 +2646,7 @@
                     this.completeDungeon();
                 } else {
                     // Early exit (fled, died, or failed)
-                    this.resetTracking();
+                    this.resetTracking({ result: 'fail', endTimestamp: Date.now() });
                 }
             } else {
                 this.notifyUpdate();
@@ -2737,8 +2772,24 @@
 
         /**
          * Reset tracking state (on completion, flee, or death)
+         * @param {{result: 'fail'|'cancel', endTimestamp: number}} [failure] - When provided, the
+         *   current run's duration is captured and persisted as a failed/canceled attempt before
+         *   state is cleared. State is still wiped synchronously first (before the async save runs)
+         *   to avoid the same race completeDungeon() already guards against - a new run starting
+         *   before the save completes.
          */
-        async resetTracking() {
+        async resetTracking(failure = null) {
+            const failureSnapshot =
+                failure && this.isTracking && this.currentRun
+                    ? {
+                          result: failure.result,
+                          endTimestamp: failure.endTimestamp,
+                          currentRun: this.currentRun,
+                          firstKeyCountTimestamp: this.firstKeyCountTimestamp,
+                          battleStartedTimestamp: this.battleStartedTimestamp,
+                      }
+                    : null;
+
             this.isTracking = false;
             this.currentRun = null;
             this.waveStartTime = null;
@@ -2756,7 +2807,58 @@
             // Clear saved state (await to ensure it completes)
             await this.clearInProgressRun();
 
+            if (failureSnapshot) {
+                // Fire-and-forget, same as completeDungeon()'s save-after-state-clear ordering.
+                this.saveFailedRun(failureSnapshot).catch((error) => {
+                    console.error('[Dungeon Tracker] Failed to save failed/canceled run:', error);
+                });
+            }
+
             this.notifyUpdate();
+        }
+
+        /**
+         * Persist a failed/canceled run's duration. Called by resetTracking() with a snapshot taken
+         * before state was cleared, since a fail has no completion key-count message of its own to
+         * anchor an end time - the caller supplies the best available end timestamp.
+         * @param {Object} snapshot
+         * @param {'fail'|'cancel'} snapshot.result
+         * @param {number} snapshot.endTimestamp - End anchor in epoch ms.
+         * @param {Object} snapshot.currentRun
+         * @param {number|null} snapshot.firstKeyCountTimestamp
+         * @param {number|null} snapshot.battleStartedTimestamp
+         */
+        async saveFailedRun({ result, endTimestamp, currentRun, firstKeyCountTimestamp, battleStartedTimestamp }) {
+            if (!currentRun.dungeonHrid) {
+                return;
+            }
+
+            const startAnchor = firstKeyCountTimestamp ?? battleStartedTimestamp ?? currentRun.startTime;
+            if (startAnchor === null || startAnchor === undefined) {
+                return;
+            }
+
+            let duration = endTimestamp - startAnchor;
+            if (duration < 0) {
+                duration += 24 * 60 * 60 * 1000;
+            }
+
+            const validated = firstKeyCountTimestamp !== null;
+            const dungeonInfo = dungeonTrackerStorage.getDungeonInfo(currentRun.dungeonHrid);
+            const dungeonName = dungeonInfo ? dungeonInfo.name : 'Unknown';
+            const keyCountsMap = currentRun.keyCountsMap || {};
+            const team = Object.keys(keyCountsMap).sort();
+            const teamKey = dungeonTrackerStorage.getTeamKey(team);
+
+            await dungeonTrackerStorage.saveTeamRun(teamKey, {
+                timestamp: new Date(startAnchor).toISOString(),
+                duration,
+                dungeonName,
+                keyCountsMap: currentRun.keyCountsMap || null,
+                result,
+                wavesCompleted: currentRun.wavesCompleted,
+                validated,
+            });
         }
 
         /**
@@ -3027,7 +3129,8 @@
                 // Sort events by timestamp
                 events.sort((a, b) => a.timestamp - b.timestamp);
 
-                // Build runs from events - only count key→key pairs (skip key→fail and key→cancel)
+                // Build runs from events - pair each key count with whatever ends it: another key
+                // count (success), a "Party failed" message (fail), or a battle-ended/cancel (cancel)
                 let runsAdded = 0;
                 const teamsSet = new Set();
 
@@ -3038,8 +3141,7 @@
                     const next = events[i + 1];
                     if (!next) break; // No next event
 
-                    // Only create run if next event is also a key count (successful completion)
-                    if (next.type === 'key') {
+                    if (next.type === 'key' || next.type === 'fail' || next.type === 'cancel') {
                         // Calculate duration (handle midnight rollover)
                         let duration = next.timestamp - event.timestamp;
                         if (duration < 0) {
@@ -3070,6 +3172,7 @@
                             timestamp: event.timestamp.toISOString(),
                             duration: duration,
                             dungeonName: dungeonName,
+                            result: next.type === 'key' ? 'success' : next.type,
                         };
 
                         const saved = await dungeonTrackerStorage.saveTeamRun(teamKey, run);
@@ -3077,7 +3180,6 @@
                             runsAdded++;
                         }
                     }
-                    // If next event is 'fail' or 'cancel', skip this key count (not a completed run)
                 }
 
                 return {
@@ -3563,7 +3665,10 @@
         }
 
         /**
-         * Save runs from chat events to storage (Phase 5: authoritative source)
+         * Save runs from chat events to storage (Phase 5: authoritative source). Pairs a starting
+         * key-count event with whatever ends it - a completion key-count (success), a "Party failed"
+         * message (fail), or a cancel (party left before completing) - so failed/canceled attempts'
+         * real time cost gets captured, not just successful clears.
          * @param {Array} events - Chat events array
          */
         async saveRunsFromEvents(events) {
@@ -3582,7 +3687,7 @@
                         break;
                     }
                 }
-                if (!next || next.type !== 'key') continue; // Only key→key pairs
+                if (!next) continue;
 
                 // Calculate duration
                 let duration = next.timestamp - event.timestamp;
@@ -3599,6 +3704,7 @@
                     timestamp: event.timestamp.toISOString(),
                     duration: duration,
                     dungeonName: dungeonName,
+                    result: next.type === 'key' ? 'success' : next.type,
                 };
 
                 // Save team run (includes dungeon name from Phase 2)
@@ -3608,7 +3714,8 @@
 
         /**
          * Calculate stats from visible chat events (in-memory, no storage)
-         * Used to show averages before backfill is done
+         * Used to show averages before backfill is done. Successful clears and failed/canceled
+         * attempts are tracked separately so the preview matches what saveRunsFromEvents() persists.
          * @param {Array} events - Chat events array
          * @returns {Object} Stats keyed by "teamKey::dungeonName"
          */
@@ -3630,7 +3737,7 @@
                         break;
                     }
                 }
-                if (!next || next.type !== 'key') continue; // Only key→key pairs (successful runs)
+                if (!next) continue;
 
                 // Calculate duration
                 let duration = next.timestamp - event.timestamp;
@@ -3645,11 +3752,16 @@
 
                 // Initialize stats entry if needed
                 if (!statsByKey[statsKey]) {
-                    statsByKey[statsKey] = { durations: [] };
+                    statsByKey[statsKey] = { durations: [], failedDurations: [] };
                 }
 
-                // Add this run duration
-                statsByKey[statsKey].durations.push(duration);
+                // Successful clears feed the existing clear-time stat; fails/cancels are tracked
+                // separately so they can add to time cost without counting as output.
+                if (next.type === 'key') {
+                    statsByKey[statsKey].durations.push(duration);
+                } else {
+                    statsByKey[statsKey].failedDurations.push(duration);
+                }
             }
 
             // Calculate stats for each team+dungeon combination
@@ -3659,11 +3771,15 @@
                 if (durations.length === 0) continue;
 
                 const total = durations.reduce((sum, d) => sum + d, 0);
+                const failedTotal = data.failedDurations.reduce((sum, d) => sum + d, 0);
                 result[key] = {
                     totalRuns: durations.length,
                     avgTime: Math.floor(total / durations.length),
                     fastestTime: Math.min(...durations),
                     slowestTime: Math.max(...durations),
+                    avgTimePerAttempt: Math.floor((total + failedTotal) / durations.length),
+                    failCount: data.failedDurations.length,
+                    totalAttempts: durations.length + data.failedDurations.length,
                 };
             }
 
@@ -4142,6 +4258,11 @@
                 filteredRuns = filteredRuns.filter((r) => r.teamKey === this.state.filterTeam);
             }
 
+            // This chart plots run duration as a trend over time - a failed/canceled attempt's
+            // duration isn't comparable to a clear's, so it's excluded rather than shown as a point
+            // on the same line (matches the history/stats views treating fails separately).
+            filteredRuns = filteredRuns.filter((r) => !r.result || r.result === 'success');
+
             if (filteredRuns.length === 0) {
                 // Destroy existing chart
                 if (this.chartInstance) {
@@ -4409,6 +4530,9 @@
                 filteredRuns = filteredRuns.filter((r) => r.teamKey === this.state.filterTeam);
             }
 
+            // Exclude fails/cancels - see render() for why.
+            filteredRuns = filteredRuns.filter((r) => !r.result || r.result === 'success');
+
             if (filteredRuns.length === 0) return;
 
             // Sort by timestamp
@@ -4622,28 +4746,40 @@
         }
 
         /**
-         * Calculate stats for a set of runs
-         * @param {Array} runs - Array of runs
+         * Calculate stats for a set of runs. Failed/canceled attempts cost real time but aren't
+         * clears, so the clear-only stats (avg/fastest/slowest) stay unaffected by them while
+         * avgTimePerAttempt/failCount surface the real time cost.
+         * @param {Array} allAttempts - Array of runs (successes + fails/cancels)
          * @returns {Object} Stats object
          */
-        calculateStatsForRuns(runs) {
-            if (!runs || runs.length === 0) {
+        calculateStatsForRuns(allAttempts) {
+            const runs = (allAttempts || []).filter((r) => !r.result || r.result === 'success');
+            const failedAttempts = (allAttempts || []).filter((r) => r.result === 'fail' || r.result === 'cancel');
+
+            if (runs.length === 0) {
                 return {
                     totalRuns: 0,
                     avgTime: 0,
                     fastestTime: 0,
                     slowestTime: 0,
+                    avgTimePerAttempt: 0,
+                    failCount: failedAttempts.length,
+                    totalAttempts: failedAttempts.length,
                 };
             }
 
             const durations = runs.map((r) => r.duration);
             const total = durations.reduce((sum, d) => sum + d, 0);
+            const failedTotal = failedAttempts.reduce((sum, r) => sum + (r.duration || 0), 0);
 
             return {
                 totalRuns: runs.length,
                 avgTime: Math.floor(total / runs.length),
                 fastestTime: Math.min(...durations),
                 slowestTime: Math.max(...durations),
+                avgTimePerAttempt: Math.floor((total + failedTotal) / runs.length),
+                failCount: failedAttempts.length,
+                totalAttempts: runs.length + failedAttempts.length,
             };
         }
 
@@ -4750,6 +4886,8 @@
                 const avgTime = this.formatTime(group.stats.avgTime);
                 const bestTime = this.formatTime(group.stats.fastestTime);
                 const worstTime = this.formatTime(group.stats.slowestTime);
+                const avgPerAttempt = this.formatTime(group.stats.avgTimePerAttempt);
+                const failSummary = group.stats.failCount > 0 ? ` | Fails: ${group.stats.failCount}` : '';
 
                 // Check if this group is expanded
                 const isExpanded = this.state.expandedGroups.has(group.label);
@@ -4775,7 +4913,7 @@
                                 ${group.label}
                             </div>
                             <div style="font-size: 10px; color: #aaa;">
-                                Runs: ${group.stats.totalRuns} | Avg: ${avgTime} | Best: ${bestTime} | Worst: ${worstTime}
+                                Runs: ${group.stats.totalRuns} | Avg Clear: ${avgTime} | Avg/Attempt: ${avgPerAttempt} | Best: ${bestTime} | Worst: ${worstTime}${failSummary}
                             </div>
                         </div>
                         <span class="mwi-dt-group-toggle" style="color: #aaa; font-size: 10px;">${toggleIcon}</span>
@@ -4844,6 +4982,10 @@
                 const dateObj = new Date(run.timestamp);
                 const dateTime = formatters_js.formatDateTime(dateObj);
                 const dungeonLabel = run.dungeonName || 'Unknown';
+                const isFailed = run.result === 'fail' || run.result === 'cancel';
+                const resultBadge = isFailed
+                    ? `<span style="color: ${run.result === 'fail' ? '#ff6b6b' : '#ffd700'}; font-size: 9px; font-weight: bold; margin-right: 4px;">${run.result === 'fail' ? 'FAILED' : 'CANCELED'}</span>`
+                    : '';
 
                 html += `
                 <div style="
@@ -4855,8 +4997,8 @@
                     font-size: 10px;
                 " data-run-timestamp="${run.timestamp}">
                     <span style="color: #aaa; min-width: 25px;">#${runNumber}</span>
-                    <span style="color: #fff; flex: 1; text-align: center;">
-                        ${timeStr} <span style="color: #888; font-size: 9px;">(${dateTime})</span>
+                    <span style="color: ${isFailed ? '#888' : '#fff'}; flex: 1; text-align: center;">
+                        ${resultBadge}${timeStr} <span style="color: #888; font-size: 9px;">(${dateTime})</span>
                     </span>
                     <span style="color: #888; margin-right: 6px; font-size: 9px;">${dungeonLabel}</span>
                     <button class="mwi-dt-delete-run" style="
@@ -5603,7 +5745,7 @@
                 ">
                     <span>Last Run: <span id="mwi-dt-header-last" style="color: #fff; font-weight: bold;">--:--</span></span>
                     <span>|</span>
-                    <span>Avg Run: <span id="mwi-dt-header-avg" style="color: #fff; font-weight: bold;">--:--</span></span>
+                    <span>Avg Clear: <span id="mwi-dt-header-avg" style="color: #fff; font-weight: bold;">--:--</span></span>
                     <span>|</span>
                     <span>Runs: <span id="mwi-dt-header-runs" style="color: #fff; font-weight: bold;">0</span></span>
                     <span>|</span>
@@ -5637,10 +5779,10 @@
                     </div>
                 </div>
 
-                <!-- Run-level stats (2x2 grid) -->
+                <!-- Run-level stats (2x3 grid) -->
                 <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; font-size: 11px; color: #ccc; padding-top: 4px; border-top: 1px solid #444;">
                     <div style="text-align: center;">
-                        <div style="color: #aaa; font-size: 10px;">Avg Run</div>
+                        <div style="color: #aaa; font-size: 10px;">Avg Clear</div>
                         <div id="mwi-dt-avg-time" style="color: #fff; font-weight: bold;">--:--</div>
                     </div>
                     <div style="text-align: center;">
@@ -5654,6 +5796,14 @@
                     <div style="text-align: center;">
                         <div style="color: #aaa; font-size: 10px;">Slowest Run</div>
                         <div id="mwi-dt-slowest-time" style="color: #ff6b6b; font-weight: bold;">--:--</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="color: #aaa; font-size: 10px;">Avg/Attempt</div>
+                        <div id="mwi-dt-avg-per-attempt" style="color: #fff; font-weight: bold;">--:--</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="color: #aaa; font-size: 10px;">Fail Rate</div>
+                        <div id="mwi-dt-fail-rate" style="color: #ffb84d; font-weight: bold;">--</div>
                     </div>
                 </div>
 
@@ -5887,21 +6037,26 @@
             }
 
             // Fetch run statistics - respect ALL filters to match chart exactly
-            let stats, runHistory, lastRunTime;
+            let stats, lastRunTime;
 
             // Get all runs and apply filters (EXACT SAME LOGIC as chart)
             const allRuns = await storage.getJSON('allRuns', 'unifiedRuns', []);
-            runHistory = allRuns;
+            let allAttempts = allRuns;
 
             // Apply dungeon filter
             if (this.state.filterDungeon !== 'all') {
-                runHistory = runHistory.filter((r) => r.dungeonName === this.state.filterDungeon);
+                allAttempts = allAttempts.filter((r) => r.dungeonName === this.state.filterDungeon);
             }
 
             // Apply team filter
             if (this.state.filterTeam !== 'all') {
-                runHistory = runHistory.filter((r) => r.teamKey === this.state.filterTeam);
+                allAttempts = allAttempts.filter((r) => r.teamKey === this.state.filterTeam);
             }
+
+            // Failed/canceled attempts cost real time but aren't clears - keep the existing
+            // clear-only stats (avg/fastest/slowest/last) unaffected by them.
+            const runHistory = allAttempts.filter((r) => !r.result || r.result === 'success');
+            const failedAttempts = allAttempts.filter((r) => r.result === 'fail' || r.result === 'cancel');
 
             // Calculate stats from filtered runs
             if (runHistory.length > 0) {
@@ -5910,18 +6065,31 @@
 
                 const durations = runHistory.map((r) => r.duration || r.totalTime || 0);
                 const total = durations.reduce((sum, d) => sum + d, 0);
+                const failedTotal = failedAttempts.reduce((sum, r) => sum + (r.duration || r.totalTime || 0), 0);
+                const totalAttempts = runHistory.length + failedAttempts.length;
 
                 stats = {
                     totalRuns: runHistory.length,
                     avgTime: Math.floor(total / runHistory.length),
                     fastestTime: Math.min(...durations),
                     slowestTime: Math.max(...durations),
+                    avgTimePerAttempt: Math.floor((total + failedTotal) / runHistory.length),
+                    failCount: failedAttempts.length,
+                    failRate: totalAttempts > 0 ? failedAttempts.length / totalAttempts : 0,
                 };
 
                 lastRunTime = durations[0]; // First run after sorting (most recent)
             } else {
                 // No runs match filters
-                stats = { totalRuns: 0, avgTime: 0, fastestTime: 0, slowestTime: 0 };
+                stats = {
+                    totalRuns: 0,
+                    avgTime: 0,
+                    fastestTime: 0,
+                    slowestTime: 0,
+                    avgTimePerAttempt: 0,
+                    failCount: failedAttempts.length,
+                    failRate: failedAttempts.length > 0 ? 1 : 0,
+                };
                 lastRunTime = 0;
             }
 
@@ -5988,6 +6156,18 @@
             const slowestTime = this.container.querySelector('#mwi-dt-slowest-time');
             if (slowestTime) {
                 slowestTime.textContent = stats.slowestTime > 0 ? this.formatTime(stats.slowestTime) : '--:--';
+            }
+
+            const avgPerAttempt = this.container.querySelector('#mwi-dt-avg-per-attempt');
+            if (avgPerAttempt) {
+                avgPerAttempt.textContent =
+                    stats.avgTimePerAttempt > 0 ? this.formatTime(stats.avgTimePerAttempt) : '--:--';
+            }
+
+            const failRate = this.container.querySelector('#mwi-dt-fail-rate');
+            if (failRate) {
+                failRate.textContent =
+                    stats.totalRuns + stats.failCount > 0 ? `${Math.round(stats.failRate * 100)}%` : '--';
             }
 
             // Update Keys section with party member key counts
@@ -25855,6 +26035,461 @@
     const combatStatsDataCollector = new CombatStatsDataCollector();
 
     /**
+     * Game Data Lookup Utilities
+     *
+     * Centralized functions for resolving display names to HRIDs.
+     * Handles the ★ ↔ (R) refined item display name difference between
+     * test server and live server.
+     */
+
+
+    /**
+     * Get the coin cost of an item from the in-game shop.
+     * Returns 0 if the item is not available in the shop or not purchasable with coins.
+     * @param {string} itemHrid - Item HRID
+     * @returns {number} Coin cost, or 0 if not available in shop
+     */
+    function getShopCoinCost(itemHrid) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.shopItemDetailMap) return 0;
+
+        for (const shopItem of Object.values(gameData.shopItemDetailMap)) {
+            if (shopItem.itemHrid === itemHrid) {
+                if (shopItem.costs && shopItem.costs.length > 0) {
+                    const coinCost = shopItem.costs.find((cost) => cost.itemHrid === '/items/coin');
+                    if (coinCost) {
+                        return coinCost.count;
+                    }
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    /**
+     * Crafting Plan Calculator
+     * Computes the optimal buy-vs-craft plan for a target item by recursively
+     * comparing market price against crafting cost at each material tier.
+     */
+
+
+    const MAX_DEPTH = 15;
+
+    /**
+     * Find the production action that creates a given item.
+     * @param {string} itemHrid
+     * @returns {{ actionHrid: string, action: Object, outputCount: number } | null}
+     */
+    function findProductionAction(itemHrid) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.actionDetailMap) return null;
+
+        for (const [actionHrid, action] of Object.entries(gameData.actionDetailMap)) {
+            if (!action.outputItems) continue;
+            for (const output of action.outputItems) {
+                if (output.itemHrid === itemHrid) {
+                    return { actionHrid, action, outputCount: output.count || 1 };
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Get artisan tea material reduction bonus for an action type.
+     * @param {string} actionType - e.g. '/action_types/brewing'
+     * @returns {number} Reduction as decimal (e.g. 0.112 for 11.2%)
+     */
+    function getArtisanBonus(actionType) {
+        try {
+            const gameData = dataManager.getInitClientData();
+            const equipment = dataManager.getEquipment();
+            const itemDetailMap = gameData?.itemDetailMap || {};
+            const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, itemDetailMap);
+            const activeDrinks = dataManager.getActionDrinkSlots(actionType);
+            return teaParser_js.parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
+        } catch {
+            return 0;
+        }
+    }
+
+    /**
+     * Compute the optimal crafting plan for an item.
+     * At each node, decides whether buying from market or crafting is cheaper.
+     *
+     * @param {string} itemHrid - Target item
+     * @param {number} quantity - How many needed
+     * @param {string} [mode='ask'] - Pricing mode for market lookups
+     * @param {Set} [visited] - Circular dependency guard
+     * @param {Map} [memo] - Memoization cache (unit cost per itemHrid)
+     * @param {number} [depth=0] - Current recursion depth
+     * @param {number} [maxDepth=MAX_DEPTH] - Maximum recursion depth (1 = buy all sub-materials)
+     * @param {boolean} [buyRawOnly=false] - When true, always craft items that have a recipe; only buy uncraftable items
+     * @param {boolean} [forceRootCraft=false] - When true, forces the root item (depth 0) to be crafted
+     * @param {number} [timeCostPerHour=0] - Gold value per hour of player time (0 = disabled)
+     * @param {boolean} [skipProcessing=false] - When true, forces buy for processing actions (single input, no upgrade)
+     * @returns {CraftingPlanNode}
+     */
+    function computeBestCraftingPlan(
+        itemHrid,
+        quantity = 1,
+        mode = 'ask',
+        visited = new Set(),
+        memo = new Map(),
+        depth = 0,
+        maxDepth = MAX_DEPTH,
+        buyRawOnly = false,
+        forceRootCraft = false,
+        timeCostPerHour = 0,
+        skipProcessing = false
+    ) {
+        const itemDetails = dataManager.getItemDetails(itemHrid);
+        const itemName = itemDetails?.name || itemHrid.split('/').pop();
+        const isTradable = itemDetails?.isTradable ?? false;
+        const artisanMode = materialCalculator_js.getArtisanMaterialMode();
+
+        // Get market buy price (min of market ask and shop cost)
+        let buyPrice = null;
+        if (isTradable) {
+            const marketPrice = marketData_js.getItemPrice(itemHrid, { mode, context: 'profit', side: 'buy' });
+            if (marketPrice !== null && marketPrice > 0) {
+                buyPrice = marketPrice;
+            }
+        }
+        const shopCost = getShopCoinCost(itemHrid);
+        if (shopCost > 0 && (buyPrice === null || shopCost < buyPrice)) {
+            buyPrice = shopCost;
+        }
+
+        // Coins always cost 1 each
+        if (itemHrid === '/items/coin') {
+            return {
+                itemHrid,
+                itemName: 'Coin',
+                quantity,
+                strategy: 'buy',
+                unitCost: 1,
+                totalCost: quantity,
+                buyPrice: 1,
+                craftCost: null,
+                actionHrid: null,
+                actionsNeeded: 0,
+                children: [],
+            };
+        }
+
+        // Check memo for previously computed unit cost
+        if (memo.has(itemHrid)) {
+            const cachedUnitCost = memo.get(itemHrid);
+            const actionsNeeded =
+                cachedUnitCost.strategy === 'craft' ? Math.ceil(quantity / (cachedUnitCost.outputCount || 1)) : 0;
+            return {
+                itemHrid,
+                itemName,
+                quantity,
+                strategy: cachedUnitCost.strategy,
+                unitCost: cachedUnitCost.unitCost,
+                totalCost: cachedUnitCost.unitCost * quantity,
+                buyPrice,
+                craftCost: cachedUnitCost.craftCost,
+                actionHrid: cachedUnitCost.actionHrid,
+                actionsNeeded,
+                children:
+                    cachedUnitCost.strategy === 'craft'
+                        ? cachedUnitCost.childrenTemplate.map((c) =>
+                              computeBestCraftingPlan(
+                                  c.itemHrid,
+                                  c.isUpgrade
+                                      ? actionsNeeded
+                                      : materialCalculator_js.calculateTotalRequired(
+                                            c.basePerAction,
+                                            cachedUnitCost.artisanBonus,
+                                            actionsNeeded,
+                                            artisanMode
+                                        ),
+                                  mode,
+                                  visited,
+                                  memo,
+                                  depth + 1,
+                                  maxDepth,
+                                  buyRawOnly,
+                                  forceRootCraft,
+                                  timeCostPerHour,
+                                  skipProcessing
+                              )
+                          )
+                        : [],
+            };
+        }
+
+        // Circular dependency or depth limit — must buy
+        if (visited.has(itemHrid) || depth >= maxDepth) {
+            return {
+                itemHrid,
+                itemName,
+                quantity,
+                strategy: 'buy',
+                unitCost: buyPrice ?? Infinity,
+                totalCost: (buyPrice ?? Infinity) * quantity,
+                buyPrice,
+                craftCost: null,
+                actionHrid: null,
+                actionsNeeded: 0,
+                children: [],
+            };
+        }
+
+        // Find production action
+        const production = findProductionAction(itemHrid);
+        if (!production) {
+            // No recipe — must buy
+            const unitCost = buyPrice ?? 0;
+            memo.set(itemHrid, {
+                strategy: 'buy',
+                unitCost,
+                craftCost: null,
+                actionHrid: null,
+                outputCount: 1,
+                childrenTemplate: [],
+            });
+            return {
+                itemHrid,
+                itemName,
+                quantity,
+                strategy: 'buy',
+                unitCost,
+                totalCost: unitCost * quantity,
+                buyPrice,
+                craftCost: null,
+                actionHrid: null,
+                actionsNeeded: 0,
+                children: [],
+            };
+        }
+
+        // Skip processing actions if flag is set
+        // Processing = material conversion actions (milk → cheese, fiber → fabric, log → lumber)
+        // Identified by category ending in /material or /lumber (vs equipment crafting like /feet, /crossbow)
+        const isProcessingAction =
+            production.action.category?.endsWith('/material') || production.action.category?.endsWith('/lumber');
+        if (skipProcessing && isProcessingAction) {
+            const unitCost = buyPrice ?? Infinity;
+            memo.set(itemHrid, {
+                strategy: 'buy',
+                unitCost,
+                craftCost: null,
+                actionHrid: null,
+                outputCount: 1,
+                childrenTemplate: [],
+            });
+            return {
+                itemHrid,
+                itemName,
+                quantity,
+                strategy: 'buy',
+                unitCost,
+                totalCost: unitCost * quantity,
+                buyPrice,
+                craftCost: null,
+                actionHrid: null,
+                actionsNeeded: 0,
+                children: [],
+            };
+        }
+
+        // Recurse into crafting
+        visited.add(itemHrid);
+        const { actionHrid, action, outputCount } = production;
+        const artisanBonus = getArtisanBonus(action.type);
+        const actionsForOne = 1 / outputCount; // actions per 1 output item
+        const actionsNeeded = Math.ceil(quantity / outputCount);
+
+        let craftCostPerUnit = 0;
+        const childrenTemplate = []; // { itemHrid, basePerAction, isUpgrade } for memo reconstruction
+
+        // Input items (affected by artisan bonus)
+        if (action.inputItems) {
+            for (const input of action.inputItems) {
+                const inputCountPerAction = input.count || 1;
+                const qtyPerUnit = inputCountPerAction * (1 - artisanBonus) * actionsForOne;
+
+                const inputQty = materialCalculator_js.calculateTotalRequired(inputCountPerAction, artisanBonus, actionsNeeded, artisanMode);
+                const childPlan = computeBestCraftingPlan(
+                    input.itemHrid,
+                    inputQty,
+                    mode,
+                    visited,
+                    memo,
+                    depth + 1,
+                    maxDepth,
+                    buyRawOnly,
+                    forceRootCraft,
+                    timeCostPerHour,
+                    skipProcessing
+                );
+
+                craftCostPerUnit += childPlan.unitCost * qtyPerUnit;
+                childrenTemplate.push({ itemHrid: input.itemHrid, basePerAction: inputCountPerAction, isUpgrade: false });
+            }
+        }
+
+        // Upgrade item (NOT affected by artisan bonus)
+        if (action.upgradeItemHrid) {
+            const qtyPerUnit = actionsForOne; // 1 upgrade per action
+            const upgradePlan = computeBestCraftingPlan(
+                action.upgradeItemHrid,
+                actionsNeeded,
+                mode,
+                visited,
+                memo,
+                depth + 1,
+                maxDepth,
+                buyRawOnly,
+                forceRootCraft,
+                timeCostPerHour,
+                skipProcessing
+            );
+
+            craftCostPerUnit += upgradePlan.unitCost * qtyPerUnit;
+            childrenTemplate.push({ itemHrid: action.upgradeItemHrid, basePerAction: 1, isUpgrade: true });
+        }
+
+        visited.delete(itemHrid);
+
+        // Add time cost to craft cost if enabled
+        if (timeCostPerHour > 0) {
+            const gameData = dataManager.getInitClientData();
+            const actionDetails = gameData?.actionDetailMap?.[actionHrid];
+            if (actionDetails) {
+                const stats = actionCalculator_js.calculateActionStats(actionDetails, {
+                    skills: dataManager.getSkills(),
+                    equipment: dataManager.getEquipment(),
+                    itemDetailMap: gameData.itemDetailMap,
+                });
+                const effMultiplier = efficiency_js.calculateEfficiencyMultiplier(stats.totalEfficiency);
+                const timePerUnit = (stats.actionTime / effMultiplier) * actionsForOne;
+                craftCostPerUnit += timePerUnit * (timeCostPerHour / 3600);
+            }
+        }
+
+        // Buy vs craft decision
+        // When buyRawOnly is true, always craft (we only reach here if a recipe exists)
+        // When forceRootCraft is true and depth === 0, always craft the root item
+        const shouldBuy =
+            !buyRawOnly && !(forceRootCraft && depth === 0) && buyPrice !== null && buyPrice <= craftCostPerUnit;
+        const strategy = shouldBuy ? 'buy' : 'craft';
+        const unitCost = shouldBuy ? buyPrice : craftCostPerUnit;
+
+        // Cache the decision
+        memo.set(itemHrid, {
+            strategy,
+            unitCost,
+            craftCost: craftCostPerUnit,
+            actionHrid: strategy === 'craft' ? actionHrid : null,
+            outputCount,
+            artisanBonus,
+            childrenTemplate: strategy === 'craft' ? childrenTemplate : [],
+        });
+
+        // Build children for the actual quantities
+        let children = [];
+        if (!shouldBuy) {
+            children = [];
+            if (action.inputItems) {
+                for (const input of action.inputItems) {
+                    const inputCountPerAction = input.count || 1;
+                    const inputQty = materialCalculator_js.calculateTotalRequired(inputCountPerAction, artisanBonus, actionsNeeded, artisanMode);
+                    children.push(
+                        computeBestCraftingPlan(
+                            input.itemHrid,
+                            inputQty,
+                            mode,
+                            visited,
+                            memo,
+                            depth + 1,
+                            maxDepth,
+                            buyRawOnly,
+                            forceRootCraft,
+                            timeCostPerHour,
+                            skipProcessing
+                        )
+                    );
+                }
+            }
+            if (action.upgradeItemHrid) {
+                children.push(
+                    computeBestCraftingPlan(
+                        action.upgradeItemHrid,
+                        actionsNeeded,
+                        mode,
+                        visited,
+                        memo,
+                        depth + 1,
+                        maxDepth,
+                        buyRawOnly,
+                        forceRootCraft,
+                        timeCostPerHour,
+                        skipProcessing
+                    )
+                );
+            }
+        }
+
+        return {
+            itemHrid,
+            itemName,
+            quantity,
+            strategy,
+            unitCost,
+            totalCost: unitCost * quantity,
+            buyPrice,
+            craftCost: craftCostPerUnit,
+            actionHrid: strategy === 'craft' ? actionHrid : null,
+            actionsNeeded: strategy === 'craft' ? actionsNeeded : 0,
+            children,
+        };
+    }
+
+    /**
+     * Dungeon Key Cost
+     * Single entry point for pricing a dungeon key (entry key or chest key) under the
+     * `profitCalc_keyPricingMode` setting — ask, bid, or "cheapest" (buy vs. craft, reusing Best
+     * Crafting Plan's own buy-vs-craft engine headlessly, no action panel required).
+     */
+
+
+    const KEY_PRICING_MODE_CHEAPEST = 'cheapest';
+
+    /**
+     * Get the raw `profitCalc_keyPricingMode` setting value.
+     * @returns {string} 'ask' | 'bid' | 'cheapest'
+     */
+    function getKeyPricingModeSetting() {
+        return config.getSettingValue('profitCalc_keyPricingMode') || 'ask';
+    }
+
+    /**
+     * Compute the cheapest way to acquire a dungeon key: buy from market, or craft it, using the
+     * same buy-vs-craft decision Best Crafting Plan already makes for any item. The buy-side price
+     * basis is derived from the global profit-pricing-mode setting (respecting whichever of
+     * ask/bid the player already uses for buy-side profit math), not hardcoded.
+     * @param {string} keyHrid
+     * @param {number} [quantity=1]
+     * @returns {{strategy: 'buy'|'craft', unitCost: number, plan: Object|null}} `plan` is the full
+     *   Best Crafting Plan tree when crafting wins (for a materials/craft-steps breakdown), else null.
+     */
+    function getCheapestKeyCost(keyHrid, quantity = 1) {
+        const buyMode = marketData_js.getPricingMode('profit', 'buy');
+        const plan = computeBestCraftingPlan(keyHrid, quantity, buyMode);
+        return {
+            strategy: plan.strategy,
+            unitCost: plan.unitCost,
+            plan: plan.strategy === 'craft' ? plan : null,
+        };
+    }
+
+    /**
      * Combat Statistics Calculator
      * Calculates income, profit, consumable costs, and other statistics
      */
@@ -26015,17 +26650,27 @@
             return { ask: 0, bid: 0, dailyCost: 0, breakdown: [] };
         }
 
-        const keyPricingSetting = config.getSettingValue('profitCalc_keyPricingMode') || 'ask';
+        const keyPricingSetting = getKeyPricingModeSetting();
+        const isCheapest = keyPricingSetting === KEY_PRICING_MODE_CHEAPEST;
+
+        const priceKey = (keyHrid) => {
+            if (isCheapest) {
+                const { unitCost, plan } = getCheapestKeyCost(keyHrid);
+                return { price: Number.isFinite(unitCost) ? unitCost : null, plan };
+            }
+            const keyPrices = marketAPI.getPrice(keyHrid);
+            if (!keyPrices) return { price: null, plan: null };
+            return { price: keyPrices[keyPricingSetting] ?? keyPrices.ask, plan: null };
+        };
 
         for (const loot of Object.values(lootMap)) {
             const keyHrid = DUNGEON_CHEST_KEYS[loot.itemHrid];
             if (!keyHrid) continue;
 
             const chestCount = loot.count;
-            const keyPrices = marketAPI.getPrice(keyHrid);
-            if (!keyPrices) continue;
+            const { price: keyPrice, plan } = priceKey(keyHrid);
+            if (keyPrice === null) continue;
 
-            const keyPrice = keyPrices[keyPricingSetting] ?? keyPrices.ask;
             const itemCost = keyPrice * chestCount;
 
             totalCost += itemCost;
@@ -26042,6 +26687,7 @@
                 consumedPerDay,
                 pricePerItem: keyPrice,
                 totalCost: itemCost,
+                craftPlan: plan,
             });
         }
 
@@ -26054,10 +26700,9 @@
         }
 
         for (const [keyHrid, count] of Object.entries(chestKeyCounts)) {
-            const keyPrices = marketAPI.getPrice(keyHrid);
-            if (!keyPrices) continue;
+            const { price: keyPrice, plan } = priceKey(keyHrid);
+            if (keyPrice === null) continue;
 
-            const keyPrice = keyPrices[keyPricingSetting] ?? keyPrices.ask;
             const itemCost = keyPrice * count;
 
             totalCost += itemCost;
@@ -26073,6 +26718,7 @@
                 consumedPerDay,
                 pricePerItem: keyPrice,
                 totalCost: itemCost,
+                craftPlan: plan,
             });
         }
 
@@ -26473,12 +27119,285 @@
     }
 
     /**
+     * Crafting Plan Tree Renderer
+     * Pure helpers + DOM builder for a computed Best Crafting Plan's shopping list and craft
+     * steps. Shared by the action-panel BCP display and any other surface that wants the same
+     * materials/craft-steps breakdown for a plan tree (e.g. Combat Stats' dungeon key drill-down).
+     */
+
+
+    /**
+     * Collect all leaf "buy" items from the plan tree into a flat shopping list.
+     * Aggregates quantities for the same item across branches.
+     * @param {Object} node - CraftingPlanNode
+     * @param {Map} buyItems - Map of itemHrid → { itemName, quantity, unitCost, totalCost }
+     */
+    function collectBuyItems(node, buyItems) {
+        if (node.strategy === 'buy') {
+            const existing = buyItems.get(node.itemHrid);
+            if (existing) {
+                existing.quantity += node.quantity;
+                existing.totalCost += node.totalCost;
+            } else {
+                buyItems.set(node.itemHrid, {
+                    itemName: node.itemName,
+                    quantity: node.quantity,
+                    unitCost: node.unitCost,
+                    totalCost: node.totalCost,
+                });
+            }
+            return;
+        }
+
+        for (const child of node.children) {
+            collectBuyItems(child, buyItems);
+        }
+    }
+
+    /**
+     * Collect all "craft" steps from the plan tree.
+     * @param {Object} node - CraftingPlanNode
+     * @param {Array} craftSteps - Array to collect craft steps into
+     */
+    function collectCraftSteps(node, craftSteps) {
+        // Depth-first: collect children first so deepest crafts appear first
+        for (const child of node.children) {
+            collectCraftSteps(child, craftSteps);
+        }
+
+        if (node.strategy === 'craft' && node.actionHrid) {
+            craftSteps.push({
+                itemName: node.itemName,
+                quantity: Math.ceil(node.quantity),
+                actionsNeeded: node.actionsNeeded,
+                actionHrid: node.actionHrid,
+            });
+        }
+    }
+
+    /**
+     * Create a styled row with left label and right value.
+     * @param {string} leftText
+     * @param {string} rightText
+     * @param {Object} [options]
+     * @returns {HTMLElement}
+     */
+    function createRow(leftText, rightText, options = {}) {
+        const row = document.createElement('div');
+        row.style.cssText = `
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 2px 0;
+    `;
+
+        const left = document.createElement('span');
+        left.style.cssText = 'overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
+        left.textContent = leftText;
+        if (options.leftColor) left.style.color = options.leftColor;
+
+        const right = document.createElement('span');
+        right.style.cssText = 'flex-shrink: 0; white-space: nowrap;';
+        right.textContent = rightText;
+        if (options.rightColor) right.style.color = options.rightColor;
+
+        row.appendChild(left);
+        row.appendChild(right);
+        return row;
+    }
+
+    /**
+     * Calculate timing and XP metrics for every craft step in the plan.
+     * The returned total is the same value rendered as `Total craft time` in the
+     * expanded plan and reused in the collapsed summary.
+     * @param {Array} craftSteps
+     * @returns {{ steps: Array, totalCraftSeconds: number, totalXP: number }}
+     */
+    function calculateCraftingPlanMetrics(craftSteps) {
+        const gameData = dataManager.getInitClientData();
+        const skills = dataManager.getSkills();
+        const equipment = dataManager.getEquipment();
+        let totalCraftSeconds = 0;
+        let totalXP = 0;
+
+        const steps = craftSteps.map((step) => {
+            let totalSeconds = 0;
+            let expPerHour = 0;
+
+            if (step.actionHrid) {
+                const actionDetails = gameData?.actionDetailMap?.[step.actionHrid];
+                if (actionDetails) {
+                    const stats = actionCalculator_js.calculateActionStats(actionDetails, {
+                        skills,
+                        equipment,
+                        itemDetailMap: gameData.itemDetailMap,
+                    });
+                    const efficiencyMultiplier = efficiency_js.calculateEfficiencyMultiplier(stats.totalEfficiency);
+                    const calculatedSeconds = (stats.actionTime * step.actionsNeeded) / efficiencyMultiplier;
+                    if (Number.isFinite(calculatedSeconds) && calculatedSeconds > 0) {
+                        totalSeconds = calculatedSeconds;
+                        totalCraftSeconds += calculatedSeconds;
+                    }
+                }
+
+                const expData = experienceCalculator_js.calculateExpPerHour(step.actionHrid);
+                if (expData?.expPerHour > 0 && expData.actionsPerHour > 0) {
+                    const xpPerAction = expData.expPerHour / expData.actionsPerHour;
+                    totalXP += xpPerAction * step.actionsNeeded;
+                    expPerHour = expData.expPerHour;
+                }
+            }
+
+            return { ...step, totalSeconds, expPerHour };
+        });
+
+        return { steps, totalCraftSeconds, totalXP };
+    }
+
+    /**
+     * Render the Shopping List (materials to buy) and Crafting Steps sections for a computed plan.
+     * Read-only breakdown — no marketplace/Buy-workflow wiring. Callers that need a "Buy Missing
+     * Materials" button (the action-panel BCP display) append their own after the shopping list via
+     * `onShoppingListRendered`, so this module stays free of session/marketplace concerns.
+     * @param {Object} plan - CraftingPlanNode (root)
+     * @param {Object} [options]
+     * @param {Object} [options.craftMetrics] - Precomputed { steps, totalCraftSeconds, totalXP }. When
+     *   omitted, it's derived from the plan via collectCraftSteps + calculateCraftingPlanMetrics.
+     * @param {(shoppingListContainer: HTMLElement, buyItems: Array) => void} [options.onShoppingListRendered]
+     *   Called with the shopping list's container (already holding the header/rows/total) and the
+     *   sorted buy-items array, so a caller can append its own controls (e.g. a Buy button).
+     * @returns {HTMLElement} A container with the Shopping List and Crafting Steps sections (either
+     *   may be omitted if there's nothing to show for that part of the plan).
+     */
+    function renderCraftingPlanBreakdown(plan, options = {}) {
+        let craftMetrics = options.craftMetrics;
+        if (!craftMetrics) {
+            const craftSteps = [];
+            collectCraftSteps(plan, craftSteps);
+            craftMetrics =
+                plan.strategy === 'craft' && craftSteps.length > 0
+                    ? calculateCraftingPlanMetrics(craftSteps)
+                    : { steps: [], totalCraftSeconds: 0, totalXP: 0 };
+        }
+
+        const container = document.createElement('div');
+
+        // === Shopping List (what to buy) ===
+        const buyItems = new Map();
+        collectBuyItems(plan, buyItems);
+
+        if (buyItems.size > 0) {
+            const shoppingListContainer = document.createElement('div');
+
+            const shoppingHeader = document.createElement('div');
+            shoppingHeader.style.cssText = `
+            font-weight: 500;
+            color: var(--text-color-primary, #fff);
+            margin-bottom: 4px;
+        `;
+            shoppingHeader.textContent = 'Shopping List';
+            shoppingListContainer.appendChild(shoppingHeader);
+
+            // Sort by total cost descending
+            const sortedItems = [...buyItems.values()].sort((a, b) => b.totalCost - a.totalCost);
+
+            for (const item of sortedItems) {
+                const qty = Math.ceil(item.quantity);
+                const cost = formatters_js.formatKMB(Math.round(item.totalCost));
+                const unit = formatters_js.formatWithSeparator(Math.round(item.unitCost));
+                shoppingListContainer.appendChild(
+                    createRow(`${item.itemName} x${formatters_js.formatWithSeparator(qty)}`, `${cost} (${unit}/ea)`)
+                );
+            }
+
+            // Total buy cost
+            const totalBuyCost = sortedItems.reduce((sum, item) => sum + item.totalCost, 0);
+            const totalRow = createRow('Total material cost', formatters_js.formatWithSeparator(Math.round(totalBuyCost)), {
+                leftColor: 'var(--text-color-primary, #fff)',
+            });
+            totalRow.style.borderTop = '1px solid var(--border-color, #333)';
+            totalRow.style.marginTop = '4px';
+            totalRow.style.paddingTop = '4px';
+            shoppingListContainer.appendChild(totalRow);
+
+            if (options.onShoppingListRendered) {
+                options.onShoppingListRendered(shoppingListContainer, sortedItems);
+            }
+
+            container.appendChild(shoppingListContainer);
+        }
+
+        // === Crafting Steps (what to craft, in order) ===
+        if (craftMetrics.steps.length > 0) {
+            if (buyItems.size > 0) {
+                const divider = document.createElement('div');
+                divider.style.cssText = 'border-top: 1px solid var(--border-color, #333); margin: 6px 0;';
+                container.appendChild(divider);
+            }
+
+            const stepsHeader = document.createElement('div');
+            stepsHeader.style.cssText = `
+            font-weight: 500;
+            color: var(--text-color-primary, #fff);
+            margin-bottom: 4px;
+        `;
+            stepsHeader.textContent = 'Crafting Steps';
+            container.appendChild(stepsHeader);
+
+            for (let i = 0; i < craftMetrics.steps.length; i++) {
+                const step = craftMetrics.steps[i];
+                const qty = formatters_js.formatWithSeparator(step.quantity);
+                let timeStr = step.totalSeconds > 0 ? ` (${formatters_js.timeReadable(step.totalSeconds)}` : '';
+                const xpStr = step.expPerHour > 0 ? ` · ${formatters_js.formatKMB(step.expPerHour)} xp/hr` : '';
+                if (timeStr) {
+                    timeStr += `${xpStr})`;
+                } else if (xpStr) {
+                    timeStr = ` (${xpStr.slice(3)})`;
+                }
+                container.appendChild(createRow(`${i + 1}. ${step.itemName}`, `x${qty}${timeStr}`));
+            }
+
+            if (craftMetrics.totalCraftSeconds > 0) {
+                const totalTimeRow = createRow('Total craft time', formatters_js.timeReadable(craftMetrics.totalCraftSeconds), {
+                    leftColor: 'var(--text-color-primary, #fff)',
+                });
+                totalTimeRow.style.borderTop = '1px solid var(--border-color, #333)';
+                totalTimeRow.style.marginTop = '4px';
+                totalTimeRow.style.paddingTop = '4px';
+                container.appendChild(totalTimeRow);
+            }
+
+            if (craftMetrics.totalXP > 0) {
+                container.appendChild(
+                    createRow('Total XP', formatters_js.formatKMB(Math.round(craftMetrics.totalXP)), {
+                        leftColor: 'var(--text-color-primary, #fff)',
+                    })
+                );
+            }
+        }
+
+        return container;
+    }
+
+    /**
      * Combat Statistics UI
      * Injects button and displays statistics popup
      */
 
 
     const YEAR_SECONDS = 365 * 86400;
+
+    /**
+     * `priceKey` selects which of an ask/bid-only stats field (income, dailyIncome, dailyProfit,
+     * keyCosts) to display. Those fields never carry a 'cheapest' entry — key-cost math already
+     * resolves 'cheapest' to a concrete number in `calculateKeyCosts()` and stores the identical
+     * value under both `.ask`/`.bid`, so any general ask/bid-only indexing falls back to 'ask'.
+     * @param {string} settingValue - Raw `profitCalc_keyPricingMode` value
+     * @returns {'ask'|'bid'}
+     */
+    function resolveDisplayPriceKey(settingValue) {
+        return settingValue === 'bid' ? 'bid' : 'ask';
+    }
 
     /**
      * Format a consumable's remaining runway for display. Capped at >1y - beyond that the estimate
@@ -26708,7 +27627,7 @@
         shareStatsToChat(stats) {
             // Get chat message format from config (use getSettingValue for template type)
             const messageTemplate = config.getSettingValue('combatStatsChatMessage');
-            const priceKey = config.getSettingValue('profitCalc_keyPricingMode') || 'ask';
+            const priceKey = resolveDisplayPriceKey(getKeyPricingModeSetting());
 
             // Convert array format to string if needed
             let message = '';
@@ -27115,7 +28034,7 @@
                     ? formatters_js.coinFormatter(Math.round(num))
                     : new Intl.NumberFormat('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 }).format(num);
 
-            const priceKey = config.getSettingValue('profitCalc_keyPricingMode') || 'ask';
+            const priceKey = resolveDisplayPriceKey(getKeyPricingModeSetting());
 
             const statsRows = [
                 { label: 'Duration', value: stats.durationFormatted || '0s' },
@@ -27527,14 +28446,20 @@
                             } else if (row.breakdown && row.breakdown.length > 0) {
                                 // Add key pricing note if applicable
                                 if (row.showKeyPricingNote) {
-                                    const keyPricing = config.getSettingValue('profitCalc_keyPricingMode') || 'ask';
+                                    const keyPricing = getKeyPricingModeSetting();
                                     const keyPricingNote = document.createElement('div');
                                     keyPricingNote.style.cssText = `
                                     font-size: 11px;
                                     color: #aaa;
                                     margin-bottom: 6px;
                                 `;
-                                    keyPricingNote.textContent = `Pricing: ${keyPricing === 'bid' ? 'Bid (patient buy)' : 'Ask (instant buy)'}`;
+                                    const keyPricingLabel =
+                                        keyPricing === 'bid'
+                                            ? 'Bid (patient buy)'
+                                            : keyPricing === KEY_PRICING_MODE_CHEAPEST
+                                              ? 'Cheapest (buy or craft)'
+                                              : 'Ask (instant buy)';
+                                    keyPricingNote.textContent = `Pricing: ${keyPricingLabel}`;
                                     breakdownDiv.appendChild(keyPricingNote);
                                 }
 
@@ -27586,6 +28511,21 @@
                                     <span style="text-align: right; color: #ff6b6b;">${formatNum(displayCost)}</span>
                                 `;
                                     breakdownDiv.appendChild(itemRow);
+
+                                    // Cheapest key pricing (row.showKeyPricingNote): when crafting the
+                                    // key beats buying it, show the same materials/craft-steps
+                                    // breakdown Best Crafting Plan itself renders in the action panel.
+                                    if (row.showKeyPricingNote && item.craftPlan) {
+                                        const craftBreakdown = renderCraftingPlanBreakdown(item.craftPlan);
+                                        craftBreakdown.style.cssText = `
+                                        margin: 2px 0 6px 16px;
+                                        padding: 6px 8px;
+                                        border-left: 2px solid #4a4a4a;
+                                        font-size: 12px;
+                                        color: ${textColor};
+                                    `;
+                                        breakdownDiv.appendChild(craftBreakdown);
+                                    }
 
                                     if (!row.isDaily && item.timeToZeroSeconds !== undefined) {
                                         const remainingRow = document.createElement('div');
@@ -29749,39 +30689,6 @@
         const entry = getAllSpecialCurrencyShopEntries().find((e) => e.itemHrid === itemHrid);
         if (!entry) return null;
         return { currencyHrid: entry.currencyHrid, tokenCost: entry.tokenCost, outputCount: entry.outputCount };
-    }
-
-    /**
-     * Game Data Lookup Utilities
-     *
-     * Centralized functions for resolving display names to HRIDs.
-     * Handles the ★ ↔ (R) refined item display name difference between
-     * test server and live server.
-     */
-
-
-    /**
-     * Get the coin cost of an item from the in-game shop.
-     * Returns 0 if the item is not available in the shop or not purchasable with coins.
-     * @param {string} itemHrid - Item HRID
-     * @returns {number} Coin cost, or 0 if not available in shop
-     */
-    function getShopCoinCost(itemHrid) {
-        const gameData = dataManager.getInitClientData();
-        if (!gameData?.shopItemDetailMap) return 0;
-
-        for (const shopItem of Object.values(gameData.shopItemDetailMap)) {
-            if (shopItem.itemHrid === itemHrid) {
-                if (shopItem.costs && shopItem.costs.length > 0) {
-                    const coinCost = shopItem.costs.find((cost) => cost.itemHrid === '/items/coin');
-                    if (coinCost) {
-                        return coinCost.count;
-                    }
-                }
-            }
-        }
-
-        return 0;
     }
 
     /**
@@ -33598,4 +34505,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] Combat library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.loadoutState, Toolasha.Core.storage, Toolasha.Core.webSocketHook, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.profitHelpers, Toolasha.Utils.profitConstants, Toolasha.Utils.reactInput, Toolasha.Utils.marketData, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.teaParser, Toolasha.Utils.abilityCalc, Toolasha.Utils.equipmentParser, Toolasha.Core, Toolasha.Utils.dom, Toolasha.Core.tooltipObserver, Toolasha.Utils.houseCostCalculator);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.loadoutState, Toolasha.Core.storage, Toolasha.Core.webSocketHook, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.profitHelpers, Toolasha.Utils.profitConstants, Toolasha.Utils.reactInput, Toolasha.Utils.marketData, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.teaParser, Toolasha.Utils.abilityCalc, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.efficiency, Toolasha.Utils.materialCalculator, Toolasha.Utils.experienceCalculator, Toolasha.Core, Toolasha.Utils.dom, Toolasha.Core.tooltipObserver, Toolasha.Utils.houseCostCalculator);

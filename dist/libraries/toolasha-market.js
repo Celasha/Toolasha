@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.108.7
+ * Version: 2.108.8
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4930,24 +4930,6 @@ self.onmessage = function (e) {
     }
 
     /**
-     * Combat Statistics Calculator
-     * Calculates income, profit, consumable costs, and other statistics
-     */
-
-
-    // Maps dungeon chest HRIDs (regular and refinement) to their required chest key HRIDs (1:1 relationship)
-    const DUNGEON_CHEST_CHEST_KEYS = {
-        '/items/chimerical_chest': '/items/chimerical_chest_key',
-        '/items/sinister_chest': '/items/sinister_chest_key',
-        '/items/enchanted_chest': '/items/enchanted_chest_key',
-        '/items/pirate_chest': '/items/pirate_chest_key',
-        '/items/chimerical_refinement_chest': '/items/chimerical_chest_key',
-        '/items/sinister_refinement_chest': '/items/sinister_chest_key',
-        '/items/enchanted_refinement_chest': '/items/enchanted_chest_key',
-        '/items/pirate_refinement_chest': '/items/pirate_chest_key',
-    };
-
-    /**
      * Game Data Lookup Utilities
      *
      * Centralized functions for resolving display names to HRIDs.
@@ -5026,6 +5008,464 @@ self.onmessage = function (e) {
 
         return 0;
     }
+
+    /**
+     * Crafting Plan Calculator
+     * Computes the optimal buy-vs-craft plan for a target item by recursively
+     * comparing market price against crafting cost at each material tier.
+     */
+
+
+    const MAX_DEPTH = 15;
+
+    /**
+     * Find the production action that creates a given item.
+     * @param {string} itemHrid
+     * @returns {{ actionHrid: string, action: Object, outputCount: number } | null}
+     */
+    function findProductionAction(itemHrid) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.actionDetailMap) return null;
+
+        for (const [actionHrid, action] of Object.entries(gameData.actionDetailMap)) {
+            if (!action.outputItems) continue;
+            for (const output of action.outputItems) {
+                if (output.itemHrid === itemHrid) {
+                    return { actionHrid, action, outputCount: output.count || 1 };
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Get artisan tea material reduction bonus for an action type.
+     * @param {string} actionType - e.g. '/action_types/brewing'
+     * @returns {number} Reduction as decimal (e.g. 0.112 for 11.2%)
+     */
+    function getArtisanBonus(actionType) {
+        try {
+            const gameData = dataManager.getInitClientData();
+            const equipment = dataManager.getEquipment();
+            const itemDetailMap = gameData?.itemDetailMap || {};
+            const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, itemDetailMap);
+            const activeDrinks = dataManager.getActionDrinkSlots(actionType);
+            return teaParser_js.parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
+        } catch {
+            return 0;
+        }
+    }
+
+    /**
+     * Compute the optimal crafting plan for an item.
+     * At each node, decides whether buying from market or crafting is cheaper.
+     *
+     * @param {string} itemHrid - Target item
+     * @param {number} quantity - How many needed
+     * @param {string} [mode='ask'] - Pricing mode for market lookups
+     * @param {Set} [visited] - Circular dependency guard
+     * @param {Map} [memo] - Memoization cache (unit cost per itemHrid)
+     * @param {number} [depth=0] - Current recursion depth
+     * @param {number} [maxDepth=MAX_DEPTH] - Maximum recursion depth (1 = buy all sub-materials)
+     * @param {boolean} [buyRawOnly=false] - When true, always craft items that have a recipe; only buy uncraftable items
+     * @param {boolean} [forceRootCraft=false] - When true, forces the root item (depth 0) to be crafted
+     * @param {number} [timeCostPerHour=0] - Gold value per hour of player time (0 = disabled)
+     * @param {boolean} [skipProcessing=false] - When true, forces buy for processing actions (single input, no upgrade)
+     * @returns {CraftingPlanNode}
+     */
+    function computeBestCraftingPlan(
+        itemHrid,
+        quantity = 1,
+        mode = 'ask',
+        visited = new Set(),
+        memo = new Map(),
+        depth = 0,
+        maxDepth = MAX_DEPTH,
+        buyRawOnly = false,
+        forceRootCraft = false,
+        timeCostPerHour = 0,
+        skipProcessing = false
+    ) {
+        const itemDetails = dataManager.getItemDetails(itemHrid);
+        const itemName = itemDetails?.name || itemHrid.split('/').pop();
+        const isTradable = itemDetails?.isTradable ?? false;
+        const artisanMode = materialCalculator_js.getArtisanMaterialMode();
+
+        // Get market buy price (min of market ask and shop cost)
+        let buyPrice = null;
+        if (isTradable) {
+            const marketPrice = marketData_js.getItemPrice(itemHrid, { mode, context: 'profit', side: 'buy' });
+            if (marketPrice !== null && marketPrice > 0) {
+                buyPrice = marketPrice;
+            }
+        }
+        const shopCost = getShopCoinCost(itemHrid);
+        if (shopCost > 0 && (buyPrice === null || shopCost < buyPrice)) {
+            buyPrice = shopCost;
+        }
+
+        // Coins always cost 1 each
+        if (itemHrid === '/items/coin') {
+            return {
+                itemHrid,
+                itemName: 'Coin',
+                quantity,
+                strategy: 'buy',
+                unitCost: 1,
+                totalCost: quantity,
+                buyPrice: 1,
+                craftCost: null,
+                actionHrid: null,
+                actionsNeeded: 0,
+                children: [],
+            };
+        }
+
+        // Check memo for previously computed unit cost
+        if (memo.has(itemHrid)) {
+            const cachedUnitCost = memo.get(itemHrid);
+            const actionsNeeded =
+                cachedUnitCost.strategy === 'craft' ? Math.ceil(quantity / (cachedUnitCost.outputCount || 1)) : 0;
+            return {
+                itemHrid,
+                itemName,
+                quantity,
+                strategy: cachedUnitCost.strategy,
+                unitCost: cachedUnitCost.unitCost,
+                totalCost: cachedUnitCost.unitCost * quantity,
+                buyPrice,
+                craftCost: cachedUnitCost.craftCost,
+                actionHrid: cachedUnitCost.actionHrid,
+                actionsNeeded,
+                children:
+                    cachedUnitCost.strategy === 'craft'
+                        ? cachedUnitCost.childrenTemplate.map((c) =>
+                              computeBestCraftingPlan(
+                                  c.itemHrid,
+                                  c.isUpgrade
+                                      ? actionsNeeded
+                                      : materialCalculator_js.calculateTotalRequired(
+                                            c.basePerAction,
+                                            cachedUnitCost.artisanBonus,
+                                            actionsNeeded,
+                                            artisanMode
+                                        ),
+                                  mode,
+                                  visited,
+                                  memo,
+                                  depth + 1,
+                                  maxDepth,
+                                  buyRawOnly,
+                                  forceRootCraft,
+                                  timeCostPerHour,
+                                  skipProcessing
+                              )
+                          )
+                        : [],
+            };
+        }
+
+        // Circular dependency or depth limit — must buy
+        if (visited.has(itemHrid) || depth >= maxDepth) {
+            return {
+                itemHrid,
+                itemName,
+                quantity,
+                strategy: 'buy',
+                unitCost: buyPrice ?? Infinity,
+                totalCost: (buyPrice ?? Infinity) * quantity,
+                buyPrice,
+                craftCost: null,
+                actionHrid: null,
+                actionsNeeded: 0,
+                children: [],
+            };
+        }
+
+        // Find production action
+        const production = findProductionAction(itemHrid);
+        if (!production) {
+            // No recipe — must buy
+            const unitCost = buyPrice ?? 0;
+            memo.set(itemHrid, {
+                strategy: 'buy',
+                unitCost,
+                craftCost: null,
+                actionHrid: null,
+                outputCount: 1,
+                childrenTemplate: [],
+            });
+            return {
+                itemHrid,
+                itemName,
+                quantity,
+                strategy: 'buy',
+                unitCost,
+                totalCost: unitCost * quantity,
+                buyPrice,
+                craftCost: null,
+                actionHrid: null,
+                actionsNeeded: 0,
+                children: [],
+            };
+        }
+
+        // Skip processing actions if flag is set
+        // Processing = material conversion actions (milk → cheese, fiber → fabric, log → lumber)
+        // Identified by category ending in /material or /lumber (vs equipment crafting like /feet, /crossbow)
+        const isProcessingAction =
+            production.action.category?.endsWith('/material') || production.action.category?.endsWith('/lumber');
+        if (skipProcessing && isProcessingAction) {
+            const unitCost = buyPrice ?? Infinity;
+            memo.set(itemHrid, {
+                strategy: 'buy',
+                unitCost,
+                craftCost: null,
+                actionHrid: null,
+                outputCount: 1,
+                childrenTemplate: [],
+            });
+            return {
+                itemHrid,
+                itemName,
+                quantity,
+                strategy: 'buy',
+                unitCost,
+                totalCost: unitCost * quantity,
+                buyPrice,
+                craftCost: null,
+                actionHrid: null,
+                actionsNeeded: 0,
+                children: [],
+            };
+        }
+
+        // Recurse into crafting
+        visited.add(itemHrid);
+        const { actionHrid, action, outputCount } = production;
+        const artisanBonus = getArtisanBonus(action.type);
+        const actionsForOne = 1 / outputCount; // actions per 1 output item
+        const actionsNeeded = Math.ceil(quantity / outputCount);
+
+        let craftCostPerUnit = 0;
+        const childrenTemplate = []; // { itemHrid, basePerAction, isUpgrade } for memo reconstruction
+
+        // Input items (affected by artisan bonus)
+        if (action.inputItems) {
+            for (const input of action.inputItems) {
+                const inputCountPerAction = input.count || 1;
+                const qtyPerUnit = inputCountPerAction * (1 - artisanBonus) * actionsForOne;
+
+                const inputQty = materialCalculator_js.calculateTotalRequired(inputCountPerAction, artisanBonus, actionsNeeded, artisanMode);
+                const childPlan = computeBestCraftingPlan(
+                    input.itemHrid,
+                    inputQty,
+                    mode,
+                    visited,
+                    memo,
+                    depth + 1,
+                    maxDepth,
+                    buyRawOnly,
+                    forceRootCraft,
+                    timeCostPerHour,
+                    skipProcessing
+                );
+
+                craftCostPerUnit += childPlan.unitCost * qtyPerUnit;
+                childrenTemplate.push({ itemHrid: input.itemHrid, basePerAction: inputCountPerAction, isUpgrade: false });
+            }
+        }
+
+        // Upgrade item (NOT affected by artisan bonus)
+        if (action.upgradeItemHrid) {
+            const qtyPerUnit = actionsForOne; // 1 upgrade per action
+            const upgradePlan = computeBestCraftingPlan(
+                action.upgradeItemHrid,
+                actionsNeeded,
+                mode,
+                visited,
+                memo,
+                depth + 1,
+                maxDepth,
+                buyRawOnly,
+                forceRootCraft,
+                timeCostPerHour,
+                skipProcessing
+            );
+
+            craftCostPerUnit += upgradePlan.unitCost * qtyPerUnit;
+            childrenTemplate.push({ itemHrid: action.upgradeItemHrid, basePerAction: 1, isUpgrade: true });
+        }
+
+        visited.delete(itemHrid);
+
+        // Add time cost to craft cost if enabled
+        if (timeCostPerHour > 0) {
+            const gameData = dataManager.getInitClientData();
+            const actionDetails = gameData?.actionDetailMap?.[actionHrid];
+            if (actionDetails) {
+                const stats = actionCalculator_js.calculateActionStats(actionDetails, {
+                    skills: dataManager.getSkills(),
+                    equipment: dataManager.getEquipment(),
+                    itemDetailMap: gameData.itemDetailMap,
+                });
+                const effMultiplier = efficiency_js.calculateEfficiencyMultiplier(stats.totalEfficiency);
+                const timePerUnit = (stats.actionTime / effMultiplier) * actionsForOne;
+                craftCostPerUnit += timePerUnit * (timeCostPerHour / 3600);
+            }
+        }
+
+        // Buy vs craft decision
+        // When buyRawOnly is true, always craft (we only reach here if a recipe exists)
+        // When forceRootCraft is true and depth === 0, always craft the root item
+        const shouldBuy =
+            !buyRawOnly && !(forceRootCraft && depth === 0) && buyPrice !== null && buyPrice <= craftCostPerUnit;
+        const strategy = shouldBuy ? 'buy' : 'craft';
+        const unitCost = shouldBuy ? buyPrice : craftCostPerUnit;
+
+        // Cache the decision
+        memo.set(itemHrid, {
+            strategy,
+            unitCost,
+            craftCost: craftCostPerUnit,
+            actionHrid: strategy === 'craft' ? actionHrid : null,
+            outputCount,
+            artisanBonus,
+            childrenTemplate: strategy === 'craft' ? childrenTemplate : [],
+        });
+
+        // Build children for the actual quantities
+        let children = [];
+        if (!shouldBuy) {
+            children = [];
+            if (action.inputItems) {
+                for (const input of action.inputItems) {
+                    const inputCountPerAction = input.count || 1;
+                    const inputQty = materialCalculator_js.calculateTotalRequired(inputCountPerAction, artisanBonus, actionsNeeded, artisanMode);
+                    children.push(
+                        computeBestCraftingPlan(
+                            input.itemHrid,
+                            inputQty,
+                            mode,
+                            visited,
+                            memo,
+                            depth + 1,
+                            maxDepth,
+                            buyRawOnly,
+                            forceRootCraft,
+                            timeCostPerHour,
+                            skipProcessing
+                        )
+                    );
+                }
+            }
+            if (action.upgradeItemHrid) {
+                children.push(
+                    computeBestCraftingPlan(
+                        action.upgradeItemHrid,
+                        actionsNeeded,
+                        mode,
+                        visited,
+                        memo,
+                        depth + 1,
+                        maxDepth,
+                        buyRawOnly,
+                        forceRootCraft,
+                        timeCostPerHour,
+                        skipProcessing
+                    )
+                );
+            }
+        }
+
+        return {
+            itemHrid,
+            itemName,
+            quantity,
+            strategy,
+            unitCost,
+            totalCost: unitCost * quantity,
+            buyPrice,
+            craftCost: craftCostPerUnit,
+            actionHrid: strategy === 'craft' ? actionHrid : null,
+            actionsNeeded: strategy === 'craft' ? actionsNeeded : 0,
+            children,
+        };
+    }
+
+    /**
+     * Dungeon Key Cost
+     * Single entry point for pricing a dungeon key (entry key or chest key) under the
+     * `profitCalc_keyPricingMode` setting — ask, bid, or "cheapest" (buy vs. craft, reusing Best
+     * Crafting Plan's own buy-vs-craft engine headlessly, no action panel required).
+     */
+
+
+    const KEY_PRICING_MODE_CHEAPEST = 'cheapest';
+
+    /**
+     * Get the raw `profitCalc_keyPricingMode` setting value.
+     * @returns {string} 'ask' | 'bid' | 'cheapest'
+     */
+    function getKeyPricingModeSetting() {
+        return config.getSettingValue('profitCalc_keyPricingMode') || 'ask';
+    }
+
+    /**
+     * Compute the cheapest way to acquire a dungeon key: buy from market, or craft it, using the
+     * same buy-vs-craft decision Best Crafting Plan already makes for any item. The buy-side price
+     * basis is derived from the global profit-pricing-mode setting (respecting whichever of
+     * ask/bid the player already uses for buy-side profit math), not hardcoded.
+     * @param {string} keyHrid
+     * @param {number} [quantity=1]
+     * @returns {{strategy: 'buy'|'craft', unitCost: number, plan: Object|null}} `plan` is the full
+     *   Best Crafting Plan tree when crafting wins (for a materials/craft-steps breakdown), else null.
+     */
+    function getCheapestKeyCost(keyHrid, quantity = 1) {
+        const buyMode = marketData_js.getPricingMode('profit', 'buy');
+        const plan = computeBestCraftingPlan(keyHrid, quantity, buyMode);
+        return {
+            strategy: plan.strategy,
+            unitCost: plan.unitCost,
+            plan: plan.strategy === 'craft' ? plan : null,
+        };
+    }
+
+    /**
+     * Price a dungeon key under the player's selected key-pricing mode.
+     * @param {string} keyHrid
+     * @returns {number|null} Gold cost, or null if unresolvable (no market data and no recipe).
+     */
+    function getKeyPrice(keyHrid) {
+        const mode = getKeyPricingModeSetting();
+
+        if (mode === KEY_PRICING_MODE_CHEAPEST) {
+            const { unitCost } = getCheapestKeyCost(keyHrid);
+            return Number.isFinite(unitCost) ? unitCost : null;
+        }
+
+        const priceData = marketAPI.getPrice(keyHrid);
+        if (!priceData) return null;
+        return priceData[mode] ?? priceData.ask ?? 0;
+    }
+
+    /**
+     * Combat Statistics Calculator
+     * Calculates income, profit, consumable costs, and other statistics
+     */
+
+
+    // Maps dungeon chest HRIDs (regular and refinement) to their required chest key HRIDs (1:1 relationship)
+    const DUNGEON_CHEST_CHEST_KEYS = {
+        '/items/chimerical_chest': '/items/chimerical_chest_key',
+        '/items/sinister_chest': '/items/sinister_chest_key',
+        '/items/enchanted_chest': '/items/enchanted_chest_key',
+        '/items/pirate_chest': '/items/pirate_chest_key',
+        '/items/chimerical_refinement_chest': '/items/chimerical_chest_key',
+        '/items/sinister_refinement_chest': '/items/sinister_chest_key',
+        '/items/enchanted_refinement_chest': '/items/enchanted_chest_key',
+        '/items/pirate_refinement_chest': '/items/pirate_chest_key',
+    };
 
     /**
      * Market Tooltip Prices Feature
@@ -5272,10 +5712,8 @@ self.onmessage = function (e) {
                     let keyPrice = 0;
                     const chestKeyHrid = DUNGEON_CHEST_CHEST_KEYS[itemHrid];
                     if (chestKeyHrid) {
-                        const keyPricingSetting = config.getSettingValue('profitCalc_keyPricingMode') || 'ask';
-                        const keyPrices = marketAPI.getPrice(chestKeyHrid);
                         const keyDetails = dataManager.getItemDetails(chestKeyHrid);
-                        keyPrice = keyPrices?.[keyPricingSetting] ?? keyPrices?.ask ?? 0;
+                        keyPrice = getKeyPrice(chestKeyHrid) ?? 0;
                         this.injectExpectedValueDisplay(
                             tooltipElement,
                             evData,
@@ -11227,17 +11665,6 @@ self.onmessage = function (e) {
     const COIN_HRID$1 = '/items/coin';
     const DEFAULT_EMPIRICAL_SAMPLE_SIZE = 5000;
 
-    function getKeyPricingMode() {
-        return config.getSettingValue('profitCalc_keyPricingMode') || 'ask';
-    }
-
-    function getKeyPrice(keyHrid) {
-        const priceData = marketAPI.getPrice(keyHrid);
-        if (!priceData) return 0;
-        const priceKey = getKeyPricingMode();
-        return priceData[priceKey] ?? priceData.ask ?? 0;
-    }
-
     /**
      * Gold cost to open one chest: entry key (regular, non-refinement chests only) + chest key,
      * priced via the existing profitCalc_keyPricingMode setting — the same model
@@ -11249,10 +11676,10 @@ self.onmessage = function (e) {
         let cost = 0;
 
         const entryKeyHrid = DUNGEON_ENTRY_KEYS[containerHrid];
-        if (entryKeyHrid) cost += getKeyPrice(entryKeyHrid);
+        if (entryKeyHrid) cost += getKeyPrice(entryKeyHrid) ?? 0;
 
         const chestKeyHrid = DUNGEON_CHEST_KEYS[containerHrid];
-        if (chestKeyHrid) cost += getKeyPrice(chestKeyHrid);
+        if (chestKeyHrid) cost += getKeyPrice(chestKeyHrid) ?? 0;
 
         return cost;
     }
@@ -11275,14 +11702,14 @@ self.onmessage = function (e) {
             ? {
                   hrid: entryKeyHrid,
                   name: dataManager.getItemDetails(entryKeyHrid)?.name || entryKeyHrid,
-                  price: getKeyPrice(entryKeyHrid),
+                  price: getKeyPrice(entryKeyHrid) ?? 0,
               }
             : null;
         const chestKey = chestKeyHrid
             ? {
                   hrid: chestKeyHrid,
                   name: dataManager.getItemDetails(chestKeyHrid)?.name || chestKeyHrid,
-                  price: getKeyPrice(chestKeyHrid),
+                  price: getKeyPrice(chestKeyHrid) ?? 0,
               }
             : null;
 
@@ -21023,10 +21450,7 @@ self.onmessage = function (e) {
                     // Deduct chest key cost for dungeon chests
                     const chestKeyHrid = DUNGEON_CHEST_CHEST_KEYS[itemHrid];
                     if (chestKeyHrid) {
-                        const keyPricingSetting = config.getSettingValue('profitCalc_keyPricingMode') || 'ask';
-                        const keyPrices = marketAPI.getPrice(chestKeyHrid);
-                        const keyPrice = keyPrices?.[keyPricingSetting] ?? keyPrices?.ask ?? 0;
-                        netValue -= keyPrice;
+                        netValue -= getKeyPrice(chestKeyHrid) ?? 0;
                     }
 
                     return netValue;
@@ -25486,9 +25910,7 @@ self.onmessage = function (e) {
                 let keyPrice = 0;
                 let keyName = null;
                 if (chestKeyHrid) {
-                    const setting = config.getSettingValue('profitCalc_keyPricingMode') || 'ask';
-                    const keyPrices = marketAPI.getPrice(chestKeyHrid);
-                    keyPrice = keyPrices?.[setting] ?? keyPrices?.ask ?? 0;
+                    keyPrice = getKeyPrice(chestKeyHrid) ?? 0;
                     keyName = dataManager.getItemDetails(chestKeyHrid)?.name;
                 }
                 detailsHTML = this.buildChestDropsHTML(evData, keyPrice, keyName);
@@ -26840,10 +27262,7 @@ self.onmessage = function (e) {
 
                         const chestKeyHrid = DUNGEON_CHEST_CHEST_KEYS[itemHrid];
                         if (chestKeyHrid) {
-                            const keyPricingSetting = config.getSettingValue('profitCalc_keyPricingMode') || 'ask';
-                            const keyPrices = marketAPI.getPrice(chestKeyHrid);
-                            const keyPrice = keyPrices?.[keyPricingSetting] ?? keyPrices?.ask ?? 0;
-                            netValue -= keyPrice;
+                            netValue -= getKeyPrice(chestKeyHrid) ?? 0;
                         }
 
                         itemElem.dataset.askPrice = netValue;
