@@ -395,3 +395,100 @@ describe('TLA047-10: reset/cleanup invariants stay green', () => {
         expect(storage.delete).toHaveBeenCalledWith('dungeonTracker_inProgressRun', 'settings');
     });
 });
+
+describe('Fail/cancel capture: real time cost of unsuccessful attempts is persisted', () => {
+    test('a party failure after a real key-count timestamp saves a validated fail record', async () => {
+        await dungeonTracker.onNewBattle({ wave: 0, battleId: 600, combatStartTime: 0 });
+        dungeonTracker.onKeyCountsMessage(1000, keyCountMessage('[Alice - 1]'));
+
+        const failTimestamp = 1000 + 3 * 60 * 1000; // 3 minutes after the key-count start anchor
+        dungeonTracker.onPartyFailed(failTimestamp, {});
+        await flushAsync();
+
+        expect(mocks.savedTeamRuns).toHaveLength(1);
+        const saved = mocks.savedTeamRuns[0].run;
+        expect(saved.result).toBe('fail');
+        expect(saved.duration).toBe(3 * 60 * 1000);
+        expect(saved.validated).toBe(true);
+        expect(saved.dungeonName).toBe('Pirate Cove');
+    });
+
+    test('a party failure before any key-count message saves an unvalidated fail using the client-clock start', async () => {
+        await dungeonTracker.onNewBattle({ wave: 0, battleId: 601, combatStartTime: 0 });
+
+        const failTimestamp = 90 * 1000; // No key-count/battle-started message received yet
+        dungeonTracker.onPartyFailed(failTimestamp, {});
+        await flushAsync();
+
+        expect(mocks.savedTeamRuns).toHaveLength(1);
+        const saved = mocks.savedTeamRuns[0].run;
+        expect(saved.result).toBe('fail');
+        expect(saved.duration).toBe(90 * 1000);
+        expect(saved.validated).toBe(false);
+    });
+
+    test('resetTracking() still fully clears tracking state after capturing a fail', async () => {
+        await dungeonTracker.onNewBattle({ wave: 0, battleId: 602, combatStartTime: 0 });
+        dungeonTracker.onPartyFailed(Date.now(), {});
+        await flushAsync();
+
+        expect(dungeonTracker.isTracking).toBe(false);
+        expect(dungeonTracker.currentRun).toBeNull();
+        expect(dungeonTracker.firstKeyCountTimestamp).toBeNull();
+    });
+
+    test('an early exit detected via actions_updated (flee/death) is captured as a fail', async () => {
+        await dungeonTracker.onNewBattle({ wave: 0, battleId: 603, combatStartTime: 0 });
+        dungeonTracker.onKeyCountsMessage(2000, keyCountMessage('[Alice - 1]'));
+
+        dungeonTracker.onActionsUpdated({
+            endCharacterActions: [{ actionHrid: DUNGEON_HRID, isDone: true, difficultyTier: 0 }],
+        });
+        await flushAsync();
+
+        expect(mocks.savedTeamRuns).toHaveLength(1);
+        expect(mocks.savedTeamRuns[0].run.result).toBe('fail');
+    });
+
+    test('an early exit detected via action_completed (died mid-wave) is captured as a fail', async () => {
+        await dungeonTracker.onNewBattle({ wave: 0, battleId: 604, combatStartTime: 0 });
+        dungeonTracker.onKeyCountsMessage(3000, keyCountMessage('[Alice - 1]'));
+
+        dungeonTracker.onActionCompleted({
+            endCharacterAction: { actionHrid: DUNGEON_HRID, wave: 3, isDone: true, difficultyTier: 0 },
+        });
+        await flushAsync();
+
+        expect(mocks.savedTeamRuns).toHaveLength(1);
+        expect(mocks.savedTeamRuns[0].run.result).toBe('fail');
+        expect(mocks.savedTeamRuns[0].run.wavesCompleted).toBe(3);
+    });
+
+    test('a successful completion is unaffected by the fail-capture change', async () => {
+        await dungeonTracker.onNewBattle({ wave: 0, battleId: 605, combatStartTime: 0 });
+        dungeonTracker.onKeyCountsMessage(1000, keyCountMessage('[Alice - 1]'));
+        dungeonTracker.onKeyCountsMessage(1000 + 5 * 60 * 1000, keyCountMessage('[Alice - 2]'));
+        await flushAsync();
+
+        expect(mocks.savedTeamRuns).toHaveLength(1);
+        expect(mocks.savedTeamRuns[0].run.result).toBeUndefined();
+        expect(mocks.savedTeamRuns[0].run.duration).toBe(5 * 60 * 1000);
+    });
+
+    test('a dungeon-switch mismatch reset (no failure context) does not save a run', async () => {
+        await dungeonTracker.onNewBattle({ wave: 0, battleId: 606, combatStartTime: 0 });
+        dungeonTracker.onKeyCountsMessage(1000, keyCountMessage('[Alice - 1]'));
+        dungeonTracker.currentRun.dungeonHrid = '/actions/combat/some_other_dungeon';
+        mocks.dungeonInfoByHrid['/actions/combat/some_other_dungeon'] = {
+            name: 'Some Different Dungeon',
+            maxWaves: 10,
+        };
+
+        dungeonTracker.onBattleStarted(Date.now(), {
+            systemMetadata: JSON.stringify({ name: 'Some Unrelated Dungeon' }),
+        });
+        await flushAsync();
+
+        expect(mocks.savedTeamRuns).toHaveLength(0);
+    });
+});

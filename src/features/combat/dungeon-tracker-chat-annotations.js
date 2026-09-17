@@ -470,11 +470,13 @@ class DungeonTrackerChatAnnotations {
     }
 
     /**
-     * Save runs from chat events to storage (Phase 5: authoritative source)
+     * Save runs from chat events to storage (Phase 5: authoritative source). Pairs a starting
+     * key-count event with whatever ends it - a completion key-count (success), a "Party failed"
+     * message (fail), or a cancel (party left before completing) - so failed/canceled attempts'
+     * real time cost gets captured, not just successful clears.
      * @param {Array} events - Chat events array
      */
     async saveRunsFromEvents(events) {
-        // Build runs from events (only key→key pairs)
         const dungeonCounts = {};
 
         for (let i = 0; i < events.length; i++) {
@@ -491,7 +493,7 @@ class DungeonTrackerChatAnnotations {
                     break;
                 }
             }
-            if (!next || next.type !== 'key') continue; // Only key→key pairs
+            if (!next) continue;
 
             // Calculate duration
             let duration = next.timestamp - event.timestamp;
@@ -508,6 +510,7 @@ class DungeonTrackerChatAnnotations {
                 timestamp: event.timestamp.toISOString(),
                 duration: duration,
                 dungeonName: dungeonName,
+                result: next.type === 'key' ? 'success' : next.type,
             };
 
             // Save team run (includes dungeon name from Phase 2)
@@ -519,7 +522,8 @@ class DungeonTrackerChatAnnotations {
 
     /**
      * Calculate stats from visible chat events (in-memory, no storage)
-     * Used to show averages before backfill is done
+     * Used to show averages before backfill is done. Successful clears and failed/canceled
+     * attempts are tracked separately so the preview matches what saveRunsFromEvents() persists.
      * @param {Array} events - Chat events array
      * @returns {Object} Stats keyed by "teamKey::dungeonName"
      */
@@ -541,7 +545,7 @@ class DungeonTrackerChatAnnotations {
                     break;
                 }
             }
-            if (!next || next.type !== 'key') continue; // Only key→key pairs (successful runs)
+            if (!next) continue;
 
             // Calculate duration
             let duration = next.timestamp - event.timestamp;
@@ -556,11 +560,16 @@ class DungeonTrackerChatAnnotations {
 
             // Initialize stats entry if needed
             if (!statsByKey[statsKey]) {
-                statsByKey[statsKey] = { durations: [] };
+                statsByKey[statsKey] = { durations: [], failedDurations: [] };
             }
 
-            // Add this run duration
-            statsByKey[statsKey].durations.push(duration);
+            // Successful clears feed the existing clear-time stat; fails/cancels are tracked
+            // separately so they can add to time cost without counting as output.
+            if (next.type === 'key') {
+                statsByKey[statsKey].durations.push(duration);
+            } else {
+                statsByKey[statsKey].failedDurations.push(duration);
+            }
         }
 
         // Calculate stats for each team+dungeon combination
@@ -570,11 +579,15 @@ class DungeonTrackerChatAnnotations {
             if (durations.length === 0) continue;
 
             const total = durations.reduce((sum, d) => sum + d, 0);
+            const failedTotal = data.failedDurations.reduce((sum, d) => sum + d, 0);
             result[key] = {
                 totalRuns: durations.length,
                 avgTime: Math.floor(total / durations.length),
                 fastestTime: Math.min(...durations),
                 slowestTime: Math.max(...durations),
+                avgTimePerAttempt: Math.floor((total + failedTotal) / durations.length),
+                failCount: data.failedDurations.length,
+                totalAttempts: durations.length + data.failedDurations.length,
             };
         }
 

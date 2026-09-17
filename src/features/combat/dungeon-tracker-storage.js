@@ -127,7 +127,11 @@ class DungeonTrackerStorage {
      */
     async getStatsByName(dungeonName) {
         const allRuns = await storage.getJSON('allRuns', this.unifiedStoreName, []);
-        const runs = allRuns.filter((r) => r.dungeonName === dungeonName);
+        const allAttempts = allRuns.filter((r) => r.dungeonName === dungeonName);
+        // Runs saved before the result field existed have no result — treat as success (only
+        // successful clears were ever saved back then).
+        const runs = allAttempts.filter((r) => !r.result || r.result === 'success');
+        const failedAttempts = allAttempts.filter((r) => r.result === 'fail' || r.result === 'cancel');
 
         if (runs.length === 0) {
             return {
@@ -136,6 +140,9 @@ class DungeonTrackerStorage {
                 fastestTime: 0,
                 slowestTime: 0,
                 avgWaveTime: 0,
+                avgTimePerAttempt: 0,
+                failCount: failedAttempts.length,
+                totalAttempts: allAttempts.length,
             };
         }
 
@@ -148,12 +155,20 @@ class DungeonTrackerStorage {
 
         const avgWaveTime = runs.reduce((sum, run) => sum + (run.avgWaveTime || 0), 0) / runs.length;
 
+        // Attempt-inclusive time cost: failed/canceled attempts still cost real time, but only
+        // successful clears count as output, so the denominator stays the clear count.
+        const failedTime = failedAttempts.reduce((sum, r) => sum + (r.duration || r.totalTime || 0), 0);
+        const avgTimePerAttempt = (totalTime + failedTime) / runs.length;
+
         return {
             totalRuns: runs.length,
             avgTime,
             fastestTime,
             slowestTime,
             avgWaveTime,
+            avgTimePerAttempt,
+            failCount: failedAttempts.length,
+            totalAttempts: allAttempts.length,
         };
     }
 
@@ -300,6 +315,10 @@ class DungeonTrackerStorage {
      * @param {string} run.timestamp - Run start timestamp (ISO string)
      * @param {number} run.duration - Run duration (ms)
      * @param {string} run.dungeonName - Dungeon name (from Phase 2)
+     * @param {string} [run.result] - 'success' | 'fail' | 'cancel'. Defaults to 'success'.
+     * @param {number} [run.wavesCompleted] - Waves completed before the run ended.
+     * @param {boolean} [run.validated] - Whether duration is anchored to a real server-side
+     *   chat-message timestamp vs. a client-clock estimate. Defaults to true.
      * @returns {Promise<boolean>} Success status
      */
     async saveTeamRun(teamKey, run) {
@@ -333,11 +352,13 @@ class DungeonTrackerStorage {
                 team: team,
                 teamKey: teamKey,
                 duration: run.duration,
-                validated: true,
+                validated: run.validated ?? true,
                 source: 'chat',
                 waveTimes: null,
                 avgWaveTime: null,
                 keyCountsMap: run.keyCountsMap || null, // Include key counts if available
+                result: run.result || 'success',
+                wavesCompleted: run.wavesCompleted ?? null,
             };
 
             // Add to front of list (most recent first)
@@ -369,10 +390,13 @@ class DungeonTrackerStorage {
         const allRuns = await this.getAllRuns();
         if (allRuns.length === 0) return 0;
 
-        // Group by dungeonName + teamKey
+        // Group by dungeonName + teamKey. Fail/cancel attempts are excluded — their durations
+        // aren't drawn from the same distribution as clears, so mixing them in would skew the
+        // median this scrub uses to flag outliers.
         const groups = new Map();
         for (let i = 0; i < allRuns.length; i++) {
             const run = allRuns[i];
+            if (run.result === 'fail' || run.result === 'cancel') continue;
             const key = `${run.dungeonName}||${run.teamKey}`;
             if (!groups.has(key)) groups.set(key, []);
             groups.get(key).push({ run, index: i });
@@ -440,7 +464,8 @@ class DungeonTrackerStorage {
 
     /**
      * Get all teams with stored runs
-     * @returns {Promise<Array>} Array of {teamKey, runCount, avgTime, bestTime, worstTime}
+     * @returns {Promise<Array>} Array of {teamKey, runCount, avgTime, bestTime, worstTime,
+     *   avgTimePerAttempt, failCount, totalAttempts}
      */
     async getAllTeamStats() {
         // Get all runs from unified storage
@@ -459,11 +484,18 @@ class DungeonTrackerStorage {
 
         // Calculate stats for each team
         const results = [];
-        for (const [teamKey, runs] of Object.entries(teamGroups)) {
+        for (const [teamKey, allAttempts] of Object.entries(teamGroups)) {
+            const runs = allAttempts.filter((r) => !r.result || r.result === 'success');
+            const failedAttempts = allAttempts.filter((r) => r.result === 'fail' || r.result === 'cancel');
+            if (runs.length === 0) continue;
+
             const durations = runs.map((r) => r.duration);
-            const avgTime = durations.reduce((a, b) => a + b, 0) / durations.length;
+            const totalTime = durations.reduce((a, b) => a + b, 0);
+            const avgTime = totalTime / durations.length;
             const bestTime = Math.min(...durations);
             const worstTime = Math.max(...durations);
+            const failedTime = failedAttempts.reduce((sum, r) => sum + (r.duration || 0), 0);
+            const avgTimePerAttempt = (totalTime + failedTime) / runs.length;
 
             results.push({
                 teamKey,
@@ -471,6 +503,9 @@ class DungeonTrackerStorage {
                 avgTime,
                 bestTime,
                 worstTime,
+                avgTimePerAttempt,
+                failCount: failedAttempts.length,
+                totalAttempts: allAttempts.length,
             });
         }
 

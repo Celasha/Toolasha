@@ -68,28 +68,40 @@ class DungeonTrackerUIHistory {
     }
 
     /**
-     * Calculate stats for a set of runs
-     * @param {Array} runs - Array of runs
+     * Calculate stats for a set of runs. Failed/canceled attempts cost real time but aren't
+     * clears, so the clear-only stats (avg/fastest/slowest) stay unaffected by them while
+     * avgTimePerAttempt/failCount surface the real time cost.
+     * @param {Array} allAttempts - Array of runs (successes + fails/cancels)
      * @returns {Object} Stats object
      */
-    calculateStatsForRuns(runs) {
-        if (!runs || runs.length === 0) {
+    calculateStatsForRuns(allAttempts) {
+        const runs = (allAttempts || []).filter((r) => !r.result || r.result === 'success');
+        const failedAttempts = (allAttempts || []).filter((r) => r.result === 'fail' || r.result === 'cancel');
+
+        if (runs.length === 0) {
             return {
                 totalRuns: 0,
                 avgTime: 0,
                 fastestTime: 0,
                 slowestTime: 0,
+                avgTimePerAttempt: 0,
+                failCount: failedAttempts.length,
+                totalAttempts: failedAttempts.length,
             };
         }
 
         const durations = runs.map((r) => r.duration);
         const total = durations.reduce((sum, d) => sum + d, 0);
+        const failedTotal = failedAttempts.reduce((sum, r) => sum + (r.duration || 0), 0);
 
         return {
             totalRuns: runs.length,
             avgTime: Math.floor(total / runs.length),
             fastestTime: Math.min(...durations),
             slowestTime: Math.max(...durations),
+            avgTimePerAttempt: Math.floor((total + failedTotal) / runs.length),
+            failCount: failedAttempts.length,
+            totalAttempts: runs.length + failedAttempts.length,
         };
     }
 
@@ -196,6 +208,8 @@ class DungeonTrackerUIHistory {
             const avgTime = this.formatTime(group.stats.avgTime);
             const bestTime = this.formatTime(group.stats.fastestTime);
             const worstTime = this.formatTime(group.stats.slowestTime);
+            const avgPerAttempt = this.formatTime(group.stats.avgTimePerAttempt);
+            const failSummary = group.stats.failCount > 0 ? ` | Fails: ${group.stats.failCount}` : '';
 
             // Check if this group is expanded
             const isExpanded = this.state.expandedGroups.has(group.label);
@@ -221,7 +235,7 @@ class DungeonTrackerUIHistory {
                                 ${group.label}
                             </div>
                             <div style="font-size: 10px; color: #aaa;">
-                                Runs: ${group.stats.totalRuns} | Avg: ${avgTime} | Best: ${bestTime} | Worst: ${worstTime}
+                                Runs: ${group.stats.totalRuns} | Avg Clear: ${avgTime} | Avg/Attempt: ${avgPerAttempt} | Best: ${bestTime} | Worst: ${worstTime}${failSummary}
                             </div>
                         </div>
                         <span class="mwi-dt-group-toggle" style="color: #aaa; font-size: 10px;">${toggleIcon}</span>
@@ -290,6 +304,10 @@ class DungeonTrackerUIHistory {
             const dateObj = new Date(run.timestamp);
             const dateTime = formatDateTime(dateObj);
             const dungeonLabel = run.dungeonName || 'Unknown';
+            const isFailed = run.result === 'fail' || run.result === 'cancel';
+            const resultBadge = isFailed
+                ? `<span style="color: ${run.result === 'fail' ? '#ff6b6b' : '#ffd700'}; font-size: 9px; font-weight: bold; margin-right: 4px;">${run.result === 'fail' ? 'FAILED' : 'CANCELED'}</span>`
+                : '';
 
             html += `
                 <div style="
@@ -301,8 +319,8 @@ class DungeonTrackerUIHistory {
                     font-size: 10px;
                 " data-run-timestamp="${run.timestamp}">
                     <span style="color: #aaa; min-width: 25px;">#${runNumber}</span>
-                    <span style="color: #fff; flex: 1; text-align: center;">
-                        ${timeStr} <span style="color: #888; font-size: 9px;">(${dateTime})</span>
+                    <span style="color: ${isFailed ? '#888' : '#fff'}; flex: 1; text-align: center;">
+                        ${resultBadge}${timeStr} <span style="color: #888; font-size: 9px;">(${dateTime})</span>
                     </span>
                     <span style="color: #888; margin-right: 6px; font-size: 9px;">${dungeonLabel}</span>
                     <button class="mwi-dt-delete-run" style="

@@ -32,6 +32,11 @@ class DungeonTrackerUIChart {
             filteredRuns = filteredRuns.filter((r) => r.teamKey === this.state.filterTeam);
         }
 
+        // This chart plots run duration as a trend over time - a failed/canceled attempt's
+        // duration isn't comparable to a clear's, so it's excluded rather than shown as a point
+        // on the same line (matches the history/stats views treating fails separately).
+        filteredRuns = filteredRuns.filter((r) => !r.result || r.result === 'success');
+
         if (filteredRuns.length === 0) {
             // Destroy existing chart
             if (this.chartInstance) {
@@ -298,6 +303,9 @@ class DungeonTrackerUIChart {
         if (this.state.filterTeam !== 'all') {
             filteredRuns = filteredRuns.filter((r) => r.teamKey === this.state.filterTeam);
         }
+
+        // Exclude fails/cancels - see render() for why.
+        filteredRuns = filteredRuns.filter((r) => !r.result || r.result === 'success');
 
         if (filteredRuns.length === 0) return;
 

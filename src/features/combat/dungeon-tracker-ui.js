@@ -158,7 +158,7 @@ class DungeonTrackerUI {
                 ">
                     <span>Last Run: <span id="mwi-dt-header-last" style="color: #fff; font-weight: bold;">--:--</span></span>
                     <span>|</span>
-                    <span>Avg Run: <span id="mwi-dt-header-avg" style="color: #fff; font-weight: bold;">--:--</span></span>
+                    <span>Avg Clear: <span id="mwi-dt-header-avg" style="color: #fff; font-weight: bold;">--:--</span></span>
                     <span>|</span>
                     <span>Runs: <span id="mwi-dt-header-runs" style="color: #fff; font-weight: bold;">0</span></span>
                     <span>|</span>
@@ -192,10 +192,10 @@ class DungeonTrackerUI {
                     </div>
                 </div>
 
-                <!-- Run-level stats (2x2 grid) -->
+                <!-- Run-level stats (2x3 grid) -->
                 <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; font-size: 11px; color: #ccc; padding-top: 4px; border-top: 1px solid #444;">
                     <div style="text-align: center;">
-                        <div style="color: #aaa; font-size: 10px;">Avg Run</div>
+                        <div style="color: #aaa; font-size: 10px;">Avg Clear</div>
                         <div id="mwi-dt-avg-time" style="color: #fff; font-weight: bold;">--:--</div>
                     </div>
                     <div style="text-align: center;">
@@ -209,6 +209,14 @@ class DungeonTrackerUI {
                     <div style="text-align: center;">
                         <div style="color: #aaa; font-size: 10px;">Slowest Run</div>
                         <div id="mwi-dt-slowest-time" style="color: #ff6b6b; font-weight: bold;">--:--</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="color: #aaa; font-size: 10px;">Avg/Attempt</div>
+                        <div id="mwi-dt-avg-per-attempt" style="color: #fff; font-weight: bold;">--:--</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="color: #aaa; font-size: 10px;">Fail Rate</div>
+                        <div id="mwi-dt-fail-rate" style="color: #ffb84d; font-weight: bold;">--</div>
                     </div>
                 </div>
 
@@ -442,21 +450,26 @@ class DungeonTrackerUI {
         }
 
         // Fetch run statistics - respect ALL filters to match chart exactly
-        let stats, runHistory, lastRunTime;
+        let stats, lastRunTime;
 
         // Get all runs and apply filters (EXACT SAME LOGIC as chart)
         const allRuns = await storage.getJSON('allRuns', 'unifiedRuns', []);
-        runHistory = allRuns;
+        let allAttempts = allRuns;
 
         // Apply dungeon filter
         if (this.state.filterDungeon !== 'all') {
-            runHistory = runHistory.filter((r) => r.dungeonName === this.state.filterDungeon);
+            allAttempts = allAttempts.filter((r) => r.dungeonName === this.state.filterDungeon);
         }
 
         // Apply team filter
         if (this.state.filterTeam !== 'all') {
-            runHistory = runHistory.filter((r) => r.teamKey === this.state.filterTeam);
+            allAttempts = allAttempts.filter((r) => r.teamKey === this.state.filterTeam);
         }
+
+        // Failed/canceled attempts cost real time but aren't clears - keep the existing
+        // clear-only stats (avg/fastest/slowest/last) unaffected by them.
+        const runHistory = allAttempts.filter((r) => !r.result || r.result === 'success');
+        const failedAttempts = allAttempts.filter((r) => r.result === 'fail' || r.result === 'cancel');
 
         // Calculate stats from filtered runs
         if (runHistory.length > 0) {
@@ -465,18 +478,31 @@ class DungeonTrackerUI {
 
             const durations = runHistory.map((r) => r.duration || r.totalTime || 0);
             const total = durations.reduce((sum, d) => sum + d, 0);
+            const failedTotal = failedAttempts.reduce((sum, r) => sum + (r.duration || r.totalTime || 0), 0);
+            const totalAttempts = runHistory.length + failedAttempts.length;
 
             stats = {
                 totalRuns: runHistory.length,
                 avgTime: Math.floor(total / runHistory.length),
                 fastestTime: Math.min(...durations),
                 slowestTime: Math.max(...durations),
+                avgTimePerAttempt: Math.floor((total + failedTotal) / runHistory.length),
+                failCount: failedAttempts.length,
+                failRate: totalAttempts > 0 ? failedAttempts.length / totalAttempts : 0,
             };
 
             lastRunTime = durations[0]; // First run after sorting (most recent)
         } else {
             // No runs match filters
-            stats = { totalRuns: 0, avgTime: 0, fastestTime: 0, slowestTime: 0 };
+            stats = {
+                totalRuns: 0,
+                avgTime: 0,
+                fastestTime: 0,
+                slowestTime: 0,
+                avgTimePerAttempt: 0,
+                failCount: failedAttempts.length,
+                failRate: failedAttempts.length > 0 ? 1 : 0,
+            };
             lastRunTime = 0;
         }
 
@@ -543,6 +569,18 @@ class DungeonTrackerUI {
         const slowestTime = this.container.querySelector('#mwi-dt-slowest-time');
         if (slowestTime) {
             slowestTime.textContent = stats.slowestTime > 0 ? this.formatTime(stats.slowestTime) : '--:--';
+        }
+
+        const avgPerAttempt = this.container.querySelector('#mwi-dt-avg-per-attempt');
+        if (avgPerAttempt) {
+            avgPerAttempt.textContent =
+                stats.avgTimePerAttempt > 0 ? this.formatTime(stats.avgTimePerAttempt) : '--:--';
+        }
+
+        const failRate = this.container.querySelector('#mwi-dt-fail-rate');
+        if (failRate) {
+            failRate.textContent =
+                stats.totalRuns + stats.failCount > 0 ? `${Math.round(stats.failRate * 100)}%` : '--';
         }
 
         // Update Keys section with party member key counts

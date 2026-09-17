@@ -558,7 +558,7 @@ class DungeonTracker {
 
                         if (!allWavesCompleted) {
                             // Early exit (fled, died, or failed)
-                            this.resetTracking();
+                            this.resetTracking({ result: 'fail', endTimestamp: Date.now() });
                         }
                         // If it was a successful completion, action_completed will handle it
                         return;
@@ -647,16 +647,16 @@ class DungeonTracker {
 
     /**
      * Handle "Party failed" message
-     * @param {number} _timestamp - Message timestamp in milliseconds
+     * @param {number} timestamp - Message timestamp in milliseconds
      * @param {Object} _message - Message object
      */
-    onPartyFailed(_timestamp, _message) {
+    onPartyFailed(timestamp, _message) {
         if (!this.isTracking || !this.currentRun) {
             return;
         }
 
         // Mark run as failed and reset tracking
-        this.resetTracking();
+        this.resetTracking({ result: 'fail', endTimestamp: timestamp });
     }
 
     /**
@@ -1007,7 +1007,7 @@ class DungeonTracker {
                 this.completeDungeon();
             } else {
                 // Early exit (fled, died, or failed)
-                this.resetTracking();
+                this.resetTracking({ result: 'fail', endTimestamp: Date.now() });
             }
         } else {
             this.notifyUpdate();
@@ -1133,8 +1133,24 @@ class DungeonTracker {
 
     /**
      * Reset tracking state (on completion, flee, or death)
+     * @param {{result: 'fail'|'cancel', endTimestamp: number}} [failure] - When provided, the
+     *   current run's duration is captured and persisted as a failed/canceled attempt before
+     *   state is cleared. State is still wiped synchronously first (before the async save runs)
+     *   to avoid the same race completeDungeon() already guards against - a new run starting
+     *   before the save completes.
      */
-    async resetTracking() {
+    async resetTracking(failure = null) {
+        const failureSnapshot =
+            failure && this.isTracking && this.currentRun
+                ? {
+                      result: failure.result,
+                      endTimestamp: failure.endTimestamp,
+                      currentRun: this.currentRun,
+                      firstKeyCountTimestamp: this.firstKeyCountTimestamp,
+                      battleStartedTimestamp: this.battleStartedTimestamp,
+                  }
+                : null;
+
         this.isTracking = false;
         this.currentRun = null;
         this.waveStartTime = null;
@@ -1152,7 +1168,58 @@ class DungeonTracker {
         // Clear saved state (await to ensure it completes)
         await this.clearInProgressRun();
 
+        if (failureSnapshot) {
+            // Fire-and-forget, same as completeDungeon()'s save-after-state-clear ordering.
+            this.saveFailedRun(failureSnapshot).catch((error) => {
+                console.error('[Dungeon Tracker] Failed to save failed/canceled run:', error);
+            });
+        }
+
         this.notifyUpdate();
+    }
+
+    /**
+     * Persist a failed/canceled run's duration. Called by resetTracking() with a snapshot taken
+     * before state was cleared, since a fail has no completion key-count message of its own to
+     * anchor an end time - the caller supplies the best available end timestamp.
+     * @param {Object} snapshot
+     * @param {'fail'|'cancel'} snapshot.result
+     * @param {number} snapshot.endTimestamp - End anchor in epoch ms.
+     * @param {Object} snapshot.currentRun
+     * @param {number|null} snapshot.firstKeyCountTimestamp
+     * @param {number|null} snapshot.battleStartedTimestamp
+     */
+    async saveFailedRun({ result, endTimestamp, currentRun, firstKeyCountTimestamp, battleStartedTimestamp }) {
+        if (!currentRun.dungeonHrid) {
+            return;
+        }
+
+        const startAnchor = firstKeyCountTimestamp ?? battleStartedTimestamp ?? currentRun.startTime;
+        if (startAnchor === null || startAnchor === undefined) {
+            return;
+        }
+
+        let duration = endTimestamp - startAnchor;
+        if (duration < 0) {
+            duration += 24 * 60 * 60 * 1000;
+        }
+
+        const validated = firstKeyCountTimestamp !== null;
+        const dungeonInfo = dungeonTrackerStorage.getDungeonInfo(currentRun.dungeonHrid);
+        const dungeonName = dungeonInfo ? dungeonInfo.name : 'Unknown';
+        const keyCountsMap = currentRun.keyCountsMap || {};
+        const team = Object.keys(keyCountsMap).sort();
+        const teamKey = dungeonTrackerStorage.getTeamKey(team);
+
+        await dungeonTrackerStorage.saveTeamRun(teamKey, {
+            timestamp: new Date(startAnchor).toISOString(),
+            duration,
+            dungeonName,
+            keyCountsMap: currentRun.keyCountsMap || null,
+            result,
+            wavesCompleted: currentRun.wavesCompleted,
+            validated,
+        });
     }
 
     /**
@@ -1423,7 +1490,8 @@ class DungeonTracker {
             // Sort events by timestamp
             events.sort((a, b) => a.timestamp - b.timestamp);
 
-            // Build runs from events - only count key→key pairs (skip key→fail and key→cancel)
+            // Build runs from events - pair each key count with whatever ends it: another key
+            // count (success), a "Party failed" message (fail), or a battle-ended/cancel (cancel)
             let runsAdded = 0;
             const teamsSet = new Set();
 
@@ -1434,8 +1502,7 @@ class DungeonTracker {
                 const next = events[i + 1];
                 if (!next) break; // No next event
 
-                // Only create run if next event is also a key count (successful completion)
-                if (next.type === 'key') {
+                if (next.type === 'key' || next.type === 'fail' || next.type === 'cancel') {
                     // Calculate duration (handle midnight rollover)
                     let duration = next.timestamp - event.timestamp;
                     if (duration < 0) {
@@ -1466,6 +1533,7 @@ class DungeonTracker {
                         timestamp: event.timestamp.toISOString(),
                         duration: duration,
                         dungeonName: dungeonName,
+                        result: next.type === 'key' ? 'success' : next.type,
                     };
 
                     const saved = await dungeonTrackerStorage.saveTeamRun(teamKey, run);
@@ -1473,7 +1541,6 @@ class DungeonTracker {
                         runsAdded++;
                     }
                 }
-                // If next event is 'fail' or 'cancel', skip this key count (not a completed run)
             }
 
             return {
