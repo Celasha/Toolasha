@@ -76,6 +76,8 @@ class CombatStatsDataCollector {
         this.trackedZoneKey = null;
         this.expectedLootTracker = new ExpectedLootTracker();
         this.dungeonCompletionHandler = null;
+        this.socketCloseHandler = null;
+        this.connectionInterrupted = false;
 
         this._resetTrackingState();
     }
@@ -96,6 +98,7 @@ class CombatStatsDataCollector {
         this.partyConsumableTrackers = {};
         this.partyConsumableSnapshots = {};
         this.partyLastKnownConsumables = {};
+        this.connectionInterrupted = false;
     }
 
     _getStorageKey(baseKey, characterId = this.characterId) {
@@ -144,6 +147,16 @@ class CombatStatsDataCollector {
 
         // Listen for battle_consumable_ability_updated (fires on each consumable use)
         webSocketHook.on('battle_consumable_ability_updated', this.consumableEventHandler);
+
+        // A mid-session disconnect means some events during the gap may have been missed - flag
+        // the current session's numbers as possibly incomplete rather than silently trusting them.
+        this.socketCloseHandler = () => {
+            if (generation !== this.lifecycleGeneration) return;
+            if (this.consumableTracker.startTime) {
+                this.connectionInterrupted = true;
+            }
+        };
+        webSocketHook.onSocketEvent('close', this.socketCloseHandler);
 
         // Reuse dungeon-tracker's own proven completion signal instead of re-deriving one
         this.dungeonCompletionHandler = (_current, completedRun) => {
@@ -894,6 +907,15 @@ class CombatStatsDataCollector {
     }
 
     /**
+     * Whether a WS disconnect/reconnect happened during the current tracking session, meaning
+     * some events may have been missed and the session's numbers may be incomplete.
+     * @returns {boolean}
+     */
+    isConnectionInterrupted() {
+        return this.connectionInterrupted;
+    }
+
+    /**
      * Load latest combat data from storage
      * @returns {Promise<Object|null>} Latest combat data
      */
@@ -917,6 +939,11 @@ class CombatStatsDataCollector {
         if (this.consumableEventHandler) {
             webSocketHook.off('battle_consumable_ability_updated', this.consumableEventHandler);
             this.consumableEventHandler = null;
+        }
+
+        if (this.socketCloseHandler) {
+            webSocketHook.offSocketEvent('close', this.socketCloseHandler);
+            this.socketCloseHandler = null;
         }
 
         if (this.dungeonCompletionHandler) {

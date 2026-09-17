@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
     currentCharacterId: 'character-a',
     on: vi.fn(),
     off: vi.fn(),
+    socketEventHandlers: {},
     settingValues: { combatStats_runwayWarningThreshold: 12 },
 }));
 
@@ -37,6 +38,12 @@ vi.mock('../../core/websocket.js', () => ({
     default: {
         on: mocks.on,
         off: mocks.off,
+        onSocketEvent: vi.fn((eventType, handler) => {
+            mocks.socketEventHandlers[eventType] = handler;
+        }),
+        offSocketEvent: vi.fn((eventType) => {
+            delete mocks.socketEventHandlers[eventType];
+        }),
     },
 }));
 
@@ -71,6 +78,7 @@ vi.mock('../combat/dungeon-tracker.js', () => ({
 import storage from '../../core/storage.js';
 import dataManager from '../../core/data-manager.js';
 import dungeonTracker from '../combat/dungeon-tracker.js';
+import webSocketHook from '../../core/websocket.js';
 import { calculateLevelGapDebuff } from '../combat-sim/combat-sim-adapter.js';
 import { CombatStatsDataCollector } from './combat-stats-data-collector.js';
 
@@ -80,6 +88,7 @@ beforeEach(() => {
     mocks.settingValues = { combatStats_runwayWarningThreshold: 12 };
     mocks.on.mockClear();
     mocks.off.mockClear();
+    mocks.socketEventHandlers = {};
     vi.clearAllMocks();
 
     globalThis.Notification = vi.fn(function MockNotification() {
@@ -779,5 +788,52 @@ describe('CombatStatsDataCollector Loot Luck sample window (exact start/end boun
         // New zone, no completion yet - sample must restart clean, not inherit the old window.
         expect(collector.expectedLootTracker.getSampleSize()).toBe(0);
         expect(collector.expectedLootTracker.getElapsedSeconds()).toBe(0);
+    });
+});
+
+describe('CombatStatsDataCollector connection-interrupted flagging', () => {
+    test('a socket close mid-session flags connectionInterrupted', async () => {
+        const collector = new CombatStatsDataCollector();
+        await collector.initialize();
+        await collector.resetConsumableTracking('character-a');
+
+        expect(collector.isConnectionInterrupted()).toBe(false);
+
+        mocks.socketEventHandlers.close();
+
+        expect(collector.isConnectionInterrupted()).toBe(true);
+        collector.cleanup();
+    });
+
+    test('a socket close before any session has started is a no-op', async () => {
+        const collector = new CombatStatsDataCollector();
+        await collector.initialize();
+
+        mocks.socketEventHandlers.close();
+
+        expect(collector.isConnectionInterrupted()).toBe(false);
+        collector.cleanup();
+    });
+
+    test('starting a new session clears a stale interrupted flag', async () => {
+        const collector = new CombatStatsDataCollector();
+        await collector.initialize();
+        await collector.resetConsumableTracking('character-a');
+        mocks.socketEventHandlers.close();
+        expect(collector.isConnectionInterrupted()).toBe(true);
+
+        await collector.resetConsumableTracking('character-a');
+
+        expect(collector.isConnectionInterrupted()).toBe(false);
+        collector.cleanup();
+    });
+
+    test('cleanup unregisters the socket close handler', async () => {
+        const collector = new CombatStatsDataCollector();
+        await collector.initialize();
+
+        collector.cleanup();
+
+        expect(webSocketHook.offSocketEvent).toHaveBeenCalledWith('close', expect.any(Function));
     });
 });

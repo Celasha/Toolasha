@@ -20,6 +20,39 @@ class TaskRerollTracker {
         this.isInitialized = false;
         this.storeName = 'rerollSpending';
         this.timerRegistry = createTimerRegistry();
+        this.characterId = null;
+        this._legacyMigrationDone = false;
+    }
+
+    /**
+     * Character-scoped storage key. Falls back to 'default' if the character id isn't
+     * resolvable yet, matching the fallback used elsewhere (e.g. labyrinth tracker).
+     * @returns {string}
+     */
+    getStorageKey() {
+        return `taskRerollData_${this.characterId || 'default'}`;
+    }
+
+    /**
+     * One-time best-effort migration: reroll data saved before storage was character-scoped
+     * lived under a single global 'taskRerollData' key shared by every character on the
+     * account. There's no way to retroactively attribute old entries to a specific character,
+     * so the first character to load after this upgrade claims that data; the legacy key is
+     * cleared immediately after so a second character never re-claims (and duplicates) it.
+     */
+    async _migrateLegacyDataIfNeeded() {
+        if (this._legacyMigrationDone) return;
+        this._legacyMigrationDone = true;
+
+        const legacyData = await storage.getJSON('taskRerollData', this.storeName, null);
+        if (!legacyData) return;
+
+        const scopedKey = this.getStorageKey();
+        const existing = await storage.getJSON(scopedKey, this.storeName, null);
+        if (existing === null) {
+            await storage.setJSON(scopedKey, legacyData, this.storeName, true);
+        }
+        await storage.delete('taskRerollData', this.storeName);
     }
 
     /**
@@ -27,6 +60,8 @@ class TaskRerollTracker {
      */
     async initialize() {
         if (this.isInitialized) return;
+
+        this.characterId = dataManager.getCurrentCharacterId();
 
         // Load saved data from IndexedDB
         await this.loadFromStorage();
@@ -49,7 +84,13 @@ class TaskRerollTracker {
      */
     async loadFromStorage() {
         try {
-            const savedData = await storage.getJSON('taskRerollData', this.storeName, {});
+            await this._migrateLegacyDataIfNeeded();
+
+            // Fail closed against prior-character state - a stale entry left over in memory
+            // from a previous character must never survive a reload for the new one.
+            this.taskRerollData.clear();
+
+            const savedData = await storage.getJSON(this.getStorageKey(), this.storeName, {});
 
             // Convert saved object back to Map
             for (const [taskId, data] of Object.entries(savedData)) {
@@ -71,7 +112,7 @@ class TaskRerollTracker {
                 dataToSave[taskId] = data;
             }
 
-            await storage.setJSON('taskRerollData', dataToSave, this.storeName, true);
+            await storage.setJSON(this.getStorageKey(), dataToSave, this.storeName, true);
         } catch (error) {
             console.error('[Task Reroll Tracker] Failed to save to storage:', error);
         }
@@ -85,6 +126,8 @@ class TaskRerollTracker {
         this.unregisterHandlers = [];
         this.timerRegistry.clearAll();
         document.getElementById('mwi-task-action-min-height')?.remove();
+        this.taskRerollData.clear();
+        this.characterId = null;
         this.isInitialized = false;
     }
 

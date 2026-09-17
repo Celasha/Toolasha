@@ -409,14 +409,16 @@ class CombatStatsUI {
         const playerStats = calculateAllPlayerStats(combatData, durationSeconds, expectedLootData);
 
         // Create and show popup
-        this.createPopup(playerStats);
+        this.createPopup(playerStats, combatStatsDataCollector.isConnectionInterrupted());
     }
 
     /**
      * Create and display the statistics popup
      * @param {Array} playerStats - Array of player statistics
+     * @param {boolean} [connectionInterrupted=false] - Whether a WS disconnect/reconnect happened
+     *   during this session, meaning some events may have been missed
      */
-    createPopup(playerStats) {
+    createPopup(playerStats, connectionInterrupted = false) {
         // Remove existing popup if any
         if (this.popup) {
             this.closePopup();
@@ -562,6 +564,22 @@ class CombatStatsUI {
 
         // Assemble popup
         popup.appendChild(header);
+        if (connectionInterrupted) {
+            const banner = document.createElement('div');
+            banner.textContent =
+                '⚠️ Connection was interrupted during this session — some events may have been ' +
+                'missed, so these numbers may be incomplete.';
+            banner.style.cssText = `
+                background: #4a3a1a;
+                border: 1px solid #8a6a2a;
+                border-radius: 4px;
+                padding: 8px 12px;
+                margin-bottom: 16px;
+                font-size: 13px;
+                color: #ffcc66;
+            `;
+            popup.appendChild(banner);
+        }
         popup.appendChild(cardsContainer);
         overlay.appendChild(popup);
 
