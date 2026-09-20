@@ -420,6 +420,7 @@ class OpenableAnalyticsSidePanel {
         this.currentPanel = null;
         this.currentModal = null;
         this.stopWatchingModal = null;
+        this.visibilityPollInterval = null;
         this.expandedSections = new Set();
         this.itemsSpriteUrl = null;
         this.handlePanelClick = this.handlePanelClick.bind(this);
@@ -555,22 +556,44 @@ class OpenableAnalyticsSidePanel {
         panel.style.top = `${modalRect.top}px`;
     }
 
+    /**
+     * The modal can stop being "open" without ever firing a childList mutation the observer
+     * below would catch - e.g. the game hiding it in place via CSS instead of removing the node,
+     * or reusing the same container with no further loot data ever arriving to re-run tryShow().
+     * Checked from both the mutation observer (fast path) and a periodic poll (safety net), so a
+     * closed modal is always noticed rather than leaving this body-appended panel stuck on
+     * screen until the whole feature is torn down and re-initialized (e.g. by switching characters).
+     * @param {HTMLElement} modal
+     * @returns {boolean}
+     */
+    isModalOpen(modal) {
+        if (!document.body.contains(modal)) return false;
+        const style = window.getComputedStyle(modal);
+        return style.display !== 'none' && style.visibility !== 'hidden';
+    }
+
     setupCleanupObserver(modal) {
-        this.stopWatchingModal = createMutationWatcher(
-            document.body,
-            () => {
-                if (!document.body.contains(modal)) {
-                    this.removePanel();
-                }
-            },
-            { childList: true, subtree: true }
-        );
+        const checkStillOpen = () => {
+            if (!this.isModalOpen(modal)) {
+                this.removePanel();
+            }
+        };
+
+        this.stopWatchingModal = createMutationWatcher(document.body, checkStillOpen, {
+            childList: true,
+            subtree: true,
+        });
+        this.visibilityPollInterval = setInterval(checkStillOpen, 1000);
     }
 
     removePanel() {
         if (this.stopWatchingModal) {
             this.stopWatchingModal();
             this.stopWatchingModal = null;
+        }
+        if (this.visibilityPollInterval) {
+            clearInterval(this.visibilityPollInterval);
+            this.visibilityPollInterval = null;
         }
         if (this.currentPanel) {
             this.currentPanel.remove();

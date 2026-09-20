@@ -208,6 +208,41 @@ describe('OpenableAnalyticsSidePanel', () => {
 
         expect(document.getElementById(PANEL_ID)).toBeNull();
     });
+
+    test('TLA-071: a modal hidden via CSS instead of being removed from the DOM is still cleaned up, via the periodic poll', () => {
+        vi.useFakeTimers();
+        try {
+            const modal = buildModal();
+            modalCallback()(modal);
+            expect(document.getElementById(PANEL_ID)).not.toBeNull();
+
+            // Modal stays in the DOM (no childList mutation ever fires) but is hidden in place -
+            // the MutationObserver fast path can never catch this, only the poll safety net.
+            modal.style.display = 'none';
+            vi.advanceTimersByTime(1000);
+
+            expect(document.getElementById(PANEL_ID)).toBeNull();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    test('TLA-071: the visibility poll is stopped once the panel is removed, so it never fires again', () => {
+        vi.useFakeTimers();
+        try {
+            const modal = buildModal();
+            modalCallback()(modal);
+            expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+            mocks.isMonetaryRewardModal.mockReturnValue(false);
+            modalCallback()(modal);
+            expect(document.getElementById(PANEL_ID)).toBeNull();
+
+            expect(vi.getTimerCount()).toBe(0);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
 });
 
 describe('OpenableAnalyticsSidePanel expandable breakdown rows', () => {
