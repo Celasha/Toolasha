@@ -851,6 +851,16 @@ describe('ActionTimeDisplay Queued Actions edit-menu width stability (TLA-040)',
         expect(css).toContain('white-space: normal;');
     });
 
+    test('TLA-070: queue rows wrap instead of overflowing horizontally, so the delete button never requires scrolling to reach', () => {
+        instance.initializeQueueObserver();
+        const css = document.getElementById(STYLE_ID).textContent;
+
+        expect(css).toContain('overflow-x: hidden;');
+        expect(css).toContain(`.${MARKER_CLASS} [class^="QueuedActions_action__"]`);
+        expect(css).toContain('flex-wrap: wrap;');
+        expect(css).toContain(`.${MARKER_CLASS} [class*="QueuedActions_actionText"]`);
+    });
+
     test('QW-15: no global MUI tooltip/popper selector, and the separate hover-tooltip surface, is touched', () => {
         instance.initializeQueueObserver();
         const css = document.getElementById(STYLE_ID).textContent;
