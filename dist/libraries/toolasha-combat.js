@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.110.1
+ * Version: 2.110.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2318,7 +2318,11 @@
                                 this.currentRun.maxWaves && this.currentRun.wavesCompleted >= this.currentRun.maxWaves;
 
                             if (!allWavesCompleted) {
-                                // Early exit (fled, died, or failed)
+                                // Fallback only: a real death/cancel already reset tracking via
+                                // onPartyFailed/onBattleEnded's chat signal, so isTracking would be
+                                // false by the time this fires for those cases. This branch only
+                                // still runs when neither chat message ever arrived - default to
+                                // 'fail' since that's the more common failure mode to miss a signal for.
                                 this.resetTracking({ result: 'fail', endTimestamp: Date.now() });
                             }
                             // If it was a successful completion, action_completed will handle it
@@ -2330,7 +2334,7 @@
         }
 
         /**
-         * Handle chat_message_received (parse Key counts messages, Battle started, and Party failed)
+         * Handle chat_message_received (parse Key counts, Battle started/ended, and Party failed)
          * @param {Object} data - chat_message_received message data
          */
         onChatMessage(data) {
@@ -2365,9 +2369,19 @@
                 return;
             }
 
-            // Handle "Party failed" messages
-            if (message.m === 'systemChatMessage.partyFailed') {
+            // Handle "Party failed" messages. The real message type is partyWaveFailed (rendered as
+            // "Party failed on wave N.") - there is no systemChatMessage.partyFailed key in the
+            // game's own locale data, so checking for that string meant this handler never actually
+            // fired and every early exit (death AND cancel alike) fell through to the generic
+            // 'fail'-only branches in onActionsUpdated/onActionCompleted below.
+            if (message.m === 'systemChatMessage.partyWaveFailed') {
                 this.onPartyFailed(timestamp, message);
+                return;
+            }
+
+            // Handle "Battle ended" messages (manual flee/cancel, not a death)
+            if (message.m === 'systemChatMessage.partyBattleEnded') {
+                this.onBattleEnded(timestamp, message);
                 return;
             }
 
@@ -2407,7 +2421,7 @@
         }
 
         /**
-         * Handle "Party failed" message
+         * Handle "Party failed" message (a genuine wipe/death)
          * @param {number} timestamp - Message timestamp in milliseconds
          * @param {Object} _message - Message object
          */
@@ -2418,6 +2432,23 @@
 
             // Mark run as failed and reset tracking
             this.resetTracking({ result: 'fail', endTimestamp: timestamp });
+        }
+
+        /**
+         * Handle "Battle ended" message (a manual flee/cancel, not a death). Resetting here, on the
+         * real-time chat signal, is what lets the generic early-exit branches in
+         * onActionsUpdated/onActionCompleted stay 'fail'-only fallbacks for the rare case where
+         * neither this nor onPartyFailed ever fires - isTracking is already false by the time either
+         * of those runs otherwise.
+         * @param {number} timestamp - Message timestamp in milliseconds
+         * @param {Object} _message - Message object
+         */
+        onBattleEnded(timestamp, _message) {
+            if (!this.isTracking || !this.currentRun) {
+                return;
+            }
+
+            this.resetTracking({ result: 'cancel', endTimestamp: timestamp });
         }
 
         /**
@@ -2806,7 +2837,7 @@
                     // Successful completion
                     this.completeDungeon();
                 } else {
-                    // Early exit (fled, died, or failed)
+                    // Fallback only - see the matching branch in onActionsUpdated for why.
                     this.resetTracking({ result: 'fail', endTimestamp: Date.now() });
                 }
             } else {
@@ -13205,6 +13236,12 @@
      * Metz character object, reshaping into Metz's un-padded slot format. Used by the profile-box
      * "Metz Sim Export" loadout dropdown, which exports a NAMED saved loadout instead of the
      * character's live equipped state.
+     *
+     * Combat loadouts never include tool slots (enhancing/alchemy tools aren't part of a combat
+     * loadout), so unlike toMetzCharacter's live equipment there's nothing to re-derive
+     * skilling.enhancingTool/alchemyTool from here - character.skilling already reflects whatever
+     * tools are currently equipped (from buildSelfMetzCharacter) and is left untouched, rather than
+     * overwritten with null from an equipment array that was never going to carry tools.
      * @param {Object} character - A Metz character object (e.g. from constructMetzCharacterExport)
      * @param {Object} overrides
      * @param {Array<Object>} overrides.equipment
@@ -13215,19 +13252,8 @@
      * @returns {Object} A new character object with the overrides applied
      */
     function applyLoadoutOverrideToMetzCharacter(character, { equipment, abilities, triggerMap, food, drinks }) {
-        const {
-            equipment: strippedEquipment,
-            enhancingTool,
-            alchemyTool,
-        } = extractToolsFromEquipment((equipment || []).map((item) => ({ ...item })));
-        const existingSkilling = character.skilling || {};
-        const skilling = { ...existingSkilling, enhancingTool, alchemyTool };
-        const hasSkilling =
-            skilling.enhancingLevel != null ||
-            skilling.alchemyLevel != null ||
-            enhancingTool ||
-            alchemyTool ||
-            skilling.speedGear?.length > 0;
+        // Defensive only - strip any stray tool entry rather than assume a loadout can't have one.
+        const { equipment: strippedEquipment } = extractToolsFromEquipment((equipment || []).map((item) => ({ ...item })));
 
         return {
             ...character,
@@ -13236,7 +13262,6 @@
             triggerMap: triggerMap || {},
             food: { '/action_types/combat': dropBlankSlots(food, 'itemHrid') },
             drinks: { '/action_types/combat': dropBlankSlots(drinks, 'itemHrid') },
-            ...(hasSkilling ? { skilling } : {}),
         };
     }
 
