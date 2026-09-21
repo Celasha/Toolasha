@@ -2,11 +2,10 @@
 
 ## [2.110.1](https://github.com/Celasha/Toolasha/compare/v2.110.0...v2.110.1) (2026-09-21)
 
-
 ### Bug Fixes
 
-* periodically refresh base market snapshot to prevent stale prices ([706e2f4](https://github.com/Celasha/Toolasha/commit/706e2f4f0516dee0770eadaebcda50bef078477b))
-* populate Metz skilling/owned blocks for enhancing and alchemy setup ([04f3f6a](https://github.com/Celasha/Toolasha/commit/04f3f6a782a1994d48669b1f8c71a9f0bd437ba8))
+- periodically refresh base market snapshot to prevent stale prices ([706e2f4](https://github.com/Celasha/Toolasha/commit/706e2f4f0516dee0770eadaebcda50bef078477b))
+- populate Metz skilling/owned blocks for enhancing and alchemy setup ([04f3f6a](https://github.com/Celasha/Toolasha/commit/04f3f6a782a1994d48669b1f8c71a9f0bd437ba8))
 
 ## [2.110.0](https://github.com/Celasha/Toolasha/compare/v2.109.0...v2.110.0) (2026-09-21)
 
