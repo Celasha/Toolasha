@@ -11,6 +11,7 @@ import dataManager from './core/data-manager.js';
 import featureRegistry from './core/feature-registry.js';
 import networkAlert from './features/market/network-alert.js';
 import * as combatSimIntegration from './features/combat/combat-sim-integration.js';
+import * as combatSimIntegrationMetz from './features/combat/combat-sim-integration-metz.js';
 import settingsUI from './features/settings/settings-ui.js';
 import { setupScrollTooltipDismissal } from './utils/dom.js';
 import guildXPTrackerFeature from './features/guild/guild-xp-tracker.js';
@@ -18,20 +19,32 @@ import characterSelectRenderer from './features/character-activity/character-sel
 import { startAccountPreferencesSync } from './features/character-activity/character-activity-account-prefs-sync.js';
 
 /**
- * Detect if running on a supported Combat Simulator page
- * @returns {boolean} True if on a Combat Simulator
+ * Detect if running on a supported Combat Simulator page.
+ * @returns {'shykai'|'metz'|null}
  */
-function isCombatSimulatorPage() {
+function getCombatSimulatorSite() {
     const url = window.location.href;
-    return (
+    if (
         url.includes('shykai.github.io/MWICombatSimulatorTest/dist/') ||
         url.includes('szerra.github.io/mwi-shrine-combat-simulator/')
-    );
+    ) {
+        return 'shykai';
+    }
+    if (url.includes('metzlii.github.io/metz-combat-simulator/')) {
+        return 'metz';
+    }
+    return null;
 }
 
-if (isCombatSimulatorPage()) {
+const combatSimSite = getCombatSimulatorSite();
+
+if (combatSimSite === 'shykai') {
     // Initialize combat sim integration only
     combatSimIntegration.initialize();
+
+    // Skip all other initialization
+} else if (combatSimSite === 'metz') {
+    combatSimIntegrationMetz.initialize();
 
     // Skip all other initialization
 } else {

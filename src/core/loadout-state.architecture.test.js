@@ -159,7 +159,7 @@ describe('Loadout State architecture invariants', () => {
 
     test('Profile Combat Sim export uses the shared native-slot mapper and cannot compact saved ability holes', () => {
         const combatScore = source(join(SRC, 'features/profile/combat-score.js'));
-        const methodStart = combatScore.indexOf('async handleCombatSimExportFromSnapshot');
+        const methodStart = combatScore.indexOf('async handleMetzSimExportFromSnapshot');
         const methodEnd = combatScore.indexOf('\n    /**', methodStart + 1);
         const method = combatScore.slice(methodStart, methodEnd);
 

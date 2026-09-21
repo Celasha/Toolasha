@@ -26,15 +26,21 @@ const { storage, config, webSocketHook, domObserver, dataManager, loadoutState, 
 const { setupScrollTooltipDismissal } = Utils.dom;
 
 /**
- * Detect if running on a supported Combat Simulator page
- * @returns {boolean} True if on a Combat Simulator
+ * Detect if running on a supported Combat Simulator page.
+ * @returns {'shykai'|'metz'|null}
  */
-function isCombatSimulatorPage() {
+function getCombatSimulatorSite() {
     const url = window.location.href;
-    return (
+    if (
         url.includes('shykai.github.io/MWICombatSimulatorTest/dist/') ||
         url.includes('szerra.github.io/mwi-shrine-combat-simulator/')
-    );
+    ) {
+        return 'shykai';
+    }
+    if (url.includes('metzlii.github.io/metz-combat-simulator/')) {
+        return 'metz';
+    }
+    return null;
 }
 
 /**
@@ -843,9 +849,15 @@ function registerFeatures() {
     featureRegistry.replaceFeatures(features);
 }
 
-if (isCombatSimulatorPage()) {
+const combatSimSite = getCombatSimulatorSite();
+
+if (combatSimSite === 'shykai') {
     // Initialize combat sim integration only
     Combat.combatSimIntegration.initialize();
+
+    // Skip all other initialization
+} else if (combatSimSite === 'metz') {
+    Combat.combatSimIntegrationMetz.initialize();
 
     // Skip all other initialization
 } else {

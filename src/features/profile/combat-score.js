@@ -9,7 +9,7 @@ import storage from '../../core/storage.js';
 import webSocketHook from '../../core/websocket.js';
 import { calculateCombatScore } from './score-calculator.js';
 import { numberFormatter } from '../../utils/formatters.js';
-import { constructExportObject } from '../combat/combat-sim-export.js';
+import { constructMetzCharacterExport, applyLoadoutOverrideToMetzCharacter } from '../combat/combat-sim-export-metz.js';
 import { constructMilkonomyExport } from '../combat/milkonomy-export.js';
 import { handleViewCardClick, handleViewCardFromSnapshot } from './character-card-button.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
@@ -392,8 +392,8 @@ class CombatScore {
             </div>
             ${this.buildScoreSectionsHTML(scoreData)}
             <div id="mwi-button-container" style="margin-top: 12px; display: flex; flex-direction: column; gap: 6px;">
-                <div id="mwi-combat-sim-wrapper" style="position: relative; display: flex; gap: 4px;">
-                    <button id="mwi-combat-sim-export-btn" style="
+                <div id="mwi-metz-sim-wrapper" style="position: relative; display: flex; gap: 4px;">
+                    <button id="mwi-metz-sim-export-btn" style="
                         padding: 8px 12px;
                         background: ${config.COLOR_ACCENT};
                         color: black;
@@ -403,8 +403,8 @@ class CombatScore {
                         font-weight: bold;
                         font-size: 0.85rem;
                         flex: 1;
-                    ">Combat Sim Export</button>
-                    <button id="mwi-combat-sim-loadout-btn" style="
+                    ">Metz Sim Export</button>
+                    <button id="mwi-metz-sim-loadout-btn" style="
                         padding: 8px 10px;
                         background: ${config.COLOR_ACCENT};
                         color: black;
@@ -415,7 +415,7 @@ class CombatScore {
                         font-size: 0.85rem;
                         display: none;
                     ">▾</button>
-                    <div id="mwi-combat-sim-loadout-dropdown" style="
+                    <div id="mwi-metz-sim-loadout-dropdown" style="
                         display: none;
                         position: absolute;
                         top: 100%;
@@ -699,17 +699,17 @@ class CombatScore {
             });
         }
 
-        // Combat Sim Export button
-        const combatSimBtn = panel.querySelector('#mwi-combat-sim-export-btn');
-        if (combatSimBtn) {
-            combatSimBtn.addEventListener('click', async () => {
-                await this.handleCombatSimExport(combatSimBtn);
+        // Metz Sim Export button
+        const metzSimBtn = panel.querySelector('#mwi-metz-sim-export-btn');
+        if (metzSimBtn) {
+            metzSimBtn.addEventListener('click', async () => {
+                await this.handleMetzSimExport(metzSimBtn);
             });
-            combatSimBtn.addEventListener('mouseenter', () => {
-                combatSimBtn.style.opacity = '0.8';
+            metzSimBtn.addEventListener('mouseenter', () => {
+                metzSimBtn.style.opacity = '0.8';
             });
-            combatSimBtn.addEventListener('mouseleave', () => {
-                combatSimBtn.style.opacity = '1';
+            metzSimBtn.addEventListener('mouseleave', () => {
+                metzSimBtn.style.opacity = '1';
             });
         }
 
@@ -739,10 +739,10 @@ class CombatScore {
             });
         }
 
-        // Combat Sim loadout dropdown for own character only
-        const combatSimLoadoutBtn = panel.querySelector('#mwi-combat-sim-loadout-btn');
-        const combatSimLoadoutDropdown = panel.querySelector('#mwi-combat-sim-loadout-dropdown');
-        if (combatSimLoadoutBtn && combatSimLoadoutDropdown) {
+        // Metz Sim loadout dropdown for own character only
+        const metzSimLoadoutBtn = panel.querySelector('#mwi-metz-sim-loadout-btn');
+        const metzSimLoadoutDropdown = panel.querySelector('#mwi-metz-sim-loadout-dropdown');
+        if (metzSimLoadoutBtn && metzSimLoadoutDropdown) {
             const profileCharId =
                 profileData?.profile?.sharableCharacter?.id ||
                 profileData?.profile?.characterSkills?.[0]?.characterID ||
@@ -753,16 +753,13 @@ class CombatScore {
                     .getAllSnapshots()
                     .filter((snapshot) => snapshot.isUsableForCalculation);
                 const combatSnapshots = allSnapshots.filter((s) => s.actionTypeHrid === '/action_types/combat');
-                console.log(
-                    `[CombatScore] Combat Sim dropdown: profileCharId=${profileCharId}, myCharId=${dataManager.getCurrentCharacterId()}, totalSnapshots=${allSnapshots.length}, combatSnapshots=${combatSnapshots.length}`
-                );
                 if (combatSnapshots.length > 0) {
-                    combatSimLoadoutBtn.style.display = '';
+                    metzSimLoadoutBtn.style.display = '';
 
-                    combatSimLoadoutDropdown.innerHTML = combatSnapshots
+                    metzSimLoadoutDropdown.innerHTML = combatSnapshots
                         .map(
                             (s) =>
-                                `<div class="mwi-combat-sim-loadout-option" data-name="${s.name.replace(/"/g, '&quot;')}" style="
+                                `<div class="mwi-metz-sim-loadout-option" data-name="${s.name.replace(/"/g, '&quot;')}" style="
                                 padding: 6px 10px;
                                 cursor: pointer;
                                 font-size: 0.8rem;
@@ -775,22 +772,22 @@ class CombatScore {
                         )
                         .join('');
 
-                    combatSimLoadoutBtn.addEventListener('click', (e) => {
+                    metzSimLoadoutBtn.addEventListener('click', (e) => {
                         e.stopPropagation();
-                        combatSimLoadoutDropdown.style.display =
-                            combatSimLoadoutDropdown.style.display === 'none' ? 'block' : 'none';
+                        metzSimLoadoutDropdown.style.display =
+                            metzSimLoadoutDropdown.style.display === 'none' ? 'block' : 'none';
                     });
-                    combatSimLoadoutBtn.addEventListener('mouseenter', () => {
-                        combatSimLoadoutBtn.style.opacity = '0.8';
+                    metzSimLoadoutBtn.addEventListener('mouseenter', () => {
+                        metzSimLoadoutBtn.style.opacity = '0.8';
                     });
-                    combatSimLoadoutBtn.addEventListener('mouseleave', () => {
-                        combatSimLoadoutBtn.style.opacity = '1';
+                    metzSimLoadoutBtn.addEventListener('mouseleave', () => {
+                        metzSimLoadoutBtn.style.opacity = '1';
                     });
 
-                    combatSimLoadoutDropdown.querySelectorAll('.mwi-combat-sim-loadout-option').forEach((opt) => {
+                    metzSimLoadoutDropdown.querySelectorAll('.mwi-metz-sim-loadout-option').forEach((opt) => {
                         opt.addEventListener('click', async () => {
-                            combatSimLoadoutDropdown.style.display = 'none';
-                            await this.handleCombatSimExportFromSnapshot(opt.dataset.name, combatSimBtn);
+                            metzSimLoadoutDropdown.style.display = 'none';
+                            await this.handleMetzSimExportFromSnapshot(opt.dataset.name, metzSimBtn);
                         });
                         opt.addEventListener('mouseenter', () => {
                             opt.style.background = 'rgba(255,255,255,0.1)';
@@ -800,16 +797,16 @@ class CombatScore {
                         });
                     });
 
-                    const closeCombatSimDropdown = (e) => {
-                        if (!document.body.contains(combatSimLoadoutDropdown)) {
-                            document.removeEventListener('click', closeCombatSimDropdown);
+                    const closeMetzSimDropdown = (e) => {
+                        if (!document.body.contains(metzSimLoadoutDropdown)) {
+                            document.removeEventListener('click', closeMetzSimDropdown);
                             return;
                         }
-                        if (!combatSimLoadoutDropdown.contains(e.target) && e.target !== combatSimLoadoutBtn) {
-                            combatSimLoadoutDropdown.style.display = 'none';
+                        if (!metzSimLoadoutDropdown.contains(e.target) && e.target !== metzSimLoadoutBtn) {
+                            metzSimLoadoutDropdown.style.display = 'none';
                         }
                     };
-                    document.addEventListener('click', closeCombatSimDropdown);
+                    document.addEventListener('click', closeMetzSimDropdown);
                 }
             }
         }
@@ -1165,58 +1162,11 @@ class CombatScore {
     }
 
     /**
-     * Handle Combat Sim Export button click
-     * @param {Element} button - Button element
-     */
-    async handleCombatSimExport(button) {
-        const originalText = button.textContent;
-        const originalBg = button.style.background;
-
-        try {
-            // Get current profile ID (if viewing someone else's profile)
-            const currentProfileId = await storage.get('currentProfileId', 'combatExport', null);
-
-            // Get export data in single-player format (for pasting into "Player 1 import" field)
-            const exportData = await constructExportObject(currentProfileId, true);
-            if (!exportData) {
-                button.textContent = '✗ No Data';
-                button.style.background = '${config.COLOR_LOSS}';
-                const resetTimeout = setTimeout(() => {
-                    button.textContent = originalText;
-                    button.style.background = originalBg;
-                }, 3000);
-                this.timerRegistry.registerTimeout(resetTimeout);
-                return;
-            }
-
-            const exportString = JSON.stringify(exportData.exportObj);
-            await navigator.clipboard.writeText(exportString);
-
-            button.textContent = '✓ Copied';
-            button.style.background = '${config.COLOR_PROFIT}';
-            const resetTimeout = setTimeout(() => {
-                button.textContent = originalText;
-                button.style.background = originalBg;
-            }, 3000);
-            this.timerRegistry.registerTimeout(resetTimeout);
-        } catch (error) {
-            console.error('[Combat Score] Combat Sim export failed:', error);
-            button.textContent = '✗ Failed';
-            button.style.background = '${config.COLOR_LOSS}';
-            const resetTimeout = setTimeout(() => {
-                button.textContent = originalText;
-                button.style.background = originalBg;
-            }, 3000);
-            this.timerRegistry.registerTimeout(resetTimeout);
-        }
-    }
-
-    /**
-     * Handle Combat Sim Export from a loadout snapshot
+     * Handle Metz Sim Export from a loadout snapshot
      * @param {string} snapshotName - Loadout snapshot name
      * @param {Element} button - The main export button (for visual feedback)
      */
-    async handleCombatSimExportFromSnapshot(snapshotName, button) {
+    async handleMetzSimExportFromSnapshot(snapshotName, button) {
         const originalText = button.textContent;
         const originalBg = button.style.background;
 
@@ -1227,11 +1177,11 @@ class CombatScore {
                 return;
             }
 
-            // Get base export (skills, house, achievements, triggers)
-            const exportData = await constructExportObject(null, true);
-            if (!exportData) {
+            // Base character (skills, house, achievements, triggers, hasMooPass) - own character only
+            const character = await constructMetzCharacterExport(null);
+            if (!character) {
                 button.textContent = '✗ No Data';
-                button.style.background = '${config.COLOR_LOSS}';
+                button.style.background = `${config.COLOR_LOSS}`;
                 const resetTimeout = setTimeout(() => {
                     button.textContent = originalText;
                     button.style.background = originalBg;
@@ -1240,14 +1190,8 @@ class CombatScore {
                 return;
             }
 
-            const playerObj = exportData.exportObj;
             const clientObj = dataManager.getInitClientData();
 
-            // Equipment is already resolved by Core Loadout State. Do not reinterpret
-            // exact/highest enhancement semantics in feature consumers.
-            playerObj.player.equipment = (snapshot.equipment || []).map((item) => ({ ...item }));
-
-            // Override abilities from snapshot
             // Build ability level lookup from all learned abilities (not just currently equipped)
             const characterData = dataManager.characterData;
             const abilityLevelMap = {};
@@ -1255,52 +1199,87 @@ class CombatScore {
                 if (ab.abilityHrid) abilityLevelMap[ab.abilityHrid] = ab.level || 1;
             }
 
-            // Preserve the actual saved MWI ability slots (1..5 -> export 0..4), including holes.
-            playerObj.abilities = mapLoadoutAbilitiesToNativeSlots(
+            // Preserve the actual saved MWI ability slots (1..5 -> native 0..4), including holes.
+            const abilities = mapLoadoutAbilitiesToNativeSlots(
                 snapshot.abilities,
                 clientObj?.abilityDetailMap || {},
                 (ability) => ({
                     abilityHrid: ability.abilityHrid,
                     level: abilityLevelMap[ability.abilityHrid] || 1,
                 })
-            ).map((ability) => ability || { abilityHrid: '', level: 1 });
+            );
 
-            // Override triggers from snapshot (includes all configured triggers regardless of equip state)
-            playerObj.triggerMap = {
-                ...(snapshot.abilityCombatTriggersMap || {}),
-                ...(snapshot.consumableCombatTriggersMap || {}),
-            };
+            const overridden = applyLoadoutOverrideToMetzCharacter(character, {
+                // Equipment is already resolved by Core Loadout State. Do not reinterpret
+                // exact/highest enhancement semantics in feature consumers.
+                equipment: snapshot.equipment,
+                abilities,
+                triggerMap: {
+                    ...(snapshot.abilityCombatTriggersMap || {}),
+                    ...(snapshot.consumableCombatTriggersMap || {}),
+                },
+                food: snapshot.food,
+                drinks: snapshot.drinks,
+            });
 
-            // Override food from snapshot
-            playerObj.food = { '/action_types/combat': [] };
-            for (let i = 0; i < 3; i++) {
-                playerObj.food['/action_types/combat'][i] = {
-                    itemHrid: snapshot.food?.[i]?.itemHrid || '',
-                };
-            }
-
-            // Override drinks from snapshot
-            playerObj.drinks = { '/action_types/combat': [] };
-            for (let i = 0; i < 3; i++) {
-                playerObj.drinks['/action_types/combat'][i] = {
-                    itemHrid: snapshot.drinks?.[i]?.itemHrid || '',
-                };
-            }
-
-            const exportString = JSON.stringify(playerObj);
-            await navigator.clipboard.writeText(exportString);
+            await navigator.clipboard.writeText(JSON.stringify(overridden));
 
             button.textContent = '✓ Copied';
-            button.style.background = '${config.COLOR_PROFIT}';
+            button.style.background = `${config.COLOR_PROFIT}`;
             const resetTimeout = setTimeout(() => {
                 button.textContent = originalText;
                 button.style.background = originalBg;
             }, 3000);
             this.timerRegistry.registerTimeout(resetTimeout);
         } catch (error) {
-            console.error('[Combat Score] Combat Sim snapshot export failed:', error);
+            console.error('[Combat Score] Metz Sim snapshot export failed:', error);
             button.textContent = '✗ Failed';
-            button.style.background = '${config.COLOR_LOSS}';
+            button.style.background = `${config.COLOR_LOSS}`;
+            const resetTimeout = setTimeout(() => {
+                button.textContent = originalText;
+                button.style.background = originalBg;
+            }, 3000);
+            this.timerRegistry.registerTimeout(resetTimeout);
+        }
+    }
+
+    /**
+     * Handle Metz Sim Export button click
+     * @param {Element} button - Button element
+     */
+    async handleMetzSimExport(button) {
+        const originalText = button.textContent;
+        const originalBg = button.style.background;
+
+        try {
+            // Get current profile ID (if viewing someone else's profile)
+            const currentProfileId = await storage.get('currentProfileId', 'combatExport', null);
+
+            const character = await constructMetzCharacterExport(currentProfileId);
+            if (!character) {
+                button.textContent = '✗ No Data';
+                button.style.background = `${config.COLOR_LOSS}`;
+                const resetTimeout = setTimeout(() => {
+                    button.textContent = originalText;
+                    button.style.background = originalBg;
+                }, 3000);
+                this.timerRegistry.registerTimeout(resetTimeout);
+                return;
+            }
+
+            await navigator.clipboard.writeText(JSON.stringify(character));
+
+            button.textContent = '✓ Copied';
+            button.style.background = `${config.COLOR_PROFIT}`;
+            const resetTimeout = setTimeout(() => {
+                button.textContent = originalText;
+                button.style.background = originalBg;
+            }, 3000);
+            this.timerRegistry.registerTimeout(resetTimeout);
+        } catch (error) {
+            console.error('[Combat Score] Metz Sim export failed:', error);
+            button.textContent = '✗ Failed';
+            button.style.background = `${config.COLOR_LOSS}`;
             const resetTimeout = setTimeout(() => {
                 button.textContent = originalText;
                 button.style.background = originalBg;

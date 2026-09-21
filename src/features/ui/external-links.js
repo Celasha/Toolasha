@@ -61,7 +61,7 @@ class ExternalLinks {
         const links = [
             {
                 label: 'Combat Sim',
-                url: 'https://shykai.github.io/MWICombatSimulatorTest/dist/',
+                url: 'https://metzlii.github.io/metz-combat-simulator/',
             },
             {
                 label: 'Enhancelator',

@@ -21,7 +21,13 @@ import labyrinthBestLevel from '../features/combat/labyrinth-best-level.js';
 import labyrinthShopPrices from '../features/combat/labyrinth-shop-prices.js';
 import labyrinthClearRate from '../features/combat/labyrinth-clear-rate.js';
 import * as combatSimIntegration from '../features/combat/combat-sim-integration.js';
+import * as combatSimIntegrationMetz from '../features/combat/combat-sim-integration-metz.js';
 import { constructExportObject } from '../features/combat/combat-sim-export.js';
+import {
+    constructMetzTeamExport,
+    constructMetzCharacterExport,
+    applyLoadoutOverrideToMetzCharacter,
+} from '../features/combat/combat-sim-export-metz.js';
 import { constructMilkonomyExport } from '../features/combat/milkonomy-export.js';
 import combatSim from '../features/combat-sim/combat-sim.js';
 import labSim from '../features/combat-sim/lab-sim.js';
@@ -63,9 +69,15 @@ toolashaRoot.Combat = {
     labyrinthShopPrices,
     labyrinthClearRate,
     combatSimIntegration,
+    combatSimIntegrationMetz,
     combatSimExport: {
         constructExportObject,
         constructMilkonomyExport,
+    },
+    combatSimExportMetz: {
+        constructMetzTeamExport,
+        constructMetzCharacterExport,
+        applyLoadoutOverrideToMetzCharacter,
     },
     combatStats,
     combatConsumableTimer,
