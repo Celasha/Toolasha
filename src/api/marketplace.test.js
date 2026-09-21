@@ -70,3 +70,51 @@ describe('MarketAPI fetch', () => {
         expect(fetch).not.toHaveBeenCalled();
     });
 });
+
+describe('MarketAPI auto-refresh', () => {
+    beforeEach(() => {
+        vi.resetModules();
+        vi.useFakeTimers();
+        createMocks(false);
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    test('re-checks the snapshot on a timer instead of only once at load', async () => {
+        const { default: marketAPI } = await import('./marketplace.js');
+        const fetchSpy = vi.spyOn(marketAPI, 'fetch').mockResolvedValue(null);
+
+        marketAPI.startAutoRefresh();
+        expect(fetchSpy).not.toHaveBeenCalled();
+
+        await vi.advanceTimersByTimeAsync(marketAPI.CACHE_DURATION);
+        expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+        await vi.advanceTimersByTimeAsync(marketAPI.CACHE_DURATION);
+        expect(fetchSpy).toHaveBeenCalledTimes(2);
+    });
+
+    test('starting twice does not double the interval', async () => {
+        const { default: marketAPI } = await import('./marketplace.js');
+        const fetchSpy = vi.spyOn(marketAPI, 'fetch').mockResolvedValue(null);
+
+        marketAPI.startAutoRefresh();
+        marketAPI.startAutoRefresh();
+
+        await vi.advanceTimersByTimeAsync(marketAPI.CACHE_DURATION);
+        expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test('stopAutoRefresh clears the interval', async () => {
+        const { default: marketAPI } = await import('./marketplace.js');
+        const fetchSpy = vi.spyOn(marketAPI, 'fetch').mockResolvedValue(null);
+
+        marketAPI.startAutoRefresh();
+        marketAPI.stopAutoRefresh();
+
+        await vi.advanceTimersByTimeAsync(marketAPI.CACHE_DURATION * 2);
+        expect(fetchSpy).not.toHaveBeenCalled();
+    });
+});

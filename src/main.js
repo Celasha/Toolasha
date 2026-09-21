@@ -10,6 +10,7 @@ import domObserver from './core/dom-observer.js';
 import dataManager from './core/data-manager.js';
 import featureRegistry from './core/feature-registry.js';
 import networkAlert from './features/market/network-alert.js';
+import marketAPI from './api/marketplace.js';
 import * as combatSimIntegration from './features/combat/combat-sim-integration.js';
 import * as combatSimIntegrationMetz from './features/combat/combat-sim-integration-metz.js';
 import settingsUI from './features/settings/settings-ui.js';
@@ -67,6 +68,10 @@ if (combatSimSite === 'shykai') {
 
     // Initialize network alert (must be early, before market features)
     networkAlert.initialize();
+
+    // Keep the base market snapshot from going stale over a long-lived tab - fetch() only
+    // re-checks CACHE_DURATION when something calls it, so this is what makes that check happen.
+    marketAPI.startAutoRefresh();
 
     // Start capturing client data from localStorage (for Combat Sim export)
     webSocketHook.captureClientDataFromLocalStorage();

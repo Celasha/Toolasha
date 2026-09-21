@@ -21,7 +21,7 @@ const Combat = window.Toolasha.Combat;
 const UI = window.Toolasha.UI;
 
 // Destructure core modules
-const { storage, config, webSocketHook, domObserver, dataManager, loadoutState, featureRegistry } = Core;
+const { storage, config, webSocketHook, domObserver, dataManager, loadoutState, featureRegistry, marketAPI } = Core;
 
 const { setupScrollTooltipDismissal } = Utils.dom;
 
@@ -883,6 +883,10 @@ if (combatSimSite === 'shykai') {
 
     // Initialize network alert (must be early, before market features)
     Market.networkAlert.initialize();
+
+    // Keep the base market snapshot from going stale over a long-lived tab - fetch() only
+    // re-checks CACHE_DURATION when something calls it, so this is what makes that check happen.
+    marketAPI.startAutoRefresh();
 
     // Start capturing client data from localStorage (for Combat Sim export)
     webSocketHook.captureClientDataFromLocalStorage();

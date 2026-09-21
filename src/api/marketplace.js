@@ -6,6 +6,7 @@
 import connectionState from '../core/connection-state.js';
 import storage from '../core/storage.js';
 import networkAlert from '../features/market/network-alert.js';
+import { createTimerRegistry } from '../utils/timer-registry.js';
 
 /**
  * MarketAPI class handles fetching and caching market price data
@@ -34,6 +35,11 @@ class MarketAPI {
 
         // Event listeners for price updates
         this.listeners = [];
+
+        // Periodic re-fetch so long-lived sessions don't run on a snapshot that's gone stale
+        // for items nobody has viewed the order book for (see startAutoRefresh)
+        this.timerRegistry = createTimerRegistry();
+        this.autoRefreshStarted = false;
     }
 
     /**
@@ -115,6 +121,36 @@ class MarketAPI {
         console.error('[MarketAPI] ❌ No market data available');
         networkAlert.show('⚠️ Market data unavailable');
         return null;
+    }
+
+    /**
+     * Start periodically re-checking the base snapshot so a long-lived tab doesn't keep serving
+     * prices from whenever the page happened to load. fetch() (unforced) only hits the network
+     * once CACHE_DURATION has actually elapsed - see getCachedData() - so this just makes sure
+     * that check runs on a timer instead of never running again after the initial load. Safe to
+     * call multiple times; only the first call starts the interval.
+     */
+    startAutoRefresh() {
+        if (this.autoRefreshStarted) {
+            return;
+        }
+        this.autoRefreshStarted = true;
+
+        const intervalId = setInterval(() => {
+            this.fetch().catch((error) => {
+                this.logError('Auto-refresh fetch failed', error);
+            });
+        }, this.CACHE_DURATION);
+
+        this.timerRegistry.registerInterval(intervalId);
+    }
+
+    /**
+     * Stop the periodic re-fetch started by startAutoRefresh().
+     */
+    stopAutoRefresh() {
+        this.timerRegistry.clearAll();
+        this.autoRefreshStarted = false;
     }
 
     /**
