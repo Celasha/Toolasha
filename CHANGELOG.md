@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.110.2](https://github.com/Celasha/Toolasha/compare/v2.110.1...v2.110.2) (2026-09-21)
+
+
+### Bug Fixes
+
+* keep live-equipped tools when exporting a saved combat loadout to Metz ([c8921f2](https://github.com/Celasha/Toolasha/commit/c8921f2bed313e7f8dacd21558d2139b567537bd))
+* stop live dungeon-run cancels from being counted as fails ([619b943](https://github.com/Celasha/Toolasha/commit/619b9431e250f293f6946520d23774adfeecdfc2))
+
 ## [2.110.1](https://github.com/Celasha/Toolasha/compare/v2.110.0...v2.110.1) (2026-09-21)
 
 ### Bug Fixes
