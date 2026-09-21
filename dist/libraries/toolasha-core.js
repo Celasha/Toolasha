@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.109.0
+ * Version: 2.110.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -3449,6 +3449,15 @@
         /**
          * Add character to known characters list, storing name alongside ID.
          * Migrates old flat-array format ([id, id]) to object format ([{id, name}]).
+         *
+         * Known, accepted race (investigated, not fixed): this is a global read-modify-write list
+         * with no compare-and-swap. Two different characters loading for the very first time ever,
+         * in two separate tabs, within the same write window, could race and drop one entry. Same-
+         * character dual-tab play is not possible, so the exposure is limited to that one-time-per-
+         * character-ever event, and the consequence is cosmetic (a missing/stale name in the
+         * settings-sync character list) rather than lost gameplay data - not worth an OCC/revision
+         * guard for that risk/reward. Revisit if a future caller writes this list more frequently or
+         * for data where a dropped entry would actually matter.
          * @param {string} characterId
          * @param {string} characterName
          * @returns {Promise<void>}

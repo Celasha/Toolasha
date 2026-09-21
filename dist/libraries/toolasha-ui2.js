@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 2.109.0
+ * Version: 2.110.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -700,7 +700,7 @@
             const links = [
                 {
                     label: 'Combat Sim',
-                    url: 'https://shykai.github.io/MWICombatSimulatorTest/dist/',
+                    url: 'https://metzlii.github.io/metz-combat-simulator/',
                 },
                 {
                     label: 'Enhancelator',
@@ -12648,6 +12648,7 @@
             totalSuccesses: 0,
             totalFailures: 0,
             totalBlessed: 0, // Successes that jumped +2 or more levels (Blessed Tea)
+            totalExpectedSuccesses: 0, // Sum of the game's modeled success chance across all attempts (Enhancing Luck)
             totalXP: 0, // Total XP gained from enhancements
             longestSuccessStreak: 0,
             longestFailureStreak: 0,
@@ -12673,6 +12674,7 @@
                 fail: 0,
                 blessed: 0,
                 successRate: 0,
+                expectedSuccessSum: 0, // Sum of the game's modeled success chance across attempts at this level
             };
         }
     }
@@ -12697,8 +12699,11 @@
      * @param {number} newLevel - New level after success
      * @param {boolean} wasBlessed - Whether this success jumped +2 or more levels (Blessed Tea).
      *   A subtype of success, not counted as an additional attempt/success on top of it.
+     * @param {number|null} [expectedChance] - The game's modeled success chance for this attempt
+     *   (0-1), for Enhancing Luck. Omitted/null when it couldn't be computed (e.g. live context
+     *   unavailable) - the attempt still counts toward success/fail totals, just not luck.
      */
-    function recordSuccess(session, previousLevel, newLevel, wasBlessed = false) {
+    function recordSuccess(session, previousLevel, newLevel, wasBlessed = false, expectedChance = null) {
         // Initialize tracking if needed for the level that succeeded
         initializeLevelTracking(session, previousLevel);
 
@@ -12706,6 +12711,11 @@
         session.attemptsPerLevel[previousLevel].success++;
         session.totalAttempts++;
         session.totalSuccesses++;
+
+        if (typeof expectedChance === 'number') {
+            session.attemptsPerLevel[previousLevel].expectedSuccessSum += expectedChance;
+            session.totalExpectedSuccesses += expectedChance;
+        }
 
         if (wasBlessed) {
             session.attemptsPerLevel[previousLevel].blessed++;
@@ -12748,8 +12758,11 @@
      * Record a failed enhancement attempt
      * @param {Object} session - Session object
      * @param {number} previousLevel - Level that failed (level we tried to enhance from)
+     * @param {number} newLevel - Actual level after failure
+     * @param {number|null} [expectedChance] - The game's modeled success chance for this attempt
+     *   (0-1), for Enhancing Luck. See recordSuccess() for when this is omitted.
      */
-    function recordFailure(session, previousLevel, newLevel) {
+    function recordFailure(session, previousLevel, newLevel, expectedChance = null) {
         // Initialize tracking if needed for the level that failed
         initializeLevelTracking(session, previousLevel);
 
@@ -12757,6 +12770,11 @@
         session.attemptsPerLevel[previousLevel].fail++;
         session.totalAttempts++;
         session.totalFailures++;
+
+        if (typeof expectedChance === 'number') {
+            session.attemptsPerLevel[previousLevel].expectedSuccessSum += expectedChance;
+            session.totalExpectedSuccesses += expectedChance;
+        }
 
         // Update success rate for this level
         updateSuccessRate(session, previousLevel);
@@ -12848,6 +12866,41 @@
     function getSessionDuration(session) {
         const endTime = session.endTime || Date.now();
         return Math.floor((endTime - session.startTime) / 1000);
+    }
+
+    /**
+     * Calculate Enhancing Luck for a specific level: actual successes vs. the game's modeled
+     * expected successes, mirroring Loot Luck's actual-vs-expected percentage. Requires at least one
+     * attempt with a recorded expected chance; older attempts recorded before this feature existed
+     * have no expected data and are excluded rather than shown as a misleading 0% or infinite luck.
+     * @param {Object} session - Session object
+     * @param {number} level - Enhancement level
+     * @returns {{luckPercent: number, actualSuccesses: number, expectedSuccesses: number}|null}
+     */
+    function getLevelEnhancingLuck(session, level) {
+        const levelData = session.attemptsPerLevel[level];
+        if (!levelData || !levelData.expectedSuccessSum) return null;
+
+        return {
+            luckPercent: (levelData.success / levelData.expectedSuccessSum - 1) * 100,
+            actualSuccesses: levelData.success,
+            expectedSuccesses: levelData.expectedSuccessSum,
+        };
+    }
+
+    /**
+     * Calculate overall Enhancing Luck across the whole session. See getLevelEnhancingLuck().
+     * @param {Object} session - Session object
+     * @returns {{luckPercent: number, actualSuccesses: number, expectedSuccesses: number}|null}
+     */
+    function getOverallEnhancingLuck(session) {
+        if (!session.totalExpectedSuccesses) return null;
+
+        return {
+            luckPercent: (session.totalSuccesses / session.totalExpectedSuccesses - 1) * 100,
+            actualSuccesses: session.totalSuccesses,
+            expectedSuccesses: session.totalExpectedSuccesses,
+        };
     }
 
     /**
@@ -12959,10 +13012,16 @@
         if (typeof session.totalBlessed !== 'number') {
             session.totalBlessed = 0;
         }
+        if (typeof session.totalExpectedSuccesses !== 'number') {
+            session.totalExpectedSuccesses = 0;
+        }
 
         for (const levelData of Object.values(session.attemptsPerLevel || {})) {
             if (typeof levelData.blessed !== 'number') {
                 levelData.blessed = 0;
+            }
+            if (typeof levelData.expectedSuccessSum !== 'number') {
+                levelData.expectedSuccessSum = 0;
             }
         }
 
@@ -13647,9 +13706,11 @@
          * @param {number} previousLevel - Level before success
          * @param {number} newLevel - New level after success
          * @param {boolean} wasBlessed - Whether this success jumped +2 or more levels (Blessed Tea)
+         * @param {number|null} [expectedChance] - The game's modeled success chance for this
+         *   attempt (0-1), for Enhancing Luck
          * @returns {Promise<void>}
          */
-        async recordSuccess(previousLevel, newLevel, wasBlessed = false) {
+        async recordSuccess(previousLevel, newLevel, wasBlessed = false, expectedChance = null) {
             const context = this._captureContext();
             if (!context) {
                 return;
@@ -13660,7 +13721,7 @@
                 return;
             }
 
-            recordSuccess(session, previousLevel, newLevel, wasBlessed);
+            recordSuccess(session, previousLevel, newLevel, wasBlessed, expectedChance);
 
             // Check if target reached
             if (session.state === SessionState.COMPLETED) {
@@ -13681,9 +13742,11 @@
          * Record a failed enhancement attempt
          * @param {number} previousLevel - Level that failed
          * @param {number} newLevel - Actual level after failure
+         * @param {number|null} [expectedChance] - The game's modeled success chance for this
+         *   attempt (0-1), for Enhancing Luck
          * @returns {Promise<void>}
          */
-        async recordFailure(previousLevel, newLevel) {
+        async recordFailure(previousLevel, newLevel, expectedChance = null) {
             const context = this._captureContext();
             if (!context) {
                 return;
@@ -13694,7 +13757,7 @@
                 return;
             }
 
-            recordFailure(session, previousLevel, newLevel);
+            recordFailure(session, previousLevel, newLevel, expectedChance);
             await saveSessions(context.sessions, context.characterId);
         }
 
@@ -14796,6 +14859,18 @@
             </div>
         `;
 
+            const overallLuck = getOverallEnhancingLuck(session);
+            if (overallLuck) {
+                const luckColor = overallLuck.luckPercent >= 0 ? STYLE.colors.success : STYLE.colors.danger;
+                const luckSign = overallLuck.luckPercent >= 0 ? '+' : '';
+                html += `
+            <div style="margin-top: 8px; display: flex; justify-content: space-between; font-size: 13px;">
+                <span>Enhancing Luck:</span>
+                <strong style="color: ${luckColor};" title="${overallLuck.actualSuccesses} actual vs ${overallLuck.expectedSuccesses.toFixed(2)} expected successes">${luckSign}${overallLuck.luckPercent.toFixed(1)}%</strong>
+            </div>
+            `;
+            }
+
             // Material costs
             html += this.generateMaterialCostsHTML(session);
 
@@ -14839,12 +14914,21 @@
                 const blessedSuffix =
                     blessedCount > 0 ? ` <span style="color: ${STYLE.colors.accent};">(${blessedCount}✦)</span>` : '';
 
+                const levelLuck = getLevelEnhancingLuck(session, level);
+                let luckCell = '—';
+                if (levelLuck) {
+                    const luckColor = levelLuck.luckPercent >= 0 ? STYLE.colors.success : STYLE.colors.danger;
+                    const luckSign = levelLuck.luckPercent >= 0 ? '+' : '';
+                    luckCell = `<span style="color: ${luckColor};">${luckSign}${levelLuck.luckPercent.toFixed(0)}%</span>`;
+                }
+
                 rows += `
                 <tr style="${rowStyle}">
                     <td style="${compactCellStyle} text-align: center;">${level}</td>
                     <td style="${compactCellStyle} text-align: right;">${levelData.success}${blessedSuffix}</td>
                     <td style="${compactCellStyle} text-align: right;">${levelData.fail}</td>
                     <td style="${compactCellStyle} text-align: right;">${rate}</td>
+                    <td style="${compactCellStyle} text-align: right;">${luckCell}</td>
                 </tr>
             `;
             }
@@ -14857,6 +14941,7 @@
                         <th style="${compactHeaderStyle}">Success</th>
                         <th style="${compactHeaderStyle}">Fail</th>
                         <th style="${compactHeaderStyle}">%</th>
+                        <th style="${compactHeaderStyle}">Luck</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -15329,6 +15414,28 @@
     }
 
     /**
+     * Compute the game's modeled success chance for an attempt at the given item/level, using live
+     * auto-detected character state (not the enhance-sim's manual/simulator settings, which may not
+     * reflect what actually happened). Returns null if it can't be computed (e.g. item level unknown).
+     * @param {string} itemHrid - Item HRID being enhanced
+     * @param {number} level - Enhancement level being attempted (0-indexed)
+     * @returns {number|null} Success chance in [0, 1], or null
+     */
+    function getExpectedSuccessChance(itemHrid, level) {
+        try {
+            const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
+            const itemLevel = itemDetailMap[itemHrid]?.itemLevel;
+            if (typeof itemLevel !== 'number') return null;
+
+            const { enhancingLevel, toolBonus } = enhancementConfig_js.getAutoDetectedParams();
+            return enhancementCalculator_js.calculateSingleLevelSuccessChance(level, enhancingLevel, toolBonus, itemLevel);
+        } catch (error) {
+            console.error('[EnhancementHandlers] Failed to compute expected success chance:', error);
+            return null;
+        }
+    }
+
+    /**
      * Handle enhancement result (success or failure)
      * @param {Object} action - Enhancement action data
      * @param {Object} _data - Full WebSocket message data
@@ -15508,11 +15615,13 @@
             // Skip on the first attempt of a newly created session — we don't have a reliable
             // baseline level yet, but lastAttempt is still set so the next attempt works correctly.
             if (!justCreatedNewSession) {
+                const expectedChance = getExpectedSuccessChance(itemHrid, previousLevel);
+
                 if (wasSuccess) {
                     const xpGain = calculateSuccessXP(previousLevel, itemHrid);
                     currentSession.totalXP += xpGain;
 
-                    await enhancementTracker.recordSuccess(previousLevel, newLevel, wasBlessed);
+                    await enhancementTracker.recordSuccess(previousLevel, newLevel, wasBlessed, expectedChance);
                     enhancementUI.scheduleUpdate(); // Update UI after success
 
                     // Check if we've reached target
@@ -15523,7 +15632,7 @@
                     const xpGain = calculateFailureXP(previousLevel, itemHrid);
                     currentSession.totalXP += xpGain;
 
-                    await enhancementTracker.recordFailure(previousLevel, newLevel);
+                    await enhancementTracker.recordFailure(previousLevel, newLevel, expectedChance);
                     enhancementUI.scheduleUpdate(); // Update UI after failure
                 }
             }
@@ -23862,6 +23971,7 @@ self.onmessage = function (e) {
     max-width: min(414px, calc(100vw - 64px));
     min-width: min(280px, calc(100vw - 64px));
     box-sizing: border-box;
+    overflow-x: hidden;
 }
 @supports (width: 100dvw) {
     .${QUEUE_EDIT_MENU_MARKER_CLASS} {
@@ -23878,6 +23988,17 @@ self.onmessage = function (e) {
     white-space: normal;
     overflow-wrap: anywhere;
     box-sizing: border-box;
+}
+/* The native row (drag handle + name/time/profit + delete button) has no flex-wrap and its
+   text column has no min-width:0, so injected time/profit text can push the row - and the
+   trailing delete "X" button - past the popup's right edge, forcing horizontal scrolling to
+   reach it (TLA-070). Wrapping the row keeps the delete button on-screen instead. */
+.${QUEUE_EDIT_MENU_MARKER_CLASS} [class^="QueuedActions_action__"] {
+    flex-wrap: wrap;
+}
+.${QUEUE_EDIT_MENU_MARKER_CLASS} [class*="QueuedActions_actionText"] {
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 `;
 

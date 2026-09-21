@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.109.0
+ * Version: 2.110.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -461,7 +461,7 @@
         removeOverlays();
     }
 
-    function initialize$3() {
+    function initialize$4() {
         if (!settingChangeHandler$1) {
             settingChangeHandler$1 = (enabled) => {
                 if (enabled) {
@@ -488,7 +488,7 @@
 
     var loadoutEnhancementDisplay = {
         name: 'Loadout Enhancement Display',
-        initialize: initialize$3,
+        initialize: initialize$4,
         cleanup: cleanup$1,
     };
 
@@ -731,7 +731,7 @@
      */
 
 
-    const BUTTON_ID = 'toolasha-scroll-sim-btn';
+    const BUTTON_ID$1 = 'toolasha-scroll-sim-btn';
     const POPUP_ID = 'toolasha-scroll-sim-popup';
 
     // Ordered list of scroll buff types to display in the popup
@@ -1042,7 +1042,7 @@
     // ─── Loadout panel button ───────────────────────────────────────
 
     function injectButton(navButtons) {
-        if (document.getElementById(BUTTON_ID)) return;
+        if (document.getElementById(BUTTON_ID$1)) return;
         if (!config.getSetting('simulateScrollEffects')) return;
 
         const loadoutName = getLoadoutName(navButtons);
@@ -1052,7 +1052,7 @@
         if (snapshot?.actionTypeHrid === '/action_types/combat') return;
 
         const button = document.createElement('button');
-        button.id = BUTTON_ID;
+        button.id = BUTTON_ID$1;
         button.textContent = 'Scroll Simulation';
         button.className = 'Button_button__1Fe9z';
         button.style.cssText = `white-space: nowrap;`;
@@ -1090,11 +1090,11 @@
             unregisterObserver();
             unregisterObserver = null;
         }
-        document.getElementById(BUTTON_ID)?.remove();
+        document.getElementById(BUTTON_ID$1)?.remove();
         popup.close();
     }
 
-    function initialize$2() {
+    function initialize$3() {
         if (!settingChangeHandler) {
             settingChangeHandler = (enabled) => {
                 if (enabled) {
@@ -1118,7 +1118,7 @@
         popup.open(null);
     }
 
-    function disable$1() {
+    function disable$2() {
         deactivate();
         if (settingChangeHandler) {
             config.offSettingChange('simulateScrollEffects', settingChangeHandler);
@@ -1128,9 +1128,9 @@
 
     var scrollSimulatorUI = {
         name: 'Scroll Simulator UI',
-        initialize: initialize$2,
+        initialize: initialize$3,
         openDefaultsPopup,
-        disable: disable$1,
+        disable: disable$2,
     };
 
     /**
@@ -1152,6 +1152,58 @@
     class DungeonTrackerStorage {
         constructor() {
             this.unifiedStoreName = 'unifiedRuns'; // Unified storage for all runs
+            this._legacyMigrationDone = false;
+        }
+
+        /**
+         * Character-scoped storage key for the run-history array. Falls back to 'default' if the
+         * character id isn't resolvable yet, matching the fallback used elsewhere (e.g. labyrinth
+         * tracker) rather than failing closed.
+         * @returns {string}
+         */
+        getRunsKey() {
+            const characterId = dataManager.getCurrentCharacterId() || 'default';
+            return `allRuns_${characterId}`;
+        }
+
+        /**
+         * One-time best-effort migration: runs saved before storage was character-scoped lived under
+         * a single global 'allRuns' key shared by every character on the account. There's no way to
+         * retroactively attribute old runs to a specific character, so the first character to load
+         * after this upgrade claims that history; the legacy key is cleared immediately after so a
+         * second character never re-claims (and duplicates) it.
+         */
+        async _migrateLegacyRunsIfNeeded() {
+            if (this._legacyMigrationDone) return;
+            this._legacyMigrationDone = true;
+
+            const legacyRuns = await storage.getJSON('allRuns', this.unifiedStoreName, null);
+            if (!legacyRuns) return;
+
+            const scopedKey = this.getRunsKey();
+            const existing = await storage.getJSON(scopedKey, this.unifiedStoreName, null);
+            if (existing === null) {
+                await storage.setJSON(scopedKey, legacyRuns, this.unifiedStoreName, true);
+            }
+            await storage.delete('allRuns', this.unifiedStoreName);
+        }
+
+        /**
+         * Read the current character's run history array.
+         * @returns {Promise<Array>}
+         */
+        async _readRuns() {
+            await this._migrateLegacyRunsIfNeeded();
+            return storage.getJSON(this.getRunsKey(), this.unifiedStoreName, []);
+        }
+
+        /**
+         * Persist the current character's run history array.
+         * @param {Array} runs
+         * @returns {Promise<boolean>}
+         */
+        async _writeRuns(runs) {
+            return storage.setJSON(this.getRunsKey(), runs, this.unifiedStoreName, true);
         }
 
         /**
@@ -1205,7 +1257,7 @@
          */
         async getRunHistory(dungeonHrid, tier, limit = 0) {
             // Get all runs from unified storage
-            const allRuns = await storage.getJSON('allRuns', this.unifiedStoreName, []);
+            const allRuns = await this._readRuns();
 
             // Filter by dungeon HRID and tier
             const runs = allRuns.filter((r) => r.dungeonHrid === dungeonHrid && r.tier === tier);
@@ -1259,12 +1311,19 @@
          * @returns {Promise<Object>} Statistics
          */
         async getStatsByName(dungeonName) {
-            const allRuns = await storage.getJSON('allRuns', this.unifiedStoreName, []);
+            const allRuns = await this._readRuns();
             const allAttempts = allRuns.filter((r) => r.dungeonName === dungeonName);
+
+            // A run's duration is untrustworthy only when it's both unvalidated (wall-clock, not
+            // server-timestamp-anchored) AND flagged for a sleep/background hibernation gap during
+            // tracking - validated runs use a server-anchored duration immune to wall-clock drift.
+            const unreliableAttempts = allAttempts.filter((r) => r.hibernationDetected && !r.validated);
+            const reliableAttempts = allAttempts.filter((r) => !r.hibernationDetected || r.validated);
+
             // Runs saved before the result field existed have no result — treat as success (only
             // successful clears were ever saved back then).
-            const runs = allAttempts.filter((r) => !r.result || r.result === 'success');
-            const failedAttempts = allAttempts.filter((r) => r.result === 'fail' || r.result === 'cancel');
+            const runs = reliableAttempts.filter((r) => !r.result || r.result === 'success');
+            const failedAttempts = reliableAttempts.filter((r) => r.result === 'fail' || r.result === 'cancel');
 
             if (runs.length === 0) {
                 return {
@@ -1276,6 +1335,7 @@
                     avgTimePerAttempt: 0,
                     failCount: failedAttempts.length,
                     totalAttempts: allAttempts.length,
+                    hibernationFlaggedCount: unreliableAttempts.length,
                 };
             }
 
@@ -1302,6 +1362,7 @@
                 avgTimePerAttempt,
                 failCount: failedAttempts.length,
                 totalAttempts: allAttempts.length,
+                hibernationFlaggedCount: unreliableAttempts.length,
             };
         }
 
@@ -1347,7 +1408,7 @@
          */
         async deleteRun(dungeonHrid, tier, runIndex) {
             // Get all runs from unified storage
-            const allRuns = await storage.getJSON('allRuns', this.unifiedStoreName, []);
+            const allRuns = await this._readRuns();
 
             // Filter to this dungeon+tier
             const dungeonRuns = allRuns.filter((r) => r.dungeonHrid === dungeonHrid && r.tier === tier);
@@ -1375,7 +1436,7 @@
             allRuns.splice(indexInAllRuns, 1);
 
             // Save updated list
-            return storage.setJSON('allRuns', allRuns, this.unifiedStoreName, true);
+            return this._writeRuns(allRuns);
         }
 
         /**
@@ -1386,13 +1447,13 @@
          */
         async clearHistory(dungeonHrid, tier) {
             // Get all runs from unified storage
-            const allRuns = await storage.getJSON('allRuns', this.unifiedStoreName, []);
+            const allRuns = await this._readRuns();
 
             // Filter OUT the runs we want to delete
             const filteredRuns = allRuns.filter((r) => !(r.dungeonHrid === dungeonHrid && r.tier === tier));
 
             // Save back the filtered list
-            return storage.setJSON('allRuns', filteredRuns, this.unifiedStoreName, true);
+            return this._writeRuns(filteredRuns);
         }
 
         /**
@@ -1452,11 +1513,14 @@
          * @param {number} [run.wavesCompleted] - Waves completed before the run ended.
          * @param {boolean} [run.validated] - Whether duration is anchored to a real server-side
          *   chat-message timestamp vs. a client-clock estimate. Defaults to true.
+         * @param {boolean} [run.hibernationDetected] - Whether a sleep/background gap was detected
+         *   during tracking. Only makes an unvalidated run's duration untrustworthy (a validated
+         *   duration is server-timestamp-anchored and immune to wall-clock drift either way).
          * @returns {Promise<boolean>} Success status
          */
         async saveTeamRun(teamKey, run) {
             // Get all runs from unified storage
-            const allRuns = await storage.getJSON('allRuns', this.unifiedStoreName, []);
+            const allRuns = await this._readRuns();
 
             // Parse incoming timestamp
             const newTimestamp = new Date(run.timestamp).getTime();
@@ -1492,13 +1556,14 @@
                     keyCountsMap: run.keyCountsMap || null, // Include key counts if available
                     result: run.result || 'success',
                     wavesCompleted: run.wavesCompleted ?? null,
+                    hibernationDetected: run.hibernationDetected ?? false,
                 };
 
                 // Add to front of list (most recent first)
                 allRuns.unshift(unifiedRun);
 
                 // Save to unified storage
-                await storage.setJSON('allRuns', allRuns, this.unifiedStoreName, true);
+                await this._writeRuns(allRuns);
 
                 return true;
             }
@@ -1511,7 +1576,28 @@
          * @returns {Promise<Array>} All runs
          */
         async getAllRuns() {
-            return storage.getJSON('allRuns', this.unifiedStoreName, []);
+            return this._readRuns();
+        }
+
+        /**
+         * Delete a single run by its exact timestamp (used by the history UI's per-run delete
+         * button). Routes through the character-scoped read/write pair so it can never write back
+         * to the legacy unscoped key.
+         * @param {string} timestamp - ISO timestamp of the run to remove
+         * @returns {Promise<boolean>} Success status
+         */
+        async deleteRunByTimestamp(timestamp) {
+            const allRuns = await this._readRuns();
+            const filtered = allRuns.filter((r) => r.timestamp !== timestamp);
+            return this._writeRuns(filtered);
+        }
+
+        /**
+         * Delete all run history for the current character.
+         * @returns {Promise<boolean>} Success status
+         */
+        async clearAllRuns() {
+            return this._writeRuns([]);
         }
 
         /**
@@ -1567,7 +1653,7 @@
             if (outlierIndices.size === 0) return 0;
 
             const cleaned = allRuns.filter((_, i) => !outlierIndices.has(i));
-            await storage.setJSON('allRuns', cleaned, this.unifiedStoreName, true);
+            await this._writeRuns(cleaned);
             console.log(`[DungeonTrackerStorage] Scrubbed ${outlierIndices.size} outlier run(s) from storage`);
             return outlierIndices.size;
         }
@@ -1602,7 +1688,7 @@
          */
         async getAllTeamStats() {
             // Get all runs from unified storage
-            const allRuns = await storage.getJSON('allRuns', this.unifiedStoreName, []);
+            const allRuns = await this._readRuns();
 
             // Group by teamKey
             const teamGroups = {};
@@ -1618,8 +1704,12 @@
             // Calculate stats for each team
             const results = [];
             for (const [teamKey, allAttempts] of Object.entries(teamGroups)) {
-                const runs = allAttempts.filter((r) => !r.result || r.result === 'success');
-                const failedAttempts = allAttempts.filter((r) => r.result === 'fail' || r.result === 'cancel');
+                // Same hibernation-reliability split as getStatsByName - see comment there.
+                const unreliableAttempts = allAttempts.filter((r) => r.hibernationDetected && !r.validated);
+                const reliableAttempts = allAttempts.filter((r) => !r.hibernationDetected || r.validated);
+
+                const runs = reliableAttempts.filter((r) => !r.result || r.result === 'success');
+                const failedAttempts = reliableAttempts.filter((r) => r.result === 'fail' || r.result === 'cancel');
                 if (runs.length === 0) continue;
 
                 const durations = runs.map((r) => r.duration);
@@ -1639,6 +1729,7 @@
                     avgTimePerAttempt,
                     failCount: failedAttempts.length,
                     totalAttempts: allAttempts.length,
+                    hibernationFlaggedCount: unreliableAttempts.length,
                 });
             }
 
@@ -1653,6 +1744,12 @@
      * Tracks dungeon progress in real-time using WebSocket messages
      */
 
+
+    // Heartbeat watchdog: visibilitychange doesn't reliably fire for every stall (a long GC pause, or
+    // some OS/browser combinations delaying the event on wake) - checked independently by noticing
+    // the interval itself ran much later than scheduled.
+    const HEARTBEAT_INTERVAL_MS = 15000;
+    const HEARTBEAT_STALL_THRESHOLD_MS = 60000;
 
     class DungeonTracker {
         constructor() {
@@ -1694,15 +1791,7 @@
                 actionsUpdated: null,
                 chatMessage: null,
             };
-        }
-
-        /**
-         * Get character ID from URL
-         * @returns {string|null} Character ID or null
-         */
-        getCharacterIdFromURL() {
-            const urlParams = new URLSearchParams(window.location.search);
-            return urlParams.get('characterId');
+            this.socketCloseHandler = null;
         }
 
         /**
@@ -1760,7 +1849,7 @@
                 hibernationDetected: this.hibernationDetected,
             };
 
-            return storage.setJSON('dungeonTracker_inProgressRun', stateToSave, 'settings', true);
+            return storage.setJSON(this.getCharacterKey('dungeonTracker_inProgressRun'), stateToSave, 'settings', true);
         }
 
         /**
@@ -1769,7 +1858,7 @@
          * @returns {Promise<boolean>} True if restored successfully
          */
         async restoreInProgressRun(currentBattleId) {
-            const saved = await storage.getJSON('dungeonTracker_inProgressRun', 'settings', null);
+            const saved = await storage.getJSON(this.getCharacterKey('dungeonTracker_inProgressRun'), 'settings', null);
 
             if (!saved) {
                 return false; // No saved state
@@ -1838,7 +1927,7 @@
          * @returns {Promise<boolean>} Success status
          */
         async clearInProgressRun() {
-            return storage.delete('dungeonTracker_inProgressRun', 'settings');
+            return storage.delete(this.getCharacterKey('dungeonTracker_inProgressRun'), 'settings');
         }
 
         /**
@@ -1852,8 +1941,10 @@
 
             this.isInitialized = true;
 
-            // Get character ID from URL for data isolation
-            this.characterId = this.getCharacterIdFromURL();
+            // Character-scope in-progress-run storage so it can't be restored against the wrong
+            // character. dataManager's live character id (not a URL param, which can go stale across
+            // an in-app character switch that doesn't reload the page).
+            this.characterId = dataManager.getCurrentCharacterId();
 
             // Create and store handler references for cleanup
             this.handlers.newBattle = (data) => this.onNewBattle(data);
@@ -1872,6 +1963,11 @@
 
             // Listen for party chat messages (for server-validated duration and battle started)
             webSocketHook.on('chat_message_received', this.handlers.chatMessage);
+
+            // A mid-run disconnect means some wave/chat messages during the gap may have been missed
+            // - flag the run's elapsed time as potentially inaccurate, same as a hibernation/stall.
+            this.socketCloseHandler = () => this.markHibernationDetected();
+            webSocketHook.onSocketEvent('close', this.socketCloseHandler);
 
             // Setup hibernation detection using Visibility API
             this.setupHibernationDetection();
@@ -1894,18 +1990,42 @@
                     wasHidden = true;
                 } else if (wasHidden && this.isTracking) {
                     // Tab visible again after being hidden during active run
-                    // Mark hibernation detected (elapsed time may be wrong)
-                    this.hibernationDetected = true;
-                    if (this.currentRun) {
-                        this.currentRun.hibernationDetected = true;
-                    }
-                    this.notifyUpdate();
-                    this.saveInProgressRun(); // Persist flag to IndexedDB
+                    this.markHibernationDetected();
                     wasHidden = false;
                 }
             };
 
             document.addEventListener('visibilitychange', this.visibilityHandler);
+
+            // Independent watchdog for stalls visibilitychange might miss.
+            let lastHeartbeat = Date.now();
+            const heartbeatInterval = setInterval(() => {
+                const now = Date.now();
+                const elapsed = now - lastHeartbeat;
+                lastHeartbeat = now;
+
+                if (this.isTracking && elapsed > HEARTBEAT_STALL_THRESHOLD_MS) {
+                    this.markHibernationDetected();
+                }
+            }, HEARTBEAT_INTERVAL_MS);
+            this.timerRegistry.registerInterval(heartbeatInterval);
+        }
+
+        /**
+         * Flag the current run's elapsed time as potentially inaccurate (sleep/background gap
+         * detected mid-run) and persist the flag immediately.
+         */
+        markHibernationDetected() {
+            if (!this.isTracking) {
+                return;
+            }
+
+            this.hibernationDetected = true;
+            if (this.currentRun) {
+                this.currentRun.hibernationDetected = true;
+            }
+            this.notifyUpdate();
+            this.saveInProgressRun(); // Persist flag to IndexedDB
         }
 
         /**
@@ -2043,9 +2163,7 @@
                                 if (period === 'PM' && hour < 12) hour += 12;
                                 if (period === 'AM' && hour === 12) hour = 0;
 
-                                // Create timestamp (assumes current year)
-                                const now = new Date();
-                                const timestamp = new Date(now.getFullYear(), month - 1, day, hour, min, sec, 0);
+                                const timestamp = this.buildTimestampFromParts(month, day, hour, min, sec);
 
                                 this.battleStartedTimestamp = timestamp.getTime();
                                 battleStartedFound = true;
@@ -2094,9 +2212,7 @@
                                     if (period === 'PM' && hour < 12) hour += 12;
                                     if (period === 'AM' && hour === 12) hour = 0;
 
-                                    // Create timestamp (assumes current year)
-                                    const now = new Date();
-                                    const timestamp = new Date(now.getFullYear(), month - 1, day, hour, min, sec, 0);
+                                    const timestamp = this.buildTimestampFromParts(month, day, hour, min, sec);
 
                                     // Keep this as the latest (will be overwritten if we find a newer one)
                                     latestKeyCountsMap = keyCountsMap;
@@ -2356,10 +2472,15 @@
 
             // First "Key counts" message = dungeon start
             if (this.firstKeyCountTimestamp === null) {
-                // FALLBACK: If we're already tracking and have a currentRun.startTime,
-                // this is probably the COMPLETION message, not the start!
-                // This happens when state was restored but first message wasn't captured.
-                if (this.currentRun && this.currentRun.startTime) {
+                // FALLBACK: If a wave has already completed under our own tracking without ever
+                // seeing a Key counts message (state was restored mid-run, or we joined after missing
+                // the run's true start message), this message is far more likely to be the COMPLETION
+                // than the start. A fresh run's real first message always arrives before its first
+                // wave completes, so wavesCompleted > 0 is a genuine restore/late-join signal - unlike
+                // currentRun.startTime, which is truthy for every run and can't tell a restore apart
+                // from an ordinary fresh start (the bug this replaced: it misfired on live key-count
+                // messages for brand-new runs too, silently fragmenting them).
+                if (this.currentRun && this.currentRun.wavesCompleted > 0) {
                     // Use the currentRun.startTime as the first timestamp (best estimate)
                     this.firstKeyCountTimestamp = this.currentRun.startTime;
                     this.lastKeyCountTimestamp = timestamp; // Current message is completion
@@ -2424,6 +2545,25 @@
             }
 
             return keyCountsMap;
+        }
+
+        /**
+         * Reconstruct a Date from chat-message display parts (no year in the source text). Chat
+         * messages are always in the past, so if assuming the current year would put the timestamp
+         * in the future, the message must actually be from the previous year (e.g. a message sent in
+         * December, parsed after the new year rolled over).
+         * @param {number} month - 1-indexed month
+         * @param {number} day
+         * @param {number} hour
+         * @param {number} min
+         * @param {number} sec
+         * @returns {Date}
+         */
+        buildTimestampFromParts(month, day, hour, min, sec) {
+            const now = new Date();
+            const year = now.getFullYear();
+            const timestamp = new Date(year, month - 1, day, hour, min, sec, 0);
+            return timestamp.getTime() > now.getTime() ? new Date(year - 1, month - 1, day, hour, min, sec, 0) : timestamp;
         }
 
         /**
@@ -2577,6 +2717,15 @@
                 return;
             }
 
+            // Defense-in-depth: a wave number that goes backward indicates a duplicate/reordered/
+            // stale event, not real progress - ignore it rather than let it corrupt currentWave/ETA.
+            if (data.wave < this.currentRun.currentWave) {
+                console.warn(
+                    `[Dungeon Tracker] Ignoring out-of-order wave (got ${data.wave}, currently on ${this.currentRun.currentWave})`
+                );
+                return;
+            }
+
             // Update current wave
             this.waveStartTime = new Date(data.combatStartTime);
             this.currentRun.currentWave = data.wave;
@@ -2622,14 +2771,26 @@
                 this.notifyUpdate();
             }
 
+            // BUGFIX: Wave 50 completion sends wave: 0, so use currentWave instead
+            const actualWaveNumber = action.wave === 0 ? this.currentRun.currentWave : action.wave;
+
+            // Defense-in-depth: a completed-wave number that goes backward indicates a duplicate/
+            // reordered/stale event, not real progress - ignore it entirely (including the wave-time
+            // sample below) rather than let it corrupt wavesCompleted, avgWaveTime, or the
+            // allWavesCompleted check.
+            if (actualWaveNumber < this.currentRun.wavesCompleted) {
+                console.warn(
+                    `[Dungeon Tracker] Ignoring out-of-order wave completion (got ${actualWaveNumber}, already at ${this.currentRun.wavesCompleted})`
+                );
+                return;
+            }
+
             // Calculate wave time
             const waveEndTime = Date.now();
             const waveTime = waveEndTime - this.waveStartTime.getTime();
             this.waveTimes.push(waveTime);
 
             // Update waves completed
-            // BUGFIX: Wave 50 completion sends wave: 0, so use currentWave instead
-            const actualWaveNumber = action.wave === 0 ? this.currentRun.currentWave : action.wave;
             this.currentRun.wavesCompleted = actualWaveNumber;
 
             // Save state after wave completion
@@ -2743,6 +2904,7 @@
                         duration: partyMessageDuration, // Server-validated duration
                         dungeonName: dungeonName,
                         keyCountsMap: completedRunData.keyCountsMap, // Include key counts
+                        hibernationDetected: completedRunData.hibernationDetected || false,
                     };
 
                     // Save to database (with duplicate detection)
@@ -2858,6 +3020,7 @@
                 result,
                 wavesCompleted: currentRun.wavesCompleted,
                 validated,
+                hibernationDetected: currentRun.hibernationDetected || false,
             });
         }
 
@@ -2982,6 +3145,10 @@
                 webSocketHook.off('chat_message_received', this.handlers.chatMessage);
                 this.handlers.chatMessage = null;
             }
+            if (this.socketCloseHandler) {
+                webSocketHook.offSocketEvent('close', this.socketCloseHandler);
+                this.socketCloseHandler = null;
+            }
 
             // Reset all tracking state
             this.isTracking = false;
@@ -3078,9 +3245,7 @@
                     if (period === 'PM' && hour < 12) hour += 12;
                     if (period === 'AM' && hour === 12) hour = 0;
 
-                    // Create timestamp (assumes current year)
-                    const now = new Date();
-                    const timestamp = new Date(now.getFullYear(), month - 1, day, hour, min, sec, 0);
+                    const timestamp = this.buildTimestampFromParts(month, day, hour, min, sec);
 
                     // Extract "Battle started:" messages
                     if (text.includes('Battle started:')) {
@@ -4263,6 +4428,11 @@
             // on the same line (matches the history/stats views treating fails separately).
             filteredRuns = filteredRuns.filter((r) => !r.result || r.result === 'success');
 
+            // A run's duration is untrustworthy only when it's both unvalidated (wall-clock) AND
+            // flagged for a sleep/background hibernation gap during tracking - a single inflated
+            // point would otherwise dominate the chart's scale and skew avg/fastest/slowest below.
+            filteredRuns = filteredRuns.filter((r) => !r.hibernationDetected || r.validated);
+
             if (filteredRuns.length === 0) {
                 // Destroy existing chart
                 if (this.chartInstance) {
@@ -4533,6 +4703,9 @@
             // Exclude fails/cancels - see render() for why.
             filteredRuns = filteredRuns.filter((r) => !r.result || r.result === 'success');
 
+            // Exclude hibernation-flagged unvalidated runs - see render() for why.
+            filteredRuns = filteredRuns.filter((r) => !r.hibernationDetected || r.validated);
+
             if (filteredRuns.length === 0) return;
 
             // Sort by timestamp
@@ -4753,8 +4926,12 @@
          * @returns {Object} Stats object
          */
         calculateStatsForRuns(allAttempts) {
-            const runs = (allAttempts || []).filter((r) => !r.result || r.result === 'success');
-            const failedAttempts = (allAttempts || []).filter((r) => r.result === 'fail' || r.result === 'cancel');
+            // A run's duration is untrustworthy only when it's both unvalidated (wall-clock) AND
+            // flagged for a sleep/background hibernation gap during tracking - exclude it entirely
+            // rather than let it skew avg/fastest/slowest.
+            const reliableAttempts = (allAttempts || []).filter((r) => !r.hibernationDetected || r.validated);
+            const runs = reliableAttempts.filter((r) => !r.result || r.result === 'success');
+            const failedAttempts = reliableAttempts.filter((r) => r.result === 'fail' || r.result === 'cancel');
 
             if (runs.length === 0) {
                 return {
@@ -4956,10 +5133,7 @@
                 btn.addEventListener('click', async (e) => {
                     const runTimestamp = e.target.closest('[data-run-timestamp]').dataset.runTimestamp;
 
-                    // Find and delete the run from unified storage
-                    const allRuns = await dungeonTrackerStorage.getAllRuns();
-                    const filteredRuns = allRuns.filter((r) => r.timestamp !== runTimestamp);
-                    await storage.setJSON('allRuns', filteredRuns, 'unifiedRuns', true);
+                    await dungeonTrackerStorage.deleteRunByTimestamp(runTimestamp);
 
                     // Trigger refresh via callback
                     if (this.onDeleteCallback) {
@@ -5228,7 +5402,7 @@
                 if (confirm('Delete ALL run history data?\n\nThis cannot be undone!')) {
                     try {
                         // Clear unified storage completely
-                        await storage.setJSON('allRuns', [], 'unifiedRuns', true);
+                        await dungeonTrackerStorage.clearAllRuns();
                         alert('All run history cleared.');
 
                         // Refresh both history and chart display
@@ -6040,7 +6214,7 @@
             let stats, lastRunTime;
 
             // Get all runs and apply filters (EXACT SAME LOGIC as chart)
-            const allRuns = await storage.getJSON('allRuns', 'unifiedRuns', []);
+            const allRuns = await dungeonTrackerStorage.getAllRuns();
             let allAttempts = allRuns;
 
             // Apply dungeon filter
@@ -6052,6 +6226,11 @@
             if (this.state.filterTeam !== 'all') {
                 allAttempts = allAttempts.filter((r) => r.teamKey === this.state.filterTeam);
             }
+
+            // A run's duration is untrustworthy only when it's both unvalidated (wall-clock) AND
+            // flagged for a sleep/background hibernation gap during tracking - exclude it from time
+            // math entirely rather than let it skew avg/fastest/slowest/last.
+            allAttempts = allAttempts.filter((r) => !r.hibernationDetected || r.validated);
 
             // Failed/canceled attempts cost real time but aren't clears - keep the existing
             // clear-only stats (avg/fastest/slowest/last) unaffected by them.
@@ -12092,7 +12271,7 @@
      */
 
 
-    const timerRegistry = timerRegistry_js.createTimerRegistry();
+    const timerRegistry$1 = timerRegistry_js.createTimerRegistry();
     const IMPORT_CONTAINER_ID = 'toolasha-import-container';
 
     // Skill calculator state
@@ -12102,8 +12281,8 @@
     /**
      * Initialize combat sim integration (runs on sim page only)
      */
-    function initialize$1() {
-        disable();
+    function initialize$2() {
+        disable$1();
 
         // Wait for simulator UI to load
         waitForSimulatorUI();
@@ -12115,8 +12294,8 @@
     /**
      * Disable combat sim integration and cleanup injected UI
      */
-    function disable() {
-        timerRegistry.clearAll();
+    function disable$1() {
+        timerRegistry$1.clearAll();
 
         const container = document.getElementById(IMPORT_CONTAINER_ID);
         if (container) {
@@ -12144,22 +12323,22 @@
             const exportButton = document.querySelector('button#buttonImportExport');
             if (exportButton) {
                 clearInterval(checkInterval);
-                injectImportButton(exportButton);
+                injectImportButton$1(exportButton);
             }
         }, 200);
 
-        timerRegistry.registerInterval(checkInterval);
+        timerRegistry$1.registerInterval(checkInterval);
 
         // Stop checking after 10 seconds
         const stopTimeout = setTimeout(() => clearInterval(checkInterval), 10000);
-        timerRegistry.registerTimeout(stopTimeout);
+        timerRegistry$1.registerTimeout(stopTimeout);
     }
 
     /**
      * Inject "Import from Toolasha" button
      * @param {Element} exportButton - Reference element to insert after
      */
-    function injectImportButton(exportButton) {
+    function injectImportButton$1(exportButton) {
         // Check if button already exists
         if (document.getElementById('toolasha-import-button')) {
             return;
@@ -12219,7 +12398,7 @@
                     button.innerHTML = 'Import from Toolasha<span style="display:none;">Import solo/group</span>';
                     button.style.backgroundColor = config.COLOR_ACCENT;
                 }, 3000);
-                timerRegistry.registerTimeout(resetTimeout);
+                timerRegistry$1.registerTimeout(resetTimeout);
                 console.error('[Toolasha Combat Sim] No export data available');
                 alert(
                     'No character data found. Please:\n1. Refresh the game page\n2. Wait for it to fully load\n3. Try again'
@@ -12321,7 +12500,7 @@
                         console.warn('[Toolasha Combat Sim] Difficulty element not found');
                     }
                 }, 250); // Increased delay to ensure zone loads first
-                timerRegistry.registerTimeout(difficultyTimeout);
+                timerRegistry$1.registerTimeout(difficultyTimeout);
 
                 // Step 8: Enable/disable player checkboxes
                 for (let i = 0; i < 5; i++) {
@@ -12351,9 +12530,9 @@
                     button.innerHTML = 'Import from Toolasha<span style="display:none;">Import solo/group</span>';
                     button.style.backgroundColor = config.COLOR_ACCENT;
                 }, 3000);
-                timerRegistry.registerTimeout(successResetTimeout);
+                timerRegistry$1.registerTimeout(successResetTimeout);
             }, 100);
-            timerRegistry.registerTimeout(importTimeout);
+            timerRegistry$1.registerTimeout(importTimeout);
         } catch (error) {
             console.error('[Toolasha Combat Sim] Import failed:', error);
             button.textContent = 'Import Failed';
@@ -12362,7 +12541,7 @@
                 button.innerHTML = 'Import from Toolasha<span style="display:none;">Import solo/group</span>';
                 button.style.backgroundColor = config.COLOR_ACCENT;
             }, 3000);
-            timerRegistry.registerTimeout(failResetTimeout);
+            timerRegistry$1.registerTimeout(failResetTimeout);
         }
     }
 
@@ -12386,7 +12565,7 @@
                     }
                 }
             }, 100);
-            timerRegistry.registerTimeout(dungeonTimeout);
+            timerRegistry$1.registerTimeout(dungeonTimeout);
         } else {
             const zoneTimeout = setTimeout(() => {
                 const selectZoneEl = document.querySelector('select#selectZone');
@@ -12400,7 +12579,7 @@
                     }
                 }
             }, 100);
-            timerRegistry.registerTimeout(zoneTimeout);
+            timerRegistry$1.registerTimeout(zoneTimeout);
         }
     }
 
@@ -12705,6 +12884,399 @@
     }
 
     var combatSimIntegration = /*#__PURE__*/Object.freeze({
+        __proto__: null,
+        disable: disable$1,
+        initialize: initialize$2
+    });
+
+    /**
+     * Combat Simulator Export Module (Metz)
+     *
+     * Reshapes Toolasha's own Shykai-format player export into the array-of-characters shape the
+     * Metz Combat Simulator's Setup screen accepts (https://metzlii.github.io/metz-combat-simulator/).
+     * Metz's importer takes an array of character objects; each one is field-for-field the same
+     * shape Shykai's importer takes (player skills+equipment, abilities, triggerMap, houseRooms,
+     * guildCombatBuffLevels, food/drinks, achievements), except abilities/food/drinks list only
+     * what is actually equipped (no blank-slot padding), and name/hasMooPass sit on the character
+     * object directly instead of alongside it.
+     */
+
+
+    /**
+     * Drop Shykai's fixed-length blank-slot padding, keeping only genuinely equipped/set entries.
+     * @param {Array<Object>} slots
+     * @param {string} hridField - 'abilityHrid' or 'itemHrid'
+     * @returns {Array<Object>}
+     */
+    function dropBlankSlots(slots, hridField) {
+        return (slots || []).filter((slot) => slot && slot[hridField]);
+    }
+
+    /**
+     * Reshape one Shykai-format player object (from constructSelfPlayer/constructPartyPlayer) into
+     * a Metz character entry.
+     * @param {string} name
+     * @param {Object} shykaiPlayer
+     * @param {Object} [extra] - Fields only available for your own character (e.g. hasMooPass)
+     * @returns {Object}
+     */
+    function toMetzCharacter(name, shykaiPlayer, extra = {}) {
+        const character = {
+            name,
+            player: shykaiPlayer.player,
+            abilities: dropBlankSlots(shykaiPlayer.abilities, 'abilityHrid'),
+            triggerMap: shykaiPlayer.triggerMap,
+            houseRooms: shykaiPlayer.houseRooms,
+            guildCombatBuffLevels: shykaiPlayer.guildCombatBuffLevels,
+            food: { '/action_types/combat': dropBlankSlots(shykaiPlayer.food['/action_types/combat'], 'itemHrid') },
+            drinks: { '/action_types/combat': dropBlankSlots(shykaiPlayer.drinks['/action_types/combat'], 'itemHrid') },
+            ...extra,
+        };
+        if (shykaiPlayer.achievements && Object.keys(shykaiPlayer.achievements).length) {
+            character.achievements = shykaiPlayer.achievements;
+        }
+        return character;
+    }
+
+    /**
+     * Build the Metz character entry for your own character.
+     * @param {Object} characterObj
+     * @param {Object} clientObj
+     * @returns {Object}
+     */
+    function buildSelfMetzCharacter(characterObj, clientObj) {
+        const selfPlayer = constructSelfPlayer(characterObj, clientObj);
+        return toMetzCharacter(characterObj.character?.name || 'Player 1', selfPlayer, {
+            hasMooPass: (dataManager.getMooPassBuffs()?.length ?? 0) > 0,
+        });
+    }
+
+    /**
+     * Build the array-of-characters export Metz's Setup screen accepts: your own character, plus
+     * any party members Toolasha already has a cached profile for (the same profile cache the
+     * Shykai export uses). Only your own character carries hasMooPass - a teammate's shared
+     * profile does not expose it the same reliable way.
+     *
+     * Note: Metz's "Optimize" upgrade-finder tab also reads a per-character `owned`/`skilling`
+     * block (spare gear, alchemy/enhancing setup) that this does not populate - only what Setup's
+     * zone simulation needs is built here.
+     * @returns {Promise<Array<Object>|null>} null if no character data is available at all
+     */
+    async function constructMetzTeamExport() {
+        const characterObj = getCharacterData$1();
+        if (!characterObj) {
+            return null;
+        }
+
+        const clientObj = getClientData();
+        const battleObj = getBattleData();
+        const profileList = await getProfileList$1();
+
+        const team = [buildSelfMetzCharacter(characterObj, clientObj)];
+
+        const partySlots = characterObj.partyInfo?.partySlotMap;
+        if (partySlots) {
+            for (const member of Object.values(partySlots)) {
+                if (!member.characterID || member.characterID === characterObj.character.id) {
+                    continue;
+                }
+                const profile = profileList.find((p) => p.characterID === member.characterID);
+                if (!profile) {
+                    continue;
+                }
+                const partyPlayer = constructPartyPlayer(profile, clientObj, battleObj);
+                team.push(toMetzCharacter(profile.characterName, partyPlayer));
+            }
+        }
+
+        return team;
+    }
+
+    /**
+     * Build a single Metz character entry - your own character, or (if externalProfileId is given
+     * and differs from your own id) a cached party/profile member. Mirrors constructExportObject's
+     * singlePlayerFormat mode for Shykai, for the profile-box "Metz Sim Export" button.
+     * @param {string|null} [externalProfileId]
+     * @returns {Promise<Object|null>} null if no character data, or no cached profile for that id
+     */
+    async function constructMetzCharacterExport(externalProfileId = null) {
+        const characterObj = getCharacterData$1();
+        if (!characterObj) {
+            return null;
+        }
+
+        const clientObj = getClientData();
+
+        if (externalProfileId && externalProfileId !== characterObj.character?.id) {
+            const profileList = await getProfileList$1();
+            const profile = profileList.find((p) => p.characterID === externalProfileId);
+            if (!profile) {
+                return null;
+            }
+            const battleObj = getBattleData();
+            const partyPlayer = constructPartyPlayer(profile, clientObj, battleObj);
+            return toMetzCharacter(profile.characterName, partyPlayer);
+        }
+
+        return buildSelfMetzCharacter(characterObj, clientObj);
+    }
+
+    /**
+     * Apply a saved-loadout override (equipment/abilities/food/drinks/triggers) onto an existing
+     * Metz character object, reshaping into Metz's un-padded slot format. Used by the profile-box
+     * "Metz Sim Export" loadout dropdown, which exports a NAMED saved loadout instead of the
+     * character's live equipped state.
+     * @param {Object} character - A Metz character object (e.g. from constructMetzCharacterExport)
+     * @param {Object} overrides
+     * @param {Array<Object>} overrides.equipment
+     * @param {Array<Object|null>} overrides.abilities - Native-slot-mapped (0..4), holes as null/undefined
+     * @param {Object} overrides.triggerMap
+     * @param {Array<Object>} overrides.food
+     * @param {Array<Object>} overrides.drinks
+     * @returns {Object} A new character object with the overrides applied
+     */
+    function applyLoadoutOverrideToMetzCharacter(character, { equipment, abilities, triggerMap, food, drinks }) {
+        return {
+            ...character,
+            player: { ...character.player, equipment: (equipment || []).map((item) => ({ ...item })) },
+            abilities: dropBlankSlots(abilities, 'abilityHrid'),
+            triggerMap: triggerMap || {},
+            food: { '/action_types/combat': dropBlankSlots(food, 'itemHrid') },
+            drinks: { '/action_types/combat': dropBlankSlots(drinks, 'itemHrid') },
+        };
+    }
+
+    /**
+     * Combat Simulator Integration Module (Metz)
+     * Injects an "Import from Toolasha" button on the Metz Combat Simulator's Setup screen
+     * (https://metzlii.github.io/metz-combat-simulator/).
+     *
+     * Metz's Setup screen imports a pasted character/team export off the paste event itself and
+     * has no separate Import button to click afterward, unlike Shykai. Its Setup content also
+     * mounts and unmounts as the visitor switches tabs (it is a single-page app), so the button is
+     * re-attached via an observer rather than injected once at load.
+     */
+
+
+    const timerRegistry = timerRegistry_js.createTimerRegistry();
+    const BUTTON_ID = 'toolasha-metz-import-button';
+    const DEFAULT_LABEL = 'Import from Toolasha';
+
+    let mutationObserver = null;
+    let mountTimeout = null;
+
+    /**
+     * Initialize the Metz integration (runs on the Metz Combat Simulator page only). The userscript
+     * runs at document-start, so `document.body` may not exist yet - starting the MutationObserver
+     * before it does would throw and abort the whole script for this page.
+     */
+    function initialize$1() {
+        disable();
+        if (document.body) {
+            start();
+        } else {
+            document.addEventListener('DOMContentLoaded', start, { once: true });
+        }
+    }
+
+    function start() {
+        mount();
+        mutationObserver = new MutationObserver(() => scheduleMount());
+        mutationObserver.observe(document.body, { childList: true, subtree: true });
+    }
+
+    /**
+     * Disable the integration and remove any injected UI.
+     */
+    function disable() {
+        timerRegistry.clearAll();
+
+        if (mutationObserver) {
+            mutationObserver.disconnect();
+            mutationObserver = null;
+        }
+        if (mountTimeout) {
+            clearTimeout(mountTimeout);
+            mountTimeout = null;
+        }
+
+        const button = document.getElementById(BUTTON_ID);
+        if (button) {
+            button.remove();
+        }
+    }
+
+    function scheduleMount() {
+        if (mountTimeout) {
+            return;
+        }
+        mountTimeout = setTimeout(() => {
+            mountTimeout = null;
+            mount();
+        }, 250);
+    }
+
+    /**
+     * The character-export paste box. Metz's own docs call it "the import box" and describe it as
+     * the page's paste target for one to five character exports; in practice this is the only
+     * textarea Setup renders, so that assumption is used first and a placeholder-text match is kept
+     * as a fallback in case a future build adds another textarea elsewhere on the page.
+     * @returns {HTMLTextAreaElement|null}
+     */
+    function findImportTextarea() {
+        const textareas = Array.from(document.querySelectorAll('textarea'));
+        if (!textareas.length) {
+            return null;
+        }
+        if (textareas.length === 1) {
+            return textareas[0];
+        }
+        return textareas.find((t) => /export/i.test(t.placeholder || '')) || textareas[0];
+    }
+
+    /**
+     * Put the button where it belongs, and do nothing when it is already there - this idempotence
+     * is what stops the observer above from looping.
+     */
+    function mount() {
+        const textarea = findImportTextarea();
+        const existing = document.getElementById(BUTTON_ID);
+
+        if (!textarea) {
+            if (existing) {
+                existing.remove();
+            }
+            return;
+        }
+        if (existing) {
+            if (existing.previousElementSibling !== textarea) {
+                textarea.insertAdjacentElement('afterend', existing);
+            }
+            return;
+        }
+        injectImportButton(textarea);
+    }
+
+    /**
+     * @param {HTMLTextAreaElement} textarea
+     */
+    function injectImportButton(textarea) {
+        const button = document.createElement('button');
+        button.id = BUTTON_ID;
+        button.type = 'button';
+        button.textContent = DEFAULT_LABEL;
+        button.style.backgroundColor = config.COLOR_ACCENT;
+        button.style.color = 'white';
+        button.style.padding = '6px 16px';
+        button.style.border = 'none';
+        button.style.borderRadius = '4px';
+        button.style.cursor = 'pointer';
+        button.style.fontWeight = 'bold';
+        button.style.margin = '8px 0';
+        button.style.display = 'block';
+
+        button.addEventListener('mouseenter', () => {
+            button.style.opacity = '0.8';
+        });
+        button.addEventListener('mouseleave', () => {
+            button.style.opacity = '1';
+        });
+        button.addEventListener('click', (event) => {
+            event.preventDefault();
+            importIntoMetz(button);
+        });
+
+        textarea.insertAdjacentElement('afterend', button);
+    }
+
+    function resetButton(button) {
+        button.textContent = DEFAULT_LABEL;
+        button.style.backgroundColor = config.COLOR_ACCENT;
+    }
+
+    function setButtonStatus(button, label, backgroundColor) {
+        button.textContent = label;
+        button.style.backgroundColor = backgroundColor;
+        const resetTimeout = setTimeout(() => resetButton(button), 3000);
+        timerRegistry.registerTimeout(resetTimeout);
+    }
+
+    /**
+     * @param {Element} button
+     */
+    async function importIntoMetz(button) {
+        try {
+            const team = await constructMetzTeamExport();
+
+            if (!team) {
+                setButtonStatus(button, 'Error: No character data', '#dc3545');
+                console.error('[Toolasha Metz Sim] No export data available');
+                alert(
+                    'No character data found. Please:\n1. Refresh the game page\n2. Wait for it to fully load\n3. Try again'
+                );
+                return;
+            }
+
+            console.log('[Toolasha Metz Sim] Export payload:', team);
+
+            const json = JSON.stringify(team);
+            const textarea = findImportTextarea();
+
+            if (!textarea) {
+                console.error('[Toolasha Metz Sim] Import box not found');
+                await copyToClipboard(json);
+                setButtonStatus(button, 'Copied - paste manually', '#28a745');
+                return;
+            }
+
+            firePasteEvent(textarea, json);
+            setButtonStatus(button, '✓ Imported', '#28a745');
+        } catch (error) {
+            console.error('[Toolasha Metz Sim] Import failed:', error);
+            setButtonStatus(button, 'Import Failed', '#dc3545');
+        }
+    }
+
+    /**
+     * Mimic a real clipboard paste into `textarea`. Metz's Setup screen imports itself off the
+     * paste event rather than a separate Import button, so this sets the value directly (in case
+     * the page reads it after the fact) and also dispatches a real paste event carrying the same
+     * text via clipboardData (in case the page reads it directly from the event, which is the more
+     * common way a "paste to import" UI is actually implemented), plus input/change for any plain
+     * value-watching handler. Dispatching all three is harmless if a given page only needs one.
+     * @param {HTMLTextAreaElement} textarea
+     * @param {string} text
+     */
+    function firePasteEvent(textarea, text) {
+        textarea.focus();
+        textarea.value = text;
+
+        if (typeof ClipboardEvent === 'function' && typeof DataTransfer === 'function') {
+            try {
+                const clipboardData = new DataTransfer();
+                clipboardData.setData('text/plain', text);
+                textarea.dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true }));
+            } catch (error) {
+                console.warn('[Toolasha Metz Sim] Synthetic paste event failed, falling back to input/change', error);
+            }
+        }
+
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        textarea.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    /**
+     * @param {string} text
+     */
+    async function copyToClipboard(text) {
+        try {
+            await navigator.clipboard.writeText(text);
+        } catch (error) {
+            console.warn('[Toolasha Metz Sim] Clipboard write blocked', error);
+        }
+    }
+
+    var combatSimIntegrationMetz = /*#__PURE__*/Object.freeze({
         __proto__: null,
         disable: disable,
         initialize: initialize$1
@@ -25172,6 +25744,8 @@
             this.trackedZoneKey = null;
             this.expectedLootTracker = new ExpectedLootTracker();
             this.dungeonCompletionHandler = null;
+            this.socketCloseHandler = null;
+            this.connectionInterrupted = false;
 
             this._resetTrackingState();
         }
@@ -25192,6 +25766,7 @@
             this.partyConsumableTrackers = {};
             this.partyConsumableSnapshots = {};
             this.partyLastKnownConsumables = {};
+            this.connectionInterrupted = false;
         }
 
         _getStorageKey(baseKey, characterId = this.characterId) {
@@ -25240,6 +25815,16 @@
 
             // Listen for battle_consumable_ability_updated (fires on each consumable use)
             webSocketHook.on('battle_consumable_ability_updated', this.consumableEventHandler);
+
+            // A mid-session disconnect means some events during the gap may have been missed - flag
+            // the current session's numbers as possibly incomplete rather than silently trusting them.
+            this.socketCloseHandler = () => {
+                if (generation !== this.lifecycleGeneration) return;
+                if (this.consumableTracker.startTime) {
+                    this.connectionInterrupted = true;
+                }
+            };
+            webSocketHook.onSocketEvent('close', this.socketCloseHandler);
 
             // Reuse dungeon-tracker's own proven completion signal instead of re-deriving one
             this.dungeonCompletionHandler = (_current, completedRun) => {
@@ -25990,6 +26575,15 @@
         }
 
         /**
+         * Whether a WS disconnect/reconnect happened during the current tracking session, meaning
+         * some events may have been missed and the session's numbers may be incomplete.
+         * @returns {boolean}
+         */
+        isConnectionInterrupted() {
+            return this.connectionInterrupted;
+        }
+
+        /**
          * Load latest combat data from storage
          * @returns {Promise<Object|null>} Latest combat data
          */
@@ -26013,6 +26607,11 @@
             if (this.consumableEventHandler) {
                 webSocketHook.off('battle_consumable_ability_updated', this.consumableEventHandler);
                 this.consumableEventHandler = null;
+            }
+
+            if (this.socketCloseHandler) {
+                webSocketHook.offSocketEvent('close', this.socketCloseHandler);
+                this.socketCloseHandler = null;
             }
 
             if (this.dungeonCompletionHandler) {
@@ -27775,14 +28374,16 @@
             const playerStats = calculateAllPlayerStats(combatData, durationSeconds, expectedLootData);
 
             // Create and show popup
-            this.createPopup(playerStats);
+            this.createPopup(playerStats, combatStatsDataCollector.isConnectionInterrupted());
         }
 
         /**
          * Create and display the statistics popup
          * @param {Array} playerStats - Array of player statistics
+         * @param {boolean} [connectionInterrupted=false] - Whether a WS disconnect/reconnect happened
+         *   during this session, meaning some events may have been missed
          */
-        createPopup(playerStats) {
+        createPopup(playerStats, connectionInterrupted = false) {
             // Remove existing popup if any
             if (this.popup) {
                 this.closePopup();
@@ -27928,6 +28529,22 @@
 
             // Assemble popup
             popup.appendChild(header);
+            if (connectionInterrupted) {
+                const banner = document.createElement('div');
+                banner.textContent =
+                    '⚠️ Connection was interrupted during this session — some events may have been ' +
+                    'missed, so these numbers may be incomplete.';
+                banner.style.cssText = `
+                background: #4a3a1a;
+                border: 1px solid #8a6a2a;
+                border-radius: 4px;
+                padding: 8px 12px;
+                margin-bottom: 16px;
+                font-size: 13px;
+                color: #ffcc66;
+            `;
+                popup.appendChild(banner);
+            }
             popup.appendChild(cardsContainer);
             overlay.appendChild(popup);
 
@@ -33055,8 +33672,8 @@ self.onmessage = function (e) {
             </div>
             ${this.buildScoreSectionsHTML(scoreData)}
             <div id="mwi-button-container" style="margin-top: 12px; display: flex; flex-direction: column; gap: 6px;">
-                <div id="mwi-combat-sim-wrapper" style="position: relative; display: flex; gap: 4px;">
-                    <button id="mwi-combat-sim-export-btn" style="
+                <div id="mwi-metz-sim-wrapper" style="position: relative; display: flex; gap: 4px;">
+                    <button id="mwi-metz-sim-export-btn" style="
                         padding: 8px 12px;
                         background: ${config.COLOR_ACCENT};
                         color: black;
@@ -33066,8 +33683,8 @@ self.onmessage = function (e) {
                         font-weight: bold;
                         font-size: 0.85rem;
                         flex: 1;
-                    ">Combat Sim Export</button>
-                    <button id="mwi-combat-sim-loadout-btn" style="
+                    ">Metz Sim Export</button>
+                    <button id="mwi-metz-sim-loadout-btn" style="
                         padding: 8px 10px;
                         background: ${config.COLOR_ACCENT};
                         color: black;
@@ -33078,7 +33695,7 @@ self.onmessage = function (e) {
                         font-size: 0.85rem;
                         display: none;
                     ">▾</button>
-                    <div id="mwi-combat-sim-loadout-dropdown" style="
+                    <div id="mwi-metz-sim-loadout-dropdown" style="
                         display: none;
                         position: absolute;
                         top: 100%;
@@ -33362,17 +33979,17 @@ self.onmessage = function (e) {
                 });
             }
 
-            // Combat Sim Export button
-            const combatSimBtn = panel.querySelector('#mwi-combat-sim-export-btn');
-            if (combatSimBtn) {
-                combatSimBtn.addEventListener('click', async () => {
-                    await this.handleCombatSimExport(combatSimBtn);
+            // Metz Sim Export button
+            const metzSimBtn = panel.querySelector('#mwi-metz-sim-export-btn');
+            if (metzSimBtn) {
+                metzSimBtn.addEventListener('click', async () => {
+                    await this.handleMetzSimExport(metzSimBtn);
                 });
-                combatSimBtn.addEventListener('mouseenter', () => {
-                    combatSimBtn.style.opacity = '0.8';
+                metzSimBtn.addEventListener('mouseenter', () => {
+                    metzSimBtn.style.opacity = '0.8';
                 });
-                combatSimBtn.addEventListener('mouseleave', () => {
-                    combatSimBtn.style.opacity = '1';
+                metzSimBtn.addEventListener('mouseleave', () => {
+                    metzSimBtn.style.opacity = '1';
                 });
             }
 
@@ -33402,10 +34019,10 @@ self.onmessage = function (e) {
                 });
             }
 
-            // Combat Sim loadout dropdown for own character only
-            const combatSimLoadoutBtn = panel.querySelector('#mwi-combat-sim-loadout-btn');
-            const combatSimLoadoutDropdown = panel.querySelector('#mwi-combat-sim-loadout-dropdown');
-            if (combatSimLoadoutBtn && combatSimLoadoutDropdown) {
+            // Metz Sim loadout dropdown for own character only
+            const metzSimLoadoutBtn = panel.querySelector('#mwi-metz-sim-loadout-btn');
+            const metzSimLoadoutDropdown = panel.querySelector('#mwi-metz-sim-loadout-dropdown');
+            if (metzSimLoadoutBtn && metzSimLoadoutDropdown) {
                 const profileCharId =
                     profileData?.profile?.sharableCharacter?.id ||
                     profileData?.profile?.characterSkills?.[0]?.characterID ||
@@ -33416,16 +34033,13 @@ self.onmessage = function (e) {
                         .getAllSnapshots()
                         .filter((snapshot) => snapshot.isUsableForCalculation);
                     const combatSnapshots = allSnapshots.filter((s) => s.actionTypeHrid === '/action_types/combat');
-                    console.log(
-                        `[CombatScore] Combat Sim dropdown: profileCharId=${profileCharId}, myCharId=${dataManager.getCurrentCharacterId()}, totalSnapshots=${allSnapshots.length}, combatSnapshots=${combatSnapshots.length}`
-                    );
                     if (combatSnapshots.length > 0) {
-                        combatSimLoadoutBtn.style.display = '';
+                        metzSimLoadoutBtn.style.display = '';
 
-                        combatSimLoadoutDropdown.innerHTML = combatSnapshots
+                        metzSimLoadoutDropdown.innerHTML = combatSnapshots
                             .map(
                                 (s) =>
-                                    `<div class="mwi-combat-sim-loadout-option" data-name="${s.name.replace(/"/g, '&quot;')}" style="
+                                    `<div class="mwi-metz-sim-loadout-option" data-name="${s.name.replace(/"/g, '&quot;')}" style="
                                 padding: 6px 10px;
                                 cursor: pointer;
                                 font-size: 0.8rem;
@@ -33438,22 +34052,22 @@ self.onmessage = function (e) {
                             )
                             .join('');
 
-                        combatSimLoadoutBtn.addEventListener('click', (e) => {
+                        metzSimLoadoutBtn.addEventListener('click', (e) => {
                             e.stopPropagation();
-                            combatSimLoadoutDropdown.style.display =
-                                combatSimLoadoutDropdown.style.display === 'none' ? 'block' : 'none';
+                            metzSimLoadoutDropdown.style.display =
+                                metzSimLoadoutDropdown.style.display === 'none' ? 'block' : 'none';
                         });
-                        combatSimLoadoutBtn.addEventListener('mouseenter', () => {
-                            combatSimLoadoutBtn.style.opacity = '0.8';
+                        metzSimLoadoutBtn.addEventListener('mouseenter', () => {
+                            metzSimLoadoutBtn.style.opacity = '0.8';
                         });
-                        combatSimLoadoutBtn.addEventListener('mouseleave', () => {
-                            combatSimLoadoutBtn.style.opacity = '1';
+                        metzSimLoadoutBtn.addEventListener('mouseleave', () => {
+                            metzSimLoadoutBtn.style.opacity = '1';
                         });
 
-                        combatSimLoadoutDropdown.querySelectorAll('.mwi-combat-sim-loadout-option').forEach((opt) => {
+                        metzSimLoadoutDropdown.querySelectorAll('.mwi-metz-sim-loadout-option').forEach((opt) => {
                             opt.addEventListener('click', async () => {
-                                combatSimLoadoutDropdown.style.display = 'none';
-                                await this.handleCombatSimExportFromSnapshot(opt.dataset.name, combatSimBtn);
+                                metzSimLoadoutDropdown.style.display = 'none';
+                                await this.handleMetzSimExportFromSnapshot(opt.dataset.name, metzSimBtn);
                             });
                             opt.addEventListener('mouseenter', () => {
                                 opt.style.background = 'rgba(255,255,255,0.1)';
@@ -33463,16 +34077,16 @@ self.onmessage = function (e) {
                             });
                         });
 
-                        const closeCombatSimDropdown = (e) => {
-                            if (!document.body.contains(combatSimLoadoutDropdown)) {
-                                document.removeEventListener('click', closeCombatSimDropdown);
+                        const closeMetzSimDropdown = (e) => {
+                            if (!document.body.contains(metzSimLoadoutDropdown)) {
+                                document.removeEventListener('click', closeMetzSimDropdown);
                                 return;
                             }
-                            if (!combatSimLoadoutDropdown.contains(e.target) && e.target !== combatSimLoadoutBtn) {
-                                combatSimLoadoutDropdown.style.display = 'none';
+                            if (!metzSimLoadoutDropdown.contains(e.target) && e.target !== metzSimLoadoutBtn) {
+                                metzSimLoadoutDropdown.style.display = 'none';
                             }
                         };
-                        document.addEventListener('click', closeCombatSimDropdown);
+                        document.addEventListener('click', closeMetzSimDropdown);
                     }
                 }
             }
@@ -33828,58 +34442,11 @@ self.onmessage = function (e) {
         }
 
         /**
-         * Handle Combat Sim Export button click
-         * @param {Element} button - Button element
-         */
-        async handleCombatSimExport(button) {
-            const originalText = button.textContent;
-            const originalBg = button.style.background;
-
-            try {
-                // Get current profile ID (if viewing someone else's profile)
-                const currentProfileId = await storage.get('currentProfileId', 'combatExport', null);
-
-                // Get export data in single-player format (for pasting into "Player 1 import" field)
-                const exportData = await constructExportObject(currentProfileId, true);
-                if (!exportData) {
-                    button.textContent = '✗ No Data';
-                    button.style.background = '${config.COLOR_LOSS}';
-                    const resetTimeout = setTimeout(() => {
-                        button.textContent = originalText;
-                        button.style.background = originalBg;
-                    }, 3000);
-                    this.timerRegistry.registerTimeout(resetTimeout);
-                    return;
-                }
-
-                const exportString = JSON.stringify(exportData.exportObj);
-                await navigator.clipboard.writeText(exportString);
-
-                button.textContent = '✓ Copied';
-                button.style.background = '${config.COLOR_PROFIT}';
-                const resetTimeout = setTimeout(() => {
-                    button.textContent = originalText;
-                    button.style.background = originalBg;
-                }, 3000);
-                this.timerRegistry.registerTimeout(resetTimeout);
-            } catch (error) {
-                console.error('[Combat Score] Combat Sim export failed:', error);
-                button.textContent = '✗ Failed';
-                button.style.background = '${config.COLOR_LOSS}';
-                const resetTimeout = setTimeout(() => {
-                    button.textContent = originalText;
-                    button.style.background = originalBg;
-                }, 3000);
-                this.timerRegistry.registerTimeout(resetTimeout);
-            }
-        }
-
-        /**
-         * Handle Combat Sim Export from a loadout snapshot
+         * Handle Metz Sim Export from a loadout snapshot
          * @param {string} snapshotName - Loadout snapshot name
          * @param {Element} button - The main export button (for visual feedback)
          */
-        async handleCombatSimExportFromSnapshot(snapshotName, button) {
+        async handleMetzSimExportFromSnapshot(snapshotName, button) {
             const originalText = button.textContent;
             const originalBg = button.style.background;
 
@@ -33890,11 +34457,11 @@ self.onmessage = function (e) {
                     return;
                 }
 
-                // Get base export (skills, house, achievements, triggers)
-                const exportData = await constructExportObject(null, true);
-                if (!exportData) {
+                // Base character (skills, house, achievements, triggers, hasMooPass) - own character only
+                const character = await constructMetzCharacterExport(null);
+                if (!character) {
                     button.textContent = '✗ No Data';
-                    button.style.background = '${config.COLOR_LOSS}';
+                    button.style.background = `${config.COLOR_LOSS}`;
                     const resetTimeout = setTimeout(() => {
                         button.textContent = originalText;
                         button.style.background = originalBg;
@@ -33903,14 +34470,8 @@ self.onmessage = function (e) {
                     return;
                 }
 
-                const playerObj = exportData.exportObj;
                 const clientObj = dataManager.getInitClientData();
 
-                // Equipment is already resolved by Core Loadout State. Do not reinterpret
-                // exact/highest enhancement semantics in feature consumers.
-                playerObj.player.equipment = (snapshot.equipment || []).map((item) => ({ ...item }));
-
-                // Override abilities from snapshot
                 // Build ability level lookup from all learned abilities (not just currently equipped)
                 const characterData = dataManager.characterData;
                 const abilityLevelMap = {};
@@ -33918,52 +34479,87 @@ self.onmessage = function (e) {
                     if (ab.abilityHrid) abilityLevelMap[ab.abilityHrid] = ab.level || 1;
                 }
 
-                // Preserve the actual saved MWI ability slots (1..5 -> export 0..4), including holes.
-                playerObj.abilities = mapLoadoutAbilitiesToNativeSlots(
+                // Preserve the actual saved MWI ability slots (1..5 -> native 0..4), including holes.
+                const abilities = mapLoadoutAbilitiesToNativeSlots(
                     snapshot.abilities,
                     clientObj?.abilityDetailMap || {},
                     (ability) => ({
                         abilityHrid: ability.abilityHrid,
                         level: abilityLevelMap[ability.abilityHrid] || 1,
                     })
-                ).map((ability) => ability || { abilityHrid: '', level: 1 });
+                );
 
-                // Override triggers from snapshot (includes all configured triggers regardless of equip state)
-                playerObj.triggerMap = {
-                    ...(snapshot.abilityCombatTriggersMap || {}),
-                    ...(snapshot.consumableCombatTriggersMap || {}),
-                };
+                const overridden = applyLoadoutOverrideToMetzCharacter(character, {
+                    // Equipment is already resolved by Core Loadout State. Do not reinterpret
+                    // exact/highest enhancement semantics in feature consumers.
+                    equipment: snapshot.equipment,
+                    abilities,
+                    triggerMap: {
+                        ...(snapshot.abilityCombatTriggersMap || {}),
+                        ...(snapshot.consumableCombatTriggersMap || {}),
+                    },
+                    food: snapshot.food,
+                    drinks: snapshot.drinks,
+                });
 
-                // Override food from snapshot
-                playerObj.food = { '/action_types/combat': [] };
-                for (let i = 0; i < 3; i++) {
-                    playerObj.food['/action_types/combat'][i] = {
-                        itemHrid: snapshot.food?.[i]?.itemHrid || '',
-                    };
-                }
-
-                // Override drinks from snapshot
-                playerObj.drinks = { '/action_types/combat': [] };
-                for (let i = 0; i < 3; i++) {
-                    playerObj.drinks['/action_types/combat'][i] = {
-                        itemHrid: snapshot.drinks?.[i]?.itemHrid || '',
-                    };
-                }
-
-                const exportString = JSON.stringify(playerObj);
-                await navigator.clipboard.writeText(exportString);
+                await navigator.clipboard.writeText(JSON.stringify(overridden));
 
                 button.textContent = '✓ Copied';
-                button.style.background = '${config.COLOR_PROFIT}';
+                button.style.background = `${config.COLOR_PROFIT}`;
                 const resetTimeout = setTimeout(() => {
                     button.textContent = originalText;
                     button.style.background = originalBg;
                 }, 3000);
                 this.timerRegistry.registerTimeout(resetTimeout);
             } catch (error) {
-                console.error('[Combat Score] Combat Sim snapshot export failed:', error);
+                console.error('[Combat Score] Metz Sim snapshot export failed:', error);
                 button.textContent = '✗ Failed';
-                button.style.background = '${config.COLOR_LOSS}';
+                button.style.background = `${config.COLOR_LOSS}`;
+                const resetTimeout = setTimeout(() => {
+                    button.textContent = originalText;
+                    button.style.background = originalBg;
+                }, 3000);
+                this.timerRegistry.registerTimeout(resetTimeout);
+            }
+        }
+
+        /**
+         * Handle Metz Sim Export button click
+         * @param {Element} button - Button element
+         */
+        async handleMetzSimExport(button) {
+            const originalText = button.textContent;
+            const originalBg = button.style.background;
+
+            try {
+                // Get current profile ID (if viewing someone else's profile)
+                const currentProfileId = await storage.get('currentProfileId', 'combatExport', null);
+
+                const character = await constructMetzCharacterExport(currentProfileId);
+                if (!character) {
+                    button.textContent = '✗ No Data';
+                    button.style.background = `${config.COLOR_LOSS}`;
+                    const resetTimeout = setTimeout(() => {
+                        button.textContent = originalText;
+                        button.style.background = originalBg;
+                    }, 3000);
+                    this.timerRegistry.registerTimeout(resetTimeout);
+                    return;
+                }
+
+                await navigator.clipboard.writeText(JSON.stringify(character));
+
+                button.textContent = '✓ Copied';
+                button.style.background = `${config.COLOR_PROFIT}`;
+                const resetTimeout = setTimeout(() => {
+                    button.textContent = originalText;
+                    button.style.background = originalBg;
+                }, 3000);
+                this.timerRegistry.registerTimeout(resetTimeout);
+            } catch (error) {
+                console.error('[Combat Score] Metz Sim export failed:', error);
+                button.textContent = '✗ Failed';
+                button.style.background = `${config.COLOR_LOSS}`;
                 const resetTimeout = setTimeout(() => {
                     button.textContent = originalText;
                     button.style.background = originalBg;
@@ -34488,9 +35084,15 @@ self.onmessage = function (e) {
         labyrinthShopPrices,
         labyrinthClearRate,
         combatSimIntegration,
+        combatSimIntegrationMetz,
         combatSimExport: {
             constructExportObject,
             constructMilkonomyExport,
+        },
+        combatSimExportMetz: {
+            constructMetzTeamExport,
+            constructMetzCharacterExport,
+            applyLoadoutOverrideToMetzCharacter,
         },
         combatStats,
         combatConsumableTimer: combatConsumableTimer$1,

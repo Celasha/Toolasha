@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.109.0
+ * Version: 2.110.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2806,6 +2806,27 @@
     }
 
     /**
+     * Calculate the expected success chance for a single enhancement attempt, without the Markov
+     * chain machinery calculateEnhancement() needs (no math.js dependency) - just the base rate for
+     * this level scaled by the success multiplier. Used to compare an attempt's actual outcome
+     * against the chance the game modeled for it (Enhancing Luck).
+     * @param {number} level - Current enhancement level being attempted (0-indexed, e.g. 0 = a +0→+1 attempt)
+     * @param {number} enhancingLevel - Effective enhancing level (base + tea bonus)
+     * @param {number} toolBonus - Tool success bonus % (already includes equipment + house bonus)
+     * @param {number} itemLevel - Item level being enhanced
+     * @returns {number|null} Success chance in [0, 1], or null if this level has no base rate (e.g. beyond +20)
+     */
+    function calculateSingleLevelSuccessChance(level, enhancingLevel, toolBonus, itemLevel) {
+        const baseRate = BASE_SUCCESS_RATES[level];
+        if (baseRate === undefined) {
+            return null;
+        }
+
+        const successMultiplier = calculateSuccessMultiplier({ enhancingLevel, toolBonus, itemLevel });
+        return Math.max(0, Math.min(1, (baseRate / 100) * successMultiplier));
+    }
+
+    /**
      * Calculate per-action time for enhancement
      * Simple calculation that doesn't require Markov chain analysis
      * @param {number} enhancingLevel - Effective enhancing level (includes tea bonus)
@@ -2992,6 +3013,8 @@
         BASE_SUCCESS_RATES: BASE_SUCCESS_RATES,
         calculateEnhancement: calculateEnhancement,
         calculatePerActionTime: calculatePerActionTime,
+        calculateSingleLevelSuccessChance: calculateSingleLevelSuccessChance,
+        calculateSuccessMultiplier: calculateSuccessMultiplier,
         isMathJsAvailable: isMathJsAvailable
     });
 

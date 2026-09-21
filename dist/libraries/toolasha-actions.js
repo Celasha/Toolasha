@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.109.0
+ * Version: 2.110.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7401,6 +7401,7 @@
     max-width: min(414px, calc(100vw - 64px));
     min-width: min(280px, calc(100vw - 64px));
     box-sizing: border-box;
+    overflow-x: hidden;
 }
 @supports (width: 100dvw) {
     .${QUEUE_EDIT_MENU_MARKER_CLASS} {
@@ -7417,6 +7418,17 @@
     white-space: normal;
     overflow-wrap: anywhere;
     box-sizing: border-box;
+}
+/* The native row (drag handle + name/time/profit + delete button) has no flex-wrap and its
+   text column has no min-width:0, so injected time/profit text can push the row - and the
+   trailing delete "X" button - past the popup's right edge, forcing horizontal scrolling to
+   reach it (TLA-070). Wrapping the row keeps the delete button on-screen instead. */
+.${QUEUE_EDIT_MENU_MARKER_CLASS} [class^="QueuedActions_action__"] {
+    flex-wrap: wrap;
+}
+.${QUEUE_EDIT_MENU_MARKER_CLASS} [class*="QueuedActions_actionText"] {
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 `;
 
