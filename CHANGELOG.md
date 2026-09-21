@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.110.0](https://github.com/Celasha/Toolasha/compare/v2.109.0...v2.110.0) (2026-09-21)
+
+
+### Features
+
+* add Enhancing Luck metric ([bfe5ff2](https://github.com/Celasha/Toolasha/commit/bfe5ff2c62cb29fb1c6e13f433ae75a63470c525))
+* replace Shykai combat sim links with Metz Combat Simulator integration ([fb2a9fb](https://github.com/Celasha/Toolasha/commit/fb2a9fb985825d9ff0886f615751fb0e76186a14))
+
+
+### Bug Fixes
+
+* flag interrupted combat-stats sessions and character-scope task reroll tracking ([7542801](https://github.com/Celasha/Toolasha/commit/7542801bb336b9fb2f63689f86643e822fdbee9a))
+* harden dungeon tracker against cross-character mixing and false completions ([e6ddbe2](https://github.com/Celasha/Toolasha/commit/e6ddbe24fcf9b946dd2e088ee86c45328d6921aa))
+* keep queued-action delete button reachable without horizontal scrolling ([ee2a52a](https://github.com/Celasha/Toolasha/commit/ee2a52a26697d360f7dae500700311061a056469))
+* stop Loot Luck side panel from getting stuck on screen after a chest close ([e50a20a](https://github.com/Celasha/Toolasha/commit/e50a20a89877dbb7e52c9bef2032a4ee5b10306b))
+
+
+### Documentation
+
+* add Weylan to userscript credits and reconcile header drift ([a40f252](https://github.com/Celasha/Toolasha/commit/a40f2522d678cb05bf57f09541c912f78a3d3a4b))
+
 ## [2.109.0](https://github.com/Celasha/Toolasha/compare/v2.108.8...v2.109.0) (2026-09-17)
 
 ### Features
