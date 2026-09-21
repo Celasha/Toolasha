@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.110.0
+ * Version: 2.110.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -9215,6 +9215,68 @@
     const networkAlert = new NetworkAlert();
 
     /**
+     * Timer Registry Utility
+     * Centralized registration for intervals and timeouts.
+     */
+
+    /**
+     * Create a timer registry for deterministic teardown.
+     * @returns {{
+     *   registerInterval: (intervalId: number) => void,
+     *   registerTimeout: (timeoutId: number) => void,
+     *   clearAll: () => void
+     * }} Timer registry API
+     */
+    function createTimerRegistry() {
+        const intervals = [];
+        const timeouts = [];
+
+        const registerInterval = (intervalId) => {
+            if (!intervalId) {
+                console.warn('[TimerRegistry] registerInterval called with invalid interval id');
+                return;
+            }
+
+            intervals.push(intervalId);
+        };
+
+        const registerTimeout = (timeoutId) => {
+            if (!timeoutId) {
+                console.warn('[TimerRegistry] registerTimeout called with invalid timeout id');
+                return;
+            }
+
+            timeouts.push(timeoutId);
+        };
+
+        const clearAll = () => {
+            intervals.forEach((intervalId) => {
+                try {
+                    clearInterval(intervalId);
+                } catch (error) {
+                    console.error('[TimerRegistry] Failed to clear interval:', error);
+                }
+            });
+            intervals.length = 0;
+
+            timeouts.forEach((timeoutId) => {
+                try {
+                    clearTimeout(timeoutId);
+                } catch (error) {
+                    console.error('[TimerRegistry] Failed to clear timeout:', error);
+                }
+            });
+            timeouts.length = 0;
+        };
+
+        return {
+            registerInterval,
+            registerTimeout,
+            clearAll,
+        };
+    }
+
+    /**
      * Marketplace API Module
      * Fetches and caches market price data from the MWI marketplace API
      */
@@ -9247,6 +9309,11 @@
 
             // Event listeners for price updates
             this.listeners = [];
+
+            // Periodic re-fetch so long-lived sessions don't run on a snapshot that's gone stale
+            // for items nobody has viewed the order book for (see startAutoRefresh)
+            this.timerRegistry = createTimerRegistry();
+            this.autoRefreshStarted = false;
         }
 
         /**
@@ -9328,6 +9395,36 @@
             console.error('[MarketAPI] ❌ No market data available');
             networkAlert.show('⚠️ Market data unavailable');
             return null;
+        }
+
+        /**
+         * Start periodically re-checking the base snapshot so a long-lived tab doesn't keep serving
+         * prices from whenever the page happened to load. fetch() (unforced) only hits the network
+         * once CACHE_DURATION has actually elapsed - see getCachedData() - so this just makes sure
+         * that check runs on a timer instead of never running again after the initial load. Safe to
+         * call multiple times; only the first call starts the interval.
+         */
+        startAutoRefresh() {
+            if (this.autoRefreshStarted) {
+                return;
+            }
+            this.autoRefreshStarted = true;
+
+            const intervalId = setInterval(() => {
+                this.fetch().catch((error) => {
+                    this.logError('Auto-refresh fetch failed', error);
+                });
+            }, this.CACHE_DURATION);
+
+            this.timerRegistry.registerInterval(intervalId);
+        }
+
+        /**
+         * Stop the periodic re-fetch started by startAutoRefresh().
+         */
+        stopAutoRefresh() {
+            this.timerRegistry.clearAll();
+            this.autoRefreshStarted = false;
         }
 
         /**
