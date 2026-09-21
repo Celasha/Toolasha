@@ -323,6 +323,12 @@ export async function constructMetzCharacterExport(externalProfileId = null) {
  * Metz character object, reshaping into Metz's un-padded slot format. Used by the profile-box
  * "Metz Sim Export" loadout dropdown, which exports a NAMED saved loadout instead of the
  * character's live equipped state.
+ *
+ * Combat loadouts never include tool slots (enhancing/alchemy tools aren't part of a combat
+ * loadout), so unlike toMetzCharacter's live equipment there's nothing to re-derive
+ * skilling.enhancingTool/alchemyTool from here - character.skilling already reflects whatever
+ * tools are currently equipped (from buildSelfMetzCharacter) and is left untouched, rather than
+ * overwritten with null from an equipment array that was never going to carry tools.
  * @param {Object} character - A Metz character object (e.g. from constructMetzCharacterExport)
  * @param {Object} overrides
  * @param {Array<Object>} overrides.equipment
@@ -333,19 +339,8 @@ export async function constructMetzCharacterExport(externalProfileId = null) {
  * @returns {Object} A new character object with the overrides applied
  */
 export function applyLoadoutOverrideToMetzCharacter(character, { equipment, abilities, triggerMap, food, drinks }) {
-    const {
-        equipment: strippedEquipment,
-        enhancingTool,
-        alchemyTool,
-    } = extractToolsFromEquipment((equipment || []).map((item) => ({ ...item })));
-    const existingSkilling = character.skilling || {};
-    const skilling = { ...existingSkilling, enhancingTool, alchemyTool };
-    const hasSkilling =
-        skilling.enhancingLevel != null ||
-        skilling.alchemyLevel != null ||
-        enhancingTool ||
-        alchemyTool ||
-        skilling.speedGear?.length > 0;
+    // Defensive only - strip any stray tool entry rather than assume a loadout can't have one.
+    const { equipment: strippedEquipment } = extractToolsFromEquipment((equipment || []).map((item) => ({ ...item })));
 
     return {
         ...character,
@@ -354,6 +349,5 @@ export function applyLoadoutOverrideToMetzCharacter(character, { equipment, abil
         triggerMap: triggerMap || {},
         food: { '/action_types/combat': dropBlankSlots(food, 'itemHrid') },
         drinks: { '/action_types/combat': dropBlankSlots(drinks, 'itemHrid') },
-        ...(hasSkilling ? { skilling } : {}),
     };
 }

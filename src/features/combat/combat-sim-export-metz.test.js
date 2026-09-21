@@ -230,14 +230,14 @@ describe('Metz export - skilling/owned blocks', () => {
     });
 });
 
-describe('applyLoadoutOverrideToMetzCharacter - skilling stays in sync with the swapped loadout', () => {
-    test('re-derives enhancingTool/alchemyTool from the override equipment, keeps existing enhancingLevel/alchemyLevel', () => {
+describe('applyLoadoutOverrideToMetzCharacter - skilling stays authoritative from live equipment', () => {
+    test('leaves skilling untouched - combat loadouts never carry tools, so live-equipped tools stay authoritative', () => {
         const character = {
             player: { equipment: [] },
             skilling: {
                 enhancingLevel: 42,
                 alchemyLevel: 33,
-                enhancingTool: { itemHrid: '/items/old_enhancer', enhancementLevel: 5 },
+                enhancingTool: { itemHrid: '/items/celestial_enhancer', enhancementLevel: 10 },
                 alchemyTool: null,
                 speedGear: [],
             },
@@ -246,11 +246,6 @@ describe('applyLoadoutOverrideToMetzCharacter - skilling stays in sync with the 
         const overridden = applyLoadoutOverrideToMetzCharacter(character, {
             equipment: [
                 { itemLocationHrid: '/item_locations/body', itemHrid: '/items/plate_body', enhancementLevel: 2 },
-                {
-                    itemLocationHrid: '/item_locations/alchemy_tool',
-                    itemHrid: '/items/new_alembic',
-                    enhancementLevel: 9,
-                },
             ],
             abilities: [],
             triggerMap: {},
@@ -261,16 +256,38 @@ describe('applyLoadoutOverrideToMetzCharacter - skilling stays in sync with the 
         expect(overridden.player.equipment).toEqual([
             { itemLocationHrid: '/item_locations/body', itemHrid: '/items/plate_body', enhancementLevel: 2 },
         ]);
-        expect(overridden.skilling).toEqual({
-            enhancingLevel: 42,
-            alchemyLevel: 33,
-            enhancingTool: null,
-            alchemyTool: { itemHrid: '/items/new_alembic', enhancementLevel: 9 },
-            speedGear: [],
-        });
+        expect(overridden.skilling).toEqual(character.skilling);
     });
 
-    test('omits skilling entirely when the character never had one and the new loadout has no tools', () => {
+    test('still strips a stray tool entry out of the loadout equipment defensively, without touching skilling', () => {
+        const character = {
+            player: { equipment: [] },
+            skilling: {
+                enhancingTool: { itemHrid: '/items/celestial_enhancer', enhancementLevel: 10 },
+                alchemyTool: null,
+                speedGear: [],
+            },
+        };
+
+        const overridden = applyLoadoutOverrideToMetzCharacter(character, {
+            equipment: [
+                {
+                    itemLocationHrid: '/item_locations/alchemy_tool',
+                    itemHrid: '/items/unexpected',
+                    enhancementLevel: 3,
+                },
+            ],
+            abilities: [],
+            triggerMap: {},
+            food: [],
+            drinks: [],
+        });
+
+        expect(overridden.player.equipment).toEqual([]);
+        expect(overridden.skilling).toEqual(character.skilling);
+    });
+
+    test('a character with no skilling to begin with stays without one', () => {
         const character = { player: { equipment: [] } };
 
         const overridden = applyLoadoutOverrideToMetzCharacter(character, {
