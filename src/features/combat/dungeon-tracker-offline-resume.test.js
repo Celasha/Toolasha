@@ -526,6 +526,60 @@ describe('Fail/cancel capture: real time cost of unsuccessful attempts is persis
 
         expect(mocks.savedTeamRuns).toHaveLength(0);
     });
+
+    test('onChatMessage routes the real partyWaveFailed message type to a fail record', async () => {
+        await dungeonTracker.onNewBattle({ wave: 0, battleId: 610, combatStartTime: 0 });
+        dungeonTracker.onKeyCountsMessage(1000, keyCountMessage('[Alice - 1]'));
+
+        dungeonTracker.onChatMessage({
+            message: {
+                chan: '/chat_channel_types/party',
+                isSystemMessage: true,
+                t: 1000 + 3 * 60 * 1000,
+                m: 'systemChatMessage.partyWaveFailed',
+            },
+        });
+        await flushAsync();
+
+        expect(dungeonTracker.isTracking).toBe(false);
+        expect(mocks.savedTeamRuns).toHaveLength(1);
+        expect(mocks.savedTeamRuns[0].run.result).toBe('fail');
+    });
+
+    test('onChatMessage routes partyBattleEnded to a cancel record, not a fail', async () => {
+        await dungeonTracker.onNewBattle({ wave: 0, battleId: 611, combatStartTime: 0 });
+        dungeonTracker.onKeyCountsMessage(1000, keyCountMessage('[Alice - 1]'));
+
+        dungeonTracker.onChatMessage({
+            message: {
+                chan: '/chat_channel_types/party',
+                isSystemMessage: true,
+                t: 1000 + 90 * 1000,
+                m: 'systemChatMessage.partyBattleEnded',
+            },
+        });
+        await flushAsync();
+
+        expect(dungeonTracker.isTracking).toBe(false);
+        expect(mocks.savedTeamRuns).toHaveLength(1);
+        expect(mocks.savedTeamRuns[0].run.result).toBe('cancel');
+    });
+
+    test('a cancel caught live via onBattleEnded pre-empts the generic actions_updated fallback', async () => {
+        await dungeonTracker.onNewBattle({ wave: 0, battleId: 612, combatStartTime: 0 });
+        dungeonTracker.onKeyCountsMessage(1000, keyCountMessage('[Alice - 1]'));
+
+        dungeonTracker.onBattleEnded(1000 + 45 * 1000, {});
+        // The dungeon action's own isDone update arrives after the chat signal already reset
+        // tracking - it must find isTracking already false and do nothing.
+        dungeonTracker.onActionsUpdated({
+            endCharacterActions: [{ actionHrid: DUNGEON_HRID, isDone: true, difficultyTier: 0 }],
+        });
+        await flushAsync();
+
+        expect(mocks.savedTeamRuns).toHaveLength(1);
+        expect(mocks.savedTeamRuns[0].run.result).toBe('cancel');
+    });
 });
 
 describe('Fresh-start false-completion guard: wavesCompleted, not startTime truthiness', () => {
