@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.110.2
+ * Version: 2.110.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -27471,9 +27471,9 @@
         const keyPricingSetting = getKeyPricingModeSetting();
         const isCheapest = keyPricingSetting === KEY_PRICING_MODE_CHEAPEST;
 
-        const priceKey = (keyHrid) => {
+        const priceKey = (keyHrid, quantity) => {
             if (isCheapest) {
-                const { unitCost, plan } = getCheapestKeyCost(keyHrid);
+                const { unitCost, plan } = getCheapestKeyCost(keyHrid, quantity);
                 return { price: Number.isFinite(unitCost) ? unitCost : null, plan };
             }
             const keyPrices = marketAPI.getPrice(keyHrid);
@@ -27486,7 +27486,7 @@
             if (!keyHrid) continue;
 
             const chestCount = loot.count;
-            const { price: keyPrice, plan } = priceKey(keyHrid);
+            const { price: keyPrice, plan } = priceKey(keyHrid, chestCount);
             if (keyPrice === null) continue;
 
             const itemCost = keyPrice * chestCount;
@@ -27518,7 +27518,7 @@
         }
 
         for (const [keyHrid, count] of Object.entries(chestKeyCounts)) {
-            const { price: keyPrice, plan } = priceKey(keyHrid);
+            const { price: keyPrice, plan } = priceKey(keyHrid, count);
             if (keyPrice === null) continue;
 
             const itemCost = keyPrice * count;
@@ -28934,7 +28934,7 @@
                     value: `${formatNum(stats.dailyProfit[priceKey])}/d`,
                     color: stats.dailyProfit[priceKey] >= 0 ? '#51cf66' : '#ff6b6b',
                 },
-                ...(stats.actualVsExpected
+                ...(stats.actualVsExpected && config.getSettingValue('combatStats_showLootLuck', true)
                     ? (() => {
                           const sampleHeading = `Loot Luck sample · ${formatNum(stats.actualVsExpected.sampleSize)} encounters · ${formatRunway(stats.actualVsExpected.elapsedSeconds)}`;
                           return [
