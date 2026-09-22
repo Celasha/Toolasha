@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.110.3](https://github.com/Celasha/Toolasha/compare/v2.110.2...v2.110.3) (2026-09-22)
+
+### Bug Fixes
+
+- add setting to hide the Loot Luck comparison in Combat Statistics ([24560b4](https://github.com/Celasha/Toolasha/commit/24560b46417c625a43de23c6585b7e6f020904f3))
+- size the dungeon key craft-plan breakdown to keys actually consumed ([e949738](https://github.com/Celasha/Toolasha/commit/e949738b4b4bbb34809c0ab894200de0c2aec1d4))
+
 ## [2.110.2](https://github.com/Celasha/Toolasha/compare/v2.110.1...v2.110.2) (2026-09-21)
 
 ### Bug Fixes
