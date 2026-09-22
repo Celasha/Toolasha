@@ -750,7 +750,7 @@ class CombatStatsUI {
                 value: `${formatNum(stats.dailyProfit[priceKey])}/d`,
                 color: stats.dailyProfit[priceKey] >= 0 ? '#51cf66' : '#ff6b6b',
             },
-            ...(stats.actualVsExpected
+            ...(stats.actualVsExpected && config.getSettingValue('combatStats_showLootLuck', true)
                 ? (() => {
                       const sampleHeading = `Loot Luck sample · ${formatNum(stats.actualVsExpected.sampleSize)} encounters · ${formatRunway(stats.actualVsExpected.elapsedSeconds)}`;
                       return [

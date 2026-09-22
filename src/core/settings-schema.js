@@ -1852,6 +1852,13 @@ export const settingsGroups = {
                 default: 12,
                 help: 'Highlight combat consumables projected to run out within this many hours. Set to 0 to disable warnings.',
             },
+            combatStats_showLootLuck: {
+                id: 'combatStats_showLootLuck',
+                label: 'Combat Statistics: Show Loot Luck comparison',
+                type: 'checkbox',
+                default: true,
+                help: 'Shows the Actual vs Expected drop-rate/profit comparison and Loot Luck delta in the Statistics panel.',
+            },
             combatConsumableTimer: {
                 id: 'combatConsumableTimer',
                 label: 'Combat consumable timer: Show remaining food/drink time during battle',
