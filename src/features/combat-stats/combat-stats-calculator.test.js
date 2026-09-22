@@ -449,6 +449,21 @@ describe('calculateKeyCosts - cheapest pricing mode (buy vs craft)', () => {
         expect(bid).toBe(1200);
     });
 
+    test('requests the craft plan for the actual number of keys consumed, not a single unit', () => {
+        config.getSettingValue.mockReturnValue('cheapest');
+        computeBestCraftingPlan.mockReturnValue({ strategy: 'craft', unitCost: 300, children: [] });
+
+        const lootMap = { a: { itemHrid: '/items/chimerical_chest', count: 7 } };
+        calculateKeyCosts(lootMap, 0);
+
+        // Each chest consumes one entry key AND one chest key - both plans must be sized to 7,
+        // not the default quantity of 1, or the rendered materials breakdown understates what's
+        // actually needed by a factor of 7.
+        for (const call of computeBestCraftingPlan.mock.calls) {
+            expect(call[1]).toBe(7);
+        }
+    });
+
     test('uses the buy price and no plan when buying beats crafting', () => {
         config.getSettingValue.mockReturnValue('cheapest');
         computeBestCraftingPlan.mockReturnValue({ strategy: 'buy', unitCost: 500, children: [] });

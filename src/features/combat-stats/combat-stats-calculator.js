@@ -171,9 +171,9 @@ export function calculateKeyCosts(lootMap, durationSeconds) {
     const keyPricingSetting = getKeyPricingModeSetting();
     const isCheapest = keyPricingSetting === KEY_PRICING_MODE_CHEAPEST;
 
-    const priceKey = (keyHrid) => {
+    const priceKey = (keyHrid, quantity) => {
         if (isCheapest) {
-            const { unitCost, plan } = getCheapestKeyCost(keyHrid);
+            const { unitCost, plan } = getCheapestKeyCost(keyHrid, quantity);
             return { price: Number.isFinite(unitCost) ? unitCost : null, plan };
         }
         const keyPrices = marketAPI.getPrice(keyHrid);
@@ -186,7 +186,7 @@ export function calculateKeyCosts(lootMap, durationSeconds) {
         if (!keyHrid) continue;
 
         const chestCount = loot.count;
-        const { price: keyPrice, plan } = priceKey(keyHrid);
+        const { price: keyPrice, plan } = priceKey(keyHrid, chestCount);
         if (keyPrice === null) continue;
 
         const itemCost = keyPrice * chestCount;
@@ -218,7 +218,7 @@ export function calculateKeyCosts(lootMap, durationSeconds) {
     }
 
     for (const [keyHrid, count] of Object.entries(chestKeyCounts)) {
-        const { price: keyPrice, plan } = priceKey(keyHrid);
+        const { price: keyPrice, plan } = priceKey(keyHrid, count);
         if (keyPrice === null) continue;
 
         const itemCost = keyPrice * count;
