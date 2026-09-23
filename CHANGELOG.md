@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.110.4](https://github.com/Celasha/Toolasha/compare/v2.110.3...v2.110.4) (2026-09-23)
+
+### Bug Fixes
+
+- resolve labyrinth room-grid data lookup and badge tooltip ([c158eef](https://github.com/Celasha/Toolasha/commit/c158eefbe976d71f1491472d4ed5c74d0d01a162))
+- show clear-rate badges on the labyrinth room-grid tiles ([7a9eee4](https://github.com/Celasha/Toolasha/commit/7a9eee45c6b35a32d202fc8f9ad80034f9abac55))
+
 ## [2.110.3](https://github.com/Celasha/Toolasha/compare/v2.110.2...v2.110.3) (2026-09-22)
 
 ### Bug Fixes
