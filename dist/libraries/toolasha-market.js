@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.110.4
+ * Version: 2.111.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -21280,6 +21280,8 @@ self.onmessage = function (e) {
      */
 
 
+    const GUILD_TOKEN_HRID = '/items/guild_token';
+
     /**
      * Build cheapest-gold-per-credit maps for both sell and buy sides.
      * @param {Object} itemDetailMap
@@ -21308,6 +21310,31 @@ self.onmessage = function (e) {
             }
         }
         return { sell, buy };
+    }
+
+    /**
+     * Guild Token's coin-equivalent value broken out per credit type it converts to, using the
+     * cheapest per-credit value for each credit type (from buildCheapestPerCredit's sell or buy
+     * map). Sorted best (highest goldPerToken) first, so callers wanting the single best figure
+     * can just take index 0.
+     * @param {Object} itemDetailMap
+     * @param {Object} creditValueTable - creditItemHrid -> coin value per credit
+     * @returns {Array<{creditItemHrid: string, itemCount: number, creditCount: number, goldPerToken: number}>}
+     */
+    function buildGuildTokenValueByCredit(itemDetailMap, creditValueTable) {
+        const tokenItem = itemDetailMap[GUILD_TOKEN_HRID];
+        const rows = [];
+        for (const conv of tokenItem?.guildCreditConversions || []) {
+            const creditValue = creditValueTable[conv.creditItemHrid];
+            if (!(creditValue > 0)) continue;
+            rows.push({
+                creditItemHrid: conv.creditItemHrid,
+                itemCount: conv.itemCount,
+                creditCount: conv.creditCount,
+                goldPerToken: (conv.creditCount / conv.itemCount) * creditValue,
+            });
+        }
+        return rows.sort((a, b) => b.goldPerToken - a.goldPerToken);
     }
 
     /**
@@ -28315,7 +28342,7 @@ self.onmessage = function (e) {
     /**
      * Currency Token Shop Tooltips
      * Adds shop item lists and valuations to currency token tooltips with market pricing.
-     * Supports dungeon tokens, task tokens, labyrinth tokens, seals, and cowbells.
+     * Supports dungeon tokens, task tokens, labyrinth tokens, seals, cowbells, and Guild Token.
      */
 
 
@@ -28444,6 +28471,9 @@ self.onmessage = function (e) {
                 this._handleSeal(tooltipElement, isCollectionTooltip);
             } else if (itemHrid === COWBELL) {
                 this._handleCowbell(tooltipElement, isCollectionTooltip);
+            } else if (itemHrid === GUILD_TOKEN_HRID) {
+                if (!config.getSetting('guildTokenValueComparison', true)) return;
+                this._handleGuildToken(tooltipElement, isCollectionTooltip);
             }
         }
 
@@ -28500,6 +28530,19 @@ self.onmessage = function (e) {
                 `= ${SEAL_TOKEN_COST} Labyrinth Tokens × ${formatters_js.formatKMB(Math.floor(bestGoldPerToken))} gold/token`,
                 isCollectionTooltip
             );
+            dom.fixTooltipOverflow(tooltipElement);
+        }
+
+        /**
+         * Handle Guild Token tooltip — ranks all Guild Credit conversions by their coin-equivalent
+         * value per token, using the cheapest tradeable item route to each credit type (same
+         * formula the Guild Credit exchange modal and Score's shrine cost tally both use).
+         */
+        _handleGuildToken(tooltipElement, isCollectionTooltip) {
+            const shopItems = this._getGuildTokenShopItems();
+            if (!shopItems || shopItems.length === 0) return;
+
+            this._injectShopTable(tooltipElement, shopItems, 'Guild Credit Value:', 'Gold/Token', isCollectionTooltip);
             dom.fixTooltipOverflow(tooltipElement);
         }
 
@@ -28666,6 +28709,27 @@ self.onmessage = function (e) {
                 })
                 .filter(Boolean)
                 .sort((a, b) => b.goldPerToken - a.goldPerToken);
+        }
+
+        /**
+         * Get Guild Credit conversions for Guild Token, valued via the cheapest tradeable item
+         * route to each credit type (shared formula with the Guild Credit exchange modal and
+         * Score's shrine cost tally).
+         * @returns {Array} Credit conversions with pricing data, shaped like the other shop-item lists
+         */
+        _getGuildTokenShopItems() {
+            const gameData = dataManager.getInitClientData();
+            if (!gameData?.itemDetailMap) return [];
+
+            const { sell } = buildCheapestPerCredit(gameData.itemDetailMap);
+            const creditRows = buildGuildTokenValueByCredit(gameData.itemDetailMap, sell);
+
+            return creditRows.map((row) => ({
+                name: gameData.itemDetailMap[row.creditItemHrid]?.name || row.creditItemHrid.split('/').pop(),
+                cost: row.itemCount,
+                askPrice: row.creditCount * sell[row.creditItemHrid],
+                goldPerToken: row.goldPerToken,
+            }));
         }
 
         /**

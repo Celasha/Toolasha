@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.110.4
+ * Version: 2.111.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2967,6 +2967,13 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Injects a cost-efficiency table into each guild credit exchange modal, sorted cheapest first using your profit pricing mode.',
+                },
+                guildTokenValueComparison: {
+                    id: 'guildTokenValueComparison',
+                    label: 'Guild Shop: Show Guild Token gold-value comparison',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Adds a Guild Token row to the credit exchange cost table, and a Guild Credit Value table to the Guild Token tooltip, showing gold/token via the cheapest tradeable item route to each credit type.',
                 },
                 guildCreditExchangeAdvisor: {
                     id: 'guildCreditExchangeAdvisor',

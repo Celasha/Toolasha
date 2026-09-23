@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.110.4
+ * Version: 2.111.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -32645,6 +32645,8 @@ self.onmessage = function (e) {
      */
 
 
+    const GUILD_TOKEN_HRID = '/items/guild_token';
+
     /**
      * Build cheapest-gold-per-credit maps for both sell and buy sides.
      * @param {Object} itemDetailMap
@@ -32673,6 +32675,41 @@ self.onmessage = function (e) {
             }
         }
         return { sell, buy };
+    }
+
+    /**
+     * Guild Token's coin-equivalent value broken out per credit type it converts to, using the
+     * cheapest per-credit value for each credit type (from buildCheapestPerCredit's sell or buy
+     * map). Sorted best (highest goldPerToken) first, so callers wanting the single best figure
+     * can just take index 0.
+     * @param {Object} itemDetailMap
+     * @param {Object} creditValueTable - creditItemHrid -> coin value per credit
+     * @returns {Array<{creditItemHrid: string, itemCount: number, creditCount: number, goldPerToken: number}>}
+     */
+    function buildGuildTokenValueByCredit(itemDetailMap, creditValueTable) {
+        const tokenItem = itemDetailMap[GUILD_TOKEN_HRID];
+        const rows = [];
+        for (const conv of tokenItem?.guildCreditConversions || []) {
+            const creditValue = creditValueTable[conv.creditItemHrid];
+            if (!(creditValue > 0)) continue;
+            rows.push({
+                creditItemHrid: conv.creditItemHrid,
+                itemCount: conv.itemCount,
+                creditCount: conv.creditCount,
+                goldPerToken: (conv.creditCount / conv.itemCount) * creditValue,
+            });
+        }
+        return rows.sort((a, b) => b.goldPerToken - a.goldPerToken);
+    }
+
+    /**
+     * @param {Object} itemDetailMap
+     * @param {Object} creditValueTable - creditItemHrid -> coin value per credit
+     * @returns {number} coin value per Guild Token (0 if unresolved) — the MAXIMUM foregone
+     * native Token->Credit alternative (F-12), not the minimum.
+     */
+    function calculateGuildTokenOpportunityValue(itemDetailMap, creditValueTable) {
+        return buildGuildTokenValueByCredit(itemDetailMap, creditValueTable)[0]?.goldPerToken || 0;
     }
 
     /**
@@ -32714,28 +32751,11 @@ self.onmessage = function (e) {
      * Guild Credits are priced via the cheapest Ask-side tradeable conversion, excluding Guild Token
      * itself as a source item to avoid a circular value (real risk: `/items/guild_token` carries its
      * own `guildCreditConversions`). Guild Token's own coin-equivalent value is the MAXIMUM foregone
-     * native Token->Credit alternative (F-12), not the minimum.
+     * native Token->Credit alternative (F-12), not the minimum — see
+     * `calculateGuildTokenOpportunityValue` in utils/guild-credit-conversion.js, shared with the
+     * Guild Credit exchange modal and Guild Token tooltip.
      */
 
-
-    const GUILD_TOKEN_HRID = '/items/guild_token';
-
-    /**
-     * @param {Object} itemDetailMap
-     * @param {Object} creditValueTable - creditItemHrid -> coin value per credit
-     * @returns {number} coin value per Guild Token (0 if unresolved)
-     */
-    function calculateGuildTokenOpportunityValue(itemDetailMap, creditValueTable) {
-        const tokenItem = itemDetailMap[GUILD_TOKEN_HRID];
-        let best = 0;
-        for (const conv of tokenItem?.guildCreditConversions || []) {
-            const creditValue = creditValueTable[conv.creditItemHrid];
-            if (!(creditValue > 0)) continue;
-            const perToken = (conv.creditCount / conv.itemCount) * creditValue;
-            if (perToken > best) best = perToken;
-        }
-        return best;
-    }
 
     /**
      * Sum a buff's `levelCosts[1..level]` using the resolved credit/token coin values.
