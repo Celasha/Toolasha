@@ -790,6 +790,97 @@ describe('_updateApplyButtonState', () => {
     });
 });
 
+describe('room-grid tile badges (the interactive maze view, distinct from the Automation tab table)', () => {
+    function buildRoomGridCell(x, y) {
+        const cell = document.createElement('div');
+        cell.className = 'LabyrinthPanel_roomCell__3CSgp';
+        cell.dataset.roomX = String(x);
+        cell.dataset.roomY = String(y);
+        document.body.appendChild(cell);
+        return cell;
+    }
+
+    test('badges a visible skilling room tile using roomData indexed by [y][x]', () => {
+        const feature = new LabyrinthClearRate();
+        const cell = buildRoomGridCell(1, 2);
+        feature.roomData = [
+            [{}, {}, {}],
+            [{}, {}, {}],
+            [{}, { skillHrid: '/skills/milking', recommendedLevel: 40 }, {}],
+        ];
+        dataManager.getSkills.mockReturnValue([{ skillHrid: '/skills/milking', level: 50 }]);
+
+        feature.injectOverlays();
+
+        const badge = cell.querySelector('.mwi-labyrinth-grid-clear');
+        expect(badge).not.toBeNull();
+        expect(badge.textContent).not.toBe('');
+    });
+
+    test('badges a visible combat room tile and queues its simulation like the Automation tab does', () => {
+        const feature = new LabyrinthClearRate();
+        const cell = buildRoomGridCell(0, 0);
+        feature.roomData = [[{ monsterHrid: '/monsters/pyre_hunter', recommendedLevel: 55 }]];
+        feature.processSimQueue = vi.fn();
+
+        feature.injectOverlays();
+
+        const badge = cell.querySelector('.mwi-labyrinth-grid-clear');
+        expect(badge).not.toBeNull();
+        expect(badge.textContent).toBe('...');
+        expect(feature.simQueue).toHaveLength(1);
+        expect(feature.simQueue[0]).toMatchObject({ monsterHrid: '/monsters/pyre_hunter', roomLevel: 55 });
+    });
+
+    test('skips fog/unrevealed tiles (empty room object) and already-cleared tiles', () => {
+        const feature = new LabyrinthClearRate();
+        const fogCell = buildRoomGridCell(0, 0);
+        const clearedCell = buildRoomGridCell(1, 0);
+        feature.roomData = [[{}, { monsterHrid: '/monsters/pyre_hunter', recommendedLevel: 55, isCleared: true }]];
+
+        feature.injectOverlays();
+
+        expect(fogCell.querySelector('.mwi-labyrinth-grid-clear')).toBeNull();
+        expect(clearedCell.querySelector('.mwi-labyrinth-grid-clear')).toBeNull();
+    });
+
+    test('falls back to the init payload roomData when no labyrinth_updated event has arrived yet', () => {
+        const feature = new LabyrinthClearRate();
+        const cell = buildRoomGridCell(0, 0);
+        dataManager.characterData.characterLabyrinth = {
+            roomData: [[{ skillHrid: '/skills/milking', recommendedLevel: 40 }]],
+        };
+        dataManager.getSkills.mockReturnValue([{ skillHrid: '/skills/milking', level: 50 }]);
+
+        feature.injectOverlays();
+
+        expect(cell.querySelector('.mwi-labyrinth-grid-clear')).not.toBeNull();
+    });
+
+    test('runs alongside the Automation tab table when both are present, without duplicating badge classes', () => {
+        const feature = new LabyrinthClearRate();
+        buildAutomationTable([
+            { roomHrid: '/skills/milking', isSkill: true, settingKey: 'labyrinthSkipMilking', currentValue: 5 },
+        ]);
+        const gridCell = buildRoomGridCell(0, 0);
+        feature.roomData = [[{ skillHrid: '/skills/foraging', recommendedLevel: 30 }]];
+        dataManager.getSkills.mockReturnValue([{ skillHrid: '/skills/foraging', level: 40 }]);
+
+        feature.injectOverlays();
+
+        expect(document.querySelector('.mwi-labyrinth-clear')).not.toBeNull();
+        expect(gridCell.querySelector('.mwi-labyrinth-grid-clear')).not.toBeNull();
+    });
+
+    test('does nothing when the grid has no roomData yet (neither live nor init payload)', () => {
+        const feature = new LabyrinthClearRate();
+        buildRoomGridCell(0, 0);
+
+        expect(() => feature.injectOverlays()).not.toThrow();
+        expect(document.querySelector('.mwi-labyrinth-grid-clear')).toBeNull();
+    });
+});
+
 describe('skilling/enhancing success chance floor matches the in-game guide minimum (5%)', () => {
     const zeroMetrics = () => ({
         skillLevelBonus: 0,

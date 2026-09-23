@@ -11,6 +11,7 @@ import { buildPlayerDTO, buildGameDataPayload, applyLoadoutSnapshotToDTO } from 
 import { runLabyrinthSimulation } from '../combat-sim/combat-sim-runner.js';
 import { setReactInputValue } from '../../utils/react-input.js';
 import loadoutState from '../../core/loadout-state.js';
+import { addStyles, removeStyles } from '../../utils/dom.js';
 
 const ROOM_DURATION = 120;
 const BASE_SKILLING_TIME = 10;
@@ -18,11 +19,40 @@ const BASE_ENHANCING_TIME = 8;
 const UPGRADE_STEP = 0.01;
 const UPGRADE_SUCCESS_STEP = 0.005;
 const BADGE_CLASS = 'mwi-labyrinth-clear';
+const GRID_BADGE_CLASS = 'mwi-labyrinth-grid-clear';
+const GRID_BADGE_STYLE_ID = 'mwi-labyrinth-grid-clear-style';
 const RECOMMEND_CLASS = 'mwi-labyrinth-recommend';
 const RECOMMEND_CONTROLS_CLASS = 'mwi-labyrinth-recommend-controls';
 const APPLY_SKIP_BUTTON_ID = 'mwi-apply-skip-btn';
 const LIVE_PROGRESS_CLASS = 'mwi-labyrinth-live-progress';
 const LIVE_PROGRESS_STALE_MS = 5000;
+
+// The room grid (the maze the player actually navigates) renders each tile at ~2.875rem, so the
+// badge has to be a tiny absolutely-positioned corner overlay rather than the inline text used
+// next to the Automation tab's skip-threshold rows.
+const GRID_BADGE_CSS = `
+[class*="LabyrinthPanel_roomCell"] {
+    position: relative;
+}
+.${GRID_BADGE_CLASS} {
+    position: absolute;
+    right: 1px;
+    bottom: 1px;
+    z-index: 5;
+    max-width: calc(100% - 2px);
+    padding: 0 2px;
+    border-radius: 2px;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    font-size: 8px;
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+    user-select: none;
+}
+`;
 
 class LabyrinthClearRate {
     constructor() {
@@ -54,6 +84,8 @@ class LabyrinthClearRate {
         if (this.isInitialized) {
             return;
         }
+
+        addStyles(GRID_BADGE_CSS, GRID_BADGE_STYLE_ID);
 
         this.wsHandler = (data) => this.onLabyrinthUpdated(data);
         webSocketHook.on('labyrinth_updated', this.wsHandler);
@@ -90,8 +122,10 @@ class LabyrinthClearRate {
         this.liveProgressHandler = (data) => this.onLiveProgress(data);
         webSocketHook.on('labyrinth_room_progress', this.liveProgressHandler);
 
-        const unregister = domObserver.onClass('LabyrinthClearRate', 'LabyrinthPanel_skipThreshold', () =>
-            this.injectOverlays()
+        const unregister = domObserver.onClass(
+            'LabyrinthClearRate',
+            ['LabyrinthPanel_skipThreshold', 'LabyrinthPanel_roomCell'],
+            () => this.injectOverlays()
         );
         this.unregisterHandlers.push(unregister);
 
@@ -123,10 +157,13 @@ class LabyrinthClearRate {
 
         this.clearLiveProgress();
 
+        removeStyles(GRID_BADGE_STYLE_ID);
+
         this.unregisterHandlers.forEach((fn) => fn());
         this.unregisterHandlers = [];
 
         document.querySelectorAll(`.${BADGE_CLASS}`).forEach((el) => el.remove());
+        document.querySelectorAll(`.${GRID_BADGE_CLASS}`).forEach((el) => el.remove());
         document.querySelectorAll(`.${RECOMMEND_CLASS}`).forEach((el) => el.remove());
         document.querySelectorAll(`.${RECOMMEND_CONTROLS_CLASS}`).forEach((el) => el.remove());
         document.querySelectorAll(`.${LIVE_PROGRESS_CLASS}`).forEach((el) => el.remove());
@@ -1436,16 +1473,27 @@ class LabyrinthClearRate {
     }
 
     /**
+     * The room-grid roomData[y][x] matrix, preferring the live copy this feature tracks off
+     * labyrinth_updated (kept fresh across fog reveals/room clears) and falling back to the
+     * init payload's copy only for the brief window before the first such event arrives.
+     */
+    getRoomDataGrid() {
+        return this.roomData || dataManager.characterData?.characterLabyrinth?.roomData || null;
+    }
+
+    /**
      * Inject clear rate overlays onto visible labyrinth room cells
      */
     injectOverlays() {
-        const cells = document.querySelectorAll('[class*="LabyrinthPanel_skipThreshold"]');
-        if (!cells.length) return;
+        const skipCells = document.querySelectorAll('[class*="LabyrinthPanel_skipThreshold"]');
+        const gridCells = document.querySelectorAll('[class*="LabyrinthPanel_roomCell"]');
+        if (!skipCells.length && !gridCells.length) return;
 
         document.querySelectorAll(`.${BADGE_CLASS}`).forEach((el) => el.remove());
+        document.querySelectorAll(`.${GRID_BADGE_CLASS}`).forEach((el) => el.remove());
         this.simQueue = [];
 
-        for (const cell of cells) {
+        for (const cell of skipCells) {
             const roomHrid = this.extractRoomHrid(cell);
             if (!roomHrid) continue;
 
@@ -1487,9 +1535,70 @@ class LabyrinthClearRate {
             }
         }
 
+        this.injectRoomGridBadges(gridCells);
+
         this.processSimQueue();
         this.injectRecommendControls();
         this.injectRecommendationBadges();
+    }
+
+    /**
+     * Inject clear rate badges directly onto the interactive room-grid tiles (the maze the
+     * player actually navigates during a run), keyed off the data-room-x/data-room-y coordinates
+     * the game renders on every room cell -- indexing directly into roomData[y][x] rather than
+     * re-deriving a room identity from sprite icons.
+     */
+    injectRoomGridBadges(cells) {
+        if (!cells.length) return;
+
+        const roomGrid = this.getRoomDataGrid();
+        if (!roomGrid) return;
+
+        for (const cell of cells) {
+            const x = Number(cell.dataset.roomX);
+            const y = Number(cell.dataset.roomY);
+            if (!Number.isInteger(x) || !Number.isInteger(y)) continue;
+
+            const room = roomGrid[y]?.[x];
+            if (!room || room.isCleared) continue;
+
+            const roomLevel = Number(room.recommendedLevel || 0);
+            if (!roomLevel || roomLevel <= 0) continue;
+
+            if (room.skillHrid) {
+                const isEnhancing = room.skillHrid === '/skills/enhancing';
+                const result = isEnhancing
+                    ? this.computeEnhancingClear(roomLevel)
+                    : this.computeSkillingClear(room.skillHrid, roomLevel);
+                if (!result) continue;
+                this.appendGridBadge(cell, result, roomLevel);
+            } else if (room.monsterHrid) {
+                const cached = this.getCachedCombatResult(room.monsterHrid, roomLevel);
+                if (cached) {
+                    this.appendGridBadge(cell, cached, roomLevel);
+                } else {
+                    const badge = this.appendGridPlaceholderBadge(cell);
+                    this.queueCombatSim(room.monsterHrid, roomLevel, badge);
+                }
+            }
+        }
+    }
+
+    appendGridBadge(cell, result, roomLevel) {
+        const badge = document.createElement('span');
+        badge.className = GRID_BADGE_CLASS;
+        cell.appendChild(badge);
+        this.updateBadge(badge, result, roomLevel);
+        return badge;
+    }
+
+    appendGridPlaceholderBadge(cell) {
+        const badge = document.createElement('span');
+        badge.className = GRID_BADGE_CLASS;
+        badge.textContent = '...';
+        badge.title = 'Simulating combat...';
+        cell.appendChild(badge);
+        return badge;
     }
 
     appendBadge(cell, result, roomLevel) {
