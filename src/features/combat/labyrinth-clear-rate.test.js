@@ -847,7 +847,7 @@ describe('room-grid tile badges (the interactive maze view, distinct from the Au
     test('falls back to the init payload roomData when no labyrinth_updated event has arrived yet', () => {
         const feature = new LabyrinthClearRate();
         const cell = buildRoomGridCell(0, 0);
-        dataManager.characterData.characterLabyrinth = {
+        dataManager.characterData.labyrinth = {
             roomData: [[{ skillHrid: '/skills/milking', recommendedLevel: 40 }]],
         };
         dataManager.getSkills.mockReturnValue([{ skillHrid: '/skills/milking', level: 50 }]);

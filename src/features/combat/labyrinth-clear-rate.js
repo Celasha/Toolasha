@@ -49,7 +49,7 @@ const GRID_BADGE_CSS = `
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    pointer-events: none;
+    cursor: default;
     user-select: none;
 }
 `;
@@ -207,7 +207,7 @@ class LabyrinthClearRate {
      * Get crate buff arrays for all equipped crates
      */
     getCrateBuffs() {
-        const labyrinth = dataManager.characterData?.characterLabyrinth;
+        const labyrinth = dataManager.characterData?.labyrinth;
         const setting = dataManager.characterData?.characterSetting;
         const gameData = dataManager.getInitClientData();
         if (!gameData?.labyrinthCrateDetailMap) return [];
@@ -233,7 +233,7 @@ class LabyrinthClearRate {
      * Get crate buffs for combat rooms (coffee + food only, no tea)
      */
     getCombatCrateBuffs() {
-        const labyrinth = dataManager.characterData?.characterLabyrinth;
+        const labyrinth = dataManager.characterData?.labyrinth;
         const setting = dataManager.characterData?.characterSetting;
         const gameData = dataManager.getInitClientData();
         if (!gameData?.labyrinthCrateDetailMap) return [];
@@ -258,7 +258,7 @@ class LabyrinthClearRate {
      * Get crate buffs for tea crate only (used for room-assignment effective level)
      */
     getTeaCrateBuffs() {
-        const labyrinth = dataManager.characterData?.characterLabyrinth;
+        const labyrinth = dataManager.characterData?.labyrinth;
         const setting = dataManager.characterData?.characterSetting;
         const gameData = dataManager.getInitClientData();
         if (!gameData?.labyrinthCrateDetailMap) return [];
@@ -835,7 +835,7 @@ class LabyrinthClearRate {
      * Get crate HRIDs as an array for the combat sim
      */
     getCrateHrids() {
-        const labyrinth = dataManager.characterData?.characterLabyrinth;
+        const labyrinth = dataManager.characterData?.labyrinth;
         const setting = dataManager.characterData?.characterSetting;
         return [
             labyrinth?.teaCrateItemHrid || setting?.labyrinthTeaCrateHrid || '',
@@ -1476,9 +1476,11 @@ class LabyrinthClearRate {
      * The room-grid roomData[y][x] matrix, preferring the live copy this feature tracks off
      * labyrinth_updated (kept fresh across fog reveals/room clears) and falling back to the
      * init payload's copy only for the brief window before the first such event arrives.
+     * The raw init_character_data payload's field is "labyrinth" -- "characterLabyrinth" is
+     * only a rename the game's own React state applies internally, never present on the wire.
      */
     getRoomDataGrid() {
-        return this.roomData || dataManager.characterData?.characterLabyrinth?.roomData || null;
+        return this.roomData || dataManager.characterData?.labyrinth?.roomData || null;
     }
 
     /**
