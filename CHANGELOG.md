@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.111.0](https://github.com/Celasha/Toolasha/compare/v2.110.4...v2.111.0) (2026-09-23)
+
+### Features
+
+- surface Guild Token's gold-equivalent value in the guild credit UI ([d01b42e](https://github.com/Celasha/Toolasha/commit/d01b42ec7a4e5b965e083a2c4489d4ba88c82552))
+
 ## [2.110.4](https://github.com/Celasha/Toolasha/compare/v2.110.3...v2.110.4) (2026-09-23)
 
 ### Bug Fixes
