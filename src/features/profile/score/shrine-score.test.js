@@ -15,7 +15,10 @@ vi.mock('../../../core/data-manager.js', () => ({
     },
 }));
 
-vi.mock('../../../utils/guild-credit-conversion.js', () => ({ buildCheapestPerCredit: mocks.buildCheapestPerCredit }));
+vi.mock('../../../utils/guild-credit-conversion.js', async () => {
+    const actual = await vi.importActual('../../../utils/guild-credit-conversion.js');
+    return { ...actual, buildCheapestPerCredit: mocks.buildCheapestPerCredit };
+});
 
 vi.mock('../../networth/networth-calculator.js', () => ({
     buildGuildBuffDisplayName: (hrid, buff) => `Shrine (${buff.isCombat ? 'Combat' : 'Skilling'})`,

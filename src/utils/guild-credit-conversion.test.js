@@ -4,7 +4,11 @@ const { mockGetItemPrice } = vi.hoisted(() => ({ mockGetItemPrice: vi.fn() }));
 
 vi.mock('./market-data.js', () => ({ getItemPrice: mockGetItemPrice }));
 
-import { buildCheapestPerCredit } from './guild-credit-conversion.js';
+import {
+    buildCheapestPerCredit,
+    buildGuildTokenValueByCredit,
+    calculateGuildTokenOpportunityValue,
+} from './guild-credit-conversion.js';
 
 const CREDIT = '/items/brown_guild_credit';
 const ITEM_A = '/items/coal';
@@ -92,5 +96,85 @@ describe('buildCheapestPerCredit', () => {
             [ITEM_A]: { guildCreditConversions: [{ creditItemHrid: CREDIT, itemCount: 1, creditCount: 10 }] },
         };
         expect(buildCheapestPerCredit(itemDetailMap)).toEqual(buildCheapestPerCredit(itemDetailMap, []));
+    });
+});
+
+const GUILD_TOKEN = '/items/guild_token';
+
+describe('buildGuildTokenValueByCredit', () => {
+    test('matches the manual example: 54k gold/credit at 10 tokens/credit -> 5.4k gold/token', () => {
+        const itemDetailMap = {
+            [GUILD_TOKEN]: {
+                guildCreditConversions: [
+                    { creditItemHrid: '/items/silver_guild_credit', itemCount: 10, creditCount: 1 },
+                ],
+            },
+        };
+        const rows = buildGuildTokenValueByCredit(itemDetailMap, { '/items/silver_guild_credit': 54_000 });
+        expect(rows).toEqual([
+            { creditItemHrid: '/items/silver_guild_credit', itemCount: 10, creditCount: 1, goldPerToken: 5_400 },
+        ]);
+    });
+
+    test('sorts multiple resolvable credit conversions by goldPerToken descending (best first)', () => {
+        const itemDetailMap = {
+            [GUILD_TOKEN]: {
+                guildCreditConversions: [
+                    { creditItemHrid: '/items/brown_guild_credit', itemCount: 1, creditCount: 10 }, // 1000/token
+                    { creditItemHrid: '/items/gold_guild_credit', itemCount: 60, creditCount: 1 }, // 1166.67/token, best
+                    { creditItemHrid: '/items/silver_guild_credit', itemCount: 10, creditCount: 1 }, // 800/token
+                ],
+            },
+        };
+        const creditValueTable = {
+            '/items/brown_guild_credit': 100,
+            '/items/gold_guild_credit': 70_000,
+            '/items/silver_guild_credit': 8_000,
+        };
+        const rows = buildGuildTokenValueByCredit(itemDetailMap, creditValueTable);
+        expect(rows.map((r) => r.creditItemHrid)).toEqual([
+            '/items/gold_guild_credit',
+            '/items/brown_guild_credit',
+            '/items/silver_guild_credit',
+        ]);
+    });
+
+    test('skips conversions whose credit type has no resolvable value', () => {
+        const itemDetailMap = {
+            [GUILD_TOKEN]: {
+                guildCreditConversions: [{ creditItemHrid: '/items/red_guild_credit', itemCount: 1, creditCount: 1 }],
+            },
+        };
+        expect(buildGuildTokenValueByCredit(itemDetailMap, {})).toEqual([]);
+    });
+
+    test('returns an empty array when Guild Token has no guildCreditConversions', () => {
+        expect(buildGuildTokenValueByCredit({ [GUILD_TOKEN]: {} }, { '/items/red_guild_credit': 100 })).toEqual([]);
+    });
+});
+
+describe('calculateGuildTokenOpportunityValue', () => {
+    test('returns the MAXIMUM foregone alternative across credit types, not the minimum (F-12)', () => {
+        const itemDetailMap = {
+            [GUILD_TOKEN]: {
+                guildCreditConversions: [
+                    { creditItemHrid: '/items/brown_guild_credit', itemCount: 1, creditCount: 10 },
+                    { creditItemHrid: '/items/purple_guild_credit', itemCount: 1, creditCount: 1 },
+                    { creditItemHrid: '/items/silver_guild_credit', itemCount: 10, creditCount: 1 },
+                    { creditItemHrid: '/items/gold_guild_credit', itemCount: 60, creditCount: 1 },
+                ],
+            },
+        };
+        const creditValueTable = {
+            '/items/brown_guild_credit': 100,
+            '/items/purple_guild_credit': 900,
+            '/items/silver_guild_credit': 8_000,
+            '/items/gold_guild_credit': 70_000,
+        };
+        expect(calculateGuildTokenOpportunityValue(itemDetailMap, creditValueTable)).toBeCloseTo(1166.67, 1);
+    });
+
+    test('returns 0 when no conversion is resolvable', () => {
+        expect(calculateGuildTokenOpportunityValue({ [GUILD_TOKEN]: {} }, {})).toBe(0);
     });
 });

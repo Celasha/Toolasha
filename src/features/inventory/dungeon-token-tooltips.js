@@ -1,7 +1,7 @@
 /**
  * Currency Token Shop Tooltips
  * Adds shop item lists and valuations to currency token tooltips with market pricing.
- * Supports dungeon tokens, task tokens, labyrinth tokens, seals, and cowbells.
+ * Supports dungeon tokens, task tokens, labyrinth tokens, seals, cowbells, and Guild Token.
  */
 
 import config from '../../core/config.js';
@@ -10,6 +10,11 @@ import domObserver from '../../core/dom-observer.js';
 import dom from '../../utils/dom.js';
 import { formatKMB } from '../../utils/formatters.js';
 import { getItemPrices } from '../../utils/market-data.js';
+import {
+    buildCheapestPerCredit,
+    buildGuildTokenValueByCredit,
+    GUILD_TOKEN_HRID,
+} from '../../utils/guild-credit-conversion.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 
 /**
@@ -137,6 +142,9 @@ class DungeonTokenTooltips {
             this._handleSeal(tooltipElement, isCollectionTooltip);
         } else if (itemHrid === COWBELL) {
             this._handleCowbell(tooltipElement, isCollectionTooltip);
+        } else if (itemHrid === GUILD_TOKEN_HRID) {
+            if (!config.getSetting('guildTokenValueComparison', true)) return;
+            this._handleGuildToken(tooltipElement, isCollectionTooltip);
         }
     }
 
@@ -193,6 +201,19 @@ class DungeonTokenTooltips {
             `= ${SEAL_TOKEN_COST} Labyrinth Tokens × ${formatKMB(Math.floor(bestGoldPerToken))} gold/token`,
             isCollectionTooltip
         );
+        dom.fixTooltipOverflow(tooltipElement);
+    }
+
+    /**
+     * Handle Guild Token tooltip — ranks all Guild Credit conversions by their coin-equivalent
+     * value per token, using the cheapest tradeable item route to each credit type (same
+     * formula the Guild Credit exchange modal and Score's shrine cost tally both use).
+     */
+    _handleGuildToken(tooltipElement, isCollectionTooltip) {
+        const shopItems = this._getGuildTokenShopItems();
+        if (!shopItems || shopItems.length === 0) return;
+
+        this._injectShopTable(tooltipElement, shopItems, 'Guild Credit Value:', 'Gold/Token', isCollectionTooltip);
         dom.fixTooltipOverflow(tooltipElement);
     }
 
@@ -359,6 +380,27 @@ class DungeonTokenTooltips {
             })
             .filter(Boolean)
             .sort((a, b) => b.goldPerToken - a.goldPerToken);
+    }
+
+    /**
+     * Get Guild Credit conversions for Guild Token, valued via the cheapest tradeable item
+     * route to each credit type (shared formula with the Guild Credit exchange modal and
+     * Score's shrine cost tally).
+     * @returns {Array} Credit conversions with pricing data, shaped like the other shop-item lists
+     */
+    _getGuildTokenShopItems() {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.itemDetailMap) return [];
+
+        const { sell } = buildCheapestPerCredit(gameData.itemDetailMap);
+        const creditRows = buildGuildTokenValueByCredit(gameData.itemDetailMap, sell);
+
+        return creditRows.map((row) => ({
+            name: gameData.itemDetailMap[row.creditItemHrid]?.name || row.creditItemHrid.split('/').pop(),
+            cost: row.itemCount,
+            askPrice: row.creditCount * sell[row.creditItemHrid],
+            goldPerToken: row.goldPerToken,
+        }));
     }
 
     /**

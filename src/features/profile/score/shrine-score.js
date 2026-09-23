@@ -6,32 +6,19 @@
  * Guild Credits are priced via the cheapest Ask-side tradeable conversion, excluding Guild Token
  * itself as a source item to avoid a circular value (real risk: `/items/guild_token` carries its
  * own `guildCreditConversions`). Guild Token's own coin-equivalent value is the MAXIMUM foregone
- * native Token->Credit alternative (F-12), not the minimum.
+ * native Token->Credit alternative (F-12), not the minimum — see
+ * `calculateGuildTokenOpportunityValue` in utils/guild-credit-conversion.js, shared with the
+ * Guild Credit exchange modal and Guild Token tooltip.
  */
 
 import dataManager from '../../../core/data-manager.js';
-import { buildCheapestPerCredit } from '../../../utils/guild-credit-conversion.js';
+import {
+    buildCheapestPerCredit,
+    calculateGuildTokenOpportunityValue,
+    GUILD_TOKEN_HRID,
+} from '../../../utils/guild-credit-conversion.js';
 import { buildGuildBuffDisplayName } from '../../networth/networth-calculator.js';
 import { emptyCategory, attribute } from './score-result.js';
-
-const GUILD_TOKEN_HRID = '/items/guild_token';
-
-/**
- * @param {Object} itemDetailMap
- * @param {Object} creditValueTable - creditItemHrid -> coin value per credit
- * @returns {number} coin value per Guild Token (0 if unresolved)
- */
-function calculateGuildTokenOpportunityValue(itemDetailMap, creditValueTable) {
-    const tokenItem = itemDetailMap[GUILD_TOKEN_HRID];
-    let best = 0;
-    for (const conv of tokenItem?.guildCreditConversions || []) {
-        const creditValue = creditValueTable[conv.creditItemHrid];
-        if (!(creditValue > 0)) continue;
-        const perToken = (conv.creditCount / conv.itemCount) * creditValue;
-        if (perToken > best) best = perToken;
-    }
-    return best;
-}
 
 /**
  * Sum a buff's `levelCosts[1..level]` using the resolved credit/token coin values.

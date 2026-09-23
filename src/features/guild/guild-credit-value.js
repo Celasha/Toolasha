@@ -28,7 +28,11 @@ import {
 } from '../../utils/marketplace-tabs.js';
 import { createAutofillManager } from '../../utils/marketplace-autofill.js';
 import { normalizeGuildShrineReturnLabel } from './guild-marketplace-label.js';
-import { buildCheapestPerCredit } from '../../utils/guild-credit-conversion.js';
+import {
+    buildCheapestPerCredit,
+    buildGuildTokenValueByCredit,
+    GUILD_TOKEN_HRID,
+} from '../../utils/guild-credit-conversion.js';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
 import { setReactInputValue } from '../../utils/react-input.js';
 
@@ -66,6 +70,60 @@ function findExchangeConversion(itemDetailMap, creditHrid, selectedItemName) {
 }
 
 export { findExchangeConversion, MAX_GUILD_CREDIT_EXCHANGE_BATCH_COUNT };
+
+/**
+ * Build the "Gold cost per credit" ranking rows for a single credit type: one row per
+ * tradeable item with a matching guildCreditConversions entry, plus a synthetic row for
+ * Guild Token itself (unless disabled via includeToken). Guild Token has no market price of
+ * its own, so without this it would be silently dropped by the price filter that keeps
+ * unpriced junk items out of the ranking -- its "price" here is the opportunity cost of the
+ * cheapest tradeable route to this same credit type, i.e. what you'd otherwise have to pay in
+ * gold to get one more of this credit.
+ * @param {Object} itemDetailMap
+ * @param {string} creditHrid
+ * @param {Object} [options]
+ * @param {boolean} [options.includeToken=true] - gated by the guildTokenValueComparison setting
+ * @returns {Array} rows in itemDetailMap iteration order (buildTbody sorts on demand)
+ */
+function buildCreditRows(itemDetailMap, creditHrid, { includeToken = true } = {}) {
+    const { sell: cheapestSellAll, buy: cheapestBuyAll } = buildCheapestPerCredit(itemDetailMap);
+    const tokenAskGPC =
+        buildGuildTokenValueByCredit(itemDetailMap, cheapestSellAll).find((r) => r.creditItemHrid === creditHrid)
+            ?.goldPerToken ?? null;
+    const tokenBidGPC =
+        buildGuildTokenValueByCredit(itemDetailMap, cheapestBuyAll).find((r) => r.creditItemHrid === creditHrid)
+            ?.goldPerToken ?? null;
+
+    const rows = [];
+    for (const [hrid, item] of Object.entries(itemDetailMap)) {
+        const isToken = hrid === GUILD_TOKEN_HRID;
+        if (isToken && !includeToken) continue;
+
+        const conv = (item.guildCreditConversions || []).find((c) => c.creditItemHrid === creditHrid);
+        if (!conv) continue;
+
+        const sellPrice = isToken ? null : getItemPrice(hrid, { mode: 'ask' });
+        const buyPrice = isToken ? null : getItemPrice(hrid, { mode: 'bid' });
+        const sellGPC = isToken ? tokenAskGPC : sellPrice > 0 ? (sellPrice * conv.itemCount) / conv.creditCount : null;
+        const buyGPC = isToken ? tokenBidGPC : buyPrice > 0 ? (buyPrice * conv.itemCount) / conv.creditCount : null;
+
+        if (sellGPC === null && buyGPC === null) continue;
+
+        rows.push({
+            name: item.name,
+            itemCount: conv.itemCount,
+            creditCount: conv.creditCount,
+            sellPrice,
+            buyPrice,
+            sellGPC,
+            buyGPC,
+            isToken,
+        });
+    }
+    return rows;
+}
+
+export { buildCreditRows };
 
 function createGuildReturnTab(referenceTab, returnLabel, sessionId) {
     const returnTab = referenceTab.cloneNode(true);
@@ -288,28 +346,9 @@ class GuildCreditValue {
         );
         if (!creditHrid) return;
 
-        const rows = [];
-        for (const [hrid, item] of Object.entries(gameData.itemDetailMap)) {
-            const conv = (item.guildCreditConversions || []).find((c) => c.creditItemHrid === creditHrid);
-            if (!conv) continue;
-
-            const sellPrice = getItemPrice(hrid, { mode: 'ask' });
-            const buyPrice = getItemPrice(hrid, { mode: 'bid' });
-            if (!sellPrice && !buyPrice) continue;
-
-            const sellGPC = sellPrice > 0 ? (sellPrice * conv.itemCount) / conv.creditCount : null;
-            const buyGPC = buyPrice > 0 ? (buyPrice * conv.itemCount) / conv.creditCount : null;
-
-            rows.push({
-                name: item.name,
-                itemCount: conv.itemCount,
-                creditCount: conv.creditCount,
-                sellPrice,
-                buyPrice,
-                sellGPC,
-                buyGPC,
-            });
-        }
+        const rows = buildCreditRows(gameData.itemDetailMap, creditHrid, {
+            includeToken: config.getSetting('guildTokenValueComparison', true),
+        });
 
         if (rows.length === 0) return;
 
@@ -333,8 +372,11 @@ class GuildCreditValue {
                 const tr = document.createElement('tr');
                 tr.style.cssText = `border-bottom:1px solid rgba(255,255,255,0.05); color:${isTop ? '#4ade80' : '#e0e0e0'};`;
                 const rate = row.creditCount === 1 ? `${row.itemCount} → 1` : `${row.itemCount} → ${row.creditCount}`;
+                const nameDisplay = row.isToken
+                    ? `${row.name} <span style="color:#6b7280;font-size:9px;">(tokens)</span>`
+                    : row.name;
                 tr.innerHTML = `
-                <td style="padding:4px 6px; text-align:left;">${row.name}</td>
+                <td style="padding:4px 6px; text-align:left;">${nameDisplay}</td>
                 <td style="padding:4px 6px; text-align:center; color:#9ca3af;">${rate}</td>
                 <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.sellPrice ? formatKMB(row.sellPrice) : '–'}</td>
                 <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buyPrice ? formatKMB(row.buyPrice) : '–'}</td>
@@ -407,6 +449,15 @@ class GuildCreditValue {
         bidTh.addEventListener('click', () => setSort('bid'));
 
         wrapper.appendChild(table);
+
+        if (rows.some((row) => row.isToken)) {
+            const tokenNote = document.createElement('div');
+            tokenNote.style.cssText = 'font-size:10px; color:#6b7280; margin-top:4px; text-align:center;';
+            tokenNote.textContent =
+                'Guild Token value is the gold you’d otherwise spend on the cheapest item route, not a market price.';
+            wrapper.appendChild(tokenNote);
+        }
+
         exchangeBtn.insertAdjacentElement('afterend', wrapper);
 
         // Exchange advisor — initial render + re-render on item selection change

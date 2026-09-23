@@ -115,3 +115,47 @@ describe('TLA041E-25: shared special-currency valuation stays consistent with th
         expect(shared).toEqual({ value: 20, complete: true });
     });
 });
+
+describe('_getGuildTokenShopItems', () => {
+    beforeEach(resetMocks);
+
+    test('ranks Guild Credit conversions by Gold/Token, valuing each via the cheapest tradeable item route', () => {
+        mocks.gameData.itemDetailMap['/items/guild_token'] = {
+            name: 'Guild Token',
+            guildCreditConversions: [
+                { creditItemHrid: '/items/brown_guild_credit', itemCount: 10, creditCount: 1 },
+                { creditItemHrid: '/items/silver_guild_credit', itemCount: 1, creditCount: 10 },
+            ],
+        };
+        mocks.gameData.itemDetailMap['/items/brown_guild_credit'] = { name: 'Brown Guild Credit' };
+        mocks.gameData.itemDetailMap['/items/silver_guild_credit'] = { name: 'Silver Guild Credit' };
+        mocks.gameData.itemDetailMap['/items/item_x'] = {
+            name: 'Item X',
+            guildCreditConversions: [{ creditItemHrid: '/items/brown_guild_credit', itemCount: 1, creditCount: 1 }],
+        };
+        mocks.gameData.itemDetailMap['/items/item_y'] = {
+            name: 'Item Y',
+            guildCreditConversions: [{ creditItemHrid: '/items/silver_guild_credit', itemCount: 1, creditCount: 1 }],
+        };
+        mocks.askPrices['/items/item_x'] = { ask: 1000 };
+        mocks.askPrices['/items/item_y'] = { ask: 20 };
+
+        const shopItems = dungeonTokenTooltips._getGuildTokenShopItems();
+
+        // Brown: 1000/credit via Item X; 10 tokens/credit -> 100 gold/token
+        // Silver: 20/credit via Item Y; 1 token/10 credits -> 200 gold/token, best
+        expect(shopItems).toEqual([
+            { name: 'Silver Guild Credit', cost: 1, askPrice: 200, goldPerToken: 200 },
+            { name: 'Brown Guild Credit', cost: 10, askPrice: 1000, goldPerToken: 100 },
+        ]);
+    });
+
+    test('returns an empty array when no credit conversion resolves a value', () => {
+        mocks.gameData.itemDetailMap['/items/guild_token'] = {
+            name: 'Guild Token',
+            guildCreditConversions: [{ creditItemHrid: '/items/brown_guild_credit', itemCount: 10, creditCount: 1 }],
+        };
+
+        expect(dungeonTokenTooltips._getGuildTokenShopItems()).toEqual([]);
+    });
+});
