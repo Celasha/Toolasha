@@ -2,10 +2,9 @@
 
 ## [2.111.2](https://github.com/Celasha/Toolasha/compare/v2.111.1...v2.111.2) (2026-09-24)
 
-
 ### Bug Fixes
 
-* stop labyrinth grid clear-rate badge text from overflowing ([317a8c2](https://github.com/Celasha/Toolasha/commit/317a8c2615ac401cf71865fe968c5b3c5ed52645))
+- stop labyrinth grid clear-rate badge text from overflowing ([317a8c2](https://github.com/Celasha/Toolasha/commit/317a8c2615ac401cf71865fe968c5b3c5ed52645))
 
 ## [2.111.1](https://github.com/Celasha/Toolasha/compare/v2.111.0...v2.111.1) (2026-09-24)
 
