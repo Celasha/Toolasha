@@ -202,4 +202,32 @@ describe('collectableListingsSort.initialize()', () => {
         const statuses = Array.from(table.querySelectorAll('tbody tr')).map((r) => r.children[0].textContent);
         expect(statuses).toEqual(['Filled', 'Active']);
     });
+
+    test('disconnects the previous tbody observer when a new tbody appears (TLA memory leak fix)', () => {
+        const firstTable = buildTable([{ status: 'Active', hasCollect: false }]);
+        collectableListingsSort._watchTable(firstTable);
+        const firstTbody = firstTable.querySelector('tbody');
+
+        const disconnectSpy = vi.fn();
+        const originalDisconnect = MutationObserver.prototype.disconnect;
+        MutationObserver.prototype.disconnect = function () {
+            disconnectSpy();
+            return originalDisconnect.call(this);
+        };
+
+        try {
+            // A remount: same table element querying a brand-new tbody, as React would produce
+            // when it rebuilds the "My Listings" table from scratch.
+            firstTbody.remove();
+            const newTbody = document.createElement('tbody');
+            newTbody.appendChild(buildRow({ status: 'Active', hasCollect: false }));
+            firstTable.appendChild(newTbody);
+
+            collectableListingsSort._watchTable(firstTable);
+
+            expect(disconnectSpy).toHaveBeenCalledTimes(1);
+        } finally {
+            MutationObserver.prototype.disconnect = originalDisconnect;
+        }
+    });
 });

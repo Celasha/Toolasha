@@ -9,7 +9,7 @@
 
 /* @vitest-environment jsdom */
 
-import { describe, test, expect, afterEach } from 'vitest';
+import { describe, test, expect, afterEach, vi } from 'vitest';
 import { QuickInputButtons, computeProgressiveQueueTime } from './quick-input-buttons.js';
 
 const LEVEL_EXPERIENCE_TABLE = [0, 0, 100, 250, 450, 700, 1000, 1350, 1750, 2200, 2700];
@@ -109,6 +109,78 @@ describe('QuickInputButtons.createLevelProgressSection — reverse quantity-to-l
 
         expect(targetLevelResult.textContent).toContain('actions');
         expect(numberInput.value).not.toBe('');
+    });
+});
+
+describe('QuickInputButtons — per-panel listener tracking (memory leak fix)', () => {
+    afterEach(() => {
+        document.body.innerHTML = '';
+    });
+
+    test('_pruneDetachedPanelListeners releases and forgets a panel that is no longer connected', () => {
+        const feature = new QuickInputButtons();
+        const panel = document.createElement('div'); // never appended — starts detached
+        const unregister = vi.fn();
+        feature._trackPanelUnregister(panel, unregister);
+
+        feature._pruneDetachedPanelListeners();
+
+        expect(unregister).toHaveBeenCalledTimes(1);
+        expect(feature.panelUnregisters.has(panel)).toBe(false);
+    });
+
+    test('_pruneDetachedPanelListeners leaves a still-connected panel untouched', () => {
+        const feature = new QuickInputButtons();
+        const panel = document.createElement('div');
+        document.body.appendChild(panel);
+        const unregister = vi.fn();
+        feature._trackPanelUnregister(panel, unregister);
+
+        feature._pruneDetachedPanelListeners();
+
+        expect(unregister).not.toHaveBeenCalled();
+        expect(feature.panelUnregisters.has(panel)).toBe(true);
+    });
+
+    test('_releasePanelListeners releases only the targeted panel, not other tracked panels', () => {
+        const feature = new QuickInputButtons();
+        const panelA = document.createElement('div');
+        const panelB = document.createElement('div');
+        const unregisterA = vi.fn();
+        const unregisterB = vi.fn();
+        feature._trackPanelUnregister(panelA, unregisterA);
+        feature._trackPanelUnregister(panelB, unregisterB);
+
+        feature._releasePanelListeners(panelA);
+
+        expect(unregisterA).toHaveBeenCalledTimes(1);
+        expect(unregisterB).not.toHaveBeenCalled();
+        expect(feature.panelUnregisters.has(panelA)).toBe(false);
+        expect(feature.panelUnregisters.has(panelB)).toBe(true);
+    });
+
+    test('multiple unregisters tracked for the same panel are all released together', () => {
+        const feature = new QuickInputButtons();
+        const panel = document.createElement('div');
+        const unregister1 = vi.fn();
+        const unregister2 = vi.fn();
+        feature._trackPanelUnregister(panel, unregister1);
+        feature._trackPanelUnregister(panel, unregister2);
+
+        feature._releasePanelListeners(panel);
+
+        expect(unregister1).toHaveBeenCalledTimes(1);
+        expect(unregister2).toHaveBeenCalledTimes(1);
+    });
+
+    test('disable() clears all tracked panel state', () => {
+        const feature = new QuickInputButtons();
+        const panel = document.createElement('div');
+        feature._trackPanelUnregister(panel, vi.fn());
+
+        feature.disable();
+
+        expect(feature.panelUnregisters.size).toBe(0);
     });
 });
 

@@ -110,6 +110,11 @@ class QuickInputButtons {
         this.presetValues = [10, 100, 1000];
         this.cleanupRegistry = createCleanupRegistry();
         this._targetLevelByAction = new Map();
+        // Per-panel unregister functions for listeners/observers wired inside injectButtons.
+        // Keyed by panel element so multiple concurrently-open panels (if the game ever shows
+        // more than one) are tracked independently. Pruned/released whenever the panel is
+        // detached or its action changes, instead of accumulating for the feature's lifetime.
+        this.panelUnregisters = new Map();
     }
 
     /**
@@ -289,10 +294,53 @@ class QuickInputButtons {
     }
 
     /**
+     * Release any tracked listeners/observers for panels that are no longer in the document —
+     * e.g. after the game rebuilds the action panel UI and the old panel becomes detached.
+     * Called on every injectButtons() so leaked panels are bounded to "since the last panel
+     * opened," not the lifetime of the feature.
+     * @private
+     */
+    _pruneDetachedPanelListeners() {
+        for (const [trackedPanel, unregisters] of this.panelUnregisters) {
+            if (trackedPanel.isConnected) continue;
+            unregisters.forEach((unregister) => unregister());
+            this.panelUnregisters.delete(trackedPanel);
+        }
+    }
+
+    /**
+     * Track an unregister function under the panel it was registered for.
+     * @param {HTMLElement} panel
+     * @param {Function} unregister
+     * @private
+     */
+    _trackPanelUnregister(panel, unregister) {
+        if (!this.panelUnregisters.has(panel)) {
+            this.panelUnregisters.set(panel, []);
+        }
+        this.panelUnregisters.get(panel).push(unregister);
+    }
+
+    /**
+     * Release all tracked listeners/observers for one specific panel (e.g. because its action
+     * changed and its old per-action closures are about to be replaced).
+     * @param {HTMLElement} panel
+     * @private
+     */
+    _releasePanelListeners(panel) {
+        const unregisters = this.panelUnregisters.get(panel);
+        if (!unregisters) return;
+        unregisters.forEach((unregister) => unregister());
+        this.panelUnregisters.delete(panel);
+    }
+
+    /**
      * Inject quick input buttons into action panel
      * @param {HTMLElement} panel - Action panel element
      */
     injectButtons(panel) {
+        this._pruneDetachedPanelListeners();
+
         let actionDetails = null;
         try {
             // Check if already injected for this same action
@@ -304,7 +352,9 @@ class QuickInputButtons {
                 if (currentActionName && currentActionName === previousActionName) {
                     return;
                 }
-                // Action changed (React reused the panel) — remove old injections
+                // Action changed (React reused the panel) — remove old injections and release
+                // the listeners/observers wired to the previous action's closures.
+                this._releasePanelListeners(panel);
                 panel.querySelectorAll('.mwi-collapsible-section').forEach((el) => el.remove());
                 panel.querySelectorAll('.mwi-quick-input-btn').forEach((el) => el.remove());
             }
@@ -617,39 +667,6 @@ class QuickInputButtons {
                 // Initial update
                 updateTotalTime();
 
-                // Watch for input changes
-                let inputObserverCleanup = createMutationWatcher(
-                    numberInput,
-                    () => {
-                        updateTotalTime();
-                    },
-                    {
-                        attributes: true,
-                        attributeFilter: ['value'],
-                    }
-                );
-                this.cleanupRegistry.registerCleanup(() => {
-                    if (inputObserverCleanup) {
-                        inputObserverCleanup();
-                        inputObserverCleanup = null;
-                    }
-                });
-
-                const updateOnInput = () => updateTotalTime();
-                const updateOnChange = () => updateTotalTime();
-                const updateOnClick = () => {
-                    const clickTimeout = setTimeout(updateTotalTime, 50);
-                    this.cleanupRegistry.registerTimeout(clickTimeout);
-                };
-
-                numberInput.addEventListener('input', updateOnInput);
-                numberInput.addEventListener('change', updateOnChange);
-                panel.addEventListener('click', updateOnClick);
-
-                this.cleanupRegistry.registerListener(numberInput, 'input', updateOnInput);
-                this.cleanupRegistry.registerListener(numberInput, 'change', updateOnChange);
-                this.cleanupRegistry.registerListener(panel, 'click', updateOnClick);
-
                 // Create initial summary for Action Speed & Time
                 const actionsPerHourWithEfficiency = Math.round(
                     calculateEffectiveActionsPerHour(calculateActionsPerHour(actionTime), efficiencyMultiplier)
@@ -668,9 +685,8 @@ class QuickInputButtons {
                 const speedSummaryDiv = speedSection.querySelector('.mwi-section-header + div');
 
                 // Enhanced updateTotalTime to also update the summary
-                const originalUpdateTotalTime = updateTotalTime;
                 const enhancedUpdateTotalTime = () => {
-                    originalUpdateTotalTime();
+                    updateTotalTime();
 
                     // Update summary when collapsed
                     if (speedSummaryDiv) {
@@ -689,13 +705,8 @@ class QuickInputButtons {
                     }
                 };
 
-                // Replace all updateTotalTime calls with enhanced version
-                if (inputObserverCleanup) {
-                    inputObserverCleanup();
-                    inputObserverCleanup = null;
-                }
-
-                const newInputObserverCleanup = createMutationWatcher(
+                // Watch for input changes and reflect them in both the detail line and summary
+                const inputObserverCleanup = createMutationWatcher(
                     numberInput,
                     () => {
                         enhancedUpdateTotalTime();
@@ -705,28 +716,27 @@ class QuickInputButtons {
                         attributeFilter: ['value'],
                     }
                 );
-                this.cleanupRegistry.registerCleanup(() => {
-                    newInputObserverCleanup();
-                });
-
-                numberInput.removeEventListener('input', updateOnInput);
-                numberInput.removeEventListener('change', updateOnChange);
-                panel.removeEventListener('click', updateOnClick);
+                this._trackPanelUnregister(panel, this.cleanupRegistry.registerCleanup(inputObserverCleanup));
 
                 const updateOnInputEnhanced = () => enhancedUpdateTotalTime();
                 const updateOnChangeEnhanced = () => enhancedUpdateTotalTime();
                 const updateOnClickEnhanced = () => {
                     const clickTimeout = setTimeout(enhancedUpdateTotalTime, 50);
-                    this.cleanupRegistry.registerTimeout(clickTimeout);
+                    this._trackPanelUnregister(panel, this.cleanupRegistry.registerTimeout(clickTimeout));
                 };
 
-                numberInput.addEventListener('input', updateOnInputEnhanced);
-                numberInput.addEventListener('change', updateOnChangeEnhanced);
-                panel.addEventListener('click', updateOnClickEnhanced);
-
-                this.cleanupRegistry.registerListener(numberInput, 'input', updateOnInputEnhanced);
-                this.cleanupRegistry.registerListener(numberInput, 'change', updateOnChangeEnhanced);
-                this.cleanupRegistry.registerListener(panel, 'click', updateOnClickEnhanced);
+                this._trackPanelUnregister(
+                    panel,
+                    this.cleanupRegistry.registerListener(numberInput, 'input', updateOnInputEnhanced)
+                );
+                this._trackPanelUnregister(
+                    panel,
+                    this.cleanupRegistry.registerListener(numberInput, 'change', updateOnChangeEnhanced)
+                );
+                this._trackPanelUnregister(
+                    panel,
+                    this.cleanupRegistry.registerListener(panel, 'click', updateOnClickEnhanced)
+                );
 
                 // Initial update with enhanced version
                 enhancedUpdateTotalTime();
@@ -840,6 +850,7 @@ class QuickInputButtons {
      */
     disable() {
         this.cleanupRegistry.cleanupAll();
+        this.panelUnregisters.clear();
         document.querySelectorAll('.mwi-collapsible-section').forEach((section) => section.remove());
         document.querySelectorAll('.mwi-quick-input-btn').forEach((button) => button.remove());
         document.querySelectorAll('[class*="SkillActionDetail_regularComponent"]').forEach((el) => {

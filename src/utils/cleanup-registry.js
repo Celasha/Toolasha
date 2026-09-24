@@ -6,13 +6,17 @@
 /**
  * Create a cleanup registry for deterministic teardown.
  * @returns {{
- *   registerListener: (target: EventTarget, event: string, handler: Function, options?: Object) => void,
- *   registerObserver: (observer: MutationObserver|{ disconnect: Function }) => void,
- *   registerInterval: (intervalId: number) => void,
- *   registerTimeout: (timeoutId: number) => void,
- *   registerCleanup: (cleanupFn: Function) => void,
+ *   registerListener: (target: EventTarget, event: string, handler: Function, options?: Object) => (() => void),
+ *   registerObserver: (observer: MutationObserver|{ disconnect: Function }) => (() => void),
+ *   registerInterval: (intervalId: number) => (() => void),
+ *   registerTimeout: (timeoutId: number) => (() => void),
+ *   registerCleanup: (cleanupFn: Function) => (() => void),
  *   cleanupAll: () => void
- * }} Cleanup registry API
+ * }} Cleanup registry API. Each register* function returns an unregister function that reverses
+ *   just that one registration (removes the listener/disconnects the observer/clears the
+ *   timer/runs the cleanup) and removes it from the registry, so a caller that replaces one
+ *   element-scoped registration with another (e.g. on DOM remount) can release the old one
+ *   immediately instead of waiting for cleanupAll().
  */
 export function createCleanupRegistry() {
     const listeners = [];
@@ -21,50 +25,101 @@ export function createCleanupRegistry() {
     const timeouts = [];
     const customCleanups = [];
 
+    const removeFrom = (array, entry) => {
+        const index = array.indexOf(entry);
+        if (index > -1) array.splice(index, 1);
+    };
+
     const registerListener = (target, event, handler, options) => {
         if (!target || !event || !handler) {
             console.warn('[CleanupRegistry] registerListener called with invalid arguments');
-            return;
+            return () => {};
         }
 
         target.addEventListener(event, handler, options);
-        listeners.push({ target, event, handler, options });
+        const entry = { target, event, handler, options };
+        listeners.push(entry);
+
+        return () => {
+            try {
+                target.removeEventListener(event, handler, options);
+            } catch (error) {
+                console.error('[CleanupRegistry] Failed to remove listener:', error);
+            }
+            removeFrom(listeners, entry);
+        };
     };
 
     const registerObserver = (observer) => {
         if (!observer || typeof observer.disconnect !== 'function') {
             console.warn('[CleanupRegistry] registerObserver called with invalid observer');
-            return;
+            return () => {};
         }
 
         observers.push(observer);
+
+        return () => {
+            try {
+                observer.disconnect();
+            } catch (error) {
+                console.error('[CleanupRegistry] Failed to disconnect observer:', error);
+            }
+            removeFrom(observers, observer);
+        };
     };
 
     const registerInterval = (intervalId) => {
         if (!intervalId) {
             console.warn('[CleanupRegistry] registerInterval called with invalid interval id');
-            return;
+            return () => {};
         }
 
         intervals.push(intervalId);
+
+        return () => {
+            try {
+                clearInterval(intervalId);
+            } catch (error) {
+                console.error('[CleanupRegistry] Failed to clear interval:', error);
+            }
+            removeFrom(intervals, intervalId);
+        };
     };
 
     const registerTimeout = (timeoutId) => {
         if (!timeoutId) {
             console.warn('[CleanupRegistry] registerTimeout called with invalid timeout id');
-            return;
+            return () => {};
         }
 
         timeouts.push(timeoutId);
+
+        return () => {
+            try {
+                clearTimeout(timeoutId);
+            } catch (error) {
+                console.error('[CleanupRegistry] Failed to clear timeout:', error);
+            }
+            removeFrom(timeouts, timeoutId);
+        };
     };
 
     const registerCleanup = (cleanupFn) => {
         if (typeof cleanupFn !== 'function') {
             console.warn('[CleanupRegistry] registerCleanup called with invalid function');
-            return;
+            return () => {};
         }
 
         customCleanups.push(cleanupFn);
+
+        return () => {
+            try {
+                cleanupFn();
+            } catch (error) {
+                console.error('[CleanupRegistry] Custom cleanup failed:', error);
+            }
+            removeFrom(customCleanups, cleanupFn);
+        };
     };
 
     const cleanupAll = () => {
