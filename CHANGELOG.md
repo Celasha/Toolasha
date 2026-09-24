@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.111.1](https://github.com/Celasha/Toolasha/compare/v2.111.0...v2.111.1) (2026-09-24)
+
+### Bug Fixes
+
+- add skill-level bulk selection to task reroll protection and auto-reroll ([ac98d8d](https://github.com/Celasha/Toolasha/commit/ac98d8df4e80b52c018b8d49b064e22e2a591a61))
+- release per-remount observers/listeners instead of accumulating them ([03a5539](https://github.com/Celasha/Toolasha/commit/03a55395ef2e1b0c2b782a1fd48926c81396df43))
+
 ## [2.111.0](https://github.com/Celasha/Toolasha/compare/v2.110.4...v2.111.0) (2026-09-23)
 
 ### Features
