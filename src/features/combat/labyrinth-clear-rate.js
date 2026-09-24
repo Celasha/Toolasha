@@ -45,7 +45,8 @@ const GRID_BADGE_CSS = `
     background: rgba(0, 0, 0, 0.6);
     color: #fff;
     font-size: 8px;
-    line-height: 1.3;
+    line-height: 1.2;
+    text-align: right;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1643,7 +1644,15 @@ class LabyrinthClearRate {
         badge.style.color = this.getBadgeColor(result.clearChance);
         const pct = Math.round(result.clearChance * 100);
         const timeText = this.formatTime(result.expectedSeconds);
-        badge.textContent = pct >= 100 ? timeText : `${pct}% ${timeText}`;
+        // Stack percent and time on two lines instead of one "NN% ~M:SS" line -- the grid
+        // overlay is only ~46px wide, and that combined line was wider than the tile and got
+        // clipped to an ellipsis before the time was ever visible.
+        badge.replaceChildren();
+        if (pct >= 100) {
+            badge.append(timeText);
+        } else {
+            badge.append(`${pct}%`, document.createElement('br'), timeText);
+        }
         badge.title = this.formatTooltip(result, roomLevel);
     }
 

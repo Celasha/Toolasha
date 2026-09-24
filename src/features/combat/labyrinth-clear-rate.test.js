@@ -904,3 +904,47 @@ describe('skilling/enhancing success chance floor matches the in-game guide mini
         expect(result.successChance).toBe(0.05);
     });
 });
+
+describe('updateBadge — grid overlay text does not overflow the ~46px room tile', () => {
+    test('below 100% clear chance, splits percent and time onto two lines instead of one long line', () => {
+        const feature = new LabyrinthClearRate();
+        const badge = document.createElement('span');
+
+        feature.updateBadge(badge, { clearChance: 0.97, expectedSeconds: 83 }, 100);
+
+        expect(badge.textContent).toBe('97%~1:23');
+        expect(badge.querySelector('br')).not.toBeNull();
+        expect(badge.innerHTML).toBe('97%<br>~1:23');
+    });
+
+    test('at or above 100% clear chance, shows only the time on a single line (already fits)', () => {
+        const feature = new LabyrinthClearRate();
+        const badge = document.createElement('span');
+
+        feature.updateBadge(badge, { clearChance: 1, expectedSeconds: 15 }, 100);
+
+        expect(badge.textContent).toBe('~15s');
+        expect(badge.querySelector('br')).toBeNull();
+    });
+
+    test('re-rendering an existing badge (async sim result replacing a placeholder) replaces prior content instead of appending', () => {
+        const feature = new LabyrinthClearRate();
+        const badge = document.createElement('span');
+        badge.textContent = '...';
+
+        feature.updateBadge(badge, { clearChance: 0.62, expectedSeconds: 145 }, 100);
+
+        expect(badge.textContent).toBe('62%~2:25');
+        expect(badge.childNodes.length).toBe(3); // "62%", <br>, "~2:25" -- no leftover "..." node
+    });
+
+    test('an error result still shows a plain message without a two-line split', () => {
+        const feature = new LabyrinthClearRate();
+        const badge = document.createElement('span');
+
+        feature.updateBadge(badge, { error: 'Configured loadout is unavailable' }, 100);
+
+        expect(badge.textContent).toBe('Loadout unavailable');
+        expect(badge.querySelector('br')).toBeNull();
+    });
+});
