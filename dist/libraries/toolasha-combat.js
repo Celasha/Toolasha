@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.111.0
+ * Version: 2.111.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -3527,6 +3527,11 @@
          * Observe chat tab switches to trigger batch annotation when user views party chat
          */
         observeTabSwitches() {
+            // Drop handlers for buttons no longer in the document (e.g. the chat tabs bar was
+            // rebuilt) before scanning for the current Party button, so a stale button never stays
+            // referenced only to be silently replaced by a new entry every time this runs.
+            this._pruneDetachedTabHandlers();
+
             // Find all chat tab buttons
             const tabButtons = document.querySelectorAll('.Chat_tabsComponentContainer__3ZoKe .MuiButtonBase-root');
 
@@ -3549,6 +3554,18 @@
                     this.tabClickHandlers.set(button, handler);
                     button.addEventListener('click', handler);
                 }
+            }
+        }
+
+        /**
+         * Remove tracked click handlers for tab buttons that are no longer in the document.
+         * @private
+         */
+        _pruneDetachedTabHandlers() {
+            for (const [button, handler] of this.tabClickHandlers) {
+                if (button.isConnected) continue;
+                button.removeEventListener('click', handler);
+                this.tabClickHandlers.delete(button);
             }
         }
 

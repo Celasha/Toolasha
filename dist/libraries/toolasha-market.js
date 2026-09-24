@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.111.0
+ * Version: 2.111.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -10759,7 +10759,8 @@ self.onmessage = function (e) {
         constructor() {
             this.isInitialized = false;
             this.cleanupRegistry = cleanupRegistry_js.createCleanupRegistry();
-            this.tbodyObservers = new WeakMap();
+            this.currentTbody = null;
+            this.unregisterCurrentObserver = null;
         }
 
         initialize() {
@@ -10793,14 +10794,21 @@ self.onmessage = function (e) {
                 return;
             }
 
-            if (!this.tbodyObservers.has(tbody)) {
+            if (tbody !== this.currentTbody) {
+                // A new tbody means React remounted the table (e.g. reopening the marketplace
+                // panel) — release the previous observer first so the old, now-detached tbody
+                // isn't kept referenced forever by an observer that's still watching it.
+                if (this.unregisterCurrentObserver) {
+                    this.unregisterCurrentObserver();
+                }
+
                 // subtree: true is required — React reuses the same <tr> when a listing's status
                 // flips to Filled and just swaps in a Collect button inside it, rather than
                 // replacing the row itself, so a childList-only watch on tbody never sees it.
                 const observer = new MutationObserver(() => this._reorder(tableNode));
                 observer.observe(tbody, { childList: true, subtree: true });
-                this.tbodyObservers.set(tbody, observer);
-                this.cleanupRegistry.registerCleanup(() => observer.disconnect());
+                this.currentTbody = tbody;
+                this.unregisterCurrentObserver = this.cleanupRegistry.registerObserver(observer);
             }
 
             this._reorder(tableNode);
@@ -10864,7 +10872,8 @@ self.onmessage = function (e) {
 
         cleanup() {
             this.cleanupRegistry.cleanupAll();
-            this.tbodyObservers = new WeakMap();
+            this.currentTbody = null;
+            this.unregisterCurrentObserver = null;
             this.isInitialized = false;
         }
     }
