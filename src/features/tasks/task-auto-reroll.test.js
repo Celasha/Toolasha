@@ -110,3 +110,55 @@ describe('TaskAutoReroll — per-card classification', () => {
         expect(card.querySelector('.mwi-autoreroll-badge')).not.toBeNull();
     });
 });
+
+describe('TaskAutoReroll — skill-level "select all <Skill>" flagging', () => {
+    let feature;
+
+    beforeEach(async () => {
+        vi.resetModules();
+        Object.keys(storageData).forEach((k) => delete storageData[k]);
+        document.body.innerHTML = '';
+
+        const dataManager = (await import('../../core/data-manager.js')).default;
+        dataManager.getInitClientData = vi.fn(() => ({
+            actionDetailMap: {
+                '/actions/brewing/brew_beer': { type: '/action_types/brewing' },
+                '/actions/alchemy/transmute': { type: '/action_types/alchemy' },
+            },
+        }));
+
+        const { TaskAutoReroll } = await import('./task-auto-reroll.js');
+        feature = new TaskAutoReroll();
+    });
+
+    test('a task whose action skill type is in the flagged set gets the red border without an explicit HRID', () => {
+        feature.autoRerollSkillTypes = new Set(['/action_types/brewing']);
+        const card = makeCard();
+        vi.spyOn(feature, '_getQuestFromCard').mockReturnValue({ actionHrid: '/actions/brewing/brew_beer' });
+
+        feature._processTaskCard(card);
+
+        expect(card.dataset.mwiAutoReroll).toBe('1');
+    });
+
+    test('a task in a different skill type than the flagged one is not flagged', () => {
+        feature.autoRerollSkillTypes = new Set(['/action_types/brewing']);
+        const card = makeCard();
+        vi.spyOn(feature, '_getQuestFromCard').mockReturnValue({ actionHrid: '/actions/alchemy/transmute' });
+
+        feature._processTaskCard(card);
+
+        expect(card.dataset.mwiAutoReroll).toBe('');
+    });
+
+    test('toggleSkillType saves the updated set under a character-scoped key and returns the new state', async () => {
+        const result = await feature.toggleSkillType('/action_types/brewing');
+
+        expect(result).toBe(true);
+        expect(storageData['taskAutoRerollSkillTypes_111111']).toEqual(['/action_types/brewing']);
+
+        const result2 = await feature.toggleSkillType('/action_types/brewing');
+        expect(result2).toBe(false);
+        expect(storageData['taskAutoRerollSkillTypes_111111']).toEqual([]);
+    });
+});

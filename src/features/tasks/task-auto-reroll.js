@@ -13,18 +13,26 @@ import domObserver from '../../core/dom-observer.js';
 import storage from '../../core/storage.js';
 import webSocketHook from '../../core/websocket.js';
 import { repaintTaskCard } from './task-card-visual-state.js';
+import { TASK_SKILL_TYPES, getActionSkillType, countActionsBySkillType } from './task-skill-groups.js';
 
 const STORAGE_KEY_PREFIX = 'taskAutoRerollHrids';
+const SKILL_STORAGE_KEY_PREFIX = 'taskAutoRerollSkillTypes';
 
 function getStorageKey() {
     const charId = dataManager.getCurrentCharacterId() || 'default';
     return `${STORAGE_KEY_PREFIX}_${charId}`;
 }
 
+function getSkillStorageKey() {
+    const charId = dataManager.getCurrentCharacterId() || 'default';
+    return `${SKILL_STORAGE_KEY_PREFIX}_${charId}`;
+}
+
 class TaskAutoReroll {
     constructor() {
         this.isInitialized = false;
         this.autoRerollHrids = new Set();
+        this.autoRerollSkillTypes = new Set();
         this.unregisterHandlers = [];
     }
 
@@ -36,6 +44,9 @@ class TaskAutoReroll {
 
         const saved = await storage.getJSON(getStorageKey(), 'settings', []);
         this.autoRerollHrids = new Set(saved);
+
+        const savedSkills = await storage.getJSON(getSkillStorageKey(), 'settings', []);
+        this.autoRerollSkillTypes = new Set(savedSkills);
 
         const unregister = domObserver.onClass('TaskAutoReroll', 'RandomTask_randomTask', (taskNode) => {
             setTimeout(() => this._processTaskCard(taskNode), 150);
@@ -81,10 +92,26 @@ class TaskAutoReroll {
         parent.appendChild(btn);
     }
 
+    /**
+     * Returns true if the given quest should be flagged for reroll — either its exact HRID was
+     * individually added, or its action's skill type has a "select all <Skill>" rule active.
+     * Resolved live against current game data so an action added by a future game update is
+     * automatically covered.
+     * @param {Object|null} quest
+     * @returns {boolean}
+     * @private
+     */
+    _isQuestFlagged(quest) {
+        const hrid = quest?.actionHrid || quest?.monsterHrid || '';
+        if (hrid && this.autoRerollHrids.has(hrid)) return true;
+        if (!quest?.actionHrid || this.autoRerollSkillTypes.size === 0) return false;
+        const skillType = getActionSkillType(quest.actionHrid, dataManager.getInitClientData());
+        return skillType !== null && this.autoRerollSkillTypes.has(skillType);
+    }
+
     _processTaskCard(taskCard) {
         const quest = this._getQuestFromCard(taskCard);
-        const hrid = quest?.actionHrid || quest?.monsterHrid || '';
-        const shouldReroll = hrid && this.autoRerollHrids.has(hrid);
+        const shouldReroll = this._isQuestFlagged(quest);
 
         // Write this feature's own signal; repaintTaskCard resolves the final border/badge
         // considering Task Reroll Protection and Task Token Threshold too — a manual reroll-list
@@ -145,8 +172,23 @@ class TaskAutoReroll {
         return this.autoRerollHrids.has(hrid);
     }
 
+    async toggleSkillType(skillType) {
+        if (this.autoRerollSkillTypes.has(skillType)) {
+            this.autoRerollSkillTypes.delete(skillType);
+        } else {
+            this.autoRerollSkillTypes.add(skillType);
+        }
+        await this._saveSkillTypes();
+        this._processAllCards();
+        return this.autoRerollSkillTypes.has(skillType);
+    }
+
     async _save() {
         await storage.setJSON(getStorageKey(), Array.from(this.autoRerollHrids), 'settings', true);
+    }
+
+    async _saveSkillTypes() {
+        await storage.setJSON(getSkillStorageKey(), Array.from(this.autoRerollSkillTypes), 'settings', true);
     }
 
     openConfigPopup() {
@@ -257,6 +299,33 @@ class TaskAutoReroll {
         `;
         searchDiv.appendChild(searchInput);
 
+        // Skill bulk-select bar \u2014 "select all <Skill>" toggles, live against current game data
+        const skillCounts = countActionsBySkillType(gameData);
+        const skillBar = document.createElement('div');
+        skillBar.style.cssText = 'display:flex; flex-wrap:wrap; gap:4px; padding:0 14px 8px; flex-shrink:0;';
+        const renderSkillBar = () => {
+            skillBar.innerHTML = Object.entries(TASK_SKILL_TYPES)
+                .map(([skillType, label]) => {
+                    const active = this.autoRerollSkillTypes.has(skillType);
+                    const count = skillCounts[skillType] || 0;
+                    return `<span data-skill="${skillType}" style="
+                        cursor:pointer; user-select:none; font-size:11px; padding:3px 8px; border-radius:12px;
+                        background:${active ? 'rgba(239,68,68,0.25)' : 'rgba(255,255,255,0.06)'};
+                        border:1px solid ${active ? '#ef4444' : 'rgba(255,255,255,0.15)'};
+                        color:${active ? '#e0e0e0' : '#aaa'};
+                    ">${label} (${count})</span>`;
+                })
+                .join('');
+            skillBar.querySelectorAll('[data-skill]').forEach((chip) => {
+                chip.addEventListener('click', async () => {
+                    await this.toggleSkillType(chip.dataset.skill);
+                    renderSkillBar();
+                    renderList(searchInput.value.trim());
+                });
+            });
+        };
+        renderSkillBar();
+
         const listContainer = document.createElement('div');
         listContainer.style.cssText = 'flex: 1; overflow-y: auto; padding: 4px 14px;';
 
@@ -268,7 +337,9 @@ class TaskAutoReroll {
                       if (i.isZone) {
                           return zoneMonsters[i.hrid]?.some((m) => this.autoRerollHrids.has(m));
                       }
-                      return this.autoRerollHrids.has(i.hrid);
+                      if (this.autoRerollHrids.has(i.hrid)) return true;
+                      const skillType = getActionSkillType(i.hrid, gameData);
+                      return skillType !== null && this.autoRerollSkillTypes.has(skillType);
                   });
 
             let html = '';
@@ -290,9 +361,11 @@ class TaskAutoReroll {
                     typeLabel = 'Zone (' + monsters.length + ')';
                 } else {
                     const isMarked = this.autoRerollHrids.has(item.hrid);
-                    checkmark = isMarked ? '\u2713' : '';
-                    checkColor = isMarked ? '#ef4444' : '#444';
-                    nameColor = isMarked ? '#e0e0e0' : '#aaa';
+                    const skillType = getActionSkillType(item.hrid, gameData);
+                    const viaSkill = !isMarked && skillType !== null && this.autoRerollSkillTypes.has(skillType);
+                    checkmark = isMarked ? '\u2713' : viaSkill ? '\u{1F512}' : '';
+                    checkColor = isMarked || viaSkill ? '#ef4444' : '#444';
+                    nameColor = isMarked || viaSkill ? '#e0e0e0' : '#aaa';
                     typeLabel = item.type.charAt(0).toUpperCase() + item.type.slice(1);
                 }
 
@@ -345,6 +418,7 @@ class TaskAutoReroll {
 
         popup.appendChild(header);
         popup.appendChild(searchDiv);
+        popup.appendChild(skillBar);
         popup.appendChild(listContainer);
         document.body.appendChild(popup);
 

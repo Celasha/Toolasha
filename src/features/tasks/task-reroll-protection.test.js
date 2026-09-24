@@ -268,3 +268,86 @@ describe('TaskRerollProtection — per-card visual state', () => {
         expect(card.dataset.mwiRerollLocked).toBe('1');
     });
 });
+
+describe('TaskRerollProtection — skill-level "select all <Skill>" protection', () => {
+    function makeCard() {
+        const card = document.createElement('div');
+        card.className = 'RandomTask_randomTask';
+        document.body.appendChild(card);
+        return card;
+    }
+
+    beforeEach(async () => {
+        vi.resetModules();
+        Object.keys(storageData).forEach((k) => delete storageData[k]);
+        document.body.innerHTML = '';
+
+        const config = (await import('../../core/config.js')).default;
+        config.getSetting.mockImplementation((key) => key !== 'taskRerollProtection_hideHighlight');
+
+        const dataManager = (await import('../../core/data-manager.js')).default;
+        dataManager.getCurrentCharacterId.mockReturnValue('111111');
+        dataManager.getInitClientData = vi.fn(() => ({
+            actionDetailMap: {
+                '/actions/brewing/brew_beer': { type: '/action_types/brewing' },
+                '/actions/alchemy/transmute': { type: '/action_types/alchemy' },
+            },
+        }));
+    });
+
+    test('a task whose action skill type is in the protected set is protected without an explicit HRID', async () => {
+        const { TaskRerollProtection } = await import('./task-reroll-protection.js');
+        const feature = new TaskRerollProtection();
+        feature.protectedSkillTypes = new Set(['/action_types/brewing']);
+        const card = makeCard();
+        vi.spyOn(feature, '_getQuestFromCard').mockReturnValue({ actionHrid: '/actions/brewing/brew_beer' });
+
+        feature._processTaskCard(card);
+
+        expect(card.dataset.mwiProtected).toBe('1');
+    });
+
+    test('a task in a different skill type than the protected one is not protected', async () => {
+        const { TaskRerollProtection } = await import('./task-reroll-protection.js');
+        const feature = new TaskRerollProtection();
+        feature.protectedSkillTypes = new Set(['/action_types/brewing']);
+        const card = makeCard();
+        vi.spyOn(feature, '_getQuestFromCard').mockReturnValue({ actionHrid: '/actions/alchemy/transmute' });
+
+        feature._processTaskCard(card);
+
+        expect(card.dataset.mwiProtected).toBe('');
+    });
+
+    test('toggleSkillType saves the updated set under a character-scoped key and returns the new state', async () => {
+        const { TaskRerollProtection } = await import('./task-reroll-protection.js');
+        const feature = new TaskRerollProtection();
+
+        const result = await feature.toggleSkillType('/action_types/brewing');
+
+        expect(result).toBe(true);
+        expect(storageData['taskProtectedSkillTypes_111111']).toEqual(['/action_types/brewing']);
+
+        const result2 = await feature.toggleSkillType('/action_types/brewing');
+        expect(result2).toBe(false);
+        expect(storageData['taskProtectedSkillTypes_111111']).toEqual([]);
+    });
+
+    test('a click on a skill-protected task (no explicit HRID) is blocked the same as an explicit HRID match', async () => {
+        const { TaskRerollProtection } = await import('./task-reroll-protection.js');
+        const feature = new TaskRerollProtection();
+        feature.protectedSkillTypes = new Set(['/action_types/brewing']);
+        const card = makeCard();
+        vi.spyOn(feature, '_getQuestFromCard').mockReturnValue({ actionHrid: '/actions/brewing/brew_beer' });
+        feature._processTaskCard(card);
+
+        const btn = document.createElement('button');
+        btn.textContent = 'Pay 10K';
+        card.appendChild(btn);
+        const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true });
+        btn.dispatchEvent(clickEvent);
+
+        expect(clickEvent.defaultPrevented).toBe(true);
+        expect(card.dataset.mwiRerollLocked).toBe('1');
+    });
+});
