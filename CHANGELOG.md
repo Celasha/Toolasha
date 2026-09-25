@@ -2,10 +2,9 @@
 
 ## [2.111.3](https://github.com/Celasha/Toolasha/compare/v2.111.2...v2.111.3) (2026-09-25)
 
-
 ### Bug Fixes
 
-* serialize labyrinth combat sim calls to stop concurrent runs cancelling each other ([c14dcee](https://github.com/Celasha/Toolasha/commit/c14dceeb44c9cfe09a240f469184adb93e73c669))
+- serialize labyrinth combat sim calls to stop concurrent runs cancelling each other ([c14dcee](https://github.com/Celasha/Toolasha/commit/c14dceeb44c9cfe09a240f469184adb93e73c669))
 
 ## [2.111.2](https://github.com/Celasha/Toolasha/compare/v2.111.1...v2.111.2) (2026-09-24)
 
