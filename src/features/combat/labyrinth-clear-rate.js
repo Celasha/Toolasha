@@ -75,6 +75,14 @@ class LabyrinthClearRate {
         this._pendingSelfAppliedValue = null;
         this.liveProgressHandler = null;
         this.liveProgressTimeout = null;
+        // combat-sim-runner.js keeps one module-level worker slot and cancels any in-flight run
+        // whenever a new one starts. runRecommendations()'s sequential binary search and
+        // processSimQueue()'s DOM-triggered badge fills are two independent async loops that both
+        // call computeCombatClear() -> runLabyrinthSimulation(); without serializing them here,
+        // whichever starts second silently cancels the other's in-flight worker (surfaces as
+        // "Error: Cancelled" and corrupts the cancelled call's result to a false 0% clear chance
+        // instead of throwing). Longer Sim Hours widens this race window.
+        this._simChain = Promise.resolve();
     }
 
     initialize() {
@@ -174,6 +182,7 @@ class LabyrinthClearRate {
         this.combatCache.clear();
         this.simQueue = [];
         this.simRunning = false;
+        this._simChain = Promise.resolve();
         this.recommendations.clear();
         this.recommendRunning = false;
         this._pendingSelfAppliedKey = null;
@@ -859,6 +868,24 @@ class LabyrinthClearRate {
     }
 
     /**
+     * Queue a simulation task behind every previously queued one, so only one
+     * runLabyrinthSimulation() call from this feature is ever in flight at a time. See the
+     * constructor comment for why this matters: combat-sim-runner.js cancels any in-flight run
+     * whenever a new one starts, and this feature has two independent async loops that both hit
+     * that same call.
+     * @param {() => Promise<Object>} taskFn
+     * @returns {Promise<Object>}
+     */
+    runSimSerialized(taskFn) {
+        const run = this._simChain.then(taskFn, taskFn);
+        this._simChain = run.then(
+            () => undefined,
+            () => undefined
+        );
+        return run;
+    }
+
+    /**
      * Run combat sim for a monster room and return clear stats
      */
     async computeCombatClear(monsterHrid, roomLevel, retryOnLoadoutChange = true) {
@@ -877,17 +904,19 @@ class LabyrinthClearRate {
         const labyrinthCombatBuffs = this.getLabyrinthCombatBuffs();
 
         try {
-            const simResult = await runLabyrinthSimulation({
-                gameData,
-                playerDTOs: [dto],
-                zoneHrid: '/actions/combat/fly',
-                monsterHrid,
-                roomLevel,
-                crates: crateHrids,
-                hours: this._recommendSimHours || 1,
-                communityBuffs: { mooPass: false, comExp: 0, comDrop: 0 },
-                labyrinthCombatBuffs,
-            });
+            const simResult = await this.runSimSerialized(() =>
+                runLabyrinthSimulation({
+                    gameData,
+                    playerDTOs: [dto],
+                    zoneHrid: '/actions/combat/fly',
+                    monsterHrid,
+                    roomLevel,
+                    crates: crateHrids,
+                    hours: this._recommendSimHours || 1,
+                    communityBuffs: { mooPass: false, comExp: 0, comDrop: 0 },
+                    labyrinthCombatBuffs,
+                })
+            );
 
             // A saved loadout can re-resolve while the worker is running (for example +5 -> +10
             // in Highest mode). Invalidation alone is insufficient because this older async run

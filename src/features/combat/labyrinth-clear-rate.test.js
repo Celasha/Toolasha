@@ -213,6 +213,10 @@ describe('loadout-state cache invalidation', () => {
         });
 
         const resultPromise = feature.computeCombatClear('/monsters/test', 100);
+        // computeCombatClear() now routes through runSimSerialized(), which defers the actual
+        // call by one microtask (its own sim queue starts empty/settled, so this is immediate,
+        // not a real wait) so it can queue behind any still-running simulation from this feature.
+        await Promise.resolve();
         expect(simRunner.runLabyrinthSimulation).toHaveBeenCalledTimes(1);
 
         // Model a Core effective-loadout update while the old (+5) worker is still running.
@@ -232,6 +236,53 @@ describe('loadout-state cache invalidation', () => {
         expect(simRunner.runLabyrinthSimulation).toHaveBeenCalledTimes(2);
         expect(result).toMatchObject({ clearChance: 1, winRate: 1, loadoutName: 'Highest Loadout' });
         expect(feature.combatCache.get('combat-key')).toMatchObject({ clearChance: 1, winRate: 1 });
+    });
+
+    test('two concurrent computeCombatClear calls (mirroring runRecommendations vs processSimQueue) queue instead of cancelling each other', async () => {
+        // Regression for a reported bug: raising Sim Hours made worker runs long enough that
+        // runRecommendations()'s sequential binary search and processSimQueue()'s DOM-triggered
+        // badge fills (two independent async loops both hitting computeCombatClear()) would
+        // overlap. combat-sim-runner.js cancels any in-flight run whenever a new one starts, so
+        // the second call would kill the first's worker mid-flight ("Error: Cancelled"), silently
+        // corrupting the first call's result instead of throwing.
+        const feature = new LabyrinthClearRate();
+        feature.isInitialized = true;
+        feature.getLabyrinthLoadoutId = vi.fn(() => 123);
+        feature.buildLabyrinthPlayerDTO = vi.fn(() => ({ name: 'player' }));
+        feature.getCrateHrids = vi.fn(() => []);
+        feature.getLabyrinthCombatBuffs = vi.fn(() => []);
+
+        combatAdapter.buildGameDataPayload.mockReturnValue({});
+        dataManager.getInitClientData.mockReturnValue({ combatMonsterDetailMap: {} });
+        loadoutState.getUsableSnapshotById.mockReturnValue({ name: 'Loadout' });
+
+        let resolveFirst;
+        const firstSim = new Promise((resolve) => {
+            resolveFirst = resolve;
+        });
+        simRunner.runLabyrinthSimulation.mockReturnValueOnce(firstSim).mockResolvedValueOnce({
+            labyAttemptCount: 1,
+            encounters: 1,
+            simulatedTime: 10e9,
+        });
+
+        const firstCallPromise = feature.computeCombatClear('/monsters/a', 50);
+        await Promise.resolve();
+        expect(simRunner.runLabyrinthSimulation).toHaveBeenCalledTimes(1);
+
+        // A DOM mutation fires injectOverlays() -> processSimQueue() -> computeCombatClear() for
+        // a different room while the first call's worker is still running.
+        const secondCallPromise = feature.computeCombatClear('/monsters/b', 60);
+        await Promise.resolve();
+        expect(simRunner.runLabyrinthSimulation).toHaveBeenCalledTimes(1);
+
+        resolveFirst({ labyAttemptCount: 1, encounters: 1, simulatedTime: 10e9 });
+        const firstResult = await firstCallPromise;
+        const secondResult = await secondCallPromise;
+
+        expect(simRunner.runLabyrinthSimulation).toHaveBeenCalledTimes(2);
+        expect(firstResult.clearChance).toBe(1);
+        expect(secondResult.clearChance).toBe(1);
     });
 
     test('an effective loadout change aborts an in-flight recommendation run instead of publishing a partial result', async () => {
