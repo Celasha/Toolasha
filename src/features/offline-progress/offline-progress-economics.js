@@ -6,6 +6,7 @@
  */
 
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import { calculateOfflineEconomics } from '../../utils/offline-economics-calculator.js';
@@ -16,15 +17,26 @@ const UI_ID = 'mwi-offline-economics';
 const MODAL_ANCHOR_CLASS = 'OfflineProgressModal_offlineProgress';
 const MODAL_CONTENT_CLASS = 'OfflineProgressModal_modalContent';
 
-const SOURCE_LABELS = {
-    coin: 'Coin face value',
-    cowbell: 'Cowbell valuation',
-    dungeonToken: 'Dungeon Token shop value',
-    expectedValue: 'Expected Value',
-    custom: 'Custom price override',
-    market: 'Market price',
-    taskToken: 'Task Token shop value',
+const SOURCE_LABEL_KEYS = {
+    coin: 'sourceLabelCoin',
+    cowbell: 'sourceLabelCowbell',
+    dungeonToken: 'sourceLabelDungeonToken',
+    expectedValue: 'sourceLabelExpectedValue',
+    custom: 'sourceLabelCustom',
+    market: 'sourceLabelMarket',
+    taskToken: 'sourceLabelTaskToken',
 };
+
+/**
+ * Resolve the display label for a price valuation source, falling back to the raw source key
+ * when it's not a recognized source (should not normally happen).
+ * @param {string} source - Valuation source key (e.g. 'coin', 'market')
+ * @returns {string} Translated label
+ */
+function getSourceLabel(source) {
+    const key = SOURCE_LABEL_KEYS[source];
+    return key ? t(`offlineProgressEconomics.${key}`) : source;
+}
 
 class OfflineProgressEconomics {
     constructor() {
@@ -229,7 +241,7 @@ class OfflineProgressEconomics {
  */
 export function buildHeadingTooltip(economics) {
     const mode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
-    let tooltip = `Pricing mode: ${config.getPricingModeLabel(mode)}`;
+    let tooltip = t('offlineProgressEconomics.pricingModeTooltip', { mode: config.getPricingModeLabel(mode) });
 
     if (economics.isPartial) {
         const names = economics.unvaluedItems.map((item) => {
@@ -237,7 +249,7 @@ export function buildHeadingTooltip(economics) {
             return details?.name || item.itemHrid.split('/').pop();
         });
         const count = economics.unvaluedItems.length;
-        tooltip += ` | Partial - ${count} item${count === 1 ? '' : 's'} could not be valued: ${names.join(', ')}`;
+        tooltip += t('offlineProgressEconomics.partialValuationNote', { count, names: names.join(', ') });
     }
 
     return tooltip;
@@ -267,7 +279,9 @@ export function buildBlock(economics) {
     `;
 
     const header = document.createElement('div');
-    header.textContent = economics.isPartial ? 'Offline Economics *' : 'Offline Economics';
+    header.textContent = economics.isPartial
+        ? t('offlineProgressEconomics.headerTitlePartial')
+        : t('offlineProgressEconomics.headerTitle');
     header.title = buildHeadingTooltip(economics);
     header.style.cssText = `
         font-size: 13px;
@@ -337,7 +351,7 @@ function buildLineDetail(line) {
     const name = getItemDisplayName(line.itemHrid);
     const label = document.createElement('span');
     label.textContent = `${line.quantity}x ${name}${line.enhancementLevel > 0 ? ` +${line.enhancementLevel}` : ''}`;
-    label.title = SOURCE_LABELS[line.source] || line.source;
+    label.title = getSourceLabel(line.source);
 
     const value = document.createElement('span');
     value.textContent = formatPrice(line.totalValue, { decimals: 1 });
@@ -365,9 +379,11 @@ function buildUnvaluedDetail(item) {
     `;
 
     const name = getItemDisplayName(item.itemHrid);
-    row.textContent = `${Math.abs(item.offlineCount)}x ${name}${
-        item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : ''
-    } - no price data`;
+    row.textContent = t('offlineProgressEconomics.unvaluedItemLine', {
+        count: Math.abs(item.offlineCount),
+        name,
+        enhSuffix: item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '',
+    });
 
     return row;
 }
@@ -375,7 +391,8 @@ function buildUnvaluedDetail(item) {
 /**
  * Render one Revenue/Cost/Profit row: label, total, per-day, and - when line items are
  * available - a click-to-expand breakdown of the items behind that total.
- * @param {string} label - Row label
+ * @param {'Revenue'|'Cost'|'Profit'} labelKey - Row label key, translated via
+ *   offlineProgressEconomics.rowLabel{labelKey}
  * @param {number} value - Total value
  * @param {number|null} perDay - Per-day value, or null if the offline window was zero/invalid
  * @param {'sell'|'buy'|null} side - Which side this row values, for the per-side pricing tooltip
@@ -383,7 +400,8 @@ function buildUnvaluedDetail(item) {
  * @param {Array|null} unvaluedItems - Unvalued items for this side, or null for a non-expandable row
  * @returns {Element} Row wrapper element
  */
-function renderRow(label, value, perDay, side, lines, unvaluedItems) {
+function renderRow(labelKey, value, perDay, side, lines, unvaluedItems) {
+    const label = t(`offlineProgressEconomics.rowLabel${labelKey}`);
     const wrapper = document.createElement('div');
 
     const hasDetails = (lines && lines.length > 0) || (unvaluedItems && unvaluedItems.length > 0);
@@ -402,11 +420,16 @@ function renderRow(label, value, perDay, side, lines, unvaluedItems) {
     labelEl.style.color = '#cbd5e1';
     if (side) {
         const mode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
-        labelEl.title = `${config.getPricingModeLabel(mode)} (${side === 'sell' ? 'Sell' : 'Buy'} side)`;
+        const sideLabelKey =
+            side === 'sell' ? 'offlineProgressEconomics.sellSideLabel' : 'offlineProgressEconomics.buySideLabel';
+        labelEl.title = t('offlineProgressEconomics.sideTooltip', {
+            modeLabel: config.getPricingModeLabel(mode),
+            sideLabel: t(sideLabelKey),
+        });
     }
 
     const valueEl = document.createElement('span');
-    const sign = value > 0 && label === 'Profit' ? '+' : '';
+    const sign = value > 0 && labelKey === 'Profit' ? '+' : '';
     const perDayText = perDay !== null ? ` (${sign}${formatPrice(perDay, { decimals: 1 })}/day)` : '';
     valueEl.textContent = `${sign}${formatPrice(value, { decimals: 1 })}${perDayText}`;
     valueEl.style.color = '#e2e8f0';

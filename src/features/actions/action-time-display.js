@@ -15,6 +15,7 @@ import dataManager from '../../core/data-manager.js';
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import tooltipObserver from '../../core/tooltip-observer.js';
+import { t } from '../../core/i18n.js';
 import marketAPI from '../../api/marketplace.js';
 import { calculateGatheringProfit } from './gathering-profit.js';
 import profitCalculator from '../market/profit-calculator.js';
@@ -449,7 +450,7 @@ export class ActionTimeDisplay {
                 const actionObj = this.matchActionFromDiv(actionDiv, currentActions, usedActionIds);
 
                 if (!actionObj) {
-                    this.appendTimeToActionDiv(actionDiv, '[Unknown action]');
+                    this.appendTimeToActionDiv(actionDiv, t('actionTimeDisplay.unknownAction'));
                     continue;
                 }
 
@@ -1695,7 +1696,10 @@ export class ActionTimeDisplay {
             const itemIconHtml = this.getItemIconHtml(limitingItemHrid);
             const matsLabel = itemIconHtml ? `${itemIconHtml}:` : 'Mats:';
             const timeText = buildTimeRemainingText(timeRemainingMode, timeStr, clockTime);
-            this.displayElement.innerHTML = `<span style="display: inline-flex; flex-wrap: nowrap; align-items: baseline; gap: 0.25em;"><span>⏱</span>${matsLabel} ${timeText} (${formatWithSeparator(materialLimit)} actions)</span>`;
+            const actionsCountText = t('actionTimeDisplay.actionsCount', {
+                count: formatWithSeparator(materialLimit),
+            });
+            this.displayElement.innerHTML = `<span style="display: inline-flex; flex-wrap: nowrap; align-items: baseline; gap: 0.25em;"><span>⏱</span>${matsLabel} ${timeText} ${actionsCountText}</span>`;
         } else {
             this.displayElement.innerHTML = '';
         }
@@ -2595,7 +2599,7 @@ export class ActionTimeDisplay {
                         font-size: 0.85em;
                         margin-top: 2px;
                     `;
-                    timeDiv.textContent = '[Unknown action]';
+                    timeDiv.textContent = t('actionTimeDisplay.unknownAction');
 
                     const actionTextContainer = actionDiv.querySelector('[class*="QueuedActions_actionText"]');
                     if (actionTextContainer) {

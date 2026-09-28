@@ -8,6 +8,7 @@ import marketAPI from '../../api/marketplace.js';
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
+import { t } from '../../core/i18n.js';
 import { marketplaceSession, MARKETPLACE_OWNER } from '../../core/marketplace-session.js';
 import dom from '../../utils/dom.js';
 import { numberFormatter, formatKMB } from '../../utils/formatters.js';
@@ -365,10 +366,10 @@ export class AbilityBookCalculator {
 
         calculatorDiv.innerHTML = `
             <div style="margin-bottom: 8px; font-size: 0.95em;">
-                <strong>Current level:</strong> <span id="currentLevelValue">${currentLevel}</span>
+                <strong>${t('abilityBookCalculator.currentLevelLabel')}</strong> <span id="currentLevelValue">${currentLevel}</span>
             </div>
             <div style="margin-bottom: 8px;">
-                <label for="tillLevelInput">To level: </label>
+                <label for="tillLevelInput">${t('abilityBookCalculator.toLevelLabel')}</label>
                 <input
                     id="tillLevelInput"
                     type="number"
@@ -379,9 +380,12 @@ export class AbilityBookCalculator {
                 >
             </div>
             <div id="tillLevelNumber" style="font-size: 0.95em;">
-                Books needed: <strong>${numberFormatter(booksNeeded)}</strong>
+                ${t('abilityBookCalculator.booksNeededLine', { books: numberFormatter(booksNeeded) })}
                 <br>
-                Cost: ${formatKMB(Math.ceil(booksNeeded * ask))} / ${formatKMB(Math.ceil(booksNeeded * bid))} (ask / bid)
+                ${t('abilityBookCalculator.costAskBidLine', {
+                    askCost: formatKMB(Math.ceil(booksNeeded * ask)),
+                    bidCost: formatKMB(Math.ceil(booksNeeded * bid)),
+                })}
             </div>
         `;
 
@@ -399,13 +403,16 @@ export class AbilityBookCalculator {
                 const books = this.calculateBooksNeeded(currentLevel, currentXp, target, xpPerBook);
                 currentBooks = books;
                 display.innerHTML = `
-                    Books needed: <strong>${numberFormatter(books)}</strong>
+                    ${t('abilityBookCalculator.booksNeededLine', { books: numberFormatter(books) })}
                     <br>
-                    Cost: ${formatKMB(Math.ceil(books * ask))} / ${formatKMB(Math.ceil(books * bid))} (ask / bid)
+                    ${t('abilityBookCalculator.costAskBidLine', {
+                        askCost: formatKMB(Math.ceil(books * ask)),
+                        bidCost: formatKMB(Math.ceil(books * bid)),
+                    })}
                 `;
             } else {
                 currentBooks = 0;
-                display.innerHTML = `<span style="color: ${config.COLOR_LOSS};">Invalid target level</span>`;
+                display.innerHTML = `<span style="color: ${config.COLOR_LOSS};">${t('skillCalculatorUi.invalidTargetLevelMessage')}</span>`;
             }
         };
 
@@ -437,7 +444,7 @@ export class AbilityBookCalculator {
         // Buy on Marketplace button
         const buyButton = document.createElement('button');
         buyButton.type = 'button';
-        buyButton.textContent = 'Buy on Marketplace';
+        buyButton.textContent = t('abilityBookCalculator.buyOnMarketplaceButton');
         buyButton.style.cssText = `
             margin-top: 8px;
             padding: 4px 10px;

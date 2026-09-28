@@ -8,6 +8,7 @@ import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import webSocketHook from '../../core/websocket.js';
 import domObserver from '../../core/dom-observer.js';
+import { t } from '../../core/i18n.js';
 import { formatKMB } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { chatBlockList } from './chat-block-list.js';
@@ -454,6 +455,7 @@ class PopOutChat {
      * @returns {string}
      */
     _buildPopoutHTML() {
+        const sendButtonLabel = t('popOutChat.sendButtonLabel');
         return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -786,7 +788,7 @@ class PopOutChat {
 
     const sendBtn = document.createElement('button');
     sendBtn.className = 'pane-send-btn';
-    sendBtn.textContent = 'SEND';
+    sendBtn.textContent = '${sendButtonLabel}';
 
     const doSend = () => {
       const text = input.value.trim();

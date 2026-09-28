@@ -8,6 +8,7 @@ import networthHistory, { GAP_THRESHOLD_MS } from './networth-history.js';
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import storage from '../../core/storage.js';
+import { t } from '../../core/i18n.js';
 import { networthFormatter, formatDateTime } from '../../utils/formatters.js';
 
 const RANGE_MS = {
@@ -18,13 +19,22 @@ const RANGE_MS = {
 };
 
 const CATEGORIES = [
-    { key: 'gold', label: 'Gold', color: '#eab308' },
-    { key: 'inventory', label: 'Inventory', color: '#3b82f6' },
-    { key: 'equipment', label: 'Equipment', color: '#ef4444' },
-    { key: 'listings', label: 'Listings', color: '#8b5cf6' },
-    { key: 'house', label: 'House', color: '#f97316' },
-    { key: 'abilities', label: 'Abilities', color: '#06b6d4' },
+    { key: 'gold', color: '#eab308' },
+    { key: 'inventory', color: '#3b82f6' },
+    { key: 'equipment', color: '#ef4444' },
+    { key: 'listings', color: '#8b5cf6' },
+    { key: 'house', color: '#f97316' },
+    { key: 'abilities', color: '#06b6d4' },
 ];
+
+/**
+ * Translated display label for a networth category key ('gold', 'inventory', ...).
+ * @param {string} key - Category key
+ * @returns {string}
+ */
+function getCategoryLabel(key) {
+    return t(`networthHistoryChart.category${key.charAt(0).toUpperCase()}${key.slice(1)}`);
+}
 
 class NetworthHistoryChart {
     constructor() {
@@ -65,6 +75,22 @@ class NetworthHistoryChart {
         if (prefs.categoryVisibility !== undefined)
             this.categoryVisibility = { ...this.categoryVisibility, ...prefs.categoryVisibility };
         if (prefs.activeRange !== undefined) this.activeRange = prefs.activeRange;
+    }
+
+    /**
+     * Translated display label for a preset/custom time range key.
+     * @param {string} range - '24h', '7d', '30d', 'all', or 'custom'
+     * @returns {string}
+     */
+    _rangeLabel(range) {
+        const labels = {
+            '24h': t('networthHistoryChart.range24hLabel'),
+            '7d': t('networthHistoryChart.range7dLabel'),
+            '30d': t('networthHistoryChart.range30dLabel'),
+            all: t('networthHistoryChart.rangeAllLabel'),
+            custom: t('networthHistoryChart.rangeCustomLabel'),
+        };
+        return labels[range] || labels['24h'];
     }
 
     /**
@@ -145,7 +171,7 @@ class NetworthHistoryChart {
         `;
 
         const title = document.createElement('h3');
-        title.textContent = 'Net Worth History';
+        title.textContent = t('networthHistoryChart.modalTitle');
         title.style.cssText = 'color: #ccc; margin: 0; font-size: 18px;';
 
         const closeBtn = document.createElement('button');
@@ -177,7 +203,7 @@ class NetworthHistoryChart {
         const ranges = ['24h', '7d', '30d', 'all'];
         for (const range of ranges) {
             const btn = document.createElement('button');
-            btn.textContent = range === 'all' ? 'All' : range.toUpperCase();
+            btn.textContent = this._rangeLabel(range);
             btn.dataset.range = range;
             btn.className = 'mwi-nw-range-btn';
             btn.style.cssText = `
@@ -197,7 +223,7 @@ class NetworthHistoryChart {
 
         // Connect Gaps toggle
         const gapToggle = document.createElement('button');
-        gapToggle.textContent = 'Connect Gaps';
+        gapToggle.textContent = t('networthHistoryChart.connectGapsButton');
         gapToggle.className = 'mwi-nw-gap-toggle';
         const updateGapToggleStyle = () => {
             gapToggle.style.cssText = `
@@ -222,7 +248,7 @@ class NetworthHistoryChart {
 
         // Show Bars toggle
         const barToggle = document.createElement('button');
-        barToggle.textContent = 'Show Bars';
+        barToggle.textContent = t('networthHistoryChart.showBarsButton');
         barToggle.className = 'mwi-nw-bar-toggle';
         const updateBarToggleStyle = () => {
             barToggle.style.cssText = `
@@ -247,7 +273,7 @@ class NetworthHistoryChart {
 
         // Moving Average dropdown
         const maLabel = document.createElement('span');
-        maLabel.textContent = 'Avg:';
+        maLabel.textContent = t('networthHistoryChart.avgLabel');
         maLabel.style.cssText = 'color: #999; font-size: 12px; margin-left: 8px;';
         rangeRow.appendChild(maLabel);
 
@@ -264,7 +290,7 @@ class NetworthHistoryChart {
             color-scheme: dark;
         `;
         const maOptions = [
-            { value: 0, label: 'Off' },
+            { value: 0, label: t('networthHistoryChart.movingAvgOffOption') },
             { value: 3, label: '3h' },
             { value: 6, label: '6h' },
             { value: 12, label: '12h' },
@@ -277,7 +303,7 @@ class NetworthHistoryChart {
         if (isCustomValue) {
             maOptions.push({ value: this.movingAvgWindow, label: `${this.movingAvgWindow}h` });
         }
-        maOptions.push({ value: -1, label: 'Custom...' });
+        maOptions.push({ value: -1, label: t('networthHistoryChart.movingAvgCustomOption') });
         for (const opt of maOptions) {
             const option = document.createElement('option');
             option.value = opt.value;
@@ -288,7 +314,7 @@ class NetworthHistoryChart {
         maSelect.addEventListener('change', () => {
             const val = parseInt(maSelect.value, 10);
             if (val === -1) {
-                const input = prompt('Enter moving average window in hours:');
+                const input = prompt(t('networthHistoryChart.promptMovingAvgWindow'));
                 const parsed = parseInt(input, 10);
                 if (parsed > 0) {
                     this.movingAvgWindow = parsed;
@@ -332,7 +358,7 @@ class NetworthHistoryChart {
 
         // From label + input
         const fromLabel = document.createElement('span');
-        fromLabel.textContent = 'From:';
+        fromLabel.textContent = t('networthHistoryChart.fromLabel');
         fromLabel.style.cssText = 'color: #999; font-size: 12px;';
         rangeRow.appendChild(fromLabel);
 
@@ -347,7 +373,7 @@ class NetworthHistoryChart {
 
         // To label + input
         const toLabel = document.createElement('span');
-        toLabel.textContent = 'To:';
+        toLabel.textContent = t('networthHistoryChart.toLabel');
         toLabel.style.cssText = 'color: #999; font-size: 12px;';
         rangeRow.appendChild(toLabel);
 
@@ -399,7 +425,7 @@ class NetworthHistoryChart {
             flex-shrink: 0;
         `;
         totalBtn.appendChild(totalDot);
-        totalBtn.appendChild(document.createTextNode('Total'));
+        totalBtn.appendChild(document.createTextNode(t('networthHistoryChart.totalChipLabel')));
         updateTotalBtnStyle();
         totalBtn.addEventListener('click', () => {
             this.categoryVisibility.showTotal = !this.categoryVisibility.showTotal;
@@ -441,7 +467,7 @@ class NetworthHistoryChart {
             flex-shrink: 0;
         `;
         nonExclBtn.appendChild(nonExclDot);
-        nonExclBtn.appendChild(document.createTextNode('Non-Excluded'));
+        nonExclBtn.appendChild(document.createTextNode(t('networthHistoryChart.nonExcludedLabel')));
         updateNonExclBtnStyle();
         nonExclBtn.addEventListener('click', () => {
             this.categoryVisibility.showNonExcluded = !this.categoryVisibility.showNonExcluded;
@@ -482,7 +508,7 @@ class NetworthHistoryChart {
                 flex-shrink: 0;
             `;
             btn.appendChild(dot);
-            btn.appendChild(document.createTextNode(cat.label));
+            btn.appendChild(document.createTextNode(getCategoryLabel(cat.key)));
             updateCatBtnStyle();
             btn.addEventListener('click', () => {
                 this.categoryVisibility[cat.key] = !this.categoryVisibility[cat.key];
@@ -703,6 +729,8 @@ class NetworthHistoryChart {
 
         // Build datasets array
         const datasets = [];
+        const totalNetWorthLabel = t('networthHistoryChart.totalNetWorthDatasetLabel');
+        const nonExcludedLabel = t('networthHistoryChart.nonExcludedLabel');
 
         // Check if non-excluded data diverges from total (i.e., exclusions were active)
         const hasNonExcludedData = filtered.some((p) => p.nonExcluded != null && p.nonExcluded !== p.total);
@@ -712,7 +740,7 @@ class NetworthHistoryChart {
             const barData = chartData.filter((p) => !isNaN(p.y));
             datasets.push({
                 type: 'bar',
-                label: 'Net Worth (bars)',
+                label: t('networthHistoryChart.barsDatasetLabel'),
                 data: barData,
                 backgroundColor: 'rgba(34, 197, 94, 0.3)',
                 borderColor: 'transparent',
@@ -727,7 +755,7 @@ class NetworthHistoryChart {
         if (this.categoryVisibility.showTotal) {
             datasets.push({
                 type: 'line',
-                label: 'Total Net Worth',
+                label: totalNetWorthLabel,
                 data: chartData,
                 borderColor: config.COLOR_ACCENT || '#22c55e',
                 backgroundColor: 'rgba(34, 197, 94, 0.1)',
@@ -749,7 +777,7 @@ class NetworthHistoryChart {
             }));
             datasets.push({
                 type: 'line',
-                label: 'Non-Excluded',
+                label: nonExcludedLabel,
                 data: neData,
                 borderColor: '#a78bfa',
                 backgroundColor: 'transparent',
@@ -775,7 +803,7 @@ class NetworthHistoryChart {
             });
             datasets.push({
                 type: 'line',
-                label: cat.label,
+                label: getCategoryLabel(cat.key),
                 data: catData,
                 borderColor: cat.color,
                 backgroundColor: 'transparent',
@@ -806,7 +834,12 @@ class NetworthHistoryChart {
             }
             datasets.push({
                 type: 'line',
-                label: `${this.movingAvgWindow >= 24 && this.movingAvgWindow % 24 === 0 ? `${this.movingAvgWindow / 24}d` : `${this.movingAvgWindow}h`} Moving Avg`,
+                label: t('networthHistoryChart.movingAvgDatasetLabel', {
+                    window:
+                        this.movingAvgWindow >= 24 && this.movingAvgWindow % 24 === 0
+                            ? `${this.movingAvgWindow / 24}d`
+                            : `${this.movingAvgWindow}h`,
+                }),
                 data: maData,
                 borderColor: '#f59e0b',
                 backgroundColor: 'transparent',
@@ -823,7 +856,9 @@ class NetworthHistoryChart {
 
         const visibleCategories = CATEGORIES.filter((c) => this.categoryVisibility[c.key]);
         const yAxisTitle =
-            !this.categoryVisibility.showTotal && visibleCategories.length > 0 ? 'Category Value' : 'Net Worth';
+            !this.categoryVisibility.showTotal && visibleCategories.length > 0
+                ? t('networthHistoryChart.categoryValueAxisTitle')
+                : t('networthHistoryChart.netWorthAxisTitle');
 
         this.chartInstance = new Chart(ctx, {
             type: 'line',
@@ -850,9 +885,9 @@ class NetworthHistoryChart {
                         filter: (tooltipItem) => {
                             if (tooltipItem.dataset.type === 'bar') return false;
                             if (isNaN(tooltipItem.raw?.y)) return false;
-                            if (tooltipItem.dataset.label === 'Total Net Worth') return true;
-                            if (tooltipItem.dataset.label === 'Non-Excluded') return true;
-                            const cat = CATEGORIES.find((c) => c.label === tooltipItem.dataset.label);
+                            if (tooltipItem.dataset.label === totalNetWorthLabel) return true;
+                            if (tooltipItem.dataset.label === nonExcludedLabel) return true;
+                            const cat = CATEGORIES.find((c) => getCategoryLabel(c.key) === tooltipItem.dataset.label);
                             return cat ? this.categoryVisibility[cat.key] : false;
                         },
                     },
@@ -903,7 +938,7 @@ class NetworthHistoryChart {
         if (!statsRow) return;
 
         if (filtered.length === 0) {
-            statsRow.innerHTML = '<span style="color: #666;">No data available for this range</span>';
+            statsRow.innerHTML = t('networthHistoryChart.noDataForRangeMessage');
             return;
         }
 
@@ -913,8 +948,7 @@ class NetworthHistoryChart {
         const hoursElapsed = (last.t - first.t) / 3_600_000;
 
         // Range label for the change stat
-        const rangeLabelMap = { '24h': '24H', '7d': '7D', '30d': '30D', all: 'All', custom: 'Range' };
-        const rangeLabel = rangeLabelMap[this.currentRange] || '24H';
+        const rangeLabel = this._rangeLabel(this.currentRange);
         const is24hRange = this.currentRange === '24h';
 
         // Total stats — Current, range change, Rate
@@ -930,18 +964,28 @@ class NetworthHistoryChart {
             const ratePerHour = hoursElapsed > 0 ? (currentTotal - first.total) / hoursElapsed : 0;
 
             parts.push(
-                `<span>Current: <strong style="color: ${config.COLOR_ACCENT};">${networthFormatter(Math.round(currentTotal))}</strong></span>`
+                `<span>${t('networthHistoryChart.currentTotalLine', {
+                    color: config.COLOR_ACCENT,
+                    value: networthFormatter(Math.round(currentTotal)),
+                })}</span>`
             );
 
             if (filtered.length >= 2) {
                 const color = rangeChange >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
                 const sign = rangeChange >= 0 ? '+' : '';
                 const breakdownAttr = is24hRange
-                    ? ' id="mwi-nw-24h-toggle" style="cursor: pointer;" title="Click for item breakdown"'
+                    ? ` id="mwi-nw-24h-toggle" style="cursor: pointer;" title="${t('networthHistoryChart.clickForBreakdownTooltip')}"`
                     : '';
                 const breakdownArrow = is24hRange ? ' <span style="font-size: 10px; color: #666;">▼</span>' : '';
                 parts.push(
-                    `<span${breakdownAttr}>Last ${rangeLabel}: <strong style="color: ${color};">${sign}${networthFormatter(Math.round(rangeChange))} (${sign}${rangePercent.toFixed(1)}%)</strong>${breakdownArrow}</span>`
+                    `<span${breakdownAttr}>${t('networthHistoryChart.lastRangeChangeLine', {
+                        range: rangeLabel,
+                        color,
+                        sign,
+                        value: networthFormatter(Math.round(rangeChange)),
+                        percent: rangePercent.toFixed(1),
+                        arrow: breakdownArrow,
+                    })}</span>`
                 );
             }
 
@@ -949,7 +993,11 @@ class NetworthHistoryChart {
                 const color = ratePerHour >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
                 const sign = ratePerHour >= 0 ? '+' : '';
                 parts.push(
-                    `<span>Rate: <strong style="color: ${color};">${sign}${networthFormatter(Math.round(ratePerHour))}/hr</strong></span>`
+                    `<span>${t('networthHistoryChart.rateLine', {
+                        color,
+                        sign,
+                        value: networthFormatter(Math.round(ratePerHour)),
+                    })}</span>`
                 );
             }
         }
@@ -961,19 +1009,30 @@ class NetworthHistoryChart {
             const firstNE = first.nonExcluded ?? first.total;
             const neRate = hoursElapsed > 0 ? (currentNE - firstNE) / hoursElapsed : 0;
 
-            let neStatHtml = `<span style="color: #a78bfa;">Non-Excl</span>: <strong style="color: #a78bfa;">${networthFormatter(Math.round(currentNE))}</strong>`;
+            let neStatHtml = t('networthHistoryChart.nonExclCurrentLine', {
+                value: networthFormatter(Math.round(currentNE)),
+            });
 
             if (filtered.length >= 2) {
                 const neChange = currentNE - firstNE;
                 const neChangeColor = neChange >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
                 const neChangeSign = neChange >= 0 ? '+' : '';
-                neStatHtml += ` <span style="font-size: 11px; color: #aaa;">(${neChangeSign}<span style="color: ${neChangeColor};">${networthFormatter(Math.round(neChange))}</span> ${rangeLabel})</span>`;
+                neStatHtml += t('networthHistoryChart.nonExclChangeSuffix', {
+                    sign: neChangeSign,
+                    color: neChangeColor,
+                    value: networthFormatter(Math.round(neChange)),
+                    range: rangeLabel,
+                });
             }
 
             if (hoursElapsed >= 1) {
                 const neRateColor = neRate >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
                 const neRateSign = neRate >= 0 ? '+' : '';
-                neStatHtml += ` <span style="font-size: 11px; color: #aaa;">${neRateSign}<span style="color: ${neRateColor};">${networthFormatter(Math.round(neRate))}/hr</span></span>`;
+                neStatHtml += t('networthHistoryChart.rateSuffixSpan', {
+                    sign: neRateSign,
+                    color: neRateColor,
+                    value: networthFormatter(Math.round(neRate)),
+                });
             }
 
             parts.push(`<span>${neStatHtml}</span>`);
@@ -995,17 +1054,27 @@ class NetworthHistoryChart {
             const catChangeColor = catChange >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
             const catChangeSign = catChange >= 0 ? '+' : '';
 
-            let statHtml = `${cat.label}: <strong style="color: ${catChangeColor};">Last ${rangeLabel}: ${catChangeSign}${networthFormatter(Math.round(catChange))}</strong>`;
+            let statHtml = t('networthHistoryChart.categoryLastRangeLine', {
+                label: getCategoryLabel(cat.key),
+                color: catChangeColor,
+                range: rangeLabel,
+                sign: catChangeSign,
+                value: networthFormatter(Math.round(catChange)),
+            });
 
             if (hoursElapsed >= 1) {
-                statHtml += ` <span style="font-size: 11px; color: #aaa;">${rateSign}<span style="color: ${rateColor};">${networthFormatter(Math.round(rate))}/hr</span></span>`;
+                statHtml += t('networthHistoryChart.rateSuffixSpan', {
+                    sign: rateSign,
+                    color: rateColor,
+                    value: networthFormatter(Math.round(rate)),
+                });
             }
 
             parts.push(`<span>${statHtml}</span>`);
         }
 
         if (parts.length === 0) {
-            statsRow.innerHTML = '<span style="color: #666;">No data available for this range</span>';
+            statsRow.innerHTML = t('networthHistoryChart.noDataForRangeMessage');
             return;
         }
 
@@ -1082,15 +1151,14 @@ class NetworthHistoryChart {
     render24hBreakdown(container) {
         const currentData = this.networthFeature?.currentData;
         if (!currentData) {
-            container.innerHTML = '<span style="color: #666;">No live data available</span>';
+            container.innerHTML = t('networthHistoryChart.noLiveDataMessage');
             return;
         }
 
         const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
         const oldSnapshot = networthHistory.getDetailSnapshot(oneDayAgo);
         if (!oldSnapshot) {
-            container.innerHTML =
-                '<span style="color: #666;">No detail snapshot available yet (data collected hourly)</span>';
+            container.innerHTML = t('networthHistoryChart.noDetailSnapshotMessage');
             return;
         }
 
@@ -1102,7 +1170,7 @@ class NetworthHistoryChart {
         currentItems['/items/coin:0'] = {
             count: Math.round(currentData.coins),
             value: Math.round(currentData.coins),
-            name: 'Gold',
+            name: getCategoryLabel('gold'),
         };
 
         // Inventory items
@@ -1217,9 +1285,11 @@ class NetworthHistoryChart {
                     const baseName = details?.name || itemHrid.replace('/items/', '');
                     name = Number(enhLevel) > 0 ? `${baseName} +${enhLevel}` : baseName;
                 }
-                const prefix = key.startsWith('listing:sell:') ? 'Sell Listing' : 'Buy Listing';
+                const listingLabel = key.startsWith('listing:sell:')
+                    ? t('networthHistoryChart.sellListingItemLabel', { name })
+                    : t('networthHistoryChart.buyListingItemLabel', { name });
                 otherTotal += totalDiff;
-                otherItems.push({ name: `${prefix}: ${name}`, key, value: totalDiff });
+                otherItems.push({ name: listingLabel, key, value: totalDiff });
                 continue;
             }
 
@@ -1275,7 +1345,7 @@ class NetworthHistoryChart {
         }
 
         if (activityItems.length === 0 && marketItems.length === 0 && otherItems.length === 0) {
-            container.innerHTML = '<span style="color: #666;">No item-level changes in the last 24h</span>';
+            container.innerHTML = t('networthHistoryChart.noItemChangesMessage');
             return;
         }
 
@@ -1291,7 +1361,7 @@ class NetworthHistoryChart {
             const actColor = activityTotal >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
             const actSign = activityTotal >= 0 ? '+' : '';
             html += `<div style="font-weight: bold; margin-bottom: 4px; display: flex; justify-content: space-between;">`;
-            html += `<span>Activity</span>`;
+            html += `<span>${t('networthHistoryChart.activityHeading')}</span>`;
             html += `<span style="color: ${actColor};">${actSign}${networthFormatter(activityTotal)}</span>`;
             html += `</div>`;
 
@@ -1318,7 +1388,7 @@ class NetworthHistoryChart {
             const mktColor = marketTotal >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
             const mktSign = marketTotal >= 0 ? '+' : '';
             html += `<div style="font-weight: bold; margin-top: 8px; margin-bottom: 4px; display: flex; justify-content: space-between;${activityItems.length > 0 ? ' padding-top: 6px; border-top: 1px solid #333;' : ''}">`;
-            html += `<span>Market Movement</span>`;
+            html += `<span>${t('networthHistoryChart.marketMovementHeading')}</span>`;
             html += `<span style="color: ${mktColor};">${mktSign}${networthFormatter(marketTotal)}</span>`;
             html += `</div>`;
 
@@ -1349,7 +1419,7 @@ class NetworthHistoryChart {
             const residual = last24hChange - activityTotal - marketTotal - otherTotal;
             if (Math.abs(residual) > 0) {
                 otherTotal += residual;
-                otherItems.push({ name: 'Rounding', key: '_rounding', value: residual });
+                otherItems.push({ name: t('networthHistoryChart.roundingLabel'), key: '_rounding', value: residual });
             }
         }
 
@@ -1358,7 +1428,7 @@ class NetworthHistoryChart {
             const otherColor = otherTotal >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
             const otherSign = otherTotal >= 0 ? '+' : '';
             html += `<div style="font-weight: bold; margin-top: 8px; margin-bottom: 4px; display: flex; justify-content: space-between;${hasPrevSections ? ' padding-top: 6px; border-top: 1px solid #333;' : ''}">`;
-            html += `<span>Other</span>`;
+            html += `<span>${t('networthHistoryChart.otherHeading')}</span>`;
             html += `<span style="color: ${otherColor};">${otherSign}${networthFormatter(otherTotal)}</span>`;
             html += `</div>`;
 
@@ -1376,7 +1446,7 @@ class NetworthHistoryChart {
 
         // Snapshot age note
         const ageHours = Math.round((Date.now() - oldSnapshot.t) / 3_600_000);
-        html += `<div style="color: #555; font-size: 10px; margin-top: 6px; text-align: right;">Compared to snapshot from ${ageHours}h ago</div>`;
+        html += t('networthHistoryChart.comparedToSnapshotLine', { hours: ageHours });
 
         container.innerHTML = html;
     }
@@ -1438,7 +1508,9 @@ class NetworthHistoryChart {
         }
 
         // Find the Total Net Worth data point
-        const totalPoint = tooltip.dataPoints?.find((dp) => dp.dataset.label === 'Total Net Worth');
+        const totalPoint = tooltip.dataPoints?.find(
+            (dp) => dp.dataset.label === t('networthHistoryChart.totalNetWorthDatasetLabel')
+        );
         if (!totalPoint) {
             tooltipEl.style.opacity = '0';
             return;
@@ -1460,29 +1532,36 @@ class NetworthHistoryChart {
 
         // Total
         const totalDelta = this._formatDelta(raw.total, prevRaw?.total);
-        html += `<div style="color:#4ade80;">&#9632; Total: ${networthFormatter(raw.total)}${totalDelta}</div>`;
+        html += t('networthHistoryChart.totalTooltipLine', {
+            value: networthFormatter(raw.total),
+            delta: totalDelta,
+        });
 
         // Category breakdown
         const categories = [];
-        categories.push({ label: 'Gold', value: raw.gold || 0, prev: prevRaw?.gold });
+        categories.push({ label: getCategoryLabel('gold'), value: raw.gold || 0, prev: prevRaw?.gold });
 
         const inventoryExGold = (raw.inventory || 0) - (raw.gold || 0);
         const prevInventoryExGold = prevRaw ? (prevRaw.inventory || 0) - (prevRaw.gold || 0) : null;
-        categories.push({ label: 'Inventory', value: inventoryExGold, prev: prevInventoryExGold });
+        categories.push({ label: getCategoryLabel('inventory'), value: inventoryExGold, prev: prevInventoryExGold });
 
-        categories.push({ label: 'Equipment', value: raw.equipment || 0, prev: prevRaw?.equipment });
-        categories.push({ label: 'Listings', value: raw.listings || 0, prev: prevRaw?.listings });
-        categories.push({ label: 'House', value: raw.house || 0, prev: prevRaw?.house });
-        categories.push({ label: 'Abilities', value: raw.abilities || 0, prev: prevRaw?.abilities });
+        categories.push({ label: getCategoryLabel('equipment'), value: raw.equipment || 0, prev: prevRaw?.equipment });
+        categories.push({ label: getCategoryLabel('listings'), value: raw.listings || 0, prev: prevRaw?.listings });
+        categories.push({ label: getCategoryLabel('house'), value: raw.house || 0, prev: prevRaw?.house });
+        categories.push({ label: getCategoryLabel('abilities'), value: raw.abilities || 0, prev: prevRaw?.abilities });
         if (raw.nonExcluded != null && raw.nonExcluded !== raw.total) {
             const excluded = raw.total - raw.nonExcluded;
             const prevExcluded = prevRaw?.nonExcluded != null ? prevRaw.total - prevRaw.nonExcluded : null;
-            categories.push({ label: 'Excluded', value: excluded, prev: prevExcluded });
+            categories.push({ label: t('networthHistoryChart.excludedLabel'), value: excluded, prev: prevExcluded });
         }
 
         for (const cat of categories) {
             const delta = this._formatDelta(cat.value, cat.prev);
-            html += `<div style="color:#ccc; padding-left:12px;">${cat.label}: ${networthFormatter(cat.value)}${delta}</div>`;
+            html += t('networthHistoryChart.categoryTooltipLine', {
+                label: cat.label,
+                value: networthFormatter(cat.value),
+                delta,
+            });
         }
 
         tooltipEl.innerHTML = html;
@@ -1563,8 +1642,8 @@ class NetworthHistoryChart {
         popup.innerHTML = `
             <div style="margin-bottom:4px;font-weight:500;color:#fff;">${date}</div>
             <div style="margin-bottom:10px;color:${config.COLOR_ACCENT};">${networthFormatter(snapshot.total)}</div>
-            <button id="mwi-nw-delete-confirm" style="background:#ef4444;color:#fff;border:none;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px;margin-right:6px;">Delete point</button>
-            <button id="mwi-nw-delete-cancel" style="background:#2a2a2a;color:#999;border:1px solid #444;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px;">Cancel</button>
+            <button id="mwi-nw-delete-confirm" style="background:#ef4444;color:#fff;border:none;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px;margin-right:6px;">${t('networthHistoryChart.deletePointButton')}</button>
+            <button id="mwi-nw-delete-cancel" style="background:#2a2a2a;color:#999;border:1px solid #444;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px;">${t('settings.cancelButton')}</button>
         `;
 
         document.body.appendChild(popup);

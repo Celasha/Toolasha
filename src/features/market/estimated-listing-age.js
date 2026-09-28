@@ -11,6 +11,7 @@ import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
 import storage from '../../core/storage.js';
+import { t } from '../../core/i18n.js';
 import marketAPI from '../../api/marketplace.js';
 import { formatRelativeTime, formatDateTime } from '../../utils/formatters.js';
 
@@ -633,7 +634,7 @@ class EstimatedListingAge {
         // Add header
         const header = document.createElement('th');
         header.classList.add('mwi-estimated-age-header');
-        header.textContent = '~Age';
+        header.textContent = t('estimatedListingAge.ageColumnHeader');
         header.title = 'Estimated listing age (based on listing ID)';
         thead.appendChild(header);
 
@@ -727,7 +728,7 @@ class EstimatedListingAge {
                         cell.style.color = '#00FF00'; // Green for YOUR listing
                         cell.style.fontSize = '0.9em';
                     } else {
-                        cell.textContent = '~Unknown';
+                        cell.textContent = t('estimatedListingAge.unknownAgeLabel');
                         cell.style.color = '#666666';
                         cell.style.fontSize = '0.9em';
                     }

@@ -9,6 +9,7 @@
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
+import { t } from '../../core/i18n.js';
 import storage from '../../core/storage.js';
 import marketAPI from '../../api/marketplace.js';
 import { getActionEfficiencyContext } from '../../utils/efficiency.js';
@@ -926,7 +927,7 @@ class CollectionFilters {
 
         const header = document.createElement('div');
         header.className = 'toolasha-cf-favorites-header';
-        header.textContent = 'Favorites';
+        header.textContent = t('collectionFilters.favoritesLabel');
         section.appendChild(header);
 
         // Record positions: use the next non-favorite sibling as reference

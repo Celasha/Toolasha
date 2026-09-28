@@ -7,6 +7,7 @@ import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import dataManager from '../../core/data-manager.js';
 import webSocketHook from '../../core/websocket.js';
+import { t } from '../../core/i18n.js';
 import { buildPlayerDTO, buildGameDataPayload, applyLoadoutSnapshotToDTO } from '../combat-sim/combat-sim-adapter.js';
 import { runLabyrinthSimulation } from '../combat-sim/combat-sim-runner.js';
 import { setReactInputValue } from '../../utils/react-input.js';
@@ -449,7 +450,11 @@ class LabyrinthClearRate {
         const actionTypeHrid = `/action_types/${skillId}`;
         const metrics = this.getSkillingMetrics(skillId, actionTypeHrid);
         if (!metrics) {
-            return { clearChance: 0, expectedSeconds: Infinity, error: 'Configured loadout is unavailable' };
+            return {
+                clearChance: 0,
+                expectedSeconds: Infinity,
+                error: t('labyrinthClearRate.errorLoadoutUnavailable'),
+            };
         }
 
         const skills = dataManager.getSkills();
@@ -500,7 +505,11 @@ class LabyrinthClearRate {
         const actionTypeHrid = '/action_types/enhancing';
         const metrics = this.getSkillingMetrics(skillId, actionTypeHrid);
         if (!metrics) {
-            return { clearChance: 0, expectedSeconds: Infinity, error: 'Configured loadout is unavailable' };
+            return {
+                clearChance: 0,
+                expectedSeconds: Infinity,
+                error: t('labyrinthClearRate.errorLoadoutUnavailable'),
+            };
         }
 
         const skills = dataManager.getSkills();
@@ -896,7 +905,11 @@ class LabyrinthClearRate {
         const loadoutId = this.getLabyrinthLoadoutId(monsterHrid);
         const dto = this.buildLabyrinthPlayerDTO(loadoutId);
         if (!dto) {
-            return { clearChance: 0, expectedSeconds: Infinity, error: 'Configured loadout is unavailable' };
+            return {
+                clearChance: 0,
+                expectedSeconds: Infinity,
+                error: t('labyrinthClearRate.errorLoadoutUnavailable'),
+            };
         }
 
         const gameData = buildGameDataPayload();
@@ -929,7 +942,7 @@ class LabyrinthClearRate {
                 return {
                     clearChance: 0,
                     expectedSeconds: Infinity,
-                    error: 'Configured loadout changed during simulation',
+                    error: t('labyrinthClearRate.errorLoadoutChangedDuringSim'),
                 };
             }
 
@@ -943,7 +956,7 @@ class LabyrinthClearRate {
             const monsterName = monsterDetail?.name || monsterHrid.replace('/monsters/', '').replace(/_/g, ' ');
 
             const snapshot = loadoutState.getUsableSnapshotById(loadoutId);
-            const loadoutName = snapshot?.name || `Loadout #${loadoutId}`;
+            const loadoutName = snapshot?.name || t('labyrinthClearRate.loadoutFallbackName', { id: loadoutId });
 
             const result = {
                 clearChance: winRate,
@@ -1077,19 +1090,23 @@ class LabyrinthClearRate {
             if (isSkill) {
                 const threshold = this.findRecommendedThreshold(roomHrid, targetRate);
                 if (loadoutRevision !== this.loadoutRevision) {
-                    if (button) button.textContent = 'Recommend';
+                    if (button) button.textContent = t('labyrinthClearRate.recommendButtonLabel');
                     this.recommendRunning = false;
                     return;
                 }
                 this.recommendations.set(roomHrid, { threshold });
             } else {
-                if (button) button.textContent = `Recommending... (${completed + 1}/${totalRooms})`;
+                if (button)
+                    button.textContent = t('labyrinthClearRate.recommendingProgress', {
+                        current: completed + 1,
+                        total: totalRooms,
+                    });
                 const threshold = await this.findRecommendedThresholdCombat(roomHrid, targetRate);
                 // The loadout-state handler already cleared any prior recommendations. Do not
                 // publish a partial fresh/stale mix after an effective loadout change mid-run;
                 // the user can rerun Recommend against one coherent current state.
                 if (loadoutRevision !== this.loadoutRevision) {
-                    if (button) button.textContent = 'Recommend';
+                    if (button) button.textContent = t('labyrinthClearRate.recommendButtonLabel');
                     this.recommendRunning = false;
                     return;
                 }
@@ -1098,7 +1115,7 @@ class LabyrinthClearRate {
             completed++;
         }
 
-        if (button) button.textContent = 'Recommend';
+        if (button) button.textContent = t('labyrinthClearRate.recommendButtonLabel');
         this.recommendRunning = false;
         this.injectRecommendationBadges();
         this._updateApplyButtonState();
@@ -1125,9 +1142,11 @@ class LabyrinthClearRate {
             const badge = document.createElement('span');
             badge.className = RECOMMEND_CLASS;
             badge.style.cssText = 'font-size:0.7rem; margin-left:6px; white-space:nowrap; font-weight:bold;';
-            badge.textContent = `Rec: ${rec.threshold >= 0 ? '+' : ''}${rec.threshold}`;
+            badge.textContent = t('labyrinthClearRate.recommendedBadgeText', {
+                value: `${rec.threshold >= 0 ? '+' : ''}${rec.threshold}`,
+            });
 
-            badge.title = `Recommended skip threshold for ≥${this._recommendTargetPct}% clear rate`;
+            badge.title = t('labyrinthClearRate.recommendedBadgeTooltip', { percent: this._recommendTargetPct });
 
             if (currentThreshold <= rec.threshold) {
                 badge.style.color = '#00c896';
@@ -1260,7 +1279,7 @@ class LabyrinthClearRate {
         if (!button) return;
 
         if (this._pendingSelfAppliedKey !== null) {
-            button.textContent = 'Apply Skip (saving...)';
+            button.textContent = t('labyrinthClearRate.applySkipSaving');
             button.disabled = true;
             button.style.opacity = '0.5';
             button.style.cursor = 'default';
@@ -1268,7 +1287,7 @@ class LabyrinthClearRate {
         }
 
         const remaining = this.getRoomsNeedingSkipUpdate().length;
-        button.textContent = `Apply Skip (${remaining})`;
+        button.textContent = t('labyrinthClearRate.applySkipButton', { count: remaining });
         button.disabled = remaining === 0;
         button.style.opacity = remaining === 0 ? '0.5' : '1';
         button.style.cursor = remaining === 0 ? 'default' : 'pointer';
@@ -1304,7 +1323,7 @@ class LabyrinthClearRate {
 
         const rateLabel = document.createElement('span');
         rateLabel.style.cssText = labelStyle;
-        rateLabel.textContent = 'Target Win %';
+        rateLabel.textContent = t('labyrinthClearRate.targetWinPercentLabel');
 
         const rateInput = document.createElement('input');
         rateInput.type = 'number';
@@ -1320,7 +1339,7 @@ class LabyrinthClearRate {
 
         const hoursLabel = document.createElement('span');
         hoursLabel.style.cssText = labelStyle;
-        hoursLabel.textContent = 'Sim Hours';
+        hoursLabel.textContent = t('labyrinthClearRate.simHoursLabel');
 
         const hoursInput = document.createElement('input');
         hoursInput.type = 'number';
@@ -1335,14 +1354,14 @@ class LabyrinthClearRate {
         });
 
         const button = document.createElement('button');
-        button.textContent = 'Recommend';
+        button.textContent = t('labyrinthClearRate.recommendButtonLabel');
         button.style.cssText =
             'padding:2px 10px; cursor:pointer; font-size:0.75rem; border-radius:4px; border:1px solid #555; background:#333; color:#ccc;';
         button.addEventListener('click', () => this.runRecommendations());
 
         const applyButton = document.createElement('button');
         applyButton.id = APPLY_SKIP_BUTTON_ID;
-        applyButton.textContent = 'Apply Skip (0)';
+        applyButton.textContent = t('labyrinthClearRate.applySkipButton', { count: 0 });
         applyButton.disabled = true;
         applyButton.style.cssText =
             'padding:2px 10px; cursor:default; font-size:0.75rem; border-radius:4px; border:1px solid #555; background:#333; color:#ccc; opacity:0.5;';
@@ -1462,19 +1481,43 @@ class LabyrinthClearRate {
 
         const chancePct = (estimate.clearChance * 100).toFixed(1);
         if (estimate.isEnhancing) {
-            node.textContent = ` [Clear ${chancePct}% | +${estimate.currentLevel}/+${estimate.targetLevel} | ${estimate.attemptsLeft} left]`;
+            node.textContent = t('labyrinthClearRate.liveClearEnhancing', {
+                pct: chancePct,
+                current: estimate.currentLevel,
+                target: estimate.targetLevel,
+                left: estimate.attemptsLeft,
+            });
         } else {
-            node.textContent = ` [Clear ${chancePct}% | ${estimate.attemptsLeft} left]`;
+            node.textContent = t('labyrinthClearRate.liveClearSkilling', {
+                pct: chancePct,
+                left: estimate.attemptsLeft,
+            });
         }
 
         const tooltipLines = [
-            `Success: ${(estimate.successChance * 100).toFixed(1)}% | Double: ${(estimate.doubleChance * 100).toFixed(1)}%`,
-            `Actions: ${estimate.actionCounter}/${estimate.totalAttempts}`,
+            t('labyrinthClearRate.successDoubleLine', {
+                success: (estimate.successChance * 100).toFixed(1),
+                double: (estimate.doubleChance * 100).toFixed(1),
+            }),
+            t('labyrinthClearRate.liveActionsLine', {
+                current: estimate.actionCounter,
+                total: estimate.totalAttempts,
+            }),
         ];
         if (estimate.isEnhancing) {
-            tooltipLines.push(`Enhance: +${estimate.currentLevel}/+${estimate.targetLevel}`);
+            tooltipLines.push(
+                t('labyrinthClearRate.liveEnhanceLine', {
+                    current: estimate.currentLevel,
+                    target: estimate.targetLevel,
+                })
+            );
         } else {
-            tooltipLines.push(`Progress: ${estimate.currentWorkValue}/${estimate.targetWorkValue}`);
+            tooltipLines.push(
+                t('labyrinthClearRate.liveProgressLine', {
+                    current: estimate.currentWorkValue,
+                    target: estimate.targetWorkValue,
+                })
+            );
         }
         node.title = tooltipLines.join('\n');
     }
@@ -1628,7 +1671,7 @@ class LabyrinthClearRate {
         const badge = document.createElement('span');
         badge.className = GRID_BADGE_CLASS;
         badge.textContent = '...';
-        badge.title = 'Simulating combat...';
+        badge.title = t('labyrinthClearRate.simulatingCombatTooltip');
         cell.appendChild(badge);
         return badge;
     }
@@ -1639,13 +1682,14 @@ class LabyrinthClearRate {
         badge.style.cssText = 'font-size:0.7rem; margin-left:6px; white-space:nowrap;';
         if (result.error) {
             badge.style.color = '#d9534f';
-            badge.textContent = 'Loadout unavailable';
+            badge.textContent = t('labyrinthClearRate.loadoutUnavailableBadgeText');
             badge.title = result.error;
         } else {
             badge.style.color = this.getBadgeColor(result.clearChance);
             const pct = Math.round(result.clearChance * 100);
             const timeText = this.formatTime(result.expectedSeconds);
-            badge.textContent = pct >= 100 ? timeText : `${pct}% ${timeText}`;
+            badge.textContent =
+                pct >= 100 ? timeText : t('labyrinthClearRate.badgePercentTime', { pct, time: timeText });
             badge.title = this.formatTooltip(result, roomLevel);
         }
 
@@ -1658,7 +1702,7 @@ class LabyrinthClearRate {
         badge.className = BADGE_CLASS;
         badge.style.cssText = 'font-size:0.7rem; margin-left:6px; white-space:nowrap; color:#999;';
         badge.textContent = '...';
-        badge.title = 'Simulating combat...';
+        badge.title = t('labyrinthClearRate.simulatingCombatTooltip');
         cell.appendChild(badge);
         return badge;
     }
@@ -1666,7 +1710,7 @@ class LabyrinthClearRate {
     updateBadge(badge, result, roomLevel) {
         if (result.error) {
             badge.style.color = '#d9534f';
-            badge.textContent = 'Loadout unavailable';
+            badge.textContent = t('labyrinthClearRate.loadoutUnavailableBadgeText');
             badge.title = result.error;
             return;
         }
@@ -1728,38 +1772,70 @@ class LabyrinthClearRate {
 
     formatTooltip(result, roomLevel) {
         if (result?.error) return result.error;
-        const pct = (v) => `${(v * 100).toFixed(1)}%`;
+        const pct = (v) => (v * 100).toFixed(1);
 
         if (result.type === 'skilling') {
             return [
-                `Success: ${pct(result.successChance)} | Double: ${pct(result.doubleChance)}`,
-                `Actions: ${result.attempts} @ ${result.actionSeconds.toFixed(2)}s each`,
-                `Work Power: ${Math.floor(result.workPower)} → Progress: ${result.progressPerSuccess}/${result.targetProgress} per success`,
-                `Effective Level: ${Math.floor(result.effectiveLevel)} (base ${result.baseLevel} + ${Math.floor(result.effectiveLevel - result.baseLevel)})`,
-                `Room Level: ${result.roomLevel} | XP/room: ${result.xpPerRoom}`,
+                t('labyrinthClearRate.successDoubleLine', {
+                    success: pct(result.successChance),
+                    double: pct(result.doubleChance),
+                }),
+                t('labyrinthClearRate.tooltipActionsLine', {
+                    attempts: result.attempts,
+                    seconds: result.actionSeconds.toFixed(2),
+                }),
+                t('labyrinthClearRate.tooltipWorkPowerProgress', {
+                    workPower: Math.floor(result.workPower),
+                    progress: result.progressPerSuccess,
+                    target: result.targetProgress,
+                }),
+                t('labyrinthClearRate.tooltipEffectiveLevel', {
+                    level: Math.floor(result.effectiveLevel),
+                    baseLevel: result.baseLevel,
+                    bonus: Math.floor(result.effectiveLevel - result.baseLevel),
+                }),
+                t('labyrinthClearRate.tooltipRoomLevelXp', {
+                    roomLevel: result.roomLevel,
+                    xp: result.xpPerRoom,
+                }),
             ].join('\n');
         }
 
         if (result.type === 'enhancing') {
             return [
-                `Success: ${pct(result.successChance)} | Double: ${pct(result.doubleChance)}`,
-                `Actions: ${result.attempts} @ ${result.actionSeconds.toFixed(2)}s each`,
-                `Target: +${result.targetLevel} | Effective Level: ${Math.floor(result.effectiveLevel)}`,
-                `Room Level: ${result.roomLevel}`,
+                t('labyrinthClearRate.successDoubleLine', {
+                    success: pct(result.successChance),
+                    double: pct(result.doubleChance),
+                }),
+                t('labyrinthClearRate.tooltipActionsLine', {
+                    attempts: result.attempts,
+                    seconds: result.actionSeconds.toFixed(2),
+                }),
+                t('labyrinthClearRate.tooltipEnhancingTarget', {
+                    targetLevel: result.targetLevel,
+                    level: Math.floor(result.effectiveLevel),
+                }),
+                t('labyrinthClearRate.tooltipRoomLevel', { roomLevel: result.roomLevel }),
             ].join('\n');
         }
 
         if (result.type === 'combat') {
             return [
-                `Win Rate: ${pct(result.winRate)} | Avg Fight: ${Math.round(result.avgFightSeconds)}s`,
-                `Monster: ${result.monsterName} | Room Level: ${result.roomLevel}`,
-                `Loadout: "${result.loadoutName}"`,
+                t('labyrinthClearRate.tooltipCombatWinRate', {
+                    winRate: pct(result.winRate),
+                    avgFight: Math.round(result.avgFightSeconds),
+                }),
+                t('labyrinthClearRate.tooltipCombatMonsterRoom', {
+                    monster: result.monsterName,
+                    roomLevel: result.roomLevel,
+                }),
+                t('labyrinthClearRate.tooltipCombatLoadout', { loadout: result.loadoutName }),
             ].join('\n');
         }
 
         const clearPct = Math.round(result.clearChance * 100);
         const timeText = this.formatTime(result.expectedSeconds);
-        return `Clear: ${clearPct}% | Expected: ${timeText} | Room level: ${roomLevel}`;
+        return t('labyrinthClearRate.tooltipFallback', { pct: clearPct, time: timeText, roomLevel });
     }
 
     getBadgeColor(clearChance) {
@@ -1906,7 +1982,7 @@ class LabyrinthClearRate {
         if (!Number.isFinite(seconds) || seconds <= 0) return '—';
         if (seconds >= 9999) return '∞';
         const s = Math.round(seconds);
-        if (s < 60) return `~${s}s`;
+        if (s < 60) return t('labyrinthClearRate.timeApproxSeconds', { seconds: s });
         const m = Math.floor(s / 60);
         const rem = s % 60;
         return `~${m}:${rem.toString().padStart(2, '0')}`;

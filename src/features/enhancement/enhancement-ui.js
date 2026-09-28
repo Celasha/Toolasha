@@ -14,6 +14,7 @@ import {
 import dataManager from '../../core/data-manager.js';
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
+import { t } from '../../core/i18n.js';
 import { formatPercentage, formatLargeNumber } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } from '../../utils/panel-z-index.js';
@@ -402,7 +403,7 @@ class EnhancementUI {
         titleContainer.style.textOverflow = 'ellipsis';
 
         const title = document.createElement('span');
-        title.textContent = 'Enhancement Tracker';
+        title.textContent = t('enhancementUi.panelTitle');
         title.style.fontWeight = 'bold';
 
         const sessionCounter = document.createElement('span');
@@ -483,7 +484,7 @@ class EnhancementUI {
     createClearButton() {
         const button = document.createElement('button');
         button.innerHTML = '🗑️';
-        button.title = 'Clear all sessions';
+        button.title = t('enhancementUi.clearAllSessionsTooltip');
         Object.assign(button.style, {
             background: 'none',
             border: 'none',
@@ -506,7 +507,7 @@ class EnhancementUI {
         });
         button.addEventListener('click', (e) => {
             e.stopPropagation();
-            if (confirm('Clear all enhancement sessions?')) {
+            if (confirm(t('enhancementUi.clearAllSessionsConfirm'))) {
                 this.clearAllSessions();
             }
         });
@@ -521,7 +522,7 @@ class EnhancementUI {
         const button = document.createElement('button');
         button.id = 'enhancementCollapseButton';
         button.innerHTML = '▼';
-        button.title = 'Collapse panel';
+        button.title = t('enhancementUi.collapsePanelTooltip');
         Object.assign(button.style, {
             background: 'none',
             border: 'none',
@@ -616,7 +617,7 @@ class EnhancementUI {
             content.style.opacity = '0';
             content.style.padding = '0 15px';
             button.innerHTML = '▶';
-            button.title = 'Expand panel';
+            button.title = t('enhancementUi.expandPanelTooltip');
             this.floatingUI.style.width = '250px';
 
             // Show compact summary after content fades
@@ -631,7 +632,7 @@ class EnhancementUI {
             content.style.opacity = '1';
             content.style.padding = '15px';
             button.innerHTML = '▼';
-            button.title = 'Collapse panel';
+            button.title = t('enhancementUi.collapsePanelTooltip');
             this.floatingUI.style.width = '350px';
         }
     }
@@ -652,7 +653,7 @@ class EnhancementUI {
 
         const gameData = dataManager.getInitClientData();
         const itemDetails = gameData?.itemDetailMap?.[session.itemHrid];
-        const itemName = itemDetails?.name || 'Unknown Item';
+        const itemName = itemDetails?.name || t('enhancementUi.unknownItemFallback');
 
         const totalAttempts = session.totalAttempts;
         const totalSuccess = session.totalSuccesses;
@@ -670,7 +671,7 @@ class EnhancementUI {
 
         summary.innerHTML = `
             <div style="font-weight: bold; margin-bottom: 4px;">${itemName} → +${session.targetLevel}</div>
-            <div style="opacity: 0.8;">${statusIcon} ${totalAttempts} attempts | ${successRate}% rate</div>
+            <div style="opacity: 0.8;">${t('enhancementUi.collapsedSummaryStats', { statusIcon, totalAttempts, successRate })}</div>
         `;
 
         this.floatingUI.appendChild(summary);
@@ -761,13 +762,13 @@ class EnhancementUI {
             content.innerHTML = `
                 <div style="text-align: center; padding: 40px 20px; color: ${STYLE.colors.textSecondary};">
                     <div style="font-size: 32px; margin-bottom: 10px;">✧</div>
-                    <div style="font-size: 14px;">Begin enhancing to populate data</div>
+                    <div style="font-size: 14px;">${t('enhancementUi.noSessionsMessage')}</div>
                 </div>
             `;
             return;
         }
         if (!session) {
-            content.innerHTML = '<div style="text-align: center; color: ${STYLE.colors.danger};">Invalid session</div>';
+            content.innerHTML = `<div style="text-align: center; color: ${STYLE.colors.danger};">${t('enhancementUi.invalidSessionMessage')}</div>`;
             return;
         }
 
@@ -814,7 +815,7 @@ class EnhancementUI {
     generateSessionHTML(session) {
         const gameData = dataManager.getInitClientData();
         const itemDetails = gameData?.itemDetailMap?.[session.itemHrid];
-        const itemName = itemDetails?.name || 'Unknown Item';
+        const itemName = itemDetails?.name || t('enhancementUi.unknownItemFallback');
 
         // Calculate stats
         const totalAttempts = session.totalAttempts;
@@ -830,25 +831,28 @@ class EnhancementUI {
 
         // Status display
         const statusColor = session.state === SessionState.COMPLETED ? STYLE.colors.success : STYLE.colors.accent;
-        const statusText = session.state === SessionState.COMPLETED ? 'Completed' : 'In Progress';
+        const statusText =
+            session.state === SessionState.COMPLETED
+                ? t('enhancementUi.statusCompleted')
+                : t('enhancementUi.statusInProgress');
 
         // Build HTML
         let html = `
             <div style="margin-bottom: 10px; font-size: 13px;">
                 <div style="display: flex; justify-content: space-between;">
-                    <span>Item:</span>
+                    <span>${t('enhancementUi.itemLabel')}</span>
                     <strong>${itemName}</strong>
                 </div>
                 <div style="display: flex; justify-content: space-between;">
-                    <span>Target:</span>
+                    <span>${t('enhancementUi.targetLabel')}</span>
                     <span>+${session.targetLevel}</span>
                 </div>
                 <div style="display: flex; justify-content: space-between;">
-                    <span>Prot:</span>
+                    <span>${t('enhancementUi.protLabel')}</span>
                     <span>+${session.protectFrom}</span>
                 </div>
                 <div style="display: flex; justify-content: space-between; margin-top: 5px; color: ${statusColor};">
-                    <span>Status:</span>
+                    <span>${t('enhancementUi.statusLabel')}</span>
                     <strong>${statusText}</strong>
                 </div>
             </div>
@@ -861,10 +865,10 @@ class EnhancementUI {
         html += `
             <div style="margin-top: 8px;">
                 <div style="font-size: 13px;">
-                    Attempts ${totalAttempts} · Successes ${totalSuccess} · Blessed ${totalBlessed} · Failures ${totalFailure}
+                    ${t('enhancementUi.summaryStatsLine', { totalAttempts, totalSuccess, totalBlessed, totalFailure })}
                 </div>
                 <div style="font-size: 13px; margin-top: 4px;">
-                    <span>Prots Used:</span>
+                    <span>${t('enhancementUi.protsUsedLabel')}</span>
                     <strong> ${session.protectionCount || 0}</strong>
                 </div>
             </div>`;
@@ -894,11 +898,11 @@ class EnhancementUI {
             html += `
             <div style="display: flex; justify-content: space-between; font-size: 12px; margin-top: 4px;">
                 <div style="color: ${STYLE.colors.textSecondary};">
-                    <span>Expected Attempts:</span>
+                    <span>${t('enhancementUi.expectedAttemptsLabel')}</span>
                     <span> ${expAtt}</span>
                 </div>
                 <div style="color: ${STYLE.colors.textSecondary};">
-                    <span>Expected Prots:</span>
+                    <span>${t('enhancementUi.expectedProtsLabel')}</span>
                     <span> ${expProt}</span>
                 </div>
             </div>`;
@@ -907,11 +911,11 @@ class EnhancementUI {
                 html += `
             <div style="display: flex; justify-content: space-between; font-size: 12px; margin-top: 2px; color: ${STYLE.colors.textSecondary};">
                 <div>
-                    <span>Attempt Factor:</span>
+                    <span>${t('enhancementUi.attemptFactorLabel')}</span>
                     <strong> ${attFactor ? attFactor + 'x' : '—'}</strong>
                 </div>
                 <div>
-                    <span>Prot Factor:</span>
+                    <span>${t('enhancementUi.protFactorLabel')}</span>
                     <strong> ${protFactor ? protFactor + 'x' : '—'}</strong>
                 </div>
             </div>`;
@@ -920,18 +924,18 @@ class EnhancementUI {
 
         html += `
             <div style="margin-top: 8px; display: flex; justify-content: space-between; font-size: 13px;">
-                <span>Total XP Gained:</span>
+                <span>${t('enhancementUi.totalXpGainedLabel')}</span>
                 <strong>${this.formatNumber(session.totalXP)}</strong>
             </div>
 
             <div style="margin-top: 8px; display: flex; justify-content: space-between; font-size: 13px;">
-                <span>Session Duration:</span>
+                <span>${t('enhancementUi.sessionDurationLabel')}</span>
                 <strong>${durationText}</strong>
             </div>
 
             <div style="margin-top: 8px; display: flex; justify-content: space-between; font-size: 13px;">
-                <span>XP/Hour:</span>
-                <strong>${xpPerHour > 0 ? this.formatNumber(xpPerHour) : 'Calculating...'}</strong>
+                <span>${t('enhancementUi.xpPerHourLabel')}</span>
+                <strong>${xpPerHour > 0 ? this.formatNumber(xpPerHour) : t('enhancementUi.calculatingEllipsis')}</strong>
             </div>
         `;
 
@@ -939,10 +943,14 @@ class EnhancementUI {
         if (overallLuck) {
             const luckColor = overallLuck.luckPercent >= 0 ? STYLE.colors.success : STYLE.colors.danger;
             const luckSign = overallLuck.luckPercent >= 0 ? '+' : '';
+            const luckTooltip = t('enhancementUi.luckTooltip', {
+                actualSuccesses: overallLuck.actualSuccesses,
+                expectedSuccesses: overallLuck.expectedSuccesses.toFixed(2),
+            });
             html += `
             <div style="margin-top: 8px; display: flex; justify-content: space-between; font-size: 13px;">
-                <span>Enhancing Luck:</span>
-                <strong style="color: ${luckColor};" title="${overallLuck.actualSuccesses} actual vs ${overallLuck.expectedSuccesses.toFixed(2)} expected successes">${luckSign}${overallLuck.luckPercent.toFixed(1)}%</strong>
+                <span>${t('enhancementUi.enhancingLuckLabel')}</span>
+                <strong style="color: ${luckColor};" title="${luckTooltip}">${luckSign}${overallLuck.luckPercent.toFixed(1)}%</strong>
             </div>
             `;
         }
@@ -968,7 +976,7 @@ class EnhancementUI {
         const levels = Array.from(levelSet).sort((a, b) => b - a);
 
         if (levels.length === 0) {
-            return '<div style="text-align: center; padding: 20px; color: ${STYLE.colors.textSecondary};">No attempts recorded yet</div>';
+            return `<div style="text-align: center; padding: 20px; color: ${STYLE.colors.textSecondary};">${t('enhancementUi.noAttemptsRecordedMessage')}</div>`;
         }
 
         let rows = '';
@@ -1013,11 +1021,11 @@ class EnhancementUI {
             <table style="${compactTableStyle}">
                 <thead>
                     <tr>
-                        <th style="${compactHeaderStyle}">Lvl</th>
-                        <th style="${compactHeaderStyle}">Success</th>
-                        <th style="${compactHeaderStyle}">Fail</th>
-                        <th style="${compactHeaderStyle}">%</th>
-                        <th style="${compactHeaderStyle}">Luck</th>
+                        <th style="${compactHeaderStyle}">${t('alchemyBestItems.colLvl')}</th>
+                        <th style="${compactHeaderStyle}">${t('labSim.colSuccess')}</th>
+                        <th style="${compactHeaderStyle}">${t('enhancementUi.colFail')}</th>
+                        <th style="${compactHeaderStyle}">${t('enhancementUi.colPercent')}</th>
+                        <th style="${compactHeaderStyle}">${t('enhancementUi.colLuck')}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1049,7 +1057,7 @@ class EnhancementUI {
         html += `
             <div style="display: flex; justify-content: space-between; cursor: pointer; font-weight: bold; padding: 5px 0;"
                  onclick="document.getElementById('${detailsId}').style.display = document.getElementById('${detailsId}').style.display === 'none' ? 'block' : 'none'">
-                <span>💰 Total Cost (click for details)</span>
+                <span>${t('enhancementUi.totalCostClickDetailsLabel')}</span>
                 <span style="color: ${STYLE.colors.gold};">${this.formatNumber(session.totalCost)}</span>
             </div>
         `;
@@ -1061,8 +1069,7 @@ class EnhancementUI {
         if (hasMaterials) {
             html +=
                 '<div style="margin-bottom: 8px; padding: 5px; background: rgba(0, 255, 234, 0.05); border-radius: 4px;">';
-            html +=
-                '<div style="font-weight: bold; margin-bottom: 3px; color: ${STYLE.colors.textSecondary};">Materials:</div>';
+            html += `<div style="font-weight: bold; margin-bottom: 3px; color: ${STYLE.colors.textSecondary};">${t('enhancementUi.materialsLabel')}</div>`;
 
             for (const [itemHrid, data] of Object.entries(session.materialCosts)) {
                 const itemDetails = gameData?.itemDetailMap?.[itemHrid];
@@ -1083,7 +1090,7 @@ class EnhancementUI {
         if (hasCoins) {
             html += `
                 <div style="display: flex; justify-content: space-between; margin-top: 2px; padding: 5px; background: rgba(0, 255, 234, 0.05); border-radius: 4px;">
-                    <span style="font-weight: bold; color: ${STYLE.colors.textSecondary};">Coins (${session.coinCount || 0}×):</span>
+                    <span style="font-weight: bold; color: ${STYLE.colors.textSecondary};">${t('enhancementUi.coinsCountLabel', { count: session.coinCount || 0 })}</span>
                     <span style="color: ${STYLE.colors.gold};">${this.formatNumber(session.coinCost)}</span>
                 </div>
             `;
@@ -1092,8 +1099,9 @@ class EnhancementUI {
         // Protection costs
         if (hasProtection) {
             const protectionItemName = session.protectionItemHrid
-                ? gameData?.itemDetailMap?.[session.protectionItemHrid]?.name || 'Protection'
-                : 'Protection';
+                ? gameData?.itemDetailMap?.[session.protectionItemHrid]?.name ||
+                  t('enhancementUi.protectionFallbackName')
+                : t('enhancementUi.protectionFallbackName');
 
             html += `
                 <div style="display: flex; justify-content: space-between; margin-top: 2px; padding: 5px; background: rgba(0, 255, 234, 0.05); border-radius: 4px;">
@@ -1125,11 +1133,11 @@ class EnhancementUI {
         const s = seconds % 60;
 
         if (h > 0) {
-            return `${h}h ${m}m ${s}s`;
+            return t('enhancementUi.durationHoursMinutesSeconds', { hours: h, minutes: m, seconds: s });
         } else if (m > 0) {
-            return `${m}m ${s}s`;
+            return t('combatSimUi.durationMinutesSeconds', { minutes: m, seconds: s });
         } else {
-            return `${s}s`;
+            return t('combatSimUi.durationSeconds', { seconds: s });
         }
     }
 

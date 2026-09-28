@@ -3,7 +3,18 @@
  * UI generation and management for combat sim skill calculator
  */
 
+import { t } from '../../core/i18n.js';
 import { calculateTimeToLevel, calculateLevelsAfterDays, getLevelFromExp } from './skill-calculator-logic.js';
+
+const SKILL_NAME_KEYS = {
+    stamina: 'simEditor.skillStamina',
+    intelligence: 'simEditor.skillIntelligence',
+    attack: 'simEditor.skillAttack',
+    melee: 'simEditor.skillMelee',
+    defense: 'simEditor.skillDefense',
+    ranged: 'simEditor.skillRanged',
+    magic: 'simEditor.skillMagic',
+};
 
 /**
  * Create the skill calculator UI
@@ -39,7 +50,7 @@ export function createCalculatorUI(container, characterSkills, expRates, levelEx
             const currentExp = skill.experience || 0;
 
             skillData[skillName] = {
-                displayName: capitalize(skillName),
+                displayName: getSkillDisplayName(skillName),
                 currentLevel,
                 currentExp,
             };
@@ -55,7 +66,7 @@ export function createCalculatorUI(container, characterSkills, expRates, levelEx
         row.style.cssText = 'display: flex; justify-content: flex-end; margin-bottom: 4px; align-items: center;';
 
         const label = document.createElement('span');
-        label.textContent = `${skillData[skillName].displayName} to level `;
+        label.textContent = t('skillCalculatorUi.skillToLevelLabel', { skillName: skillData[skillName].displayName });
         label.style.marginRight = '6px';
 
         const input = document.createElement('input');
@@ -88,7 +99,7 @@ export function createCalculatorUI(container, characterSkills, expRates, levelEx
     daysInput.style.cssText = 'width: 60px; padding: 2px 4px; margin-right: 6px;';
 
     const daysLabel = document.createElement('span');
-    daysLabel.textContent = 'days after';
+    daysLabel.textContent = t('skillCalculatorUi.daysAfterLabel');
 
     daysRow.appendChild(daysInput);
     daysRow.appendChild(daysLabel);
@@ -192,24 +203,27 @@ function updateCalculatorResults(
         const currentExp = skillData[activeSkill].currentExp;
         const expRate = expRates[activeSkill] || 0;
 
-        resultsHeader.textContent = `${skillData[activeSkill].displayName} to level ${targetLevel} takes:`;
+        resultsHeader.textContent = t('skillCalculatorUi.resultsHeaderToLevel', {
+            skillName: skillData[activeSkill].displayName,
+            level: targetLevel,
+        });
 
         if (expRate === 0) {
-            resultsContent.innerHTML = '<div>No experience gain (not trained in simulation)</div>';
+            resultsContent.innerHTML = `<div>${t('skillCalculatorUi.noExperienceGainMessage')}</div>`;
         } else if (targetLevel <= currentLevel) {
-            resultsContent.innerHTML = '<div>Already achieved</div>';
+            resultsContent.innerHTML = `<div>${t('skillCalculatorUi.alreadyAchievedMessage')}</div>`;
         } else {
             const timeResult = calculateTimeToLevel(currentExp, targetLevel, expRate, levelExpTable);
             if (timeResult) {
                 resultsContent.innerHTML = `<div>[${timeResult.readable}]</div>`;
             } else {
-                resultsContent.innerHTML = '<div>Invalid target level</div>';
+                resultsContent.innerHTML = `<div>${t('skillCalculatorUi.invalidTargetLevelMessage')}</div>`;
             }
         }
     } else {
         // Calculate levels after X days
         const days = Number(daysInput.value);
-        resultsHeader.textContent = `After ${days} days:`;
+        resultsHeader.textContent = t('skillCalculatorUi.resultsHeaderAfterDays', { days });
 
         const projected = calculateLevelsAfterDays(characterSkills, expRates, days, levelExpTable);
 
@@ -219,25 +233,32 @@ function updateCalculatorResults(
 
             for (const skillName of skillOrder) {
                 if (projected[skillName]) {
-                    html += `<div>${capitalize(skillName)} level ${projected[skillName].level} ${projected[skillName].percentage}%</div>`;
+                    html += `<div>${t('skillCalculatorUi.skillLevelPercentLine', {
+                        skillName: getSkillDisplayName(skillName),
+                        level: projected[skillName].level,
+                        percentage: projected[skillName].percentage,
+                    })}</div>`;
                 }
             }
 
-            html += `<div style="margin-top: 4px; font-weight: bold;">Combat level: ${projected.combatLevel.toFixed(1)}</div>`;
+            html += `<div style="margin-top: 4px; font-weight: bold;">${t('skillCalculatorUi.combatLevelLine', {
+                level: projected.combatLevel.toFixed(1),
+            })}</div>`;
             resultsContent.innerHTML = html;
         } else {
-            resultsContent.innerHTML = '<div>Unable to calculate projection</div>';
+            resultsContent.innerHTML = `<div>${t('skillCalculatorUi.unableToCalculateProjectionMessage')}</div>`;
         }
     }
 }
 
 /**
- * Capitalize first letter of string
- * @param {string} str - String to capitalize
- * @returns {string} Capitalized string
+ * Get the translated display name for a skill.
+ * @param {string} skillName - Internal skill name (e.g. 'attack')
+ * @returns {string} Translated display name
  */
-function capitalize(str) {
-    return str.charAt(0).toUpperCase() + str.slice(1);
+function getSkillDisplayName(skillName) {
+    const key = SKILL_NAME_KEYS[skillName];
+    return key ? t(key) : skillName;
 }
 
 /**

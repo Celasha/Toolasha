@@ -7,6 +7,7 @@
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
+import { t } from '../../core/i18n.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 class ChatCommands {
@@ -308,7 +309,7 @@ class ChatCommands {
         });
 
         const matchList = properNames.slice(0, 5).join(', ') + (properNames.length > 5 ? '...' : '');
-        messageDiv.textContent = `Multiple items match: ${matchList}. Please be more specific.`;
+        messageDiv.textContent = t('chatCommands.multipleMatchesMessage', { matchList });
 
         chatHistory.appendChild(messageDiv);
         chatHistory.scrollTop = chatHistory.scrollHeight;

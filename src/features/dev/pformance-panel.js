@@ -5,6 +5,7 @@
  */
 
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } from '../../utils/panel-z-index.js';
 
@@ -106,7 +107,7 @@ class PFormancePanel {
         this.headerEl = header;
 
         const title = document.createElement('span');
-        title.textContent = 'PFormance';
+        title.textContent = t('performancePanel.title');
         title.style.fontWeight = 'bold';
         title.style.color = COLORS.accent;
 
@@ -290,7 +291,7 @@ class PFormancePanel {
 
         if (entries.length === 0) {
             const empty = document.createElement('div');
-            empty.textContent = 'No data';
+            empty.textContent = t('performancePanel.noData');
             empty.style.padding = '4px 6px';
             empty.style.color = COLORS.textDim;
             empty.style.fontSize = '11px';

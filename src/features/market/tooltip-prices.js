@@ -4,6 +4,7 @@
  */
 
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import marketAPI from '../../api/marketplace.js';
@@ -585,7 +586,7 @@ class TooltipPrices {
 
         // Show message if no market data at all
         if (price.ask <= 0 && price.bid <= 0) {
-            priceDiv.innerHTML = `Price: <span style="color: ${config.COLOR_TEXT_SECONDARY}; font-style: italic;">No market data</span>`;
+            priceDiv.innerHTML = `Price: <span style="color: ${config.COLOR_TEXT_SECONDARY}; font-style: italic;">${t('tooltipPrices.noMarketDataLabel')}</span>`;
             tooltipText.appendChild(priceDiv);
             return;
         }

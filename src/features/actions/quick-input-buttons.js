@@ -16,6 +16,7 @@ import dataManager from '../../core/data-manager.js';
 import storage from '../../core/storage.js';
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
+import { t } from '../../core/i18n.js';
 import { calculateActionStats } from '../../utils/action-calculator.js';
 import { parseEquipmentSpeedBonuses, debugEquipmentSpeedBonuses } from '../../utils/equipment-parser.js';
 import { parseArtisanBonus, getDrinkConcentration } from '../../utils/tea-parser.js';
@@ -199,7 +200,7 @@ class QuickInputButtons {
 
         const addToggle = document.createElement('button');
         addToggle.textContent = '+';
-        addToggle.title = 'Toggle add mode: click to accumulate counts instead of setting them';
+        addToggle.title = t('quickInputButtons.toggleAddModeTooltip');
         addToggle.style.cssText = `
             font-size: 11px;
             font-weight: 700;
@@ -221,7 +222,7 @@ class QuickInputButtons {
         });
         fragment.appendChild(addToggle);
 
-        fragment.appendChild(document.createTextNode('Do '));
+        fragment.appendChild(document.createTextNode(t('quickInputButtons.doPrefixLabel')));
 
         const activePresetValues = this._parsePresets(
             config.getSettingValue('actionPanel_quickInputs_countPresets', ''),
@@ -243,7 +244,7 @@ class QuickInputButtons {
             fragment.appendChild(button);
         });
 
-        const maxButton = this.createButton('Max', () => {
+        const maxButton = this.createButton(t('alchemyBestItems.maxPlaceholder'), () => {
             const currentInput =
                 panel.querySelector('[class*="maxActionCountInput"] input') ||
                 panel.querySelector('input[type="number"]') ||
@@ -261,7 +262,7 @@ class QuickInputButtons {
         });
         fragment.appendChild(maxButton);
 
-        fragment.appendChild(document.createTextNode(' times'));
+        fragment.appendChild(document.createTextNode(t('quickInputButtons.timesSuffixLabel')));
 
         return fragment;
     }
@@ -460,14 +461,24 @@ class QuickInputButtons {
                     timeAfterEquipment < MIN_ACTION_TIME_SECONDS ? ` (${timeAfterEquipment.toFixed(2)}s)` : '';
 
                 speedLines.push(
-                    `Base: ${baseTime.toFixed(2)}s → ${displayTimeAfterEquipment.toFixed(2)}s${equipmentClampSuffix}`
+                    t('taskProfitDisplay.baseSpeedLine', {
+                        base: baseTime.toFixed(2),
+                        after: displayTimeAfterEquipment.toFixed(2),
+                    }) + equipmentClampSuffix
                 );
                 if (speedBonus > 0) {
                     speedLines.push(
-                        `Speed: +${formatPercentage(speedBonus, 1)} | ${calculateActionsPerHour(timeAfterEquipment).toFixed(0)}/hr`
+                        t('taskProfitDisplay.speedBonusLine', {
+                            pct: formatPercentage(speedBonus, 1),
+                            rate: calculateActionsPerHour(timeAfterEquipment).toFixed(0),
+                        })
                     );
                 } else {
-                    speedLines.push(`${calculateActionsPerHour(timeAfterEquipment).toFixed(0)}/hr`);
+                    speedLines.push(
+                        t('alchemyProfitDisplay.actionsPerHourLine', {
+                            value: calculateActionsPerHour(timeAfterEquipment).toFixed(0),
+                        })
+                    );
                 }
 
                 // Add speed breakdown
@@ -481,7 +492,11 @@ class QuickInputButtons {
                                 ? ` (${formatPercentage(item.baseBonus, 1)} + ${formatPercentage(item.enhancementBonus * item.enhancementLevel, 1)})`
                                 : '';
                         speedLines.push(
-                            `  - ${item.itemName}${enhText}: +${formatPercentage(item.scaledBonus, 1)}${detailText}`
+                            t('alchemyProfitDisplay.speedDetailLine', {
+                                name: item.itemName,
+                                enh: enhText,
+                                value: formatPercentage(item.scaledBonus, 1),
+                            }) + detailText
                         );
                     }
 
@@ -491,7 +506,13 @@ class QuickInputButtons {
                             item.drinkConcentration > 0
                                 ? ` (${item.baseSpeed.toFixed(2)}% × ${(1 + item.drinkConcentration / 100).toFixed(2)})`
                                 : '';
-                        speedLines.push(`  - ${item.name}: +${item.speed.toFixed(2)}%${detailText}`);
+                        speedLines.push(
+                            t('alchemyProfitDisplay.speedDetailLine', {
+                                name: item.name,
+                                enh: '',
+                                value: `${item.speed.toFixed(2)}%`,
+                            }) + detailText
+                        );
                     }
 
                     // Personal buff (Scroll of Action Speed)
@@ -503,11 +524,16 @@ class QuickInputButtons {
                             ? scrollSpriteHtml('/buff_types/action_speed')
                             : '';
                         speedLines.push(
-                            `  - ${simSprite}Scroll of Action Speed: +${formatPercentage(personalSpeedBonus, 1)}`
+                            `  - ${simSprite}` +
+                                t('taskProfitDisplay.scrollOfActionSpeedLine', {
+                                    pct: formatPercentage(personalSpeedBonus, 1),
+                                })
                         );
                     }
                     if (speedBreakdown.guild > 0) {
-                        speedLines.push(`  - Guild Shrine: +${speedBreakdown.guild.toFixed(1)}%`);
+                        speedLines.push(
+                            t('quickInputButtons.guildShrineBonusLine', { pct: speedBreakdown.guild.toFixed(1) })
+                        );
                     }
                 }
 
@@ -515,10 +541,15 @@ class QuickInputButtons {
                 if (isTaskAction && taskSpeedBonus > 0) {
                     speedLines.push(''); // Empty line separator
                     speedLines.push(
-                        `<span style="font-weight: 500;">Task Speed (multiplicative): +${taskSpeedBonus.toFixed(2)}%</span>`
+                        `<span style="font-weight: 500;">${t('taskProfitDisplay.taskSpeedMultiplicativeLine', { pct: taskSpeedBonus.toFixed(2) })}</span>`
                     );
                     speedLines.push(
-                        `${displayTimeAfterEquipment.toFixed(2)}s${equipmentClampSuffix} → ${actionTime.toFixed(2)}s | ${calculateActionsPerHour(actionTime).toFixed(0)}/hr`
+                        t('quickInputButtons.taskSpeedTimeChangeLine', {
+                            before: displayTimeAfterEquipment.toFixed(2),
+                            clampSuffix: equipmentClampSuffix,
+                            after: actionTime.toFixed(2),
+                            rate: calculateActionsPerHour(actionTime).toFixed(0),
+                        })
                     );
 
                     // Find equipped task badge for details
@@ -540,7 +571,11 @@ class QuickInputButtons {
                                     : '';
 
                             speedLines.push(
-                                `  - ${itemDetails.name}${enhText}: +${taskSpeedBonus.toFixed(2)}%${detailText}`
+                                t('alchemyProfitDisplay.speedDetailLine', {
+                                    name: itemDetails.name,
+                                    enh: enhText,
+                                    value: `${taskSpeedBonus.toFixed(2)}%`,
+                                }) + detailText
                             );
                         }
                     }
@@ -549,7 +584,7 @@ class QuickInputButtons {
                 // Add Efficiency breakdown
                 speedLines.push(''); // Empty line
                 speedLines.push(
-                    `<span style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Efficiency: +${totalEfficiency.toFixed(2)}% → Output: ×${efficiencyMultiplier.toFixed(2)} (${Math.round(calculateActionsPerHour(actionTime) * efficiencyMultiplier)}/hr)</span>`
+                    `<span style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">${t('alchemyProfitDisplay.efficiencyOutputLine', { efficiency: totalEfficiency.toFixed(2), multiplier: efficiencyMultiplier.toFixed(2), actionsPerHour: Math.round(calculateActionsPerHour(actionTime) * efficiencyMultiplier) })}</span>`
                 );
 
                 // Detailed efficiency breakdown
@@ -561,11 +596,20 @@ class QuickInputButtons {
                     const rawLevelDelta = efficiencyBreakdown.skillLevel - efficiencyBreakdown.baseRequirement;
 
                     // Show final level efficiency
-                    speedLines.push(`  - Level: +${efficiencyBreakdown.levelEfficiency.toFixed(2)}%`);
+                    speedLines.push(
+                        t('alchemyProfitDisplay.effLevelDetailLine', {
+                            value: efficiencyBreakdown.levelEfficiency.toFixed(2),
+                        })
+                    );
 
                     // Show raw level delta (what you'd get without Action Level bonuses)
                     speedLines.push(
-                        `    - Raw level delta: +${rawLevelDelta.toFixed(2)}% (${efficiencyBreakdown.skillLevel} - ${efficiencyBreakdown.baseRequirement} base requirement)`
+                        '    - ' +
+                            t('taskProfitDisplay.rawLevelDeltaLine', {
+                                pct: rawLevelDelta.toFixed(2),
+                                skillLevel: efficiencyBreakdown.skillLevel,
+                                baseRequirement: efficiencyBreakdown.baseRequirement,
+                            })
                     );
 
                     // Show Action Level bonus teas that reduce level efficiency
@@ -577,13 +621,20 @@ class QuickInputButtons {
                             // Calculate impact: base tea effect reduces efficiency
                             const baseTeaImpact = -tea.baseActionLevel;
                             speedLines.push(
-                                `    - ${tea.name} impact: ${baseTeaImpact.toFixed(2)}% (raises requirement)`
+                                '    - ' +
+                                    t('taskProfitDisplay.levelImpactLine', {
+                                        name: tea.name,
+                                        pct: baseTeaImpact.toFixed(2),
+                                    })
                             );
 
                             // Show DC contribution as additional reduction if > 0
                             if (tea.dcContribution > 0) {
                                 const dcImpact = -tea.dcContribution;
-                                speedLines.push(`      - Drink Concentration: ${dcImpact.toFixed(2)}%`);
+                                speedLines.push(
+                                    '      - ' +
+                                        t('taskProfitDisplay.drinkConcentrationLine', { pct: dcImpact.toFixed(2) })
+                                );
                             }
                         }
                     }
@@ -592,23 +643,48 @@ class QuickInputButtons {
                     // Get house room name
                     const houseRoomName = this.getHouseRoomName(actionDetails.type);
                     speedLines.push(
-                        `  - House: +${efficiencyBreakdown.houseEfficiency.toFixed(2)}% (${houseRoomName})`
+                        '  - ' +
+                            t('taskProfitDisplay.houseEfficiencyLine', {
+                                pct: efficiencyBreakdown.houseEfficiency.toFixed(2),
+                                roomLabel: houseRoomName,
+                            })
                     );
                 }
                 if (efficiencyBreakdown.equipmentEfficiency > 0) {
-                    speedLines.push(`  - Equipment: +${efficiencyBreakdown.equipmentEfficiency.toFixed(2)}%`);
+                    speedLines.push(
+                        '  - ' +
+                            t('taskProfitDisplay.equipmentEfficiencyLine', {
+                                pct: efficiencyBreakdown.equipmentEfficiency.toFixed(2),
+                            })
+                    );
                 }
                 if (efficiencyBreakdown.achievementEfficiency > 0) {
-                    speedLines.push(`  - Achievement: +${efficiencyBreakdown.achievementEfficiency.toFixed(2)}%`);
+                    speedLines.push(
+                        '  - ' +
+                            t('taskProfitDisplay.achievementEfficiencyLine', {
+                                pct: efficiencyBreakdown.achievementEfficiency.toFixed(2),
+                            })
+                    );
                 }
                 // Break out individual teas - show BASE efficiency on main line, DC as sub-line
                 if (efficiencyBreakdown.teaBreakdown && efficiencyBreakdown.teaBreakdown.length > 0) {
                     for (const tea of efficiencyBreakdown.teaBreakdown) {
                         // Show BASE efficiency (without DC scaling) on main line
-                        speedLines.push(`  - ${tea.name}: +${tea.baseEfficiency.toFixed(2)}%`);
+                        speedLines.push(
+                            t('alchemyProfitDisplay.speedDetailLine', {
+                                name: tea.name,
+                                enh: '',
+                                value: `${tea.baseEfficiency.toFixed(2)}%`,
+                            })
+                        );
                         // Show DC contribution as sub-line if > 0
                         if (tea.dcContribution > 0) {
-                            speedLines.push(`    - Drink Concentration: +${tea.dcContribution.toFixed(2)}%`);
+                            speedLines.push(
+                                '    - ' +
+                                    t('taskProfitDisplay.drinkConcentrationLine', {
+                                        pct: `+${tea.dcContribution.toFixed(2)}`,
+                                    })
+                            );
                         }
                     }
                 }
@@ -617,17 +693,30 @@ class QuickInputButtons {
                         '/community_buff_types/production_efficiency'
                     );
                     speedLines.push(
-                        `  - Community: +${efficiencyBreakdown.communityEfficiency.toFixed(2)}% (Production Efficiency T${communityBuffLevel})`
+                        '  - ' +
+                            t('taskProfitDisplay.communityEfficiencyLine', {
+                                pct: efficiencyBreakdown.communityEfficiency.toFixed(2),
+                                tier: communityBuffLevel,
+                            })
                     );
                 }
                 if (efficiencyBreakdown.personalEfficiency > 0) {
                     const simSprite = dataManager.isBuffBeingSimulated(actionDetails.type, '/buff_types/efficiency')
                         ? scrollSpriteHtml('/buff_types/efficiency')
                         : '';
-                    speedLines.push(`  - ${simSprite}Seal: +${efficiencyBreakdown.personalEfficiency.toFixed(2)}%`);
+                    speedLines.push(
+                        `  - ${simSprite}` +
+                            t('taskProfitDisplay.sealEfficiencyLine', {
+                                pct: efficiencyBreakdown.personalEfficiency.toFixed(2),
+                            })
+                    );
                 }
                 if (efficiencyBreakdown.guildEfficiency > 0) {
-                    speedLines.push(`  - Guild Shrine: +${efficiencyBreakdown.guildEfficiency.toFixed(2)}%`);
+                    speedLines.push(
+                        t('quickInputButtons.guildShrineBonusLine', {
+                            pct: efficiencyBreakdown.guildEfficiency.toFixed(2),
+                        })
+                    );
                 }
 
                 // Total time (dynamic)
@@ -647,16 +736,18 @@ class QuickInputButtons {
                     const inputValue = numberInput.value;
 
                     if (inputValue === '∞') {
-                        totalTimeLine.textContent = 'Total time: ∞';
+                        totalTimeLine.textContent = t('taskProfitDisplay.totalTimeLine', { time: '∞' });
                         return;
                     }
 
                     const queueCount = parseInt(inputValue) || 0;
                     if (queueCount > 0) {
                         const totalSeconds = computeTotalSeconds(queueCount);
-                        totalTimeLine.textContent = `Total time: ${timeReadable(totalSeconds)}`;
+                        totalTimeLine.textContent = t('taskProfitDisplay.totalTimeLine', {
+                            time: timeReadable(totalSeconds),
+                        });
                     } else {
-                        totalTimeLine.textContent = 'Total time: 0s';
+                        totalTimeLine.textContent = t('taskProfitDisplay.totalTimeLine', { time: '0s' });
                     }
                 };
 
@@ -671,11 +762,14 @@ class QuickInputButtons {
                 const actionsPerHourWithEfficiency = Math.round(
                     calculateEffectiveActionsPerHour(calculateActionsPerHour(actionTime), efficiencyMultiplier)
                 );
-                const initialSummary = `${actionsPerHourWithEfficiency}/hr | Total time: 0s`;
+                const initialSummary = t('alchemyProfitDisplay.speedTimeSummary', {
+                    actionsPerHour: actionsPerHourWithEfficiency,
+                    time: '0s',
+                });
 
                 speedSection = createCollapsibleSection(
                     '⏱',
-                    'Action Speed & Time',
+                    t('alchemyProfitDisplay.actionSpeedTimeTitle'),
                     initialSummary,
                     speedContent,
                     false // Collapsed by default
@@ -692,14 +786,23 @@ class QuickInputButtons {
                     if (speedSummaryDiv) {
                         const inputValue = numberInput.value;
                         if (inputValue === '∞') {
-                            speedSummaryDiv.textContent = `${actionsPerHourWithEfficiency}/hr | Total time: ∞`;
+                            speedSummaryDiv.textContent = t('alchemyProfitDisplay.speedTimeSummary', {
+                                actionsPerHour: actionsPerHourWithEfficiency,
+                                time: '∞',
+                            });
                         } else {
                             const queueCount = parseInt(inputValue) || 0;
                             if (queueCount > 0) {
                                 const totalSeconds = computeTotalSeconds(queueCount);
-                                speedSummaryDiv.textContent = `${actionsPerHourWithEfficiency}/hr | Total time: ${timeReadable(totalSeconds)}`;
+                                speedSummaryDiv.textContent = t('alchemyProfitDisplay.speedTimeSummary', {
+                                    actionsPerHour: actionsPerHourWithEfficiency,
+                                    time: timeReadable(totalSeconds),
+                                });
                             } else {
-                                speedSummaryDiv.textContent = `${actionsPerHourWithEfficiency}/hr | Total time: 0s`;
+                                speedSummaryDiv.textContent = t('alchemyProfitDisplay.speedTimeSummary', {
+                                    actionsPerHour: actionsPerHourWithEfficiency,
+                                    time: '0s',
+                                });
                             }
                         }
                     }
@@ -949,7 +1052,7 @@ class QuickInputButtons {
         };
 
         const roomHrid = roomMapping[actionType];
-        if (!roomHrid) return 'Unknown Room';
+        if (!roomHrid) return t('taskProfitDisplay.unknownRoomLabel');
 
         const room = houseRooms.get(roomHrid);
         const roomName = roomHrid
@@ -960,7 +1063,7 @@ class QuickInputButtons {
             .join(' ');
         const level = room?.level || 0;
 
-        return `${roomName} level ${level}`;
+        return t('taskProfitDisplay.roomLevelLabel', { roomName, level });
     }
 
     /**
@@ -1292,18 +1395,28 @@ class QuickInputButtons {
             const lines = [];
 
             // Current level and progress
-            lines.push(`Current: Level ${currentLevel} | ${progressPercent.toFixed(2)}% to Level ${nextLevel}`);
+            lines.push(
+                t('alchemyProfitDisplay.currentLevelProgress', {
+                    level: currentLevel,
+                    percent: progressPercent.toFixed(2),
+                    nextLevel,
+                })
+            );
             lines.push('');
 
             // Action details
             lines.push(
-                `XP per action: ${formatWithSeparator(baseXP.toFixed(2))} base → ${formatWithSeparator(modifiedXP.toFixed(2))} (×${xpData.totalMultiplier.toFixed(2)})`
+                t('alchemyProfitDisplay.xpPerActionLine', {
+                    base: formatWithSeparator(baseXP.toFixed(2)),
+                    modified: formatWithSeparator(modifiedXP.toFixed(2)),
+                    multiplier: xpData.totalMultiplier.toFixed(2),
+                })
             );
 
             // XP breakdown (if any bonuses exist)
             if (xpData.totalWisdom > 0 || xpData.charmExperience > 0) {
                 const totalXPBonus = xpData.totalWisdom + xpData.charmExperience;
-                lines.push(`  Total XP Bonus: +${totalXPBonus.toFixed(2)}%`);
+                lines.push(t('alchemyProfitDisplay.totalXpBonusLine', { value: totalXPBonus.toFixed(2) }));
 
                 // List all sources that contribute
 
@@ -1311,7 +1424,13 @@ class QuickInputButtons {
                 if (xpData.charmBreakdown && xpData.charmBreakdown.length > 0) {
                     for (const item of xpData.charmBreakdown) {
                         const enhText = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
-                        lines.push(`    • ${item.name}${enhText}: +${item.value.toFixed(2)}%`);
+                        lines.push(
+                            t('alchemyProfitDisplay.xpItemBonusLine', {
+                                name: item.name,
+                                enh: enhText,
+                                value: item.value.toFixed(2),
+                            })
+                        );
                     }
                 }
 
@@ -1319,33 +1438,55 @@ class QuickInputButtons {
                 if (xpData.wisdomBreakdown && xpData.wisdomBreakdown.length > 0) {
                     for (const item of xpData.wisdomBreakdown) {
                         const enhText = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
-                        lines.push(`    • ${item.name}${enhText}: +${item.value.toFixed(2)}%`);
+                        lines.push(
+                            t('alchemyProfitDisplay.xpItemBonusLine', {
+                                name: item.name,
+                                enh: enhText,
+                                value: item.value.toFixed(2),
+                            })
+                        );
                     }
                 }
 
                 // House rooms
                 if (xpData.breakdown.houseWisdom > 0) {
-                    lines.push(`    • House Rooms: +${xpData.breakdown.houseWisdom.toFixed(2)}%`);
+                    lines.push(
+                        t('alchemyProfitDisplay.xpHouseRoomsLine', { value: xpData.breakdown.houseWisdom.toFixed(2) })
+                    );
                 }
 
                 // Community buff
                 if (xpData.breakdown.communityWisdom > 0) {
-                    lines.push(`    • Community Buff: +${xpData.breakdown.communityWisdom.toFixed(2)}%`);
+                    lines.push(
+                        t('alchemyProfitDisplay.xpCommunityBuffLine', {
+                            value: xpData.breakdown.communityWisdom.toFixed(2),
+                        })
+                    );
                 }
 
                 // Tea/Coffee
                 if (xpData.breakdown.consumableWisdom > 0) {
-                    lines.push(`    • Wisdom Tea: +${xpData.breakdown.consumableWisdom.toFixed(2)}%`);
+                    lines.push(
+                        t('alchemyProfitDisplay.xpWisdomTeaLine', {
+                            value: xpData.breakdown.consumableWisdom.toFixed(2),
+                        })
+                    );
                 }
 
                 // Achievement wisdom
                 if (xpData.breakdown.achievementWisdom > 0) {
-                    lines.push(`    • Achievement: +${xpData.breakdown.achievementWisdom.toFixed(2)}%`);
+                    lines.push(
+                        t('alchemyProfitDisplay.xpAchievementLine', {
+                            value: xpData.breakdown.achievementWisdom.toFixed(2),
+                        })
+                    );
                 }
 
                 // MooPass wisdom
                 if (xpData.breakdown.mooPassWisdom > 0) {
-                    lines.push(`    • MooPass: +${xpData.breakdown.mooPassWisdom.toFixed(2)}%`);
+                    lines.push(
+                        t('alchemyProfitDisplay.xpMooPassLine', { value: xpData.breakdown.mooPassWisdom.toFixed(2) })
+                    );
                 }
 
                 // Personal buff (Scroll of Wisdom)
@@ -1353,10 +1494,18 @@ class QuickInputButtons {
                     const simSprite = dataManager.isBuffBeingSimulated(actionDetails.type, '/buff_types/wisdom')
                         ? scrollSpriteHtml('/buff_types/wisdom')
                         : '';
-                    lines.push(`    • ${simSprite}Scroll of Wisdom: +${xpData.breakdown.personalWisdom.toFixed(2)}%`);
+                    lines.push(
+                        `    • ${simSprite}` +
+                            t('quickInputButtons.xpScrollOfWisdomLine', {
+                                value: xpData.breakdown.personalWisdom.toFixed(2),
+                            })
+                    );
                 }
                 if (xpData.breakdown.guildWisdom > 0) {
-                    lines.push(`    • Guild Shrine: +${xpData.breakdown.guildWisdom.toFixed(2)}%`);
+                    lines.push(
+                        `    • ` +
+                            t('quickInputButtons.xpGuildShrineLine', { value: xpData.breakdown.guildWisdom.toFixed(2) })
+                    );
                 }
             }
 
@@ -1374,10 +1523,12 @@ class QuickInputButtons {
             );
 
             lines.push(
-                `<span style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">To Level ${nextLevel}:</span>`
+                `<span style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">${t('alchemyProfitDisplay.toLevelHeader', { level: nextLevel })}</span>`
             );
-            lines.push(`  Actions: ${formatWithSeparator(singleLevel.actionsNeeded)}`);
-            lines.push(`  Time: ${timeReadable(singleLevel.timeNeeded)}`);
+            lines.push(
+                t('alchemyProfitDisplay.actionsCountLine', { count: formatWithSeparator(singleLevel.actionsNeeded) })
+            );
+            lines.push(t('alchemyProfitDisplay.timeNeededLine', { time: timeReadable(singleLevel.timeNeeded) }));
 
             lines.push('');
 
@@ -1386,10 +1537,10 @@ class QuickInputButtons {
             const initialTargetLevel =
                 savedTargetLevel && savedTargetLevel > currentLevel ? savedTargetLevel : nextLevel;
             lines.push(
-                `<span style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Target Level Calculator:</span>`
+                `<span style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">${t('alchemyProfitDisplay.targetLevelCalculatorHeader')}</span>`
             );
             lines.push(`<div style="margin-top: 4px;">
-                <span>To level </span>
+                <span>${t('alchemyProfitDisplay.toLevelPrefix')} </span>
                 <input
                     type="number"
                     id="mwi-target-level-input"
@@ -1411,12 +1562,15 @@ class QuickInputButtons {
 
             // Dynamic result line (will be updated by JS)
             lines.push(`<div id="mwi-target-level-result" style="margin-top: 4px; margin-left: 8px;">
-                ${formatWithSeparator(singleLevel.actionsNeeded)} actions | ${timeReadable(singleLevel.timeNeeded)}
+                ${t('alchemyProfitDisplay.actionsTimeResult', { actions: formatWithSeparator(singleLevel.actionsNeeded), time: timeReadable(singleLevel.timeNeeded) })}
             </div>`);
 
             lines.push('');
             lines.push(
-                `XP/hour: ${formatWithSeparator(Math.round(xpPerHour))} | XP/day: ${formatWithSeparator(Math.round(xpPerDay))}`
+                t('alchemyProfitDisplay.xpPerHourPerDayLine', {
+                    perHour: formatWithSeparator(Math.round(xpPerHour)),
+                    perDay: formatWithSeparator(Math.round(xpPerDay)),
+                })
             );
 
             content.innerHTML = lines.join('<br>');
@@ -1441,14 +1595,14 @@ class QuickInputButtons {
                     );
 
                     targetLevelResult.innerHTML = `
-                        ${formatWithSeparator(result.actionsNeeded)} actions | ${timeReadable(result.timeNeeded)}
+                        ${t('alchemyProfitDisplay.actionsTimeResult', { actions: formatWithSeparator(result.actionsNeeded), time: timeReadable(result.timeNeeded) })}
                     `;
                     targetLevelResult.style.color = 'var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY})';
 
                     // Auto-fill queue input when target level changes
                     this.setInputValue(numberInput, result.actionsNeeded);
                 } else {
-                    targetLevelResult.textContent = 'Invalid level';
+                    targetLevelResult.textContent = t('alchemyProfitDisplay.invalidLevelMessage');
                     targetLevelResult.style.color = 'var(--color-error, #ff4444)';
                 }
             };
@@ -1476,7 +1630,12 @@ class QuickInputButtons {
                 );
 
                 targetLevelResult.innerHTML = `
-                    ${formatWithSeparator(actionCount)} actions → Level ${result.finalLevel} (${result.percentToNext.toFixed(2)}% to next) | ${timeReadable(result.timeElapsed)}
+                    ${t('quickInputButtons.actionsToLevelResult', {
+                        actions: formatWithSeparator(actionCount),
+                        level: result.finalLevel,
+                        percent: result.percentToNext.toFixed(2),
+                        time: timeReadable(result.timeElapsed),
+                    })}
                 `;
                 targetLevelResult.style.color = `var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY})`;
             };
@@ -1490,13 +1649,16 @@ class QuickInputButtons {
             }
 
             // Create summary for collapsed view (time to next level)
-            const summary = `${timeReadable(singleLevel.timeNeeded)} to Level ${nextLevel}`;
+            const summary = t('alchemyProfitDisplay.timeToLevelSummary', {
+                time: timeReadable(singleLevel.timeNeeded),
+                level: nextLevel,
+            });
 
             // Create collapsible section
             return compactActionPanelSection(
                 createCollapsibleSection(
                     '📈',
-                    'Level Progress',
+                    t('alchemyProfitDisplay.levelProgressTitle'),
                     summary,
                     content,
                     false // Collapsed by default

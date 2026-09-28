@@ -11,6 +11,7 @@
  */
 
 import config from '../../../core/config.js';
+import { t } from '../../../core/i18n.js';
 import domObserver from '../../../core/dom-observer.js';
 import dataManager from '../../../core/data-manager.js';
 import inventorySort from '../inventory-sort.js';
@@ -677,7 +678,7 @@ export default class CustomTabsUI {
                 'toolasha-inv-tab ' + (existingTab ? existingTab.className.replace(/Mui-selected/g, '') : '');
             btn.setAttribute('role', 'tab');
             btn.setAttribute('type', 'button');
-            btn.textContent = 'Toolasha';
+            btn.textContent = t('settings.tabLabel');
             btn.style.minWidth = 'auto';
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -1026,7 +1027,7 @@ export default class CustomTabsUI {
             if (this._config.tabs.length === 0) {
                 const empty = document.createElement('div');
                 empty.className = 'toolasha-ct-empty';
-                empty.textContent = 'No custom tabs yet. Click "+ Tab" to create one.';
+                empty.textContent = t('customTabsUi.emptyTabsMessage');
                 empty.style.order = orderCounter++;
                 invContainer.appendChild(empty);
                 this._injectedEls.push(empty);
@@ -1272,19 +1273,19 @@ export default class CustomTabsUI {
 
         const addBtn = document.createElement('button');
         addBtn.className = 'toolasha-ct-add-btn';
-        addBtn.textContent = '+ Tab';
+        addBtn.textContent = t('customTabsUi.addTabButton');
         addBtn.addEventListener('click', () => this._onAddTab(null));
 
         const exportBtn = document.createElement('button');
         exportBtn.className = 'toolasha-ct-add-btn';
-        exportBtn.textContent = 'Export';
+        exportBtn.textContent = t('customTabsUi.exportButton');
         exportBtn.addEventListener('click', () => this._exportLayout());
 
         const importBtn = document.createElement('div');
         importBtn.className = 'toolasha-ct-add-btn';
         importBtn.style.position = 'relative';
         importBtn.style.overflow = 'hidden';
-        importBtn.textContent = 'Import';
+        importBtn.textContent = t('customTabsUi.importButton');
         const importInput = document.createElement('input');
         importInput.type = 'file';
         importInput.accept = '.json,application/json';
@@ -1302,13 +1303,13 @@ export default class CustomTabsUI {
 
         const expandBtn = document.createElement('button');
         expandBtn.className = 'toolasha-ct-add-btn';
-        expandBtn.textContent = 'Expand All';
+        expandBtn.textContent = t('customTabsUi.expandAllButton');
         expandBtn.addEventListener('click', () => this._onSetAllTabsOpen(true));
         actionsDiv.appendChild(expandBtn);
 
         const collapseBtn = document.createElement('button');
         collapseBtn.className = 'toolasha-ct-add-btn';
-        collapseBtn.textContent = 'Collapse All';
+        collapseBtn.textContent = t('customTabsUi.collapseAllButton');
         collapseBtn.addEventListener('click', () => this._onSetAllTabsOpen(false));
         actionsDiv.appendChild(collapseBtn);
 
@@ -1352,7 +1353,7 @@ export default class CustomTabsUI {
             const text = await file.text();
             const parsed = JSON.parse(text);
             if (parsed._toolasha !== 'tabs-v1' || !Array.isArray(parsed.tabs)) {
-                alert('[Toolasha] Invalid layout file.');
+                alert(t('customTabsUi.invalidLayoutFileAlert'));
                 console.error('[CustomTabs] Import failed: missing _toolasha marker or tabs array', parsed);
                 return;
             }
@@ -1365,7 +1366,7 @@ export default class CustomTabsUI {
             await this._applyLayout();
             this._save();
         } catch (err) {
-            alert('[Toolasha] Failed to read layout file.');
+            alert(t('customTabsUi.failedReadLayoutFileAlert'));
             console.error('[CustomTabs] Import error:', err);
         }
     }
@@ -1647,7 +1648,7 @@ export default class CustomTabsUI {
         const editBtn = document.createElement('button');
         editBtn.className = 'toolasha-ct-node-btn';
         editBtn.textContent = '✏';
-        editBtn.title = 'Edit tab';
+        editBtn.title = t('customTabsUi.editTabTooltip');
         editBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             this._openEditor(tab.id);
@@ -1657,7 +1658,7 @@ export default class CustomTabsUI {
         const addSubBtn = document.createElement('button');
         addSubBtn.className = 'toolasha-ct-node-btn';
         addSubBtn.textContent = '+';
-        addSubBtn.title = 'Add subtab';
+        addSubBtn.title = t('customTabsUi.addSubtabTooltip');
         addSubBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             this._onAddTab(tab.id);
@@ -1667,7 +1668,7 @@ export default class CustomTabsUI {
         const delBtn = document.createElement('button');
         delBtn.className = 'toolasha-ct-node-btn';
         delBtn.textContent = '×';
-        delBtn.title = 'Delete tab';
+        delBtn.title = t('customTabsUi.deleteTabTooltip');
         delBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             this._onDeleteTab(tab.id);
@@ -1748,8 +1749,7 @@ export default class CustomTabsUI {
                 if (anyOwned) {
                     const warn = document.createElement('span');
                     warn.textContent = '⚠';
-                    warn.title =
-                        'Items are hidden — expand the relevant categories in the Inventory tab to show them here.';
+                    warn.title = t('customTabsUi.itemsHiddenWarningTooltip');
                     warn.style.cssText = 'color:#ff3333;margin-left:4px;cursor:default;font-size:13px;flex-shrink:0;';
                     const actionsEl = header.querySelector('.toolasha-ct-section-actions');
                     if (actionsEl) header.insertBefore(warn, actionsEl);
@@ -2003,7 +2003,9 @@ export default class CustomTabsUI {
 
         const headerEl = document.createElement('div');
         headerEl.className = 'toolasha-ct-unorg-header';
-        headerEl.innerHTML = `<span>${this._unorgOpen ? '▼' : '▶'}</span> <span>Unorganized (${totalTiles})</span>`;
+        headerEl.innerHTML = `<span>${this._unorgOpen ? '▼' : '▶'}</span> <span>${this._escHtml(
+            t('customTabsUi.unorganizedHeaderLabel', { count: totalTiles })
+        )}</span>`;
         headerEl.style.order = orderCounter++;
         headerEl.addEventListener('click', () => {
             this._unorgOpen = !this._unorgOpen;
@@ -2160,37 +2162,37 @@ export default class CustomTabsUI {
 
         modal.innerHTML = `
             <div class="toolasha-ct-modal-body">
-                <h3>Edit Tab</h3>
-                <label>Name</label>
+                <h3>${this._escHtml(t('customTabsUi.editTabModalTitle'))}</h3>
+                <label>${this._escHtml(t('customTabsUi.nameFieldLabel'))}</label>
                 <input type="text" class="toolasha-ct-editor-name" value="${this._escHtml(tab.name)}">
 
-                <label>Color</label>
+                <label>${this._escHtml(t('customTabsUi.colorFieldLabel'))}</label>
                 <div class="toolasha-ct-swatches"></div>
 
-                <label>Add Category <span class="toolasha-ct-addall-label"><input type="checkbox" class="toolasha-ct-addall-cb"${config.getSetting('inventoryTabs_categoryAddAll') ? ' checked' : ''}> All items</span></label>
+                <label>${this._escHtml(t('customTabsUi.addCategoryLabel'))} <span class="toolasha-ct-addall-label"><input type="checkbox" class="toolasha-ct-addall-cb"${config.getSetting('inventoryTabs_categoryAddAll') ? ' checked' : ''}> ${this._escHtml(t('customTabsUi.allItemsCheckboxLabel'))}</span></label>
                 <div class="toolasha-ct-categories"></div>
 
-                <label>From Loadout</label>
+                <label>${this._escHtml(t('customTabsUi.fromLoadoutLabel'))}</label>
                 <div class="toolasha-ct-loadouts"></div>
 
-                <label>Items</label>
+                <label>${this._escHtml(t('customTabsUi.itemsFieldLabel'))}</label>
                 <div class="toolasha-ct-search-row">
-                    <input type="search" class="toolasha-ct-editor-search" placeholder="Search items to add...">
+                    <input type="search" class="toolasha-ct-editor-search" placeholder="${this._escHtml(t('customTabsUi.searchItemsToAddPlaceholder'))}">
                     <select class="toolasha-ct-cat-filter">
-                        <option value="">All</option>
+                        <option value="">${this._escHtml(t('customTabsUi.catFilterAllOption'))}</option>
                     </select>
                 </div>
                 <div class="toolasha-ct-search-results"></div>
                 <div class="toolasha-ct-assigned-list"></div>
                 <div style="margin-top:6px;">
-                    <button class="toolasha-ct-add-linebreak-btn" style="background:#2a2a3a;color:#888;border:1px solid #444;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px;">+ Line Break</button>
+                    <button class="toolasha-ct-add-linebreak-btn" style="background:#2a2a3a;color:#888;border:1px solid #444;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px;">${this._escHtml(t('customTabsUi.addLineBreakButton'))}</button>
                 </div>
             </div>
 
             <div class="toolasha-ct-modal-footer">
-                <button class="toolasha-ct-delete-btn">Delete Tab</button>
-                <button class="toolasha-ct-clear-btn">Clear All</button>
-                <button class="toolasha-ct-close-btn">Close</button>
+                <button class="toolasha-ct-delete-btn">${this._escHtml(t('customTabsUi.deleteTabButton'))}</button>
+                <button class="toolasha-ct-clear-btn">${this._escHtml(t('settings.clearAllButton'))}</button>
+                <button class="toolasha-ct-close-btn">${this._escHtml(t('openableAnalytics.closeAriaLabel'))}</button>
             </div>
         `;
 
@@ -2250,7 +2252,7 @@ export default class CustomTabsUI {
         const colorPicker = document.createElement('input');
         colorPicker.type = 'color';
         colorPicker.className = 'toolasha-ct-color-picker';
-        colorPicker.title = 'Custom color';
+        colorPicker.title = t('customTabsUi.customColorTooltip');
         colorPicker.value = tab.color && tab.color.startsWith('#') ? tab.color : '#888888';
         colorPicker.addEventListener('input', () => {
             const hex = colorPicker.value;
@@ -2323,7 +2325,7 @@ export default class CustomTabsUI {
                 this._applyLayout();
             } else {
                 this._deleteConfirmId = tabId;
-                deleteBtn.textContent = 'Confirm Delete?';
+                deleteBtn.textContent = t('customTabsUi.confirmDeleteButton');
                 deleteBtn.style.background = '#a03030';
             }
         });
@@ -2342,12 +2344,12 @@ export default class CustomTabsUI {
                     this._renderAssignedItems(modal.querySelector('.toolasha-ct-assigned-list'), tabId);
                     if (this._isActive) this._applyLayout();
                 }
-                clearBtn.textContent = 'Clear All';
+                clearBtn.textContent = t('settings.clearAllButton');
                 clearBtn.style.background = '';
                 clearConfirm = false;
             } else {
                 clearConfirm = true;
-                clearBtn.textContent = 'Confirm Clear?';
+                clearBtn.textContent = t('customTabsUi.confirmClearButton');
                 clearBtn.style.background = '#6a3a00';
             }
         });
@@ -2411,7 +2413,9 @@ export default class CustomTabsUI {
                     // "Add all levels" shortcut row
                     const addAllRow = document.createElement('div');
                     addAllRow.className = 'toolasha-ct-search-result toolasha-ct-search-level-row';
-                    addAllRow.innerHTML = `<span style="color:#7dcea0;font-size:12px;padding-left:4px;">+ Add all levels (+0–+${maxLevel})</span>`;
+                    addAllRow.innerHTML = `<span style="color:#7dcea0;font-size:12px;padding-left:4px;">${this._escHtml(
+                        t('customTabsUi.addAllLevelsLabel', { maxLevel })
+                    )}</span>`;
                     addAllRow.addEventListener('click', () => {
                         for (let level = 0; level <= maxLevel; level++) {
                             const levelHrid = level === 0 ? hrid : `${hrid}+${level}`;
@@ -2439,7 +2443,7 @@ export default class CustomTabsUI {
                         levelRow.className = 'toolasha-ct-search-result toolasha-ct-search-level-row';
                         const displayName = level === 0 ? details.name : `${details.name} +${level}`;
                         const ownedDot = owned
-                            ? `<span style="color:#7dcea0;margin-left:4px;" title="In inventory">●</span>`
+                            ? `<span style="color:#7dcea0;margin-left:4px;" title="${this._escHtml(t('customTabsUi.inInventoryTooltip'))}">●</span>`
                             : '';
                         levelRow.innerHTML = `<svg viewBox="0 0 32 32"><use href="${iconHref}"></use></svg><span>${this._escHtml(displayName)}</span>${ownedDot}`;
                         levelRow.addEventListener('click', () => {
@@ -2508,7 +2512,9 @@ export default class CustomTabsUI {
         }
 
         if (count === 0) {
-            container.innerHTML = '<div style="color:#666;padding:6px;font-size:12px;">No matching items found</div>';
+            container.innerHTML = `<div style="color:#666;padding:6px;font-size:12px;">${this._escHtml(
+                t('customTabsUi.noMatchingItemsMessage')
+            )}</div>`;
         }
     }
 
@@ -2519,7 +2525,9 @@ export default class CustomTabsUI {
         container.innerHTML = '';
         const tab = findTab(this._config, tabId)?.tab;
         if (!tab || tab.items.length === 0) {
-            container.innerHTML = '<div style="color:#555;font-size:12px;padding:4px;">No items assigned</div>';
+            container.innerHTML = `<div style="color:#555;font-size:12px;padding:4px;">${this._escHtml(
+                t('customTabsUi.noItemsAssignedMessage')
+            )}</div>`;
             if (scrollParent) scrollParent.scrollTop = scrollPos;
             return;
         }
@@ -2538,7 +2546,7 @@ export default class CustomTabsUI {
 
             if (hrid === LINEBREAK_HRID) {
                 const label = document.createElement('span');
-                label.textContent = '─── Line Break ───';
+                label.textContent = t('customTabsUi.lineBreakLabel');
                 label.style.cssText = 'color:#555;font-style:italic;font-size:11px;flex:1;text-align:center;';
                 row.appendChild(label);
             } else {
@@ -2599,7 +2607,7 @@ export default class CustomTabsUI {
             const toTopBtn = document.createElement('button');
             toTopBtn.className = 'toolasha-ct-node-btn';
             toTopBtn.textContent = '⇈';
-            toTopBtn.title = 'Move to top';
+            toTopBtn.title = t('customTabsUi.moveToTopTooltip');
             toTopBtn.style.marginLeft = '0';
             if (index === 0) {
                 toTopBtn.style.visibility = 'hidden';
@@ -2616,7 +2624,7 @@ export default class CustomTabsUI {
             const toBottomBtn = document.createElement('button');
             toBottomBtn.className = 'toolasha-ct-node-btn';
             toBottomBtn.textContent = '⇊';
-            toBottomBtn.title = 'Move to bottom';
+            toBottomBtn.title = t('customTabsUi.moveToBottomTooltip');
             toBottomBtn.style.marginLeft = '0';
             if (index >= tab.items.length - 1) {
                 toBottomBtn.style.visibility = 'hidden';
@@ -2633,7 +2641,7 @@ export default class CustomTabsUI {
             const removeBtn = document.createElement('button');
             removeBtn.className = 'toolasha-ct-node-btn';
             removeBtn.textContent = '×';
-            removeBtn.title = 'Remove';
+            removeBtn.title = t('settings.removeTooltip');
             removeBtn.addEventListener('click', () => {
                 this._config = removeItemAtIndex(this._config, tabId, index);
                 // Clean item from loadout bindings so it won't be re-added on sync
@@ -2709,8 +2717,8 @@ export default class CustomTabsUI {
             btn.className = 'toolasha-ct-cat-btn' + (allAlreadyAdded ? ' toolasha-ct-cat-btn--added' : '');
             btn.textContent = cat.name;
             btn.title = allAlreadyAdded
-                ? `Click to remove ${catItems.length} items from ${cat.name}`
-                : `Add ${catItems.length} items from ${cat.name}`;
+                ? t('customTabsUi.removeCategoryTooltip', { count: catItems.length, categoryName: cat.name })
+                : t('customTabsUi.addCategoryTooltip', { count: catItems.length, categoryName: cat.name });
 
             if (allAlreadyAdded) {
                 btn.addEventListener('click', () => {
@@ -2838,7 +2846,7 @@ export default class CustomTabsUI {
         if (entries.length === 0) {
             const msg = document.createElement('span');
             msg.style.cssText = 'font-size:11px;color:#888;';
-            msg.textContent = 'No saved loadouts available.';
+            msg.textContent = t('customTabsUi.noSavedLoadoutsMessage');
             container.appendChild(msg);
             return;
         }
@@ -2856,7 +2864,7 @@ export default class CustomTabsUI {
                       .pop()
                       .replace(/_/g, ' ')
                       .replace(/\b\w/g, (c) => c.toUpperCase())
-                : 'All Skills';
+                : t('labSim.allSkillsOption');
             const hasUnavailableEquipment = (snapshot.unavailableEquipment || []).length > 0;
 
             const loadoutItems = [];
@@ -2885,13 +2893,17 @@ export default class CustomTabsUI {
 
             const btn = document.createElement('button');
             btn.className = 'toolasha-ct-cat-btn' + (allAdded ? ' toolasha-ct-cat-btn--added' : '');
-            btn.textContent = `${snapshot.name} (${skillLabel})${hasUnavailableEquipment ? ' — Unavailable' : ''}`;
+            btn.textContent = t('customTabsUi.loadoutButtonLabel', {
+                name: snapshot.name,
+                skillLabel,
+                unavailable: hasUnavailableEquipment,
+            });
             btn.disabled = hasUnavailableEquipment;
             btn.title = hasUnavailableEquipment
-                ? `Cannot add "${snapshot.name}" while saved equipment is unavailable`
+                ? t('customTabsUi.loadoutUnavailableTooltip', { name: snapshot.name })
                 : allAdded
-                  ? `All items from "${snapshot.name}" already added`
-                  : `Add ${newItems.length} item(s) from "${snapshot.name}"`;
+                  ? t('customTabsUi.loadoutAllAddedTooltip', { name: snapshot.name })
+                  : t('customTabsUi.loadoutAddItemsTooltip', { count: newItems.length, name: snapshot.name });
 
             if (hasUnavailableEquipment) {
                 btn.style.opacity = '0.55';
@@ -3030,7 +3042,7 @@ export default class CustomTabsUI {
 
         const label = document.createElement('span');
         label.style.cssText = 'flex: 1; text-align: center;';
-        label.textContent = 'Add to Tab';
+        label.textContent = t('customTabsUi.addToTabLabel');
         const chevron = document.createElement('span');
         chevron.style.cssText = 'font-size: 0.65em; transition: transform 0.15s; display: inline-block;';
         chevron.textContent = '▼';
@@ -3078,7 +3090,7 @@ export default class CustomTabsUI {
             `;
             if (tab.color && !alreadyAdded) btn.style.borderLeft = `3px solid ${tab.color}`;
             if (alreadyAdded) {
-                btn.title = 'Already in this tab';
+                btn.title = t('customTabsUi.alreadyInTabTooltip');
             } else {
                 btn.addEventListener('mouseenter', () => {
                     btn.style.opacity = '0.8';

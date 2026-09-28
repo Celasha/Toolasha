@@ -3,8 +3,8 @@
  * Tracks and displays reroll costs for tasks using WebSocket messages
  */
 
-import { formatKMB } from '../../utils/formatters.js';
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import domObserver from '../../core/dom-observer.js';
 import webSocketHook from '../../core/websocket.js';
 import dataManager from '../../core/data-manager.js';
@@ -12,6 +12,7 @@ import storage from '../../core/storage.js';
 import { GAME, TOOLASHA } from '../../utils/selectors.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { addStyles } from '../../utils/dom.js';
+import { formatKMB } from '../../utils/formatters.js';
 
 class TaskRerollTracker {
     constructor() {
@@ -425,7 +426,7 @@ class TaskRerollTracker {
                 background: rgba(0, 0, 0, 0.3);
                 visibility: hidden;
             `;
-            displayElement.textContent = 'Reroll spent: –';
+            displayElement.textContent = t('taskRerollTracker.rerollSpentPlaceholder');
 
             const taskContent = taskElement.querySelector(GAME.TASK_CONTENT);
             if (taskContent) {
@@ -460,7 +461,7 @@ class TaskRerollTracker {
         }
 
         if (parts.length > 0) {
-            displayElement.textContent = `Reroll spent: ${parts.join(' + ')}`;
+            displayElement.textContent = t('taskRerollTracker.rerollSpentLabel', { value: parts.join(' + ') });
             displayElement.style.visibility = 'visible';
         } else {
             displayElement.style.visibility = 'hidden';

@@ -6,6 +6,7 @@
  */
 
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import dataManager from '../../core/data-manager.js';
 import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import { calculateEnhancement, BASE_SUCCESS_RATES } from '../../utils/enhancement-calculator.js';
@@ -300,9 +301,11 @@ function generateCostsByLevelTable(
 
     lines.push('<div style="margin-top: 12px; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px;">');
     lines.push('<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">');
-    lines.push('<div style="color: #ffa500; font-weight: bold; font-size: 0.95em;">Costs by Enhancement Level:</div>');
     lines.push(
-        '<button id="mwi-expand-costs-table-btn" style="background: rgba(0, 255, 234, 0.1); border: 1px solid #00ffe7; color: #00ffe7; cursor: pointer; font-size: 18px; font-weight: bold; padding: 4px 10px; border-radius: 4px; transition: all 0.15s ease;" title="View full table">⤢</button>'
+        `<div style="color: #ffa500; font-weight: bold; font-size: 0.95em;">${t('enhancementDisplay.costsByLevelHeader')}</div>`
+    );
+    lines.push(
+        `<button id="mwi-expand-costs-table-btn" style="background: rgba(0, 255, 234, 0.1); border: 1px solid #00ffe7; color: #00ffe7; cursor: pointer; font-size: 18px; font-weight: bold; padding: 4px 10px; border-radius: 4px; transition: all 0.15s ease;" title="${t('enhancementDisplay.viewFullTableTooltip')}">⤢</button>`
     );
     lines.push('</div>');
 
@@ -437,16 +440,16 @@ function generateCostsByLevelTable(
             '<div style="background: linear-gradient(90deg, rgba(255, 215, 0, 0.15), rgba(255, 215, 0, 0.05)); border: 1px solid #FFD700; border-radius: 4px; padding: 8px; margin-bottom: 8px;">'
         );
         lines.push(
-            '<div style="color: #FFD700; font-weight: bold; font-size: 0.95em;">💎 Philosopher\'s Mirror Strategy:</div>'
+            `<div style="color: #FFD700; font-weight: bold; font-size: 0.95em;">${t('enhancementDisplay.mirrorStrategyHeader')}</div>`
         );
         lines.push(
-            `<div style="color: #fff; font-size: 0.85em; margin-top: 4px;">• Use mirrors starting at <strong>+${mirrorStartLevel}</strong></div>`
+            `<div style="color: #fff; font-size: 0.85em; margin-top: 4px;">${t('enhancementDisplay.mirrorStrategyStartLevel', { level: mirrorStartLevel })}</div>`
         );
         lines.push(
-            `<div style="color: #88ff88; font-size: 0.85em;">• Total savings to +20: <strong>${formatLargeNumber(Math.round(totalSavings))}</strong> coins</div>`
+            `<div style="color: #88ff88; font-size: 0.85em;">${t('enhancementDisplay.mirrorStrategyTotalSavings', { savings: formatLargeNumber(Math.round(totalSavings)) })}</div>`
         );
         lines.push(
-            `<div style="color: #aaa; font-size: 0.75em; margin-top: 4px; font-style: italic;">Rows highlighted in gold show where mirror is cheaper</div>`
+            `<div style="color: #aaa; font-size: 0.75em; margin-top: 4px; font-style: italic;">${t('enhancementDisplay.mirrorStrategyHighlightNote')}</div>`
         );
         lines.push('</div>');
     }
@@ -466,22 +469,24 @@ function generateCostsByLevelTable(
     lines.push(
         '<tr style="color: #888; border-bottom: 1px solid #444; position: sticky; top: 0; background: rgba(0,0,0,0.9);">'
     );
-    lines.push('<th style="text-align: left; padding: 4px;">Level</th>');
-    lines.push('<th style="text-align: right; padding: 4px;">Attempts</th>');
-    lines.push('<th style="text-align: right; padding: 4px;">Protection</th>');
+    lines.push('<th style="text-align: left; padding: 4px;">' + t('labSim.colLevel') + '</th>');
+    lines.push('<th style="text-align: right; padding: 4px;">' + t('alchemyHistoryViewer.colAttempts') + '</th>');
+    lines.push('<th style="text-align: right; padding: 4px;">' + t('enhancementUi.protectionFallbackName') + '</th>');
 
     // Add material columns
     materialNames.forEach((matName) => {
         lines.push(`<th style="text-align: right; padding: 4px;">${matName}</th>`);
     });
 
-    lines.push('<th style="text-align: right; padding: 4px;">Time</th>');
-    lines.push('<th style="text-align: right; padding: 4px;">XP/hr</th>');
-    lines.push('<th style="text-align: right; padding: 4px;">Total Cost</th>');
+    lines.push('<th style="text-align: right; padding: 4px;">' + t('enhancementDisplay.colTime') + '</th>');
+    lines.push('<th style="text-align: right; padding: 4px;">' + t('pinnedActionsPage.columnExpPerHour') + '</th>');
+    lines.push('<th style="text-align: right; padding: 4px;">' + t('budgetCalculator.colTotalCost') + '</th>');
 
     // Add Mirror Cost column if Philosopher's Mirror is equipped
     if (isPhilosopherMirror) {
-        lines.push('<th style="text-align: right; padding: 4px; color: #FFD700;">Mirror Cost</th>');
+        lines.push(
+            `<th style="text-align: right; padding: 4px; color: #FFD700;">${t('enhancementDisplay.colMirrorCost')}</th>`
+        );
     }
 
     lines.push('</tr>');
@@ -547,7 +552,9 @@ function generateCostsByLevelTable(
                 );
             } else {
                 // Levels 1-2 cannot use mirrors
-                lines.push(`<td style="padding: 6px 4px; text-align: right; color: #666;">N/A</td>`);
+                lines.push(
+                    `<td style="padding: 6px 4px; text-align: right; color: #666;">${t('combatSimUi.notAvailableLabel')}</td>`
+                );
             }
         }
 
@@ -616,20 +623,20 @@ function formatEnhancementDisplay(
     const isAutoDetect = config.getSettingValue('enhanceSim_autoDetect', false);
     lines.push(
         '<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">' +
-            `<button id="mwi-enhance-mode-toggle" style="font-size: 0.7em; padding: 2px 7px; border-radius: 3px; border: 1px solid #888; background: rgba(0,0,0,0.3); color: #ccc; cursor: pointer;" title="Toggle between Auto-Detect and Manual modes">${isAutoDetect ? '🔍 Auto' : '✏️ Manual'}</button>` +
-            '<span style="color: #ffa500; font-weight: bold; font-size: 1.1em;">⚙️ ENHANCEMENT CALCULATOR</span>' +
+            `<button id="mwi-enhance-mode-toggle" style="font-size: 0.7em; padding: 2px 7px; border-radius: 3px; border: 1px solid #888; background: rgba(0,0,0,0.3); color: #ccc; cursor: pointer;" title="${t('enhancementDisplay.modeToggleTooltip')}">${isAutoDetect ? t('enhancementDisplay.autoDetectModeLabel') : t('enhancementDisplay.manualModeLabel')}</button>` +
+            `<span style="color: #ffa500; font-weight: bold; font-size: 1.1em;">${t('enhancementDisplay.calculatorTitle')}</span>` +
             '</div>'
     );
 
     // Item info
     lines.push(
-        `<div style="color: #ddd; margin-bottom: 12px; font-weight: bold;">${itemDetails.name} <span style="color: #888;">(Item Level ${itemDetails.itemLevel})</span></div>`
+        `<div style="color: #ddd; margin-bottom: 12px; font-weight: bold;">${itemDetails.name} <span style="color: #888;">${t('enhancementDisplay.itemLevelSuffix', { itemLevel: itemDetails.itemLevel })}</span></div>`
     );
 
     // Current stats section
     lines.push('<div style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px; margin-bottom: 12px;">');
     lines.push(
-        '<div style="color: #ffa500; font-weight: bold; margin-bottom: 6px; font-size: 0.95em;">Your Enhancing Stats:</div>'
+        `<div style="color: #ffa500; font-weight: bold; margin-bottom: 6px; font-size: 0.95em;">${t('enhancementDisplay.yourStatsHeader')}</div>`
     );
 
     // Two column layout for stats
@@ -638,31 +645,31 @@ function formatEnhancementDisplay(
     // Left column
     lines.push('<div>');
     lines.push(
-        `<div style="color: #ccc;"><span style="color: #888;">Level:</span> ${Math.round(params.enhancingLevel - params.detectedTeaBonus)}${params.detectedTeaBonus > 0 ? ` <span style="color: #88ff88;">(+${params.detectedTeaBonus.toFixed(1)} tea)</span>` : ''}</div>`
+        `<div style="color: #ccc;"><span style="color: #888;">${t('skillingOptimizer.levelLabel')}</span> ${Math.round(params.enhancingLevel - params.detectedTeaBonus)}${params.detectedTeaBonus > 0 ? ` <span style="color: #88ff88;">${t('enhancementDisplay.teaBonusSuffix', { value: params.detectedTeaBonus.toFixed(1) })}</span>` : ''}</div>`
     );
     lines.push(
-        `<div style="color: #ccc;"><span style="color: #888;">House:</span> Observatory Lvl ${params.houseLevel}</div>`
+        `<div style="color: #ccc;"><span style="color: #888;">${t('enhancementDisplay.houseLabel')}</span> ${t('enhancementDisplay.observatoryLevelValue', { level: params.houseLevel })}</div>`
     );
 
     // Display each equipment slot
     if (params.toolSlot) {
         lines.push(
-            `<div style="color: #ccc;"><span style="color: #888;">Tool:</span> ${params.toolSlot.name}${params.toolSlot.enhancementLevel > 0 ? ` +${params.toolSlot.enhancementLevel}` : ''}</div>`
+            `<div style="color: #ccc;"><span style="color: #888;">${t('enhancementDisplay.toolLabel')}</span> ${params.toolSlot.name}${params.toolSlot.enhancementLevel > 0 ? ` +${params.toolSlot.enhancementLevel}` : ''}</div>`
         );
     }
     if (params.bodySlot) {
         lines.push(
-            `<div style="color: #ccc;"><span style="color: #888;">Body:</span> ${params.bodySlot.name}${params.bodySlot.enhancementLevel > 0 ? ` +${params.bodySlot.enhancementLevel}` : ''}</div>`
+            `<div style="color: #ccc;"><span style="color: #888;">${t('enhancementDisplay.bodyLabel')}</span> ${params.bodySlot.name}${params.bodySlot.enhancementLevel > 0 ? ` +${params.bodySlot.enhancementLevel}` : ''}</div>`
         );
     }
     if (params.legsSlot) {
         lines.push(
-            `<div style="color: #ccc;"><span style="color: #888;">Legs:</span> ${params.legsSlot.name}${params.legsSlot.enhancementLevel > 0 ? ` +${params.legsSlot.enhancementLevel}` : ''}</div>`
+            `<div style="color: #ccc;"><span style="color: #888;">${t('enhancementDisplay.legsLabel')}</span> ${params.legsSlot.name}${params.legsSlot.enhancementLevel > 0 ? ` +${params.legsSlot.enhancementLevel}` : ''}</div>`
         );
     }
     if (params.handsSlot) {
         lines.push(
-            `<div style="color: #ccc;"><span style="color: #888;">Hands:</span> ${params.handsSlot.name}${params.handsSlot.enhancementLevel > 0 ? ` +${params.handsSlot.enhancementLevel}` : ''}</div>`
+            `<div style="color: #ccc;"><span style="color: #888;">${t('enhancementDisplay.handsLabel')}</span> ${params.handsSlot.name}${params.handsSlot.enhancementLevel > 0 ? ` +${params.handsSlot.enhancementLevel}` : ''}</div>`
         );
     }
     lines.push('</div>');
@@ -682,7 +689,7 @@ function formatEnhancementDisplay(
 
     if (totalSuccess > 0) {
         lines.push(
-            `<div class="mwi-enh-toggle" data-target="mwi-enh-success" style="color: #88ff88; cursor: pointer;"><span style="color: #888;">Success:</span> +${totalSuccess.toFixed(2)}% <span class="mwi-enh-arrow" style="color: #666; font-size: 0.8em;">▸</span></div>`
+            `<div class="mwi-enh-toggle" data-target="mwi-enh-success" style="color: #88ff88; cursor: pointer;"><span style="color: #888;">${t('enhancementDisplay.successLabel')}</span> +${totalSuccess.toFixed(2)}% <span class="mwi-enh-arrow" style="color: #666; font-size: 0.8em;">▸</span></div>`
         );
         lines.push('<div id="mwi-enh-success" style="display: none;">');
 
@@ -726,7 +733,7 @@ function formatEnhancementDisplay(
 
         if (equipmentSuccess > 0) {
             lines.push(
-                `<div style="color: #88ff88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Equipment:</span> +${equipmentSuccess.toFixed(2)}%</div>`
+                `<div style="color: #88ff88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${t('enhancementDisplay.equipmentLabel')}</span> +${equipmentSuccess.toFixed(2)}%</div>`
             );
             const successSlots = (params.slotBreakdown || []).filter((s) => s.success > 0);
             for (const slot of successSlots) {
@@ -738,18 +745,18 @@ function formatEnhancementDisplay(
         }
         if (houseSuccess > 0) {
             lines.push(
-                `<div style="color: #88ff88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">House (Observatory):</span> +${houseSuccess.toFixed(2)}%</div>`
+                `<div style="color: #88ff88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${t('enhancementDisplay.houseObservatoryLabel')}</span> +${houseSuccess.toFixed(2)}%</div>`
             );
         }
         const achievementSuccess = params.achievementSuccessBonus || 0;
         if (achievementSuccess > 0) {
             lines.push(
-                `<div style="color: #88ff88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Achievement:</span> +${achievementSuccess.toFixed(2)}%</div>`
+                `<div style="color: #88ff88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${t('enhancementDisplay.achievementLabel')}</span> +${achievementSuccess.toFixed(2)}%</div>`
             );
         }
         if (successLevelAdvantage > 0) {
             lines.push(
-                `<div style="color: #88ff88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Level advantage:</span> +${successLevelAdvantage.toFixed(2)}%</div>`
+                `<div style="color: #88ff88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${t('enhancementDisplay.levelAdvantageLabel')}</span> +${successLevelAdvantage.toFixed(2)}%</div>`
             );
         }
         lines.push('</div>');
@@ -760,14 +767,14 @@ function formatEnhancementDisplay(
 
     if (totalSpeed > 0) {
         lines.push(
-            `<div class="mwi-enh-toggle" data-target="mwi-enh-speed" style="color: #88ccff; cursor: pointer;"><span style="color: #888;">Speed:</span> +${totalSpeed.toFixed(1)}% <span class="mwi-enh-arrow" style="color: #666; font-size: 0.8em;">▸</span></div>`
+            `<div class="mwi-enh-toggle" data-target="mwi-enh-speed" style="color: #88ccff; cursor: pointer;"><span style="color: #888;">${t('settings.enhanceSimSpeed')}</span> +${totalSpeed.toFixed(1)}% <span class="mwi-enh-arrow" style="color: #666; font-size: 0.8em;">▸</span></div>`
         );
         lines.push('<div id="mwi-enh-speed" style="display: none;">');
 
         // Show breakdown from buff maps (each value is decimal, convert to %)
         if (speedBreakdown.equipment > 0) {
             lines.push(
-                `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Equipment:</span> +${(speedBreakdown.equipment * 100).toFixed(1)}%</div>`
+                `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${t('enhancementDisplay.equipmentLabel')}</span> +${(speedBreakdown.equipment * 100).toFixed(1)}%</div>`
             );
             const speedSlots = (params.slotBreakdown || []).filter((s) => s.speed > 0);
             for (const slot of speedSlots) {
@@ -779,53 +786,55 @@ function formatEnhancementDisplay(
         }
         if (speedBreakdown.house > 0) {
             lines.push(
-                `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">House (Observatory):</span> +${(speedBreakdown.house * 100).toFixed(1)}%</div>`
+                `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${t('enhancementDisplay.houseObservatoryLabel')}</span> +${(speedBreakdown.house * 100).toFixed(1)}%</div>`
             );
         }
         if (speedBreakdown.community > 0) {
             lines.push(
-                `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Community:</span> +${(speedBreakdown.community * 100).toFixed(1)}%</div>`
+                `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${t('enhancementDisplay.communityLabel')}</span> +${(speedBreakdown.community * 100).toFixed(1)}%</div>`
             );
         }
         if (speedBreakdown.consumable > 0) {
             lines.push(
-                `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Tea:</span> +${(speedBreakdown.consumable * 100).toFixed(1)}%</div>`
+                `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${t('enhancementDisplay.teaLabel')}</span> +${(speedBreakdown.consumable * 100).toFixed(1)}%</div>`
             );
         }
         if (speedBreakdown.personal > 0) {
             lines.push(
-                `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Labyrinth:</span> +${(speedBreakdown.personal * 100).toFixed(1)}%</div>`
+                `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${t('enhancementDisplay.labyrinthLabel')}</span> +${(speedBreakdown.personal * 100).toFixed(1)}%</div>`
             );
         }
         if (speedBreakdown.levelAdvantage > 0) {
             lines.push(
-                `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Level advantage:</span> +${(speedBreakdown.levelAdvantage * 100).toFixed(1)}%</div>`
+                `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${t('enhancementDisplay.levelAdvantageLabel')}</span> +${(speedBreakdown.levelAdvantage * 100).toFixed(1)}%</div>`
             );
         }
         lines.push('</div>');
     } else {
-        lines.push(`<div style="color: #88ccff;"><span style="color: #888;">Speed:</span> +0.0%</div>`);
+        lines.push(
+            `<div style="color: #88ccff;"><span style="color: #888;">${t('settings.enhanceSimSpeed')}</span> +0.0%</div>`
+        );
     }
 
     // Base → effective action time
     lines.push(
-        `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Base:</span> ${baseTime.toFixed(2)}s → ${perActionTime.toFixed(2)}s</div>`
+        `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${t('enhancementDisplay.baseLabel')}</span> ${baseTime.toFixed(2)}s → ${perActionTime.toFixed(2)}s</div>`
     );
 
     if (params.teas.blessed) {
         const blessedBonus = 1.1;
         lines.push(
-            `<div class="mwi-enh-toggle" data-target="mwi-enh-blessed" style="color: #ffdd88; cursor: pointer;"><span style="color: #888;">Blessed:</span> +${blessedBonus.toFixed(1)}% <span class="mwi-enh-arrow" style="color: #666; font-size: 0.8em;">▸</span></div>`
+            `<div class="mwi-enh-toggle" data-target="mwi-enh-blessed" style="color: #ffdd88; cursor: pointer;"><span style="color: #888;">${t('enhancementDisplay.blessedLabel')}</span> +${blessedBonus.toFixed(1)}% <span class="mwi-enh-arrow" style="color: #666; font-size: 0.8em;">▸</span></div>`
         );
         lines.push('<div id="mwi-enh-blessed" style="display: none;">');
         lines.push(
-            `<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Blessed Tea:</span> ${blessedBonus}% chance to skip a level</div>`
+            `<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${t('enhancementDisplay.blessedTeaLabel')}</span> ${t('enhancementDisplay.blessedTeaChanceLine', { percent: blessedBonus })}</div>`
         );
         lines.push('</div>');
     }
     if (params.rareFindBonus > 0) {
         lines.push(
-            `<div class="mwi-enh-toggle" data-target="mwi-enh-rarefind" style="color: #ffaa55; cursor: pointer;"><span style="color: #888;">Rare Find:</span> +${params.rareFindBonus.toFixed(1)}% <span class="mwi-enh-arrow" style="color: #666; font-size: 0.8em;">▸</span></div>`
+            `<div class="mwi-enh-toggle" data-target="mwi-enh-rarefind" style="color: #ffaa55; cursor: pointer;"><span style="color: #888;">${t('settings.enhanceSimRareFind')}</span> +${params.rareFindBonus.toFixed(1)}% <span class="mwi-enh-arrow" style="color: #666; font-size: 0.8em;">▸</span></div>`
         );
         lines.push('<div id="mwi-enh-rarefind" style="display: none;">');
 
@@ -837,7 +846,7 @@ function formatEnhancementDisplay(
         );
         if (equipmentRareFind > 0) {
             lines.push(
-                `<div style="color: #ffaa55; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Equipment:</span> +${equipmentRareFind.toFixed(1)}%</div>`
+                `<div style="color: #ffaa55; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${t('enhancementDisplay.equipmentLabel')}</span> +${equipmentRareFind.toFixed(1)}%</div>`
             );
             const rfSlots = (params.slotBreakdown || []).filter((s) => s.rareFind > 0);
             for (const slot of rfSlots) {
@@ -849,19 +858,19 @@ function formatEnhancementDisplay(
         }
         if (params.houseRareFindBonus > 0) {
             lines.push(
-                `<div style="color: #ffaa55; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">House Rooms:</span> +${params.houseRareFindBonus.toFixed(1)}%</div>`
+                `<div style="color: #ffaa55; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${t('enhancementDisplay.houseRoomsLabel')}</span> +${params.houseRareFindBonus.toFixed(1)}%</div>`
             );
         }
         if (achievementRareFind > 0) {
             lines.push(
-                `<div style="color: #ffaa55; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Achievement:</span> +${achievementRareFind.toFixed(1)}%</div>`
+                `<div style="color: #ffaa55; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${t('enhancementDisplay.achievementLabel')}</span> +${achievementRareFind.toFixed(1)}%</div>`
             );
         }
         lines.push('</div>');
     }
     if (params.experienceBonus > 0) {
         lines.push(
-            `<div class="mwi-enh-toggle" data-target="mwi-enh-experience" style="color: #ffdd88; cursor: pointer;"><span style="color: #888;">Experience:</span> +${params.experienceBonus.toFixed(1)}% <span class="mwi-enh-arrow" style="color: #666; font-size: 0.8em;">▸</span></div>`
+            `<div class="mwi-enh-toggle" data-target="mwi-enh-experience" style="color: #ffdd88; cursor: pointer;"><span style="color: #888;">${t('settings.enhanceSimExperience')}</span> +${params.experienceBonus.toFixed(1)}% <span class="mwi-enh-arrow" style="color: #666; font-size: 0.8em;">▸</span></div>`
         );
         lines.push('<div id="mwi-enh-experience" style="display: none;">');
 
@@ -877,7 +886,7 @@ function formatEnhancementDisplay(
 
         if (equipmentExperience > 0) {
             lines.push(
-                `<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Equipment:</span> +${equipmentExperience.toFixed(1)}%</div>`
+                `<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${t('enhancementDisplay.equipmentLabel')}</span> +${equipmentExperience.toFixed(1)}%</div>`
             );
             const expSlots = (params.slotBreakdown || []).filter((s) => s.experience > 0);
             for (const slot of expSlots) {
@@ -889,23 +898,23 @@ function formatEnhancementDisplay(
         }
         if (houseWisdom > 0) {
             lines.push(
-                `<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">House Rooms (Wisdom):</span> +${houseWisdom.toFixed(1)}%</div>`
+                `<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${t('enhancementDisplay.houseRoomsWisdomLabel')}</span> +${houseWisdom.toFixed(1)}%</div>`
             );
         }
         if (communityWisdom > 0) {
             const wisdomLevel = params.communityWisdomLevel || 0;
             lines.push(
-                `<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Community (Wisdom T${wisdomLevel}):</span> +${communityWisdom.toFixed(1)}%</div>`
+                `<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${t('enhancementDisplay.communityWisdomLabel', { level: wisdomLevel })}</span> +${communityWisdom.toFixed(1)}%</div>`
             );
         }
         if (teaWisdom > 0) {
             lines.push(
-                `<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Wisdom Tea:</span> +${teaWisdom.toFixed(1)}%</div>`
+                `<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${t('enhancementDisplay.wisdomTeaLabel')}</span> +${teaWisdom.toFixed(1)}%</div>`
             );
         }
         if (achievementWisdom > 0) {
             lines.push(
-                `<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Achievement:</span> +${achievementWisdom.toFixed(1)}%</div>`
+                `<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${t('enhancementDisplay.achievementLabel')}</span> +${achievementWisdom.toFixed(1)}%</div>`
             );
         }
         lines.push('</div>');
@@ -931,7 +940,7 @@ function formatEnhancementDisplay(
     if (enhancementCosts && enhancementCosts.length > 0) {
         lines.push('<div style="margin-top: 12px; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px;">');
         lines.push(
-            '<div style="color: #ffa500; font-weight: bold; margin-bottom: 6px; font-size: 0.95em;">Materials Per Attempt:</div>'
+            `<div style="color: #ffa500; font-weight: bold; margin-bottom: 6px; font-size: 0.95em;">${t('enhancementDisplay.materialsPerAttemptHeader')}</div>`
         );
 
         // Get game data for item names
@@ -980,7 +989,7 @@ function formatEnhancementDisplay(
                 }
 
                 lines.push(
-                    `<div style="font-size: 0.85em; color: #ffa500; margin-top: 4px;">1× ${protectionItemName} <span style="color: #888;">(if used) (@${protectionPrice.toLocaleString()})</span></div>`
+                    `<div style="font-size: 0.85em; color: #ffa500; margin-top: 4px;">1× ${protectionItemName} <span style="color: #888;">${t('enhancementDisplay.ifUsedSuffix')} (@${protectionPrice.toLocaleString()})</span></div>`
                 );
             }
         }
@@ -993,15 +1002,18 @@ function formatEnhancementDisplay(
 
     // Only show protection note if actually using protection
     if (protectFromLevel >= 2) {
-        lines.push(`• Protection active from +${protectFromLevel} onwards (enhancement level -1 on failure)<br>`);
+        lines.push(t('enhancementDisplay.protectionActiveNote', { level: protectFromLevel }));
     } else {
-        lines.push('• No protection used (all failures return to +0)<br>');
+        lines.push(t('enhancementDisplay.noProtectionNote'));
     }
 
-    lines.push('• Attempts and time are statistical averages<br>');
+    lines.push(t('enhancementDisplay.statisticalAveragesNote'));
 
     lines.push(
-        `• Action time: ${perActionTime.toFixed(2)}s (includes ${(speedBreakdown.total * 100).toFixed(1)}% speed bonus)`
+        t('enhancementDisplay.actionTimeNote', {
+            time: perActionTime.toFixed(2),
+            percent: (speedBreakdown.total * 100).toFixed(1),
+        })
     );
     lines.push('</div>');
 
@@ -1210,7 +1222,7 @@ function showCostsTableModal(container) {
 
     modal.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid rgba(0, 255, 234, 0.4); padding-bottom: 10px;">
-            <h2 style="margin: 0; color: #00ffe7; font-size: 20px;">📊 Costs by Enhancement Level</h2>
+            <h2 style="margin: 0; color: #00ffe7; font-size: 20px;">${t('enhancementDisplay.costsModalTitle')}</h2>
             <button id="mwi-close-costs-modal" style="
                 background: none;
                 border: none;
@@ -1220,10 +1232,10 @@ function showCostsTableModal(container) {
                 padding: 0 8px;
                 line-height: 1;
                 transition: all 0.15s ease;
-            " title="Close">×</button>
+            " title="${t('combatScore.closeTooltip')}">×</button>
         </div>
         <div style="color: #9b9bff; font-size: 0.9em; margin-bottom: 15px;">
-            Full breakdown of enhancement costs for all levels
+            ${t('enhancementDisplay.costsModalSubtitle')}
         </div>
     `;
 

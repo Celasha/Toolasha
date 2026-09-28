@@ -12,6 +12,7 @@ import {
     COMBAT_SHRINE_HRIDS,
 } from './combat-sim-adapter.js';
 import loadoutState from '../../core/loadout-state.js';
+import { t } from '../../core/i18n.js';
 
 const ACCENT = '#4a9eff';
 const ACCENT_BG = 'rgba(74, 158, 255, 0.12)';
@@ -98,7 +99,7 @@ export class SimEditor {
         const applied = this._applyLoadoutToDTO(loadoutName);
         if (!applied) {
             this._unavailableLoadoutName = loadoutName;
-            this._loadoutStatusMessage = `Configured loadout “${loadoutName}” is unavailable. Simulation is blocked until you choose another loadout or Current Gear.`;
+            this._loadoutStatusMessage = t('simEditor.loadoutUnavailableBlocked', { name: loadoutName });
             this.renderEditor();
             return false;
         }
@@ -134,7 +135,7 @@ export class SimEditor {
         if (!this._applyLoadoutToDTO(selectedName)) {
             // applyLoadoutSnapshotToDTO is transactional. Preserve both the previous DTO
             // and selected-loadout identity instead of silently switching to Current Gear.
-            this._loadoutStatusMessage = `Loadout “${selectedName}” is unavailable. Previous simulation kept.`;
+            this._loadoutStatusMessage = t('simEditor.loadoutUnavailablePreviousKept', { name: selectedName });
             return false;
         }
 
@@ -154,8 +155,7 @@ export class SimEditor {
         try {
             const { players, playerInfo, selfHrid, missingMembers } = await buildAllPlayerDTOs();
             if (!players.length) {
-                editorArea.innerHTML =
-                    '<div style="color:#555; font-size:12px; text-align:center; padding:20px 0;">No character data available.</div>';
+                editorArea.innerHTML = `<div style="color:#555; font-size:12px; text-align:center; padding:20px 0;">${t('labSim.statusNoCharacterData')}</div>`;
                 return;
             }
 
@@ -176,8 +176,7 @@ export class SimEditor {
             this.renderEditor();
         } catch (error) {
             console.error('[SimEditor] Failed to init editor:', error);
-            editorArea.innerHTML =
-                '<div style="color:#f66; font-size:12px; text-align:center; padding:20px 0;">Failed to load character data.</div>';
+            editorArea.innerHTML = `<div style="color:#f66; font-size:12px; text-align:center; padding:20px 0;">${t('simEditor.failedToLoadCharacterData')}</div>`;
         }
     }
 
@@ -223,7 +222,10 @@ export class SimEditor {
             dto.hrid = `player${nextSlot}`;
             this._editedDTOs[dto.hrid] = dto;
             this._originalDTOs[dto.hrid] = structuredClone(dto);
-            this._editedPlayerInfo.push({ hrid: dto.hrid, name: names[i] || `Player ${nextSlot}` });
+            this._editedPlayerInfo.push({
+                hrid: dto.hrid,
+                name: names[i] || t('combatSimUi.playerFallbackName', { number: nextSlot }),
+            });
             nextSlot++;
         }
 
@@ -268,13 +270,13 @@ export class SimEditor {
         if (!dto && playerInfo.length === 0) {
             editorArea.innerHTML = `
                 <div style="text-align:center; padding:20px 0;">
-                    <div style="color:#888; font-size:12px; margin-bottom:10px;">No players loaded.</div>
+                    <div style="color:#888; font-size:12px; margin-bottom:10px;">${t('simEditor.noPlayersLoaded')}</div>
                     <button id="mwi-csim-import-btn" style="
                         background:${ACCENT_BTN_BG}; border:1px solid ${ACCENT_BTN_BORDER}; color:${ACCENT};
                         padding:5px 14px; border-radius:5px; font-size:12px; cursor:pointer;
-                        font-family:inherit; font-weight:600;">+ Import Player</button>
+                        font-family:inherit; font-weight:600;">${t('simEditor.importPlayerButton')}</button>
                     <div id="mwi-csim-import-area" style="display:none; margin-top:10px; text-align:left;">
-                        <textarea id="mwi-csim-import-text" placeholder="Paste Combat Sim Export JSON here..." style="
+                        <textarea id="mwi-csim-import-text" placeholder="${t('simEditor.pasteExportPlaceholder')}" style="
                             width:100%; height:60px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
                             border-radius:4px; padding:6px; font-size:11px; font-family:monospace; resize:vertical;
                             box-sizing:border-box;"></textarea>
@@ -282,10 +284,10 @@ export class SimEditor {
                             <button id="mwi-csim-import-go" style="
                                 background:${ACCENT_BTN_BG}; border:1px solid ${ACCENT_BTN_BORDER}; color:${ACCENT};
                                 padding:3px 12px; border-radius:4px; font-size:11px; cursor:pointer; font-family:inherit;
-                                font-weight:600;">Import</button>
+                                font-weight:600;">${t('openableAnalytics.importButtonLabel')}</button>
                             <button id="mwi-csim-import-cancel" style="
                                 background:rgba(255,255,255,0.04); border:1px solid #333; color:#888;
-                                padding:3px 12px; border-radius:4px; font-size:11px; cursor:pointer; font-family:inherit;">Cancel</button>
+                                padding:3px 12px; border-radius:4px; font-size:11px; cursor:pointer; font-family:inherit;">${t('settings.cancelButton')}</button>
                             <span id="mwi-csim-import-error" style="color:#f44; font-size:11px; align-self:center;"></span>
                         </div>
                     </div>
@@ -305,12 +307,12 @@ export class SimEditor {
                     const text = editorArea.querySelector('#mwi-csim-import-text')?.value?.trim();
                     const errorEl = editorArea.querySelector('#mwi-csim-import-error');
                     if (!text) {
-                        if (errorEl) errorEl.textContent = 'Paste export data first.';
+                        if (errorEl) errorEl.textContent = t('simEditor.pasteExportDataFirst');
                         return;
                     }
                     const result = parseShykaiImport(text);
                     if (!result || !result.players.length) {
-                        if (errorEl) errorEl.textContent = 'Invalid format. Paste a Combat Sim Export JSON.';
+                        if (errorEl) errorEl.textContent = t('simEditor.invalidFormatCombatSimExport');
                         return;
                     }
                     this.importPlayers(result.players, result.names);
@@ -345,7 +347,7 @@ export class SimEditor {
                     ${tabStyle}
                     padding:3px 8px; border-radius:5px; font-size:12px; cursor:pointer;
                     font-family:inherit; transition:all 0.1s; position:relative;
-                ">${name}<span data-remove-player="${hrid}" style="margin-left:4px; color:#f44; cursor:pointer; font-size:14px;" title="Remove player">\u00d7</span></button>`;
+                ">${name}<span data-remove-player="${hrid}" style="margin-left:4px; color:#f44; cursor:pointer; font-size:14px;" title="${t('simEditor.removePlayerTooltip')}">\u00d7</span></button>`;
             }
         } else if (playerInfo.length === 1) {
             const { hrid, name } = playerInfo[0];
@@ -353,17 +355,17 @@ export class SimEditor {
                 background:${ACCENT_BG}; border:1px solid ${ACCENT_BORDER}; color:${ACCENT}; font-weight:700;
                 padding:3px 8px; border-radius:5px; font-size:12px; cursor:pointer;
                 font-family:inherit; transition:all 0.1s; position:relative;
-            ">${name}<span data-remove-player="${hrid}" style="margin-left:4px; color:#f44; cursor:pointer; font-size:14px;" title="Remove player">\u00d7</span></button>`;
+            ">${name}<span data-remove-player="${hrid}" style="margin-left:4px; color:#f44; cursor:pointer; font-size:14px;" title="${t('simEditor.removePlayerTooltip')}">\u00d7</span></button>`;
         }
         html += `<button id="mwi-csim-import-btn" style="
             background:rgba(255,255,255,0.04); border:1px solid #333; color:#888;
             padding:3px 8px; border-radius:5px; font-size:11px; cursor:pointer;
-            font-family:inherit;" title="Import players from Shykai export string">+ Import</button>`;
+            font-family:inherit;" title="${t('simEditor.importFromShykaiTooltip')}">${t('simEditor.importPlusButton')}</button>`;
         html += '</div>';
 
         // Import paste area (hidden by default)
         html += `<div id="mwi-csim-import-area" style="display:none; margin-bottom:10px;">
-            <textarea id="mwi-csim-import-text" placeholder="Paste Shykai export JSON here..." style="
+            <textarea id="mwi-csim-import-text" placeholder="${t('simEditor.pasteShykaiExportPlaceholder')}" style="
                 width:100%; height:60px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
                 border-radius:4px; padding:6px; font-size:11px; font-family:monospace; resize:vertical;
                 box-sizing:border-box;"></textarea>
@@ -371,10 +373,10 @@ export class SimEditor {
                 <button id="mwi-csim-import-go" style="
                     background:${ACCENT_BTN_BG}; border:1px solid ${ACCENT_BTN_BORDER}; color:${ACCENT};
                     padding:3px 12px; border-radius:4px; font-size:11px; cursor:pointer; font-family:inherit;
-                    font-weight:600;">Import</button>
+                    font-weight:600;">${t('openableAnalytics.importButtonLabel')}</button>
                 <button id="mwi-csim-import-cancel" style="
                     background:rgba(255,255,255,0.04); border:1px solid #333; color:#888;
-                    padding:3px 12px; border-radius:4px; font-size:11px; cursor:pointer; font-family:inherit;">Cancel</button>
+                    padding:3px 12px; border-radius:4px; font-size:11px; cursor:pointer; font-family:inherit;">${t('settings.cancelButton')}</button>
                 <span id="mwi-csim-import-error" style="color:#f44; font-size:11px; align-self:center;"></span>
             </div>
         </div>`;
@@ -402,30 +404,36 @@ export class SimEditor {
 
             html += `<div style="display:flex; align-items:center; gap:6px; margin-bottom:8px;">`;
             if (relevantSnapshots.length > 0 || needsSyntheticUnavailableOption) {
-                html += `<label style="color:#888; font-size:11px; flex-shrink:0;">Loadout</label>`;
+                html += `<label style="color:#888; font-size:11px; flex-shrink:0;">${t('simEditor.loadoutLabel')}</label>`;
                 html += `<select id="mwi-csim-loadout-select" style="
                     flex:1; min-width:0; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
                     border-radius:4px; padding:2px 6px; font-size:12px; font-family:inherit;">`;
-                html += `<option value=""${!displayedLoadoutName ? ' selected' : ''}>— Current Gear —</option>`;
+                html += `<option value=""${!displayedLoadoutName ? ' selected' : ''}>${t('simEditor.currentGearOption')}</option>`;
                 for (const snap of relevantSnapshots) {
-                    const label =
-                        snap.name +
-                        (snap.actionTypeHrid ? '' : ' (All Skills)') +
-                        (snap.isUsableForCalculation ? '' : ' (Unavailable)');
+                    const label = t('simEditor.loadoutOptionLabel', {
+                        name: snap.name,
+                        allSkills: !snap.actionTypeHrid,
+                        unavailable: !snap.isUsableForCalculation,
+                    });
                     const selected = displayedLoadoutName === snap.name ? ' selected' : '';
                     const disabled = snap.isUsableForCalculation ? '' : ' disabled';
                     html += `<option value="${snap.name}"${selected}${disabled}>${label}</option>`;
                 }
                 if (needsSyntheticUnavailableOption) {
                     const unavailableLabel = selectedSnapshot?.name || displayedLoadoutName;
-                    html += `<option value="${displayedLoadoutName}" selected disabled>${unavailableLabel} (Unavailable)</option>`;
+                    const label = t('simEditor.loadoutOptionLabel', {
+                        name: unavailableLabel,
+                        allSkills: false,
+                        unavailable: true,
+                    });
+                    html += `<option value="${displayedLoadoutName}" selected disabled>${label}</option>`;
                 }
                 html += `</select>`;
             }
             html += `<button id="mwi-csim-reset" style="
                 margin-left:auto; background:rgba(255,255,255,0.04); border:1px solid #333; color:#aaa;
                 padding:2px 8px; border-radius:4px; font-size:11px; cursor:pointer;
-                font-family:inherit; flex-shrink:0;">Reset to Current</button>`;
+                font-family:inherit; flex-shrink:0;">${t('simEditor.resetToCurrentButton')}</button>`;
             html += '</div>';
             if (this._loadoutStatusMessage) {
                 html += `<div style="color:#f66; font-size:11px; margin:-4px 0 8px 0;">${this._loadoutStatusMessage}</div>`;
@@ -452,6 +460,32 @@ export class SimEditor {
         this._wireEditorEvents(editorArea, dto);
     }
 
+    /**
+     * Translated label for an equipment slot type hrid. Falls back to the raw hrid suffix for
+     * an unrecognized slot type rather than throwing.
+     * @private
+     */
+    _equipmentSlotLabel(slotType) {
+        const keys = {
+            '/equipment_types/head': 'simEditor.slotHead',
+            '/equipment_types/body': 'simEditor.slotBody',
+            '/equipment_types/legs': 'simEditor.slotLegs',
+            '/equipment_types/feet': 'simEditor.slotFeet',
+            '/equipment_types/hands': 'simEditor.slotHands',
+            '/equipment_types/main_hand': 'simEditor.slotMainHand',
+            '/equipment_types/two_hand': 'simEditor.slotTwoHand',
+            '/equipment_types/off_hand': 'simEditor.slotOffHand',
+            '/equipment_types/pouch': 'simEditor.slotPouch',
+            '/equipment_types/back': 'simEditor.slotBack',
+            '/equipment_types/neck': 'simEditor.slotNeck',
+            '/equipment_types/earrings': 'simEditor.slotEarrings',
+            '/equipment_types/ring': 'simEditor.slotRing',
+            '/equipment_types/charm': 'simEditor.slotCharm',
+        };
+        const key = keys[slotType];
+        return key ? t(key) : slotType.split('/').pop();
+    }
+
     /** @private */
     _renderEquipmentSection(dto, gameData) {
         const itemDetailMap = gameData.itemDetailMap || {};
@@ -471,39 +505,23 @@ export class SimEditor {
             '/equipment_types/ring',
             '/equipment_types/charm',
         ];
-        const slotLabels = {
-            '/equipment_types/head': 'Head',
-            '/equipment_types/body': 'Body',
-            '/equipment_types/legs': 'Legs',
-            '/equipment_types/feet': 'Feet',
-            '/equipment_types/hands': 'Hands',
-            '/equipment_types/main_hand': 'Main Hand',
-            '/equipment_types/two_hand': 'Two Hand',
-            '/equipment_types/off_hand': 'Off Hand',
-            '/equipment_types/pouch': 'Pouch',
-            '/equipment_types/back': 'Back',
-            '/equipment_types/neck': 'Neck',
-            '/equipment_types/earrings': 'Earrings',
-            '/equipment_types/ring': 'Ring',
-            '/equipment_types/charm': 'Charm',
-        };
 
         const equippedCount = slotOrder.filter((s) => dto.equipment[s]).length;
         let html = `<div style="margin-bottom:10px;">`;
         html += `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:6px; cursor:pointer; user-select:none;" data-toggle="equip-section">`;
-        html += `<span data-arrow="equip-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> Equipment (${equippedCount} items)`;
+        html += `<span data-arrow="equip-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> ${t('simEditor.equipmentSectionHeader', { count: equippedCount })}`;
         html += '</div>';
         html += `<div id="mwi-csim-equip-section" style="display:none;">`;
 
         for (const slotType of slotOrder) {
             const equip = dto.equipment[slotType];
-            const label = slotLabels[slotType] || slotType.split('/').pop();
+            const label = this._equipmentSlotLabel(slotType);
 
             if (!equip) {
                 html += `<div style="display:flex; align-items:center; gap:6px; padding:2px 0; font-size:12px;">`;
                 html += `<span style="color:#888; width:70px; flex-shrink:0;">${label}</span>`;
-                html += `<span style="color:#555; flex:1; font-style:italic;">Empty</span>`;
-                html += `<button data-equipment-slot="${slotType}" style="background:rgba(255,255,255,0.06); border:1px solid #444; color:#aaa; padding:1px 6px; border-radius:3px; font-size:11px; cursor:pointer; font-family:inherit;">add</button>`;
+                html += `<span style="color:#555; flex:1; font-style:italic;">${t('skillingOptimizer.emptySlotCapitalized')}</span>`;
+                html += `<button data-equipment-slot="${slotType}" style="background:rgba(255,255,255,0.06); border:1px solid #444; color:#aaa; padding:1px 6px; border-radius:3px; font-size:11px; cursor:pointer; font-family:inherit;">${t('simEditor.addButton')}</button>`;
                 html += '</div>';
                 continue;
             }
@@ -519,7 +537,7 @@ export class SimEditor {
                 data-enhance-slot="${slotType}"
                 style="width:36px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
                 border-radius:3px; padding:1px 3px; font-size:12px; text-align:center;">`;
-            html += `<button data-equipment-slot="${slotType}" style="background:rgba(255,255,255,0.06); border:1px solid #444; color:#aaa; padding:1px 6px; border-radius:3px; font-size:11px; cursor:pointer; font-family:inherit;">change</button>`;
+            html += `<button data-equipment-slot="${slotType}" style="background:rgba(255,255,255,0.06); border:1px solid #444; color:#aaa; padding:1px 6px; border-radius:3px; font-size:11px; cursor:pointer; font-family:inherit;">${t('simEditor.changeButton')}</button>`;
             html += '</div>';
         }
 
@@ -534,7 +552,7 @@ export class SimEditor {
 
         let html = `<div style="margin-bottom:10px;">`;
         html += `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:6px; cursor:pointer; user-select:none;" data-toggle="ability-section">`;
-        html += `<span data-arrow="ability-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> Abilities (${abilityCount} equipped)`;
+        html += `<span data-arrow="ability-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> ${t('simEditor.abilitiesSectionHeader', { count: abilityCount })}`;
         html += '</div>';
         html += `<div id="mwi-csim-ability-section" style="display:none;">`;
 
@@ -543,13 +561,14 @@ export class SimEditor {
 
         for (let i = 0; i < slotCount; i++) {
             const ability = dto.abilities[i];
-            const slotLabel = i === 0 ? 'Special' : `Slot ${i}`;
+            const slotLabel =
+                i === 0 ? t('simEditor.abilitySpecialSlotLabel') : t('simEditor.abilitySlotLabel', { index: i });
 
             if (!ability) {
                 html += `<div style="display:flex; align-items:center; gap:6px; padding:2px 0; font-size:12px;">`;
                 html += `<span style="color:#888; width:50px; flex-shrink:0;">${slotLabel}</span>`;
-                html += `<span style="color:#555; flex:1; font-style:italic;">Empty</span>`;
-                html += `<button data-ability-slot="${i}" style="background:rgba(255,255,255,0.06); border:1px solid #444; color:#aaa; padding:1px 6px; border-radius:3px; font-size:11px; cursor:pointer; font-family:inherit;">add</button>`;
+                html += `<span style="color:#555; flex:1; font-style:italic;">${t('skillingOptimizer.emptySlotCapitalized')}</span>`;
+                html += `<button data-ability-slot="${i}" style="background:rgba(255,255,255,0.06); border:1px solid #444; color:#aaa; padding:1px 6px; border-radius:3px; font-size:11px; cursor:pointer; font-family:inherit;">${t('simEditor.addButton')}</button>`;
                 html += '</div>';
                 continue;
             }
@@ -560,12 +579,12 @@ export class SimEditor {
             html += `<div style="display:flex; align-items:center; gap:6px; padding:2px 0; font-size:12px;">`;
             html += `<span style="color:#888; width:50px; flex-shrink:0;">${slotLabel}</span>`;
             html += `<span style="color:#e0e0e0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${name}</span>`;
-            html += `<span style="color:#666; font-size:11px;">Lv</span>`;
+            html += `<span style="color:#666; font-size:11px;">${t('simEditor.levelAbbreviation')}</span>`;
             html += `<input type="number" min="1" max="200" value="${ability.level}"
                 data-ability-idx="${i}"
                 style="width:42px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
                 border-radius:3px; padding:1px 3px; font-size:12px; text-align:center;">`;
-            html += `<button data-ability-slot="${i}" style="background:rgba(255,255,255,0.06); border:1px solid #444; color:#aaa; padding:1px 6px; border-radius:3px; font-size:11px; cursor:pointer; font-family:inherit;">change</button>`;
+            html += `<button data-ability-slot="${i}" style="background:rgba(255,255,255,0.06); border:1px solid #444; color:#aaa; padding:1px 6px; border-radius:3px; font-size:11px; cursor:pointer; font-family:inherit;">${t('simEditor.changeButton')}</button>`;
             html += '</div>';
         }
 
@@ -585,18 +604,17 @@ export class SimEditor {
             ACCENT +
             '; font-weight:700; font-size:12px; margin-bottom:6px; cursor:pointer; user-select:none;" data-toggle="consumable-section">';
         html +=
-            '<span data-arrow="consumable-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> Consumables (' +
-            foodCount +
-            ' food, ' +
-            drinkCount +
-            ' drinks)';
+            '<span data-arrow="consumable-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> ' +
+            t('simEditor.consumablesSectionHeader', { food: foodCount, drinks: drinkCount });
         html += '</div>';
         html += '<div id="mwi-csim-consumable-section" style="display:none;">';
 
-        html += '<div style="color:#888; font-size:11px; margin-bottom:3px;">Food</div>';
+        html += '<div style="color:#888; font-size:11px; margin-bottom:3px;">' + t('labSim.foodLabel') + '</div>';
         for (let i = 0; i < 3; i++) {
             const item = dto.food[i];
-            const name = item ? itemDetailMap[item.hrid]?.name || item.hrid.split('/').pop() : 'Empty';
+            const name = item
+                ? itemDetailMap[item.hrid]?.name || item.hrid.split('/').pop()
+                : t('skillingOptimizer.emptySlotCapitalized');
             const nameColor = item ? '#e0e0e0' : '#555';
             html += '<div style="display:flex; align-items:center; gap:6px; padding:2px 0; font-size:12px;">';
             html += '<span style="color:#666; width:16px; flex-shrink:0;">' + (i + 1) + '</span>';
@@ -609,14 +627,21 @@ export class SimEditor {
             html +=
                 '<button data-consumable-slot="food-' +
                 i +
-                '" style="background:rgba(255,255,255,0.06); border:1px solid #444; color:#aaa; padding:1px 6px; border-radius:3px; font-size:11px; cursor:pointer; font-family:inherit;">change</button>';
+                '" style="background:rgba(255,255,255,0.06); border:1px solid #444; color:#aaa; padding:1px 6px; border-radius:3px; font-size:11px; cursor:pointer; font-family:inherit;">' +
+                t('simEditor.changeButton') +
+                '</button>';
             html += '</div>';
         }
 
-        html += '<div style="color:#888; font-size:11px; margin-bottom:3px; margin-top:6px;">Drinks</div>';
+        html +=
+            '<div style="color:#888; font-size:11px; margin-bottom:3px; margin-top:6px;">' +
+            t('simEditor.drinksHeader') +
+            '</div>';
         for (let i = 0; i < 3; i++) {
             const item = dto.drinks[i];
-            const name = item ? itemDetailMap[item.hrid]?.name || item.hrid.split('/').pop() : 'Empty';
+            const name = item
+                ? itemDetailMap[item.hrid]?.name || item.hrid.split('/').pop()
+                : t('skillingOptimizer.emptySlotCapitalized');
             const nameColor = item ? '#e0e0e0' : '#555';
             html += '<div style="display:flex; align-items:center; gap:6px; padding:2px 0; font-size:12px;">';
             html += '<span style="color:#666; width:16px; flex-shrink:0;">' + (i + 1) + '</span>';
@@ -629,7 +654,9 @@ export class SimEditor {
             html +=
                 '<button data-consumable-slot="drinks-' +
                 i +
-                '" style="background:rgba(255,255,255,0.06); border:1px solid #444; color:#aaa; padding:1px 6px; border-radius:3px; font-size:11px; cursor:pointer; font-family:inherit;">change</button>';
+                '" style="background:rgba(255,255,255,0.06); border:1px solid #444; color:#aaa; padding:1px 6px; border-radius:3px; font-size:11px; cursor:pointer; font-family:inherit;">' +
+                t('simEditor.changeButton') +
+                '</button>';
             html += '</div>';
         }
 
@@ -687,17 +714,17 @@ export class SimEditor {
                     const hp = item.consumableDetail.hitpointRestore || 0;
                     const mp = item.consumableDetail.manapointRestore || 0;
                     const dur = item.consumableDetail.recoveryDuration || 0;
-                    if (hp > 0 && dur > 0) categoryLabel = 'HP Over Time';
-                    else if (hp > 0) categoryLabel = 'HP Instant';
-                    else if (mp > 0 && dur > 0) categoryLabel = 'MP Over Time';
-                    else if (mp > 0) categoryLabel = 'MP Instant';
-                    else categoryLabel = 'Other';
+                    if (hp > 0 && dur > 0) categoryLabel = t('simEditor.categoryHpOverTime');
+                    else if (hp > 0) categoryLabel = t('simEditor.categoryHpInstant');
+                    else if (mp > 0 && dur > 0) categoryLabel = t('simEditor.categoryMpOverTime');
+                    else if (mp > 0) categoryLabel = t('simEditor.categoryMpInstant');
+                    else categoryLabel = t('simEditor.categoryOther');
                 } else {
                     const buffs = item.consumableDetail.buffs || [];
                     if (buffs.length > 0) {
                         const buffName = buffs[0].uniqueHrid?.split('/').pop()?.replace(/_/g, ' ') || 'buff';
                         categoryLabel = buffName.charAt(0).toUpperCase() + buffName.slice(1);
-                    } else categoryLabel = 'Other';
+                    } else categoryLabel = t('simEditor.categoryOther');
                 }
 
                 items.push({ hrid, name: item.name || hrid.split('/').pop(), conflict, itemLevel, categoryLabel });
@@ -722,9 +749,7 @@ export class SimEditor {
         header.style.cssText =
             'display:flex; justify-content:space-between; align-items:center; padding:8px 14px; border-bottom:1px solid rgba(74,158,255,0.3); flex-shrink:0;';
         header.innerHTML =
-            '<span style="font-weight:700; font-size:13px; color:#4a9eff;">Select ' +
-            (isFood ? 'Food' : 'Drink') +
-            '</span>' +
+            `<span style="font-weight:700; font-size:13px; color:#4a9eff;">${isFood ? t('simEditor.selectFoodHeader') : t('simEditor.selectDrinkHeader')}</span>` +
             '<button id="mwi-csim-picker-close" style="background:none; border:none; color:#aaa; font-size:20px; cursor:pointer; padding:0; line-height:1;">\u00d7</button>';
         popup.appendChild(header);
 
@@ -732,7 +757,7 @@ export class SimEditor {
         searchDiv.style.cssText = 'padding:6px 14px; flex-shrink:0;';
         const searchInput = document.createElement('input');
         searchInput.type = 'search';
-        searchInput.placeholder = 'Search...';
+        searchInput.placeholder = t('simEditor.searchPlaceholder');
         searchInput.style.cssText =
             'width:100%; padding:5px 8px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15);' +
             'border-radius:6px; color:#e0e0e0; font-size:12px; font-family:inherit; outline:none;';
@@ -755,7 +780,9 @@ export class SimEditor {
 
             let html =
                 '<div data-pick-hrid="" style="display:flex; align-items:center; gap:8px; padding:4px; cursor:pointer; border-bottom:1px solid #1a1a2e; color:#888; font-style:italic;"' +
-                ' onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'\'">Empty (clear slot)</div>';
+                ' onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'\'">' +
+                t('simEditor.emptyClearSlotOption') +
+                '</div>';
 
             let lastCategory = '';
             for (const item of filtered.slice(0, 80)) {
@@ -771,14 +798,16 @@ export class SimEditor {
 
                 const isCurrent = item.hrid === currentHrid;
                 const lvlTag =
-                    '<span style="color:#666; font-size:10px; margin-left:auto; flex-shrink:0;">Lv ' +
-                    item.itemLevel +
+                    '<span style="color:#666; font-size:10px; margin-left:auto; flex-shrink:0;">' +
+                    t('simEditor.levelTag', { level: item.itemLevel }) +
                     '</span>';
                 if (item.conflict) {
                     html +=
                         '<div style="display:flex; align-items:center; gap:8px; padding:3px 4px; border-bottom:1px solid #1a1a2e; color:#555; cursor:default;">' +
                         item.name +
-                        ' <span style="font-size:10px; color:#664;">(in use)</span>' +
+                        ' <span style="font-size:10px; color:#664;">' +
+                        t('simEditor.inUseLabel') +
+                        '</span>' +
                         lvlTag +
                         '</div>';
                 } else {
@@ -799,9 +828,9 @@ export class SimEditor {
             }
             if (filtered.length > 80) {
                 html +=
-                    '<div style="color:#666; text-align:center; padding:6px;">...' +
-                    (filtered.length - 80) +
-                    ' more</div>';
+                    '<div style="color:#666; text-align:center; padding:6px;">' +
+                    t('simEditor.moreItemsSuffix', { count: filtered.length - 80 }) +
+                    '</div>';
             }
             listEl.innerHTML = html;
 
@@ -849,7 +878,7 @@ export class SimEditor {
         document.getElementById('mwi-csim-equipment-backdrop')?.remove();
 
         const itemDetailMap = gameData?.itemDetailMap || {};
-        const slotName = slotType.split('/').pop().replace(/_/g, ' ');
+        const slotName = this._equipmentSlotLabel(slotType);
 
         const items = [];
         for (const [hrid, item] of Object.entries(itemDetailMap)) {
@@ -860,11 +889,11 @@ export class SimEditor {
             const reqSkill = primaryReq?.skillHrid?.split('/').pop() || '';
 
             let categoryLabel;
-            if (reqSkill === 'attack') categoryLabel = 'Attack';
-            else if (reqSkill === 'defense') categoryLabel = 'Defense';
-            else if (reqSkill === 'ranged') categoryLabel = 'Ranged';
-            else if (reqSkill === 'magic') categoryLabel = 'Magic';
-            else categoryLabel = 'General';
+            if (reqSkill === 'attack') categoryLabel = t('simEditor.categoryAttack');
+            else if (reqSkill === 'defense') categoryLabel = t('simEditor.categoryDefense');
+            else if (reqSkill === 'ranged') categoryLabel = t('simEditor.categoryRanged');
+            else if (reqSkill === 'magic') categoryLabel = t('simEditor.categoryMagic');
+            else categoryLabel = t('simEditor.categoryGeneral');
 
             items.push({
                 hrid,
@@ -893,7 +922,7 @@ export class SimEditor {
         header.style.cssText =
             'display:flex; justify-content:space-between; align-items:center; padding:8px 14px; border-bottom:1px solid rgba(74,158,255,0.3); flex-shrink:0;';
         header.innerHTML =
-            `<span style="font-weight:700; font-size:13px; color:${ACCENT};">Select ${slotName}</span>` +
+            `<span style="font-weight:700; font-size:13px; color:${ACCENT};">${t('simEditor.selectEquipmentSlotHeader', { slot: slotName })}</span>` +
             '<button id="mwi-csim-equip-picker-close" style="background:none; border:none; color:#aaa; font-size:20px; cursor:pointer; padding:0; line-height:1;">\u00d7</button>';
         popup.appendChild(header);
 
@@ -901,7 +930,7 @@ export class SimEditor {
         searchDiv.style.cssText = 'padding:6px 14px; flex-shrink:0;';
         const searchInput = document.createElement('input');
         searchInput.type = 'search';
-        searchInput.placeholder = 'Search...';
+        searchInput.placeholder = t('simEditor.searchPlaceholder');
         searchInput.style.cssText =
             'width:100%; padding:5px 8px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15);' +
             'border-radius:6px; color:#e0e0e0; font-size:12px; font-family:inherit; outline:none;';
@@ -920,7 +949,9 @@ export class SimEditor {
 
             let html =
                 '<div data-pick-hrid="" style="display:flex; align-items:center; gap:8px; padding:4px; cursor:pointer; border-bottom:1px solid #1a1a2e; color:#888; font-style:italic;"' +
-                ' onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'\'">Empty (remove slot)</div>';
+                ' onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'\'">' +
+                t('simEditor.emptyRemoveSlotOption') +
+                '</div>';
 
             let lastCategory = '';
             for (const item of filtered.slice(0, 100)) {
@@ -932,7 +963,7 @@ export class SimEditor {
                 const isCurrent = item.hrid === currentHrid;
                 const color = isCurrent ? ACCENT : '#ccc';
                 const indicator = isCurrent ? ` <span style="color:${ACCENT};">\u25cf</span>` : '';
-                const lvlTag = `<span style="color:#666; font-size:10px; margin-left:auto; flex-shrink:0;">Lv ${item.reqLevel}</span>`;
+                const lvlTag = `<span style="color:#666; font-size:10px; margin-left:auto; flex-shrink:0;">${t('simEditor.levelTag', { level: item.reqLevel })}</span>`;
 
                 html +=
                     `<div data-pick-hrid="${item.hrid}" style="display:flex; align-items:center; gap:8px; padding:3px 4px; cursor:pointer; border-bottom:1px solid #1a1a2e; color:${color};"` +
@@ -943,7 +974,7 @@ export class SimEditor {
                     '</div>';
             }
             if (filtered.length > 100) {
-                html += `<div style="color:#666; text-align:center; padding:6px;">...${filtered.length - 100} more</div>`;
+                html += `<div style="color:#666; text-align:center; padding:6px;">${t('simEditor.moreItemsSuffix', { count: filtered.length - 100 })}</div>`;
             }
             listEl.innerHTML = html;
 
@@ -1007,10 +1038,11 @@ export class SimEditor {
             const effects = ability.abilityEffects || [];
             const combatStyle = effects[0]?.combatStyleHrid?.split('/').pop() || '';
             let categoryLabel;
-            if (combatStyle === 'stab' || combatStyle === 'slash' || combatStyle === 'smash') categoryLabel = 'Melee';
-            else if (combatStyle === 'ranged') categoryLabel = 'Ranged';
-            else if (combatStyle === 'magic') categoryLabel = 'Magic';
-            else categoryLabel = 'Other';
+            if (combatStyle === 'stab' || combatStyle === 'slash' || combatStyle === 'smash')
+                categoryLabel = t('simEditor.categoryMelee');
+            else if (combatStyle === 'ranged') categoryLabel = t('simEditor.categoryRanged');
+            else if (combatStyle === 'magic') categoryLabel = t('simEditor.categoryMagic');
+            else categoryLabel = t('simEditor.categoryOther');
 
             items.push({
                 hrid,
@@ -1034,12 +1066,14 @@ export class SimEditor {
             'width:350px; max-height:400px; display:flex; flex-direction:column;' +
             "font-family:'Segoe UI',sans-serif; color:#e0e0e0; font-size:13px; box-shadow:0 8px 24px rgba(0,0,0,0.6);";
 
-        const slotLabel = isSpecialSlot ? 'Special Ability' : `Ability Slot ${slotIndex}`;
+        const slotLabel = isSpecialSlot
+            ? t('simEditor.specialAbilityLabel')
+            : t('simEditor.abilitySlotNumberLabel', { index: slotIndex });
         const header = document.createElement('div');
         header.style.cssText =
             'display:flex; justify-content:space-between; align-items:center; padding:8px 14px; border-bottom:1px solid rgba(74,158,255,0.3); flex-shrink:0;';
         header.innerHTML =
-            `<span style="font-weight:700; font-size:13px; color:${ACCENT};">Select ${slotLabel}</span>` +
+            `<span style="font-weight:700; font-size:13px; color:${ACCENT};">${t('simEditor.selectAbilityHeader', { slotLabel })}</span>` +
             '<button id="mwi-csim-ability-picker-close" style="background:none; border:none; color:#aaa; font-size:20px; cursor:pointer; padding:0; line-height:1;">\u00d7</button>';
         popup.appendChild(header);
 
@@ -1047,7 +1081,7 @@ export class SimEditor {
         searchDiv.style.cssText = 'padding:6px 14px; flex-shrink:0;';
         const searchInput = document.createElement('input');
         searchInput.type = 'search';
-        searchInput.placeholder = 'Search...';
+        searchInput.placeholder = t('simEditor.searchPlaceholder');
         searchInput.style.cssText =
             'width:100%; padding:5px 8px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15);' +
             'border-radius:6px; color:#e0e0e0; font-size:12px; font-family:inherit; outline:none;';
@@ -1066,7 +1100,9 @@ export class SimEditor {
 
             let html =
                 '<div data-pick-hrid="" style="display:flex; align-items:center; gap:8px; padding:4px; cursor:pointer; border-bottom:1px solid #1a1a2e; color:#888; font-style:italic;"' +
-                ' onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'\'">Empty (clear slot)</div>';
+                ' onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'\'">' +
+                t('simEditor.emptyClearSlotOption') +
+                '</div>';
 
             let lastCategory = '';
             for (const item of filtered) {
@@ -1079,7 +1115,9 @@ export class SimEditor {
                     html +=
                         '<div style="display:flex; align-items:center; gap:8px; padding:3px 4px; border-bottom:1px solid #1a1a2e; color:#555; cursor:default;">' +
                         item.name +
-                        ' <span style="font-size:10px; color:#664;">(in use)</span></div>';
+                        ' <span style="font-size:10px; color:#664;">' +
+                        t('simEditor.inUseLabel') +
+                        '</span></div>';
                 } else {
                     const isCurrent = item.hrid === currentHrid;
                     const color = isCurrent ? ACCENT : '#ccc';
@@ -1137,33 +1175,41 @@ export class SimEditor {
     /** @private */
     _renderSkillLevelsSection(dto) {
         const combatSkills = [
-            { key: 'staminaLevel', label: 'Stamina' },
-            { key: 'intelligenceLevel', label: 'Intelligence' },
-            { key: 'attackLevel', label: 'Attack' },
-            { key: 'meleeLevel', label: 'Melee' },
-            { key: 'defenseLevel', label: 'Defense' },
-            { key: 'rangedLevel', label: 'Ranged' },
-            { key: 'magicLevel', label: 'Magic' },
+            { key: 'staminaLevel', label: t('simEditor.skillStamina'), shortLabel: t('combatSimUi.colStamina') },
+            {
+                key: 'intelligenceLevel',
+                label: t('simEditor.skillIntelligence'),
+                shortLabel: t('combatSimUi.colIntelligence'),
+            },
+            { key: 'attackLevel', label: t('simEditor.skillAttack'), shortLabel: t('combatSimUi.colAttack') },
+            { key: 'meleeLevel', label: t('simEditor.skillMelee'), shortLabel: t('combatSimUi.colMelee') },
+            { key: 'defenseLevel', label: t('simEditor.skillDefense'), shortLabel: t('combatSimUi.colDefense') },
+            { key: 'rangedLevel', label: t('simEditor.skillRanged'), shortLabel: t('combatSimUi.colRanged') },
+            { key: 'magicLevel', label: t('simEditor.skillMagic'), shortLabel: t('combatSimUi.colMagic') },
         ];
         const skillingSkills = [
-            { key: 'woodcuttingLevel', label: 'Woodcutting' },
-            { key: 'foragingLevel', label: 'Foraging' },
-            { key: 'milkingLevel', label: 'Milking' },
-            { key: 'cookingLevel', label: 'Cooking' },
-            { key: 'brewingLevel', label: 'Brewing' },
-            { key: 'cheesesmithingLevel', label: 'Cheesesmithing' },
-            { key: 'craftingLevel', label: 'Crafting' },
-            { key: 'tailoringLevel', label: 'Tailoring' },
-            { key: 'alchemyLevel', label: 'Alchemy' },
-            { key: 'enhancingLevel', label: 'Enhancing' },
+            { key: 'woodcuttingLevel', label: t('labSim.skillWoodcutting'), shortLabel: t('labSim.skillWoodcutting') },
+            { key: 'foragingLevel', label: t('labSim.skillForaging'), shortLabel: t('labSim.skillForaging') },
+            { key: 'milkingLevel', label: t('labSim.skillMilking'), shortLabel: t('labSim.skillMilking') },
+            { key: 'cookingLevel', label: t('labSim.skillCooking'), shortLabel: t('labSim.skillCooking') },
+            { key: 'brewingLevel', label: t('labSim.skillBrewing'), shortLabel: t('labSim.skillBrewing') },
+            {
+                key: 'cheesesmithingLevel',
+                label: t('labSim.skillCheesesmithing'),
+                shortLabel: t('labSim.skillCheesesmithing'),
+            },
+            { key: 'craftingLevel', label: t('labSim.skillCrafting'), shortLabel: t('labSim.skillCrafting') },
+            { key: 'tailoringLevel', label: t('labSim.skillTailoring'), shortLabel: t('labSim.skillTailoring') },
+            { key: 'alchemyLevel', label: t('labSim.skillAlchemy'), shortLabel: t('labSim.skillAlchemy') },
+            { key: 'enhancingLevel', label: t('labSim.skillEnhancing'), shortLabel: t('labSim.skillEnhancing') },
         ];
         const skills = this.skillingMode ? skillingSkills : combatSkills;
 
-        const summary = skills.map((s) => `${s.label.slice(0, 3)} ${dto[s.key]}`).join(' / ');
+        const summary = skills.map((s) => `${s.shortLabel} ${dto[s.key]}`).join(' / ');
 
         let html = `<div style="margin-bottom:10px;">`;
         html += `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:6px; cursor:pointer; user-select:none;" data-toggle="skill-section">`;
-        html += `<span data-arrow="skill-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> Skill Levels`;
+        html += `<span data-arrow="skill-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> ${t('simEditor.skillLevelsSectionHeader')}`;
         html += `<span style="color:#888; font-weight:400; font-size:11px; margin-left:6px;">${summary}</span>`;
         html += '</div>';
         html += `<div id="mwi-csim-skill-section" style="display:none;">`;
@@ -1191,8 +1237,8 @@ export class SimEditor {
 
         let html = `<div style="margin-bottom:10px;">`;
         html += `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:6px; cursor:pointer; user-select:none;" data-toggle="house-section">`;
-        html += `<span data-arrow="house-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> House Rooms`;
-        html += `<span style="color:#888; font-weight:400; font-size:11px; margin-left:6px;">${activeCount} active</span>`;
+        html += `<span data-arrow="house-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> ${t('simEditor.houseRoomsSectionHeader')}`;
+        html += `<span style="color:#888; font-weight:400; font-size:11px; margin-left:6px;">${t('simEditor.activeCountLabel', { count: activeCount })}</span>`;
         html += '</div>';
         html += `<div id="mwi-csim-house-section" style="display:none;">`;
         html += `<div style="display:grid; grid-template-columns:1fr 1fr; gap:4px 12px;">`;
@@ -1222,8 +1268,8 @@ export class SimEditor {
 
         let html = `<div style="margin-bottom:10px;">`;
         html += `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:6px; cursor:pointer; user-select:none;" data-toggle="shrine-section">`;
-        html += `<span data-arrow="shrine-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> Shrines`;
-        html += `<span style="color:#888; font-weight:400; font-size:11px; margin-left:6px;">${activeCount} active</span>`;
+        html += `<span data-arrow="shrine-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> ${t('simEditor.shrinesSectionHeader')}`;
+        html += `<span style="color:#888; font-weight:400; font-size:11px; margin-left:6px;">${t('simEditor.activeCountLabel', { count: activeCount })}</span>`;
         html += '</div>';
         html += `<div id="mwi-csim-shrine-section" style="display:none;">`;
         html += `<div style="display:grid; grid-template-columns:1fr 1fr; gap:4px 12px;">`;
@@ -1260,12 +1306,12 @@ export class SimEditor {
 
         let html = `<div style="margin-bottom:10px;">`;
         html += `<div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">`;
-        html += `<span style="color:${ACCENT}; font-weight:700; font-size:12px;">Achievements</span>`;
+        html += `<span style="color:${ACCENT}; font-weight:700; font-size:12px;">${t('simEditor.achievementsSectionHeader')}</span>`;
         html += `<div style="display:flex; gap:4px;">`;
         for (const [value, label] of [
-            ['current', 'Current'],
-            ['none', 'None'],
-            ['custom', 'Custom'],
+            ['current', t('simEditor.achievementModeCurrent')],
+            ['none', t('simEditor.achievementModeNone')],
+            ['custom', t('simEditor.achievementModeCustom')],
         ]) {
             const isActive = mode === value;
             const btnStyle = isActive
@@ -1277,18 +1323,22 @@ export class SimEditor {
 
         if (mode === 'custom') {
             if (tiers.length === 0) {
-                html += `<div style="color:#666; font-size:11px; font-style:italic;">No combat-relevant Achievement Tiers found in current game data.</div>`;
+                html += `<div style="color:#666; font-size:11px; font-style:italic;">${t('simEditor.noCombatRelevantAchievementTiers')}</div>`;
             } else {
                 const scenario = this._getAchievementScenario(playerHrid);
                 const completedHrids = scenario.customCompletedHrids || new Set();
 
-                html += `<div style="color:#666; font-size:10px; font-style:italic; margin-bottom:6px;">Simulation only - does not change your account.</div>`;
+                html += `<div style="color:#666; font-size:10px; font-style:italic; margin-bottom:6px;">${t('simEditor.achievementSimulationOnlyNote')}</div>`;
 
                 for (const tier of tiers) {
                     const tierId = 'achv-' + tier.tierHrid.replace(/[^a-zA-Z0-9]/g, '_');
                     const completedCount = tier.members.filter((m) => completedHrids.has(m.hrid)).length;
                     const buffText = this._formatTierBuffDescription(tier.buff);
-                    const summary = `${completedCount} / ${tier.members.length}` + (buffText ? ` · ${buffText}` : '');
+                    const summary = t('simEditor.achievementTierSummary', {
+                        completed: completedCount,
+                        total: tier.members.length,
+                        buffText,
+                    });
 
                     html += `<div style="margin-bottom:4px;">`;
                     html += `<div style="color:#ccc; font-weight:600; font-size:12px; margin-bottom:2px; cursor:pointer; user-select:none;" data-toggle="${tierId}">`;
@@ -1314,18 +1364,18 @@ export class SimEditor {
     /** @private */
     _renderTokenUpgradesSection(dto) {
         const upgrades = [
-            { key: 'speed', label: 'Speed' },
-            { key: 'efficiency', label: 'Efficiency' },
-            { key: 'success', label: 'Success Rate' },
-            { key: 'doubleProgress', label: 'Double Progress' },
+            { key: 'speed', label: t('labSim.buffSpeed') },
+            { key: 'efficiency', label: t('profitDisplay.efficiencyLabel') },
+            { key: 'success', label: t('simEditor.tokenSuccessRateLabel') },
+            { key: 'doubleProgress', label: t('simEditor.tokenDoubleProgressLabel') },
         ];
         const tokens = dto.tokenUpgrades || {};
         const activeCount = upgrades.filter((u) => (tokens[u.key] || 0) > 0).length;
 
         let html = `<div style="margin-bottom:10px;">`;
         html += `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:6px; cursor:pointer; user-select:none;" data-toggle="token-section">`;
-        html += `<span data-arrow="token-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> Token Upgrades`;
-        html += `<span style="color:#888; font-weight:400; font-size:11px; margin-left:6px;">${activeCount} active</span>`;
+        html += `<span data-arrow="token-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> ${t('simEditor.tokenUpgradesSectionHeader')}`;
+        html += `<span style="color:#888; font-weight:400; font-size:11px; margin-left:6px;">${t('simEditor.activeCountLabel', { count: activeCount })}</span>`;
         html += '</div>';
         html += `<div id="mwi-csim-token-section" style="display:none;">`;
         html += `<div style="display:grid; grid-template-columns:1fr 1fr; gap:4px 12px;">`;
@@ -1348,18 +1398,18 @@ export class SimEditor {
     /** @private */
     _renderCommunityBuffsSection(dto) {
         const buffs = [
-            { key: 'productionEfficiency', label: 'Prod. Efficiency' },
-            { key: 'enhancingSpeed', label: 'Enhancing Speed' },
-            { key: 'gatheringQuantity', label: 'Gathering Qty' },
-            { key: 'experience', label: 'Experience' },
+            { key: 'productionEfficiency', label: t('simEditor.communityProdEfficiencyLabel') },
+            { key: 'enhancingSpeed', label: t('simEditor.communityEnhancingSpeedLabel') },
+            { key: 'gatheringQuantity', label: t('simEditor.communityGatheringQtyLabel') },
+            { key: 'experience', label: t('labSim.buffExperience') },
         ];
         const levels = dto.communityBuffLevels || {};
         const activeCount = buffs.filter((b) => (levels[b.key] || 0) > 0).length;
 
         let html = `<div style="margin-bottom:10px;">`;
         html += `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:6px; cursor:pointer; user-select:none;" data-toggle="community-section">`;
-        html += `<span data-arrow="community-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> Community Buffs`;
-        html += `<span style="color:#888; font-weight:400; font-size:11px; margin-left:6px;">${activeCount} active</span>`;
+        html += `<span data-arrow="community-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> ${t('simEditor.communityBuffsSectionHeader')}`;
+        html += `<span style="color:#888; font-weight:400; font-size:11px; margin-left:6px;">${t('simEditor.activeCountLabel', { count: activeCount })}</span>`;
         html += '</div>';
         html += `<div id="mwi-csim-community-section" style="display:none;">`;
         html += `<div style="display:grid; grid-template-columns:1fr 1fr; gap:4px 12px;">`;
@@ -1589,12 +1639,12 @@ export class SimEditor {
                 const text = editorArea.querySelector('#mwi-csim-import-text')?.value?.trim();
                 const errorEl = editorArea.querySelector('#mwi-csim-import-error');
                 if (!text) {
-                    if (errorEl) errorEl.textContent = 'Paste export data first.';
+                    if (errorEl) errorEl.textContent = t('simEditor.pasteExportDataFirst');
                     return;
                 }
                 const result = parseShykaiImport(text);
                 if (!result || !result.players.length) {
-                    if (errorEl) errorEl.textContent = 'Invalid format. Paste a Shykai export JSON.';
+                    if (errorEl) errorEl.textContent = t('simEditor.invalidFormatShykaiExport');
                     return;
                 }
                 this.importPlayers(result.players, result.names);
@@ -1629,7 +1679,7 @@ export class SimEditor {
         const selfHrid = this._selfHrid || this._activeEditPlayer;
         const original = this._originalDTOs?.[selfHrid];
         const edited = this._editedDTOs?.[selfHrid];
-        if (!original || !edited) return this._selectedLoadoutName || 'Current Gear';
+        if (!original || !edited) return this._selectedLoadoutName || t('combatSimUi.currentGearLabel');
 
         const gameData = buildGameDataPayload();
         const itemDetailMap = gameData?.itemDetailMap || {};
@@ -1637,35 +1687,47 @@ export class SimEditor {
 
         const changes = [];
 
-        const slotNames = {
-            '/equipment_types/head': 'Head',
-            '/equipment_types/body': 'Body',
-            '/equipment_types/legs': 'Legs',
-            '/equipment_types/feet': 'Feet',
-            '/equipment_types/hands': 'Hands',
-            '/equipment_types/main_hand': 'Main Hand',
-            '/equipment_types/two_hand': 'Two Hand',
-            '/equipment_types/off_hand': 'Off Hand',
-            '/equipment_types/pouch': 'Pouch',
-            '/equipment_types/back': 'Back',
-            '/equipment_types/neck': 'Neck',
-            '/equipment_types/earrings': 'Earrings',
-            '/equipment_types/ring': 'Ring',
-            '/equipment_types/charm': 'Charm',
-        };
+        const slotHrids = [
+            '/equipment_types/head',
+            '/equipment_types/body',
+            '/equipment_types/legs',
+            '/equipment_types/feet',
+            '/equipment_types/hands',
+            '/equipment_types/main_hand',
+            '/equipment_types/two_hand',
+            '/equipment_types/off_hand',
+            '/equipment_types/pouch',
+            '/equipment_types/back',
+            '/equipment_types/neck',
+            '/equipment_types/earrings',
+            '/equipment_types/ring',
+            '/equipment_types/charm',
+        ];
 
-        for (const slot of Object.keys(slotNames)) {
+        for (const slot of slotHrids) {
             const origEquip = original.equipment?.[slot];
             const editEquip = edited.equipment?.[slot];
             if (!origEquip && !editEquip) continue;
 
             if (origEquip?.hrid !== editEquip?.hrid) {
-                const origName = itemDetailMap[origEquip?.hrid]?.name || origEquip?.hrid?.split('/').pop() || 'Empty';
-                const editName = itemDetailMap[editEquip?.hrid]?.name || editEquip?.hrid?.split('/').pop() || 'Empty';
-                changes.push(`${origName} \u2192 ${editName}`);
+                const origName =
+                    itemDetailMap[origEquip?.hrid]?.name ||
+                    origEquip?.hrid?.split('/').pop() ||
+                    t('skillingOptimizer.emptySlotCapitalized');
+                const editName =
+                    itemDetailMap[editEquip?.hrid]?.name ||
+                    editEquip?.hrid?.split('/').pop() ||
+                    t('skillingOptimizer.emptySlotCapitalized');
+                changes.push(t('simEditor.itemSwapLabel', { from: origName, to: editName }));
             } else if (origEquip?.enhancementLevel !== editEquip?.enhancementLevel) {
-                const label = slotNames[slot];
-                changes.push(`${label} +${origEquip.enhancementLevel}\u2192+${editEquip.enhancementLevel}`);
+                const label = this._equipmentSlotLabel(slot);
+                changes.push(
+                    t('simEditor.enhancementChangeLabel', {
+                        slot: label,
+                        from: origEquip.enhancementLevel,
+                        to: editEquip.enhancementLevel,
+                    })
+                );
             }
         }
 
@@ -1675,80 +1737,95 @@ export class SimEditor {
             if (!origAb && !editAb) continue;
 
             if (origAb?.hrid !== editAb?.hrid) {
-                const origName = abilityDetailMap[origAb?.hrid]?.name || origAb?.hrid?.split('/').pop() || 'None';
-                const editName = abilityDetailMap[editAb?.hrid]?.name || editAb?.hrid?.split('/').pop() || 'None';
-                changes.push(`${origName} \u2192 ${editName}`);
+                const origName =
+                    abilityDetailMap[origAb?.hrid]?.name || origAb?.hrid?.split('/').pop() || t('simEditor.noneLabel');
+                const editName =
+                    abilityDetailMap[editAb?.hrid]?.name || editAb?.hrid?.split('/').pop() || t('simEditor.noneLabel');
+                changes.push(t('simEditor.itemSwapLabel', { from: origName, to: editName }));
             } else if (origAb && editAb && origAb.level !== editAb.level) {
                 const name = abilityDetailMap[editAb.hrid]?.name || editAb.hrid.split('/').pop();
-                changes.push(`${name} Lv ${origAb.level}\u2192${editAb.level}`);
+                changes.push(t('simEditor.abilityLevelChangeLabel', { name, from: origAb.level, to: editAb.level }));
             }
         }
 
-        const skillLabels = {
-            staminaLevel: 'Stamina',
-            intelligenceLevel: 'Intelligence',
-            attackLevel: 'Attack',
-            meleeLevel: 'Melee',
-            defenseLevel: 'Defense',
-            rangedLevel: 'Ranged',
-            magicLevel: 'Magic',
-            woodcuttingLevel: 'Woodcutting',
-            foragingLevel: 'Foraging',
-            milkingLevel: 'Milking',
-            cookingLevel: 'Cooking',
-            brewingLevel: 'Brewing',
-            cheesesmithingLevel: 'Cheesesmithing',
-            craftingLevel: 'Crafting',
-            tailoringLevel: 'Tailoring',
-            alchemyLevel: 'Alchemy',
-            enhancingLevel: 'Enhancing',
-        };
-        for (const [key, label] of Object.entries(skillLabels)) {
+        const skillKeys = [
+            ['staminaLevel', t('simEditor.skillStamina')],
+            ['intelligenceLevel', t('simEditor.skillIntelligence')],
+            ['attackLevel', t('simEditor.skillAttack')],
+            ['meleeLevel', t('simEditor.skillMelee')],
+            ['defenseLevel', t('simEditor.skillDefense')],
+            ['rangedLevel', t('simEditor.skillRanged')],
+            ['magicLevel', t('simEditor.skillMagic')],
+            ['woodcuttingLevel', t('labSim.skillWoodcutting')],
+            ['foragingLevel', t('labSim.skillForaging')],
+            ['milkingLevel', t('labSim.skillMilking')],
+            ['cookingLevel', t('labSim.skillCooking')],
+            ['brewingLevel', t('labSim.skillBrewing')],
+            ['cheesesmithingLevel', t('labSim.skillCheesesmithing')],
+            ['craftingLevel', t('labSim.skillCrafting')],
+            ['tailoringLevel', t('labSim.skillTailoring')],
+            ['alchemyLevel', t('labSim.skillAlchemy')],
+            ['enhancingLevel', t('labSim.skillEnhancing')],
+        ];
+        for (const [key, label] of skillKeys) {
             if (original[key] !== edited[key]) {
-                changes.push(`${label} ${original[key]}\u2192${edited[key]}`);
+                changes.push(t('simEditor.skillLevelChangeLabel', { label, from: original[key], to: edited[key] }));
             }
         }
 
-        const slotLabels = { food: 'Food', drinks: 'Drink' };
-        for (const [slotType, prefix] of Object.entries(slotLabels)) {
+        const slotTypeLabels = { food: t('labSim.foodLabel'), drinks: t('simEditor.drinkLabelSingular') };
+        for (const [slotType, prefix] of Object.entries(slotTypeLabels)) {
             for (let i = 0; i < 3; i++) {
                 const origHrid = original[slotType]?.[i]?.hrid;
                 const editHrid = edited[slotType]?.[i]?.hrid;
                 if (origHrid !== editHrid) {
-                    const origName = origHrid ? itemDetailMap[origHrid]?.name || origHrid.split('/').pop() : 'Empty';
-                    const editName = editHrid ? itemDetailMap[editHrid]?.name || editHrid.split('/').pop() : 'Empty';
-                    changes.push(`${prefix} ${i + 1}: ${origName}\u2192${editName}`);
+                    const origName = origHrid
+                        ? itemDetailMap[origHrid]?.name || origHrid.split('/').pop()
+                        : t('skillingOptimizer.emptySlotCapitalized');
+                    const editName = editHrid
+                        ? itemDetailMap[editHrid]?.name || editHrid.split('/').pop()
+                        : t('skillingOptimizer.emptySlotCapitalized');
+                    changes.push(
+                        t('simEditor.consumableChangeLabel', { prefix, index: i + 1, from: origName, to: editName })
+                    );
                 }
             }
         }
 
-        const tokenLabels = { speed: 'Speed', efficiency: 'Efficiency', success: 'Success', doubleProgress: 'DblProg' };
+        const tokenLabels = {
+            speed: t('labSim.buffSpeed'),
+            efficiency: t('profitDisplay.efficiencyLabel'),
+            success: t('labSim.buffSuccess'),
+            doubleProgress: t('simEditor.tokenDoubleProgressShort'),
+        };
         for (const [key, label] of Object.entries(tokenLabels)) {
             const origVal = original.tokenUpgrades?.[key] || 0;
             const editVal = edited.tokenUpgrades?.[key] || 0;
             if (origVal !== editVal) {
-                changes.push(`Token ${label} ${origVal}\u2192${editVal}`);
+                changes.push(t('simEditor.tokenChangeLabel', { label, from: origVal, to: editVal }));
             }
         }
 
         const cbLabels = {
-            productionEfficiency: 'ProdEff',
-            enhancingSpeed: 'EnhSpd',
-            gatheringQuantity: 'GathQty',
-            experience: 'Exp',
+            productionEfficiency: t('simEditor.communityProdEffShort'),
+            enhancingSpeed: t('simEditor.communityEnhSpdShort'),
+            gatheringQuantity: t('simEditor.communityGathQtyShort'),
+            experience: t('simEditor.communityExpShort'),
         };
         for (const [key, label] of Object.entries(cbLabels)) {
             const origVal = original.communityBuffLevels?.[key] || 0;
             const editVal = edited.communityBuffLevels?.[key] || 0;
             if (origVal !== editVal) {
-                changes.push(`CB ${label} ${origVal}\u2192${editVal}`);
+                changes.push(t('simEditor.communityBuffChangeLabel', { label, from: origVal, to: editVal }));
             }
         }
 
         const loadoutPrefix = this._selectedLoadoutName || '';
-        if (changes.length === 0) return loadoutPrefix || 'Current Gear';
+        if (changes.length === 0) return loadoutPrefix || t('combatSimUi.currentGearLabel');
         const changesStr = changes.join(', ');
-        return loadoutPrefix ? loadoutPrefix + ': ' + changesStr : changesStr;
+        return loadoutPrefix
+            ? t('simEditor.loadoutChangesSummary', { prefix: loadoutPrefix, changes: changesStr })
+            : changesStr;
     }
 
     /**

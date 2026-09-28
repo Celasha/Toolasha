@@ -6,6 +6,7 @@
  */
 
 import dataManager from '../../core/data-manager.js';
+import { t } from '../../core/i18n.js';
 import { formatKMB, formatWithSeparator, timeReadable } from '../../utils/formatters.js';
 import { calculateActionStats } from '../../utils/action-calculator.js';
 import { calculateEfficiencyMultiplier } from '../../utils/efficiency.js';
@@ -207,7 +208,7 @@ export function renderCraftingPlanBreakdown(plan, options = {}) {
             color: var(--text-color-primary, #fff);
             margin-bottom: 4px;
         `;
-        shoppingHeader.textContent = 'Shopping List';
+        shoppingHeader.textContent = t('craftingPlanTreeRenderer.shoppingListHeader');
         shoppingListContainer.appendChild(shoppingHeader);
 
         // Sort by total cost descending
@@ -253,7 +254,7 @@ export function renderCraftingPlanBreakdown(plan, options = {}) {
             color: var(--text-color-primary, #fff);
             margin-bottom: 4px;
         `;
-        stepsHeader.textContent = 'Crafting Steps';
+        stepsHeader.textContent = t('craftingPlanTreeRenderer.craftingStepsHeader');
         container.appendChild(stepsHeader);
 
         for (let i = 0; i < craftMetrics.steps.length; i++) {

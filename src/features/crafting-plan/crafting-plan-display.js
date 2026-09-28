@@ -5,6 +5,7 @@
  */
 
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import domObserver from '../../core/dom-observer.js';
 import dataManager from '../../core/data-manager.js';
 import { marketplaceSession, MARKETPLACE_OWNER } from '../../core/marketplace-session.js';
@@ -41,17 +42,31 @@ export { calculateCraftingPlanMetrics, formatCraftingPlanSummary };
 
 const UI_ID = 'mwi-crafting-plan';
 
-const PRICING_MODES = [
-    { value: 'conservative', label: 'Instant Buy' },
-    { value: 'hybrid', label: 'Instant Buy / Patient Sell' },
-    { value: 'optimistic', label: 'Patient Buy / Patient Sell' },
-    { value: 'patientBuy', label: 'Patient Buy' },
-];
-const ARTISAN_MODES = [
-    { value: ARTISAN_MATERIAL_MODE.EXPECTED, label: 'Expected' },
-    { value: ARTISAN_MATERIAL_MODE.WORST_CASE, label: 'Worst-case' },
-    { value: ARTISAN_MATERIAL_MODE.HYBRID, label: 'Hybrid' },
-];
+/**
+ * Build the pricing mode options, resolved at call time so the labels reflect the active locale.
+ * @returns {{value: string, label: string}[]}
+ */
+function getPricingModes() {
+    return [
+        { value: 'conservative', label: t('craftingPlanDisplay.pricingModeInstantBuy') },
+        { value: 'hybrid', label: t('craftingPlanDisplay.pricingModeInstantBuyPatientSell') },
+        { value: 'optimistic', label: t('craftingPlanDisplay.pricingModePatientBuyPatientSell') },
+        { value: 'patientBuy', label: t('craftingPlanDisplay.pricingModePatientBuy') },
+    ];
+}
+
+/**
+ * Build the Artisan material mode options, resolved at call time so the labels reflect the
+ * active locale.
+ * @returns {{value: string, label: string}[]}
+ */
+function getArtisanModes() {
+    return [
+        { value: ARTISAN_MATERIAL_MODE.EXPECTED, label: t('openableAnalytics.expectedLabel') },
+        { value: ARTISAN_MATERIAL_MODE.WORST_CASE, label: t('craftingPlanDisplay.artisanModeWorstCase') },
+        { value: ARTISAN_MATERIAL_MODE.HYBRID, label: t('craftingPlanDisplay.artisanModeHybrid') },
+    ];
+}
 const craftingPlanTabs = [];
 let cleanupObserver = null;
 let nativeTabExitCleanup = null;
@@ -214,14 +229,19 @@ function buildPlanUI(actionHrid, panel, onToggle, defaultOpen = false) {
 
     // === Summary comparison ===
     const unitCostText = plan.unitCost === Infinity ? '?' : formatWithSeparator(Math.round(plan.unitCost));
-    const buyText = plan.buyPrice !== null ? formatWithSeparator(Math.round(plan.buyPrice)) : 'N/A';
-    const craftText = plan.craftCost !== null ? formatWithSeparator(Math.round(plan.craftCost)) : 'N/A';
-    const strategyText = plan.strategy === 'buy' ? 'Buy from market' : 'Craft from materials';
+    const buyText =
+        plan.buyPrice !== null ? formatWithSeparator(Math.round(plan.buyPrice)) : t('combatSimUi.notAvailableLabel');
+    const craftText =
+        plan.craftCost !== null ? formatWithSeparator(Math.round(plan.craftCost)) : t('combatSimUi.notAvailableLabel');
+    const strategyText =
+        plan.strategy === 'buy'
+            ? t('craftingPlanDisplay.strategyBuyFromMarket')
+            : t('craftingPlanDisplay.strategyCraftFromMaterials');
     const quantityRow =
         requestedQuantity > 1 && plan.unitCost !== Infinity
             ? `<div style="display: flex; justify-content: space-between; color: var(--text-color-secondary, #888); font-size: 0.9em;">
-                   <span>Quantity: ${formatWithSeparator(requestedQuantity)}</span>
-                   <span>Total: ${formatWithSeparator(Math.round(plan.totalCost))}</span>
+                   <span>${t('craftingPlanDisplay.quantityLine', { quantity: formatWithSeparator(requestedQuantity) })}</span>
+                   <span>${t('craftingPlanDisplay.totalLine', { value: formatWithSeparator(Math.round(plan.totalCost)) })}</span>
                </div>`
             : '';
 
@@ -229,44 +249,43 @@ function buildPlanUI(actionHrid, panel, onToggle, defaultOpen = false) {
     summary.style.cssText = 'margin-bottom: 6px;';
     summary.innerHTML = `
         <div style="display: flex; justify-content: space-between; color: var(--text-color-primary, #fff);">
-            <span>Optimal: <strong>${strategyText}</strong></span>
-            <span>${unitCostText}/ea</span>
+            <span>${t('craftingPlanDisplay.optimalStrategyLine', { strategy: strategyText })}</span>
+            <span>${t('craftingPlanDisplay.unitCostPerEach', { cost: unitCostText })}</span>
         </div>
         <div style="display: flex; justify-content: space-between; color: var(--text-color-secondary, #888); font-size: 0.9em;">
-            <span>Market buy: ${buyText}</span>
-            <span>Craft cost: ${craftText}</span>
+            <span>${t('craftingPlanDisplay.marketBuyLine', { value: buyText })}</span>
+            <span>${t('craftingPlanDisplay.craftCostLine', { value: craftText })}</span>
         </div>
         ${quantityRow}
     `;
     content.appendChild(summary);
 
     // === Pricing mode toggle ===
-    const currentMode = PRICING_MODES.find((m) => m.value === pricingModeSetting) || PRICING_MODES[0];
+    const pricingModes = getPricingModes();
+    const currentMode = pricingModes.find((m) => m.value === pricingModeSetting) || pricingModes[0];
     content.appendChild(
-        createModePillRow('Pricing:', currentMode.label, () => {
-            const idx = PRICING_MODES.findIndex((m) => m.value === pricingModeSetting);
-            const next = PRICING_MODES[(idx + 1) % PRICING_MODES.length];
+        createModePillRow(t('craftingPlanDisplay.pricingPillLabel'), currentMode.label, () => {
+            const idx = pricingModes.findIndex((m) => m.value === pricingModeSetting);
+            const next = pricingModes[(idx + 1) % pricingModes.length];
             config.setSettingValue('profitCalc_pricingMode', next.value);
             if (onToggle) onToggle();
         })
     );
 
     // === Artisan material mode toggle ===
-    const currentArtisanMode = ARTISAN_MODES.find((m) => m.value === artisanMode) || ARTISAN_MODES[0];
+    const artisanModes = getArtisanModes();
+    const currentArtisanMode = artisanModes.find((m) => m.value === artisanMode) || artisanModes[0];
     content.appendChild(
         createModePillRow(
-            'Artisan mode:',
+            t('craftingPlanDisplay.artisanModePillLabel'),
             currentArtisanMode.label,
             () => {
-                const idx = ARTISAN_MODES.findIndex((m) => m.value === artisanMode);
-                const next = ARTISAN_MODES[(idx + 1) % ARTISAN_MODES.length];
+                const idx = artisanModes.findIndex((m) => m.value === artisanMode);
+                const next = artisanModes[(idx + 1) % artisanModes.length];
                 config.setSettingValue('actions_artisanMaterialMode', next.value);
                 if (onToggle) onToggle();
             },
-            'How Artisan Tea savings are rounded into material quantities:\n' +
-                'Expected — pools the savings across the whole batch (average, may run short on a bad action).\n' +
-                'Worst-case — rounds up every single action before multiplying (safest, may over-buy).\n' +
-                'Hybrid — worst-case under 100 actions, expected at 100+.'
+            t('craftingPlanDisplay.artisanModeTooltip')
         )
     );
 
@@ -290,7 +309,7 @@ function buildPlanUI(actionHrid, panel, onToggle, defaultOpen = false) {
         if (onToggle) onToggle();
     });
     matchQuantityRow.appendChild(matchQuantityCheckbox);
-    matchQuantityRow.appendChild(document.createTextNode('Match action panel quantity'));
+    matchQuantityRow.appendChild(document.createTextNode(t('craftingPlanDisplay.matchQuantityLabel')));
     content.appendChild(matchQuantityRow);
 
     // === Buy intermediates toggle ===
@@ -313,7 +332,7 @@ function buildPlanUI(actionHrid, panel, onToggle, defaultOpen = false) {
         if (onToggle) onToggle();
     });
     toggleRow.appendChild(checkbox);
-    toggleRow.appendChild(document.createTextNode('Buy raw materials only'));
+    toggleRow.appendChild(document.createTextNode(t('craftingPlanDisplay.buyRawMaterialsOnlyLabel')));
     content.appendChild(toggleRow);
 
     // === No processing toggle ===
@@ -336,7 +355,7 @@ function buildPlanUI(actionHrid, panel, onToggle, defaultOpen = false) {
         if (onToggle) onToggle();
     });
     noProcessingRow.appendChild(noProcessingCheckbox);
-    noProcessingRow.appendChild(document.createTextNode('No processing (buy intermediates)'));
+    noProcessingRow.appendChild(document.createTextNode(t('craftingPlanDisplay.noProcessingLabel')));
     content.appendChild(noProcessingRow);
 
     // === Task mode toggle ===
@@ -359,7 +378,7 @@ function buildPlanUI(actionHrid, panel, onToggle, defaultOpen = false) {
         if (onToggle) onToggle();
     });
     taskToggleRow.appendChild(taskCheckbox);
-    taskToggleRow.appendChild(document.createTextNode('Task mode (force last step)'));
+    taskToggleRow.appendChild(document.createTextNode(t('craftingPlanDisplay.taskModeLabel')));
     content.appendChild(taskToggleRow);
 
     // === Time cost toggle ===
@@ -378,7 +397,7 @@ function buildPlanUI(actionHrid, panel, onToggle, defaultOpen = false) {
     timeCostCheckbox.checked = timeCostEnabled;
     timeCostCheckbox.style.cssText = 'margin: 0; cursor: pointer;';
     timeCostRow.appendChild(timeCostCheckbox);
-    timeCostRow.appendChild(document.createTextNode('Factor in time cost'));
+    timeCostRow.appendChild(document.createTextNode(t('craftingPlanDisplay.factorTimeCostLabel')));
 
     const goldInput = document.createElement('input');
     goldInput.type = 'number';
@@ -391,7 +410,7 @@ function buildPlanUI(actionHrid, panel, onToggle, defaultOpen = false) {
     `;
     goldInput.style.display = timeCostEnabled ? '' : 'none';
     const goldLabel = document.createElement('span');
-    goldLabel.textContent = 'gold/hr';
+    goldLabel.textContent = t('taskProfitDisplay.goldPerHourUnit');
     goldLabel.style.fontSize = '0.85em';
     goldLabel.style.display = timeCostEnabled ? '' : 'none';
 
@@ -413,7 +432,14 @@ function buildPlanUI(actionHrid, panel, onToggle, defaultOpen = false) {
     // Only show breakdown if crafting is the optimal strategy
     if (plan.strategy !== 'craft' || plan.children.length === 0) {
         const costText = formatCraftingPlanSummary(plan, craftMetrics.totalCraftSeconds);
-        const section = createCollapsibleSection('', 'Best Crafting Plan', costText, content, defaultOpen, 0);
+        const section = createCollapsibleSection(
+            '',
+            t('craftingPlanDisplay.bestCraftingPlanTitle'),
+            costText,
+            content,
+            defaultOpen,
+            0
+        );
         section.id = UI_ID;
         section.className = 'mwi-crafting-plan-section';
         return compactActionPanelSection(section);
@@ -431,7 +457,7 @@ function buildPlanUI(actionHrid, panel, onToggle, defaultOpen = false) {
             // === Buy Missing Materials button ===
             const buyButton = document.createElement('button');
             buyButton.type = 'button';
-            buyButton.textContent = 'Buy Missing Materials';
+            buyButton.textContent = t('craftingPlanDisplay.buyMissingMaterialsButton');
             buyButton.style.cssText = `
                 width: 100%; margin-top: 6px; padding: 6px;
                 background: linear-gradient(135deg, #1e40af, #3b82f6);
@@ -578,7 +604,14 @@ function buildPlanUI(actionHrid, panel, onToggle, defaultOpen = false) {
     }
 
     const costText = formatCraftingPlanSummary(plan, craftMetrics.totalCraftSeconds);
-    const section = createCollapsibleSection('', 'Best Crafting Plan', costText, content, defaultOpen, 0);
+    const section = createCollapsibleSection(
+        '',
+        t('craftingPlanDisplay.bestCraftingPlanTitle'),
+        costText,
+        content,
+        defaultOpen,
+        0
+    );
     section.id = UI_ID;
     section.className = 'mwi-crafting-plan-section';
     compactActionPanelSection(section);
@@ -662,7 +695,7 @@ function createCraftingPlanReturnTab(referenceTab, returnContext, sessionId) {
     if (badge) {
         badge.innerHTML = `
             <div style="text-align: center;">
-                <div>↩ Return</div>
+                <div>${t('guildCreditValue.returnTabLabel')}</div>
                 <div style="font-size: 0.75em; color: #60a5fa;">${displayName}</div>
             </div>
         `;

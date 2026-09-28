@@ -12,6 +12,7 @@ import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import storage from '../../core/storage.js';
 import webSocketHook from '../../core/websocket.js';
+import { t } from '../../core/i18n.js';
 import { repaintTaskCard } from './task-card-visual-state.js';
 import { TASK_SKILL_TYPES, getActionSkillType, countActionsBySkillType } from './task-skill-groups.js';
 
@@ -275,7 +276,7 @@ class TaskAutoReroll {
             flex-shrink: 0;
         `;
         header.innerHTML = `
-            <span style="font-weight:700; font-size:14px; color:#ef4444;">Auto-Reroll List</span>
+            <span style="font-weight:700; font-size:14px; color:#ef4444;">${t('taskAutoReroll.autoRerollListTitle')}</span>
             <button id="mwi-task-autoreroll-close" style="
                 background:none; border:none; color:#aaa; font-size:22px;
                 cursor:pointer; padding:0; line-height:1;">\u00d7</button>

@@ -6,6 +6,7 @@
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
+import { t } from '../../core/i18n.js';
 import { numberFormatter } from '../../utils/formatters.js';
 import { calculateMaterialRequirements, isArtisanTeaOutOfStock } from '../../utils/material-calculator.js';
 import {
@@ -129,7 +130,7 @@ class RequiredMaterials {
             const warning = document.createElement('div');
             warning.className = 'mwi-artisan-warning';
             warning.style.cssText = 'color:#f0a830; font-size:11px; text-align:center; padding:3px 0 1px 0;';
-            warning.textContent = '⚠ Artisan Tea out of stock — full material amounts shown';
+            warning.textContent = t('requiredMaterials.artisanTeaOutOfStock');
             requiresDiv.insertAdjacentElement('afterend', warning);
         }
 

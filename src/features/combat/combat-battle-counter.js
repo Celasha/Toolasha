@@ -14,6 +14,7 @@ import webSocketHook from '../../core/websocket.js';
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import dataManager from '../../core/data-manager.js';
+import { t } from '../../core/i18n.js';
 
 const COUNTER_ID = 'mwi-battle-counter';
 const ACTION_NAME_SELECTOR = '[class*="Header_actionName"]';
@@ -165,11 +166,14 @@ class CombatBattleCounter {
         }
 
         if (this.isLabyrinth) {
-            el.textContent = `· Attempt #${this.labyrinthAttempt}`;
+            el.textContent = t('combatBattleCounter.attemptLabel', { attempt: this.labyrinthAttempt });
         } else if (this.isDungeon) {
-            el.textContent = `· Wave ${this.currentWave} · Battle #${this.battleId}`;
+            el.textContent = t('combatBattleCounter.dungeonBattleLabel', {
+                wave: this.currentWave,
+                battle: this.battleId,
+            });
         } else {
-            el.textContent = `· Battle #${this.battleId}`;
+            el.textContent = t('combatBattleCounter.battleLabel', { battle: this.battleId });
         }
     }
 

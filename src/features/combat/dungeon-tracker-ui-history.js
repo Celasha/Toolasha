@@ -3,6 +3,7 @@
  * Handles grouping, filtering, and rendering of run history
  */
 
+import { t } from '../../core/i18n.js';
 import dungeonTrackerStorage from './dungeon-tracker-storage.js';
 import { formatDateTime } from '../../utils/formatters.js';
 
@@ -25,7 +26,7 @@ class DungeonTrackerUIHistory {
             if (!groups[key]) {
                 groups[key] = {
                     key: key,
-                    label: key === 'Solo' ? 'Solo Runs' : key,
+                    label: key === 'Solo' ? t('dungeonTrackerUi.soloRunsLabel') : key,
                     runs: [],
                 };
             }
@@ -48,7 +49,7 @@ class DungeonTrackerUIHistory {
         const groups = {};
 
         for (const run of runs) {
-            const key = run.dungeonName || 'Unknown';
+            const key = run.dungeonName || t('dungeonTrackerUi.unknownDungeonFallback');
             if (!groups[key]) {
                 groups[key] = {
                     key: key,
@@ -121,8 +122,7 @@ class DungeonTrackerUIHistory {
             const allRuns = await dungeonTrackerStorage.getAllRuns();
 
             if (allRuns.length === 0) {
-                runList.innerHTML =
-                    '<div style="color: #888; font-style: italic; text-align: center; padding: 8px;">No runs yet</div>';
+                runList.innerHTML = `<div style="color: #888; font-style: italic; text-align: center; padding: 8px;">${t('dungeonTrackerUi.noRunsYet')}</div>`;
                 // Update filter dropdowns with empty options
                 this.updateFilterDropdowns(container, [], []);
                 return;
@@ -138,8 +138,7 @@ class DungeonTrackerUIHistory {
             }
 
             if (filteredRuns.length === 0) {
-                runList.innerHTML =
-                    '<div style="color: #888; font-style: italic; text-align: center; padding: 8px;">No runs match filters</div>';
+                runList.innerHTML = `<div style="color: #888; font-style: italic; text-align: center; padding: 8px;">${t('dungeonTrackerUi.noRunsMatchFilters')}</div>`;
                 return;
             }
 
@@ -156,8 +155,7 @@ class DungeonTrackerUIHistory {
             this.updateFilterDropdowns(container, dungeons, teams);
         } catch (error) {
             console.error('[Dungeon Tracker UI History] Update error:', error);
-            runList.innerHTML =
-                '<div style="color: #ff6b6b; text-align: center; padding: 8px;">Error loading run history</div>';
+            runList.innerHTML = `<div style="color: #ff6b6b; text-align: center; padding: 8px;">${t('dungeonTrackerUi.errorLoadingRunHistory')}</div>`;
         }
     }
 
@@ -173,7 +171,7 @@ class DungeonTrackerUIHistory {
         if (dungeonFilter) {
             const currentValue = dungeonFilter.value;
             dungeonFilter.innerHTML =
-                '<option value="all">All Dungeons</option>' +
+                `<option value="all">${t('dungeonTrackerUi.filterDungeonAllOption')}</option>` +
                 dungeons.map((dungeon) => `<option value="${dungeon}">${dungeon}</option>`).join('');
             // Restore selection if still valid
             if (dungeons.includes(currentValue)) {
@@ -188,7 +186,7 @@ class DungeonTrackerUIHistory {
         if (teamFilter) {
             const currentValue = teamFilter.value;
             teamFilter.innerHTML =
-                '<option value="all">All Teams</option>' +
+                `<option value="all">${t('dungeonTrackerUi.filterTeamAllOption')}</option>` +
                 teams.map((team) => `<option value="${team}">${team}</option>`).join('');
             // Restore selection if still valid
             if (teams.includes(currentValue)) {
@@ -212,7 +210,6 @@ class DungeonTrackerUIHistory {
             const bestTime = this.formatTime(group.stats.fastestTime);
             const worstTime = this.formatTime(group.stats.slowestTime);
             const avgPerAttempt = this.formatTime(group.stats.avgTimePerAttempt);
-            const failSummary = group.stats.failCount > 0 ? ` | Fails: ${group.stats.failCount}` : '';
 
             // Check if this group is expanded
             const isExpanded = this.state.expandedGroups.has(group.label);
@@ -238,7 +235,14 @@ class DungeonTrackerUIHistory {
                                 ${group.label}
                             </div>
                             <div style="font-size: 10px; color: #aaa;">
-                                Runs: ${group.stats.totalRuns} | Avg Clear: ${avgTime} | Avg/Attempt: ${avgPerAttempt} | Best: ${bestTime} | Worst: ${worstTime}${failSummary}
+                                ${t('dungeonTrackerUi.groupStatsSummary', {
+                                    totalRuns: group.stats.totalRuns,
+                                    avgTime,
+                                    avgPerAttempt,
+                                    bestTime,
+                                    worstTime,
+                                    failCount: group.stats.failCount,
+                                })}
                             </div>
                         </div>
                         <span class="mwi-dt-group-toggle" style="color: #aaa; font-size: 10px;">${toggleIcon}</span>
@@ -303,10 +307,10 @@ class DungeonTrackerUIHistory {
             const timeStr = this.formatTime(run.duration);
             const dateObj = new Date(run.timestamp);
             const dateTime = formatDateTime(dateObj);
-            const dungeonLabel = run.dungeonName || 'Unknown';
+            const dungeonLabel = run.dungeonName || t('dungeonTrackerUi.unknownDungeonFallback');
             const isFailed = run.result === 'fail' || run.result === 'cancel';
             const resultBadge = isFailed
-                ? `<span style="color: ${run.result === 'fail' ? '#ff6b6b' : '#ffd700'}; font-size: 9px; font-weight: bold; margin-right: 4px;">${run.result === 'fail' ? 'FAILED' : 'CANCELED'}</span>`
+                ? `<span style="color: ${run.result === 'fail' ? '#ff6b6b' : '#ffd700'}; font-size: 9px; font-weight: bold; margin-right: 4px;">${run.result === 'fail' ? t('dungeonTrackerUi.resultFailedBadge') : t('dungeonTrackerUi.resultCanceledBadge')}</span>`
                 : '';
 
             html += `
@@ -332,7 +336,7 @@ class DungeonTrackerUIHistory {
                         padding: 1px 4px;
                         border-radius: 2px;
                         font-weight: bold;
-                    " title="Delete this run">✕</button>
+                    " title="${t('dungeonTrackerUi.deleteRunButtonTitle')}">✕</button>
                 </div>
             `;
         });

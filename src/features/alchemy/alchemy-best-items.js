@@ -6,6 +6,7 @@
 
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
+import { t } from '../../core/i18n.js';
 import alchemyProfitCalculator from '../market/alchemy-profit-calculator.js';
 import { calculateExperienceMultiplier } from '../../utils/experience-parser.js';
 import { formatKMB, formatWithSeparator, formatPercentage } from '../../utils/formatters.js';
@@ -16,12 +17,42 @@ import { navigateToMarketplace } from '../../utils/marketplace-tabs.js';
 
 const ALCHEMY_TYPES = ['coinify', 'decompose', 'transmute'];
 
-const CATALYST_LABELS = {
-    '/items/catalyst_of_coinification': 'Coinify',
-    '/items/catalyst_of_decomposition': 'Decompose',
-    '/items/catalyst_of_transmutation': 'Transmute',
-    '/items/prime_catalyst': 'Prime',
+// Marker substituted for an item name inside a translated template string, then split back out
+// so the actual item name can be rendered as a clickable link in the item's original position -
+// this keeps word order correct across locales (e.g. Chinese vs English) without hardcoding it.
+const LINK_MARKER = '\u0000';
+
+const ALCHEMY_TYPE_LABEL_KEYS = {
+    coinify: 'skillingOptimizer.alchemyTypeCoinify',
+    decompose: 'skillingOptimizer.alchemyTypeDecompose',
+    transmute: 'skillingOptimizer.alchemyTypeTransmute',
 };
+
+/**
+ * Translated label for an alchemy type ('coinify', 'decompose', 'transmute')
+ */
+function getAlchemyTypeLabel(type) {
+    const key = ALCHEMY_TYPE_LABEL_KEYS[type];
+    return key ? t(key) : type;
+}
+
+/**
+ * Translated label for a catalyst item, used as a tooltip on the catalyst icon
+ */
+function getCatalystLabel(catalystHrid) {
+    switch (catalystHrid) {
+        case '/items/catalyst_of_coinification':
+            return t('skillingOptimizer.alchemyTypeCoinify');
+        case '/items/catalyst_of_decomposition':
+            return t('skillingOptimizer.alchemyTypeDecompose');
+        case '/items/catalyst_of_transmutation':
+            return t('skillingOptimizer.alchemyTypeTransmute');
+        case '/items/prime_catalyst':
+            return t('alchemyBestItems.catalystPrimeLabel');
+        default:
+            return null;
+    }
+}
 
 /**
  * Get base XP for an alchemy action type and item level
@@ -129,10 +160,10 @@ class AlchemyBestItems {
             if (badge) {
                 const badgeSpan = badge.querySelector('.MuiBadge-badge');
                 badge.textContent = '';
-                badge.appendChild(document.createTextNode('Best Items'));
+                badge.appendChild(document.createTextNode(t('alchemyBestItems.tabLabel')));
                 if (badgeSpan) badge.appendChild(badgeSpan);
             } else {
-                tab.textContent = 'Best Items';
+                tab.textContent = t('alchemyBestItems.tabLabel');
             }
 
             tab.addEventListener('click', (e) => {
@@ -325,7 +356,7 @@ class AlchemyBestItems {
         // Alchemy type tabs
         for (const type of ALCHEMY_TYPES) {
             const tab = document.createElement('button');
-            tab.textContent = type.charAt(0).toUpperCase() + type.slice(1);
+            tab.textContent = getAlchemyTypeLabel(type);
             tab.setAttribute('data-mwi-type-tab', type);
             tab.style.cssText = `
                 padding: 4px 12px; border-radius: 4px; cursor: pointer;
@@ -347,12 +378,13 @@ class AlchemyBestItems {
         // Sort toggle
         const sortLabel = document.createElement('span');
         sortLabel.style.cssText = 'color: #aaa; font-size: 0.75rem;';
-        sortLabel.textContent = 'Sort by:';
+        sortLabel.textContent = t('alchemyBestItems.sortByLabel');
         controls.appendChild(sortLabel);
 
         for (const mode of ['profit', 'xp']) {
             const btn = document.createElement('button');
-            btn.textContent = mode === 'profit' ? 'Profit/hr' : 'XP/hr';
+            btn.textContent =
+                mode === 'profit' ? t('combatSimUi.colProfitPerHr') : t('pinnedActionsPage.columnExpPerHour');
             btn.setAttribute('data-mwi-sort-btn', mode);
             btn.style.cssText = `
                 padding: 3px 8px; border-radius: 4px; cursor: pointer;
@@ -368,7 +400,7 @@ class AlchemyBestItems {
         // Profitable only toggle
         const profitToggle = document.createElement('button');
         profitToggle.setAttribute('data-mwi-profit-toggle', 'true');
-        profitToggle.textContent = 'Profitable only';
+        profitToggle.textContent = t('alchemyBestItems.profitableOnlyLabel');
         profitToggle.style.cssText = `
             padding: 3px 8px; border-radius: 4px; cursor: pointer;
             border: 1px solid #555; font-size: 0.75rem; color: #fff;
@@ -387,7 +419,7 @@ class AlchemyBestItems {
         searchRow.style.cssText = 'display: flex; margin-bottom: 8px;';
         const searchInput = document.createElement('input');
         searchInput.type = 'text';
-        searchInput.placeholder = 'Search items...';
+        searchInput.placeholder = t('settings.itemSearchPlaceholder');
         searchInput.setAttribute('data-mwi-best-search', 'true');
         searchInput.style.cssText = `
             flex: 1; padding: 5px 10px; border-radius: 4px;
@@ -415,14 +447,14 @@ class AlchemyBestItems {
         // Profit/hr filter
         const profitFilter = document.createElement('span');
         profitFilter.style.cssText = 'display: flex; align-items: center; gap: 4px;';
-        profitFilter.innerHTML = 'Profit/hr:';
+        profitFilter.innerHTML = t('alchemyBestItems.profitFilterLabel');
         const profitMin = document.createElement('input');
         profitMin.type = 'text';
-        profitMin.placeholder = 'Min';
+        profitMin.placeholder = t('alchemyBestItems.minPlaceholder');
         profitMin.style.cssText = filterInputStyle;
         const profitMax = document.createElement('input');
         profitMax.type = 'text';
-        profitMax.placeholder = 'Max';
+        profitMax.placeholder = t('alchemyBestItems.maxPlaceholder');
         profitMax.style.cssText = filterInputStyle;
 
         const parseFilterValue = (val) => {
@@ -453,14 +485,14 @@ class AlchemyBestItems {
         // Item price filter
         const priceFilter = document.createElement('span');
         priceFilter.style.cssText = 'display: flex; align-items: center; gap: 4px;';
-        priceFilter.innerHTML = 'Item price:';
+        priceFilter.innerHTML = t('alchemyBestItems.itemPriceFilterLabel');
         const priceMin = document.createElement('input');
         priceMin.type = 'text';
-        priceMin.placeholder = 'Min';
+        priceMin.placeholder = t('alchemyBestItems.minPlaceholder');
         priceMin.style.cssText = filterInputStyle;
         const priceMax = document.createElement('input');
         priceMax.type = 'text';
-        priceMax.placeholder = 'Max';
+        priceMax.placeholder = t('alchemyBestItems.maxPlaceholder');
         priceMax.style.cssText = filterInputStyle;
         priceMin.addEventListener('change', onFilterChange);
         priceMax.addEventListener('change', onFilterChange);
@@ -516,8 +548,7 @@ class AlchemyBestItems {
         // Update title
         const title = this.modal.querySelector('[data-mwi-best-title]');
         if (title) {
-            const typeLabel = this.currentType.charAt(0).toUpperCase() + this.currentType.slice(1);
-            title.textContent = `Best Items \u2014 ${typeLabel}`;
+            title.textContent = t('alchemyBestItems.modalTitle', { type: getAlchemyTypeLabel(this.currentType) });
         }
 
         // Update tab styling
@@ -550,12 +581,18 @@ class AlchemyBestItems {
         const headerRow = document.createElement('tr');
         headerRow.style.cssText = 'border-bottom: 1px solid #555;';
 
-        for (const col of ['#', 'Item', 'Lvl', 'Catalyst', 'Profit/hr', 'XP/hr']) {
+        for (const col of [
+            { label: '#', align: 'center' },
+            { label: t('settings.itemLabel'), align: 'left' },
+            { label: t('alchemyBestItems.colLvl'), align: 'center' },
+            { label: t('riskOfRuinUi.catalystLabel'), align: 'left' },
+            { label: t('combatSimUi.colProfitPerHr'), align: 'right' },
+            { label: t('pinnedActionsPage.columnExpPerHour'), align: 'right' },
+        ]) {
             const th = document.createElement('th');
-            th.textContent = col;
+            th.textContent = col.label;
             th.style.cssText = 'padding: 6px 8px; text-align: left; color: #aaa; font-weight: 500;';
-            if (col === '#' || col === 'Lvl') th.style.textAlign = 'center';
-            if (col === 'Profit/hr' || col === 'XP/hr') th.style.textAlign = 'right';
+            th.style.textAlign = col.align;
             headerRow.appendChild(th);
         }
         thead.appendChild(headerRow);
@@ -609,7 +646,7 @@ class AlchemyBestItems {
                 use.setAttribute('href', `${this.itemsSpriteUrl}#${symbolId}`);
                 svg.appendChild(use);
                 catTd.appendChild(svg);
-                catTd.title = CATALYST_LABELS[item.catalyst] || symbolId;
+                catTd.title = getCatalystLabel(item.catalyst) || symbolId;
             } else {
                 catTd.textContent = '\u2014';
                 catTd.style.color = '#555';
@@ -640,14 +677,13 @@ class AlchemyBestItems {
         container.innerHTML = '';
 
         if (sorted.length === 0) {
-            container.innerHTML =
-                '<div style="color: #888; padding: 20px; text-align: center;">No eligible items found</div>';
+            container.innerHTML = `<div style="color: #888; padding: 20px; text-align: center;">${t('alchemyBestItems.noEligibleItemsMessage')}</div>`;
         } else {
             container.appendChild(table);
             if (sorted.length > maxRows) {
                 const more = document.createElement('div');
                 more.style.cssText = 'color: #888; text-align: center; padding: 8px; font-size: 0.75rem;';
-                more.textContent = `Showing top ${maxRows} of ${sorted.length} items`;
+                more.textContent = t('alchemyBestItems.showingTopItemsMessage', { max: maxRows, total: sorted.length });
                 container.appendChild(more);
             }
         }
@@ -691,6 +727,28 @@ class AlchemyBestItems {
     }
 
     /**
+     * Append a line built from a translated template whose itemName param was set to
+     * LINK_MARKER, splitting the resulting string on that marker so the item name can be
+     * rendered as a clickable link at the position the current locale puts it.
+     */
+    _appendLinkedLine(container, text, itemName, itemHrid, extraStyle = '') {
+        const line = document.createElement('div');
+        line.style.cssText = `margin-left: 8px; color: #aaa;${extraStyle}`;
+        const idx = text.indexOf(LINK_MARKER);
+        if (idx === -1) {
+            line.textContent = text;
+        } else {
+            line.append(
+                text.slice(0, idx),
+                this._makeItemLink(itemName, itemHrid),
+                text.slice(idx + LINK_MARKER.length)
+            );
+        }
+        container.appendChild(line);
+        return line;
+    }
+
+    /**
      * Render breakdown content for an expanded item row
      */
     renderBreakdownContent(item) {
@@ -698,7 +756,7 @@ class AlchemyBestItems {
         const profitData = item.profitData;
 
         if (!profitData) {
-            container.textContent = 'No breakdown data available';
+            container.textContent = t('alchemyBestItems.noBreakdownDataMessage');
             container.style.color = '#888';
             return container;
         }
@@ -710,7 +768,9 @@ class AlchemyBestItems {
             const totalRevenue = profitData.dropRevenues
                 .filter((d) => !d.isSelfReturn)
                 .reduce((sum, d) => sum + d.revenuePerHour, 0);
-            revenueHeader.textContent = `Revenue: ${formatKMB(Math.round(totalRevenue))}/hr`;
+            revenueHeader.textContent = t('alchemyProfitDisplay.revenueHeader', {
+                revenue: formatKMB(Math.round(totalRevenue)),
+            });
             container.appendChild(revenueHeader);
 
             for (const drop of profitData.dropRevenues) {
@@ -722,18 +782,16 @@ class AlchemyBestItems {
                         ? formatKMB(Math.round(drop.dropsPerHour))
                         : drop.dropsPerHour.toFixed(2);
 
-                const line = document.createElement('div');
-                line.style.cssText = 'margin-left: 8px; color: #aaa;';
-                if (drop.isSelfReturn) {
-                    line.style.textDecoration = 'line-through';
-                    line.style.opacity = '0.6';
-                }
-                line.append(
-                    `\u2022 `,
-                    this._makeItemLink(itemName, drop.itemHrid),
-                    `: ${dropsDisplay}/hr (${dropRatePct} \u00d7 ${formatPercentage(profitData.successRate, 1)} success) @ ${formatWithSeparator(Math.round(drop.price))} \u2192 ${formatKMB(Math.round(drop.revenuePerHour))}/hr`
-                );
-                container.appendChild(line);
+                const text = t('alchemyProfitDisplay.normalDropLine', {
+                    itemName: LINK_MARKER,
+                    drops: dropsDisplay,
+                    dropRate: dropRatePct,
+                    successRate: formatPercentage(profitData.successRate, 1),
+                    price: formatWithSeparator(Math.round(drop.price)),
+                    revenue: formatKMB(Math.round(drop.revenuePerHour)),
+                });
+                const extraStyle = drop.isSelfReturn ? ' text-decoration: line-through; opacity: 0.6;' : '';
+                this._appendLinkedLine(container, text, itemName, drop.itemHrid, extraStyle);
             }
         }
 
@@ -746,7 +804,9 @@ class AlchemyBestItems {
         if (totalCosts > 0 || profitData.requirementCosts?.length > 0) {
             const costsHeader = document.createElement('div');
             costsHeader.style.cssText = 'color: #fff; font-weight: 500; margin-top: 6px; margin-bottom: 2px;';
-            costsHeader.textContent = `Costs: ${formatKMB(Math.round(totalCosts))}/hr`;
+            costsHeader.textContent = t('alchemyProfitDisplay.costsHeader', {
+                costs: formatKMB(Math.round(totalCosts)),
+            });
             container.appendChild(costsHeader);
 
             // Input materials
@@ -754,14 +814,13 @@ class AlchemyBestItems {
                 for (const req of profitData.requirementCosts) {
                     const itemDetails = dataManager.getItemDetails(req.itemHrid);
                     const itemName = itemDetails?.name || req.itemHrid.split('/').pop();
-                    const line = document.createElement('div');
-                    line.style.cssText = 'margin-left: 8px; color: #aaa;';
-                    line.append(
-                        `\u2022 `,
-                        this._makeItemLink(itemName, req.itemHrid),
-                        `: ${req.count}\u00d7 @ ${formatWithSeparator(Math.round(req.price))} \u2192 ${formatKMB(Math.round(req.costPerHour))}/hr`
-                    );
-                    container.appendChild(line);
+                    const text = t('alchemyBestItems.materialLine', {
+                        itemName: LINK_MARKER,
+                        count: req.count,
+                        price: formatWithSeparator(Math.round(req.price)),
+                        cost: formatKMB(Math.round(req.costPerHour)),
+                    });
+                    this._appendLinkedLine(container, text, itemName, req.itemHrid);
                 }
             }
 
@@ -769,14 +828,12 @@ class AlchemyBestItems {
             if (profitData.catalystCost?.itemHrid && profitData.catalystCostPerHour > 0) {
                 const catDetails = dataManager.getItemDetails(profitData.catalystCost.itemHrid);
                 const catName = catDetails?.name || profitData.catalystCost.itemHrid.split('/').pop();
-                const line = document.createElement('div');
-                line.style.cssText = 'margin-left: 8px; color: #aaa;';
-                line.append(
-                    `\u2022 `,
-                    this._makeItemLink(catName, profitData.catalystCost.itemHrid),
-                    ` @ ${formatWithSeparator(Math.round(profitData.catalystCost.price))} \u2192 ${formatKMB(Math.round(profitData.catalystCostPerHour))}/hr`
-                );
-                container.appendChild(line);
+                const text = t('alchemyBestItems.catalystLine', {
+                    itemName: LINK_MARKER,
+                    price: formatWithSeparator(Math.round(profitData.catalystCost.price)),
+                    cost: formatKMB(Math.round(profitData.catalystCostPerHour)),
+                });
+                this._appendLinkedLine(container, text, catName, profitData.catalystCost.itemHrid);
             }
 
             // Tea
@@ -784,14 +841,11 @@ class AlchemyBestItems {
                 for (const tea of profitData.consumableCosts) {
                     const teaDetails = dataManager.getItemDetails(tea.itemHrid);
                     const teaName = teaDetails?.name || tea.itemHrid.split('/').pop();
-                    const line = document.createElement('div');
-                    line.style.cssText = 'margin-left: 8px; color: #aaa;';
-                    line.append(
-                        `\u2022 `,
-                        this._makeItemLink(teaName, tea.itemHrid),
-                        ` \u2192 ${formatKMB(Math.round(tea.costPerHour))}/hr`
-                    );
-                    container.appendChild(line);
+                    const text = t('alchemyBestItems.teaLine', {
+                        itemName: LINK_MARKER,
+                        cost: formatKMB(Math.round(tea.costPerHour)),
+                    });
+                    this._appendLinkedLine(container, text, teaName, tea.itemHrid);
                 }
             }
         }
@@ -800,9 +854,15 @@ class AlchemyBestItems {
         const statsLine = document.createElement('div');
         statsLine.style.cssText = 'color: #888; margin-top: 6px; font-size: 0.7rem;';
         const parts = [];
-        if (profitData.actionsPerHour) parts.push(`${Math.round(profitData.actionsPerHour)}/hr`);
-        if (profitData.successRate) parts.push(`${formatPercentage(profitData.successRate, 1)} success`);
-        if (profitData.efficiency != null) parts.push(`${formatPercentage(profitData.efficiency, 1)} efficiency`);
+        if (profitData.actionsPerHour) {
+            parts.push(t('alchemyBestItems.statsActionsPerHour', { value: Math.round(profitData.actionsPerHour) }));
+        }
+        if (profitData.successRate) {
+            parts.push(t('alchemyBestItems.statsSuccessRate', { value: formatPercentage(profitData.successRate, 1) }));
+        }
+        if (profitData.efficiency != null) {
+            parts.push(t('alchemyBestItems.statsEfficiency', { value: formatPercentage(profitData.efficiency, 1) }));
+        }
         statsLine.textContent = parts.join(' | ');
         container.appendChild(statsLine);
 

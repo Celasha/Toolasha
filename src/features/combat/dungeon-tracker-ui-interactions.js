@@ -7,6 +7,7 @@ import dungeonTracker from './dungeon-tracker.js';
 import dungeonTrackerStorage from './dungeon-tracker-storage.js';
 import dungeonTrackerChatAnnotations from './dungeon-tracker-chat-annotations.js';
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { bringPanelToFront } from '../../utils/panel-z-index.js';
 
@@ -203,11 +204,11 @@ class DungeonTrackerUIInteractions {
         if (!clearBtn) return;
 
         clearBtn.addEventListener('click', async () => {
-            if (confirm('Delete ALL run history data?\n\nThis cannot be undone!')) {
+            if (confirm(t('dungeonTrackerUi.clearAllRunsConfirm'))) {
                 try {
                     // Clear unified storage completely
                     await dungeonTrackerStorage.clearAllRuns();
-                    alert('All run history cleared.');
+                    alert(t('dungeonTrackerUi.clearAllRunsSuccessAlert'));
 
                     // Refresh both history and chart display
                     if (this.callbacks.onUpdateHistory) await this.callbacks.onUpdateHistory();
@@ -217,7 +218,7 @@ class DungeonTrackerUIInteractions {
                     await dungeonTrackerChatAnnotations.refreshRunCounts();
                 } catch (error) {
                     console.error('[Dungeon Tracker UI Interactions] Clear all history error:', error);
-                    alert('Failed to clear run history. Check console for details.');
+                    alert(t('dungeonTrackerUi.clearAllRunsFailedAlert'));
                 }
             }
         });
@@ -260,7 +261,7 @@ class DungeonTrackerUIInteractions {
 
         backfillBtn.addEventListener('click', async () => {
             // Change button text to show loading
-            backfillBtn.textContent = '⟳ Processing...';
+            backfillBtn.textContent = t('dungeonTrackerUi.backfillProcessingLabel');
             backfillBtn.disabled = true;
 
             try {
@@ -269,9 +270,14 @@ class DungeonTrackerUIInteractions {
 
                 // Show result message
                 if (result.runsAdded > 0) {
-                    alert(`Backfill complete!\n\nRuns added: ${result.runsAdded}\nTeams: ${result.teams.length}`);
+                    alert(
+                        t('dungeonTrackerUi.backfillCompleteAlert', {
+                            runsAdded: result.runsAdded,
+                            teamsCount: result.teams.length,
+                        })
+                    );
                 } else {
-                    alert('No new runs found to backfill.');
+                    alert(t('dungeonTrackerUi.backfillNoRunsAlert'));
                 }
 
                 // Refresh both history and chart display
@@ -282,10 +288,10 @@ class DungeonTrackerUIInteractions {
                 await dungeonTrackerChatAnnotations.refreshRunCounts();
             } catch (error) {
                 console.error('[Dungeon Tracker UI Interactions] Backfill error:', error);
-                alert('Backfill failed. Check console for details.');
+                alert(t('dungeonTrackerUi.backfillFailedAlert'));
             } finally {
                 // Reset button
-                backfillBtn.textContent = '⟳ Backfill';
+                backfillBtn.textContent = t('dungeonTrackerUi.backfillButtonLabel');
                 backfillBtn.disabled = false;
             }
         });
@@ -516,7 +522,7 @@ class DungeonTrackerUIInteractions {
         this.state.save();
 
         // Show brief notification
-        this.showNotification('Dungeon Tracker position reset');
+        this.showNotification(t('dungeonTrackerUi.positionResetNotification'));
     }
 
     /**

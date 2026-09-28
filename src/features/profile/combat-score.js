@@ -4,6 +4,7 @@
  */
 
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import dataManager from '../../core/data-manager.js';
 import storage from '../../core/storage.js';
 import webSocketHook from '../../core/websocket.js';
@@ -25,7 +26,6 @@ import { buildPlayerDTOFromProfile, mapLoadoutAbilitiesToNativeSlots } from '../
 const SCORE_PANEL_DESKTOP_WIDTH = 280;
 const SCORE_PANEL_GAP = 8;
 const SCORE_PANEL_VIEWPORT_MARGIN = 10;
-const HIDDEN_EQUIPMENT_TOOLTIP = 'Equipment is hidden in this profile, so it is not included in the Score.';
 
 /**
  * CombatScore class manages combat score display on profiles
@@ -205,7 +205,7 @@ class CombatScore {
         const reasonInfo = item.reason
             ? ` <span title="${item.reason.replace(/"/g, '&quot;')}" style="cursor: help; opacity: 0.7;">ⓘ</span>`
             : '';
-        if (item.value === null) return `N/A${reasonInfo}`;
+        if (item.value === null) return `${t('combatSimUi.notAvailableLabel')}${reasonInfo}`;
         return `${item.value}${item.complete === false ? '+' : ''}${reasonInfo}`;
     }
 
@@ -236,7 +236,7 @@ class CombatScore {
      */
     formatCategoryHeaderValue(categoryValue, complete, { hidden = false } = {}) {
         if (hidden) {
-            return `N/A <span title="${HIDDEN_EQUIPMENT_TOOLTIP}" style="cursor: help; opacity: 0.7;">ⓘ</span>`;
+            return `${t('combatSimUi.notAvailableLabel')} <span title="${t('combatScore.hiddenEquipmentTooltip')}" style="cursor: help; opacity: 0.7;">ⓘ</span>`;
         }
         return `${numberFormatter(categoryValue.toFixed(1))}${complete === false ? '+' : ''}`;
     }
@@ -249,49 +249,48 @@ class CombatScore {
      * @returns {string}
      */
     buildScoreSectionsHTML(scoreData) {
-        const scoreTooltip =
-            'Estimated cost for you to reproduce this persistent build now, using current acquisition prices and your current Enhancing setup. Market values use current best Ask/unit estimates and are not order-book-depth adjusted.';
+        const scoreTooltip = t('combatScore.scoreTooltip');
         const scoreVisibility = !config.getSetting('combatScore') ? 'display: none;' : '';
 
         if (!scoreData) {
             return `
                 <div style="font-weight: bold; margin-bottom: 8px; color: ${config.COLOR_PROFIT}; ${scoreVisibility}" id="mwi-score-toggle" title="${scoreTooltip}">
-                    Combat Score: Calculating…
+                    ${t('combatScore.combatScoreCalculatingLabel')}
                 </div>
                 <div style="font-weight: bold; margin-top: 12px; margin-bottom: 8px; color: ${config.COLOR_PROFIT}; ${scoreVisibility}" id="mwi-skiller-score-toggle" title="${scoreTooltip}">
-                    Skiller Score: Calculating…
+                    ${t('combatScore.skillerScoreCalculatingLabel')}
                 </div>
             `;
         }
 
         return `
             <div style="cursor: pointer; font-weight: bold; margin-bottom: 8px; color: ${config.COLOR_PROFIT}; ${scoreVisibility}" id="mwi-score-toggle" title="${scoreTooltip}">
-                + Combat Score: ${numberFormatter(scoreData.total.toFixed(1))}${scoreData.complete === false ? '+' : ''}
+                + ${t('combatScore.combatScoreLine', { value: `${numberFormatter(scoreData.total.toFixed(1))}${scoreData.complete === false ? '+' : ''}` })}
             </div>
             <div id="mwi-score-details" style="display: none; margin-left: 10px; color: ${config.COLOR_TEXT_PRIMARY};">
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-house-toggle">
-                    + House: ${this.formatCategoryHeaderValue(scoreData.house, scoreData.houseComplete)}
+                    + ${t('combatScore.houseLine', { value: this.formatCategoryHeaderValue(scoreData.house, scoreData.houseComplete) })}
                 </div>
                 <div id="mwi-house-breakdown" style="display: none; margin-bottom: 6px;">
                     ${this.buildBreakdownHTML(scoreData.breakdown.houses)}
                 </div>
 
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-ability-toggle">
-                    + Ability: ${this.formatCategoryHeaderValue(scoreData.ability, scoreData.abilityComplete)}
+                    + ${t('combatScore.abilityLine', { value: this.formatCategoryHeaderValue(scoreData.ability, scoreData.abilityComplete) })}
                 </div>
                 <div id="mwi-ability-breakdown" style="display: none; margin-bottom: 6px;">
                     ${this.buildBreakdownHTML(scoreData.breakdown.abilities)}
                 </div>
 
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-equipment-toggle">
-                    + Equipment: ${this.formatCategoryHeaderValue(scoreData.equipment, scoreData.equipmentComplete, { hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData })}
+                    + ${t('combatScore.equipmentLine', { value: this.formatCategoryHeaderValue(scoreData.equipment, scoreData.equipmentComplete, { hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData }) })}
                 </div>
                 <div id="mwi-equipment-breakdown" style="display: none; margin-bottom: 6px;">
                     ${this.buildBreakdownHTML(scoreData.breakdown.equipment)}
                 </div>
 
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-shrine-toggle">
-                    + Shrines: ${this.formatCategoryHeaderValue(scoreData.shrine || 0, scoreData.shrineComplete)}
+                    + ${t('combatScore.shrinesLine', { value: this.formatCategoryHeaderValue(scoreData.shrine || 0, scoreData.shrineComplete) })}
                 </div>
                 <div id="mwi-shrine-breakdown" style="display: none;">
                     ${this.buildBreakdownHTML(scoreData.breakdown.shrines)}
@@ -299,25 +298,25 @@ class CombatScore {
             </div>
 
             <div style="cursor: pointer; font-weight: bold; margin-top: 12px; margin-bottom: 8px; color: ${config.COLOR_PROFIT}; ${scoreVisibility}" id="mwi-skiller-score-toggle" title="${scoreTooltip}">
-                + Skiller Score: ${numberFormatter(scoreData.skillerTotal.toFixed(1))}${scoreData.skillerComplete === false ? '+' : ''}
+                + ${t('combatScore.skillerScoreLine', { value: `${numberFormatter(scoreData.skillerTotal.toFixed(1))}${scoreData.skillerComplete === false ? '+' : ''}` })}
             </div>
             <div id="mwi-skiller-score-details" style="display: none; margin-left: 10px; color: ${config.COLOR_TEXT_PRIMARY};">
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-skiller-house-toggle">
-                    + House: ${this.formatCategoryHeaderValue(scoreData.skillerHouse || 0, scoreData.skillerHouseComplete)}
+                    + ${t('combatScore.houseLine', { value: this.formatCategoryHeaderValue(scoreData.skillerHouse || 0, scoreData.skillerHouseComplete) })}
                 </div>
                 <div id="mwi-skiller-house-breakdown" style="display: none; margin-bottom: 6px;">
                     ${this.buildBreakdownHTML(scoreData.skillerBreakdown.houses)}
                 </div>
 
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-skiller-equipment-toggle">
-                    + Equipment: ${this.formatCategoryHeaderValue(scoreData.skillerEquipment, scoreData.skillerEquipmentComplete, { hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData })}
+                    + ${t('combatScore.equipmentLine', { value: this.formatCategoryHeaderValue(scoreData.skillerEquipment, scoreData.skillerEquipmentComplete, { hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData }) })}
                 </div>
                 <div id="mwi-skiller-equipment-breakdown" style="display: none; margin-bottom: 6px;">
                     ${this.buildBreakdownHTML(scoreData.skillerBreakdown.equipment)}
                 </div>
 
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-skiller-shrine-toggle">
-                    + Shrines: ${this.formatCategoryHeaderValue(scoreData.skillerShrine || 0, scoreData.skillerShrineComplete)}
+                    + ${t('combatScore.shrinesLine', { value: this.formatCategoryHeaderValue(scoreData.skillerShrine || 0, scoreData.skillerShrineComplete) })}
                 </div>
                 <div id="mwi-skiller-shrine-breakdown" style="display: none;">
                     ${this.buildBreakdownHTML(scoreData.skillerBreakdown.shrines)}
@@ -335,7 +334,7 @@ class CombatScore {
      * @returns {string}
      */
     buildPanelInnerHTML(profileData, scoreData) {
-        const playerName = profileData.profile?.sharableCharacter?.name || 'Player';
+        const playerName = profileData.profile?.sharableCharacter?.name || t('combatScore.playerFallbackName');
 
         // Build View Card button HTML (only if characterCard setting is enabled)
         const viewCardButtonHTML = config.getSetting('characterCard')
@@ -350,7 +349,7 @@ class CombatScore {
                     font-weight: bold;
                     font-size: 0.85rem;
                     flex: 1;
-                ">View Card</button>
+                ">${t('combatScore.viewCardButton')}</button>
                 <button id="mwi-character-card-loadout-btn" style="
                     padding: 8px 10px;
                     background: ${config.COLOR_ACCENT};
@@ -388,7 +387,7 @@ class CombatScore {
                     color: #aaa;
                     padding: 0 5px;
                     line-height: 1;
-                " title="Close">×</span>
+                " title="${t('combatScore.closeTooltip')}">×</span>
             </div>
             ${this.buildScoreSectionsHTML(scoreData)}
             <div id="mwi-button-container" style="margin-top: 12px; display: flex; flex-direction: column; gap: 6px;">
@@ -403,7 +402,7 @@ class CombatScore {
                         font-weight: bold;
                         font-size: 0.85rem;
                         flex: 1;
-                    ">Metz Sim Export</button>
+                    ">${t('combatScore.metzSimExportButton')}</button>
                     <button id="mwi-metz-sim-loadout-btn" style="
                         padding: 8px 10px;
                         background: ${config.COLOR_ACCENT};
@@ -440,7 +439,7 @@ class CombatScore {
                     font-weight: bold;
                     font-size: 0.85rem;
                     width: 100%;
-                ">Sim Character</button>
+                ">${t('combatScore.simCharacterButton')}</button>
                 <button id="mwi-milkonomy-export-btn" style="
                     padding: 8px 12px;
                     background: ${config.COLOR_ACCENT};
@@ -451,7 +450,7 @@ class CombatScore {
                     font-weight: bold;
                     font-size: 0.85rem;
                     width: 100%;
-                ">Milkonomy Export</button>
+                ">${t('combatScore.milkonomyExportButton')}</button>
                 ${viewCardButtonHTML}
             </div>
         `;
@@ -591,7 +590,9 @@ class CombatScore {
                 details.style.display = isCollapsed ? 'block' : 'none';
                 toggleBtn.textContent =
                     (isCollapsed ? '- ' : '+ ') +
-                    `Combat Score: ${numberFormatter(scoreData.total.toFixed(1))}${scoreData.complete === false ? '+' : ''}`;
+                    t('combatScore.combatScoreLine', {
+                        value: `${numberFormatter(scoreData.total.toFixed(1))}${scoreData.complete === false ? '+' : ''}`,
+                    });
             });
         }
 
@@ -604,7 +605,9 @@ class CombatScore {
                 houseBreakdown.style.display = isCollapsed ? 'block' : 'none';
                 houseToggle.textContent =
                     (isCollapsed ? '- ' : '+ ') +
-                    `House: ${this.formatCategoryHeaderValue(scoreData.house, scoreData.houseComplete)}`;
+                    t('combatScore.houseLine', {
+                        value: this.formatCategoryHeaderValue(scoreData.house, scoreData.houseComplete),
+                    });
             });
         }
 
@@ -617,7 +620,9 @@ class CombatScore {
                 abilityBreakdown.style.display = isCollapsed ? 'block' : 'none';
                 abilityToggle.textContent =
                     (isCollapsed ? '- ' : '+ ') +
-                    `Ability: ${this.formatCategoryHeaderValue(scoreData.ability, scoreData.abilityComplete)}`;
+                    t('combatScore.abilityLine', {
+                        value: this.formatCategoryHeaderValue(scoreData.ability, scoreData.abilityComplete),
+                    });
             });
         }
 
@@ -630,7 +635,11 @@ class CombatScore {
                 equipmentBreakdown.style.display = isCollapsed ? 'block' : 'none';
                 equipmentToggle.innerHTML =
                     (isCollapsed ? '- ' : '+ ') +
-                    `Equipment: ${this.formatCategoryHeaderValue(scoreData.equipment, scoreData.equipmentComplete, { hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData })}`;
+                    t('combatScore.equipmentLine', {
+                        value: this.formatCategoryHeaderValue(scoreData.equipment, scoreData.equipmentComplete, {
+                            hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData,
+                        }),
+                    });
             });
         }
 
@@ -643,7 +652,9 @@ class CombatScore {
                 shrineBreakdown.style.display = isCollapsed ? 'block' : 'none';
                 shrineToggle.textContent =
                     (isCollapsed ? '- ' : '+ ') +
-                    `Shrines: ${this.formatCategoryHeaderValue(scoreData.shrine || 0, scoreData.shrineComplete)}`;
+                    t('combatScore.shrinesLine', {
+                        value: this.formatCategoryHeaderValue(scoreData.shrine || 0, scoreData.shrineComplete),
+                    });
             });
         }
 
@@ -656,7 +667,9 @@ class CombatScore {
                 skillerScoreDetails.style.display = isCollapsed ? 'block' : 'none';
                 skillerScoreToggle.textContent =
                     (isCollapsed ? '- ' : '+ ') +
-                    `Skiller Score: ${numberFormatter(scoreData.skillerTotal.toFixed(1))}${scoreData.skillerComplete === false ? '+' : ''}`;
+                    t('combatScore.skillerScoreLine', {
+                        value: `${numberFormatter(scoreData.skillerTotal.toFixed(1))}${scoreData.skillerComplete === false ? '+' : ''}`,
+                    });
             });
         }
 
@@ -669,7 +682,12 @@ class CombatScore {
                 skillerHouseBreakdown.style.display = isCollapsed ? 'block' : 'none';
                 skillerHouseToggle.textContent =
                     (isCollapsed ? '- ' : '+ ') +
-                    `House: ${this.formatCategoryHeaderValue(scoreData.skillerHouse || 0, scoreData.skillerHouseComplete)}`;
+                    t('combatScore.houseLine', {
+                        value: this.formatCategoryHeaderValue(
+                            scoreData.skillerHouse || 0,
+                            scoreData.skillerHouseComplete
+                        ),
+                    });
             });
         }
 
@@ -682,7 +700,13 @@ class CombatScore {
                 skillerEquipmentBreakdown.style.display = isCollapsed ? 'block' : 'none';
                 skillerEquipmentToggle.innerHTML =
                     (isCollapsed ? '- ' : '+ ') +
-                    `Equipment: ${this.formatCategoryHeaderValue(scoreData.skillerEquipment, scoreData.skillerEquipmentComplete, { hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData })}`;
+                    t('combatScore.equipmentLine', {
+                        value: this.formatCategoryHeaderValue(
+                            scoreData.skillerEquipment,
+                            scoreData.skillerEquipmentComplete,
+                            { hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData }
+                        ),
+                    });
             });
         }
 
@@ -695,7 +719,12 @@ class CombatScore {
                 skillerShrineBreakdown.style.display = isCollapsed ? 'block' : 'none';
                 skillerShrineToggle.textContent =
                     (isCollapsed ? '- ' : '+ ') +
-                    `Shrines: ${this.formatCategoryHeaderValue(scoreData.skillerShrine || 0, scoreData.skillerShrineComplete)}`;
+                    t('combatScore.shrinesLine', {
+                        value: this.formatCategoryHeaderValue(
+                            scoreData.skillerShrine || 0,
+                            scoreData.skillerShrineComplete
+                        ),
+                    });
             });
         }
 
@@ -717,13 +746,13 @@ class CombatScore {
         const simCharBtn = panel.querySelector('#mwi-sim-character-btn');
         if (simCharBtn) {
             simCharBtn.addEventListener('click', () => {
-                const playerName = profileData?.profile?.sharableCharacter?.name || 'Player';
+                const playerName = profileData?.profile?.sharableCharacter?.name || t('combatScore.playerFallbackName');
                 const dto = buildPlayerDTOFromProfile(profileData);
                 if (!dto) {
-                    simCharBtn.textContent = '\u2717 No Data';
+                    simCharBtn.textContent = t('combatScore.noDataStatus');
                     simCharBtn.style.background = config.COLOR_LOSS;
                     const resetTimeout = setTimeout(() => {
-                        simCharBtn.textContent = 'Sim Character';
+                        simCharBtn.textContent = t('combatScore.simCharacterButton');
                         simCharBtn.style.background = 'linear-gradient(135deg, #3a7bd5, #5f3dc4)';
                     }, 3000);
                     this.timerRegistry.registerTimeout(resetTimeout);
@@ -928,7 +957,7 @@ class CombatScore {
             return;
         }
 
-        const playerName = profileData.profile?.sharableCharacter?.name || 'Player';
+        const playerName = profileData.profile?.sharableCharacter?.name || t('combatScore.playerFallbackName');
 
         // Create panel element
         const panel = document.createElement('div');
@@ -952,7 +981,7 @@ class CombatScore {
         // Create panel HTML
         panel.innerHTML = `
             <div id="mwi-abilities-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; flex-shrink: 0; cursor: move; user-select: none;">
-                <div style="font-weight: bold; color: ${config.COLOR_ACCENT}; font-size: 0.9rem;">${playerName} - Abilities & Triggers</div>
+                <div style="font-weight: bold; color: ${config.COLOR_ACCENT}; font-size: 0.9rem;">${t('combatScore.abilitiesTriggersPanelTitle', { playerName })}</div>
                 <div style="display: flex; align-items: center; gap: 4px;">
                     <span id="mwi-abilities-expand-btn" style="
                         cursor: pointer;
@@ -961,18 +990,18 @@ class CombatScore {
                         padding: 0 5px;
                         line-height: 1;
                         user-select: none;
-                    " title="Expand / Collapse">⤢</span>
+                    " title="${t('combatScore.expandCollapseTooltip')}">⤢</span>
                     <span id="mwi-abilities-close-btn" style="
                         cursor: pointer;
                         font-size: 18px;
                         color: #aaa;
                         padding: 0 5px;
                         line-height: 1;
-                    " title="Close">×</span>
+                    " title="${t('combatScore.closeTooltip')}">×</span>
                 </div>
             </div>
             <div style="cursor: pointer; font-weight: bold; margin-bottom: 8px; color: ${config.COLOR_ACCENT}; flex-shrink: 0;" id="mwi-abilities-toggle">
-                + Show Details
+                + ${t('combatScore.showDetailsLabel')}
             </div>
             <div id="mwi-abilities-details" style="display: none; overflow-y: auto; flex: 1; min-height: 0;">
                 ${abilitiesTriggersHTML}
@@ -1043,11 +1072,11 @@ class CombatScore {
                 expanded = !expanded;
                 panel.style.maxHeight = expanded ? 'none' : '200px';
                 expandBtn.textContent = expanded ? '⤡' : '⤢';
-                expandBtn.title = expanded ? 'Collapse' : 'Expand';
+                expandBtn.title = expanded ? t('combatScore.collapseLabel') : t('combatScore.expandLabel');
 
                 if (expanded && details && details.style.display === 'none') {
                     details.style.display = 'block';
-                    if (toggleBtn) toggleBtn.textContent = '- Hide Details';
+                    if (toggleBtn) toggleBtn.textContent = '- ' + t('combatScore.hideDetailsLabel');
                 }
 
                 // Anchor bottom of panel to bottom of screen
@@ -1068,7 +1097,9 @@ class CombatScore {
             toggleBtn.addEventListener('click', () => {
                 const isCollapsed = details.style.display === 'none';
                 details.style.display = isCollapsed ? 'block' : 'none';
-                toggleBtn.textContent = (isCollapsed ? '- ' : '+ ') + (isCollapsed ? 'Hide Details' : 'Show Details');
+                toggleBtn.textContent =
+                    (isCollapsed ? '- ' : '+ ') +
+                    (isCollapsed ? t('combatScore.hideDetailsLabel') : t('combatScore.showDetailsLabel'));
                 // Re-anchor to bottom after size change
                 requestAnimationFrame(() => {
                     const bottomGap = 10;
@@ -1180,7 +1211,7 @@ class CombatScore {
             // Base character (skills, house, achievements, triggers, hasMooPass) - own character only
             const character = await constructMetzCharacterExport(null);
             if (!character) {
-                button.textContent = '✗ No Data';
+                button.textContent = t('combatScore.noDataStatus');
                 button.style.background = `${config.COLOR_LOSS}`;
                 const resetTimeout = setTimeout(() => {
                     button.textContent = originalText;
@@ -1224,7 +1255,7 @@ class CombatScore {
 
             await navigator.clipboard.writeText(JSON.stringify(overridden));
 
-            button.textContent = '✓ Copied';
+            button.textContent = t('combatScore.copiedStatus');
             button.style.background = `${config.COLOR_PROFIT}`;
             const resetTimeout = setTimeout(() => {
                 button.textContent = originalText;
@@ -1233,7 +1264,7 @@ class CombatScore {
             this.timerRegistry.registerTimeout(resetTimeout);
         } catch (error) {
             console.error('[Combat Score] Metz Sim snapshot export failed:', error);
-            button.textContent = '✗ Failed';
+            button.textContent = t('combatScore.failedStatus');
             button.style.background = `${config.COLOR_LOSS}`;
             const resetTimeout = setTimeout(() => {
                 button.textContent = originalText;
@@ -1257,7 +1288,7 @@ class CombatScore {
 
             const character = await constructMetzCharacterExport(currentProfileId);
             if (!character) {
-                button.textContent = '✗ No Data';
+                button.textContent = t('combatScore.noDataStatus');
                 button.style.background = `${config.COLOR_LOSS}`;
                 const resetTimeout = setTimeout(() => {
                     button.textContent = originalText;
@@ -1269,7 +1300,7 @@ class CombatScore {
 
             await navigator.clipboard.writeText(JSON.stringify(character));
 
-            button.textContent = '✓ Copied';
+            button.textContent = t('combatScore.copiedStatus');
             button.style.background = `${config.COLOR_PROFIT}`;
             const resetTimeout = setTimeout(() => {
                 button.textContent = originalText;
@@ -1278,7 +1309,7 @@ class CombatScore {
             this.timerRegistry.registerTimeout(resetTimeout);
         } catch (error) {
             console.error('[Combat Score] Metz Sim export failed:', error);
-            button.textContent = '✗ Failed';
+            button.textContent = t('combatScore.failedStatus');
             button.style.background = `${config.COLOR_LOSS}`;
             const resetTimeout = setTimeout(() => {
                 button.textContent = originalText;
@@ -1303,7 +1334,7 @@ class CombatScore {
             // Get export data (pass profile ID if viewing external profile)
             const exportData = await constructMilkonomyExport(currentProfileId);
             if (!exportData) {
-                button.textContent = '✗ No Data';
+                button.textContent = t('combatScore.noDataStatus');
                 button.style.background = '${config.COLOR_LOSS}';
                 const resetTimeout = setTimeout(() => {
                     button.textContent = originalText;
@@ -1316,7 +1347,7 @@ class CombatScore {
             const exportString = JSON.stringify(exportData);
             await navigator.clipboard.writeText(exportString);
 
-            button.textContent = '✓ Copied';
+            button.textContent = t('combatScore.copiedStatus');
             button.style.background = '${config.COLOR_PROFIT}';
             const resetTimeout = setTimeout(() => {
                 button.textContent = originalText;
@@ -1325,7 +1356,7 @@ class CombatScore {
             this.timerRegistry.registerTimeout(resetTimeout);
         } catch (error) {
             console.error('[Combat Score] Milkonomy export failed:', error);
-            button.textContent = '✗ Failed';
+            button.textContent = t('combatScore.failedStatus');
             button.style.background = '${config.COLOR_LOSS}';
             const resetTimeout = setTimeout(() => {
                 button.textContent = originalText;
@@ -1361,10 +1392,10 @@ class CombatScore {
      */
     formatDependency(dependencyHrid) {
         const map = {
-            '/combat_trigger_dependencies/self': 'Self',
-            '/combat_trigger_dependencies/targeted_enemy': 'Target',
-            '/combat_trigger_dependencies/all_enemies': 'All Enemies',
-            '/combat_trigger_dependencies/all_allies': 'All Allies',
+            '/combat_trigger_dependencies/self': t('combatScore.dependencySelf'),
+            '/combat_trigger_dependencies/targeted_enemy': t('combatScore.dependencyTarget'),
+            '/combat_trigger_dependencies/all_enemies': t('combatScore.dependencyAllEnemies'),
+            '/combat_trigger_dependencies/all_allies': t('combatScore.dependencyAllAllies'),
         };
         return map[dependencyHrid] || dependencyHrid.split('/').pop().replace(/_/g, ' ');
     }
@@ -1376,11 +1407,11 @@ class CombatScore {
      */
     formatCondition(conditionHrid) {
         const map = {
-            '/combat_trigger_conditions/current_hp': 'HP',
-            '/combat_trigger_conditions/missing_hp': 'Missing HP',
-            '/combat_trigger_conditions/current_mp': 'MP',
-            '/combat_trigger_conditions/missing_mp': 'Missing MP',
-            '/combat_trigger_conditions/number_of_active_units': 'Active Units',
+            '/combat_trigger_conditions/current_hp': t('combatScore.conditionHp'),
+            '/combat_trigger_conditions/missing_hp': t('combatScore.conditionMissingHp'),
+            '/combat_trigger_conditions/current_mp': t('combatScore.conditionMp'),
+            '/combat_trigger_conditions/missing_mp': t('combatScore.conditionMissingMp'),
+            '/combat_trigger_conditions/number_of_active_units': t('combatScore.conditionActiveUnits'),
         };
         if (map[conditionHrid]) return map[conditionHrid];
 
@@ -1404,8 +1435,8 @@ class CombatScore {
             '/combat_trigger_comparators/greater_than': '>',
             '/combat_trigger_comparators/less_than': '<',
             '/combat_trigger_comparators/equal': '=',
-            '/combat_trigger_comparators/is_active': 'is active',
-            '/combat_trigger_comparators/is_inactive': 'is inactive',
+            '/combat_trigger_comparators/is_active': t('combatScore.comparatorIsActive'),
+            '/combat_trigger_comparators/is_inactive': t('combatScore.comparatorIsInactive'),
         };
         return map[comparatorHrid] || comparatorHrid.split('/').pop().replace(/_/g, ' ');
     }
@@ -1420,12 +1451,21 @@ class CombatScore {
         const conditionName = this.formatCondition(condition.conditionHrid);
         const comparator = this.formatComparator(condition.comparatorHrid);
 
-        // Handle is_active/is_inactive specially
-        if (comparator === 'is active' || comparator === 'is inactive') {
-            return `${dependency}: ${conditionName} ${comparator}`;
+        // Handle is_active/is_inactive specially - checked against the HRID (not the translated
+        // comparator text) so this branch keeps working once formatComparator's output is localized.
+        const isActivityComparator =
+            condition.comparatorHrid === '/combat_trigger_comparators/is_active' ||
+            condition.comparatorHrid === '/combat_trigger_comparators/is_inactive';
+        if (isActivityComparator) {
+            return t('combatScore.triggerConditionActive', { dependency, condition: conditionName, comparator });
         }
 
-        return `${dependency}: ${conditionName} ${comparator} ${condition.value}`;
+        return t('combatScore.triggerConditionValue', {
+            dependency,
+            condition: conditionName,
+            comparator,
+            value: condition.value,
+        });
     }
 
     /**
@@ -1434,9 +1474,9 @@ class CombatScore {
      * @returns {string} Formatted trigger string
      */
     formatTriggers(conditions) {
-        if (!conditions || conditions.length === 0) return 'No trigger';
+        if (!conditions || conditions.length === 0) return t('combatScore.noTriggerLabel');
 
-        return conditions.map((c) => this.formatTriggerCondition(c)).join(' AND ');
+        return conditions.map((c) => this.formatTriggerCondition(c)).join(t('combatScore.triggerAndSeparator'));
     }
 
     /**
@@ -1494,11 +1534,11 @@ class CombatScore {
             for (const ability of abilities) {
                 const abilityIconId = ability.abilityHrid.split('/').pop();
                 const triggers = abilityTriggers[ability.abilityHrid];
-                const triggerText = triggers ? this.formatTriggers(triggers) : 'No trigger';
+                const triggerText = triggers ? this.formatTriggers(triggers) : t('combatScore.noTriggerLabel');
 
                 html += `
                     <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
-                        <svg role="img" aria-label="Ability" style="width: 24px; height: 24px; flex-shrink: 0;">
+                        <svg role="img" aria-label="${t('combatScore.abilityAriaLabel')}" style="width: 24px; height: 24px; flex-shrink: 0;">
                             <use href="${abilitiesSpriteUrl}#${abilityIconId}"></use>
                         </svg>
                         <span style="font-size: 0.75rem; color: #999; line-height: 1.3;">${triggerText}</span>
@@ -1511,17 +1551,17 @@ class CombatScore {
         const consumableKeys = Object.keys(consumableTriggers);
         if (consumableKeys.length > 0 && itemsSpriteUrl) {
             if (abilities.length > 0) {
-                html += `<div style="margin-top: 6px; margin-bottom: 6px; font-weight: 600; color: ${config.COLOR_TEXT_SECONDARY}; font-size: 0.85rem;">Food & Drinks</div>`;
+                html += `<div style="margin-top: 6px; margin-bottom: 6px; font-weight: 600; color: ${config.COLOR_TEXT_SECONDARY}; font-size: 0.85rem;">${t('combatScore.foodAndDrinksHeader')}</div>`;
             }
 
             for (const itemHrid of consumableKeys) {
                 const itemIconId = itemHrid.split('/').pop();
                 const triggers = consumableTriggers[itemHrid];
-                const triggerText = triggers ? this.formatTriggers(triggers) : 'No trigger';
+                const triggerText = triggers ? this.formatTriggers(triggers) : t('combatScore.noTriggerLabel');
 
                 html += `
                     <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
-                        <svg role="img" aria-label="Item" style="width: 24px; height: 24px; flex-shrink: 0;">
+                        <svg role="img" aria-label="${t('combatScore.itemAriaLabel')}" style="width: 24px; height: 24px; flex-shrink: 0;">
                             <use href="${itemsSpriteUrl}#${itemIconId}"></use>
                         </svg>
                         <span style="font-size: 0.75rem; color: #999; line-height: 1.3;">${triggerText}</span>

@@ -212,9 +212,9 @@ describe('Loadout State architecture invariants', () => {
         const simEditor = source(join(SRC, 'features/combat-sim/sim-editor.js'));
 
         expect(simEditor).toContain('getUnavailableLoadoutName()');
-        expect(simEditor).toContain('Simulation is blocked until you choose another loadout or Current Gear.');
+        expect(simEditor).toContain("t('simEditor.loadoutUnavailableBlocked'");
         expect(labSim).toContain('this._getBlockedCombatLoadoutName()');
-        expect(labSim).toContain('Configured combat loadout unavailable:');
+        expect(labSim).toContain("t('labSim.statusLoadoutUnavailable'");
         expect(labSim).toContain("this._editor.applyLoadoutByName('')");
     });
 

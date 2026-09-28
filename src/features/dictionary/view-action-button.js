@@ -4,6 +4,7 @@
  */
 
 import domObserver from '../../core/dom-observer.js';
+import { t } from '../../core/i18n.js';
 import { navigateToItem, findActionForItem } from '../../utils/item-navigation.js';
 import { setReactInputValue } from '../../utils/react-input.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
@@ -74,7 +75,7 @@ class ViewActionButton {
         if (!actionInfo) return;
 
         const btn = document.createElement('button');
-        btn.textContent = 'View Action';
+        btn.textContent = t('viewActionButton.buttonLabel');
 
         // Copy class from existing popup button for visual consistency
         const existingBtn = actionMenu.querySelector('button');
@@ -123,7 +124,7 @@ class ViewActionButton {
         // Create the action button
         const actionButton = document.createElement('button');
         actionButton.className = 'mwi-view-action-button';
-        actionButton.textContent = 'View Action';
+        actionButton.textContent = t('viewActionButton.buttonLabel');
         actionButton.style.cssText = `
             background: #2a2a2a;
             color: #ffffff;

@@ -10,6 +10,7 @@
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import { formatKMB } from '../../utils/formatters.js';
 import { MARKET_TAX, COWBELL_BAG_HRID, COWBELL_BAG_TAX } from '../../utils/profit-constants.js';
 
@@ -193,12 +194,13 @@ class MarketOrderTotals {
 
         if (hasNoData) {
             const marketplaceIcon = this.getMarketplaceIcon();
+            const noOrdersTitle = t('marketOrderTotals.noOrdersTitle');
             this.displayElement.innerHTML = `
                 <button
                     type="button"
                     class="mwi-market-order-totals-link"
-                    title="No market orders"
-                    aria-label="No market orders"
+                    title="${noOrdersTitle}"
+                    aria-label="${noOrdersTitle}"
                     style="background: none; border: none; padding: 0; cursor: pointer; display: flex; align-items: center;"
                 >
                     ${marketplaceIcon}
@@ -220,15 +222,15 @@ class MarketOrderTotals {
 
         // Update display
         this.displayElement.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 4px;" title="Buy Orders (coins locked in buy orders)">
-                <span style="color: #888; font-weight: 500;">BO:</span>
+            <div style="display: flex; align-items: center; gap: 4px;" title="${t('marketOrderTotals.buyOrdersTooltip')}">
+                <span style="color: #888; font-weight: 500;">${t('marketOrderTotals.buyOrdersLabel')}</span>
                 ${boDisplay}
             </div>
-            <div style="display: flex; align-items: center; gap: 4px;" title="Sell Orders (expected proceeds after tax)">
-                <span style="color: #888; font-weight: 500;">SO:</span>
+            <div style="display: flex; align-items: center; gap: 4px;" title="${t('marketOrderTotals.sellOrdersTooltip')}">
+                <span style="color: #888; font-weight: 500;">${t('marketOrderTotals.sellOrdersLabel')}</span>
                 ${soDisplay}
             </div>
-            <div style="display: flex; align-items: center; gap: 4px;" title="Unclaimed coins (waiting to be collected)">
+            <div style="display: flex; align-items: center; gap: 4px;" title="${t('marketOrderTotals.unclaimedTooltip')}">
                 <span style="font-weight: 500;">💰:</span>
                 ${unclaimedDisplay}
             </div>

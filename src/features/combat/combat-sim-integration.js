@@ -8,6 +8,7 @@
 
 import { constructExportObject } from './combat-sim-export.js';
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import { setReactInputValue } from '../../utils/react-input.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import dataManager from '../../core/data-manager.js';
@@ -15,6 +16,16 @@ import { createCalculatorUI, extractExpRates } from '../combat-sim-integration/s
 
 const timerRegistry = createTimerRegistry();
 const IMPORT_CONTAINER_ID = 'toolasha-import-container';
+
+/**
+ * Build the import button's default label markup, including a hidden span with the fixed
+ * English string "Import solo/group" that must NOT be translated - JIGS searches the DOM for
+ * that exact text to detect this button (see comment at the original call site).
+ * @returns {string}
+ */
+function getImportButtonHtml() {
+    return `${t('combatSimIntegration.importButtonLabel')}<span style="display:none;">Import solo/group</span>`;
+}
 
 // Skill calculator state
 let calculatorObserver = null;
@@ -95,7 +106,7 @@ function injectImportButton(exportButton) {
     const button = document.createElement('button');
     button.id = 'toolasha-import-button';
     // Include hidden text for JIGS compatibility (JIGS searches for "Import solo/group")
-    button.innerHTML = 'Import from Toolasha<span style="display:none;">Import solo/group</span>';
+    button.innerHTML = getImportButtonHtml();
     button.style.backgroundColor = config.COLOR_ACCENT;
     button.style.color = 'white';
     button.style.padding = '10px 20px';
@@ -134,17 +145,15 @@ async function importDataToSimulator(button) {
         const exportData = await constructExportObject();
 
         if (!exportData) {
-            button.textContent = 'Error: No character data';
+            button.textContent = t('combatSimIntegration.errorNoCharacterDataLabel');
             button.style.backgroundColor = '#dc3545'; // Red
             const resetTimeout = setTimeout(() => {
-                button.innerHTML = 'Import from Toolasha<span style="display:none;">Import solo/group</span>';
+                button.innerHTML = getImportButtonHtml();
                 button.style.backgroundColor = config.COLOR_ACCENT;
             }, 3000);
             timerRegistry.registerTimeout(resetTimeout);
             console.error('[Toolasha Combat Sim] No export data available');
-            alert(
-                'No character data found. Please:\n1. Refresh the game page\n2. Wait for it to fully load\n3. Try again'
-            );
+            alert(t('combatSimIntegration.noCharacterDataAlert'));
             return;
         }
 
@@ -266,10 +275,10 @@ async function importDataToSimulator(button) {
             }
 
             // Update button status
-            button.textContent = '✓ Imported';
+            button.textContent = t('combatSimIntegration.importedLabel');
             button.style.backgroundColor = '#28a745'; // Green
             const successResetTimeout = setTimeout(() => {
-                button.innerHTML = 'Import from Toolasha<span style="display:none;">Import solo/group</span>';
+                button.innerHTML = getImportButtonHtml();
                 button.style.backgroundColor = config.COLOR_ACCENT;
             }, 3000);
             timerRegistry.registerTimeout(successResetTimeout);
@@ -277,10 +286,10 @@ async function importDataToSimulator(button) {
         timerRegistry.registerTimeout(importTimeout);
     } catch (error) {
         console.error('[Toolasha Combat Sim] Import failed:', error);
-        button.textContent = 'Import Failed';
+        button.textContent = t('combatSimIntegration.importFailedLabel');
         button.style.backgroundColor = '#dc3545'; // Red
         const failResetTimeout = setTimeout(() => {
-            button.innerHTML = 'Import from Toolasha<span style="display:none;">Import solo/group</span>';
+            button.innerHTML = getImportButtonHtml();
             button.style.backgroundColor = config.COLOR_ACCENT;
         }, 3000);
         timerRegistry.registerTimeout(failResetTimeout);

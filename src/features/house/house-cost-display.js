@@ -5,6 +5,7 @@
 
 import houseCostCalculator from './house-cost-calculator.js';
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import { coinFormatter } from '../../utils/formatters.js';
 import dataManager from '../../core/data-manager.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
@@ -275,7 +276,9 @@ class HouseCostDisplay {
         color: ${config.COLOR_ACCENT};
         text-align: center;
     `;
-        totalDiv.textContent = `Total Market Value: ${coinFormatter(costData.totalValue)}`;
+        totalDiv.textContent = t('houseCostDisplay.totalMarketValueLine', {
+            value: coinFormatter(costData.totalValue),
+        });
         costsSection.appendChild(totalDiv);
     }
 
@@ -313,7 +316,7 @@ class HouseCostDisplay {
         font-weight: bold;
         font-size: 0.875rem;
     `;
-        label.textContent = 'Cumulative to Level:';
+        label.textContent = t('houseCostDisplay.cumulativeToLevelLabel');
 
         const dropdown = document.createElement('select');
         dropdown.style.cssText = `
@@ -416,7 +419,9 @@ class HouseCostDisplay {
         color: ${config.COLOR_ACCENT};
         text-align: center;
     `;
-        totalDiv.textContent = `Total Market Value: ${coinFormatter(costData.totalValue)}`;
+        totalDiv.textContent = t('houseCostDisplay.totalMarketValueLine', {
+            value: coinFormatter(costData.totalValue),
+        });
         renderNodes.push(totalDiv);
 
         const missingMaterials = this.getMissingMaterials(costData);
@@ -489,7 +494,7 @@ class HouseCostDisplay {
         margin-left: auto;
         text-align: right;
     `;
-        missingSpan.textContent = `Missing: ${coinFormatter(amountNeeded)}`;
+        missingSpan.textContent = t('houseCostDisplay.missingAmountLabel', { value: coinFormatter(amountNeeded) });
         row.appendChild(missingSpan);
 
         container.appendChild(row);
@@ -556,7 +561,7 @@ class HouseCostDisplay {
         transition: all 0.2s ease;
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
     `;
-        button.textContent = 'Missing Mats Marketplace';
+        button.textContent = t('guildCreditValue.missingMatsButtonLabel');
 
         button.addEventListener('mouseenter', () => {
             button.style.background =
@@ -990,12 +995,13 @@ class HouseCostDisplay {
         tab.setAttribute('tabindex', '-1');
         const badgeSpan = tab.querySelector('[class*="TabsComponent_badge"]');
         if (badgeSpan) {
-            const roomName = houseCostCalculator.getRoomName(returnContext.houseRoomHrid) || 'House';
+            const roomName =
+                houseCostCalculator.getRoomName(returnContext.houseRoomHrid) || t('networthHistoryChart.categoryHouse');
             badgeSpan.innerHTML =
-                `<div style="text-align:center;"><div>↩ Return</div>` +
+                `<div style="text-align:center;"><div>${t('guildCreditValue.returnTabLabel')}</div>` +
                 `<div style="font-size:0.75em;color:#60a5fa;">${roomName}</div></div>`;
         } else {
-            tab.textContent = '↩ Return to House';
+            tab.textContent = t('houseCostDisplay.returnToHouseTabLabel');
         }
         tab.addEventListener('click', async (event) => {
             event.preventDefault();

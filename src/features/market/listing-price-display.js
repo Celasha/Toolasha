@@ -10,6 +10,7 @@
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import marketAPI from '../../api/marketplace.js';
 import estimatedListingAge from './estimated-listing-age.js';
 import { coinFormatter, formatKMB, formatRelativeTime } from '../../utils/formatters.js';
@@ -382,28 +383,28 @@ class ListingPriceDisplay {
         // Create "Top Order Price" header
         const topOrderHeader = document.createElement('th');
         topOrderHeader.classList.add('mwi-listing-price-header');
-        topOrderHeader.textContent = 'Top Order Price';
+        topOrderHeader.textContent = t('listingPriceDisplay.topOrderPriceHeader');
 
         // Create "Top Order Age" header (if setting enabled)
         let topOrderAgeHeader = null;
         if (config.getSetting('market_showTopOrderAge')) {
             topOrderAgeHeader = document.createElement('th');
             topOrderAgeHeader.classList.add('mwi-listing-price-header');
-            topOrderAgeHeader.textContent = 'Top Order Age';
-            topOrderAgeHeader.title = 'Estimated age of the top competing order';
+            topOrderAgeHeader.textContent = t('listingPriceDisplay.topOrderAgeHeader');
+            topOrderAgeHeader.title = t('listingPriceDisplay.topOrderAgeHeaderTooltip');
         }
 
         // Create "Total Price" header
         const totalPriceHeader = document.createElement('th');
         totalPriceHeader.classList.add('mwi-listing-price-header');
-        totalPriceHeader.textContent = 'Total Price';
+        totalPriceHeader.textContent = t('listingPriceDisplay.totalPriceHeader');
 
         // Create "Listed" header (if setting enabled)
         let listedHeader = null;
         if (config.getSetting('market_showListingAge')) {
             listedHeader = document.createElement('th');
             listedHeader.classList.add('mwi-listing-price-header');
-            listedHeader.textContent = 'Listed';
+            listedHeader.textContent = t('listingPriceDisplay.listedHeader');
         }
 
         // Insert headers (order: Top Order Price, Top Order Age, Total Price, Listed)
@@ -447,7 +448,7 @@ class ListingPriceDisplay {
             th.dataset.mwiSortable = 'true';
             th.style.cursor = 'pointer';
             th.style.userSelect = 'none';
-            th.title = `Click to sort by ${rawText}`;
+            th.title = t('listingPriceDisplay.clickToSortByTooltip', { text: rawText });
 
             th.addEventListener('click', () => this._handleHeaderClick(colKey, tableNode));
         }
@@ -472,15 +473,15 @@ class ListingPriceDisplay {
     /** @returns {string} */
     _colKeyToBaseText(colKey) {
         const map = {
-            status: 'Status',
-            type: 'Type',
-            progress: 'Progress',
-            price: 'Price',
-            topOrderPrice: 'Top Order Price',
-            topOrderAge: 'Top Order Age',
-            totalPrice: 'Total Price',
-            listed: 'Listed',
-            collect: 'Collect',
+            status: t('marketHistory.columnStatus'),
+            type: t('marketHistory.columnType'),
+            progress: t('listingPriceDisplay.progressColumnLabel'),
+            price: t('marketHistory.columnPrice'),
+            topOrderPrice: t('listingPriceDisplay.topOrderPriceHeader'),
+            topOrderAge: t('listingPriceDisplay.topOrderAgeHeader'),
+            totalPrice: t('listingPriceDisplay.totalPriceHeader'),
+            listed: t('listingPriceDisplay.listedHeader'),
+            collect: t('listingPriceDisplay.collectColumnLabel'),
         };
         return map[colKey] ?? colKey;
     }
@@ -1059,13 +1060,19 @@ class ListingPriceDisplay {
      */
     createTopOrderAgeCell(itemHrid, enhancementLevel, isSell, ownListingIds = new Set()) {
         const cacheEntry = estimatedListingAge.orderBooksCache[itemHrid];
-        if (!cacheEntry) return createStyledCell('N/A', config.COLOR_TEXT_SECONDARY, { fontSize: '0.9em' });
+        if (!cacheEntry)
+            return createStyledCell(t('combatSimUi.notAvailableLabel'), config.COLOR_TEXT_SECONDARY, {
+                fontSize: '0.9em',
+            });
 
         const lastUpdated = cacheEntry.lastUpdated;
         const ageMs = this._getTopOrderAgeMs(itemHrid, enhancementLevel, isSell, ownListingIds);
 
-        if (ageMs === null) return createStyledCell('N/A', config.COLOR_TEXT_SECONDARY, { fontSize: '0.9em' });
-        if (ageMs === -1) return createStyledCell('None', '#00FF00', { fontSize: '0.9em' });
+        if (ageMs === null)
+            return createStyledCell(t('combatSimUi.notAvailableLabel'), config.COLOR_TEXT_SECONDARY, {
+                fontSize: '0.9em',
+            });
+        if (ageMs === -1) return createStyledCell(t('simEditor.noneLabel'), '#00FF00', { fontSize: '0.9em' });
 
         return createStyledCell(`~${formatRelativeTime(ageMs)}`, estimatedListingAge.getStalenessColor(lastUpdated), {
             fontSize: '0.9em',
@@ -1122,7 +1129,9 @@ class ListingPriceDisplay {
      * @returns {HTMLElement} Empty table cell element
      */
     createPlaceholderCell() {
-        return createStyledCell('N/A', config.COLOR_TEXT_SECONDARY, { fontSize: '0.9em' });
+        return createStyledCell(t('combatSimUi.notAvailableLabel'), config.COLOR_TEXT_SECONDARY, {
+            fontSize: '0.9em',
+        });
     }
 
     /**

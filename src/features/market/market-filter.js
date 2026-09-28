@@ -4,6 +4,7 @@
  */
 
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 
@@ -121,7 +122,7 @@ class MarketFilter {
         container.style.cssText = 'display: flex; align-items: center; gap: 4px;';
 
         const label = document.createElement('label');
-        label.textContent = type === 'min' ? 'Level >= ' : 'Level < ';
+        label.textContent = type === 'min' ? t('marketFilter.levelMinLabel') : t('marketFilter.levelMaxLabel');
         label.style.cssText = 'font-size: 12px; color: rgba(255, 255, 255, 0.7);';
 
         const select = document.createElement('select');
@@ -138,7 +139,7 @@ class MarketFilter {
         levels.forEach((level) => {
             const option = document.createElement('option');
             option.value = level;
-            option.textContent = level === 1000 ? 'All' : level;
+            option.textContent = level === 1000 ? t('skillingOptimizer.allActionsOption') : level;
             if ((type === 'min' && level === 1) || (type === 'max' && level === 1000)) {
                 option.selected = true;
             }
@@ -169,7 +170,7 @@ class MarketFilter {
         container.style.cssText = 'display: flex; align-items: center; gap: 4px;';
 
         const label = document.createElement('label');
-        label.textContent = 'Class: ';
+        label.textContent = t('marketFilter.classLabel');
         label.style.cssText = 'font-size: 12px; color: rgba(255, 255, 255, 0.7);';
 
         const select = document.createElement('select');
@@ -178,13 +179,13 @@ class MarketFilter {
             'padding: 4px 8px; border-radius: 4px; background: rgba(0, 0, 0, 0.3); color: #fff; border: 1px solid rgba(91, 141, 239, 0.3);';
 
         const classes = [
-            { value: 'all', label: 'All' },
-            { value: 'attack', label: 'Attack' },
-            { value: 'melee', label: 'Melee' },
-            { value: 'defense', label: 'Defense' },
-            { value: 'ranged', label: 'Ranged' },
-            { value: 'magic', label: 'Magic' },
-            { value: 'others', label: 'Others' },
+            { value: 'all', label: t('skillingOptimizer.allActionsOption') },
+            { value: 'attack', label: t('simEditor.skillAttack') },
+            { value: 'melee', label: t('simEditor.skillMelee') },
+            { value: 'defense', label: t('simEditor.skillDefense') },
+            { value: 'ranged', label: t('simEditor.skillRanged') },
+            { value: 'magic', label: t('simEditor.skillMagic') },
+            { value: 'others', label: t('marketFilter.othersOption') },
         ];
 
         classes.forEach((cls) => {
@@ -213,7 +214,7 @@ class MarketFilter {
         container.style.cssText = 'display: flex; align-items: center; gap: 4px;';
 
         const label = document.createElement('label');
-        label.textContent = 'Slot: ';
+        label.textContent = t('marketFilter.slotLabel');
         label.style.cssText = 'font-size: 12px; color: rgba(255, 255, 255, 0.7);';
 
         const select = document.createElement('select');
@@ -222,20 +223,20 @@ class MarketFilter {
             'padding: 4px 8px; border-radius: 4px; background: rgba(0, 0, 0, 0.3); color: #fff; border: 1px solid rgba(91, 141, 239, 0.3);';
 
         const slots = [
-            { value: 'all', label: 'All' },
-            { value: 'main_hand', label: 'Main Hand' },
-            { value: 'off_hand', label: 'Off Hand' },
-            { value: 'two_hand', label: 'Two Hand' },
-            { value: 'head', label: 'Head' },
-            { value: 'body', label: 'Body' },
-            { value: 'hands', label: 'Hands' },
-            { value: 'legs', label: 'Legs' },
-            { value: 'feet', label: 'Feet' },
-            { value: 'neck', label: 'Neck' },
-            { value: 'earrings', label: 'Earrings' },
-            { value: 'ring', label: 'Ring' },
-            { value: 'pouch', label: 'Pouch' },
-            { value: 'back', label: 'Back' },
+            { value: 'all', label: t('skillingOptimizer.allActionsOption') },
+            { value: 'main_hand', label: t('simEditor.slotMainHand') },
+            { value: 'off_hand', label: t('simEditor.slotOffHand') },
+            { value: 'two_hand', label: t('simEditor.slotTwoHand') },
+            { value: 'head', label: t('simEditor.slotHead') },
+            { value: 'body', label: t('simEditor.slotBody') },
+            { value: 'hands', label: t('simEditor.slotHands') },
+            { value: 'legs', label: t('simEditor.slotLegs') },
+            { value: 'feet', label: t('simEditor.slotFeet') },
+            { value: 'neck', label: t('simEditor.slotNeck') },
+            { value: 'earrings', label: t('simEditor.slotEarrings') },
+            { value: 'ring', label: t('simEditor.slotRing') },
+            { value: 'pouch', label: t('simEditor.slotPouch') },
+            { value: 'back', label: t('simEditor.slotBack') },
         ];
 
         slots.forEach((slot) => {

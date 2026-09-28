@@ -8,6 +8,7 @@
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
+import { t } from '../../core/i18n.js';
 import { calculateDrinkRemainingSeconds, calculateQueueTimeSeconds } from '../../utils/drink-calculator.js';
 
 const SECONDS_PER_HOUR = 3600;
@@ -118,7 +119,11 @@ class DrinkTimer {
                 const shortDrink = drinks.find((d) => d.totalSeconds === minDrinkSeconds);
                 const queueRow = document.createElement('div');
                 queueRow.style.color = '#f0a830';
-                queueRow.textContent = `⚠ Queue (${this._formatTime(queueSeconds)}) outlasts ${shortDrink.name} by ${this._formatTime(shortfall)}`;
+                queueRow.textContent = t('drinkTimer.queueOutlastsWarning', {
+                    queueTime: this._formatTime(queueSeconds),
+                    drinkName: shortDrink.name,
+                    shortfallTime: this._formatTime(shortfall),
+                });
                 wrapper.appendChild(queueRow);
             }
         }

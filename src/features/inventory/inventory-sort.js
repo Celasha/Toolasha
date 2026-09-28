@@ -7,6 +7,7 @@ import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import marketAPI from '../../api/marketplace.js';
 import storage from '../../core/storage.js';
+import { t } from '../../core/i18n.js';
 import { formatKMB } from '../../utils/formatters.js';
 import dataManager from '../../core/data-manager.js';
 import inventoryBadgeManager from './inventory-badge-manager.js';
@@ -229,7 +230,7 @@ class InventorySort {
 
         // Sort label and buttons
         const sortLabel = document.createElement('span');
-        sortLabel.textContent = 'Sort:';
+        sortLabel.textContent = t('inventorySort.sortLabel');
 
         const askButton = this.createSortButton('Ask', 'ask');
         const bidButton = this.createSortButton('Bid', 'bid');

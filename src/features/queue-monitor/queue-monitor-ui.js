@@ -7,6 +7,7 @@
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import storage from '../../core/storage.js';
+import { t } from '../../core/i18n.js';
 import { timeReadable } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } from '../../utils/panel-z-index.js';
@@ -157,7 +158,7 @@ export class QueueMonitorUI {
             user-select: none;
         `;
         header.innerHTML = `
-            <span style="font-weight:600; font-size:12px; color:${ACCENT};">Queue Monitor</span>
+            <span style="font-weight:600; font-size:12px; color:${ACCENT};">${t('queueMonitorUi.headerTitle')}</span>
             <button id="toolasha-qm-toggle" style="
                 background:none; border:none; color:#aaa; font-size:16px;
                 cursor:pointer; padding:0; line-height:1;">${this.collapsed ? '+' : '−'}</button>
@@ -297,7 +298,7 @@ export class QueueMonitorUI {
 
         if (snapshots.length === 0) {
             this.bodyEl.innerHTML = `<div style="color:#666; font-size:11px; text-align:center; padding:4px 0;">
-                No other character data yet.<br>Switch characters to capture queue state.
+                ${t('queueMonitorUi.noOtherCharacterDataMessage')}
             </div>`;
             return;
         }
@@ -327,11 +328,11 @@ export class QueueMonitorUI {
             // Time display
             let timeDisplay;
             if (snap.actions.length === 0) {
-                timeDisplay = 'Idle';
+                timeDisplay = t('queueMonitorUi.idleLabel');
             } else if (snap.hasInfiniteAction && remaining <= 0) {
                 timeDisplay = '∞';
             } else if (remaining <= 0) {
-                timeDisplay = 'Done';
+                timeDisplay = t('queueMonitorUi.doneLabel');
             } else {
                 timeDisplay = timeReadable(remaining);
                 if (snap.hasInfiniteAction) {
@@ -348,7 +349,7 @@ export class QueueMonitorUI {
             html += `</div>`;
 
             if (isStale) {
-                html += `<div style="color:#f39c12; font-size:10px; margin-left:14px; margin-top:2px;">Stale (>${Math.round((Date.now() - snap.timestamp) / 3600000)}h ago)</div>`;
+                html += `<div style="color:#f39c12; font-size:10px; margin-left:14px; margin-top:2px;">${t('queueMonitorUi.staleLabel', { hours: Math.round((Date.now() - snap.timestamp) / 3600000) })}</div>`;
             }
 
             // Expanded action details
@@ -361,7 +362,8 @@ export class QueueMonitorUI {
                         actionTimeStr = '∞';
                     } else if (action.estimatedSeconds !== null) {
                         const actionRemaining = Math.max(0, action.estimatedSeconds - Math.max(0, actionElapsed));
-                        actionTimeStr = actionRemaining <= 0 ? 'Done' : timeReadable(actionRemaining);
+                        actionTimeStr =
+                            actionRemaining <= 0 ? t('queueMonitorUi.doneLabel') : timeReadable(actionRemaining);
                     } else {
                         actionTimeStr = '?';
                     }

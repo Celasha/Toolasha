@@ -12,6 +12,7 @@
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
+import { t } from '../../core/i18n.js';
 import storage from '../../core/storage.js';
 import webSocketHook from '../../core/websocket.js';
 import assetManifest from '../../utils/asset-manifest.js';
@@ -110,7 +111,7 @@ class TaskTokenThreshold {
 
         const btn = document.createElement('span');
         btn.className = 'mwi-task-token-threshold-btn';
-        btn.title = 'Configure Task Token reroll threshold';
+        btn.title = t('taskTokenThreshold.configureButtonTitle');
         btn.style.cssText =
             'cursor:pointer; display:inline-flex; align-items:center; margin-left:6px; opacity:0.7; transition:opacity 0.1s;';
 
@@ -163,7 +164,8 @@ class TaskTokenThreshold {
         // considering Task Reroll Protection and Task Auto-Reroll Reminder too — qualifying here
         // always wins the red border/badge, even over manual protection's green border.
         taskCard.dataset.mwiTokenFlag = qualifies ? '1' : '';
-        taskCard.dataset.mwiTokenFlagText = this.direction === 'above' ? 'High tokens!' : 'Low tokens!';
+        taskCard.dataset.mwiTokenFlagText =
+            this.direction === 'above' ? t('taskTokenThreshold.highTokensFlag') : t('taskTokenThreshold.lowTokensFlag');
         repaintTaskCard(taskCard);
     }
 
@@ -217,7 +219,7 @@ class TaskTokenThreshold {
             border-bottom: 1px solid rgba(239, 68, 68, 0.3);
         `;
         header.innerHTML = `
-            <span style="font-weight:700; font-size:14px; color:#ef4444;">Task Token Threshold</span>
+            <span style="font-weight:700; font-size:14px; color:#ef4444;">${t('taskTokenThreshold.popupTitle')}</span>
             <button id="mwi-task-token-threshold-close" style="
                 background:none; border:none; color:#aaa; font-size:22px;
                 cursor:pointer; padding:0; line-height:1;">×</button>
@@ -226,7 +228,7 @@ class TaskTokenThreshold {
         const body = document.createElement('div');
         body.style.cssText = 'padding: 12px 14px; display:flex; flex-direction:column; gap:10px;';
         body.innerHTML = `
-            <div style="color:#aaa;">Flag tasks whose Task Token reward crosses this cutoff for reroll.</div>
+            <div style="color:#aaa;">${t('taskTokenThreshold.description')}</div>
             <div style="display:flex; align-items:center; gap:8px;">
                 <select id="mwi-token-threshold-direction" style="
                     padding: 4px 6px;
@@ -238,10 +240,10 @@ class TaskTokenThreshold {
                     font-family: inherit;
                     cursor: pointer;
                 ">
-                    <option value="below">Below</option>
-                    <option value="above">Above</option>
+                    <option value="below">${t('taskTokenThreshold.belowOption')}</option>
+                    <option value="above">${t('taskTokenThreshold.aboveOption')}</option>
                 </select>
-                <input id="mwi-token-threshold-input" type="number" min="0" step="1" placeholder="e.g. 8" style="
+                <input id="mwi-token-threshold-input" type="number" min="0" step="1" placeholder="${t('taskTokenThreshold.thresholdPlaceholder')}" style="
                     width: 70px;
                     padding: 4px 6px;
                     background: rgba(255,255,255,0.08);
@@ -252,17 +254,17 @@ class TaskTokenThreshold {
                     font-family: inherit;
                     outline: none;
                 ">
-                <span>tokens</span>
+                <span>${t('taskTokenThreshold.tokensLabel')}</span>
             </div>
             <div style="display:flex; gap:8px;">
                 <button id="mwi-token-threshold-save" style="
                     flex:1; padding:6px 10px; background:rgba(239,68,68,0.25);
                     border:1px solid rgba(239,68,68,0.5); border-radius:6px;
-                    color:#e0e0e0; cursor:pointer; font-size:13px;">Save</button>
+                    color:#e0e0e0; cursor:pointer; font-size:13px;">${t('settings.saveButton')}</button>
                 <button id="mwi-token-threshold-clear" style="
                     flex:1; padding:6px 10px; background:rgba(255,255,255,0.06);
                     border:1px solid rgba(255,255,255,0.15); border-radius:6px;
-                    color:#aaa; cursor:pointer; font-size:13px;">Disable</button>
+                    color:#aaa; cursor:pointer; font-size:13px;">${t('taskTokenThreshold.disableButton')}</button>
             </div>
         `;
 

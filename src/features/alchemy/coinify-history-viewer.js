@@ -6,6 +6,7 @@
 
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
+import { t } from '../../core/i18n.js';
 import { coinifyHistoryTracker } from './coinify-history-tracker.js';
 import { formatKMB, formatDateTime } from '../../utils/formatters.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
@@ -124,10 +125,18 @@ class CoinifyHistoryViewer {
                 // Replace first text node (the label) while keeping badge span
                 const badgeSpan = badge.querySelector('.MuiBadge-badge');
                 badge.textContent = '';
-                badge.appendChild(document.createTextNode('Coinify History'));
+                badge.appendChild(
+                    document.createTextNode(
+                        t('alchemyHistoryViewer.historyTabTitle', {
+                            actionName: t('skillingOptimizer.alchemyTypeCoinify'),
+                        })
+                    )
+                );
                 if (badgeSpan) badge.appendChild(badgeSpan);
             } else {
-                tab.textContent = 'Coinify History';
+                tab.textContent = t('alchemyHistoryViewer.historyTabTitle', {
+                    actionName: t('skillingOptimizer.alchemyTypeCoinify'),
+                });
             }
 
             tab.addEventListener('click', (e) => {
@@ -227,7 +236,9 @@ class CoinifyHistoryViewer {
         `;
 
         const title = document.createElement('h2');
-        title.textContent = 'Coinify History';
+        title.textContent = t('alchemyHistoryViewer.historyTabTitle', {
+            actionName: t('skillingOptimizer.alchemyTypeCoinify'),
+        });
         title.style.cssText = 'margin: 0; color: #fff;';
 
         const closeBtn = document.createElement('button');
@@ -393,15 +404,19 @@ class CoinifyHistoryViewer {
         headerRow.style.background = '#1a1a1a';
 
         const columns = [
-            { key: 'startTime', label: 'Session Start', filterable: true },
-            { key: 'inputItemHrid', label: 'Input Item', filterable: true },
-            { key: 'enhancementLevel', label: 'Enh. Level', filterable: false },
-            { key: 'totalAttempts', label: 'Attempts', filterable: false },
-            { key: 'totalSuccesses', label: 'Successes', filterable: false },
-            { key: '_successRate', label: 'Success Rate', filterable: false },
-            { key: 'totalCoinsEarned', label: 'Coins Earned', filterable: false },
-            { key: '_catalystOfCoinification', label: 'Catalyst of Coinification', filterable: false },
-            { key: '_primeCatalyst', label: 'Prime Catalyst', filterable: false },
+            { key: 'startTime', label: t('alchemyHistoryViewer.colSessionStart'), filterable: true },
+            { key: 'inputItemHrid', label: t('alchemyHistoryViewer.colInputItem'), filterable: true },
+            { key: 'enhancementLevel', label: t('alchemyHistoryViewer.colEnhLevel'), filterable: false },
+            { key: 'totalAttempts', label: t('alchemyHistoryViewer.colAttempts'), filterable: false },
+            { key: 'totalSuccesses', label: t('alchemyHistoryViewer.colSuccesses'), filterable: false },
+            { key: '_successRate', label: t('alchemyHistoryViewer.colSuccessRate'), filterable: false },
+            { key: 'totalCoinsEarned', label: t('alchemyHistoryViewer.colCoinsEarned'), filterable: false },
+            {
+                key: '_catalystOfCoinification',
+                label: this.getItemName(CATALYST_OF_COINIFICATION_HRID),
+                filterable: false,
+            },
+            { key: '_primeCatalyst', label: this.getItemName(PRIME_CATALYST_HRID), filterable: false },
             { key: '_delete', label: '', filterable: false },
         ];
 
@@ -488,8 +503,8 @@ class CoinifyHistoryViewer {
             cell.colSpan = columns.length;
             cell.textContent =
                 this.sessions.length === 0
-                    ? 'No coinify history recorded yet.'
-                    : 'No sessions match the current filters.';
+                    ? t('alchemyHistoryViewer.noCoinifyHistoryYet')
+                    : t('alchemyHistoryViewer.noSessionsMatchFilters');
             cell.style.cssText = 'padding: 20px; text-align: center; color: #888;';
             row.appendChild(cell);
             tbody.appendChild(row);
@@ -531,7 +546,10 @@ class CoinifyHistoryViewer {
                 // Successes
                 const successCell = document.createElement('td');
                 const failures = session.totalAttempts - session.totalSuccesses;
-                successCell.textContent = `${session.totalSuccesses} (${failures} failed)`;
+                successCell.textContent = t('alchemyHistoryViewer.successesFailedLabel', {
+                    successes: session.totalSuccesses,
+                    failures,
+                });
                 successCell.style.cssText = `
                     padding: 6px 10px;
                     color: ${failures > 0 ? '#fbbf24' : '#4ade80'};
@@ -575,7 +593,7 @@ class CoinifyHistoryViewer {
                 deleteCell.style.cssText = 'padding: 6px 4px; text-align: center;';
                 const deleteBtn = document.createElement('button');
                 deleteBtn.textContent = '✕';
-                deleteBtn.title = 'Delete this session';
+                deleteBtn.title = t('alchemyHistoryViewer.deleteSessionTitle');
                 deleteBtn.style.cssText = `
                     background: none; border: none; color: #dc2626;
                     cursor: pointer; font-size: 14px; padding: 2px 6px;
@@ -637,7 +655,7 @@ class CoinifyHistoryViewer {
         // Stats
         const stats = document.createElement('span');
         stats.style.cssText = 'color: #aaa; font-size: 14px;';
-        stats.textContent = `${this.filteredSessions.length} session${this.filteredSessions.length !== 1 ? 's' : ''}`;
+        stats.textContent = t('alchemyHistoryViewer.sessionCountStat', { count: this.filteredSessions.length });
         controls.appendChild(stats);
 
         const rightGroup = document.createElement('div');
@@ -646,7 +664,7 @@ class CoinifyHistoryViewer {
         // Clear All Filters button (only when filters active)
         if (this.hasAnyFilter()) {
             const clearFiltersBtn = document.createElement('button');
-            clearFiltersBtn.textContent = 'Clear All Filters';
+            clearFiltersBtn.textContent = t('marketHistory.clearAllFiltersButton');
             clearFiltersBtn.style.cssText = `
                 padding: 6px 12px; background: #e67e22; color: white;
                 border: none; border-radius: 4px; cursor: pointer;
@@ -657,7 +675,7 @@ class CoinifyHistoryViewer {
 
         // Export button
         const exportBtn = document.createElement('button');
-        exportBtn.textContent = 'Export';
+        exportBtn.textContent = t('customTabsUi.exportButton');
         exportBtn.style.cssText = `
             padding: 6px 12px; background: #2563eb; color: white;
             border: none; border-radius: 4px; cursor: pointer;
@@ -667,7 +685,7 @@ class CoinifyHistoryViewer {
 
         // Clear History button
         const clearBtn = document.createElement('button');
-        clearBtn.textContent = 'Clear History';
+        clearBtn.textContent = t('marketHistory.clearHistoryButton');
         clearBtn.style.cssText = `
             padding: 6px 12px; background: #dc2626; color: white;
             border: none; border-radius: 4px; cursor: pointer;
@@ -692,7 +710,7 @@ class CoinifyHistoryViewer {
             if (this.filters.dateFrom) parts.push(formatDateTime(this.filters.dateFrom, { includeTime: false }));
             if (this.filters.dateTo) parts.push(formatDateTime(this.filters.dateTo, { includeTime: false }));
             badges.push({
-                label: `Date: ${parts.join(' - ')}`,
+                label: t('marketHistory.dateFilterBadge', { range: parts.join(' - ') }),
                 onRemove: () => {
                     this.filters.dateFrom = null;
                     this.filters.dateTo = null;
@@ -706,9 +724,9 @@ class CoinifyHistoryViewer {
             const label =
                 this.filters.selectedInputItems.length === 1
                     ? this.getItemName(this.filters.selectedInputItems[0])
-                    : `${this.filters.selectedInputItems.length} input items`;
+                    : t('alchemyHistoryViewer.inputItemsCountLabel', { count: this.filters.selectedInputItems.length });
             badges.push({
-                label: `Input: ${label}`,
+                label: t('alchemyHistoryViewer.inputFilterBadge', { label }),
                 icon: this.filters.selectedInputItems[0],
                 onRemove: () => {
                     this.filters.selectedInputItems = [];
@@ -759,7 +777,7 @@ class CoinifyHistoryViewer {
         leftSide.style.cssText = 'display: flex; gap: 8px; align-items: center; color: #aaa;';
 
         const label = document.createElement('span');
-        label.textContent = 'Rows per page:';
+        label.textContent = t('marketHistory.rowsPerPageLabel');
 
         const rowsInput = document.createElement('input');
         rowsInput.type = 'number';
@@ -795,7 +813,7 @@ class CoinifyHistoryViewer {
         });
 
         showAllLabel.appendChild(showAllCheckbox);
-        showAllLabel.appendChild(document.createTextNode('Show All'));
+        showAllLabel.appendChild(document.createTextNode(t('marketHistory.showAllLabel')));
 
         leftSide.appendChild(label);
         leftSide.appendChild(rowsInput);
@@ -825,7 +843,7 @@ class CoinifyHistoryViewer {
             });
 
             const pageInfo = document.createElement('span');
-            pageInfo.textContent = `Page ${this.currentPage} of ${totalPages || 1}`;
+            pageInfo.textContent = t('marketHistory.pageInfo', { current: this.currentPage, total: totalPages || 1 });
 
             const nextBtn = document.createElement('button');
             nextBtn.textContent = '▶';
@@ -849,7 +867,7 @@ class CoinifyHistoryViewer {
             rightSide.appendChild(nextBtn);
         } else {
             const info = document.createElement('span');
-            info.textContent = `Showing all ${this.filteredSessions.length} sessions`;
+            info.textContent = t('alchemyHistoryViewer.showingAllSessions', { count: this.filteredSessions.length });
             rightSide.appendChild(info);
         }
 
@@ -925,7 +943,7 @@ class CoinifyHistoryViewer {
      * @returns {HTMLElement}
      */
     createDateFilterPopup() {
-        const popup = this.createPopupBase('Filter by Date');
+        const popup = this.createPopupBase(t('marketHistory.filterByDateTitle'));
 
         // Compute available range
         if (!this.cachedDateRange) {
@@ -948,18 +966,20 @@ class CoinifyHistoryViewer {
                 color: #aaa; font-size: 11px; margin-bottom: 10px;
                 padding: 6px; background: #1a1a1a; border-radius: 3px;
             `;
-            rangeInfo.textContent = `Available: ${formatDateTime(minDate, { includeTime: false })} - ${formatDateTime(maxDate, { includeTime: false })}`;
+            rangeInfo.textContent = t('marketHistory.availableRangeLabel', {
+                range: `${formatDateTime(minDate, { includeTime: false })} - ${formatDateTime(maxDate, { includeTime: false })}`,
+            });
             popup.appendChild(rangeInfo);
         }
 
         const fromInput = this.createDateInput(
-            'From:',
+            t('marketHistory.fromLabel'),
             this.filters.dateFrom ? this.filters.dateFrom.toISOString().split('T')[0] : '',
             minDate,
             maxDate
         );
         const toInput = this.createDateInput(
-            'To:',
+            t('marketHistory.toLabel'),
             this.filters.dateTo ? this.filters.dateTo.toISOString().split('T')[0] : '',
             minDate,
             maxDate
@@ -996,7 +1016,7 @@ class CoinifyHistoryViewer {
      * @returns {HTMLElement}
      */
     createInputItemFilterPopup() {
-        const popup = this.createPopupBase('Filter by Input Item');
+        const popup = this.createPopupBase(t('alchemyHistoryViewer.filterByInputItemTitle'));
         popup.style.minWidth = '220px';
 
         // Gather unique input items from all sessions
@@ -1014,7 +1034,7 @@ class CoinifyHistoryViewer {
         // Search box
         const searchInput = document.createElement('input');
         searchInput.type = 'text';
-        searchInput.placeholder = 'Search items...';
+        searchInput.placeholder = t('marketHistory.searchItemsPlaceholder');
         searchInput.style.cssText = `
             width: 100%; padding: 6px; margin-bottom: 8px;
             background: #1a1a1a; border: 1px solid #555;
@@ -1141,7 +1161,7 @@ class CoinifyHistoryViewer {
         row.style.cssText = 'display: flex; gap: 8px; margin-top: 10px;';
 
         const applyBtn = document.createElement('button');
-        applyBtn.textContent = 'Apply';
+        applyBtn.textContent = t('marketHistory.applyButton');
         applyBtn.style.cssText = `
             flex: 1; padding: 6px; background: #4a90e2; color: white;
             border: none; border-radius: 3px; cursor: pointer;
@@ -1149,7 +1169,7 @@ class CoinifyHistoryViewer {
         applyBtn.addEventListener('click', onApply);
 
         const clearBtn = document.createElement('button');
-        clearBtn.textContent = 'Clear';
+        clearBtn.textContent = t('settings.clearButton');
         clearBtn.style.cssText = `
             flex: 1; padding: 6px; background: #666; color: white;
             border: none; border-radius: 3px; cursor: pointer;
@@ -1257,16 +1277,16 @@ class CoinifyHistoryViewer {
         const escape = (val) => `"${String(val === null || val === undefined ? '' : val).replace(/"/g, '""')}"`;
 
         const headers = [
-            'Session Start',
-            'Input Item',
-            'Enhancement Level',
-            'Attempts',
-            'Successes',
-            'Failures',
-            'Success Rate',
-            'Coins Earned',
-            'Catalyst of Coinification Used',
-            'Prime Catalyst Used',
+            t('alchemyHistoryViewer.colSessionStart'),
+            t('alchemyHistoryViewer.colInputItem'),
+            t('alchemyHistoryViewer.csvColEnhancementLevelFull'),
+            t('alchemyHistoryViewer.colAttempts'),
+            t('alchemyHistoryViewer.colSuccesses'),
+            t('alchemyHistoryViewer.colFailures'),
+            t('alchemyHistoryViewer.colSuccessRate'),
+            t('alchemyHistoryViewer.colCoinsEarned'),
+            t('alchemyHistoryViewer.csvColItemUsedHeader', { name: this.getItemName(CATALYST_OF_COINIFICATION_HRID) }),
+            t('alchemyHistoryViewer.csvColItemUsedHeader', { name: this.getItemName(PRIME_CATALYST_HRID) }),
         ];
 
         const rows = this.sessions.map((session) => {
@@ -1312,7 +1332,10 @@ class CoinifyHistoryViewer {
      */
     async clearHistory() {
         const confirmed = confirm(
-            `This will permanently delete ALL coinify history (${this.sessions.length} sessions).\nThis cannot be undone.\n\nAre you sure?`
+            t('alchemyHistoryViewer.clearHistoryConfirmPlain', {
+                actionName: t('skillingOptimizer.alchemyTypeCoinify'),
+                count: this.sessions.length,
+            })
         );
         if (!confirmed) return;
 
@@ -1320,12 +1343,16 @@ class CoinifyHistoryViewer {
             await coinifyHistoryTracker.clearHistory();
             this.sessions = [];
             this.filteredSessions = [];
-            alert('Coinify history cleared.');
+            alert(
+                t('alchemyHistoryViewer.historyClearedAlert', {
+                    actionName: t('skillingOptimizer.alchemyTypeCoinify'),
+                })
+            );
             this.applyFilters();
             this.renderTable();
         } catch (error) {
             console.error('[CoinifyHistoryViewer] Failed to clear history:', error);
-            alert(`Failed to clear history: ${error.message}`);
+            alert(t('marketHistory.clearHistoryFailedAlert', { error: error.message }));
         }
     }
 }

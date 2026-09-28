@@ -8,6 +8,7 @@ import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import webSocketHook from '../../core/websocket.js';
+import { t } from '../../core/i18n.js';
 import taskIconFilters from './task-icon-filters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import assetManifest from '../../utils/asset-manifest.js';
@@ -233,7 +234,7 @@ class TaskIcons {
             font-weight: 500;
             margin-top: 4px;
         `;
-        warning.textContent = '⚠ Combat icons unavailable - visit Combat to load sprites';
+        warning.textContent = t('taskIcons.spriteWarning');
         warning.title = 'Combat monster sprites need to be loaded. Visit the Combat panel to load them.';
 
         titleElement.appendChild(warning);

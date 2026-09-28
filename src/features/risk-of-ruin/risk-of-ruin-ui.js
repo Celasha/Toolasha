@@ -8,6 +8,7 @@
 
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
+import { t } from '../../core/i18n.js';
 import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import { formatWithSeparator, formatPercentage } from '../../utils/formatters.js';
 import { parseItemCount } from '../../utils/number-parser.js';
@@ -100,7 +101,7 @@ class RiskOfRuinUI {
     _buildLauncher() {
         const btn = document.createElement('button');
         btn.id = LAUNCHER_ID;
-        btn.textContent = 'Risk of Ruin';
+        btn.textContent = t('riskOfRuinUi.launcherButtonLabel');
         btn.style.cssText = `
             position: fixed;
             bottom: 12px;
@@ -163,7 +164,7 @@ class RiskOfRuinUI {
             flex-shrink: 0;
         `;
         header.innerHTML = `
-            <span style="font-weight:700; font-size:14px; color:#e05c5c;">Risk of Ruin Calculator</span>
+            <span style="font-weight:700; font-size:14px; color:#e05c5c;">${t('riskOfRuinUi.panelTitle')}</span>
             <button id="mwi-ror-close" style="
                 background:none; border:none; color:#aaa; font-size:22px;
                 cursor:pointer; padding:0; line-height:1;">×</button>
@@ -178,7 +179,7 @@ class RiskOfRuinUI {
         status.id = 'mwi-ror-status';
         status.style.cssText =
             'padding:6px 14px; color:#555; font-size:11px; border-top:1px solid #1a1a1a; flex-shrink:0; text-align:center;';
-        status.textContent = 'Choose a mode, set your target, and click Calculate.';
+        status.textContent = t('riskOfRuinUi.statusDefault');
 
         this.panel.appendChild(header);
         this.panel.appendChild(body);
@@ -204,17 +205,17 @@ class RiskOfRuinUI {
             'width:100%; background:#1a1a2e; color:#e0e0e0; border:1px solid #444; border-radius:4px; padding:5px 8px; font-size:12px; box-sizing:border-box;';
 
         return `
-            <label style="${labelStyle}">Mode</label>
+            <label style="${labelStyle}">${t('riskOfRuinUi.modeLabel')}</label>
             <select id="mwi-ror-mode" style="${inputStyle} margin-bottom:10px;">
-                <option value="chest">Dungeon Chest</option>
-                <option value="alchemy">Alchemy (Transmute)</option>
-                <option value="enhancement">Enhancing</option>
+                <option value="chest">${t('riskOfRuinUi.modeChestOption')}</option>
+                <option value="alchemy">${t('riskOfRuinUi.modeAlchemyOption')}</option>
+                <option value="enhancement">${t('riskOfRuinUi.modeEnhancingOption')}</option>
             </select>
 
             <div id="mwi-ror-mode-inputs"></div>
 
-            <label style="${labelStyle} margin-top:10px;">Starting gold</label>
-            <input id="mwi-ror-bankroll" type="text" inputmode="decimal" placeholder="e.g. 5m, 1.2b" style="${inputStyle} margin-bottom:10px;">
+            <label style="${labelStyle} margin-top:10px;">${t('riskOfRuinUi.startingGoldLabel')}</label>
+            <input id="mwi-ror-bankroll" type="text" inputmode="decimal" placeholder="${t('riskOfRuinUi.startingGoldPlaceholder')}" style="${inputStyle} margin-bottom:10px;">
 
             <button id="mwi-ror-run" style="
                 width: 100%;
@@ -226,7 +227,7 @@ class RiskOfRuinUI {
                 font-size: 13px;
                 font-weight: 600;
                 cursor: pointer;
-                margin-bottom: 10px;">Calculate</button>
+                margin-bottom: 10px;">${t('riskOfRuinUi.calculateButton')}</button>
 
             <div id="mwi-ror-results" style="font-size:12px; line-height:1.6;"></div>
         `;
@@ -245,34 +246,34 @@ class RiskOfRuinUI {
                 return `<option value="${hrid}">${name}</option>`;
             }).join('');
             container.innerHTML = `
-                <label style="${labelStyle}">Chest type</label>
+                <label style="${labelStyle}">${t('riskOfRuinUi.chestTypeLabel')}</label>
                 <select id="mwi-ror-chest" style="${inputStyle}">${options}</select>
-                <label style="${labelStyle}">Chests to open</label>
+                <label style="${labelStyle}">${t('riskOfRuinUi.chestsToOpenLabel')}</label>
                 <input id="mwi-ror-target" type="number" min="1" step="1" value="100" style="${inputStyle}">
             `;
         } else if (mode === 'alchemy') {
             container.innerHTML = `
-                <label style="${labelStyle}">Item to Transmute</label>
-                <input id="mwi-ror-item" list="mwi-ror-transmute-items" style="${inputStyle}" placeholder="Start typing an item name...">
-                <label style="${labelStyle}">Catalyst</label>
+                <label style="${labelStyle}">${t('riskOfRuinUi.itemToTransmuteLabel')}</label>
+                <input id="mwi-ror-item" list="mwi-ror-transmute-items" style="${inputStyle}" placeholder="${t('riskOfRuinUi.itemNamePlaceholder')}">
+                <label style="${labelStyle}">${t('riskOfRuinUi.catalystLabel')}</label>
                 <select id="mwi-ror-catalyst" style="${inputStyle}">
-                    <option value="best">Best available (auto)</option>
-                    <option value="none">None</option>
-                    <option value="typeSpecific">Type-specific catalyst</option>
-                    <option value="prime">Prime catalyst</option>
+                    <option value="best">${t('riskOfRuinUi.catalystBestOption')}</option>
+                    <option value="none">${t('riskOfRuinUi.catalystNoneOption')}</option>
+                    <option value="typeSpecific">${t('riskOfRuinUi.catalystTypeSpecificOption')}</option>
+                    <option value="prime">${t('riskOfRuinUi.catalystPrimeOption')}</option>
                 </select>
-                <label style="${labelStyle}">Actions to attempt</label>
+                <label style="${labelStyle}">${t('riskOfRuinUi.actionsToAttemptLabel')}</label>
                 <input id="mwi-ror-target" type="number" min="1" step="1" value="100" style="${inputStyle}">
             `;
         } else {
             container.innerHTML = `
-                <label style="${labelStyle}">Item to enhance</label>
-                <input id="mwi-ror-item" list="mwi-ror-enhance-items" style="${inputStyle}" placeholder="Start typing an item name...">
-                <label style="${labelStyle}">Target level</label>
+                <label style="${labelStyle}">${t('riskOfRuinUi.itemToEnhanceLabel')}</label>
+                <input id="mwi-ror-item" list="mwi-ror-enhance-items" style="${inputStyle}" placeholder="${t('riskOfRuinUi.itemNamePlaceholder')}">
+                <label style="${labelStyle}">${t('riskOfRuinUi.targetLevelLabel')}</label>
                 <input id="mwi-ror-target" type="number" min="1" max="20" step="1" value="10" style="${inputStyle}">
-                <label style="${labelStyle}">Start level</label>
+                <label style="${labelStyle}">${t('riskOfRuinUi.startLevelLabel')}</label>
                 <input id="mwi-ror-start-level" type="number" min="0" max="19" step="1" value="0" style="${inputStyle}">
-                <label style="${labelStyle}">Protect from level (0 = never)</label>
+                <label style="${labelStyle}">${t('riskOfRuinUi.protectFromLevelLabel')}</label>
                 <input id="mwi-ror-protect-from" type="number" min="0" max="19" step="1" value="0" style="${inputStyle}">
             `;
         }
@@ -371,16 +372,16 @@ class RiskOfRuinUI {
     _run() {
         const status = this.panel.querySelector('#mwi-ror-status');
         const results = this.panel.querySelector('#mwi-ror-results');
-        status.textContent = 'Calculating…';
+        status.textContent = t('riskOfRuinUi.statusCalculating');
         results.innerHTML = '';
 
-        const t = setTimeout(() => {
+        const timeoutId = setTimeout(() => {
             this._compute().catch((err) => {
                 console.error('[RiskOfRuinUI] Calculation failed:', err);
-                status.textContent = 'Error during calculation.';
+                status.textContent = t('riskOfRuinUi.statusErrorCalculation');
             });
         }, 10);
-        this.timerRegistry.registerTimeout(t);
+        this.timerRegistry.registerTimeout(timeoutId);
     }
 
     async _compute() {
@@ -438,7 +439,7 @@ class RiskOfRuinUI {
             const catalystChoice = catalystSelection === 'best' ? null : catalystSelection;
             const alchemyModel = hrid ? buildAlchemyTransmuteModel(hrid, { catalystChoice }) : null;
             if (!alchemyModel) {
-                status.textContent = 'Enter a valid transmutable item name.';
+                status.textContent = t('riskOfRuinUi.statusInvalidTransmuteItem');
                 return;
             }
             maxSinglePossibleLoss = alchemyModel.maxSinglePossibleLoss;
@@ -471,7 +472,7 @@ class RiskOfRuinUI {
             const protectFrom = parseInt(this.panel.querySelector('#mwi-ror-protect-from').value) || 0;
             const itemDetails = hrid ? dataManager.getItemDetails(hrid) : null;
             if (!itemDetails) {
-                status.textContent = 'Enter a valid enhanceable item name.';
+                status.textContent = t('riskOfRuinUi.statusInvalidEnhanceItem');
                 return;
             }
 
@@ -489,7 +490,7 @@ class RiskOfRuinUI {
                 guzzlingBonus: enhancingParams.guzzlingBonus,
             });
             if (!enhancementModel) {
-                status.textContent = 'Could not build an enhancement model for these parameters.';
+                status.textContent = t('riskOfRuinUi.statusEnhancementModelFailed');
                 return;
             }
             maxSinglePossibleLoss = enhancementModel.maxSinglePossibleLoss;
@@ -530,15 +531,13 @@ class RiskOfRuinUI {
             results.insertAdjacentHTML(
                 'beforeend',
                 `<div style="margin-top:10px; margin-bottom:6px; color:#888; font-size:11px;">
-                    Optimal share of cash to commit: not applicable — enhancing has no revenue
-                    distribution to size a bet against, only a fixed cost toward the target level.
-                    Use the ruin probability above instead.
+                    ${t('riskOfRuinUi.optimalCommitNotApplicable')}
                 </div>`
             );
         }
         this._renderDepthCapTrackingNote(results, detailInfo);
         this._renderDetails(results, detailInfo, startingBalance, maxSinglePossibleLoss, minActions);
-        status.textContent = `${formatWithSeparator(trials)} trials simulated.`;
+        status.textContent = t('riskOfRuinUi.statusTrialsSimulated', { trials: formatWithSeparator(trials) });
     }
 
     /**
@@ -595,8 +594,7 @@ class RiskOfRuinUI {
             container.insertAdjacentHTML(
                 'beforeend',
                 `<div style="margin-top:10px; margin-bottom:6px; color:#c98;">
-                    <strong>Optimal share of cash to commit:</strong> 0% — this setup has no positive
-                    expected edge (E[R] ≤ 1), so sizing a bet against its variance isn't meaningful here.
+                    ${t('riskOfRuinUi.optimalCommitNoEdge')}
                 </div>`
             );
             return;
@@ -605,14 +603,14 @@ class RiskOfRuinUI {
         container.insertAdjacentHTML(
             'beforeend',
             `<div style="margin-top:10px;">
-                <strong>Optimal share of cash to commit:</strong> ${formatPercentage(optimalCommit.fstar, 1)} of bankroll
-                (${fmtGold(optimalCommit.recommendedCommit)} ≈ ${formatWithSeparator(optimalCommit.recommendedActionCount)} actions)
+                ${t('riskOfRuinUi.optimalCommitWithEdge', {
+                    percent: formatPercentage(optimalCommit.fstar, 1),
+                    gold: fmtGold(optimalCommit.recommendedCommit),
+                    actions: formatWithSeparator(optimalCommit.recommendedActionCount),
+                })}
             </div>
             <div style="color:#888; font-size:11px; margin-bottom:6px;">
-                Variance-based cap only — ignores the downward price pressure from selling your own output.
-                Toolasha shows an automatic "Sell depth" estimate on each tracked output's marketplace
-                order-book page, but only once you've opened that item's page in-game this session — see
-                which outputs are tracked below.
+                ${t('riskOfRuinUi.optimalCommitVarianceNote')}
             </div>`
         );
     }
@@ -632,20 +630,19 @@ class RiskOfRuinUI {
                 (i) => dataManager.getItemDetails(i.itemHrid)?.name || i.itemHrid.split('/').pop()
             );
             html += `<div style="color:#888; font-size:11px; margin-bottom:6px;">
-                Tracking "Sell depth" for: ${names.join(', ')} — open that item's order-book page in the
-                marketplace to see the estimate.
+                ${t('riskOfRuinUi.trackingSellDepthNote', { names: names.join(', ') })}
             </div>`;
         }
 
         if (detailInfo.untrackedOutputs?.length) {
             html += `<div style="color:#c98; font-size:11px; margin-bottom:6px;">
-                Not tracked (no current sell price available to check against): ${detailInfo.untrackedOutputs.join(', ')}.
+                ${t('riskOfRuinUi.untrackedOutputsNote', { names: detailInfo.untrackedOutputs.join(', ') })}
             </div>`;
         }
 
         if (detailInfo.untradeableOutput) {
             html += `<div style="color:#888; font-size:11px; margin-bottom:6px;">
-                ${detailInfo.untradeableOutput} is untradeable, so no "Sell depth" check applies.
+                ${t('riskOfRuinUi.untradeableOutputNote', { itemName: detailInfo.untradeableOutput })}
             </div>`;
         }
 
@@ -658,33 +655,41 @@ class RiskOfRuinUI {
 
         const lines = [];
         lines.push(
-            `<strong>Ruin probability:</strong> ${formatPercentage(simResult.ruinProbability, 2)} ` +
-                `(95% CI: ${formatPercentage(ci.low, 2)} – ${formatPercentage(ci.high, 2)})`
+            t('riskOfRuinUi.ruinProbabilityLine', {
+                probability: formatPercentage(simResult.ruinProbability, 2),
+                ciLow: formatPercentage(ci.low, 2),
+                ciHigh: formatPercentage(ci.high, 2),
+            })
         );
 
         lines.push(
-            `<strong>Ruin becomes possible at action:</strong> ` +
-                (Number.isFinite(minActions)
+            t('riskOfRuinUi.ruinPossibleAtActionLine', {
+                value: Number.isFinite(minActions)
                     ? formatWithSeparator(minActions)
-                    : 'never (no single action can lose money)')
+                    : t('riskOfRuinUi.neverRuinPossible'),
+            })
         );
 
         lines.push(
-            `<strong>Peak ruin exposure at action:</strong> ` +
-                (peakStep !== null ? formatWithSeparator(peakStep) : 'no ruin occurred in the simulation')
+            t('riskOfRuinUi.peakRuinExposureLine', {
+                value: peakStep !== null ? formatWithSeparator(peakStep) : t('riskOfRuinUi.noRuinOccurred'),
+            })
         );
 
         if (simResult.meanStepsToRuin !== null) {
             lines.push(
-                `<strong>Average actions before ruin (when it occurs):</strong> ${formatWithSeparator(Math.round(simResult.meanStepsToRuin * 10) / 10)}`
+                t('riskOfRuinUi.avgActionsBeforeRuinLine', {
+                    value: formatWithSeparator(Math.round(simResult.meanStepsToRuin * 10) / 10),
+                })
             );
         }
 
         if (simResult.undecidedCount > 0) {
             lines.push(
-                `<span style="color:#c98;">${formatWithSeparator(simResult.undecidedCount)} of ${formatWithSeparator(simResult.trials)} ` +
-                    `trials neither ruined nor reached the target within the simulation's step cap — ` +
-                    `the result may be imprecise for this very long-horizon scenario.</span>`
+                `<span style="color:#c98;">${t('riskOfRuinUi.undecidedTrialsNote', {
+                    undecided: formatWithSeparator(simResult.undecidedCount),
+                    total: formatWithSeparator(simResult.trials),
+                })}</span>`
             );
         }
 
@@ -697,12 +702,13 @@ class RiskOfRuinUI {
      */
     _riskFormulaLine(startingBalance, maxSinglePossibleLoss, minActions) {
         if (!Number.isFinite(minActions)) {
-            return `<div>No single action can ever lose money here, so ruin never becomes possible.</div>`;
+            return `<div>${t('riskOfRuinUi.noSingleActionLoss')}</div>`;
         }
-        return (
-            `<div><strong>Ruin becomes possible at action</strong> = ⌈starting gold ÷ max single-action loss⌉ ` +
-            `= ⌈${fmtGold(startingBalance)} ÷ ${fmtGold(maxSinglePossibleLoss)}⌉ = ${formatWithSeparator(minActions)}</div>`
-        );
+        return `<div>${t('riskOfRuinUi.ruinFormulaLine', {
+            startingGold: fmtGold(startingBalance),
+            maxLoss: fmtGold(maxSinglePossibleLoss),
+            minActions: formatWithSeparator(minActions),
+        })}</div>`;
     }
 
     _renderDetails(container, detailInfo, startingBalance, maxSinglePossibleLoss, minActions) {
@@ -726,23 +732,32 @@ class RiskOfRuinUI {
         const rows = [];
         if (costBreakdown.entryKey) {
             rows.push(
-                `<div>Entry key (${costBreakdown.entryKey.name}): ${fmtGold(costBreakdown.entryKey.price)}</div>`
+                `<div>${t('riskOfRuinUi.entryKeyLine', {
+                    name: costBreakdown.entryKey.name,
+                    price: fmtGold(costBreakdown.entryKey.price),
+                })}</div>`
             );
         }
         if (costBreakdown.chestKey) {
             rows.push(
-                `<div>Chest key (${costBreakdown.chestKey.name}): ${fmtGold(costBreakdown.chestKey.price)}</div>`
+                `<div>${t('riskOfRuinUi.chestKeyLine', {
+                    name: costBreakdown.chestKey.name,
+                    price: fmtGold(costBreakdown.chestKey.price),
+                })}</div>`
             );
         }
-        rows.push(`<div><strong>Total cost per open:</strong> ${fmtGold(costBreakdown.total)}</div>`);
+        rows.push(`<div>${t('riskOfRuinUi.totalCostPerOpenLine', { total: fmtGold(costBreakdown.total) })}</div>`);
         rows.push(
-            `<div style="margin-top:6px;">Guaranteed minimum payout per open: ${fmtGold(minimumGuaranteedPayout)} ` +
-                `(the sum of every drop table entry with a 100% drop rate, at its minimum count — a real chest ` +
-                `always drops at least this much, it is never actually 0)</div>`
+            `<div style="margin-top:6px;">${t('riskOfRuinUi.guaranteedMinPayoutLine', {
+                amount: fmtGold(minimumGuaranteedPayout),
+            })}</div>`
         );
         rows.push(
-            `<div><strong>Max single-action loss:</strong> ${fmtGold(maxSinglePossibleLoss)} ` +
-                `= cost − guaranteed minimum payout = ${fmtGold(costBreakdown.total)} − ${fmtGold(minimumGuaranteedPayout)}</div>`
+            `<div>${t('riskOfRuinUi.chestMaxLossLine', {
+                loss: fmtGold(maxSinglePossibleLoss),
+                total: fmtGold(costBreakdown.total),
+                min: fmtGold(minimumGuaranteedPayout),
+            })}</div>`
         );
         rows.push(this._riskFormulaLine(startingBalance, maxSinglePossibleLoss, minActions));
 
@@ -751,7 +766,11 @@ class RiskOfRuinUI {
             .map(
                 (drop) =>
                     `<tr>
-                        <td style="padding:2px 6px;">${drop.itemName}${drop.dropRate === 1 ? ' (guaranteed)' : ''}</td>
+                        <td style="padding:2px 6px;">${
+                            drop.dropRate === 1
+                                ? t('riskOfRuinUi.guaranteedDropLabel', { itemName: drop.itemName })
+                                : drop.itemName
+                        }</td>
                         <td style="padding:2px 6px; text-align:right;">${formatPercentage(drop.dropRate, 2)}</td>
                         <td style="padding:2px 6px; text-align:right;">${drop.avgCount}</td>
                         <td style="padding:2px 6px; text-align:right;">${drop.hasPriceData ? fmtGold(drop.priceEach) : '—'}</td>
@@ -761,15 +780,15 @@ class RiskOfRuinUI {
             .join('');
 
         return this._wrapDetails(
-            'Cost & risk details',
+            t('riskOfRuinUi.costRiskDetailsSummary'),
             rows.join('') +
                 this._wrapDetails(
-                    `Drop table (${dropBreakdown.length} items)`,
+                    t('riskOfRuinUi.dropTableSummary', { count: dropBreakdown.length }),
                     `<table style="width:100%; border-collapse:collapse; font-size:11px;">
-                        <tr style="color:#888;"><th style="text-align:left;">Item</th><th>Drop rate</th><th>Avg count</th><th>Price</th><th>EV</th></tr>
+                        <tr style="color:#888;"><th style="text-align:left;">${t('riskOfRuinUi.colItem')}</th><th>${t('riskOfRuinUi.colDropRate')}</th><th>${t('riskOfRuinUi.colAvgCount')}</th><th>${t('riskOfRuinUi.colPrice')}</th><th>${t('riskOfRuinUi.colEv')}</th></tr>
                         ${dropRows}
                         <tr style="border-top:1px solid #444; font-weight:600;">
-                            <td style="padding:2px 6px;" colspan="4">Total EV per open</td>
+                            <td style="padding:2px 6px;" colspan="4">${t('riskOfRuinUi.totalEvPerOpenLabel')}</td>
                             <td style="padding:2px 6px; text-align:right;">${fmtGold(totalEV)}</td>
                         </tr>
                     </table>`,
@@ -782,45 +801,46 @@ class RiskOfRuinUI {
         const catalystName = breakdown.catalystHrid ? dataManager.getItemDetails(breakdown.catalystHrid)?.name : null;
 
         const rows = [
-            `<div>Success rate: ${formatPercentage(breakdown.successRate, 2)}</div>`,
-            `<div>Material cost (paid every attempt): ${fmtGold(breakdown.materialCost)}</div>`,
+            `<div>${t('riskOfRuinUi.successRateLine', { rate: formatPercentage(breakdown.successRate, 2) })}</div>`,
+            `<div>${t('riskOfRuinUi.materialCostLine', { cost: fmtGold(breakdown.materialCost) })}</div>`,
         ];
         if (breakdown.coinCost > 0) {
-            rows.push(`<div>Coin cost (paid every attempt): ${fmtGold(breakdown.coinCost)}</div>`);
+            rows.push(`<div>${t('riskOfRuinUi.coinCostLine', { cost: fmtGold(breakdown.coinCost) })}</div>`);
         }
         rows.push(
             catalystName
-                ? `<div>Catalyst (${catalystName}, paid only on success): ${fmtGold(breakdown.catalystCostOnSuccess)}</div>`
-                : `<div>No catalyst used.</div>`
+                ? `<div>${t('riskOfRuinUi.catalystCostLine', {
+                      name: catalystName,
+                      cost: fmtGold(breakdown.catalystCostOnSuccess),
+                  })}</div>`
+                : `<div>${t('riskOfRuinUi.noCatalystUsed')}</div>`
         );
-        rows.push(
-            `<div style="margin-top:6px;">The output drop table (below) is a single mutually-exclusive roll ` +
-                `<em>given success</em> — each branch is its own separate outcome, not averaged together, so a ` +
-                `rare high-value branch's real tail risk shows up in the simulation instead of being smoothed away.</div>`
-        );
-        rows.push(`<div><strong>Net on failure:</strong> ${fmtGold(breakdown.netOnFail)}</div>`);
-        rows.push(`<div><strong>Max single-action loss:</strong> ${fmtGold(maxSinglePossibleLoss)}</div>`);
+        rows.push(`<div style="margin-top:6px;">${t('riskOfRuinUi.dropTableExplanationNote')}</div>`);
+        rows.push(`<div>${t('riskOfRuinUi.netOnFailureLine', { value: fmtGold(breakdown.netOnFail) })}</div>`);
+        rows.push(`<div>${t('riskOfRuinUi.maxLossLine', { value: fmtGold(maxSinglePossibleLoss) })}</div>`);
         rows.push(this._riskFormulaLine(startingBalance, maxSinglePossibleLoss, minActions));
 
         const mainRows = breakdown.mainBranches
-            .map(
-                (branch) =>
-                    `<tr>
-                        <td style="padding:2px 6px;">${dataManager.getItemDetails(branch.itemHrid)?.name || branch.itemHrid}${branch.isSelfReturn ? ' (self-return)' : ''}</td>
+            .map((branch) => {
+                const itemName = dataManager.getItemDetails(branch.itemHrid)?.name || branch.itemHrid;
+                return `<tr>
+                        <td style="padding:2px 6px;">${
+                            branch.isSelfReturn ? t('riskOfRuinUi.selfReturnLabel', { itemName }) : itemName
+                        }</td>
                         <td style="padding:2px 6px; text-align:right;">${formatPercentage(breakdown.successRate * branch.dropRate, 2)}</td>
                         <td style="padding:2px 6px; text-align:right;">${fmtGold(branch.payout)}</td>
-                    </tr>`
-            )
+                    </tr>`;
+            })
             .join('');
         const mainCoverage = breakdown.mainBranches.reduce((sum, b) => sum + b.dropRate, 0);
         const failRow = `<tr>
-                        <td style="padding:2px 6px;">(failure)</td>
+                        <td style="padding:2px 6px;">${t('riskOfRuinUi.failureLabel')}</td>
                         <td style="padding:2px 6px; text-align:right;">${formatPercentage(1 - breakdown.successRate, 2)}</td>
                         <td style="padding:2px 6px; text-align:right;">${fmtGold(0)}</td>
                     </tr>`;
         const gapNote =
             mainCoverage < 0.999
-                ? `<div style="color:#c98; margin-top:4px; font-size:11px;">${formatPercentage(1 - mainCoverage, 1)} of the success-branch probability has no market price data and is treated as a 0-payout outcome (never inflated with a guess).</div>`
+                ? `<div style="color:#c98; margin-top:4px; font-size:11px;">${t('riskOfRuinUi.unpricedProbabilityNote', { percent: formatPercentage(1 - mainCoverage, 1) })}</div>`
                 : '';
 
         const bonusRows = breakdown.bonusDrops
@@ -835,9 +855,9 @@ class RiskOfRuinUI {
             .join('');
         const bonusSection = breakdown.bonusDrops.length
             ? this._wrapDetails(
-                  `Bonus drops (${breakdown.bonusDrops.length}, independent of success/fail)`,
+                  t('riskOfRuinUi.bonusDropsSummary', { count: breakdown.bonusDrops.length }),
                   `<table style="width:100%; border-collapse:collapse; font-size:11px;">
-                        <tr style="color:#888;"><th style="text-align:left;">Item</th><th>Chance per attempt</th><th>Payout if hit</th></tr>
+                        <tr style="color:#888;"><th style="text-align:left;">${t('riskOfRuinUi.colItem')}</th><th>${t('riskOfRuinUi.colChancePerAttempt')}</th><th>${t('riskOfRuinUi.colPayoutIfHit')}</th></tr>
                         ${bonusRows}
                     </table>`,
                   true
@@ -845,12 +865,12 @@ class RiskOfRuinUI {
             : '';
 
         return this._wrapDetails(
-            'Cost & risk details',
+            t('riskOfRuinUi.costRiskDetailsSummary'),
             rows.join('') +
                 this._wrapDetails(
-                    `Output drop table (${breakdown.mainBranches.length} branches, one roll given success)`,
+                    t('riskOfRuinUi.outputDropTableSummary', { count: breakdown.mainBranches.length }),
                     `<table style="width:100%; border-collapse:collapse; font-size:11px;">
-                        <tr style="color:#888;"><th style="text-align:left;">Outcome</th><th>Chance per attempt</th><th>Payout if hit</th></tr>
+                        <tr style="color:#888;"><th style="text-align:left;">${t('riskOfRuinUi.colOutcome')}</th><th>${t('riskOfRuinUi.colChancePerAttempt')}</th><th>${t('riskOfRuinUi.colPayoutIfHit')}</th></tr>
                         ${failRow}
                         ${mainRows}
                     </table>
@@ -882,27 +902,26 @@ class RiskOfRuinUI {
             })
             .join('');
 
-        const rows2 = [
-            `<div><strong>Cost per attempt (materials, every attempt):</strong> ${fmtGold(costPerAttempt)}</div>`,
-        ];
+        const rows2 = [`<div>${t('riskOfRuinUi.costPerAttemptLine', { value: fmtGold(costPerAttempt) })}</div>`];
         if (protectionCostOnFailure > 0) {
             rows2.push(
-                `<div><strong>Protection cost (charged only on a protected failure):</strong> ${fmtGold(protectionCostOnFailure)}</div>`
+                `<div>${t('riskOfRuinUi.protectionCostLine', { value: fmtGold(protectionCostOnFailure) })}</div>`
             );
         }
         rows2.push(
-            `<div style="margin-top:6px;"><strong>Max single-action loss:</strong> ${fmtGold(maxSinglePossibleLoss)} ` +
-                `(worst case: an attempt fails at a protected level)</div>`
+            `<div style="margin-top:6px;">${t('riskOfRuinUi.maxLossWithNoteLine', {
+                value: fmtGold(maxSinglePossibleLoss),
+            })}</div>`
         );
         rows2.push(this._riskFormulaLine(startingBalance, maxSinglePossibleLoss, minActions));
 
         return this._wrapDetails(
-            `Cost & risk details (levels +${startLevel} to +${targetLevel})`,
+            t('riskOfRuinUi.costRiskDetailsLevelsSummary', { startLevel, targetLevel }),
             rows2.join('') +
                 this._wrapDetails(
-                    `Per-level success rates & costs (${perLevelOutcomeDistributions.length} levels)`,
+                    t('riskOfRuinUi.perLevelRatesSummary', { count: perLevelOutcomeDistributions.length }),
                     `<table style="width:100%; border-collapse:collapse; font-size:11px;">
-                        <tr style="color:#888;"><th style="text-align:left;">Attempt</th><th>Success</th><th>Cost</th><th>Fail →</th><th>Protection cost</th></tr>
+                        <tr style="color:#888;"><th style="text-align:left;">${t('riskOfRuinUi.colAttempt')}</th><th>${t('riskOfRuinUi.colSuccess')}</th><th>${t('riskOfRuinUi.colCost')}</th><th>${t('riskOfRuinUi.colFailArrow')}</th><th>${t('riskOfRuinUi.colProtectionCost')}</th></tr>
                         ${rows}
                     </table>`,
                     true

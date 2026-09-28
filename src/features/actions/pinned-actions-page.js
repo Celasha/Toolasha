@@ -8,6 +8,7 @@
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import dataManager from '../../core/data-manager.js';
+import { t } from '../../core/i18n.js';
 import actionPanelSort from './action-panel-sort.js';
 import { calculateGatheringProfit } from './gathering-profit.js';
 import { calculateProductionProfit } from './production-profit.js';
@@ -21,13 +22,19 @@ import alchemyProfitCalculator from '../market/alchemy-profit-calculator.js';
 
 const GATHERING_TYPES = ['/action_types/foraging', '/action_types/woodcutting', '/action_types/milking'];
 
-const COLUMNS = [
-    { key: 'name', label: 'Action', align: 'left', filterable: false },
-    { key: 'skill', label: 'Skill', align: 'left', filterable: true },
-    { key: 'level', label: 'Lv', align: 'left', filterable: false },
-    { key: 'profitPerHour', label: 'Profit/hr', align: 'right', filterable: false },
-    { key: 'expPerHour', label: 'XP/hr', align: 'right', filterable: false },
-];
+/**
+ * Build the column definitions (translated at call time so the current locale is always used)
+ * @returns {Array} Column definitions
+ */
+function getColumns() {
+    return [
+        { key: 'name', label: t('pinnedActionsPage.columnAction'), align: 'left', filterable: false },
+        { key: 'skill', label: t('pinnedActionsPage.columnSkill'), align: 'left', filterable: true },
+        { key: 'level', label: t('pinnedActionsPage.columnLevel'), align: 'left', filterable: false },
+        { key: 'profitPerHour', label: t('pinnedActionsPage.columnProfitPerHour'), align: 'right', filterable: false },
+        { key: 'expPerHour', label: t('pinnedActionsPage.columnExpPerHour'), align: 'right', filterable: false },
+    ];
+}
 
 const GRID_COLUMNS = '28px 1fr 120px 50px 90px 90px';
 
@@ -55,7 +62,7 @@ function getGameObject() {
  * @returns {string} Display name, e.g. "Milking"
  */
 function formatSkillName(typeHrid) {
-    if (!typeHrid) return 'Unknown';
+    if (!typeHrid) return t('pinnedActionsPage.unknownSkill');
     const slug = typeHrid.split('/').pop();
     return slug.charAt(0).toUpperCase() + slug.slice(1);
 }
@@ -164,7 +171,7 @@ class PinnedActionsPage {
             margin-bottom: 2px;
         `;
 
-        btn.innerHTML = `<span style="font-size: 1.1em;">📌</span><span>Pinned</span>`;
+        btn.innerHTML = `<span style="font-size: 1.1em;">📌</span><span>${t('pinnedActionsPage.navButtonLabel')}</span>`;
 
         btn.addEventListener('mouseenter', () => {
             if (!this.isActive) {
@@ -345,7 +352,7 @@ class PinnedActionsPage {
         `;
         header.innerHTML = `
             <span style="font-size: 1.3em;">📌</span>
-            <span style="font-size: 1.1em; font-weight: bold;">Pinned Actions</span>
+            <span style="font-size: 1.1em; font-weight: bold;">${t('pinnedActionsPage.pageTitle')}</span>
             <span style="color: #888; font-size: 0.85em;">(${actions.length})</span>
         `;
         this.pageContainer.appendChild(header);
@@ -360,7 +367,7 @@ class PinnedActionsPage {
         `;
 
         for (const tab of ['overview', 'materials']) {
-            const label = tab === 'overview' ? 'Overview' : 'Materials';
+            const label = tab === 'overview' ? t('pinnedActionsPage.tabOverview') : t('pinnedActionsPage.tabMaterials');
             const btn = document.createElement('button');
             btn.dataset.tab = tab;
             btn.textContent = label;
@@ -426,9 +433,9 @@ class PinnedActionsPage {
             empty.style.cssText = 'text-align: center; padding: 40px 20px; color: #999;';
             empty.innerHTML = `
                 <div style="font-size: 2em; margin-bottom: 12px;">📌</div>
-                <div style="font-size: 1.1em; margin-bottom: 8px;">No pinned actions</div>
+                <div style="font-size: 1.1em; margin-bottom: 8px;">${t('pinnedActionsPage.emptyStateTitle')}</div>
                 <div style="font-size: 0.85em; color: #666;">
-                    Pin actions using the 📌 icon on action tiles to see them here.
+                    ${t('pinnedActionsPage.emptyStateHint')}
                 </div>
             `;
             this.contentArea.appendChild(empty);
@@ -454,7 +461,7 @@ class PinnedActionsPage {
         const iconHeader = document.createElement('div');
         headerRow.appendChild(iconHeader);
 
-        for (const col of COLUMNS) {
+        for (const col of getColumns()) {
             const th = document.createElement('div');
             th.style.cssText = `
                 display: flex;
@@ -580,7 +587,7 @@ class PinnedActionsPage {
         if (actions.length === 0 && this.allActions.length > 0) {
             const noResults = document.createElement('div');
             noResults.style.cssText = 'text-align: center; padding: 20px; color: #888;';
-            noResults.textContent = 'No actions match the current filter.';
+            noResults.textContent = t('pinnedActionsPage.noFilterMatches');
             this.contentArea.appendChild(noResults);
         }
     }
@@ -605,7 +612,7 @@ class PinnedActionsPage {
         if (productionActions.length === 0) {
             const empty = document.createElement('div');
             empty.style.cssText = 'text-align: center; padding: 40px 20px; color: #999;';
-            empty.textContent = 'No production actions pinned';
+            empty.textContent = t('pinnedActionsPage.noProductionActionsPinned');
             contentArea.appendChild(empty);
             return;
         }
@@ -647,7 +654,7 @@ class PinnedActionsPage {
             // Can produce count
             const canProduceEl = document.createElement('div');
             canProduceEl.style.cssText = `font-size: 0.85em; color: ${canProduce > 0 ? config.COLOR_PROFIT : config.COLOR_LOSS};`;
-            canProduceEl.textContent = `Can produce: ${canProduce.toLocaleString()}`;
+            canProduceEl.textContent = t('pinnedActionsPage.canProduceLabel', { count: canProduce.toLocaleString() });
 
             groupHeader.appendChild(iconEl);
             groupHeader.appendChild(nameEl);
@@ -718,7 +725,7 @@ class PinnedActionsPage {
 
         // Title
         const title = document.createElement('div');
-        title.textContent = 'Filter by Skill';
+        title.textContent = t('pinnedActionsPage.filterBySkillTitle');
         title.style.cssText = 'color: #fff; font-weight: bold; margin-bottom: 10px; font-size: 0.85em;';
         popup.appendChild(title);
 
@@ -753,7 +760,7 @@ class PinnedActionsPage {
         btnRow.style.cssText = 'display: flex; gap: 8px;';
 
         const applyBtn = document.createElement('button');
-        applyBtn.textContent = 'Apply';
+        applyBtn.textContent = t('pinnedActionsPage.applyButton');
         applyBtn.style.cssText = `
             flex: 1;
             padding: 6px;
@@ -766,7 +773,7 @@ class PinnedActionsPage {
         `;
 
         const clearBtn = document.createElement('button');
-        clearBtn.textContent = 'Clear';
+        clearBtn.textContent = t('pinnedActionsPage.clearButton');
         clearBtn.style.cssText = `
             flex: 1;
             padding: 6px;

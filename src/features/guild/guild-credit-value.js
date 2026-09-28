@@ -8,6 +8,7 @@
  */
 
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import { marketplaceSession, MARKETPLACE_OWNER } from '../../core/marketplace-session.js';
@@ -143,10 +144,10 @@ function createGuildReturnTab(referenceTab, returnLabel, sessionId) {
     const returnContent = document.createElement('div');
     returnContent.style.textAlign = 'center';
     const returnTitle = document.createElement('div');
-    returnTitle.textContent = '↩ Return';
+    returnTitle.textContent = t('guildCreditValue.returnTabLabel');
     const returnSubtitle = document.createElement('div');
     returnSubtitle.style.cssText = 'font-size:0.75em;color:#60a5fa;';
-    returnSubtitle.textContent = returnLabel || 'Guild';
+    returnSubtitle.textContent = returnLabel || t('guildCreditValue.returnLabelFallback');
     returnContent.append(returnTitle, returnSubtitle);
     returnTab.appendChild(returnContent);
 
@@ -373,7 +374,7 @@ class GuildCreditValue {
                 tr.style.cssText = `border-bottom:1px solid rgba(255,255,255,0.05); color:${isTop ? '#4ade80' : '#e0e0e0'};`;
                 const rate = row.creditCount === 1 ? `${row.itemCount} → 1` : `${row.itemCount} → ${row.creditCount}`;
                 const nameDisplay = row.isToken
-                    ? `${row.name} <span style="color:#6b7280;font-size:9px;">(tokens)</span>`
+                    ? `${row.name} <span style="color:#6b7280;font-size:9px;">${t('guildCreditValue.tokensLabel')}</span>`
                     : row.name;
                 tr.innerHTML = `
                 <td style="padding:4px 6px; text-align:left;">${nameDisplay}</td>
@@ -394,7 +395,7 @@ class GuildCreditValue {
 
         const hdr = document.createElement('div');
         hdr.style.cssText = 'font-size:11px; color:#9ca3af; margin-bottom:6px; text-align:center;';
-        hdr.textContent = 'Gold cost per credit — click to sort';
+        hdr.textContent = t('guildCreditValue.rankingHeader');
         wrapper.appendChild(hdr);
 
         const table = document.createElement('table');
@@ -405,10 +406,10 @@ class GuildCreditValue {
         thRow.style.cssText = 'font-size:11px; border-bottom:1px solid rgba(255,255,255,0.1);';
 
         [
-            { text: 'Item', align: 'left' },
-            { text: 'Rate', align: 'center' },
-            { text: 'Ask ea.', align: 'right' },
-            { text: 'Bid ea.', align: 'right' },
+            { text: t('guildCreditValue.columnItem'), align: 'left' },
+            { text: t('guildCreditValue.columnRate'), align: 'center' },
+            { text: t('guildCreditValue.columnAskEach'), align: 'right' },
+            { text: t('guildCreditValue.columnBidEach'), align: 'right' },
         ].forEach(({ text, align }) => {
             const th = document.createElement('th');
             th.style.cssText = `text-align:${align}; padding:3px 6px; font-weight:500; color:#6b7280;`;
@@ -417,9 +418,9 @@ class GuildCreditValue {
         });
 
         const askTh = document.createElement('th');
-        askTh.textContent = 'Ask/credit';
+        askTh.textContent = t('guildCreditValue.columnAskPerCredit');
         const bidTh = document.createElement('th');
-        bidTh.textContent = 'Bid/credit';
+        bidTh.textContent = t('guildCreditValue.columnBidPerCredit');
         thRow.appendChild(askTh);
         thRow.appendChild(bidTh);
         thead.appendChild(thRow);
@@ -453,8 +454,7 @@ class GuildCreditValue {
         if (rows.some((row) => row.isToken)) {
             const tokenNote = document.createElement('div');
             tokenNote.style.cssText = 'font-size:10px; color:#6b7280; margin-top:4px; text-align:center;';
-            tokenNote.textContent =
-                'Guild Token value is the gold you’d otherwise spend on the cheapest item route, not a market price.';
+            tokenNote.textContent = t('guildCreditValue.tokenValueNote');
             wrapper.appendChild(tokenNote);
         }
 
@@ -500,11 +500,11 @@ class GuildCreditValue {
         if (Object.keys(byShrine).length === 0) return;
 
         const SHRINE_LABELS = {
-            '/guild_shrines/force': 'Force',
-            '/guild_shrines/tempo': 'Tempo',
-            '/guild_shrines/rarity': 'Rarity',
-            '/guild_shrines/scholar': 'Scholar',
-            '/guild_shrines/spirit': 'Spirit',
+            '/guild_shrines/force': t('guildCreditValue.shrineForce'),
+            '/guild_shrines/tempo': t('guildCreditValue.shrineTempo'),
+            '/guild_shrines/rarity': t('guildCreditValue.shrineRarity'),
+            '/guild_shrines/scholar': t('guildCreditValue.shrineScholar'),
+            '/guild_shrines/spirit': t('guildCreditValue.shrineSpirit'),
         };
 
         // Aggregate total costs across all target levels selected
@@ -538,7 +538,7 @@ class GuildCreditValue {
         border:1px solid rgba(255,255,255,0.08); margin-bottom:4px;
     `;
         const headerTitle = document.createElement('span');
-        headerTitle.textContent = 'Shrine Upgrade Planner';
+        headerTitle.textContent = t('guildCreditValue.shrinePlannerHeader');
         const headerArrow = document.createElement('span');
         headerArrow.textContent = '▶';
         header.appendChild(headerTitle);
@@ -574,8 +574,7 @@ class GuildCreditValue {
             totalsEl.innerHTML = '';
 
             if (plans.length === 0) {
-                totalsEl.innerHTML =
-                    '<div style="color:#6b7280; text-align:center; font-size:11px;">Set target levels above current to see costs</div>';
+                totalsEl.innerHTML = `<div style="color:#6b7280; text-align:center; font-size:11px;">${t('guildCreditValue.shrinePlannerEmptyHint')}</div>`;
                 return;
             }
 
@@ -584,14 +583,14 @@ class GuildCreditValue {
 
             const titleEl = document.createElement('div');
             titleEl.style.cssText = 'color:#9ca3af; font-size:11px; margin-bottom:6px;';
-            titleEl.textContent = 'Total upgrade cost';
+            titleEl.textContent = t('guildCreditValue.shrinePlannerTotalCostTitle');
             totalsEl.appendChild(titleEl);
 
             // Guild tokens row
             if (tokens.total > 0) {
                 const row = document.createElement('div');
                 row.style.cssText = 'display:flex; justify-content:space-between; padding:2px 0; font-size:12px;';
-                row.innerHTML = `<span style="color:#aaa;">Guild Tokens</span><span style="color:#e0e0e0; font-weight:600;">${tokens.total.toLocaleString()}</span>`;
+                row.innerHTML = `<span style="color:#aaa;">${t('guildCreditValue.guildTokensLabel')}</span><span style="color:#e0e0e0; font-weight:600;">${tokens.total.toLocaleString()}</span>`;
                 totalsEl.appendChild(row);
             }
 
@@ -618,12 +617,17 @@ class GuildCreditValue {
             const shrineTitleEl = document.createElement('div');
             shrineTitleEl.style.cssText =
                 'color:#c4b5fd; font-size:11px; font-weight:600; margin-bottom:3px; padding:2px 0;';
-            shrineTitleEl.textContent = `${shrineLabel} Shrine${shrineCapLevel > 0 ? ` (cap: ${shrineCapLevel})` : ''}`;
+            shrineTitleEl.textContent = t('guildCreditValue.shrineSectionTitle', {
+                shrine: shrineLabel,
+                cap: shrineCapLevel > 0 ? shrineCapLevel : null,
+            });
             shrineSection.appendChild(shrineTitleEl);
 
             for (const { buffHrid, buff } of buffs.sort((a, b) => a.buffHrid.localeCompare(b.buffHrid))) {
                 const isCombat = buff.isCombat;
-                const buffLabel = isCombat ? 'Combat' : 'Skilling';
+                const buffLabel = isCombat
+                    ? t('guildCreditValue.buffLabelCombat')
+                    : t('guildCreditValue.buffLabelSkilling');
                 const currentLevel = dataManager.getCharacterGuildBuffLevel(buffHrid);
                 const maxLevel = Math.max(...Object.keys(buff.levelCosts).map(Number));
                 const capLevel = shrineCapLevel > 0 ? Math.min(shrineCapLevel, maxLevel) : maxLevel;
@@ -633,7 +637,7 @@ class GuildCreditValue {
 
                 const label = document.createElement('span');
                 label.style.cssText = 'flex:1; color:#9ca3af;';
-                label.textContent = `${buffLabel} (lvl ${currentLevel})`;
+                label.textContent = t('guildCreditValue.buffRowLabel', { buffLabel, level: currentLevel });
 
                 const input = document.createElement('input');
                 input.type = 'number';
@@ -702,7 +706,7 @@ class GuildCreditValue {
 
         if (!selectedItemName) {
             // No item selected yet
-            advisor.innerHTML = `<div style="color:#6b7280; text-align:center;">Select an item to see exchange advice</div>`;
+            advisor.innerHTML = `<div style="color:#6b7280; text-align:center;">${t('guildCreditValue.advisorSelectItemHint')}</div>`;
             modalEl.querySelector(`.${CSS_CLASS}`)?.insertAdjacentElement('afterend', advisor);
             return;
         }
@@ -711,14 +715,14 @@ class GuildCreditValue {
 
         if (!selectedRow) {
             // Item in modal has no conversion for this credit type
-            advisor.innerHTML = `<div style="color:#6b7280; text-align:center;">Selected item has no conversion for this credit</div>`;
+            advisor.innerHTML = `<div style="color:#6b7280; text-align:center;">${t('guildCreditValue.advisorNoConversionHint')}</div>`;
             modalEl.querySelector(`.${CSS_CLASS}`)?.insertAdjacentElement('afterend', advisor);
             return;
         }
 
         if (selectedRow === bestRow) {
             advisor.style.borderColor = 'rgba(74,222,128,0.4)';
-            advisor.innerHTML = `<div style="color:#4ade80; font-weight:600; text-align:center;">✓ Optimal choice for this credit type</div>`;
+            advisor.innerHTML = `<div style="color:#4ade80; font-weight:600; text-align:center;">${t('guildCreditValue.advisorOptimalChoice')}</div>`;
             modalEl.querySelector(`.${CSS_CLASS}`)?.insertAdjacentElement('afterend', advisor);
             return;
         }
@@ -729,7 +733,7 @@ class GuildCreditValue {
         const directCredits = batches * selectedRow.creditCount;
 
         if (!sellPrice || sellPrice <= 0 || !bestRow.sellPrice || bestRow.sellPrice <= 0) {
-            advisor.innerHTML = `<div style="color:#6b7280; text-align:center;">Best: <b style="color:#e0e0e0;">${bestRow.name}</b> — no price data for comparison</div>`;
+            advisor.innerHTML = `<div style="color:#6b7280; text-align:center;">${t('guildCreditValue.advisorNoPriceData', { name: `<b style="color:#e0e0e0;">${bestRow.name}</b>` })}</div>`;
             modalEl.querySelector(`.${CSS_CLASS}`)?.insertAdjacentElement('afterend', advisor);
             return;
         }
@@ -746,26 +750,27 @@ class GuildCreditValue {
 
         const diffColor = creditDiff > 0 ? '#4ade80' : '#ff6b6b';
         const diffSign = creditDiff > 0 ? '+' : '';
-        const diffLabel = creditDiff > 0 ? '↑ better' : '↓ worse';
+        const diffLabel =
+            creditDiff > 0 ? t('guildCreditValue.advisorBetterLabel') : t('guildCreditValue.advisorWorseLabel');
 
         advisor.style.borderColor = creditDiff > 0 ? 'rgba(74,222,128,0.3)' : 'rgba(255,107,107,0.3)';
         advisor.innerHTML = `
-        <div style="color:#9ca3af; margin-bottom:6px; font-size:11px;">Sell → rebuy best item (${SELLER_TAX * 100}% tax)</div>
+        <div style="color:#9ca3af; margin-bottom:6px; font-size:11px;">${t('guildCreditValue.advisorSellRebuyHeader', { taxPercent: SELLER_TAX * 100 })}</div>
         <div style="display:flex; justify-content:space-between; margin-bottom:3px;">
-            <span style="color:#aaa;">Direct exchange</span>
-            <span style="color:#e0e0e0; font-weight:600;">${directCredits.toLocaleString()} credits</span>
+            <span style="color:#aaa;">${t('guildCreditValue.advisorDirectExchangeLabel')}</span>
+            <span style="color:#e0e0e0; font-weight:600;">${t('guildCreditValue.creditsAmount', { amount: directCredits.toLocaleString() })}</span>
         </div>
         <div style="display:flex; justify-content:space-between; margin-bottom:3px;">
-            <span style="color:#aaa;">Sell proceeds (after tax)</span>
+            <span style="color:#aaa;">${t('guildCreditValue.advisorSellProceedsLabel')}</span>
             <span style="color:#e0e0e0;">${formatKMB(net)}</span>
         </div>
         <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
-            <span style="color:#aaa;">Buy <b style="color:#e0e0e0;">${bestRow.name}</b> → credits</span>
-            <span style="color:#e0e0e0; font-weight:600;">${bestCredits.toLocaleString()} credits</span>
+            <span style="color:#aaa;">${t('guildCreditValue.advisorBuyLabel', { name: `<b style="color:#e0e0e0;">${bestRow.name}</b>` })}</span>
+            <span style="color:#e0e0e0; font-weight:600;">${t('guildCreditValue.creditsAmount', { amount: bestCredits.toLocaleString() })}</span>
         </div>
         <div style="display:flex; justify-content:space-between; border-top:1px solid rgba(255,255,255,0.1); padding-top:6px;">
-            <span style="color:#aaa;">Difference</span>
-            <span style="color:${diffColor}; font-weight:700;">${diffSign}${creditDiff.toLocaleString()} credits ${diffLabel}</span>
+            <span style="color:#aaa;">${t('guildCreditValue.advisorDifferenceLabel')}</span>
+            <span style="color:${diffColor}; font-weight:700;">${t('guildCreditValue.differenceValue', { sign: diffSign, amount: creditDiff.toLocaleString(), label: diffLabel })}</span>
         </div>
     `;
 
@@ -814,8 +819,8 @@ class GuildCreditValue {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'mwi-guild-exchange-all-btn';
-        btn.textContent = 'ALL';
-        btn.title = `Fill max: ${maxUnits.toLocaleString()}`;
+        btn.textContent = t('guildCreditValue.allButtonLabel');
+        btn.title = t('guildCreditValue.fillMaxTooltip', { amount: maxUnits.toLocaleString() });
         btn.style.cssText = `
             flex-shrink: 0; padding: 6px 10px; font-size: 12px; font-weight: 700;
             border-radius: 6px; border: none; background: #6366f1; color: #fff;
@@ -861,7 +866,7 @@ class GuildCreditValue {
         color:#fff; border:1px solid rgba(91,141,239,0.4); border-radius:6px;
         cursor:pointer; font-size:12px; font-weight:600;
     `;
-        copyBtn.textContent = 'Copy List';
+        copyBtn.textContent = t('guildCreditValue.copyListButtonLabel');
         copyBtn.addEventListener('mouseenter', () => {
             copyBtn.style.background = 'linear-gradient(180deg,rgba(91,141,239,0.35) 0%,rgba(91,141,239,0.25) 100%)';
         });
@@ -876,9 +881,9 @@ class GuildCreditValue {
             if (!names) return;
             try {
                 await navigator.clipboard.writeText(names);
-                copyBtn.textContent = 'Copied!';
+                copyBtn.textContent = t('guildCreditValue.copiedButtonLabel');
                 setTimeout(() => {
-                    copyBtn.textContent = 'Copy List';
+                    copyBtn.textContent = t('guildCreditValue.copyListButtonLabel');
                 }, 1500);
             } catch (error) {
                 console.error('[GuildCreditValue] Failed to copy member list:', error);
@@ -995,7 +1000,7 @@ class GuildCreditValue {
                 tr.style.cssText = 'border-bottom:1px solid rgba(255,255,255,0.05); color:#e0e0e0;';
                 tr.innerHTML = `
                 <td style="padding:4px 6px; text-align:left;">${row.itemName}</td>
-                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.effectiveRequired.toLocaleString()}${row.owned > 0 ? ` <span style="color:#6b7280;font-size:10px;">(own ${row.owned.toLocaleString()})</span>` : ''}</td>
+                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.effectiveRequired.toLocaleString()}${row.owned > 0 ? ` <span style="color:#6b7280;font-size:10px;">${t('guildCreditValue.ownedSuffix', { count: row.owned.toLocaleString() })}</span>` : ''}</td>
                 <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.sellEach ? formatKMB(row.sellEach) : '–'}</td>
                 <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buyEach ? formatKMB(row.buyEach) : '–'}</td>
                 <td style="padding:4px 6px; text-align:right;">${row.sellSub ? formatKMB(row.sellSub) : '–'}</td>
@@ -1040,7 +1045,7 @@ class GuildCreditValue {
             const totalRow = document.createElement('tr');
             totalRow.style.cssText = 'border-top:1px solid rgba(255,255,255,0.2); color:#4ade80; font-weight:700;';
             totalRow.innerHTML = `
-            <td style="padding:5px 6px;" colspan="4">Total</td>
+            <td style="padding:5px 6px;" colspan="4">${t('guildCreditValue.totalRowLabel')}</td>
             <td style="padding:5px 6px; text-align:right;">${totalSell > 0 ? formatKMB(totalSell) : '–'}${!allSellPriced ? '*' : ''}</td>
             <td style="padding:5px 6px; text-align:right;">${totalBuy > 0 ? formatKMB(totalBuy) : '–'}${!allBuyPriced ? '*' : ''}</td>
         `;
@@ -1054,7 +1059,7 @@ class GuildCreditValue {
 
         const hdr = document.createElement('div');
         hdr.style.cssText = 'font-size:11px; color:#9ca3af; margin-bottom:6px; text-align:center;';
-        hdr.textContent = 'Gold cost of upgrade — click to sort';
+        hdr.textContent = t('guildCreditValue.upgradeCostHeader');
         wrapper.appendChild(hdr);
 
         const table = document.createElement('table');
@@ -1065,10 +1070,10 @@ class GuildCreditValue {
         thRow.style.cssText = 'font-size:11px; border-bottom:1px solid rgba(255,255,255,0.1);';
 
         [
-            { text: 'Item', align: 'left' },
-            { text: 'Qty', align: 'right' },
-            { text: 'Ask ea.', align: 'right' },
-            { text: 'Bid ea.', align: 'right' },
+            { text: t('guildCreditValue.columnItem'), align: 'left' },
+            { text: t('guildCreditValue.columnQty'), align: 'right' },
+            { text: t('guildCreditValue.columnAskEach'), align: 'right' },
+            { text: t('guildCreditValue.columnBidEach'), align: 'right' },
         ].forEach(({ text, align }) => {
             const th = document.createElement('th');
             th.style.cssText = `text-align:${align}; padding:3px 6px; font-weight:500; color:#6b7280;`;
@@ -1077,9 +1082,9 @@ class GuildCreditValue {
         });
 
         const askTh = document.createElement('th');
-        askTh.textContent = 'Ask cost';
+        askTh.textContent = t('guildCreditValue.columnAskCost');
         const bidTh = document.createElement('th');
-        bidTh.textContent = 'Bid cost';
+        bidTh.textContent = t('guildCreditValue.columnBidCost');
         thRow.appendChild(askTh);
         thRow.appendChild(bidTh);
         thead.appendChild(thRow);
@@ -1113,7 +1118,7 @@ class GuildCreditValue {
         if (!allSellPriced || !allBuyPriced) {
             const note = document.createElement('div');
             note.style.cssText = 'font-size:10px; color:#6b7280; margin-top:4px; text-align:center;';
-            note.textContent = '* some items have no market price data';
+            note.textContent = t('guildCreditValue.unpricedItemsNote');
             wrapper.appendChild(note);
         }
 
@@ -1148,7 +1153,7 @@ class GuildCreditValue {
             color:#fff; border:1px solid rgba(91,141,239,0.4); border-radius:6px;
             cursor:pointer; font-size:12px; font-weight:600;
         `;
-            missingBtn.textContent = 'Missing Mats Marketplace';
+            missingBtn.textContent = t('guildCreditValue.missingMatsButtonLabel');
             missingBtn.addEventListener('mouseenter', () => {
                 missingBtn.style.background =
                     'linear-gradient(180deg,rgba(91,141,239,0.35) 0%,rgba(91,141,239,0.25) 100%)';

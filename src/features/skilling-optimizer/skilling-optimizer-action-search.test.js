@@ -4,6 +4,7 @@
  * search box filters visible action rows by name without changing what's actually selected.
  */
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { t } from '../../core/i18n.js';
 
 const mocks = vi.hoisted(() => ({
     actions: [],
@@ -119,7 +120,7 @@ describe('action picker search filter', () => {
         search.dispatchEvent(new Event('input'));
 
         const rows = [...popup.querySelectorAll('label')];
-        const allRow = rows.find((r) => r.textContent.trim() === 'All');
+        const allRow = rows.find((r) => r.textContent.trim() === t('skillingOptimizer.allActionsOption'));
         expect(allRow.style.display).not.toBe('none');
     });
 

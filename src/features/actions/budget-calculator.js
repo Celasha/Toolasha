@@ -7,6 +7,7 @@
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import dataManager from '../../core/data-manager.js';
+import { t } from '../../core/i18n.js';
 import marketAPI from '../../api/marketplace.js';
 import { calculateMaterialRequirements } from '../../utils/material-calculator.js';
 import { formatKMB, formatWithSeparator } from '../../utils/formatters.js';
@@ -167,11 +168,12 @@ function showBreakdownModal(budget, result) {
     `;
     header.innerHTML = `
         <div>
-            <span style="font-size:15px; font-weight:600; color:#e0e0e0;">Budget Calculator</span>
+            <span style="font-size:15px; font-weight:600; color:#e0e0e0;">${t('budgetCalculator.modalTitle')}</span>
             <span style="margin-left:10px; color:#aaa;">
-                Budget: <strong style="color:#fff;">${formatKMB(budget)}</strong>
-                &nbsp;→&nbsp;
-                <strong style="color:#7ec87e;">${formatWithSeparator(result.n)} units</strong>
+                ${t('budgetCalculator.budgetSummaryLine', {
+                    budget: formatKMB(budget),
+                    units: formatWithSeparator(result.n),
+                })}
             </span>
         </div>
         <button id="mwi-budget-modal-close" style="
@@ -208,7 +210,7 @@ function showBreakdownModal(budget, result) {
 
             const askCell = ask
                 ? `<td style="${tdStyle}">${formatKMB(ask)}</td>`
-                : `<td style="${tdDimStyle}">${mat.isTradeable ? 'No data' : '—'}</td>`;
+                : `<td style="${tdDimStyle}">${mat.isTradeable ? t('budgetCalculator.noData') : '—'}</td>`;
 
             const costCell =
                 lineCost > 0
@@ -234,22 +236,22 @@ function showBreakdownModal(budget, result) {
         <table style="width:100%; border-collapse:collapse;">
             <thead>
                 <tr>
-                    <th style="${thLeftStyle}">Ingredient</th>
-                    <th style="${thStyle}">Required</th>
-                    <th style="${thStyle}">On Hand</th>
-                    <th style="${thStyle}">To Buy</th>
-                    <th style="${thStyle}">Ask Price</th>
-                    <th style="${thStyle}">Total Cost</th>
+                    <th style="${thLeftStyle}">${t('budgetCalculator.colIngredient')}</th>
+                    <th style="${thStyle}">${t('budgetCalculator.colRequired')}</th>
+                    <th style="${thStyle}">${t('budgetCalculator.colOnHand')}</th>
+                    <th style="${thStyle}">${t('budgetCalculator.colToBuy')}</th>
+                    <th style="${thStyle}">${t('budgetCalculator.colAskPrice')}</th>
+                    <th style="${thStyle}">${t('budgetCalculator.colTotalCost')}</th>
                 </tr>
             </thead>
             <tbody>${rows}</tbody>
             <tfoot>
                 <tr>
-                    <td colspan="5" style="${summaryRowStyle}; text-align:left; color:#aaa;">Per unit cost (ask)</td>
+                    <td colspan="5" style="${summaryRowStyle}; text-align:left; color:#aaa;">${t('budgetCalculator.perUnitCostLabel')}</td>
                     <td style="${summaryRowStyle}">${formatKMB(Math.round(perUnitCost))}</td>
                 </tr>
                 <tr>
-                    <td colspan="5" style="${summaryRowStyle}; text-align:left; color:#aaa;">Total spend</td>
+                    <td colspan="5" style="${summaryRowStyle}; text-align:left; color:#aaa;">${t('budgetCalculator.totalSpendLabel')}</td>
                     <td style="${summaryRowStyle}; color:#7ec87e;">${formatKMB(totalSpend)}</td>
                 </tr>
             </tfoot>
@@ -381,7 +383,7 @@ class BudgetCalculator {
 
         const input = document.createElement('input');
         input.type = 'text';
-        input.placeholder = 'Budget (e.g. 50m)';
+        input.placeholder = t('budgetCalculator.budgetInputPlaceholder');
         input.style.cssText = `
             flex: 1;
             background: #2a2a2a;
@@ -394,7 +396,7 @@ class BudgetCalculator {
         `;
 
         const calcBtn = document.createElement('button');
-        calcBtn.textContent = 'Calculate';
+        calcBtn.textContent = t('budgetCalculator.calculateButton');
         calcBtn.style.cssText = `
             background: linear-gradient(180deg, rgba(126,200,126,0.2) 0%, rgba(126,200,126,0.1) 100%);
             color: #e0e0e0;
@@ -415,7 +417,7 @@ class BudgetCalculator {
         });
 
         const detailsLink = document.createElement('span');
-        detailsLink.title = 'View last breakdown';
+        detailsLink.title = t('budgetCalculator.viewLastBreakdownTooltip');
         detailsLink.style.cssText = 'font-size:14px; cursor:pointer; opacity:0.4; user-select:none;';
         detailsLink.textContent = '📋';
         detailsLink.style.display = 'none';
@@ -430,10 +432,10 @@ class BudgetCalculator {
             const budget = parseKMB(raw);
             if (isNaN(budget) || budget <= 0) {
                 input.style.borderColor = '#c0392b';
-                const t = setTimeout(() => {
+                const invalidBudgetTimer = setTimeout(() => {
                     input.style.borderColor = '#555';
                 }, 1500);
-                this.timerRegistry.registerTimeout(t);
+                this.timerRegistry.registerTimeout(invalidBudgetTimer);
                 return;
             }
             input.style.borderColor = '#555';
@@ -443,11 +445,11 @@ class BudgetCalculator {
 
             const result = findMaxUnits(actionHrid, budget);
             if (!result) {
-                calcBtn.textContent = 'No data';
-                const t = setTimeout(() => {
-                    calcBtn.textContent = 'Calculate';
+                calcBtn.textContent = t('budgetCalculator.noData');
+                const noDataTimer = setTimeout(() => {
+                    calcBtn.textContent = t('budgetCalculator.calculateButton');
                 }, 2000);
-                this.timerRegistry.registerTimeout(t);
+                this.timerRegistry.registerTimeout(noDataTimer);
                 return;
             }
 

@@ -10,6 +10,7 @@
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
+import { t } from '../../core/i18n.js';
 import storage from '../../core/storage.js';
 import webSocketHook from '../../core/websocket.js';
 import { repaintTaskCard } from './task-card-visual-state.js';
@@ -149,7 +150,7 @@ class TaskRerollProtection {
         const btn = document.createElement('span');
         btn.className = 'mwi-task-protection-btn';
         btn.textContent = '🛡️';
-        btn.title = 'Configure task reroll protection';
+        btn.title = t('taskRerollProtection.configureTooltip');
         btn.style.cssText = 'cursor:pointer; font-size:16px; margin-left:6px; opacity:0.7; transition:opacity 0.1s;';
         btn.addEventListener('mouseover', () => {
             btn.style.opacity = '1';
@@ -322,8 +323,8 @@ class TaskRerollProtection {
                     if (!isPerTaskProtected && !isCapProtected) return;
 
                     const warningMsg = isPerTaskProtected
-                        ? 'Protected task! Unlocks in 3s...'
-                        : 'Reroll at cap! Unlocks in 3s...';
+                        ? t('taskRerollProtection.protectedTaskWarning')
+                        : t('taskRerollProtection.rerollAtCapWarning');
 
                     // Phase 2: confirmation window is open — allow the reroll through
                     if (card.dataset.mwiRerollConfirmed === '1') {
@@ -352,7 +353,7 @@ class TaskRerollProtection {
                     const lockdownTimer = setTimeout(() => {
                         card.dataset.mwiRerollLocked = '';
                         card.dataset.mwiRerollConfirmed = '1';
-                        this._showWarning(card, 'Click reroll now to confirm.');
+                        this._showWarning(card, t('taskRerollProtection.confirmRerollMessage'));
 
                         // Auto-clear confirmation after another 3s
                         const confirmTimer = setTimeout(() => {
@@ -374,7 +375,7 @@ class TaskRerollProtection {
      * @param {string} [message='Protected task! Unlocks in 3s...']
      * @private
      */
-    _showWarning(taskCard, message = 'Protected task! Unlocks in 3s...') {
+    _showWarning(taskCard, message = t('taskRerollProtection.protectedTaskWarning')) {
         this._clearWarning(taskCard);
 
         const warning = document.createElement('div');
@@ -622,7 +623,7 @@ class TaskRerollProtection {
             flex-shrink: 0;
         `;
         header.innerHTML = `
-            <span style="font-weight:700; font-size:14px; color:#4a9eff;">Protected Tasks</span>
+            <span style="font-weight:700; font-size:14px; color:#4a9eff;">${t('taskRerollProtection.popupTitle')}</span>
             <button id="mwi-task-protection-close" style="
                 background:none; border:none; color:#aaa; font-size:22px;
                 cursor:pointer; padding:0; line-height:1;">×</button>
@@ -633,7 +634,7 @@ class TaskRerollProtection {
         searchDiv.style.cssText = 'padding: 8px 14px; flex-shrink: 0;';
         const searchInput = document.createElement('input');
         searchInput.type = 'search';
-        searchInput.placeholder = 'Search actions, monsters, zones...';
+        searchInput.placeholder = t('taskRerollProtection.searchPlaceholder');
         searchInput.style.cssText = `
             width: 100%;
             padding: 6px 10px;
@@ -694,8 +695,7 @@ class TaskRerollProtection {
 
             let html = '';
             if (!query && filtered.length === 0) {
-                html =
-                    '<div style="color:#666; text-align:center; padding:20px 0;">No protected tasks yet. Search to add.</div>';
+                html = `<div style="color:#666; text-align:center; padding:20px 0;">${t('taskRerollProtection.noProtectedTasksMessage')}</div>`;
             }
 
             for (const item of filtered.slice(0, 50)) {
@@ -708,7 +708,7 @@ class TaskRerollProtection {
                     checkmark = allProtected ? '✓' : protectedCount > 0 ? '~' : '';
                     checkColor = protectedCount > 0 ? '#4a9eff' : '#444';
                     nameColor = protectedCount > 0 ? '#e0e0e0' : '#aaa';
-                    typeLabel = 'Zone (' + monsters.length + ')';
+                    typeLabel = t('taskRerollProtection.zoneTypeLabel', { count: monsters.length });
                 } else {
                     const isProtected = this.protectedHrids.has(item.hrid);
                     const skillType = getActionSkillType(item.hrid, gameData);
@@ -733,7 +733,7 @@ class TaskRerollProtection {
             }
 
             if (filtered.length > 50) {
-                html += `<div style="color:#666; text-align:center; padding:8px;">...${filtered.length - 50} more (refine search)</div>`;
+                html += `<div style="color:#666; text-align:center; padding:8px;">${t('taskRerollProtection.moreResultsRefineSearch', { count: filtered.length - 50 })}</div>`;
             }
 
             listContainer.innerHTML = html;
@@ -802,7 +802,7 @@ class TaskRerollProtection {
                 ).join('');
                 capRow.innerHTML = `
                     <span style="width:18px; text-align:center; color:#f0a830; font-weight:700;">✓</span>
-                    <span style="color:#e0e0e0;">Block rerolls at</span>
+                    <span style="color:#e0e0e0;">${t('taskRerollProtection.blockRerollsAtLabel')}</span>
                     <select id="mwi-cap-coin" style="${selectCss}">${coinOpts}</select>
                     <select id="mwi-cap-cowbell" style="${selectCss}">${cowbellOpts}</select>
                 `;
@@ -823,8 +823,8 @@ class TaskRerollProtection {
             } else {
                 capRow.innerHTML = `
                     <span style="width:18px; text-align:center; color:#444; font-weight:700;"></span>
-                    <span style="flex:1; color:#aaa;">Block rerolls at cap</span>
-                    <span style="color:#888; font-size:11px;">320K💰 / 32🔔</span>
+                    <span style="flex:1; color:#aaa;">${t('taskRerollProtection.blockRerollsAtCapLabel')}</span>
+                    <span style="color:#888; font-size:11px;">${t('taskRerollProtection.capDisplayDefault')}</span>
                 `;
             }
         };

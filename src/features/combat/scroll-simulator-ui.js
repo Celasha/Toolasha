@@ -8,6 +8,7 @@
 
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } from '../../utils/panel-z-index.js';
 import scrollSimulator from './scroll-simulator.js';
 import loadoutState from '../../core/loadout-state.js';
@@ -153,7 +154,7 @@ class ScrollSimPopup {
         const title = document.createElement('span');
         title.style.cssText = `font-size: 0.9rem; font-weight: 600; color: ${config.COLOR_ACCENT};`;
         const contextLabel = this.loadoutName ? this.loadoutName : 'Defaults';
-        title.textContent = `Scroll Simulation — ${contextLabel}`;
+        title.textContent = t('scrollSimulatorUi.headingWithDash', { contextLabel });
 
         const closeBtn = document.createElement('button');
         closeBtn.textContent = '×';
@@ -335,7 +336,7 @@ function injectButton(navButtons) {
 
     const button = document.createElement('button');
     button.id = BUTTON_ID;
-    button.textContent = 'Scroll Simulation';
+    button.textContent = t('scrollSimulatorUi.title');
     button.className = 'Button_button__1Fe9z';
     button.style.cssText = `white-space: nowrap;`;
     button.addEventListener('click', () => popup.open(loadoutName));

@@ -17,6 +17,7 @@ import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import storage from '../../core/storage.js';
 import webSocketHook from '../../core/websocket.js';
+import { t } from '../../core/i18n.js';
 import { addStyles, removeStyles } from '../../utils/dom.js';
 import { GAME } from '../../utils/selectors.js';
 import {
@@ -32,7 +33,6 @@ const TAB_ID = 'mwi-notification-log-tab';
 const PANEL_ID = 'mwi-notification-log-panel';
 const ACTIVE_CLASS = 'mwi-notification-log-active';
 const STYLE_ID = 'mwi-notification-log-css';
-const TAB_LABEL = 'Log';
 const DEFAULT_MAX_ENTRIES = 100;
 
 const CSS = `
@@ -129,7 +129,11 @@ function getEntryCategory(entry) {
  */
 function formatEntryText(entry) {
     if (entry.type === 'mention') {
-        return `Mentioned by ${entry.sName} in ${entry.channelName}: ${entry.text}`;
+        return t('notificationLog.mentionedByLine', {
+            sender: entry.sName,
+            channel: entry.channelName,
+            text: entry.text,
+        });
     }
     return formatNotificationMessage(entry.message, entry.variables);
 }
@@ -284,7 +288,7 @@ class NotificationLog {
         const badge = button.querySelector('[class*="MuiBadge-badge"]');
         if (badge) badge.remove();
         const target = button.querySelector('[class*="MuiTab-wrapper"], span, div') || button;
-        target.textContent = TAB_LABEL;
+        target.textContent = t('notificationLog.tabLabel');
 
         button.id = TAB_ID;
         button.style.minWidth = '0';
@@ -292,7 +296,7 @@ class NotificationLog {
         button.setAttribute('aria-selected', 'false');
         button.setAttribute('tabindex', '-1');
         button.classList.remove('Mui-selected');
-        button.title = 'Log of item trades, level-ups, guild events, and other notifications';
+        button.title = t('notificationLog.tabTooltip');
         button.addEventListener('click', (event) => {
             event.stopPropagation();
             this._activateTab();
@@ -346,8 +350,8 @@ class NotificationLog {
 
         const clearAllBtn = document.createElement('button');
         clearAllBtn.className = 'mwi-notiflog-clear-all';
-        clearAllBtn.textContent = 'Clear All';
-        clearAllBtn.title = 'Delete all logged notifications';
+        clearAllBtn.textContent = t('settings.clearAllButton');
+        clearAllBtn.title = t('notificationLog.clearAllTooltip');
         clearAllBtn.addEventListener('click', () => this._clearAll());
         filtersEl.appendChild(clearAllBtn);
 
@@ -371,7 +375,7 @@ class NotificationLog {
      */
     _clearAll() {
         if (this.entries.length === 0) return;
-        const confirmed = confirm(`Delete all ${this.entries.length} logged notifications? This cannot be undone.`);
+        const confirmed = confirm(t('notificationLog.clearAllConfirm', { count: this.entries.length }));
         if (!confirmed) return;
 
         this.entries = [];
@@ -456,7 +460,7 @@ class NotificationLog {
         if (visible.length === 0) {
             const empty = document.createElement('div');
             empty.className = 'mwi-notiflog-empty';
-            empty.textContent = 'No notifications match the current filters.';
+            empty.textContent = t('notificationLog.noEntriesMatchFilters');
             this.listEl.appendChild(empty);
             return;
         }
@@ -476,7 +480,7 @@ class NotificationLog {
             const deleteBtn = document.createElement('button');
             deleteBtn.className = 'mwi-notiflog-delete';
             deleteBtn.textContent = '✕';
-            deleteBtn.title = 'Delete this notification';
+            deleteBtn.title = t('notificationLog.deleteEntryTooltip');
             deleteBtn.addEventListener('click', () => this._removeEntry(entry));
 
             row.appendChild(time);

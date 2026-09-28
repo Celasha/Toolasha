@@ -7,6 +7,7 @@
  */
 
 import config from '../../../core/config.js';
+import { t } from '../../../core/i18n.js';
 import dataManager from '../../../core/data-manager.js';
 import domObserver from '../../../core/dom-observer.js';
 import { formatLargeNumber } from '../../../utils/formatters.js';
@@ -132,8 +133,8 @@ class OpenableAnalyticsUI {
         button.type = 'button';
         button.className = className;
         button.textContent = '🎁';
-        button.title = 'Openable Analytics';
-        button.setAttribute('aria-label', 'Openable Analytics');
+        button.title = t('openableAnalytics.title');
+        button.setAttribute('aria-label', t('openableAnalytics.title'));
         button.onclick = () => this.showPopup();
         return button;
     }
@@ -244,7 +245,7 @@ class OpenableAnalyticsUI {
 
         const titleWrap = document.createElement('div');
         const title = document.createElement('h2');
-        title.textContent = 'Openable Analytics';
+        title.textContent = t('openableAnalytics.title');
         title.style.cssText = `margin: 0; color: ${textColor}; font-size: 20px;`;
         const characterName = document.createElement('div');
         characterName.style.cssText = 'font-size:12px; opacity:0.7; margin-top:2px;';
@@ -255,7 +256,7 @@ class OpenableAnalyticsUI {
         const closeButton = document.createElement('button');
         closeButton.type = 'button';
         closeButton.textContent = '×';
-        closeButton.setAttribute('aria-label', 'Close');
+        closeButton.setAttribute('aria-label', t('openableAnalytics.closeAriaLabel'));
         closeButton.style.cssText = `background: none; border: none; color: ${textColor}; font-size: 28px; cursor: pointer; padding: 0; line-height: 1;`;
         closeButton.onclick = () => this.closePopup();
 
@@ -331,7 +332,10 @@ class OpenableAnalyticsUI {
         for (const scope of ['session', 'lifetime']) {
             const button = document.createElement('button');
             button.type = 'button';
-            button.textContent = scope === 'session' ? 'Session' : 'Lifetime';
+            button.textContent =
+                scope === 'session'
+                    ? t('openableAnalytics.sessionScopeLabel')
+                    : t('openableAnalytics.lifetimeScopeLabel');
             const active = scope === this.scope;
             button.style.cssText = `
                 flex:1; padding:6px 10px; border-radius:4px; cursor:pointer; font-size:13px;
@@ -351,13 +355,13 @@ class OpenableAnalyticsUI {
         wrapper.style.cssText = 'opacity:0.75; padding:12px 0; font-size:13px; line-height:1.5;';
 
         if (this.scope === 'session') {
-            wrapper.textContent = 'No tracked chest, crate, or cache openings this session.';
+            wrapper.textContent = t('openableAnalytics.emptyStateSession');
             return wrapper;
         }
 
-        wrapper.innerHTML = 'No chest, crate, or cache history yet.<br>Open one to start tracking.<br>';
+        wrapper.innerHTML = t('openableAnalytics.emptyStateLifetime');
         const importLink = document.createElement('span');
-        importLink.textContent = 'Import History';
+        importLink.textContent = t('openableAnalytics.importHistoryLabel');
         importLink.style.cssText = 'cursor:pointer; text-decoration:underline;';
         importLink.onclick = () => {
             this.manageDataOpen = true;
@@ -416,7 +420,7 @@ class OpenableAnalyticsUI {
         if (aggregate.hasImportedData) {
             const infoMark = document.createElement('span');
             infoMark.textContent = 'ⓘ';
-            infoMark.title = 'Includes imported historical data';
+            infoMark.title = t('openableAnalytics.includesImportedDataTooltip');
             infoMark.style.cssText = `flex-shrink:0; color:${config.COLOR_INFO};`;
             count.appendChild(document.createTextNode(' '));
             count.appendChild(infoMark);
@@ -472,20 +476,19 @@ class OpenableAnalyticsUI {
         summaryRow.style.cssText = 'display:flex; justify-content:space-between; margin-bottom:10px; font-size:13px;';
 
         const actualCol = document.createElement('div');
-        actualCol.innerHTML = `<div style="opacity:0.7; font-size:11px;">Actual</div>${formatLargeNumber(aggregate.actualValueTotal)}${aggregate.actualValuePartialEvents > 0 ? ' <span title="One or more openings/imports could not be fully priced">[Partial]</span>' : ''}`;
+        actualCol.innerHTML = `<div style="opacity:0.7; font-size:11px;">${t('openableAnalytics.actualLabel')}</div>${formatLargeNumber(aggregate.actualValueTotal)}${aggregate.actualValuePartialEvents > 0 ? ` <span title="${t('openableAnalytics.partialTooltip')}">${t('openableAnalytics.partialLabel')}</span>` : ''}`;
 
         const expectedCol = document.createElement('div');
         const expectedHasAny = aggregate.expectedValueAvailableEvents > 0;
-        expectedCol.innerHTML = `<div style="opacity:0.7; font-size:11px;">Expected</div>${expectedHasAny ? formatLargeNumber(aggregate.expectedValueTotal) : '—'}`;
+        expectedCol.innerHTML = `<div style="opacity:0.7; font-size:11px;">${t('openableAnalytics.expectedLabel')}</div>${expectedHasAny ? formatLargeNumber(aggregate.expectedValueTotal) : '—'}`;
 
         const luckCol = document.createElement('div');
         luckCol.style.textAlign = 'right';
         const luckHeader = document.createElement('div');
         luckHeader.style.cssText = 'opacity:0.7; font-size:11px;';
         const luckInfo = document.createElement('span');
-        luckInfo.textContent = 'Luck ⓘ';
-        luckInfo.title =
-            'Luck is Actual loot value minus Expected loot value. It does not include the container/key cost and is not opening profit.';
+        luckInfo.textContent = t('openableAnalytics.luckLabel');
+        luckInfo.title = t('openableAnalytics.luckTooltip');
         luckHeader.appendChild(luckInfo);
         const luckValueEl = document.createElement('div');
         if (!luckEligible) {
@@ -506,8 +509,7 @@ class OpenableAnalyticsUI {
         if (aggregate.hasImportedData) {
             const note = document.createElement('div');
             note.style.cssText = 'font-size:11px; opacity:0.7; margin-bottom:10px; line-height:1.35;';
-            note.textContent =
-                'Includes imported historical data: imported raw counts are recalculated using current Toolasha prices/loot model at import time, and imported/live periods may overlap.';
+            note.textContent = t('openableAnalytics.importedDataNote');
             wrapper.appendChild(note);
         }
 
@@ -518,7 +520,9 @@ class OpenableAnalyticsUI {
             deleteRow.style.cssText = 'margin-top:10px;';
             const deleteButton = document.createElement('button');
             deleteButton.type = 'button';
-            deleteButton.textContent = `Delete ${containerLabel(containerHrid)} Data…`;
+            deleteButton.textContent = t('openableAnalytics.deleteContainerButton', {
+                containerName: containerLabel(containerHrid),
+            });
             deleteButton.disabled = this.mutationInFlight;
             deleteButton.style.cssText = this.destructiveButtonStyle();
             deleteButton.onclick = () => this.handleDeleteContainer(containerHrid);
@@ -541,14 +545,14 @@ class OpenableAnalyticsUI {
         const wrapper = document.createElement('div');
 
         const heading = document.createElement('div');
-        heading.textContent = 'Loot';
+        heading.textContent = t('openableAnalytics.lootHeading');
         heading.style.cssText = 'font-weight:600; margin-bottom:6px; font-size:13px;';
         wrapper.appendChild(heading);
 
         const entries = Object.entries(aggregate.itemTotals || {});
         if (entries.length === 0) {
             const empty = document.createElement('div');
-            empty.textContent = 'No items gained in this scope.';
+            empty.textContent = t('openableAnalytics.noItemsMessage');
             empty.style.cssText = 'opacity:0.75; font-size:12px;';
             wrapper.appendChild(empty);
             return wrapper;
@@ -562,7 +566,7 @@ class OpenableAnalyticsUI {
 
         const headerRow = document.createElement('tr');
         headerRow.style.cssText = 'opacity:0.7; text-align:left;';
-        headerRow.innerHTML = `<th style="font-weight:400; padding:2px 0;">Item</th><th style="font-weight:400; text-align:right; padding:2px 0;">Qty</th><th style="font-weight:400; text-align:right; padding:2px 0;">Value <span title="Values are the amounts recorded at each opening/import, not current market value.">ⓘ</span></th>`;
+        headerRow.innerHTML = `<th style="font-weight:400; padding:2px 0;">${t('openableAnalytics.itemColumnHeader')}</th><th style="font-weight:400; text-align:right; padding:2px 0;">${t('openableAnalytics.qtyColumnHeader')}</th><th style="font-weight:400; text-align:right; padding:2px 0;">${t('openableAnalytics.valueColumnHeader')} <span title="${t('openableAnalytics.valueColumnTooltip')}">ⓘ</span></th>`;
         table.appendChild(headerRow);
 
         for (const [itemHrid, count] of sorted) {
@@ -650,7 +654,7 @@ class OpenableAnalyticsUI {
         details.style.cssText = 'margin-top:8px; border-top:1px solid #3a3a3a; padding-top:10px;';
 
         const summary = document.createElement('summary');
-        summary.textContent = 'Manage Data';
+        summary.textContent = t('openableAnalytics.manageDataHeading');
         summary.style.cssText = 'cursor:pointer; font-weight:600; font-size:13px; list-style:none;';
         summary.onclick = (e) => {
             e.preventDefault();
@@ -676,14 +680,14 @@ class OpenableAnalyticsUI {
         wrapper.style.cssText = 'margin-bottom:12px;';
 
         const heading = document.createElement('div');
-        heading.textContent = 'Historical Imports';
+        heading.textContent = t('openableAnalytics.historicalImportsHeading');
         heading.style.cssText = 'font-weight:600; font-size:12px; margin-bottom:6px;';
         wrapper.appendChild(heading);
 
         const sources = openableAnalyticsDataCollector.getImportSourceKeys();
         if (sources.length === 0) {
             const empty = document.createElement('div');
-            empty.textContent = 'No imported sources.';
+            empty.textContent = t('openableAnalytics.noImportedSourcesMessage');
             empty.style.cssText = 'opacity:0.7; font-size:12px;';
             wrapper.appendChild(empty);
             return wrapper;
@@ -699,7 +703,7 @@ class OpenableAnalyticsUI {
 
             const removeButton = document.createElement('button');
             removeButton.type = 'button';
-            removeButton.textContent = 'Remove Import';
+            removeButton.textContent = t('openableAnalytics.removeImportButton');
             removeButton.disabled = this.mutationInFlight;
             removeButton.style.cssText =
                 'background:#3a3a3a; border:1px solid #4a4a4a; color:#fff; font-size:11px; cursor:pointer; padding:4px 8px; border-radius:4px;';
@@ -718,7 +722,7 @@ class OpenableAnalyticsUI {
         wrapper.style.cssText = 'margin-bottom:12px; padding-top:10px; border-top:1px solid #2a2a2a;';
 
         const heading = document.createElement('div');
-        heading.textContent = 'Import History';
+        heading.textContent = t('openableAnalytics.importHistoryLabel');
         heading.style.cssText = 'font-weight:600; font-size:12px; margin-bottom:6px;';
         wrapper.appendChild(heading);
 
@@ -738,7 +742,7 @@ class OpenableAnalyticsUI {
         if (readEdibleLocalStorage() !== null) {
             const edibleButton = document.createElement('button');
             edibleButton.type = 'button';
-            edibleButton.textContent = 'Import from Edible Tools';
+            edibleButton.textContent = t('openableAnalytics.importFromEdibleButton');
             edibleButton.style.cssText = this.controlButtonStyle();
             edibleButton.onclick = () => this.beginImport(readEdibleLocalStorage(), 'edible');
             controls.appendChild(edibleButton);
@@ -748,7 +752,7 @@ class OpenableAnalyticsUI {
         fileButtonWrap.style.cssText = 'position:relative; overflow:hidden; display:inline-block;';
         const fileButton = document.createElement('button');
         fileButton.type = 'button';
-        fileButton.textContent = 'Choose JSON File';
+        fileButton.textContent = t('openableAnalytics.chooseJsonFileButton');
         fileButton.style.cssText = this.controlButtonStyle();
         const fileInput = document.createElement('input');
         fileInput.type = 'file';
@@ -760,7 +764,7 @@ class OpenableAnalyticsUI {
             const reader = new FileReader();
             reader.onload = () => this.beginImport(String(reader.result || ''));
             reader.onerror = () => {
-                this.pendingImport = { errorMessage: 'Could not read the selected file.' };
+                this.pendingImport = { errorMessage: t('openableAnalytics.fileReadErrorMessage') };
                 this.renderBody();
             };
             reader.readAsText(file);
@@ -770,7 +774,7 @@ class OpenableAnalyticsUI {
         controls.appendChild(fileButtonWrap);
 
         const pasteLink = document.createElement('span');
-        pasteLink.textContent = 'Paste JSON Instead';
+        pasteLink.textContent = t('openableAnalytics.pasteJsonInsteadLabel');
         pasteLink.style.cssText = 'cursor:pointer; text-decoration:underline; font-size:12px; align-self:center;';
         pasteLink.onclick = () => {
             this.showPasteArea = true;
@@ -780,14 +784,14 @@ class OpenableAnalyticsUI {
 
         if (this.showPasteArea) {
             const textarea = document.createElement('textarea');
-            textarea.placeholder = 'Paste exported JSON here (Edible Tools or MWI Combat Suite).';
+            textarea.placeholder = t('openableAnalytics.pasteJsonPlaceholder');
             textarea.style.cssText =
                 'width:100%; height:70px; background:#2a2a2a; color:#fff; border:1px solid #4a4a4a; border-radius:4px; padding:6px; font-size:12px; box-sizing:border-box; resize:vertical; margin-bottom:6px;';
             wrapper.appendChild(textarea);
 
             const submitButton = document.createElement('button');
             submitButton.type = 'button';
-            submitButton.textContent = 'Preview Import';
+            submitButton.textContent = t('openableAnalytics.previewImportButton');
             submitButton.style.cssText = this.controlButtonStyle();
             submitButton.onclick = () => this.beginImport(textarea.value);
             wrapper.appendChild(submitButton);
@@ -819,7 +823,7 @@ class OpenableAnalyticsUI {
     /** Parse pasted/uploaded/one-click text, auto-detecting the source unless explicitly known (Edible one-click). */
     beginImport(rawText, knownSource) {
         if (!rawText?.trim()) {
-            this.pendingImport = { errorMessage: 'No data found to import.' };
+            this.pendingImport = { errorMessage: t('openableAnalytics.noDataToImportMessage') };
             this.renderBody();
             return;
         }
@@ -895,7 +899,7 @@ class OpenableAnalyticsUI {
         const wrapper = document.createElement('div');
 
         const label = document.createElement('div');
-        label.textContent = 'This Edible Tools data has more than one player - which one is this character?';
+        label.textContent = t('openableAnalytics.ediblePlayerPickerLabel');
         label.style.cssText = 'font-size:12px; margin-bottom:6px;';
         wrapper.appendChild(label);
 
@@ -912,7 +916,7 @@ class OpenableAnalyticsUI {
 
         const confirmButton = document.createElement('button');
         confirmButton.type = 'button';
-        confirmButton.textContent = 'Continue';
+        confirmButton.textContent = t('openableAnalytics.continueButton');
         confirmButton.style.cssText = this.controlButtonStyle();
         confirmButton.onclick = () => {
             const result = parseEdibleExport(this.pendingImport.rawText, { playerId: select.value });
@@ -921,7 +925,7 @@ class OpenableAnalyticsUI {
 
         const cancelButton = document.createElement('button');
         cancelButton.type = 'button';
-        cancelButton.textContent = 'Cancel';
+        cancelButton.textContent = t('settings.cancelButton');
         cancelButton.style.cssText = this.controlButtonStyle() + 'margin-left:6px;';
         cancelButton.onclick = () => {
             this.pendingImport = null;
@@ -940,26 +944,29 @@ class OpenableAnalyticsUI {
         const summary = document.createElement('div');
         const totalOpenings = containers.reduce((sum, c) => sum + c.containerCount, 0);
         summary.style.cssText = 'font-size:12px; margin-bottom:6px;';
-        summary.textContent = `${IMPORT_SOURCE_LABELS[`import:${source}`]}: ${formatLargeNumber(totalOpenings)} openings across ${containers.length} container(s) ready to import.`;
+        summary.textContent = t('openableAnalytics.importPreflightSummary', {
+            sourceLabel: IMPORT_SOURCE_LABELS[`import:${source}`],
+            openings: formatLargeNumber(totalOpenings),
+            containerCount: containers.length,
+        });
         wrapper.appendChild(summary);
 
         if (ownerMismatch === true) {
             const warn = document.createElement('div');
             warn.style.cssText = `font-size:12px; color:${config.COLOR_WARNING}; margin-bottom:6px;`;
-            warn.textContent = `This export's recorded player ("${ownerName}") does not match the current character.`;
+            warn.textContent = t('openableAnalytics.ownerMismatchWarning', { ownerName });
             wrapper.appendChild(warn);
         } else if (ownerMismatch === null) {
             const warn = document.createElement('div');
             warn.style.cssText = `font-size:12px; color:${config.COLOR_WARNING}; margin-bottom:6px;`;
-            warn.textContent = 'This export does not record which character it belongs to - please verify ownership.';
+            warn.textContent = t('openableAnalytics.ownerUnknownWarning');
             wrapper.appendChild(warn);
         }
 
         if (overlaps) {
             const warn = document.createElement('div');
             warn.style.cssText = `font-size:12px; color:${config.COLOR_INFO}; margin-bottom:6px;`;
-            warn.textContent =
-                'These cumulative histories may cover the same openings and cannot be reliably deduplicated.';
+            warn.textContent = t('openableAnalytics.overlapWarning');
             wrapper.appendChild(warn);
         }
 
@@ -972,14 +979,18 @@ class OpenableAnalyticsUI {
 
         const confirmButton = document.createElement('button');
         confirmButton.type = 'button';
-        confirmButton.textContent = this.mutationInFlight ? 'Importing…' : alreadyExists ? 'Replace Import…' : 'Import';
+        confirmButton.textContent = this.mutationInFlight
+            ? t('openableAnalytics.importingButtonLabel')
+            : alreadyExists
+              ? t('openableAnalytics.replaceImportButtonLabel')
+              : t('openableAnalytics.importButtonLabel');
         confirmButton.disabled = this.mutationInFlight;
         confirmButton.style.cssText = this.controlButtonStyle();
         confirmButton.onclick = () => this.handleConfirmImport();
 
         const cancelButton = document.createElement('button');
         cancelButton.type = 'button';
-        cancelButton.textContent = 'Cancel';
+        cancelButton.textContent = t('settings.cancelButton');
         cancelButton.disabled = this.mutationInFlight;
         cancelButton.style.cssText = this.controlButtonStyle() + 'margin-left:6px;';
         cancelButton.onclick = () => {
@@ -1006,9 +1017,14 @@ class OpenableAnalyticsUI {
         const totalOpenings = containers.reduce((sum, c) => sum + c.containerCount, 0);
         this.pendingImport = persisted
             ? {
-                  statusMessage: `${alreadyExists ? 'Replaced' : 'Imported'} ${IMPORT_SOURCE_LABELS[prefixedSource]} import: ${formatLargeNumber(totalOpenings)} openings across ${containers.length} container(s).`,
+                  statusMessage: t('openableAnalytics.importCompleteStatus', {
+                      replaced: alreadyExists,
+                      sourceLabel: IMPORT_SOURCE_LABELS[prefixedSource],
+                      openings: formatLargeNumber(totalOpenings),
+                      containerCount: containers.length,
+                  }),
               }
-            : { errorMessage: 'Could not save Openable Analytics data. Current changes may not persist after reload.' };
+            : { errorMessage: t('openableAnalytics.saveImportErrorMessage') };
         this.showPasteArea = false;
         this.renderBody();
     }
@@ -1023,21 +1039,19 @@ class OpenableAnalyticsUI {
         if (!this.popupOverlay) return;
 
         if (!persisted) {
-            this.pendingImport = { errorMessage: 'Could not remove the imported data. It may reappear after reload.' };
+            this.pendingImport = { errorMessage: t('openableAnalytics.removeImportErrorMessage') };
         } else {
             this.pendingImport = {
-                statusMessage: `Removed ${IMPORT_SOURCE_LABELS[source]} import. Live Toolasha history was kept.`,
+                statusMessage: t('openableAnalytics.importRemovedStatus', {
+                    sourceLabel: IMPORT_SOURCE_LABELS[source],
+                }),
             };
         }
         this.renderBody();
     }
 
     async handleDeleteContainer(containerHrid) {
-        if (
-            !confirm(
-                `Delete all Openable Analytics data for ${containerLabel(containerHrid)} on this character? This cannot be undone.`
-            )
-        ) {
+        if (!confirm(t('openableAnalytics.deleteContainerConfirm', { containerName: containerLabel(containerHrid) }))) {
             return;
         }
 
@@ -1051,7 +1065,7 @@ class OpenableAnalyticsUI {
         if (!this.popupOverlay) return;
         this.deleteContainerError = persisted
             ? null
-            : { containerHrid, message: 'Could not save this deletion. It may reappear after reload.' };
+            : { containerHrid, message: t('openableAnalytics.deletionSaveErrorMessage') };
         this.renderBody();
     }
 
@@ -1061,7 +1075,7 @@ class OpenableAnalyticsUI {
 
         const button = document.createElement('button');
         button.type = 'button';
-        button.textContent = 'Delete All Analytics Data…';
+        button.textContent = t('openableAnalytics.deleteAllButton');
         button.disabled = this.mutationInFlight;
         button.style.cssText = this.destructiveButtonStyle();
         button.onclick = () => this.handleDeleteAll();
@@ -1079,8 +1093,8 @@ class OpenableAnalyticsUI {
     }
 
     async handleDeleteAll() {
-        const characterName = dataManager.getCurrentCharacterName() || 'this character';
-        if (!confirm(`Delete ALL Openable Analytics data for ${characterName}? This cannot be undone.`)) {
+        const characterName = dataManager.getCurrentCharacterName() || t('openableAnalytics.thisCharacterFallback');
+        if (!confirm(t('openableAnalytics.deleteAllConfirm', { characterName }))) {
             return;
         }
 
@@ -1092,7 +1106,7 @@ class OpenableAnalyticsUI {
 
         this.mutationInFlight = false;
         if (!this.popupOverlay) return;
-        this.deleteAllError = persisted ? null : 'Could not save this deletion. It may reappear after reload.';
+        this.deleteAllError = persisted ? null : t('openableAnalytics.deletionSaveErrorMessage');
         // Delete All does not silently close the popup - show the resulting empty state in place.
         this.renderBody();
     }

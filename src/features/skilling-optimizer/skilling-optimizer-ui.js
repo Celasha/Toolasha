@@ -6,6 +6,7 @@
  */
 
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import {
     calculateSkillPerformance,
@@ -36,16 +37,23 @@ const INNER_CONTENT_CLASS = 'toolasha-skilling-opt-inner';
 // skill's own optimization goal (XP/hr per gold for XP-goal skills, payback time for Gold-goal
 // gathering skills), so the default view always leads with the metric the panel is already
 // optimizing for.
-const SORT_MODES = [
-    { value: 'value', label: 'Best Value' },
-    { value: 'payback', label: 'Payback (fastest)' },
-    { value: 'cost', label: 'Cost (cheapest)' },
-    { value: 'xpGain', label: 'XP Gain %' },
-    { value: 'goldGain', label: 'Gold Gain %' },
-    { value: 'xpRatio', label: 'G/0.01% Exp/Hr (cheapest)' },
-    { value: 'profitRatio', label: 'G/0.01% Profit (cheapest)' },
-    { value: 'slot', label: 'Slot Order' },
-];
+/**
+ * Builds the Equipment Progression sort options with live-translated labels (resolved at call
+ * time rather than baked in at module load, so the dropdown always reflects the current locale).
+ * @returns {Array<{value: string, label: string}>}
+ */
+function getSortModes() {
+    return [
+        { value: 'value', label: t('skillingOptimizer.sortBestValue') },
+        { value: 'payback', label: t('skillingOptimizer.sortPaybackFastest') },
+        { value: 'cost', label: t('skillingOptimizer.sortCostCheapest') },
+        { value: 'xpGain', label: t('skillingOptimizer.sortXpGainPercent') },
+        { value: 'goldGain', label: t('skillingOptimizer.sortGoldGainPercent') },
+        { value: 'xpRatio', label: t('skillingOptimizer.sortXpRatioCheapest') },
+        { value: 'profitRatio', label: t('skillingOptimizer.sortProfitRatioCheapest') },
+        { value: 'slot', label: t('skillingOptimizer.sortSlotOrder') },
+    ];
+}
 
 class SkillingSimulatorUI {
     constructor() {
@@ -127,7 +135,7 @@ class SkillingSimulatorUI {
         btn.className = `${TAB_CLASS} ${existingTab ? existingTab.className.replace(/Mui-selected/g, '').trim() : ''}`;
         btn.setAttribute('role', 'tab');
         btn.setAttribute('type', 'button');
-        btn.textContent = 'Skilling Sim';
+        btn.textContent = t('skillingOptimizer.tabLabel');
         btn.style.minWidth = 'auto';
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -204,7 +212,7 @@ class SkillingSimulatorUI {
             border-radius: 8px 8px 0 0; flex-shrink: 0;
         `;
         const title = document.createElement('span');
-        title.textContent = 'Skilling Sim';
+        title.textContent = t('skillingOptimizer.tabLabel');
         title.style.cssText = `font-weight: 700; font-size: 14px; color: ${config.COLOR_ACCENT};`;
         const closeBtn = document.createElement('button');
         closeBtn.type = 'button';
@@ -355,8 +363,8 @@ class SkillingSimulatorUI {
         modeRow.style.cssText = 'display: flex; gap: 6px; margin-bottom: 14px;';
 
         for (const [mode, label] of [
-            ['simulator', 'Simulator'],
-            ['optimizer', 'Upgrade'],
+            ['simulator', t('skillingOptimizer.modeSimulator')],
+            ['optimizer', t('skillingOptimizer.modeUpgrade')],
         ]) {
             const btn = document.createElement('button');
             btn.type = 'button';
@@ -387,7 +395,7 @@ class SkillingSimulatorUI {
 
             const simulateBtn = document.createElement('button');
             simulateBtn.type = 'button';
-            simulateBtn.textContent = 'Simulate';
+            simulateBtn.textContent = t('skillingOptimizer.simulateButton');
             simulateBtn.style.cssText = `
                 margin-top: 12px; padding: 6px 20px;
                 background: ${config.COLOR_ACCENT}; color: #000;
@@ -395,12 +403,12 @@ class SkillingSimulatorUI {
                 font-size: 12px; font-weight: 700; cursor: pointer;
             `;
             simulateBtn.addEventListener('click', () => {
-                simulateBtn.textContent = 'Simulating…';
+                simulateBtn.textContent = t('skillingOptimizer.simulatingButton');
                 simulateBtn.disabled = true;
                 requestAnimationFrame(() =>
                     setTimeout(() => {
                         this._runSimulation();
-                        simulateBtn.textContent = 'Simulate';
+                        simulateBtn.textContent = t('skillingOptimizer.simulateButton');
                         simulateBtn.disabled = false;
                     }, 0)
                 );
@@ -416,14 +424,14 @@ class SkillingSimulatorUI {
             const compareRow = document.createElement('div');
             compareRow.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 8px;';
             const compareLabel = document.createElement('span');
-            compareLabel.textContent = 'Compare:';
+            compareLabel.textContent = t('skillingOptimizer.compareLabel');
             compareLabel.style.cssText = 'color: rgba(255,255,255,0.5); font-size: 12px; width: 56px; flex-shrink: 0;';
             const compareSelect = document.createElement('select');
             compareSelect.style.cssText =
                 'background: #2a2a2a; color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; padding: 4px 8px; font-size: 12px; flex: 1; cursor: pointer;';
             const noneOpt = document.createElement('option');
             noneOpt.value = '';
-            noneOpt.textContent = '— None —';
+            noneOpt.textContent = t('skillingOptimizer.compareNoneOption');
             compareSelect.appendChild(noneOpt);
 
             const resolvedComparison = this.optimizerLoadout
@@ -438,7 +446,7 @@ class SkillingSimulatorUI {
             if (currentComparisonName && !usableComparisonNames.has(currentComparisonName)) {
                 const unavailableOpt = document.createElement('option');
                 unavailableOpt.value = currentComparisonName;
-                unavailableOpt.textContent = `${currentComparisonName} (Unavailable)`;
+                unavailableOpt.textContent = t('skillingOptimizer.unavailableLabel', { name: currentComparisonName });
                 unavailableOpt.selected = true;
                 unavailableOpt.disabled = true;
                 compareSelect.appendChild(unavailableOpt);
@@ -470,7 +478,7 @@ class SkillingSimulatorUI {
 
             const optimizeBtn = document.createElement('button');
             optimizeBtn.type = 'button';
-            optimizeBtn.textContent = 'Optimize';
+            optimizeBtn.textContent = t('skillingOptimizer.optimizeButton');
             optimizeBtn.style.cssText = `
                 padding: 6px 20px;
                 background: ${config.COLOR_ACCENT}; color: #000;
@@ -482,7 +490,7 @@ class SkillingSimulatorUI {
             resultsArea.style.marginTop = '16px';
 
             optimizeBtn.addEventListener('click', () => {
-                optimizeBtn.textContent = 'Optimizing…';
+                optimizeBtn.textContent = t('skillingOptimizer.optimizingButton');
                 optimizeBtn.disabled = true;
                 requestAnimationFrame(() =>
                     setTimeout(() => {
@@ -519,7 +527,9 @@ class SkillingSimulatorUI {
                                 }
                             } else {
                                 unavailableComparisonName =
-                                    refreshedLoadout?.name || this.optimizerLoadout?.name || 'Selected loadout';
+                                    refreshedLoadout?.name ||
+                                    this.optimizerLoadout?.name ||
+                                    t('skillingOptimizer.selectedLoadoutFallbackName');
                                 if (refreshedLoadout) this.optimizerLoadout = refreshedLoadout;
                             }
                         }
@@ -578,7 +588,7 @@ class SkillingSimulatorUI {
                               )
                             : null;
 
-                        optimizeBtn.textContent = 'Optimize';
+                        optimizeBtn.textContent = t('skillingOptimizer.optimizeButton');
                         optimizeBtn.disabled = false;
                         resultsArea.innerHTML = '';
                         if (result) {
@@ -590,7 +600,9 @@ class SkillingSimulatorUI {
                             );
                             if (unavailableComparisonName) {
                                 const warning = document.createElement('div');
-                                warning.textContent = `Compare loadout “${unavailableComparisonName}” is unavailable. Comparison was not substituted with Current Gear.`;
+                                warning.textContent = t('skillingOptimizer.compareLoadoutUnavailableWarning', {
+                                    name: unavailableComparisonName,
+                                });
                                 warning.style.cssText = 'color:#f87171; font-size:11px; margin-bottom:8px;';
                                 resultsArea.prepend(warning);
                             }
@@ -624,7 +636,7 @@ class SkillingSimulatorUI {
         const row = document.createElement('div');
         row.style.cssText = 'display: flex; align-items: center; gap: 8px;';
         const label = document.createElement('span');
-        label.textContent = 'Alchemy Item:';
+        label.textContent = t('skillingOptimizer.alchemyItemLabel');
         label.style.cssText = 'color: rgba(255,255,255,0.5); font-size: 12px; width: 56px; flex-shrink: 0;';
         row.appendChild(label);
 
@@ -643,7 +655,7 @@ class SkillingSimulatorUI {
         `;
         const items = getAlchemyItemOptions();
         const currentItemLabel = () => {
-            if (!this.alchemyItemOverride?.itemHrid) return '— Auto (from active action) —';
+            if (!this.alchemyItemOverride?.itemHrid) return t('skillingOptimizer.alchemyAutoOption');
             return this._getItemName(this.alchemyItemOverride.itemHrid) || this.alchemyItemOverride.itemHrid;
         };
         itemBtn.textContent = currentItemLabel();
@@ -663,7 +675,7 @@ class SkillingSimulatorUI {
                     itemBtn.textContent = currentItemLabel();
                     itemBtn.style.color = this.alchemyItemOverride?.itemHrid ? '#fff' : 'rgba(255,255,255,0.5)';
                 },
-                '— Auto (from active action) —'
+                t('skillingOptimizer.alchemyAutoOption')
             );
         });
         row.appendChild(itemBtn);
@@ -671,10 +683,10 @@ class SkillingSimulatorUI {
         const typeSelect = document.createElement('select');
         typeSelect.style.cssText = selectCss + ' width: 100px; flex-shrink: 0;';
         for (const [value, name] of [
-            ['decompose', 'Decompose'],
-            ['coinify', 'Coinify'],
-            ['transmute', 'Transmute'],
-            ['unrefine', 'Unrefine'],
+            ['decompose', t('skillingOptimizer.alchemyTypeDecompose')],
+            ['coinify', t('skillingOptimizer.alchemyTypeCoinify')],
+            ['transmute', t('skillingOptimizer.alchemyTypeTransmute')],
+            ['unrefine', t('skillingOptimizer.alchemyTypeUnrefine')],
         ]) {
             const opt = document.createElement('option');
             opt.value = value;
@@ -689,7 +701,7 @@ class SkillingSimulatorUI {
         levelInput.min = '0';
         levelInput.max = '20';
         levelInput.value = String(this.alchemyItemOverride?.enhancementLevel || 0);
-        levelInput.title = 'Enhancement level (ignored for Transmute)';
+        levelInput.title = t('skillingOptimizer.alchemyEnhancementLevelTooltip');
         levelInput.style.cssText = selectCss + ' width: 44px; flex-shrink: 0; cursor: text;';
         row.appendChild(levelInput);
         wrap.appendChild(row);
@@ -710,8 +722,7 @@ class SkillingSimulatorUI {
 
         const hint = document.createElement('div');
         hint.style.cssText = 'color: rgba(255,255,255,0.35); font-size: 10px; font-style: italic;';
-        hint.textContent =
-            'Alchemy Gold/XP are priced against one item - pick one, or leave on Auto to use whatever your character is currently queued to Alchemize.';
+        hint.textContent = t('skillingOptimizer.alchemyItemHint');
         wrap.appendChild(hint);
 
         return wrap;
@@ -738,7 +749,7 @@ class SkillingSimulatorUI {
         `;
 
         // Skill
-        const skillRow = makeRow('Skill:');
+        const skillRow = makeRow(t('skillingOptimizer.skillLabel'));
         const skillSelect = document.createElement('select');
         skillSelect.style.cssText = inputCss + ' flex: 1; cursor: pointer;';
         for (const s of SKILL_NAMES) {
@@ -752,7 +763,7 @@ class SkillingSimulatorUI {
         wrap.appendChild(skillRow);
 
         // Level
-        const levelRow = makeRow('Level:');
+        const levelRow = makeRow(t('skillingOptimizer.levelLabel'));
         const levelInput = document.createElement('input');
         levelInput.type = 'number';
         levelInput.min = '1';
@@ -764,7 +775,7 @@ class SkillingSimulatorUI {
 
         // Loadout (simulator only)
         if (this.currentMode === 'simulator') {
-            const loadoutRow = makeRow('Loadout:');
+            const loadoutRow = makeRow(t('skillingOptimizer.loadoutLabel'));
             const loadoutSelect = document.createElement('select');
             loadoutSelect.style.cssText = inputCss + ' flex: 1; cursor: pointer;';
             this._populateLoadoutSelect(loadoutSelect);
@@ -773,7 +784,9 @@ class SkillingSimulatorUI {
             const loadoutStatus = document.createElement('div');
             loadoutStatus.style.cssText = 'color:#f87171; font-size:11px; margin-left:64px;';
             if (this._simulatorLoadoutUnavailableName) {
-                loadoutStatus.textContent = `Loadout “${this._simulatorLoadoutUnavailableName}” is unavailable and was not loaded.`;
+                loadoutStatus.textContent = t('skillingOptimizer.loadoutUnavailableStatus', {
+                    name: this._simulatorLoadoutUnavailableName,
+                });
             }
             wrap.appendChild(loadoutStatus);
             loadoutSelect.addEventListener('change', () => {
@@ -783,10 +796,10 @@ class SkillingSimulatorUI {
                 if (!this._loadLoadout(name)) {
                     const selectedOption = loadoutSelect.selectedOptions?.[0];
                     if (selectedOption) {
-                        selectedOption.textContent = `${name} (Unavailable)`;
+                        selectedOption.textContent = t('skillingOptimizer.unavailableLabel', { name });
                         selectedOption.disabled = true;
                     }
-                    loadoutStatus.textContent = `Loadout “${name}” is unavailable and was not loaded.`;
+                    loadoutStatus.textContent = t('skillingOptimizer.loadoutUnavailableStatus', { name });
                 }
             });
         }
@@ -795,7 +808,7 @@ class SkillingSimulatorUI {
         // can't narrow anything the Alchemy Item row above doesn't already cover, and having both
         // visible reads as two competing controls for the same thing.
         if (this.currentSkill !== 'Alchemy') {
-            const actionsRow = makeRow('Actions:');
+            const actionsRow = makeRow(t('skillingOptimizer.actionsLabel'));
             actionsRow.style.position = 'relative';
             const actionBtn = document.createElement('button');
             actionBtn.type = 'button';
@@ -804,7 +817,7 @@ class SkillingSimulatorUI {
             const getActionLabel = () => {
                 const all = getSkillActionsForDisplay(this.currentSkill, this.currentLevel);
                 const avail = all.filter((a) => a.available);
-                if (!this.selectedActionHrids) return `All (${avail.length})`;
+                if (!this.selectedActionHrids) return t('skillingOptimizer.allActionsCount', { count: avail.length });
                 // Counts against the full action list (not just avail) so an explicitly selected
                 // locked action - pending a tea unlock - is still reflected in the count.
                 const n = [...this.selectedActionHrids].filter((h) => all.some((a) => a.hrid === h)).length;
@@ -859,7 +872,7 @@ class SkillingSimulatorUI {
     _populateLoadoutSelect(select) {
         const empty = document.createElement('option');
         empty.value = '';
-        empty.textContent = '— No loadout —';
+        empty.textContent = t('skillingOptimizer.noLoadoutOption');
         if (!this._simulatorLoadoutName) empty.selected = true;
         select.appendChild(empty);
 
@@ -867,8 +880,10 @@ class SkillingSimulatorUI {
         for (const snap of loadoutState.getAllSnapshots()) {
             const opt = document.createElement('option');
             opt.value = snap.name;
-            opt.textContent =
-                snap.name + (snap.isDefault ? ' ★' : '') + (snap.isUsableForCalculation ? '' : ' (Unavailable)');
+            const starSuffix = snap.isDefault ? ' ★' : '';
+            opt.textContent = snap.isUsableForCalculation
+                ? snap.name + starSuffix
+                : t('skillingOptimizer.unavailableLabel', { name: snap.name + starSuffix });
             opt.disabled = !snap.isUsableForCalculation;
             if (this._simulatorLoadoutName === snap.name) {
                 opt.selected = true;
@@ -882,7 +897,9 @@ class SkillingSimulatorUI {
         if (this._simulatorLoadoutName && !matched) {
             const unavailableOpt = document.createElement('option');
             unavailableOpt.value = this._simulatorLoadoutName;
-            unavailableOpt.textContent = `${this._simulatorLoadoutName} (Unavailable)`;
+            unavailableOpt.textContent = t('skillingOptimizer.unavailableLabel', {
+                name: this._simulatorLoadoutName,
+            });
             unavailableOpt.selected = true;
             unavailableOpt.disabled = true;
             select.appendChild(unavailableOpt);
@@ -1006,7 +1023,7 @@ class SkillingSimulatorUI {
     _buildEquipmentSection() {
         const section = document.createElement('div');
         section.style.marginTop = '14px';
-        section.appendChild(this._makeSectionHeader('Equipment'));
+        section.appendChild(this._makeSectionHeader(t('skillingOptimizer.equipmentHeader')));
 
         const relevantTool = SKILL_TOOL_LOCATION[this.currentSkill];
         const locations = SKILLING_LOCATIONS.filter((loc) => !loc.endsWith('_tool') || loc === relevantTool);
@@ -1117,7 +1134,7 @@ class SkillingSimulatorUI {
     _buildTeasSection() {
         const section = document.createElement('div');
         section.style.marginTop = '14px';
-        section.appendChild(this._makeSectionHeader('Teas'));
+        section.appendChild(this._makeSectionHeader(t('skillingOptimizer.teasHeader')));
 
         for (let i = 0; i < 3; i++) {
             const row = this._buildTeaRow(i);
@@ -1134,7 +1151,7 @@ class SkillingSimulatorUI {
         row.style.cssText = 'display: flex; align-items: center; gap: 6px; padding: 2px 0;';
 
         const label = document.createElement('span');
-        label.textContent = `TEA ${index + 1}`;
+        label.textContent = t('skillingOptimizer.teaSlotLabel', { index: index + 1 });
         label.style.cssText =
             'font-size: 10px; color: rgba(255,255,255,0.35); width: 58px; flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.04em;';
         row.appendChild(label);
@@ -1200,9 +1217,9 @@ class SkillingSimulatorUI {
      * @param {Array<{hrid: string, name: string, available?: boolean, itemLevel?: number}>} items
      * @param {string|null} currentHrid
      * @param {(hrid: string|null) => void} onSelect
-     * @param {string} [emptyLabel] - Label for the "clear selection" row (default '— Empty —')
+     * @param {string} [emptyLabel] - Label for the "clear selection" row (default t('skillingOptimizer.emptyOption'))
      */
-    _openItemPicker(anchorEl, items, currentHrid, onSelect, emptyLabel = '— Empty —') {
+    _openItemPicker(anchorEl, items, currentHrid, onSelect, emptyLabel = t('skillingOptimizer.emptyOption')) {
         this._closePicker();
 
         const popup = document.createElement('div');
@@ -1225,7 +1242,7 @@ class SkillingSimulatorUI {
 
         // Search input
         const search = document.createElement('input');
-        search.placeholder = 'Search…';
+        search.placeholder = t('skillingOptimizer.searchPlaceholder');
         search.style.cssText = `
             padding: 7px 10px; background: #2a2a2a; color: #fff; font-size: 12px;
             border: none; border-bottom: 1px solid rgba(255,255,255,0.15); outline: none;
@@ -1262,7 +1279,7 @@ class SkillingSimulatorUI {
 
             if (locked.length) {
                 const sep = document.createElement('div');
-                sep.textContent = '— Level locked —';
+                sep.textContent = t('skillingOptimizer.levelLockedSeparator');
                 sep.style.cssText =
                     'padding: 4px 10px; font-size: 10px; color: rgba(255,255,255,0.3); border-top: 1px solid rgba(255,255,255,0.08);';
                 list.appendChild(sep);
@@ -1383,20 +1400,25 @@ class SkillingSimulatorUI {
         const allChecked = this.selectedActionHrids === null;
         const itemRows = [];
 
-        const { row: allRow, cb: allCb } = makeRow('All', allChecked, false, (checked) => {
-            if (checked) {
-                this.selectedActionHrids = null;
-                itemRows.forEach(({ cb }) => {
-                    cb.checked = true;
-                });
-            } else {
-                this.selectedActionHrids = new Set();
-                itemRows.forEach(({ cb }) => {
-                    cb.checked = false;
-                });
+        const { row: allRow, cb: allCb } = makeRow(
+            t('skillingOptimizer.allActionsOption'),
+            allChecked,
+            false,
+            (checked) => {
+                if (checked) {
+                    this.selectedActionHrids = null;
+                    itemRows.forEach(({ cb }) => {
+                        cb.checked = true;
+                    });
+                } else {
+                    this.selectedActionHrids = new Set();
+                    itemRows.forEach(({ cb }) => {
+                        cb.checked = false;
+                    });
+                }
+                anchorBtn.textContent = getBtnLabel();
             }
-            anchorBtn.textContent = getBtnLabel();
-        });
+        );
         allRow.style.cssText += ' font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.1);';
         popup.appendChild(allRow);
 
@@ -1404,7 +1426,7 @@ class SkillingSimulatorUI {
         searchWrapper.style.cssText = 'padding: 5px 10px; border-bottom: 1px solid rgba(255,255,255,0.1);';
         const searchInput = document.createElement('input');
         searchInput.type = 'text';
-        searchInput.placeholder = 'Search actions...';
+        searchInput.placeholder = t('skillingOptimizer.searchActionsPlaceholder');
         searchInput.style.cssText = `
             width: 100%; box-sizing: border-box; background: #2a2a2a; color: rgba(255,255,255,0.85);
             border: 1px solid rgba(255,255,255,0.15); border-radius: 4px; padding: 4px 8px; font-size: 12px;
@@ -1432,7 +1454,7 @@ class SkillingSimulatorUI {
                 this.selectedActionHrids === null ? action.available : this.selectedActionHrids.has(action.hrid);
             const label = action.available
                 ? action.name
-                : `${action.name} (lv ${action.requiredLevel} — locked, may unlock via tea)`;
+                : t('skillingOptimizer.actionLockedLabel', { name: action.name, level: action.requiredLevel });
             const { row, cb } = makeRow(label, isChecked, false, (checked) => {
                 if (this.selectedActionHrids === null) {
                     this.selectedActionHrids = new Set(available.map((a) => a.hrid));
@@ -1482,7 +1504,7 @@ class SkillingSimulatorUI {
         this._resultsArea.innerHTML = '';
 
         const section = document.createElement('div');
-        section.appendChild(this._makeSectionHeader('Results'));
+        section.appendChild(this._makeSectionHeader(t('skillingOptimizer.resultsHeader')));
 
         // Alchemy XP/Gold depend on the specific item + enhancement being processed, which this
         // generic action-wide scenario has no context for. A generic number here would silently
@@ -1490,9 +1512,7 @@ class SkillingSimulatorUI {
         if (this.currentSkill === 'Alchemy') {
             const unsupported = document.createElement('div');
             unsupported.style.cssText = 'color: rgba(255,255,255,0.5); font-size: 12px;';
-            unsupported.textContent =
-                'Alchemy scenario math is not item-aware yet, so a generic Results number here would ' +
-                'misrepresent real Coinify/Decompose/Transmute economics. Unsupported for now.';
+            unsupported.textContent = t('skillingOptimizer.alchemyUnsupportedNotice');
             section.appendChild(unsupported);
             this._resultsArea.appendChild(section);
             return;
@@ -1511,7 +1531,9 @@ class SkillingSimulatorUI {
 
         const makeStat = (label, value, color, isIncomplete = false) => {
             const el = document.createElement('div');
-            const valueText = isIncomplete ? `${formatKMB(value)} (incomplete)` : formatKMB(value);
+            const valueText = isIncomplete
+                ? t('skillingOptimizer.incompleteValueSuffix', { value: formatKMB(value) })
+                : formatKMB(value);
             el.innerHTML = `
                 <div style="font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">${label}</div>
                 <div style="font-size:15px;font-weight:700;color:${color};">${valueText}</div>
@@ -1528,10 +1550,16 @@ class SkillingSimulatorUI {
             this.selectedActionHrids === null ? allActionsAvailable.length : this.selectedActionHrids.size;
         const isMultiAction = selectedCount > 1;
 
-        stats.appendChild(makeStat(isMultiAction ? 'Avg XP / hr' : 'XP / hr', result.xpPerHour, config.COLOR_INFO));
         stats.appendChild(
             makeStat(
-                isMultiAction ? 'Avg Gold / hr' : 'Gold / hr',
+                isMultiAction ? t('skillingOptimizer.avgXpPerHourStat') : t('skillingOptimizer.xpPerHourStat'),
+                result.xpPerHour,
+                config.COLOR_INFO
+            )
+        );
+        stats.appendChild(
+            makeStat(
+                isMultiAction ? t('skillingOptimizer.avgGoldPerHourStat') : t('skillingOptimizer.goldPerHourStat'),
                 result.goldPerHour,
                 config.COLOR_PROFIT,
                 result.hasMissingPrice
@@ -1542,7 +1570,7 @@ class SkillingSimulatorUI {
         if (result.teaCostPerHour > 0) {
             const cost = document.createElement('div');
             cost.style.cssText = 'font-size: 11px; color: rgba(255,255,255,0.4);';
-            cost.textContent = `Tea cost: ${formatKMB(result.teaCostPerHour)}/hr`;
+            cost.textContent = t('skillingOptimizer.teaCostPerHour', { cost: formatKMB(result.teaCostPerHour) });
             section.appendChild(cost);
         }
 
@@ -1566,18 +1594,35 @@ class SkillingSimulatorUI {
         const ctx = result.alchemyContext;
         if (!ctx) {
             label.style.color = '#f0ad4e';
-            label.textContent =
-                'Based on: nothing queued - XP is an item-agnostic estimate, Gold is unavailable. ' +
-                'Pick an item above, or start an Alchemy action.';
+            label.textContent = t('skillingOptimizer.alchemyBasisNothingQueued');
         } else {
             label.style.color = 'rgba(255,255,255,0.5)';
             const itemName = this._getItemName(ctx.itemHrid) || ctx.itemHrid;
-            const typeName = ctx.actionType.charAt(0).toUpperCase() + ctx.actionType.slice(1);
+            const typeName = this._getAlchemyTypeName(ctx.actionType);
             const levelSuffix = ctx.enhancementLevel ? ` +${ctx.enhancementLevel}` : '';
-            const source = result.alchemyContextIsManual ? 'manually selected' : 'from your active/queued action';
-            label.textContent = `Based on: ${typeName} ${itemName}${levelSuffix} (${source})`;
+            const source = result.alchemyContextIsManual
+                ? t('skillingOptimizer.alchemyBasisManualSource')
+                : t('skillingOptimizer.alchemyBasisQueueSource');
+            label.textContent = t('skillingOptimizer.alchemyBasisLabel', { typeName, itemName, levelSuffix, source });
         }
         return label;
+    }
+
+    /**
+     * Translated display name for an Alchemy action-type value, mirroring the same labels used in
+     * the Alchemy Item override row's type <select> (_buildAlchemyItemOverrideRow).
+     * @param {string} actionType - 'decompose' | 'coinify' | 'transmute' | 'unrefine'
+     * @returns {string}
+     */
+    _getAlchemyTypeName(actionType) {
+        const keys = {
+            decompose: 'skillingOptimizer.alchemyTypeDecompose',
+            coinify: 'skillingOptimizer.alchemyTypeCoinify',
+            transmute: 'skillingOptimizer.alchemyTypeTransmute',
+            unrefine: 'skillingOptimizer.alchemyTypeUnrefine',
+        };
+        const key = keys[actionType];
+        return key ? t(key) : actionType;
     }
 
     _renderOptimizerResults(container, result, achievableStats, loadoutItemMap) {
@@ -1587,7 +1632,7 @@ class SkillingSimulatorUI {
         if (!slotEntries.length) {
             const empty = document.createElement('div');
             empty.style.color = 'rgba(255,255,255,0.5)';
-            empty.textContent = 'No relevant equipment found for this skill at the selected level.';
+            empty.textContent = t('skillingOptimizer.noRelevantEquipment');
             container.appendChild(empty);
             return;
         }
@@ -1609,12 +1654,12 @@ class SkillingSimulatorUI {
         const sortRow = document.createElement('div');
         sortRow.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 10px;';
         const sortLabel = document.createElement('span');
-        sortLabel.textContent = 'Sort:';
+        sortLabel.textContent = t('skillingOptimizer.sortLabel');
         sortLabel.style.cssText = 'color: rgba(255,255,255,0.5); font-size: 12px; width: 56px; flex-shrink: 0;';
         const sortSelect = document.createElement('select');
         sortSelect.style.cssText =
             'background: #2a2a2a; color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; padding: 4px 8px; font-size: 12px; flex: 1; cursor: pointer;';
-        for (const mode of SORT_MODES) {
+        for (const mode of getSortModes()) {
             const opt = document.createElement('option');
             opt.value = mode.value;
             opt.textContent = mode.label;
@@ -1640,7 +1685,7 @@ class SkillingSimulatorUI {
                       return diff !== 0 ? diff : slotEntries.indexOf(a) - slotEntries.indexOf(b);
                   });
 
-        container.appendChild(this._makeSectionHeader('Equipment Progression'));
+        container.appendChild(this._makeSectionHeader(t('skillingOptimizer.equipmentProgressionHeader')));
         container.appendChild(
             this._renderProgressionTable(orderedEntries, loadoutItemMap, xpBaseline, goldBaseline, houseRoomCandidate)
         );
@@ -1656,11 +1701,18 @@ class SkillingSimulatorUI {
         if (hasXp || hasGold) {
             const statsRow = document.createElement('div');
             statsRow.style.cssText = 'display: flex; gap: 20px; margin-top: 16px; margin-bottom: 4px;';
-            if (hasXp) statsRow.appendChild(this._makeStat('Avg XP/hr', xpResult.optimal.avgScore, config.COLOR_INFO));
+            if (hasXp)
+                statsRow.appendChild(
+                    this._makeStat(
+                        t('skillingOptimizer.avgXpPerHourCompactStat'),
+                        xpResult.optimal.avgScore,
+                        config.COLOR_INFO
+                    )
+                );
             if (hasGold)
                 statsRow.appendChild(
                     this._makeStat(
-                        'Avg Gold/hr',
+                        t('skillingOptimizer.avgGoldPerHourCompactStat'),
                         goldResult.optimal.avgScore,
                         config.COLOR_PROFIT,
                         goldResult.optimal.hasMissingPrice
@@ -1672,11 +1724,17 @@ class SkillingSimulatorUI {
         if (hasXp || hasGold) {
             const teasSection = document.createElement('div');
             teasSection.style.marginTop = '14px';
-            teasSection.appendChild(this._makeSectionHeader('Optimal Teas'));
+            teasSection.appendChild(this._makeSectionHeader(t('skillingOptimizer.optimalTeasHeader')));
             const cols = document.createElement('div');
             cols.style.cssText = 'display: flex; gap: 16px;';
-            if (hasXp) cols.appendChild(this._makeTeaCol('For XP', config.COLOR_INFO, xpResult.optimal.teas));
-            if (hasGold) cols.appendChild(this._makeTeaCol('For Gold', config.COLOR_PROFIT, goldResult.optimal.teas));
+            if (hasXp)
+                cols.appendChild(
+                    this._makeTeaCol(t('skillingOptimizer.forXpLabel'), config.COLOR_INFO, xpResult.optimal.teas)
+                );
+            if (hasGold)
+                cols.appendChild(
+                    this._makeTeaCol(t('skillingOptimizer.forGoldLabel'), config.COLOR_PROFIT, goldResult.optimal.teas)
+                );
             teasSection.appendChild(cols);
             container.appendChild(teasSection);
         }
@@ -1684,8 +1742,8 @@ class SkillingSimulatorUI {
         const note = document.createElement('div');
         note.style.cssText = 'margin-top: 12px; font-size: 10px; color: rgba(255,255,255,0.3); font-style: italic;';
         note.textContent = loadoutItemMap
-            ? '% shows gain over your compared loadout item for each slot.'
-            : '% shows gain over an empty slot. Select a loadout in Compare to see gains over your current gear.';
+            ? t('skillingOptimizer.compareGainNote')
+            : t('skillingOptimizer.noCompareGainNote');
         container.appendChild(note);
     }
 
@@ -1767,7 +1825,7 @@ class SkillingSimulatorUI {
      * to prioritize regardless of mode.
      * @param {Object} metrics - Result of _computeSlotMetrics
      * @param {string} goal - 'xp' | 'gold' (the skill's own optimization goal)
-     * @param {string} sortMode - One of SORT_MODES' `value`s
+     * @param {string} sortMode - One of getSortModes()' `value`s
      * @returns {number}
      */
     _sortValueFor(metrics, goal, sortMode) {
@@ -1823,13 +1881,13 @@ class SkillingSimulatorUI {
             'color: rgba(255,255,255,0.4); font-weight: 600; white-space: nowrap;';
         const thead = document.createElement('thead');
         thead.innerHTML = `<tr>
-            <th style="${thStyle}">Item</th>
-            <th style="${thStyle}">Cost</th>
-            <th style="${thStyle}">Profit Δ</th>
-            <th style="${thStyle}">G/0.01% Profit</th>
-            <th style="${thStyle}">Exp/Hr Δ</th>
-            <th style="${thStyle}">G/0.01% Exp/Hr</th>
-            <th style="${thStyle}">Payback</th>
+            <th style="${thStyle}">${t('settings.itemLabel')}</th>
+            <th style="${thStyle}">${t('skillingOptimizer.tableHeaderCost')}</th>
+            <th style="${thStyle}">${t('skillingOptimizer.tableHeaderProfitDelta')}</th>
+            <th style="${thStyle}">${t('skillingOptimizer.tableHeaderProfitRatio')}</th>
+            <th style="${thStyle}">${t('skillingOptimizer.tableHeaderXpDelta')}</th>
+            <th style="${thStyle}">${t('skillingOptimizer.tableHeaderXpRatio')}</th>
+            <th style="${thStyle}">${t('skillingOptimizer.tableHeaderPayback')}</th>
         </tr>`;
         table.appendChild(thead);
 
@@ -1870,7 +1928,7 @@ class SkillingSimulatorUI {
         const label = document.createElement('span');
         label.style.cssText =
             'font-size: 10px; color: rgba(255,255,255,0.38); text-transform: uppercase; letter-spacing: 0.04em;';
-        label.textContent = 'House Room';
+        label.textContent = t('skillingOptimizer.houseRoomLabel');
         nameTd.appendChild(label);
 
         const transition = document.createElement('span');
@@ -1912,7 +1970,9 @@ class SkillingSimulatorUI {
             indicator.textContent = `✓${enhStr}`;
             indicator.style.color = config.COLOR_PROFIT;
         } else {
-            const loadoutName = loadoutItemHrid ? this._getItemName(loadoutItemHrid) || loadoutItemHrid : 'empty';
+            const loadoutName = loadoutItemHrid
+                ? this._getItemName(loadoutItemHrid) || loadoutItemHrid
+                : t('skillingOptimizer.emptySlotLower');
             indicator.textContent = `≠ ${loadoutName}${enhStr}`;
             indicator.style.color = config.COLOR_WARNING;
             indicator.style.fontStyle = 'italic';
@@ -1947,7 +2007,7 @@ class SkillingSimulatorUI {
                 const none = document.createElement('span');
                 none.style.cssText =
                     'margin-left: 8px; font-size: 11px; color: rgba(255,255,255,0.25); font-style: italic;';
-                none.textContent = 'Already at optimal enhancement';
+                none.textContent = t('skillingOptimizer.alreadyOptimal');
                 nameTd.appendChild(none);
                 tr.appendChild(nameTd);
                 const restTd = document.createElement('td');
@@ -1967,7 +2027,7 @@ class SkillingSimulatorUI {
                 ? sameBaseItem
                     ? `${suggestedEntry.itemName} +${loadoutEntry.enhancementLevel}`
                     : `${this._getItemName(loadoutItemHrid) || loadoutItemHrid} +${loadoutEntry.enhancementLevel}`
-                : 'Empty';
+                : t('skillingOptimizer.emptySlotCapitalized');
             transition.appendChild(fromSpan);
             transition.appendChild(document.createTextNode(' → '));
 
@@ -2032,9 +2092,7 @@ class SkillingSimulatorUI {
      */
     _applyRefinedTooltip(nameEl, itemHrid) {
         if (!itemHrid?.includes('_refined')) return;
-        nameEl.title =
-            'Refined item: has higher base stats than its non-refined counterpart, so a lower ' +
-            'enhancement level can still outperform a higher-level non-refined item.';
+        nameEl.title = t('skillingOptimizer.refinedItemTooltip');
         nameEl.style.cursor = 'help';
         nameEl.style.borderBottom = '1px dotted rgba(255,255,255,0.35)';
     }
@@ -2048,8 +2106,8 @@ class SkillingSimulatorUI {
      */
     _applyIncompleteTooltip(nameEl, hasMissingPrice) {
         if (!hasMissingPrice) return;
-        nameEl.textContent += ' (incomplete)';
-        nameEl.title = 'A required market price is unresolved, so this recommendation is not an exact ranking.';
+        nameEl.textContent = t('skillingOptimizer.incompleteValueSuffix', { value: nameEl.textContent });
+        nameEl.title = t('skillingOptimizer.incompletePriceRankingTooltip');
         nameEl.style.cursor = 'help';
         nameEl.style.color = config.COLOR_WARNING;
     }
@@ -2137,7 +2195,7 @@ class SkillingSimulatorUI {
         td.style.cssText = 'padding: 4px 8px; white-space: nowrap; color: rgba(255,255,255,0.75);';
         const span = this._makeCoinValueSpan((costIsIncomplete ? '~' : '') + formatKMB(cost), spriteUrl);
         if (costIsIncomplete) {
-            span.title = 'A required market price is unresolved, so this cost is not exact.';
+            span.title = t('skillingOptimizer.incompletePriceCostTooltip');
             span.style.cursor = 'help';
         }
         td.appendChild(span);
@@ -2261,7 +2319,9 @@ class SkillingSimulatorUI {
 
     _makeStat(label, value, color, isIncomplete = false) {
         const el = document.createElement('div');
-        const valueText = isIncomplete ? `${formatKMB(value)} (incomplete)` : formatKMB(value);
+        const valueText = isIncomplete
+            ? t('skillingOptimizer.incompleteValueSuffix', { value: formatKMB(value) })
+            : formatKMB(value);
         el.innerHTML = `
             <div style="font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">${label}</div>
             <div style="font-size:15px;font-weight:700;color:${color};">${valueText}</div>

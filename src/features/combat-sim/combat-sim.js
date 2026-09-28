@@ -5,6 +5,7 @@
 
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
+import { t } from '../../core/i18n.js';
 import combatSimUI from './combat-sim-ui.js';
 import { cancelSimulation } from './combat-sim-runner.js';
 import { cancelAllZonesSimulation } from './all-zones-runner.js';
@@ -64,7 +65,7 @@ class CombatSim {
 
         const button = document.createElement('div');
         button.className = 'MuiButtonBase-root MuiTab-root MuiTab-textColorPrimary css-1q2h7u5 ' + BUTTON_CLASS;
-        button.textContent = 'Combat Sim';
+        button.textContent = t('combatSimUi.tabButtonLabel');
         button.style.cssText =
             'cursor: pointer; background: linear-gradient(135deg, #3a7bd5, #5f3dc4); color: #fff; border-radius: 4px; padding: 4px 10px; font-size: 12px; white-space: nowrap;';
 

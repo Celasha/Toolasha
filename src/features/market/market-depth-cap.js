@@ -21,6 +21,7 @@
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import { createCleanupRegistry } from '../../utils/cleanup-registry.js';
 import { formatWithSeparator } from '../../utils/formatters.js';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
@@ -156,8 +157,10 @@ class MarketDepthCap {
         el.style.textAlign = 'center';
         el.style.color = '#60a5fa';
 
-        const prefix = result.hitBookEnd ? 'at least ' : '~';
-        el.textContent = `Sell depth: ${prefix}${formatWithSeparator(result.nstar)} actions`;
+        el.textContent = t('marketDepthCap.sellDepthLabel', {
+            hitBookEnd: result.hitBookEnd,
+            count: formatWithSeparator(result.nstar),
+        });
         el.title =
             (result.hitBookEnd
                 ? 'Every visible resting bid still clears cost — the true cap may be higher than shown. '

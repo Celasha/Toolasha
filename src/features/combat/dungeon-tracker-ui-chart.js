@@ -3,6 +3,7 @@
  * Handles Chart.js rendering for dungeon run statistics
  */
 
+import { t } from '../../core/i18n.js';
 import dungeonTrackerStorage from './dungeon-tracker-storage.js';
 
 class DungeonTrackerUIChart {
@@ -237,7 +238,7 @@ class DungeonTrackerUIChart {
         `;
 
         const title = document.createElement('h3');
-        title.textContent = '📊 Dungeon Run Chart';
+        title.textContent = t('dungeonTrackerUi.chartTitle');
         title.style.cssText = 'color: #ccc; margin: 0; font-size: 18px;';
 
         const closeBtn = document.createElement('button');

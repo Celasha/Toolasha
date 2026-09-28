@@ -6,6 +6,7 @@
 
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
+import { t } from '../../core/i18n.js';
 import { decomposeHistoryTracker } from './decompose-history-tracker.js';
 import { formatKMB, formatDateTime } from '../../utils/formatters.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
@@ -125,10 +126,18 @@ class DecomposeHistoryViewer {
                 // Replace first text node (the label) while keeping badge span
                 const badgeSpan = badge.querySelector('.MuiBadge-badge');
                 badge.textContent = '';
-                badge.appendChild(document.createTextNode('Decompose History'));
+                badge.appendChild(
+                    document.createTextNode(
+                        t('alchemyHistoryViewer.historyTabTitle', {
+                            actionName: t('skillingOptimizer.alchemyTypeDecompose'),
+                        })
+                    )
+                );
                 if (badgeSpan) badge.appendChild(badgeSpan);
             } else {
-                tab.textContent = 'Decompose History';
+                tab.textContent = t('alchemyHistoryViewer.historyTabTitle', {
+                    actionName: t('skillingOptimizer.alchemyTypeDecompose'),
+                });
             }
 
             tab.addEventListener('click', (e) => {
@@ -230,7 +239,9 @@ class DecomposeHistoryViewer {
         `;
 
         const title = document.createElement('h2');
-        title.textContent = 'Decompose History';
+        title.textContent = t('alchemyHistoryViewer.historyTabTitle', {
+            actionName: t('skillingOptimizer.alchemyTypeDecompose'),
+        });
         title.style.cssText = 'margin: 0; color: #fff;';
 
         const closeBtn = document.createElement('button');
@@ -414,15 +425,19 @@ class DecomposeHistoryViewer {
         headerRow.style.background = '#1a1a1a';
 
         const columns = [
-            { key: 'startTime', label: 'Session Start', filterable: true },
-            { key: 'inputItemHrid', label: 'Input Item', filterable: true },
-            { key: 'enhancementLevel', label: 'Enh. Level', filterable: false },
-            { key: 'totalAttempts', label: 'Attempts', filterable: false },
-            { key: 'totalSuccesses', label: 'Successes', filterable: false },
-            { key: '_successRate', label: 'Success Rate', filterable: false },
-            { key: 'results', label: 'Results', filterable: true },
-            { key: '_catalystOfDecomposition', label: 'Catalyst of Decomposition', filterable: false },
-            { key: '_primeCatalyst', label: 'Prime Catalyst', filterable: false },
+            { key: 'startTime', label: t('alchemyHistoryViewer.colSessionStart'), filterable: true },
+            { key: 'inputItemHrid', label: t('alchemyHistoryViewer.colInputItem'), filterable: true },
+            { key: 'enhancementLevel', label: t('alchemyHistoryViewer.colEnhLevel'), filterable: false },
+            { key: 'totalAttempts', label: t('alchemyHistoryViewer.colAttempts'), filterable: false },
+            { key: 'totalSuccesses', label: t('alchemyHistoryViewer.colSuccesses'), filterable: false },
+            { key: '_successRate', label: t('alchemyHistoryViewer.colSuccessRate'), filterable: false },
+            { key: 'results', label: t('alchemyHistoryViewer.colResults'), filterable: true },
+            {
+                key: '_catalystOfDecomposition',
+                label: this.getItemName(CATALYST_OF_DECOMPOSITION_HRID),
+                filterable: false,
+            },
+            { key: '_primeCatalyst', label: this.getItemName(PRIME_CATALYST_HRID), filterable: false },
             { key: '_delete', label: '', filterable: false },
         ];
 
@@ -509,8 +524,8 @@ class DecomposeHistoryViewer {
             cell.colSpan = columns.length;
             cell.textContent =
                 this.sessions.length === 0
-                    ? 'No decompose history recorded yet.'
-                    : 'No sessions match the current filters.';
+                    ? t('alchemyHistoryViewer.noDecomposeHistoryYet')
+                    : t('alchemyHistoryViewer.noSessionsMatchFilters');
             cell.style.cssText = 'padding: 20px; text-align: center; color: #888;';
             row.appendChild(cell);
             tbody.appendChild(row);
@@ -552,7 +567,10 @@ class DecomposeHistoryViewer {
                 // Successes
                 const successCell = document.createElement('td');
                 const failures = session.totalAttempts - session.totalSuccesses;
-                successCell.textContent = `${session.totalSuccesses} (${failures} failed)`;
+                successCell.textContent = t('alchemyHistoryViewer.successesFailedLabel', {
+                    successes: session.totalSuccesses,
+                    failures,
+                });
                 successCell.style.cssText = `
                     padding: 6px 10px;
                     color: ${failures > 0 ? '#fbbf24' : '#4ade80'};
@@ -596,7 +614,7 @@ class DecomposeHistoryViewer {
                 deleteCell.style.cssText = 'padding: 6px 4px; text-align: center;';
                 const deleteBtn = document.createElement('button');
                 deleteBtn.textContent = '\u2715';
-                deleteBtn.title = 'Delete this session';
+                deleteBtn.title = t('alchemyHistoryViewer.deleteSessionTitle');
                 deleteBtn.style.cssText = `
                     background: none; border: none; color: #dc2626;
                     cursor: pointer; font-size: 14px; padding: 2px 6px;
@@ -652,7 +670,7 @@ class DecomposeHistoryViewer {
             const name = this.getItemName(itemHrid);
             const total = formatKMB(result.totalValue || 0, 1);
             const each = formatKMB(result.priceEach || 0, 1);
-            text.textContent = `${name} x${result.count} = ${total} (${each} each)`;
+            text.textContent = t('alchemyHistoryViewer.resultLine', { name, count: result.count, total, each });
 
             line.appendChild(text);
             cell.appendChild(line);
@@ -695,7 +713,7 @@ class DecomposeHistoryViewer {
         // Stats
         const stats = document.createElement('span');
         stats.style.cssText = 'color: #aaa; font-size: 14px;';
-        stats.textContent = `${this.filteredSessions.length} session${this.filteredSessions.length !== 1 ? 's' : ''}`;
+        stats.textContent = t('alchemyHistoryViewer.sessionCountStat', { count: this.filteredSessions.length });
         controls.appendChild(stats);
 
         const rightGroup = document.createElement('div');
@@ -704,7 +722,7 @@ class DecomposeHistoryViewer {
         // Clear All Filters button (only when filters active)
         if (this.hasAnyFilter()) {
             const clearFiltersBtn = document.createElement('button');
-            clearFiltersBtn.textContent = 'Clear All Filters';
+            clearFiltersBtn.textContent = t('marketHistory.clearAllFiltersButton');
             clearFiltersBtn.style.cssText = `
                 padding: 6px 12px; background: #e67e22; color: white;
                 border: none; border-radius: 4px; cursor: pointer;
@@ -715,7 +733,7 @@ class DecomposeHistoryViewer {
 
         // Export button
         const exportBtn = document.createElement('button');
-        exportBtn.textContent = 'Export';
+        exportBtn.textContent = t('customTabsUi.exportButton');
         exportBtn.style.cssText = `
             padding: 6px 12px; background: #2563eb; color: white;
             border: none; border-radius: 4px; cursor: pointer;
@@ -725,7 +743,7 @@ class DecomposeHistoryViewer {
 
         // Clear History button
         const clearBtn = document.createElement('button');
-        clearBtn.textContent = 'Clear History';
+        clearBtn.textContent = t('marketHistory.clearHistoryButton');
         clearBtn.style.cssText = `
             padding: 6px 12px; background: #dc2626; color: white;
             border: none; border-radius: 4px; cursor: pointer;
@@ -750,7 +768,7 @@ class DecomposeHistoryViewer {
             if (this.filters.dateFrom) parts.push(formatDateTime(this.filters.dateFrom, { includeTime: false }));
             if (this.filters.dateTo) parts.push(formatDateTime(this.filters.dateTo, { includeTime: false }));
             badges.push({
-                label: `Date: ${parts.join(' - ')}`,
+                label: t('marketHistory.dateFilterBadge', { range: parts.join(' - ') }),
                 onRemove: () => {
                     this.filters.dateFrom = null;
                     this.filters.dateTo = null;
@@ -764,9 +782,9 @@ class DecomposeHistoryViewer {
             const label =
                 this.filters.selectedInputItems.length === 1
                     ? this.getItemName(this.filters.selectedInputItems[0])
-                    : `${this.filters.selectedInputItems.length} input items`;
+                    : t('alchemyHistoryViewer.inputItemsCountLabel', { count: this.filters.selectedInputItems.length });
             badges.push({
-                label: `Input: ${label}`,
+                label: t('alchemyHistoryViewer.inputFilterBadge', { label }),
                 icon: this.filters.selectedInputItems[0],
                 onRemove: () => {
                     this.filters.selectedInputItems = [];
@@ -778,7 +796,7 @@ class DecomposeHistoryViewer {
 
         if (this.filters.resultsSearch.trim()) {
             badges.push({
-                label: `Results: "${this.filters.resultsSearch.trim()}"`,
+                label: t('alchemyHistoryViewer.resultsFilterBadge', { text: this.filters.resultsSearch.trim() }),
                 onRemove: () => {
                     this.filters.resultsSearch = '';
                     this.applyFilters();
@@ -828,7 +846,7 @@ class DecomposeHistoryViewer {
         leftSide.style.cssText = 'display: flex; gap: 8px; align-items: center; color: #aaa;';
 
         const label = document.createElement('span');
-        label.textContent = 'Rows per page:';
+        label.textContent = t('marketHistory.rowsPerPageLabel');
 
         const rowsInput = document.createElement('input');
         rowsInput.type = 'number';
@@ -864,7 +882,7 @@ class DecomposeHistoryViewer {
         });
 
         showAllLabel.appendChild(showAllCheckbox);
-        showAllLabel.appendChild(document.createTextNode('Show All'));
+        showAllLabel.appendChild(document.createTextNode(t('marketHistory.showAllLabel')));
 
         leftSide.appendChild(label);
         leftSide.appendChild(rowsInput);
@@ -894,7 +912,7 @@ class DecomposeHistoryViewer {
             });
 
             const pageInfo = document.createElement('span');
-            pageInfo.textContent = `Page ${this.currentPage} of ${totalPages || 1}`;
+            pageInfo.textContent = t('marketHistory.pageInfo', { current: this.currentPage, total: totalPages || 1 });
 
             const nextBtn = document.createElement('button');
             nextBtn.textContent = '\u25B6';
@@ -918,7 +936,7 @@ class DecomposeHistoryViewer {
             rightSide.appendChild(nextBtn);
         } else {
             const info = document.createElement('span');
-            info.textContent = `Showing all ${this.filteredSessions.length} sessions`;
+            info.textContent = t('alchemyHistoryViewer.showingAllSessions', { count: this.filteredSessions.length });
             rightSide.appendChild(info);
         }
 
@@ -997,7 +1015,7 @@ class DecomposeHistoryViewer {
      * @returns {HTMLElement}
      */
     createDateFilterPopup() {
-        const popup = this.createPopupBase('Filter by Date');
+        const popup = this.createPopupBase(t('marketHistory.filterByDateTitle'));
 
         // Compute available range
         if (!this.cachedDateRange) {
@@ -1020,18 +1038,20 @@ class DecomposeHistoryViewer {
                 color: #aaa; font-size: 11px; margin-bottom: 10px;
                 padding: 6px; background: #1a1a1a; border-radius: 3px;
             `;
-            rangeInfo.textContent = `Available: ${formatDateTime(minDate, { includeTime: false })} - ${formatDateTime(maxDate, { includeTime: false })}`;
+            rangeInfo.textContent = t('marketHistory.availableRangeLabel', {
+                range: `${formatDateTime(minDate, { includeTime: false })} - ${formatDateTime(maxDate, { includeTime: false })}`,
+            });
             popup.appendChild(rangeInfo);
         }
 
         const fromInput = this.createDateInput(
-            'From:',
+            t('marketHistory.fromLabel'),
             this.filters.dateFrom ? this.filters.dateFrom.toISOString().split('T')[0] : '',
             minDate,
             maxDate
         );
         const toInput = this.createDateInput(
-            'To:',
+            t('marketHistory.toLabel'),
             this.filters.dateTo ? this.filters.dateTo.toISOString().split('T')[0] : '',
             minDate,
             maxDate
@@ -1068,7 +1088,7 @@ class DecomposeHistoryViewer {
      * @returns {HTMLElement}
      */
     createInputItemFilterPopup() {
-        const popup = this.createPopupBase('Filter by Input Item');
+        const popup = this.createPopupBase(t('alchemyHistoryViewer.filterByInputItemTitle'));
         popup.style.minWidth = '220px';
 
         // Gather unique input items from all sessions
@@ -1086,7 +1106,7 @@ class DecomposeHistoryViewer {
         // Search box
         const searchInput = document.createElement('input');
         searchInput.type = 'text';
-        searchInput.placeholder = 'Search items...';
+        searchInput.placeholder = t('marketHistory.searchItemsPlaceholder');
         searchInput.style.cssText = `
             width: 100%; padding: 6px; margin-bottom: 8px;
             background: #1a1a1a; border: 1px solid #555;
@@ -1158,12 +1178,12 @@ class DecomposeHistoryViewer {
      * @returns {HTMLElement}
      */
     createResultsFilterPopup() {
-        const popup = this.createPopupBase('Filter by Result Item');
+        const popup = this.createPopupBase(t('alchemyHistoryViewer.filterByResultItemTitle'));
         popup.style.minWidth = '220px';
 
         const searchInput = document.createElement('input');
         searchInput.type = 'text';
-        searchInput.placeholder = 'Item name...';
+        searchInput.placeholder = t('alchemyHistoryViewer.itemNamePlaceholder');
         searchInput.value = this.filters.resultsSearch;
         searchInput.style.cssText = `
             width: 100%; padding: 6px; margin-bottom: 10px;
@@ -1252,7 +1272,7 @@ class DecomposeHistoryViewer {
         row.style.cssText = 'display: flex; gap: 8px; margin-top: 10px;';
 
         const applyBtn = document.createElement('button');
-        applyBtn.textContent = 'Apply';
+        applyBtn.textContent = t('marketHistory.applyButton');
         applyBtn.style.cssText = `
             flex: 1; padding: 6px; background: #4a90e2; color: white;
             border: none; border-radius: 3px; cursor: pointer;
@@ -1260,7 +1280,7 @@ class DecomposeHistoryViewer {
         applyBtn.addEventListener('click', onApply);
 
         const clearBtn = document.createElement('button');
-        clearBtn.textContent = 'Clear';
+        clearBtn.textContent = t('settings.clearButton');
         clearBtn.style.cssText = `
             flex: 1; padding: 6px; background: #666; color: white;
             border: none; border-radius: 3px; cursor: pointer;
@@ -1368,16 +1388,16 @@ class DecomposeHistoryViewer {
         const escape = (val) => `"${String(val === null || val === undefined ? '' : val).replace(/"/g, '""')}"`;
 
         const headers = [
-            'Session Start',
-            'Input Item',
-            'Enh. Level',
-            'Attempts',
-            'Successes',
-            'Failures',
-            'Success Rate',
-            'Results',
-            'Catalyst of Decomposition',
-            'Prime Catalyst',
+            t('alchemyHistoryViewer.colSessionStart'),
+            t('alchemyHistoryViewer.colInputItem'),
+            t('alchemyHistoryViewer.colEnhLevel'),
+            t('alchemyHistoryViewer.colAttempts'),
+            t('alchemyHistoryViewer.colSuccesses'),
+            t('alchemyHistoryViewer.colFailures'),
+            t('alchemyHistoryViewer.colSuccessRate'),
+            t('alchemyHistoryViewer.colResults'),
+            this.getItemName(CATALYST_OF_DECOMPOSITION_HRID),
+            this.getItemName(PRIME_CATALYST_HRID),
         ];
 
         const rows = this.sessions.map((session) => {
@@ -1395,7 +1415,7 @@ class DecomposeHistoryViewer {
                     const name = this.getItemName(hrid);
                     const total = formatKMB(result.totalValue || 0, 1);
                     const each = formatKMB(result.priceEach || 0, 1);
-                    return `${name} x${result.count} = ${total} (${each} each)`;
+                    return t('alchemyHistoryViewer.resultLine', { name, count: result.count, total, each });
                 });
 
             return [
@@ -1432,7 +1452,10 @@ class DecomposeHistoryViewer {
      */
     async clearHistory() {
         const confirmed = confirm(
-            `\u26A0\uFE0F This will permanently delete ALL decompose history (${this.sessions.length} sessions).\nThis cannot be undone.\n\nAre you sure?`
+            t('alchemyHistoryViewer.clearHistoryConfirmWithWarning', {
+                actionName: t('skillingOptimizer.alchemyTypeDecompose'),
+                count: this.sessions.length,
+            })
         );
         if (!confirmed) return;
 
@@ -1440,12 +1463,16 @@ class DecomposeHistoryViewer {
             await decomposeHistoryTracker.clearHistory();
             this.sessions = [];
             this.filteredSessions = [];
-            alert('Decompose history cleared.');
+            alert(
+                t('alchemyHistoryViewer.historyClearedAlert', {
+                    actionName: t('skillingOptimizer.alchemyTypeDecompose'),
+                })
+            );
             this.applyFilters();
             this.renderTable();
         } catch (error) {
             console.error('[DecomposeHistoryViewer] Failed to clear history:', error);
-            alert(`Failed to clear history: ${error.message}`);
+            alert(t('marketHistory.clearHistoryFailedAlert', { error: error.message }));
         }
     }
 }

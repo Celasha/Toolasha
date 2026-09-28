@@ -5,6 +5,7 @@
  */
 
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import domObserver from '../../core/dom-observer.js';
 import webSocketHook from '../../core/websocket.js';
 import dataManager from '../../core/data-manager.js';
@@ -262,16 +263,16 @@ class LootLogStats {
      */
     formatDuration(seconds) {
         if (seconds === 0 || !seconds) return '—';
-        if (seconds < 60) return `${seconds.toFixed(2)}s`;
+        if (seconds < 60) return t('lootLogStats.durationSubSecond', { seconds: seconds.toFixed(2) });
 
         const h = Math.floor(seconds / 3600);
         const m = Math.floor((seconds % 3600) / 60);
         const s = Math.round(seconds % 60);
 
         let str = '';
-        if (h > 0) str += `${h}h`;
-        if (m > 0 || h > 0) str += `${m}m`;
-        str += `${s}s`;
+        if (h > 0) str += t('lootLogStats.durationHoursUnit', { value: h });
+        if (m > 0 || h > 0) str += t('lootLogStats.durationMinutesUnit', { value: m });
+        str += t('lootLogStats.durationSecondsUnit', { value: s });
 
         return str;
     }
@@ -301,13 +302,13 @@ class LootLogStats {
         header.style.cssText = `color: ${config.COLOR_GOLD}; font-weight: bold;`;
 
         if (askTotal === 0 && bidTotal === 0) {
-            header.textContent = 'Total Value: —';
+            header.textContent = t('lootLogStats.totalValueEmpty');
             wrapper.appendChild(header);
             secondDiv.appendChild(wrapper);
             return;
         }
 
-        header.textContent = `▶ Total Value: ${formatKMB(askTotal)}/${formatKMB(bidTotal)}`;
+        header.textContent = t('lootLogStats.totalValueHeader', { ask: formatKMB(askTotal), bid: formatKMB(bidTotal) });
         header.style.cursor = 'pointer';
         wrapper.appendChild(header);
 
@@ -354,7 +355,7 @@ class LootLogStats {
             let bidPerItem = 0;
 
             if (baseHrid === '/items/coin') {
-                name = 'Coins';
+                name = t('lootLogStats.coinsLabel');
                 askPerItem = 1;
                 bidPerItem = 1;
             } else {
@@ -532,9 +533,12 @@ class LootLogStats {
         dayValueSpan.className = 'mwi-loot-log-day-value';
 
         if (dayValueAsk === 0 && dayValueBid === 0) {
-            dayValueSpan.textContent = 'Daily Output: —';
+            dayValueSpan.textContent = t('lootLogStats.dailyOutputEmpty');
         } else {
-            dayValueSpan.textContent = `Daily Output: ${formatKMB(dayValueAsk)}/${formatKMB(dayValueBid)}`;
+            dayValueSpan.textContent = t('lootLogStats.dailyOutputValue', {
+                ask: formatKMB(dayValueAsk),
+                bid: formatKMB(dayValueBid),
+            });
         }
 
         dayValueSpan.style.float = 'right';
@@ -574,7 +578,7 @@ class LootLogStats {
             color: rgba(96, 165, 250, 0.7);
             font-size: 0.85em;
         `;
-        separator.textContent = `— Historical Entries (${historicalEntries.length}) —`;
+        separator.textContent = t('lootLogStats.historicalEntriesSeparator', { count: historicalEntries.length });
 
         // Create wrapper
         const wrapper = document.createElement('div');
@@ -594,7 +598,9 @@ class LootLogStats {
         if (historicalEntries.length > this.historicalBatchSize) {
             const showMoreBtn = document.createElement('button');
             showMoreBtn.className = 'mwi-loot-log-history-more';
-            showMoreBtn.textContent = `Show more (${historicalEntries.length - this.historicalRendered} remaining)`;
+            showMoreBtn.textContent = t('lootLogStats.showMoreButton', {
+                remaining: historicalEntries.length - this.historicalRendered,
+            });
             showMoreBtn.style.cssText = `
                 display: block;
                 width: 100%;
@@ -621,7 +627,7 @@ class LootLogStats {
                 if (remaining <= 0) {
                     showMoreBtn.remove();
                 } else {
-                    showMoreBtn.textContent = `Show more (${remaining} remaining)`;
+                    showMoreBtn.textContent = t('lootLogStats.showMoreButton', { remaining });
                 }
             });
             wrapper.appendChild(showMoreBtn);
@@ -686,7 +692,7 @@ class LootLogStats {
                 if (remaining === 0) {
                     wrapper.remove();
                 } else if (sep) {
-                    sep.textContent = `— Historical Entries (${remaining}) —`;
+                    sep.textContent = t('lootLogStats.historicalEntriesSeparator', { count: remaining });
                 }
             }
         });
@@ -703,8 +709,10 @@ class LootLogStats {
         actionLabel.style.cssText = 'font-weight: bold; color: #fff;';
         const category = this.getActionCategory(entry.actionHrid);
         const name = this.getActionName(entry.actionHrid);
-        const countStr = entry.actionCount ? ` (${numberFormatter(entry.actionCount)})` : '';
-        actionLabel.textContent = category ? `${category} - ${name}${countStr}` : `${name}${countStr}`;
+        const countStr = entry.actionCount
+            ? t('lootLogStats.countSuffixParen', { count: numberFormatter(entry.actionCount) })
+            : '';
+        actionLabel.textContent = t('lootLogStats.categoryDashName', { category, name, suffix: countStr });
         headerDiv.appendChild(actionLabel);
 
         entryEl.appendChild(headerDiv);
@@ -714,7 +722,7 @@ class LootLogStats {
         timeDiv.style.cssText = 'margin-bottom: 2px;';
 
         const startDate = new Date(entry.startTime);
-        timeDiv.textContent = `Start Time: ${formatDateTime(startDate)}`;
+        timeDiv.textContent = t('lootLogStats.startTimeLine', { time: formatDateTime(startDate) });
         entryEl.appendChild(timeDiv);
 
         this.injectTotalValue(timeDiv, entry);
@@ -725,7 +733,7 @@ class LootLogStats {
 
         if (entry.startTime && entry.endTime) {
             const durationSec = (new Date(entry.endTime) - new Date(entry.startTime)) / 1000;
-            durationDiv.textContent = `Duration: ${this.formatDuration(durationSec)}`;
+            durationDiv.textContent = t('lootLogStats.durationLine', { duration: this.formatDuration(durationSec) });
         }
         entryEl.appendChild(durationDiv);
 
@@ -844,7 +852,7 @@ class LootLogStats {
      * @returns {string}
      */
     getActionName(actionHrid) {
-        if (!actionHrid) return 'Unknown';
+        if (!actionHrid) return t('lootLogStats.unknownActionFallback');
         const details = dataManager.getActionDetails(actionHrid);
         if (details?.name) return details.name;
         return actionHrid.split('/').pop().replace(/_/g, ' ');
@@ -866,7 +874,7 @@ class LootLogStats {
         btn.type = 'button';
         btn.className = 'mwi-loot-log-analytics-btn';
         btn.textContent = '📊';
-        btn.title = 'Loot & XP Log Analytics (pivot table)';
+        btn.title = t('lootLogStats.analyticsButtonTooltip');
         btn.style.cssText = `
             margin-left: 8px;
             background: none;
@@ -918,7 +926,7 @@ class LootLogStats {
     enrichAnalyticsRow(row) {
         const name = this.getActionName(row.actionHrid);
         const category = this.getActionCategory(row.actionHrid);
-        const tierLabel = row.difficultyTier ? ` (Tier ${row.difficultyTier})` : '';
+        const tierLabel = row.difficultyTier ? t('lootLogStats.tierSuffixParen', { tier: row.difficultyTier }) : '';
         const { askTotal, bidTotal } = this.calculateTotalValue(row.drops);
         const hours = row.totalTimeMs / 3_600_000;
         const goldPerHourAsk = hours > 0 ? askTotal / hours : 0;
@@ -935,7 +943,7 @@ class LootLogStats {
 
         return {
             row,
-            displayName: category ? `${category} - ${name}${tierLabel}` : `${name}${tierLabel}`,
+            displayName: t('lootLogStats.categoryDashName', { category, name, suffix: tierLabel }),
             askTotal,
             bidTotal,
             hours,
@@ -983,7 +991,7 @@ class LootLogStats {
         header.style.cssText =
             'display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;';
         const title = document.createElement('h2');
-        title.textContent = '📊 Loot & XP Log Analytics';
+        title.textContent = t('lootLogStats.analyticsPanelTitle');
         title.style.cssText = 'margin: 0; font-size: 1.1em; color: #fff;';
         const closeBtn = document.createElement('span');
         closeBtn.textContent = '✕';
@@ -994,15 +1002,17 @@ class LootLogStats {
 
         const subtitle = document.createElement('div');
         subtitle.style.cssText = 'color: rgba(255,255,255,0.6); font-size: 0.85em; margin-bottom: 8px;';
-        const entryCountText = `${enriched.length} action${enriched.length === 1 ? '' : 's'}`;
         subtitle.textContent = historyEnabled
-            ? `${entryCountText} across ${numberFormatter(historicalCount)} stored sessions`
-            : `${entryCountText} from the current session only — enable Loot Log History for full historical coverage`;
+            ? t('lootLogStats.subtitleWithHistory', {
+                  actionCount: enriched.length,
+                  sessions: numberFormatter(historicalCount),
+              })
+            : t('lootLogStats.subtitleSessionOnly', { actionCount: enriched.length });
         panel.appendChild(subtitle);
 
         const search = document.createElement('input');
         search.type = 'text';
-        search.placeholder = 'Filter by action name…';
+        search.placeholder = t('lootLogStats.filterByActionPlaceholder');
         search.style.cssText = `
             margin-bottom: 8px; padding: 6px 8px; border-radius: 4px;
             border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05);
@@ -1022,12 +1032,12 @@ class LootLogStats {
         panel.appendChild(tableWrapper);
 
         const columns = [
-            { key: 'displayName', label: 'Action' },
-            { key: 'actionCount', label: 'Actions' },
-            { key: 'totalTimeMs', label: 'Total Time' },
-            { key: 'xp', label: 'XP' },
-            { key: 'value', label: 'Value (ask/bid)' },
-            { key: 'goldPerHour', label: 'Gold/hr' },
+            { key: 'displayName', label: t('lootLogStats.colAction') },
+            { key: 'actionCount', label: t('lootLogStats.colActions') },
+            { key: 'totalTimeMs', label: t('lootLogStats.colTotalTime') },
+            { key: 'xp', label: t('lootLogStats.colXp') },
+            { key: 'value', label: t('lootLogStats.colValueAskBid') },
+            { key: 'goldPerHour', label: t('lootLogStats.colGoldPerHour') },
         ];
 
         const headRow = document.createElement('tr');
@@ -1116,7 +1126,7 @@ class LootLogStats {
             const emptyRow = document.createElement('tr');
             const emptyCell = document.createElement('td');
             emptyCell.colSpan = 6;
-            emptyCell.textContent = 'No actions match.';
+            emptyCell.textContent = t('lootLogStats.noActionsMatch');
             emptyCell.style.cssText = 'padding: 16px; text-align: center; color: rgba(255,255,255,0.5);';
             emptyRow.appendChild(emptyCell);
             tbody.appendChild(emptyRow);
@@ -1152,7 +1162,10 @@ class LootLogStats {
         actionWrap.appendChild(nameSpan);
         actionCell.appendChild(actionWrap);
         const sessionsSub = document.createElement('div');
-        sessionsSub.textContent = `${numberFormatter(row.entryCount)} session${row.entryCount === 1 ? '' : 's'}`;
+        sessionsSub.textContent = t('lootLogStats.sessionsCountLabel', {
+            count: numberFormatter(row.entryCount),
+            rawCount: row.entryCount,
+        });
         sessionsSub.style.cssText = 'color: rgba(255,255,255,0.45); font-size: 0.85em; margin-top: 2px;';
         actionCell.appendChild(sessionsSub);
         tr.appendChild(actionCell);
@@ -1176,7 +1189,7 @@ class LootLogStats {
                 xpText.textContent = formatKMB(xp.amount);
                 const perHourText = document.createElement('span');
                 perHourText.style.cssText = 'color: rgba(255,255,255,0.45); font-size: 0.85em;';
-                perHourText.textContent = ` (${formatKMB(xp.perHour)}/hr)`;
+                perHourText.textContent = t('lootLogStats.perHourParen', { value: formatKMB(xp.perHour) });
                 chip.append(xpText, perHourText);
                 xpCell.appendChild(chip);
             }
@@ -1192,13 +1205,15 @@ class LootLogStats {
                     'margin-top: 3px; padding-top: 3px; border-top: 1px solid rgba(255,255,255,0.12);';
                 const totalLabel = document.createElement('span');
                 totalLabel.style.cssText = 'color: rgba(255,255,255,0.6); font-size: 0.85em;';
-                totalLabel.textContent = 'Total:';
+                totalLabel.textContent = t('lootLogStats.totalColon');
                 const totalXpText = document.createElement('span');
                 totalXpText.style.cssText = `color: ${config.COLOR_INFO}; font-weight: 600;`;
                 totalXpText.textContent = formatKMB(entry.totalXp);
                 const totalPerHourText = document.createElement('span');
                 totalPerHourText.style.cssText = 'color: rgba(255,255,255,0.45); font-size: 0.85em;';
-                totalPerHourText.textContent = ` (${formatKMB(entry.totalXpPerHour)}/hr)`;
+                totalPerHourText.textContent = t('lootLogStats.perHourParen', {
+                    value: formatKMB(entry.totalXpPerHour),
+                });
                 totalChip.append(totalLabel, totalXpText, totalPerHourText);
                 xpCell.appendChild(totalChip);
             }
@@ -1277,13 +1292,14 @@ class LootLogStats {
         const totalBid = enriched.reduce((sum, e) => sum + e.bidTotal, 0);
 
         const left = document.createElement('span');
-        left.textContent = `Total: ${numberFormatter(totalActions)} actions over ${this.formatDuration(
-            totalTimeMs / 1000
-        )}`;
+        left.textContent = t('lootLogStats.footerTotalActions', {
+            actions: numberFormatter(totalActions),
+            duration: this.formatDuration(totalTimeMs / 1000),
+        });
 
         const right = document.createElement('span');
         right.style.color = config.COLOR_GOLD;
-        right.textContent = `Total Value (ask/bid): ${formatKMB(totalAsk)}/${formatKMB(totalBid)}`;
+        right.textContent = t('lootLogStats.footerTotalValue', { ask: formatKMB(totalAsk), bid: formatKMB(totalBid) });
 
         footer.append(left, right);
         return footer;

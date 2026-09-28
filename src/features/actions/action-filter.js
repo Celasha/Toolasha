@@ -8,6 +8,7 @@
 
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
+import { t } from '../../core/i18n.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import actionPanelSort from './action-panel-sort.js';
 import { displayGatheringProfit, displayProductionProfit } from './profit-display.js';
@@ -212,7 +213,7 @@ class ActionFilter {
         modeBtn.id = 'mwi-action-profit-mode';
         const updateModeBtn = () => {
             const mode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
-            modeBtn.textContent = `Mode: ${config.getPricingModeLabel(mode)}`;
+            modeBtn.textContent = t('actionFilter.modeLabel', { mode: config.getPricingModeLabel(mode) });
         };
         modeBtn.style.cssText = `
             padding: 8px 12px;
@@ -300,7 +301,7 @@ class ActionFilter {
                 message.style.padding = '40px 20px';
                 message.style.color = 'rgba(255, 255, 255, 0.6)';
                 message.style.fontSize = '16px';
-                message.textContent = 'No matching actions';
+                message.textContent = t('actionFilter.noMatchingActions');
 
                 // Insert after the title
                 titleElement.parentElement.insertBefore(message, titleElement.nextSibling);

@@ -6,6 +6,7 @@
 import dataManager from '../../core/data-manager.js';
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
+import { t } from '../../core/i18n.js';
 import { marketplaceSession, MARKETPLACE_OWNER } from '../../core/marketplace-session.js';
 import {
     findActionInput,
@@ -703,7 +704,7 @@ function createEnhancementMissingMaterialsButton(
     const button = document.createElement('button');
     button.id = 'mwi-missing-mats-button';
     button.type = 'button';
-    button.textContent = 'Missing Mats Marketplace';
+    button.textContent = t('guildCreditValue.missingMatsButtonLabel');
     button.disabled = disabled;
     button.style.cssText = `
     width: 100%;
@@ -954,9 +955,9 @@ function createMissingMaterialsButton(missingMaterials, actionHrid, numActions, 
     const button = document.createElement('button');
     button.id = 'mwi-missing-mats-button';
     button.type = 'button';
-    button.textContent = 'Missing Mats Marketplace';
+    button.textContent = t('guildCreditValue.missingMatsButtonLabel');
     button.disabled = disabled;
-    button.title = disabled && numActions <= 0 ? 'Enter a quantity to check missing materials' : '';
+    button.title = disabled && numActions <= 0 ? t('missingMaterialsButton.enterQuantityTooltip') : '';
     button.style.cssText = `
     width: 100%;
     padding: 10px 16px;
@@ -1184,7 +1185,7 @@ function createStrategyIndicator(strategyInfo) {
 `;
 
     if (strategyInfo.protectFrom === 0) {
-        indicator.textContent = 'No protection needed';
+        indicator.textContent = t('missingMaterialsButton.noProtectionNeeded');
     } else {
         // Get item sprite URL from existing DOM
         const spriteUse = document.querySelector('use[href*="items_sprite"]');
@@ -1202,7 +1203,7 @@ function createStrategyIndicator(strategyInfo) {
         }
 
         const label = document.createElement('span');
-        label.textContent = `From: +${strategyInfo.protectFrom}`;
+        label.textContent = t('missingMaterialsButton.protectFromLabel', { level: strategyInfo.protectFrom });
         indicator.appendChild(label);
     }
 
@@ -1263,7 +1264,7 @@ function createReturnTab(referenceTab, returnContext) {
     if (badgeSpan) {
         badgeSpan.innerHTML = `
         <div style="text-align: center;">
-            <div>\u21a9 Return</div>
+            <div>${t('guildCreditValue.returnTabLabel')}</div>
             <div style="font-size: 0.75em; color: #60a5fa;">${displayName}</div>
         </div>
     `;

@@ -8,6 +8,7 @@
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
+import { t } from '../../core/i18n.js';
 import {
     findActionInput,
     attachInputListeners,
@@ -199,7 +200,7 @@ export function renderBlock({ directCost, directComplete, missingCost, missingCo
     `;
 
     const header = document.createElement('div');
-    header.textContent = 'Cost Summary';
+    header.textContent = t('costSummary.title');
     header.style.cssText = `
         font-size: 13px;
         font-weight: 600;

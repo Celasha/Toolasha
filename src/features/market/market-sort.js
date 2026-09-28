@@ -6,6 +6,7 @@
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
+import { t } from '../../core/i18n.js';
 import profitCalculator from './profit-calculator.js';
 import { calculateGatheringProfit } from '../actions/gathering-profit.js';
 import { formatLargeNumber } from '../../utils/formatters.js';
@@ -78,7 +79,7 @@ class MarketSort {
                 this.hasSorted = false;
                 this.sortDirection = 'desc';
                 if (this.sortButton) {
-                    this.sortButton.textContent = 'Sort by Profit';
+                    this.sortButton.textContent = t('marketSort.sortByProfitButton');
                 }
             }
         );
@@ -93,7 +94,7 @@ class MarketSort {
             this.hasSorted = false;
             this.sortDirection = 'desc';
             if (this.sortButton) {
-                this.sortButton.textContent = 'Sort by Profit';
+                this.sortButton.textContent = t('marketSort.sortByProfitButton');
             }
             // Remove profit indicators from any stale elements
             document.querySelectorAll('.toolasha-profit-indicator').forEach((el) => el.remove());
@@ -126,7 +127,7 @@ class MarketSort {
         // Create sort button
         const sortButton = document.createElement('button');
         sortButton.id = 'toolasha-sort-profit-btn';
-        sortButton.textContent = 'Sort by Profit';
+        sortButton.textContent = t('marketSort.sortByProfitButton');
         sortButton.style.cssText = `
             padding: 6px 12px;
             border-radius: 4px;
@@ -157,7 +158,7 @@ class MarketSort {
 
         // Create reset button
         const resetButton = document.createElement('button');
-        resetButton.textContent = 'Reset Order';
+        resetButton.textContent = t('marketSort.resetOrderButton');
         resetButton.style.cssText = `
             padding: 6px 12px;
             border-radius: 4px;
@@ -198,7 +199,9 @@ class MarketSort {
             this.sortDirection = this.sortDirection === 'desc' ? 'asc' : 'desc';
         }
 
-        this.sortButton.textContent = this.sortDirection === 'desc' ? 'Sorting... ▼' : 'Sorting... ▲';
+        this.sortButton.textContent = t('marketSort.sortingInProgress', {
+            arrow: this.sortDirection === 'desc' ? '▼' : '▲',
+        });
         this.sortButton.style.background = 'rgba(91, 141, 239, 0.6)';
         this.isSorting = true;
 
@@ -206,7 +209,9 @@ class MarketSort {
             await this.sortByProfitability();
         } finally {
             this.isSorting = false;
-            this.sortButton.textContent = this.sortDirection === 'desc' ? 'Sort by Profit ▼' : 'Sort by Profit ▲';
+            this.sortButton.textContent = t('marketSort.sortByProfitWithArrow', {
+                arrow: this.sortDirection === 'desc' ? '▼' : '▲',
+            });
             this.sortButton.style.background = 'rgba(91, 141, 239, 0.2)';
         }
     }
@@ -447,7 +452,7 @@ class MarketSort {
         // Reset sort direction
         this.sortDirection = 'desc';
         if (this.sortButton) {
-            this.sortButton.textContent = 'Sort by Profit';
+            this.sortButton.textContent = t('marketSort.sortByProfitButton');
         }
     }
 

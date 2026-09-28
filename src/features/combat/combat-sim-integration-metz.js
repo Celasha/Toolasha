@@ -9,8 +9,9 @@
  * re-attached via an observer rather than injected once at load.
  */
 
-import { constructMetzTeamExport } from './combat-sim-export-metz.js';
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
+import { constructMetzTeamExport } from './combat-sim-export-metz.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 const timerRegistry = createTimerRegistry();
@@ -166,9 +167,7 @@ async function importIntoMetz(button) {
         if (!team) {
             setButtonStatus(button, 'Error: No character data', '#dc3545');
             console.error('[Toolasha Metz Sim] No export data available');
-            alert(
-                'No character data found. Please:\n1. Refresh the game page\n2. Wait for it to fully load\n3. Try again'
-            );
+            alert(t('combatSimIntegrationMetz.noCharacterDataAlert'));
             return;
         }
 

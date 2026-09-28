@@ -6,6 +6,7 @@
 
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
+import { t } from '../../core/i18n.js';
 import marketAPI from '../../api/marketplace.js';
 import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } from '../../utils/panel-z-index.js';
 import { networthFormatter } from '../../utils/formatters.js';
@@ -95,25 +96,45 @@ class NetworthExclusionPopup {
         const ca = networthData?.currentAssets;
         const fa = networthData?.fixedAssets;
         if (!isExcluded('assetType', 'equipped') && (ca?.equipped?.value ?? 0) > 0)
-            add({ type: 'assetType', value: 'equipped', name: 'All Equipped Items', amount: ca.equipped.value });
+            add({
+                type: 'assetType',
+                value: 'equipped',
+                name: t('networthExclusionPopup.allEquippedItemsLabel'),
+                amount: ca.equipped.value,
+            });
         if (!isExcluded('assetType', 'listings') && (ca?.listings?.value ?? 0) > 0)
-            add({ type: 'assetType', value: 'listings', name: 'All Market Listings', amount: ca.listings.value });
+            add({
+                type: 'assetType',
+                value: 'listings',
+                name: t('networthExclusionPopup.allMarketListingsLabel'),
+                amount: ca.listings.value,
+            });
         if (!isExcluded('assetType', 'houses') && (fa?.houses?.totalCost ?? 0) > 0)
-            add({ type: 'assetType', value: 'houses', name: 'All Houses', amount: fa.houses.totalCost });
+            add({
+                type: 'assetType',
+                value: 'houses',
+                name: t('networthExclusionPopup.allHousesLabel'),
+                amount: fa.houses.totalCost,
+            });
         if (!isExcluded('assetType', 'abilities') && (fa?.abilities?.totalCost ?? 0) > 0)
-            add({ type: 'assetType', value: 'abilities', name: 'All Abilities', amount: fa.abilities.totalCost });
+            add({
+                type: 'assetType',
+                value: 'abilities',
+                name: t('networthExclusionPopup.allAbilitiesLabel'),
+                amount: fa.abilities.totalCost,
+            });
         if (!isExcluded('assetType', 'abilityBooks') && (fa?.abilityBooks?.totalCost ?? 0) > 0)
             add({
                 type: 'assetType',
                 value: 'abilityBooks',
-                name: 'All Ability Books',
+                name: t('networthExclusionPopup.allAbilityBooksLabel'),
                 amount: fa.abilityBooks.totalCost,
             });
         if (!isExcluded('assetType', 'guildShrines') && (fa?.guildShrines?.totalCost ?? 0) > 0)
             add({
                 type: 'assetType',
                 value: 'guildShrines',
-                name: 'All Guild Shrines',
+                name: t('networthExclusionPopup.allGuildShrinesLabel'),
                 amount: fa.guildShrines.totalCost,
             });
 
@@ -123,7 +144,7 @@ class NetworthExclusionPopup {
             add({
                 type: 'category',
                 value: catData.categoryHrid,
-                name: `${catName} (category)`,
+                name: t('networthExclusionPopup.categoryNameSuffix', { name: catName }),
                 amount: catData.totalValue,
             });
         }
@@ -170,7 +191,12 @@ class NetworthExclusionPopup {
                 const price = marketAPI.getPrice(eq.itemHrid);
                 return sum + (price?.ask ?? 0);
             }, 0);
-            add({ type: 'loadout', value: snapshot.name, name: `Loadout: ${snapshot.name}`, amount });
+            add({
+                type: 'loadout',
+                value: snapshot.name,
+                name: t('networthExclusionPopup.loadoutNameLabel', { name: snapshot.name }),
+                amount,
+            });
         }
 
         // Sort by amount descending
@@ -230,7 +256,7 @@ class NetworthExclusionPopup {
 
         const title = document.createElement('span');
         title.style.cssText = `font-size: 0.9rem; font-weight: 600; color: ${config.COLOR_ACCENT};`;
-        title.textContent = 'Net Worth Exclusions';
+        title.textContent = t('networthExclusionPopup.popupTitle');
 
         const closeBtn = document.createElement('button');
         closeBtn.textContent = '×';
@@ -287,12 +313,15 @@ class NetworthExclusionPopup {
         currentLabel.style.cssText = `font-size: 0.75rem; color: rgba(255,255,255,0.45); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; justify-content: space-between;`;
 
         const labelText = document.createElement('span');
-        labelText.textContent = exclusions.length > 0 ? 'Current Exclusions' : 'No exclusions configured';
+        labelText.textContent =
+            exclusions.length > 0
+                ? t('networthExclusionPopup.currentExclusionsLabel')
+                : t('networthExclusionPopup.noExclusionsConfiguredLabel');
         currentLabel.appendChild(labelText);
 
         if (exclusions.length > 0) {
             const clearBtn = document.createElement('button');
-            clearBtn.textContent = 'Clear All';
+            clearBtn.textContent = t('settings.clearAllButton');
             clearBtn.style.cssText = `
                 background: transparent;
                 border: 1px solid rgba(255,100,100,0.4);
@@ -343,7 +372,7 @@ class NetworthExclusionPopup {
         // ── Search section ──
         const searchInput = document.createElement('input');
         searchInput.type = 'search';
-        searchInput.placeholder = 'Search items, categories, houses, loadouts...';
+        searchInput.placeholder = t('networthExclusionPopup.searchPlaceholder');
         searchInput.style.cssText = `
             width: 100%;
             box-sizing: border-box;
@@ -464,7 +493,7 @@ class NetworthExclusionPopup {
         if (filtered.length === 0) {
             const empty = document.createElement('div');
             empty.style.cssText = `color: rgba(255,255,255,0.3); font-size: 0.8rem; text-align: center; padding: 12px 0;`;
-            empty.textContent = 'No results';
+            empty.textContent = t('networthExclusionPopup.noResultsMessage');
             container.appendChild(empty);
             return;
         }
@@ -532,7 +561,9 @@ class NetworthExclusionPopup {
                 white-space: nowrap;
                 flex-shrink: 0;
             `;
-            actionBtn.textContent = alreadyExcluded ? '✕ Remove' : '+ Exclude';
+            actionBtn.textContent = alreadyExcluded
+                ? t('networthExclusionPopup.removeButtonLabel')
+                : t('networthExclusionPopup.excludeButtonLabel');
             actionBtn.addEventListener('mouseenter', () => {
                 actionBtn.style.opacity = '1';
                 actionBtn.style.borderColor = alreadyExcluded ? 'rgba(255,100,100,0.9)' : config.COLOR_ACCENT;
@@ -600,15 +631,15 @@ class NetworthExclusionPopup {
         if (entry) return entry.name;
 
         const ASSET_TYPE_NAMES = {
-            equipped: 'All Equipped Items',
-            listings: 'All Market Listings',
-            houses: 'All Houses',
-            abilities: 'All Abilities',
-            abilityBooks: 'All Ability Books',
-            guildShrines: 'All Guild Shrines',
+            equipped: t('networthExclusionPopup.allEquippedItemsLabel'),
+            listings: t('networthExclusionPopup.allMarketListingsLabel'),
+            houses: t('networthExclusionPopup.allHousesLabel'),
+            abilities: t('networthExclusionPopup.allAbilitiesLabel'),
+            abilityBooks: t('networthExclusionPopup.allAbilityBooksLabel'),
+            guildShrines: t('networthExclusionPopup.allGuildShrinesLabel'),
         };
         if (exc.type === 'assetType') return ASSET_TYPE_NAMES[exc.value] ?? exc.value;
-        if (exc.type === 'loadout') return `Loadout: ${exc.value}`;
+        if (exc.type === 'loadout') return t('networthExclusionPopup.loadoutNameLabel', { name: exc.value });
 
         const gd = dataManager.getInitClientData();
         if (!gd) return exc.value;
@@ -653,7 +684,7 @@ class NetworthExclusionPopup {
 
         const removeBtn = document.createElement('span');
         removeBtn.textContent = '×';
-        removeBtn.title = 'Remove exclusion';
+        removeBtn.title = t('networthExclusionPopup.removeExclusionTooltip');
         removeBtn.style.cssText = `cursor: pointer; color: rgba(255,100,100,0.7); font-size: 0.9rem; line-height: 1;`;
         removeBtn.addEventListener('mouseenter', () => (removeBtn.style.color = 'rgba(255,100,100,1)'));
         removeBtn.addEventListener('mouseleave', () => (removeBtn.style.color = 'rgba(255,100,100,0.7)'));

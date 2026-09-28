@@ -10,6 +10,7 @@
  */
 
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import { navigateToMarketplace } from '../../utils/marketplace-tabs.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 
@@ -53,7 +54,7 @@ class ListingRefreshNavigator {
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = BTN_CLASS;
-            btn.textContent = 'Refresh';
+            btn.textContent = t('listingRefreshNavigator.refreshButtonLabel');
             btn.addEventListener('click', () => this._startSession());
 
             const upgradeBtn = Array.from(countContainer.querySelectorAll('button')).find((b) =>
