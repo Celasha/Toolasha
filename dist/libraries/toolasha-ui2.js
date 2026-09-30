@@ -2,11 +2,11 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 2.111.3
+ * Version: 3.0.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, dom_js, storage, webSocketHook, marketData_js, formatters_js, timerRegistry_js, expectedValueCalculator, marketAPI, marketplaceSession_js, domObserverHelpers_js, cleanupRegistry_js, reactInput_js, materialCalculator_js, enhancementCalculator_js, enhancementConfig_js, profitConstants_js, teaParser_js, profitHelpers_js, loadoutState, actionCalculator_js, efficiency_js, alchemyProfitCalculator, tooltipObserver, bonusRevenueCalculator_js, profitCalculator, buffParser_js) {
+(function (config, dataManager, domObserver, i18n_js, dom_js, storage, webSocketHook, marketData_js, formatters_js, timerRegistry_js, expectedValueCalculator, marketAPI, marketplaceSession_js, domObserverHelpers_js, cleanupRegistry_js, reactInput_js, materialCalculator_js, enhancementCalculator_js, enhancementConfig_js, profitConstants_js, teaParser_js, profitHelpers_js, loadoutState, actionCalculator_js, efficiency_js, alchemyProfitCalculator, tooltipObserver, bonusRevenueCalculator_js, profitCalculator, buffParser_js) {
     'use strict';
 
     /**
@@ -613,7 +613,7 @@
 
             const decimalText = rawCombatLevel.toFixed(1).split('.')[1];
             span.textContent = `.${decimalText}`;
-            span.title = `Combat Level from current whole skill levels · native display: ${Math.floor(rawCombatLevel)}`;
+            span.title = i18n_js.t('combatLevelProgress.decimalTooltip', { nativeLevel: Math.floor(rawCombatLevel) });
         }
 
         /**
@@ -1772,16 +1772,16 @@
          */
         formatDuration(seconds) {
             if (seconds === 0 || !seconds) return '—';
-            if (seconds < 60) return `${seconds.toFixed(2)}s`;
+            if (seconds < 60) return i18n_js.t('lootLogStats.durationSubSecond', { seconds: seconds.toFixed(2) });
 
             const h = Math.floor(seconds / 3600);
             const m = Math.floor((seconds % 3600) / 60);
             const s = Math.round(seconds % 60);
 
             let str = '';
-            if (h > 0) str += `${h}h`;
-            if (m > 0 || h > 0) str += `${m}m`;
-            str += `${s}s`;
+            if (h > 0) str += i18n_js.t('lootLogStats.durationHoursUnit', { value: h });
+            if (m > 0 || h > 0) str += i18n_js.t('lootLogStats.durationMinutesUnit', { value: m });
+            str += i18n_js.t('lootLogStats.durationSecondsUnit', { value: s });
 
             return str;
         }
@@ -1811,13 +1811,13 @@
             header.style.cssText = `color: ${config.COLOR_GOLD}; font-weight: bold;`;
 
             if (askTotal === 0 && bidTotal === 0) {
-                header.textContent = 'Total Value: —';
+                header.textContent = i18n_js.t('lootLogStats.totalValueEmpty');
                 wrapper.appendChild(header);
                 secondDiv.appendChild(wrapper);
                 return;
             }
 
-            header.textContent = `▶ Total Value: ${formatters_js.formatKMB(askTotal)}/${formatters_js.formatKMB(bidTotal)}`;
+            header.textContent = i18n_js.t('lootLogStats.totalValueHeader', { ask: formatters_js.formatKMB(askTotal), bid: formatters_js.formatKMB(bidTotal) });
             header.style.cursor = 'pointer';
             wrapper.appendChild(header);
 
@@ -1864,7 +1864,7 @@
                 let bidPerItem = 0;
 
                 if (baseHrid === '/items/coin') {
-                    name = 'Coins';
+                    name = i18n_js.t('lootLogStats.coinsLabel');
                     askPerItem = 1;
                     bidPerItem = 1;
                 } else {
@@ -2042,9 +2042,12 @@
             dayValueSpan.className = 'mwi-loot-log-day-value';
 
             if (dayValueAsk === 0 && dayValueBid === 0) {
-                dayValueSpan.textContent = 'Daily Output: —';
+                dayValueSpan.textContent = i18n_js.t('lootLogStats.dailyOutputEmpty');
             } else {
-                dayValueSpan.textContent = `Daily Output: ${formatters_js.formatKMB(dayValueAsk)}/${formatters_js.formatKMB(dayValueBid)}`;
+                dayValueSpan.textContent = i18n_js.t('lootLogStats.dailyOutputValue', {
+                    ask: formatters_js.formatKMB(dayValueAsk),
+                    bid: formatters_js.formatKMB(dayValueBid),
+                });
             }
 
             dayValueSpan.style.float = 'right';
@@ -2084,7 +2087,7 @@
             color: rgba(96, 165, 250, 0.7);
             font-size: 0.85em;
         `;
-            separator.textContent = `— Historical Entries (${historicalEntries.length}) —`;
+            separator.textContent = i18n_js.t('lootLogStats.historicalEntriesSeparator', { count: historicalEntries.length });
 
             // Create wrapper
             const wrapper = document.createElement('div');
@@ -2104,7 +2107,9 @@
             if (historicalEntries.length > this.historicalBatchSize) {
                 const showMoreBtn = document.createElement('button');
                 showMoreBtn.className = 'mwi-loot-log-history-more';
-                showMoreBtn.textContent = `Show more (${historicalEntries.length - this.historicalRendered} remaining)`;
+                showMoreBtn.textContent = i18n_js.t('lootLogStats.showMoreButton', {
+                    remaining: historicalEntries.length - this.historicalRendered,
+                });
                 showMoreBtn.style.cssText = `
                 display: block;
                 width: 100%;
@@ -2131,7 +2136,7 @@
                     if (remaining <= 0) {
                         showMoreBtn.remove();
                     } else {
-                        showMoreBtn.textContent = `Show more (${remaining} remaining)`;
+                        showMoreBtn.textContent = i18n_js.t('lootLogStats.showMoreButton', { remaining });
                     }
                 });
                 wrapper.appendChild(showMoreBtn);
@@ -2196,7 +2201,7 @@
                     if (remaining === 0) {
                         wrapper.remove();
                     } else if (sep) {
-                        sep.textContent = `— Historical Entries (${remaining}) —`;
+                        sep.textContent = i18n_js.t('lootLogStats.historicalEntriesSeparator', { count: remaining });
                     }
                 }
             });
@@ -2213,8 +2218,10 @@
             actionLabel.style.cssText = 'font-weight: bold; color: #fff;';
             const category = this.getActionCategory(entry.actionHrid);
             const name = this.getActionName(entry.actionHrid);
-            const countStr = entry.actionCount ? ` (${formatters_js.numberFormatter(entry.actionCount)})` : '';
-            actionLabel.textContent = category ? `${category} - ${name}${countStr}` : `${name}${countStr}`;
+            const countStr = entry.actionCount
+                ? i18n_js.t('lootLogStats.countSuffixParen', { count: formatters_js.numberFormatter(entry.actionCount) })
+                : '';
+            actionLabel.textContent = i18n_js.t('lootLogStats.categoryDashName', { category, name, suffix: countStr });
             headerDiv.appendChild(actionLabel);
 
             entryEl.appendChild(headerDiv);
@@ -2224,7 +2231,7 @@
             timeDiv.style.cssText = 'margin-bottom: 2px;';
 
             const startDate = new Date(entry.startTime);
-            timeDiv.textContent = `Start Time: ${formatters_js.formatDateTime(startDate)}`;
+            timeDiv.textContent = i18n_js.t('lootLogStats.startTimeLine', { time: formatters_js.formatDateTime(startDate) });
             entryEl.appendChild(timeDiv);
 
             this.injectTotalValue(timeDiv, entry);
@@ -2235,7 +2242,7 @@
 
             if (entry.startTime && entry.endTime) {
                 const durationSec = (new Date(entry.endTime) - new Date(entry.startTime)) / 1000;
-                durationDiv.textContent = `Duration: ${this.formatDuration(durationSec)}`;
+                durationDiv.textContent = i18n_js.t('lootLogStats.durationLine', { duration: this.formatDuration(durationSec) });
             }
             entryEl.appendChild(durationDiv);
 
@@ -2354,7 +2361,7 @@
          * @returns {string}
          */
         getActionName(actionHrid) {
-            if (!actionHrid) return 'Unknown';
+            if (!actionHrid) return i18n_js.t('lootLogStats.unknownActionFallback');
             const details = dataManager.getActionDetails(actionHrid);
             if (details?.name) return details.name;
             return actionHrid.split('/').pop().replace(/_/g, ' ');
@@ -2376,7 +2383,7 @@
             btn.type = 'button';
             btn.className = 'mwi-loot-log-analytics-btn';
             btn.textContent = '📊';
-            btn.title = 'Loot & XP Log Analytics (pivot table)';
+            btn.title = i18n_js.t('lootLogStats.analyticsButtonTooltip');
             btn.style.cssText = `
             margin-left: 8px;
             background: none;
@@ -2428,7 +2435,7 @@
         enrichAnalyticsRow(row) {
             const name = this.getActionName(row.actionHrid);
             const category = this.getActionCategory(row.actionHrid);
-            const tierLabel = row.difficultyTier ? ` (Tier ${row.difficultyTier})` : '';
+            const tierLabel = row.difficultyTier ? i18n_js.t('lootLogStats.tierSuffixParen', { tier: row.difficultyTier }) : '';
             const { askTotal, bidTotal } = this.calculateTotalValue(row.drops);
             const hours = row.totalTimeMs / 3_600_000;
             const goldPerHourAsk = hours > 0 ? askTotal / hours : 0;
@@ -2445,7 +2452,7 @@
 
             return {
                 row,
-                displayName: category ? `${category} - ${name}${tierLabel}` : `${name}${tierLabel}`,
+                displayName: i18n_js.t('lootLogStats.categoryDashName', { category, name, suffix: tierLabel }),
                 askTotal,
                 bidTotal,
                 hours,
@@ -2493,7 +2500,7 @@
             header.style.cssText =
                 'display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;';
             const title = document.createElement('h2');
-            title.textContent = '📊 Loot & XP Log Analytics';
+            title.textContent = i18n_js.t('lootLogStats.analyticsPanelTitle');
             title.style.cssText = 'margin: 0; font-size: 1.1em; color: #fff;';
             const closeBtn = document.createElement('span');
             closeBtn.textContent = '✕';
@@ -2504,15 +2511,17 @@
 
             const subtitle = document.createElement('div');
             subtitle.style.cssText = 'color: rgba(255,255,255,0.6); font-size: 0.85em; margin-bottom: 8px;';
-            const entryCountText = `${enriched.length} action${enriched.length === 1 ? '' : 's'}`;
             subtitle.textContent = historyEnabled
-                ? `${entryCountText} across ${formatters_js.numberFormatter(historicalCount)} stored sessions`
-                : `${entryCountText} from the current session only — enable Loot Log History for full historical coverage`;
+                ? i18n_js.t('lootLogStats.subtitleWithHistory', {
+                      actionCount: enriched.length,
+                      sessions: formatters_js.numberFormatter(historicalCount),
+                  })
+                : i18n_js.t('lootLogStats.subtitleSessionOnly', { actionCount: enriched.length });
             panel.appendChild(subtitle);
 
             const search = document.createElement('input');
             search.type = 'text';
-            search.placeholder = 'Filter by action name…';
+            search.placeholder = i18n_js.t('lootLogStats.filterByActionPlaceholder');
             search.style.cssText = `
             margin-bottom: 8px; padding: 6px 8px; border-radius: 4px;
             border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05);
@@ -2532,12 +2541,12 @@
             panel.appendChild(tableWrapper);
 
             const columns = [
-                { key: 'displayName', label: 'Action' },
-                { key: 'actionCount', label: 'Actions' },
-                { key: 'totalTimeMs', label: 'Total Time' },
-                { key: 'xp', label: 'XP' },
-                { key: 'value', label: 'Value (ask/bid)' },
-                { key: 'goldPerHour', label: 'Gold/hr' },
+                { key: 'displayName', label: i18n_js.t('lootLogStats.colAction') },
+                { key: 'actionCount', label: i18n_js.t('lootLogStats.colActions') },
+                { key: 'totalTimeMs', label: i18n_js.t('lootLogStats.colTotalTime') },
+                { key: 'xp', label: i18n_js.t('lootLogStats.colXp') },
+                { key: 'value', label: i18n_js.t('lootLogStats.colValueAskBid') },
+                { key: 'goldPerHour', label: i18n_js.t('lootLogStats.colGoldPerHour') },
             ];
 
             const headRow = document.createElement('tr');
@@ -2626,7 +2635,7 @@
                 const emptyRow = document.createElement('tr');
                 const emptyCell = document.createElement('td');
                 emptyCell.colSpan = 6;
-                emptyCell.textContent = 'No actions match.';
+                emptyCell.textContent = i18n_js.t('lootLogStats.noActionsMatch');
                 emptyCell.style.cssText = 'padding: 16px; text-align: center; color: rgba(255,255,255,0.5);';
                 emptyRow.appendChild(emptyCell);
                 tbody.appendChild(emptyRow);
@@ -2662,7 +2671,10 @@
             actionWrap.appendChild(nameSpan);
             actionCell.appendChild(actionWrap);
             const sessionsSub = document.createElement('div');
-            sessionsSub.textContent = `${formatters_js.numberFormatter(row.entryCount)} session${row.entryCount === 1 ? '' : 's'}`;
+            sessionsSub.textContent = i18n_js.t('lootLogStats.sessionsCountLabel', {
+                count: formatters_js.numberFormatter(row.entryCount),
+                rawCount: row.entryCount,
+            });
             sessionsSub.style.cssText = 'color: rgba(255,255,255,0.45); font-size: 0.85em; margin-top: 2px;';
             actionCell.appendChild(sessionsSub);
             tr.appendChild(actionCell);
@@ -2686,7 +2698,7 @@
                     xpText.textContent = formatters_js.formatKMB(xp.amount);
                     const perHourText = document.createElement('span');
                     perHourText.style.cssText = 'color: rgba(255,255,255,0.45); font-size: 0.85em;';
-                    perHourText.textContent = ` (${formatters_js.formatKMB(xp.perHour)}/hr)`;
+                    perHourText.textContent = i18n_js.t('lootLogStats.perHourParen', { value: formatters_js.formatKMB(xp.perHour) });
                     chip.append(xpText, perHourText);
                     xpCell.appendChild(chip);
                 }
@@ -2702,13 +2714,15 @@
                         'margin-top: 3px; padding-top: 3px; border-top: 1px solid rgba(255,255,255,0.12);';
                     const totalLabel = document.createElement('span');
                     totalLabel.style.cssText = 'color: rgba(255,255,255,0.6); font-size: 0.85em;';
-                    totalLabel.textContent = 'Total:';
+                    totalLabel.textContent = i18n_js.t('lootLogStats.totalColon');
                     const totalXpText = document.createElement('span');
                     totalXpText.style.cssText = `color: ${config.COLOR_INFO}; font-weight: 600;`;
                     totalXpText.textContent = formatters_js.formatKMB(entry.totalXp);
                     const totalPerHourText = document.createElement('span');
                     totalPerHourText.style.cssText = 'color: rgba(255,255,255,0.45); font-size: 0.85em;';
-                    totalPerHourText.textContent = ` (${formatters_js.formatKMB(entry.totalXpPerHour)}/hr)`;
+                    totalPerHourText.textContent = i18n_js.t('lootLogStats.perHourParen', {
+                        value: formatters_js.formatKMB(entry.totalXpPerHour),
+                    });
                     totalChip.append(totalLabel, totalXpText, totalPerHourText);
                     xpCell.appendChild(totalChip);
                 }
@@ -2787,13 +2801,14 @@
             const totalBid = enriched.reduce((sum, e) => sum + e.bidTotal, 0);
 
             const left = document.createElement('span');
-            left.textContent = `Total: ${formatters_js.numberFormatter(totalActions)} actions over ${this.formatDuration(
-            totalTimeMs / 1000
-        )}`;
+            left.textContent = i18n_js.t('lootLogStats.footerTotalActions', {
+                actions: formatters_js.numberFormatter(totalActions),
+                duration: this.formatDuration(totalTimeMs / 1000),
+            });
 
             const right = document.createElement('span');
             right.style.color = config.COLOR_GOLD;
-            right.textContent = `Total Value (ask/bid): ${formatters_js.formatKMB(totalAsk)}/${formatters_js.formatKMB(totalBid)}`;
+            right.textContent = i18n_js.t('lootLogStats.footerTotalValue', { ask: formatters_js.formatKMB(totalAsk), bid: formatters_js.formatKMB(totalBid) });
 
             footer.append(left, right);
             return footer;
@@ -4264,7 +4279,9 @@
         color: ${config.COLOR_ACCENT};
         text-align: center;
     `;
-            totalDiv.textContent = `Total Market Value: ${formatters_js.coinFormatter(costData.totalValue)}`;
+            totalDiv.textContent = i18n_js.t('houseCostDisplay.totalMarketValueLine', {
+                value: formatters_js.coinFormatter(costData.totalValue),
+            });
             costsSection.appendChild(totalDiv);
         }
 
@@ -4302,7 +4319,7 @@
         font-weight: bold;
         font-size: 0.875rem;
     `;
-            label.textContent = 'Cumulative to Level:';
+            label.textContent = i18n_js.t('houseCostDisplay.cumulativeToLevelLabel');
 
             const dropdown = document.createElement('select');
             dropdown.style.cssText = `
@@ -4405,7 +4422,9 @@
         color: ${config.COLOR_ACCENT};
         text-align: center;
     `;
-            totalDiv.textContent = `Total Market Value: ${formatters_js.coinFormatter(costData.totalValue)}`;
+            totalDiv.textContent = i18n_js.t('houseCostDisplay.totalMarketValueLine', {
+                value: formatters_js.coinFormatter(costData.totalValue),
+            });
             renderNodes.push(totalDiv);
 
             const missingMaterials = this.getMissingMaterials(costData);
@@ -4478,7 +4497,7 @@
         margin-left: auto;
         text-align: right;
     `;
-            missingSpan.textContent = `Missing: ${formatters_js.coinFormatter(amountNeeded)}`;
+            missingSpan.textContent = i18n_js.t('houseCostDisplay.missingAmountLabel', { value: formatters_js.coinFormatter(amountNeeded) });
             row.appendChild(missingSpan);
 
             container.appendChild(row);
@@ -4545,7 +4564,7 @@
         transition: all 0.2s ease;
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
     `;
-            button.textContent = 'Missing Mats Marketplace';
+            button.textContent = i18n_js.t('guildCreditValue.missingMatsButtonLabel');
 
             button.addEventListener('mouseenter', () => {
                 button.style.background =
@@ -4979,12 +4998,13 @@
             tab.setAttribute('tabindex', '-1');
             const badgeSpan = tab.querySelector('[class*="TabsComponent_badge"]');
             if (badgeSpan) {
-                const roomName = houseCostCalculator.getRoomName(returnContext.houseRoomHrid) || 'House';
+                const roomName =
+                    houseCostCalculator.getRoomName(returnContext.houseRoomHrid) || i18n_js.t('networthHistoryChart.categoryHouse');
                 badgeSpan.innerHTML =
-                    `<div style="text-align:center;"><div>↩ Return</div>` +
+                    `<div style="text-align:center;"><div>${i18n_js.t('guildCreditValue.returnTabLabel')}</div>` +
                     `<div style="font-size:0.75em;color:#60a5fa;">${roomName}</div></div>`;
             } else {
-                tab.textContent = '↩ Return to House';
+                tab.textContent = i18n_js.t('houseCostDisplay.returnToHouseTabLabel');
             }
             tab.addEventListener('click', async (event) => {
                 event.preventDefault();
@@ -6057,7 +6077,7 @@
             if (!actionInfo) return;
 
             const btn = document.createElement('button');
-            btn.textContent = 'View Action';
+            btn.textContent = i18n_js.t('viewActionButton.buttonLabel');
 
             // Copy class from existing popup button for visual consistency
             const existingBtn = actionMenu.querySelector('button');
@@ -6106,7 +6126,7 @@
             // Create the action button
             const actionButton = document.createElement('button');
             actionButton.className = 'mwi-view-action-button';
-            actionButton.textContent = 'View Action';
+            actionButton.textContent = i18n_js.t('viewActionButton.buttonLabel');
             actionButton.style.cssText = `
             background: #2a2a2a;
             color: #ffffff;
@@ -6779,10 +6799,18 @@
                     // Replace first text node (the label) while keeping badge span
                     const badgeSpan = badge.querySelector('.MuiBadge-badge');
                     badge.textContent = '';
-                    badge.appendChild(document.createTextNode('Transmute History'));
+                    badge.appendChild(
+                        document.createTextNode(
+                            i18n_js.t('alchemyHistoryViewer.historyTabTitle', {
+                                actionName: i18n_js.t('skillingOptimizer.alchemyTypeTransmute'),
+                            })
+                        )
+                    );
                     if (badgeSpan) badge.appendChild(badgeSpan);
                 } else {
-                    tab.textContent = 'Transmute History';
+                    tab.textContent = i18n_js.t('alchemyHistoryViewer.historyTabTitle', {
+                        actionName: i18n_js.t('skillingOptimizer.alchemyTypeTransmute'),
+                    });
                 }
 
                 tab.addEventListener('click', (e) => {
@@ -6882,7 +6910,9 @@
         `;
 
             const title = document.createElement('h2');
-            title.textContent = 'Transmute History';
+            title.textContent = i18n_js.t('alchemyHistoryViewer.historyTabTitle', {
+                actionName: i18n_js.t('skillingOptimizer.alchemyTypeTransmute'),
+            });
             title.style.cssText = 'margin: 0; color: #fff;';
 
             const closeBtn = document.createElement('button');
@@ -7066,11 +7096,11 @@
             headerRow.style.background = '#1a1a1a';
 
             const columns = [
-                { key: 'startTime', label: 'Session Start', filterable: true },
-                { key: 'inputItemHrid', label: 'Input Item', filterable: true },
-                { key: 'totalAttempts', label: 'Attempts', filterable: false },
-                { key: 'totalSuccesses', label: 'Successes', filterable: false },
-                { key: 'results', label: 'Results', filterable: true },
+                { key: 'startTime', label: i18n_js.t('alchemyHistoryViewer.colSessionStart'), filterable: true },
+                { key: 'inputItemHrid', label: i18n_js.t('alchemyHistoryViewer.colInputItem'), filterable: true },
+                { key: 'totalAttempts', label: i18n_js.t('alchemyHistoryViewer.colAttempts'), filterable: false },
+                { key: 'totalSuccesses', label: i18n_js.t('alchemyHistoryViewer.colSuccesses'), filterable: false },
+                { key: 'results', label: i18n_js.t('alchemyHistoryViewer.colResults'), filterable: true },
                 { key: '_delete', label: '', filterable: false },
             ];
 
@@ -7147,8 +7177,8 @@
                 cell.colSpan = columns.length;
                 cell.textContent =
                     this.sessions.length === 0
-                        ? 'No transmute history recorded yet.'
-                        : 'No sessions match the current filters.';
+                        ? i18n_js.t('alchemyHistoryViewer.noTransmuteHistoryYet')
+                        : i18n_js.t('alchemyHistoryViewer.noSessionsMatchFilters');
                 cell.style.cssText = 'padding: 20px; text-align: center; color: #888;';
                 row.appendChild(cell);
                 tbody.appendChild(row);
@@ -7184,7 +7214,10 @@
                     // Successes
                     const successCell = document.createElement('td');
                     const failures = session.totalAttempts - session.totalSuccesses;
-                    successCell.textContent = `${session.totalSuccesses} (${failures} failed)`;
+                    successCell.textContent = i18n_js.t('alchemyHistoryViewer.successesFailedLabel', {
+                        successes: session.totalSuccesses,
+                        failures,
+                    });
                     successCell.style.cssText = `
                     padding: 6px 10px;
                     color: ${failures > 0 ? '#fbbf24' : '#4ade80'};
@@ -7202,7 +7235,7 @@
                     deleteCell.style.cssText = 'padding: 6px 4px; text-align: center;';
                     const deleteBtn = document.createElement('button');
                     deleteBtn.textContent = '✕';
-                    deleteBtn.title = 'Delete this session';
+                    deleteBtn.title = i18n_js.t('alchemyHistoryViewer.deleteSessionTitle');
                     deleteBtn.style.cssText = `
                     background: none; border: none; color: #dc2626;
                     cursor: pointer; font-size: 14px; padding: 2px 6px;
@@ -7263,12 +7296,12 @@
                 const name = this.getItemName(itemHrid);
 
                 if (result.isSelfReturn) {
-                    text.textContent = `${name} x${result.count} (self-return)`;
+                    text.textContent = i18n_js.t('alchemyHistoryViewer.selfReturnResultLine', { name, count: result.count });
                     text.style.color = '#888';
                 } else {
                     const total = formatters_js.formatKMB(result.totalValue || 0, 1);
                     const each = formatters_js.formatKMB(result.priceEach || 0, 1);
-                    text.textContent = `${name} x${result.count} = ${total} (${each} each)`;
+                    text.textContent = i18n_js.t('alchemyHistoryViewer.resultLine', { name, count: result.count, total, each });
                 }
 
                 line.appendChild(text);
@@ -7286,7 +7319,7 @@
             // Stats
             const stats = document.createElement('span');
             stats.style.cssText = 'color: #aaa; font-size: 14px;';
-            stats.textContent = `${this.filteredSessions.length} session${this.filteredSessions.length !== 1 ? 's' : ''}`;
+            stats.textContent = i18n_js.t('alchemyHistoryViewer.sessionCountStat', { count: this.filteredSessions.length });
             controls.appendChild(stats);
 
             const rightGroup = document.createElement('div');
@@ -7295,7 +7328,7 @@
             // Clear All Filters button (only when filters active)
             if (this.hasAnyFilter()) {
                 const clearFiltersBtn = document.createElement('button');
-                clearFiltersBtn.textContent = 'Clear All Filters';
+                clearFiltersBtn.textContent = i18n_js.t('marketHistory.clearAllFiltersButton');
                 clearFiltersBtn.style.cssText = `
                 padding: 6px 12px; background: #e67e22; color: white;
                 border: none; border-radius: 4px; cursor: pointer;
@@ -7306,7 +7339,7 @@
 
             // Export button
             const exportBtn = document.createElement('button');
-            exportBtn.textContent = 'Export';
+            exportBtn.textContent = i18n_js.t('customTabsUi.exportButton');
             exportBtn.style.cssText = `
             padding: 6px 12px; background: #2563eb; color: white;
             border: none; border-radius: 4px; cursor: pointer;
@@ -7316,7 +7349,7 @@
 
             // Clear History button
             const clearBtn = document.createElement('button');
-            clearBtn.textContent = 'Clear History';
+            clearBtn.textContent = i18n_js.t('marketHistory.clearHistoryButton');
             clearBtn.style.cssText = `
             padding: 6px 12px; background: #dc2626; color: white;
             border: none; border-radius: 4px; cursor: pointer;
@@ -7341,7 +7374,7 @@
                 if (this.filters.dateFrom) parts.push(formatters_js.formatDateTime(this.filters.dateFrom, { includeTime: false }));
                 if (this.filters.dateTo) parts.push(formatters_js.formatDateTime(this.filters.dateTo, { includeTime: false }));
                 badges.push({
-                    label: `Date: ${parts.join(' - ')}`,
+                    label: i18n_js.t('marketHistory.dateFilterBadge', { range: parts.join(' - ') }),
                     onRemove: () => {
                         this.filters.dateFrom = null;
                         this.filters.dateTo = null;
@@ -7355,9 +7388,9 @@
                 const label =
                     this.filters.selectedInputItems.length === 1
                         ? this.getItemName(this.filters.selectedInputItems[0])
-                        : `${this.filters.selectedInputItems.length} input items`;
+                        : i18n_js.t('alchemyHistoryViewer.inputItemsCountLabel', { count: this.filters.selectedInputItems.length });
                 badges.push({
-                    label: `Input: ${label}`,
+                    label: i18n_js.t('alchemyHistoryViewer.inputFilterBadge', { label }),
                     icon: this.filters.selectedInputItems[0],
                     onRemove: () => {
                         this.filters.selectedInputItems = [];
@@ -7369,7 +7402,7 @@
 
             if (this.filters.resultsSearch.trim()) {
                 badges.push({
-                    label: `Results: "${this.filters.resultsSearch.trim()}"`,
+                    label: i18n_js.t('alchemyHistoryViewer.resultsFilterBadge', { text: this.filters.resultsSearch.trim() }),
                     onRemove: () => {
                         this.filters.resultsSearch = '';
                         this.applyFilters();
@@ -7419,7 +7452,7 @@
             leftSide.style.cssText = 'display: flex; gap: 8px; align-items: center; color: #aaa;';
 
             const label = document.createElement('span');
-            label.textContent = 'Rows per page:';
+            label.textContent = i18n_js.t('marketHistory.rowsPerPageLabel');
 
             const rowsInput = document.createElement('input');
             rowsInput.type = 'number';
@@ -7455,7 +7488,7 @@
             });
 
             showAllLabel.appendChild(showAllCheckbox);
-            showAllLabel.appendChild(document.createTextNode('Show All'));
+            showAllLabel.appendChild(document.createTextNode(i18n_js.t('marketHistory.showAllLabel')));
 
             leftSide.appendChild(label);
             leftSide.appendChild(rowsInput);
@@ -7485,7 +7518,7 @@
                 });
 
                 const pageInfo = document.createElement('span');
-                pageInfo.textContent = `Page ${this.currentPage} of ${totalPages || 1}`;
+                pageInfo.textContent = i18n_js.t('marketHistory.pageInfo', { current: this.currentPage, total: totalPages || 1 });
 
                 const nextBtn = document.createElement('button');
                 nextBtn.textContent = '▶';
@@ -7509,7 +7542,7 @@
                 rightSide.appendChild(nextBtn);
             } else {
                 const info = document.createElement('span');
-                info.textContent = `Showing all ${this.filteredSessions.length} sessions`;
+                info.textContent = i18n_js.t('alchemyHistoryViewer.showingAllSessions', { count: this.filteredSessions.length });
                 rightSide.appendChild(info);
             }
 
@@ -7588,7 +7621,7 @@
          * @returns {HTMLElement}
          */
         createDateFilterPopup() {
-            const popup = this.createPopupBase('Filter by Date');
+            const popup = this.createPopupBase(i18n_js.t('marketHistory.filterByDateTitle'));
 
             // Compute available range
             if (!this.cachedDateRange) {
@@ -7611,18 +7644,20 @@
                 color: #aaa; font-size: 11px; margin-bottom: 10px;
                 padding: 6px; background: #1a1a1a; border-radius: 3px;
             `;
-                rangeInfo.textContent = `Available: ${formatters_js.formatDateTime(minDate, { includeTime: false })} - ${formatters_js.formatDateTime(maxDate, { includeTime: false })}`;
+                rangeInfo.textContent = i18n_js.t('marketHistory.availableRangeLabel', {
+                    range: `${formatters_js.formatDateTime(minDate, { includeTime: false })} - ${formatters_js.formatDateTime(maxDate, { includeTime: false })}`,
+                });
                 popup.appendChild(rangeInfo);
             }
 
             const fromInput = this.createDateInput(
-                'From:',
+                i18n_js.t('marketHistory.fromLabel'),
                 this.filters.dateFrom ? this.filters.dateFrom.toISOString().split('T')[0] : '',
                 minDate,
                 maxDate
             );
             const toInput = this.createDateInput(
-                'To:',
+                i18n_js.t('marketHistory.toLabel'),
                 this.filters.dateTo ? this.filters.dateTo.toISOString().split('T')[0] : '',
                 minDate,
                 maxDate
@@ -7659,7 +7694,7 @@
          * @returns {HTMLElement}
          */
         createInputItemFilterPopup() {
-            const popup = this.createPopupBase('Filter by Input Item');
+            const popup = this.createPopupBase(i18n_js.t('alchemyHistoryViewer.filterByInputItemTitle'));
             popup.style.minWidth = '220px';
 
             // Gather unique input items from all sessions
@@ -7677,7 +7712,7 @@
             // Search box
             const searchInput = document.createElement('input');
             searchInput.type = 'text';
-            searchInput.placeholder = 'Search items...';
+            searchInput.placeholder = i18n_js.t('marketHistory.searchItemsPlaceholder');
             searchInput.style.cssText = `
             width: 100%; padding: 6px; margin-bottom: 8px;
             background: #1a1a1a; border: 1px solid #555;
@@ -7749,12 +7784,12 @@
          * @returns {HTMLElement}
          */
         createResultsFilterPopup() {
-            const popup = this.createPopupBase('Filter by Result Item');
+            const popup = this.createPopupBase(i18n_js.t('alchemyHistoryViewer.filterByResultItemTitle'));
             popup.style.minWidth = '220px';
 
             const searchInput = document.createElement('input');
             searchInput.type = 'text';
-            searchInput.placeholder = 'Item name...';
+            searchInput.placeholder = i18n_js.t('alchemyHistoryViewer.itemNamePlaceholder');
             searchInput.value = this.filters.resultsSearch;
             searchInput.style.cssText = `
             width: 100%; padding: 6px; margin-bottom: 10px;
@@ -7843,7 +7878,7 @@
             row.style.cssText = 'display: flex; gap: 8px; margin-top: 10px;';
 
             const applyBtn = document.createElement('button');
-            applyBtn.textContent = 'Apply';
+            applyBtn.textContent = i18n_js.t('marketHistory.applyButton');
             applyBtn.style.cssText = `
             flex: 1; padding: 6px; background: #4a90e2; color: white;
             border: none; border-radius: 3px; cursor: pointer;
@@ -7851,7 +7886,7 @@
             applyBtn.addEventListener('click', onApply);
 
             const clearBtn = document.createElement('button');
-            clearBtn.textContent = 'Clear';
+            clearBtn.textContent = i18n_js.t('settings.clearButton');
             clearBtn.style.cssText = `
             flex: 1; padding: 6px; background: #666; color: white;
             border: none; border-radius: 3px; cursor: pointer;
@@ -7958,7 +7993,14 @@
         exportHistory() {
             const escape = (val) => `"${String(val === null || val === undefined ? '' : val).replace(/"/g, '""')}"`;
 
-            const headers = ['Session Start', 'Input Item', 'Attempts', 'Successes', 'Failures', 'Results'];
+            const headers = [
+                i18n_js.t('alchemyHistoryViewer.colSessionStart'),
+                i18n_js.t('alchemyHistoryViewer.colInputItem'),
+                i18n_js.t('alchemyHistoryViewer.colAttempts'),
+                i18n_js.t('alchemyHistoryViewer.colSuccesses'),
+                i18n_js.t('alchemyHistoryViewer.colFailures'),
+                i18n_js.t('alchemyHistoryViewer.colResults'),
+            ];
 
             const rows = this.sessions.map((session) => {
                 const start = formatters_js.formatDateTime(new Date(session.startTime));
@@ -7974,11 +8016,11 @@
                     .map(([hrid, result]) => {
                         const name = this.getItemName(hrid);
                         if (result.isSelfReturn) {
-                            return `${name} x${result.count} (self-return)`;
+                            return i18n_js.t('alchemyHistoryViewer.selfReturnResultLine', { name, count: result.count });
                         }
                         const total = formatters_js.formatKMB(result.totalValue || 0, 1);
                         const each = formatters_js.formatKMB(result.priceEach || 0, 1);
-                        return `${name} x${result.count} = ${total} (${each} each)`;
+                        return i18n_js.t('alchemyHistoryViewer.resultLine', { name, count: result.count, total, each });
                     });
 
                 return [start, inputName, session.totalAttempts, session.totalSuccesses, failures, resultParts.join('; ')]
@@ -8004,7 +8046,10 @@
          */
         async clearHistory() {
             const confirmed = confirm(
-                `⚠️ This will permanently delete ALL transmute history (${this.sessions.length} sessions).\nThis cannot be undone.\n\nAre you sure?`
+                i18n_js.t('alchemyHistoryViewer.clearHistoryConfirmWithWarning', {
+                    actionName: i18n_js.t('skillingOptimizer.alchemyTypeTransmute'),
+                    count: this.sessions.length,
+                })
             );
             if (!confirmed) return;
 
@@ -8012,12 +8057,16 @@
                 await transmuteHistoryTracker.clearHistory();
                 this.sessions = [];
                 this.filteredSessions = [];
-                alert('Transmute history cleared.');
+                alert(
+                    i18n_js.t('alchemyHistoryViewer.historyClearedAlert', {
+                        actionName: i18n_js.t('skillingOptimizer.alchemyTypeTransmute'),
+                    })
+                );
                 this.applyFilters();
                 this.renderTable();
             } catch (error) {
                 console.error('[TransmuteHistoryViewer] Failed to clear history:', error);
-                alert(`Failed to clear history: ${error.message}`);
+                alert(i18n_js.t('marketHistory.clearHistoryFailedAlert', { error: error.message }));
             }
         }
     }
@@ -8500,10 +8549,18 @@
                     // Replace first text node (the label) while keeping badge span
                     const badgeSpan = badge.querySelector('.MuiBadge-badge');
                     badge.textContent = '';
-                    badge.appendChild(document.createTextNode('Coinify History'));
+                    badge.appendChild(
+                        document.createTextNode(
+                            i18n_js.t('alchemyHistoryViewer.historyTabTitle', {
+                                actionName: i18n_js.t('skillingOptimizer.alchemyTypeCoinify'),
+                            })
+                        )
+                    );
                     if (badgeSpan) badge.appendChild(badgeSpan);
                 } else {
-                    tab.textContent = 'Coinify History';
+                    tab.textContent = i18n_js.t('alchemyHistoryViewer.historyTabTitle', {
+                        actionName: i18n_js.t('skillingOptimizer.alchemyTypeCoinify'),
+                    });
                 }
 
                 tab.addEventListener('click', (e) => {
@@ -8603,7 +8660,9 @@
         `;
 
             const title = document.createElement('h2');
-            title.textContent = 'Coinify History';
+            title.textContent = i18n_js.t('alchemyHistoryViewer.historyTabTitle', {
+                actionName: i18n_js.t('skillingOptimizer.alchemyTypeCoinify'),
+            });
             title.style.cssText = 'margin: 0; color: #fff;';
 
             const closeBtn = document.createElement('button');
@@ -8769,15 +8828,19 @@
             headerRow.style.background = '#1a1a1a';
 
             const columns = [
-                { key: 'startTime', label: 'Session Start', filterable: true },
-                { key: 'inputItemHrid', label: 'Input Item', filterable: true },
-                { key: 'enhancementLevel', label: 'Enh. Level', filterable: false },
-                { key: 'totalAttempts', label: 'Attempts', filterable: false },
-                { key: 'totalSuccesses', label: 'Successes', filterable: false },
-                { key: '_successRate', label: 'Success Rate', filterable: false },
-                { key: 'totalCoinsEarned', label: 'Coins Earned', filterable: false },
-                { key: '_catalystOfCoinification', label: 'Catalyst of Coinification', filterable: false },
-                { key: '_primeCatalyst', label: 'Prime Catalyst', filterable: false },
+                { key: 'startTime', label: i18n_js.t('alchemyHistoryViewer.colSessionStart'), filterable: true },
+                { key: 'inputItemHrid', label: i18n_js.t('alchemyHistoryViewer.colInputItem'), filterable: true },
+                { key: 'enhancementLevel', label: i18n_js.t('alchemyHistoryViewer.colEnhLevel'), filterable: false },
+                { key: 'totalAttempts', label: i18n_js.t('alchemyHistoryViewer.colAttempts'), filterable: false },
+                { key: 'totalSuccesses', label: i18n_js.t('alchemyHistoryViewer.colSuccesses'), filterable: false },
+                { key: '_successRate', label: i18n_js.t('alchemyHistoryViewer.colSuccessRate'), filterable: false },
+                { key: 'totalCoinsEarned', label: i18n_js.t('alchemyHistoryViewer.colCoinsEarned'), filterable: false },
+                {
+                    key: '_catalystOfCoinification',
+                    label: this.getItemName(CATALYST_OF_COINIFICATION_HRID),
+                    filterable: false,
+                },
+                { key: '_primeCatalyst', label: this.getItemName(PRIME_CATALYST_HRID$2), filterable: false },
                 { key: '_delete', label: '', filterable: false },
             ];
 
@@ -8864,8 +8927,8 @@
                 cell.colSpan = columns.length;
                 cell.textContent =
                     this.sessions.length === 0
-                        ? 'No coinify history recorded yet.'
-                        : 'No sessions match the current filters.';
+                        ? i18n_js.t('alchemyHistoryViewer.noCoinifyHistoryYet')
+                        : i18n_js.t('alchemyHistoryViewer.noSessionsMatchFilters');
                 cell.style.cssText = 'padding: 20px; text-align: center; color: #888;';
                 row.appendChild(cell);
                 tbody.appendChild(row);
@@ -8907,7 +8970,10 @@
                     // Successes
                     const successCell = document.createElement('td');
                     const failures = session.totalAttempts - session.totalSuccesses;
-                    successCell.textContent = `${session.totalSuccesses} (${failures} failed)`;
+                    successCell.textContent = i18n_js.t('alchemyHistoryViewer.successesFailedLabel', {
+                        successes: session.totalSuccesses,
+                        failures,
+                    });
                     successCell.style.cssText = `
                     padding: 6px 10px;
                     color: ${failures > 0 ? '#fbbf24' : '#4ade80'};
@@ -8951,7 +9017,7 @@
                     deleteCell.style.cssText = 'padding: 6px 4px; text-align: center;';
                     const deleteBtn = document.createElement('button');
                     deleteBtn.textContent = '✕';
-                    deleteBtn.title = 'Delete this session';
+                    deleteBtn.title = i18n_js.t('alchemyHistoryViewer.deleteSessionTitle');
                     deleteBtn.style.cssText = `
                     background: none; border: none; color: #dc2626;
                     cursor: pointer; font-size: 14px; padding: 2px 6px;
@@ -9013,7 +9079,7 @@
             // Stats
             const stats = document.createElement('span');
             stats.style.cssText = 'color: #aaa; font-size: 14px;';
-            stats.textContent = `${this.filteredSessions.length} session${this.filteredSessions.length !== 1 ? 's' : ''}`;
+            stats.textContent = i18n_js.t('alchemyHistoryViewer.sessionCountStat', { count: this.filteredSessions.length });
             controls.appendChild(stats);
 
             const rightGroup = document.createElement('div');
@@ -9022,7 +9088,7 @@
             // Clear All Filters button (only when filters active)
             if (this.hasAnyFilter()) {
                 const clearFiltersBtn = document.createElement('button');
-                clearFiltersBtn.textContent = 'Clear All Filters';
+                clearFiltersBtn.textContent = i18n_js.t('marketHistory.clearAllFiltersButton');
                 clearFiltersBtn.style.cssText = `
                 padding: 6px 12px; background: #e67e22; color: white;
                 border: none; border-radius: 4px; cursor: pointer;
@@ -9033,7 +9099,7 @@
 
             // Export button
             const exportBtn = document.createElement('button');
-            exportBtn.textContent = 'Export';
+            exportBtn.textContent = i18n_js.t('customTabsUi.exportButton');
             exportBtn.style.cssText = `
             padding: 6px 12px; background: #2563eb; color: white;
             border: none; border-radius: 4px; cursor: pointer;
@@ -9043,7 +9109,7 @@
 
             // Clear History button
             const clearBtn = document.createElement('button');
-            clearBtn.textContent = 'Clear History';
+            clearBtn.textContent = i18n_js.t('marketHistory.clearHistoryButton');
             clearBtn.style.cssText = `
             padding: 6px 12px; background: #dc2626; color: white;
             border: none; border-radius: 4px; cursor: pointer;
@@ -9068,7 +9134,7 @@
                 if (this.filters.dateFrom) parts.push(formatters_js.formatDateTime(this.filters.dateFrom, { includeTime: false }));
                 if (this.filters.dateTo) parts.push(formatters_js.formatDateTime(this.filters.dateTo, { includeTime: false }));
                 badges.push({
-                    label: `Date: ${parts.join(' - ')}`,
+                    label: i18n_js.t('marketHistory.dateFilterBadge', { range: parts.join(' - ') }),
                     onRemove: () => {
                         this.filters.dateFrom = null;
                         this.filters.dateTo = null;
@@ -9082,9 +9148,9 @@
                 const label =
                     this.filters.selectedInputItems.length === 1
                         ? this.getItemName(this.filters.selectedInputItems[0])
-                        : `${this.filters.selectedInputItems.length} input items`;
+                        : i18n_js.t('alchemyHistoryViewer.inputItemsCountLabel', { count: this.filters.selectedInputItems.length });
                 badges.push({
-                    label: `Input: ${label}`,
+                    label: i18n_js.t('alchemyHistoryViewer.inputFilterBadge', { label }),
                     icon: this.filters.selectedInputItems[0],
                     onRemove: () => {
                         this.filters.selectedInputItems = [];
@@ -9135,7 +9201,7 @@
             leftSide.style.cssText = 'display: flex; gap: 8px; align-items: center; color: #aaa;';
 
             const label = document.createElement('span');
-            label.textContent = 'Rows per page:';
+            label.textContent = i18n_js.t('marketHistory.rowsPerPageLabel');
 
             const rowsInput = document.createElement('input');
             rowsInput.type = 'number';
@@ -9171,7 +9237,7 @@
             });
 
             showAllLabel.appendChild(showAllCheckbox);
-            showAllLabel.appendChild(document.createTextNode('Show All'));
+            showAllLabel.appendChild(document.createTextNode(i18n_js.t('marketHistory.showAllLabel')));
 
             leftSide.appendChild(label);
             leftSide.appendChild(rowsInput);
@@ -9201,7 +9267,7 @@
                 });
 
                 const pageInfo = document.createElement('span');
-                pageInfo.textContent = `Page ${this.currentPage} of ${totalPages || 1}`;
+                pageInfo.textContent = i18n_js.t('marketHistory.pageInfo', { current: this.currentPage, total: totalPages || 1 });
 
                 const nextBtn = document.createElement('button');
                 nextBtn.textContent = '▶';
@@ -9225,7 +9291,7 @@
                 rightSide.appendChild(nextBtn);
             } else {
                 const info = document.createElement('span');
-                info.textContent = `Showing all ${this.filteredSessions.length} sessions`;
+                info.textContent = i18n_js.t('alchemyHistoryViewer.showingAllSessions', { count: this.filteredSessions.length });
                 rightSide.appendChild(info);
             }
 
@@ -9301,7 +9367,7 @@
          * @returns {HTMLElement}
          */
         createDateFilterPopup() {
-            const popup = this.createPopupBase('Filter by Date');
+            const popup = this.createPopupBase(i18n_js.t('marketHistory.filterByDateTitle'));
 
             // Compute available range
             if (!this.cachedDateRange) {
@@ -9324,18 +9390,20 @@
                 color: #aaa; font-size: 11px; margin-bottom: 10px;
                 padding: 6px; background: #1a1a1a; border-radius: 3px;
             `;
-                rangeInfo.textContent = `Available: ${formatters_js.formatDateTime(minDate, { includeTime: false })} - ${formatters_js.formatDateTime(maxDate, { includeTime: false })}`;
+                rangeInfo.textContent = i18n_js.t('marketHistory.availableRangeLabel', {
+                    range: `${formatters_js.formatDateTime(minDate, { includeTime: false })} - ${formatters_js.formatDateTime(maxDate, { includeTime: false })}`,
+                });
                 popup.appendChild(rangeInfo);
             }
 
             const fromInput = this.createDateInput(
-                'From:',
+                i18n_js.t('marketHistory.fromLabel'),
                 this.filters.dateFrom ? this.filters.dateFrom.toISOString().split('T')[0] : '',
                 minDate,
                 maxDate
             );
             const toInput = this.createDateInput(
-                'To:',
+                i18n_js.t('marketHistory.toLabel'),
                 this.filters.dateTo ? this.filters.dateTo.toISOString().split('T')[0] : '',
                 minDate,
                 maxDate
@@ -9372,7 +9440,7 @@
          * @returns {HTMLElement}
          */
         createInputItemFilterPopup() {
-            const popup = this.createPopupBase('Filter by Input Item');
+            const popup = this.createPopupBase(i18n_js.t('alchemyHistoryViewer.filterByInputItemTitle'));
             popup.style.minWidth = '220px';
 
             // Gather unique input items from all sessions
@@ -9390,7 +9458,7 @@
             // Search box
             const searchInput = document.createElement('input');
             searchInput.type = 'text';
-            searchInput.placeholder = 'Search items...';
+            searchInput.placeholder = i18n_js.t('marketHistory.searchItemsPlaceholder');
             searchInput.style.cssText = `
             width: 100%; padding: 6px; margin-bottom: 8px;
             background: #1a1a1a; border: 1px solid #555;
@@ -9517,7 +9585,7 @@
             row.style.cssText = 'display: flex; gap: 8px; margin-top: 10px;';
 
             const applyBtn = document.createElement('button');
-            applyBtn.textContent = 'Apply';
+            applyBtn.textContent = i18n_js.t('marketHistory.applyButton');
             applyBtn.style.cssText = `
             flex: 1; padding: 6px; background: #4a90e2; color: white;
             border: none; border-radius: 3px; cursor: pointer;
@@ -9525,7 +9593,7 @@
             applyBtn.addEventListener('click', onApply);
 
             const clearBtn = document.createElement('button');
-            clearBtn.textContent = 'Clear';
+            clearBtn.textContent = i18n_js.t('settings.clearButton');
             clearBtn.style.cssText = `
             flex: 1; padding: 6px; background: #666; color: white;
             border: none; border-radius: 3px; cursor: pointer;
@@ -9633,16 +9701,16 @@
             const escape = (val) => `"${String(val === null || val === undefined ? '' : val).replace(/"/g, '""')}"`;
 
             const headers = [
-                'Session Start',
-                'Input Item',
-                'Enhancement Level',
-                'Attempts',
-                'Successes',
-                'Failures',
-                'Success Rate',
-                'Coins Earned',
-                'Catalyst of Coinification Used',
-                'Prime Catalyst Used',
+                i18n_js.t('alchemyHistoryViewer.colSessionStart'),
+                i18n_js.t('alchemyHistoryViewer.colInputItem'),
+                i18n_js.t('alchemyHistoryViewer.csvColEnhancementLevelFull'),
+                i18n_js.t('alchemyHistoryViewer.colAttempts'),
+                i18n_js.t('alchemyHistoryViewer.colSuccesses'),
+                i18n_js.t('alchemyHistoryViewer.colFailures'),
+                i18n_js.t('alchemyHistoryViewer.colSuccessRate'),
+                i18n_js.t('alchemyHistoryViewer.colCoinsEarned'),
+                i18n_js.t('alchemyHistoryViewer.csvColItemUsedHeader', { name: this.getItemName(CATALYST_OF_COINIFICATION_HRID) }),
+                i18n_js.t('alchemyHistoryViewer.csvColItemUsedHeader', { name: this.getItemName(PRIME_CATALYST_HRID$2) }),
             ];
 
             const rows = this.sessions.map((session) => {
@@ -9688,7 +9756,10 @@
          */
         async clearHistory() {
             const confirmed = confirm(
-                `This will permanently delete ALL coinify history (${this.sessions.length} sessions).\nThis cannot be undone.\n\nAre you sure?`
+                i18n_js.t('alchemyHistoryViewer.clearHistoryConfirmPlain', {
+                    actionName: i18n_js.t('skillingOptimizer.alchemyTypeCoinify'),
+                    count: this.sessions.length,
+                })
             );
             if (!confirmed) return;
 
@@ -9696,12 +9767,16 @@
                 await coinifyHistoryTracker.clearHistory();
                 this.sessions = [];
                 this.filteredSessions = [];
-                alert('Coinify history cleared.');
+                alert(
+                    i18n_js.t('alchemyHistoryViewer.historyClearedAlert', {
+                        actionName: i18n_js.t('skillingOptimizer.alchemyTypeCoinify'),
+                    })
+                );
                 this.applyFilters();
                 this.renderTable();
             } catch (error) {
                 console.error('[CoinifyHistoryViewer] Failed to clear history:', error);
-                alert(`Failed to clear history: ${error.message}`);
+                alert(i18n_js.t('marketHistory.clearHistoryFailedAlert', { error: error.message }));
             }
         }
     }
@@ -10235,10 +10310,18 @@
                     // Replace first text node (the label) while keeping badge span
                     const badgeSpan = badge.querySelector('.MuiBadge-badge');
                     badge.textContent = '';
-                    badge.appendChild(document.createTextNode('Decompose History'));
+                    badge.appendChild(
+                        document.createTextNode(
+                            i18n_js.t('alchemyHistoryViewer.historyTabTitle', {
+                                actionName: i18n_js.t('skillingOptimizer.alchemyTypeDecompose'),
+                            })
+                        )
+                    );
                     if (badgeSpan) badge.appendChild(badgeSpan);
                 } else {
-                    tab.textContent = 'Decompose History';
+                    tab.textContent = i18n_js.t('alchemyHistoryViewer.historyTabTitle', {
+                        actionName: i18n_js.t('skillingOptimizer.alchemyTypeDecompose'),
+                    });
                 }
 
                 tab.addEventListener('click', (e) => {
@@ -10340,7 +10423,9 @@
         `;
 
             const title = document.createElement('h2');
-            title.textContent = 'Decompose History';
+            title.textContent = i18n_js.t('alchemyHistoryViewer.historyTabTitle', {
+                actionName: i18n_js.t('skillingOptimizer.alchemyTypeDecompose'),
+            });
             title.style.cssText = 'margin: 0; color: #fff;';
 
             const closeBtn = document.createElement('button');
@@ -10524,15 +10609,19 @@
             headerRow.style.background = '#1a1a1a';
 
             const columns = [
-                { key: 'startTime', label: 'Session Start', filterable: true },
-                { key: 'inputItemHrid', label: 'Input Item', filterable: true },
-                { key: 'enhancementLevel', label: 'Enh. Level', filterable: false },
-                { key: 'totalAttempts', label: 'Attempts', filterable: false },
-                { key: 'totalSuccesses', label: 'Successes', filterable: false },
-                { key: '_successRate', label: 'Success Rate', filterable: false },
-                { key: 'results', label: 'Results', filterable: true },
-                { key: '_catalystOfDecomposition', label: 'Catalyst of Decomposition', filterable: false },
-                { key: '_primeCatalyst', label: 'Prime Catalyst', filterable: false },
+                { key: 'startTime', label: i18n_js.t('alchemyHistoryViewer.colSessionStart'), filterable: true },
+                { key: 'inputItemHrid', label: i18n_js.t('alchemyHistoryViewer.colInputItem'), filterable: true },
+                { key: 'enhancementLevel', label: i18n_js.t('alchemyHistoryViewer.colEnhLevel'), filterable: false },
+                { key: 'totalAttempts', label: i18n_js.t('alchemyHistoryViewer.colAttempts'), filterable: false },
+                { key: 'totalSuccesses', label: i18n_js.t('alchemyHistoryViewer.colSuccesses'), filterable: false },
+                { key: '_successRate', label: i18n_js.t('alchemyHistoryViewer.colSuccessRate'), filterable: false },
+                { key: 'results', label: i18n_js.t('alchemyHistoryViewer.colResults'), filterable: true },
+                {
+                    key: '_catalystOfDecomposition',
+                    label: this.getItemName(CATALYST_OF_DECOMPOSITION_HRID),
+                    filterable: false,
+                },
+                { key: '_primeCatalyst', label: this.getItemName(PRIME_CATALYST_HRID), filterable: false },
                 { key: '_delete', label: '', filterable: false },
             ];
 
@@ -10619,8 +10708,8 @@
                 cell.colSpan = columns.length;
                 cell.textContent =
                     this.sessions.length === 0
-                        ? 'No decompose history recorded yet.'
-                        : 'No sessions match the current filters.';
+                        ? i18n_js.t('alchemyHistoryViewer.noDecomposeHistoryYet')
+                        : i18n_js.t('alchemyHistoryViewer.noSessionsMatchFilters');
                 cell.style.cssText = 'padding: 20px; text-align: center; color: #888;';
                 row.appendChild(cell);
                 tbody.appendChild(row);
@@ -10662,7 +10751,10 @@
                     // Successes
                     const successCell = document.createElement('td');
                     const failures = session.totalAttempts - session.totalSuccesses;
-                    successCell.textContent = `${session.totalSuccesses} (${failures} failed)`;
+                    successCell.textContent = i18n_js.t('alchemyHistoryViewer.successesFailedLabel', {
+                        successes: session.totalSuccesses,
+                        failures,
+                    });
                     successCell.style.cssText = `
                     padding: 6px 10px;
                     color: ${failures > 0 ? '#fbbf24' : '#4ade80'};
@@ -10706,7 +10798,7 @@
                     deleteCell.style.cssText = 'padding: 6px 4px; text-align: center;';
                     const deleteBtn = document.createElement('button');
                     deleteBtn.textContent = '\u2715';
-                    deleteBtn.title = 'Delete this session';
+                    deleteBtn.title = i18n_js.t('alchemyHistoryViewer.deleteSessionTitle');
                     deleteBtn.style.cssText = `
                     background: none; border: none; color: #dc2626;
                     cursor: pointer; font-size: 14px; padding: 2px 6px;
@@ -10762,7 +10854,7 @@
                 const name = this.getItemName(itemHrid);
                 const total = formatters_js.formatKMB(result.totalValue || 0, 1);
                 const each = formatters_js.formatKMB(result.priceEach || 0, 1);
-                text.textContent = `${name} x${result.count} = ${total} (${each} each)`;
+                text.textContent = i18n_js.t('alchemyHistoryViewer.resultLine', { name, count: result.count, total, each });
 
                 line.appendChild(text);
                 cell.appendChild(line);
@@ -10805,7 +10897,7 @@
             // Stats
             const stats = document.createElement('span');
             stats.style.cssText = 'color: #aaa; font-size: 14px;';
-            stats.textContent = `${this.filteredSessions.length} session${this.filteredSessions.length !== 1 ? 's' : ''}`;
+            stats.textContent = i18n_js.t('alchemyHistoryViewer.sessionCountStat', { count: this.filteredSessions.length });
             controls.appendChild(stats);
 
             const rightGroup = document.createElement('div');
@@ -10814,7 +10906,7 @@
             // Clear All Filters button (only when filters active)
             if (this.hasAnyFilter()) {
                 const clearFiltersBtn = document.createElement('button');
-                clearFiltersBtn.textContent = 'Clear All Filters';
+                clearFiltersBtn.textContent = i18n_js.t('marketHistory.clearAllFiltersButton');
                 clearFiltersBtn.style.cssText = `
                 padding: 6px 12px; background: #e67e22; color: white;
                 border: none; border-radius: 4px; cursor: pointer;
@@ -10825,7 +10917,7 @@
 
             // Export button
             const exportBtn = document.createElement('button');
-            exportBtn.textContent = 'Export';
+            exportBtn.textContent = i18n_js.t('customTabsUi.exportButton');
             exportBtn.style.cssText = `
             padding: 6px 12px; background: #2563eb; color: white;
             border: none; border-radius: 4px; cursor: pointer;
@@ -10835,7 +10927,7 @@
 
             // Clear History button
             const clearBtn = document.createElement('button');
-            clearBtn.textContent = 'Clear History';
+            clearBtn.textContent = i18n_js.t('marketHistory.clearHistoryButton');
             clearBtn.style.cssText = `
             padding: 6px 12px; background: #dc2626; color: white;
             border: none; border-radius: 4px; cursor: pointer;
@@ -10860,7 +10952,7 @@
                 if (this.filters.dateFrom) parts.push(formatters_js.formatDateTime(this.filters.dateFrom, { includeTime: false }));
                 if (this.filters.dateTo) parts.push(formatters_js.formatDateTime(this.filters.dateTo, { includeTime: false }));
                 badges.push({
-                    label: `Date: ${parts.join(' - ')}`,
+                    label: i18n_js.t('marketHistory.dateFilterBadge', { range: parts.join(' - ') }),
                     onRemove: () => {
                         this.filters.dateFrom = null;
                         this.filters.dateTo = null;
@@ -10874,9 +10966,9 @@
                 const label =
                     this.filters.selectedInputItems.length === 1
                         ? this.getItemName(this.filters.selectedInputItems[0])
-                        : `${this.filters.selectedInputItems.length} input items`;
+                        : i18n_js.t('alchemyHistoryViewer.inputItemsCountLabel', { count: this.filters.selectedInputItems.length });
                 badges.push({
-                    label: `Input: ${label}`,
+                    label: i18n_js.t('alchemyHistoryViewer.inputFilterBadge', { label }),
                     icon: this.filters.selectedInputItems[0],
                     onRemove: () => {
                         this.filters.selectedInputItems = [];
@@ -10888,7 +10980,7 @@
 
             if (this.filters.resultsSearch.trim()) {
                 badges.push({
-                    label: `Results: "${this.filters.resultsSearch.trim()}"`,
+                    label: i18n_js.t('alchemyHistoryViewer.resultsFilterBadge', { text: this.filters.resultsSearch.trim() }),
                     onRemove: () => {
                         this.filters.resultsSearch = '';
                         this.applyFilters();
@@ -10938,7 +11030,7 @@
             leftSide.style.cssText = 'display: flex; gap: 8px; align-items: center; color: #aaa;';
 
             const label = document.createElement('span');
-            label.textContent = 'Rows per page:';
+            label.textContent = i18n_js.t('marketHistory.rowsPerPageLabel');
 
             const rowsInput = document.createElement('input');
             rowsInput.type = 'number';
@@ -10974,7 +11066,7 @@
             });
 
             showAllLabel.appendChild(showAllCheckbox);
-            showAllLabel.appendChild(document.createTextNode('Show All'));
+            showAllLabel.appendChild(document.createTextNode(i18n_js.t('marketHistory.showAllLabel')));
 
             leftSide.appendChild(label);
             leftSide.appendChild(rowsInput);
@@ -11004,7 +11096,7 @@
                 });
 
                 const pageInfo = document.createElement('span');
-                pageInfo.textContent = `Page ${this.currentPage} of ${totalPages || 1}`;
+                pageInfo.textContent = i18n_js.t('marketHistory.pageInfo', { current: this.currentPage, total: totalPages || 1 });
 
                 const nextBtn = document.createElement('button');
                 nextBtn.textContent = '\u25B6';
@@ -11028,7 +11120,7 @@
                 rightSide.appendChild(nextBtn);
             } else {
                 const info = document.createElement('span');
-                info.textContent = `Showing all ${this.filteredSessions.length} sessions`;
+                info.textContent = i18n_js.t('alchemyHistoryViewer.showingAllSessions', { count: this.filteredSessions.length });
                 rightSide.appendChild(info);
             }
 
@@ -11107,7 +11199,7 @@
          * @returns {HTMLElement}
          */
         createDateFilterPopup() {
-            const popup = this.createPopupBase('Filter by Date');
+            const popup = this.createPopupBase(i18n_js.t('marketHistory.filterByDateTitle'));
 
             // Compute available range
             if (!this.cachedDateRange) {
@@ -11130,18 +11222,20 @@
                 color: #aaa; font-size: 11px; margin-bottom: 10px;
                 padding: 6px; background: #1a1a1a; border-radius: 3px;
             `;
-                rangeInfo.textContent = `Available: ${formatters_js.formatDateTime(minDate, { includeTime: false })} - ${formatters_js.formatDateTime(maxDate, { includeTime: false })}`;
+                rangeInfo.textContent = i18n_js.t('marketHistory.availableRangeLabel', {
+                    range: `${formatters_js.formatDateTime(minDate, { includeTime: false })} - ${formatters_js.formatDateTime(maxDate, { includeTime: false })}`,
+                });
                 popup.appendChild(rangeInfo);
             }
 
             const fromInput = this.createDateInput(
-                'From:',
+                i18n_js.t('marketHistory.fromLabel'),
                 this.filters.dateFrom ? this.filters.dateFrom.toISOString().split('T')[0] : '',
                 minDate,
                 maxDate
             );
             const toInput = this.createDateInput(
-                'To:',
+                i18n_js.t('marketHistory.toLabel'),
                 this.filters.dateTo ? this.filters.dateTo.toISOString().split('T')[0] : '',
                 minDate,
                 maxDate
@@ -11178,7 +11272,7 @@
          * @returns {HTMLElement}
          */
         createInputItemFilterPopup() {
-            const popup = this.createPopupBase('Filter by Input Item');
+            const popup = this.createPopupBase(i18n_js.t('alchemyHistoryViewer.filterByInputItemTitle'));
             popup.style.minWidth = '220px';
 
             // Gather unique input items from all sessions
@@ -11196,7 +11290,7 @@
             // Search box
             const searchInput = document.createElement('input');
             searchInput.type = 'text';
-            searchInput.placeholder = 'Search items...';
+            searchInput.placeholder = i18n_js.t('marketHistory.searchItemsPlaceholder');
             searchInput.style.cssText = `
             width: 100%; padding: 6px; margin-bottom: 8px;
             background: #1a1a1a; border: 1px solid #555;
@@ -11268,12 +11362,12 @@
          * @returns {HTMLElement}
          */
         createResultsFilterPopup() {
-            const popup = this.createPopupBase('Filter by Result Item');
+            const popup = this.createPopupBase(i18n_js.t('alchemyHistoryViewer.filterByResultItemTitle'));
             popup.style.minWidth = '220px';
 
             const searchInput = document.createElement('input');
             searchInput.type = 'text';
-            searchInput.placeholder = 'Item name...';
+            searchInput.placeholder = i18n_js.t('alchemyHistoryViewer.itemNamePlaceholder');
             searchInput.value = this.filters.resultsSearch;
             searchInput.style.cssText = `
             width: 100%; padding: 6px; margin-bottom: 10px;
@@ -11362,7 +11456,7 @@
             row.style.cssText = 'display: flex; gap: 8px; margin-top: 10px;';
 
             const applyBtn = document.createElement('button');
-            applyBtn.textContent = 'Apply';
+            applyBtn.textContent = i18n_js.t('marketHistory.applyButton');
             applyBtn.style.cssText = `
             flex: 1; padding: 6px; background: #4a90e2; color: white;
             border: none; border-radius: 3px; cursor: pointer;
@@ -11370,7 +11464,7 @@
             applyBtn.addEventListener('click', onApply);
 
             const clearBtn = document.createElement('button');
-            clearBtn.textContent = 'Clear';
+            clearBtn.textContent = i18n_js.t('settings.clearButton');
             clearBtn.style.cssText = `
             flex: 1; padding: 6px; background: #666; color: white;
             border: none; border-radius: 3px; cursor: pointer;
@@ -11478,16 +11572,16 @@
             const escape = (val) => `"${String(val === null || val === undefined ? '' : val).replace(/"/g, '""')}"`;
 
             const headers = [
-                'Session Start',
-                'Input Item',
-                'Enh. Level',
-                'Attempts',
-                'Successes',
-                'Failures',
-                'Success Rate',
-                'Results',
-                'Catalyst of Decomposition',
-                'Prime Catalyst',
+                i18n_js.t('alchemyHistoryViewer.colSessionStart'),
+                i18n_js.t('alchemyHistoryViewer.colInputItem'),
+                i18n_js.t('alchemyHistoryViewer.colEnhLevel'),
+                i18n_js.t('alchemyHistoryViewer.colAttempts'),
+                i18n_js.t('alchemyHistoryViewer.colSuccesses'),
+                i18n_js.t('alchemyHistoryViewer.colFailures'),
+                i18n_js.t('alchemyHistoryViewer.colSuccessRate'),
+                i18n_js.t('alchemyHistoryViewer.colResults'),
+                this.getItemName(CATALYST_OF_DECOMPOSITION_HRID),
+                this.getItemName(PRIME_CATALYST_HRID),
             ];
 
             const rows = this.sessions.map((session) => {
@@ -11505,7 +11599,7 @@
                         const name = this.getItemName(hrid);
                         const total = formatters_js.formatKMB(result.totalValue || 0, 1);
                         const each = formatters_js.formatKMB(result.priceEach || 0, 1);
-                        return `${name} x${result.count} = ${total} (${each} each)`;
+                        return i18n_js.t('alchemyHistoryViewer.resultLine', { name, count: result.count, total, each });
                     });
 
                 return [
@@ -11542,7 +11636,10 @@
          */
         async clearHistory() {
             const confirmed = confirm(
-                `\u26A0\uFE0F This will permanently delete ALL decompose history (${this.sessions.length} sessions).\nThis cannot be undone.\n\nAre you sure?`
+                i18n_js.t('alchemyHistoryViewer.clearHistoryConfirmWithWarning', {
+                    actionName: i18n_js.t('skillingOptimizer.alchemyTypeDecompose'),
+                    count: this.sessions.length,
+                })
             );
             if (!confirmed) return;
 
@@ -11550,12 +11647,16 @@
                 await decomposeHistoryTracker.clearHistory();
                 this.sessions = [];
                 this.filteredSessions = [];
-                alert('Decompose history cleared.');
+                alert(
+                    i18n_js.t('alchemyHistoryViewer.historyClearedAlert', {
+                        actionName: i18n_js.t('skillingOptimizer.alchemyTypeDecompose'),
+                    })
+                );
                 this.applyFilters();
                 this.renderTable();
             } catch (error) {
                 console.error('[DecomposeHistoryViewer] Failed to clear history:', error);
-                alert(`Failed to clear history: ${error.message}`);
+                alert(i18n_js.t('marketHistory.clearHistoryFailedAlert', { error: error.message }));
             }
         }
     }
@@ -11979,6 +12080,12 @@
      */
 
 
+    const ALCHEMY_TYPE_LABEL_KEYS = {
+        coinify: 'skillingOptimizer.alchemyTypeCoinify',
+        decompose: 'skillingOptimizer.alchemyTypeDecompose',
+        transmute: 'skillingOptimizer.alchemyTypeTransmute',
+    };
+
     const STORAGE_KEY_PREFIX = 'alchemyProtectedCategories';
     const LOCKDOWN_MS = 3000;
     const CONFIRM_WINDOW_MS = 3000;
@@ -12069,7 +12176,7 @@
                 alchemyPanel.dataset.mwiAlchemyLocked = '1';
 
                 const categoryName = this._getCategoryDisplayName(categoryHrid);
-                this._showWarning(alchemyPanel, `Protected category (${categoryName})! Unlocks in 3s...`);
+                this._showWarning(alchemyPanel, i18n_js.t('alchemyActionProtection.protectedCategoryWarning', { categoryName }));
 
                 if (this.lockdownTimer) clearTimeout(this.lockdownTimer);
                 if (this.confirmTimer) clearTimeout(this.confirmTimer);
@@ -12077,7 +12184,7 @@
                 this.lockdownTimer = setTimeout(() => {
                     alchemyPanel.dataset.mwiAlchemyLocked = '';
                     alchemyPanel.dataset.mwiAlchemyConfirmed = '1';
-                    this._showWarning(alchemyPanel, 'Click again to confirm.');
+                    this._showWarning(alchemyPanel, i18n_js.t('alchemyActionProtection.clickAgainToConfirm'));
 
                     this.confirmTimer = setTimeout(() => {
                         alchemyPanel.dataset.mwiAlchemyConfirmed = '';
@@ -12137,7 +12244,7 @@
             pinIcon.innerHTML = '\u{1F4CC}';
             pinIcon.style.cssText =
                 'cursor:pointer; font-size:16px; transition:all 0.2s; text-align:center; filter: grayscale(100%) brightness(0.7); display:none;';
-            pinIcon.title = 'Pin this action';
+            pinIcon.title = i18n_js.t('alchemyActionProtection.pinActionTooltip');
 
             const updatePinIcon = () => {
                 const alchemyType = this._getAlchemyType();
@@ -12152,11 +12259,11 @@
                 if (isPinned) {
                     pinIcon.style.filter = 'grayscale(0%) brightness(1.2) drop-shadow(0 0 3px rgba(255, 100, 0, 0.8))';
                     pinIcon.style.transform = 'scale(1.1)';
-                    pinIcon.title = 'Unpin this action';
+                    pinIcon.title = i18n_js.t('alchemyActionProtection.unpinActionTooltip');
                 } else {
                     pinIcon.style.filter = 'grayscale(100%) brightness(0.7)';
                     pinIcon.style.transform = 'scale(1)';
-                    pinIcon.title = 'Pin this action';
+                    pinIcon.title = i18n_js.t('alchemyActionProtection.pinActionTooltip');
                 }
             };
 
@@ -12318,7 +12425,7 @@
             const activeAction = actions?.find((a) => a.actionHrid === actionHrid && a.primaryItemHash?.includes(itemHrid));
 
             let totalActions;
-            let label = 'all';
+            let label = i18n_js.t('alchemyActionProtection.allCountLabel');
 
             const countInput = alchemyComponent.querySelector('[class*="maxActionCountInput"] input');
             const inputValue = countInput ? parseInt(countInput.value, 10) : NaN;
@@ -12351,7 +12458,11 @@
             }
 
             const color = hasEnough ? '#4caf50' : '#ff6b6b';
-            const text = `Gold for ${label}: ${formatters_js.formatLargeNumber(goldNeeded)} / ${formatters_js.formatLargeNumber(goldBalance)}`;
+            const text = i18n_js.t('alchemyActionProtection.goldSummaryLine', {
+                label,
+                needed: formatters_js.formatLargeNumber(goldNeeded),
+                balance: formatters_js.formatLargeNumber(goldBalance),
+            });
             if (summaryDiv.textContent === text && summaryDiv.style.display === 'block') return;
             summaryDiv.style.display = 'block';
             summaryDiv.style.color = color;
@@ -12359,8 +12470,8 @@
         }
 
         _getCategoryDisplayName(categoryHrid) {
-            const name = categoryHrid.replace('/item_categories/', '').replace(/_/g, ' ');
-            return name.charAt(0).toUpperCase() + name.slice(1);
+            const gameData = dataManager.getInitClientData();
+            return gameData?.itemCategoryDetailMap?.[categoryHrid]?.name || 'Other';
         }
 
         _showWarning(container, message) {
@@ -12422,7 +12533,7 @@
 
             const header = document.createElement('div');
             header.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;';
-            header.innerHTML = `<h3 style="margin:0; font-size:16px; color:#eee;">Alchemy Action Protection</h3>`;
+            header.innerHTML = `<h3 style="margin:0; font-size:16px; color:#eee;">${i18n_js.t('alchemyActionProtection.popupTitle')}</h3>`;
 
             const closeBtn = document.createElement('button');
             closeBtn.textContent = '\u2715';
@@ -12434,8 +12545,7 @@
 
             const desc = document.createElement('p');
             desc.style.cssText = 'color:#999; margin:0 0 10px 0; font-size:12px;';
-            desc.textContent =
-                'Select which item categories to protect from each alchemy action. Protected items require a 3-second confirmation before the action proceeds.';
+            desc.textContent = i18n_js.t('alchemyActionProtection.popupDescription');
             popup.appendChild(desc);
 
             const alchemyTypes = ['coinify', 'decompose', 'transmute'];
@@ -12450,7 +12560,7 @@
 
                 const typeHeader = document.createElement('div');
                 typeHeader.style.cssText = 'font-weight:bold; margin-bottom:6px; text-transform:capitalize; color:#ddd;';
-                typeHeader.textContent = type;
+                typeHeader.textContent = ALCHEMY_TYPE_LABEL_KEYS[type] ? i18n_js.t(ALCHEMY_TYPE_LABEL_KEYS[type]) : type;
                 section.appendChild(typeHeader);
 
                 const protectedSet = this.protectedMap.get(type) || new Set();
@@ -12474,7 +12584,10 @@
                     });
 
                     const label = document.createElement('span');
-                    label.textContent = `${cat.name} (${cat.count} items)`;
+                    label.textContent = i18n_js.t('alchemyActionProtection.categoryItemCountLabel', {
+                        name: cat.name,
+                        count: cat.count,
+                    });
 
                     row.appendChild(checkbox);
                     row.appendChild(label);
@@ -14326,7 +14439,7 @@
             titleContainer.style.textOverflow = 'ellipsis';
 
             const title = document.createElement('span');
-            title.textContent = 'Enhancement Tracker';
+            title.textContent = i18n_js.t('enhancementUi.panelTitle');
             title.style.fontWeight = 'bold';
 
             const sessionCounter = document.createElement('span');
@@ -14407,7 +14520,7 @@
         createClearButton() {
             const button = document.createElement('button');
             button.innerHTML = '🗑️';
-            button.title = 'Clear all sessions';
+            button.title = i18n_js.t('enhancementUi.clearAllSessionsTooltip');
             Object.assign(button.style, {
                 background: 'none',
                 border: 'none',
@@ -14430,7 +14543,7 @@
             });
             button.addEventListener('click', (e) => {
                 e.stopPropagation();
-                if (confirm('Clear all enhancement sessions?')) {
+                if (confirm(i18n_js.t('enhancementUi.clearAllSessionsConfirm'))) {
                     this.clearAllSessions();
                 }
             });
@@ -14445,7 +14558,7 @@
             const button = document.createElement('button');
             button.id = 'enhancementCollapseButton';
             button.innerHTML = '▼';
-            button.title = 'Collapse panel';
+            button.title = i18n_js.t('enhancementUi.collapsePanelTooltip');
             Object.assign(button.style, {
                 background: 'none',
                 border: 'none',
@@ -14540,7 +14653,7 @@
                 content.style.opacity = '0';
                 content.style.padding = '0 15px';
                 button.innerHTML = '▶';
-                button.title = 'Expand panel';
+                button.title = i18n_js.t('enhancementUi.expandPanelTooltip');
                 this.floatingUI.style.width = '250px';
 
                 // Show compact summary after content fades
@@ -14555,7 +14668,7 @@
                 content.style.opacity = '1';
                 content.style.padding = '15px';
                 button.innerHTML = '▼';
-                button.title = 'Collapse panel';
+                button.title = i18n_js.t('enhancementUi.collapsePanelTooltip');
                 this.floatingUI.style.width = '350px';
             }
         }
@@ -14576,7 +14689,7 @@
 
             const gameData = dataManager.getInitClientData();
             const itemDetails = gameData?.itemDetailMap?.[session.itemHrid];
-            const itemName = itemDetails?.name || 'Unknown Item';
+            const itemName = itemDetails?.name || i18n_js.t('enhancementUi.unknownItemFallback');
 
             const totalAttempts = session.totalAttempts;
             const totalSuccess = session.totalSuccesses;
@@ -14594,7 +14707,7 @@
 
             summary.innerHTML = `
             <div style="font-weight: bold; margin-bottom: 4px;">${itemName} → +${session.targetLevel}</div>
-            <div style="opacity: 0.8;">${statusIcon} ${totalAttempts} attempts | ${successRate}% rate</div>
+            <div style="opacity: 0.8;">${i18n_js.t('enhancementUi.collapsedSummaryStats', { statusIcon, totalAttempts, successRate })}</div>
         `;
 
             this.floatingUI.appendChild(summary);
@@ -14685,13 +14798,13 @@
                 content.innerHTML = `
                 <div style="text-align: center; padding: 40px 20px; color: ${STYLE.colors.textSecondary};">
                     <div style="font-size: 32px; margin-bottom: 10px;">✧</div>
-                    <div style="font-size: 14px;">Begin enhancing to populate data</div>
+                    <div style="font-size: 14px;">${i18n_js.t('enhancementUi.noSessionsMessage')}</div>
                 </div>
             `;
                 return;
             }
             if (!session) {
-                content.innerHTML = '<div style="text-align: center; color: ${STYLE.colors.danger};">Invalid session</div>';
+                content.innerHTML = `<div style="text-align: center; color: ${STYLE.colors.danger};">${i18n_js.t('enhancementUi.invalidSessionMessage')}</div>`;
                 return;
             }
 
@@ -14738,7 +14851,7 @@
         generateSessionHTML(session) {
             const gameData = dataManager.getInitClientData();
             const itemDetails = gameData?.itemDetailMap?.[session.itemHrid];
-            const itemName = itemDetails?.name || 'Unknown Item';
+            const itemName = itemDetails?.name || i18n_js.t('enhancementUi.unknownItemFallback');
 
             // Calculate stats
             const totalAttempts = session.totalAttempts;
@@ -14754,25 +14867,28 @@
 
             // Status display
             const statusColor = session.state === SessionState.COMPLETED ? STYLE.colors.success : STYLE.colors.accent;
-            const statusText = session.state === SessionState.COMPLETED ? 'Completed' : 'In Progress';
+            const statusText =
+                session.state === SessionState.COMPLETED
+                    ? i18n_js.t('enhancementUi.statusCompleted')
+                    : i18n_js.t('enhancementUi.statusInProgress');
 
             // Build HTML
             let html = `
             <div style="margin-bottom: 10px; font-size: 13px;">
                 <div style="display: flex; justify-content: space-between;">
-                    <span>Item:</span>
+                    <span>${i18n_js.t('enhancementUi.itemLabel')}</span>
                     <strong>${itemName}</strong>
                 </div>
                 <div style="display: flex; justify-content: space-between;">
-                    <span>Target:</span>
+                    <span>${i18n_js.t('enhancementUi.targetLabel')}</span>
                     <span>+${session.targetLevel}</span>
                 </div>
                 <div style="display: flex; justify-content: space-between;">
-                    <span>Prot:</span>
+                    <span>${i18n_js.t('enhancementUi.protLabel')}</span>
                     <span>+${session.protectFrom}</span>
                 </div>
                 <div style="display: flex; justify-content: space-between; margin-top: 5px; color: ${statusColor};">
-                    <span>Status:</span>
+                    <span>${i18n_js.t('enhancementUi.statusLabel')}</span>
                     <strong>${statusText}</strong>
                 </div>
             </div>
@@ -14785,10 +14901,10 @@
             html += `
             <div style="margin-top: 8px;">
                 <div style="font-size: 13px;">
-                    Attempts ${totalAttempts} · Successes ${totalSuccess} · Blessed ${totalBlessed} · Failures ${totalFailure}
+                    ${i18n_js.t('enhancementUi.summaryStatsLine', { totalAttempts, totalSuccess, totalBlessed, totalFailure })}
                 </div>
                 <div style="font-size: 13px; margin-top: 4px;">
-                    <span>Prots Used:</span>
+                    <span>${i18n_js.t('enhancementUi.protsUsedLabel')}</span>
                     <strong> ${session.protectionCount || 0}</strong>
                 </div>
             </div>`;
@@ -14818,11 +14934,11 @@
                 html += `
             <div style="display: flex; justify-content: space-between; font-size: 12px; margin-top: 4px;">
                 <div style="color: ${STYLE.colors.textSecondary};">
-                    <span>Expected Attempts:</span>
+                    <span>${i18n_js.t('enhancementUi.expectedAttemptsLabel')}</span>
                     <span> ${expAtt}</span>
                 </div>
                 <div style="color: ${STYLE.colors.textSecondary};">
-                    <span>Expected Prots:</span>
+                    <span>${i18n_js.t('enhancementUi.expectedProtsLabel')}</span>
                     <span> ${expProt}</span>
                 </div>
             </div>`;
@@ -14831,11 +14947,11 @@
                     html += `
             <div style="display: flex; justify-content: space-between; font-size: 12px; margin-top: 2px; color: ${STYLE.colors.textSecondary};">
                 <div>
-                    <span>Attempt Factor:</span>
+                    <span>${i18n_js.t('enhancementUi.attemptFactorLabel')}</span>
                     <strong> ${attFactor ? attFactor + 'x' : '—'}</strong>
                 </div>
                 <div>
-                    <span>Prot Factor:</span>
+                    <span>${i18n_js.t('enhancementUi.protFactorLabel')}</span>
                     <strong> ${protFactor ? protFactor + 'x' : '—'}</strong>
                 </div>
             </div>`;
@@ -14844,18 +14960,18 @@
 
             html += `
             <div style="margin-top: 8px; display: flex; justify-content: space-between; font-size: 13px;">
-                <span>Total XP Gained:</span>
+                <span>${i18n_js.t('enhancementUi.totalXpGainedLabel')}</span>
                 <strong>${this.formatNumber(session.totalXP)}</strong>
             </div>
 
             <div style="margin-top: 8px; display: flex; justify-content: space-between; font-size: 13px;">
-                <span>Session Duration:</span>
+                <span>${i18n_js.t('enhancementUi.sessionDurationLabel')}</span>
                 <strong>${durationText}</strong>
             </div>
 
             <div style="margin-top: 8px; display: flex; justify-content: space-between; font-size: 13px;">
-                <span>XP/Hour:</span>
-                <strong>${xpPerHour > 0 ? this.formatNumber(xpPerHour) : 'Calculating...'}</strong>
+                <span>${i18n_js.t('enhancementUi.xpPerHourLabel')}</span>
+                <strong>${xpPerHour > 0 ? this.formatNumber(xpPerHour) : i18n_js.t('enhancementUi.calculatingEllipsis')}</strong>
             </div>
         `;
 
@@ -14863,10 +14979,14 @@
             if (overallLuck) {
                 const luckColor = overallLuck.luckPercent >= 0 ? STYLE.colors.success : STYLE.colors.danger;
                 const luckSign = overallLuck.luckPercent >= 0 ? '+' : '';
+                const luckTooltip = i18n_js.t('enhancementUi.luckTooltip', {
+                    actualSuccesses: overallLuck.actualSuccesses,
+                    expectedSuccesses: overallLuck.expectedSuccesses.toFixed(2),
+                });
                 html += `
             <div style="margin-top: 8px; display: flex; justify-content: space-between; font-size: 13px;">
-                <span>Enhancing Luck:</span>
-                <strong style="color: ${luckColor};" title="${overallLuck.actualSuccesses} actual vs ${overallLuck.expectedSuccesses.toFixed(2)} expected successes">${luckSign}${overallLuck.luckPercent.toFixed(1)}%</strong>
+                <span>${i18n_js.t('enhancementUi.enhancingLuckLabel')}</span>
+                <strong style="color: ${luckColor};" title="${luckTooltip}">${luckSign}${overallLuck.luckPercent.toFixed(1)}%</strong>
             </div>
             `;
             }
@@ -14892,7 +15012,7 @@
             const levels = Array.from(levelSet).sort((a, b) => b - a);
 
             if (levels.length === 0) {
-                return '<div style="text-align: center; padding: 20px; color: ${STYLE.colors.textSecondary};">No attempts recorded yet</div>';
+                return `<div style="text-align: center; padding: 20px; color: ${STYLE.colors.textSecondary};">${i18n_js.t('enhancementUi.noAttemptsRecordedMessage')}</div>`;
             }
 
             let rows = '';
@@ -14937,11 +15057,11 @@
             <table style="${compactTableStyle}">
                 <thead>
                     <tr>
-                        <th style="${compactHeaderStyle}">Lvl</th>
-                        <th style="${compactHeaderStyle}">Success</th>
-                        <th style="${compactHeaderStyle}">Fail</th>
-                        <th style="${compactHeaderStyle}">%</th>
-                        <th style="${compactHeaderStyle}">Luck</th>
+                        <th style="${compactHeaderStyle}">${i18n_js.t('alchemyBestItems.colLvl')}</th>
+                        <th style="${compactHeaderStyle}">${i18n_js.t('labSim.colSuccess')}</th>
+                        <th style="${compactHeaderStyle}">${i18n_js.t('enhancementUi.colFail')}</th>
+                        <th style="${compactHeaderStyle}">${i18n_js.t('enhancementUi.colPercent')}</th>
+                        <th style="${compactHeaderStyle}">${i18n_js.t('enhancementUi.colLuck')}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -14973,7 +15093,7 @@
             html += `
             <div style="display: flex; justify-content: space-between; cursor: pointer; font-weight: bold; padding: 5px 0;"
                  onclick="document.getElementById('${detailsId}').style.display = document.getElementById('${detailsId}').style.display === 'none' ? 'block' : 'none'">
-                <span>💰 Total Cost (click for details)</span>
+                <span>${i18n_js.t('enhancementUi.totalCostClickDetailsLabel')}</span>
                 <span style="color: ${STYLE.colors.gold};">${this.formatNumber(session.totalCost)}</span>
             </div>
         `;
@@ -14985,8 +15105,7 @@
             if (hasMaterials) {
                 html +=
                     '<div style="margin-bottom: 8px; padding: 5px; background: rgba(0, 255, 234, 0.05); border-radius: 4px;">';
-                html +=
-                    '<div style="font-weight: bold; margin-bottom: 3px; color: ${STYLE.colors.textSecondary};">Materials:</div>';
+                html += `<div style="font-weight: bold; margin-bottom: 3px; color: ${STYLE.colors.textSecondary};">${i18n_js.t('enhancementUi.materialsLabel')}</div>`;
 
                 for (const [itemHrid, data] of Object.entries(session.materialCosts)) {
                     const itemDetails = gameData?.itemDetailMap?.[itemHrid];
@@ -15007,7 +15126,7 @@
             if (hasCoins) {
                 html += `
                 <div style="display: flex; justify-content: space-between; margin-top: 2px; padding: 5px; background: rgba(0, 255, 234, 0.05); border-radius: 4px;">
-                    <span style="font-weight: bold; color: ${STYLE.colors.textSecondary};">Coins (${session.coinCount || 0}×):</span>
+                    <span style="font-weight: bold; color: ${STYLE.colors.textSecondary};">${i18n_js.t('enhancementUi.coinsCountLabel', { count: session.coinCount || 0 })}</span>
                     <span style="color: ${STYLE.colors.gold};">${this.formatNumber(session.coinCost)}</span>
                 </div>
             `;
@@ -15016,8 +15135,9 @@
             // Protection costs
             if (hasProtection) {
                 const protectionItemName = session.protectionItemHrid
-                    ? gameData?.itemDetailMap?.[session.protectionItemHrid]?.name || 'Protection'
-                    : 'Protection';
+                    ? gameData?.itemDetailMap?.[session.protectionItemHrid]?.name ||
+                      i18n_js.t('enhancementUi.protectionFallbackName')
+                    : i18n_js.t('enhancementUi.protectionFallbackName');
 
                 html += `
                 <div style="display: flex; justify-content: space-between; margin-top: 2px; padding: 5px; background: rgba(0, 255, 234, 0.05); border-radius: 4px;">
@@ -15049,11 +15169,11 @@
             const s = seconds % 60;
 
             if (h > 0) {
-                return `${h}h ${m}m ${s}s`;
+                return i18n_js.t('enhancementUi.durationHoursMinutesSeconds', { hours: h, minutes: m, seconds: s });
             } else if (m > 0) {
-                return `${m}m ${s}s`;
+                return i18n_js.t('combatSimUi.durationMinutesSeconds', { minutes: m, seconds: s });
             } else {
-                return `${s}s`;
+                return i18n_js.t('combatSimUi.durationSeconds', { seconds: s });
             }
         }
 
@@ -16155,7 +16275,7 @@
 
             const btn = document.createElement('button');
             btn.className = BTN_CLASS;
-            btn.textContent = 'XPH Calc';
+            btn.textContent = i18n_js.t('xphCalculator.openButtonLabel');
             btn.style.cssText = `
             background: linear-gradient(180deg, rgba(0,200,150,0.2) 0%, rgba(0,200,150,0.1) 100%);
             color: #e0e0e0;
@@ -16214,7 +16334,7 @@
             flex-shrink: 0;
         `;
             header.innerHTML = `
-            <span style="font-weight:700; font-size:14px; color:#00c896;">Enhancement XPH Calculator</span>
+            <span style="font-weight:700; font-size:14px; color:#00c896;">${i18n_js.t('xphCalculator.panelTitle')}</span>
             <button id="mwi-xph-close" style="
                 background:none; border:none; color:#aaa; font-size:22px;
                 cursor:pointer; padding:0; line-height:1;">×</button>
@@ -16239,9 +16359,9 @@
                 'width:46px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444; border-radius:4px; padding:3px 6px; font-size:12px; text-align:center;';
 
             controls.innerHTML = `
-            <label style="color:#888; font-size:12px;">Max level</label>
+            <label style="color:#888; font-size:12px;">${i18n_js.t('xphCalculator.maxLevelLabel')}</label>
             <input id="mwi-xph-maxlevel" type="number" min="1" max="20" value="${defaultMax}" style="${inputStyle}">
-            <label style="color:#888; font-size:12px; margin-left:6px;">Protect from</label>
+            <label style="color:#888; font-size:12px; margin-left:6px;">${i18n_js.t('xphCalculator.protectFromLabel')}</label>
             <input id="mwi-xph-protect" type="number" min="0" max="19" value="${defaultProtect}" style="${inputStyle}">
             <button id="mwi-xph-run" style="
                 margin-left: auto;
@@ -16252,7 +16372,7 @@
                 padding: 5px 14px;
                 font-size: 12px;
                 font-weight: 600;
-                cursor: pointer;">Calculate</button>
+                cursor: pointer;">${i18n_js.t('riskOfRuinUi.calculateButton')}</button>
         `;
 
             // Table container
@@ -16265,10 +16385,10 @@
             <table style="width:100%; border-collapse:collapse;">
                 <thead style="position:sticky; top:0; background:#0a0a14; z-index:1;">
                     <tr>
-                        <th id="mwi-xph-th-name" style="${thBase} text-align:left;"># Item</th>
-                        <th id="mwi-xph-th-xph"  style="${thBase} text-align:right;">XP/hr ▼</th>
-                        <th id="mwi-xph-th-gpx"  style="${thBase} text-align:right;">Gold/XP</th>
-                        <th id="mwi-xph-th-cphr" style="${thBase} text-align:right;">Cost/hr</th>
+                        <th id="mwi-xph-th-name" style="${thBase} text-align:left;">${i18n_js.t('xphCalculator.colItem')}</th>
+                        <th id="mwi-xph-th-xph"  style="${thBase} text-align:right;">${i18n_js.t('combatSimUi.xpPerHrHeading')} ▼</th>
+                        <th id="mwi-xph-th-gpx"  style="${thBase} text-align:right;">${i18n_js.t('xphCalculator.colGoldPerXp')}</th>
+                        <th id="mwi-xph-th-cphr" style="${thBase} text-align:right;">${i18n_js.t('combatSimUi.colCostPerHr')}</th>
                     </tr>
                 </thead>
                 <tbody id="mwi-xph-tbody"></tbody>
@@ -16280,7 +16400,7 @@
             status.id = 'mwi-xph-status';
             status.style.cssText =
                 'padding:6px 14px; color:#555; font-size:11px; border-top:1px solid #1a1a1a; flex-shrink:0; text-align:center;';
-            status.textContent = 'Enter parameters and click Calculate.';
+            status.textContent = i18n_js.t('xphCalculator.statusDefault');
 
             this.panel.appendChild(header);
             this.panel.appendChild(controls);
@@ -16336,25 +16456,25 @@
             );
 
             const status = this.panel.querySelector('#mwi-xph-status');
-            status.textContent = 'Calculating…';
+            status.textContent = i18n_js.t('riskOfRuinUi.statusCalculating');
             this.tableBody.innerHTML = '';
 
-            const t = setTimeout(() => {
+            const t2 = setTimeout(() => {
                 try {
                     this._compute(maxLevel, protectFrom);
                 } catch (err) {
                     console.error('[XPHCalculator] Error:', err);
-                    status.textContent = 'Error during calculation.';
+                    status.textContent = i18n_js.t('riskOfRuinUi.statusErrorCalculation');
                 }
             }, 10);
-            this.timerRegistry.registerTimeout(t);
+            this.timerRegistry.registerTimeout(t2);
         }
 
         _compute(maxLevel, protectFrom) {
             const gameData = dataManager.getInitClientData();
             const status = this.panel.querySelector('#mwi-xph-status');
             if (!gameData) {
-                status.textContent = 'No game data available.';
+                status.textContent = i18n_js.t('labSim.statusNoGameData');
                 return;
             }
 
@@ -16374,8 +16494,8 @@
             this._updateSortIndicators();
 
             const withCost = results.filter((r) => r.costPerHour !== null).length;
-            const partialNote = results.some((r) => r.costPartial) ? ' * = partial price data.' : '';
-            status.textContent = `${results.length} items · ${withCost} with cost data.${partialNote}`;
+            const hasPartial = results.some((r) => r.costPartial);
+            status.textContent = i18n_js.t('xphCalculator.statusResults', { count: results.length, withCost, hasPartial });
         }
 
         _sort(col) {
@@ -17162,7 +17282,7 @@ self.onmessage = function (e) {
         if (itemHrid === '/items/coin') {
             return {
                 itemHrid,
-                itemName: 'Coin',
+                itemName: i18n_js.t('craftingPlanCalculator.coinItemName'),
                 quantity,
                 strategy: 'buy',
                 unitCost: 1,
@@ -18092,7 +18212,7 @@ self.onmessage = function (e) {
         _buildLauncher() {
             const btn = document.createElement('button');
             btn.id = LAUNCHER_ID;
-            btn.textContent = 'Risk of Ruin';
+            btn.textContent = i18n_js.t('riskOfRuinUi.launcherButtonLabel');
             btn.style.cssText = `
             position: fixed;
             bottom: 12px;
@@ -18155,7 +18275,7 @@ self.onmessage = function (e) {
             flex-shrink: 0;
         `;
             header.innerHTML = `
-            <span style="font-weight:700; font-size:14px; color:#e05c5c;">Risk of Ruin Calculator</span>
+            <span style="font-weight:700; font-size:14px; color:#e05c5c;">${i18n_js.t('riskOfRuinUi.panelTitle')}</span>
             <button id="mwi-ror-close" style="
                 background:none; border:none; color:#aaa; font-size:22px;
                 cursor:pointer; padding:0; line-height:1;">×</button>
@@ -18170,7 +18290,7 @@ self.onmessage = function (e) {
             status.id = 'mwi-ror-status';
             status.style.cssText =
                 'padding:6px 14px; color:#555; font-size:11px; border-top:1px solid #1a1a1a; flex-shrink:0; text-align:center;';
-            status.textContent = 'Choose a mode, set your target, and click Calculate.';
+            status.textContent = i18n_js.t('riskOfRuinUi.statusDefault');
 
             this.panel.appendChild(header);
             this.panel.appendChild(body);
@@ -18196,17 +18316,17 @@ self.onmessage = function (e) {
                 'width:100%; background:#1a1a2e; color:#e0e0e0; border:1px solid #444; border-radius:4px; padding:5px 8px; font-size:12px; box-sizing:border-box;';
 
             return `
-            <label style="${labelStyle}">Mode</label>
+            <label style="${labelStyle}">${i18n_js.t('riskOfRuinUi.modeLabel')}</label>
             <select id="mwi-ror-mode" style="${inputStyle} margin-bottom:10px;">
-                <option value="chest">Dungeon Chest</option>
-                <option value="alchemy">Alchemy (Transmute)</option>
-                <option value="enhancement">Enhancing</option>
+                <option value="chest">${i18n_js.t('riskOfRuinUi.modeChestOption')}</option>
+                <option value="alchemy">${i18n_js.t('riskOfRuinUi.modeAlchemyOption')}</option>
+                <option value="enhancement">${i18n_js.t('riskOfRuinUi.modeEnhancingOption')}</option>
             </select>
 
             <div id="mwi-ror-mode-inputs"></div>
 
-            <label style="${labelStyle} margin-top:10px;">Starting gold</label>
-            <input id="mwi-ror-bankroll" type="text" inputmode="decimal" placeholder="e.g. 5m, 1.2b" style="${inputStyle} margin-bottom:10px;">
+            <label style="${labelStyle} margin-top:10px;">${i18n_js.t('riskOfRuinUi.startingGoldLabel')}</label>
+            <input id="mwi-ror-bankroll" type="text" inputmode="decimal" placeholder="${i18n_js.t('riskOfRuinUi.startingGoldPlaceholder')}" style="${inputStyle} margin-bottom:10px;">
 
             <button id="mwi-ror-run" style="
                 width: 100%;
@@ -18218,7 +18338,7 @@ self.onmessage = function (e) {
                 font-size: 13px;
                 font-weight: 600;
                 cursor: pointer;
-                margin-bottom: 10px;">Calculate</button>
+                margin-bottom: 10px;">${i18n_js.t('riskOfRuinUi.calculateButton')}</button>
 
             <div id="mwi-ror-results" style="font-size:12px; line-height:1.6;"></div>
         `;
@@ -18237,34 +18357,34 @@ self.onmessage = function (e) {
                     return `<option value="${hrid}">${name}</option>`;
                 }).join('');
                 container.innerHTML = `
-                <label style="${labelStyle}">Chest type</label>
+                <label style="${labelStyle}">${i18n_js.t('riskOfRuinUi.chestTypeLabel')}</label>
                 <select id="mwi-ror-chest" style="${inputStyle}">${options}</select>
-                <label style="${labelStyle}">Chests to open</label>
+                <label style="${labelStyle}">${i18n_js.t('riskOfRuinUi.chestsToOpenLabel')}</label>
                 <input id="mwi-ror-target" type="number" min="1" step="1" value="100" style="${inputStyle}">
             `;
             } else if (mode === 'alchemy') {
                 container.innerHTML = `
-                <label style="${labelStyle}">Item to Transmute</label>
-                <input id="mwi-ror-item" list="mwi-ror-transmute-items" style="${inputStyle}" placeholder="Start typing an item name...">
-                <label style="${labelStyle}">Catalyst</label>
+                <label style="${labelStyle}">${i18n_js.t('riskOfRuinUi.itemToTransmuteLabel')}</label>
+                <input id="mwi-ror-item" list="mwi-ror-transmute-items" style="${inputStyle}" placeholder="${i18n_js.t('riskOfRuinUi.itemNamePlaceholder')}">
+                <label style="${labelStyle}">${i18n_js.t('riskOfRuinUi.catalystLabel')}</label>
                 <select id="mwi-ror-catalyst" style="${inputStyle}">
-                    <option value="best">Best available (auto)</option>
-                    <option value="none">None</option>
-                    <option value="typeSpecific">Type-specific catalyst</option>
-                    <option value="prime">Prime catalyst</option>
+                    <option value="best">${i18n_js.t('riskOfRuinUi.catalystBestOption')}</option>
+                    <option value="none">${i18n_js.t('riskOfRuinUi.catalystNoneOption')}</option>
+                    <option value="typeSpecific">${i18n_js.t('riskOfRuinUi.catalystTypeSpecificOption')}</option>
+                    <option value="prime">${i18n_js.t('riskOfRuinUi.catalystPrimeOption')}</option>
                 </select>
-                <label style="${labelStyle}">Actions to attempt</label>
+                <label style="${labelStyle}">${i18n_js.t('riskOfRuinUi.actionsToAttemptLabel')}</label>
                 <input id="mwi-ror-target" type="number" min="1" step="1" value="100" style="${inputStyle}">
             `;
             } else {
                 container.innerHTML = `
-                <label style="${labelStyle}">Item to enhance</label>
-                <input id="mwi-ror-item" list="mwi-ror-enhance-items" style="${inputStyle}" placeholder="Start typing an item name...">
-                <label style="${labelStyle}">Target level</label>
+                <label style="${labelStyle}">${i18n_js.t('riskOfRuinUi.itemToEnhanceLabel')}</label>
+                <input id="mwi-ror-item" list="mwi-ror-enhance-items" style="${inputStyle}" placeholder="${i18n_js.t('riskOfRuinUi.itemNamePlaceholder')}">
+                <label style="${labelStyle}">${i18n_js.t('riskOfRuinUi.targetLevelLabel')}</label>
                 <input id="mwi-ror-target" type="number" min="1" max="20" step="1" value="10" style="${inputStyle}">
-                <label style="${labelStyle}">Start level</label>
+                <label style="${labelStyle}">${i18n_js.t('riskOfRuinUi.startLevelLabel')}</label>
                 <input id="mwi-ror-start-level" type="number" min="0" max="19" step="1" value="0" style="${inputStyle}">
-                <label style="${labelStyle}">Protect from level (0 = never)</label>
+                <label style="${labelStyle}">${i18n_js.t('riskOfRuinUi.protectFromLevelLabel')}</label>
                 <input id="mwi-ror-protect-from" type="number" min="0" max="19" step="1" value="0" style="${inputStyle}">
             `;
             }
@@ -18363,16 +18483,16 @@ self.onmessage = function (e) {
         _run() {
             const status = this.panel.querySelector('#mwi-ror-status');
             const results = this.panel.querySelector('#mwi-ror-results');
-            status.textContent = 'Calculating…';
+            status.textContent = i18n_js.t('riskOfRuinUi.statusCalculating');
             results.innerHTML = '';
 
-            const t = setTimeout(() => {
+            const timeoutId = setTimeout(() => {
                 this._compute().catch((err) => {
                     console.error('[RiskOfRuinUI] Calculation failed:', err);
-                    status.textContent = 'Error during calculation.';
+                    status.textContent = i18n_js.t('riskOfRuinUi.statusErrorCalculation');
                 });
             }, 10);
-            this.timerRegistry.registerTimeout(t);
+            this.timerRegistry.registerTimeout(timeoutId);
         }
 
         async _compute() {
@@ -18430,7 +18550,7 @@ self.onmessage = function (e) {
                 const catalystChoice = catalystSelection === 'best' ? null : catalystSelection;
                 const alchemyModel = hrid ? buildAlchemyTransmuteModel(hrid, { catalystChoice }) : null;
                 if (!alchemyModel) {
-                    status.textContent = 'Enter a valid transmutable item name.';
+                    status.textContent = i18n_js.t('riskOfRuinUi.statusInvalidTransmuteItem');
                     return;
                 }
                 maxSinglePossibleLoss = alchemyModel.maxSinglePossibleLoss;
@@ -18463,7 +18583,7 @@ self.onmessage = function (e) {
                 const protectFrom = parseInt(this.panel.querySelector('#mwi-ror-protect-from').value) || 0;
                 const itemDetails = hrid ? dataManager.getItemDetails(hrid) : null;
                 if (!itemDetails) {
-                    status.textContent = 'Enter a valid enhanceable item name.';
+                    status.textContent = i18n_js.t('riskOfRuinUi.statusInvalidEnhanceItem');
                     return;
                 }
 
@@ -18481,7 +18601,7 @@ self.onmessage = function (e) {
                     guzzlingBonus: enhancingParams.guzzlingBonus,
                 });
                 if (!enhancementModel) {
-                    status.textContent = 'Could not build an enhancement model for these parameters.';
+                    status.textContent = i18n_js.t('riskOfRuinUi.statusEnhancementModelFailed');
                     return;
                 }
                 maxSinglePossibleLoss = enhancementModel.maxSinglePossibleLoss;
@@ -18522,15 +18642,13 @@ self.onmessage = function (e) {
                 results.insertAdjacentHTML(
                     'beforeend',
                     `<div style="margin-top:10px; margin-bottom:6px; color:#888; font-size:11px;">
-                    Optimal share of cash to commit: not applicable — enhancing has no revenue
-                    distribution to size a bet against, only a fixed cost toward the target level.
-                    Use the ruin probability above instead.
+                    ${i18n_js.t('riskOfRuinUi.optimalCommitNotApplicable')}
                 </div>`
                 );
             }
             this._renderDepthCapTrackingNote(results, detailInfo);
             this._renderDetails(results, detailInfo, startingBalance, maxSinglePossibleLoss, minActions);
-            status.textContent = `${formatters_js.formatWithSeparator(trials)} trials simulated.`;
+            status.textContent = i18n_js.t('riskOfRuinUi.statusTrialsSimulated', { trials: formatters_js.formatWithSeparator(trials) });
         }
 
         /**
@@ -18587,8 +18705,7 @@ self.onmessage = function (e) {
                 container.insertAdjacentHTML(
                     'beforeend',
                     `<div style="margin-top:10px; margin-bottom:6px; color:#c98;">
-                    <strong>Optimal share of cash to commit:</strong> 0% — this setup has no positive
-                    expected edge (E[R] ≤ 1), so sizing a bet against its variance isn't meaningful here.
+                    ${i18n_js.t('riskOfRuinUi.optimalCommitNoEdge')}
                 </div>`
                 );
                 return;
@@ -18597,14 +18714,14 @@ self.onmessage = function (e) {
             container.insertAdjacentHTML(
                 'beforeend',
                 `<div style="margin-top:10px;">
-                <strong>Optimal share of cash to commit:</strong> ${formatters_js.formatPercentage(optimalCommit.fstar, 1)} of bankroll
-                (${fmtGold(optimalCommit.recommendedCommit)} ≈ ${formatters_js.formatWithSeparator(optimalCommit.recommendedActionCount)} actions)
+                ${i18n_js.t('riskOfRuinUi.optimalCommitWithEdge', {
+                    percent: formatters_js.formatPercentage(optimalCommit.fstar, 1),
+                    gold: fmtGold(optimalCommit.recommendedCommit),
+                    actions: formatters_js.formatWithSeparator(optimalCommit.recommendedActionCount),
+                })}
             </div>
             <div style="color:#888; font-size:11px; margin-bottom:6px;">
-                Variance-based cap only — ignores the downward price pressure from selling your own output.
-                Toolasha shows an automatic "Sell depth" estimate on each tracked output's marketplace
-                order-book page, but only once you've opened that item's page in-game this session — see
-                which outputs are tracked below.
+                ${i18n_js.t('riskOfRuinUi.optimalCommitVarianceNote')}
             </div>`
             );
         }
@@ -18624,20 +18741,19 @@ self.onmessage = function (e) {
                     (i) => dataManager.getItemDetails(i.itemHrid)?.name || i.itemHrid.split('/').pop()
                 );
                 html += `<div style="color:#888; font-size:11px; margin-bottom:6px;">
-                Tracking "Sell depth" for: ${names.join(', ')} — open that item's order-book page in the
-                marketplace to see the estimate.
+                ${i18n_js.t('riskOfRuinUi.trackingSellDepthNote', { names: names.join(', ') })}
             </div>`;
             }
 
             if (detailInfo.untrackedOutputs?.length) {
                 html += `<div style="color:#c98; font-size:11px; margin-bottom:6px;">
-                Not tracked (no current sell price available to check against): ${detailInfo.untrackedOutputs.join(', ')}.
+                ${i18n_js.t('riskOfRuinUi.untrackedOutputsNote', { names: detailInfo.untrackedOutputs.join(', ') })}
             </div>`;
             }
 
             if (detailInfo.untradeableOutput) {
                 html += `<div style="color:#888; font-size:11px; margin-bottom:6px;">
-                ${detailInfo.untradeableOutput} is untradeable, so no "Sell depth" check applies.
+                ${i18n_js.t('riskOfRuinUi.untradeableOutputNote', { itemName: detailInfo.untradeableOutput })}
             </div>`;
             }
 
@@ -18650,33 +18766,41 @@ self.onmessage = function (e) {
 
             const lines = [];
             lines.push(
-                `<strong>Ruin probability:</strong> ${formatters_js.formatPercentage(simResult.ruinProbability, 2)} ` +
-                    `(95% CI: ${formatters_js.formatPercentage(ci.low, 2)} – ${formatters_js.formatPercentage(ci.high, 2)})`
+                i18n_js.t('riskOfRuinUi.ruinProbabilityLine', {
+                    probability: formatters_js.formatPercentage(simResult.ruinProbability, 2),
+                    ciLow: formatters_js.formatPercentage(ci.low, 2),
+                    ciHigh: formatters_js.formatPercentage(ci.high, 2),
+                })
             );
 
             lines.push(
-                `<strong>Ruin becomes possible at action:</strong> ` +
-                    (Number.isFinite(minActions)
+                i18n_js.t('riskOfRuinUi.ruinPossibleAtActionLine', {
+                    value: Number.isFinite(minActions)
                         ? formatters_js.formatWithSeparator(minActions)
-                        : 'never (no single action can lose money)')
+                        : i18n_js.t('riskOfRuinUi.neverRuinPossible'),
+                })
             );
 
             lines.push(
-                `<strong>Peak ruin exposure at action:</strong> ` +
-                    (peakStep !== null ? formatters_js.formatWithSeparator(peakStep) : 'no ruin occurred in the simulation')
+                i18n_js.t('riskOfRuinUi.peakRuinExposureLine', {
+                    value: peakStep !== null ? formatters_js.formatWithSeparator(peakStep) : i18n_js.t('riskOfRuinUi.noRuinOccurred'),
+                })
             );
 
             if (simResult.meanStepsToRuin !== null) {
                 lines.push(
-                    `<strong>Average actions before ruin (when it occurs):</strong> ${formatters_js.formatWithSeparator(Math.round(simResult.meanStepsToRuin * 10) / 10)}`
+                    i18n_js.t('riskOfRuinUi.avgActionsBeforeRuinLine', {
+                        value: formatters_js.formatWithSeparator(Math.round(simResult.meanStepsToRuin * 10) / 10),
+                    })
                 );
             }
 
             if (simResult.undecidedCount > 0) {
                 lines.push(
-                    `<span style="color:#c98;">${formatters_js.formatWithSeparator(simResult.undecidedCount)} of ${formatters_js.formatWithSeparator(simResult.trials)} ` +
-                        `trials neither ruined nor reached the target within the simulation's step cap — ` +
-                        `the result may be imprecise for this very long-horizon scenario.</span>`
+                    `<span style="color:#c98;">${i18n_js.t('riskOfRuinUi.undecidedTrialsNote', {
+                    undecided: formatters_js.formatWithSeparator(simResult.undecidedCount),
+                    total: formatters_js.formatWithSeparator(simResult.trials),
+                })}</span>`
                 );
             }
 
@@ -18689,12 +18813,13 @@ self.onmessage = function (e) {
          */
         _riskFormulaLine(startingBalance, maxSinglePossibleLoss, minActions) {
             if (!Number.isFinite(minActions)) {
-                return `<div>No single action can ever lose money here, so ruin never becomes possible.</div>`;
+                return `<div>${i18n_js.t('riskOfRuinUi.noSingleActionLoss')}</div>`;
             }
-            return (
-                `<div><strong>Ruin becomes possible at action</strong> = ⌈starting gold ÷ max single-action loss⌉ ` +
-                `= ⌈${fmtGold(startingBalance)} ÷ ${fmtGold(maxSinglePossibleLoss)}⌉ = ${formatters_js.formatWithSeparator(minActions)}</div>`
-            );
+            return `<div>${i18n_js.t('riskOfRuinUi.ruinFormulaLine', {
+            startingGold: fmtGold(startingBalance),
+            maxLoss: fmtGold(maxSinglePossibleLoss),
+            minActions: formatters_js.formatWithSeparator(minActions),
+        })}</div>`;
         }
 
         _renderDetails(container, detailInfo, startingBalance, maxSinglePossibleLoss, minActions) {
@@ -18718,23 +18843,32 @@ self.onmessage = function (e) {
             const rows = [];
             if (costBreakdown.entryKey) {
                 rows.push(
-                    `<div>Entry key (${costBreakdown.entryKey.name}): ${fmtGold(costBreakdown.entryKey.price)}</div>`
+                    `<div>${i18n_js.t('riskOfRuinUi.entryKeyLine', {
+                    name: costBreakdown.entryKey.name,
+                    price: fmtGold(costBreakdown.entryKey.price),
+                })}</div>`
                 );
             }
             if (costBreakdown.chestKey) {
                 rows.push(
-                    `<div>Chest key (${costBreakdown.chestKey.name}): ${fmtGold(costBreakdown.chestKey.price)}</div>`
+                    `<div>${i18n_js.t('riskOfRuinUi.chestKeyLine', {
+                    name: costBreakdown.chestKey.name,
+                    price: fmtGold(costBreakdown.chestKey.price),
+                })}</div>`
                 );
             }
-            rows.push(`<div><strong>Total cost per open:</strong> ${fmtGold(costBreakdown.total)}</div>`);
+            rows.push(`<div>${i18n_js.t('riskOfRuinUi.totalCostPerOpenLine', { total: fmtGold(costBreakdown.total) })}</div>`);
             rows.push(
-                `<div style="margin-top:6px;">Guaranteed minimum payout per open: ${fmtGold(minimumGuaranteedPayout)} ` +
-                    `(the sum of every drop table entry with a 100% drop rate, at its minimum count — a real chest ` +
-                    `always drops at least this much, it is never actually 0)</div>`
+                `<div style="margin-top:6px;">${i18n_js.t('riskOfRuinUi.guaranteedMinPayoutLine', {
+                amount: fmtGold(minimumGuaranteedPayout),
+            })}</div>`
             );
             rows.push(
-                `<div><strong>Max single-action loss:</strong> ${fmtGold(maxSinglePossibleLoss)} ` +
-                    `= cost − guaranteed minimum payout = ${fmtGold(costBreakdown.total)} − ${fmtGold(minimumGuaranteedPayout)}</div>`
+                `<div>${i18n_js.t('riskOfRuinUi.chestMaxLossLine', {
+                loss: fmtGold(maxSinglePossibleLoss),
+                total: fmtGold(costBreakdown.total),
+                min: fmtGold(minimumGuaranteedPayout),
+            })}</div>`
             );
             rows.push(this._riskFormulaLine(startingBalance, maxSinglePossibleLoss, minActions));
 
@@ -18743,7 +18877,11 @@ self.onmessage = function (e) {
                 .map(
                     (drop) =>
                         `<tr>
-                        <td style="padding:2px 6px;">${drop.itemName}${drop.dropRate === 1 ? ' (guaranteed)' : ''}</td>
+                        <td style="padding:2px 6px;">${
+                            drop.dropRate === 1
+                                ? i18n_js.t('riskOfRuinUi.guaranteedDropLabel', { itemName: drop.itemName })
+                                : drop.itemName
+                        }</td>
                         <td style="padding:2px 6px; text-align:right;">${formatters_js.formatPercentage(drop.dropRate, 2)}</td>
                         <td style="padding:2px 6px; text-align:right;">${drop.avgCount}</td>
                         <td style="padding:2px 6px; text-align:right;">${drop.hasPriceData ? fmtGold(drop.priceEach) : '—'}</td>
@@ -18753,15 +18891,15 @@ self.onmessage = function (e) {
                 .join('');
 
             return this._wrapDetails(
-                'Cost & risk details',
+                i18n_js.t('riskOfRuinUi.costRiskDetailsSummary'),
                 rows.join('') +
                     this._wrapDetails(
-                        `Drop table (${dropBreakdown.length} items)`,
+                        i18n_js.t('riskOfRuinUi.dropTableSummary', { count: dropBreakdown.length }),
                         `<table style="width:100%; border-collapse:collapse; font-size:11px;">
-                        <tr style="color:#888;"><th style="text-align:left;">Item</th><th>Drop rate</th><th>Avg count</th><th>Price</th><th>EV</th></tr>
+                        <tr style="color:#888;"><th style="text-align:left;">${i18n_js.t('riskOfRuinUi.colItem')}</th><th>${i18n_js.t('riskOfRuinUi.colDropRate')}</th><th>${i18n_js.t('riskOfRuinUi.colAvgCount')}</th><th>${i18n_js.t('riskOfRuinUi.colPrice')}</th><th>${i18n_js.t('riskOfRuinUi.colEv')}</th></tr>
                         ${dropRows}
                         <tr style="border-top:1px solid #444; font-weight:600;">
-                            <td style="padding:2px 6px;" colspan="4">Total EV per open</td>
+                            <td style="padding:2px 6px;" colspan="4">${i18n_js.t('riskOfRuinUi.totalEvPerOpenLabel')}</td>
                             <td style="padding:2px 6px; text-align:right;">${fmtGold(totalEV)}</td>
                         </tr>
                     </table>`,
@@ -18774,45 +18912,46 @@ self.onmessage = function (e) {
             const catalystName = breakdown.catalystHrid ? dataManager.getItemDetails(breakdown.catalystHrid)?.name : null;
 
             const rows = [
-                `<div>Success rate: ${formatters_js.formatPercentage(breakdown.successRate, 2)}</div>`,
-                `<div>Material cost (paid every attempt): ${fmtGold(breakdown.materialCost)}</div>`,
+                `<div>${i18n_js.t('riskOfRuinUi.successRateLine', { rate: formatters_js.formatPercentage(breakdown.successRate, 2) })}</div>`,
+                `<div>${i18n_js.t('riskOfRuinUi.materialCostLine', { cost: fmtGold(breakdown.materialCost) })}</div>`,
             ];
             if (breakdown.coinCost > 0) {
-                rows.push(`<div>Coin cost (paid every attempt): ${fmtGold(breakdown.coinCost)}</div>`);
+                rows.push(`<div>${i18n_js.t('riskOfRuinUi.coinCostLine', { cost: fmtGold(breakdown.coinCost) })}</div>`);
             }
             rows.push(
                 catalystName
-                    ? `<div>Catalyst (${catalystName}, paid only on success): ${fmtGold(breakdown.catalystCostOnSuccess)}</div>`
-                    : `<div>No catalyst used.</div>`
+                    ? `<div>${i18n_js.t('riskOfRuinUi.catalystCostLine', {
+                      name: catalystName,
+                      cost: fmtGold(breakdown.catalystCostOnSuccess),
+                  })}</div>`
+                    : `<div>${i18n_js.t('riskOfRuinUi.noCatalystUsed')}</div>`
             );
-            rows.push(
-                `<div style="margin-top:6px;">The output drop table (below) is a single mutually-exclusive roll ` +
-                    `<em>given success</em> — each branch is its own separate outcome, not averaged together, so a ` +
-                    `rare high-value branch's real tail risk shows up in the simulation instead of being smoothed away.</div>`
-            );
-            rows.push(`<div><strong>Net on failure:</strong> ${fmtGold(breakdown.netOnFail)}</div>`);
-            rows.push(`<div><strong>Max single-action loss:</strong> ${fmtGold(maxSinglePossibleLoss)}</div>`);
+            rows.push(`<div style="margin-top:6px;">${i18n_js.t('riskOfRuinUi.dropTableExplanationNote')}</div>`);
+            rows.push(`<div>${i18n_js.t('riskOfRuinUi.netOnFailureLine', { value: fmtGold(breakdown.netOnFail) })}</div>`);
+            rows.push(`<div>${i18n_js.t('riskOfRuinUi.maxLossLine', { value: fmtGold(maxSinglePossibleLoss) })}</div>`);
             rows.push(this._riskFormulaLine(startingBalance, maxSinglePossibleLoss, minActions));
 
             const mainRows = breakdown.mainBranches
-                .map(
-                    (branch) =>
-                        `<tr>
-                        <td style="padding:2px 6px;">${dataManager.getItemDetails(branch.itemHrid)?.name || branch.itemHrid}${branch.isSelfReturn ? ' (self-return)' : ''}</td>
+                .map((branch) => {
+                    const itemName = dataManager.getItemDetails(branch.itemHrid)?.name || branch.itemHrid;
+                    return `<tr>
+                        <td style="padding:2px 6px;">${
+                            branch.isSelfReturn ? i18n_js.t('riskOfRuinUi.selfReturnLabel', { itemName }) : itemName
+                        }</td>
                         <td style="padding:2px 6px; text-align:right;">${formatters_js.formatPercentage(breakdown.successRate * branch.dropRate, 2)}</td>
                         <td style="padding:2px 6px; text-align:right;">${fmtGold(branch.payout)}</td>
-                    </tr>`
-                )
+                    </tr>`;
+                })
                 .join('');
             const mainCoverage = breakdown.mainBranches.reduce((sum, b) => sum + b.dropRate, 0);
             const failRow = `<tr>
-                        <td style="padding:2px 6px;">(failure)</td>
+                        <td style="padding:2px 6px;">${i18n_js.t('riskOfRuinUi.failureLabel')}</td>
                         <td style="padding:2px 6px; text-align:right;">${formatters_js.formatPercentage(1 - breakdown.successRate, 2)}</td>
                         <td style="padding:2px 6px; text-align:right;">${fmtGold(0)}</td>
                     </tr>`;
             const gapNote =
                 mainCoverage < 0.999
-                    ? `<div style="color:#c98; margin-top:4px; font-size:11px;">${formatters_js.formatPercentage(1 - mainCoverage, 1)} of the success-branch probability has no market price data and is treated as a 0-payout outcome (never inflated with a guess).</div>`
+                    ? `<div style="color:#c98; margin-top:4px; font-size:11px;">${i18n_js.t('riskOfRuinUi.unpricedProbabilityNote', { percent: formatters_js.formatPercentage(1 - mainCoverage, 1) })}</div>`
                     : '';
 
             const bonusRows = breakdown.bonusDrops
@@ -18827,9 +18966,9 @@ self.onmessage = function (e) {
                 .join('');
             const bonusSection = breakdown.bonusDrops.length
                 ? this._wrapDetails(
-                      `Bonus drops (${breakdown.bonusDrops.length}, independent of success/fail)`,
+                      i18n_js.t('riskOfRuinUi.bonusDropsSummary', { count: breakdown.bonusDrops.length }),
                       `<table style="width:100%; border-collapse:collapse; font-size:11px;">
-                        <tr style="color:#888;"><th style="text-align:left;">Item</th><th>Chance per attempt</th><th>Payout if hit</th></tr>
+                        <tr style="color:#888;"><th style="text-align:left;">${i18n_js.t('riskOfRuinUi.colItem')}</th><th>${i18n_js.t('riskOfRuinUi.colChancePerAttempt')}</th><th>${i18n_js.t('riskOfRuinUi.colPayoutIfHit')}</th></tr>
                         ${bonusRows}
                     </table>`,
                       true
@@ -18837,12 +18976,12 @@ self.onmessage = function (e) {
                 : '';
 
             return this._wrapDetails(
-                'Cost & risk details',
+                i18n_js.t('riskOfRuinUi.costRiskDetailsSummary'),
                 rows.join('') +
                     this._wrapDetails(
-                        `Output drop table (${breakdown.mainBranches.length} branches, one roll given success)`,
+                        i18n_js.t('riskOfRuinUi.outputDropTableSummary', { count: breakdown.mainBranches.length }),
                         `<table style="width:100%; border-collapse:collapse; font-size:11px;">
-                        <tr style="color:#888;"><th style="text-align:left;">Outcome</th><th>Chance per attempt</th><th>Payout if hit</th></tr>
+                        <tr style="color:#888;"><th style="text-align:left;">${i18n_js.t('riskOfRuinUi.colOutcome')}</th><th>${i18n_js.t('riskOfRuinUi.colChancePerAttempt')}</th><th>${i18n_js.t('riskOfRuinUi.colPayoutIfHit')}</th></tr>
                         ${failRow}
                         ${mainRows}
                     </table>
@@ -18874,27 +19013,26 @@ self.onmessage = function (e) {
                 })
                 .join('');
 
-            const rows2 = [
-                `<div><strong>Cost per attempt (materials, every attempt):</strong> ${fmtGold(costPerAttempt)}</div>`,
-            ];
+            const rows2 = [`<div>${i18n_js.t('riskOfRuinUi.costPerAttemptLine', { value: fmtGold(costPerAttempt) })}</div>`];
             if (protectionCostOnFailure > 0) {
                 rows2.push(
-                    `<div><strong>Protection cost (charged only on a protected failure):</strong> ${fmtGold(protectionCostOnFailure)}</div>`
+                    `<div>${i18n_js.t('riskOfRuinUi.protectionCostLine', { value: fmtGold(protectionCostOnFailure) })}</div>`
                 );
             }
             rows2.push(
-                `<div style="margin-top:6px;"><strong>Max single-action loss:</strong> ${fmtGold(maxSinglePossibleLoss)} ` +
-                    `(worst case: an attempt fails at a protected level)</div>`
+                `<div style="margin-top:6px;">${i18n_js.t('riskOfRuinUi.maxLossWithNoteLine', {
+                value: fmtGold(maxSinglePossibleLoss),
+            })}</div>`
             );
             rows2.push(this._riskFormulaLine(startingBalance, maxSinglePossibleLoss, minActions));
 
             return this._wrapDetails(
-                `Cost & risk details (levels +${startLevel} to +${targetLevel})`,
+                i18n_js.t('riskOfRuinUi.costRiskDetailsLevelsSummary', { startLevel, targetLevel }),
                 rows2.join('') +
                     this._wrapDetails(
-                        `Per-level success rates & costs (${perLevelOutcomeDistributions.length} levels)`,
+                        i18n_js.t('riskOfRuinUi.perLevelRatesSummary', { count: perLevelOutcomeDistributions.length }),
                         `<table style="width:100%; border-collapse:collapse; font-size:11px;">
-                        <tr style="color:#888;"><th style="text-align:left;">Attempt</th><th>Success</th><th>Cost</th><th>Fail →</th><th>Protection cost</th></tr>
+                        <tr style="color:#888;"><th style="text-align:left;">${i18n_js.t('riskOfRuinUi.colAttempt')}</th><th>${i18n_js.t('riskOfRuinUi.colSuccess')}</th><th>${i18n_js.t('riskOfRuinUi.colCost')}</th><th>${i18n_js.t('riskOfRuinUi.colFailArrow')}</th><th>${i18n_js.t('riskOfRuinUi.colProtectionCost')}</th></tr>
                         ${rows}
                     </table>`,
                         true
@@ -19883,15 +20021,14 @@ self.onmessage = function (e) {
         const h = Math.floor((ms % d1) / h1);
         const m = Math.ceil((ms % h1) / m1);
 
-        const s = (n) => (n === 1 ? '' : 's');
         const parts = [];
 
-        if (w >= 1) parts.push(`${w} week${s(w)}`);
-        if (d >= 1) parts.push(`${d} day${s(d)}`);
-        if (ms < w1 && h >= 1) parts.push(`${h} hour${s(h)}`);
-        if (ms < 6 * h1 && m >= 1) parts.push(`${m} minute${s(m)}`);
+        if (w >= 1) parts.push(i18n_js.t('guildXpDisplay.weeksCount', { count: w }));
+        if (d >= 1) parts.push(i18n_js.t('guildXpDisplay.daysCount', { count: d }));
+        if (ms < w1 && h >= 1) parts.push(i18n_js.t('guildXpDisplay.hoursCount', { count: h }));
+        if (ms < 6 * h1 && m >= 1) parts.push(i18n_js.t('guildXpDisplay.minutesCount', { count: m }));
 
-        return parts.join(' ') || '< 1 minute';
+        return parts.join(' ') || i18n_js.t('guildXpDisplay.lessThanOneMinute');
     }
 
     // ─── Chart rendering ────────────────────────────────────────────────────────
@@ -19902,7 +20039,8 @@ self.onmessage = function (e) {
      * @returns {string} HTML
      */
     function buildChart(chart) {
-        if (chart.length === 0) return '<div style="color: var(--color-disabled);">Not enough data for chart</div>';
+        if (chart.length === 0)
+            return `<div style="color: var(--color-disabled);">${i18n_js.t('guildXpDisplay.notEnoughDataForChart')}</div>`;
 
         // Truncate outliers at 2x the median
         let maxXPH = 0;
@@ -20140,7 +20278,7 @@ self.onmessage = function (e) {
             const stats = guildXPTracker.getGuildStats(guildName);
 
             // XP/h stats row
-            const rateLabel = stats.lastHourXPH > 0 ? 'Last hour XP/h' : 'Last XP/h';
+            const rateLabel = stats.lastHourXPH > 0 ? i18n_js.t('guildXpDisplay.lastHourXph') : i18n_js.t('guildXpDisplay.lastXph');
             const rateValue = stats.lastHourXPH > 0 ? stats.lastHourXPH : stats.lastXPH;
 
             const statsHTML = `
@@ -20150,7 +20288,7 @@ self.onmessage = function (e) {
                     <div class="GuildPanel_value__Hm2I9">${fNum(rateValue)}</div>
                 </div>
                 <div class="GuildPanel_dataBlock__3qVhK">
-                    <div class="GuildPanel_label__-A63g">Last day XP/h</div>
+                    <div class="GuildPanel_label__-A63g">${i18n_js.t('guildXpDisplay.lastDayXph')}</div>
                     <div class="GuildPanel_value__Hm2I9">${fNum(stats.lastDayXPH)}</div>
                 </div>
             </div>`;
@@ -20159,7 +20297,7 @@ self.onmessage = function (e) {
             const chartHTML = `
             <div class="GuildPanel_dataBlockGroup__1d2rR ${CSS_PREFIX$1}" style="grid-column: 1 / 3; max-width: none;">
                 <div class="GuildPanel_dataBlock__3qVhK" style="height: 240px;">
-                    <div class="GuildPanel_label__-A63g">Last week XP/h</div>
+                    <div class="GuildPanel_label__-A63g">${i18n_js.t('guildXpDisplay.lastWeekXph')}</div>
                     ${buildChart(stats.chart)}
                 </div>
             </div>`;
@@ -20254,18 +20392,23 @@ self.onmessage = function (e) {
             let tooltip = '';
             if (slotEta.status === 'ok') {
                 etaText = formatTimeLeft(slotEta.etaMs);
-                tooltip = `ETA based on ${slotEta.rateBasis} average: ${fNum(slotEta.rateValue)} XP/h`;
+                tooltip = i18n_js.t('guildXpDisplay.etaBasedOnAverageTooltip', {
+                    basis: slotEta.rateBasis,
+                    rate: fNum(slotEta.rateValue),
+                });
             } else if (slotEta.status === 'zero-rate') {
-                etaText = 'no recent gains';
-                tooltip = `No guild XP gained in the last ${slotEta.rateBasis === '24h' ? '24 hours' : 'hour'}`;
+                etaText = i18n_js.t('guildXpDisplay.noRecentGains');
+                const period =
+                    slotEta.rateBasis === '24h' ? i18n_js.t('guildXpDisplay.period24Hours') : i18n_js.t('guildXpDisplay.periodOneHour');
+                tooltip = i18n_js.t('guildXpDisplay.noGuildXpGainedTooltip', { period });
             } else {
-                etaText = 'collecting data';
+                etaText = i18n_js.t('guildXpDisplay.collectingData');
             }
 
             return `<div class="${CSS_PREFIX$1}" style="margin-top: 4px; font-size: 13px; line-height: 1.5;"${tooltip ? ` title="${tooltip}"` : ''}>
-            <div style="color: #9ca3af;">Next Guild Level Slot (+1)</div>
-            <div style="color: var(--color-space-300);">To Lv ${slotEta.targetLevel} · ${fNum(slotEta.xpRemaining)} XP</div>
-            <div style="color: var(--color-space-300); opacity: 0.85;">ETA: ${etaText}</div>
+            <div style="color: #9ca3af;">${i18n_js.t('guildXpDisplay.nextGuildLevelSlotHeading')}</div>
+            <div style="color: var(--color-space-300);">${i18n_js.t('guildXpDisplay.toLevelXp', { level: slotEta.targetLevel, xp: fNum(slotEta.xpRemaining) })}</div>
+            <div style="color: var(--color-space-300); opacity: 0.85;">${i18n_js.t('guildXpDisplay.etaLine', { eta: etaText })}</div>
         </div>`;
         }
 
@@ -20290,13 +20433,13 @@ self.onmessage = function (e) {
 
             const idleNamesStr =
                 idleNames.length === 0
-                    ? '<span style="color: var(--color-success);">None</span>'
+                    ? `<span style="color: var(--color-success);">${i18n_js.t('guildXpDisplay.noneLabel')}</span>`
                     : idleNames.map((n) => `<span style="color: #f0a830;">${n}</span>`).join(', ');
 
             const lastUpdate = guildXPTracker.lastMembersUpdateTime;
             const offlineNamesStr =
                 offlineMembers.length === 0
-                    ? '<span style="color: var(--color-success);">None</span>'
+                    ? `<span style="color: var(--color-success);">${i18n_js.t('guildXpDisplay.noneLabel')}</span>`
                     : offlineMembers
                           .map((m) => {
                               const memberInactiveMs = m.inactiveTime ? new Date(m.inactiveTime).getTime() : null;
@@ -20314,13 +20457,13 @@ self.onmessage = function (e) {
             return `
             <div class="GuildPanel_dataBlockGroup__1d2rR ${CSS_PREFIX$1}" style="grid-column: 1 / 3; max-width: none;">
                 <div class="GuildPanel_dataBlock__3qVhK" style="padding: 8px 12px; height: auto; min-height: 0;">
-                    <div class="GuildPanel_label__-A63g">Online — Idle (${idleNames.length})</div>
+                    <div class="GuildPanel_label__-A63g">${i18n_js.t('guildXpDisplay.onlineIdleLabel', { count: idleNames.length })}</div>
                     <div style="font-size: 13px; line-height: 1.6; max-height: 120px; overflow-y: auto;">${idleNamesStr}</div>
                 </div>
             </div>
             <div class="GuildPanel_dataBlockGroup__1d2rR ${CSS_PREFIX$1}" style="grid-column: 1 / 3; max-width: none;">
                 <div class="GuildPanel_dataBlock__3qVhK" style="padding: 8px 12px; height: auto; min-height: 0;">
-                    <div class="GuildPanel_label__-A63g">Offline (${offlineMembers.length})</div>
+                    <div class="GuildPanel_label__-A63g">${i18n_js.t('guildXpDisplay.offlineLabel', { count: offlineMembers.length })}</div>
                     <div style="font-size: 13px; line-height: 1.6; max-height: 120px; overflow-y: auto;">${offlineNamesStr}</div>
                 </div>
             </div>`;
@@ -20434,7 +20577,11 @@ self.onmessage = function (e) {
             const isStatusTab = activityIndex >= 0;
             const insertAfter = theadTr.children.length - 1;
 
-            const gameModes = { standard: 'MC', ironcow: 'IC', legacy_ironcow: 'LC' };
+            const gameModes = {
+                standard: i18n_js.t('guildXpDisplay.gameModeStandardAbbr'),
+                ironcow: i18n_js.t('guildXpDisplay.gameModeIroncowAbbr'),
+                legacy_ironcow: i18n_js.t('guildXpDisplay.gameModeLegacyIroncowAbbr'),
+            };
             const showGameMode = config.getSetting('guildMembersShowGameMode', false);
             const showJoined = config.getSetting('guildMembersShowJoined', true);
             const showLastXPH = config.getSetting('guildMembersShowLastXPH', true);
@@ -20469,7 +20616,7 @@ self.onmessage = function (e) {
 
                 if (showGameMode) {
                     addColumn(tableEl, CSS_PREFIX$1, {
-                        name: 'Game Mode',
+                        name: i18n_js.t('guildXpDisplay.gameModeColumn'),
                         insertAfter,
                         data: allStats.map((s) => s.gameMode),
                         format: (v) => gameModes[v] || v || '',
@@ -20481,7 +20628,7 @@ self.onmessage = function (e) {
 
                 if (showJoined) {
                     addColumn(tableEl, CSS_PREFIX$1, {
-                        name: 'Joined',
+                        name: i18n_js.t('guildXpDisplay.joinedColumn'),
                         insertAfter,
                         data: allStats.map((s) => s.joinTime),
                         format: (v) =>
@@ -20501,7 +20648,7 @@ self.onmessage = function (e) {
 
             if (showLastXPH) {
                 addColumn(tableEl, CSS_PREFIX$1, {
-                    name: 'Last XP/h',
+                    name: i18n_js.t('guildXpDisplay.lastXph'),
                     insertAfter: insertAfter + colOffset,
                     data: allStats.map((s) => s.lastXPH),
                     format: (v, i) => {
@@ -20518,7 +20665,7 @@ self.onmessage = function (e) {
             // Last day XP/h column — Contributions tab
             if (showLastDayXPH) {
                 addColumn(tableEl, CSS_PREFIX$1, {
-                    name: 'Last day XP/h',
+                    name: i18n_js.t('guildXpDisplay.lastDayXph'),
                     insertAfter: insertAfter + colOffset,
                     data: allStats.map((s) => s.lastDayXPH),
                     format: (v, i) => {
@@ -20535,7 +20682,7 @@ self.onmessage = function (e) {
             // Activity column — Contributions tab (uses cached HTML from game's Status tab render)
             if (activityTab !== 'status') {
                 addColumn(tableEl, CSS_PREFIX$1, {
-                    name: 'Activity',
+                    name: i18n_js.t('guildXpDisplay.activityColumn'),
                     insertAfter: insertAfter + colOffset,
                     data: allStats.map((s) => ({
                         cached: this._activityCellCache[s.name] ?? null,
@@ -20555,7 +20702,7 @@ self.onmessage = function (e) {
                         const mins = Math.floor(ms / 60000);
                         if (days > 0) return `${days}d ago`;
                         if (hours > 0) return `${hours}h ago`;
-                        return mins > 0 ? `${mins}m ago` : 'just now';
+                        return mins > 0 ? `${mins}m ago` : i18n_js.t('guildXpDisplay.justNow');
                     },
                     makeSortable: true,
                     sortId: 'activityTime',
@@ -20741,17 +20888,20 @@ self.onmessage = function (e) {
                 const color = names.length === 0 ? '#4ade80' : '#f0a830';
                 const nameStr =
                     names.length === 0
-                        ? 'All signed up ✓'
+                        ? i18n_js.t('guildXpDisplay.allSignedUp')
                         : names
                               .map(
                                   (n) =>
                                       `<span class="mwi-trial-name" data-name="${n}" style="cursor:pointer; text-decoration:underline dotted; color:${color};">${n}</span>`
                               )
                               .join('<span style="color:#6b7280;">, </span>');
-                return `<div><span style="color:#9ca3af;">${label} (${names.length} unsigned):</span> <span style="color:${color};">${nameStr}</span></div>`;
+                const labelHTML = i18n_js.t('guildXpDisplay.unsignedListLabel', { label, count: names.length });
+                return `<div><span style="color:#9ca3af;">${labelHTML}</span> <span style="color:${color};">${nameStr}</span></div>`;
             };
 
-            wrapper.innerHTML = makeList('Skilling', unsignedSkilling) + makeList('Combat', unsignedCombat);
+            wrapper.innerHTML =
+                makeList(i18n_js.t('guildXpDisplay.skillingLabel'), unsignedSkilling) +
+                makeList(i18n_js.t('guildXpDisplay.combatLabel'), unsignedCombat);
 
             statusRow.insertAdjacentElement('afterend', wrapper);
 
@@ -20761,7 +20911,7 @@ self.onmessage = function (e) {
                     const chatInput = document.querySelector('[class*="Chat_chatInputContainer"] input');
                     if (!chatInput) return;
                     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                    const DEFAULT_TEMPLATE = "/w {name} Why haven't you signed up for your trial(s) yet?!";
+                    const DEFAULT_TEMPLATE = i18n_js.t('guildXpDisplay.defaultWhisperTemplate');
                     let template =
                         config.getSettingValue('guildTrialWhisperTemplate', DEFAULT_TEMPLATE) || DEFAULT_TEMPLATE;
                     if (Array.isArray(template)) {
@@ -20822,7 +20972,7 @@ self.onmessage = function (e) {
             const insertAfter = theadTr.children.length - 1;
 
             addColumn(tableEl, CSS_PREFIX$1, {
-                name: 'Last XP/h',
+                name: i18n_js.t('guildXpDisplay.lastXph'),
                 insertAfter,
                 data: allStats.map((s) => s.lastXPH),
                 format: (v, i) => (!v || v <= 0 ? '' : `${fNum(v)} ${rankBadge(allStats[i].lastXPH_rank)}`),
@@ -20833,7 +20983,7 @@ self.onmessage = function (e) {
             });
 
             addColumn(tableEl, CSS_PREFIX$1, {
-                name: 'Last day XP/h',
+                name: i18n_js.t('guildXpDisplay.lastDayXph'),
                 insertAfter: insertAfter + 1,
                 data: allStats.map((s) => s.lastDayXPH),
                 format: (v, i) => (!v || v <= 0 ? '' : `${fNum(v)} ${rankBadge(allStats[i].lastDayXPH_rank)}`),
@@ -20869,7 +21019,7 @@ self.onmessage = function (e) {
         _onBarEnter(event) {
             const el = event.target;
             const xpH = parseFloat(el.dataset.xph);
-            const t = parseInt(el.dataset.t, 10);
+            const timestamp = parseInt(el.dataset.t, 10);
             const truncated = el.dataset.truncated === 'true';
 
             const bb = el.getBoundingClientRect();
@@ -20882,10 +21032,10 @@ self.onmessage = function (e) {
             <div class="MuiTooltip-tooltip MuiTooltip-tooltipPlacementTop css-1spb1s5" style="opacity: 1;">
                 <div class="ItemTooltipText_itemTooltipText__zFq3A">
                     <div class="ItemTooltipText_name__2JAHA">
-                        <span>${formatters_js.formatDateTime(new Date(t), { includeSeconds: false })}</span>
+                        <span>${formatters_js.formatDateTime(new Date(timestamp), { includeSeconds: false })}</span>
                     </div>
                     <div>
-                        <span>${fNum(xpH)} XP/h${truncated ? ' (anomalous)' : ''}</span>
+                        <span>${fNum(xpH)} XP/h${truncated ? ` ${i18n_js.t('guildXpDisplay.anomalousSuffix')}` : ''}</span>
                     </div>
                 </div>
             </div>
@@ -20956,7 +21106,7 @@ self.onmessage = function (e) {
         return (
             normalized.match(/Shrine of [A-Za-z]+ (?:Combat|Skilling) Level/)?.[0] ||
             normalized.match(/Shrine of [A-Za-z]+/)?.[0] ||
-            'Guild'
+            i18n_js.t('guildCreditValue.returnLabelFallback')
         );
     }
 
@@ -21138,10 +21288,10 @@ self.onmessage = function (e) {
         const returnContent = document.createElement('div');
         returnContent.style.textAlign = 'center';
         const returnTitle = document.createElement('div');
-        returnTitle.textContent = '↩ Return';
+        returnTitle.textContent = i18n_js.t('guildCreditValue.returnTabLabel');
         const returnSubtitle = document.createElement('div');
         returnSubtitle.style.cssText = 'font-size:0.75em;color:#60a5fa;';
-        returnSubtitle.textContent = returnLabel || 'Guild';
+        returnSubtitle.textContent = returnLabel || i18n_js.t('guildCreditValue.returnLabelFallback');
         returnContent.append(returnTitle, returnSubtitle);
         returnTab.appendChild(returnContent);
 
@@ -21368,7 +21518,7 @@ self.onmessage = function (e) {
                     tr.style.cssText = `border-bottom:1px solid rgba(255,255,255,0.05); color:${isTop ? '#4ade80' : '#e0e0e0'};`;
                     const rate = row.creditCount === 1 ? `${row.itemCount} → 1` : `${row.itemCount} → ${row.creditCount}`;
                     const nameDisplay = row.isToken
-                        ? `${row.name} <span style="color:#6b7280;font-size:9px;">(tokens)</span>`
+                        ? `${row.name} <span style="color:#6b7280;font-size:9px;">${i18n_js.t('guildCreditValue.tokensLabel')}</span>`
                         : row.name;
                     tr.innerHTML = `
                 <td style="padding:4px 6px; text-align:left;">${nameDisplay}</td>
@@ -21389,7 +21539,7 @@ self.onmessage = function (e) {
 
             const hdr = document.createElement('div');
             hdr.style.cssText = 'font-size:11px; color:#9ca3af; margin-bottom:6px; text-align:center;';
-            hdr.textContent = 'Gold cost per credit — click to sort';
+            hdr.textContent = i18n_js.t('guildCreditValue.rankingHeader');
             wrapper.appendChild(hdr);
 
             const table = document.createElement('table');
@@ -21400,10 +21550,10 @@ self.onmessage = function (e) {
             thRow.style.cssText = 'font-size:11px; border-bottom:1px solid rgba(255,255,255,0.1);';
 
             [
-                { text: 'Item', align: 'left' },
-                { text: 'Rate', align: 'center' },
-                { text: 'Ask ea.', align: 'right' },
-                { text: 'Bid ea.', align: 'right' },
+                { text: i18n_js.t('guildCreditValue.columnItem'), align: 'left' },
+                { text: i18n_js.t('guildCreditValue.columnRate'), align: 'center' },
+                { text: i18n_js.t('guildCreditValue.columnAskEach'), align: 'right' },
+                { text: i18n_js.t('guildCreditValue.columnBidEach'), align: 'right' },
             ].forEach(({ text, align }) => {
                 const th = document.createElement('th');
                 th.style.cssText = `text-align:${align}; padding:3px 6px; font-weight:500; color:#6b7280;`;
@@ -21412,9 +21562,9 @@ self.onmessage = function (e) {
             });
 
             const askTh = document.createElement('th');
-            askTh.textContent = 'Ask/credit';
+            askTh.textContent = i18n_js.t('guildCreditValue.columnAskPerCredit');
             const bidTh = document.createElement('th');
-            bidTh.textContent = 'Bid/credit';
+            bidTh.textContent = i18n_js.t('guildCreditValue.columnBidPerCredit');
             thRow.appendChild(askTh);
             thRow.appendChild(bidTh);
             thead.appendChild(thRow);
@@ -21448,8 +21598,7 @@ self.onmessage = function (e) {
             if (rows.some((row) => row.isToken)) {
                 const tokenNote = document.createElement('div');
                 tokenNote.style.cssText = 'font-size:10px; color:#6b7280; margin-top:4px; text-align:center;';
-                tokenNote.textContent =
-                    'Guild Token value is the gold you’d otherwise spend on the cheapest item route, not a market price.';
+                tokenNote.textContent = i18n_js.t('guildCreditValue.tokenValueNote');
                 wrapper.appendChild(tokenNote);
             }
 
@@ -21495,11 +21644,11 @@ self.onmessage = function (e) {
             if (Object.keys(byShrine).length === 0) return;
 
             const SHRINE_LABELS = {
-                '/guild_shrines/force': 'Force',
-                '/guild_shrines/tempo': 'Tempo',
-                '/guild_shrines/rarity': 'Rarity',
-                '/guild_shrines/scholar': 'Scholar',
-                '/guild_shrines/spirit': 'Spirit',
+                '/guild_shrines/force': i18n_js.t('guildCreditValue.shrineForce'),
+                '/guild_shrines/tempo': i18n_js.t('guildCreditValue.shrineTempo'),
+                '/guild_shrines/rarity': i18n_js.t('guildCreditValue.shrineRarity'),
+                '/guild_shrines/scholar': i18n_js.t('guildCreditValue.shrineScholar'),
+                '/guild_shrines/spirit': i18n_js.t('guildCreditValue.shrineSpirit'),
             };
 
             // Aggregate total costs across all target levels selected
@@ -21533,7 +21682,7 @@ self.onmessage = function (e) {
         border:1px solid rgba(255,255,255,0.08); margin-bottom:4px;
     `;
             const headerTitle = document.createElement('span');
-            headerTitle.textContent = 'Shrine Upgrade Planner';
+            headerTitle.textContent = i18n_js.t('guildCreditValue.shrinePlannerHeader');
             const headerArrow = document.createElement('span');
             headerArrow.textContent = '▶';
             header.appendChild(headerTitle);
@@ -21569,8 +21718,7 @@ self.onmessage = function (e) {
                 totalsEl.innerHTML = '';
 
                 if (plans.length === 0) {
-                    totalsEl.innerHTML =
-                        '<div style="color:#6b7280; text-align:center; font-size:11px;">Set target levels above current to see costs</div>';
+                    totalsEl.innerHTML = `<div style="color:#6b7280; text-align:center; font-size:11px;">${i18n_js.t('guildCreditValue.shrinePlannerEmptyHint')}</div>`;
                     return;
                 }
 
@@ -21579,14 +21727,14 @@ self.onmessage = function (e) {
 
                 const titleEl = document.createElement('div');
                 titleEl.style.cssText = 'color:#9ca3af; font-size:11px; margin-bottom:6px;';
-                titleEl.textContent = 'Total upgrade cost';
+                titleEl.textContent = i18n_js.t('guildCreditValue.shrinePlannerTotalCostTitle');
                 totalsEl.appendChild(titleEl);
 
                 // Guild tokens row
                 if (tokens.total > 0) {
                     const row = document.createElement('div');
                     row.style.cssText = 'display:flex; justify-content:space-between; padding:2px 0; font-size:12px;';
-                    row.innerHTML = `<span style="color:#aaa;">Guild Tokens</span><span style="color:#e0e0e0; font-weight:600;">${tokens.total.toLocaleString()}</span>`;
+                    row.innerHTML = `<span style="color:#aaa;">${i18n_js.t('guildCreditValue.guildTokensLabel')}</span><span style="color:#e0e0e0; font-weight:600;">${tokens.total.toLocaleString()}</span>`;
                     totalsEl.appendChild(row);
                 }
 
@@ -21613,12 +21761,17 @@ self.onmessage = function (e) {
                 const shrineTitleEl = document.createElement('div');
                 shrineTitleEl.style.cssText =
                     'color:#c4b5fd; font-size:11px; font-weight:600; margin-bottom:3px; padding:2px 0;';
-                shrineTitleEl.textContent = `${shrineLabel} Shrine${shrineCapLevel > 0 ? ` (cap: ${shrineCapLevel})` : ''}`;
+                shrineTitleEl.textContent = i18n_js.t('guildCreditValue.shrineSectionTitle', {
+                    shrine: shrineLabel,
+                    cap: shrineCapLevel > 0 ? shrineCapLevel : null,
+                });
                 shrineSection.appendChild(shrineTitleEl);
 
                 for (const { buffHrid, buff } of buffs.sort((a, b) => a.buffHrid.localeCompare(b.buffHrid))) {
                     const isCombat = buff.isCombat;
-                    const buffLabel = isCombat ? 'Combat' : 'Skilling';
+                    const buffLabel = isCombat
+                        ? i18n_js.t('guildCreditValue.buffLabelCombat')
+                        : i18n_js.t('guildCreditValue.buffLabelSkilling');
                     const currentLevel = dataManager.getCharacterGuildBuffLevel(buffHrid);
                     const maxLevel = Math.max(...Object.keys(buff.levelCosts).map(Number));
                     const capLevel = shrineCapLevel > 0 ? Math.min(shrineCapLevel, maxLevel) : maxLevel;
@@ -21628,7 +21781,7 @@ self.onmessage = function (e) {
 
                     const label = document.createElement('span');
                     label.style.cssText = 'flex:1; color:#9ca3af;';
-                    label.textContent = `${buffLabel} (lvl ${currentLevel})`;
+                    label.textContent = i18n_js.t('guildCreditValue.buffRowLabel', { buffLabel, level: currentLevel });
 
                     const input = document.createElement('input');
                     input.type = 'number';
@@ -21697,7 +21850,7 @@ self.onmessage = function (e) {
 
             if (!selectedItemName) {
                 // No item selected yet
-                advisor.innerHTML = `<div style="color:#6b7280; text-align:center;">Select an item to see exchange advice</div>`;
+                advisor.innerHTML = `<div style="color:#6b7280; text-align:center;">${i18n_js.t('guildCreditValue.advisorSelectItemHint')}</div>`;
                 modalEl.querySelector(`.${CSS_CLASS}`)?.insertAdjacentElement('afterend', advisor);
                 return;
             }
@@ -21706,14 +21859,14 @@ self.onmessage = function (e) {
 
             if (!selectedRow) {
                 // Item in modal has no conversion for this credit type
-                advisor.innerHTML = `<div style="color:#6b7280; text-align:center;">Selected item has no conversion for this credit</div>`;
+                advisor.innerHTML = `<div style="color:#6b7280; text-align:center;">${i18n_js.t('guildCreditValue.advisorNoConversionHint')}</div>`;
                 modalEl.querySelector(`.${CSS_CLASS}`)?.insertAdjacentElement('afterend', advisor);
                 return;
             }
 
             if (selectedRow === bestRow) {
                 advisor.style.borderColor = 'rgba(74,222,128,0.4)';
-                advisor.innerHTML = `<div style="color:#4ade80; font-weight:600; text-align:center;">✓ Optimal choice for this credit type</div>`;
+                advisor.innerHTML = `<div style="color:#4ade80; font-weight:600; text-align:center;">${i18n_js.t('guildCreditValue.advisorOptimalChoice')}</div>`;
                 modalEl.querySelector(`.${CSS_CLASS}`)?.insertAdjacentElement('afterend', advisor);
                 return;
             }
@@ -21724,7 +21877,7 @@ self.onmessage = function (e) {
             const directCredits = batches * selectedRow.creditCount;
 
             if (!sellPrice || sellPrice <= 0 || !bestRow.sellPrice || bestRow.sellPrice <= 0) {
-                advisor.innerHTML = `<div style="color:#6b7280; text-align:center;">Best: <b style="color:#e0e0e0;">${bestRow.name}</b> — no price data for comparison</div>`;
+                advisor.innerHTML = `<div style="color:#6b7280; text-align:center;">${i18n_js.t('guildCreditValue.advisorNoPriceData', { name: `<b style="color:#e0e0e0;">${bestRow.name}</b>` })}</div>`;
                 modalEl.querySelector(`.${CSS_CLASS}`)?.insertAdjacentElement('afterend', advisor);
                 return;
             }
@@ -21741,26 +21894,27 @@ self.onmessage = function (e) {
 
             const diffColor = creditDiff > 0 ? '#4ade80' : '#ff6b6b';
             const diffSign = creditDiff > 0 ? '+' : '';
-            const diffLabel = creditDiff > 0 ? '↑ better' : '↓ worse';
+            const diffLabel =
+                creditDiff > 0 ? i18n_js.t('guildCreditValue.advisorBetterLabel') : i18n_js.t('guildCreditValue.advisorWorseLabel');
 
             advisor.style.borderColor = creditDiff > 0 ? 'rgba(74,222,128,0.3)' : 'rgba(255,107,107,0.3)';
             advisor.innerHTML = `
-        <div style="color:#9ca3af; margin-bottom:6px; font-size:11px;">Sell → rebuy best item (${SELLER_TAX * 100}% tax)</div>
+        <div style="color:#9ca3af; margin-bottom:6px; font-size:11px;">${i18n_js.t('guildCreditValue.advisorSellRebuyHeader', { taxPercent: SELLER_TAX * 100 })}</div>
         <div style="display:flex; justify-content:space-between; margin-bottom:3px;">
-            <span style="color:#aaa;">Direct exchange</span>
-            <span style="color:#e0e0e0; font-weight:600;">${directCredits.toLocaleString()} credits</span>
+            <span style="color:#aaa;">${i18n_js.t('guildCreditValue.advisorDirectExchangeLabel')}</span>
+            <span style="color:#e0e0e0; font-weight:600;">${i18n_js.t('guildCreditValue.creditsAmount', { amount: directCredits.toLocaleString() })}</span>
         </div>
         <div style="display:flex; justify-content:space-between; margin-bottom:3px;">
-            <span style="color:#aaa;">Sell proceeds (after tax)</span>
+            <span style="color:#aaa;">${i18n_js.t('guildCreditValue.advisorSellProceedsLabel')}</span>
             <span style="color:#e0e0e0;">${formatters_js.formatKMB(net)}</span>
         </div>
         <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
-            <span style="color:#aaa;">Buy <b style="color:#e0e0e0;">${bestRow.name}</b> → credits</span>
-            <span style="color:#e0e0e0; font-weight:600;">${bestCredits.toLocaleString()} credits</span>
+            <span style="color:#aaa;">${i18n_js.t('guildCreditValue.advisorBuyLabel', { name: `<b style="color:#e0e0e0;">${bestRow.name}</b>` })}</span>
+            <span style="color:#e0e0e0; font-weight:600;">${i18n_js.t('guildCreditValue.creditsAmount', { amount: bestCredits.toLocaleString() })}</span>
         </div>
         <div style="display:flex; justify-content:space-between; border-top:1px solid rgba(255,255,255,0.1); padding-top:6px;">
-            <span style="color:#aaa;">Difference</span>
-            <span style="color:${diffColor}; font-weight:700;">${diffSign}${creditDiff.toLocaleString()} credits ${diffLabel}</span>
+            <span style="color:#aaa;">${i18n_js.t('guildCreditValue.advisorDifferenceLabel')}</span>
+            <span style="color:${diffColor}; font-weight:700;">${i18n_js.t('guildCreditValue.differenceValue', { sign: diffSign, amount: creditDiff.toLocaleString(), label: diffLabel })}</span>
         </div>
     `;
 
@@ -21809,8 +21963,8 @@ self.onmessage = function (e) {
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'mwi-guild-exchange-all-btn';
-            btn.textContent = 'ALL';
-            btn.title = `Fill max: ${maxUnits.toLocaleString()}`;
+            btn.textContent = i18n_js.t('guildCreditValue.allButtonLabel');
+            btn.title = i18n_js.t('guildCreditValue.fillMaxTooltip', { amount: maxUnits.toLocaleString() });
             btn.style.cssText = `
             flex-shrink: 0; padding: 6px 10px; font-size: 12px; font-weight: 700;
             border-radius: 6px; border: none; background: #6366f1; color: #fff;
@@ -21856,7 +22010,7 @@ self.onmessage = function (e) {
         color:#fff; border:1px solid rgba(91,141,239,0.4); border-radius:6px;
         cursor:pointer; font-size:12px; font-weight:600;
     `;
-            copyBtn.textContent = 'Copy List';
+            copyBtn.textContent = i18n_js.t('guildCreditValue.copyListButtonLabel');
             copyBtn.addEventListener('mouseenter', () => {
                 copyBtn.style.background = 'linear-gradient(180deg,rgba(91,141,239,0.35) 0%,rgba(91,141,239,0.25) 100%)';
             });
@@ -21871,9 +22025,9 @@ self.onmessage = function (e) {
                 if (!names) return;
                 try {
                     await navigator.clipboard.writeText(names);
-                    copyBtn.textContent = 'Copied!';
+                    copyBtn.textContent = i18n_js.t('guildCreditValue.copiedButtonLabel');
                     setTimeout(() => {
-                        copyBtn.textContent = 'Copy List';
+                        copyBtn.textContent = i18n_js.t('guildCreditValue.copyListButtonLabel');
                     }, 1500);
                 } catch (error) {
                     console.error('[GuildCreditValue] Failed to copy member list:', error);
@@ -21990,7 +22144,7 @@ self.onmessage = function (e) {
                     tr.style.cssText = 'border-bottom:1px solid rgba(255,255,255,0.05); color:#e0e0e0;';
                     tr.innerHTML = `
                 <td style="padding:4px 6px; text-align:left;">${row.itemName}</td>
-                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.effectiveRequired.toLocaleString()}${row.owned > 0 ? ` <span style="color:#6b7280;font-size:10px;">(own ${row.owned.toLocaleString()})</span>` : ''}</td>
+                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.effectiveRequired.toLocaleString()}${row.owned > 0 ? ` <span style="color:#6b7280;font-size:10px;">${i18n_js.t('guildCreditValue.ownedSuffix', { count: row.owned.toLocaleString() })}</span>` : ''}</td>
                 <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.sellEach ? formatters_js.formatKMB(row.sellEach) : '–'}</td>
                 <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buyEach ? formatters_js.formatKMB(row.buyEach) : '–'}</td>
                 <td style="padding:4px 6px; text-align:right;">${row.sellSub ? formatters_js.formatKMB(row.sellSub) : '–'}</td>
@@ -22035,7 +22189,7 @@ self.onmessage = function (e) {
                 const totalRow = document.createElement('tr');
                 totalRow.style.cssText = 'border-top:1px solid rgba(255,255,255,0.2); color:#4ade80; font-weight:700;';
                 totalRow.innerHTML = `
-            <td style="padding:5px 6px;" colspan="4">Total</td>
+            <td style="padding:5px 6px;" colspan="4">${i18n_js.t('guildCreditValue.totalRowLabel')}</td>
             <td style="padding:5px 6px; text-align:right;">${totalSell > 0 ? formatters_js.formatKMB(totalSell) : '–'}${!allSellPriced ? '*' : ''}</td>
             <td style="padding:5px 6px; text-align:right;">${totalBuy > 0 ? formatters_js.formatKMB(totalBuy) : '–'}${!allBuyPriced ? '*' : ''}</td>
         `;
@@ -22049,7 +22203,7 @@ self.onmessage = function (e) {
 
             const hdr = document.createElement('div');
             hdr.style.cssText = 'font-size:11px; color:#9ca3af; margin-bottom:6px; text-align:center;';
-            hdr.textContent = 'Gold cost of upgrade — click to sort';
+            hdr.textContent = i18n_js.t('guildCreditValue.upgradeCostHeader');
             wrapper.appendChild(hdr);
 
             const table = document.createElement('table');
@@ -22060,10 +22214,10 @@ self.onmessage = function (e) {
             thRow.style.cssText = 'font-size:11px; border-bottom:1px solid rgba(255,255,255,0.1);';
 
             [
-                { text: 'Item', align: 'left' },
-                { text: 'Qty', align: 'right' },
-                { text: 'Ask ea.', align: 'right' },
-                { text: 'Bid ea.', align: 'right' },
+                { text: i18n_js.t('guildCreditValue.columnItem'), align: 'left' },
+                { text: i18n_js.t('guildCreditValue.columnQty'), align: 'right' },
+                { text: i18n_js.t('guildCreditValue.columnAskEach'), align: 'right' },
+                { text: i18n_js.t('guildCreditValue.columnBidEach'), align: 'right' },
             ].forEach(({ text, align }) => {
                 const th = document.createElement('th');
                 th.style.cssText = `text-align:${align}; padding:3px 6px; font-weight:500; color:#6b7280;`;
@@ -22072,9 +22226,9 @@ self.onmessage = function (e) {
             });
 
             const askTh = document.createElement('th');
-            askTh.textContent = 'Ask cost';
+            askTh.textContent = i18n_js.t('guildCreditValue.columnAskCost');
             const bidTh = document.createElement('th');
-            bidTh.textContent = 'Bid cost';
+            bidTh.textContent = i18n_js.t('guildCreditValue.columnBidCost');
             thRow.appendChild(askTh);
             thRow.appendChild(bidTh);
             thead.appendChild(thRow);
@@ -22108,7 +22262,7 @@ self.onmessage = function (e) {
             if (!allSellPriced || !allBuyPriced) {
                 const note = document.createElement('div');
                 note.style.cssText = 'font-size:10px; color:#6b7280; margin-top:4px; text-align:center;';
-                note.textContent = '* some items have no market price data';
+                note.textContent = i18n_js.t('guildCreditValue.unpricedItemsNote');
                 wrapper.appendChild(note);
             }
 
@@ -22143,7 +22297,7 @@ self.onmessage = function (e) {
             color:#fff; border:1px solid rgba(91,141,239,0.4); border-radius:6px;
             cursor:pointer; font-size:12px; font-weight:600;
         `;
-                missingBtn.textContent = 'Missing Mats Marketplace';
+                missingBtn.textContent = i18n_js.t('guildCreditValue.missingMatsButtonLabel');
                 missingBtn.addEventListener('mouseenter', () => {
                     missingBtn.style.background =
                         'linear-gradient(180deg,rgba(91,141,239,0.35) 0%,rgba(91,141,239,0.25) 100%)';
@@ -22675,7 +22829,7 @@ self.onmessage = function (e) {
             const insertAfter = theadTr.children.length - 1;
 
             addColumn(tableEl, CSS_PREFIX, {
-                name: 'Last XP/h',
+                name: i18n_js.t('guildXpDisplay.lastXph'),
                 insertAfter,
                 data: allStats.map((s) => s.lastXPH),
                 format: (v, i) => (!v || v <= 0 ? '' : `${fNum(v)} ${rankBadge(allStats[i].lastXPH_rank)}`),
@@ -22686,7 +22840,7 @@ self.onmessage = function (e) {
             });
 
             addColumn(tableEl, CSS_PREFIX, {
-                name: 'Last day XP/h',
+                name: i18n_js.t('guildXpDisplay.lastDayXph'),
                 insertAfter: insertAfter + 1,
                 data: allStats.map((s) => s.lastDayXPH),
                 format: (v, i) => (!v || v <= 0 ? '' : `${fNum(v)} ${rankBadge(allStats[i].lastDayXPH_rank)}`),
@@ -23228,7 +23382,7 @@ self.onmessage = function (e) {
             user-select: none;
         `;
             header.innerHTML = `
-            <span style="font-weight:600; font-size:12px; color:${ACCENT};">Queue Monitor</span>
+            <span style="font-weight:600; font-size:12px; color:${ACCENT};">${i18n_js.t('queueMonitorUi.headerTitle')}</span>
             <button id="toolasha-qm-toggle" style="
                 background:none; border:none; color:#aaa; font-size:16px;
                 cursor:pointer; padding:0; line-height:1;">${this.collapsed ? '+' : '−'}</button>
@@ -23368,7 +23522,7 @@ self.onmessage = function (e) {
 
             if (snapshots.length === 0) {
                 this.bodyEl.innerHTML = `<div style="color:#666; font-size:11px; text-align:center; padding:4px 0;">
-                No other character data yet.<br>Switch characters to capture queue state.
+                ${i18n_js.t('queueMonitorUi.noOtherCharacterDataMessage')}
             </div>`;
                 return;
             }
@@ -23398,11 +23552,11 @@ self.onmessage = function (e) {
                 // Time display
                 let timeDisplay;
                 if (snap.actions.length === 0) {
-                    timeDisplay = 'Idle';
+                    timeDisplay = i18n_js.t('queueMonitorUi.idleLabel');
                 } else if (snap.hasInfiniteAction && remaining <= 0) {
                     timeDisplay = '∞';
                 } else if (remaining <= 0) {
-                    timeDisplay = 'Done';
+                    timeDisplay = i18n_js.t('queueMonitorUi.doneLabel');
                 } else {
                     timeDisplay = formatters_js.timeReadable(remaining);
                     if (snap.hasInfiniteAction) {
@@ -23419,7 +23573,7 @@ self.onmessage = function (e) {
                 html += `</div>`;
 
                 if (isStale) {
-                    html += `<div style="color:#f39c12; font-size:10px; margin-left:14px; margin-top:2px;">Stale (>${Math.round((Date.now() - snap.timestamp) / 3600000)}h ago)</div>`;
+                    html += `<div style="color:#f39c12; font-size:10px; margin-left:14px; margin-top:2px;">${i18n_js.t('queueMonitorUi.staleLabel', { hours: Math.round((Date.now() - snap.timestamp) / 3600000) })}</div>`;
                 }
 
                 // Expanded action details
@@ -23432,7 +23586,8 @@ self.onmessage = function (e) {
                             actionTimeStr = '∞';
                         } else if (action.estimatedSeconds !== null) {
                             const actionRemaining = Math.max(0, action.estimatedSeconds - Math.max(0, actionElapsed));
-                            actionTimeStr = actionRemaining <= 0 ? 'Done' : formatters_js.timeReadable(actionRemaining);
+                            actionTimeStr =
+                                actionRemaining <= 0 ? i18n_js.t('queueMonitorUi.doneLabel') : formatters_js.timeReadable(actionRemaining);
                         } else {
                             actionTimeStr = '?';
                         }
@@ -24015,13 +24170,13 @@ self.onmessage = function (e) {
         const parts = [];
 
         if (style === 'relative' || style === 'both') {
-            parts.push(`Complete in ${formatters_js.timeReadable(accumulatedTime)}`);
+            parts.push(i18n_js.t('actionTimeDisplay.completeIn', { time: formatters_js.timeReadable(accumulatedTime) }));
         }
         if (style === 'absolute' || style === 'both') {
             const completionDate = new Date();
             completionDate.setSeconds(completionDate.getSeconds() + accumulatedTime);
             const isToday = completionDate.toDateString() === new Date().toDateString();
-            parts.push(`Complete at ${formatCompletionTime(completionDate, !isToday)}`);
+            parts.push(i18n_js.t('actionTimeDisplay.completeAt', { time: formatCompletionTime(completionDate, !isToday) }));
         }
 
         return parts.length ? ` ${parts.join(' · ')}` : '';
@@ -24386,7 +24541,7 @@ self.onmessage = function (e) {
                     const actionObj = this.matchActionFromDiv(actionDiv, currentActions, usedActionIds);
 
                     if (!actionObj) {
-                        this.appendTimeToActionDiv(actionDiv, '[Unknown action]');
+                        this.appendTimeToActionDiv(actionDiv, i18n_js.t('actionTimeDisplay.unknownAction'));
                         continue;
                     }
 
@@ -24446,12 +24601,17 @@ self.onmessage = function (e) {
                     if (hasTimingUnavailable) {
                         totalText =
                             accumulatedTime > 0
-                                ? `Total: ${formatters_js.timeReadable(accumulatedTime)} + [?]`
-                                : 'Total: [?] (enhancement estimate unavailable)';
+                                ? i18n_js.t('actionTimeDisplay.tooltipTotalWithUnavailable', {
+                                      time: formatters_js.timeReadable(accumulatedTime),
+                                  })
+                                : i18n_js.t('actionTimeDisplay.tooltipTotalUnavailable');
                     } else if (hasInfinite) {
-                        totalText = accumulatedTime > 0 ? `Total: ${formatters_js.timeReadable(accumulatedTime)} + [∞]` : 'Total: [∞]';
+                        totalText =
+                            accumulatedTime > 0
+                                ? i18n_js.t('actionTimeDisplay.tooltipTotalWithInfinite', { time: formatters_js.timeReadable(accumulatedTime) })
+                                : i18n_js.t('actionTimeDisplay.tooltipTotalInfinite');
                     } else {
-                        totalText = `Total: ${formatters_js.timeReadable(accumulatedTime)}`;
+                        totalText = i18n_js.t('actionTimeDisplay.tooltipTotal', { time: formatters_js.timeReadable(accumulatedTime) });
                     }
                     totalDiv.textContent = totalText;
                     actionsContainer.appendChild(totalDiv);
@@ -24635,13 +24795,13 @@ self.onmessage = function (e) {
 
             // Derive limit label
             if (limitType === 'gold') {
-                limitLabel = 'gold';
+                limitLabel = i18n_js.t('actionTimeDisplay.limitLabelGold');
             } else if (limitType && limitType.startsWith('material:')) {
-                limitLabel = 'mat';
+                limitLabel = i18n_js.t('actionTimeDisplay.limitLabelMat');
             } else if (limitType && limitType.startsWith('upgrade:')) {
-                limitLabel = 'upgrade';
+                limitLabel = i18n_js.t('actionTimeDisplay.limitLabelUpgrade');
             } else {
-                limitLabel = 'max';
+                limitLabel = i18n_js.t('actionTimeDisplay.limitLabelMax');
             }
 
             return {
@@ -25352,17 +25512,17 @@ self.onmessage = function (e) {
             // Queue count
             if (config.getSetting('actionBar_showQueueCount')) {
                 if (queueSizeDisplay !== Infinity) {
-                    statsToAppend.push(`(${queueSizeDisplay.toLocaleString()} queued)`);
+                    statsToAppend.push(i18n_js.t('actionTimeDisplay.queuedCount', { count: queueSizeDisplay.toLocaleString() }));
                 } else if (materialLimit !== null) {
                     let limitLabel = '';
                     if (limitType === 'gold') {
-                        limitLabel = 'gold limit';
+                        limitLabel = i18n_js.t('actionTimeDisplay.limitLabelGoldLimit');
                     } else if (limitType && limitType.startsWith('material:')) {
-                        limitLabel = 'mat limit';
+                        limitLabel = i18n_js.t('actionTimeDisplay.limitLabelMatLimit');
                     } else if (limitType && limitType.startsWith('upgrade:')) {
-                        limitLabel = 'upgrade limit';
+                        limitLabel = i18n_js.t('actionTimeDisplay.limitLabelUpgradeLimit');
                     } else {
-                        limitLabel = 'max';
+                        limitLabel = i18n_js.t('actionTimeDisplay.limitLabelMax');
                     }
                     statsToAppend.push(`(∞ · ${limitLabel}: ${this.formatLargeNumber(materialLimit)})`);
                 } else {
@@ -25372,13 +25532,16 @@ self.onmessage = function (e) {
 
             // Time per action
             if (config.getSetting('actionBar_showActionDuration')) {
-                statsToAppend.push(`${actionTime.toFixed(2)}s/action`);
+                statsToAppend.push(i18n_js.t('actionTimeDisplay.secondsPerAction', { time: actionTime.toFixed(2) }));
             }
 
             // Actions/hr and items/hr
             if (config.getSetting('actionBar_showActionsPerHour')) {
                 statsToAppend.push(
-                    `${actionsPerHourWithEfficiency.toFixed(0)} actions/hr (${itemsPerHour.toFixed(0)} items/hr)`
+                    i18n_js.t('actionTimeDisplay.actionsPerHourWithItems', {
+                        actionsPerHour: actionsPerHourWithEfficiency.toFixed(0),
+                        itemsPerHour: itemsPerHour.toFixed(0),
+                    })
                 );
             }
 
@@ -25403,7 +25566,7 @@ self.onmessage = function (e) {
                     const recycleIsToday = recycleCompletion.toDateString() === new Date().toDateString();
                     const recycleClockTime = formatCompletionTime(recycleCompletion, !recycleIsToday);
                     const recycleText = buildTimeRemainingText(timeRemainingMode, recycleTimeStr, recycleClockTime);
-                    recycleHtml = `<span style="color:#4dd0a0; margin-left:12px; font-size:11px;">Est. w/ recycle: ${recycleText}</span>`;
+                    recycleHtml = `<span style="color:#4dd0a0; margin-left:12px; font-size:11px;">${i18n_js.t('actionTimeDisplay.estWithRecycle', { text: recycleText })}</span>`;
                 }
                 const timeText = buildTimeRemainingText(timeRemainingMode, timeStr, clockTime);
                 this.displayElement.innerHTML = `<span style="display: inline-flex; flex-wrap: nowrap; align-items: baseline; gap: 0.25em;"><span>⏱</span>${matsLabel} ${timeText}</span>${recycleHtml}`;
@@ -25606,13 +25769,15 @@ self.onmessage = function (e) {
             const statsToAppend = [];
 
             if (config.getSetting('actionBar_showActionDuration')) {
-                statsToAppend.push(`${perActionTime.toFixed(2)}s/action`);
+                statsToAppend.push(i18n_js.t('actionTimeDisplay.secondsPerAction', { time: perActionTime.toFixed(2) }));
             }
-            statsToAppend.push(`${actualSuccessRate.toFixed(1)}% success`);
-            statsToAppend.push(`~${formatters_js.formatWithSeparator(effectiveAttempts)} to target`);
+            statsToAppend.push(i18n_js.t('actionTimeDisplay.successRate', { rate: actualSuccessRate.toFixed(1) }));
+            statsToAppend.push(i18n_js.t('actionTimeDisplay.toTarget', { count: formatters_js.formatWithSeparator(effectiveAttempts) }));
 
             if (protectFrom > 0 && effectiveProtections > 0) {
-                statsToAppend.push(`~${formatters_js.formatWithSeparator(effectiveProtections)} protections`);
+                statsToAppend.push(
+                    i18n_js.t('actionTimeDisplay.protections', { count: formatters_js.formatWithSeparator(effectiveProtections) })
+                );
             }
 
             this.appendStatsToActionName(actionNameElement, statsToAppend.join(' · '));
@@ -25630,9 +25795,12 @@ self.onmessage = function (e) {
                 const clockTime = formatCompletionTime(completionTime, !isToday);
 
                 const itemIconHtml = this.getItemIconHtml(limitingItemHrid);
-                const matsLabel = itemIconHtml ? `${itemIconHtml}:` : 'Mats:';
+                const matsLabel = itemIconHtml ? `${itemIconHtml}:` : i18n_js.t('actionTimeDisplay.matsLabel');
                 const timeText = buildTimeRemainingText(timeRemainingMode, timeStr, clockTime);
-                this.displayElement.innerHTML = `<span style="display: inline-flex; flex-wrap: nowrap; align-items: baseline; gap: 0.25em;"><span>⏱</span>${matsLabel} ${timeText} (${formatters_js.formatWithSeparator(materialLimit)} actions)</span>`;
+                const actionsCountText = i18n_js.t('actionTimeDisplay.actionsCount', {
+                    count: formatters_js.formatWithSeparator(materialLimit),
+                });
+                this.displayElement.innerHTML = `<span style="display: inline-flex; flex-wrap: nowrap; align-items: baseline; gap: 0.25em;"><span>⏱</span>${matsLabel} ${timeText} ${actionsCountText}</span>`;
             } else {
                 this.displayElement.innerHTML = '';
             }
@@ -26532,7 +26700,7 @@ self.onmessage = function (e) {
                         font-size: 0.85em;
                         margin-top: 2px;
                     `;
-                        timeDiv.textContent = '[Unknown action]';
+                        timeDiv.textContent = i18n_js.t('actionTimeDisplay.unknownAction');
 
                         const actionTextContainer = actionDiv.querySelector('[class*="QueuedActions_actionText"]');
                         if (actionTextContainer) {
@@ -26678,13 +26846,13 @@ self.onmessage = function (e) {
                         // Material-limited infinite action
                         let limitLabel = '';
                         if (limitType === 'gold') {
-                            limitLabel = 'gold';
+                            limitLabel = i18n_js.t('actionTimeDisplay.limitLabelGold');
                         } else if (limitType && limitType.startsWith('material:')) {
-                            limitLabel = 'mat';
+                            limitLabel = i18n_js.t('actionTimeDisplay.limitLabelMat');
                         } else if (limitType && limitType.startsWith('upgrade:')) {
-                            limitLabel = 'upgrade';
+                            limitLabel = i18n_js.t('actionTimeDisplay.limitLabelUpgrade');
                         } else {
-                            limitLabel = 'max';
+                            limitLabel = i18n_js.t('actionTimeDisplay.limitLabelMax');
                         }
                         const timeStr = formatters_js.timeReadable(totalTime);
                         timeDiv.textContent = `[${timeStr} · ${limitLabel}: ${this.formatLargeNumber(materialLimit)}]${completionText}`;
@@ -26746,17 +26914,21 @@ self.onmessage = function (e) {
                 if (hasTimingUnavailable) {
                     totalText =
                         accumulatedTime > 0
-                            ? `Total time: ${formatters_js.timeReadable(accumulatedTime)} + [?]`
-                            : 'Total time: [?] (enhancement estimate unavailable)';
+                            ? i18n_js.t('actionTimeDisplay.queueTotalTimeWithUnavailable', {
+                                  time: formatters_js.timeReadable(accumulatedTime),
+                              })
+                            : i18n_js.t('actionTimeDisplay.queueTotalTimeUnavailable');
                 } else if (hasInfinite) {
                     // Show finite time first, then add infinity indicator
                     if (accumulatedTime > 0) {
-                        totalText = `Total time: ${formatters_js.timeReadable(accumulatedTime)} + [∞]`;
+                        totalText = i18n_js.t('actionTimeDisplay.queueTotalTimeWithInfinite', {
+                            time: formatters_js.timeReadable(accumulatedTime),
+                        });
                     } else {
-                        totalText = 'Total time: [∞]';
+                        totalText = i18n_js.t('actionTimeDisplay.queueTotalTimeInfinite');
                     }
                 } else {
-                    totalText = `Total time: ${formatters_js.timeReadable(accumulatedTime)}`;
+                    totalText = i18n_js.t('actionTimeDisplay.queueTotalTime', { time: formatters_js.timeReadable(accumulatedTime) });
                 }
 
                 totalDiv.innerHTML = totalText;
@@ -26837,7 +27009,9 @@ self.onmessage = function (e) {
                                         ? config.getSettingValue('color_profit', '#4ade80')
                                         : config.getSettingValue('color_loss', '#f87171');
                                 const profitSign = actionProfit >= 0 ? '+' : '';
-                                profitDiv.innerHTML = `Profit: <span style="color: ${profitColor};">${profitSign}${this.formatLargeNumber(Math.abs(Math.round(actionProfit)))}</span>`;
+                                profitDiv.innerHTML = i18n_js.t('actionTimeDisplay.queueActionProfit', {
+                                    amount: `<span style="color: ${profitColor};">${profitSign}${this.formatLargeNumber(Math.abs(Math.round(actionProfit)))}</span>`,
+                                });
                             }
                         }
                     }
@@ -26856,7 +27030,9 @@ self.onmessage = function (e) {
                             ? config.getSettingValue('color_profit', '#4ade80')
                             : config.getSettingValue('color_loss', '#f87171');
                     const valueSign = totalProfit >= 0 ? '+' : '';
-                    const valueLabel = isEstimatedValue ? 'Estimated value' : 'Total profit';
+                    const valueLabel = isEstimatedValue
+                        ? i18n_js.t('actionTimeDisplay.estimatedValueLabel')
+                        : i18n_js.t('actionTimeDisplay.totalProfitLabel');
                     const valueText = `<br>${valueLabel}: <span style="color: ${valueColor};">${valueSign}${this.formatLargeNumber(Math.abs(Math.round(totalProfit)))}</span>`;
                     totalDiv.innerHTML = baseText + valueText;
                 }
@@ -27045,7 +27221,7 @@ self.onmessage = function (e) {
                         : config.getSettingValue('color_loss', '#f87171');
                 const sign = profitPerHour >= 0 ? '+' : '';
 
-                let html = `<span style="color:#888;">Profit:</span> <span style="color:${profitColor}; font-weight:600;">${sign}${this.formatLargeNumber(Math.abs(Math.round(profitPerHour)))}/hr</span>`;
+                let html = `<span style="color:#888;">${i18n_js.t('actionTimeDisplay.profitLabel')}</span> <span style="color:${profitColor}; font-weight:600;">${sign}${this.formatLargeNumber(Math.abs(Math.round(profitPerHour)))}/hr</span>`;
 
                 if (isFinite(remainingActions) && remainingActions > 0 && profitData.actionsPerHour > 0) {
                     const profitPerAction =
@@ -27056,7 +27232,7 @@ self.onmessage = function (e) {
                             ? config.getSettingValue('color_profit', '#4ade80')
                             : config.getSettingValue('color_loss', '#f87171');
                     const remSign = remainingProfit >= 0 ? '+' : '';
-                    html += ` <span style="color:#888;">·</span> <span style="color:#888;">remaining</span> <span style="color:${remColor}; font-weight:600;">${remSign}${this.formatLargeNumber(Math.abs(Math.round(remainingProfit)))}</span>`;
+                    html += ` <span style="color:#888;">·</span> <span style="color:#888;">${i18n_js.t('actionTimeDisplay.remainingLabel')}</span> <span style="color:${remColor}; font-weight:600;">${remSign}${this.formatLargeNumber(Math.abs(Math.round(remainingProfit)))}</span>`;
                 }
 
                 if (this.activeBarProfitId !== calcId) return;
@@ -28012,4 +28188,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] UI library 2 loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core.webSocketHook, Toolasha.Utils.marketData, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Market.expectedValueCalculator, Toolasha.Core.marketAPI, Toolasha.Core, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.reactInput, Toolasha.Utils.materialCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.profitConstants, Toolasha.Utils.teaParser, Toolasha.Utils.profitHelpers, Toolasha.Core.loadoutState, Toolasha.Utils.actionCalculator, Toolasha.Utils.efficiency, Toolasha.Market.alchemyProfitCalculator, Toolasha.Core.tooltipObserver, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Market.profitCalculator, Toolasha.Utils.buffParser);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.i18n, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core.webSocketHook, Toolasha.Utils.marketData, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Market.expectedValueCalculator, Toolasha.Core.marketAPI, Toolasha.Core, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.reactInput, Toolasha.Utils.materialCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.profitConstants, Toolasha.Utils.teaParser, Toolasha.Utils.profitHelpers, Toolasha.Core.loadoutState, Toolasha.Utils.actionCalculator, Toolasha.Utils.efficiency, Toolasha.Market.alchemyProfitCalculator, Toolasha.Core.tooltipObserver, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Market.profitCalculator, Toolasha.Utils.buffParser);

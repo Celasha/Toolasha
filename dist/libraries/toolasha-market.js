@@ -1,11 +1,11 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.111.3
+ * Version: 3.0.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, enhancementCalculator_js, formatters_js, marketData_js, teaParser_js, profitConstants_js, profitHelpers_js, buffParser_js, equipmentParser_js, actionCalculator_js, tokenValuation_js, storage, enhancementConfig_js, dom, materialCalculator_js, timerRegistry_js, cleanupRegistry_js, loadoutState, domObserverHelpers_js, enhancementMultipliers_js, marketplaceSession_js, reactInput_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js, tooltipObserver) {
+(function (config, i18n_js, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, enhancementCalculator_js, formatters_js, marketData_js, teaParser_js, profitConstants_js, profitHelpers_js, buffParser_js, equipmentParser_js, actionCalculator_js, tokenValuation_js, storage, enhancementConfig_js, dom, materialCalculator_js, timerRegistry_js, cleanupRegistry_js, loadoutState, domObserverHelpers_js, enhancementMultipliers_js, marketplaceSession_js, reactInput_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js, tooltipObserver) {
     'use strict';
 
     function _interopNamespaceDefault(e) {
@@ -273,7 +273,10 @@
             // No mirror used - return traditional result
             optimalStrategy = {
                 protectFrom: optimalTraditional.protectFrom,
-                label: optimalTraditional.protectFrom === 0 ? 'Never' : `+${optimalTraditional.protectFrom}`,
+                label:
+                    optimalTraditional.protectFrom === 0
+                        ? i18n_js.t('tooltipEnhancement.neverProtectionLabel')
+                        : `+${optimalTraditional.protectFrom}`,
                 expectedAttempts: optimalTraditional.expectedAttempts,
                 totalTime: optimalTraditional.totalTime,
                 baseCost: optimalTraditional.baseCost,
@@ -456,7 +459,10 @@
 
         return {
             protectFrom: optimalTraditional.protectFrom,
-            label: optimalTraditional.protectFrom === 0 ? 'Never' : `From +${optimalTraditional.protectFrom}`,
+            label:
+                optimalTraditional.protectFrom === 0
+                    ? i18n_js.t('tooltipEnhancement.neverProtectionLabel')
+                    : i18n_js.t('tooltipEnhancement.fromLevelLabel', { level: optimalTraditional.protectFrom }),
             expectedAttempts: totalAttempts,
             totalTime: totalTime,
             baseCost: 0, // Not applicable for mirror phase
@@ -913,27 +919,34 @@
         }
 
         let html = '<div style="border-top: 1px solid rgba(255,255,255,0.2); margin-top: 8px; padding-top: 8px;">';
-        html += '<div style="font-weight: bold; margin-bottom: 4px;">ENHANCEMENT PATH (+0 → +' + targetLevel + ')</div>';
+        html += `<div style="font-weight: bold; margin-bottom: 4px;">${i18n_js.t('tooltipEnhancement.pathHeaderLine', { targetLevel })}</div>`;
         html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 
         // Optimal strategy
         if (optimalStrategy.protectFrom === 0) {
-            html += '<div>No protection needed for +' + targetLevel + '</div>';
+            html += `<div>${i18n_js.t('tooltipEnhancement.noProtectionNeededLine', { targetLevel })}</div>`;
         } else {
-            html += '<div>Protect from: ' + optimalStrategy.label + '</div>';
+            html += `<div>${i18n_js.t('tooltipEnhancement.protectFromLine', { label: optimalStrategy.label })}</div>`;
         }
+
+        // Look up the localized item name instead of hardcoding the English string
+        const mirrorItemName =
+            dataManager.getInitClientData()?.itemDetailMap?.['/items/philosophers_mirror']?.name || "Philosopher's Mirror";
 
         // Show Philosopher's Mirror usage if applicable
         if (optimalStrategy.usedMirror && optimalStrategy.mirrorStartLevel) {
             html +=
                 '<div style="color: ' +
                 config.COLOR_MIRROR +
-                ';">Uses Philosopher\'s Mirror from +' +
-                optimalStrategy.mirrorStartLevel +
+                ';">' +
+                i18n_js.t('tooltipEnhancement.usesMirrorFromLine', {
+                    mirrorName: mirrorItemName,
+                    level: optimalStrategy.mirrorStartLevel,
+                }) +
                 '</div>';
         }
 
-        html += '<div>Expected Attempts: ' + formatters_js.formatLargeNumber(optimalStrategy.expectedAttempts.toFixed(1)) + '</div>';
+        html += `<div>${i18n_js.t('tooltipEnhancement.expectedAttemptsLine', { value: formatters_js.formatLargeNumber(optimalStrategy.expectedAttempts.toFixed(1)) })}</div>`;
 
         // Costs table
         html += '<div style="margin-top: 8px;">';
@@ -941,10 +954,10 @@
 
         // Table header
         html += `<tr style="border-bottom: 1px solid ${config.COLOR_BORDER};">`;
-        html += '<th style="padding: 2px 4px; text-align: left;">Material</th>';
-        html += '<th style="padding: 2px 4px; text-align: center;">Count</th>';
-        html += '<th style="padding: 2px 4px; text-align: right;">Ask</th>';
-        html += '<th style="padding: 2px 4px; text-align: right;">Bid</th>';
+        html += `<th style="padding: 2px 4px; text-align: left;">${i18n_js.t('tooltipEnhancement.materialHeader')}</th>`;
+        html += `<th style="padding: 2px 4px; text-align: center;">${i18n_js.t('tooltipEnhancement.countHeader')}</th>`;
+        html += `<th style="padding: 2px 4px; text-align: right;">${i18n_js.t('tooltipEnhancement.askHeader')}</th>`;
+        html += `<th style="padding: 2px 4px; text-align: right;">${i18n_js.t('tooltipEnhancement.bidHeader')}</th>`;
         html += '</tr>';
 
         // Hoisted so both branches can populate them and the minimum-sell section below can read them
@@ -983,7 +996,7 @@
                 totalAsk += mirrorAsk * optimalStrategy.mirrorCount;
                 totalBid += mirrorBid * optimalStrategy.mirrorCount;
                 consumedRows.push({
-                    name: "Philosopher's Mirror",
+                    name: mirrorItemName,
                     count: optimalStrategy.mirrorCount,
                     askPrice: mirrorAsk,
                     bidPrice: mirrorBid,
@@ -1007,7 +1020,7 @@
 
             // Total row
             html += `<tr style="border-bottom: 1px solid ${config.COLOR_BORDER};">`;
-            html += '<td style="padding: 2px 4px; font-weight: bold;">Total</td>';
+            html += `<td style="padding: 2px 4px; font-weight: bold;">${i18n_js.t('tooltipEnhancement.totalLabel')}</td>`;
             html += '<td style="padding: 2px 4px; text-align: center;"></td>';
             html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalAskColor ? ' color: ' + totalAskColor + ';' : ''}">${formatters_js.formatKMB(totalAsk)}</td>`;
             html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalBidColor ? ' color: ' + totalBidColor + ';' : ''}">${formatters_js.formatKMB(totalBid)}</td>`;
@@ -1032,9 +1045,13 @@
             const rows = [];
 
             // Base item row
-            const baseItemLabel = optimalStrategy.baseAskIsCrafted ? 'Craft Item' : 'Buy Item';
+            const baseItemLabel = optimalStrategy.baseAskIsCrafted
+                ? i18n_js.t('tooltipEnhancement.craftItemLabel')
+                : i18n_js.t('tooltipEnhancement.buyItemLabel');
             rows.push({
-                name: toolashaConfig.isFeatureEnabled('enhanceSim_baseItemCraftingCost') ? baseItemLabel : 'Base Item',
+                name: toolashaConfig.isFeatureEnabled('enhanceSim_baseItemCraftingCost')
+                    ? baseItemLabel
+                    : i18n_js.t('tooltipEnhancement.baseItemLabel'),
                 count: 1,
                 askPrice: optimalStrategy.baseAskPrice || optimalStrategy.baseCost,
                 bidPrice: optimalStrategy.baseBidPrice || optimalStrategy.baseCost,
@@ -1062,7 +1079,7 @@
                 totalAsk += askPrice * count;
                 totalBid += bidPrice * count;
 
-                let protName = 'Protection';
+                let protName = i18n_js.t('tooltipEnhancement.protectionLabel');
                 if (optimalStrategy.protectionItemHrid) {
                     const gameData = dataManager.getInitClientData();
                     const protDetails = gameData?.itemDetailMap[optimalStrategy.protectionItemHrid];
@@ -1090,7 +1107,7 @@
 
             // Total row
             html += `<tr style="border-bottom: 1px solid ${config.COLOR_BORDER};">`;
-            html += '<td style="padding: 2px 4px; font-weight: bold;">Total</td>';
+            html += `<td style="padding: 2px 4px; font-weight: bold;">${i18n_js.t('tooltipEnhancement.totalLabel')}</td>`;
             html += `<td style="padding: 2px 4px; text-align: center;">${formatters_js.formatKMB(totalCount)}</td>`;
             html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalAskColor ? ' color: ' + totalAskColor + ';' : ''}">${formatters_js.formatKMB(totalAsk)}</td>`;
             html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalBidColor ? ' color: ' + totalBidColor + ';' : ''}">${formatters_js.formatKMB(totalBid)}</td>`;
@@ -1121,26 +1138,26 @@
 
         if (totalSeconds < 60) {
             // Less than 1 minute: show seconds
-            html += '<div>Time: ~' + Math.round(totalSeconds) + ' seconds</div>';
+            html += `<div>${i18n_js.t('tooltipEnhancement.timeSecondsLine', { value: Math.round(totalSeconds) })}</div>`;
         } else if (totalSeconds < 3600) {
             // Less than 1 hour: show minutes
             const minutes = Math.round(totalSeconds / 60);
-            html += '<div>Time: ~' + minutes + ' minutes</div>';
+            html += `<div>${i18n_js.t('tooltipEnhancement.timeMinutesLine', { value: minutes })}</div>`;
         } else if (totalSeconds < 86400) {
             // Less than 1 day: show hours
             const hours = (totalSeconds / 3600).toFixed(1);
-            html += '<div>Time: ~' + hours + ' hours</div>';
+            html += `<div>${i18n_js.t('tooltipEnhancement.timeHoursLine', { value: hours })}</div>`;
         } else {
             // 1 day or more: show days
             const days = (totalSeconds / 86400).toFixed(1);
-            html += '<div>Time: ~' + days + ' days</div>';
+            html += `<div>${i18n_js.t('tooltipEnhancement.timeDaysLine', { value: days })}</div>`;
         }
 
         if (xpPerHour !== null && xpPerHour > 0) {
-            html += '<div style="margin-top: 4px;">XP/hr: ' + formatters_js.formatLargeNumber(xpPerHour) + '</div>';
+            html += `<div style="margin-top: 4px;">${i18n_js.t('tooltipEnhancement.xpPerHourLine', { value: formatters_js.formatLargeNumber(xpPerHour) })}</div>`;
         }
         if (totalExpectedXP !== null && totalExpectedXP > 0) {
-            html += '<div>Total XP: ~' + formatters_js.formatLargeNumber(totalExpectedXP) + '</div>';
+            html += `<div>${i18n_js.t('tooltipEnhancement.totalXpLine', { value: formatters_js.formatLargeNumber(totalExpectedXP) })}</div>`;
         }
 
         // Target hourly rate / minimum sell price (only shown when a rate is configured)
@@ -1164,10 +1181,10 @@
                         : config.COLOR_TOOLTIP_LOSS
                     : '';
 
-            html += '<div style="margin-top: 4px;">Your rate: ' + formatters_js.formatKMB3Digits(hourlyRate) + '/hr</div>';
-            html += '<div>Minimum sell: ';
-            html += `<span${askColor ? ` style="color: ${askColor};"` : ''}>${formatters_js.formatKMB3Digits(minSellAsk)}</span>(ask)/`;
-            html += `<span${bidColor ? ` style="color: ${bidColor};"` : ''}>${formatters_js.formatKMB3Digits(minSellBid)}</span>(bid)`;
+            html += `<div style="margin-top: 4px;">${i18n_js.t('tooltipEnhancement.yourRateLine', { value: formatters_js.formatKMB3Digits(hourlyRate) })}</div>`;
+            html += `<div>${i18n_js.t('tooltipEnhancement.minimumSellLabel')} `;
+            html += `<span${askColor ? ` style="color: ${askColor};"` : ''}>${formatters_js.formatKMB3Digits(minSellAsk)}</span>${i18n_js.t('tooltipEnhancement.askSuffixLabel')}/`;
+            html += `<span${bidColor ? ` style="color: ${bidColor};"` : ''}>${formatters_js.formatKMB3Digits(minSellBid)}</span>${i18n_js.t('tooltipEnhancement.bidSuffixLabel')}`;
             html += '</div>';
         }
 
@@ -1226,13 +1243,13 @@
             `style="padding: 1px 6px; text-align: ${align}; opacity: 0.6; font-weight: normal;"`;
 
         let html = '<div style="border-top: 1px solid rgba(255,255,255,0.2); margin-top: 8px; padding-top: 8px;">';
-        html += '<div style="font-weight: bold; margin-bottom: 4px;">Enhancement Milestones</div>';
+        html += `<div style="font-weight: bold; margin-bottom: 4px;">${i18n_js.t('tooltipEnhancement.milestonesHeaderLabel')}</div>`;
         html += '<table style="font-size: 0.9em; border-collapse: collapse; width: 100%;">';
         html += '<thead><tr>';
-        html += `<th ${thStyle('left')}>Level</th>`;
-        html += `<th ${thStyle()}>Cost</th>`;
-        if (showPrices) html += `<th ${thStyle()}>Ask / Bid</th>`;
-        html += `<th ${thStyle()}>XP</th>`;
+        html += `<th ${thStyle('left')}>${i18n_js.t('tooltipEnhancement.levelHeader')}</th>`;
+        html += `<th ${thStyle()}>${i18n_js.t('tooltipEnhancement.costHeader')}</th>`;
+        if (showPrices) html += `<th ${thStyle()}>${i18n_js.t('tooltipEnhancement.askBidHeader')}</th>`;
+        html += `<th ${thStyle()}>${i18n_js.t('tooltipEnhancement.xpHeader')}</th>`;
         html += '</tr></thead><tbody>';
 
         for (const row of rows) {
@@ -5108,7 +5125,7 @@ self.onmessage = function (e) {
         if (itemHrid === '/items/coin') {
             return {
                 itemHrid,
-                itemName: 'Coin',
+                itemName: i18n_js.t('craftingPlanCalculator.coinItemName'),
                 quantity,
                 strategy: 'buy',
                 unitCost: 1,
@@ -5477,6 +5494,16 @@ self.onmessage = function (e) {
     const REGEX_ENHANCEMENT_LEVEL = /\+(\d+)$/;
     const REGEX_ENHANCEMENT_STRIP = /\s*\+\d+$/;
     const REGEX_REFINED_STAR = /\s*★/g;
+
+    // Map alchemy action types to existing skillingOptimizer locale keys so the capitalized
+    // label shown in the multi-action profit display stays consistent with the rest of the UI
+    // instead of naively capitalizing the raw identifier.
+    const ACTION_TYPE_LABEL_KEYS = {
+        coinify: 'skillingOptimizer.alchemyTypeCoinify',
+        decompose: 'skillingOptimizer.alchemyTypeDecompose',
+        transmute: 'skillingOptimizer.alchemyTypeTransmute',
+        unrefine: 'skillingOptimizer.alchemyTypeUnrefine',
+    };
 
     /**
      * Get the items sprite URL from the DOM (matches pattern used across other display modules)
@@ -6023,7 +6050,8 @@ self.onmessage = function (e) {
 
             // Show message if no market data at all
             if (price.ask <= 0 && price.bid <= 0) {
-                priceDiv.innerHTML = `Price: <span style="color: ${config.COLOR_TEXT_SECONDARY}; font-style: italic;">No market data</span>`;
+                const noDataHtml = `<span style="color: ${config.COLOR_TEXT_SECONDARY}; font-style: italic;">${i18n_js.t('tooltipPrices.noMarketDataLabel')}</span>`;
+                priceDiv.innerHTML = i18n_js.t('tooltipPrices.priceNoDataLine', { noData: noDataHtml });
                 tooltipText.appendChild(priceDiv);
                 return;
             }
@@ -6047,13 +6075,13 @@ self.onmessage = function (e) {
             }
 
             // Format: "Price: 1,200 / 950" or "Price: 1,200 / -" or "Price: - / 950"
-            priceDiv.innerHTML = `Price: ${askDisplay} / ${bidDisplay}${totalDisplay}`;
+            priceDiv.innerHTML = i18n_js.t('tooltipPrices.priceLine', { ask: askDisplay, bid: bidDisplay, total: totalDisplay });
 
             if (config.getSetting('itemTooltip_effectivePrices') && (price.ask > 0 || price.bid > 0)) {
                 const taxRate = itemHrid === profitConstants_js.COWBELL_BAG_HRID ? profitConstants_js.COWBELL_BAG_TAX : profitConstants_js.MARKET_TAX;
                 const effAsk = price.ask > 0 ? formatTooltipPrice(profitHelpers_js.calculatePriceAfterTax(price.ask, taxRate)) : '-';
                 const effBid = price.bid > 0 ? formatTooltipPrice(profitHelpers_js.calculatePriceAfterTax(price.bid, taxRate)) : '-';
-                priceDiv.innerHTML += `<br><span style="color: ${config.COLOR_TEXT_SECONDARY};">Eff: ${effAsk} / ${effBid}</span>`;
+                priceDiv.innerHTML += `<br><span style="color: ${config.COLOR_TEXT_SECONDARY};">${i18n_js.t('tooltipPrices.effLine', { ask: effAsk, bid: effBid })}</span>`;
             }
 
             tooltipText.appendChild(priceDiv);
@@ -6093,13 +6121,13 @@ self.onmessage = function (e) {
 
             if (profitData.itemPrice.bid > 0 && profitData.itemPrice.ask > 0) {
                 // Market data available - show profit
-                html += '<div style="font-weight: bold; margin-bottom: 4px;">PROFIT</div>';
+                html += `<div style="font-weight: bold; margin-bottom: 4px;">${i18n_js.t('tooltipPrices.profitHeaderLabel')}</div>`;
                 html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 
                 const profitPerDay = profitData.profitPerDay;
                 const profitColor = profitData.profitPerHour >= 0 ? config.COLOR_TOOLTIP_PROFIT : config.COLOR_TOOLTIP_LOSS;
 
-                html += `<div style="color: ${profitColor}; font-weight: bold;">Net: ${formatters_js.formatKMB(profitData.profitPerHour)}/hr (${formatters_js.formatKMB(profitPerDay)}/day)</div>`;
+                html += `<div style="color: ${profitColor}; font-weight: bold;">${i18n_js.t('tooltipPrices.netLine', { perHour: formatters_js.formatKMB(profitData.profitPerHour), perDay: formatters_js.formatKMB(profitPerDay) })}</div>`;
 
                 // Show detailed breakdown if enabled
                 if (showDetailed) {
@@ -6112,7 +6140,7 @@ self.onmessage = function (e) {
                 if (showDetailed) {
                     html += this.buildDetailedProfitDisplay(profitData, false);
                 } else {
-                    html += `<div style="font-weight: bold; color: ${config.COLOR_TOOLTIP_INFO};">Cost: ${formatters_js.formatKMB(profitData.totalMaterialCost)}/item</div>`;
+                    html += `<div style="font-weight: bold; color: ${config.COLOR_TOOLTIP_INFO};">${i18n_js.t('tooltipPrices.costPerItemLine', { cost: formatters_js.formatKMB(profitData.totalMaterialCost) })}</div>`;
                 }
             }
 
@@ -6160,11 +6188,28 @@ self.onmessage = function (e) {
                 const deeperBid = deeperRows.reduce((s, r) => s + r.bidPrice * r.amount, 0);
                 askPrice = craftAsk - deeperAsk;
                 bidPrice = (craftBid || craftAsk) - deeperBid;
-                return [{ itemName: `Craft ${upgradeDetails.name}`, amount: 1, askPrice, bidPrice, depth }, ...deeperRows];
+                return [
+                    {
+                        itemName: i18n_js.t('tooltipPrices.craftItemName', { itemName: upgradeDetails.name }),
+                        amount: 1,
+                        askPrice,
+                        bidPrice,
+                        depth,
+                    },
+                    ...deeperRows,
+                ];
             }
 
             if (craftBid > 0 && (bidPrice === 0 || craftBid < bidPrice)) bidPrice = craftBid;
-            return [{ itemName: `Buy ${upgradeDetails.name}`, amount: 1, askPrice, bidPrice, depth }];
+            return [
+                {
+                    itemName: i18n_js.t('tooltipPrices.buyItemName', { itemName: upgradeDetails.name }),
+                    amount: 1,
+                    askPrice,
+                    bidPrice,
+                    depth,
+                },
+            ];
         }
 
         /**
@@ -6182,10 +6227,10 @@ self.onmessage = function (e) {
 
                 // Table header
                 html += `<tr style="border-bottom: 1px solid ${config.COLOR_BORDER};">`;
-                html += '<th style="padding: 2px 4px; text-align: left;">Material</th>';
-                html += '<th style="padding: 2px 4px; text-align: center;">Count</th>';
-                html += '<th style="padding: 2px 4px; text-align: right;">Ask</th>';
-                html += '<th style="padding: 2px 4px; text-align: right;">Bid</th>';
+                html += `<th style="padding: 2px 4px; text-align: left;">${i18n_js.t('tooltipPrices.materialHeader')}</th>`;
+                html += `<th style="padding: 2px 4px; text-align: center;">${i18n_js.t('tooltipPrices.countHeader')}</th>`;
+                html += `<th style="padding: 2px 4px; text-align: right;">${i18n_js.t('tooltipPrices.askHeader')}</th>`;
+                html += `<th style="padding: 2px 4px; text-align: right;">${i18n_js.t('tooltipPrices.bidHeader')}</th>`;
                 html += '</tr>';
 
                 // Resolve prices for all materials through unified chain
@@ -6209,10 +6254,21 @@ self.onmessage = function (e) {
                             const subBidTotal = subRows.reduce((s, r) => s + r.bidPrice * r.amount, 0);
                             askPrice = craftAsk - subAskTotal;
                             bidPrice = (craftBid || craftAsk) - subBidTotal;
-                            return { ...material, itemName: `Craft ${material.itemName}`, askPrice, bidPrice, subRows };
+                            return {
+                                ...material,
+                                itemName: i18n_js.t('tooltipPrices.craftItemName', { itemName: material.itemName }),
+                                askPrice,
+                                bidPrice,
+                                subRows,
+                            };
                         }
                         if (craftBid > 0 && (bidPrice === 0 || craftBid < bidPrice)) bidPrice = craftBid;
-                        return { ...material, itemName: `Buy ${material.itemName}`, askPrice, bidPrice };
+                        return {
+                            ...material,
+                            itemName: i18n_js.t('tooltipPrices.buyItemName', { itemName: material.itemName }),
+                            askPrice,
+                            bidPrice,
+                        };
                     }
 
                     return { ...material, askPrice, bidPrice };
@@ -6237,7 +6293,7 @@ self.onmessage = function (e) {
 
                 // Total row
                 html += `<tr style="border-bottom: 1px solid ${config.COLOR_BORDER};">`;
-                html += '<td style="padding: 2px 4px; font-weight: bold;">Total</td>';
+                html += `<td style="padding: 2px 4px; font-weight: bold;">${i18n_js.t('tooltipPrices.totalLabel')}</td>`;
                 html += `<td style="padding: 2px 4px; text-align: center;">${totalCount.toFixed(1)}</td>`;
                 html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(totalAsk)}</td>`;
                 html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(totalBid)}</td>`;
@@ -6275,7 +6331,7 @@ self.onmessage = function (e) {
                 const profitPerDay = profitData.profitPerDay;
                 const profitColor = profitData.profitPerHour >= 0 ? config.COLOR_TOOLTIP_PROFIT : config.COLOR_TOOLTIP_LOSS;
 
-                html += `<div style="color: ${profitColor};">Profit: ${formatters_js.formatKMB(profitPerAction)}/action, ${formatters_js.formatKMB(profitData.profitPerHour)}/hour, ${formatters_js.formatKMB(profitPerDay)}/day</div>`;
+                html += `<div style="color: ${profitColor};">${i18n_js.t('tooltipPrices.profitSummaryLine', { perAction: formatters_js.formatKMB(profitPerAction), perHour: formatters_js.formatKMB(profitData.profitPerHour), perDay: formatters_js.formatKMB(profitPerDay) })}</div>`;
                 html += '</div>';
             }
 
@@ -6312,15 +6368,17 @@ self.onmessage = function (e) {
             let html = '<div style="border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;">';
 
             // Header
-            html += '<div style="font-weight: bold; margin-bottom: 4px;">EXPECTED VALUE</div>';
+            html += `<div style="font-weight: bold; margin-bottom: 4px;">${i18n_js.t('tooltipPrices.expectedValueHeaderLabel')}</div>`;
             html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 
             // Expected value (simple display)
-            html += `<div style="color: ${config.COLOR_TOOLTIP_PROFIT}; font-weight: bold;">Expected Return: ${formatTooltipPrice(evData.expectedValue)}</div>`;
+            html += `<div style="color: ${config.COLOR_TOOLTIP_PROFIT}; font-weight: bold;">${i18n_js.t('tooltipPrices.expectedReturnLine', { value: formatTooltipPrice(evData.expectedValue) })}</div>`;
             if (keyPrice > 0) {
-                const keyLabel = keyName ? `Key Cost (${keyName})` : 'Key Cost';
-                html += `<div style="color: ${config.COLOR_TOOLTIP_LOSS};">- ${keyLabel}: ${formatTooltipPrice(keyPrice)}</div>`;
-                html += `<div style="color: ${config.COLOR_TOOLTIP_PROFIT}; font-weight: bold;">Net Value: ${formatTooltipPrice(evData.expectedValue - keyPrice)}</div>`;
+                const keyLine = keyName
+                    ? i18n_js.t('tooltipPrices.keyCostNamedLine', { name: keyName, value: formatTooltipPrice(keyPrice) })
+                    : i18n_js.t('tooltipPrices.keyCostLine', { value: formatTooltipPrice(keyPrice) });
+                html += `<div style="color: ${config.COLOR_TOOLTIP_LOSS};">${keyLine}</div>`;
+                html += `<div style="color: ${config.COLOR_TOOLTIP_PROFIT}; font-weight: bold;">${i18n_js.t('tooltipPrices.netValueLine', { value: formatTooltipPrice(evData.expectedValue - keyPrice) })}</div>`;
             }
 
             html += '</div>'; // Close summary section
@@ -6333,30 +6391,30 @@ self.onmessage = function (e) {
 
                 // Determine how many drops to show
                 let dropsToShow = evData.drops;
-                let headerLabel = 'All Drops';
+                let dropsHeader = i18n_js.t('tooltipPrices.allDropsHeader', { count: evData.drops.length });
 
                 if (showDropsSetting === 'Top 5') {
                     dropsToShow = evData.drops.slice(0, 5);
-                    headerLabel = 'Top 5 Drops';
+                    dropsHeader = i18n_js.t('tooltipPrices.top5DropsHeader', { count: evData.drops.length });
                 } else if (showDropsSetting === 'Top 10') {
                     dropsToShow = evData.drops.slice(0, 10);
-                    headerLabel = 'Top 10 Drops';
+                    dropsHeader = i18n_js.t('tooltipPrices.top10DropsHeader', { count: evData.drops.length });
                 }
 
-                html += `<div style="font-weight: bold; margin-bottom: 4px;">${headerLabel} (${evData.drops.length} total):</div>`;
+                html += `<div style="font-weight: bold; margin-bottom: 4px;">${dropsHeader}</div>`;
                 html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 
                 // List each drop
                 for (const drop of dropsToShow) {
                     if (!drop.hasPriceData) {
                         // Show item without price data in gray
-                        html += `<div style="color: ${config.COLOR_TEXT_SECONDARY};">• ${drop.itemName} (${formatters_js.formatPercentage(drop.dropRate, 2)}): ${drop.avgCount.toFixed(2)} avg → No price data</div>`;
+                        html += `<div style="color: ${config.COLOR_TEXT_SECONDARY};">${i18n_js.t('tooltipPrices.dropNoPriceLine', { itemName: drop.itemName, dropRate: formatters_js.formatPercentage(drop.dropRate, 2), avgCount: drop.avgCount.toFixed(2) })}</div>`;
                     } else {
                         // Format drop rate percentage
                         const dropRatePercent = formatters_js.formatPercentage(drop.dropRate, 2);
 
                         // Show full drop breakdown
-                        html += `<div>• ${drop.itemName} (${dropRatePercent}%): ${drop.avgCount.toFixed(2)} avg → ${formatTooltipPrice(drop.expectedValue)}</div>`;
+                        html += `<div>${i18n_js.t('tooltipPrices.dropWithPriceLine', { itemName: drop.itemName, dropRate: dropRatePercent, avgCount: drop.avgCount.toFixed(2), value: formatTooltipPrice(drop.expectedValue) })}</div>`;
                     }
                 }
 
@@ -6364,9 +6422,9 @@ self.onmessage = function (e) {
 
                 // Show total
                 html += '<div style="border-top: 1px solid rgba(255,255,255,0.2); margin: 4px 0;"></div>';
-                html += `<div style="font-size: 0.9em; margin-left: 8px; font-weight: bold;">Total from ${evData.drops.length} drops: ${formatTooltipPrice(evData.expectedValue)}</div>`;
+                html += `<div style="font-size: 0.9em; margin-left: 8px; font-weight: bold;">${i18n_js.t('tooltipPrices.totalFromDropsLine', { count: evData.drops.length, value: formatTooltipPrice(evData.expectedValue) })}</div>`;
                 if (keyPrice > 0) {
-                    html += `<div style="font-size: 0.9em; margin-left: 8px; font-weight: bold;">Net after key: ${formatTooltipPrice(evData.expectedValue - keyPrice)}</div>`;
+                    html += `<div style="font-size: 0.9em; margin-left: 8px; font-weight: bold;">${i18n_js.t('tooltipPrices.netAfterKeyLine', { value: formatTooltipPrice(evData.expectedValue - keyPrice) })}</div>`;
                 }
             }
 
@@ -6520,19 +6578,19 @@ self.onmessage = function (e) {
             );
 
             let html = '<div style="border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;">';
-            html += '<div style="font-weight: bold; margin-bottom: 4px;">GATHERING</div>';
+            html += `<div style="font-weight: bold; margin-bottom: 4px;">${i18n_js.t('tooltipPrices.gatheringHeaderLabel')}</div>`;
 
             // Solo actions section
             if (gatheringData.soloActions.length > 0) {
                 html += '<div style="font-size: 0.9em; margin-left: 8px; margin-bottom: 6px;">';
-                html += '<div style="font-weight: 500; margin-bottom: 2px;">Solo:</div>';
+                html += `<div style="font-weight: 500; margin-bottom: 2px;">${i18n_js.t('tooltipPrices.soloLabel')}</div>`;
 
                 for (const action of gatheringData.soloActions) {
                     const itemsPerHourStr = action.itemsPerHour ? Math.round(action.itemsPerHour) : '?';
                     const profitStr = action.profitPerHour ? formatters_js.formatKMB(Math.round(action.profitPerHour)) : '?';
                     const profitDayStr = action.profitPerHour ? formatters_js.formatKMB(Math.round(action.profitPerHour * 24)) : '?';
 
-                    html += `<div style="margin-left: 8px;">• ${action.actionName}: ${itemsPerHourStr} items/hr | ${profitStr}/hr (${profitDayStr}/day)</div>`;
+                    html += `<div style="margin-left: 8px;">${i18n_js.t('tooltipPrices.soloActionLine', { actionName: action.actionName, itemsPerHour: itemsPerHourStr, profitPerHour: profitStr, profitPerDay: profitDayStr })}</div>`;
                 }
 
                 html += '</div>';
@@ -6541,7 +6599,7 @@ self.onmessage = function (e) {
             // Zone actions section
             if (zoneActions.length > 0) {
                 html += '<div style="font-size: 0.9em; margin-left: 8px;">';
-                html += '<div style="font-weight: 500; margin-bottom: 2px;">Found in:</div>';
+                html += `<div style="font-weight: 500; margin-bottom: 2px;">${i18n_js.t('tooltipPrices.foundInLabel')}</div>`;
 
                 for (const action of zoneActions) {
                     // Use more decimal places for very rare drops (< 0.1%)
@@ -6552,13 +6610,13 @@ self.onmessage = function (e) {
                     let itemsDisplay;
                     if (action.isRareDrop) {
                         const itemsPerDayStr = action.itemsPerDay ? action.itemsPerDay.toFixed(2) : '?';
-                        itemsDisplay = `${itemsPerDayStr} items/day`;
+                        itemsDisplay = i18n_js.t('tooltipPrices.itemsPerDayUnit', { value: itemsPerDayStr });
                     } else {
                         const itemsPerHourStr = action.itemsPerHour ? Math.round(action.itemsPerHour) : '?';
-                        itemsDisplay = `${itemsPerHourStr} items/hr`;
+                        itemsDisplay = i18n_js.t('tooltipPrices.itemsPerHourUnit', { value: itemsPerHourStr });
                     }
 
-                    html += `<div style="margin-left: 8px;">• ${action.actionName}: ${itemsDisplay} (${dropRatePercent}% drop)</div>`;
+                    html += `<div style="margin-left: 8px;">${i18n_js.t('tooltipPrices.zoneActionLine', { actionName: action.actionName, itemsDisplay, dropRate: dropRatePercent })}</div>`;
                 }
 
                 html += '</div>';
@@ -6630,13 +6688,16 @@ self.onmessage = function (e) {
             let html = '<div style="border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;">';
 
             // Show heading based on whether item is craftable
-            const heading = isCraftable ? 'Alternative Actions:' : 'Profits:';
+            const heading = isCraftable ? i18n_js.t('tooltipPrices.alternativeActionsHeader') : i18n_js.t('tooltipPrices.profitsHeader');
             html += `<div style="font-weight: bold; margin-bottom: 4px;">${heading}</div>`;
             html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 
             for (let i = 0; i < allProfits.length; i++) {
                 const profit = allProfits[i];
-                const label = profit.actionType.charAt(0).toUpperCase() + profit.actionType.slice(1);
+                const labelKey = ACTION_TYPE_LABEL_KEYS[profit.actionType];
+                const label = labelKey
+                    ? i18n_js.t(labelKey)
+                    : profit.actionType.charAt(0).toUpperCase() + profit.actionType.slice(1);
                 const color = profit.profitPerHour >= 0 ? config.COLOR_TOOLTIP_INFO : config.COLOR_TOOLTIP_LOSS;
                 html += `<div style="color: ${color};">• ${label}: ${formatters_js.formatKMB(profit.profitPerHour)}/hr`;
 
@@ -6778,21 +6839,21 @@ self.onmessage = function (e) {
             if (!abilityStatus.learned) {
                 // Not learned
                 html += `<div style="color: ${config.COLOR_TOOLTIP_LOSS}; font-weight: 600;">`;
-                html += `\u26A0 Unlearned</div>`;
+                html += `${i18n_js.t('tooltipPrices.unlearnedLabel')}</div>`;
             } else {
                 // Learned
                 html += `<div style="color: ${config.COLOR_TOOLTIP_INFO}; font-weight: 600;">`;
-                html += `\u2714 Learned</div>`;
+                html += `${i18n_js.t('tooltipPrices.learnedLabel')}</div>`;
 
                 // Show level and progress
                 html += `<div style="margin-top: 4px; margin-left: 8px; font-size: 0.9em;">`;
-                html += `<div>Level: ${abilityStatus.level}</div>`;
+                html += `<div>${i18n_js.t('tooltipPrices.levelLine', { level: abilityStatus.level })}</div>`;
 
                 if (abilityStatus.maxLevel) {
-                    html += `<div style="color: ${config.COLOR_TOOLTIP_INFO};">Max Level Reached</div>`;
+                    html += `<div style="color: ${config.COLOR_TOOLTIP_INFO};">${i18n_js.t('tooltipPrices.maxLevelReachedLabel')}</div>`;
                 } else if (abilityStatus.percentToNext !== undefined) {
-                    html += `<div>Progress: ${formatters_js.formatPercentage(abilityStatus.percentToNext)}</div>`;
-                    html += `<div style="opacity: 0.7;">XP to Next: ${formatters_js.numberFormatter(abilityStatus.xpToNext)}</div>`;
+                    html += `<div>${i18n_js.t('tooltipPrices.progressLine', { percent: formatters_js.formatPercentage(abilityStatus.percentToNext) })}</div>`;
+                    html += `<div style="opacity: 0.7;">${i18n_js.t('tooltipPrices.xpToNextLine', { xp: formatters_js.numberFormatter(abilityStatus.xpToNext) })}</div>`;
                 }
 
                 html += '</div>';
@@ -7097,36 +7158,36 @@ self.onmessage = function (e) {
             let html = '<div style="border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;">';
 
             // CONSUMABLE STATS section
-            html += '<div style="font-weight: bold; margin-bottom: 4px;">CONSUMABLE STATS</div>';
+            html += `<div style="font-weight: bold; margin-bottom: 4px;">${i18n_js.t('tooltipConsumables.statsHeaderLabel')}</div>`;
             html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 
             // Restores line
             if (stats.recoveryDuration > 0) {
-                html += `<div>Restores: ${formatters_js.numberFormatter(stats.restorePerSecond, 1)} ${stats.restoreType}/s</div>`;
+                html += `<div>${i18n_js.t('tooltipConsumables.restoresPerSecondLine', { amount: formatters_js.numberFormatter(stats.restorePerSecond, 1), type: stats.restoreType })}</div>`;
             } else {
-                html += `<div>Restores: ${formatters_js.numberFormatter(stats.restoreAmount)} ${stats.restoreType} (instant)</div>`;
+                html += `<div>${i18n_js.t('tooltipConsumables.restoresInstantLine', { amount: formatters_js.numberFormatter(stats.restoreAmount), type: stats.restoreType })}</div>`;
             }
 
             // Cost efficiency line
             if (stats.costPerPoint > 0) {
-                html += `<div>Cost: ${formatters_js.numberFormatter(stats.costPerPoint, 1)} per ${stats.restoreType}</div>`;
+                html += `<div>${i18n_js.t('tooltipConsumables.costPerPointLine', { cost: formatters_js.numberFormatter(stats.costPerPoint, 1), type: stats.restoreType })}</div>`;
             } else if (stats.askPrice === 0) {
-                html += `<div style="color: gray; font-style: italic;">Cost: No market data</div>`;
+                html += `<div style="color: gray; font-style: italic;">${i18n_js.t('tooltipConsumables.costNoDataLabel')}</div>`;
             }
 
             // Daily maximum line - ALWAYS show (based on cooldown)
             if (stats.dailyMax > 0) {
-                html += `<div>Daily Max: ${formatters_js.numberFormatter(stats.dailyMax)} ${stats.restoreType}</div>`;
+                html += `<div>${i18n_js.t('tooltipConsumables.dailyMaxLine', { amount: formatters_js.numberFormatter(stats.dailyMax), type: stats.restoreType })}</div>`;
             }
 
             // Recovery duration line - ONLY for over-time items
             if (stats.recoveryDuration > 0) {
-                html += `<div>Recovery Time: ${stats.recoveryDuration}s</div>`;
+                html += `<div>${i18n_js.t('tooltipConsumables.recoveryTimeLine', { seconds: stats.recoveryDuration })}</div>`;
             }
 
             // Cooldown line - ALWAYS show
             if (stats.cooldownDuration > 0) {
-                html += `<div>Cooldown: ${stats.cooldownDuration}s (${formatters_js.numberFormatter(stats.usesPerDay)} uses/day)</div>`;
+                html += `<div>${i18n_js.t('tooltipConsumables.cooldownLine', { seconds: stats.cooldownDuration, uses: formatters_js.numberFormatter(stats.usesPerDay) })}</div>`;
             }
 
             html += '</div>';
@@ -7273,7 +7334,7 @@ self.onmessage = function (e) {
             container.style.cssText = 'display: flex; align-items: center; gap: 4px;';
 
             const label = document.createElement('label');
-            label.textContent = type === 'min' ? 'Level >= ' : 'Level < ';
+            label.textContent = type === 'min' ? i18n_js.t('marketFilter.levelMinLabel') : i18n_js.t('marketFilter.levelMaxLabel');
             label.style.cssText = 'font-size: 12px; color: rgba(255, 255, 255, 0.7);';
 
             const select = document.createElement('select');
@@ -7290,7 +7351,7 @@ self.onmessage = function (e) {
             levels.forEach((level) => {
                 const option = document.createElement('option');
                 option.value = level;
-                option.textContent = level === 1000 ? 'All' : level;
+                option.textContent = level === 1000 ? i18n_js.t('skillingOptimizer.allActionsOption') : level;
                 if ((type === 'min' && level === 1) || (type === 'max' && level === 1000)) {
                     option.selected = true;
                 }
@@ -7321,7 +7382,7 @@ self.onmessage = function (e) {
             container.style.cssText = 'display: flex; align-items: center; gap: 4px;';
 
             const label = document.createElement('label');
-            label.textContent = 'Class: ';
+            label.textContent = i18n_js.t('marketFilter.classLabel');
             label.style.cssText = 'font-size: 12px; color: rgba(255, 255, 255, 0.7);';
 
             const select = document.createElement('select');
@@ -7330,13 +7391,13 @@ self.onmessage = function (e) {
                 'padding: 4px 8px; border-radius: 4px; background: rgba(0, 0, 0, 0.3); color: #fff; border: 1px solid rgba(91, 141, 239, 0.3);';
 
             const classes = [
-                { value: 'all', label: 'All' },
-                { value: 'attack', label: 'Attack' },
-                { value: 'melee', label: 'Melee' },
-                { value: 'defense', label: 'Defense' },
-                { value: 'ranged', label: 'Ranged' },
-                { value: 'magic', label: 'Magic' },
-                { value: 'others', label: 'Others' },
+                { value: 'all', label: i18n_js.t('skillingOptimizer.allActionsOption') },
+                { value: 'attack', label: i18n_js.t('simEditor.skillAttack') },
+                { value: 'melee', label: i18n_js.t('simEditor.skillMelee') },
+                { value: 'defense', label: i18n_js.t('simEditor.skillDefense') },
+                { value: 'ranged', label: i18n_js.t('simEditor.skillRanged') },
+                { value: 'magic', label: i18n_js.t('simEditor.skillMagic') },
+                { value: 'others', label: i18n_js.t('marketFilter.othersOption') },
             ];
 
             classes.forEach((cls) => {
@@ -7365,7 +7426,7 @@ self.onmessage = function (e) {
             container.style.cssText = 'display: flex; align-items: center; gap: 4px;';
 
             const label = document.createElement('label');
-            label.textContent = 'Slot: ';
+            label.textContent = i18n_js.t('marketFilter.slotLabel');
             label.style.cssText = 'font-size: 12px; color: rgba(255, 255, 255, 0.7);';
 
             const select = document.createElement('select');
@@ -7374,20 +7435,20 @@ self.onmessage = function (e) {
                 'padding: 4px 8px; border-radius: 4px; background: rgba(0, 0, 0, 0.3); color: #fff; border: 1px solid rgba(91, 141, 239, 0.3);';
 
             const slots = [
-                { value: 'all', label: 'All' },
-                { value: 'main_hand', label: 'Main Hand' },
-                { value: 'off_hand', label: 'Off Hand' },
-                { value: 'two_hand', label: 'Two Hand' },
-                { value: 'head', label: 'Head' },
-                { value: 'body', label: 'Body' },
-                { value: 'hands', label: 'Hands' },
-                { value: 'legs', label: 'Legs' },
-                { value: 'feet', label: 'Feet' },
-                { value: 'neck', label: 'Neck' },
-                { value: 'earrings', label: 'Earrings' },
-                { value: 'ring', label: 'Ring' },
-                { value: 'pouch', label: 'Pouch' },
-                { value: 'back', label: 'Back' },
+                { value: 'all', label: i18n_js.t('skillingOptimizer.allActionsOption') },
+                { value: 'main_hand', label: i18n_js.t('simEditor.slotMainHand') },
+                { value: 'off_hand', label: i18n_js.t('simEditor.slotOffHand') },
+                { value: 'two_hand', label: i18n_js.t('simEditor.slotTwoHand') },
+                { value: 'head', label: i18n_js.t('simEditor.slotHead') },
+                { value: 'body', label: i18n_js.t('simEditor.slotBody') },
+                { value: 'hands', label: i18n_js.t('simEditor.slotHands') },
+                { value: 'legs', label: i18n_js.t('simEditor.slotLegs') },
+                { value: 'feet', label: i18n_js.t('simEditor.slotFeet') },
+                { value: 'neck', label: i18n_js.t('simEditor.slotNeck') },
+                { value: 'earrings', label: i18n_js.t('simEditor.slotEarrings') },
+                { value: 'ring', label: i18n_js.t('simEditor.slotRing') },
+                { value: 'pouch', label: i18n_js.t('simEditor.slotPouch') },
+                { value: 'back', label: i18n_js.t('simEditor.slotBack') },
             ];
 
             slots.forEach((slot) => {
@@ -7613,7 +7674,7 @@ self.onmessage = function (e) {
                     this.hasSorted = false;
                     this.sortDirection = 'desc';
                     if (this.sortButton) {
-                        this.sortButton.textContent = 'Sort by Profit';
+                        this.sortButton.textContent = i18n_js.t('marketSort.sortByProfitButton');
                     }
                 }
             );
@@ -7628,7 +7689,7 @@ self.onmessage = function (e) {
                 this.hasSorted = false;
                 this.sortDirection = 'desc';
                 if (this.sortButton) {
-                    this.sortButton.textContent = 'Sort by Profit';
+                    this.sortButton.textContent = i18n_js.t('marketSort.sortByProfitButton');
                 }
                 // Remove profit indicators from any stale elements
                 document.querySelectorAll('.toolasha-profit-indicator').forEach((el) => el.remove());
@@ -7661,7 +7722,7 @@ self.onmessage = function (e) {
             // Create sort button
             const sortButton = document.createElement('button');
             sortButton.id = 'toolasha-sort-profit-btn';
-            sortButton.textContent = 'Sort by Profit';
+            sortButton.textContent = i18n_js.t('marketSort.sortByProfitButton');
             sortButton.style.cssText = `
             padding: 6px 12px;
             border-radius: 4px;
@@ -7692,7 +7753,7 @@ self.onmessage = function (e) {
 
             // Create reset button
             const resetButton = document.createElement('button');
-            resetButton.textContent = 'Reset Order';
+            resetButton.textContent = i18n_js.t('marketSort.resetOrderButton');
             resetButton.style.cssText = `
             padding: 6px 12px;
             border-radius: 4px;
@@ -7733,7 +7794,9 @@ self.onmessage = function (e) {
                 this.sortDirection = this.sortDirection === 'desc' ? 'asc' : 'desc';
             }
 
-            this.sortButton.textContent = this.sortDirection === 'desc' ? 'Sorting... ▼' : 'Sorting... ▲';
+            this.sortButton.textContent = i18n_js.t('marketSort.sortingInProgress', {
+                arrow: this.sortDirection === 'desc' ? '▼' : '▲',
+            });
             this.sortButton.style.background = 'rgba(91, 141, 239, 0.6)';
             this.isSorting = true;
 
@@ -7741,7 +7804,9 @@ self.onmessage = function (e) {
                 await this.sortByProfitability();
             } finally {
                 this.isSorting = false;
-                this.sortButton.textContent = this.sortDirection === 'desc' ? 'Sort by Profit ▼' : 'Sort by Profit ▲';
+                this.sortButton.textContent = i18n_js.t('marketSort.sortByProfitWithArrow', {
+                    arrow: this.sortDirection === 'desc' ? '▼' : '▲',
+                });
                 this.sortButton.style.background = 'rgba(91, 141, 239, 0.2)';
             }
         }
@@ -7982,7 +8047,7 @@ self.onmessage = function (e) {
             // Reset sort direction
             this.sortDirection = 'desc';
             if (this.sortButton) {
-                this.sortButton.textContent = 'Sort by Profit';
+                this.sortButton.textContent = i18n_js.t('marketSort.sortByProfitButton');
             }
         }
 
@@ -9133,8 +9198,8 @@ self.onmessage = function (e) {
             // Add header
             const header = document.createElement('th');
             header.classList.add('mwi-estimated-age-header');
-            header.textContent = '~Age';
-            header.title = 'Estimated listing age (based on listing ID)';
+            header.textContent = i18n_js.t('estimatedListingAge.ageColumnHeader');
+            header.title = i18n_js.t('estimatedListingAge.ageColumnHeaderTooltip');
             thead.appendChild(header);
 
             // Track which of user's listings have been matched to prevent duplicates
@@ -9227,7 +9292,7 @@ self.onmessage = function (e) {
                             cell.style.color = '#00FF00'; // Green for YOUR listing
                             cell.style.fontSize = '0.9em';
                         } else {
-                            cell.textContent = '~Unknown';
+                            cell.textContent = i18n_js.t('estimatedListingAge.unknownAgeLabel');
                             cell.style.color = '#666666';
                             cell.style.fontSize = '0.9em';
                         }
@@ -9366,12 +9431,12 @@ self.onmessage = function (e) {
          */
         getStalenessTooltip(lastUpdated) {
             if (!lastUpdated) {
-                return 'Order book data - Visit market page to refresh';
+                return i18n_js.t('estimatedListingAge.stalenessTooltipUnknown');
             }
 
             const age = Date.now() - lastUpdated;
             const relativeTime = formatters_js.formatRelativeTime(age);
-            return `Order book data from ${relativeTime} ago - Visit market page to refresh`;
+            return i18n_js.t('estimatedListingAge.stalenessTooltip', { relativeTime });
         }
 
         /**
@@ -9901,28 +9966,28 @@ self.onmessage = function (e) {
             // Create "Top Order Price" header
             const topOrderHeader = document.createElement('th');
             topOrderHeader.classList.add('mwi-listing-price-header');
-            topOrderHeader.textContent = 'Top Order Price';
+            topOrderHeader.textContent = i18n_js.t('listingPriceDisplay.topOrderPriceHeader');
 
             // Create "Top Order Age" header (if setting enabled)
             let topOrderAgeHeader = null;
             if (config.getSetting('market_showTopOrderAge')) {
                 topOrderAgeHeader = document.createElement('th');
                 topOrderAgeHeader.classList.add('mwi-listing-price-header');
-                topOrderAgeHeader.textContent = 'Top Order Age';
-                topOrderAgeHeader.title = 'Estimated age of the top competing order';
+                topOrderAgeHeader.textContent = i18n_js.t('listingPriceDisplay.topOrderAgeHeader');
+                topOrderAgeHeader.title = i18n_js.t('listingPriceDisplay.topOrderAgeHeaderTooltip');
             }
 
             // Create "Total Price" header
             const totalPriceHeader = document.createElement('th');
             totalPriceHeader.classList.add('mwi-listing-price-header');
-            totalPriceHeader.textContent = 'Total Price';
+            totalPriceHeader.textContent = i18n_js.t('listingPriceDisplay.totalPriceHeader');
 
             // Create "Listed" header (if setting enabled)
             let listedHeader = null;
             if (config.getSetting('market_showListingAge')) {
                 listedHeader = document.createElement('th');
                 listedHeader.classList.add('mwi-listing-price-header');
-                listedHeader.textContent = 'Listed';
+                listedHeader.textContent = i18n_js.t('listingPriceDisplay.listedHeader');
             }
 
             // Insert headers (order: Top Order Price, Top Order Age, Total Price, Listed)
@@ -9966,7 +10031,7 @@ self.onmessage = function (e) {
                 th.dataset.mwiSortable = 'true';
                 th.style.cursor = 'pointer';
                 th.style.userSelect = 'none';
-                th.title = `Click to sort by ${rawText}`;
+                th.title = i18n_js.t('listingPriceDisplay.clickToSortByTooltip', { text: rawText });
 
                 th.addEventListener('click', () => this._handleHeaderClick(colKey, tableNode));
             }
@@ -9991,15 +10056,15 @@ self.onmessage = function (e) {
         /** @returns {string} */
         _colKeyToBaseText(colKey) {
             const map = {
-                status: 'Status',
-                type: 'Type',
-                progress: 'Progress',
-                price: 'Price',
-                topOrderPrice: 'Top Order Price',
-                topOrderAge: 'Top Order Age',
-                totalPrice: 'Total Price',
-                listed: 'Listed',
-                collect: 'Collect',
+                status: i18n_js.t('marketHistory.columnStatus'),
+                type: i18n_js.t('marketHistory.columnType'),
+                progress: i18n_js.t('listingPriceDisplay.progressColumnLabel'),
+                price: i18n_js.t('marketHistory.columnPrice'),
+                topOrderPrice: i18n_js.t('listingPriceDisplay.topOrderPriceHeader'),
+                topOrderAge: i18n_js.t('listingPriceDisplay.topOrderAgeHeader'),
+                totalPrice: i18n_js.t('listingPriceDisplay.totalPriceHeader'),
+                listed: i18n_js.t('listingPriceDisplay.listedHeader'),
+                collect: i18n_js.t('listingPriceDisplay.collectColumnLabel'),
             };
             return map[colKey] ?? colKey;
         }
@@ -10576,13 +10641,19 @@ self.onmessage = function (e) {
          */
         createTopOrderAgeCell(itemHrid, enhancementLevel, isSell, ownListingIds = new Set()) {
             const cacheEntry = estimatedListingAge.orderBooksCache[itemHrid];
-            if (!cacheEntry) return createStyledCell('N/A', config.COLOR_TEXT_SECONDARY, { fontSize: '0.9em' });
+            if (!cacheEntry)
+                return createStyledCell(i18n_js.t('combatSimUi.notAvailableLabel'), config.COLOR_TEXT_SECONDARY, {
+                    fontSize: '0.9em',
+                });
 
             const lastUpdated = cacheEntry.lastUpdated;
             const ageMs = this._getTopOrderAgeMs(itemHrid, enhancementLevel, isSell, ownListingIds);
 
-            if (ageMs === null) return createStyledCell('N/A', config.COLOR_TEXT_SECONDARY, { fontSize: '0.9em' });
-            if (ageMs === -1) return createStyledCell('None', '#00FF00', { fontSize: '0.9em' });
+            if (ageMs === null)
+                return createStyledCell(i18n_js.t('combatSimUi.notAvailableLabel'), config.COLOR_TEXT_SECONDARY, {
+                    fontSize: '0.9em',
+                });
+            if (ageMs === -1) return createStyledCell(i18n_js.t('simEditor.noneLabel'), '#00FF00', { fontSize: '0.9em' });
 
             return createStyledCell(`~${formatters_js.formatRelativeTime(ageMs)}`, estimatedListingAge.getStalenessColor(lastUpdated), {
                 fontSize: '0.9em',
@@ -10639,7 +10710,9 @@ self.onmessage = function (e) {
          * @returns {HTMLElement} Empty table cell element
          */
         createPlaceholderCell() {
-            return createStyledCell('N/A', config.COLOR_TEXT_SECONDARY, { fontSize: '0.9em' });
+            return createStyledCell(i18n_js.t('combatSimUi.notAvailableLabel'), config.COLOR_TEXT_SECONDARY, {
+                fontSize: '0.9em',
+            });
         }
 
         /**
@@ -11090,9 +11163,11 @@ self.onmessage = function (e) {
 
             // Add tooltip
             if (isEstimated) {
-                displayElement.title = `Estimated total queue depth (extrapolated from ${listings.length} visible orders)`;
+                displayElement.title = i18n_js.t('queueLengthEstimator.estimatedTooltip', { count: listings.length });
             } else {
-                displayElement.title = `Total quantity at best ${isAsk ? 'sell' : 'buy'} price`;
+                displayElement.title = isAsk
+                    ? i18n_js.t('queueLengthEstimator.bestSellPriceTooltip')
+                    : i18n_js.t('queueLengthEstimator.bestBuyPriceTooltip');
             }
 
             // Insert into button container
@@ -12238,7 +12313,7 @@ self.onmessage = function (e) {
         _buildLauncher() {
             const btn = document.createElement('button');
             btn.id = LAUNCHER_ID;
-            btn.textContent = 'Risk of Ruin';
+            btn.textContent = i18n_js.t('riskOfRuinUi.launcherButtonLabel');
             btn.style.cssText = `
             position: fixed;
             bottom: 12px;
@@ -12301,7 +12376,7 @@ self.onmessage = function (e) {
             flex-shrink: 0;
         `;
             header.innerHTML = `
-            <span style="font-weight:700; font-size:14px; color:#e05c5c;">Risk of Ruin Calculator</span>
+            <span style="font-weight:700; font-size:14px; color:#e05c5c;">${i18n_js.t('riskOfRuinUi.panelTitle')}</span>
             <button id="mwi-ror-close" style="
                 background:none; border:none; color:#aaa; font-size:22px;
                 cursor:pointer; padding:0; line-height:1;">×</button>
@@ -12316,7 +12391,7 @@ self.onmessage = function (e) {
             status.id = 'mwi-ror-status';
             status.style.cssText =
                 'padding:6px 14px; color:#555; font-size:11px; border-top:1px solid #1a1a1a; flex-shrink:0; text-align:center;';
-            status.textContent = 'Choose a mode, set your target, and click Calculate.';
+            status.textContent = i18n_js.t('riskOfRuinUi.statusDefault');
 
             this.panel.appendChild(header);
             this.panel.appendChild(body);
@@ -12342,17 +12417,17 @@ self.onmessage = function (e) {
                 'width:100%; background:#1a1a2e; color:#e0e0e0; border:1px solid #444; border-radius:4px; padding:5px 8px; font-size:12px; box-sizing:border-box;';
 
             return `
-            <label style="${labelStyle}">Mode</label>
+            <label style="${labelStyle}">${i18n_js.t('riskOfRuinUi.modeLabel')}</label>
             <select id="mwi-ror-mode" style="${inputStyle} margin-bottom:10px;">
-                <option value="chest">Dungeon Chest</option>
-                <option value="alchemy">Alchemy (Transmute)</option>
-                <option value="enhancement">Enhancing</option>
+                <option value="chest">${i18n_js.t('riskOfRuinUi.modeChestOption')}</option>
+                <option value="alchemy">${i18n_js.t('riskOfRuinUi.modeAlchemyOption')}</option>
+                <option value="enhancement">${i18n_js.t('riskOfRuinUi.modeEnhancingOption')}</option>
             </select>
 
             <div id="mwi-ror-mode-inputs"></div>
 
-            <label style="${labelStyle} margin-top:10px;">Starting gold</label>
-            <input id="mwi-ror-bankroll" type="text" inputmode="decimal" placeholder="e.g. 5m, 1.2b" style="${inputStyle} margin-bottom:10px;">
+            <label style="${labelStyle} margin-top:10px;">${i18n_js.t('riskOfRuinUi.startingGoldLabel')}</label>
+            <input id="mwi-ror-bankroll" type="text" inputmode="decimal" placeholder="${i18n_js.t('riskOfRuinUi.startingGoldPlaceholder')}" style="${inputStyle} margin-bottom:10px;">
 
             <button id="mwi-ror-run" style="
                 width: 100%;
@@ -12364,7 +12439,7 @@ self.onmessage = function (e) {
                 font-size: 13px;
                 font-weight: 600;
                 cursor: pointer;
-                margin-bottom: 10px;">Calculate</button>
+                margin-bottom: 10px;">${i18n_js.t('riskOfRuinUi.calculateButton')}</button>
 
             <div id="mwi-ror-results" style="font-size:12px; line-height:1.6;"></div>
         `;
@@ -12383,34 +12458,34 @@ self.onmessage = function (e) {
                     return `<option value="${hrid}">${name}</option>`;
                 }).join('');
                 container.innerHTML = `
-                <label style="${labelStyle}">Chest type</label>
+                <label style="${labelStyle}">${i18n_js.t('riskOfRuinUi.chestTypeLabel')}</label>
                 <select id="mwi-ror-chest" style="${inputStyle}">${options}</select>
-                <label style="${labelStyle}">Chests to open</label>
+                <label style="${labelStyle}">${i18n_js.t('riskOfRuinUi.chestsToOpenLabel')}</label>
                 <input id="mwi-ror-target" type="number" min="1" step="1" value="100" style="${inputStyle}">
             `;
             } else if (mode === 'alchemy') {
                 container.innerHTML = `
-                <label style="${labelStyle}">Item to Transmute</label>
-                <input id="mwi-ror-item" list="mwi-ror-transmute-items" style="${inputStyle}" placeholder="Start typing an item name...">
-                <label style="${labelStyle}">Catalyst</label>
+                <label style="${labelStyle}">${i18n_js.t('riskOfRuinUi.itemToTransmuteLabel')}</label>
+                <input id="mwi-ror-item" list="mwi-ror-transmute-items" style="${inputStyle}" placeholder="${i18n_js.t('riskOfRuinUi.itemNamePlaceholder')}">
+                <label style="${labelStyle}">${i18n_js.t('riskOfRuinUi.catalystLabel')}</label>
                 <select id="mwi-ror-catalyst" style="${inputStyle}">
-                    <option value="best">Best available (auto)</option>
-                    <option value="none">None</option>
-                    <option value="typeSpecific">Type-specific catalyst</option>
-                    <option value="prime">Prime catalyst</option>
+                    <option value="best">${i18n_js.t('riskOfRuinUi.catalystBestOption')}</option>
+                    <option value="none">${i18n_js.t('riskOfRuinUi.catalystNoneOption')}</option>
+                    <option value="typeSpecific">${i18n_js.t('riskOfRuinUi.catalystTypeSpecificOption')}</option>
+                    <option value="prime">${i18n_js.t('riskOfRuinUi.catalystPrimeOption')}</option>
                 </select>
-                <label style="${labelStyle}">Actions to attempt</label>
+                <label style="${labelStyle}">${i18n_js.t('riskOfRuinUi.actionsToAttemptLabel')}</label>
                 <input id="mwi-ror-target" type="number" min="1" step="1" value="100" style="${inputStyle}">
             `;
             } else {
                 container.innerHTML = `
-                <label style="${labelStyle}">Item to enhance</label>
-                <input id="mwi-ror-item" list="mwi-ror-enhance-items" style="${inputStyle}" placeholder="Start typing an item name...">
-                <label style="${labelStyle}">Target level</label>
+                <label style="${labelStyle}">${i18n_js.t('riskOfRuinUi.itemToEnhanceLabel')}</label>
+                <input id="mwi-ror-item" list="mwi-ror-enhance-items" style="${inputStyle}" placeholder="${i18n_js.t('riskOfRuinUi.itemNamePlaceholder')}">
+                <label style="${labelStyle}">${i18n_js.t('riskOfRuinUi.targetLevelLabel')}</label>
                 <input id="mwi-ror-target" type="number" min="1" max="20" step="1" value="10" style="${inputStyle}">
-                <label style="${labelStyle}">Start level</label>
+                <label style="${labelStyle}">${i18n_js.t('riskOfRuinUi.startLevelLabel')}</label>
                 <input id="mwi-ror-start-level" type="number" min="0" max="19" step="1" value="0" style="${inputStyle}">
-                <label style="${labelStyle}">Protect from level (0 = never)</label>
+                <label style="${labelStyle}">${i18n_js.t('riskOfRuinUi.protectFromLevelLabel')}</label>
                 <input id="mwi-ror-protect-from" type="number" min="0" max="19" step="1" value="0" style="${inputStyle}">
             `;
             }
@@ -12509,16 +12584,16 @@ self.onmessage = function (e) {
         _run() {
             const status = this.panel.querySelector('#mwi-ror-status');
             const results = this.panel.querySelector('#mwi-ror-results');
-            status.textContent = 'Calculating…';
+            status.textContent = i18n_js.t('riskOfRuinUi.statusCalculating');
             results.innerHTML = '';
 
-            const t = setTimeout(() => {
+            const timeoutId = setTimeout(() => {
                 this._compute().catch((err) => {
                     console.error('[RiskOfRuinUI] Calculation failed:', err);
-                    status.textContent = 'Error during calculation.';
+                    status.textContent = i18n_js.t('riskOfRuinUi.statusErrorCalculation');
                 });
             }, 10);
-            this.timerRegistry.registerTimeout(t);
+            this.timerRegistry.registerTimeout(timeoutId);
         }
 
         async _compute() {
@@ -12576,7 +12651,7 @@ self.onmessage = function (e) {
                 const catalystChoice = catalystSelection === 'best' ? null : catalystSelection;
                 const alchemyModel = hrid ? buildAlchemyTransmuteModel(hrid, { catalystChoice }) : null;
                 if (!alchemyModel) {
-                    status.textContent = 'Enter a valid transmutable item name.';
+                    status.textContent = i18n_js.t('riskOfRuinUi.statusInvalidTransmuteItem');
                     return;
                 }
                 maxSinglePossibleLoss = alchemyModel.maxSinglePossibleLoss;
@@ -12609,7 +12684,7 @@ self.onmessage = function (e) {
                 const protectFrom = parseInt(this.panel.querySelector('#mwi-ror-protect-from').value) || 0;
                 const itemDetails = hrid ? dataManager.getItemDetails(hrid) : null;
                 if (!itemDetails) {
-                    status.textContent = 'Enter a valid enhanceable item name.';
+                    status.textContent = i18n_js.t('riskOfRuinUi.statusInvalidEnhanceItem');
                     return;
                 }
 
@@ -12627,7 +12702,7 @@ self.onmessage = function (e) {
                     guzzlingBonus: enhancingParams.guzzlingBonus,
                 });
                 if (!enhancementModel) {
-                    status.textContent = 'Could not build an enhancement model for these parameters.';
+                    status.textContent = i18n_js.t('riskOfRuinUi.statusEnhancementModelFailed');
                     return;
                 }
                 maxSinglePossibleLoss = enhancementModel.maxSinglePossibleLoss;
@@ -12668,15 +12743,13 @@ self.onmessage = function (e) {
                 results.insertAdjacentHTML(
                     'beforeend',
                     `<div style="margin-top:10px; margin-bottom:6px; color:#888; font-size:11px;">
-                    Optimal share of cash to commit: not applicable — enhancing has no revenue
-                    distribution to size a bet against, only a fixed cost toward the target level.
-                    Use the ruin probability above instead.
+                    ${i18n_js.t('riskOfRuinUi.optimalCommitNotApplicable')}
                 </div>`
                 );
             }
             this._renderDepthCapTrackingNote(results, detailInfo);
             this._renderDetails(results, detailInfo, startingBalance, maxSinglePossibleLoss, minActions);
-            status.textContent = `${formatters_js.formatWithSeparator(trials)} trials simulated.`;
+            status.textContent = i18n_js.t('riskOfRuinUi.statusTrialsSimulated', { trials: formatters_js.formatWithSeparator(trials) });
         }
 
         /**
@@ -12733,8 +12806,7 @@ self.onmessage = function (e) {
                 container.insertAdjacentHTML(
                     'beforeend',
                     `<div style="margin-top:10px; margin-bottom:6px; color:#c98;">
-                    <strong>Optimal share of cash to commit:</strong> 0% — this setup has no positive
-                    expected edge (E[R] ≤ 1), so sizing a bet against its variance isn't meaningful here.
+                    ${i18n_js.t('riskOfRuinUi.optimalCommitNoEdge')}
                 </div>`
                 );
                 return;
@@ -12743,14 +12815,14 @@ self.onmessage = function (e) {
             container.insertAdjacentHTML(
                 'beforeend',
                 `<div style="margin-top:10px;">
-                <strong>Optimal share of cash to commit:</strong> ${formatters_js.formatPercentage(optimalCommit.fstar, 1)} of bankroll
-                (${fmtGold(optimalCommit.recommendedCommit)} ≈ ${formatters_js.formatWithSeparator(optimalCommit.recommendedActionCount)} actions)
+                ${i18n_js.t('riskOfRuinUi.optimalCommitWithEdge', {
+                    percent: formatters_js.formatPercentage(optimalCommit.fstar, 1),
+                    gold: fmtGold(optimalCommit.recommendedCommit),
+                    actions: formatters_js.formatWithSeparator(optimalCommit.recommendedActionCount),
+                })}
             </div>
             <div style="color:#888; font-size:11px; margin-bottom:6px;">
-                Variance-based cap only — ignores the downward price pressure from selling your own output.
-                Toolasha shows an automatic "Sell depth" estimate on each tracked output's marketplace
-                order-book page, but only once you've opened that item's page in-game this session — see
-                which outputs are tracked below.
+                ${i18n_js.t('riskOfRuinUi.optimalCommitVarianceNote')}
             </div>`
             );
         }
@@ -12770,20 +12842,19 @@ self.onmessage = function (e) {
                     (i) => dataManager.getItemDetails(i.itemHrid)?.name || i.itemHrid.split('/').pop()
                 );
                 html += `<div style="color:#888; font-size:11px; margin-bottom:6px;">
-                Tracking "Sell depth" for: ${names.join(', ')} — open that item's order-book page in the
-                marketplace to see the estimate.
+                ${i18n_js.t('riskOfRuinUi.trackingSellDepthNote', { names: names.join(', ') })}
             </div>`;
             }
 
             if (detailInfo.untrackedOutputs?.length) {
                 html += `<div style="color:#c98; font-size:11px; margin-bottom:6px;">
-                Not tracked (no current sell price available to check against): ${detailInfo.untrackedOutputs.join(', ')}.
+                ${i18n_js.t('riskOfRuinUi.untrackedOutputsNote', { names: detailInfo.untrackedOutputs.join(', ') })}
             </div>`;
             }
 
             if (detailInfo.untradeableOutput) {
                 html += `<div style="color:#888; font-size:11px; margin-bottom:6px;">
-                ${detailInfo.untradeableOutput} is untradeable, so no "Sell depth" check applies.
+                ${i18n_js.t('riskOfRuinUi.untradeableOutputNote', { itemName: detailInfo.untradeableOutput })}
             </div>`;
             }
 
@@ -12796,33 +12867,41 @@ self.onmessage = function (e) {
 
             const lines = [];
             lines.push(
-                `<strong>Ruin probability:</strong> ${formatters_js.formatPercentage(simResult.ruinProbability, 2)} ` +
-                    `(95% CI: ${formatters_js.formatPercentage(ci.low, 2)} – ${formatters_js.formatPercentage(ci.high, 2)})`
+                i18n_js.t('riskOfRuinUi.ruinProbabilityLine', {
+                    probability: formatters_js.formatPercentage(simResult.ruinProbability, 2),
+                    ciLow: formatters_js.formatPercentage(ci.low, 2),
+                    ciHigh: formatters_js.formatPercentage(ci.high, 2),
+                })
             );
 
             lines.push(
-                `<strong>Ruin becomes possible at action:</strong> ` +
-                    (Number.isFinite(minActions)
+                i18n_js.t('riskOfRuinUi.ruinPossibleAtActionLine', {
+                    value: Number.isFinite(minActions)
                         ? formatters_js.formatWithSeparator(minActions)
-                        : 'never (no single action can lose money)')
+                        : i18n_js.t('riskOfRuinUi.neverRuinPossible'),
+                })
             );
 
             lines.push(
-                `<strong>Peak ruin exposure at action:</strong> ` +
-                    (peakStep !== null ? formatters_js.formatWithSeparator(peakStep) : 'no ruin occurred in the simulation')
+                i18n_js.t('riskOfRuinUi.peakRuinExposureLine', {
+                    value: peakStep !== null ? formatters_js.formatWithSeparator(peakStep) : i18n_js.t('riskOfRuinUi.noRuinOccurred'),
+                })
             );
 
             if (simResult.meanStepsToRuin !== null) {
                 lines.push(
-                    `<strong>Average actions before ruin (when it occurs):</strong> ${formatters_js.formatWithSeparator(Math.round(simResult.meanStepsToRuin * 10) / 10)}`
+                    i18n_js.t('riskOfRuinUi.avgActionsBeforeRuinLine', {
+                        value: formatters_js.formatWithSeparator(Math.round(simResult.meanStepsToRuin * 10) / 10),
+                    })
                 );
             }
 
             if (simResult.undecidedCount > 0) {
                 lines.push(
-                    `<span style="color:#c98;">${formatters_js.formatWithSeparator(simResult.undecidedCount)} of ${formatters_js.formatWithSeparator(simResult.trials)} ` +
-                        `trials neither ruined nor reached the target within the simulation's step cap — ` +
-                        `the result may be imprecise for this very long-horizon scenario.</span>`
+                    `<span style="color:#c98;">${i18n_js.t('riskOfRuinUi.undecidedTrialsNote', {
+                    undecided: formatters_js.formatWithSeparator(simResult.undecidedCount),
+                    total: formatters_js.formatWithSeparator(simResult.trials),
+                })}</span>`
                 );
             }
 
@@ -12835,12 +12914,13 @@ self.onmessage = function (e) {
          */
         _riskFormulaLine(startingBalance, maxSinglePossibleLoss, minActions) {
             if (!Number.isFinite(minActions)) {
-                return `<div>No single action can ever lose money here, so ruin never becomes possible.</div>`;
+                return `<div>${i18n_js.t('riskOfRuinUi.noSingleActionLoss')}</div>`;
             }
-            return (
-                `<div><strong>Ruin becomes possible at action</strong> = ⌈starting gold ÷ max single-action loss⌉ ` +
-                `= ⌈${fmtGold(startingBalance)} ÷ ${fmtGold(maxSinglePossibleLoss)}⌉ = ${formatters_js.formatWithSeparator(minActions)}</div>`
-            );
+            return `<div>${i18n_js.t('riskOfRuinUi.ruinFormulaLine', {
+            startingGold: fmtGold(startingBalance),
+            maxLoss: fmtGold(maxSinglePossibleLoss),
+            minActions: formatters_js.formatWithSeparator(minActions),
+        })}</div>`;
         }
 
         _renderDetails(container, detailInfo, startingBalance, maxSinglePossibleLoss, minActions) {
@@ -12864,23 +12944,32 @@ self.onmessage = function (e) {
             const rows = [];
             if (costBreakdown.entryKey) {
                 rows.push(
-                    `<div>Entry key (${costBreakdown.entryKey.name}): ${fmtGold(costBreakdown.entryKey.price)}</div>`
+                    `<div>${i18n_js.t('riskOfRuinUi.entryKeyLine', {
+                    name: costBreakdown.entryKey.name,
+                    price: fmtGold(costBreakdown.entryKey.price),
+                })}</div>`
                 );
             }
             if (costBreakdown.chestKey) {
                 rows.push(
-                    `<div>Chest key (${costBreakdown.chestKey.name}): ${fmtGold(costBreakdown.chestKey.price)}</div>`
+                    `<div>${i18n_js.t('riskOfRuinUi.chestKeyLine', {
+                    name: costBreakdown.chestKey.name,
+                    price: fmtGold(costBreakdown.chestKey.price),
+                })}</div>`
                 );
             }
-            rows.push(`<div><strong>Total cost per open:</strong> ${fmtGold(costBreakdown.total)}</div>`);
+            rows.push(`<div>${i18n_js.t('riskOfRuinUi.totalCostPerOpenLine', { total: fmtGold(costBreakdown.total) })}</div>`);
             rows.push(
-                `<div style="margin-top:6px;">Guaranteed minimum payout per open: ${fmtGold(minimumGuaranteedPayout)} ` +
-                    `(the sum of every drop table entry with a 100% drop rate, at its minimum count — a real chest ` +
-                    `always drops at least this much, it is never actually 0)</div>`
+                `<div style="margin-top:6px;">${i18n_js.t('riskOfRuinUi.guaranteedMinPayoutLine', {
+                amount: fmtGold(minimumGuaranteedPayout),
+            })}</div>`
             );
             rows.push(
-                `<div><strong>Max single-action loss:</strong> ${fmtGold(maxSinglePossibleLoss)} ` +
-                    `= cost − guaranteed minimum payout = ${fmtGold(costBreakdown.total)} − ${fmtGold(minimumGuaranteedPayout)}</div>`
+                `<div>${i18n_js.t('riskOfRuinUi.chestMaxLossLine', {
+                loss: fmtGold(maxSinglePossibleLoss),
+                total: fmtGold(costBreakdown.total),
+                min: fmtGold(minimumGuaranteedPayout),
+            })}</div>`
             );
             rows.push(this._riskFormulaLine(startingBalance, maxSinglePossibleLoss, minActions));
 
@@ -12889,7 +12978,11 @@ self.onmessage = function (e) {
                 .map(
                     (drop) =>
                         `<tr>
-                        <td style="padding:2px 6px;">${drop.itemName}${drop.dropRate === 1 ? ' (guaranteed)' : ''}</td>
+                        <td style="padding:2px 6px;">${
+                            drop.dropRate === 1
+                                ? i18n_js.t('riskOfRuinUi.guaranteedDropLabel', { itemName: drop.itemName })
+                                : drop.itemName
+                        }</td>
                         <td style="padding:2px 6px; text-align:right;">${formatters_js.formatPercentage(drop.dropRate, 2)}</td>
                         <td style="padding:2px 6px; text-align:right;">${drop.avgCount}</td>
                         <td style="padding:2px 6px; text-align:right;">${drop.hasPriceData ? fmtGold(drop.priceEach) : '—'}</td>
@@ -12899,15 +12992,15 @@ self.onmessage = function (e) {
                 .join('');
 
             return this._wrapDetails(
-                'Cost & risk details',
+                i18n_js.t('riskOfRuinUi.costRiskDetailsSummary'),
                 rows.join('') +
                     this._wrapDetails(
-                        `Drop table (${dropBreakdown.length} items)`,
+                        i18n_js.t('riskOfRuinUi.dropTableSummary', { count: dropBreakdown.length }),
                         `<table style="width:100%; border-collapse:collapse; font-size:11px;">
-                        <tr style="color:#888;"><th style="text-align:left;">Item</th><th>Drop rate</th><th>Avg count</th><th>Price</th><th>EV</th></tr>
+                        <tr style="color:#888;"><th style="text-align:left;">${i18n_js.t('riskOfRuinUi.colItem')}</th><th>${i18n_js.t('riskOfRuinUi.colDropRate')}</th><th>${i18n_js.t('riskOfRuinUi.colAvgCount')}</th><th>${i18n_js.t('riskOfRuinUi.colPrice')}</th><th>${i18n_js.t('riskOfRuinUi.colEv')}</th></tr>
                         ${dropRows}
                         <tr style="border-top:1px solid #444; font-weight:600;">
-                            <td style="padding:2px 6px;" colspan="4">Total EV per open</td>
+                            <td style="padding:2px 6px;" colspan="4">${i18n_js.t('riskOfRuinUi.totalEvPerOpenLabel')}</td>
                             <td style="padding:2px 6px; text-align:right;">${fmtGold(totalEV)}</td>
                         </tr>
                     </table>`,
@@ -12920,45 +13013,46 @@ self.onmessage = function (e) {
             const catalystName = breakdown.catalystHrid ? dataManager.getItemDetails(breakdown.catalystHrid)?.name : null;
 
             const rows = [
-                `<div>Success rate: ${formatters_js.formatPercentage(breakdown.successRate, 2)}</div>`,
-                `<div>Material cost (paid every attempt): ${fmtGold(breakdown.materialCost)}</div>`,
+                `<div>${i18n_js.t('riskOfRuinUi.successRateLine', { rate: formatters_js.formatPercentage(breakdown.successRate, 2) })}</div>`,
+                `<div>${i18n_js.t('riskOfRuinUi.materialCostLine', { cost: fmtGold(breakdown.materialCost) })}</div>`,
             ];
             if (breakdown.coinCost > 0) {
-                rows.push(`<div>Coin cost (paid every attempt): ${fmtGold(breakdown.coinCost)}</div>`);
+                rows.push(`<div>${i18n_js.t('riskOfRuinUi.coinCostLine', { cost: fmtGold(breakdown.coinCost) })}</div>`);
             }
             rows.push(
                 catalystName
-                    ? `<div>Catalyst (${catalystName}, paid only on success): ${fmtGold(breakdown.catalystCostOnSuccess)}</div>`
-                    : `<div>No catalyst used.</div>`
+                    ? `<div>${i18n_js.t('riskOfRuinUi.catalystCostLine', {
+                      name: catalystName,
+                      cost: fmtGold(breakdown.catalystCostOnSuccess),
+                  })}</div>`
+                    : `<div>${i18n_js.t('riskOfRuinUi.noCatalystUsed')}</div>`
             );
-            rows.push(
-                `<div style="margin-top:6px;">The output drop table (below) is a single mutually-exclusive roll ` +
-                    `<em>given success</em> — each branch is its own separate outcome, not averaged together, so a ` +
-                    `rare high-value branch's real tail risk shows up in the simulation instead of being smoothed away.</div>`
-            );
-            rows.push(`<div><strong>Net on failure:</strong> ${fmtGold(breakdown.netOnFail)}</div>`);
-            rows.push(`<div><strong>Max single-action loss:</strong> ${fmtGold(maxSinglePossibleLoss)}</div>`);
+            rows.push(`<div style="margin-top:6px;">${i18n_js.t('riskOfRuinUi.dropTableExplanationNote')}</div>`);
+            rows.push(`<div>${i18n_js.t('riskOfRuinUi.netOnFailureLine', { value: fmtGold(breakdown.netOnFail) })}</div>`);
+            rows.push(`<div>${i18n_js.t('riskOfRuinUi.maxLossLine', { value: fmtGold(maxSinglePossibleLoss) })}</div>`);
             rows.push(this._riskFormulaLine(startingBalance, maxSinglePossibleLoss, minActions));
 
             const mainRows = breakdown.mainBranches
-                .map(
-                    (branch) =>
-                        `<tr>
-                        <td style="padding:2px 6px;">${dataManager.getItemDetails(branch.itemHrid)?.name || branch.itemHrid}${branch.isSelfReturn ? ' (self-return)' : ''}</td>
+                .map((branch) => {
+                    const itemName = dataManager.getItemDetails(branch.itemHrid)?.name || branch.itemHrid;
+                    return `<tr>
+                        <td style="padding:2px 6px;">${
+                            branch.isSelfReturn ? i18n_js.t('riskOfRuinUi.selfReturnLabel', { itemName }) : itemName
+                        }</td>
                         <td style="padding:2px 6px; text-align:right;">${formatters_js.formatPercentage(breakdown.successRate * branch.dropRate, 2)}</td>
                         <td style="padding:2px 6px; text-align:right;">${fmtGold(branch.payout)}</td>
-                    </tr>`
-                )
+                    </tr>`;
+                })
                 .join('');
             const mainCoverage = breakdown.mainBranches.reduce((sum, b) => sum + b.dropRate, 0);
             const failRow = `<tr>
-                        <td style="padding:2px 6px;">(failure)</td>
+                        <td style="padding:2px 6px;">${i18n_js.t('riskOfRuinUi.failureLabel')}</td>
                         <td style="padding:2px 6px; text-align:right;">${formatters_js.formatPercentage(1 - breakdown.successRate, 2)}</td>
                         <td style="padding:2px 6px; text-align:right;">${fmtGold(0)}</td>
                     </tr>`;
             const gapNote =
                 mainCoverage < 0.999
-                    ? `<div style="color:#c98; margin-top:4px; font-size:11px;">${formatters_js.formatPercentage(1 - mainCoverage, 1)} of the success-branch probability has no market price data and is treated as a 0-payout outcome (never inflated with a guess).</div>`
+                    ? `<div style="color:#c98; margin-top:4px; font-size:11px;">${i18n_js.t('riskOfRuinUi.unpricedProbabilityNote', { percent: formatters_js.formatPercentage(1 - mainCoverage, 1) })}</div>`
                     : '';
 
             const bonusRows = breakdown.bonusDrops
@@ -12973,9 +13067,9 @@ self.onmessage = function (e) {
                 .join('');
             const bonusSection = breakdown.bonusDrops.length
                 ? this._wrapDetails(
-                      `Bonus drops (${breakdown.bonusDrops.length}, independent of success/fail)`,
+                      i18n_js.t('riskOfRuinUi.bonusDropsSummary', { count: breakdown.bonusDrops.length }),
                       `<table style="width:100%; border-collapse:collapse; font-size:11px;">
-                        <tr style="color:#888;"><th style="text-align:left;">Item</th><th>Chance per attempt</th><th>Payout if hit</th></tr>
+                        <tr style="color:#888;"><th style="text-align:left;">${i18n_js.t('riskOfRuinUi.colItem')}</th><th>${i18n_js.t('riskOfRuinUi.colChancePerAttempt')}</th><th>${i18n_js.t('riskOfRuinUi.colPayoutIfHit')}</th></tr>
                         ${bonusRows}
                     </table>`,
                       true
@@ -12983,12 +13077,12 @@ self.onmessage = function (e) {
                 : '';
 
             return this._wrapDetails(
-                'Cost & risk details',
+                i18n_js.t('riskOfRuinUi.costRiskDetailsSummary'),
                 rows.join('') +
                     this._wrapDetails(
-                        `Output drop table (${breakdown.mainBranches.length} branches, one roll given success)`,
+                        i18n_js.t('riskOfRuinUi.outputDropTableSummary', { count: breakdown.mainBranches.length }),
                         `<table style="width:100%; border-collapse:collapse; font-size:11px;">
-                        <tr style="color:#888;"><th style="text-align:left;">Outcome</th><th>Chance per attempt</th><th>Payout if hit</th></tr>
+                        <tr style="color:#888;"><th style="text-align:left;">${i18n_js.t('riskOfRuinUi.colOutcome')}</th><th>${i18n_js.t('riskOfRuinUi.colChancePerAttempt')}</th><th>${i18n_js.t('riskOfRuinUi.colPayoutIfHit')}</th></tr>
                         ${failRow}
                         ${mainRows}
                     </table>
@@ -13020,27 +13114,26 @@ self.onmessage = function (e) {
                 })
                 .join('');
 
-            const rows2 = [
-                `<div><strong>Cost per attempt (materials, every attempt):</strong> ${fmtGold(costPerAttempt)}</div>`,
-            ];
+            const rows2 = [`<div>${i18n_js.t('riskOfRuinUi.costPerAttemptLine', { value: fmtGold(costPerAttempt) })}</div>`];
             if (protectionCostOnFailure > 0) {
                 rows2.push(
-                    `<div><strong>Protection cost (charged only on a protected failure):</strong> ${fmtGold(protectionCostOnFailure)}</div>`
+                    `<div>${i18n_js.t('riskOfRuinUi.protectionCostLine', { value: fmtGold(protectionCostOnFailure) })}</div>`
                 );
             }
             rows2.push(
-                `<div style="margin-top:6px;"><strong>Max single-action loss:</strong> ${fmtGold(maxSinglePossibleLoss)} ` +
-                    `(worst case: an attempt fails at a protected level)</div>`
+                `<div style="margin-top:6px;">${i18n_js.t('riskOfRuinUi.maxLossWithNoteLine', {
+                value: fmtGold(maxSinglePossibleLoss),
+            })}</div>`
             );
             rows2.push(this._riskFormulaLine(startingBalance, maxSinglePossibleLoss, minActions));
 
             return this._wrapDetails(
-                `Cost & risk details (levels +${startLevel} to +${targetLevel})`,
+                i18n_js.t('riskOfRuinUi.costRiskDetailsLevelsSummary', { startLevel, targetLevel }),
                 rows2.join('') +
                     this._wrapDetails(
-                        `Per-level success rates & costs (${perLevelOutcomeDistributions.length} levels)`,
+                        i18n_js.t('riskOfRuinUi.perLevelRatesSummary', { count: perLevelOutcomeDistributions.length }),
                         `<table style="width:100%; border-collapse:collapse; font-size:11px;">
-                        <tr style="color:#888;"><th style="text-align:left;">Attempt</th><th>Success</th><th>Cost</th><th>Fail →</th><th>Protection cost</th></tr>
+                        <tr style="color:#888;"><th style="text-align:left;">${i18n_js.t('riskOfRuinUi.colAttempt')}</th><th>${i18n_js.t('riskOfRuinUi.colSuccess')}</th><th>${i18n_js.t('riskOfRuinUi.colCost')}</th><th>${i18n_js.t('riskOfRuinUi.colFailArrow')}</th><th>${i18n_js.t('riskOfRuinUi.colProtectionCost')}</th></tr>
                         ${rows}
                     </table>`,
                         true
@@ -13223,15 +13316,11 @@ self.onmessage = function (e) {
             el.style.textAlign = 'center';
             el.style.color = '#60a5fa';
 
-            const prefix = result.hitBookEnd ? 'at least ' : '~';
-            el.textContent = `Sell depth: ${prefix}${formatters_js.formatWithSeparator(result.nstar)} actions`;
-            el.title =
-                (result.hitBookEnd
-                    ? 'Every visible resting bid still clears cost — the true cap may be higher than shown. '
-                    : 'Estimated number of actions worth of this item the visible order book can absorb before the ' +
-                      'marginal sale price drops below cost. ') +
-                "Ignores the marketplace's tradable range floor (not exposed in game data), so a large sell-off " +
-                'may hit that floor and queue with a delay before this estimate suggests.';
+            el.textContent = i18n_js.t('marketDepthCap.sellDepthLabel', {
+                hitBookEnd: result.hitBookEnd,
+                count: formatters_js.formatWithSeparator(result.nstar),
+            });
+            el.title = result.hitBookEnd ? i18n_js.t('marketDepthCap.tooltipHitBookEnd') : i18n_js.t('marketDepthCap.tooltipEstimate');
 
             buttonContainer.insertBefore(el, buttonContainer.lastChild);
         }
@@ -13464,12 +13553,13 @@ self.onmessage = function (e) {
 
             if (hasNoData) {
                 const marketplaceIcon = this.getMarketplaceIcon();
+                const noOrdersTitle = i18n_js.t('marketOrderTotals.noOrdersTitle');
                 this.displayElement.innerHTML = `
                 <button
                     type="button"
                     class="mwi-market-order-totals-link"
-                    title="No market orders"
-                    aria-label="No market orders"
+                    title="${noOrdersTitle}"
+                    aria-label="${noOrdersTitle}"
                     style="background: none; border: none; padding: 0; cursor: pointer; display: flex; align-items: center;"
                 >
                     ${marketplaceIcon}
@@ -13491,15 +13581,15 @@ self.onmessage = function (e) {
 
             // Update display
             this.displayElement.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 4px;" title="Buy Orders (coins locked in buy orders)">
-                <span style="color: #888; font-weight: 500;">BO:</span>
+            <div style="display: flex; align-items: center; gap: 4px;" title="${i18n_js.t('marketOrderTotals.buyOrdersTooltip')}">
+                <span style="color: #888; font-weight: 500;">${i18n_js.t('marketOrderTotals.buyOrdersLabel')}</span>
                 ${boDisplay}
             </div>
-            <div style="display: flex; align-items: center; gap: 4px;" title="Sell Orders (expected proceeds after tax)">
-                <span style="color: #888; font-weight: 500;">SO:</span>
+            <div style="display: flex; align-items: center; gap: 4px;" title="${i18n_js.t('marketOrderTotals.sellOrdersTooltip')}">
+                <span style="color: #888; font-weight: 500;">${i18n_js.t('marketOrderTotals.sellOrdersLabel')}</span>
                 ${soDisplay}
             </div>
-            <div style="display: flex; align-items: center; gap: 4px;" title="Unclaimed coins (waiting to be collected)">
+            <div style="display: flex; align-items: center; gap: 4px;" title="${i18n_js.t('marketOrderTotals.unclaimedTooltip')}">
                 <span style="font-weight: 500;">💰:</span>
                 ${unclaimedDisplay}
             </div>
@@ -13737,7 +13827,7 @@ self.onmessage = function (e) {
                 if (badgeSpan) {
                     badgeSpan.innerHTML = `
                     <div style="text-align: center;">
-                        <div>Market History</div>
+                        <div>${i18n_js.t('marketHistory.modalTitle')}</div>
                     </div>
                 `;
                 }
@@ -14287,7 +14377,7 @@ self.onmessage = function (e) {
         `;
 
             const title = document.createElement('h2');
-            title.textContent = 'Market History';
+            title.textContent = i18n_js.t('marketHistory.modalTitle');
             title.style.cssText = `
             margin: 0;
             color: #fff;
@@ -14376,7 +14466,7 @@ self.onmessage = function (e) {
             // Search box
             const searchBox = document.createElement('input');
             searchBox.type = 'text';
-            searchBox.placeholder = 'Search items...';
+            searchBox.placeholder = i18n_js.t('marketHistory.searchItemsPlaceholder');
             searchBox.value = this.searchTerm;
             searchBox.className = 'mwi-search-box';
             searchBox.style.cssText = `
@@ -14403,9 +14493,9 @@ self.onmessage = function (e) {
             color: #fff;
         `;
             const typeOptions = [
-                { value: 'all', label: 'All Types' },
-                { value: 'buy', label: 'Buy Orders' },
-                { value: 'sell', label: 'Sell Orders' },
+                { value: 'all', label: i18n_js.t('marketHistory.allTypesOption') },
+                { value: 'buy', label: i18n_js.t('marketHistory.buyOrdersOption') },
+                { value: 'sell', label: i18n_js.t('marketHistory.sellOrdersOption') },
             ];
             typeOptions.forEach((opt) => {
                 const option = document.createElement('option');
@@ -14432,13 +14522,13 @@ self.onmessage = function (e) {
             color: #fff;
         `;
             const statusOptions = [
-                { value: 'all', label: 'All Statuses' },
-                { value: 'active', label: 'Active Only' },
-                { value: 'filled', label: 'Filled Only' },
-                { value: 'filled_active', label: 'Filled or Active' },
-                { value: 'canceled', label: 'Canceled Only' },
-                { value: 'expired', label: 'Expired Only' },
-                { value: 'unknown', label: 'Unknown Only' },
+                { value: 'all', label: i18n_js.t('marketHistory.allStatusesOption') },
+                { value: 'active', label: i18n_js.t('marketHistory.activeOnlyOption') },
+                { value: 'filled', label: i18n_js.t('marketHistory.filledOnlyOption') },
+                { value: 'filled_active', label: i18n_js.t('marketHistory.filledOrActiveOption') },
+                { value: 'canceled', label: i18n_js.t('marketHistory.canceledOnlyOption') },
+                { value: 'expired', label: i18n_js.t('marketHistory.expiredOnlyOption') },
+                { value: 'unknown', label: i18n_js.t('marketHistory.unknownOnlyOption') },
             ];
             statusOptions.forEach((opt) => {
                 const option = document.createElement('option');
@@ -14481,7 +14571,7 @@ self.onmessage = function (e) {
 
             // Export button
             const exportBtn = document.createElement('button');
-            exportBtn.textContent = 'Export CSV';
+            exportBtn.textContent = i18n_js.t('marketHistory.exportCsvButton');
             exportBtn.style.cssText = `
             padding: 6px 12px;
             background: #4a90e2;
@@ -14494,7 +14584,7 @@ self.onmessage = function (e) {
 
             // Import button
             const importBtn = document.createElement('button');
-            importBtn.textContent = 'Import Market Data';
+            importBtn.textContent = i18n_js.t('marketHistory.importDataButton');
             importBtn.style.cssText = `
             padding: 6px 12px;
             background: #9b59b6;
@@ -14507,7 +14597,7 @@ self.onmessage = function (e) {
 
             // Clear History button (destructive action - red)
             const clearBtn = document.createElement('button');
-            clearBtn.textContent = 'Clear History';
+            clearBtn.textContent = i18n_js.t('marketHistory.clearHistoryButton');
             clearBtn.style.cssText = `
             padding: 6px 12px;
             background: #dc2626;
@@ -14554,7 +14644,7 @@ self.onmessage = function (e) {
 
             const kmbLabel = document.createElement('label');
             kmbLabel.htmlFor = 'mwi-kmb-format';
-            kmbLabel.textContent = 'K/M/B Format';
+            kmbLabel.textContent = i18n_js.t('marketHistory.kmbFormatLabel');
             kmbLabel.style.cssText = `
             cursor: pointer;
             color: #aaa;
@@ -14573,7 +14663,7 @@ self.onmessage = function (e) {
             font-size: 14px;
             white-space: nowrap;
         `;
-            stats.textContent = `Total: ${this.filteredListings.length} listings`;
+            stats.textContent = i18n_js.t('marketHistory.totalListingsStats', { count: this.filteredListings.length });
 
             rightGroup.appendChild(kmbLabel);
             rightGroup.appendChild(stats);
@@ -14596,7 +14686,7 @@ self.onmessage = function (e) {
         updateStats() {
             const stats = this.modal.querySelector('.mwi-market-history-stats');
             if (stats) {
-                stats.textContent = `Total: ${this.filteredListings.length} listings`;
+                stats.textContent = i18n_js.t('marketHistory.totalListingsStats', { count: this.filteredListings.length });
             }
 
             // Update Clear All Filters button visibility
@@ -14630,7 +14720,7 @@ self.onmessage = function (e) {
                     dateText.push(formatters_js.formatDateTime(this.filters.dateTo, { includeTime: false }));
                 }
                 badges.push({
-                    label: `Date: ${dateText.join(' - ')}`,
+                    label: i18n_js.t('marketHistory.dateFilterBadge', { range: dateText.join(' - ') }),
                     onRemove: () => {
                         this.filters.dateFrom = null;
                         this.filters.dateTo = null;
@@ -14656,7 +14746,7 @@ self.onmessage = function (e) {
                     });
                 } else {
                     badges.push({
-                        label: `${this.filters.selectedItems.length} items selected`,
+                        label: i18n_js.t('marketHistory.itemsSelectedBadge', { count: this.filters.selectedItems.length }),
                         icon: this.filters.selectedItems[0], // Show first item's icon
                         onRemove: () => {
                             this.filters.selectedItems = [];
@@ -14672,9 +14762,9 @@ self.onmessage = function (e) {
             if (this.filters.selectedEnhLevels.length > 0) {
                 const levels = this.filters.selectedEnhLevels.sort((a, b) => a - b);
                 if (levels.length === 1) {
-                    const levelText = levels[0] > 0 ? `+${levels[0]}` : 'No Enhancement';
+                    const levelText = levels[0] > 0 ? `+${levels[0]}` : i18n_js.t('marketHistory.noEnhancementLabel');
                     badges.push({
-                        label: `Enh Lvl: ${levelText}`,
+                        label: i18n_js.t('marketHistory.enhLevelBadge', { level: levelText }),
                         onRemove: () => {
                             this.filters.selectedEnhLevels = [];
                             this.saveFilters();
@@ -14684,7 +14774,7 @@ self.onmessage = function (e) {
                     });
                 } else {
                     badges.push({
-                        label: `Enh Lvl: ${levels.length} selected`,
+                        label: i18n_js.t('marketHistory.enhLevelsSelectedBadge', { count: levels.length }),
                         onRemove: () => {
                             this.filters.selectedEnhLevels = [];
                             this.saveFilters();
@@ -14698,7 +14788,11 @@ self.onmessage = function (e) {
             // Type filters
             if (this.filters.selectedTypes.length > 0 && this.filters.selectedTypes.length < 2) {
                 badges.push({
-                    label: `Type: ${this.filters.selectedTypes.includes('buy') ? 'Buy' : 'Sell'}`,
+                    label: i18n_js.t('marketHistory.typeBadge', {
+                        type: this.filters.selectedTypes.includes('buy')
+                            ? i18n_js.t('marketHistory.buyLabel')
+                            : i18n_js.t('marketHistory.sellLabel'),
+                    }),
                     onRemove: () => {
                         this.filters.selectedTypes = [];
                         this.saveFilters();
@@ -14789,7 +14883,7 @@ self.onmessage = function (e) {
                 // Create button
                 const clearFiltersBtn = document.createElement('button');
                 clearFiltersBtn.className = 'mwi-clear-filters-button';
-                clearFiltersBtn.textContent = 'Clear All Filters';
+                clearFiltersBtn.textContent = i18n_js.t('marketHistory.clearAllFiltersButton');
                 clearFiltersBtn.style.cssText = `
                 padding: 6px 12px;
                 background: #e67e22;
@@ -14846,15 +14940,15 @@ self.onmessage = function (e) {
         `;
 
             const columns = [
-                { key: 'createdTimestamp', label: 'Date' },
-                { key: 'itemHrid', label: 'Item' },
-                { key: 'enhancementLevel', label: 'Enh Lvl' },
-                { key: 'isSell', label: 'Type' },
-                { key: 'status', label: 'Status' },
-                { key: 'price', label: 'Price' },
-                { key: 'orderQuantity', label: 'Quantity' },
-                { key: 'filledQuantity', label: 'Filled' },
-                { key: 'total', label: 'Total' },
+                { key: 'createdTimestamp', label: i18n_js.t('marketHistory.columnDate') },
+                { key: 'itemHrid', label: i18n_js.t('marketHistory.columnItem') },
+                { key: 'enhancementLevel', label: i18n_js.t('marketHistory.columnEnhLvl') },
+                { key: 'isSell', label: i18n_js.t('marketHistory.columnType') },
+                { key: 'status', label: i18n_js.t('marketHistory.columnStatus') },
+                { key: 'price', label: i18n_js.t('marketHistory.columnPrice') },
+                { key: 'orderQuantity', label: i18n_js.t('marketHistory.columnQuantity') },
+                { key: 'filledQuantity', label: i18n_js.t('marketHistory.columnFilled') },
+                { key: 'total', label: i18n_js.t('marketHistory.columnTotal') },
                 { key: '_delete', label: '' },
             ];
 
@@ -14950,7 +15044,7 @@ self.onmessage = function (e) {
                 const row = document.createElement('tr');
                 const cell = document.createElement('td');
                 cell.colSpan = columns.length;
-                cell.textContent = 'No listings found';
+                cell.textContent = i18n_js.t('marketHistory.noListingsFound');
                 cell.style.cssText = `
                 padding: 20px;
                 text-align: center;
@@ -15015,7 +15109,7 @@ self.onmessage = function (e) {
 
                     // Type
                     const typeCell = document.createElement('td');
-                    typeCell.textContent = listing.isSell ? 'Sell' : 'Buy';
+                    typeCell.textContent = listing.isSell ? i18n_js.t('marketHistory.sellLabel') : i18n_js.t('marketHistory.buyLabel');
                     typeCell.style.cssText = `
                     padding: 4px 10px;
                     color: ${listing.isSell ? '#4ade80' : '#60a5fa'};
@@ -15025,7 +15119,14 @@ self.onmessage = function (e) {
                     // Status
                     const statusCell = document.createElement('td');
                     const status = listing.status || 'unknown';
-                    statusCell.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+                    const statusLabels = {
+                        active: i18n_js.t('marketHistory.statusActive'),
+                        filled: i18n_js.t('marketHistory.statusFilled'),
+                        canceled: i18n_js.t('marketHistory.statusCanceled'),
+                        expired: i18n_js.t('marketHistory.statusExpired'),
+                        unknown: i18n_js.t('marketHistory.statusUnknown'),
+                    };
+                    statusCell.textContent = statusLabels[status] || statusLabels.unknown;
                     const statusColors = {
                         active: '#60a5fa',
                         filled: '#4ade80',
@@ -15070,7 +15171,7 @@ self.onmessage = function (e) {
                     deleteCell.style.cssText = 'padding: 4px 6px; text-align: center;';
                     const deleteBtn = document.createElement('button');
                     deleteBtn.textContent = '✕';
-                    deleteBtn.title = 'Delete this listing';
+                    deleteBtn.title = i18n_js.t('marketHistory.deleteListingTitle');
                     deleteBtn.style.cssText = `
                     background: none;
                     border: none;
@@ -15128,7 +15229,7 @@ self.onmessage = function (e) {
         `;
 
             const label = document.createElement('span');
-            label.textContent = 'Rows per page:';
+            label.textContent = i18n_js.t('marketHistory.rowsPerPageLabel');
 
             const rowsInput = document.createElement('input');
             rowsInput.type = 'number';
@@ -15165,7 +15266,7 @@ self.onmessage = function (e) {
             });
 
             const showAllLabel = document.createElement('label');
-            showAllLabel.textContent = 'Show All';
+            showAllLabel.textContent = i18n_js.t('marketHistory.showAllLabel');
             showAllLabel.style.cssText = `
             cursor: pointer;
             color: #aaa;
@@ -15207,7 +15308,7 @@ self.onmessage = function (e) {
                 });
 
                 const pageInfo = document.createElement('span');
-                pageInfo.textContent = `Page ${this.currentPage} of ${totalPages}`;
+                pageInfo.textContent = i18n_js.t('marketHistory.pageInfo', { current: this.currentPage, total: totalPages });
 
                 const nextBtn = document.createElement('button');
                 nextBtn.textContent = '▶';
@@ -15232,7 +15333,7 @@ self.onmessage = function (e) {
                 rightSide.appendChild(nextBtn);
             } else {
                 const showingInfo = document.createElement('span');
-                showingInfo.textContent = `Showing all ${this.filteredListings.length} listings`;
+                showingInfo.textContent = i18n_js.t('marketHistory.showingAllListings', { count: this.filteredListings.length });
                 rightSide.appendChild(showingInfo);
             }
 
@@ -15244,7 +15345,18 @@ self.onmessage = function (e) {
          * Export listings to CSV
          */
         exportCSV() {
-            const headers = ['Date', 'Item', 'Enhancement', 'Type', 'Status', 'Price', 'Quantity', 'Filled', 'Total', 'ID'];
+            const headers = [
+                i18n_js.t('marketHistory.columnDate'),
+                i18n_js.t('marketHistory.columnItem'),
+                i18n_js.t('marketHistory.csvHeaderEnhancement'),
+                i18n_js.t('marketHistory.columnType'),
+                i18n_js.t('marketHistory.columnStatus'),
+                i18n_js.t('marketHistory.columnPrice'),
+                i18n_js.t('marketHistory.columnQuantity'),
+                i18n_js.t('marketHistory.columnFilled'),
+                i18n_js.t('marketHistory.columnTotal'),
+                i18n_js.t('marketHistory.csvHeaderId'),
+            ];
             const rows = this.filteredListings.map((listing) => [
                 new Date(listing.createdTimestamp || listing.timestamp).toISOString(),
                 this.getItemName(listing.itemHrid),
@@ -15277,7 +15389,7 @@ self.onmessage = function (e) {
                 // Parse CSV
                 const lines = csvText.trim().split('\n');
                 if (lines.length < 2) {
-                    throw new Error('CSV file is empty or invalid');
+                    throw new Error(i18n_js.t('marketHistory.csvEmptyError'));
                 }
 
                 // Parse header
@@ -15308,7 +15420,7 @@ self.onmessage = function (e) {
                 z-index: 10001;
                 box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
             `;
-                progressMsg.textContent = `Importing ${lines.length - 1} listings from CSV...`;
+                progressMsg.textContent = i18n_js.t('marketHistory.importingFromCsv', { count: lines.length - 1 });
                 document.body.appendChild(progressMsg);
 
                 // Load existing listings
@@ -15405,7 +15517,11 @@ self.onmessage = function (e) {
 
                 // Show success message
                 alert(
-                    `Import complete!\n\nImported: ${imported} new listings\nSkipped: ${skipped} duplicates or invalid rows\nTotal: ${existingListings.length} listings`
+                    i18n_js.t('marketHistory.importCompleteAlert', {
+                        imported,
+                        skipped,
+                        total: existingListings.length,
+                    })
                 );
 
                 // Reload and render table
@@ -15442,7 +15558,7 @@ self.onmessage = function (e) {
                     }
                 } catch (error) {
                     console.error('[MarketHistoryViewer] Import failed:', error);
-                    alert(`Import failed: ${error.message}`);
+                    alert(i18n_js.t('marketHistory.importFailedAlert', { error: error.message }));
                 }
             });
 
@@ -15463,10 +15579,7 @@ self.onmessage = function (e) {
                 // Check for truncated file (only if it looks like an object)
                 const trimmed = jsonText.trim();
                 if (trimmed.startsWith('{') && !trimmed.endsWith('}')) {
-                    throw new Error(
-                        'File appears to be truncated or incomplete. The JSON does not end properly. ' +
-                            'Try exporting from Edible Tools again, or export to CSV from the Market History Viewer and import that instead.'
-                    );
+                    throw new Error(i18n_js.t('marketHistory.csvTruncatedError'));
                 }
 
                 // Parse the file
@@ -15488,21 +15601,16 @@ self.onmessage = function (e) {
                     else if (Array.isArray(data.market_list)) {
                         marketList = data.market_list;
                     } else {
-                        throw new Error('market_list must be an array or JSON string containing an array');
+                        throw new Error(i18n_js.t('marketHistory.marketListArrayError'));
                     }
                 }
                 // Unrecognized format
                 else {
-                    throw new Error(
-                        'Unrecognized format. Expected:\n' +
-                            '- Direct array: [{listing1}, {listing2}, ...]\n' +
-                            '- Object format: {"market_list": [...]}\n' +
-                            '- Edible Tools format: {"market_list": "[...]"}'
-                    );
+                    throw new Error(i18n_js.t('marketHistory.unrecognizedFormatError'));
                 }
 
                 if (!Array.isArray(marketList) || marketList.length === 0) {
-                    throw new Error('No listings found in file or array is empty');
+                    throw new Error(i18n_js.t('marketHistory.noListingsInFileError'));
                 }
 
                 // Show progress message
@@ -15519,7 +15627,7 @@ self.onmessage = function (e) {
                 z-index: 10001;
                 box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
             `;
-                progressMsg.textContent = `Importing ${marketList.length} listings...`;
+                progressMsg.textContent = i18n_js.t('marketHistory.importingListings', { count: marketList.length });
                 document.body.appendChild(progressMsg);
 
                 // Convert imported format to Toolasha format
@@ -15561,7 +15669,11 @@ self.onmessage = function (e) {
 
                 // Show success message
                 alert(
-                    `Import complete!\n\nImported: ${imported} new listings\nSkipped: ${skipped} duplicates\nTotal: ${existingListings.length} listings`
+                    i18n_js.t('marketHistory.importCompleteDuplicatesAlert', {
+                        imported,
+                        skipped,
+                        total: existingListings.length,
+                    })
                 );
 
                 // Reload and render table
@@ -15589,13 +15701,7 @@ self.onmessage = function (e) {
          */
         async clearHistory() {
             // Strong confirmation dialog
-            const confirmed = confirm(
-                `⚠️ WARNING: This will permanently delete ALL market history data!\n` +
-                    `You are about to delete ${this.listings.length} listings.\n` +
-                    `RECOMMENDATION: Export to CSV first using the "Export CSV" button.\n` +
-                    `This action CANNOT be undone!\n` +
-                    `Are you absolutely sure you want to continue?`
-            );
+            const confirmed = confirm(i18n_js.t('marketHistory.clearHistoryConfirm', { count: this.listings.length }));
 
             if (!confirmed) {
                 return;
@@ -15613,14 +15719,14 @@ self.onmessage = function (e) {
                 await estimatedListingAge.loadHistoricalData();
 
                 // Show success message
-                alert('Market history cleared successfully.');
+                alert(i18n_js.t('marketHistory.clearHistorySuccessAlert'));
 
                 // Reload and render table (will show empty state)
                 await this.loadListings();
                 this.renderTable();
             } catch (error) {
                 console.error('[MarketHistoryViewer] Failed to clear history:', error);
-                alert(`Failed to clear history: ${error.message}`);
+                alert(i18n_js.t('marketHistory.clearHistoryFailedAlert', { error: error.message }));
             }
         }
 
@@ -15813,7 +15919,7 @@ self.onmessage = function (e) {
 
             // Title
             const title = document.createElement('div');
-            title.textContent = 'Filter by Date';
+            title.textContent = i18n_js.t('marketHistory.filterByDateTitle');
             title.style.cssText = `
             color: #fff;
             font-weight: bold;
@@ -15851,13 +15957,15 @@ self.onmessage = function (e) {
                 background: #1a1a1a;
                 border-radius: 3px;
             `;
-                rangeInfo.textContent = `Available: ${formatters_js.formatDateTime(minDate, { includeTime: false })} - ${formatters_js.formatDateTime(maxDate, { includeTime: false })}`;
+                rangeInfo.textContent = i18n_js.t('marketHistory.availableRangeLabel', {
+                    range: `${formatters_js.formatDateTime(minDate, { includeTime: false })} - ${formatters_js.formatDateTime(maxDate, { includeTime: false })}`,
+                });
                 popup.appendChild(rangeInfo);
             }
 
             // From date
             const fromLabel = document.createElement('label');
-            fromLabel.textContent = 'From:';
+            fromLabel.textContent = i18n_js.t('marketHistory.fromLabel');
             fromLabel.style.cssText = `
             display: block;
             color: #aaa;
@@ -15882,7 +15990,7 @@ self.onmessage = function (e) {
 
             // To date
             const toLabel = document.createElement('label');
-            toLabel.textContent = 'To:';
+            toLabel.textContent = i18n_js.t('marketHistory.toLabel');
             toLabel.style.cssText = `
             display: block;
             color: #aaa;
@@ -15914,7 +16022,7 @@ self.onmessage = function (e) {
         `;
 
             const applyBtn = document.createElement('button');
-            applyBtn.textContent = 'Apply';
+            applyBtn.textContent = i18n_js.t('marketHistory.applyButton');
             applyBtn.style.cssText = `
             flex: 1;
             padding: 6px;
@@ -15936,7 +16044,7 @@ self.onmessage = function (e) {
             });
 
             const clearBtn = document.createElement('button');
-            clearBtn.textContent = 'Clear';
+            clearBtn.textContent = i18n_js.t('settings.clearButton');
             clearBtn.style.cssText = `
             flex: 1;
             padding: 6px;
@@ -15989,7 +16097,7 @@ self.onmessage = function (e) {
 
             // Title
             const title = document.createElement('div');
-            title.textContent = 'Filter by Item';
+            title.textContent = i18n_js.t('marketHistory.filterByItemTitle');
             title.style.cssText = `
             color: #fff;
             font-weight: bold;
@@ -16000,7 +16108,7 @@ self.onmessage = function (e) {
             // Search box
             const searchInput = document.createElement('input');
             searchInput.type = 'text';
-            searchInput.placeholder = 'Search items...';
+            searchInput.placeholder = i18n_js.t('marketHistory.searchItemsPlaceholder');
             searchInput.style.cssText = `
             width: 100%;
             padding: 6px;
@@ -16087,7 +16195,7 @@ self.onmessage = function (e) {
         `;
 
             const applyBtn = document.createElement('button');
-            applyBtn.textContent = 'Apply';
+            applyBtn.textContent = i18n_js.t('marketHistory.applyButton');
             applyBtn.style.cssText = `
             flex: 1;
             padding: 6px;
@@ -16107,7 +16215,7 @@ self.onmessage = function (e) {
             });
 
             const clearBtn = document.createElement('button');
-            clearBtn.textContent = 'Clear';
+            clearBtn.textContent = i18n_js.t('settings.clearButton');
             clearBtn.style.cssText = `
             flex: 1;
             padding: 6px;
@@ -16151,7 +16259,7 @@ self.onmessage = function (e) {
 
             // Title
             const title = document.createElement('div');
-            title.textContent = 'Filter by Enhancement Level';
+            title.textContent = i18n_js.t('marketHistory.filterByEnhancementTitle');
             title.style.cssText = `
             color: #fff;
             font-weight: bold;
@@ -16186,7 +16294,7 @@ self.onmessage = function (e) {
                 checkbox.checked = this.filters.selectedEnhLevels.includes(level);
                 checkbox.style.marginRight = '6px';
 
-                const levelText = level > 0 ? `+${level}` : 'No Enhancement';
+                const levelText = level > 0 ? `+${level}` : i18n_js.t('marketHistory.noEnhancementLabel');
 
                 label.appendChild(checkbox);
                 label.appendChild(document.createTextNode(levelText));
@@ -16216,7 +16324,7 @@ self.onmessage = function (e) {
         `;
 
             const applyBtn = document.createElement('button');
-            applyBtn.textContent = 'Apply';
+            applyBtn.textContent = i18n_js.t('marketHistory.applyButton');
             applyBtn.style.cssText = `
             flex: 1;
             padding: 6px;
@@ -16236,7 +16344,7 @@ self.onmessage = function (e) {
             });
 
             const clearBtn = document.createElement('button');
-            clearBtn.textContent = 'Clear';
+            clearBtn.textContent = i18n_js.t('settings.clearButton');
             clearBtn.style.cssText = `
             flex: 1;
             padding: 6px;
@@ -16280,7 +16388,7 @@ self.onmessage = function (e) {
 
             // Title
             const title = document.createElement('div');
-            title.textContent = 'Filter by Type';
+            title.textContent = i18n_js.t('marketHistory.filterByTypeTitle');
             title.style.cssText = `
             color: #fff;
             font-weight: bold;
@@ -16310,7 +16418,7 @@ self.onmessage = function (e) {
                 buyCheckbox.style.marginRight = '6px';
 
                 buyLabel.appendChild(buyCheckbox);
-                buyLabel.appendChild(document.createTextNode('Buy Orders'));
+                buyLabel.appendChild(document.createTextNode(i18n_js.t('marketHistory.buyOrdersOption')));
                 popup.appendChild(buyLabel);
 
                 buyCheckbox.addEventListener('change', (e) => {
@@ -16343,7 +16451,7 @@ self.onmessage = function (e) {
                 sellCheckbox.style.marginRight = '6px';
 
                 sellLabel.appendChild(sellCheckbox);
-                sellLabel.appendChild(document.createTextNode('Sell Orders'));
+                sellLabel.appendChild(document.createTextNode(i18n_js.t('marketHistory.sellOrdersOption')));
                 popup.appendChild(sellLabel);
 
                 sellCheckbox.addEventListener('change', (e) => {
@@ -16369,7 +16477,7 @@ self.onmessage = function (e) {
         `;
 
             const applyBtn = document.createElement('button');
-            applyBtn.textContent = 'Apply';
+            applyBtn.textContent = i18n_js.t('marketHistory.applyButton');
             applyBtn.style.cssText = `
             flex: 1;
             padding: 6px;
@@ -16389,7 +16497,7 @@ self.onmessage = function (e) {
             });
 
             const clearBtn = document.createElement('button');
-            clearBtn.textContent = 'Clear';
+            clearBtn.textContent = i18n_js.t('settings.clearButton');
             clearBtn.style.cssText = `
             flex: 1;
             padding: 6px;
@@ -16919,7 +17027,7 @@ self.onmessage = function (e) {
                 const btn = document.createElement('button');
                 btn.type = 'button';
                 btn.className = BTN_CLASS$1;
-                btn.textContent = 'Refresh';
+                btn.textContent = i18n_js.t('listingRefreshNavigator.refreshButtonLabel');
                 btn.addEventListener('click', () => this._startSession());
 
                 const upgradeBtn = Array.from(countContainer.querySelectorAll('button')).find((b) =>
@@ -17132,7 +17240,9 @@ self.onmessage = function (e) {
                 }
             }
 
-            const label = progress.isLast ? 'Back to My Listings' : `Next (${progress.index + 1}/${progress.total})`;
+            const label = progress.isLast
+                ? i18n_js.t('listingNextNavigator.backToMyListingsLabel')
+                : i18n_js.t('listingNextNavigator.nextLabel', { index: progress.index + 1, total: progress.total });
 
             if (!this.nextBtn) {
                 const btn = document.createElement('button');
@@ -17253,7 +17363,7 @@ self.onmessage = function (e) {
 
                 const button = document.createElement('button');
                 button.className = 'mwi-philo-calc-button';
-                button.textContent = 'Philo Gamba';
+                button.textContent = i18n_js.t('philoCalculator.launcherButtonLabel');
                 button.style.cssText = `
                 margin: 10px;
                 padding: 8px 16px;
@@ -17682,7 +17792,7 @@ self.onmessage = function (e) {
             border-bottom: 1px solid #444;
         `;
             header.innerHTML = `
-            <span style="font-size: 18px; font-weight: bold;">Philosopher's Stone Calculator</span>
+            <span style="font-size: 18px; font-weight: bold;">${i18n_js.t('philoCalculator.panelTitle')}</span>
         `;
 
             const closeBtn = document.createElement('button');
@@ -17756,7 +17866,7 @@ self.onmessage = function (e) {
             // Philo price input
             const philoLabel = document.createElement('label');
             philoLabel.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 13px;';
-            philoLabel.textContent = 'Philo Price: ';
+            philoLabel.textContent = i18n_js.t('philoCalculator.philoPriceLabel');
             const philoInput = document.createElement('input');
             philoInput.type = 'text';
             philoInput.value = this.philoPrice.toLocaleString();
@@ -17781,7 +17891,7 @@ self.onmessage = function (e) {
             // Catalyst price input
             const catLabel = document.createElement('label');
             catLabel.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 13px;';
-            catLabel.textContent = 'Catalyst Price: ';
+            catLabel.textContent = i18n_js.t('philoCalculator.catalystPriceLabel');
             const catInput = document.createElement('input');
             catInput.type = 'text';
             catInput.value = this.catalystPrice.toLocaleString();
@@ -17816,7 +17926,7 @@ self.onmessage = function (e) {
                 this.saveSettings();
             });
             checkLabel.appendChild(checkbox);
-            checkLabel.appendChild(document.createTextNode('Use Prime Catalyst'));
+            checkLabel.appendChild(document.createTextNode(i18n_js.t('philoCalculator.usePrimeCatalystLabel')));
 
             container.appendChild(philoLabel);
             container.appendChild(catLabel);
@@ -17837,17 +17947,19 @@ self.onmessage = function (e) {
             teaCheckLabel.appendChild(teaCheckbox);
 
             // Display base ratioBoost if available
-            const boostText =
+            const teaLabelText =
                 this.catalyticTeaRatioBoost > 0
-                    ? ` (${formatters_js.formatPercentage(this.catalyticTeaRatioBoost, 1)})`
-                    : ' (unavailable)';
-            teaCheckLabel.appendChild(document.createTextNode(`Catalytic Tea${boostText}`));
+                    ? i18n_js.t('philoCalculator.catalyticTeaBoostLabel', {
+                          percent: formatters_js.formatPercentage(this.catalyticTeaRatioBoost, 1),
+                      })
+                    : i18n_js.t('philoCalculator.catalyticTeaUnavailableLabel');
+            teaCheckLabel.appendChild(document.createTextNode(teaLabelText));
             container.appendChild(teaCheckLabel);
 
             // Drink Concentration Dropdown
             const drinkLabel = document.createElement('label');
             drinkLabel.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 13px;';
-            drinkLabel.textContent = 'Drink Concentration: ';
+            drinkLabel.textContent = i18n_js.t('philoCalculator.drinkConcentrationLabel');
             const drinkSelect = document.createElement('select');
             drinkSelect.style.cssText = `
             padding: 4px 8px;
@@ -17892,16 +18004,16 @@ self.onmessage = function (e) {
                 this.saveSettings();
             });
             hideNegCheckLabel.appendChild(hideNegCheckbox);
-            hideNegCheckLabel.appendChild(document.createTextNode('Hide Negative Profit'));
+            hideNegCheckLabel.appendChild(document.createTextNode(i18n_js.t('philoCalculator.hideNegativeProfitLabel')));
             container.appendChild(hideNegCheckLabel);
 
             // Filter label
             const filterLabel = document.createElement('label');
             filterLabel.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 13px;';
-            filterLabel.textContent = 'Filter: ';
+            filterLabel.textContent = i18n_js.t('philoCalculator.filterLabel');
             const filterInput = document.createElement('input');
             filterInput.type = 'text';
-            filterInput.placeholder = 'Item name...';
+            filterInput.placeholder = i18n_js.t('alchemyHistoryViewer.itemNamePlaceholder');
             filterInput.value = this.filterText;
             filterInput.style.cssText = `
             width: 140px;
@@ -17922,7 +18034,7 @@ self.onmessage = function (e) {
 
             // Refresh prices button
             const refreshBtn = document.createElement('button');
-            refreshBtn.textContent = 'Refresh Prices';
+            refreshBtn.textContent = i18n_js.t('philoCalculator.refreshPricesButton');
             refreshBtn.style.cssText = `
             padding: 4px 12px;
             background: #4a90e2;
@@ -17940,7 +18052,7 @@ self.onmessage = function (e) {
             });
             refreshBtn.addEventListener('click', async () => {
                 refreshBtn.disabled = true;
-                refreshBtn.textContent = 'Refreshing...';
+                refreshBtn.textContent = i18n_js.t('philoCalculator.refreshingPricesStatus');
                 refreshBtn.style.opacity = '0.6';
                 try {
                     await marketAPI.fetch(true);
@@ -17954,7 +18066,7 @@ self.onmessage = function (e) {
                     console.error('[PhiloCalculator] Failed to refresh prices:', error);
                 }
                 refreshBtn.disabled = false;
-                refreshBtn.textContent = 'Refresh Prices';
+                refreshBtn.textContent = i18n_js.t('philoCalculator.refreshPricesButton');
                 refreshBtn.style.opacity = '1';
             });
             container.appendChild(refreshBtn);
@@ -17978,23 +18090,23 @@ self.onmessage = function (e) {
             if (!container) return;
 
             const columns = [
-                { key: 'name', label: 'Item', align: 'left' },
-                { key: 'cost', label: 'Cost' },
-                { key: 'philoChance', label: 'Philo %' },
-                { key: 'returnChance', label: 'Return %' },
-                { key: 'transmuteChance', label: 'Base Xmute %' },
-                { key: 'effectiveTransmuteChance', label: 'Eff. Xmute %' },
-                { key: 'transmuteCost', label: 'Xmute Cost' },
-                { key: 'ev', label: 'EV' },
-                { key: 'itemsPerAction', label: 'Items/Act' },
-                { key: 'actionsPerPhilo', label: 'Acts/Philo' },
-                { key: 'itemsPerPhilo', label: 'Items/Philo' },
-                { key: 'profitPerPhilo', label: 'Profit/Philo' },
-                { key: 'profitMargin', label: 'Margin' },
-                { key: 'timePerPhiloSeconds', label: 'Time/Philo' },
-                { key: 'profitPerHour', label: 'Profit/Hr' },
-                { key: 'revenuePerHour', label: 'Revenue/Hr' },
-                { key: 'costPerHour', label: 'Cost/Hr' },
+                { key: 'name', label: i18n_js.t('riskOfRuinUi.colItem'), align: 'left' },
+                { key: 'cost', label: i18n_js.t('riskOfRuinUi.colCost') },
+                { key: 'philoChance', label: i18n_js.t('philoCalculator.colPhiloChance') },
+                { key: 'returnChance', label: i18n_js.t('philoCalculator.colReturnChance') },
+                { key: 'transmuteChance', label: i18n_js.t('philoCalculator.colBaseTransmuteChance') },
+                { key: 'effectiveTransmuteChance', label: i18n_js.t('philoCalculator.colEffTransmuteChance') },
+                { key: 'transmuteCost', label: i18n_js.t('philoCalculator.colTransmuteCost') },
+                { key: 'ev', label: i18n_js.t('riskOfRuinUi.colEv') },
+                { key: 'itemsPerAction', label: i18n_js.t('philoCalculator.colItemsPerAction') },
+                { key: 'actionsPerPhilo', label: i18n_js.t('philoCalculator.colActionsPerPhilo') },
+                { key: 'itemsPerPhilo', label: i18n_js.t('philoCalculator.colItemsPerPhilo') },
+                { key: 'profitPerPhilo', label: i18n_js.t('philoCalculator.colProfitPerPhilo') },
+                { key: 'profitMargin', label: i18n_js.t('philoCalculator.colProfitMargin') },
+                { key: 'timePerPhiloSeconds', label: i18n_js.t('philoCalculator.colTimePerPhilo') },
+                { key: 'profitPerHour', label: i18n_js.t('philoCalculator.colProfitPerHour') },
+                { key: 'revenuePerHour', label: i18n_js.t('philoCalculator.colRevenuePerHour') },
+                { key: 'costPerHour', label: i18n_js.t('philoCalculator.colCostPerHour') },
             ];
 
             const table = document.createElement('table');
@@ -18489,12 +18601,12 @@ self.onmessage = function (e) {
 
             // Build content
             const parts = [];
-            parts.push(`<span style="color: #aaa; font-weight: 500;">Last:</span>`);
+            parts.push(`<span style="color: #aaa; font-weight: 500;">${i18n_js.t('tradeHistoryDisplay.lastLabel')}</span>`);
 
             if (history.buy) {
                 const buyColor = this.getBuyColor(history.buy, currentPrices, comparisonMode);
                 parts.push(
-                    `<span style="color: ${buyColor}; font-weight: 600;" title="Your last buy price">Buy ${formatters_js.formatKMB3Digits(history.buy)}</span>`
+                    `<span style="color: ${buyColor}; font-weight: 600;" title="${i18n_js.t('tradeHistoryDisplay.buyPriceTooltip')}">${i18n_js.t('tradeHistoryDisplay.buyValueLabel', { value: formatters_js.formatKMB3Digits(history.buy) })}</span>`
                 );
             }
 
@@ -18505,7 +18617,7 @@ self.onmessage = function (e) {
             if (history.sell) {
                 const sellColor = this.getSellColor(history.sell, currentPrices, comparisonMode);
                 parts.push(
-                    `<span style="color: ${sellColor}; font-weight: 600;" title="Your last sell price">Sell ${formatters_js.formatKMB3Digits(history.sell)}</span>`
+                    `<span style="color: ${sellColor}; font-weight: 600;" title="${i18n_js.t('tradeHistoryDisplay.sellPriceTooltip')}">${i18n_js.t('tradeHistoryDisplay.sellValueLabel', { value: formatters_js.formatKMB3Digits(history.sell) })}</span>`
                 );
             }
 
@@ -18718,7 +18830,7 @@ self.onmessage = function (e) {
          * Show the network alert
          * @param {string} message - Alert message to display
          */
-        show(message = '⚠️ Market data unavailable') {
+        show(message = i18n_js.t('networkAlert.marketDataUnavailable')) {
             if (!config.getSetting('networkAlert')) {
                 return;
             }
@@ -19069,14 +19181,15 @@ self.onmessage = function (e) {
                         const ageMs = Date.now() - new Date(topAsk.createdTimestamp).getTime();
                         if (ageMs > 0) {
                             const ageStr = formatters_js.formatRelativeTime(ageMs);
-                            ageHtml = `<div style="font-size: 0.7em; opacity: 0.7; margin-top: 1px;">Top ask: ~${ageStr}</div>`;
+                            ageHtml = `<div style="font-size: 0.7em; opacity: 0.7; margin-top: 1px;">${i18n_js.t('marketplaceShortcuts.topAskAgeSubtitle', { age: ageStr })}</div>`;
                         }
                     }
                 }
             }
 
             toggle.innerHTML =
-                '<span style="flex: 1; text-align: center;">Marketplace Action' +
+                '<span style="flex: 1; text-align: center;">' +
+                i18n_js.t('marketplaceShortcuts.actionDropdownLabel') +
                 ageHtml +
                 '</span>' +
                 '<span class="mwi-mp-chevron" style="font-size: 0.65em; transition: transform 0.15s; display: inline-block;">▼</span>';
@@ -19104,10 +19217,10 @@ self.onmessage = function (e) {
 
             // Action buttons
             const actions = [
-                { label: 'Sell Now', type: 'sell', color: '#c2410c' },
-                { label: 'Buy Now', type: 'buy', color: '#2fc4a7' },
-                { label: 'New Sell Listing', type: 'sell-listing', color: '#9a3412' },
-                { label: 'New Buy Listing', type: 'buy-listing', color: '#2fc4a7' },
+                { label: i18n_js.t('marketplaceShortcuts.sellNowLabel'), type: 'sell', color: '#c2410c' },
+                { label: i18n_js.t('marketplaceShortcuts.buyNowLabel'), type: 'buy', color: '#2fc4a7' },
+                { label: i18n_js.t('marketplaceShortcuts.newSellListingLabel'), type: 'sell-listing', color: '#9a3412' },
+                { label: i18n_js.t('marketplaceShortcuts.newBuyListingLabel'), type: 'buy-listing', color: '#2fc4a7' },
             ];
 
             for (const action of actions) {
@@ -19538,7 +19651,7 @@ self.onmessage = function (e) {
                 // + toggle button
                 const addToggle = document.createElement('button');
                 addToggle.textContent = '+';
-                addToggle.title = 'Toggle add mode: click to accumulate counts instead of setting them';
+                addToggle.title = i18n_js.t('marketplaceShortcuts.addModeToggleTooltip');
                 addToggle.style.cssText = `
                 font-size: 11px;
                 font-weight: 700;
@@ -19685,7 +19798,7 @@ self.onmessage = function (e) {
                 const ownedEl = document.createElement('div');
                 ownedEl.className = 'mwi-owned-count';
                 ownedEl.style.cssText = `text-align: center; font-size: 13px; color: ${config.COLOR_TEXT_SECONDARY}; margin: 4px 0;`;
-                ownedEl.innerHTML = `Owned: <span style="color: ${config.COLOR_ACCENT}; font-weight: 600;">${formatters_js.formatWithSeparator(count)}</span>`;
+                ownedEl.innerHTML = `${i18n_js.t('marketplaceShortcuts.ownedLabel')} <span style="color: ${config.COLOR_ACCENT}; font-weight: 600;">${formatters_js.formatWithSeparator(count)}</span>`;
                 quantityRow.insertAdjacentElement('beforebegin', ownedEl);
             }, 100);
         }
@@ -20453,7 +20566,7 @@ self.onmessage = function (e) {
                 tokenValue: null,
                 giftPerTask: null,
                 totalPerToken: null,
-                error: 'Market data not loaded',
+                error: i18n_js.t('taskProfitCalculator.marketDataNotLoadedError'),
             };
         }
 
@@ -21357,13 +21470,23 @@ self.onmessage = function (e) {
      */
 
 
-    const GUILD_SHRINE_LABELS = {
-        '/guild_shrines/force': 'Force',
-        '/guild_shrines/tempo': 'Tempo',
-        '/guild_shrines/rarity': 'Rarity',
-        '/guild_shrines/scholar': 'Scholar',
-        '/guild_shrines/spirit': 'Spirit',
-    };
+    /**
+     * Translated display label for a guild shrine hrid, mirroring the labels already
+     * used by src/features/guild/guild-credit-value.js (guildCreditValue.shrine* keys).
+     * Built at call time (not module scope) so it stays correct if the locale changes.
+     * @param {string} shrineHrid - e.g. '/guild_shrines/force'
+     * @returns {string|undefined}
+     */
+    function getGuildShrineLabel(shrineHrid) {
+        const labels = {
+            '/guild_shrines/force': i18n_js.t('guildCreditValue.shrineForce'),
+            '/guild_shrines/tempo': i18n_js.t('guildCreditValue.shrineTempo'),
+            '/guild_shrines/rarity': i18n_js.t('guildCreditValue.shrineRarity'),
+            '/guild_shrines/scholar': i18n_js.t('guildCreditValue.shrineScholar'),
+            '/guild_shrines/spirit': i18n_js.t('guildCreditValue.shrineSpirit'),
+        };
+        return labels[shrineHrid];
+    }
 
     /**
      * Calculate the value of a single item
@@ -21685,18 +21808,17 @@ self.onmessage = function (e) {
         // Create set of equipped ability HRIDs from abilityCombatTriggersMap keys
         const equippedHrids = new Set(Object.keys(abilityCombatTriggersMap || {}));
 
+        const gameData = dataManager.getInitClientData();
+
         for (const ability of characterAbilities) {
             if (!ability.abilityHrid || ability.level === 0) continue;
 
             const cost = abilityCostCalculator_js.calculateAbilityCost(ability.abilityHrid, ability.level);
             totalCost += cost;
 
-            // Format ability name for display
-            const abilityName = ability.abilityHrid
-                .replace('/abilities/', '')
-                .split('_')
-                .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-                .join(' ');
+            // Use the already-localized ability name (mirrors the lookup pattern in
+            // networth-exclusion-popup.js's getExclusionDisplayName for exc.type === 'ability')
+            const abilityName = gameData?.abilityDetailMap?.[ability.abilityHrid]?.name ?? ability.abilityHrid;
 
             const abilityData = {
                 hrid: ability.abilityHrid,
@@ -21736,9 +21858,12 @@ self.onmessage = function (e) {
      * @returns {string}
      */
     function buildGuildBuffDisplayName(buffHrid, buff) {
-        const shrineLabel = GUILD_SHRINE_LABELS[buff?.shrineHrid] || buff?.shrineHrid?.split('/').pop() || 'Shrine';
-        const typeLabel = buff?.isCombat ? 'Combat' : 'Skilling';
-        return `Shrine of ${shrineLabel} - ${typeLabel}`;
+        const shrineLabel =
+            getGuildShrineLabel(buff?.shrineHrid) ||
+            buff?.shrineHrid?.split('/').pop() ||
+            i18n_js.t('networthCalculator.shrineFallbackLabel');
+        const typeLabel = buff?.isCombat ? i18n_js.t('guildCreditValue.buffLabelCombat') : i18n_js.t('guildCreditValue.buffLabelSkilling');
+        return i18n_js.t('networthCalculator.guildBuffDisplayName', { shrine: shrineLabel, type: typeLabel });
     }
 
     /**
@@ -22038,7 +22163,7 @@ self.onmessage = function (e) {
 
             // Check exclusions in priority order: assetType > item > loadout
             if (entireEquippedExcluded) {
-                trackExcluded('assetType', 'equipped', 'All Equipped Items', value);
+                trackExcluded('assetType', 'equipped', i18n_js.t('networthExclusionPopup.allEquippedItemsLabel'), value);
                 continue;
             }
             if (isExcluded('item', item.itemHrid)) {
@@ -22047,7 +22172,12 @@ self.onmessage = function (e) {
             }
             const loadoutName = loadoutExcludedHridToName.get(item.itemHrid);
             if (loadoutName) {
-                trackExcluded('loadout', loadoutName, `Loadout: ${loadoutName}`, value);
+                trackExcluded(
+                    'loadout',
+                    loadoutName,
+                    i18n_js.t('networthExclusionPopup.loadoutNameLabel', { name: loadoutName }),
+                    value
+                );
                 continue;
             }
 
@@ -22110,16 +22240,28 @@ self.onmessage = function (e) {
             }
             const loadoutName = loadoutExcludedHridToName.get(item.itemHrid);
             if (loadoutName) {
-                trackExcluded('loadout', loadoutName, `Loadout: ${loadoutName}`, value);
+                trackExcluded(
+                    'loadout',
+                    loadoutName,
+                    i18n_js.t('networthExclusionPopup.loadoutNameLabel', { name: loadoutName }),
+                    value
+                );
                 continue;
             }
             if (isExcluded('category', categoryHrid)) {
-                const categoryName = gameData.itemCategoryDetailMap?.[categoryHrid]?.name || 'Other';
-                trackExcluded('category', categoryHrid, `${categoryName} (category)`, value);
+                const categoryName =
+                    gameData.itemCategoryDetailMap?.[categoryHrid]?.name ||
+                    i18n_js.t('networthCalculator.otherCategoryFallbackLabel');
+                trackExcluded(
+                    'category',
+                    categoryHrid,
+                    i18n_js.t('networthExclusionPopup.categoryNameSuffix', { name: categoryName }),
+                    value
+                );
                 continue;
             }
             if (isAbilityBook && !booksAsInventory && isExcluded('assetType', 'abilityBooks')) {
-                trackExcluded('assetType', 'abilityBooks', 'All Ability Books', value);
+                trackExcluded('assetType', 'abilityBooks', i18n_js.t('networthExclusionPopup.allAbilityBooksLabel'), value);
                 continue;
             }
 
@@ -22134,7 +22276,9 @@ self.onmessage = function (e) {
 
                 // Coin is always listed individually — never bucketed into a category
                 if (item.itemHrid !== '/items/coin') {
-                    const categoryName = gameData.itemCategoryDetailMap?.[categoryHrid]?.name || 'Other';
+                    const categoryName =
+                        gameData.itemCategoryDetailMap?.[categoryHrid]?.name ||
+                        i18n_js.t('networthCalculator.otherCategoryFallbackLabel');
 
                     if (!inventoryByCategory[categoryName]) {
                         inventoryByCategory[categoryName] = {
@@ -22210,14 +22354,14 @@ self.onmessage = function (e) {
 
         // Apply listings exclusion
         if (isExcluded('assetType', 'listings') && listingsValue > 0) {
-            trackExcluded('assetType', 'listings', 'All Market Listings', listingsValue);
+            trackExcluded('assetType', 'listings', i18n_js.t('networthExclusionPopup.allMarketListingsLabel'), listingsValue);
             listingsValue = 0;
         }
 
         // Calculate houses value — apply per-room and whole-section exclusions
         let housesData = calculateAllHousesCost(characterHouseRooms);
         if (isExcluded('assetType', 'houses') && housesData.totalCost > 0) {
-            trackExcluded('assetType', 'houses', 'All Houses', housesData.totalCost);
+            trackExcluded('assetType', 'houses', i18n_js.t('networthExclusionPopup.allHousesLabel'), housesData.totalCost);
             housesData = { totalCost: 0, breakdown: [] };
         } else {
             let excludedRoomCost = 0;
@@ -22238,7 +22382,7 @@ self.onmessage = function (e) {
         // Calculate abilities value — apply per-ability and whole-section exclusions
         let abilitiesData = calculateAllAbilitiesCost(characterAbilities, abilityCombatTriggersMap);
         if (isExcluded('assetType', 'abilities') && abilitiesData.totalCost > 0) {
-            trackExcluded('assetType', 'abilities', 'All Abilities', abilitiesData.totalCost);
+            trackExcluded('assetType', 'abilities', i18n_js.t('networthExclusionPopup.allAbilitiesLabel'), abilitiesData.totalCost);
             abilitiesData = {
                 totalCost: 0,
                 equippedCost: 0,
@@ -22283,7 +22427,12 @@ self.onmessage = function (e) {
         // Calculate guild shrines value — apply per-buff and whole-section exclusions
         let guildShrinesData = calculateAllGuildShrinesCost();
         if (isExcluded('assetType', 'guildShrines') && guildShrinesData.totalCost > 0) {
-            trackExcluded('assetType', 'guildShrines', 'All Guild Shrines', guildShrinesData.totalCost);
+            trackExcluded(
+                'assetType',
+                'guildShrines',
+                i18n_js.t('networthExclusionPopup.allGuildShrinesLabel'),
+                guildShrinesData.totalCost
+            );
             guildShrinesData = { totalCost: 0, breakdown: [] };
         } else {
             let excludedBuffCost = 0;
@@ -22625,13 +22774,22 @@ self.onmessage = function (e) {
     };
 
     const CATEGORIES = [
-        { key: 'gold', label: 'Gold', color: '#eab308' },
-        { key: 'inventory', label: 'Inventory', color: '#3b82f6' },
-        { key: 'equipment', label: 'Equipment', color: '#ef4444' },
-        { key: 'listings', label: 'Listings', color: '#8b5cf6' },
-        { key: 'house', label: 'House', color: '#f97316' },
-        { key: 'abilities', label: 'Abilities', color: '#06b6d4' },
+        { key: 'gold', color: '#eab308' },
+        { key: 'inventory', color: '#3b82f6' },
+        { key: 'equipment', color: '#ef4444' },
+        { key: 'listings', color: '#8b5cf6' },
+        { key: 'house', color: '#f97316' },
+        { key: 'abilities', color: '#06b6d4' },
     ];
+
+    /**
+     * Translated display label for a networth category key ('gold', 'inventory', ...).
+     * @param {string} key - Category key
+     * @returns {string}
+     */
+    function getCategoryLabel(key) {
+        return i18n_js.t(`networthHistoryChart.category${key.charAt(0).toUpperCase()}${key.slice(1)}`);
+    }
 
     class NetworthHistoryChart {
         constructor() {
@@ -22672,6 +22830,22 @@ self.onmessage = function (e) {
             if (prefs.categoryVisibility !== undefined)
                 this.categoryVisibility = { ...this.categoryVisibility, ...prefs.categoryVisibility };
             if (prefs.activeRange !== undefined) this.activeRange = prefs.activeRange;
+        }
+
+        /**
+         * Translated display label for a preset/custom time range key.
+         * @param {string} range - '24h', '7d', '30d', 'all', or 'custom'
+         * @returns {string}
+         */
+        _rangeLabel(range) {
+            const labels = {
+                '24h': i18n_js.t('networthHistoryChart.range24hLabel'),
+                '7d': i18n_js.t('networthHistoryChart.range7dLabel'),
+                '30d': i18n_js.t('networthHistoryChart.range30dLabel'),
+                all: i18n_js.t('networthHistoryChart.rangeAllLabel'),
+                custom: i18n_js.t('networthHistoryChart.rangeCustomLabel'),
+            };
+            return labels[range] || labels['24h'];
         }
 
         /**
@@ -22752,7 +22926,7 @@ self.onmessage = function (e) {
         `;
 
             const title = document.createElement('h3');
-            title.textContent = 'Net Worth History';
+            title.textContent = i18n_js.t('networthHistoryChart.modalTitle');
             title.style.cssText = 'color: #ccc; margin: 0; font-size: 18px;';
 
             const closeBtn = document.createElement('button');
@@ -22784,7 +22958,7 @@ self.onmessage = function (e) {
             const ranges = ['24h', '7d', '30d', 'all'];
             for (const range of ranges) {
                 const btn = document.createElement('button');
-                btn.textContent = range === 'all' ? 'All' : range.toUpperCase();
+                btn.textContent = this._rangeLabel(range);
                 btn.dataset.range = range;
                 btn.className = 'mwi-nw-range-btn';
                 btn.style.cssText = `
@@ -22804,7 +22978,7 @@ self.onmessage = function (e) {
 
             // Connect Gaps toggle
             const gapToggle = document.createElement('button');
-            gapToggle.textContent = 'Connect Gaps';
+            gapToggle.textContent = i18n_js.t('networthHistoryChart.connectGapsButton');
             gapToggle.className = 'mwi-nw-gap-toggle';
             const updateGapToggleStyle = () => {
                 gapToggle.style.cssText = `
@@ -22829,7 +23003,7 @@ self.onmessage = function (e) {
 
             // Show Bars toggle
             const barToggle = document.createElement('button');
-            barToggle.textContent = 'Show Bars';
+            barToggle.textContent = i18n_js.t('networthHistoryChart.showBarsButton');
             barToggle.className = 'mwi-nw-bar-toggle';
             const updateBarToggleStyle = () => {
                 barToggle.style.cssText = `
@@ -22854,7 +23028,7 @@ self.onmessage = function (e) {
 
             // Moving Average dropdown
             const maLabel = document.createElement('span');
-            maLabel.textContent = 'Avg:';
+            maLabel.textContent = i18n_js.t('networthHistoryChart.avgLabel');
             maLabel.style.cssText = 'color: #999; font-size: 12px; margin-left: 8px;';
             rangeRow.appendChild(maLabel);
 
@@ -22871,20 +23045,23 @@ self.onmessage = function (e) {
             color-scheme: dark;
         `;
             const maOptions = [
-                { value: 0, label: 'Off' },
-                { value: 3, label: '3h' },
-                { value: 6, label: '6h' },
-                { value: 12, label: '12h' },
-                { value: 24, label: '24h' },
-                { value: 48, label: '48h' },
-                { value: 168, label: '7d' },
+                { value: 0, label: i18n_js.t('networthHistoryChart.movingAvgOffOption') },
+                { value: 3, label: i18n_js.t('networthHistoryChart.movingAvg3hOption') },
+                { value: 6, label: i18n_js.t('networthHistoryChart.movingAvg6hOption') },
+                { value: 12, label: i18n_js.t('networthHistoryChart.movingAvg12hOption') },
+                { value: 24, label: i18n_js.t('networthHistoryChart.movingAvg24hOption') },
+                { value: 48, label: i18n_js.t('networthHistoryChart.movingAvg48hOption') },
+                { value: 168, label: i18n_js.t('networthHistoryChart.movingAvg7dOption') },
             ];
             // Check if current value is a custom one not in presets
             const isCustomValue = this.movingAvgWindow > 0 && !maOptions.some((o) => o.value === this.movingAvgWindow);
             if (isCustomValue) {
-                maOptions.push({ value: this.movingAvgWindow, label: `${this.movingAvgWindow}h` });
+                maOptions.push({
+                    value: this.movingAvgWindow,
+                    label: i18n_js.t('networthHistoryChart.movingAvgCustomHoursOption', { hours: this.movingAvgWindow }),
+                });
             }
-            maOptions.push({ value: -1, label: 'Custom...' });
+            maOptions.push({ value: -1, label: i18n_js.t('networthHistoryChart.movingAvgCustomOption') });
             for (const opt of maOptions) {
                 const option = document.createElement('option');
                 option.value = opt.value;
@@ -22895,7 +23072,7 @@ self.onmessage = function (e) {
             maSelect.addEventListener('change', () => {
                 const val = parseInt(maSelect.value, 10);
                 if (val === -1) {
-                    const input = prompt('Enter moving average window in hours:');
+                    const input = prompt(i18n_js.t('networthHistoryChart.promptMovingAvgWindow'));
                     const parsed = parseInt(input, 10);
                     if (parsed > 0) {
                         this.movingAvgWindow = parsed;
@@ -22904,7 +23081,9 @@ self.onmessage = function (e) {
                         if (!existing) {
                             const customOpt = document.createElement('option');
                             customOpt.value = parsed;
-                            customOpt.textContent = `${parsed}h`;
+                            customOpt.textContent = i18n_js.t('networthHistoryChart.movingAvgCustomHoursOption', {
+                                hours: parsed,
+                            });
                             maSelect.insertBefore(customOpt, maSelect.querySelector('option[value="-1"]'));
                         }
                         maSelect.value = parsed;
@@ -22939,7 +23118,7 @@ self.onmessage = function (e) {
 
             // From label + input
             const fromLabel = document.createElement('span');
-            fromLabel.textContent = 'From:';
+            fromLabel.textContent = i18n_js.t('networthHistoryChart.fromLabel');
             fromLabel.style.cssText = 'color: #999; font-size: 12px;';
             rangeRow.appendChild(fromLabel);
 
@@ -22954,7 +23133,7 @@ self.onmessage = function (e) {
 
             // To label + input
             const toLabel = document.createElement('span');
-            toLabel.textContent = 'To:';
+            toLabel.textContent = i18n_js.t('networthHistoryChart.toLabel');
             toLabel.style.cssText = 'color: #999; font-size: 12px;';
             rangeRow.appendChild(toLabel);
 
@@ -23006,7 +23185,7 @@ self.onmessage = function (e) {
             flex-shrink: 0;
         `;
             totalBtn.appendChild(totalDot);
-            totalBtn.appendChild(document.createTextNode('Total'));
+            totalBtn.appendChild(document.createTextNode(i18n_js.t('networthHistoryChart.totalChipLabel')));
             updateTotalBtnStyle();
             totalBtn.addEventListener('click', () => {
                 this.categoryVisibility.showTotal = !this.categoryVisibility.showTotal;
@@ -23048,7 +23227,7 @@ self.onmessage = function (e) {
             flex-shrink: 0;
         `;
             nonExclBtn.appendChild(nonExclDot);
-            nonExclBtn.appendChild(document.createTextNode('Non-Excluded'));
+            nonExclBtn.appendChild(document.createTextNode(i18n_js.t('networthHistoryChart.nonExcludedLabel')));
             updateNonExclBtnStyle();
             nonExclBtn.addEventListener('click', () => {
                 this.categoryVisibility.showNonExcluded = !this.categoryVisibility.showNonExcluded;
@@ -23089,7 +23268,7 @@ self.onmessage = function (e) {
                 flex-shrink: 0;
             `;
                 btn.appendChild(dot);
-                btn.appendChild(document.createTextNode(cat.label));
+                btn.appendChild(document.createTextNode(getCategoryLabel(cat.key)));
                 updateCatBtnStyle();
                 btn.addEventListener('click', () => {
                     this.categoryVisibility[cat.key] = !this.categoryVisibility[cat.key];
@@ -23310,6 +23489,8 @@ self.onmessage = function (e) {
 
             // Build datasets array
             const datasets = [];
+            const totalNetWorthLabel = i18n_js.t('networthHistoryChart.totalNetWorthDatasetLabel');
+            const nonExcludedLabel = i18n_js.t('networthHistoryChart.nonExcludedLabel');
 
             // Check if non-excluded data diverges from total (i.e., exclusions were active)
             const hasNonExcludedData = filtered.some((p) => p.nonExcluded != null && p.nonExcluded !== p.total);
@@ -23319,7 +23500,7 @@ self.onmessage = function (e) {
                 const barData = chartData.filter((p) => !isNaN(p.y));
                 datasets.push({
                     type: 'bar',
-                    label: 'Net Worth (bars)',
+                    label: i18n_js.t('networthHistoryChart.barsDatasetLabel'),
                     data: barData,
                     backgroundColor: 'rgba(34, 197, 94, 0.3)',
                     borderColor: 'transparent',
@@ -23334,7 +23515,7 @@ self.onmessage = function (e) {
             if (this.categoryVisibility.showTotal) {
                 datasets.push({
                     type: 'line',
-                    label: 'Total Net Worth',
+                    label: totalNetWorthLabel,
                     data: chartData,
                     borderColor: config.COLOR_ACCENT || '#22c55e',
                     backgroundColor: 'rgba(34, 197, 94, 0.1)',
@@ -23356,7 +23537,7 @@ self.onmessage = function (e) {
                 }));
                 datasets.push({
                     type: 'line',
-                    label: 'Non-Excluded',
+                    label: nonExcludedLabel,
                     data: neData,
                     borderColor: '#a78bfa',
                     backgroundColor: 'transparent',
@@ -23382,7 +23563,7 @@ self.onmessage = function (e) {
                 });
                 datasets.push({
                     type: 'line',
-                    label: cat.label,
+                    label: getCategoryLabel(cat.key),
                     data: catData,
                     borderColor: cat.color,
                     backgroundColor: 'transparent',
@@ -23413,7 +23594,12 @@ self.onmessage = function (e) {
                 }
                 datasets.push({
                     type: 'line',
-                    label: `${this.movingAvgWindow >= 24 && this.movingAvgWindow % 24 === 0 ? `${this.movingAvgWindow / 24}d` : `${this.movingAvgWindow}h`} Moving Avg`,
+                    label: i18n_js.t('networthHistoryChart.movingAvgDatasetLabel', {
+                        window:
+                            this.movingAvgWindow >= 24 && this.movingAvgWindow % 24 === 0
+                                ? `${this.movingAvgWindow / 24}d`
+                                : `${this.movingAvgWindow}h`,
+                    }),
                     data: maData,
                     borderColor: '#f59e0b',
                     backgroundColor: 'transparent',
@@ -23430,7 +23616,9 @@ self.onmessage = function (e) {
 
             const visibleCategories = CATEGORIES.filter((c) => this.categoryVisibility[c.key]);
             const yAxisTitle =
-                !this.categoryVisibility.showTotal && visibleCategories.length > 0 ? 'Category Value' : 'Net Worth';
+                !this.categoryVisibility.showTotal && visibleCategories.length > 0
+                    ? i18n_js.t('networthHistoryChart.categoryValueAxisTitle')
+                    : i18n_js.t('networthHistoryChart.netWorthAxisTitle');
 
             this.chartInstance = new Chart(ctx, {
                 type: 'line',
@@ -23457,9 +23645,9 @@ self.onmessage = function (e) {
                             filter: (tooltipItem) => {
                                 if (tooltipItem.dataset.type === 'bar') return false;
                                 if (isNaN(tooltipItem.raw?.y)) return false;
-                                if (tooltipItem.dataset.label === 'Total Net Worth') return true;
-                                if (tooltipItem.dataset.label === 'Non-Excluded') return true;
-                                const cat = CATEGORIES.find((c) => c.label === tooltipItem.dataset.label);
+                                if (tooltipItem.dataset.label === totalNetWorthLabel) return true;
+                                if (tooltipItem.dataset.label === nonExcludedLabel) return true;
+                                const cat = CATEGORIES.find((c) => getCategoryLabel(c.key) === tooltipItem.dataset.label);
                                 return cat ? this.categoryVisibility[cat.key] : false;
                             },
                         },
@@ -23510,7 +23698,7 @@ self.onmessage = function (e) {
             if (!statsRow) return;
 
             if (filtered.length === 0) {
-                statsRow.innerHTML = '<span style="color: #666;">No data available for this range</span>';
+                statsRow.innerHTML = i18n_js.t('networthHistoryChart.noDataForRangeMessage');
                 return;
             }
 
@@ -23520,8 +23708,7 @@ self.onmessage = function (e) {
             const hoursElapsed = (last.t - first.t) / 3_600_000;
 
             // Range label for the change stat
-            const rangeLabelMap = { '24h': '24H', '7d': '7D', '30d': '30D', all: 'All', custom: 'Range' };
-            const rangeLabel = rangeLabelMap[this.currentRange] || '24H';
+            const rangeLabel = this._rangeLabel(this.currentRange);
             const is24hRange = this.currentRange === '24h';
 
             // Total stats — Current, range change, Rate
@@ -23537,18 +23724,28 @@ self.onmessage = function (e) {
                 const ratePerHour = hoursElapsed > 0 ? (currentTotal - first.total) / hoursElapsed : 0;
 
                 parts.push(
-                    `<span>Current: <strong style="color: ${config.COLOR_ACCENT};">${formatters_js.networthFormatter(Math.round(currentTotal))}</strong></span>`
+                    `<span>${i18n_js.t('networthHistoryChart.currentTotalLine', {
+                    color: config.COLOR_ACCENT,
+                    value: formatters_js.networthFormatter(Math.round(currentTotal)),
+                })}</span>`
                 );
 
                 if (filtered.length >= 2) {
                     const color = rangeChange >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
                     const sign = rangeChange >= 0 ? '+' : '';
                     const breakdownAttr = is24hRange
-                        ? ' id="mwi-nw-24h-toggle" style="cursor: pointer;" title="Click for item breakdown"'
+                        ? ` id="mwi-nw-24h-toggle" style="cursor: pointer;" title="${i18n_js.t('networthHistoryChart.clickForBreakdownTooltip')}"`
                         : '';
                     const breakdownArrow = is24hRange ? ' <span style="font-size: 10px; color: #666;">▼</span>' : '';
                     parts.push(
-                        `<span${breakdownAttr}>Last ${rangeLabel}: <strong style="color: ${color};">${sign}${formatters_js.networthFormatter(Math.round(rangeChange))} (${sign}${rangePercent.toFixed(1)}%)</strong>${breakdownArrow}</span>`
+                        `<span${breakdownAttr}>${i18n_js.t('networthHistoryChart.lastRangeChangeLine', {
+                        range: rangeLabel,
+                        color,
+                        sign,
+                        value: formatters_js.networthFormatter(Math.round(rangeChange)),
+                        percent: rangePercent.toFixed(1),
+                        arrow: breakdownArrow,
+                    })}</span>`
                     );
                 }
 
@@ -23556,7 +23753,11 @@ self.onmessage = function (e) {
                     const color = ratePerHour >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
                     const sign = ratePerHour >= 0 ? '+' : '';
                     parts.push(
-                        `<span>Rate: <strong style="color: ${color};">${sign}${formatters_js.networthFormatter(Math.round(ratePerHour))}/hr</strong></span>`
+                        `<span>${i18n_js.t('networthHistoryChart.rateLine', {
+                        color,
+                        sign,
+                        value: formatters_js.networthFormatter(Math.round(ratePerHour)),
+                    })}</span>`
                     );
                 }
             }
@@ -23568,19 +23769,30 @@ self.onmessage = function (e) {
                 const firstNE = first.nonExcluded ?? first.total;
                 const neRate = hoursElapsed > 0 ? (currentNE - firstNE) / hoursElapsed : 0;
 
-                let neStatHtml = `<span style="color: #a78bfa;">Non-Excl</span>: <strong style="color: #a78bfa;">${formatters_js.networthFormatter(Math.round(currentNE))}</strong>`;
+                let neStatHtml = i18n_js.t('networthHistoryChart.nonExclCurrentLine', {
+                    value: formatters_js.networthFormatter(Math.round(currentNE)),
+                });
 
                 if (filtered.length >= 2) {
                     const neChange = currentNE - firstNE;
                     const neChangeColor = neChange >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
                     const neChangeSign = neChange >= 0 ? '+' : '';
-                    neStatHtml += ` <span style="font-size: 11px; color: #aaa;">(${neChangeSign}<span style="color: ${neChangeColor};">${formatters_js.networthFormatter(Math.round(neChange))}</span> ${rangeLabel})</span>`;
+                    neStatHtml += i18n_js.t('networthHistoryChart.nonExclChangeSuffix', {
+                        sign: neChangeSign,
+                        color: neChangeColor,
+                        value: formatters_js.networthFormatter(Math.round(neChange)),
+                        range: rangeLabel,
+                    });
                 }
 
                 if (hoursElapsed >= 1) {
                     const neRateColor = neRate >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
                     const neRateSign = neRate >= 0 ? '+' : '';
-                    neStatHtml += ` <span style="font-size: 11px; color: #aaa;">${neRateSign}<span style="color: ${neRateColor};">${formatters_js.networthFormatter(Math.round(neRate))}/hr</span></span>`;
+                    neStatHtml += i18n_js.t('networthHistoryChart.rateSuffixSpan', {
+                        sign: neRateSign,
+                        color: neRateColor,
+                        value: formatters_js.networthFormatter(Math.round(neRate)),
+                    });
                 }
 
                 parts.push(`<span>${neStatHtml}</span>`);
@@ -23602,17 +23814,27 @@ self.onmessage = function (e) {
                 const catChangeColor = catChange >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
                 const catChangeSign = catChange >= 0 ? '+' : '';
 
-                let statHtml = `${cat.label}: <strong style="color: ${catChangeColor};">Last ${rangeLabel}: ${catChangeSign}${formatters_js.networthFormatter(Math.round(catChange))}</strong>`;
+                let statHtml = i18n_js.t('networthHistoryChart.categoryLastRangeLine', {
+                    label: getCategoryLabel(cat.key),
+                    color: catChangeColor,
+                    range: rangeLabel,
+                    sign: catChangeSign,
+                    value: formatters_js.networthFormatter(Math.round(catChange)),
+                });
 
                 if (hoursElapsed >= 1) {
-                    statHtml += ` <span style="font-size: 11px; color: #aaa;">${rateSign}<span style="color: ${rateColor};">${formatters_js.networthFormatter(Math.round(rate))}/hr</span></span>`;
+                    statHtml += i18n_js.t('networthHistoryChart.rateSuffixSpan', {
+                        sign: rateSign,
+                        color: rateColor,
+                        value: formatters_js.networthFormatter(Math.round(rate)),
+                    });
                 }
 
                 parts.push(`<span>${statHtml}</span>`);
             }
 
             if (parts.length === 0) {
-                statsRow.innerHTML = '<span style="color: #666;">No data available for this range</span>';
+                statsRow.innerHTML = i18n_js.t('networthHistoryChart.noDataForRangeMessage');
                 return;
             }
 
@@ -23689,15 +23911,14 @@ self.onmessage = function (e) {
         render24hBreakdown(container) {
             const currentData = this.networthFeature?.currentData;
             if (!currentData) {
-                container.innerHTML = '<span style="color: #666;">No live data available</span>';
+                container.innerHTML = i18n_js.t('networthHistoryChart.noLiveDataMessage');
                 return;
             }
 
             const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
             const oldSnapshot = networthHistory.getDetailSnapshot(oneDayAgo);
             if (!oldSnapshot) {
-                container.innerHTML =
-                    '<span style="color: #666;">No detail snapshot available yet (data collected hourly)</span>';
+                container.innerHTML = i18n_js.t('networthHistoryChart.noDetailSnapshotMessage');
                 return;
             }
 
@@ -23709,7 +23930,7 @@ self.onmessage = function (e) {
             currentItems['/items/coin:0'] = {
                 count: Math.round(currentData.coins),
                 value: Math.round(currentData.coins),
-                name: 'Gold',
+                name: getCategoryLabel('gold'),
             };
 
             // Inventory items
@@ -23824,9 +24045,11 @@ self.onmessage = function (e) {
                         const baseName = details?.name || itemHrid.replace('/items/', '');
                         name = Number(enhLevel) > 0 ? `${baseName} +${enhLevel}` : baseName;
                     }
-                    const prefix = key.startsWith('listing:sell:') ? 'Sell Listing' : 'Buy Listing';
+                    const listingLabel = key.startsWith('listing:sell:')
+                        ? i18n_js.t('networthHistoryChart.sellListingItemLabel', { name })
+                        : i18n_js.t('networthHistoryChart.buyListingItemLabel', { name });
                     otherTotal += totalDiff;
-                    otherItems.push({ name: `${prefix}: ${name}`, key, value: totalDiff });
+                    otherItems.push({ name: listingLabel, key, value: totalDiff });
                     continue;
                 }
 
@@ -23882,7 +24105,7 @@ self.onmessage = function (e) {
             }
 
             if (activityItems.length === 0 && marketItems.length === 0 && otherItems.length === 0) {
-                container.innerHTML = '<span style="color: #666;">No item-level changes in the last 24h</span>';
+                container.innerHTML = i18n_js.t('networthHistoryChart.noItemChangesMessage');
                 return;
             }
 
@@ -23898,7 +24121,7 @@ self.onmessage = function (e) {
                 const actColor = activityTotal >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
                 const actSign = activityTotal >= 0 ? '+' : '';
                 html += `<div style="font-weight: bold; margin-bottom: 4px; display: flex; justify-content: space-between;">`;
-                html += `<span>Activity</span>`;
+                html += `<span>${i18n_js.t('networthHistoryChart.activityHeading')}</span>`;
                 html += `<span style="color: ${actColor};">${actSign}${formatters_js.networthFormatter(activityTotal)}</span>`;
                 html += `</div>`;
 
@@ -23925,7 +24148,7 @@ self.onmessage = function (e) {
                 const mktColor = marketTotal >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
                 const mktSign = marketTotal >= 0 ? '+' : '';
                 html += `<div style="font-weight: bold; margin-top: 8px; margin-bottom: 4px; display: flex; justify-content: space-between;${activityItems.length > 0 ? ' padding-top: 6px; border-top: 1px solid #333;' : ''}">`;
-                html += `<span>Market Movement</span>`;
+                html += `<span>${i18n_js.t('networthHistoryChart.marketMovementHeading')}</span>`;
                 html += `<span style="color: ${mktColor};">${mktSign}${formatters_js.networthFormatter(marketTotal)}</span>`;
                 html += `</div>`;
 
@@ -23956,7 +24179,7 @@ self.onmessage = function (e) {
                 const residual = last24hChange - activityTotal - marketTotal - otherTotal;
                 if (Math.abs(residual) > 0) {
                     otherTotal += residual;
-                    otherItems.push({ name: 'Rounding', key: '_rounding', value: residual });
+                    otherItems.push({ name: i18n_js.t('networthHistoryChart.roundingLabel'), key: '_rounding', value: residual });
                 }
             }
 
@@ -23965,7 +24188,7 @@ self.onmessage = function (e) {
                 const otherColor = otherTotal >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
                 const otherSign = otherTotal >= 0 ? '+' : '';
                 html += `<div style="font-weight: bold; margin-top: 8px; margin-bottom: 4px; display: flex; justify-content: space-between;${hasPrevSections ? ' padding-top: 6px; border-top: 1px solid #333;' : ''}">`;
-                html += `<span>Other</span>`;
+                html += `<span>${i18n_js.t('networthHistoryChart.otherHeading')}</span>`;
                 html += `<span style="color: ${otherColor};">${otherSign}${formatters_js.networthFormatter(otherTotal)}</span>`;
                 html += `</div>`;
 
@@ -23983,7 +24206,7 @@ self.onmessage = function (e) {
 
             // Snapshot age note
             const ageHours = Math.round((Date.now() - oldSnapshot.t) / 3_600_000);
-            html += `<div style="color: #555; font-size: 10px; margin-top: 6px; text-align: right;">Compared to snapshot from ${ageHours}h ago</div>`;
+            html += i18n_js.t('networthHistoryChart.comparedToSnapshotLine', { hours: ageHours });
 
             container.innerHTML = html;
         }
@@ -24045,7 +24268,9 @@ self.onmessage = function (e) {
             }
 
             // Find the Total Net Worth data point
-            const totalPoint = tooltip.dataPoints?.find((dp) => dp.dataset.label === 'Total Net Worth');
+            const totalPoint = tooltip.dataPoints?.find(
+                (dp) => dp.dataset.label === i18n_js.t('networthHistoryChart.totalNetWorthDatasetLabel')
+            );
             if (!totalPoint) {
                 tooltipEl.style.opacity = '0';
                 return;
@@ -24067,29 +24292,36 @@ self.onmessage = function (e) {
 
             // Total
             const totalDelta = this._formatDelta(raw.total, prevRaw?.total);
-            html += `<div style="color:#4ade80;">&#9632; Total: ${formatters_js.networthFormatter(raw.total)}${totalDelta}</div>`;
+            html += i18n_js.t('networthHistoryChart.totalTooltipLine', {
+                value: formatters_js.networthFormatter(raw.total),
+                delta: totalDelta,
+            });
 
             // Category breakdown
             const categories = [];
-            categories.push({ label: 'Gold', value: raw.gold || 0, prev: prevRaw?.gold });
+            categories.push({ label: getCategoryLabel('gold'), value: raw.gold || 0, prev: prevRaw?.gold });
 
             const inventoryExGold = (raw.inventory || 0) - (raw.gold || 0);
             const prevInventoryExGold = prevRaw ? (prevRaw.inventory || 0) - (prevRaw.gold || 0) : null;
-            categories.push({ label: 'Inventory', value: inventoryExGold, prev: prevInventoryExGold });
+            categories.push({ label: getCategoryLabel('inventory'), value: inventoryExGold, prev: prevInventoryExGold });
 
-            categories.push({ label: 'Equipment', value: raw.equipment || 0, prev: prevRaw?.equipment });
-            categories.push({ label: 'Listings', value: raw.listings || 0, prev: prevRaw?.listings });
-            categories.push({ label: 'House', value: raw.house || 0, prev: prevRaw?.house });
-            categories.push({ label: 'Abilities', value: raw.abilities || 0, prev: prevRaw?.abilities });
+            categories.push({ label: getCategoryLabel('equipment'), value: raw.equipment || 0, prev: prevRaw?.equipment });
+            categories.push({ label: getCategoryLabel('listings'), value: raw.listings || 0, prev: prevRaw?.listings });
+            categories.push({ label: getCategoryLabel('house'), value: raw.house || 0, prev: prevRaw?.house });
+            categories.push({ label: getCategoryLabel('abilities'), value: raw.abilities || 0, prev: prevRaw?.abilities });
             if (raw.nonExcluded != null && raw.nonExcluded !== raw.total) {
                 const excluded = raw.total - raw.nonExcluded;
                 const prevExcluded = prevRaw?.nonExcluded != null ? prevRaw.total - prevRaw.nonExcluded : null;
-                categories.push({ label: 'Excluded', value: excluded, prev: prevExcluded });
+                categories.push({ label: i18n_js.t('networthHistoryChart.excludedLabel'), value: excluded, prev: prevExcluded });
             }
 
             for (const cat of categories) {
                 const delta = this._formatDelta(cat.value, cat.prev);
-                html += `<div style="color:#ccc; padding-left:12px;">${cat.label}: ${formatters_js.networthFormatter(cat.value)}${delta}</div>`;
+                html += i18n_js.t('networthHistoryChart.categoryTooltipLine', {
+                    label: cat.label,
+                    value: formatters_js.networthFormatter(cat.value),
+                    delta,
+                });
             }
 
             tooltipEl.innerHTML = html;
@@ -24170,8 +24402,8 @@ self.onmessage = function (e) {
             popup.innerHTML = `
             <div style="margin-bottom:4px;font-weight:500;color:#fff;">${date}</div>
             <div style="margin-bottom:10px;color:${config.COLOR_ACCENT};">${formatters_js.networthFormatter(snapshot.total)}</div>
-            <button id="mwi-nw-delete-confirm" style="background:#ef4444;color:#fff;border:none;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px;margin-right:6px;">Delete point</button>
-            <button id="mwi-nw-delete-cancel" style="background:#2a2a2a;color:#999;border:1px solid #444;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px;">Cancel</button>
+            <button id="mwi-nw-delete-confirm" style="background:#ef4444;color:#fff;border:none;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px;margin-right:6px;">${i18n_js.t('networthHistoryChart.deletePointButton')}</button>
+            <button id="mwi-nw-delete-cancel" style="background:#2a2a2a;color:#999;border:1px solid #444;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px;">${i18n_js.t('settings.cancelButton')}</button>
         `;
 
             document.body.appendChild(popup);
@@ -24345,25 +24577,45 @@ self.onmessage = function (e) {
             const ca = networthData?.currentAssets;
             const fa = networthData?.fixedAssets;
             if (!isExcluded('assetType', 'equipped') && (ca?.equipped?.value ?? 0) > 0)
-                add({ type: 'assetType', value: 'equipped', name: 'All Equipped Items', amount: ca.equipped.value });
+                add({
+                    type: 'assetType',
+                    value: 'equipped',
+                    name: i18n_js.t('networthExclusionPopup.allEquippedItemsLabel'),
+                    amount: ca.equipped.value,
+                });
             if (!isExcluded('assetType', 'listings') && (ca?.listings?.value ?? 0) > 0)
-                add({ type: 'assetType', value: 'listings', name: 'All Market Listings', amount: ca.listings.value });
+                add({
+                    type: 'assetType',
+                    value: 'listings',
+                    name: i18n_js.t('networthExclusionPopup.allMarketListingsLabel'),
+                    amount: ca.listings.value,
+                });
             if (!isExcluded('assetType', 'houses') && (fa?.houses?.totalCost ?? 0) > 0)
-                add({ type: 'assetType', value: 'houses', name: 'All Houses', amount: fa.houses.totalCost });
+                add({
+                    type: 'assetType',
+                    value: 'houses',
+                    name: i18n_js.t('networthExclusionPopup.allHousesLabel'),
+                    amount: fa.houses.totalCost,
+                });
             if (!isExcluded('assetType', 'abilities') && (fa?.abilities?.totalCost ?? 0) > 0)
-                add({ type: 'assetType', value: 'abilities', name: 'All Abilities', amount: fa.abilities.totalCost });
+                add({
+                    type: 'assetType',
+                    value: 'abilities',
+                    name: i18n_js.t('networthExclusionPopup.allAbilitiesLabel'),
+                    amount: fa.abilities.totalCost,
+                });
             if (!isExcluded('assetType', 'abilityBooks') && (fa?.abilityBooks?.totalCost ?? 0) > 0)
                 add({
                     type: 'assetType',
                     value: 'abilityBooks',
-                    name: 'All Ability Books',
+                    name: i18n_js.t('networthExclusionPopup.allAbilityBooksLabel'),
                     amount: fa.abilityBooks.totalCost,
                 });
             if (!isExcluded('assetType', 'guildShrines') && (fa?.guildShrines?.totalCost ?? 0) > 0)
                 add({
                     type: 'assetType',
                     value: 'guildShrines',
-                    name: 'All Guild Shrines',
+                    name: i18n_js.t('networthExclusionPopup.allGuildShrinesLabel'),
                     amount: fa.guildShrines.totalCost,
                 });
 
@@ -24373,7 +24625,7 @@ self.onmessage = function (e) {
                 add({
                     type: 'category',
                     value: catData.categoryHrid,
-                    name: `${catName} (category)`,
+                    name: i18n_js.t('networthExclusionPopup.categoryNameSuffix', { name: catName }),
                     amount: catData.totalValue,
                 });
             }
@@ -24420,7 +24672,12 @@ self.onmessage = function (e) {
                     const price = marketAPI.getPrice(eq.itemHrid);
                     return sum + (price?.ask ?? 0);
                 }, 0);
-                add({ type: 'loadout', value: snapshot.name, name: `Loadout: ${snapshot.name}`, amount });
+                add({
+                    type: 'loadout',
+                    value: snapshot.name,
+                    name: i18n_js.t('networthExclusionPopup.loadoutNameLabel', { name: snapshot.name }),
+                    amount,
+                });
             }
 
             // Sort by amount descending
@@ -24480,7 +24737,7 @@ self.onmessage = function (e) {
 
             const title = document.createElement('span');
             title.style.cssText = `font-size: 0.9rem; font-weight: 600; color: ${config.COLOR_ACCENT};`;
-            title.textContent = 'Net Worth Exclusions';
+            title.textContent = i18n_js.t('networthExclusionPopup.popupTitle');
 
             const closeBtn = document.createElement('button');
             closeBtn.textContent = '×';
@@ -24537,12 +24794,15 @@ self.onmessage = function (e) {
             currentLabel.style.cssText = `font-size: 0.75rem; color: rgba(255,255,255,0.45); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; justify-content: space-between;`;
 
             const labelText = document.createElement('span');
-            labelText.textContent = exclusions.length > 0 ? 'Current Exclusions' : 'No exclusions configured';
+            labelText.textContent =
+                exclusions.length > 0
+                    ? i18n_js.t('networthExclusionPopup.currentExclusionsLabel')
+                    : i18n_js.t('networthExclusionPopup.noExclusionsConfiguredLabel');
             currentLabel.appendChild(labelText);
 
             if (exclusions.length > 0) {
                 const clearBtn = document.createElement('button');
-                clearBtn.textContent = 'Clear All';
+                clearBtn.textContent = i18n_js.t('settings.clearAllButton');
                 clearBtn.style.cssText = `
                 background: transparent;
                 border: 1px solid rgba(255,100,100,0.4);
@@ -24593,7 +24853,7 @@ self.onmessage = function (e) {
             // ── Search section ──
             const searchInput = document.createElement('input');
             searchInput.type = 'search';
-            searchInput.placeholder = 'Search items, categories, houses, loadouts...';
+            searchInput.placeholder = i18n_js.t('networthExclusionPopup.searchPlaceholder');
             searchInput.style.cssText = `
             width: 100%;
             box-sizing: border-box;
@@ -24714,7 +24974,7 @@ self.onmessage = function (e) {
             if (filtered.length === 0) {
                 const empty = document.createElement('div');
                 empty.style.cssText = `color: rgba(255,255,255,0.3); font-size: 0.8rem; text-align: center; padding: 12px 0;`;
-                empty.textContent = 'No results';
+                empty.textContent = i18n_js.t('networthExclusionPopup.noResultsMessage');
                 container.appendChild(empty);
                 return;
             }
@@ -24782,7 +25042,9 @@ self.onmessage = function (e) {
                 white-space: nowrap;
                 flex-shrink: 0;
             `;
-                actionBtn.textContent = alreadyExcluded ? '✕ Remove' : '+ Exclude';
+                actionBtn.textContent = alreadyExcluded
+                    ? i18n_js.t('networthExclusionPopup.removeButtonLabel')
+                    : i18n_js.t('networthExclusionPopup.excludeButtonLabel');
                 actionBtn.addEventListener('mouseenter', () => {
                     actionBtn.style.opacity = '1';
                     actionBtn.style.borderColor = alreadyExcluded ? 'rgba(255,100,100,0.9)' : config.COLOR_ACCENT;
@@ -24850,15 +25112,15 @@ self.onmessage = function (e) {
             if (entry) return entry.name;
 
             const ASSET_TYPE_NAMES = {
-                equipped: 'All Equipped Items',
-                listings: 'All Market Listings',
-                houses: 'All Houses',
-                abilities: 'All Abilities',
-                abilityBooks: 'All Ability Books',
-                guildShrines: 'All Guild Shrines',
+                equipped: i18n_js.t('networthExclusionPopup.allEquippedItemsLabel'),
+                listings: i18n_js.t('networthExclusionPopup.allMarketListingsLabel'),
+                houses: i18n_js.t('networthExclusionPopup.allHousesLabel'),
+                abilities: i18n_js.t('networthExclusionPopup.allAbilitiesLabel'),
+                abilityBooks: i18n_js.t('networthExclusionPopup.allAbilityBooksLabel'),
+                guildShrines: i18n_js.t('networthExclusionPopup.allGuildShrinesLabel'),
             };
             if (exc.type === 'assetType') return ASSET_TYPE_NAMES[exc.value] ?? exc.value;
-            if (exc.type === 'loadout') return `Loadout: ${exc.value}`;
+            if (exc.type === 'loadout') return i18n_js.t('networthExclusionPopup.loadoutNameLabel', { name: exc.value });
 
             const gd = dataManager.getInitClientData();
             if (!gd) return exc.value;
@@ -24903,7 +25165,7 @@ self.onmessage = function (e) {
 
             const removeBtn = document.createElement('span');
             removeBtn.textContent = '×';
-            removeBtn.title = 'Remove exclusion';
+            removeBtn.title = i18n_js.t('networthExclusionPopup.removeExclusionTooltip');
             removeBtn.style.cssText = `cursor: pointer; color: rgba(255,100,100,0.7); font-size: 0.9rem; line-height: 1;`;
             removeBtn.addEventListener('mouseenter', () => (removeBtn.style.color = 'rgba(255,100,100,1)'));
             removeBtn.addEventListener('mouseleave', () => (removeBtn.style.color = 'rgba(255,100,100,0.7)'));
@@ -25116,7 +25378,7 @@ self.onmessage = function (e) {
             totalLevelElem.insertAdjacentElement('afterend', this.container);
 
             // Initial render with loading state
-            this.renderGoldDisplay('Loading...');
+            this.renderGoldDisplay(i18n_js.t('taskProfitDisplay.loadingEllipsis'));
 
             // Trigger recalculation immediately to update from "Loading..." to actual value
             if (this.networthFeature && typeof this.networthFeature.recalculate === 'function') {
@@ -25164,7 +25426,7 @@ self.onmessage = function (e) {
 
             // Create text span
             const textSpan = document.createElement('span');
-            textSpan.textContent = `Gold: ${value}`;
+            textSpan.textContent = i18n_js.t('networthDisplay.goldLabelLine', { value });
 
             // Assemble
             wrapper.appendChild(textSpan);
@@ -25284,7 +25546,7 @@ self.onmessage = function (e) {
             } else {
                 this.container.innerHTML = `
                 <div style="font-weight: bold; cursor: pointer;">
-                    Networth: Loading...
+                    ${i18n_js.t('networthDisplay.networthLoadingMessage')}
                 </div>
             `;
             }
@@ -25363,11 +25625,11 @@ self.onmessage = function (e) {
             this.container.innerHTML = `
             <div class="mwi-networth-icon-row" style="display: flex; align-items: center; gap: 6px;">
                 <div style="cursor: pointer; font-weight: bold; flex: 1;" id="mwi-networth-toggle">
-                    + Net Worth: ${totalNetworth}
+                    + ${i18n_js.t('networthDisplay.netWorthLabel', { value: totalNetworth })}
                 </div>
                 ${
                     showChartBtn
-                        ? `<span id="mwi-networth-chart-btn" title="Net Worth History Chart" style="
+                        ? `<span id="mwi-networth-chart-btn" title="${i18n_js.t('networthDisplay.netWorthHistoryChartTooltip')}" style="
                     cursor: pointer;
                     font-size: 14px;
                     opacity: 0.7;
@@ -25377,7 +25639,7 @@ self.onmessage = function (e) {
                 ">&#x1F4C8;</span>`
                         : ''
                 }
-                <span id="mwi-networth-exclusions-btn" title="Configure Net Worth Exclusions" style="
+                <span id="mwi-networth-exclusions-btn" title="${i18n_js.t('networthDisplay.configureExclusionsTooltip')}" style="
                     cursor: pointer;
                     font-size: 12px;
                     opacity: 0.6;
@@ -25392,7 +25654,7 @@ self.onmessage = function (e) {
                         ? `
                 <!-- Current Assets -->
                 <div style="cursor: pointer; margin-top: 8px;" id="mwi-current-assets-toggle">
-                    + Current Assets: ${formatters_js.networthFormatter(Math.round(ca.total))}
+                    + ${i18n_js.t('networthDisplay.currentAssetsLabel', { value: formatters_js.networthFormatter(Math.round(ca.total)) })}
                 </div>
                 <div id="mwi-current-assets-details" style="display: none; margin-left: 20px;">
                     ${
@@ -25400,7 +25662,7 @@ self.onmessage = function (e) {
                             ? `
                     <!-- Equipment Value -->
                     <div style="cursor: pointer; margin-top: 4px;" id="mwi-equipment-toggle">
-                        + Equipment value: ${formatters_js.networthFormatter(Math.round(ca.equipped.value))}
+                        + ${i18n_js.t('networthDisplay.equipmentValueLabel', { value: formatters_js.networthFormatter(Math.round(ca.equipped.value)) })}
                     </div>
                     <div id="mwi-equipment-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderEquipmentBreakdown(ca.equipped.breakdown)}</div>
                     `
@@ -25412,7 +25674,7 @@ self.onmessage = function (e) {
                             ? `
                     <!-- Inventory Value -->
                     <div style="cursor: pointer; margin-top: 4px;" id="mwi-inventory-toggle">
-                        + Inventory value: ${formatters_js.networthFormatter(Math.round(ca.inventory.value))}
+                        + ${i18n_js.t('networthDisplay.inventoryValueLabel', { value: formatters_js.networthFormatter(Math.round(ca.inventory.value)) })}
                     </div>
                     <div id="mwi-inventory-breakdown" style="display: none; margin-left: 20px;">
                         ${this.renderInventoryBreakdown(ca.inventory)}
@@ -25426,7 +25688,7 @@ self.onmessage = function (e) {
                             ? `
                     <!-- Market Listings -->
                     <div style="cursor: pointer; margin-top: 4px;" id="mwi-listings-toggle">
-                        + Market listings: ${formatters_js.networthFormatter(Math.round(ca.listings.value))}
+                        + ${i18n_js.t('networthDisplay.marketListingsLabel', { value: formatters_js.networthFormatter(Math.round(ca.listings.value)) })}
                     </div>
                     <div id="mwi-listings-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderListingsBreakdown(ca.listings.breakdown)}</div>
                     `
@@ -25442,7 +25704,7 @@ self.onmessage = function (e) {
                         ? `
                 <!-- Fixed Assets -->
                 <div style="cursor: pointer; margin-top: 8px;" id="mwi-fixed-assets-toggle">
-                    + Fixed Assets: ${formatters_js.networthFormatter(Math.round(fa.total))}
+                    + ${i18n_js.t('networthDisplay.fixedAssetsLabel', { value: formatters_js.networthFormatter(Math.round(fa.total)) })}
                 </div>
                 <div id="mwi-fixed-assets-details" style="display: none; margin-left: 20px;">
                     ${
@@ -25450,7 +25712,7 @@ self.onmessage = function (e) {
                             ? `
                     <!-- Houses -->
                     <div style="cursor: pointer; margin-top: 4px;" id="mwi-houses-toggle">
-                        + Houses: ${formatters_js.networthFormatter(Math.round(fa.houses.totalCost))}
+                        + ${i18n_js.t('networthDisplay.housesLabel', { value: formatters_js.networthFormatter(Math.round(fa.houses.totalCost)) })}
                     </div>
                     <div id="mwi-houses-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderHousesBreakdown(fa.houses.breakdown)}</div>
                     `
@@ -25462,12 +25724,12 @@ self.onmessage = function (e) {
                             ? `
                     <!-- Abilities -->
                     <div style="cursor: pointer; margin-top: 4px;" id="mwi-abilities-toggle">
-                        + Abilities: ${formatters_js.networthFormatter(Math.round(fa.abilities.totalCost))}
+                        + ${i18n_js.t('networthDisplay.abilitiesLabel', { value: formatters_js.networthFormatter(Math.round(fa.abilities.totalCost)) })}
                     </div>
                     <div id="mwi-abilities-details" style="display: none; margin-left: 20px;">
                         <!-- Equipped Abilities -->
                         <div style="cursor: pointer; margin-top: 4px;" id="mwi-equipped-abilities-toggle">
-                            + Equipped (${fa.abilities.equippedBreakdown.length}): ${formatters_js.networthFormatter(Math.round(fa.abilities.equippedCost))}
+                            + ${i18n_js.t('networthDisplay.equippedAbilitiesLabel', { count: fa.abilities.equippedBreakdown.length, value: formatters_js.networthFormatter(Math.round(fa.abilities.equippedCost)) })}
                         </div>
                         <div id="mwi-equipped-abilities-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderAbilitiesBreakdown(fa.abilities.equippedBreakdown)}</div>
 
@@ -25475,7 +25737,7 @@ self.onmessage = function (e) {
                             fa.abilities.otherBreakdown.length > 0
                                 ? `
                             <div style="cursor: pointer; margin-top: 4px;" id="mwi-other-abilities-toggle">
-                                + Other (${fa.abilities.otherBreakdown.length}): ${formatters_js.networthFormatter(Math.round(fa.abilities.totalCost - fa.abilities.equippedCost))}
+                                + ${i18n_js.t('networthDisplay.otherAbilitiesCountLabel', { count: fa.abilities.otherBreakdown.length, value: formatters_js.networthFormatter(Math.round(fa.abilities.totalCost - fa.abilities.equippedCost)) })}
                             </div>
                             <div id="mwi-other-abilities-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderAbilitiesBreakdown(fa.abilities.otherBreakdown)}</div>
                         `
@@ -25490,7 +25752,7 @@ self.onmessage = function (e) {
                         fa.abilityBooks.breakdown.length > 0
                             ? `
                         <div style="cursor: pointer; margin-top: 4px;" id="mwi-ability-books-toggle">
-                            + Ability Books (${fa.abilityBooks.breakdown.length}): ${formatters_js.networthFormatter(Math.round(fa.abilityBooks.totalCost))}
+                            + ${i18n_js.t('networthDisplay.abilityBooksCountLabel', { count: fa.abilityBooks.breakdown.length, value: formatters_js.networthFormatter(Math.round(fa.abilityBooks.totalCost)) })}
                         </div>
                         <div id="mwi-ability-books-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderAbilityBooksBreakdown(fa.abilityBooks.breakdown)}</div>
                     `
@@ -25502,7 +25764,7 @@ self.onmessage = function (e) {
                             ? `
                     <!-- Guild Shrines -->
                     <div style="cursor: pointer; margin-top: 4px;" id="mwi-guild-shrines-toggle">
-                        + Guild Shrines: ${formatters_js.networthFormatter(Math.round(fa.guildShrines.totalCost))}
+                        + ${i18n_js.t('networthDisplay.guildShrinesLabel', { value: formatters_js.networthFormatter(Math.round(fa.guildShrines.totalCost)) })}
                     </div>
                     <div id="mwi-guild-shrines-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderGuildShrinesBreakdown(fa.guildShrines.breakdown)}</div>
                     `
@@ -25518,7 +25780,7 @@ self.onmessage = function (e) {
                         ? `
                 <!-- Excluded -->
                 <div style="cursor: pointer; margin-top: 8px; opacity: 0.6;" id="mwi-excluded-toggle">
-                    + Excluded: ${formatters_js.networthFormatter(Math.round(excl.total))}
+                    + ${i18n_js.t('networthDisplay.excludedLabel', { value: formatters_js.networthFormatter(Math.round(excl.total)) })}
                 </div>
                 <div id="mwi-excluded-details" style="display: none; margin-left: 20px; font-size: 0.8rem;">
                     ${excl.items
@@ -25526,7 +25788,7 @@ self.onmessage = function (e) {
                             (item) => `
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 3px; color: rgba(255,255,255,0.45);">
                             <span style="text-decoration: line-through;">${item.name}: ${formatters_js.networthFormatter(Math.round(item.amount))}</span>
-                            <span class="mwi-excluded-remove" data-type="${item.type}" data-value="${item.value.replace(/"/g, '&quot;')}" style="cursor: pointer; color: rgba(255,100,100,0.7); margin-left: 8px; font-size: 0.75rem;" title="Remove exclusion">✕</span>
+                            <span class="mwi-excluded-remove" data-type="${item.type}" data-value="${item.value.replace(/"/g, '&quot;')}" style="cursor: pointer; color: rgba(255,100,100,0.7); margin-left: 8px; font-size: 0.75rem;" title="${i18n_js.t('networthExclusionPopup.removeExclusionTooltip')}">✕</span>
                         </div>
                     `
                         )
@@ -25574,7 +25836,7 @@ self.onmessage = function (e) {
          */
         renderHousesBreakdown(breakdown) {
             if (breakdown.length === 0) {
-                return '<div>No houses built</div>';
+                return `<div>${i18n_js.t('networthDisplay.noHousesBuiltMessage')}</div>`;
             }
 
             return breakdown
@@ -25591,7 +25853,7 @@ self.onmessage = function (e) {
          */
         renderAbilitiesBreakdown(breakdown) {
             if (breakdown.length === 0) {
-                return '<div>No abilities</div>';
+                return `<div>${i18n_js.t('networthDisplay.noAbilitiesMessage')}</div>`;
             }
 
             return breakdown
@@ -25608,7 +25870,7 @@ self.onmessage = function (e) {
          */
         renderAbilityBooksBreakdown(breakdown) {
             if (breakdown.length === 0) {
-                return '<div>No ability books</div>';
+                return `<div>${i18n_js.t('networthDisplay.noAbilityBooksMessage')}</div>`;
             }
 
             return breakdown
@@ -25625,7 +25887,7 @@ self.onmessage = function (e) {
          */
         renderGuildShrinesBreakdown(breakdown) {
             if (breakdown.length === 0) {
-                return '<div>No guild shrine buffs purchased</div>';
+                return `<div>${i18n_js.t('networthDisplay.noGuildShrineBuffsMessage')}</div>`;
             }
 
             return breakdown
@@ -25642,7 +25904,7 @@ self.onmessage = function (e) {
          */
         renderEquipmentBreakdown(breakdown) {
             if (breakdown.length === 0) {
-                return '<div>No equipment</div>';
+                return `<div>${i18n_js.t('networthDisplay.noEquipmentMessage')}</div>`;
             }
 
             return breakdown
@@ -25659,12 +25921,12 @@ self.onmessage = function (e) {
          */
         renderListingsBreakdown(breakdown) {
             if (!breakdown || breakdown.length === 0) {
-                return '<div>No market listings</div>';
+                return `<div>${i18n_js.t('networthDisplay.noMarketListingsMessage')}</div>`;
             }
 
             return breakdown
                 .map((listing) => {
-                    const typeLabel = listing.isSell ? 'Sell' : 'Buy';
+                    const typeLabel = listing.isSell ? i18n_js.t('marketHistory.sellLabel') : i18n_js.t('marketHistory.buyLabel');
                     return `${listing.name} (${typeLabel}): ${formatters_js.networthFormatter(Math.round(listing.value))}`;
                 })
                 .join('\n');
@@ -25680,7 +25942,7 @@ self.onmessage = function (e) {
             const coinItem = inventory.breakdown?.find((item) => item.itemHrid === '/items/coin') ?? null;
 
             if (Object.keys(byCategory).length === 0 && !coinItem) {
-                return '<div>No inventory</div>';
+                return `<div>${i18n_js.t('networthDisplay.noInventoryMessage')}</div>`;
             }
 
             // Sort categories by total value descending
@@ -25710,7 +25972,7 @@ self.onmessage = function (e) {
             };
 
             const coinHTML = coinItem
-                ? `<div style="margin-top: 4px; font-size: 0.85rem;">Coin: ${formatters_js.networthFormatter(Math.round(coinItem.value))}</div>`
+                ? `<div style="margin-top: 4px; font-size: 0.85rem;">${i18n_js.t('networthDisplay.coinLabel', { value: formatters_js.networthFormatter(Math.round(coinItem.value)) })}</div>`
                 : '';
 
             // Insert coin at the right position based on value (sorted descending with categories)
@@ -25743,7 +26005,7 @@ self.onmessage = function (e) {
             this.setupToggle(
                 'mwi-networth-toggle',
                 'mwi-networth-details',
-                `Net Worth: ${formatters_js.networthFormatter(Math.round(networthData.totalNetworth))}`
+                i18n_js.t('networthDisplay.netWorthLabel', { value: formatters_js.networthFormatter(Math.round(networthData.totalNetworth)) })
             );
 
             // Chart button
@@ -25783,7 +26045,7 @@ self.onmessage = function (e) {
                 this.setupToggle(
                     'mwi-current-assets-toggle',
                     'mwi-current-assets-details',
-                    `Current Assets: ${formatters_js.networthFormatter(Math.round(ca.total))}`
+                    i18n_js.t('networthDisplay.currentAssetsLabel', { value: formatters_js.networthFormatter(Math.round(ca.total)) })
                 );
             }
 
@@ -25792,7 +26054,7 @@ self.onmessage = function (e) {
                 this.setupToggle(
                     'mwi-equipment-toggle',
                     'mwi-equipment-breakdown',
-                    `Equipment value: ${formatters_js.networthFormatter(Math.round(ca.equipped.value))}`
+                    i18n_js.t('networthDisplay.equipmentValueLabel', { value: formatters_js.networthFormatter(Math.round(ca.equipped.value)) })
                 );
             }
 
@@ -25801,7 +26063,7 @@ self.onmessage = function (e) {
                 this.setupToggle(
                     'mwi-inventory-toggle',
                     'mwi-inventory-breakdown',
-                    `Inventory value: ${formatters_js.networthFormatter(Math.round(ca.inventory.value))}`
+                    i18n_js.t('networthDisplay.inventoryValueLabel', { value: formatters_js.networthFormatter(Math.round(ca.inventory.value)) })
                 );
 
                 // Inventory category toggles
@@ -25835,7 +26097,7 @@ self.onmessage = function (e) {
                 this.setupToggle(
                     'mwi-listings-toggle',
                     'mwi-listings-breakdown',
-                    `Market listings: ${formatters_js.networthFormatter(Math.round(ca.listings.value))}`
+                    i18n_js.t('networthDisplay.marketListingsLabel', { value: formatters_js.networthFormatter(Math.round(ca.listings.value)) })
                 );
             }
 
@@ -25844,7 +26106,7 @@ self.onmessage = function (e) {
                 this.setupToggle(
                     'mwi-fixed-assets-toggle',
                     'mwi-fixed-assets-details',
-                    `Fixed Assets: ${formatters_js.networthFormatter(Math.round(fa.total))}`
+                    i18n_js.t('networthDisplay.fixedAssetsLabel', { value: formatters_js.networthFormatter(Math.round(fa.total)) })
                 );
             }
 
@@ -25853,7 +26115,7 @@ self.onmessage = function (e) {
                 this.setupToggle(
                     'mwi-houses-toggle',
                     'mwi-houses-breakdown',
-                    `Houses: ${formatters_js.networthFormatter(Math.round(fa.houses.totalCost))}`
+                    i18n_js.t('networthDisplay.housesLabel', { value: formatters_js.networthFormatter(Math.round(fa.houses.totalCost)) })
                 );
             }
 
@@ -25862,14 +26124,17 @@ self.onmessage = function (e) {
                 this.setupToggle(
                     'mwi-abilities-toggle',
                     'mwi-abilities-details',
-                    `Abilities: ${formatters_js.networthFormatter(Math.round(fa.abilities.totalCost))}`
+                    i18n_js.t('networthDisplay.abilitiesLabel', { value: formatters_js.networthFormatter(Math.round(fa.abilities.totalCost)) })
                 );
 
                 // Equipped abilities toggle
                 this.setupToggle(
                     'mwi-equipped-abilities-toggle',
                     'mwi-equipped-abilities-breakdown',
-                    `Equipped (${fa.abilities.equippedBreakdown.length}): ${formatters_js.networthFormatter(Math.round(fa.abilities.equippedCost))}`
+                    i18n_js.t('networthDisplay.equippedAbilitiesLabel', {
+                        count: fa.abilities.equippedBreakdown.length,
+                        value: formatters_js.networthFormatter(Math.round(fa.abilities.equippedCost)),
+                    })
                 );
 
                 // Other abilities toggle (if exists)
@@ -25877,7 +26142,9 @@ self.onmessage = function (e) {
                     this.setupToggle(
                         'mwi-other-abilities-toggle',
                         'mwi-other-abilities-breakdown',
-                        `Other Abilities: ${formatters_js.networthFormatter(Math.round(fa.abilities.totalCost - fa.abilities.equippedCost))}`
+                        i18n_js.t('networthDisplay.otherAbilitiesLabel', {
+                            value: formatters_js.networthFormatter(Math.round(fa.abilities.totalCost - fa.abilities.equippedCost)),
+                        })
                     );
                 }
             }
@@ -25887,7 +26154,9 @@ self.onmessage = function (e) {
                 this.setupToggle(
                     'mwi-ability-books-toggle',
                     'mwi-ability-books-breakdown',
-                    `Ability Books: ${formatters_js.networthFormatter(Math.round(fa.abilityBooks.totalCost))}`
+                    i18n_js.t('networthDisplay.abilityBooksLabel', {
+                        value: formatters_js.networthFormatter(Math.round(fa.abilityBooks.totalCost)),
+                    })
                 );
             }
 
@@ -25896,7 +26165,9 @@ self.onmessage = function (e) {
                 this.setupToggle(
                     'mwi-guild-shrines-toggle',
                     'mwi-guild-shrines-breakdown',
-                    `Guild Shrines: ${formatters_js.networthFormatter(Math.round(fa.guildShrines.totalCost))}`
+                    i18n_js.t('networthDisplay.guildShrinesLabel', {
+                        value: formatters_js.networthFormatter(Math.round(fa.guildShrines.totalCost)),
+                    })
                 );
             }
 
@@ -25905,7 +26176,7 @@ self.onmessage = function (e) {
                 this.setupToggle(
                     'mwi-excluded-toggle',
                     'mwi-excluded-details',
-                    `Excluded: ${formatters_js.networthFormatter(Math.round(excl.total))}`
+                    i18n_js.t('networthDisplay.excludedLabel', { value: formatters_js.networthFormatter(Math.round(excl.total)) })
                 );
 
                 // ✕ remove buttons on excluded rows
@@ -25969,11 +26240,13 @@ self.onmessage = function (e) {
          * @returns {string} HTML string
          */
         buildChestDropsHTML(evData, keyPrice, keyName) {
-            let html = `<div>EV: ${formatters_js.networthFormatter(Math.round(evData.expectedValue))}/chest</div>`;
+            let html = `<div>${i18n_js.t('networthDisplay.evPerChestLabel', { value: formatters_js.networthFormatter(Math.round(evData.expectedValue)) })}</div>`;
             if (keyPrice > 0) {
-                const label = keyName ? `Key (${keyName})` : 'Key Cost';
+                const label = keyName
+                    ? i18n_js.t('networthDisplay.keyLabelWithName', { name: keyName })
+                    : i18n_js.t('networthDisplay.keyCostLabel');
                 html += `<div>\u2212 ${label}: ${formatters_js.networthFormatter(Math.round(keyPrice))}</div>`;
-                html += `<div>Net: ${formatters_js.networthFormatter(Math.round(evData.expectedValue - keyPrice))}/chest</div>`;
+                html += `<div>${i18n_js.t('networthDisplay.netPerChestLabel', { value: formatters_js.networthFormatter(Math.round(evData.expectedValue - keyPrice)) })}</div>`;
             }
             const pricedDrops = evData.drops.filter((d) => d.hasPriceData);
             if (pricedDrops.length > 0) {
@@ -26518,15 +26791,26 @@ self.onmessage = function (e) {
     const MODAL_ANCHOR_CLASS = 'OfflineProgressModal_offlineProgress';
     const MODAL_CONTENT_CLASS$1 = 'OfflineProgressModal_modalContent';
 
-    const SOURCE_LABELS = {
-        coin: 'Coin face value',
-        cowbell: 'Cowbell valuation',
-        dungeonToken: 'Dungeon Token shop value',
-        expectedValue: 'Expected Value',
-        custom: 'Custom price override',
-        market: 'Market price',
-        taskToken: 'Task Token shop value',
+    const SOURCE_LABEL_KEYS = {
+        coin: 'sourceLabelCoin',
+        cowbell: 'sourceLabelCowbell',
+        dungeonToken: 'sourceLabelDungeonToken',
+        expectedValue: 'sourceLabelExpectedValue',
+        custom: 'sourceLabelCustom',
+        market: 'sourceLabelMarket',
+        taskToken: 'sourceLabelTaskToken',
     };
+
+    /**
+     * Resolve the display label for a price valuation source, falling back to the raw source key
+     * when it's not a recognized source (should not normally happen).
+     * @param {string} source - Valuation source key (e.g. 'coin', 'market')
+     * @returns {string} Translated label
+     */
+    function getSourceLabel(source) {
+        const key = SOURCE_LABEL_KEYS[source];
+        return key ? i18n_js.t(`offlineProgressEconomics.${key}`) : source;
+    }
 
     class OfflineProgressEconomics {
         constructor() {
@@ -26731,7 +27015,7 @@ self.onmessage = function (e) {
      */
     function buildHeadingTooltip(economics) {
         const mode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
-        let tooltip = `Pricing mode: ${config.getPricingModeLabel(mode)}`;
+        let tooltip = i18n_js.t('offlineProgressEconomics.pricingModeTooltip', { mode: config.getPricingModeLabel(mode) });
 
         if (economics.isPartial) {
             const names = economics.unvaluedItems.map((item) => {
@@ -26739,7 +27023,7 @@ self.onmessage = function (e) {
                 return details?.name || item.itemHrid.split('/').pop();
             });
             const count = economics.unvaluedItems.length;
-            tooltip += ` | Partial - ${count} item${count === 1 ? '' : 's'} could not be valued: ${names.join(', ')}`;
+            tooltip += i18n_js.t('offlineProgressEconomics.partialValuationNote', { count, names: names.join(', ') });
         }
 
         return tooltip;
@@ -26769,7 +27053,9 @@ self.onmessage = function (e) {
     `;
 
         const header = document.createElement('div');
-        header.textContent = economics.isPartial ? 'Offline Economics *' : 'Offline Economics';
+        header.textContent = economics.isPartial
+            ? i18n_js.t('offlineProgressEconomics.headerTitlePartial')
+            : i18n_js.t('offlineProgressEconomics.headerTitle');
         header.title = buildHeadingTooltip(economics);
         header.style.cssText = `
         font-size: 13px;
@@ -26839,7 +27125,7 @@ self.onmessage = function (e) {
         const name = getItemDisplayName(line.itemHrid);
         const label = document.createElement('span');
         label.textContent = `${line.quantity}x ${name}${line.enhancementLevel > 0 ? ` +${line.enhancementLevel}` : ''}`;
-        label.title = SOURCE_LABELS[line.source] || line.source;
+        label.title = getSourceLabel(line.source);
 
         const value = document.createElement('span');
         value.textContent = marketData_js.formatPrice(line.totalValue, { decimals: 1 });
@@ -26867,9 +27153,11 @@ self.onmessage = function (e) {
     `;
 
         const name = getItemDisplayName(item.itemHrid);
-        row.textContent = `${Math.abs(item.offlineCount)}x ${name}${
-        item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : ''
-    } - no price data`;
+        row.textContent = i18n_js.t('offlineProgressEconomics.unvaluedItemLine', {
+            count: Math.abs(item.offlineCount),
+            name,
+            enhSuffix: item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '',
+        });
 
         return row;
     }
@@ -26877,7 +27165,8 @@ self.onmessage = function (e) {
     /**
      * Render one Revenue/Cost/Profit row: label, total, per-day, and - when line items are
      * available - a click-to-expand breakdown of the items behind that total.
-     * @param {string} label - Row label
+     * @param {'Revenue'|'Cost'|'Profit'} labelKey - Row label key, translated via
+     *   offlineProgressEconomics.rowLabel{labelKey}
      * @param {number} value - Total value
      * @param {number|null} perDay - Per-day value, or null if the offline window was zero/invalid
      * @param {'sell'|'buy'|null} side - Which side this row values, for the per-side pricing tooltip
@@ -26885,7 +27174,8 @@ self.onmessage = function (e) {
      * @param {Array|null} unvaluedItems - Unvalued items for this side, or null for a non-expandable row
      * @returns {Element} Row wrapper element
      */
-    function renderRow(label, value, perDay, side, lines, unvaluedItems) {
+    function renderRow(labelKey, value, perDay, side, lines, unvaluedItems) {
+        const label = i18n_js.t(`offlineProgressEconomics.rowLabel${labelKey}`);
         const wrapper = document.createElement('div');
 
         const hasDetails = (lines && lines.length > 0) || (unvaluedItems && unvaluedItems.length > 0);
@@ -26904,11 +27194,16 @@ self.onmessage = function (e) {
         labelEl.style.color = '#cbd5e1';
         if (side) {
             const mode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
-            labelEl.title = `${config.getPricingModeLabel(mode)} (${side === 'sell' ? 'Sell' : 'Buy'} side)`;
+            const sideLabelKey =
+                side === 'sell' ? 'offlineProgressEconomics.sellSideLabel' : 'offlineProgressEconomics.buySideLabel';
+            labelEl.title = i18n_js.t('offlineProgressEconomics.sideTooltip', {
+                modeLabel: config.getPricingModeLabel(mode),
+                sideLabel: i18n_js.t(sideLabelKey),
+            });
         }
 
         const valueEl = document.createElement('span');
-        const sign = value > 0 && label === 'Profit' ? '+' : '';
+        const sign = value > 0 && labelKey === 'Profit' ? '+' : '';
         const perDayText = perDay !== null ? ` (${sign}${marketData_js.formatPrice(perDay, { decimals: 1 })}/day)` : '';
         valueEl.textContent = `${sign}${marketData_js.formatPrice(value, { decimals: 1 })}${perDayText}`;
         valueEl.style.color = '#e2e8f0';
@@ -27747,11 +28042,11 @@ self.onmessage = function (e) {
 
             // Sort label and buttons
             const sortLabel = document.createElement('span');
-            sortLabel.textContent = 'Sort:';
+            sortLabel.textContent = i18n_js.t('inventorySort.sortLabel');
 
-            const askButton = this.createSortButton('Ask', 'ask');
-            const bidButton = this.createSortButton('Bid', 'bid');
-            const noneButton = this.createSortButton('None', 'none');
+            const askButton = this.createSortButton(i18n_js.t('inventorySort.askButtonLabel'), 'ask');
+            const bidButton = this.createSortButton(i18n_js.t('inventorySort.bidButtonLabel'), 'bid');
+            const noneButton = this.createSortButton(i18n_js.t('inventorySort.noneButtonLabel'), 'none');
 
             // Assemble controls
             this.controlsContainer.appendChild(sortLabel);
@@ -28493,7 +28788,13 @@ self.onmessage = function (e) {
             const shopItems = this._getDungeonShopItems(tokenHrid);
             if (!shopItems || shopItems.length === 0) return;
 
-            this._injectShopTable(tooltipElement, shopItems, 'Token Shop Value:', 'Gold/Token', isCollectionTooltip);
+            this._injectShopTable(
+                tooltipElement,
+                shopItems,
+                i18n_js.t('dungeonTokenTooltips.tokenShopValueLabel'),
+                i18n_js.t('dungeonTokenTooltips.goldPerTokenLabel'),
+                isCollectionTooltip
+            );
             dom.fixTooltipOverflow(tooltipElement);
         }
 
@@ -28505,7 +28806,13 @@ self.onmessage = function (e) {
             const shopItems = this._getTaskShopItems();
             if (!shopItems || shopItems.length === 0) return;
 
-            this._injectShopTable(tooltipElement, shopItems, 'Task Shop Value:', 'Gold/Token', isCollectionTooltip);
+            this._injectShopTable(
+                tooltipElement,
+                shopItems,
+                i18n_js.t('dungeonTokenTooltips.taskShopValueLabel'),
+                i18n_js.t('dungeonTokenTooltips.goldPerTokenLabel'),
+                isCollectionTooltip
+            );
             dom.fixTooltipOverflow(tooltipElement);
         }
 
@@ -28516,7 +28823,13 @@ self.onmessage = function (e) {
             const shopItems = this._getLabyrinthShopItems();
             if (!shopItems || shopItems.length === 0) return;
 
-            this._injectShopTable(tooltipElement, shopItems, 'Labyrinth Shop Value:', 'Gold/Token', isCollectionTooltip);
+            this._injectShopTable(
+                tooltipElement,
+                shopItems,
+                i18n_js.t('dungeonTokenTooltips.labyrinthShopValueLabel'),
+                i18n_js.t('dungeonTokenTooltips.goldPerTokenLabel'),
+                isCollectionTooltip
+            );
             dom.fixTooltipOverflow(tooltipElement);
         }
 
@@ -28535,8 +28848,11 @@ self.onmessage = function (e) {
 
             this._injectSimpleValue(
                 tooltipElement,
-                `Value: ${formatters_js.formatKMB(sealValue)} gold`,
-                `= ${SEAL_TOKEN_COST} Labyrinth Tokens × ${formatters_js.formatKMB(Math.floor(bestGoldPerToken))} gold/token`,
+                i18n_js.t('dungeonTokenTooltips.valueGoldTemplate', { value: formatters_js.formatKMB(sealValue) }),
+                i18n_js.t('dungeonTokenTooltips.sealValueDetail', {
+                    cost: SEAL_TOKEN_COST,
+                    goldPerToken: formatters_js.formatKMB(Math.floor(bestGoldPerToken)),
+                }),
                 isCollectionTooltip
             );
             dom.fixTooltipOverflow(tooltipElement);
@@ -28551,7 +28867,13 @@ self.onmessage = function (e) {
             const shopItems = this._getGuildTokenShopItems();
             if (!shopItems || shopItems.length === 0) return;
 
-            this._injectShopTable(tooltipElement, shopItems, 'Guild Credit Value:', 'Gold/Token', isCollectionTooltip);
+            this._injectShopTable(
+                tooltipElement,
+                shopItems,
+                i18n_js.t('dungeonTokenTooltips.guildCreditValueLabel'),
+                i18n_js.t('dungeonTokenTooltips.goldPerTokenLabel'),
+                isCollectionTooltip
+            );
             dom.fixTooltipOverflow(tooltipElement);
         }
 
@@ -28567,8 +28889,8 @@ self.onmessage = function (e) {
 
             this._injectSimpleValue(
                 tooltipElement,
-                `Value: ${formatters_js.formatKMB(cowbellValue)} gold`,
-                `= Bag of 10 Cowbells (${formatters_js.formatKMB(bagPrice)}) ÷ 10`,
+                i18n_js.t('dungeonTokenTooltips.valueGoldTemplate', { value: formatters_js.formatKMB(cowbellValue) }),
+                i18n_js.t('dungeonTokenTooltips.cowbellValueDetail', { bagPrice: formatters_js.formatKMB(bagPrice) }),
                 isCollectionTooltip
             );
             dom.fixTooltipOverflow(tooltipElement);
@@ -28623,7 +28945,7 @@ self.onmessage = function (e) {
                     if (!askPrice || askPrice <= 0) return null;
 
                     return {
-                        name: itemDetails?.name || 'Unknown Item',
+                        name: itemDetails?.name || i18n_js.t('enhancementUi.unknownItemFallback'),
                         cost: tokenCost,
                         askPrice,
                         goldPerToken: askPrice / tokenCost,
@@ -28672,7 +28994,7 @@ self.onmessage = function (e) {
                     if (itemValue <= 0) return null;
 
                     return {
-                        name: itemDetails?.name || 'Unknown Item',
+                        name: itemDetails?.name || i18n_js.t('enhancementUi.unknownItemFallback'),
                         cost: tokenCost,
                         askPrice: itemValue,
                         goldPerToken: itemValue / tokenCost,
@@ -28709,7 +29031,7 @@ self.onmessage = function (e) {
                     const totalValue = askPrice * outputCount;
 
                     return {
-                        name: itemDetails?.name || 'Unknown Item',
+                        name: itemDetails?.name || i18n_js.t('enhancementUi.unknownItemFallback'),
                         cost: tokenCost,
                         askPrice: totalValue,
                         goldPerToken: totalValue / tokenCost,
@@ -28761,9 +29083,9 @@ self.onmessage = function (e) {
             let html = `<div style="margin-top: 8px;"><strong>${title}</strong></div>`;
             html += '<table style="width: 100%; margin-top: 4px; font-size: 12px;">';
             html += '<tr style="border-bottom: 1px solid #444;">';
-            html += '<th style="text-align: left; padding: 2px 4px;">Item</th>';
-            html += '<th style="text-align: right; padding: 2px 4px;">Cost</th>';
-            html += '<th style="text-align: right; padding: 2px 4px;">Value</th>';
+            html += `<th style="text-align: left; padding: 2px 4px;">${i18n_js.t('dungeonTokenTooltips.itemColumnHeader')}</th>`;
+            html += `<th style="text-align: right; padding: 2px 4px;">${i18n_js.t('dungeonTokenTooltips.costColumnHeader')}</th>`;
+            html += `<th style="text-align: right; padding: 2px 4px;">${i18n_js.t('dungeonTokenTooltips.valueColumnHeader')}</th>`;
             html += `<th style="text-align: right; padding: 2px 4px;">${efficiencyLabel}</th>`;
             html += '</tr>';
 
@@ -29764,22 +30086,45 @@ self.onmessage = function (e) {
 
     const PANEL_CSS = `
 /* ---------- Toolasha-active mode on Inventory_items ---------- */
-/* When our tab is active, Inventory_items becomes a flex container.
-   Category wrappers and grids get display:contents so tiles become
-   direct flex children and can be reordered with CSS order. */
+/* When our tab is active, Inventory_items becomes a grid container sized to the game's own
+   item-tile token (--item-size-normal — the same value the native Inventory_itemGrid uses),
+   so tiles line up in a proper multi-column grid instead of one per row. Category wrappers
+   and grids get display:contents so tiles become direct grid children and can be reordered
+   with CSS order. */
 .toolasha-ct-active {
-    display: flex !important;
-    flex-wrap: wrap;
-    align-content: flex-start;
+    display: grid !important;
+    grid-template-columns: repeat(auto-fill, var(--item-size-normal, 60px));
+    justify-content: center;
+    justify-items: start;
+    align-content: start;
     gap: 0;
     padding-top: 0 !important;
 }
-/* Flatten game category wrappers so tiles become direct flex children.
+/* Our own injected elements (topbar, section headers, etc.) span the full row instead of
+   sitting in a single item-sized grid column. */
+.toolasha-ct-active > [class*="toolasha-"] {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+}
+/* Flatten game category wrappers so tiles become direct grid children.
    Exclude our own injected elements (they have class starting with toolasha-). */
 .toolasha-ct-active > *:not([class*="toolasha-"]) {
     display: contents;
 }
 .toolasha-ct-active [class*="Inventory_itemGrid"] {
+    display: contents;
+}
+/* The game now nests each category in its own tab panel and renders tiles only for the
+   selected panel (see _selectNativeAllCategoryTab) — every other panel is an empty div. Hide
+   the category tab strip while our tab is active, and flatten the panel machinery and its
+   wrapper divs so tiles surface as direct grid children like every other wrapper above. */
+.toolasha-ct-active [class*="TabsComponent_tabsContainer"] {
+    display: none !important;
+}
+.toolasha-ct-active [class*="TabsComponent_tabPanelsContainer"],
+.toolasha-ct-active [class*="TabPanel_tabPanel"]:not([class*="TabPanel_hidden"]),
+.toolasha-ct-active [class*="TabPanel_tabPanel"] > div,
+.toolasha-ct-active [class*="TabPanel_tabPanel"] > div > div {
     display: contents;
 }
 
@@ -30245,6 +30590,11 @@ self.onmessage = function (e) {
             this._tileObserver = null; // MutationObserver for instant tile visibility on React swaps
             this._observedContainer = null; // Container currently being observed by _tileObserver
             this._dragBoundTiles = new WeakSet();
+            // Icon aria-label of the native category tab we switched away from to force "All"
+            // selected (see _selectNativeAllCategoryTab), so it can be restored on deactivation.
+            // null means we haven't switched anything; '' means we switched but couldn't identify
+            // the prior tab.
+            this._savedCategoryTabLabel = null;
         }
 
         // -----------------------------------------------------------------------
@@ -30388,7 +30738,7 @@ self.onmessage = function (e) {
                     'toolasha-inv-tab ' + (existingTab ? existingTab.className.replace(/Mui-selected/g, '') : '');
                 btn.setAttribute('role', 'tab');
                 btn.setAttribute('type', 'button');
-                btn.textContent = 'Toolasha';
+                btn.textContent = i18n_js.t('settings.tabLabel');
                 btn.style.minWidth = 'auto';
                 btn.addEventListener('click', (e) => {
                     e.stopPropagation();
@@ -30662,7 +31012,10 @@ self.onmessage = function (e) {
             }
 
             // Build tile map from all tiles currently in invContainer
-            const tileMap = this._buildTileMap(invContainer);
+            let tileMap = this._buildTileMap(invContainer);
+            if (this._selectNativeAllCategoryTab(invContainer)) {
+                tileMap = this._buildTileMap(invContainer);
+            }
 
             // A native category the player has collapsed renders none of its item tiles into the
             // DOM at all (not just visually hidden) — so any owned item inside one is invisible to
@@ -30737,7 +31090,7 @@ self.onmessage = function (e) {
                 if (this._config.tabs.length === 0) {
                     const empty = document.createElement('div');
                     empty.className = 'toolasha-ct-empty';
-                    empty.textContent = 'No custom tabs yet. Click "+ Tab" to create one.';
+                    empty.textContent = i18n_js.t('customTabsUi.emptyTabsMessage');
                     empty.style.order = orderCounter++;
                     invContainer.appendChild(empty);
                     this._injectedEls.push(empty);
@@ -30930,6 +31283,8 @@ self.onmessage = function (e) {
             this._tileObserver = null;
             this._observedContainer = null;
 
+            this._restoreNativeCategoryTab(this._invContainer);
+
             this._removeInjectedEls();
 
             if (this._invContainer) {
@@ -30983,19 +31338,19 @@ self.onmessage = function (e) {
 
             const addBtn = document.createElement('button');
             addBtn.className = 'toolasha-ct-add-btn';
-            addBtn.textContent = '+ Tab';
+            addBtn.textContent = i18n_js.t('customTabsUi.addTabButton');
             addBtn.addEventListener('click', () => this._onAddTab(null));
 
             const exportBtn = document.createElement('button');
             exportBtn.className = 'toolasha-ct-add-btn';
-            exportBtn.textContent = 'Export';
+            exportBtn.textContent = i18n_js.t('customTabsUi.exportButton');
             exportBtn.addEventListener('click', () => this._exportLayout());
 
             const importBtn = document.createElement('div');
             importBtn.className = 'toolasha-ct-add-btn';
             importBtn.style.position = 'relative';
             importBtn.style.overflow = 'hidden';
-            importBtn.textContent = 'Import';
+            importBtn.textContent = i18n_js.t('customTabsUi.importButton');
             const importInput = document.createElement('input');
             importInput.type = 'file';
             importInput.accept = '.json,application/json';
@@ -31013,13 +31368,13 @@ self.onmessage = function (e) {
 
             const expandBtn = document.createElement('button');
             expandBtn.className = 'toolasha-ct-add-btn';
-            expandBtn.textContent = 'Expand All';
+            expandBtn.textContent = i18n_js.t('customTabsUi.expandAllButton');
             expandBtn.addEventListener('click', () => this._onSetAllTabsOpen(true));
             actionsDiv.appendChild(expandBtn);
 
             const collapseBtn = document.createElement('button');
             collapseBtn.className = 'toolasha-ct-add-btn';
-            collapseBtn.textContent = 'Collapse All';
+            collapseBtn.textContent = i18n_js.t('customTabsUi.collapseAllButton');
             collapseBtn.addEventListener('click', () => this._onSetAllTabsOpen(false));
             actionsDiv.appendChild(collapseBtn);
 
@@ -31063,7 +31418,7 @@ self.onmessage = function (e) {
                 const text = await file.text();
                 const parsed = JSON.parse(text);
                 if (parsed._toolasha !== 'tabs-v1' || !Array.isArray(parsed.tabs)) {
-                    alert('[Toolasha] Invalid layout file.');
+                    alert(i18n_js.t('customTabsUi.invalidLayoutFileAlert'));
                     console.error('[CustomTabs] Import failed: missing _toolasha marker or tabs array', parsed);
                     return;
                 }
@@ -31076,7 +31431,7 @@ self.onmessage = function (e) {
                 await this._applyLayout();
                 this._save();
             } catch (err) {
-                alert('[Toolasha] Failed to read layout file.');
+                alert(i18n_js.t('customTabsUi.failedReadLayoutFileAlert'));
                 console.error('[CustomTabs] Import error:', err);
             }
         }
@@ -31153,6 +31508,52 @@ self.onmessage = function (e) {
                 }
             }
             return expanded;
+        }
+
+        /**
+         * Select the game's native "All Items" category tab. The game now renders each inventory
+         * category inside its own tab panel and only mounts tiles for the currently selected
+         * panel — every other panel is an empty div with nothing in the DOM at all. Without this,
+         * any category other than whichever one the player last had selected would be invisible to
+         * every check in this file, regardless of custom-tab assignment. "All Items" is always the
+         * first tab (confirmed against the game's own tab list construction and its own
+         * selected-tab fallback, which defaults to the first entry).
+         *
+         * Remembers whichever tab was selected before switching — see _restoreNativeCategoryTab —
+         * because the game persists the selected category tab per character and keeps the
+         * Inventory component mounted across outer character-management tab switches, so an
+         * un-restored switch would silently and permanently overwrite the player's own category
+         * preference the moment they open the Toolasha tab.
+         * @param {HTMLElement} invContainer
+         * @returns {boolean} true if a tab switch was triggered
+         */
+        _selectNativeAllCategoryTab(invContainer) {
+            const tabs = invContainer.querySelectorAll('[class*="TabsComponent_tabsContainer"] [role="tab"]');
+            const allTab = tabs[0];
+            if (!allTab || allTab.getAttribute('aria-selected') === 'true') return false;
+            if (this._savedCategoryTabLabel === null) {
+                const selected = [...tabs].find((tab) => tab.getAttribute('aria-selected') === 'true');
+                this._savedCategoryTabLabel = selected?.querySelector('svg[aria-label]')?.getAttribute('aria-label') || '';
+            }
+            allTab.click();
+            return true;
+        }
+
+        /**
+         * Restore whichever native category tab _selectNativeAllCategoryTab switched away from, so
+         * the player's own category preference (and the game's per-character persisted copy of it)
+         * isn't left on "All" after the Toolasha tab is deactivated.
+         * @param {HTMLElement|null} invContainer
+         */
+        _restoreNativeCategoryTab(invContainer) {
+            const label = this._savedCategoryTabLabel;
+            this._savedCategoryTabLabel = null;
+            if (!label || !invContainer) return;
+            const tabs = invContainer.querySelectorAll('[class*="TabsComponent_tabsContainer"] [role="tab"]');
+            const target = [...tabs].find(
+                (tab) => tab.querySelector('svg[aria-label]')?.getAttribute('aria-label') === label
+            );
+            target?.click();
         }
 
         /**
@@ -31356,7 +31757,7 @@ self.onmessage = function (e) {
             const editBtn = document.createElement('button');
             editBtn.className = 'toolasha-ct-node-btn';
             editBtn.textContent = '✏';
-            editBtn.title = 'Edit tab';
+            editBtn.title = i18n_js.t('customTabsUi.editTabTooltip');
             editBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this._openEditor(tab.id);
@@ -31366,7 +31767,7 @@ self.onmessage = function (e) {
             const addSubBtn = document.createElement('button');
             addSubBtn.className = 'toolasha-ct-node-btn';
             addSubBtn.textContent = '+';
-            addSubBtn.title = 'Add subtab';
+            addSubBtn.title = i18n_js.t('customTabsUi.addSubtabTooltip');
             addSubBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this._onAddTab(tab.id);
@@ -31376,7 +31777,7 @@ self.onmessage = function (e) {
             const delBtn = document.createElement('button');
             delBtn.className = 'toolasha-ct-node-btn';
             delBtn.textContent = '×';
-            delBtn.title = 'Delete tab';
+            delBtn.title = i18n_js.t('customTabsUi.deleteTabTooltip');
             delBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this._onDeleteTab(tab.id);
@@ -31457,8 +31858,7 @@ self.onmessage = function (e) {
                     if (anyOwned) {
                         const warn = document.createElement('span');
                         warn.textContent = '⚠';
-                        warn.title =
-                            'Items are hidden — expand the relevant categories in the Inventory tab to show them here.';
+                        warn.title = i18n_js.t('customTabsUi.itemsHiddenWarningTooltip');
                         warn.style.cssText = 'color:#ff3333;margin-left:4px;cursor:default;font-size:13px;flex-shrink:0;';
                         const actionsEl = header.querySelector('.toolasha-ct-section-actions');
                         if (actionsEl) header.insertBefore(warn, actionsEl);
@@ -31712,7 +32112,9 @@ self.onmessage = function (e) {
 
             const headerEl = document.createElement('div');
             headerEl.className = 'toolasha-ct-unorg-header';
-            headerEl.innerHTML = `<span>${this._unorgOpen ? '▼' : '▶'}</span> <span>Unorganized (${totalTiles})</span>`;
+            headerEl.innerHTML = `<span>${this._unorgOpen ? '▼' : '▶'}</span> <span>${this._escHtml(
+            i18n_js.t('customTabsUi.unorganizedHeaderLabel', { count: totalTiles })
+        )}</span>`;
             headerEl.style.order = orderCounter++;
             headerEl.addEventListener('click', () => {
                 this._unorgOpen = !this._unorgOpen;
@@ -31869,37 +32271,37 @@ self.onmessage = function (e) {
 
             modal.innerHTML = `
             <div class="toolasha-ct-modal-body">
-                <h3>Edit Tab</h3>
-                <label>Name</label>
+                <h3>${this._escHtml(i18n_js.t('customTabsUi.editTabModalTitle'))}</h3>
+                <label>${this._escHtml(i18n_js.t('customTabsUi.nameFieldLabel'))}</label>
                 <input type="text" class="toolasha-ct-editor-name" value="${this._escHtml(tab.name)}">
 
-                <label>Color</label>
+                <label>${this._escHtml(i18n_js.t('customTabsUi.colorFieldLabel'))}</label>
                 <div class="toolasha-ct-swatches"></div>
 
-                <label>Add Category <span class="toolasha-ct-addall-label"><input type="checkbox" class="toolasha-ct-addall-cb"${config.getSetting('inventoryTabs_categoryAddAll') ? ' checked' : ''}> All items</span></label>
+                <label>${this._escHtml(i18n_js.t('customTabsUi.addCategoryLabel'))} <span class="toolasha-ct-addall-label"><input type="checkbox" class="toolasha-ct-addall-cb"${config.getSetting('inventoryTabs_categoryAddAll') ? ' checked' : ''}> ${this._escHtml(i18n_js.t('customTabsUi.allItemsCheckboxLabel'))}</span></label>
                 <div class="toolasha-ct-categories"></div>
 
-                <label>From Loadout</label>
+                <label>${this._escHtml(i18n_js.t('customTabsUi.fromLoadoutLabel'))}</label>
                 <div class="toolasha-ct-loadouts"></div>
 
-                <label>Items</label>
+                <label>${this._escHtml(i18n_js.t('customTabsUi.itemsFieldLabel'))}</label>
                 <div class="toolasha-ct-search-row">
-                    <input type="search" class="toolasha-ct-editor-search" placeholder="Search items to add...">
+                    <input type="search" class="toolasha-ct-editor-search" placeholder="${this._escHtml(i18n_js.t('customTabsUi.searchItemsToAddPlaceholder'))}">
                     <select class="toolasha-ct-cat-filter">
-                        <option value="">All</option>
+                        <option value="">${this._escHtml(i18n_js.t('customTabsUi.catFilterAllOption'))}</option>
                     </select>
                 </div>
                 <div class="toolasha-ct-search-results"></div>
                 <div class="toolasha-ct-assigned-list"></div>
                 <div style="margin-top:6px;">
-                    <button class="toolasha-ct-add-linebreak-btn" style="background:#2a2a3a;color:#888;border:1px solid #444;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px;">+ Line Break</button>
+                    <button class="toolasha-ct-add-linebreak-btn" style="background:#2a2a3a;color:#888;border:1px solid #444;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px;">${this._escHtml(i18n_js.t('customTabsUi.addLineBreakButton'))}</button>
                 </div>
             </div>
 
             <div class="toolasha-ct-modal-footer">
-                <button class="toolasha-ct-delete-btn">Delete Tab</button>
-                <button class="toolasha-ct-clear-btn">Clear All</button>
-                <button class="toolasha-ct-close-btn">Close</button>
+                <button class="toolasha-ct-delete-btn">${this._escHtml(i18n_js.t('customTabsUi.deleteTabButton'))}</button>
+                <button class="toolasha-ct-clear-btn">${this._escHtml(i18n_js.t('settings.clearAllButton'))}</button>
+                <button class="toolasha-ct-close-btn">${this._escHtml(i18n_js.t('openableAnalytics.closeAriaLabel'))}</button>
             </div>
         `;
 
@@ -31909,7 +32311,11 @@ self.onmessage = function (e) {
             const nameInput = modal.querySelector('.toolasha-ct-editor-name');
             nameInput.focus();
             nameInput.addEventListener('change', () => {
-                this._config = renameTab(this._config, tabId, nameInput.value.trim() || 'Untitled');
+                this._config = renameTab(
+                    this._config,
+                    tabId,
+                    nameInput.value.trim() || i18n_js.t('customTabsUi.untitledTabNameFallback')
+                );
                 this._save();
             });
 
@@ -31959,7 +32365,7 @@ self.onmessage = function (e) {
             const colorPicker = document.createElement('input');
             colorPicker.type = 'color';
             colorPicker.className = 'toolasha-ct-color-picker';
-            colorPicker.title = 'Custom color';
+            colorPicker.title = i18n_js.t('customTabsUi.customColorTooltip');
             colorPicker.value = tab.color && tab.color.startsWith('#') ? tab.color : '#888888';
             colorPicker.addEventListener('input', () => {
                 const hex = colorPicker.value;
@@ -32032,7 +32438,7 @@ self.onmessage = function (e) {
                     this._applyLayout();
                 } else {
                     this._deleteConfirmId = tabId;
-                    deleteBtn.textContent = 'Confirm Delete?';
+                    deleteBtn.textContent = i18n_js.t('customTabsUi.confirmDeleteButton');
                     deleteBtn.style.background = '#a03030';
                 }
             });
@@ -32051,12 +32457,12 @@ self.onmessage = function (e) {
                         this._renderAssignedItems(modal.querySelector('.toolasha-ct-assigned-list'), tabId);
                         if (this._isActive) this._applyLayout();
                     }
-                    clearBtn.textContent = 'Clear All';
+                    clearBtn.textContent = i18n_js.t('settings.clearAllButton');
                     clearBtn.style.background = '';
                     clearConfirm = false;
                 } else {
                     clearConfirm = true;
-                    clearBtn.textContent = 'Confirm Clear?';
+                    clearBtn.textContent = i18n_js.t('customTabsUi.confirmClearButton');
                     clearBtn.style.background = '#6a3a00';
                 }
             });
@@ -32120,7 +32526,9 @@ self.onmessage = function (e) {
                         // "Add all levels" shortcut row
                         const addAllRow = document.createElement('div');
                         addAllRow.className = 'toolasha-ct-search-result toolasha-ct-search-level-row';
-                        addAllRow.innerHTML = `<span style="color:#7dcea0;font-size:12px;padding-left:4px;">+ Add all levels (+0–+${maxLevel})</span>`;
+                        addAllRow.innerHTML = `<span style="color:#7dcea0;font-size:12px;padding-left:4px;">${this._escHtml(
+                        i18n_js.t('customTabsUi.addAllLevelsLabel', { maxLevel })
+                    )}</span>`;
                         addAllRow.addEventListener('click', () => {
                             for (let level = 0; level <= maxLevel; level++) {
                                 const levelHrid = level === 0 ? hrid : `${hrid}+${level}`;
@@ -32148,7 +32556,7 @@ self.onmessage = function (e) {
                             levelRow.className = 'toolasha-ct-search-result toolasha-ct-search-level-row';
                             const displayName = level === 0 ? details.name : `${details.name} +${level}`;
                             const ownedDot = owned
-                                ? `<span style="color:#7dcea0;margin-left:4px;" title="In inventory">●</span>`
+                                ? `<span style="color:#7dcea0;margin-left:4px;" title="${this._escHtml(i18n_js.t('customTabsUi.inInventoryTooltip'))}">●</span>`
                                 : '';
                             levelRow.innerHTML = `<svg viewBox="0 0 32 32"><use href="${iconHref}"></use></svg><span>${this._escHtml(displayName)}</span>${ownedDot}`;
                             levelRow.addEventListener('click', () => {
@@ -32217,7 +32625,9 @@ self.onmessage = function (e) {
             }
 
             if (count === 0) {
-                container.innerHTML = '<div style="color:#666;padding:6px;font-size:12px;">No matching items found</div>';
+                container.innerHTML = `<div style="color:#666;padding:6px;font-size:12px;">${this._escHtml(
+                i18n_js.t('customTabsUi.noMatchingItemsMessage')
+            )}</div>`;
             }
         }
 
@@ -32228,7 +32638,9 @@ self.onmessage = function (e) {
             container.innerHTML = '';
             const tab = findTab(this._config, tabId)?.tab;
             if (!tab || tab.items.length === 0) {
-                container.innerHTML = '<div style="color:#555;font-size:12px;padding:4px;">No items assigned</div>';
+                container.innerHTML = `<div style="color:#555;font-size:12px;padding:4px;">${this._escHtml(
+                i18n_js.t('customTabsUi.noItemsAssignedMessage')
+            )}</div>`;
                 if (scrollParent) scrollParent.scrollTop = scrollPos;
                 return;
             }
@@ -32247,7 +32659,7 @@ self.onmessage = function (e) {
 
                 if (hrid === LINEBREAK_HRID) {
                     const label = document.createElement('span');
-                    label.textContent = '─── Line Break ───';
+                    label.textContent = i18n_js.t('customTabsUi.lineBreakLabel');
                     label.style.cssText = 'color:#555;font-style:italic;font-size:11px;flex:1;text-align:center;';
                     row.appendChild(label);
                 } else {
@@ -32308,7 +32720,7 @@ self.onmessage = function (e) {
                 const toTopBtn = document.createElement('button');
                 toTopBtn.className = 'toolasha-ct-node-btn';
                 toTopBtn.textContent = '⇈';
-                toTopBtn.title = 'Move to top';
+                toTopBtn.title = i18n_js.t('customTabsUi.moveToTopTooltip');
                 toTopBtn.style.marginLeft = '0';
                 if (index === 0) {
                     toTopBtn.style.visibility = 'hidden';
@@ -32325,7 +32737,7 @@ self.onmessage = function (e) {
                 const toBottomBtn = document.createElement('button');
                 toBottomBtn.className = 'toolasha-ct-node-btn';
                 toBottomBtn.textContent = '⇊';
-                toBottomBtn.title = 'Move to bottom';
+                toBottomBtn.title = i18n_js.t('customTabsUi.moveToBottomTooltip');
                 toBottomBtn.style.marginLeft = '0';
                 if (index >= tab.items.length - 1) {
                     toBottomBtn.style.visibility = 'hidden';
@@ -32342,7 +32754,7 @@ self.onmessage = function (e) {
                 const removeBtn = document.createElement('button');
                 removeBtn.className = 'toolasha-ct-node-btn';
                 removeBtn.textContent = '×';
-                removeBtn.title = 'Remove';
+                removeBtn.title = i18n_js.t('settings.removeTooltip');
                 removeBtn.addEventListener('click', () => {
                     this._config = removeItemAtIndex(this._config, tabId, index);
                     // Clean item from loadout bindings so it won't be re-added on sync
@@ -32418,8 +32830,8 @@ self.onmessage = function (e) {
                 btn.className = 'toolasha-ct-cat-btn' + (allAlreadyAdded ? ' toolasha-ct-cat-btn--added' : '');
                 btn.textContent = cat.name;
                 btn.title = allAlreadyAdded
-                    ? `Click to remove ${catItems.length} items from ${cat.name}`
-                    : `Add ${catItems.length} items from ${cat.name}`;
+                    ? i18n_js.t('customTabsUi.removeCategoryTooltip', { count: catItems.length, categoryName: cat.name })
+                    : i18n_js.t('customTabsUi.addCategoryTooltip', { count: catItems.length, categoryName: cat.name });
 
                 if (allAlreadyAdded) {
                     btn.addEventListener('click', () => {
@@ -32547,7 +32959,7 @@ self.onmessage = function (e) {
             if (entries.length === 0) {
                 const msg = document.createElement('span');
                 msg.style.cssText = 'font-size:11px;color:#888;';
-                msg.textContent = 'No saved loadouts available.';
+                msg.textContent = i18n_js.t('customTabsUi.noSavedLoadoutsMessage');
                 container.appendChild(msg);
                 return;
             }
@@ -32565,7 +32977,7 @@ self.onmessage = function (e) {
                           .pop()
                           .replace(/_/g, ' ')
                           .replace(/\b\w/g, (c) => c.toUpperCase())
-                    : 'All Skills';
+                    : i18n_js.t('labSim.allSkillsOption');
                 const hasUnavailableEquipment = (snapshot.unavailableEquipment || []).length > 0;
 
                 const loadoutItems = [];
@@ -32594,13 +33006,17 @@ self.onmessage = function (e) {
 
                 const btn = document.createElement('button');
                 btn.className = 'toolasha-ct-cat-btn' + (allAdded ? ' toolasha-ct-cat-btn--added' : '');
-                btn.textContent = `${snapshot.name} (${skillLabel})${hasUnavailableEquipment ? ' — Unavailable' : ''}`;
+                btn.textContent = i18n_js.t('customTabsUi.loadoutButtonLabel', {
+                    name: snapshot.name,
+                    skillLabel,
+                    unavailable: hasUnavailableEquipment,
+                });
                 btn.disabled = hasUnavailableEquipment;
                 btn.title = hasUnavailableEquipment
-                    ? `Cannot add "${snapshot.name}" while saved equipment is unavailable`
+                    ? i18n_js.t('customTabsUi.loadoutUnavailableTooltip', { name: snapshot.name })
                     : allAdded
-                      ? `All items from "${snapshot.name}" already added`
-                      : `Add ${newItems.length} item(s) from "${snapshot.name}"`;
+                      ? i18n_js.t('customTabsUi.loadoutAllAddedTooltip', { name: snapshot.name })
+                      : i18n_js.t('customTabsUi.loadoutAddItemsTooltip', { count: newItems.length, name: snapshot.name });
 
                 if (hasUnavailableEquipment) {
                     btn.style.opacity = '0.55';
@@ -32642,7 +33058,7 @@ self.onmessage = function (e) {
         // -----------------------------------------------------------------------
 
         _onAddTab(parentId) {
-            const result = addTab(this._config, parentId, 'New Tab');
+            const result = addTab(this._config, parentId, i18n_js.t('customTabsUi.newTabDefaultName'));
             this._config = result.config;
             this._config = setTabOpen(this._config, result.tabId, true);
             this._removeInjectedEls();
@@ -32739,7 +33155,7 @@ self.onmessage = function (e) {
 
             const label = document.createElement('span');
             label.style.cssText = 'flex: 1; text-align: center;';
-            label.textContent = 'Add to Tab';
+            label.textContent = i18n_js.t('customTabsUi.addToTabLabel');
             const chevron = document.createElement('span');
             chevron.style.cssText = 'font-size: 0.65em; transition: transform 0.15s; display: inline-block;';
             chevron.textContent = '▼';
@@ -32787,7 +33203,7 @@ self.onmessage = function (e) {
             `;
                 if (tab.color && !alreadyAdded) btn.style.borderLeft = `3px solid ${tab.color}`;
                 if (alreadyAdded) {
-                    btn.title = 'Already in this tab';
+                    btn.title = i18n_js.t('customTabsUi.alreadyInTabTooltip');
                 } else {
                     btn.addEventListener('mouseenter', () => {
                         btn.style.opacity = '0.8';
@@ -34066,11 +34482,6 @@ self.onmessage = function (e) {
     const ITEM_VALUE_LABEL_CLASS = 'toolasha-openable-analytics-item-value';
     const COIN_HRID = '/items/coin';
 
-    const LUCK_TOOLTIP =
-        'Luck is Actual loot value minus Expected loot value. It does not include the container/key cost and is not opening profit.';
-    const LUCK_UNAVAILABLE_TOOLTIP = `Some required values are missing, so Luck can't be calculated. ${LUCK_TOOLTIP}`;
-    const PARTIAL_TOOLTIP = 'One or more gained items could not be priced.';
-
     function formatValue(value) {
         if (value === null || value === undefined) return '—';
         return formatters_js.coinFormatter(Math.round(value));
@@ -34136,16 +34547,21 @@ self.onmessage = function (e) {
     function buildFooterContent(record, lifetimeAggregate) {
         const actualPartial = !record.actualValueComplete;
         const actualText = `${formatValue(record.actualValue)}${
-        actualPartial ? ` <span title="${PARTIAL_TOOLTIP}">[Partial]</span>` : ''
+        actualPartial
+            ? ` <span title="${i18n_js.t('openableAnalytics.gainedItemPartialTooltip')}">${i18n_js.t('openableAnalytics.partialLabel')}</span>`
+            : ''
     }`;
         const expectedText = record.expectedValueAvailable ? formatValue(record.expectedValue) : '—';
         const luckAvailable = record.luckValue !== null && record.luckValue !== undefined;
-        const luckTitle = luckAvailable ? LUCK_TOOLTIP : LUCK_UNAVAILABLE_TOOLTIP;
+        const luckTooltipText = i18n_js.t('openableAnalytics.luckTooltip');
+        const luckTitle = luckAvailable
+            ? luckTooltipText
+            : i18n_js.t('openableAnalytics.luckUnavailableTooltip', { luckTooltip: luckTooltipText });
         const luckText = luckAvailable
             ? `<span style="color:${luckColor$1(record.luckValue)}">${formatLuckValue(record.luckValue)}${formatLuckPercent(record.luckPercent)}</span>`
             : '—';
 
-        const currentLine = `Actual ${actualText} · Expected ${expectedText} · <span title="${luckTitle}">Luck</span> ${luckText}`;
+        const currentLine = `${i18n_js.t('openableAnalytics.actualLabel')} ${actualText} · ${i18n_js.t('openableAnalytics.expectedLabel')} ${expectedText} · <span title="${luckTitle}">${i18n_js.t('openableAnalytics.luckShortLabel')}</span> ${luckText}`;
 
         // Suppress a Lifetime row that would just repeat this exact first event: semantically, this
         // container's Lifetime consists of nothing but this one live event and no imported data.
@@ -34162,12 +34578,12 @@ self.onmessage = function (e) {
                 ? (lifetimeLuckValue / lifetimeAggregate.expectedValueTotal) * 100
                 : null;
 
-        const viewLink = `<span class="toolasha-openable-analytics-view-link" style="cursor:pointer;text-decoration:underline">View Analytics</span>`;
+        const viewLink = `<span class="toolasha-openable-analytics-view-link" style="cursor:pointer;text-decoration:underline">${i18n_js.t('openableAnalytics.viewAnalyticsLink')}</span>`;
         const lifetimeLine = isOnlyEverEvent
             ? viewLink
-            : `Lifetime ×${lifetimeAggregate.containersOpened}${
+            : `${i18n_js.t('openableAnalytics.lifetimeScopeLabel')} ×${lifetimeAggregate.containersOpened}${
               lifetimeLuckAvailable
-                  ? ` · Luck <span style="color:${luckColor$1(lifetimeLuckValue)}">${formatLuckValue(lifetimeLuckValue)}${formatLuckPercent(lifetimeLuckPercent)}</span>`
+                  ? ` · ${i18n_js.t('openableAnalytics.luckShortLabel')} <span style="color:${luckColor$1(lifetimeLuckValue)}">${formatLuckValue(lifetimeLuckValue)}${formatLuckPercent(lifetimeLuckPercent)}</span>`
                   : ''
           } · ${viewLink}`;
 
@@ -34405,22 +34821,22 @@ self.onmessage = function (e) {
         try {
             parsed = JSON.parse(rawText);
         } catch {
-            return { source: null, error: 'Could not parse this text as JSON.' };
+            return { source: null, error: i18n_js.t('openableAnalytics.importParseFailedGeneric') };
         }
 
         if (!isPlainObject(parsed)) {
-            return { source: null, error: 'This does not look like a supported export.' };
+            return { source: null, error: i18n_js.t('openableAnalytics.importUnsupportedFormat') };
         }
 
         const hasCombatSuiteShape = isPlainObject(parsed.chests);
         const hasEdibleShape = isPlainObject(parsed.Chest_Open_Data);
 
         if (hasCombatSuiteShape && hasEdibleShape) {
-            return { source: null, error: 'This data matches more than one supported format and cannot be imported.' };
+            return { source: null, error: i18n_js.t('openableAnalytics.importAmbiguousFormat') };
         }
         if (hasCombatSuiteShape) return { source: 'mwi-combat-suite' };
         if (hasEdibleShape) return { source: 'edible' };
-        return { source: null, error: 'This does not match a supported Edible Tools or MWI Combat Suite export.' };
+        return { source: null, error: i18n_js.t('openableAnalytics.importUnrecognizedFormat') };
     }
 
     /**
@@ -34453,7 +34869,7 @@ self.onmessage = function (e) {
 
         for (const [containerHrid, chest] of Object.entries(chests)) {
             if (!ITEM_HRID_PATTERN.test(containerHrid)) {
-                warnings.push(`Skipped an entry with an invalid item id: "${containerHrid}".`);
+                warnings.push(i18n_js.t('openableAnalytics.importSkippedInvalidContainerId', { containerHrid }));
                 continue;
             }
 
@@ -34462,7 +34878,9 @@ self.onmessage = function (e) {
                 continue; // no openings recorded - silently ignored, not a warning
             }
             if (!isValidCount(containerCount) || containerCount === 0) {
-                warnings.push(`Skipped ${chest?.name || containerHrid}: invalid opened count.`);
+                warnings.push(
+                    i18n_js.t('openableAnalytics.importSkippedInvalidOpenedCount', { name: chest?.name || containerHrid })
+                );
                 continue;
             }
 
@@ -34471,11 +34889,13 @@ self.onmessage = function (e) {
             // if it were the latter would silently fabricate Actual 0 / a huge Expected / Luck -100%.
             const total = chest?.total || {};
             if (!('loot' in total)) {
-                warnings.push(`Skipped ${chest?.name || containerHrid}: opening count present but loot data is missing.`);
+                warnings.push(i18n_js.t('openableAnalytics.importSkippedMissingLootData', { name: chest?.name || containerHrid }));
                 continue;
             }
             if (!isPlainObject(total.loot)) {
-                warnings.push(`Skipped ${chest?.name || containerHrid}: loot data is malformed.`);
+                warnings.push(
+                    i18n_js.t('openableAnalytics.importSkippedMalformedLootData', { name: chest?.name || containerHrid })
+                );
                 continue;
             }
 
@@ -34497,7 +34917,7 @@ self.onmessage = function (e) {
 
             if (hadInvalidItem) {
                 warnings.push(
-                    `${chest?.name || containerHrid}: one or more gained items had invalid data and were excluded.`
+                    i18n_js.t('openableAnalytics.importGainedItemsInvalidDataExcluded', { name: chest?.name || containerHrid })
                 );
             }
 
@@ -34601,7 +35021,7 @@ self.onmessage = function (e) {
             const containerHrid = nameToHrid[chestName.toLowerCase()];
 
             if (!containerHrid) {
-                warnings.push(`Skipped "${chestName}": could not match to a known item.`);
+                warnings.push(i18n_js.t('openableAnalytics.importSkippedUnmatchedContainerName', { chestName }));
                 continue;
             }
             anyChestNameResolved = true;
@@ -34611,16 +35031,16 @@ self.onmessage = function (e) {
                 continue; // no openings recorded - silently ignored, not a warning
             }
             if (!isValidCount(containerCount)) {
-                warnings.push(`Skipped ${chestName}: invalid opened count.`);
+                warnings.push(i18n_js.t('openableAnalytics.importSkippedInvalidOpenedCount', { name: chestName }));
                 continue;
             }
 
             if (!('获得物品' in (chest || {}))) {
-                warnings.push(`Skipped ${chestName}: opening count present but gained-item data is missing.`);
+                warnings.push(i18n_js.t('openableAnalytics.importSkippedMissingGainedItemData', { chestName }));
                 continue;
             }
             if (!isPlainObject(chest['获得物品'])) {
-                warnings.push(`Skipped ${chestName}: gained-item data is malformed.`);
+                warnings.push(i18n_js.t('openableAnalytics.importSkippedMalformedGainedItemData', { chestName }));
                 continue;
             }
 
@@ -34643,10 +35063,12 @@ self.onmessage = function (e) {
             }
 
             if (unmatchedItemCount > 0) {
-                warnings.push(`${chestName}: ${unmatchedItemCount} gained item(s) could not be matched and were excluded.`);
+                warnings.push(
+                    i18n_js.t('openableAnalytics.importUnmatchedGainedItemsExcluded', { chestName, count: unmatchedItemCount })
+                );
             }
             if (hadInvalidCount) {
-                warnings.push(`${chestName}: one or more gained items had invalid counts and were excluded.`);
+                warnings.push(i18n_js.t('openableAnalytics.importGainedItemsInvalidCountsExcluded', { chestName }));
             }
 
             if (!shouldTrackImportedOpenable(containerHrid, containerCount, itemTotals)) continue;
@@ -34815,8 +35237,8 @@ self.onmessage = function (e) {
             button.type = 'button';
             button.className = className;
             button.textContent = '🎁';
-            button.title = 'Openable Analytics';
-            button.setAttribute('aria-label', 'Openable Analytics');
+            button.title = i18n_js.t('openableAnalytics.title');
+            button.setAttribute('aria-label', i18n_js.t('openableAnalytics.title'));
             button.onclick = () => this.showPopup();
             return button;
         }
@@ -34927,7 +35349,7 @@ self.onmessage = function (e) {
 
             const titleWrap = document.createElement('div');
             const title = document.createElement('h2');
-            title.textContent = 'Openable Analytics';
+            title.textContent = i18n_js.t('openableAnalytics.title');
             title.style.cssText = `margin: 0; color: ${textColor}; font-size: 20px;`;
             const characterName = document.createElement('div');
             characterName.style.cssText = 'font-size:12px; opacity:0.7; margin-top:2px;';
@@ -34938,7 +35360,7 @@ self.onmessage = function (e) {
             const closeButton = document.createElement('button');
             closeButton.type = 'button';
             closeButton.textContent = '×';
-            closeButton.setAttribute('aria-label', 'Close');
+            closeButton.setAttribute('aria-label', i18n_js.t('openableAnalytics.closeAriaLabel'));
             closeButton.style.cssText = `background: none; border: none; color: ${textColor}; font-size: 28px; cursor: pointer; padding: 0; line-height: 1;`;
             closeButton.onclick = () => this.closePopup();
 
@@ -35014,7 +35436,10 @@ self.onmessage = function (e) {
             for (const scope of ['session', 'lifetime']) {
                 const button = document.createElement('button');
                 button.type = 'button';
-                button.textContent = scope === 'session' ? 'Session' : 'Lifetime';
+                button.textContent =
+                    scope === 'session'
+                        ? i18n_js.t('openableAnalytics.sessionScopeLabel')
+                        : i18n_js.t('openableAnalytics.lifetimeScopeLabel');
                 const active = scope === this.scope;
                 button.style.cssText = `
                 flex:1; padding:6px 10px; border-radius:4px; cursor:pointer; font-size:13px;
@@ -35034,13 +35459,13 @@ self.onmessage = function (e) {
             wrapper.style.cssText = 'opacity:0.75; padding:12px 0; font-size:13px; line-height:1.5;';
 
             if (this.scope === 'session') {
-                wrapper.textContent = 'No tracked chest, crate, or cache openings this session.';
+                wrapper.textContent = i18n_js.t('openableAnalytics.emptyStateSession');
                 return wrapper;
             }
 
-            wrapper.innerHTML = 'No chest, crate, or cache history yet.<br>Open one to start tracking.<br>';
+            wrapper.innerHTML = i18n_js.t('openableAnalytics.emptyStateLifetime');
             const importLink = document.createElement('span');
-            importLink.textContent = 'Import History';
+            importLink.textContent = i18n_js.t('openableAnalytics.importHistoryLabel');
             importLink.style.cssText = 'cursor:pointer; text-decoration:underline;';
             importLink.onclick = () => {
                 this.manageDataOpen = true;
@@ -35099,7 +35524,7 @@ self.onmessage = function (e) {
             if (aggregate.hasImportedData) {
                 const infoMark = document.createElement('span');
                 infoMark.textContent = 'ⓘ';
-                infoMark.title = 'Includes imported historical data';
+                infoMark.title = i18n_js.t('openableAnalytics.includesImportedDataTooltip');
                 infoMark.style.cssText = `flex-shrink:0; color:${config.COLOR_INFO};`;
                 count.appendChild(document.createTextNode(' '));
                 count.appendChild(infoMark);
@@ -35155,20 +35580,19 @@ self.onmessage = function (e) {
             summaryRow.style.cssText = 'display:flex; justify-content:space-between; margin-bottom:10px; font-size:13px;';
 
             const actualCol = document.createElement('div');
-            actualCol.innerHTML = `<div style="opacity:0.7; font-size:11px;">Actual</div>${formatters_js.formatLargeNumber(aggregate.actualValueTotal)}${aggregate.actualValuePartialEvents > 0 ? ' <span title="One or more openings/imports could not be fully priced">[Partial]</span>' : ''}`;
+            actualCol.innerHTML = `<div style="opacity:0.7; font-size:11px;">${i18n_js.t('openableAnalytics.actualLabel')}</div>${formatters_js.formatLargeNumber(aggregate.actualValueTotal)}${aggregate.actualValuePartialEvents > 0 ? ` <span title="${i18n_js.t('openableAnalytics.partialTooltip')}">${i18n_js.t('openableAnalytics.partialLabel')}</span>` : ''}`;
 
             const expectedCol = document.createElement('div');
             const expectedHasAny = aggregate.expectedValueAvailableEvents > 0;
-            expectedCol.innerHTML = `<div style="opacity:0.7; font-size:11px;">Expected</div>${expectedHasAny ? formatters_js.formatLargeNumber(aggregate.expectedValueTotal) : '—'}`;
+            expectedCol.innerHTML = `<div style="opacity:0.7; font-size:11px;">${i18n_js.t('openableAnalytics.expectedLabel')}</div>${expectedHasAny ? formatters_js.formatLargeNumber(aggregate.expectedValueTotal) : '—'}`;
 
             const luckCol = document.createElement('div');
             luckCol.style.textAlign = 'right';
             const luckHeader = document.createElement('div');
             luckHeader.style.cssText = 'opacity:0.7; font-size:11px;';
             const luckInfo = document.createElement('span');
-            luckInfo.textContent = 'Luck ⓘ';
-            luckInfo.title =
-                'Luck is Actual loot value minus Expected loot value. It does not include the container/key cost and is not opening profit.';
+            luckInfo.textContent = i18n_js.t('openableAnalytics.luckLabel');
+            luckInfo.title = i18n_js.t('openableAnalytics.luckTooltip');
             luckHeader.appendChild(luckInfo);
             const luckValueEl = document.createElement('div');
             if (!luckEligible) {
@@ -35189,8 +35613,7 @@ self.onmessage = function (e) {
             if (aggregate.hasImportedData) {
                 const note = document.createElement('div');
                 note.style.cssText = 'font-size:11px; opacity:0.7; margin-bottom:10px; line-height:1.35;';
-                note.textContent =
-                    'Includes imported historical data: imported raw counts are recalculated using current Toolasha prices/loot model at import time, and imported/live periods may overlap.';
+                note.textContent = i18n_js.t('openableAnalytics.importedDataNote');
                 wrapper.appendChild(note);
             }
 
@@ -35201,7 +35624,9 @@ self.onmessage = function (e) {
                 deleteRow.style.cssText = 'margin-top:10px;';
                 const deleteButton = document.createElement('button');
                 deleteButton.type = 'button';
-                deleteButton.textContent = `Delete ${containerLabel(containerHrid)} Data…`;
+                deleteButton.textContent = i18n_js.t('openableAnalytics.deleteContainerButton', {
+                    containerName: containerLabel(containerHrid),
+                });
                 deleteButton.disabled = this.mutationInFlight;
                 deleteButton.style.cssText = this.destructiveButtonStyle();
                 deleteButton.onclick = () => this.handleDeleteContainer(containerHrid);
@@ -35224,14 +35649,14 @@ self.onmessage = function (e) {
             const wrapper = document.createElement('div');
 
             const heading = document.createElement('div');
-            heading.textContent = 'Loot';
+            heading.textContent = i18n_js.t('openableAnalytics.lootHeading');
             heading.style.cssText = 'font-weight:600; margin-bottom:6px; font-size:13px;';
             wrapper.appendChild(heading);
 
             const entries = Object.entries(aggregate.itemTotals || {});
             if (entries.length === 0) {
                 const empty = document.createElement('div');
-                empty.textContent = 'No items gained in this scope.';
+                empty.textContent = i18n_js.t('openableAnalytics.noItemsMessage');
                 empty.style.cssText = 'opacity:0.75; font-size:12px;';
                 wrapper.appendChild(empty);
                 return wrapper;
@@ -35245,7 +35670,7 @@ self.onmessage = function (e) {
 
             const headerRow = document.createElement('tr');
             headerRow.style.cssText = 'opacity:0.7; text-align:left;';
-            headerRow.innerHTML = `<th style="font-weight:400; padding:2px 0;">Item</th><th style="font-weight:400; text-align:right; padding:2px 0;">Qty</th><th style="font-weight:400; text-align:right; padding:2px 0;">Value <span title="Values are the amounts recorded at each opening/import, not current market value.">ⓘ</span></th>`;
+            headerRow.innerHTML = `<th style="font-weight:400; padding:2px 0;">${i18n_js.t('openableAnalytics.itemColumnHeader')}</th><th style="font-weight:400; text-align:right; padding:2px 0;">${i18n_js.t('openableAnalytics.qtyColumnHeader')}</th><th style="font-weight:400; text-align:right; padding:2px 0;">${i18n_js.t('openableAnalytics.valueColumnHeader')} <span title="${i18n_js.t('openableAnalytics.valueColumnTooltip')}">ⓘ</span></th>`;
             table.appendChild(headerRow);
 
             for (const [itemHrid, count] of sorted) {
@@ -35333,7 +35758,7 @@ self.onmessage = function (e) {
             details.style.cssText = 'margin-top:8px; border-top:1px solid #3a3a3a; padding-top:10px;';
 
             const summary = document.createElement('summary');
-            summary.textContent = 'Manage Data';
+            summary.textContent = i18n_js.t('openableAnalytics.manageDataHeading');
             summary.style.cssText = 'cursor:pointer; font-weight:600; font-size:13px; list-style:none;';
             summary.onclick = (e) => {
                 e.preventDefault();
@@ -35359,14 +35784,14 @@ self.onmessage = function (e) {
             wrapper.style.cssText = 'margin-bottom:12px;';
 
             const heading = document.createElement('div');
-            heading.textContent = 'Historical Imports';
+            heading.textContent = i18n_js.t('openableAnalytics.historicalImportsHeading');
             heading.style.cssText = 'font-weight:600; font-size:12px; margin-bottom:6px;';
             wrapper.appendChild(heading);
 
             const sources = openableAnalyticsDataCollector.getImportSourceKeys();
             if (sources.length === 0) {
                 const empty = document.createElement('div');
-                empty.textContent = 'No imported sources.';
+                empty.textContent = i18n_js.t('openableAnalytics.noImportedSourcesMessage');
                 empty.style.cssText = 'opacity:0.7; font-size:12px;';
                 wrapper.appendChild(empty);
                 return wrapper;
@@ -35382,7 +35807,7 @@ self.onmessage = function (e) {
 
                 const removeButton = document.createElement('button');
                 removeButton.type = 'button';
-                removeButton.textContent = 'Remove Import';
+                removeButton.textContent = i18n_js.t('openableAnalytics.removeImportButton');
                 removeButton.disabled = this.mutationInFlight;
                 removeButton.style.cssText =
                     'background:#3a3a3a; border:1px solid #4a4a4a; color:#fff; font-size:11px; cursor:pointer; padding:4px 8px; border-radius:4px;';
@@ -35401,7 +35826,7 @@ self.onmessage = function (e) {
             wrapper.style.cssText = 'margin-bottom:12px; padding-top:10px; border-top:1px solid #2a2a2a;';
 
             const heading = document.createElement('div');
-            heading.textContent = 'Import History';
+            heading.textContent = i18n_js.t('openableAnalytics.importHistoryLabel');
             heading.style.cssText = 'font-weight:600; font-size:12px; margin-bottom:6px;';
             wrapper.appendChild(heading);
 
@@ -35421,7 +35846,7 @@ self.onmessage = function (e) {
             if (readEdibleLocalStorage() !== null) {
                 const edibleButton = document.createElement('button');
                 edibleButton.type = 'button';
-                edibleButton.textContent = 'Import from Edible Tools';
+                edibleButton.textContent = i18n_js.t('openableAnalytics.importFromEdibleButton');
                 edibleButton.style.cssText = this.controlButtonStyle();
                 edibleButton.onclick = () => this.beginImport(readEdibleLocalStorage(), 'edible');
                 controls.appendChild(edibleButton);
@@ -35431,7 +35856,7 @@ self.onmessage = function (e) {
             fileButtonWrap.style.cssText = 'position:relative; overflow:hidden; display:inline-block;';
             const fileButton = document.createElement('button');
             fileButton.type = 'button';
-            fileButton.textContent = 'Choose JSON File';
+            fileButton.textContent = i18n_js.t('openableAnalytics.chooseJsonFileButton');
             fileButton.style.cssText = this.controlButtonStyle();
             const fileInput = document.createElement('input');
             fileInput.type = 'file';
@@ -35443,7 +35868,7 @@ self.onmessage = function (e) {
                 const reader = new FileReader();
                 reader.onload = () => this.beginImport(String(reader.result || ''));
                 reader.onerror = () => {
-                    this.pendingImport = { errorMessage: 'Could not read the selected file.' };
+                    this.pendingImport = { errorMessage: i18n_js.t('openableAnalytics.fileReadErrorMessage') };
                     this.renderBody();
                 };
                 reader.readAsText(file);
@@ -35453,7 +35878,7 @@ self.onmessage = function (e) {
             controls.appendChild(fileButtonWrap);
 
             const pasteLink = document.createElement('span');
-            pasteLink.textContent = 'Paste JSON Instead';
+            pasteLink.textContent = i18n_js.t('openableAnalytics.pasteJsonInsteadLabel');
             pasteLink.style.cssText = 'cursor:pointer; text-decoration:underline; font-size:12px; align-self:center;';
             pasteLink.onclick = () => {
                 this.showPasteArea = true;
@@ -35463,14 +35888,14 @@ self.onmessage = function (e) {
 
             if (this.showPasteArea) {
                 const textarea = document.createElement('textarea');
-                textarea.placeholder = 'Paste exported JSON here (Edible Tools or MWI Combat Suite).';
+                textarea.placeholder = i18n_js.t('openableAnalytics.pasteJsonPlaceholder');
                 textarea.style.cssText =
                     'width:100%; height:70px; background:#2a2a2a; color:#fff; border:1px solid #4a4a4a; border-radius:4px; padding:6px; font-size:12px; box-sizing:border-box; resize:vertical; margin-bottom:6px;';
                 wrapper.appendChild(textarea);
 
                 const submitButton = document.createElement('button');
                 submitButton.type = 'button';
-                submitButton.textContent = 'Preview Import';
+                submitButton.textContent = i18n_js.t('openableAnalytics.previewImportButton');
                 submitButton.style.cssText = this.controlButtonStyle();
                 submitButton.onclick = () => this.beginImport(textarea.value);
                 wrapper.appendChild(submitButton);
@@ -35502,7 +35927,7 @@ self.onmessage = function (e) {
         /** Parse pasted/uploaded/one-click text, auto-detecting the source unless explicitly known (Edible one-click). */
         beginImport(rawText, knownSource) {
             if (!rawText?.trim()) {
-                this.pendingImport = { errorMessage: 'No data found to import.' };
+                this.pendingImport = { errorMessage: i18n_js.t('openableAnalytics.noDataToImportMessage') };
                 this.renderBody();
                 return;
             }
@@ -35578,7 +36003,7 @@ self.onmessage = function (e) {
             const wrapper = document.createElement('div');
 
             const label = document.createElement('div');
-            label.textContent = 'This Edible Tools data has more than one player - which one is this character?';
+            label.textContent = i18n_js.t('openableAnalytics.ediblePlayerPickerLabel');
             label.style.cssText = 'font-size:12px; margin-bottom:6px;';
             wrapper.appendChild(label);
 
@@ -35595,7 +36020,7 @@ self.onmessage = function (e) {
 
             const confirmButton = document.createElement('button');
             confirmButton.type = 'button';
-            confirmButton.textContent = 'Continue';
+            confirmButton.textContent = i18n_js.t('openableAnalytics.continueButton');
             confirmButton.style.cssText = this.controlButtonStyle();
             confirmButton.onclick = () => {
                 const result = parseEdibleExport(this.pendingImport.rawText, { playerId: select.value });
@@ -35604,7 +36029,7 @@ self.onmessage = function (e) {
 
             const cancelButton = document.createElement('button');
             cancelButton.type = 'button';
-            cancelButton.textContent = 'Cancel';
+            cancelButton.textContent = i18n_js.t('settings.cancelButton');
             cancelButton.style.cssText = this.controlButtonStyle() + 'margin-left:6px;';
             cancelButton.onclick = () => {
                 this.pendingImport = null;
@@ -35623,26 +36048,29 @@ self.onmessage = function (e) {
             const summary = document.createElement('div');
             const totalOpenings = containers.reduce((sum, c) => sum + c.containerCount, 0);
             summary.style.cssText = 'font-size:12px; margin-bottom:6px;';
-            summary.textContent = `${IMPORT_SOURCE_LABELS[`import:${source}`]}: ${formatters_js.formatLargeNumber(totalOpenings)} openings across ${containers.length} container(s) ready to import.`;
+            summary.textContent = i18n_js.t('openableAnalytics.importPreflightSummary', {
+                sourceLabel: IMPORT_SOURCE_LABELS[`import:${source}`],
+                openings: formatters_js.formatLargeNumber(totalOpenings),
+                containerCount: containers.length,
+            });
             wrapper.appendChild(summary);
 
             if (ownerMismatch === true) {
                 const warn = document.createElement('div');
                 warn.style.cssText = `font-size:12px; color:${config.COLOR_WARNING}; margin-bottom:6px;`;
-                warn.textContent = `This export's recorded player ("${ownerName}") does not match the current character.`;
+                warn.textContent = i18n_js.t('openableAnalytics.ownerMismatchWarning', { ownerName });
                 wrapper.appendChild(warn);
             } else if (ownerMismatch === null) {
                 const warn = document.createElement('div');
                 warn.style.cssText = `font-size:12px; color:${config.COLOR_WARNING}; margin-bottom:6px;`;
-                warn.textContent = 'This export does not record which character it belongs to - please verify ownership.';
+                warn.textContent = i18n_js.t('openableAnalytics.ownerUnknownWarning');
                 wrapper.appendChild(warn);
             }
 
             if (overlaps) {
                 const warn = document.createElement('div');
                 warn.style.cssText = `font-size:12px; color:${config.COLOR_INFO}; margin-bottom:6px;`;
-                warn.textContent =
-                    'These cumulative histories may cover the same openings and cannot be reliably deduplicated.';
+                warn.textContent = i18n_js.t('openableAnalytics.overlapWarning');
                 wrapper.appendChild(warn);
             }
 
@@ -35655,14 +36083,18 @@ self.onmessage = function (e) {
 
             const confirmButton = document.createElement('button');
             confirmButton.type = 'button';
-            confirmButton.textContent = this.mutationInFlight ? 'Importing…' : alreadyExists ? 'Replace Import…' : 'Import';
+            confirmButton.textContent = this.mutationInFlight
+                ? i18n_js.t('openableAnalytics.importingButtonLabel')
+                : alreadyExists
+                  ? i18n_js.t('openableAnalytics.replaceImportButtonLabel')
+                  : i18n_js.t('openableAnalytics.importButtonLabel');
             confirmButton.disabled = this.mutationInFlight;
             confirmButton.style.cssText = this.controlButtonStyle();
             confirmButton.onclick = () => this.handleConfirmImport();
 
             const cancelButton = document.createElement('button');
             cancelButton.type = 'button';
-            cancelButton.textContent = 'Cancel';
+            cancelButton.textContent = i18n_js.t('settings.cancelButton');
             cancelButton.disabled = this.mutationInFlight;
             cancelButton.style.cssText = this.controlButtonStyle() + 'margin-left:6px;';
             cancelButton.onclick = () => {
@@ -35689,9 +36121,14 @@ self.onmessage = function (e) {
             const totalOpenings = containers.reduce((sum, c) => sum + c.containerCount, 0);
             this.pendingImport = persisted
                 ? {
-                      statusMessage: `${alreadyExists ? 'Replaced' : 'Imported'} ${IMPORT_SOURCE_LABELS[prefixedSource]} import: ${formatters_js.formatLargeNumber(totalOpenings)} openings across ${containers.length} container(s).`,
+                      statusMessage: i18n_js.t('openableAnalytics.importCompleteStatus', {
+                          replaced: alreadyExists,
+                          sourceLabel: IMPORT_SOURCE_LABELS[prefixedSource],
+                          openings: formatters_js.formatLargeNumber(totalOpenings),
+                          containerCount: containers.length,
+                      }),
                   }
-                : { errorMessage: 'Could not save Openable Analytics data. Current changes may not persist after reload.' };
+                : { errorMessage: i18n_js.t('openableAnalytics.saveImportErrorMessage') };
             this.showPasteArea = false;
             this.renderBody();
         }
@@ -35706,21 +36143,19 @@ self.onmessage = function (e) {
             if (!this.popupOverlay) return;
 
             if (!persisted) {
-                this.pendingImport = { errorMessage: 'Could not remove the imported data. It may reappear after reload.' };
+                this.pendingImport = { errorMessage: i18n_js.t('openableAnalytics.removeImportErrorMessage') };
             } else {
                 this.pendingImport = {
-                    statusMessage: `Removed ${IMPORT_SOURCE_LABELS[source]} import. Live Toolasha history was kept.`,
+                    statusMessage: i18n_js.t('openableAnalytics.importRemovedStatus', {
+                        sourceLabel: IMPORT_SOURCE_LABELS[source],
+                    }),
                 };
             }
             this.renderBody();
         }
 
         async handleDeleteContainer(containerHrid) {
-            if (
-                !confirm(
-                    `Delete all Openable Analytics data for ${containerLabel(containerHrid)} on this character? This cannot be undone.`
-                )
-            ) {
+            if (!confirm(i18n_js.t('openableAnalytics.deleteContainerConfirm', { containerName: containerLabel(containerHrid) }))) {
                 return;
             }
 
@@ -35734,7 +36169,7 @@ self.onmessage = function (e) {
             if (!this.popupOverlay) return;
             this.deleteContainerError = persisted
                 ? null
-                : { containerHrid, message: 'Could not save this deletion. It may reappear after reload.' };
+                : { containerHrid, message: i18n_js.t('openableAnalytics.deletionSaveErrorMessage') };
             this.renderBody();
         }
 
@@ -35744,7 +36179,7 @@ self.onmessage = function (e) {
 
             const button = document.createElement('button');
             button.type = 'button';
-            button.textContent = 'Delete All Analytics Data…';
+            button.textContent = i18n_js.t('openableAnalytics.deleteAllButton');
             button.disabled = this.mutationInFlight;
             button.style.cssText = this.destructiveButtonStyle();
             button.onclick = () => this.handleDeleteAll();
@@ -35762,8 +36197,8 @@ self.onmessage = function (e) {
         }
 
         async handleDeleteAll() {
-            const characterName = dataManager.getCurrentCharacterName() || 'this character';
-            if (!confirm(`Delete ALL Openable Analytics data for ${characterName}? This cannot be undone.`)) {
+            const characterName = dataManager.getCurrentCharacterName() || i18n_js.t('openableAnalytics.thisCharacterFallback');
+            if (!confirm(i18n_js.t('openableAnalytics.deleteAllConfirm', { characterName }))) {
                 return;
             }
 
@@ -35775,7 +36210,7 @@ self.onmessage = function (e) {
 
             this.mutationInFlight = false;
             if (!this.popupOverlay) return;
-            this.deleteAllError = persisted ? null : 'Could not save this deletion. It may reappear after reload.';
+            this.deleteAllError = persisted ? null : i18n_js.t('openableAnalytics.deletionSaveErrorMessage');
             // Delete All does not silently close the popup - show the resulting empty state in place.
             this.renderBody();
         }
@@ -36091,7 +36526,7 @@ self.onmessage = function (e) {
     }
 
     function buildPartialBadge() {
-        return ` <span style="color:${config.COLOR_WARNING || '#ffa500'}; font-size:10px;">(partial)</span>`;
+        return ` <span style="color:${config.COLOR_WARNING || '#ffa500'}; font-size:10px;">${i18n_js.t('openableAnalytics.partialBadgeLabel')}</span>`;
     }
 
     function buildStatRow(label, valueHtml, { stacked = false } = {}) {
@@ -36128,7 +36563,7 @@ self.onmessage = function (e) {
             ? 'padding:3px 0; cursor:pointer;'
             : 'display:flex; justify-content:space-between; align-items:baseline; gap:10px; font-size:13px; padding:3px 0; cursor:pointer;';
         const toggleHtml = `
-        <div data-toggle-key="${toggleKey}" style="${toggleRowStyle}" title="Click for details">
+        <div data-toggle-key="${toggleKey}" style="${toggleRowStyle}" title="${i18n_js.t('openableAnalytics.clickForDetailsTooltip')}">
             ${toggleRowHtml}
         </div>
     `;
@@ -36162,7 +36597,7 @@ self.onmessage = function (e) {
                 const total = drop.expectedValue * (amount || 0);
                 const priceNote = drop.hasPriceData
                     ? ''
-                    : ` <span style="color:${config.COLOR_WARNING || '#ffa500'};">(no price yet)</span>`;
+                    : ` <span style="color:${config.COLOR_WARNING || '#ffa500'};">${i18n_js.t('openableAnalytics.noPriceYetNote')}</span>`;
                 const icon = buildItemIconHtml(spriteUrl, drop.itemHrid);
                 return `<div style="display:flex; justify-content:space-between; gap:8px; padding:1px 0;"><span style="display:flex; align-items:center; min-width:0;">${icon}${drop.itemName}${priceNote}</span><span style="flex-shrink:0;">${formatMoney(total)}</span></div>`;
             })
@@ -36202,18 +36637,18 @@ self.onmessage = function (e) {
     function buildExpectedBreakdownContent(containerHrid, amount, spriteUrl) {
         const drops = mergeDropsByItem(expectedValueCalculator.getDropBreakdown(containerHrid));
         if (!drops.length) {
-            return '<div>No drop data available for this container.</div>';
+            return `<div>${i18n_js.t('openableAnalytics.noDropDataMessage')}</div>`;
         }
 
         const shown = drops.slice(0, MAX_BREAKDOWN_ROWS);
         const omittedCount = drops.length - shown.length;
         const omittedNote =
             omittedCount > 0
-                ? `<div style="opacity:0.7; margin-top:2px;">+ ${omittedCount} more possible drop${omittedCount === 1 ? '' : 's'} not shown</div>`
+                ? `<div style="opacity:0.7; margin-top:2px;">${i18n_js.t('openableAnalytics.moreDropsNotShown', { count: omittedCount })}</div>`
                 : '';
 
         return `
-        <div style="margin-bottom:4px;">What this container can drop, valued at today's market prices for ${formatters_js.formatWithSeparator(Math.round(amount || 0))} opened:</div>
+        <div style="margin-bottom:4px;">${i18n_js.t('openableAnalytics.dropValuationHeader', { amount: formatters_js.formatWithSeparator(Math.round(amount || 0)) })}</div>
         ${buildDropBreakdownRows(shown, amount, spriteUrl)}
         ${omittedNote}
     `;
@@ -36227,7 +36662,7 @@ self.onmessage = function (e) {
      */
     function buildCurrentIncomeBreakdownContent(record, spriteUrl) {
         if (!record?.actualValueBreakdown?.length) {
-            return '<div>No item data available for this opening.</div>';
+            return `<div>${i18n_js.t('openableAnalytics.noItemDataForOpeningMessage')}</div>`;
         }
 
         const rows = record.actualValueBreakdown
@@ -36235,13 +36670,13 @@ self.onmessage = function (e) {
                 const name = dataManager.getItemDetails(item.itemHrid)?.name || item.itemHrid;
                 const priceNote = item.resolved
                     ? ''
-                    : ` <span style="color:${config.COLOR_WARNING || '#ffa500'};">(no price yet)</span>`;
+                    : ` <span style="color:${config.COLOR_WARNING || '#ffa500'};">${i18n_js.t('openableAnalytics.noPriceYetNote')}</span>`;
                 const icon = buildItemIconHtml(spriteUrl, item.itemHrid);
                 return `<div style="display:flex; justify-content:space-between; gap:8px; padding:1px 0;"><span style="display:flex; align-items:center; min-width:0;">${icon}${name} ×${formatters_js.formatWithSeparator(item.count)}${priceNote}</span><span style="flex-shrink:0;">${formatMoney(item.value)}</span></div>`;
             })
             .join('');
 
-        return `<div style="margin-bottom:4px;">Items received this opening:</div>${rows}`;
+        return `<div style="margin-bottom:4px;">${i18n_js.t('openableAnalytics.itemsReceivedHeader')}</div>${rows}`;
     }
 
     /**
@@ -36258,7 +36693,7 @@ self.onmessage = function (e) {
     function buildHistoryIncomeBreakdownContent(aggregate, spriteUrl) {
         const itemHrids = Object.keys(aggregate?.itemTotals || {});
         if (!itemHrids.length) {
-            return '<div>No item data recorded yet.</div>';
+            return `<div>${i18n_js.t('openableAnalytics.noItemDataRecordedMessage')}</div>`;
         }
 
         const items = itemHrids
@@ -36273,7 +36708,7 @@ self.onmessage = function (e) {
         const omittedCount = items.length - shown.length;
         const omittedNote =
             omittedCount > 0
-                ? `<div style="opacity:0.7; margin-top:2px;">+ ${omittedCount} more item${omittedCount === 1 ? '' : 's'} not shown</div>`
+                ? `<div style="opacity:0.7; margin-top:2px;">${i18n_js.t('openableAnalytics.moreItemsNotShown', { count: omittedCount })}</div>`
                 : '';
 
         const rows = shown
@@ -36281,13 +36716,13 @@ self.onmessage = function (e) {
                 const name = dataManager.getItemDetails(item.itemHrid)?.name || item.itemHrid;
                 const priceNote = item.resolved
                     ? ''
-                    : ` <span style="color:${config.COLOR_WARNING || '#ffa500'};">(no price yet)</span>`;
+                    : ` <span style="color:${config.COLOR_WARNING || '#ffa500'};">${i18n_js.t('openableAnalytics.noPriceYetNote')}</span>`;
                 const icon = buildItemIconHtml(spriteUrl, item.itemHrid);
                 return `<div style="display:flex; justify-content:space-between; gap:8px; padding:1px 0;"><span style="display:flex; align-items:center; min-width:0;">${icon}${name} ×${formatters_js.formatWithSeparator(item.count)}${priceNote}</span><span style="flex-shrink:0;">${formatMoney(item.value)}</span></div>`;
             })
             .join('');
 
-        return `<div style="margin-bottom:4px;">Cumulative items received across all lifetime openings:</div>${rows}${omittedNote}`;
+        return `<div style="margin-bottom:4px;">${i18n_js.t('openableAnalytics.cumulativeItemsHeader')}</div>${rows}${omittedNote}`;
     }
 
     /**
@@ -36318,7 +36753,7 @@ self.onmessage = function (e) {
         const rangeHtml =
             stats.stdDev === null || stats.stdDev === undefined
                 ? ''
-                : ` <span style="color:${config.COLOR_TEXT_SECONDARY || '#aaa'}; font-size:11px;" title="Actual income for a batch this size usually lands within this range of the expected amount">± ${formatMoney(stats.stdDev)}</span>`;
+                : ` <span style="color:${config.COLOR_TEXT_SECONDARY || '#aaa'}; font-size:11px;" title="${i18n_js.t('openableAnalytics.incomeRangeTooltip')}">± ${formatMoney(stats.stdDev)}</span>`;
         const expectedValueHtml = `${formatMoney(stats.expectedIncome)}${rangeHtml}${stats.expectedIncomeIncomplete ? buildPartialBadge() : ''}`;
         const vsExpectedHtml =
             stats.higher === null
@@ -36330,7 +36765,7 @@ self.onmessage = function (e) {
             : buildHistoryIncomeBreakdownContent(aggregate, spriteUrl);
 
         const incomeRow = buildExpandableStatRow(
-            'Income',
+            i18n_js.t('openableAnalytics.incomeLabel'),
             incomeValueHtml,
             incomeKey,
             incomeBreakdownHtml,
@@ -36339,7 +36774,7 @@ self.onmessage = function (e) {
         );
 
         const expectedRow = buildExpandableStatRow(
-            'Expected income',
+            i18n_js.t('openableAnalytics.expectedIncomeLabel'),
             expectedValueHtml,
             expectedKey,
             buildExpectedBreakdownContent(containerHrid, stats.amount, spriteUrl),
@@ -36367,21 +36802,21 @@ self.onmessage = function (e) {
                 margin-bottom: 6px;
                 border-bottom: 1px solid rgba(255, 255, 255, 0.09);
             ">${title}</div>
-            ${buildStatRow('Opened', formatters_js.formatWithSeparator(Math.round(stats.amount || 0)))}
+            ${buildStatRow(i18n_js.t('openableAnalytics.openedLabel'), formatters_js.formatWithSeparator(Math.round(stats.amount || 0)))}
             <div style="display:flex; gap:12px; align-items:flex-start;">
                 <div style="flex:1; min-width:0;">
                     ${incomeRow.toggleHtml}
-                    ${buildStatRow('Profit', profitHtml, { stacked: true })}
+                    ${buildStatRow(i18n_js.t('openableAnalytics.profitLabel'), profitHtml, { stacked: true })}
                 </div>
                 <div style="flex:1; min-width:0; border-left:1px solid rgba(255, 255, 255, 0.08); padding-left:12px;">
                     ${expectedRow.toggleHtml}
-                    ${buildStatRow('vs. expected', vsExpectedHtml, { stacked: true })}
+                    ${buildStatRow(i18n_js.t('openableAnalytics.vsExpectedLabel'), vsExpectedHtml, { stacked: true })}
                 </div>
             </div>
             ${incomeRow.detailHtml}
             ${expectedRow.detailHtml}
             <div style="height:1px; background:rgba(255, 255, 255, 0.08); margin:8px 0;"></div>
-            ${buildStatRow('Luck', luckHtml)}
+            ${buildStatRow(i18n_js.t('openableAnalytics.luckShortLabel'), luckHtml)}
         </div>
     `;
     }
@@ -36466,7 +36901,7 @@ self.onmessage = function (e) {
             const historyStats = computeStats(record.containerHrid, mapAggregateToCardInputs(lifetimeAggregate));
 
             this.currentPanel.innerHTML =
-                buildCard('Current', currentStats, {
+                buildCard(i18n_js.t('openableAnalytics.currentCardTitle'), currentStats, {
                     keyPrefix: 'current',
                     containerHrid: record.containerHrid,
                     record,
@@ -36474,7 +36909,7 @@ self.onmessage = function (e) {
                     expandedSections: this.expandedSections,
                     spriteUrl: this.itemsSpriteUrl,
                 }) +
-                buildCard('History', historyStats, {
+                buildCard(i18n_js.t('openableAnalytics.historyCardTitle'), historyStats, {
                     keyPrefix: 'history',
                     containerHrid: record.containerHrid,
                     record: null,
@@ -36674,4 +37109,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] Market library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.tokenValuation, Toolasha.Core.storage, Toolasha.Utils.enhancementConfig, Toolasha.Utils.dom, Toolasha.Utils.materialCalculator, Toolasha.Utils.timerRegistry, Toolasha.Utils.cleanupRegistry, Toolasha.Core.loadoutState, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Core, Toolasha.Utils.reactInput, Toolasha.Core.webSocketHook, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator, Toolasha.Core.tooltipObserver);
+})(Toolasha.Core.config, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.tokenValuation, Toolasha.Core.storage, Toolasha.Utils.enhancementConfig, Toolasha.Utils.dom, Toolasha.Utils.materialCalculator, Toolasha.Utils.timerRegistry, Toolasha.Utils.cleanupRegistry, Toolasha.Core.loadoutState, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Core, Toolasha.Utils.reactInput, Toolasha.Core.webSocketHook, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator, Toolasha.Core.tooltipObserver);

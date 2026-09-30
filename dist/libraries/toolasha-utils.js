@@ -1,11 +1,11 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.111.3
+ * Version: 3.0.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, loadoutState, marketAPI, storage, domObserver) {
+(function (config, i18n, dataManager, loadoutState, marketAPI, storage, domObserver) {
     'use strict';
 
     /**
@@ -46,7 +46,7 @@
         const rounded = digits > 0 ? num.toFixed(digits) : Math.round(num);
 
         // Format with thousand separators
-        return new Intl.NumberFormat().format(rounded);
+        return new Intl.NumberFormat(i18n.getLocale()).format(rounded);
     }
 
     /**
@@ -166,7 +166,7 @@
     function formatWithSeparator(num, decimals) {
         const options =
             decimals !== undefined ? { minimumFractionDigits: decimals, maximumFractionDigits: decimals } : undefined;
-        return new Intl.NumberFormat(undefined, options).format(num);
+        return new Intl.NumberFormat(i18n.getLocale(), options).format(num);
     }
 
     /**
@@ -304,29 +304,29 @@
         }
         // 1,000-9,999: comma format
         if (absNum < 10000) {
-            return sign + new Intl.NumberFormat().format(Math.floor(absNum));
+            return sign + new Intl.NumberFormat(i18n.getLocale()).format(Math.floor(absNum));
         }
         // 10K-9,999K (10,000 to 9,999,999)
         if (absNum < 10000000) {
             const val = Math.floor(absNum / 1000);
-            const formatted = val >= 1000 ? new Intl.NumberFormat().format(val) : val;
+            const formatted = val >= 1000 ? new Intl.NumberFormat(i18n.getLocale()).format(val) : val;
             return sign + formatted + 'K';
         }
         // 10M-9,999M (10,000,000 to 9,999,999,999)
         if (absNum < 10000000000) {
             const val = Math.floor(absNum / 1000000);
-            const formatted = val >= 1000 ? new Intl.NumberFormat().format(val) : val;
+            const formatted = val >= 1000 ? new Intl.NumberFormat(i18n.getLocale()).format(val) : val;
             return sign + formatted + 'M';
         }
         // 10B-9,999B (10,000,000,000 to 9,999,999,999,999)
         if (absNum < 10000000000000) {
             const val = Math.floor(absNum / 1000000000);
-            const formatted = val >= 1000 ? new Intl.NumberFormat().format(val) : val;
+            const formatted = val >= 1000 ? new Intl.NumberFormat(i18n.getLocale()).format(val) : val;
             return sign + formatted + 'B';
         }
         // 10T+ (10,000,000,000,000+)
         const val = Math.floor(absNum / 1000000000000);
-        const formatted = val >= 1000 ? new Intl.NumberFormat().format(val) : val;
+        const formatted = val >= 1000 ? new Intl.NumberFormat(i18n.getLocale()).format(val) : val;
         return sign + formatted + 'T';
     }
 
@@ -414,7 +414,7 @@
         }
 
         const percentage = value * 100;
-        const formatted = new Intl.NumberFormat(undefined, {
+        const formatted = new Intl.NumberFormat(i18n.getLocale(), {
             minimumFractionDigits: decimals,
             maximumFractionDigits: decimals,
         }).format(percentage);
@@ -569,7 +569,7 @@
         if (includeTime) {
             const timeOpts = { hour: 'numeric', minute: '2-digit', hour12: !use24h };
             if (includeSeconds) timeOpts.second = '2-digit';
-            parts.push(date.toLocaleString('en-US', timeOpts).trim());
+            parts.push(date.toLocaleString(i18n.getLocale(), timeOpts).trim());
         }
 
         return parts.join(' ');
@@ -607,7 +607,9 @@
         const date = new Date(timestamp);
         const use24h = timeFormat === '24hour';
 
-        const timePart = date.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', hour12: !use24h }).trim();
+        const timePart = date
+            .toLocaleString(i18n.getLocale(), { hour: 'numeric', minute: '2-digit', hour12: !use24h })
+            .trim();
 
         if (isSameLocalDay(timestamp, now)) {
             return timePart;
@@ -8936,4 +8938,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] Utils library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.loadoutState, Toolasha.Core.marketAPI, Toolasha.Core.storage, Toolasha.Core.domObserver);
+})(Toolasha.Core.config, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core.loadoutState, Toolasha.Core.marketAPI, Toolasha.Core.storage, Toolasha.Core.domObserver);

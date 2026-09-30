@@ -1,11 +1,11 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.111.3
+ * Version: 3.0.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (domObserver, config, formatters_js, timerRegistry_js, domObserverHelpers_js, dom_js, storage, dataManager, marketAPI, efficiency_js, webSocketHook, selectors_js, reactInput_js, actionPanelHelper_js, expectedValueCalculator, bonusRevenueCalculator_js, marketData_js, profitConstants_js, profitHelpers_js, profitCalculator, actionCalculator_js, equipmentParser_js, loadoutState, settingsSchema_js, settingsStorage, enhancementConfig_js, marketplaceSession_js, tooltipObserver, alchemyProfitCalculator, cleanupRegistry_js, teaParser_js, buffParser_js, enhancementCalculator_js) {
+(function (domObserver, config, formatters_js, timerRegistry_js, domObserverHelpers_js, dom_js, storage, i18n_js, dataManager, marketAPI, efficiency_js, webSocketHook, selectors_js, reactInput_js, actionPanelHelper_js, expectedValueCalculator, bonusRevenueCalculator_js, marketData_js, profitConstants_js, profitHelpers_js, profitCalculator, actionCalculator_js, equipmentParser_js, loadoutState, settingsSchema_js, settingsStorage, enhancementConfig_js, marketplaceSession_js, tooltipObserver, alchemyProfitCalculator, cleanupRegistry_js, teaParser_js, buffParser_js, enhancementCalculator_js) {
     'use strict';
 
     /**
@@ -326,7 +326,7 @@
             // contentEl is a plain wrapper so prepending places the bar at the top visually.
             const bar = document.createElement('div');
             bar.className = 'mwi-drag-bar';
-            bar.title = 'Drag to move';
+            bar.title = i18n_js.t('dragToMoveTooltip');
             bar.style.cssText = [
                 'width: 100%',
                 'padding: 4px 0',
@@ -1875,7 +1875,7 @@ ${starCSS}
 
             const header = document.createElement('div');
             header.className = 'toolasha-cf-favorites-header';
-            header.textContent = 'Favorites';
+            header.textContent = i18n_js.t('collectionFilters.favoritesLabel');
             section.appendChild(header);
 
             // Record positions: use the next non-favorite sibling as reference
@@ -2334,7 +2334,7 @@ ${starCSS}
                         this.openItemDictionary(itemHrid);
                     } else {
                         // Item not found in game data (best effort normalization was used)
-                        this.showError(`Item "${command.itemName}" not found in game data`);
+                        this.showError(i18n_js.t('chatCommands.itemNotFoundMessage', { itemName: command.itemName }));
                     }
                     break;
 
@@ -2348,7 +2348,7 @@ ${starCSS}
                         this.openMarketplace(itemHrid, command.enhancementLevel ?? 0);
                     } else {
                         // Item not found in game data (best effort normalization was used)
-                        this.showError(`Item "${command.itemName}" not found in game data`);
+                        this.showError(i18n_js.t('chatCommands.itemNotFoundMessage', { itemName: command.itemName }));
                     }
                     break;
             }
@@ -2437,7 +2437,7 @@ ${starCSS}
             });
 
             const matchList = properNames.slice(0, 5).join(', ') + (properNames.length > 5 ? '...' : '');
-            messageDiv.textContent = `Multiple items match: ${matchList}. Please be more specific.`;
+            messageDiv.textContent = i18n_js.t('chatCommands.multipleMatchesMessage', { matchList });
 
             chatHistory.appendChild(messageDiv);
             chatHistory.scrollTop = chatHistory.scrollHeight;
@@ -2490,7 +2490,7 @@ ${starCSS}
          */
         openItemDictionary(itemHrid) {
             if (!this.gameCore?.handleOpenItemDictionary) {
-                this.showError('Feature unavailable after 2/21/26 game update');
+                this.showError(i18n_js.t('chatCommands.featureUnavailableMessage'));
                 return;
             }
 
@@ -2498,7 +2498,7 @@ ${starCSS}
                 this.gameCore.handleOpenItemDictionary(itemHrid);
             } catch (error) {
                 console.error('[Chat Commands] Failed to open Item Dictionary:', error);
-                this.showError('Failed to open Item Dictionary');
+                this.showError(i18n_js.t('chatCommands.itemDictionaryOpenFailedMessage'));
             }
         }
 
@@ -2509,7 +2509,7 @@ ${starCSS}
          */
         openMarketplace(itemHrid, enhancementLevel = 0) {
             if (!this.gameCore?.handleGoToMarketplace) {
-                this.showError('Feature unavailable after 2/21/26 game update');
+                this.showError(i18n_js.t('chatCommands.featureUnavailableMessage'));
                 return;
             }
 
@@ -2517,7 +2517,7 @@ ${starCSS}
                 this.gameCore.handleGoToMarketplace(itemHrid, enhancementLevel);
             } catch (error) {
                 console.error('[Chat Commands] Failed to open marketplace:', error);
-                this.showError('Failed to open marketplace');
+                this.showError(i18n_js.t('chatCommands.marketplaceOpenFailedMessage'));
             }
         }
 
@@ -2712,7 +2712,7 @@ ${starCSS}
             font-weight: 600;
             color: ${config.COLOR_ACCENT};
         `;
-            title.textContent = `Mentions — ${channelDisplayName}`;
+            title.textContent = i18n_js.t('mentionPopup.titleWithChannel', { channel: channelDisplayName });
 
             const closeBtn = document.createElement('button');
             closeBtn.textContent = '×';
@@ -2759,7 +2759,7 @@ ${starCSS}
          */
         _updateContent(mentions, channelDisplayName) {
             const title = this.container.querySelector('#mwi-mention-popup-title');
-            if (title) title.textContent = `Mentions — ${channelDisplayName}`;
+            if (title) title.textContent = i18n_js.t('mentionPopup.titleWithChannel', { channel: channelDisplayName });
 
             const body = this.container.querySelector('#mwi-mention-popup-body');
             if (body) {
@@ -2782,7 +2782,7 @@ ${starCSS}
                 font-size: 0.85rem;
                 text-align: center;
             `;
-                empty.textContent = 'No mentions';
+                empty.textContent = i18n_js.t('mentionPopup.noMentionsMessage');
                 body.appendChild(empty);
                 return;
             }
@@ -2920,87 +2920,16 @@ ${starCSS}
     /**
      * Notification Message Formatter
      * Renders `infoNotification.*` WebSocket messages (see features/chat/notification-log.js) into
-     * readable text. Templates below are copied from the game client's own i18n bundle (English):
+     * readable text. Templates live in the locale tables under the `notificationFormatter` namespace
+     * (see src/locales/en.js) and are copied from the game client's own i18n bundle (English):
      * Toolasha runs outside the game's React tree and has no reachable route to its live translator
      * (it is bound to `this.props.t` on a connected component, not exposed on window), so these are
-     * a static snapshot rather than a live lookup. Update this table if the game adds/changes keys.
+     * a static snapshot rather than a live lookup. Update the locale tables if the game adds/changes keys.
      */
 
 
     /** Variable names whose values are plain quantities, not names/codes/hrids - format with thousand separators. */
     const NUMERIC_VARS = new Set(['count', 'coins', 'filled', 'total', 'minutes', 'level', 'days', 'limit', 'boundary']);
-
-    const TEMPLATES = {
-        addedFriend: 'Added friend: {{name}}',
-        removedFriend: 'Removed friend: {{name}}',
-        blockedCharacter: 'Blocked character: {{name}}',
-        unblockedCharacter: 'Unblocked character: {{name}}',
-        chatReportSubmitted: 'Chat report submitted',
-        loadoutCreated: 'Loadout created',
-        loadoutUpdated: 'Loadout updated',
-        setupImportedToLoadout: 'Imported current setup to loadout',
-        loadoutEquipped: 'Loadout equipped',
-        loadoutDeleted: 'Loadout deleted',
-        boughtItem: 'Bought {{count}} $t(itemNames.{{itemHrid}})',
-        soldItem: 'Sold {{count}} $t(itemNames.{{itemHrid}})',
-        buyOrderCompleted: 'Bought {{count}} $t(itemNames.{{itemHrid}}){{enhancement}} - Spent {{coins}} Coins',
-        sellOrderCompleted: 'Sold {{count}} $t(itemNames.{{itemHrid}}){{enhancement}} - Received {{coins}} Coins',
-        buyListingProgress: 'Buy listing: $t(itemNames.{{itemHrid}}){{enhancement}} - Progress: {{filled}}/{{total}}',
-        sellListingProgress: 'Sell listing: $t(itemNames.{{itemHrid}}){{enhancement}} - Progress: {{filled}}/{{total}}',
-        listingPegged:
-            '$t(itemNames.{{itemHrid}}){{enhancement}} currently listed at {{boundary}} - Your chosen limit: {{limit}}',
-        houseConstructed: 'Level {{level}} $t(houseRoomNames.{{roomHrid}}) constructed',
-        steamCheckoutRequested: 'Steam checkout requested. Please wait...',
-        upgradePurchased: 'Upgrade purchased: $t(buyableUpgradeNames.{{upgradeHrid}}) (x{{count}})',
-        chatIconUnlocked: 'Unlocked chat icon: $t(chatIconNames.{{iconHrid}})',
-        nameColorUnlocked: 'Unlocked name color: $t(nameColorNames.{{colorHrid}})',
-        avatarUnlocked: 'Unlocked new avatar',
-        avatarOutfitUnlocked: 'Unlocked new avatar outfit',
-        avatarBackgroundUnlocked: 'Unlocked new avatar background',
-        avatarBorderUnlocked: 'Unlocked new avatar border',
-        communityBuffAdded: 'Added {{minutes}} minutes of community buff: $t(communityBuffTypeNames.{{buffHrid}})',
-        nameChanged: 'Name changed: {{name}}',
-        guildCreated: 'Created guild: {{guildName}}',
-        guildDisbanded: 'Disbanded guild: {{guildName}}',
-        guildLeft: 'Left guild: {{guildName}}',
-        guildPromotedTo: 'You have been promoted to guild $t(guildCharacterRoleNames.{{role}})',
-        guildDemotedTo: 'You have been demoted to guild $t(guildCharacterRoleNames.{{role}})',
-        guildLeadershipPassed: 'Passed leadership to {{name}}',
-        guildMemberPromoted: 'Promoted {{name}} to $t(guildCharacterRoleNames.{{role}})',
-        guildMemberDemoted: 'Demoted {{name}} to $t(guildCharacterRoleNames.{{role}})',
-        guildMessagePinned: 'New guild pinned message',
-        guildKicked: 'Kicked by guild: {{guildName}}',
-        kickedGuildMember: 'Kicked guild member: {{name}}',
-        guildInvited: 'Invited to guild: {{guildName}}',
-        guildInviteSent: 'Sent guild invite: {{name}}',
-        guildInviteCanceled: 'Guild invite canceled: {{name}}',
-        guildJoined: 'Guild joined: {{guildName}}',
-        guildInviteDeclined: 'Guild invite declined: {{guildName}}',
-        guildApplicationSent: 'Applied to guild: {{guildName}}',
-        guildApplicationAccepted: 'Your application was accepted by {{guildName}}',
-        guildTrialStarted: 'Your guild trial has started!',
-        partyCreated: 'Party created',
-        characterLeveledUp: 'You have reached level {{level}} $t(skillNames.{{skillHrid}})!',
-        achievementCompleted: 'Achievement completed: $t(achievementNames.{{achievementHrid}})',
-        partyOptionsSaved: 'Party options saved',
-        partyOpenForRecruiting: 'Party is open for recruiting',
-        partyLeadershipChanged: 'Party leadership changed to {{name}}',
-        partyJoined: 'You have joined the party',
-        readyToBattle: 'You are ready to battle',
-        notReadyToBattle: 'You are not ready to battle',
-        partyDisbanded: 'Party disbanded',
-        partyLeft: 'You have left the party',
-        partyKicked: 'You have been kicked from the party',
-        partyMemberKicked: 'Kicked {{name}} from the party',
-        referralJoined: 'A new player joined with your referral link. Thanks for sharing!',
-        newReferralBonus: 'New referral bonus granted',
-        cowbellPurchaseCompleted: 'Purchase completed: {{count}} Cowbells',
-        mooPassPurchaseCompleted: 'Purchase completed: {{days}} days of MooPass',
-        mooPassGranted: 'Granted: {{days}} days of MooPass',
-        updateSuccessful: 'Update successful',
-        creatorCodeSet: 'Creator code applied: {{code}}',
-        labyrinthShroudFailed: "Shroud failed! The room level exceeds the shroud's effective range.",
-    };
 
     const CATEGORIES = {
         trading: [
@@ -3156,8 +3085,9 @@ ${starCSS}
             }
         }
 
-        const template = TEMPLATES[key];
-        if (!template) {
+        const templateKey = `notificationFormatter.${key}`;
+        const template = i18n_js.t(templateKey);
+        if (!template || template === templateKey) {
             // Unrecognized key (e.g. a new game update added one): still show something useful
             // instead of dropping the notification or throwing.
             const parts = Object.entries(varMap).map(([name, data]) => `${name}: ${data}`);
@@ -3220,7 +3150,6 @@ ${starCSS}
     const PANEL_ID = 'mwi-notification-log-panel';
     const ACTIVE_CLASS = 'mwi-notification-log-active';
     const STYLE_ID$1 = 'mwi-notification-log-css';
-    const TAB_LABEL = 'Log';
     const DEFAULT_MAX_ENTRIES = 100;
 
     const CSS$1 = `
@@ -3310,6 +3239,34 @@ ${starCSS}
     }
 
     /**
+     * Human-readable label for a filter category, keyed by the same category names
+     * notification-formatter.js's CATEGORIES / getAllNotificationCategories() use, plus the
+     * Log-only "mentions" category.
+     * @param {string} category
+     * @returns {string}
+     */
+    function getCategoryLabel(category) {
+        const CATEGORY_LABEL_KEYS = {
+            trading: 'notificationLog.categoryTrading',
+            guild: 'notificationLog.categoryGuild',
+            party: 'notificationLog.categoryParty',
+            progression: 'notificationLog.categoryProgression',
+            house: 'notificationLog.categoryHouse',
+            social: 'notificationLog.categorySocial',
+            cosmetic: 'notificationLog.categoryCosmetic',
+            loadout: 'notificationLog.categoryLoadout',
+            purchases: 'notificationLog.categoryPurchases',
+            community: 'notificationLog.categoryCommunity',
+            referral: 'notificationLog.categoryReferral',
+            labyrinth: 'notificationLog.categoryLabyrinth',
+            other: 'notificationLog.categoryOther',
+            [MENTION_CATEGORY]: 'notificationLog.categoryMentions',
+        };
+        const key = CATEGORY_LABEL_KEYS[category];
+        return key ? i18n_js.t(key) : category;
+    }
+
+    /**
      * Render a log entry's display text - a mention entry has no infoNotification.* template, so it
      * is formatted directly from the chat message evidence captured at the time it was mentioned.
      * @param {Object} entry
@@ -3317,7 +3274,11 @@ ${starCSS}
      */
     function formatEntryText(entry) {
         if (entry.type === 'mention') {
-            return `Mentioned by ${entry.sName} in ${entry.channelName}: ${entry.text}`;
+            return i18n_js.t('notificationLog.mentionedByLine', {
+                sender: entry.sName,
+                channel: entry.channelName,
+                text: entry.text,
+            });
         }
         return formatNotificationMessage(entry.message, entry.variables);
     }
@@ -3472,7 +3433,7 @@ ${starCSS}
             const badge = button.querySelector('[class*="MuiBadge-badge"]');
             if (badge) badge.remove();
             const target = button.querySelector('[class*="MuiTab-wrapper"], span, div') || button;
-            target.textContent = TAB_LABEL;
+            target.textContent = i18n_js.t('notificationLog.tabLabel');
 
             button.id = TAB_ID;
             button.style.minWidth = '0';
@@ -3480,7 +3441,7 @@ ${starCSS}
             button.setAttribute('aria-selected', 'false');
             button.setAttribute('tabindex', '-1');
             button.classList.remove('Mui-selected');
-            button.title = 'Log of item trades, level-ups, guild events, and other notifications';
+            button.title = i18n_js.t('notificationLog.tabTooltip');
             button.addEventListener('click', (event) => {
                 event.stopPropagation();
                 this._activateTab();
@@ -3525,7 +3486,7 @@ ${starCSS}
                 });
 
                 const text = document.createElement('span');
-                text.textContent = category.charAt(0).toUpperCase() + category.slice(1);
+                text.textContent = getCategoryLabel(category);
 
                 label.appendChild(checkbox);
                 label.appendChild(text);
@@ -3534,8 +3495,8 @@ ${starCSS}
 
             const clearAllBtn = document.createElement('button');
             clearAllBtn.className = 'mwi-notiflog-clear-all';
-            clearAllBtn.textContent = 'Clear All';
-            clearAllBtn.title = 'Delete all logged notifications';
+            clearAllBtn.textContent = i18n_js.t('settings.clearAllButton');
+            clearAllBtn.title = i18n_js.t('notificationLog.clearAllTooltip');
             clearAllBtn.addEventListener('click', () => this._clearAll());
             filtersEl.appendChild(clearAllBtn);
 
@@ -3559,7 +3520,7 @@ ${starCSS}
          */
         _clearAll() {
             if (this.entries.length === 0) return;
-            const confirmed = confirm(`Delete all ${this.entries.length} logged notifications? This cannot be undone.`);
+            const confirmed = confirm(i18n_js.t('notificationLog.clearAllConfirm', { count: this.entries.length }));
             if (!confirmed) return;
 
             this.entries = [];
@@ -3644,7 +3605,7 @@ ${starCSS}
             if (visible.length === 0) {
                 const empty = document.createElement('div');
                 empty.className = 'mwi-notiflog-empty';
-                empty.textContent = 'No notifications match the current filters.';
+                empty.textContent = i18n_js.t('notificationLog.noEntriesMatchFilters');
                 this.listEl.appendChild(empty);
                 return;
             }
@@ -3664,7 +3625,7 @@ ${starCSS}
                 const deleteBtn = document.createElement('button');
                 deleteBtn.className = 'mwi-notiflog-delete';
                 deleteBtn.textContent = '✕';
-                deleteBtn.title = 'Delete this notification';
+                deleteBtn.title = i18n_js.t('notificationLog.deleteEntryTooltip');
                 deleteBtn.addEventListener('click', () => this._removeEntry(entry));
 
                 row.appendChild(time);
@@ -3794,11 +3755,11 @@ ${starCSS}
          */
         getChannelDisplayName(channel) {
             const channelMap = {
-                '/chat_channel_types/party': 'Party',
-                '/chat_channel_types/guild': 'Guild',
-                '/chat_channel_types/local': 'Local',
-                '/chat_channel_types/whisper': 'Whisper',
-                '/chat_channel_types/global': 'Global',
+                '/chat_channel_types/party': i18n_js.t('mentionTracker.channelParty'),
+                '/chat_channel_types/guild': i18n_js.t('mentionTracker.channelGuild'),
+                '/chat_channel_types/local': i18n_js.t('mentionTracker.channelLocal'),
+                '/chat_channel_types/whisper': i18n_js.t('mentionTracker.channelWhisper'),
+                '/chat_channel_types/global': i18n_js.t('mentionTracker.channelGlobal'),
             };
             return channelMap[channel] || channel;
         }
@@ -4120,7 +4081,7 @@ ${starCSS}
     function resolveSystemMessage(messageKey, meta) {
         if (messageKey === 'systemChatMessage.characterLeveledUp') {
             const skillName = SKILL_HRID_TO_NAME[meta.skillHrid] || meta.skillHrid.split('/').pop().replace(/_/g, ' ');
-            return `🎉 ${meta.name} reached ${skillName} ${meta.level}!`;
+            return i18n_js.t('popOutChat.levelUpMessage', { name: meta.name, skillName, level: meta.level });
         }
         return null;
     }
@@ -4137,7 +4098,7 @@ ${starCSS}
             const enhancement = link.itemEnhancementLevel > 0 ? ` +${link.itemEnhancementLevel}` : '';
             const count = link.itemCount > 1 ? ` ×${link.itemCount}` : '';
             const price = formatters_js.formatKMB(link.price);
-            const side = link.isSell ? 'Sell' : 'Buy';
+            const side = link.isSell ? i18n_js.t('popOutChat.marketLinkSellLabel') : i18n_js.t('popOutChat.marketLinkBuyLabel');
             return `[${itemName}${enhancement}${count} @ ${price} ${side}]`;
         }
         if (link.linkType === '/chat_link_types/item') {
@@ -4150,27 +4111,27 @@ ${starCSS}
         if (link.linkType === '/chat_link_types/ability') {
             const abilityDetails = dataManager.getInitClientData()?.abilityDetailMap?.[link.abilityHrid];
             const abilityName = abilityDetails?.name || link.abilityHrid.split('/').pop().replace(/_/g, ' ');
-            return `[${abilityName} Lv.${link.abilityLevel}]`;
+            return `[${abilityName} ${i18n_js.t('popOutChat.levelAbbreviation')}${link.abilityLevel}]`;
         }
         if (link.linkType === '/chat_link_types/skill') {
             const skillName = SKILL_HRID_TO_NAME[link.skillHrid] || link.skillHrid.split('/').pop().replace(/_/g, ' ');
-            return `[${skillName} Lv.${link.skillLevel}]`;
+            return `[${skillName} ${i18n_js.t('popOutChat.levelAbbreviation')}${link.skillLevel}]`;
         }
         if (link.linkType === '/chat_link_types/party') {
             const actionDetails = dataManager.getActionDetails(link.partyActionHrid);
             const zoneName = actionDetails?.name || link.partyActionHrid.split('/').pop().replace(/_/g, ' ');
             const tier = ` T${link.partyDifficultyTier ?? 0}`;
-            return `[Party: ${zoneName}${tier}]`;
+            return `[${i18n_js.t('popOutChat.partyLinkLabel')} ${zoneName}${tier}]`;
         }
         if (link.linkType === '/chat_link_types/collection') {
             const itemDetails = dataManager.getItemDetails(link.itemHrid);
             const itemName = itemDetails?.name || link.itemHrid.split('/').pop().replace(/_/g, ' ');
-            return `[Collection: ${itemName} ×${formatters_js.formatKMB(link.itemCount)}]`;
+            return `[${i18n_js.t('popOutChat.collectionLinkLabel')} ${itemName} ×${formatters_js.formatKMB(link.itemCount)}]`;
         }
         if (link.linkType === '/chat_link_types/bestiary') {
             const monsterDetails = dataManager.getInitClientData()?.combatMonsterDetailMap?.[link.monsterHrid];
             const monsterName = monsterDetails?.name || link.monsterHrid.split('/').pop().replace(/_/g, ' ');
-            return `[Bestiary: ${monsterName} ×${link.monsterCount}]`;
+            return `[${i18n_js.t('popOutChat.bestiaryLinkLabel')} ${monsterName} ×${link.monsterCount}]`;
         }
         // Fallback: humanize the HRID
         return `[${link.linkType.split('/').pop().replace(/_/g, ' ')}]`;
@@ -4277,7 +4238,7 @@ ${starCSS}
             const btn = document.createElement('button');
             btn.setAttribute('data-mwi-popout-chat', 'true');
             btn.textContent = '⧉';
-            btn.title = 'Pop out chat';
+            btn.title = i18n_js.t('popOutChat.popoutButtonTooltip');
             btn.style.cssText = `
             padding: 2px 6px;
             font-size: 13px;
@@ -4503,6 +4464,14 @@ ${starCSS}
          * @returns {string}
          */
         _buildPopoutHTML() {
+            const sendButtonLabel = i18n_js.t('popOutChat.sendButtonLabel');
+            const addPaneButtonLabel = i18n_js.t('popOutChat.addPaneButtonLabel');
+            const verticalLabelText = i18n_js.t('popOutChat.verticalLabelText');
+            const disconnectBannerText = i18n_js.t('popOutChat.disconnectBannerText');
+            const dragHandleTooltip = i18n_js.t('popOutChat.dragHandleTooltip');
+            const closePaneTooltip = i18n_js.t('popOutChat.closePaneTooltip');
+            const filterInputPlaceholder = i18n_js.t('popOutChat.filterInputPlaceholder');
+            const messageInputPlaceholder = i18n_js.t('popOutChat.messageInputPlaceholder');
             return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -4660,9 +4629,9 @@ ${starCSS}
 <div id="topbar">
   <span id="topbar-title">MWI Chat</span>
   <span id="topbar-name"></span>
-  <button id="add-pane-btn">+ Pane</button>
-  <label id="vertical-label"><input type="checkbox" id="vertical-toggle"> Vertical</label>
-  <div id="disconnect-banner">⚠ Disconnected from game tab</div>
+  <button id="add-pane-btn">${addPaneButtonLabel}</button>
+  <label id="vertical-label"><input type="checkbox" id="vertical-toggle"> ${verticalLabelText}</label>
+  <div id="disconnect-banner">${disconnectBannerText}</div>
 </div>
 <div id="panes"></div>
 
@@ -4779,7 +4748,7 @@ ${starCSS}
     const dragHandle = document.createElement('span');
     dragHandle.className = 'pane-drag-handle';
     dragHandle.textContent = '⠿';
-    dragHandle.title = 'Drag to reorder';
+    dragHandle.title = '${dragHandleTooltip}';
 
     const select = document.createElement('select');
     select.className = 'pane-channel-select';
@@ -4788,7 +4757,7 @@ ${starCSS}
     const closeBtn = document.createElement('button');
     closeBtn.className = 'pane-close-btn';
     closeBtn.textContent = '✕';
-    closeBtn.title = 'Close pane';
+    closeBtn.title = '${closePaneTooltip}';
     closeBtn.addEventListener('click', () => removePane(id));
 
     header.appendChild(dragHandle);
@@ -4812,7 +4781,7 @@ ${starCSS}
     const filterInput = document.createElement('input');
     filterInput.className = 'pane-filter-input';
     filterInput.type = 'text';
-    filterInput.placeholder = 'text or /regex/';
+    filterInput.placeholder = '${filterInputPlaceholder}';
     filterInput.value = savedFilterCustom || '';
     filterInput.style.display = filterSelect.value === 'custom' ? '' : 'none';
 
@@ -4830,12 +4799,12 @@ ${starCSS}
     const input = document.createElement('input');
     input.type = 'text';
     input.className = 'pane-input';
-    input.placeholder = 'Type a message...';
+    input.placeholder = '${messageInputPlaceholder}';
     input.maxLength = 500;
 
     const sendBtn = document.createElement('button');
     sendBtn.className = 'pane-send-btn';
-    sendBtn.textContent = 'SEND';
+    sendBtn.textContent = '${sendButtonLabel}';
 
     const doSend = () => {
       const text = input.value.trim();
@@ -5940,7 +5909,7 @@ ${starCSS}
                 tokenValue: null,
                 giftPerTask: null,
                 totalPerToken: null,
-                error: 'Market data not loaded',
+                error: i18n_js.t('taskProfitCalculator.marketDataNotLoadedError'),
             };
         }
 
@@ -7724,14 +7693,14 @@ ${starCSS}
             if (profitData.rewards?.error || profitData.totalProfit === null || profitData.totalProfit === undefined) {
                 return {
                     value: null,
-                    unitLabel: 'gold/hr',
-                    error: profitData.rewards?.error || 'Missing price data',
+                    unitLabel: i18n_js.t('taskProfitDisplay.goldPerHourUnit'),
+                    error: profitData.rewards?.error || i18n_js.t('taskProfitDisplay.missingPriceDataError'),
                 };
             }
 
             return {
                 value: profitData.totalProfit / hours,
-                unitLabel: 'gold/hr',
+                unitLabel: i18n_js.t('taskProfitDisplay.goldPerHourUnit'),
                 error: null,
             };
         }
@@ -7739,7 +7708,7 @@ ${starCSS}
         const tokensReceived = profitData.rewards?.breakdown?.tokensReceived ?? 0;
         return {
             value: tokensReceived / hours,
-            unitLabel: 'tokens/hr',
+            unitLabel: i18n_js.t('taskProfitDisplay.tokensPerHourUnit'),
             error: null,
         };
     }
@@ -8466,8 +8435,8 @@ ${starCSS}
 
                 // Handle market data not loaded - add to pending queue
                 if (
-                    profitData.error === 'Market data not loaded' ||
-                    (profitData.rewards && profitData.rewards.error === 'Market data not loaded')
+                    profitData.error === i18n_js.t('taskProfitCalculator.marketDataNotLoadedError') ||
+                    (profitData.rewards && profitData.rewards.error === i18n_js.t('taskProfitCalculator.marketDataNotLoadedError'))
                 ) {
                     // Add to pending queue
                     this.pendingTaskNodes.add(taskNode);
@@ -8488,7 +8457,7 @@ ${starCSS}
                 console.error('[Task Profit Display] Failed to calculate profit:', error);
 
                 // Display error state in UI
-                this.displayErrorState(taskNode, 'Unable to calculate profit');
+                this.displayErrorState(taskNode, i18n_js.t('taskProfitDisplay.unableToCalculateProfit'));
 
                 // Remove from pending queue if present
                 this.pendingTaskNodes.delete(taskNode);
@@ -8609,18 +8578,17 @@ ${starCSS}
             let html = '<div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">';
             html +=
                 '<select class="mwi-combat-est-loadout" style="font-size:11px; background:#1a1a1a; color:#ccc; border:1px solid #444; border-radius:3px; padding:2px 4px;">';
-            html += `<option value=""${!selectedLoadoutName ? ' selected' : ''}>— Current Gear —</option>`;
+            html += `<option value=""${!selectedLoadoutName ? ' selected' : ''}>— ${i18n_js.t('combatSimUi.currentGearLabel')} —</option>`;
             if (selectedLoadoutName && !usableLoadoutNames.has(selectedLoadoutName)) {
-                html += `<option value="${selectedLoadoutName}" selected>${selectedLoadoutName} (Unavailable)</option>`;
+                html += `<option value="${selectedLoadoutName}" selected>${i18n_js.t('skillingOptimizer.unavailableLabel', { name: selectedLoadoutName })}</option>`;
             }
             for (const s of snapshots) {
                 const selected = s.name === selectedLoadoutName ? ' selected' : '';
                 html += `<option value="${s.name}"${selected}>${s.name}</option>`;
             }
             html += '</select>';
-            html += `<button class="mwi-combat-est-mode" data-mode="${selectedMode}" title="Solo: simulate only target monster. Zone: simulate full zone spawn table." style="font-size:11px; padding:2px 6px; background:#1a1a1a; color:${selectedMode === 'zone' ? '#aaddff' : '#ccc'}; border:1px solid ${selectedMode === 'zone' ? '#4a9eff44' : '#444'}; border-radius:3px; cursor:pointer;">${selectedMode === 'zone' ? 'Zone' : 'Solo'}</button>`;
-            html +=
-                '<button class="mwi-combat-est-btn" style="font-size:11px; padding:2px 8px; background:#1a3a5c; color:#4a9eff; border:1px solid #4a9eff44; border-radius:3px; cursor:pointer;">⚔ Estimate</button>';
+            html += `<button class="mwi-combat-est-mode" data-mode="${selectedMode}" title="${i18n_js.t('taskProfitDisplay.estimateModeTooltip')}" style="font-size:11px; padding:2px 6px; background:#1a1a1a; color:${selectedMode === 'zone' ? '#aaddff' : '#ccc'}; border:1px solid ${selectedMode === 'zone' ? '#4a9eff44' : '#444'}; border-radius:3px; cursor:pointer;">${selectedMode === 'zone' ? i18n_js.t('taskProfitDisplay.zoneModeLabel') : i18n_js.t('taskProfitDisplay.soloModeLabel')}</button>`;
+            html += `<button class="mwi-combat-est-btn" style="font-size:11px; padding:2px 8px; background:#1a3a5c; color:#4a9eff; border:1px solid #4a9eff44; border-radius:3px; cursor:pointer;">⚔ ${i18n_js.t('taskProfitDisplay.estimateButtonLabel')}</button>`;
             html += '</div>';
             container.innerHTML = html;
 
@@ -8629,12 +8597,12 @@ ${starCSS}
                 const current = modeBtn.dataset.mode;
                 if (current === 'solo') {
                     modeBtn.dataset.mode = 'zone';
-                    modeBtn.textContent = 'Zone';
+                    modeBtn.textContent = i18n_js.t('taskProfitDisplay.zoneModeLabel');
                     modeBtn.style.color = '#aaddff';
                     modeBtn.style.borderColor = '#4a9eff44';
                 } else {
                     modeBtn.dataset.mode = 'solo';
-                    modeBtn.textContent = 'Solo';
+                    modeBtn.textContent = i18n_js.t('taskProfitDisplay.soloModeLabel');
                     modeBtn.style.color = '#ccc';
                     modeBtn.style.borderColor = '#444';
                 }
@@ -8681,17 +8649,17 @@ ${starCSS}
                           )
                         : [],
                 });
-                container.innerHTML = '<span style="color:#f87171; font-size:11px;">Could not identify monster.</span>';
+                container.innerHTML = `<span style="color:#f87171; font-size:11px;">${i18n_js.t('taskProfitDisplay.couldNotIdentifyMonster')}</span>`;
                 return;
             }
 
             const zoneHrid = dataManager.getCombatZoneForMonster(monsterHrid);
             if (!zoneHrid) {
-                container.innerHTML = '<span style="color:#f87171; font-size:11px;">No zone found for monster.</span>';
+                container.innerHTML = `<span style="color:#f87171; font-size:11px;">${i18n_js.t('taskProfitDisplay.noZoneFoundForMonster')}</span>`;
                 return;
             }
 
-            container.innerHTML = '<span style="color:#888; font-size:11px;">⏳ Simulating…</span>';
+            container.innerHTML = `<span style="color:#888; font-size:11px;">⏳ ${i18n_js.t('taskProfitDisplay.simulatingLabel')}</span>`;
 
             try {
                 const gameData = buildGameDataPayload();
@@ -8706,7 +8674,7 @@ ${starCSS}
                     // Preserve the user's intended configuration and fail closed until they
                     // explicitly choose another loadout or Current Gear.
                     console.warn('[TaskProfit] Selected combat loadout is unavailable:', loadoutName);
-                    container.innerHTML = `<span style="color:#f87171; font-size:11px;">Loadout “${loadoutName}” is unavailable. Choose another loadout or Current Gear.</span>`;
+                    container.innerHTML = `<span style="color:#f87171; font-size:11px;">${i18n_js.t('taskProfitDisplay.combatLoadoutUnavailableMessage', { loadoutName })}</span>`;
                     return;
                 }
 
@@ -8795,9 +8763,9 @@ ${starCSS}
                 );
             } catch (e) {
                 console.error('[TaskProfit] Combat estimate failed:', e);
-                container.innerHTML = '<span style="color:#f87171; font-size:11px;">Estimate failed. </span>';
+                container.innerHTML = `<span style="color:#f87171; font-size:11px;">${i18n_js.t('taskProfitDisplay.estimateFailedLabel')} </span>`;
                 const retry = document.createElement('span');
-                retry.textContent = 'Retry';
+                retry.textContent = i18n_js.t('taskProfitDisplay.retryLabel');
                 retry.style.cssText = 'color:#4a9eff; cursor:pointer; font-size:11px;';
                 retry.addEventListener('click', () => this._renderCombatEstimateConfig(container, taskData));
                 container.appendChild(retry);
@@ -8865,31 +8833,57 @@ ${starCSS}
 
             const remaining = Math.max((taskData.quantity ?? 0) - (taskData.currentProgress ?? 0), 0);
             const lines = [];
-            lines.push('<div style="font-weight: bold; margin-bottom: 4px;">Task Profit Breakdown</div>');
+            lines.push(
+                `<div style="font-weight: bold; margin-bottom: 4px;">${i18n_js.t('taskProfitDisplay.taskProfitBreakdownTitle')}</div>`
+            );
             lines.push('<div style="border-bottom: 1px solid #555; margin-bottom: 4px;"></div>');
             lines.push(
-                `<div style="margin-bottom: 2px; color: #aaa;">Monster: ${monsterName} × ${remaining.toLocaleString()} kills (${formatters_js.formatKMB(killsPerHour)}/hr)</div>`
+                `<div style="margin-bottom: 2px; color: #aaa;">${i18n_js.t('taskProfitDisplay.monsterKillsSummary', {
+                monsterName,
+                count: remaining.toLocaleString(),
+                rate: formatters_js.formatKMB(killsPerHour),
+            })}</div>`
             );
-            lines.push(`<div style="margin-bottom: 4px; color: #aaa;">Loadout: ${loadoutName || 'Current Gear'}</div>`);
+            lines.push(
+                `<div style="margin-bottom: 4px; color: #aaa;">${i18n_js.t('taskProfitDisplay.loadoutSummary', {
+                loadoutName: loadoutName || i18n_js.t('combatSimUi.currentGearLabel'),
+            })}</div>`
+            );
 
             // Task Rewards — matching skilling section exactly
-            lines.push('<div style="margin-bottom: 4px; color: #aaa;">Task Rewards:</div>');
-            lines.push(`<div style="margin-left: 10px;">Coins: ${formatters_js.formatKMB(rewardValue.coins)}</div>`);
+            lines.push(`<div style="margin-bottom: 4px; color: #aaa;">${i18n_js.t('taskProfitDisplay.taskRewardsLabel')}</div>`);
+            lines.push(
+                `<div style="margin-left: 10px;">${i18n_js.t('taskProfitDisplay.coinsLine', { value: formatters_js.formatKMB(rewardValue.coins) })}</div>`
+            );
             if (!rewardValue.error) {
-                lines.push(`<div style="margin-left: 10px;">Task Tokens: ${formatters_js.formatKMB(rewardValue.taskTokens)}</div>`);
                 lines.push(
-                    `<div style="margin-left: 20px; font-size: 0.65rem; color: #888;">(${rewardValue.breakdown.tokensReceived} tokens @ ${formatters_js.formatKMB(Math.round(rewardValue.breakdown.tokenValue))} each)</div>`
+                    `<div style="margin-left: 10px;">${i18n_js.t('taskProfitDisplay.taskTokensLine', { value: formatters_js.formatKMB(rewardValue.taskTokens) })}</div>`
                 );
+                lines.push(
+                    `<div style="margin-left: 20px; font-size: 0.65rem; color: #888;">${i18n_js.t(
+                    'taskProfitDisplay.tokensReceivedNote',
+                    {
+                        count: rewardValue.breakdown.tokensReceived,
+                        value: formatters_js.formatKMB(Math.round(rewardValue.breakdown.tokenValue)),
+                    }
+                )}</div>`
+                );
+                // "Purple's Gift" is the in-game item name for this bonus reward and is not translated here.
                 lines.push(`<div style="margin-left: 10px;">Purple's Gift: ${formatters_js.formatKMB(rewardValue.purpleGift)}</div>`);
                 lines.push(
-                    `<div style="margin-left: 20px; font-size: 0.65rem; color: #888;">(${formatters_js.formatKMB(Math.round(rewardValue.breakdown.giftPerTask))} per task)</div>`
+                    `<div style="margin-left: 20px; font-size: 0.65rem; color: #888;">${i18n_js.t(
+                    'taskProfitDisplay.giftPerTaskNote',
+                    {
+                        value: formatters_js.formatKMB(Math.round(rewardValue.breakdown.giftPerTask)),
+                    }
+                )}</div>`
                 );
             }
 
             // Drops — total over task duration
             if (dropEntries.length > 0) {
                 lines.push(
-                    `<div style="margin-top: 6px; margin-bottom: 4px; color: #aaa;">Drops: ${formatters_js.formatKMB(Math.round(totalDropValue))}</div>`
+                    `<div style="margin-top: 6px; margin-bottom: 4px; color: #aaa;">${i18n_js.t('taskProfitDisplay.dropsLabel', { value: formatters_js.formatKMB(Math.round(totalDropValue)) })}</div>`
                 );
                 for (const d of dropEntries.slice(0, 8)) {
                     const taskCount = d.countPerHour * completionHours;
@@ -8903,7 +8897,7 @@ ${starCSS}
             // Consumables — total over task duration
             if (consumableEntries.length > 0) {
                 lines.push(
-                    `<div style="margin-top: 6px; margin-bottom: 4px; color: #aaa;">Consumables: -${formatters_js.formatKMB(Math.round(totalConsumableCost))}</div>`
+                    `<div style="margin-top: 6px; margin-bottom: 4px; color: #aaa;">${i18n_js.t('taskProfitDisplay.consumablesLabel', { value: `-${formatters_js.formatKMB(Math.round(totalConsumableCost))}` })}</div>`
                 );
                 for (const c of consumableEntries) {
                     const taskCount = c.countPerHour * completionHours;
@@ -8917,7 +8911,7 @@ ${starCSS}
             breakdown.innerHTML = lines.join('');
 
             const rerunBtn = document.createElement('button');
-            rerunBtn.textContent = 'Re-run';
+            rerunBtn.textContent = i18n_js.t('taskProfitDisplay.rerunButtonLabel');
             rerunBtn.style.cssText =
                 'margin-top:6px; font-size:11px; padding:2px 8px; background:#1a3a5c; color:#4a9eff; border:1px solid #4a9eff44; border-radius:3px; cursor:pointer;';
             rerunBtn.addEventListener('click', (e) => {
@@ -8948,11 +8942,11 @@ ${starCSS}
 
                 if (ratingMode === RATING_MODE_GOLD) {
                     ratingValue = totalProfitFull / totalHours;
-                    unitLabel = 'gold/hr';
+                    unitLabel = i18n_js.t('taskProfitDisplay.goldPerHourUnit');
                 } else {
                     const tokensReceived = rewardValue.breakdown?.tokensReceived ?? 0;
                     ratingValue = tokensReceived / totalHours;
-                    unitLabel = 'tokens/hr';
+                    unitLabel = i18n_js.t('taskProfitDisplay.tokensPerHourUnit');
                 }
 
                 const ratingLine = document.createElement('div');
@@ -9002,8 +8996,15 @@ ${starCSS}
                     const summary = document.createElement('div');
                     summary.style.cssText =
                         'margin-top: 4px; font-size: 0.7rem; color: #aaddff; border-top: 1px solid #333; padding-top: 4px;';
-                    const zoneName = dataManager.getInitClientData()?.actionDetailMap?.[zoneHrid]?.name || 'Zone';
-                    summary.textContent = `${zoneName}: ~${formatters_js.formatKMB(fightsNeeded)} fights | ${formatters_js.timeReadable(totalSeconds)} (bottleneck: ${bottleneck.name})`;
+                    const zoneName =
+                        dataManager.getInitClientData()?.actionDetailMap?.[zoneHrid]?.name ||
+                        i18n_js.t('taskProfitDisplay.zoneFallbackLabel');
+                    summary.textContent = i18n_js.t('taskProfitDisplay.zoneSummaryLine', {
+                        zoneName,
+                        fights: formatters_js.formatKMB(fightsNeeded),
+                        time: formatters_js.timeReadable(totalSeconds),
+                        bottleneckName: bottleneck.name,
+                    });
                     container.appendChild(summary);
                 }
             }
@@ -9036,7 +9037,7 @@ ${starCSS}
             if (profitData.error) {
                 profitContainer.innerHTML = `
                 <div style="color: ${config.SCRIPT_COLOR_ALERT};">
-                    Unable to calculate profit
+                    ${i18n_js.t('taskProfitDisplay.unableToCalculateProfit')}
                 </div>
             `;
                 actionNode.appendChild(profitContainer);
@@ -9267,48 +9268,66 @@ ${starCSS}
             const formatTotalValue = (value) => (showTotals ? formatters_js.formatKMB(value) : '-- ⚠');
             const formatPerActionValue = (value) => (showTotals ? formatters_js.formatKMB(Math.round(value)) : '-- ⚠');
 
-            lines.push('<div style="font-weight: bold; margin-bottom: 4px;">Task Profit Breakdown</div>');
+            lines.push(
+                `<div style="font-weight: bold; margin-bottom: 4px;">${i18n_js.t('taskProfitDisplay.taskProfitBreakdownTitle')}</div>`
+            );
             lines.push('<div style="border-bottom: 1px solid #555; margin-bottom: 4px;"></div>');
 
             // Show warning if market data unavailable
             if (profitData.rewards.error) {
                 lines.push(
-                    `<div style="color: ${config.SCRIPT_COLOR_ALERT}; margin-bottom: 6px; font-style: italic;">⚠ ${profitData.rewards.error} - Token values unavailable</div>`
+                    `<div style="color: ${config.SCRIPT_COLOR_ALERT}; margin-bottom: 6px; font-style: italic;">⚠ ${i18n_js.t('taskProfitDisplay.tokenValuesUnavailableNote', { error: profitData.rewards.error })}</div>`
                 );
             }
 
             // Task Rewards section
-            lines.push('<div style="margin-bottom: 4px; color: #aaa;">Task Rewards:</div>');
-            lines.push(`<div style="margin-left: 10px;">Coins: ${formatters_js.formatKMB(profitData.rewards.coins)}</div>`);
+            lines.push(`<div style="margin-bottom: 4px; color: #aaa;">${i18n_js.t('taskProfitDisplay.taskRewardsLabel')}</div>`);
+            lines.push(
+                `<div style="margin-left: 10px;">${i18n_js.t('taskProfitDisplay.coinsLine', { value: formatters_js.formatKMB(profitData.rewards.coins) })}</div>`
+            );
 
             if (!profitData.rewards.error) {
                 lines.push(
-                    `<div style="margin-left: 10px;">Task Tokens: ${formatters_js.formatKMB(profitData.rewards.taskTokens)}</div>`
+                    `<div style="margin-left: 10px;">${i18n_js.t('taskProfitDisplay.taskTokensLine', { value: formatters_js.formatKMB(profitData.rewards.taskTokens) })}</div>`
                 );
                 lines.push(
-                    `<div style="margin-left: 20px; font-size: 0.65rem; color: #888;">(${profitData.rewards.breakdown.tokensReceived} tokens @ ${formatters_js.formatKMB(Math.round(profitData.rewards.breakdown.tokenValue))} each)</div>`
+                    `<div style="margin-left: 20px; font-size: 0.65rem; color: #888;">${i18n_js.t(
+                    'taskProfitDisplay.tokensReceivedNote',
+                    {
+                        count: profitData.rewards.breakdown.tokensReceived,
+                        value: formatters_js.formatKMB(Math.round(profitData.rewards.breakdown.tokenValue)),
+                    }
+                )}</div>`
                 );
+                // "Purple's Gift" is the in-game item name for this bonus reward and is not translated here.
                 lines.push(
                     `<div style="margin-left: 10px;">Purple's Gift: ${formatters_js.formatKMB(profitData.rewards.purpleGift)}</div>`
                 );
                 lines.push(
-                    `<div style="margin-left: 20px; font-size: 0.65rem; color: #888;">(${formatters_js.formatKMB(Math.round(profitData.rewards.breakdown.giftPerTask))} per task)</div>`
+                    `<div style="margin-left: 20px; font-size: 0.65rem; color: #888;">${i18n_js.t(
+                    'taskProfitDisplay.giftPerTaskNote',
+                    {
+                        value: formatters_js.formatKMB(Math.round(profitData.rewards.breakdown.giftPerTask)),
+                    }
+                )}</div>`
                 );
             } else {
                 lines.push(
-                    `<div style="margin-left: 10px; color: #888; font-style: italic;">Task Tokens: Loading...</div>`
+                    `<div style="margin-left: 10px; color: #888; font-style: italic;">${i18n_js.t('taskProfitDisplay.taskTokensLine', { value: i18n_js.t('taskProfitDisplay.loadingEllipsis') })}</div>`
                 );
                 lines.push(
-                    `<div style="margin-left: 10px; color: #888; font-style: italic;">Purple's Gift: Loading...</div>`
+                    `<div style="margin-left: 10px; color: #888; font-style: italic;">Purple's Gift: ${i18n_js.t('taskProfitDisplay.loadingEllipsis')}</div>`
                 );
             }
             // Action profit section
-            lines.push('<div style="margin-top: 6px; margin-bottom: 4px; color: #aaa;">Action Profit:</div>');
+            lines.push(
+                `<div style="margin-top: 6px; margin-bottom: 4px; color: #aaa;">${i18n_js.t('taskProfitDisplay.actionProfitLabel')}</div>`
+            );
 
             if (profitData.type === 'gathering') {
                 // Gathering Value (expandable)
                 lines.push(
-                    `<div class="mwi-expandable-header" data-section="gathering" style="margin-left: 10px; cursor: pointer; user-select: none;">Gathering Value: ${formatTotalValue(profitData.action.totalValue)} ▸</div>`
+                    `<div class="mwi-expandable-header" data-section="gathering" style="margin-left: 10px; cursor: pointer; user-select: none;">${i18n_js.t('taskProfitDisplay.gatheringValueLabel', { value: formatTotalValue(profitData.action.totalValue) })} ▸</div>`
                 );
                 lines.push(
                     `<div class="mwi-expandable-section" data-section="gathering" style="display: none; margin-left: 20px; font-size: 0.65rem; color: #888; margin-top: 2px;">`
@@ -9329,7 +9348,7 @@ ${starCSS}
                         const processingRevenueTotal = (details.processingRevenueBonusPerAction || 0) * quantity;
                         const primaryOutputTotal = baseRevenueTotal + gourmetRevenueTotal + processingRevenueTotal;
                         lines.push(
-                            `<div style="margin-top: 2px; color: #aaa;">Primary Outputs: ${formatTotalValue(Math.round(primaryOutputTotal))}</div>`
+                            `<div style="margin-top: 2px; color: #aaa;">${i18n_js.t('taskProfitDisplay.primaryOutputsLabel', { value: formatTotalValue(Math.round(primaryOutputTotal)) })}</div>`
                         );
                         for (const output of details.baseOutputs) {
                             const itemsPerAction = output.itemsPerAction ?? output.itemsPerHour / actionsPerHour;
@@ -9337,10 +9356,18 @@ ${starCSS}
                             const itemsForTask = itemsPerAction * quantity;
                             const revenueForTask = revenuePerAction * quantity;
                             const dropRateText =
-                                output.dropRate < 1.0 ? ` (${formatters_js.formatPercentage(output.dropRate, 1)} drop)` : '';
+                                output.dropRate < 1.0
+                                    ? i18n_js.t('taskProfitDisplay.dropRateSuffix', { pct: formatters_js.formatPercentage(output.dropRate, 1) })
+                                    : '';
                             const missingPriceNote = output.missingPrice ? ' ⚠' : '';
                             lines.push(
-                                `<div>• ${output.name} (Base): ${itemsForTask.toFixed(1)} items @ ${formatters_js.formatKMB(Math.round(output.priceEach))}${missingPriceNote} = ${formatters_js.formatKMB(Math.round(revenueForTask))}${dropRateText}</div>`
+                                `<div>• ${i18n_js.t('taskProfitDisplay.baseOutputItemLine', {
+                                name: output.name,
+                                items: itemsForTask.toFixed(1),
+                                price: formatters_js.formatKMB(Math.round(output.priceEach)),
+                                missingNote: missingPriceNote,
+                                total: formatters_js.formatKMB(Math.round(revenueForTask)),
+                            })}${dropRateText}</div>`
                             );
                         }
                     }
@@ -9353,7 +9380,14 @@ ${starCSS}
                             const revenueForTask = revenuePerAction * quantity;
                             const missingPriceNote = output.missingPrice ? ' ⚠' : '';
                             lines.push(
-                                `<div>• ${output.name} (Gourmet ${formatters_js.formatPercentage(details.gourmetBonus || 0, 1)}): ${itemsForTask.toFixed(1)} items @ ${formatters_js.formatKMB(Math.round(output.priceEach))}${missingPriceNote} = ${formatters_js.formatKMB(Math.round(revenueForTask))}</div>`
+                                `<div>• ${i18n_js.t('taskProfitDisplay.gourmetOutputItemLine', {
+                                name: output.name,
+                                pct: formatters_js.formatPercentage(details.gourmetBonus || 0, 1),
+                                items: itemsForTask.toFixed(1),
+                                price: formatters_js.formatKMB(Math.round(output.priceEach)),
+                                missingNote: missingPriceNote,
+                                total: formatters_js.formatKMB(Math.round(revenueForTask)),
+                            })}</div>`
                             );
                         }
                     }
@@ -9362,7 +9396,10 @@ ${starCSS}
                         const processingBonusTotal = (details.processingRevenueBonusPerAction || 0) * quantity;
                         const processingLabel = `${processingBonusTotal >= 0 ? '+' : '-'}${formatters_js.formatKMB(Math.abs(Math.round(processingBonusTotal)))}`;
                         lines.push(
-                            `<div>• Processing (${formatters_js.formatPercentage(details.processingBonus || 0, 1)} proc): Net ${processingLabel}</div>`
+                            `<div>• ${i18n_js.t('taskProfitDisplay.processingNetLine', {
+                            pct: formatters_js.formatPercentage(details.processingBonus || 0, 1),
+                            label: processingLabel,
+                        })}</div>`
                         );
 
                         for (const conversion of details.processingConversions) {
@@ -9376,10 +9413,22 @@ ${starCSS}
                             const producedRevenue = totalProduced * conversion.processedPriceEach;
                             const missingPriceNote = conversion.missingPrice ? ' ⚠' : '';
                             lines.push(
-                                `<div style="margin-left: 10px;">• ${conversion.rawItem} consumed: -${totalConsumed.toFixed(1)} items @ ${formatters_js.formatKMB(Math.round(conversion.rawPriceEach))}${missingPriceNote} = -${formatters_js.formatKMB(Math.round(consumedRevenue))}</div>`
+                                `<div style="margin-left: 10px;">• ${i18n_js.t('taskProfitDisplay.materialConsumedLine', {
+                                name: conversion.rawItem,
+                                amount: totalConsumed.toFixed(1),
+                                price: formatters_js.formatKMB(Math.round(conversion.rawPriceEach)),
+                                missingNote: missingPriceNote,
+                                total: formatters_js.formatKMB(Math.round(consumedRevenue)),
+                            })}</div>`
                             );
                             lines.push(
-                                `<div style="margin-left: 10px;">• ${conversion.processedItem} produced: ${totalProduced.toFixed(1)} items @ ${formatters_js.formatKMB(Math.round(conversion.processedPriceEach))}${missingPriceNote} = ${formatters_js.formatKMB(Math.round(producedRevenue))}</div>`
+                                `<div style="margin-left: 10px;">• ${i18n_js.t('taskProfitDisplay.materialProducedLine', {
+                                name: conversion.processedItem,
+                                amount: totalProduced.toFixed(1),
+                                price: formatters_js.formatKMB(Math.round(conversion.processedPriceEach)),
+                                missingNote: missingPriceNote,
+                                total: formatters_js.formatKMB(Math.round(producedRevenue)),
+                            })}</div>`
                             );
                         }
                     }
@@ -9400,14 +9449,20 @@ ${starCSS}
                                 0
                             );
                             lines.push(
-                                `<div style="margin-top: 4px; color: #aaa;">Essence Drops: ${formatTotalValue(Math.round(totalEssenceRevenue))}</div>`
+                                `<div style="margin-top: 4px; color: #aaa;">${i18n_js.t('taskProfitDisplay.essenceDropsLabel', { value: formatTotalValue(Math.round(totalEssenceRevenue)) })}</div>`
                             );
                             for (const drop of essenceDrops) {
                                 const dropsForTask = (drop.dropsPerAction || 0) * quantity;
                                 const revenueForTask = (drop.revenuePerAction || 0) * quantity;
                                 const missingPriceNote = drop.missingPrice ? ' ⚠' : '';
                                 lines.push(
-                                    `<div>• ${drop.itemName}: ${dropsForTask.toFixed(2)} drops @ ${formatters_js.formatKMB(Math.round(drop.priceEach))}${missingPriceNote} = ${formatters_js.formatKMB(Math.round(revenueForTask))}</div>`
+                                    `<div>• ${i18n_js.t('taskProfitDisplay.dropLine', {
+                                    name: drop.itemName,
+                                    drops: dropsForTask.toFixed(2),
+                                    price: formatters_js.formatKMB(Math.round(drop.priceEach)),
+                                    missingNote: missingPriceNote,
+                                    total: formatters_js.formatKMB(Math.round(revenueForTask)),
+                                })}</div>`
                                 );
                             }
                         }
@@ -9418,14 +9473,20 @@ ${starCSS}
                                 0
                             );
                             lines.push(
-                                `<div style="margin-top: 4px; color: #aaa;">Rare Finds: ${formatTotalValue(Math.round(totalRareRevenue))}</div>`
+                                `<div style="margin-top: 4px; color: #aaa;">${i18n_js.t('taskProfitDisplay.rareFindsLabel', { value: formatTotalValue(Math.round(totalRareRevenue)) })}</div>`
                             );
                             for (const drop of rareFindDrops) {
                                 const dropsForTask = (drop.dropsPerAction || 0) * quantity;
                                 const revenueForTask = (drop.revenuePerAction || 0) * quantity;
                                 const missingPriceNote = drop.missingPrice ? ' ⚠' : '';
                                 lines.push(
-                                    `<div>• ${drop.itemName}: ${dropsForTask.toFixed(2)} drops @ ${formatters_js.formatKMB(Math.round(drop.priceEach))}${missingPriceNote} = ${formatters_js.formatKMB(Math.round(revenueForTask))}</div>`
+                                    `<div>• ${i18n_js.t('taskProfitDisplay.dropLine', {
+                                    name: drop.itemName,
+                                    drops: dropsForTask.toFixed(2),
+                                    price: formatters_js.formatKMB(Math.round(drop.priceEach)),
+                                    missingNote: missingPriceNote,
+                                    total: formatters_js.formatKMB(Math.round(revenueForTask)),
+                                })}</div>`
                                 );
                             }
                         }
@@ -9434,7 +9495,13 @@ ${starCSS}
 
                 lines.push(`</div>`);
                 lines.push(
-                    `<div style="margin-left: 20px; font-size: 0.65rem; color: #888;">(${profitData.action.breakdown.quantity}× @ ${formatPerActionValue(profitData.action.breakdown.perAction)} each)</div>`
+                    `<div style="margin-left: 20px; font-size: 0.65rem; color: #888;">${i18n_js.t(
+                    'taskProfitDisplay.perActionNote',
+                    {
+                        qty: profitData.action.breakdown.quantity,
+                        value: formatPerActionValue(profitData.action.breakdown.perAction),
+                    }
+                )}</div>`
                 );
             } else if (profitData.type === 'production') {
                 const details = profitData.action.details;
@@ -9443,7 +9510,7 @@ ${starCSS}
 
                 // Net Production (expandable)
                 lines.push(
-                    `<div class="mwi-expandable-header" data-section="production" style="margin-left: 10px; cursor: pointer; user-select: none;">Net Production: ${formatTotalValue(netProductionValue)} ▸</div>`
+                    `<div class="mwi-expandable-header" data-section="production" style="margin-left: 10px; cursor: pointer; user-select: none;">${i18n_js.t('taskProfitDisplay.netProductionLabel', { value: formatTotalValue(netProductionValue) })} ▸</div>`
                 );
                 lines.push(
                     `<div class="mwi-expandable-section" data-section="production" style="display: none; margin-left: 20px; font-size: 0.65rem; color: #888; margin-top: 2px;">`
@@ -9460,17 +9527,30 @@ ${starCSS}
                     const primaryOutputTotal = baseRevenueTotal + gourmetRevenueTotal;
 
                     lines.push(
-                        `<div style="margin-top: 2px; color: #aaa;">Primary Outputs: ${formatTotalValue(Math.round(primaryOutputTotal))}</div>`
+                        `<div style="margin-top: 2px; color: #aaa;">${i18n_js.t('taskProfitDisplay.primaryOutputsLabel', { value: formatTotalValue(Math.round(primaryOutputTotal)) })}</div>`
                     );
 
                     lines.push(
-                        `<div>• ${details.itemName} (Base): ${totalItems.toFixed(1)} items @ ${formatters_js.formatKMB(details.priceEach)}${outputPriceNote} = ${formatters_js.formatKMB(Math.round(totalItems * details.priceEach))}</div>`
+                        `<div>• ${i18n_js.t('taskProfitDisplay.baseOutputItemLine', {
+                        name: details.itemName,
+                        items: totalItems.toFixed(1),
+                        price: formatters_js.formatKMB(details.priceEach),
+                        missingNote: outputPriceNote,
+                        total: formatters_js.formatKMB(Math.round(totalItems * details.priceEach)),
+                    })}</div>`
                     );
 
                     if (details.gourmetBonus > 0) {
                         const bonusItems = outputAmount * details.gourmetBonus * profitData.action.breakdown.quantity;
                         lines.push(
-                            `<div>• ${details.itemName} (Gourmet +${formatters_js.formatPercentage(details.gourmetBonus, 1)}): ${bonusItems.toFixed(1)} items @ ${formatters_js.formatKMB(details.priceEach)}${outputPriceNote} = ${formatters_js.formatKMB(Math.round(bonusItems * details.priceEach))}</div>`
+                            `<div>• ${i18n_js.t('taskProfitDisplay.gourmetOutputItemLinePlus', {
+                            name: details.itemName,
+                            pct: formatters_js.formatPercentage(details.gourmetBonus, 1),
+                            items: bonusItems.toFixed(1),
+                            price: formatters_js.formatKMB(details.priceEach),
+                            missingNote: outputPriceNote,
+                            total: formatters_js.formatKMB(Math.round(bonusItems * details.priceEach)),
+                        })}</div>`
                         );
                     }
                 }
@@ -9485,14 +9565,20 @@ ${starCSS}
                             0
                         );
                         lines.push(
-                            `<div style="margin-top: 4px; color: #aaa;">Essence Drops: ${formatTotalValue(Math.round(totalEssenceRevenue))}</div>`
+                            `<div style="margin-top: 4px; color: #aaa;">${i18n_js.t('taskProfitDisplay.essenceDropsLabel', { value: formatTotalValue(Math.round(totalEssenceRevenue)) })}</div>`
                         );
                         for (const drop of essenceDrops) {
                             const dropsForTask = (drop.dropsPerAction || 0) * profitData.action.breakdown.quantity;
                             const revenueForTask = (drop.revenuePerAction || 0) * profitData.action.breakdown.quantity;
                             const missingPriceNote = drop.missingPrice ? ' ⚠' : '';
                             lines.push(
-                                `<div>• ${drop.itemName}: ${dropsForTask.toFixed(2)} drops @ ${formatters_js.formatKMB(Math.round(drop.priceEach))}${missingPriceNote} = ${formatters_js.formatKMB(Math.round(revenueForTask))}</div>`
+                                `<div>• ${i18n_js.t('taskProfitDisplay.dropLine', {
+                                name: drop.itemName,
+                                drops: dropsForTask.toFixed(2),
+                                price: formatters_js.formatKMB(Math.round(drop.priceEach)),
+                                missingNote: missingPriceNote,
+                                total: formatters_js.formatKMB(Math.round(revenueForTask)),
+                            })}</div>`
                             );
                         }
                     }
@@ -9503,14 +9589,20 @@ ${starCSS}
                             0
                         );
                         lines.push(
-                            `<div style="margin-top: 4px; color: #aaa;">Rare Finds: ${formatTotalValue(Math.round(totalRareRevenue))}</div>`
+                            `<div style="margin-top: 4px; color: #aaa;">${i18n_js.t('taskProfitDisplay.rareFindsLabel', { value: formatTotalValue(Math.round(totalRareRevenue)) })}</div>`
                         );
                         for (const drop of rareFindDrops) {
                             const dropsForTask = (drop.dropsPerAction || 0) * profitData.action.breakdown.quantity;
                             const revenueForTask = (drop.revenuePerAction || 0) * profitData.action.breakdown.quantity;
                             const missingPriceNote = drop.missingPrice ? ' ⚠' : '';
                             lines.push(
-                                `<div>• ${drop.itemName}: ${dropsForTask.toFixed(2)} drops @ ${formatters_js.formatKMB(Math.round(drop.priceEach))}${missingPriceNote} = ${formatters_js.formatKMB(Math.round(revenueForTask))}</div>`
+                                `<div>• ${i18n_js.t('taskProfitDisplay.dropLine', {
+                                name: drop.itemName,
+                                drops: dropsForTask.toFixed(2),
+                                price: formatters_js.formatKMB(Math.round(drop.priceEach)),
+                                missingNote: missingPriceNote,
+                                total: formatters_js.formatKMB(Math.round(revenueForTask)),
+                            })}</div>`
                             );
                         }
                     }
@@ -9524,7 +9616,7 @@ ${starCSS}
                     );
                     const hoursNeeded = effectiveActionsPerHour > 0 ? actionsNeeded / effectiveActionsPerHour : 0;
                     lines.push(
-                        `<div style="margin-top: 4px; color: #aaa;">Material Costs: ${formatTotalValue(profitData.action.breakdown.materialCost)}</div>`
+                        `<div style="margin-top: 4px; color: #aaa;">${i18n_js.t('taskProfitDisplay.materialCostsLabel', { value: formatTotalValue(profitData.action.breakdown.materialCost) })}</div>`
                     );
 
                     for (const mat of details.materialCosts) {
@@ -9542,7 +9634,13 @@ ${starCSS}
                             const totalCost = tea.totalCost * hoursNeeded;
                             const missingPriceNote = tea.missingPrice ? ' ⚠' : '';
                             lines.push(
-                                `<div>• ${tea.itemName}: ${drinksNeeded.toFixed(1)} drinks @ ${formatters_js.formatKMB(Math.round(tea.pricePerDrink))}${missingPriceNote} = ${formatters_js.formatKMB(Math.round(totalCost))}</div>`
+                                `<div>• ${i18n_js.t('taskProfitDisplay.teaDrinksLine', {
+                                name: tea.itemName,
+                                drinks: drinksNeeded.toFixed(1),
+                                price: formatters_js.formatKMB(Math.round(tea.pricePerDrink)),
+                                missingNote: missingPriceNote,
+                                total: formatters_js.formatKMB(Math.round(totalCost)),
+                            })}</div>`
                             );
                         }
                     }
@@ -9552,7 +9650,13 @@ ${starCSS}
 
                 // Net Production now shown in header
                 lines.push(
-                    `<div style="margin-left: 20px; font-size: 0.65rem; color: #888;">(${profitData.action.breakdown.quantity}× @ ${formatPerActionValue(profitData.action.breakdown.perAction)} each)</div>`
+                    `<div style="margin-left: 20px; font-size: 0.65rem; color: #888;">${i18n_js.t(
+                    'taskProfitDisplay.perActionNote',
+                    {
+                        qty: profitData.action.breakdown.quantity,
+                        value: formatPerActionValue(profitData.action.breakdown.perAction),
+                    }
+                )}</div>`
                 );
             }
 
@@ -9561,7 +9665,7 @@ ${starCSS}
                 const speedTimeHTML = this.buildSpeedTimeHTML(profitData);
                 if (speedTimeHTML) {
                     lines.push(
-                        `<div class="mwi-expandable-header" data-section="speedtime" style="margin-top: 6px; cursor: pointer; user-select: none; color: #aaa;">Action Speed & Time ▸</div>`
+                        `<div class="mwi-expandable-header" data-section="speedtime" style="margin-top: 6px; cursor: pointer; user-select: none; color: #aaa;">${i18n_js.t('alchemyProfitDisplay.actionSpeedTimeTitle')} ▸</div>`
                     );
                     lines.push(
                         `<div class="mwi-expandable-section" data-section="speedtime" style="display: none; margin-left: 10px; font-size: 0.65rem; color: #888; margin-top: 2px;">`
@@ -9579,7 +9683,7 @@ ${starCSS}
                   ? '#4ade80'
                   : config.COLOR_LOSS;
             lines.push(
-                `<div style="font-weight: bold; color: ${totalProfitColor};">Total Profit: ${formatTotalValue(profitData.totalProfit)}</div>`
+                `<div style="font-weight: bold; color: ${totalProfitColor};">${i18n_js.t('taskProfitDisplay.totalProfitLabel', { value: formatTotalValue(profitData.totalProfit) })}</div>`
             );
 
             return lines.join('');
@@ -9638,10 +9742,15 @@ ${starCSS}
             const lines = [];
 
             // Speed
-            lines.push(`<div>Base: ${baseTime.toFixed(2)}s → ${displayTimeAfterEquip.toFixed(2)}s</div>`);
+            lines.push(
+                `<div>${i18n_js.t('taskProfitDisplay.baseSpeedLine', { base: baseTime.toFixed(2), after: displayTimeAfterEquip.toFixed(2) })}</div>`
+            );
             if (speedBonus + personalSpeedBonus > 0) {
                 lines.push(
-                    `<div>Speed: +${formatters_js.formatPercentage(speedBonus + personalSpeedBonus, 1)} | ${profitHelpers_js.calculateActionsPerHour(timeAfterEquip).toFixed(0)}/hr</div>`
+                    `<div>${i18n_js.t('taskProfitDisplay.speedBonusLine', {
+                    pct: formatters_js.formatPercentage(speedBonus + personalSpeedBonus, 1),
+                    rate: profitHelpers_js.calculateActionsPerHour(timeAfterEquip).toFixed(0),
+                })}</div>`
                 );
             } else {
                 lines.push(`<div>${profitHelpers_js.calculateActionsPerHour(timeAfterEquip).toFixed(0)}/hr</div>`);
@@ -9661,14 +9770,14 @@ ${starCSS}
             }
             if (personalSpeedBonus > 0) {
                 lines.push(
-                    `<div style="margin-left: 10px;">- Scroll of Action Speed: +${formatters_js.formatPercentage(personalSpeedBonus, 1)}</div>`
+                    `<div style="margin-left: 10px;">- ${i18n_js.t('taskProfitDisplay.scrollOfActionSpeedLine', { pct: formatters_js.formatPercentage(personalSpeedBonus, 1) })}</div>`
                 );
             }
 
             // Task Speed
             if (isTaskAction && taskSpeedBonus > 0) {
                 lines.push(
-                    `<div style="margin-top: 4px; font-weight: 500; color: #ccc;">Task Speed (multiplicative): +${taskSpeedBonus.toFixed(2)}%</div>`
+                    `<div style="margin-top: 4px; font-weight: 500; color: #ccc;">${i18n_js.t('taskProfitDisplay.taskSpeedMultiplicativeLine', { pct: taskSpeedBonus.toFixed(2) })}</div>`
                 );
                 lines.push(
                     `<div>${displayTimeAfterEquip.toFixed(2)}s → ${finalActionTime.toFixed(2)}s | ${actionsPerHour.toFixed(0)}/hr</div>`
@@ -9694,22 +9803,38 @@ ${starCSS}
 
             // Efficiency
             lines.push(
-                `<div style="margin-top: 4px; font-weight: 500; color: #ccc;">Efficiency: +${totalEfficiency.toFixed(2)}% → Output: ×${efficiencyMultiplier.toFixed(2)} (${Math.round(effectiveAPH)}/hr)</div>`
+                `<div style="margin-top: 4px; font-weight: 500; color: #ccc;">${i18n_js.t(
+                'taskProfitDisplay.efficiencyOutputLine',
+                {
+                    pct: totalEfficiency.toFixed(2),
+                    mult: efficiencyMultiplier.toFixed(2),
+                    rate: Math.round(effectiveAPH),
+                }
+            )}</div>`
             );
             if (eb.levelEfficiency > 0 || eb.actionLevelBreakdown?.length > 0) {
-                lines.push(`<div style="margin-left: 10px;">- Level: +${eb.levelEfficiency.toFixed(2)}%</div>`);
+                lines.push(
+                    `<div style="margin-left: 10px;">- ${i18n_js.t('taskProfitDisplay.levelEfficiencyLine', { pct: eb.levelEfficiency.toFixed(2) })}</div>`
+                );
                 const rawLevelDelta = eb.skillLevel - eb.baseRequirement;
                 lines.push(
-                    `<div style="margin-left: 20px;">- Raw level delta: +${rawLevelDelta.toFixed(2)}% (${eb.skillLevel} - ${eb.baseRequirement} base requirement)</div>`
+                    `<div style="margin-left: 20px;">- ${i18n_js.t('taskProfitDisplay.rawLevelDeltaLine', {
+                    pct: rawLevelDelta.toFixed(2),
+                    skillLevel: eb.skillLevel,
+                    baseRequirement: eb.baseRequirement,
+                })}</div>`
                 );
                 if (eb.actionLevelBreakdown?.length > 0) {
                     for (const tea of eb.actionLevelBreakdown) {
                         lines.push(
-                            `<div style="margin-left: 20px;">- ${tea.name} impact: ${(-tea.baseActionLevel).toFixed(2)}% (raises requirement)</div>`
+                            `<div style="margin-left: 20px;">- ${i18n_js.t('taskProfitDisplay.levelImpactLine', {
+                            name: tea.name,
+                            pct: (-tea.baseActionLevel).toFixed(2),
+                        })}</div>`
                         );
                         if (tea.dcContribution > 0) {
                             lines.push(
-                                `<div style="margin-left: 30px;">- Drink Concentration: ${(-tea.dcContribution).toFixed(2)}%</div>`
+                                `<div style="margin-left: 30px;">- ${i18n_js.t('taskProfitDisplay.drinkConcentrationLine', { pct: (-tea.dcContribution).toFixed(2) })}</div>`
                             );
                         }
                     }
@@ -9717,7 +9842,7 @@ ${starCSS}
             }
             if (eb.houseEfficiency > 0) {
                 const roomHrid = HOUSE_ROOM_MAP[actionDetails.type];
-                let roomLabel = 'Unknown Room';
+                let roomLabel = i18n_js.t('taskProfitDisplay.unknownRoomLabel');
                 if (roomHrid) {
                     const room = dataManager.getHouseRooms().get(roomHrid);
                     const roomName = roomHrid
@@ -9726,24 +9851,28 @@ ${starCSS}
                         .split('_')
                         .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
                         .join(' ');
-                    roomLabel = `${roomName} level ${room?.level || 0}`;
+                    roomLabel = i18n_js.t('taskProfitDisplay.roomLevelLabel', { roomName, level: room?.level || 0 });
                 }
                 lines.push(
-                    `<div style="margin-left: 10px;">- House: +${eb.houseEfficiency.toFixed(2)}% (${roomLabel})</div>`
+                    `<div style="margin-left: 10px;">- ${i18n_js.t('taskProfitDisplay.houseEfficiencyLine', { pct: eb.houseEfficiency.toFixed(2), roomLabel })}</div>`
                 );
             }
             if (eb.equipmentEfficiency > 0) {
-                lines.push(`<div style="margin-left: 10px;">- Equipment: +${eb.equipmentEfficiency.toFixed(2)}%</div>`);
+                lines.push(
+                    `<div style="margin-left: 10px;">- ${i18n_js.t('taskProfitDisplay.equipmentEfficiencyLine', { pct: eb.equipmentEfficiency.toFixed(2) })}</div>`
+                );
             }
             if (eb.achievementEfficiency > 0) {
-                lines.push(`<div style="margin-left: 10px;">- Achievement: +${eb.achievementEfficiency.toFixed(2)}%</div>`);
+                lines.push(
+                    `<div style="margin-left: 10px;">- ${i18n_js.t('taskProfitDisplay.achievementEfficiencyLine', { pct: eb.achievementEfficiency.toFixed(2) })}</div>`
+                );
             }
             if (eb.teaBreakdown?.length > 0) {
                 for (const tea of eb.teaBreakdown) {
                     lines.push(`<div style="margin-left: 10px;">- ${tea.name}: +${tea.baseEfficiency.toFixed(2)}%</div>`);
                     if (tea.dcContribution > 0) {
                         lines.push(
-                            `<div style="margin-left: 20px;">- Drink Concentration: +${tea.dcContribution.toFixed(2)}%</div>`
+                            `<div style="margin-left: 20px;">- ${i18n_js.t('taskProfitDisplay.drinkConcentrationLine', { pct: `+${tea.dcContribution.toFixed(2)}` })}</div>`
                         );
                     }
                 }
@@ -9751,16 +9880,21 @@ ${starCSS}
             if (eb.communityEfficiency > 0) {
                 const communityBuffLevel = dataManager.getCommunityBuffLevel('/community_buff_types/production_efficiency');
                 lines.push(
-                    `<div style="margin-left: 10px;">- Community: +${eb.communityEfficiency.toFixed(2)}% (Production Efficiency T${communityBuffLevel})</div>`
+                    `<div style="margin-left: 10px;">- ${i18n_js.t('taskProfitDisplay.communityEfficiencyLine', {
+                    pct: eb.communityEfficiency.toFixed(2),
+                    tier: communityBuffLevel,
+                })}</div>`
                 );
             }
             if (eb.personalEfficiency > 0) {
-                lines.push(`<div style="margin-left: 10px;">- Seal: +${eb.personalEfficiency.toFixed(2)}%</div>`);
+                lines.push(
+                    `<div style="margin-left: 10px;">- ${i18n_js.t('taskProfitDisplay.sealEfficiencyLine', { pct: eb.personalEfficiency.toFixed(2) })}</div>`
+                );
             }
 
             // Total time
             lines.push(
-                `<div style="margin-top: 4px; font-weight: 500; color: ${config.COLOR_INFO};">Total time: ${formatters_js.timeReadable(completionSeconds)}</div>`
+                `<div style="margin-top: 4px; font-weight: 500; color: ${config.COLOR_INFO};">${i18n_js.t('taskProfitDisplay.totalTimeLine', { time: formatters_js.timeReadable(completionSeconds) })}</div>`
             );
 
             return lines.join('');
@@ -9807,7 +9941,7 @@ ${starCSS}
             color: #888;
             font-style: italic;
         `;
-            loadingContainer.textContent = '⏳ Loading market data...';
+            loadingContainer.textContent = `⏳ ${i18n_js.t('taskProfitDisplay.loadingMarketDataLabel')}`;
 
             // Store task key for reroll detection
             const taskKey = `${taskData.description}|${taskData.quantity}`;
@@ -9877,7 +10011,9 @@ ${starCSS}
 
             // Determine if active (first in queue) or queued
             const isActive = matchActionHrid === activeActionHrid;
-            const label = isActive ? '▶ Active' : '⏸ Queued';
+            const label = isActive
+                ? `▶ ${i18n_js.t('taskProfitDisplay.activeIndicatorLabel')}`
+                : `⏸ ${i18n_js.t('taskProfitDisplay.queuedIndicatorLabel')}`;
             const color = isActive ? config.COLOR_ACCENT : config.COLOR_TEXT_SECONDARY;
 
             if (existingIndicator) {
@@ -10435,7 +10571,7 @@ ${starCSS}
                 background: rgba(0, 0, 0, 0.3);
                 visibility: hidden;
             `;
-                displayElement.textContent = 'Reroll spent: –';
+                displayElement.textContent = i18n_js.t('taskRerollTracker.rerollSpentPlaceholder');
 
                 const taskContent = taskElement.querySelector(selectors_js.GAME.TASK_CONTENT);
                 if (taskContent) {
@@ -10470,7 +10606,7 @@ ${starCSS}
             }
 
             if (parts.length > 0) {
-                displayElement.textContent = `Reroll spent: ${parts.join(' + ')}`;
+                displayElement.textContent = i18n_js.t('taskRerollTracker.rerollSpentLabel', { value: parts.join(' + ') });
                 displayElement.style.visibility = 'visible';
             } else {
                 displayElement.style.visibility = 'hidden';
@@ -10802,7 +10938,7 @@ ${starCSS}
             // Create battle icon (combat icon is in misc_sprite)
             const battleIcon = this.createFilterIcon(
                 'battle',
-                'Battle',
+                i18n_js.t('taskIconFilters.battleFilterLabel'),
                 'combat',
                 () => this.getBattleFilterEnabled(),
                 'misc'
@@ -11413,8 +11549,8 @@ ${starCSS}
             font-weight: 500;
             margin-top: 4px;
         `;
-            warning.textContent = '⚠ Combat icons unavailable - visit Combat to load sprites';
-            warning.title = 'Combat monster sprites need to be loaded. Visit the Combat panel to load them.';
+            warning.textContent = i18n_js.t('taskIcons.spriteWarning');
+            warning.title = i18n_js.t('taskIcons.spriteWarningTooltip');
 
             titleElement.appendChild(warning);
             this.spriteWarningShown = true;
@@ -12028,6 +12164,7 @@ ${starCSS}
      * border/badge, even over manual protection's green border.
      */
 
+
     const OUTLINE_RED = '2px solid rgba(239, 68, 68, 0.7)';
     const SHADOW_RED = '0 0 8px 2px rgba(239, 68, 68, 0.3)';
     const OUTLINE_GREEN = '2px solid rgba(76, 175, 80, 0.7)';
@@ -12051,9 +12188,13 @@ ${starCSS}
         if (isAutoReroll || isTokenFlagged) {
             _setOutline(taskCard, OUTLINE_RED, SHADOW_RED);
             if (isAutoReroll) {
-                _showBadge(taskCard, 'mwi-autoreroll-badge', 'Reroll!');
+                _showBadge(taskCard, 'mwi-autoreroll-badge', i18n_js.t('taskCardVisualState.rerollBadgeText'));
             } else {
-                _showBadge(taskCard, 'mwi-token-badge', taskCard.dataset.mwiTokenFlagText || 'Low tokens!');
+                _showBadge(
+                    taskCard,
+                    'mwi-token-badge',
+                    taskCard.dataset.mwiTokenFlagText || i18n_js.t('taskTokenThreshold.lowTokensFlag')
+                );
             }
             return;
         }
@@ -12121,20 +12262,52 @@ ${starCSS}
      * combat already has its own per-zone bulk toggle in both popups.
      */
 
+
     // Same 10 non-combat skill types as task-sorter.js's TASK_ORDER, keyed by the
     // action_type HRID so classification doesn't depend on parsing display text.
+    // Resolved via t() at module load — safe because MWI's own language selection
+    // (which Toolasha mirrors) only changes on a full page reload, so the locale
+    // active at load time is the locale active for the lifetime of this module.
     const TASK_SKILL_TYPES = {
-        '/action_types/milking': 'Milking',
-        '/action_types/foraging': 'Foraging',
-        '/action_types/woodcutting': 'Woodcutting',
-        '/action_types/cheesesmithing': 'Cheesesmithing',
-        '/action_types/crafting': 'Crafting',
-        '/action_types/tailoring': 'Tailoring',
-        '/action_types/cooking': 'Cooking',
-        '/action_types/brewing': 'Brewing',
-        '/action_types/alchemy': 'Alchemy',
-        '/action_types/enhancing': 'Enhancing',
+        '/action_types/milking': i18n_js.t('labSim.skillMilking'),
+        '/action_types/foraging': i18n_js.t('labSim.skillForaging'),
+        '/action_types/woodcutting': i18n_js.t('labSim.skillWoodcutting'),
+        '/action_types/cheesesmithing': i18n_js.t('labSim.skillCheesesmithing'),
+        '/action_types/crafting': i18n_js.t('labSim.skillCrafting'),
+        '/action_types/tailoring': i18n_js.t('labSim.skillTailoring'),
+        '/action_types/cooking': i18n_js.t('labSim.skillCooking'),
+        '/action_types/brewing': i18n_js.t('labSim.skillBrewing'),
+        '/action_types/alchemy': i18n_js.t('labSim.skillAlchemy'),
+        '/action_types/enhancing': i18n_js.t('labSim.skillEnhancing'),
     };
+
+    // Display label for a task item's type slug (last segment of its action_type HRID,
+    // or 'combat'/'other' for monsters/unclassified actions respectively). Shared by
+    // Task Auto-Reroll and Task Reroll Protection's popup list rendering, which both
+    // derive this same slug from `action.type?.split('/').pop() || 'other'`.
+    const TASK_TYPE_LABELS = {
+        milking: i18n_js.t('labSim.skillMilking'),
+        foraging: i18n_js.t('labSim.skillForaging'),
+        woodcutting: i18n_js.t('labSim.skillWoodcutting'),
+        cheesesmithing: i18n_js.t('labSim.skillCheesesmithing'),
+        crafting: i18n_js.t('labSim.skillCrafting'),
+        tailoring: i18n_js.t('labSim.skillTailoring'),
+        cooking: i18n_js.t('labSim.skillCooking'),
+        brewing: i18n_js.t('labSim.skillBrewing'),
+        alchemy: i18n_js.t('labSim.skillAlchemy'),
+        enhancing: i18n_js.t('labSim.skillEnhancing'),
+        combat: i18n_js.t('guildCreditValue.buffLabelCombat'),
+        other: i18n_js.t('taskSkillGroups.otherTypeLabel'),
+    };
+
+    /**
+     * Resolve a task item's type slug (e.g. 'combat', 'milking', 'other') to its display label.
+     * @param {string} type
+     * @returns {string}
+     */
+    function getTaskTypeLabel(type) {
+        return TASK_TYPE_LABELS[type] || type.charAt(0).toUpperCase() + type.slice(1);
+    }
 
     /**
      * Resolve a task's action HRID to its skill type HRID, or null if it isn't
@@ -12311,7 +12484,7 @@ ${starCSS}
             const btn = document.createElement('span');
             btn.className = 'mwi-task-protection-btn';
             btn.textContent = '🛡️';
-            btn.title = 'Configure task reroll protection';
+            btn.title = i18n_js.t('taskRerollProtection.configureTooltip');
             btn.style.cssText = 'cursor:pointer; font-size:16px; margin-left:6px; opacity:0.7; transition:opacity 0.1s;';
             btn.addEventListener('mouseover', () => {
                 btn.style.opacity = '1';
@@ -12484,8 +12657,8 @@ ${starCSS}
                         if (!isPerTaskProtected && !isCapProtected) return;
 
                         const warningMsg = isPerTaskProtected
-                            ? 'Protected task! Unlocks in 3s...'
-                            : 'Reroll at cap! Unlocks in 3s...';
+                            ? i18n_js.t('taskRerollProtection.protectedTaskWarning')
+                            : i18n_js.t('taskRerollProtection.rerollAtCapWarning');
 
                         // Phase 2: confirmation window is open — allow the reroll through
                         if (card.dataset.mwiRerollConfirmed === '1') {
@@ -12514,7 +12687,7 @@ ${starCSS}
                         const lockdownTimer = setTimeout(() => {
                             card.dataset.mwiRerollLocked = '';
                             card.dataset.mwiRerollConfirmed = '1';
-                            this._showWarning(card, 'Click reroll now to confirm.');
+                            this._showWarning(card, i18n_js.t('taskRerollProtection.confirmRerollMessage'));
 
                             // Auto-clear confirmation after another 3s
                             const confirmTimer = setTimeout(() => {
@@ -12536,7 +12709,7 @@ ${starCSS}
          * @param {string} [message='Protected task! Unlocks in 3s...']
          * @private
          */
-        _showWarning(taskCard, message = 'Protected task! Unlocks in 3s...') {
+        _showWarning(taskCard, message = i18n_js.t('taskRerollProtection.protectedTaskWarning')) {
             this._clearWarning(taskCard);
 
             const warning = document.createElement('div');
@@ -12784,7 +12957,7 @@ ${starCSS}
             flex-shrink: 0;
         `;
             header.innerHTML = `
-            <span style="font-weight:700; font-size:14px; color:#4a9eff;">Protected Tasks</span>
+            <span style="font-weight:700; font-size:14px; color:#4a9eff;">${i18n_js.t('taskRerollProtection.popupTitle')}</span>
             <button id="mwi-task-protection-close" style="
                 background:none; border:none; color:#aaa; font-size:22px;
                 cursor:pointer; padding:0; line-height:1;">×</button>
@@ -12795,7 +12968,7 @@ ${starCSS}
             searchDiv.style.cssText = 'padding: 8px 14px; flex-shrink: 0;';
             const searchInput = document.createElement('input');
             searchInput.type = 'search';
-            searchInput.placeholder = 'Search actions, monsters, zones...';
+            searchInput.placeholder = i18n_js.t('taskRerollProtection.searchPlaceholder');
             searchInput.style.cssText = `
             width: 100%;
             padding: 6px 10px;
@@ -12856,8 +13029,7 @@ ${starCSS}
 
                 let html = '';
                 if (!query && filtered.length === 0) {
-                    html =
-                        '<div style="color:#666; text-align:center; padding:20px 0;">No protected tasks yet. Search to add.</div>';
+                    html = `<div style="color:#666; text-align:center; padding:20px 0;">${i18n_js.t('taskRerollProtection.noProtectedTasksMessage')}</div>`;
                 }
 
                 for (const item of filtered.slice(0, 50)) {
@@ -12870,7 +13042,7 @@ ${starCSS}
                         checkmark = allProtected ? '✓' : protectedCount > 0 ? '~' : '';
                         checkColor = protectedCount > 0 ? '#4a9eff' : '#444';
                         nameColor = protectedCount > 0 ? '#e0e0e0' : '#aaa';
-                        typeLabel = 'Zone (' + monsters.length + ')';
+                        typeLabel = i18n_js.t('taskRerollProtection.zoneTypeLabel', { count: monsters.length });
                     } else {
                         const isProtected = this.protectedHrids.has(item.hrid);
                         const skillType = getActionSkillType(item.hrid, gameData);
@@ -12878,7 +13050,7 @@ ${starCSS}
                         checkmark = isProtected ? '✓' : viaSkill ? '🔒' : '';
                         checkColor = isProtected || viaSkill ? '#4caf50' : '#444';
                         nameColor = isProtected || viaSkill ? '#e0e0e0' : '#aaa';
-                        typeLabel = item.type.charAt(0).toUpperCase() + item.type.slice(1);
+                        typeLabel = getTaskTypeLabel(item.type);
                     }
 
                     const borderColor = item.isZone ? '#2a2a4e' : '#1a1a2e';
@@ -12895,7 +13067,7 @@ ${starCSS}
                 }
 
                 if (filtered.length > 50) {
-                    html += `<div style="color:#666; text-align:center; padding:8px;">...${filtered.length - 50} more (refine search)</div>`;
+                    html += `<div style="color:#666; text-align:center; padding:8px;">${i18n_js.t('taskRerollProtection.moreResultsRefineSearch', { count: filtered.length - 50 })}</div>`;
                 }
 
                 listContainer.innerHTML = html;
@@ -12964,7 +13136,7 @@ ${starCSS}
                     ).join('');
                     capRow.innerHTML = `
                     <span style="width:18px; text-align:center; color:#f0a830; font-weight:700;">✓</span>
-                    <span style="color:#e0e0e0;">Block rerolls at</span>
+                    <span style="color:#e0e0e0;">${i18n_js.t('taskRerollProtection.blockRerollsAtLabel')}</span>
                     <select id="mwi-cap-coin" style="${selectCss}">${coinOpts}</select>
                     <select id="mwi-cap-cowbell" style="${selectCss}">${cowbellOpts}</select>
                 `;
@@ -12985,8 +13157,8 @@ ${starCSS}
                 } else {
                     capRow.innerHTML = `
                     <span style="width:18px; text-align:center; color:#444; font-weight:700;"></span>
-                    <span style="flex:1; color:#aaa;">Block rerolls at cap</span>
-                    <span style="color:#888; font-size:11px;">320K💰 / 32🔔</span>
+                    <span style="flex:1; color:#aaa;">${i18n_js.t('taskRerollProtection.blockRerollsAtCapLabel')}</span>
+                    <span style="color:#888; font-size:11px;">${i18n_js.t('taskRerollProtection.capDisplayDefault')}</span>
                 `;
                 }
             };
@@ -13132,7 +13304,7 @@ ${starCSS}
             if (!config.getSetting('taskSorter_hideButton')) {
                 this.sortButton = document.createElement('button');
                 this.sortButton.className = 'Button_button__1Fe9z Button_small__3fqC7';
-                this.sortButton.textContent = 'Sort Tasks';
+                this.sortButton.textContent = i18n_js.t('taskSorter.sortTasksLabel');
                 this.sortButton.style.marginLeft = '8px';
                 this.sortButton.setAttribute('data-mwi-task-sort', 'true');
                 this.sortButton.addEventListener('click', () => this.sortTasks());
@@ -13529,7 +13701,7 @@ ${starCSS}
             // Create button
             this.highlightButton = document.createElement('button');
             this.highlightButton.className = 'Button_button__1Fe9z Button_small__3fqC7';
-            this.highlightButton.textContent = 'Highlight Task Items';
+            this.highlightButton.textContent = i18n_js.t('taskInventoryHighlighter.highlightButtonLabel');
             this.highlightButton.style.marginLeft = '8px';
             this.highlightButton.setAttribute('data-mwi-task-highlight', 'true');
 
@@ -13568,7 +13740,7 @@ ${starCSS}
 
             // Update button state
             this.isHighlightActive = true;
-            this.highlightButton.textContent = 'Clear Highlight';
+            this.highlightButton.textContent = i18n_js.t('taskInventoryHighlighter.clearHighlightButtonLabel');
             this.highlightButton.style.backgroundColor = '#22c55e';
         }
 
@@ -13588,7 +13760,7 @@ ${starCSS}
             // Update button state
             this.isHighlightActive = false;
             if (this.highlightButton) {
-                this.highlightButton.textContent = 'Highlight Task Items';
+                this.highlightButton.textContent = i18n_js.t('taskInventoryHighlighter.highlightButtonLabel');
                 this.highlightButton.style.backgroundColor = '';
             }
         }
@@ -13917,7 +14089,7 @@ ${starCSS}
             // Create button matching MUI tab styling
             const button = document.createElement('div');
             button.className = 'MuiButtonBase-root MuiTab-root MuiTab-textColorPrimary css-1q2h7u5 toolasha-task-stats-btn';
-            button.textContent = 'Statistics';
+            button.textContent = i18n_js.t('combatStatsUi.statisticsButtonLabel');
             button.style.cursor = 'pointer';
             button.onclick = () => this.showPopup();
 
@@ -13985,7 +14157,7 @@ ${starCSS}
         calculateOverflowTime() {
             const characterInfo = dataManager.characterData?.characterInfo;
             if (!characterInfo) {
-                return { error: 'Character info not available' };
+                return { error: i18n_js.t('taskStatistics.characterInfoNotAvailable') };
             }
 
             const taskSlotCap = characterInfo.taskSlotCap;
@@ -14021,7 +14193,7 @@ ${starCSS}
         calculateSlotStatus() {
             const characterInfo = dataManager.characterData?.characterInfo;
             if (!characterInfo) {
-                return { error: 'Character info not available' };
+                return { error: i18n_js.t('taskStatistics.characterInfoNotAvailable') };
             }
 
             const unreadTaskCount = characterInfo.unreadTaskCount || 0;
@@ -14211,7 +14383,7 @@ ${starCSS}
         `;
 
             const title = document.createElement('h2');
-            title.textContent = 'Task Statistics';
+            title.textContent = i18n_js.t('taskStatistics.popupTitle');
             title.style.cssText = `margin: 0; color: ${textColor}; font-size: 24px;`;
 
             const closeButton = document.createElement('button');
@@ -14315,27 +14487,43 @@ ${starCSS}
          * @returns {HTMLElement} Section element
          */
         createOverflowSection(overflow, textColor) {
-            const section = this.createSection('Task Slots');
+            const section = this.createSection(i18n_js.t('taskStatistics.taskSlotsHeader'));
 
             if (overflow.error) {
-                section.appendChild(this.createRow('Status', overflow.error, config.COLOR_LOSS));
+                section.appendChild(this.createRow(i18n_js.t('marketHistory.columnStatus'), overflow.error, config.COLOR_LOSS));
                 return section;
             }
 
-            section.appendChild(this.createRow('Slots Used', `${overflow.usedSlots} / ${overflow.taskSlotCap}`, textColor));
-            section.appendChild(this.createRow('Available', `${overflow.availableSlots}`, textColor));
             section.appendChild(
-                this.createRow('Cooldown', `${overflow.taskCooldownHours}h per task`, config.COLOR_TEXT_SECONDARY)
+                this.createRow(
+                    i18n_js.t('taskStatistics.slotsUsedLabel'),
+                    `${overflow.usedSlots} / ${overflow.taskSlotCap}`,
+                    textColor
+                )
+            );
+            section.appendChild(
+                this.createRow(i18n_js.t('taskStatistics.availableLabel'), `${overflow.availableSlots}`, textColor)
+            );
+            section.appendChild(
+                this.createRow(
+                    i18n_js.t('labSim.buffCooldown'),
+                    i18n_js.t('taskStatistics.cooldownPerTaskValue', { hours: overflow.taskCooldownHours }),
+                    config.COLOR_TEXT_SECONDARY
+                )
             );
 
             // Overflow time
             if (overflow.isOverflowing) {
-                section.appendChild(this.createRow('Status', 'Tasks full!', config.COLOR_LOSS));
+                section.appendChild(
+                    this.createRow(i18n_js.t('marketHistory.columnStatus'), i18n_js.t('taskStatistics.tasksFullMessage'), config.COLOR_LOSS)
+                );
             } else {
                 const overflowTimeStr = formatters_js.timeReadable(overflow.msUntilOverflow / 1000);
                 const overflowDateStr = formatters_js.formatDateTime(overflow.overflowDate);
-                section.appendChild(this.createRow('Full in', overflowTimeStr, config.COLOR_INFO));
-                section.appendChild(this.createRow('Full at', overflowDateStr, config.COLOR_TEXT_SECONDARY));
+                section.appendChild(this.createRow(i18n_js.t('taskStatistics.fullInLabel'), overflowTimeStr, config.COLOR_INFO));
+                section.appendChild(
+                    this.createRow(i18n_js.t('taskStatistics.fullAtLabel'), overflowDateStr, config.COLOR_TEXT_SECONDARY)
+                );
             }
 
             return section;
@@ -14348,24 +14536,32 @@ ${starCSS}
          * @returns {HTMLElement} Section element
          */
         createRewardsSection(rewards, textColor) {
-            const section = this.createSection('Expected Rewards');
+            const section = this.createSection(i18n_js.t('taskStatistics.expectedRewardsHeader'));
 
-            section.appendChild(this.createRow('Total Coins', formatters_js.formatKMB(rewards.totalCoins), config.COLOR_GOLD));
-            section.appendChild(this.createRow('Total Task Tokens', String(rewards.totalTokens), textColor));
+            section.appendChild(
+                this.createRow(i18n_js.t('taskStatistics.totalCoinsLabel'), formatters_js.formatKMB(rewards.totalCoins), config.COLOR_GOLD)
+            );
+            section.appendChild(
+                this.createRow(i18n_js.t('taskStatistics.totalTaskTokensLabel'), String(rewards.totalTokens), textColor)
+            );
 
             if (!rewards.rewardValue.error) {
-                const tokenValueStr = `${formatters_js.formatKMB(Math.round(rewards.rewardValue.breakdown.tokenValue))} each`;
-                section.appendChild(this.createRow('Token Value', tokenValueStr, config.COLOR_TEXT_SECONDARY));
+                const tokenValueStr = i18n_js.t('taskStatistics.tokenValueEachSuffix', {
+                    value: formatters_js.formatKMB(Math.round(rewards.rewardValue.breakdown.tokenValue)),
+                });
+                section.appendChild(
+                    this.createRow(i18n_js.t('taskStatistics.tokenValueLabel'), tokenValueStr, config.COLOR_TEXT_SECONDARY)
+                );
                 section.appendChild(
                     this.createRow(
-                        'Tokens Value',
+                        i18n_js.t('taskStatistics.tokensValueLabel'),
                         formatters_js.formatKMB(Math.round(rewards.rewardValue.taskTokens)),
                         config.COLOR_PROFIT
                     )
                 );
                 section.appendChild(
                     this.createRow(
-                        "Purple's Gift",
+                        i18n_js.t('taskStatistics.purpleGiftLabel'),
                         formatters_js.formatKMB(Math.round(rewards.rewardValue.purpleGift)),
                         config.COLOR_ESSENCE
                     )
@@ -14378,13 +14574,19 @@ ${starCSS}
 
                 section.appendChild(
                     this.createRow(
-                        'Total Reward Value',
+                        i18n_js.t('taskStatistics.totalRewardValueLabel'),
                         formatters_js.formatKMB(Math.round(rewards.rewardValue.total)),
                         config.COLOR_ACCENT
                     )
                 );
             } else {
-                section.appendChild(this.createRow('Token Value', 'Loading...', config.COLOR_TEXT_SECONDARY));
+                section.appendChild(
+                    this.createRow(
+                        i18n_js.t('taskStatistics.tokenValueLabel'),
+                        i18n_js.t('taskProfitDisplay.loadingEllipsis'),
+                        config.COLOR_TEXT_SECONDARY
+                    )
+                );
             }
 
             return section;
@@ -14396,14 +14598,14 @@ ${starCSS}
          * @returns {HTMLElement} Section element
          */
         createActionProfitSection(rewards) {
-            const section = this.createSection('Action Profit');
+            const section = this.createSection(i18n_js.t('taskStatistics.actionProfitHeader'));
 
             for (const detail of rewards.taskDetails) {
                 const profitStr = detail.isCombat
-                    ? 'N/A (combat)'
+                    ? i18n_js.t('taskStatistics.combatNotApplicableLabel')
                     : detail.actionProfit !== null
                       ? formatters_js.formatKMB(Math.round(detail.actionProfit))
-                      : 'N/A';
+                      : i18n_js.t('combatSimUi.notAvailableLabel');
 
                 const profitColor = detail.isCombat
                     ? config.COLOR_TEXT_SECONDARY
@@ -14421,7 +14623,10 @@ ${starCSS}
             separator.style.cssText = 'border-top: 1px solid #3a3a3a; margin: 6px 0;';
             section.appendChild(separator);
 
-            const totalStr = rewards.totalActionProfit !== null ? formatters_js.formatKMB(Math.round(rewards.totalActionProfit)) : 'N/A';
+            const totalStr =
+                rewards.totalActionProfit !== null
+                    ? formatters_js.formatKMB(Math.round(rewards.totalActionProfit))
+                    : i18n_js.t('combatSimUi.notAvailableLabel');
             const totalColor =
                 rewards.totalActionProfit !== null && rewards.totalActionProfit >= 0
                     ? config.COLOR_PROFIT
@@ -14429,7 +14634,7 @@ ${starCSS}
                       ? config.COLOR_LOSS
                       : config.COLOR_TEXT_SECONDARY;
 
-            section.appendChild(this.createRow('Total Action Profit', totalStr, totalColor));
+            section.appendChild(this.createRow(i18n_js.t('taskStatistics.totalActionProfitLabel'), totalStr, totalColor));
 
             // Combined total
             const separator2 = document.createElement('div');
@@ -14437,7 +14642,11 @@ ${starCSS}
             section.appendChild(separator2);
 
             section.appendChild(
-                this.createRow('Combined Total', formatters_js.formatKMB(Math.round(rewards.combinedTotal)), config.COLOR_ACCENT)
+                this.createRow(
+                    i18n_js.t('taskStatistics.combinedTotalLabel'),
+                    formatters_js.formatKMB(Math.round(rewards.combinedTotal)),
+                    config.COLOR_ACCENT
+                )
             );
 
             return section;
@@ -14450,16 +14659,19 @@ ${starCSS}
          * @returns {HTMLElement} Section element
          */
         createCompletionTimeSection(rewards, textColor) {
-            const section = this.createSection('Completion Time');
+            const section = this.createSection(i18n_js.t('taskStatistics.completionTimeHeader'));
 
             for (const detail of rewards.taskDetails) {
                 const timeStr = detail.isCombat
-                    ? 'N/A (combat)'
+                    ? i18n_js.t('taskStatistics.combatNotApplicableLabel')
                     : detail.completionSeconds !== null
                       ? formatters_js.timeReadable(detail.completionSeconds)
-                      : 'N/A';
+                      : i18n_js.t('combatSimUi.notAvailableLabel');
 
-                const progressStr = detail.currentCount > 0 ? ` (${detail.currentCount}/${detail.goalCount})` : '';
+                const progressStr =
+                    detail.currentCount > 0
+                        ? i18n_js.t('taskStatistics.progressSuffix', { current: detail.currentCount, goal: detail.goalCount })
+                        : '';
 
                 section.appendChild(
                     this.createRow(
@@ -14476,9 +14688,11 @@ ${starCSS}
             section.appendChild(separator);
 
             const totalTimeStr =
-                rewards.totalCompletionSeconds !== null ? formatters_js.timeReadable(rewards.totalCompletionSeconds) : 'N/A';
+                rewards.totalCompletionSeconds !== null
+                    ? formatters_js.timeReadable(rewards.totalCompletionSeconds)
+                    : i18n_js.t('combatSimUi.notAvailableLabel');
 
-            section.appendChild(this.createRow('Total (non-combat)', totalTimeStr, config.COLOR_INFO));
+            section.appendChild(this.createRow(i18n_js.t('taskStatistics.totalNonCombatLabel'), totalTimeStr, config.COLOR_INFO));
 
             return section;
         }
@@ -14591,7 +14805,10 @@ ${starCSS}
 
             const count = this._getClaimableButtons(taskList).length;
             if (count > 0) {
-                this.proxyButton.textContent = count > 1 ? `Claim Reward (${count})` : 'Claim Reward';
+                this.proxyButton.textContent =
+                    count > 1
+                        ? i18n_js.t('taskClaimCollector.claimRewardWithCount', { count })
+                        : i18n_js.t('taskClaimCollector.claimReward');
                 this.proxyButton.style.display = '';
             } else {
                 this.proxyButton.style.display = 'none';
@@ -14716,7 +14933,7 @@ ${starCSS}
             const btn = document.createElement('span');
             btn.className = 'mwi-task-autoreroll-btn';
             btn.textContent = '\u{1F3AF}';
-            btn.title = 'Configure task auto-reroll reminders';
+            btn.title = i18n_js.t('taskAutoReroll.configTooltip');
             btn.style.cssText = 'cursor:pointer; font-size:16px; margin-left:6px; opacity:0.7; transition:opacity 0.1s;';
             btn.addEventListener('mouseover', () => {
                 btn.style.opacity = '1';
@@ -14912,7 +15129,7 @@ ${starCSS}
             flex-shrink: 0;
         `;
             header.innerHTML = `
-            <span style="font-weight:700; font-size:14px; color:#ef4444;">Auto-Reroll List</span>
+            <span style="font-weight:700; font-size:14px; color:#ef4444;">${i18n_js.t('taskAutoReroll.autoRerollListTitle')}</span>
             <button id="mwi-task-autoreroll-close" style="
                 background:none; border:none; color:#aaa; font-size:22px;
                 cursor:pointer; padding:0; line-height:1;">\u00d7</button>
@@ -14922,7 +15139,7 @@ ${starCSS}
             searchDiv.style.cssText = 'padding: 8px 14px; flex-shrink: 0;';
             const searchInput = document.createElement('input');
             searchInput.type = 'search';
-            searchInput.placeholder = 'Search actions, monsters, zones...';
+            searchInput.placeholder = i18n_js.t('taskAutoReroll.searchPlaceholder');
             searchInput.style.cssText = `
             width: 100%;
             padding: 6px 10px;
@@ -14981,8 +15198,7 @@ ${starCSS}
 
                 let html = '';
                 if (!query && filtered.length === 0) {
-                    html =
-                        '<div style="color:#666; text-align:center; padding:20px 0;">No auto-reroll tasks yet. Search to add.</div>';
+                    html = `<div style="color:#666; text-align:center; padding:20px 0;">${i18n_js.t('taskAutoReroll.noAutoRerollTasksMessage')}</div>`;
                 }
 
                 for (const item of filtered.slice(0, 50)) {
@@ -14995,7 +15211,7 @@ ${starCSS}
                         checkmark = allMarked ? '\u2713' : markedCount > 0 ? '~' : '';
                         checkColor = markedCount > 0 ? '#ef4444' : '#444';
                         nameColor = markedCount > 0 ? '#e0e0e0' : '#aaa';
-                        typeLabel = 'Zone (' + monsters.length + ')';
+                        typeLabel = i18n_js.t('taskAutoReroll.zoneTypeLabel', { count: monsters.length });
                     } else {
                         const isMarked = this.autoRerollHrids.has(item.hrid);
                         const skillType = getActionSkillType(item.hrid, gameData);
@@ -15003,7 +15219,7 @@ ${starCSS}
                         checkmark = isMarked ? '\u2713' : viaSkill ? '\u{1F512}' : '';
                         checkColor = isMarked || viaSkill ? '#ef4444' : '#444';
                         nameColor = isMarked || viaSkill ? '#e0e0e0' : '#aaa';
-                        typeLabel = item.type.charAt(0).toUpperCase() + item.type.slice(1);
+                        typeLabel = getTaskTypeLabel(item.type);
                     }
 
                     const borderColor = item.isZone ? '#2a2a4e' : '#1a1a2e';
@@ -15020,7 +15236,7 @@ ${starCSS}
                 }
 
                 if (filtered.length > 50) {
-                    html += `<div style="color:#666; text-align:center; padding:8px;">...${filtered.length - 50} more (refine search)</div>`;
+                    html += `<div style="color:#666; text-align:center; padding:8px;">${i18n_js.t('taskAutoReroll.moreResultsRefineSearch', { count: filtered.length - 50 })}</div>`;
                 }
 
                 listContainer.innerHTML = html;
@@ -15211,7 +15427,7 @@ ${starCSS}
 
             const btn = document.createElement('span');
             btn.className = 'mwi-task-token-threshold-btn';
-            btn.title = 'Configure Task Token reroll threshold';
+            btn.title = i18n_js.t('taskTokenThreshold.configureButtonTitle');
             btn.style.cssText =
                 'cursor:pointer; display:inline-flex; align-items:center; margin-left:6px; opacity:0.7; transition:opacity 0.1s;';
 
@@ -15264,7 +15480,8 @@ ${starCSS}
             // considering Task Reroll Protection and Task Auto-Reroll Reminder too — qualifying here
             // always wins the red border/badge, even over manual protection's green border.
             taskCard.dataset.mwiTokenFlag = qualifies ? '1' : '';
-            taskCard.dataset.mwiTokenFlagText = this.direction === 'above' ? 'High tokens!' : 'Low tokens!';
+            taskCard.dataset.mwiTokenFlagText =
+                this.direction === 'above' ? i18n_js.t('taskTokenThreshold.highTokensFlag') : i18n_js.t('taskTokenThreshold.lowTokensFlag');
             repaintTaskCard(taskCard);
         }
 
@@ -15318,7 +15535,7 @@ ${starCSS}
             border-bottom: 1px solid rgba(239, 68, 68, 0.3);
         `;
             header.innerHTML = `
-            <span style="font-weight:700; font-size:14px; color:#ef4444;">Task Token Threshold</span>
+            <span style="font-weight:700; font-size:14px; color:#ef4444;">${i18n_js.t('taskTokenThreshold.popupTitle')}</span>
             <button id="mwi-task-token-threshold-close" style="
                 background:none; border:none; color:#aaa; font-size:22px;
                 cursor:pointer; padding:0; line-height:1;">×</button>
@@ -15327,7 +15544,7 @@ ${starCSS}
             const body = document.createElement('div');
             body.style.cssText = 'padding: 12px 14px; display:flex; flex-direction:column; gap:10px;';
             body.innerHTML = `
-            <div style="color:#aaa;">Flag tasks whose Task Token reward crosses this cutoff for reroll.</div>
+            <div style="color:#aaa;">${i18n_js.t('taskTokenThreshold.description')}</div>
             <div style="display:flex; align-items:center; gap:8px;">
                 <select id="mwi-token-threshold-direction" style="
                     padding: 4px 6px;
@@ -15339,10 +15556,10 @@ ${starCSS}
                     font-family: inherit;
                     cursor: pointer;
                 ">
-                    <option value="below">Below</option>
-                    <option value="above">Above</option>
+                    <option value="below">${i18n_js.t('taskTokenThreshold.belowOption')}</option>
+                    <option value="above">${i18n_js.t('taskTokenThreshold.aboveOption')}</option>
                 </select>
-                <input id="mwi-token-threshold-input" type="number" min="0" step="1" placeholder="e.g. 8" style="
+                <input id="mwi-token-threshold-input" type="number" min="0" step="1" placeholder="${i18n_js.t('taskTokenThreshold.thresholdPlaceholder')}" style="
                     width: 70px;
                     padding: 4px 6px;
                     background: rgba(255,255,255,0.08);
@@ -15353,17 +15570,17 @@ ${starCSS}
                     font-family: inherit;
                     outline: none;
                 ">
-                <span>tokens</span>
+                <span>${i18n_js.t('taskTokenThreshold.tokensLabel')}</span>
             </div>
             <div style="display:flex; gap:8px;">
                 <button id="mwi-token-threshold-save" style="
                     flex:1; padding:6px 10px; background:rgba(239,68,68,0.25);
                     border:1px solid rgba(239,68,68,0.5); border-radius:6px;
-                    color:#e0e0e0; cursor:pointer; font-size:13px;">Save</button>
+                    color:#e0e0e0; cursor:pointer; font-size:13px;">${i18n_js.t('settings.saveButton')}</button>
                 <button id="mwi-token-threshold-clear" style="
                     flex:1; padding:6px 10px; background:rgba(255,255,255,0.06);
                     border:1px solid rgba(255,255,255,0.15); border-radius:6px;
-                    color:#aaa; cursor:pointer; font-size:13px;">Disable</button>
+                    color:#aaa; cursor:pointer; font-size:13px;">${i18n_js.t('taskTokenThreshold.disableButton')}</button>
             </div>
         `;
 
@@ -15603,7 +15820,7 @@ ${starCSS}
                 // Create the remaining XP display
                 const xpDisplay = document.createElement('span');
                 xpDisplay.className = 'mwi-remaining-xp';
-                xpDisplay.textContent = `${formatters_js.formatLargeNumber(remainingXP)} XP left`;
+                xpDisplay.textContent = i18n_js.t('remainingXp.xpLeftLabel', { value: formatters_js.formatLargeNumber(remainingXP) });
 
                 // Build style with optional text shadow
                 const useBlackBorder = config.getSetting('skillRemainingXP_blackBorder', true);
@@ -16476,7 +16693,7 @@ ${starCSS}
             const title = document.createElement('span');
             title.style.cssText = `font-size: 0.9rem; font-weight: 600; color: ${config.COLOR_ACCENT};`;
             const contextLabel = this.loadoutName ? this.loadoutName : 'Defaults';
-            title.textContent = `Scroll Simulation — ${contextLabel}`;
+            title.textContent = i18n_js.t('scrollSimulatorUi.headingWithDash', { contextLabel });
 
             const closeBtn = document.createElement('button');
             closeBtn.textContent = '×';
@@ -16658,7 +16875,7 @@ ${starCSS}
 
         const button = document.createElement('button');
         button.id = BUTTON_ID;
-        button.textContent = 'Scroll Simulation';
+        button.textContent = i18n_js.t('scrollSimulatorUi.title');
         button.className = 'Button_button__1Fe9z';
         button.style.cssText = `white-space: nowrap;`;
         button.addEventListener('click', () => popup.open(loadoutName));
@@ -17020,7 +17237,7 @@ ${starCSS}
             this.headerEl = header;
 
             const title = document.createElement('span');
-            title.textContent = 'PFormance';
+            title.textContent = i18n_js.t('performancePanel.title');
             title.style.fontWeight = 'bold';
             title.style.color = COLORS.accent;
 
@@ -17204,7 +17421,7 @@ ${starCSS}
 
             if (entries.length === 0) {
                 const empty = document.createElement('div');
-                empty.textContent = 'No data';
+                empty.textContent = i18n_js.t('performancePanel.noData');
                 empty.style.padding = '4px 6px';
                 empty.style.color = COLORS.textDim;
                 empty.style.fontSize = '11px';
@@ -17693,7 +17910,7 @@ ${starCSS}
 
             const span = document.createElement('span');
             span.className = 'MuiTab-wrapper';
-            span.textContent = 'Toolasha';
+            span.textContent = i18n_js.t('settings.tabLabel');
 
             button.appendChild(span);
 
@@ -17987,7 +18204,7 @@ ${starCSS}
                                 white-space: nowrap;
                                 flex-shrink: 0;
                             ">
-                            Edit Template
+                            ${i18n_js.t('settings.editTemplateButton')}
                         </button>
                     </div>
                 `;
@@ -18017,7 +18234,7 @@ ${starCSS}
                             white-space: nowrap;
                             transition: all 0.2s;
                         ">
-                        Edit Template
+                        ${i18n_js.t('settings.editTemplateButton')}
                     </button>
                 `;
                 }
@@ -18143,14 +18360,14 @@ ${starCSS}
                             white-space: nowrap;
                             transition: all 0.2s;
                         ">
-                        Manage Overrides${count > 0 ? ` (${count})` : ''}
+                        ${i18n_js.t('settings.manageOverridesButton', { count })}
                     </button>
                 `;
                 }
 
                 case 'checkboxWithButton': {
                     const checkedCwb = currentSetting?.isTrue ?? settingDef.default ?? false;
-                    const btnLabel = settingDef.buttonLabel ?? 'Configure...';
+                    const btnLabel = settingDef.buttonLabel ?? i18n_js.t('settings.configureButtonDefault');
                     return `
                     <div style="display:flex; align-items:center; gap:8px;">
                         <button type="button"
@@ -18177,7 +18394,7 @@ ${starCSS}
                 }
 
                 default:
-                    return `<span style="color: red;">Unknown type: ${type}</span>`;
+                    return `<span style="color: red;">${i18n_js.t('settings.unknownSettingType', { type })}</span>`;
             }
         }
 
@@ -18199,7 +18416,7 @@ ${starCSS}
             const searchInput = document.createElement('input');
             searchInput.type = 'text';
             searchInput.className = 'toolasha-search-input';
-            searchInput.placeholder = 'Search settings...';
+            searchInput.placeholder = i18n_js.t('settings.searchPlaceholder');
             searchInput.style.cssText = `
             flex: 1;
             padding: 8px 12px;
@@ -18212,7 +18429,7 @@ ${starCSS}
 
             // Clear button
             const clearButton = document.createElement('button');
-            clearButton.textContent = 'Clear';
+            clearButton.textContent = i18n_js.t('settings.clearButton');
             clearButton.className = 'toolasha-search-clear';
             clearButton.style.cssText = `
             padding: 8px 16px;
@@ -18298,43 +18515,43 @@ ${starCSS}
 
             // Sync button (at top - most important)
             const syncBtn = document.createElement('button');
-            syncBtn.textContent = 'Copy Settings to Other Characters';
+            syncBtn.textContent = i18n_js.t('settings.copySettingsToOthersButton');
             syncBtn.className = 'toolasha-utility-button toolasha-sync-button';
             syncBtn.addEventListener('click', () => this.handleSync());
 
             // Fetch Latest Prices button
             const fetchPricesBtn = document.createElement('button');
-            fetchPricesBtn.textContent = '🔄 Fetch Latest Prices';
+            fetchPricesBtn.textContent = i18n_js.t('settings.fetchPricesButton');
             fetchPricesBtn.className = 'toolasha-utility-button toolasha-fetch-prices-button';
             fetchPricesBtn.addEventListener('click', () => this.handleFetchPrices(fetchPricesBtn));
 
             // Reset button
             const resetBtn = document.createElement('button');
-            resetBtn.textContent = 'Reset to Defaults';
+            resetBtn.textContent = i18n_js.t('settings.resetButton');
             resetBtn.className = 'toolasha-utility-button';
             resetBtn.addEventListener('click', () => this.handleReset());
 
             // Export button
             const exportBtn = document.createElement('button');
-            exportBtn.textContent = 'Export Settings';
+            exportBtn.textContent = i18n_js.t('settings.exportButton');
             exportBtn.className = 'toolasha-utility-button';
             exportBtn.addEventListener('click', () => this.handleExport());
 
             // Import button
             const importBtn = document.createElement('button');
-            importBtn.textContent = 'Import Settings';
+            importBtn.textContent = i18n_js.t('settings.importButton');
             importBtn.className = 'toolasha-utility-button';
             importBtn.addEventListener('click', () => this.handleImport());
 
             // All Off button
             const allOffBtn = document.createElement('button');
-            allOffBtn.textContent = 'All Off';
+            allOffBtn.textContent = i18n_js.t('settings.allOffButton');
             allOffBtn.className = 'toolasha-utility-button';
             allOffBtn.addEventListener('click', () => this.handleAllOff(restoreBtn));
 
             // Restore button (only shown when an All Off snapshot exists)
             const restoreBtn = document.createElement('button');
-            restoreBtn.textContent = 'Restore';
+            restoreBtn.textContent = i18n_js.t('settings.restoreButton');
             restoreBtn.className = 'toolasha-utility-button';
             restoreBtn.style.display = 'none';
             restoreBtn.addEventListener('click', () => this.handleRestore(restoreBtn));
@@ -18355,7 +18572,7 @@ ${starCSS}
             buttonsDiv.appendChild(importBtn);
 
             const pformanceBtn = document.createElement('button');
-            pformanceBtn.textContent = 'PFormance';
+            pformanceBtn.textContent = i18n_js.t('settings.pformanceButton');
             pformanceBtn.className = 'toolasha-utility-button';
             pformanceBtn.addEventListener('click', () => pformancePanel.show());
             buttonsDiv.appendChild(pformanceBtn);
@@ -18370,7 +18587,7 @@ ${starCSS}
         addRefreshNotice(container) {
             const notice = document.createElement('div');
             notice.className = 'toolasha-refresh-notice';
-            notice.textContent = 'Some settings require a page refresh to take effect';
+            notice.textContent = i18n_js.t('settings.refreshNotice');
             container.appendChild(notice);
         }
 
@@ -18410,9 +18627,9 @@ ${starCSS}
                 if (titleEl) {
                     if (targetButton.id === 'toolasha-settings-tab') {
                         const ver = (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).Toolasha?.version || '';
-                        titleEl.textContent = `⚙️ Toolasha ${ver ? `v${ver} ` : ''}Settings (refresh to apply)`;
+                        titleEl.textContent = i18n_js.t('settings.toolashaTabTitle', { version: ver });
                     } else {
-                        titleEl.textContent = 'Settings';
+                        titleEl.textContent = i18n_js.t('settings.nativeSettingsTabTitle');
                     }
                 }
             };
@@ -18638,16 +18855,16 @@ ${starCSS}
                 const params = enhancementConfig_js.getEnhancingParams();
                 const fmt = (v) => (typeof v === 'number' ? v.toFixed(2).replace(/\.?0+$/, '') : v);
                 return `
-                <span style="color:#6b9fff; font-weight:bold;">Computed Stats</span><br>
-                Effective Level: <span style="color:#e0e0e0;">${fmt(params.enhancingLevel)}</span> &nbsp;|&nbsp;
-                Tool Success: <span style="color:#e0e0e0;">${fmt(params.toolBonus)}%</span> &nbsp;|&nbsp;
-                Speed: <span style="color:#e0e0e0;">${fmt(params.speedBonus)}%</span><br>
-                Drink Conc: <span style="color:#e0e0e0;">${fmt((params.guzzlingBonus - 1) * 100)}%</span> &nbsp;|&nbsp;
-                Rare Find: <span style="color:#e0e0e0;">${fmt(params.rareFindBonus)}%</span> &nbsp;|&nbsp;
-                Experience: <span style="color:#e0e0e0;">${fmt(params.experienceBonus)}%</span>
+                <span style="color:#6b9fff; font-weight:bold;">${i18n_js.t('settings.enhanceSimStatsHeader')}</span><br>
+                ${i18n_js.t('settings.enhanceSimEffectiveLevel')} <span style="color:#e0e0e0;">${fmt(params.enhancingLevel)}</span> &nbsp;|&nbsp;
+                ${i18n_js.t('settings.enhanceSimToolSuccess')} <span style="color:#e0e0e0;">${fmt(params.toolBonus)}%</span> &nbsp;|&nbsp;
+                ${i18n_js.t('settings.enhanceSimSpeed')} <span style="color:#e0e0e0;">${fmt(params.speedBonus)}%</span><br>
+                ${i18n_js.t('settings.enhanceSimDrinkConc')} <span style="color:#e0e0e0;">${fmt((params.guzzlingBonus - 1) * 100)}%</span> &nbsp;|&nbsp;
+                ${i18n_js.t('settings.enhanceSimRareFind')} <span style="color:#e0e0e0;">${fmt(params.rareFindBonus)}%</span> &nbsp;|&nbsp;
+                ${i18n_js.t('settings.enhanceSimExperience')} <span style="color:#e0e0e0;">${fmt(params.experienceBonus)}%</span>
             `;
             } catch {
-                return '<span style="color:#666;">Stats unavailable (game data not loaded)</span>';
+                return `<span style="color:#666;">${i18n_js.t('settings.enhanceSimStatsUnavailable')}</span>`;
             }
         }
 
@@ -18670,7 +18887,7 @@ ${starCSS}
             const others = knownCharacters.filter((c) => c.id !== currentId);
 
             if (others.length === 0) {
-                alert('You only have one character. Settings are already saved for this character.');
+                alert(i18n_js.t('settings.onlyOneCharacterAlert'));
                 return;
             }
 
@@ -18683,7 +18900,7 @@ ${starCSS}
 
             const title = document.createElement('div');
             title.style.cssText = `font-size:14px;font-weight:700;color:#4a9eff;margin-bottom:12px;`;
-            title.textContent = 'Copy Settings To';
+            title.textContent = i18n_js.t('settings.copySettingsToTitle');
             dialog.appendChild(title);
 
             const checkboxes = others.map((char) => {
@@ -18694,7 +18911,8 @@ ${starCSS}
                 cb.checked = true;
                 cb.value = char.id;
                 const nameSpan = document.createElement('span');
-                nameSpan.textContent = char.name !== char.id ? char.name : `Character ${char.id}`;
+                nameSpan.textContent =
+                    char.name !== char.id ? char.name : i18n_js.t('settings.characterFallbackName', { id: char.id });
                 row.appendChild(cb);
                 row.appendChild(nameSpan);
                 dialog.appendChild(row);
@@ -18705,11 +18923,11 @@ ${starCSS}
             btnRow.style.cssText = `display:flex;gap:8px;margin-top:16px;justify-content:flex-end;`;
 
             const cancelBtn = document.createElement('button');
-            cancelBtn.textContent = 'Cancel';
+            cancelBtn.textContent = i18n_js.t('settings.cancelButton');
             cancelBtn.style.cssText = `padding:6px 14px;border:1px solid #555;background:transparent;color:#aaa;border-radius:4px;cursor:pointer;`;
 
             const copyBtn = document.createElement('button');
-            copyBtn.textContent = 'Copy Settings';
+            copyBtn.textContent = i18n_js.t('settings.copySettingsConfirmButton');
             copyBtn.style.cssText = `padding:6px 14px;background:#4a9eff;border:none;color:#fff;border-radius:4px;cursor:pointer;font-weight:600;`;
 
             btnRow.appendChild(cancelBtn);
@@ -18733,9 +18951,9 @@ ${starCSS}
                 close();
                 const result = await this.config.syncSettingsToAllCharacters(selected);
                 if (result.success) {
-                    alert(`Settings copied to ${result.count} character${result.count !== 1 ? 's' : ''}!`);
+                    alert(i18n_js.t('settings.syncSuccessAlert', { count: result.count }));
                 } else {
-                    alert(`Failed to copy settings: ${result.error || 'Unknown error'}`);
+                    alert(i18n_js.t('settings.syncFailureAlert', { error: result.error || i18n_js.t('settings.unknownErrorFallback') }));
                 }
             });
         }
@@ -18748,7 +18966,7 @@ ${starCSS}
             // Disable button and show loading state
             const originalText = button.textContent;
             button.disabled = true;
-            button.textContent = '⏳ Fetching...';
+            button.textContent = i18n_js.t('settings.fetchingStatus');
 
             try {
                 // Clear cache and fetch fresh data
@@ -18761,7 +18979,7 @@ ${starCSS}
                     });
 
                     // Show success state
-                    button.textContent = '✅ Updated!';
+                    button.textContent = i18n_js.t('settings.updatedStatus');
                     button.style.backgroundColor = '#00ff00';
                     button.style.color = '#000';
 
@@ -18775,7 +18993,7 @@ ${starCSS}
                     this.timerRegistry.registerTimeout(resetSuccessTimeout);
                 } else {
                     // Failed - show error state
-                    button.textContent = '❌ Failed';
+                    button.textContent = i18n_js.t('settings.failedStatus');
                     button.style.backgroundColor = '#ff0000';
 
                     // Reset button after 3 seconds
@@ -18790,7 +19008,7 @@ ${starCSS}
                 console.error('[SettingsUI] Fetch prices failed:', error);
 
                 // Show error state
-                button.textContent = '❌ Error';
+                button.textContent = i18n_js.t('settings.errorStatus');
                 button.style.backgroundColor = '#ff0000';
 
                 // Reset button after 3 seconds
@@ -18807,14 +19025,14 @@ ${starCSS}
          * Handle reset to defaults
          */
         async handleReset() {
-            if (!confirm('Reset all settings to defaults? This cannot be undone.')) {
+            if (!confirm(i18n_js.t('settings.resetConfirm'))) {
                 return;
             }
 
             await settingsStorage.resetToDefaults();
             await this.config.resetToDefaults();
 
-            alert('Settings reset to defaults. Please refresh the page.');
+            alert(i18n_js.t('settings.resetDoneAlert'));
             window.location.reload();
         }
 
@@ -18851,18 +19069,14 @@ ${starCSS}
                     const result = await settingsStorage.importSettings(text);
 
                     if (result) {
-                        const msg =
-                            `Settings imported successfully (${result.imported} keys imported` +
-                            (result.skipped > 0 ? `, ${result.skipped} skipped from other characters` : '') +
-                            '). Please refresh the page.';
-                        alert(msg);
+                        alert(i18n_js.t('settings.importSuccessAlert', { imported: result.imported, skipped: result.skipped }));
                         window.location.reload();
                     } else {
-                        alert('Failed to import settings. Please check the file format.');
+                        alert(i18n_js.t('settings.importFailedFormatAlert'));
                     }
                 } catch (error) {
                     console.error('[Toolasha Settings] Import error:', error);
-                    alert('Failed to import settings.');
+                    alert(i18n_js.t('settings.importFailedAlert'));
                 }
             });
 
@@ -18996,14 +19210,14 @@ ${starCSS}
             padding-bottom: 10px;
         `;
             header.innerHTML = `
-            <h3 style="margin:0; color:#e0e0e0;">Edit Template</h3>
+            <h3 style="margin:0; color:#e0e0e0;">${i18n_js.t('settings.editTemplateButton')}</h3>
             <button style="background:none; border:none; color:#e0e0e0; font-size:32px; cursor:pointer; padding:0; line-height:1;">×</button>
         `;
             header.querySelector('button').onclick = () => overlay.remove();
 
             const textareaLabel = document.createElement('p');
             textareaLabel.style.cssText = 'margin: 0 0 8px; font-size:13px; color:#9ca3af;';
-            textareaLabel.textContent = 'Message text:';
+            textareaLabel.textContent = i18n_js.t('settings.messageTextLabel');
 
             const textarea = document.createElement('textarea');
             textarea.value = textInput.value;
@@ -19024,7 +19238,7 @@ ${starCSS}
 
             const varsLabel = document.createElement('p');
             varsLabel.style.cssText = 'margin: 0 0 8px; font-size:13px; color:#9ca3af;';
-            varsLabel.textContent = 'Click a variable to insert it at the cursor:';
+            varsLabel.textContent = i18n_js.t('settings.clickVariableHint');
 
             const chipsRow = document.createElement('div');
             chipsRow.style.cssText = 'display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px;';
@@ -19059,7 +19273,7 @@ ${starCSS}
 
             const cancelBtn = document.createElement('button');
             cancelBtn.type = 'button';
-            cancelBtn.textContent = 'Cancel';
+            cancelBtn.textContent = i18n_js.t('settings.cancelButton');
             cancelBtn.style.cssText = `
             background: #3a3a3a; border: 1px solid #5a5a5a;
             border-radius: 4px; color: #e0e0e0;
@@ -19069,7 +19283,7 @@ ${starCSS}
 
             const saveBtn = document.createElement('button');
             saveBtn.type = 'button';
-            saveBtn.textContent = 'Save';
+            saveBtn.textContent = i18n_js.t('settings.saveButton');
             saveBtn.style.cssText = `
             background: #4a7c59; border: 1px solid #5a8c69;
             border-radius: 4px; color: #e0e0e0;
@@ -19172,7 +19386,7 @@ ${starCSS}
             padding-bottom: 10px;
         `;
             header.innerHTML = `
-            <h3 style="margin: 0; color: #e0e0e0;">Edit Template</h3>
+            <h3 style="margin: 0; color: #e0e0e0;">${i18n_js.t('settings.editTemplateButton')}</h3>
             <button class="toolasha-template-close-btn" style="
                 background: none;
                 border: none;
@@ -19187,8 +19401,7 @@ ${starCSS}
             // Template list section
             const listSection = document.createElement('div');
             listSection.style.cssText = 'margin-bottom: 20px;';
-            listSection.innerHTML =
-                '<h4 style="margin: 0 0 10px 0; color: #e0e0e0;">Template Items (drag to reorder):</h4>';
+            listSection.innerHTML = `<h4 style="margin: 0 0 10px 0; color: #e0e0e0;">${i18n_js.t('settings.templateItemsHeader')}</h4>`;
 
             const listContainer = document.createElement('div');
             listContainer.className = 'toolasha-template-list';
@@ -19216,7 +19429,7 @@ ${starCSS}
             // Available variables section
             const variablesSection = document.createElement('div');
             variablesSection.style.cssText = 'margin-bottom: 20px;';
-            variablesSection.innerHTML = '<h4 style="margin: 0 0 10px 0; color: #e0e0e0;">Add Variable:</h4>';
+            variablesSection.innerHTML = `<h4 style="margin: 0 0 10px 0; color: #e0e0e0;">${i18n_js.t('settings.addVariableHeader')}</h4>`;
 
             const variablesContainer = document.createElement('div');
             variablesContainer.style.cssText = `
@@ -19262,7 +19475,7 @@ ${starCSS}
             // Add text button
             const addTextBtn = document.createElement('button');
             addTextBtn.type = 'button';
-            addTextBtn.textContent = '+ Add Text';
+            addTextBtn.textContent = i18n_js.t('settings.addTextButton');
             addTextBtn.style.cssText = `
             background: #2a2a2a;
             border: 1px solid #4a4a4a;
@@ -19282,7 +19495,7 @@ ${starCSS}
                 addTextBtn.style.borderColor = '#4a4a4a';
             };
             addTextBtn.onclick = () => {
-                const text = prompt('Enter text:');
+                const text = prompt(i18n_js.t('settings.enterTextPrompt'));
                 if (text !== null && text !== '') {
                     templateItems.push({
                         type: 'text',
@@ -19307,7 +19520,7 @@ ${starCSS}
             // Restore to Default button (left side)
             const restoreBtn = document.createElement('button');
             restoreBtn.type = 'button';
-            restoreBtn.textContent = 'Restore to Default';
+            restoreBtn.textContent = i18n_js.t('settings.restoreDefaultButton');
             restoreBtn.style.cssText = `
             background: #6b5b3a;
             border: 1px solid #8b7b5a;
@@ -19318,7 +19531,7 @@ ${starCSS}
             font-size: 14px;
         `;
             restoreBtn.onclick = () => {
-                if (confirm('Reset template to default? This will discard your current template.')) {
+                if (confirm(i18n_js.t('settings.resetTemplateConfirm'))) {
                     // Reset to default
                     templateItems.length = 0;
                     const defaultTemplate = setting.default || [];
@@ -19333,7 +19546,7 @@ ${starCSS}
 
             const cancelBtn = document.createElement('button');
             cancelBtn.type = 'button';
-            cancelBtn.textContent = 'Cancel';
+            cancelBtn.textContent = i18n_js.t('settings.cancelButton');
             cancelBtn.style.cssText = `
             background: #2a2a2a;
             border: 1px solid #4a4a4a;
@@ -19347,7 +19560,7 @@ ${starCSS}
 
             const saveBtn = document.createElement('button');
             saveBtn.type = 'button';
-            saveBtn.textContent = 'Save';
+            saveBtn.textContent = i18n_js.t('settings.saveButton');
             saveBtn.style.cssText = `
             background: #4a7c59;
             border: 1px solid #5a8c69;
@@ -19468,7 +19681,7 @@ ${starCSS}
             padding-bottom: 10px;
         `;
             header.innerHTML = `
-            <h3 style="margin: 0; color: #e0e0e0;">Custom Price Overrides</h3>
+            <h3 style="margin: 0; color: #e0e0e0;">${i18n_js.t('settings.customPriceOverridesTitle')}</h3>
             <button class="toolasha-cpo-close-btn" style="
                 background: none;
                 border: none;
@@ -19488,9 +19701,7 @@ ${starCSS}
             margin-bottom: 16px;
             line-height: 1.4;
         `;
-            helpText.textContent =
-                'Set custom buy/sell prices for items. Leave a field blank to use the marketplace price. ' +
-                'Overridden prices show * in profit displays.';
+            helpText.textContent = i18n_js.t('settings.customPriceOverridesHelp');
 
             // Search section
             const searchSection = document.createElement('div');
@@ -19508,11 +19719,11 @@ ${starCSS}
 
             const searchLabel = document.createElement('div');
             searchLabel.style.cssText = 'font-size: 11px; color: #888; margin-bottom: 4px;';
-            searchLabel.textContent = 'Item';
+            searchLabel.textContent = i18n_js.t('settings.itemLabel');
 
             const searchInput = document.createElement('input');
             searchInput.type = 'text';
-            searchInput.placeholder = 'Search items...';
+            searchInput.placeholder = i18n_js.t('settings.itemSearchPlaceholder');
             searchInput.style.cssText = `
             width: 100%;
             padding: 6px 10px;
@@ -19547,7 +19758,7 @@ ${starCSS}
             const enhWrapper = document.createElement('div');
             const enhLabel = document.createElement('div');
             enhLabel.style.cssText = 'font-size: 11px; color: #888; margin-bottom: 4px;';
-            enhLabel.textContent = 'Enh';
+            enhLabel.textContent = i18n_js.t('settings.enhLabel');
 
             const enhInput = document.createElement('input');
             enhInput.type = 'number';
@@ -19671,7 +19882,7 @@ ${starCSS}
                 if (entries.length === 0) {
                     const empty = document.createElement('div');
                     empty.style.cssText = 'padding: 20px; text-align: center; color: #666; font-size: 13px;';
-                    empty.textContent = 'No custom price overrides. Use the search bar above to add items.';
+                    empty.textContent = i18n_js.t('settings.noOverridesMessage');
                     tableContainer.appendChild(empty);
                     return;
                 }
@@ -19689,9 +19900,9 @@ ${starCSS}
                 gap: 8px;
             `;
                 headerRow.innerHTML = `
-                <div style="flex: 1;">Item</div>
-                <div style="width: 80px; text-align: center;">Buy Price</div>
-                <div style="width: 80px; text-align: center;">Sell Price</div>
+                <div style="flex: 1;">${i18n_js.t('settings.itemLabel')}</div>
+                <div style="width: 80px; text-align: center;">${i18n_js.t('settings.buyPriceLabel')}</div>
+                <div style="width: 80px; text-align: center;">${i18n_js.t('settings.sellPriceLabel')}</div>
                 <div style="width: 28px;"></div>
             `;
                 tableContainer.appendChild(headerRow);
@@ -19856,7 +20067,7 @@ ${starCSS}
 
             const clearAllBtn = document.createElement('button');
             clearAllBtn.type = 'button';
-            clearAllBtn.textContent = 'Clear All';
+            clearAllBtn.textContent = i18n_js.t('settings.clearAllButton');
             clearAllBtn.style.cssText = `
             background: #6b3a3a;
             border: 1px solid #8b5a5a;
@@ -19868,7 +20079,7 @@ ${starCSS}
         `;
             clearAllBtn.addEventListener('click', () => {
                 if (Object.keys(workingOverrides).length === 0) return;
-                if (!confirm('Remove all custom price overrides?')) return;
+                if (!confirm(i18n_js.t('settings.clearAllOverridesConfirm'))) return;
                 for (const key of Object.keys(workingOverrides)) {
                     delete workingOverrides[key];
                 }
@@ -19880,7 +20091,7 @@ ${starCSS}
 
             const cancelBtn = document.createElement('button');
             cancelBtn.type = 'button';
-            cancelBtn.textContent = 'Cancel';
+            cancelBtn.textContent = i18n_js.t('settings.cancelButton');
             cancelBtn.style.cssText = `
             background: #2a2a2a;
             border: 1px solid #4a4a4a;
@@ -19894,7 +20105,7 @@ ${starCSS}
 
             const saveBtn = document.createElement('button');
             saveBtn.type = 'button';
-            saveBtn.textContent = 'Save';
+            saveBtn.textContent = i18n_js.t('settings.saveButton');
             saveBtn.style.cssText = `
             background: #4a7c59;
             border: 1px solid #5a8c69;
@@ -19931,7 +20142,7 @@ ${starCSS}
                 const btn = document.querySelector('.toolasha-custom-price-edit-btn');
                 if (btn) {
                     const count = Object.keys(workingOverrides).length;
-                    btn.textContent = `Manage Overrides${count > 0 ? ` (${count})` : ''}`;
+                    btn.textContent = i18n_js.t('settings.manageOverridesButton', { count });
                 }
 
                 overlay.remove();
@@ -20025,7 +20236,7 @@ ${starCSS}
             const deleteBtn = document.createElement('button');
             deleteBtn.type = 'button';
             deleteBtn.textContent = '×';
-            deleteBtn.title = 'Remove';
+            deleteBtn.title = i18n_js.t('settings.removeTooltip');
             deleteBtn.style.cssText = `
             background: #8b0000;
             border: 1px solid #a00000;
@@ -20122,13 +20333,11 @@ ${starCSS}
 
             const title = document.createElement('div');
             title.style.cssText = `font-weight: 700; font-size: 14px; color: ${enabled ? '#d4900a' : '#c0c0c0'};`;
-            title.textContent = 'Iron Cow Mode';
+            title.textContent = i18n_js.t('settings.ironCowTitle');
 
             const desc = document.createElement('div');
             desc.style.cssText = 'font-size: 12px; color: #888; margin-top: 2px;';
-            desc.innerHTML = enabled
-                ? 'Disable all market &amp; profit features. <span style="color:#d4900a;font-weight:600;">ACTIVE — market features locked.</span>'
-                : 'Disable all market &amp; profit features for a no-marketplace playthrough.';
+            desc.innerHTML = enabled ? i18n_js.t('settings.ironCowDescActive') : i18n_js.t('settings.ironCowDescInactive');
 
             textBlock.appendChild(title);
             textBlock.appendChild(desc);
@@ -20180,9 +20389,7 @@ ${starCSS}
 
             const desc = wrapper.querySelector('div > div:last-child');
             if (desc) {
-                desc.innerHTML = enabled
-                    ? 'Disable all market &amp; profit features. <span style="color:#d4900a;font-weight:600;">ACTIVE — market features locked.</span>'
-                    : 'Disable all market &amp; profit features for a no-marketplace playthrough.';
+                desc.innerHTML = enabled ? i18n_js.t('settings.ironCowDescActive') : i18n_js.t('settings.ironCowDescInactive');
             }
         }
 
@@ -20727,13 +20934,13 @@ ${starCSS}
         const parts = [];
 
         if (style === 'relative' || style === 'both') {
-            parts.push(`Complete in ${formatters_js.timeReadable(accumulatedTime)}`);
+            parts.push(i18n_js.t('actionTimeDisplay.completeIn', { time: formatters_js.timeReadable(accumulatedTime) }));
         }
         if (style === 'absolute' || style === 'both') {
             const completionDate = new Date();
             completionDate.setSeconds(completionDate.getSeconds() + accumulatedTime);
             const isToday = completionDate.toDateString() === new Date().toDateString();
-            parts.push(`Complete at ${formatCompletionTime(completionDate, !isToday)}`);
+            parts.push(i18n_js.t('actionTimeDisplay.completeAt', { time: formatCompletionTime(completionDate, !isToday) }));
         }
 
         return parts.length ? ` ${parts.join(' · ')}` : '';
@@ -21098,7 +21305,7 @@ ${starCSS}
                     const actionObj = this.matchActionFromDiv(actionDiv, currentActions, usedActionIds);
 
                     if (!actionObj) {
-                        this.appendTimeToActionDiv(actionDiv, '[Unknown action]');
+                        this.appendTimeToActionDiv(actionDiv, i18n_js.t('actionTimeDisplay.unknownAction'));
                         continue;
                     }
 
@@ -21158,12 +21365,17 @@ ${starCSS}
                     if (hasTimingUnavailable) {
                         totalText =
                             accumulatedTime > 0
-                                ? `Total: ${formatters_js.timeReadable(accumulatedTime)} + [?]`
-                                : 'Total: [?] (enhancement estimate unavailable)';
+                                ? i18n_js.t('actionTimeDisplay.tooltipTotalWithUnavailable', {
+                                      time: formatters_js.timeReadable(accumulatedTime),
+                                  })
+                                : i18n_js.t('actionTimeDisplay.tooltipTotalUnavailable');
                     } else if (hasInfinite) {
-                        totalText = accumulatedTime > 0 ? `Total: ${formatters_js.timeReadable(accumulatedTime)} + [∞]` : 'Total: [∞]';
+                        totalText =
+                            accumulatedTime > 0
+                                ? i18n_js.t('actionTimeDisplay.tooltipTotalWithInfinite', { time: formatters_js.timeReadable(accumulatedTime) })
+                                : i18n_js.t('actionTimeDisplay.tooltipTotalInfinite');
                     } else {
-                        totalText = `Total: ${formatters_js.timeReadable(accumulatedTime)}`;
+                        totalText = i18n_js.t('actionTimeDisplay.tooltipTotal', { time: formatters_js.timeReadable(accumulatedTime) });
                     }
                     totalDiv.textContent = totalText;
                     actionsContainer.appendChild(totalDiv);
@@ -21347,13 +21559,13 @@ ${starCSS}
 
             // Derive limit label
             if (limitType === 'gold') {
-                limitLabel = 'gold';
+                limitLabel = i18n_js.t('actionTimeDisplay.limitLabelGold');
             } else if (limitType && limitType.startsWith('material:')) {
-                limitLabel = 'mat';
+                limitLabel = i18n_js.t('actionTimeDisplay.limitLabelMat');
             } else if (limitType && limitType.startsWith('upgrade:')) {
-                limitLabel = 'upgrade';
+                limitLabel = i18n_js.t('actionTimeDisplay.limitLabelUpgrade');
             } else {
-                limitLabel = 'max';
+                limitLabel = i18n_js.t('actionTimeDisplay.limitLabelMax');
             }
 
             return {
@@ -22064,17 +22276,17 @@ ${starCSS}
             // Queue count
             if (config.getSetting('actionBar_showQueueCount')) {
                 if (queueSizeDisplay !== Infinity) {
-                    statsToAppend.push(`(${queueSizeDisplay.toLocaleString()} queued)`);
+                    statsToAppend.push(i18n_js.t('actionTimeDisplay.queuedCount', { count: queueSizeDisplay.toLocaleString() }));
                 } else if (materialLimit !== null) {
                     let limitLabel = '';
                     if (limitType === 'gold') {
-                        limitLabel = 'gold limit';
+                        limitLabel = i18n_js.t('actionTimeDisplay.limitLabelGoldLimit');
                     } else if (limitType && limitType.startsWith('material:')) {
-                        limitLabel = 'mat limit';
+                        limitLabel = i18n_js.t('actionTimeDisplay.limitLabelMatLimit');
                     } else if (limitType && limitType.startsWith('upgrade:')) {
-                        limitLabel = 'upgrade limit';
+                        limitLabel = i18n_js.t('actionTimeDisplay.limitLabelUpgradeLimit');
                     } else {
-                        limitLabel = 'max';
+                        limitLabel = i18n_js.t('actionTimeDisplay.limitLabelMax');
                     }
                     statsToAppend.push(`(∞ · ${limitLabel}: ${this.formatLargeNumber(materialLimit)})`);
                 } else {
@@ -22084,13 +22296,16 @@ ${starCSS}
 
             // Time per action
             if (config.getSetting('actionBar_showActionDuration')) {
-                statsToAppend.push(`${actionTime.toFixed(2)}s/action`);
+                statsToAppend.push(i18n_js.t('actionTimeDisplay.secondsPerAction', { time: actionTime.toFixed(2) }));
             }
 
             // Actions/hr and items/hr
             if (config.getSetting('actionBar_showActionsPerHour')) {
                 statsToAppend.push(
-                    `${actionsPerHourWithEfficiency.toFixed(0)} actions/hr (${itemsPerHour.toFixed(0)} items/hr)`
+                    i18n_js.t('actionTimeDisplay.actionsPerHourWithItems', {
+                        actionsPerHour: actionsPerHourWithEfficiency.toFixed(0),
+                        itemsPerHour: itemsPerHour.toFixed(0),
+                    })
                 );
             }
 
@@ -22115,7 +22330,7 @@ ${starCSS}
                     const recycleIsToday = recycleCompletion.toDateString() === new Date().toDateString();
                     const recycleClockTime = formatCompletionTime(recycleCompletion, !recycleIsToday);
                     const recycleText = buildTimeRemainingText(timeRemainingMode, recycleTimeStr, recycleClockTime);
-                    recycleHtml = `<span style="color:#4dd0a0; margin-left:12px; font-size:11px;">Est. w/ recycle: ${recycleText}</span>`;
+                    recycleHtml = `<span style="color:#4dd0a0; margin-left:12px; font-size:11px;">${i18n_js.t('actionTimeDisplay.estWithRecycle', { text: recycleText })}</span>`;
                 }
                 const timeText = buildTimeRemainingText(timeRemainingMode, timeStr, clockTime);
                 this.displayElement.innerHTML = `<span style="display: inline-flex; flex-wrap: nowrap; align-items: baseline; gap: 0.25em;"><span>⏱</span>${matsLabel} ${timeText}</span>${recycleHtml}`;
@@ -22318,13 +22533,15 @@ ${starCSS}
             const statsToAppend = [];
 
             if (config.getSetting('actionBar_showActionDuration')) {
-                statsToAppend.push(`${perActionTime.toFixed(2)}s/action`);
+                statsToAppend.push(i18n_js.t('actionTimeDisplay.secondsPerAction', { time: perActionTime.toFixed(2) }));
             }
-            statsToAppend.push(`${actualSuccessRate.toFixed(1)}% success`);
-            statsToAppend.push(`~${formatters_js.formatWithSeparator(effectiveAttempts)} to target`);
+            statsToAppend.push(i18n_js.t('actionTimeDisplay.successRate', { rate: actualSuccessRate.toFixed(1) }));
+            statsToAppend.push(i18n_js.t('actionTimeDisplay.toTarget', { count: formatters_js.formatWithSeparator(effectiveAttempts) }));
 
             if (protectFrom > 0 && effectiveProtections > 0) {
-                statsToAppend.push(`~${formatters_js.formatWithSeparator(effectiveProtections)} protections`);
+                statsToAppend.push(
+                    i18n_js.t('actionTimeDisplay.protections', { count: formatters_js.formatWithSeparator(effectiveProtections) })
+                );
             }
 
             this.appendStatsToActionName(actionNameElement, statsToAppend.join(' · '));
@@ -22342,9 +22559,12 @@ ${starCSS}
                 const clockTime = formatCompletionTime(completionTime, !isToday);
 
                 const itemIconHtml = this.getItemIconHtml(limitingItemHrid);
-                const matsLabel = itemIconHtml ? `${itemIconHtml}:` : 'Mats:';
+                const matsLabel = itemIconHtml ? `${itemIconHtml}:` : i18n_js.t('actionTimeDisplay.matsLabel');
                 const timeText = buildTimeRemainingText(timeRemainingMode, timeStr, clockTime);
-                this.displayElement.innerHTML = `<span style="display: inline-flex; flex-wrap: nowrap; align-items: baseline; gap: 0.25em;"><span>⏱</span>${matsLabel} ${timeText} (${formatters_js.formatWithSeparator(materialLimit)} actions)</span>`;
+                const actionsCountText = i18n_js.t('actionTimeDisplay.actionsCount', {
+                    count: formatters_js.formatWithSeparator(materialLimit),
+                });
+                this.displayElement.innerHTML = `<span style="display: inline-flex; flex-wrap: nowrap; align-items: baseline; gap: 0.25em;"><span>⏱</span>${matsLabel} ${timeText} ${actionsCountText}</span>`;
             } else {
                 this.displayElement.innerHTML = '';
             }
@@ -23244,7 +23464,7 @@ ${starCSS}
                         font-size: 0.85em;
                         margin-top: 2px;
                     `;
-                        timeDiv.textContent = '[Unknown action]';
+                        timeDiv.textContent = i18n_js.t('actionTimeDisplay.unknownAction');
 
                         const actionTextContainer = actionDiv.querySelector('[class*="QueuedActions_actionText"]');
                         if (actionTextContainer) {
@@ -23390,13 +23610,13 @@ ${starCSS}
                         // Material-limited infinite action
                         let limitLabel = '';
                         if (limitType === 'gold') {
-                            limitLabel = 'gold';
+                            limitLabel = i18n_js.t('actionTimeDisplay.limitLabelGold');
                         } else if (limitType && limitType.startsWith('material:')) {
-                            limitLabel = 'mat';
+                            limitLabel = i18n_js.t('actionTimeDisplay.limitLabelMat');
                         } else if (limitType && limitType.startsWith('upgrade:')) {
-                            limitLabel = 'upgrade';
+                            limitLabel = i18n_js.t('actionTimeDisplay.limitLabelUpgrade');
                         } else {
-                            limitLabel = 'max';
+                            limitLabel = i18n_js.t('actionTimeDisplay.limitLabelMax');
                         }
                         const timeStr = formatters_js.timeReadable(totalTime);
                         timeDiv.textContent = `[${timeStr} · ${limitLabel}: ${this.formatLargeNumber(materialLimit)}]${completionText}`;
@@ -23458,17 +23678,21 @@ ${starCSS}
                 if (hasTimingUnavailable) {
                     totalText =
                         accumulatedTime > 0
-                            ? `Total time: ${formatters_js.timeReadable(accumulatedTime)} + [?]`
-                            : 'Total time: [?] (enhancement estimate unavailable)';
+                            ? i18n_js.t('actionTimeDisplay.queueTotalTimeWithUnavailable', {
+                                  time: formatters_js.timeReadable(accumulatedTime),
+                              })
+                            : i18n_js.t('actionTimeDisplay.queueTotalTimeUnavailable');
                 } else if (hasInfinite) {
                     // Show finite time first, then add infinity indicator
                     if (accumulatedTime > 0) {
-                        totalText = `Total time: ${formatters_js.timeReadable(accumulatedTime)} + [∞]`;
+                        totalText = i18n_js.t('actionTimeDisplay.queueTotalTimeWithInfinite', {
+                            time: formatters_js.timeReadable(accumulatedTime),
+                        });
                     } else {
-                        totalText = 'Total time: [∞]';
+                        totalText = i18n_js.t('actionTimeDisplay.queueTotalTimeInfinite');
                     }
                 } else {
-                    totalText = `Total time: ${formatters_js.timeReadable(accumulatedTime)}`;
+                    totalText = i18n_js.t('actionTimeDisplay.queueTotalTime', { time: formatters_js.timeReadable(accumulatedTime) });
                 }
 
                 totalDiv.innerHTML = totalText;
@@ -23549,7 +23773,9 @@ ${starCSS}
                                         ? config.getSettingValue('color_profit', '#4ade80')
                                         : config.getSettingValue('color_loss', '#f87171');
                                 const profitSign = actionProfit >= 0 ? '+' : '';
-                                profitDiv.innerHTML = `Profit: <span style="color: ${profitColor};">${profitSign}${this.formatLargeNumber(Math.abs(Math.round(actionProfit)))}</span>`;
+                                profitDiv.innerHTML = i18n_js.t('actionTimeDisplay.queueActionProfit', {
+                                    amount: `<span style="color: ${profitColor};">${profitSign}${this.formatLargeNumber(Math.abs(Math.round(actionProfit)))}</span>`,
+                                });
                             }
                         }
                     }
@@ -23568,7 +23794,9 @@ ${starCSS}
                             ? config.getSettingValue('color_profit', '#4ade80')
                             : config.getSettingValue('color_loss', '#f87171');
                     const valueSign = totalProfit >= 0 ? '+' : '';
-                    const valueLabel = isEstimatedValue ? 'Estimated value' : 'Total profit';
+                    const valueLabel = isEstimatedValue
+                        ? i18n_js.t('actionTimeDisplay.estimatedValueLabel')
+                        : i18n_js.t('actionTimeDisplay.totalProfitLabel');
                     const valueText = `<br>${valueLabel}: <span style="color: ${valueColor};">${valueSign}${this.formatLargeNumber(Math.abs(Math.round(totalProfit)))}</span>`;
                     totalDiv.innerHTML = baseText + valueText;
                 }
@@ -23757,7 +23985,7 @@ ${starCSS}
                         : config.getSettingValue('color_loss', '#f87171');
                 const sign = profitPerHour >= 0 ? '+' : '';
 
-                let html = `<span style="color:#888;">Profit:</span> <span style="color:${profitColor}; font-weight:600;">${sign}${this.formatLargeNumber(Math.abs(Math.round(profitPerHour)))}/hr</span>`;
+                let html = `<span style="color:#888;">${i18n_js.t('actionTimeDisplay.profitLabel')}</span> <span style="color:${profitColor}; font-weight:600;">${sign}${this.formatLargeNumber(Math.abs(Math.round(profitPerHour)))}/hr</span>`;
 
                 if (isFinite(remainingActions) && remainingActions > 0 && profitData.actionsPerHour > 0) {
                     const profitPerAction =
@@ -23768,7 +23996,7 @@ ${starCSS}
                             ? config.getSettingValue('color_profit', '#4ade80')
                             : config.getSettingValue('color_loss', '#f87171');
                     const remSign = remainingProfit >= 0 ? '+' : '';
-                    html += ` <span style="color:#888;">·</span> <span style="color:#888;">remaining</span> <span style="color:${remColor}; font-weight:600;">${remSign}${this.formatLargeNumber(Math.abs(Math.round(remainingProfit)))}</span>`;
+                    html += ` <span style="color:#888;">·</span> <span style="color:#888;">${i18n_js.t('actionTimeDisplay.remainingLabel')}</span> <span style="color:${remColor}; font-weight:600;">${remSign}${this.formatLargeNumber(Math.abs(Math.round(remainingProfit)))}</span>`;
                 }
 
                 if (this.activeBarProfitId !== calcId) return;
@@ -24043,56 +24271,64 @@ ${starCSS}
     const ONE_HOUR_MS = 60 * 60 * 1000;
     const STALE_TOLERANCE_MS = 5000;
 
-    const FUTURE_LABELS = {
-        action: 'Action ends',
-        queue: 'Queue ends',
-        materials: 'Materials run out',
-        coins: 'Coins run out',
-        'upgrade-materials': 'Upgrade materials run out',
-        drink: 'Buff expiring',
-        offline: 'Offline limit',
-    };
+    // Localized future/past-tense limiter labels. Resolved as functions (not module-level consts) so
+    // each call reads the current locale from localStorage via t() - a module-load-time value would
+    // be baked in before i18n is ready and would never update on a locale change.
+    function getFutureLabels() {
+        return {
+            action: i18n_js.t('characterActivity.futureActionEnds'),
+            queue: i18n_js.t('characterActivity.futureQueueEnds'),
+            materials: i18n_js.t('characterActivity.futureMaterialsRunOut'),
+            coins: i18n_js.t('characterActivity.futureCoinsRunOut'),
+            'upgrade-materials': i18n_js.t('characterActivity.futureUpgradeMaterialsRunOut'),
+            drink: i18n_js.t('characterActivity.futureBuffExpiring'),
+            offline: i18n_js.t('characterActivity.futureOfflineLimit'),
+        };
+    }
 
-    const PAST_LABELS = {
-        action: 'Action ended',
-        queue: 'Queue ended',
-        materials: 'Materials ran out',
-        coins: 'Coins ran out',
-        'upgrade-materials': 'Upgrade materials ran out',
-        drink: 'Buff expired',
-        offline: 'Offline progress stopped',
-    };
+    function getPastLabels() {
+        return {
+            action: i18n_js.t('characterActivity.pastActionEnded'),
+            queue: i18n_js.t('characterActivity.pastQueueEnded'),
+            materials: i18n_js.t('characterActivity.pastMaterialsRanOut'),
+            coins: i18n_js.t('characterActivity.pastCoinsRanOut'),
+            'upgrade-materials': i18n_js.t('characterActivity.pastUpgradeMaterialsRanOut'),
+            drink: i18n_js.t('characterActivity.pastBuffExpired'),
+            offline: i18n_js.t('characterActivity.pastOfflineProgressStopped'),
+        };
+    }
 
     // Per-cause text for the neutral "unknown" branch, keyed by the active uncertain segment's own
-    // `stopCause`. Locked copy per the approved UX contract - do not abbreviate the suffix.
-    const UNCERTAIN_REASON_TEXT = {
-        combat: 'Variable duration · ETA unavailable',
-        labyrinth: 'Variable duration · ETA unavailable',
-        enhancing: 'Stochastic outcome · ETA unavailable',
-        special: 'Waiting for party · ETA unavailable',
-        'loadout-unavailable': 'Configured loadout unavailable · ETA unavailable',
-    };
-    // Current segment is still a trustworthy earlier one, but a later segment in the same queue is
-    // uncertain - the deadline itself (not the current action) is what's unknowable.
-    const QUEUE_UNCERTAIN_TEXT = 'Queue duration uncertain · ETA unavailable';
-    const DEFAULT_UNCERTAIN_TEXT = 'End time unavailable';
+    // `stopCause`. Locked copy per the approved UX contract - do not abbreviate the suffix. Resolved
+    // at call time, not module load, for the same reason as getFutureLabels()/getPastLabels() above.
+    function getUncertainReasonText() {
+        return {
+            combat: i18n_js.t('characterActivity.uncertainCombat'),
+            labyrinth: i18n_js.t('characterActivity.uncertainLabyrinth'),
+            enhancing: i18n_js.t('characterActivity.uncertainEnhancing'),
+            special: i18n_js.t('characterActivity.uncertainSpecial'),
+            'loadout-unavailable': i18n_js.t('characterActivity.uncertainLoadoutUnavailable'),
+        };
+    }
 
     // TLA-025A locked copy - see evidence/COPY_MATRIX_LOCKED.md. `runs-infinite` is only used when the
     // currently active segment itself is proven truly infinite; `queue-infinite` is only used when a
     // later queued segment is, reached only through structurally non-blocking steps. Exact intermediate
-    // duration is never implied by either variant.
-    const INFINITE_COPY = {
-        'runs-infinite': {
-            known: (time) => `Runs ∞ · Offline limit · ${time}`,
-            unavailable: 'Runs ∞ · Offline ETA unavailable',
-            uncertain: 'Runs ∞ · Offline limit uncertain',
-        },
-        'queue-infinite': {
-            known: (time) => `Queue → ∞ · Offline limit · ${time}`,
-            unavailable: 'Queue → ∞ · Offline ETA unavailable',
-            uncertain: 'Queue → ∞ · Offline limit uncertain',
-        },
-    };
+    // duration is never implied by either variant. Resolved at call time, not module load.
+    function getInfiniteCopy() {
+        return {
+            'runs-infinite': {
+                known: (time) => i18n_js.t('characterActivity.runsInfiniteKnown', { time }),
+                unavailable: i18n_js.t('characterActivity.runsInfiniteUnavailable'),
+                uncertain: i18n_js.t('characterActivity.runsInfiniteUncertain'),
+            },
+            'queue-infinite': {
+                known: (time) => i18n_js.t('characterActivity.queueInfiniteKnown', { time }),
+                unavailable: i18n_js.t('characterActivity.queueInfiniteUnavailable'),
+                uncertain: i18n_js.t('characterActivity.queueInfiniteUncertain'),
+            },
+        };
+    }
 
     const COLOR_HEX = {
         green: '#51cf66',
@@ -24133,7 +24369,7 @@ ${starCSS}
     function formatActivityLine(segment, isPaused, queuedCount) {
         let text = segment.displayName || segment.actionName;
         if (isPaused) text += ' ⏸';
-        if (queuedCount > 0) text += ` +${queuedCount} queued`;
+        if (queuedCount > 0) text += ` ${i18n_js.t('characterActivity.queuedSuffix', { count: queuedCount })}`;
         return text;
     }
 
@@ -24149,9 +24385,9 @@ ${starCSS}
     function computeSlotDisplayState(record, character, prefs, now = Date.now()) {
         if (!record) {
             return {
-                firstLineText: 'No activity data yet',
+                firstLineText: i18n_js.t('characterActivity.noActivityDataYet'),
                 limiterColor: 'neutral',
-                limiterText: 'Open character once to enable status',
+                limiterText: i18n_js.t('characterActivity.openCharacterOnceToEnableStatus'),
                 activeSegment: null,
             };
         }
@@ -24163,9 +24399,9 @@ ${starCSS}
 
         if (normalizedLastOfflineTime != null && normalizedLastOfflineTime > record.observedAt + STALE_TOLERANCE_MS) {
             return {
-                firstLineText: 'Activity status outdated',
+                firstLineText: i18n_js.t('characterActivity.activityStatusOutdated'),
                 limiterColor: 'neutral',
-                limiterText: 'Open character to refresh',
+                limiterText: i18n_js.t('characterActivity.openCharacterToRefresh'),
                 activeSegment: null,
             };
         }
@@ -24182,9 +24418,9 @@ ${starCSS}
 
         if (terminalCause === 'idle') {
             return {
-                firstLineText: 'No active action',
+                firstLineText: i18n_js.t('characterActivity.noActiveAction'),
                 limiterColor: 'red',
-                limiterText: 'Character is idle',
+                limiterText: i18n_js.t('characterActivity.characterIsIdle'),
                 activeSegment: null,
             };
         }
@@ -24195,9 +24431,9 @@ ${starCSS}
 
             if (!activeSegment) {
                 return {
-                    firstLineText: 'No active action expected',
+                    firstLineText: i18n_js.t('characterActivity.noActiveActionExpected'),
                     limiterColor: 'neutral',
-                    limiterText: DEFAULT_UNCERTAIN_TEXT,
+                    limiterText: i18n_js.t('characterActivity.endTimeUnavailable'),
                     activeSegment: null,
                 };
             }
@@ -24209,7 +24445,7 @@ ${starCSS}
                 return {
                     firstLineText: formatActivityLine(activeSegment, false, activeSegment.remainingQueuedCount ?? 0),
                     limiterColor: 'neutral',
-                    limiterText: INFINITE_COPY[attentionMode][offlineLimitState],
+                    limiterText: getInfiniteCopy()[attentionMode][offlineLimitState],
                     activeSegment,
                 };
             }
@@ -24219,8 +24455,8 @@ ${starCSS}
             // now, not the future segment that made the total deadline unknowable.
             const limiterText =
                 activeSegment.certainty === 'uncertain'
-                    ? UNCERTAIN_REASON_TEXT[activeSegment.stopCause] || DEFAULT_UNCERTAIN_TEXT
-                    : QUEUE_UNCERTAIN_TEXT;
+                    ? getUncertainReasonText()[activeSegment.stopCause] || i18n_js.t('characterActivity.endTimeUnavailable')
+                    : i18n_js.t('characterActivity.queueUncertain');
 
             return {
                 firstLineText: formatActivityLine(activeSegment, false, activeSegment.remainingQueuedCount ?? 0),
@@ -24234,6 +24470,7 @@ ${starCSS}
         const time = formatters_js.formatActivityStatusTime(terminalAt, prefs, now);
 
         if (hasPassed) {
+            const pastLabels = getPastLabels();
             if (terminalCause === 'offline') {
                 const found = findSegmentAtTime(segments, terminalAt) || {
                     segment: segments[segments.length - 1],
@@ -24242,14 +24479,14 @@ ${starCSS}
                 return {
                     firstLineText: formatActivityLine(found.segment, true, found.segment.remainingQueuedCount ?? 0),
                     limiterColor: 'red',
-                    limiterText: `${PAST_LABELS.offline} · ${time}`,
+                    limiterText: `${pastLabels.offline} · ${time}`,
                     activeSegment: found.segment,
                 };
             }
             return {
-                firstLineText: 'No active action expected',
+                firstLineText: i18n_js.t('characterActivity.noActiveActionExpected'),
                 limiterColor: 'red',
-                limiterText: `${PAST_LABELS[terminalCause]} · ${time}`,
+                limiterText: `${pastLabels[terminalCause]} · ${time}`,
                 activeSegment: null,
             };
         }
@@ -24260,12 +24497,12 @@ ${starCSS}
         return {
             firstLineText: found
                 ? formatActivityLine(found.segment, false, found.segment.remainingQueuedCount ?? 0)
-                : 'No active action expected',
+                : i18n_js.t('characterActivity.noActiveActionExpected'),
             limiterColor: color,
             limiterText:
                 terminalCause === 'offline' && attentionMode && offlineLimitState === 'known'
-                    ? INFINITE_COPY[attentionMode].known(time)
-                    : `${FUTURE_LABELS[terminalCause]} · ${time}`,
+                    ? getInfiniteCopy()[attentionMode].known(time)
+                    : `${getFutureLabels()[terminalCause]} · ${time}`,
             activeSegment: found ? found.segment : null,
         };
     }
@@ -24619,4 +24856,4 @@ ${starCSS}
 
     console.log('[Toolasha] UI library loaded');
 
-})(Toolasha.Core.domObserver, Toolasha.Core.config, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core.dataManager, Toolasha.Core.marketAPI, Toolasha.Utils.efficiency, Toolasha.Core.webSocketHook, Toolasha.Utils.selectors, Toolasha.Utils.reactInput, Toolasha.Utils.actionPanelHelper, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.actionCalculator, Toolasha.Utils.equipmentParser, Toolasha.Core.loadoutState, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.enhancementConfig, Toolasha.Core, Toolasha.Core.tooltipObserver, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.teaParser, Toolasha.Utils.buffParser, Toolasha.Utils.enhancementCalculator);
+})(Toolasha.Core.domObserver, Toolasha.Core.config, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core.marketAPI, Toolasha.Utils.efficiency, Toolasha.Core.webSocketHook, Toolasha.Utils.selectors, Toolasha.Utils.reactInput, Toolasha.Utils.actionPanelHelper, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.actionCalculator, Toolasha.Utils.equipmentParser, Toolasha.Core.loadoutState, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.enhancementConfig, Toolasha.Core, Toolasha.Core.tooltipObserver, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.teaParser, Toolasha.Utils.buffParser, Toolasha.Utils.enhancementCalculator);

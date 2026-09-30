@@ -1,11 +1,11 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.111.3
+ * Version: 3.0.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (dataManager, config, domObserver, enhancementConfig_js, enhancementCalculator_js, profitConstants_js, formatters_js, marketAPI, domObserverHelpers_js, bonusRevenueCalculator_js, marketData_js, efficiency_js, profitHelpers_js, profitCalculator, uiComponents_js, actionPanelHelper_js, loadoutState, storage, dom_js, timerRegistry_js, teaParser_js, tooltipObserver, alchemyProfitCalculator, actionCalculator_js, cleanupRegistry_js, buffParser_js, equipmentParser_js, experienceParser_js, reactInput_js, experienceCalculator_js, materialCalculator_js, marketplaceSession_js, expectedValueCalculator, houseEfficiency_js) {
+(function (dataManager, config, domObserver, i18n_js, enhancementConfig_js, enhancementCalculator_js, profitConstants_js, formatters_js, marketAPI, domObserverHelpers_js, bonusRevenueCalculator_js, marketData_js, efficiency_js, profitHelpers_js, profitCalculator, uiComponents_js, actionPanelHelper_js, loadoutState, storage, dom_js, timerRegistry_js, teaParser_js, tooltipObserver, alchemyProfitCalculator, actionCalculator_js, cleanupRegistry_js, buffParser_js, equipmentParser_js, experienceParser_js, reactInput_js, experienceCalculator_js, materialCalculator_js, marketplaceSession_js, expectedValueCalculator, houseEfficiency_js) {
     'use strict';
 
     /**
@@ -75,8 +75,14 @@
     `;
 
         const roundedRate = Math.round(xpPerHour);
-        rate.textContent = `· ${approximate ? '~' : ''}${formatters_js.formatKMB3Digits(roundedRate)} XP/hr`;
-        rate.title = `${approximate ? 'Expected: ' : ''}${formatters_js.formatWithSeparator(roundedRate)} XP/hr`;
+        rate.textContent = i18n_js.t('inlineXpRate.rateLine', {
+            prefix: approximate ? '~' : '',
+            value: formatters_js.formatKMB3Digits(roundedRate),
+        });
+        rate.title = i18n_js.t('inlineXpRate.rateTooltip', {
+            prefix: approximate ? i18n_js.t('inlineXpRate.expectedPrefix') : '',
+            value: formatters_js.formatWithSeparator(roundedRate),
+        });
         rate.setAttribute('aria-label', rate.title);
 
         if (!rate.isConnected) experienceRow.appendChild(rate);
@@ -387,9 +393,11 @@
 
         lines.push('<div style="margin-top: 12px; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px;">');
         lines.push('<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">');
-        lines.push('<div style="color: #ffa500; font-weight: bold; font-size: 0.95em;">Costs by Enhancement Level:</div>');
         lines.push(
-            '<button id="mwi-expand-costs-table-btn" style="background: rgba(0, 255, 234, 0.1); border: 1px solid #00ffe7; color: #00ffe7; cursor: pointer; font-size: 18px; font-weight: bold; padding: 4px 10px; border-radius: 4px; transition: all 0.15s ease;" title="View full table">⤢</button>'
+            `<div style="color: #ffa500; font-weight: bold; font-size: 0.95em;">${i18n_js.t('enhancementDisplay.costsByLevelHeader')}</div>`
+        );
+        lines.push(
+            `<button id="mwi-expand-costs-table-btn" style="background: rgba(0, 255, 234, 0.1); border: 1px solid #00ffe7; color: #00ffe7; cursor: pointer; font-size: 18px; font-weight: bold; padding: 4px 10px; border-radius: 4px; transition: all 0.15s ease;" title="${i18n_js.t('enhancementDisplay.viewFullTableTooltip')}">⤢</button>`
         );
         lines.push('</div>');
 
@@ -524,16 +532,16 @@
                 '<div style="background: linear-gradient(90deg, rgba(255, 215, 0, 0.15), rgba(255, 215, 0, 0.05)); border: 1px solid #FFD700; border-radius: 4px; padding: 8px; margin-bottom: 8px;">'
             );
             lines.push(
-                '<div style="color: #FFD700; font-weight: bold; font-size: 0.95em;">💎 Philosopher\'s Mirror Strategy:</div>'
+                `<div style="color: #FFD700; font-weight: bold; font-size: 0.95em;">${i18n_js.t('enhancementDisplay.mirrorStrategyHeader')}</div>`
             );
             lines.push(
-                `<div style="color: #fff; font-size: 0.85em; margin-top: 4px;">• Use mirrors starting at <strong>+${mirrorStartLevel}</strong></div>`
+                `<div style="color: #fff; font-size: 0.85em; margin-top: 4px;">${i18n_js.t('enhancementDisplay.mirrorStrategyStartLevel', { level: mirrorStartLevel })}</div>`
             );
             lines.push(
-                `<div style="color: #88ff88; font-size: 0.85em;">• Total savings to +20: <strong>${formatters_js.formatLargeNumber(Math.round(totalSavings))}</strong> coins</div>`
+                `<div style="color: #88ff88; font-size: 0.85em;">${i18n_js.t('enhancementDisplay.mirrorStrategyTotalSavings', { savings: formatters_js.formatLargeNumber(Math.round(totalSavings)) })}</div>`
             );
             lines.push(
-                `<div style="color: #aaa; font-size: 0.75em; margin-top: 4px; font-style: italic;">Rows highlighted in gold show where mirror is cheaper</div>`
+                `<div style="color: #aaa; font-size: 0.75em; margin-top: 4px; font-style: italic;">${i18n_js.t('enhancementDisplay.mirrorStrategyHighlightNote')}</div>`
             );
             lines.push('</div>');
         }
@@ -553,22 +561,24 @@
         lines.push(
             '<tr style="color: #888; border-bottom: 1px solid #444; position: sticky; top: 0; background: rgba(0,0,0,0.9);">'
         );
-        lines.push('<th style="text-align: left; padding: 4px;">Level</th>');
-        lines.push('<th style="text-align: right; padding: 4px;">Attempts</th>');
-        lines.push('<th style="text-align: right; padding: 4px;">Protection</th>');
+        lines.push('<th style="text-align: left; padding: 4px;">' + i18n_js.t('labSim.colLevel') + '</th>');
+        lines.push('<th style="text-align: right; padding: 4px;">' + i18n_js.t('alchemyHistoryViewer.colAttempts') + '</th>');
+        lines.push('<th style="text-align: right; padding: 4px;">' + i18n_js.t('enhancementUi.protectionFallbackName') + '</th>');
 
         // Add material columns
         materialNames.forEach((matName) => {
             lines.push(`<th style="text-align: right; padding: 4px;">${matName}</th>`);
         });
 
-        lines.push('<th style="text-align: right; padding: 4px;">Time</th>');
-        lines.push('<th style="text-align: right; padding: 4px;">XP/hr</th>');
-        lines.push('<th style="text-align: right; padding: 4px;">Total Cost</th>');
+        lines.push('<th style="text-align: right; padding: 4px;">' + i18n_js.t('enhancementDisplay.colTime') + '</th>');
+        lines.push('<th style="text-align: right; padding: 4px;">' + i18n_js.t('pinnedActionsPage.columnExpPerHour') + '</th>');
+        lines.push('<th style="text-align: right; padding: 4px;">' + i18n_js.t('budgetCalculator.colTotalCost') + '</th>');
 
         // Add Mirror Cost column if Philosopher's Mirror is equipped
         if (isPhilosopherMirror) {
-            lines.push('<th style="text-align: right; padding: 4px; color: #FFD700;">Mirror Cost</th>');
+            lines.push(
+                `<th style="text-align: right; padding: 4px; color: #FFD700;">${i18n_js.t('enhancementDisplay.colMirrorCost')}</th>`
+            );
         }
 
         lines.push('</tr>');
@@ -634,7 +644,9 @@
                     );
                 } else {
                     // Levels 1-2 cannot use mirrors
-                    lines.push(`<td style="padding: 6px 4px; text-align: right; color: #666;">N/A</td>`);
+                    lines.push(
+                        `<td style="padding: 6px 4px; text-align: right; color: #666;">${i18n_js.t('combatSimUi.notAvailableLabel')}</td>`
+                    );
                 }
             }
 
@@ -703,20 +715,20 @@
         const isAutoDetect = config.getSettingValue('enhanceSim_autoDetect', false);
         lines.push(
             '<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">' +
-                `<button id="mwi-enhance-mode-toggle" style="font-size: 0.7em; padding: 2px 7px; border-radius: 3px; border: 1px solid #888; background: rgba(0,0,0,0.3); color: #ccc; cursor: pointer;" title="Toggle between Auto-Detect and Manual modes">${isAutoDetect ? '🔍 Auto' : '✏️ Manual'}</button>` +
-                '<span style="color: #ffa500; font-weight: bold; font-size: 1.1em;">⚙️ ENHANCEMENT CALCULATOR</span>' +
+                `<button id="mwi-enhance-mode-toggle" style="font-size: 0.7em; padding: 2px 7px; border-radius: 3px; border: 1px solid #888; background: rgba(0,0,0,0.3); color: #ccc; cursor: pointer;" title="${i18n_js.t('enhancementDisplay.modeToggleTooltip')}">${isAutoDetect ? i18n_js.t('enhancementDisplay.autoDetectModeLabel') : i18n_js.t('enhancementDisplay.manualModeLabel')}</button>` +
+                `<span style="color: #ffa500; font-weight: bold; font-size: 1.1em;">${i18n_js.t('enhancementDisplay.calculatorTitle')}</span>` +
                 '</div>'
         );
 
         // Item info
         lines.push(
-            `<div style="color: #ddd; margin-bottom: 12px; font-weight: bold;">${itemDetails.name} <span style="color: #888;">(Item Level ${itemDetails.itemLevel})</span></div>`
+            `<div style="color: #ddd; margin-bottom: 12px; font-weight: bold;">${itemDetails.name} <span style="color: #888;">${i18n_js.t('enhancementDisplay.itemLevelSuffix', { itemLevel: itemDetails.itemLevel })}</span></div>`
         );
 
         // Current stats section
         lines.push('<div style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px; margin-bottom: 12px;">');
         lines.push(
-            '<div style="color: #ffa500; font-weight: bold; margin-bottom: 6px; font-size: 0.95em;">Your Enhancing Stats:</div>'
+            `<div style="color: #ffa500; font-weight: bold; margin-bottom: 6px; font-size: 0.95em;">${i18n_js.t('enhancementDisplay.yourStatsHeader')}</div>`
         );
 
         // Two column layout for stats
@@ -725,31 +737,31 @@
         // Left column
         lines.push('<div>');
         lines.push(
-            `<div style="color: #ccc;"><span style="color: #888;">Level:</span> ${Math.round(params.enhancingLevel - params.detectedTeaBonus)}${params.detectedTeaBonus > 0 ? ` <span style="color: #88ff88;">(+${params.detectedTeaBonus.toFixed(1)} tea)</span>` : ''}</div>`
+            `<div style="color: #ccc;"><span style="color: #888;">${i18n_js.t('skillingOptimizer.levelLabel')}</span> ${Math.round(params.enhancingLevel - params.detectedTeaBonus)}${params.detectedTeaBonus > 0 ? ` <span style="color: #88ff88;">${i18n_js.t('enhancementDisplay.teaBonusSuffix', { value: params.detectedTeaBonus.toFixed(1) })}</span>` : ''}</div>`
         );
         lines.push(
-            `<div style="color: #ccc;"><span style="color: #888;">House:</span> Observatory Lvl ${params.houseLevel}</div>`
+            `<div style="color: #ccc;"><span style="color: #888;">${i18n_js.t('enhancementDisplay.houseLabel')}</span> ${i18n_js.t('enhancementDisplay.observatoryLevelValue', { level: params.houseLevel })}</div>`
         );
 
         // Display each equipment slot
         if (params.toolSlot) {
             lines.push(
-                `<div style="color: #ccc;"><span style="color: #888;">Tool:</span> ${params.toolSlot.name}${params.toolSlot.enhancementLevel > 0 ? ` +${params.toolSlot.enhancementLevel}` : ''}</div>`
+                `<div style="color: #ccc;"><span style="color: #888;">${i18n_js.t('enhancementDisplay.toolLabel')}</span> ${params.toolSlot.name}${params.toolSlot.enhancementLevel > 0 ? ` +${params.toolSlot.enhancementLevel}` : ''}</div>`
             );
         }
         if (params.bodySlot) {
             lines.push(
-                `<div style="color: #ccc;"><span style="color: #888;">Body:</span> ${params.bodySlot.name}${params.bodySlot.enhancementLevel > 0 ? ` +${params.bodySlot.enhancementLevel}` : ''}</div>`
+                `<div style="color: #ccc;"><span style="color: #888;">${i18n_js.t('enhancementDisplay.bodyLabel')}</span> ${params.bodySlot.name}${params.bodySlot.enhancementLevel > 0 ? ` +${params.bodySlot.enhancementLevel}` : ''}</div>`
             );
         }
         if (params.legsSlot) {
             lines.push(
-                `<div style="color: #ccc;"><span style="color: #888;">Legs:</span> ${params.legsSlot.name}${params.legsSlot.enhancementLevel > 0 ? ` +${params.legsSlot.enhancementLevel}` : ''}</div>`
+                `<div style="color: #ccc;"><span style="color: #888;">${i18n_js.t('enhancementDisplay.legsLabel')}</span> ${params.legsSlot.name}${params.legsSlot.enhancementLevel > 0 ? ` +${params.legsSlot.enhancementLevel}` : ''}</div>`
             );
         }
         if (params.handsSlot) {
             lines.push(
-                `<div style="color: #ccc;"><span style="color: #888;">Hands:</span> ${params.handsSlot.name}${params.handsSlot.enhancementLevel > 0 ? ` +${params.handsSlot.enhancementLevel}` : ''}</div>`
+                `<div style="color: #ccc;"><span style="color: #888;">${i18n_js.t('enhancementDisplay.handsLabel')}</span> ${params.handsSlot.name}${params.handsSlot.enhancementLevel > 0 ? ` +${params.handsSlot.enhancementLevel}` : ''}</div>`
             );
         }
         lines.push('</div>');
@@ -769,7 +781,7 @@
 
         if (totalSuccess > 0) {
             lines.push(
-                `<div class="mwi-enh-toggle" data-target="mwi-enh-success" style="color: #88ff88; cursor: pointer;"><span style="color: #888;">Success:</span> +${totalSuccess.toFixed(2)}% <span class="mwi-enh-arrow" style="color: #666; font-size: 0.8em;">▸</span></div>`
+                `<div class="mwi-enh-toggle" data-target="mwi-enh-success" style="color: #88ff88; cursor: pointer;"><span style="color: #888;">${i18n_js.t('enhancementDisplay.successLabel')}</span> +${totalSuccess.toFixed(2)}% <span class="mwi-enh-arrow" style="color: #666; font-size: 0.8em;">▸</span></div>`
             );
             lines.push('<div id="mwi-enh-success" style="display: none;">');
 
@@ -813,7 +825,7 @@
 
             if (equipmentSuccess > 0) {
                 lines.push(
-                    `<div style="color: #88ff88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Equipment:</span> +${equipmentSuccess.toFixed(2)}%</div>`
+                    `<div style="color: #88ff88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${i18n_js.t('enhancementDisplay.equipmentLabel')}</span> +${equipmentSuccess.toFixed(2)}%</div>`
                 );
                 const successSlots = (params.slotBreakdown || []).filter((s) => s.success > 0);
                 for (const slot of successSlots) {
@@ -825,18 +837,18 @@
             }
             if (houseSuccess > 0) {
                 lines.push(
-                    `<div style="color: #88ff88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">House (Observatory):</span> +${houseSuccess.toFixed(2)}%</div>`
+                    `<div style="color: #88ff88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${i18n_js.t('enhancementDisplay.houseObservatoryLabel')}</span> +${houseSuccess.toFixed(2)}%</div>`
                 );
             }
             const achievementSuccess = params.achievementSuccessBonus || 0;
             if (achievementSuccess > 0) {
                 lines.push(
-                    `<div style="color: #88ff88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Achievement:</span> +${achievementSuccess.toFixed(2)}%</div>`
+                    `<div style="color: #88ff88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${i18n_js.t('enhancementDisplay.achievementLabel')}</span> +${achievementSuccess.toFixed(2)}%</div>`
                 );
             }
             if (successLevelAdvantage > 0) {
                 lines.push(
-                    `<div style="color: #88ff88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Level advantage:</span> +${successLevelAdvantage.toFixed(2)}%</div>`
+                    `<div style="color: #88ff88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${i18n_js.t('enhancementDisplay.levelAdvantageLabel')}</span> +${successLevelAdvantage.toFixed(2)}%</div>`
                 );
             }
             lines.push('</div>');
@@ -847,14 +859,14 @@
 
         if (totalSpeed > 0) {
             lines.push(
-                `<div class="mwi-enh-toggle" data-target="mwi-enh-speed" style="color: #88ccff; cursor: pointer;"><span style="color: #888;">Speed:</span> +${totalSpeed.toFixed(1)}% <span class="mwi-enh-arrow" style="color: #666; font-size: 0.8em;">▸</span></div>`
+                `<div class="mwi-enh-toggle" data-target="mwi-enh-speed" style="color: #88ccff; cursor: pointer;"><span style="color: #888;">${i18n_js.t('settings.enhanceSimSpeed')}</span> +${totalSpeed.toFixed(1)}% <span class="mwi-enh-arrow" style="color: #666; font-size: 0.8em;">▸</span></div>`
             );
             lines.push('<div id="mwi-enh-speed" style="display: none;">');
 
             // Show breakdown from buff maps (each value is decimal, convert to %)
             if (speedBreakdown.equipment > 0) {
                 lines.push(
-                    `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Equipment:</span> +${(speedBreakdown.equipment * 100).toFixed(1)}%</div>`
+                    `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${i18n_js.t('enhancementDisplay.equipmentLabel')}</span> +${(speedBreakdown.equipment * 100).toFixed(1)}%</div>`
                 );
                 const speedSlots = (params.slotBreakdown || []).filter((s) => s.speed > 0);
                 for (const slot of speedSlots) {
@@ -866,53 +878,55 @@
             }
             if (speedBreakdown.house > 0) {
                 lines.push(
-                    `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">House (Observatory):</span> +${(speedBreakdown.house * 100).toFixed(1)}%</div>`
+                    `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${i18n_js.t('enhancementDisplay.houseObservatoryLabel')}</span> +${(speedBreakdown.house * 100).toFixed(1)}%</div>`
                 );
             }
             if (speedBreakdown.community > 0) {
                 lines.push(
-                    `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Community:</span> +${(speedBreakdown.community * 100).toFixed(1)}%</div>`
+                    `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${i18n_js.t('enhancementDisplay.communityLabel')}</span> +${(speedBreakdown.community * 100).toFixed(1)}%</div>`
                 );
             }
             if (speedBreakdown.consumable > 0) {
                 lines.push(
-                    `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Tea:</span> +${(speedBreakdown.consumable * 100).toFixed(1)}%</div>`
+                    `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${i18n_js.t('enhancementDisplay.teaLabel')}</span> +${(speedBreakdown.consumable * 100).toFixed(1)}%</div>`
                 );
             }
             if (speedBreakdown.personal > 0) {
                 lines.push(
-                    `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Labyrinth:</span> +${(speedBreakdown.personal * 100).toFixed(1)}%</div>`
+                    `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${i18n_js.t('enhancementDisplay.labyrinthLabel')}</span> +${(speedBreakdown.personal * 100).toFixed(1)}%</div>`
                 );
             }
             if (speedBreakdown.levelAdvantage > 0) {
                 lines.push(
-                    `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Level advantage:</span> +${(speedBreakdown.levelAdvantage * 100).toFixed(1)}%</div>`
+                    `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${i18n_js.t('enhancementDisplay.levelAdvantageLabel')}</span> +${(speedBreakdown.levelAdvantage * 100).toFixed(1)}%</div>`
                 );
             }
             lines.push('</div>');
         } else {
-            lines.push(`<div style="color: #88ccff;"><span style="color: #888;">Speed:</span> +0.0%</div>`);
+            lines.push(
+                `<div style="color: #88ccff;"><span style="color: #888;">${i18n_js.t('settings.enhanceSimSpeed')}</span> +0.0%</div>`
+            );
         }
 
         // Base → effective action time
         lines.push(
-            `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Base:</span> ${baseTime.toFixed(2)}s → ${perActionTime.toFixed(2)}s</div>`
+            `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${i18n_js.t('enhancementDisplay.baseLabel')}</span> ${baseTime.toFixed(2)}s → ${perActionTime.toFixed(2)}s</div>`
         );
 
         if (params.teas.blessed) {
             const blessedBonus = 1.1;
             lines.push(
-                `<div class="mwi-enh-toggle" data-target="mwi-enh-blessed" style="color: #ffdd88; cursor: pointer;"><span style="color: #888;">Blessed:</span> +${blessedBonus.toFixed(1)}% <span class="mwi-enh-arrow" style="color: #666; font-size: 0.8em;">▸</span></div>`
+                `<div class="mwi-enh-toggle" data-target="mwi-enh-blessed" style="color: #ffdd88; cursor: pointer;"><span style="color: #888;">${i18n_js.t('enhancementDisplay.blessedLabel')}</span> +${blessedBonus.toFixed(1)}% <span class="mwi-enh-arrow" style="color: #666; font-size: 0.8em;">▸</span></div>`
             );
             lines.push('<div id="mwi-enh-blessed" style="display: none;">');
             lines.push(
-                `<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Blessed Tea:</span> ${blessedBonus}% chance to skip a level</div>`
+                `<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${i18n_js.t('enhancementDisplay.blessedTeaLabel')}</span> ${i18n_js.t('enhancementDisplay.blessedTeaChanceLine', { percent: blessedBonus })}</div>`
             );
             lines.push('</div>');
         }
         if (params.rareFindBonus > 0) {
             lines.push(
-                `<div class="mwi-enh-toggle" data-target="mwi-enh-rarefind" style="color: #ffaa55; cursor: pointer;"><span style="color: #888;">Rare Find:</span> +${params.rareFindBonus.toFixed(1)}% <span class="mwi-enh-arrow" style="color: #666; font-size: 0.8em;">▸</span></div>`
+                `<div class="mwi-enh-toggle" data-target="mwi-enh-rarefind" style="color: #ffaa55; cursor: pointer;"><span style="color: #888;">${i18n_js.t('settings.enhanceSimRareFind')}</span> +${params.rareFindBonus.toFixed(1)}% <span class="mwi-enh-arrow" style="color: #666; font-size: 0.8em;">▸</span></div>`
             );
             lines.push('<div id="mwi-enh-rarefind" style="display: none;">');
 
@@ -924,7 +938,7 @@
             );
             if (equipmentRareFind > 0) {
                 lines.push(
-                    `<div style="color: #ffaa55; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Equipment:</span> +${equipmentRareFind.toFixed(1)}%</div>`
+                    `<div style="color: #ffaa55; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${i18n_js.t('enhancementDisplay.equipmentLabel')}</span> +${equipmentRareFind.toFixed(1)}%</div>`
                 );
                 const rfSlots = (params.slotBreakdown || []).filter((s) => s.rareFind > 0);
                 for (const slot of rfSlots) {
@@ -936,19 +950,19 @@
             }
             if (params.houseRareFindBonus > 0) {
                 lines.push(
-                    `<div style="color: #ffaa55; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">House Rooms:</span> +${params.houseRareFindBonus.toFixed(1)}%</div>`
+                    `<div style="color: #ffaa55; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${i18n_js.t('enhancementDisplay.houseRoomsLabel')}</span> +${params.houseRareFindBonus.toFixed(1)}%</div>`
                 );
             }
             if (achievementRareFind > 0) {
                 lines.push(
-                    `<div style="color: #ffaa55; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Achievement:</span> +${achievementRareFind.toFixed(1)}%</div>`
+                    `<div style="color: #ffaa55; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${i18n_js.t('enhancementDisplay.achievementLabel')}</span> +${achievementRareFind.toFixed(1)}%</div>`
                 );
             }
             lines.push('</div>');
         }
         if (params.experienceBonus > 0) {
             lines.push(
-                `<div class="mwi-enh-toggle" data-target="mwi-enh-experience" style="color: #ffdd88; cursor: pointer;"><span style="color: #888;">Experience:</span> +${params.experienceBonus.toFixed(1)}% <span class="mwi-enh-arrow" style="color: #666; font-size: 0.8em;">▸</span></div>`
+                `<div class="mwi-enh-toggle" data-target="mwi-enh-experience" style="color: #ffdd88; cursor: pointer;"><span style="color: #888;">${i18n_js.t('settings.enhanceSimExperience')}</span> +${params.experienceBonus.toFixed(1)}% <span class="mwi-enh-arrow" style="color: #666; font-size: 0.8em;">▸</span></div>`
             );
             lines.push('<div id="mwi-enh-experience" style="display: none;">');
 
@@ -964,7 +978,7 @@
 
             if (equipmentExperience > 0) {
                 lines.push(
-                    `<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Equipment:</span> +${equipmentExperience.toFixed(1)}%</div>`
+                    `<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${i18n_js.t('enhancementDisplay.equipmentLabel')}</span> +${equipmentExperience.toFixed(1)}%</div>`
                 );
                 const expSlots = (params.slotBreakdown || []).filter((s) => s.experience > 0);
                 for (const slot of expSlots) {
@@ -976,23 +990,23 @@
             }
             if (houseWisdom > 0) {
                 lines.push(
-                    `<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">House Rooms (Wisdom):</span> +${houseWisdom.toFixed(1)}%</div>`
+                    `<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${i18n_js.t('enhancementDisplay.houseRoomsWisdomLabel')}</span> +${houseWisdom.toFixed(1)}%</div>`
                 );
             }
             if (communityWisdom > 0) {
                 const wisdomLevel = params.communityWisdomLevel || 0;
                 lines.push(
-                    `<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Community (Wisdom T${wisdomLevel}):</span> +${communityWisdom.toFixed(1)}%</div>`
+                    `<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${i18n_js.t('enhancementDisplay.communityWisdomLabel', { level: wisdomLevel })}</span> +${communityWisdom.toFixed(1)}%</div>`
                 );
             }
             if (teaWisdom > 0) {
                 lines.push(
-                    `<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Wisdom Tea:</span> +${teaWisdom.toFixed(1)}%</div>`
+                    `<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${i18n_js.t('enhancementDisplay.wisdomTeaLabel')}</span> +${teaWisdom.toFixed(1)}%</div>`
                 );
             }
             if (achievementWisdom > 0) {
                 lines.push(
-                    `<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Achievement:</span> +${achievementWisdom.toFixed(1)}%</div>`
+                    `<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${i18n_js.t('enhancementDisplay.achievementLabel')}</span> +${achievementWisdom.toFixed(1)}%</div>`
                 );
             }
             lines.push('</div>');
@@ -1018,7 +1032,7 @@
         if (enhancementCosts && enhancementCosts.length > 0) {
             lines.push('<div style="margin-top: 12px; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px;">');
             lines.push(
-                '<div style="color: #ffa500; font-weight: bold; margin-bottom: 6px; font-size: 0.95em;">Materials Per Attempt:</div>'
+                `<div style="color: #ffa500; font-weight: bold; margin-bottom: 6px; font-size: 0.95em;">${i18n_js.t('enhancementDisplay.materialsPerAttemptHeader')}</div>`
             );
 
             // Get game data for item names
@@ -1067,7 +1081,7 @@
                     }
 
                     lines.push(
-                        `<div style="font-size: 0.85em; color: #ffa500; margin-top: 4px;">1× ${protectionItemName} <span style="color: #888;">(if used) (@${protectionPrice.toLocaleString()})</span></div>`
+                        `<div style="font-size: 0.85em; color: #ffa500; margin-top: 4px;">1× ${protectionItemName} <span style="color: #888;">${i18n_js.t('enhancementDisplay.ifUsedSuffix')} (@${protectionPrice.toLocaleString()})</span></div>`
                     );
                 }
             }
@@ -1080,15 +1094,18 @@
 
         // Only show protection note if actually using protection
         if (protectFromLevel >= 2) {
-            lines.push(`• Protection active from +${protectFromLevel} onwards (enhancement level -1 on failure)<br>`);
+            lines.push(i18n_js.t('enhancementDisplay.protectionActiveNote', { level: protectFromLevel }));
         } else {
-            lines.push('• No protection used (all failures return to +0)<br>');
+            lines.push(i18n_js.t('enhancementDisplay.noProtectionNote'));
         }
 
-        lines.push('• Attempts and time are statistical averages<br>');
+        lines.push(i18n_js.t('enhancementDisplay.statisticalAveragesNote'));
 
         lines.push(
-            `• Action time: ${perActionTime.toFixed(2)}s (includes ${(speedBreakdown.total * 100).toFixed(1)}% speed bonus)`
+            i18n_js.t('enhancementDisplay.actionTimeNote', {
+                time: perActionTime.toFixed(2),
+                percent: (speedBreakdown.total * 100).toFixed(1),
+            })
         );
         lines.push('</div>');
 
@@ -1297,7 +1314,7 @@
 
         modal.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid rgba(0, 255, 234, 0.4); padding-bottom: 10px;">
-            <h2 style="margin: 0; color: #00ffe7; font-size: 20px;">📊 Costs by Enhancement Level</h2>
+            <h2 style="margin: 0; color: #00ffe7; font-size: 20px;">${i18n_js.t('enhancementDisplay.costsModalTitle')}</h2>
             <button id="mwi-close-costs-modal" style="
                 background: none;
                 border: none;
@@ -1307,10 +1324,10 @@
                 padding: 0 8px;
                 line-height: 1;
                 transition: all 0.15s ease;
-            " title="Close">×</button>
+            " title="${i18n_js.t('combatScore.closeTooltip')}">×</button>
         </div>
         <div style="color: #9b9bff; font-size: 0.9em; margin-bottom: 15px;">
-            Full breakdown of enhancement costs for all levels
+            ${i18n_js.t('enhancementDisplay.costsModalSubtitle')}
         </div>
     `;
 
@@ -1983,15 +2000,20 @@
     const getMissingPriceIndicator = (isMissing) => (isMissing ? ' ⚠' : '');
 
     function getAutomaticLoadoutLabel(actionTypeHrid) {
-        if (!actionTypeHrid || !config.getSetting('loadoutSnapshot')) return 'Equipped';
+        if (!actionTypeHrid || !config.getSetting('loadoutSnapshot')) return i18n_js.t('profitDisplay.equippedLabel');
         const selection = loadoutState.findSnapshotSelectionForActionType(actionTypeHrid);
         if (selection.status === 'usable') {
-            return `${selection.snapshot.name}${selection.snapshot.isDefault ? ' (Default)' : ''}`;
+            return i18n_js.t('profitDisplay.loadoutLabelDefault', {
+                name: selection.snapshot.name,
+                isDefault: selection.snapshot.isDefault,
+            });
         }
         if (selection.status === 'unavailable') {
-            return `Equipped ⚠ (saved ${selection.snapshot.name || 'loadout'} unavailable)`;
+            return i18n_js.t('profitDisplay.loadoutUnavailable', {
+                name: selection.snapshot.name || i18n_js.t('profitDisplay.genericLoadoutName'),
+            });
         }
-        return 'Equipped';
+        return i18n_js.t('profitDisplay.equippedLabel');
     }
     const formatMissingLabel = (isMissing, value) => (isMissing ? '-- ⚠' : value);
 
@@ -2025,7 +2047,7 @@
     };
     const formatRareFindBonusSummary = (bonusRevenue) => {
         const rareFindBonus = bonusRevenue?.rareFindBonus || 0;
-        return `${rareFindBonus.toFixed(2)}% rare find`;
+        return i18n_js.t('profitDisplay.rareFindBonusSummary', { value: rareFindBonus.toFixed(2) });
     };
 
     /**
@@ -2089,15 +2111,24 @@
         const costs = Math.round(profitData.drinkCostPerHour + marketTax);
         const summary = formatMissingLabel(
             netMissing,
-            `${formatters_js.formatLargeNumber(profit)}/hr, ${formatters_js.formatLargeNumber(profitPerDay)}/day | Total profit: 0`
+            i18n_js.t('profitDisplay.totalProfitSummary', {
+                base: i18n_js.t('profitDisplay.perHourPerDay', {
+                    perHour: `${formatters_js.formatLargeNumber(profit)}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                    perDay: `${formatters_js.formatLargeNumber(profitPerDay)}${i18n_js.t('profitDisplay.daySuffix')}`,
+                }),
+                value: '0',
+            })
         );
 
         const detailsContent = document.createElement('div');
 
         // Revenue Section
         const revenueDiv = document.createElement('div');
-        const revenueLabel = formatMissingLabel(revenueMissing, `${formatters_js.formatLargeNumber(revenue)}/hr`);
-        revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">Revenue: ${revenueLabel}</div>`;
+        const revenueLabel = formatMissingLabel(
+            revenueMissing,
+            `${formatters_js.formatLargeNumber(revenue)}${i18n_js.t('profitDisplay.hrSuffix')}`
+        );
+        revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">${i18n_js.t('profitDisplay.revenueHeader', { label: revenueLabel })}</div>`;
 
         // Primary Outputs subsection
         const primaryDropsContent = document.createElement('div');
@@ -2107,7 +2138,13 @@
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const missingPriceNote = getMissingPriceIndicator(output.missingPrice);
-                line.textContent = `• ${output.name} (Base): ${output.itemsPerHour.toFixed(decimals)}/hr @ ${formatters_js.formatWithSeparator(output.priceEach)}${missingPriceNote} each → ${formatters_js.formatLargeNumber(Math.round(output.revenuePerHour))}/hr`;
+                line.textContent = i18n_js.t('profitDisplay.baseOutputLine', {
+                    name: output.name,
+                    rate: `${output.itemsPerHour.toFixed(decimals)}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                    price: formatters_js.formatWithSeparator(output.priceEach),
+                    missingNote: missingPriceNote,
+                    revenue: `${formatters_js.formatLargeNumber(Math.round(output.revenuePerHour))}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                });
                 primaryDropsContent.appendChild(line);
             }
         }
@@ -2118,7 +2155,14 @@
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const missingPriceNote = getMissingPriceIndicator(output.missingPrice);
-                line.textContent = `• ${output.name} (Gourmet ${formatters_js.formatPercentage(profitData.gourmetBonus || 0, 1)}): ${output.itemsPerHour.toFixed(decimals)}/hr @ ${formatters_js.formatWithSeparator(output.priceEach)}${missingPriceNote} each → ${formatters_js.formatLargeNumber(Math.round(output.revenuePerHour))}/hr`;
+                line.textContent = i18n_js.t('profitDisplay.gourmetOutputLine', {
+                    name: output.name,
+                    pct: formatters_js.formatPercentage(profitData.gourmetBonus || 0, 1),
+                    rate: `${output.itemsPerHour.toFixed(decimals)}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                    price: formatters_js.formatWithSeparator(output.priceEach),
+                    missingNote: missingPriceNote,
+                    revenue: `${formatters_js.formatLargeNumber(Math.round(output.revenuePerHour))}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                });
                 primaryDropsContent.appendChild(line);
             }
         }
@@ -2136,20 +2180,35 @@
                 consumedLine.style.marginLeft = '8px';
                 const consumedMissingNote = getMissingPriceIndicator(conversion.missingPrice);
                 const consumedRevenue = conversion.rawConsumedPerHour * conversion.rawPriceEach;
-                consumedLine.textContent = `• ${conversion.rawItem} consumed: -${conversion.rawConsumedPerHour.toFixed(2)}/hr @ ${formatters_js.formatWithSeparator(conversion.rawPriceEach)}${consumedMissingNote} → -${formatters_js.formatLargeNumber(Math.round(consumedRevenue))}/hr`;
+                consumedLine.textContent = i18n_js.t('profitDisplay.processingConsumedLine', {
+                    item: conversion.rawItem,
+                    rate: `${conversion.rawConsumedPerHour.toFixed(2)}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                    price: formatters_js.formatWithSeparator(conversion.rawPriceEach),
+                    missingNote: consumedMissingNote,
+                    revenue: `${formatters_js.formatLargeNumber(Math.round(consumedRevenue))}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                });
                 processingContent.appendChild(consumedLine);
 
                 const producedLine = document.createElement('div');
                 producedLine.style.marginLeft = '8px';
                 const producedMissingNote = getMissingPriceIndicator(conversion.missingPrice);
                 const producedRevenue = conversion.conversionsPerHour * conversion.processedPriceEach;
-                producedLine.textContent = `• ${conversion.processedItem} produced: ${conversion.conversionsPerHour.toFixed(2)}/hr @ ${formatters_js.formatWithSeparator(conversion.processedPriceEach)}${producedMissingNote} → ${formatters_js.formatLargeNumber(Math.round(producedRevenue))}/hr`;
+                producedLine.textContent = i18n_js.t('profitDisplay.processingProducedLine', {
+                    item: conversion.processedItem,
+                    rate: `${conversion.conversionsPerHour.toFixed(2)}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                    price: formatters_js.formatWithSeparator(conversion.processedPriceEach),
+                    missingNote: producedMissingNote,
+                    revenue: `${formatters_js.formatLargeNumber(Math.round(producedRevenue))}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                });
                 processingContent.appendChild(producedLine);
             }
 
             const processingSection = uiComponents_js.createCollapsibleSection(
                 '',
-                `• Processing (${formatters_js.formatPercentage(profitData.processingBonus || 0, 1)} proc): Net ${netProcessingLabel}/hr`,
+                i18n_js.t('profitDisplay.processingSectionTitle', {
+                    pct: formatters_js.formatPercentage(profitData.processingBonus || 0, 1),
+                    net: `${netProcessingLabel}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                }),
                 null,
                 processingContent,
                 false,
@@ -2168,7 +2227,10 @@
             (profitData.processingConversions && profitData.processingConversions.length > 0 ? 1 : 0);
         const primaryDropsSection = uiComponents_js.createCollapsibleSection(
             '',
-            `Primary Outputs: ${primaryRevenueLabel}/hr (${outputItemCount} item${outputItemCount !== 1 ? 's' : ''})`,
+            i18n_js.t('profitDisplay.primaryOutputsHeaderGathering', {
+                label: `${primaryRevenueLabel}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                count: outputItemCount,
+            }),
             null,
             primaryDropsContent,
             false,
@@ -2190,7 +2252,12 @@
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const dropRatePct = formatters_js.formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
-                line.textContent = `• ${drop.itemName}: ${dropsPerHour.toFixed(decimals)}/hr (${dropRatePct}) → ${formatters_js.formatLargeNumber(Math.round(revenuePerHour))}/hr`;
+                line.textContent = i18n_js.t('profitDisplay.dropLine', {
+                    itemName: drop.itemName,
+                    rate: `${dropsPerHour.toFixed(decimals)}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                    pct: dropRatePct,
+                    revenue: `${formatters_js.formatLargeNumber(Math.round(revenuePerHour))}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                });
                 essenceContent.appendChild(line);
             }
 
@@ -2202,7 +2269,11 @@
             const essenceFindBonus = profitData.bonusRevenue?.essenceFindBonus || 0;
             essenceSection = uiComponents_js.createCollapsibleSection(
                 '',
-                `Essence Drops: ${essenceRevenueLabel}/hr (${essenceDrops.length} item${essenceDrops.length !== 1 ? 's' : ''}, ${essenceFindBonus.toFixed(2)}% essence find)`,
+                i18n_js.t('profitDisplay.essenceDropsHeader', {
+                    label: `${essenceRevenueLabel}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                    count: essenceDrops.length,
+                    pct: essenceFindBonus.toFixed(2),
+                }),
                 null,
                 essenceContent,
                 false,
@@ -2220,7 +2291,12 @@
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const dropRatePct = formatters_js.formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
-                line.textContent = `• ${drop.itemName}: ${dropsPerHour.toFixed(decimals)}/hr (${dropRatePct}) → ${formatters_js.formatLargeNumber(Math.round(revenuePerHour))}/hr`;
+                line.textContent = i18n_js.t('profitDisplay.dropLine', {
+                    itemName: drop.itemName,
+                    rate: `${dropsPerHour.toFixed(decimals)}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                    pct: dropRatePct,
+                    revenue: `${formatters_js.formatLargeNumber(Math.round(revenuePerHour))}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                });
                 rareFindContent.appendChild(line);
             }
 
@@ -2232,7 +2308,11 @@
             const rareFindSummary = formatRareFindBonusSummary(profitData.bonusRevenue);
             rareFindSection = uiComponents_js.createCollapsibleSection(
                 '',
-                `Rare Finds: ${rareFindRevenueLabel}/hr (${rareFinds.length} item${rareFinds.length !== 1 ? 's' : ''}, ${rareFindSummary})`,
+                i18n_js.t('profitDisplay.rareFindsHeader', {
+                    label: `${rareFindRevenueLabel}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                    count: rareFinds.length,
+                    summary: rareFindSummary,
+                }),
                 null,
                 rareFindContent,
                 false,
@@ -2250,8 +2330,8 @@
 
         // Costs Section
         const costsDiv = document.createElement('div');
-        const costsLabel = formatMissingLabel(costsMissing, `${formatters_js.formatLargeNumber(costs)}/hr`);
-        costsDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_LOSS}; margin-top: 12px; margin-bottom: 4px;">Costs: ${costsLabel}</div>`;
+        const costsLabel = formatMissingLabel(costsMissing, `${formatters_js.formatLargeNumber(costs)}${i18n_js.t('profitDisplay.hrSuffix')}`);
+        costsDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_LOSS}; margin-top: 12px; margin-bottom: 4px;">${i18n_js.t('profitDisplay.costsHeader', { label: costsLabel })}</div>`;
 
         // Drink Costs subsection
         const drinkCostsContent = document.createElement('div');
@@ -2260,7 +2340,13 @@
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const missingPriceNote = getMissingPriceIndicator(drink.missingPrice);
-                line.textContent = `• ${drink.name}: ${drink.drinksPerHour.toFixed(2)}/hr @ ${formatters_js.formatWithSeparator(drink.priceEach)}${missingPriceNote} → ${formatters_js.formatLargeNumber(Math.round(drink.costPerHour))}/hr`;
+                line.textContent = i18n_js.t('profitDisplay.drinkCostLineNoEach', {
+                    name: drink.name,
+                    rate: `${drink.drinksPerHour.toFixed(2)}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                    price: formatters_js.formatWithSeparator(drink.priceEach),
+                    missingNote: missingPriceNote,
+                    revenue: `${formatters_js.formatLargeNumber(Math.round(drink.costPerHour))}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                });
                 drinkCostsContent.appendChild(line);
             }
         }
@@ -2269,7 +2355,10 @@
         const drinkCostsLabel = drinkCostsMissing ? '-- ⚠' : formatters_js.formatLargeNumber(Math.round(profitData.drinkCostPerHour));
         const drinkCostsSection = uiComponents_js.createCollapsibleSection(
             '',
-            `Drink Costs: ${drinkCostsLabel}/hr (${drinkCount} drink${drinkCount !== 1 ? 's' : ''})`,
+            i18n_js.t('profitDisplay.drinkCostsHeader', {
+                label: `${drinkCostsLabel}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                count: drinkCount,
+            }),
             null,
             drinkCostsContent,
             false,
@@ -2282,14 +2371,14 @@
         const marketTaxContent = document.createElement('div');
         const marketTaxLine = document.createElement('div');
         marketTaxLine.style.marginLeft = '8px';
-        const marketTaxLabel = marketTaxMissing ? '-- ⚠' : `${formatters_js.formatLargeNumber(marketTax)}/hr`;
-        marketTaxLine.textContent = `• Market Tax: ${profitConstants_js.MARKET_TAX * 100}% of revenue → ${marketTaxLabel}`;
+        const marketTaxLabel = marketTaxMissing ? '-- ⚠' : `${formatters_js.formatLargeNumber(marketTax)}${i18n_js.t('profitDisplay.hrSuffix')}`;
+        marketTaxLine.textContent = i18n_js.t('profitDisplay.marketTaxLine', { pct: profitConstants_js.MARKET_TAX * 100, label: marketTaxLabel });
         marketTaxContent.appendChild(marketTaxLine);
 
-        const marketTaxHeader = marketTaxMissing ? '-- ⚠' : `${formatters_js.formatLargeNumber(marketTax)}/hr`;
+        const marketTaxHeader = marketTaxMissing ? '-- ⚠' : `${formatters_js.formatLargeNumber(marketTax)}${i18n_js.t('profitDisplay.hrSuffix')}`;
         const marketTaxSection = uiComponents_js.createCollapsibleSection(
             '',
-            `Market Tax: ${marketTaxHeader} (${profitConstants_js.MARKET_TAX * 100}%)`,
+            i18n_js.t('profitDisplay.marketTaxSectionTitle', { label: marketTaxHeader, pct: profitConstants_js.MARKET_TAX * 100 }),
             null,
             marketTaxContent,
             false,
@@ -2310,19 +2399,44 @@
                 line.innerHTML = row;
                 content.appendChild(line);
             }
-            return uiComponents_js.createCollapsibleSection(null, `${title}: +${total}`, null, content, false, 1);
+            return uiComponents_js.createCollapsibleSection(
+                null,
+                i18n_js.t('profitDisplay.modifierSectionTitle', { title, total }),
+                null,
+                content,
+                false,
+                1
+            );
         };
 
         // Efficiency
         const effRows = [];
         if (profitData.details.levelEfficiency > 0) {
-            effRows.push(`+${profitData.details.levelEfficiency.toFixed(2)}% Level advantage`);
+            effRows.push(
+                i18n_js.t('profitDisplay.modifierRow', {
+                    icon: '',
+                    value: profitData.details.levelEfficiency.toFixed(2),
+                    label: i18n_js.t('profitDisplay.levelAdvantageLabel'),
+                })
+            );
         }
         if (profitData.details.houseEfficiency > 0) {
-            effRows.push(`+${profitData.details.houseEfficiency.toFixed(2)}% House room`);
+            effRows.push(
+                i18n_js.t('profitDisplay.modifierRow', {
+                    icon: '',
+                    value: profitData.details.houseEfficiency.toFixed(2),
+                    label: i18n_js.t('profitDisplay.houseRoomLabel'),
+                })
+            );
         }
         if (profitData.details.teaEfficiency > 0) {
-            effRows.push(`+${profitData.details.teaEfficiency.toFixed(2)}% Tea`);
+            effRows.push(
+                i18n_js.t('profitDisplay.modifierRow', {
+                    icon: '',
+                    value: profitData.details.teaEfficiency.toFixed(2),
+                    label: i18n_js.t('profitDisplay.teaLabel'),
+                })
+            );
         }
         if ((profitData.details.equipmentEfficiencyItems || []).length > 0) {
             for (const item of profitData.details.equipmentEfficiencyItems) {
@@ -2330,24 +2444,54 @@
                 effRows.push(`+${item.value.toFixed(2)}% ${item.name}${enh}`);
             }
         } else if (profitData.details.equipmentEfficiency > 0) {
-            effRows.push(`+${profitData.details.equipmentEfficiency.toFixed(2)}% Equipment`);
+            effRows.push(
+                i18n_js.t('profitDisplay.modifierRow', {
+                    icon: '',
+                    value: profitData.details.equipmentEfficiency.toFixed(2),
+                    label: i18n_js.t('profitDisplay.equipmentLabel'),
+                })
+            );
         }
         if (profitData.details.communityEfficiency > 0) {
-            effRows.push(`+${profitData.details.communityEfficiency.toFixed(2)}% Community buff`);
+            effRows.push(
+                i18n_js.t('profitDisplay.modifierRow', {
+                    icon: '',
+                    value: profitData.details.communityEfficiency.toFixed(2),
+                    label: i18n_js.t('profitDisplay.communityBuffLabel'),
+                })
+            );
         }
         if (profitData.details.achievementEfficiency > 0) {
-            effRows.push(`+${profitData.details.achievementEfficiency.toFixed(2)}% Achievement`);
+            effRows.push(
+                i18n_js.t('profitDisplay.modifierRow', {
+                    icon: '',
+                    value: profitData.details.achievementEfficiency.toFixed(2),
+                    label: i18n_js.t('profitDisplay.achievementLabel'),
+                })
+            );
         }
         if (profitData.details.personalEfficiency > 0) {
             const icon = dataManager.isBuffBeingSimulated(gatheringActionType, '/buff_types/efficiency')
                 ? scrollSpriteHtml$1('/buff_types/efficiency')
                 : '';
-            effRows.push(`${icon}+${profitData.details.personalEfficiency.toFixed(2)}% Scroll of Efficiency`);
+            effRows.push(
+                i18n_js.t('profitDisplay.modifierRow', {
+                    icon,
+                    value: profitData.details.personalEfficiency.toFixed(2),
+                    label: i18n_js.t('profitDisplay.scrollOfEfficiencyLabel'),
+                })
+            );
         }
         if (effRows.length > 0) {
-            modifierSummaryParts.push(`+${profitData.totalEfficiency.toFixed(2)}% eff`);
+            modifierSummaryParts.push(
+                i18n_js.t('profitDisplay.modifierSummaryEff', { value: profitData.totalEfficiency.toFixed(2) })
+            );
             modifierSubSections.push(
-                makeModifierSection('Efficiency', `${profitData.totalEfficiency.toFixed(2)}%`, effRows)
+                makeModifierSection(
+                    i18n_js.t('profitDisplay.efficiencyLabel'),
+                    `${profitData.totalEfficiency.toFixed(2)}%`,
+                    effRows
+                )
             );
         }
 
@@ -2355,23 +2499,51 @@
         if (profitData.gatheringQuantity > 0) {
             const gatherRows = [];
             if (profitData.details.communityBuffQuantity > 0) {
-                gatherRows.push(`+${(profitData.details.communityBuffQuantity * 100).toFixed(2)}% Community buff`);
+                gatherRows.push(
+                    i18n_js.t('profitDisplay.modifierRow', {
+                        icon: '',
+                        value: (profitData.details.communityBuffQuantity * 100).toFixed(2),
+                        label: i18n_js.t('profitDisplay.communityBuffLabel'),
+                    })
+                );
             }
             if (profitData.details.gatheringTeaBonus > 0) {
-                gatherRows.push(`+${(profitData.details.gatheringTeaBonus * 100).toFixed(2)}% Tea`);
+                gatherRows.push(
+                    i18n_js.t('profitDisplay.modifierRow', {
+                        icon: '',
+                        value: (profitData.details.gatheringTeaBonus * 100).toFixed(2),
+                        label: i18n_js.t('profitDisplay.teaLabel'),
+                    })
+                );
             }
             if (profitData.details.achievementGathering > 0) {
-                gatherRows.push(`+${(profitData.details.achievementGathering * 100).toFixed(2)}% Achievement`);
+                gatherRows.push(
+                    i18n_js.t('profitDisplay.modifierRow', {
+                        icon: '',
+                        value: (profitData.details.achievementGathering * 100).toFixed(2),
+                        label: i18n_js.t('profitDisplay.achievementLabel'),
+                    })
+                );
             }
             if (profitData.details.personalGathering > 0) {
                 const icon = dataManager.isBuffBeingSimulated(gatheringActionType, '/buff_types/gathering')
                     ? scrollSpriteHtml$1('/buff_types/gathering')
                     : '';
-                gatherRows.push(`${icon}+${(profitData.details.personalGathering * 100).toFixed(2)}% Scroll of Gathering`);
+                gatherRows.push(
+                    i18n_js.t('profitDisplay.modifierRow', {
+                        icon,
+                        value: (profitData.details.personalGathering * 100).toFixed(2),
+                        label: i18n_js.t('profitDisplay.scrollOfGatheringLabel'),
+                    })
+                );
             }
             const gatherTotal = `${(profitData.gatheringQuantity * 100).toFixed(2)}%`;
-            modifierSummaryParts.push(`+${(profitData.gatheringQuantity * 100).toFixed(2)}% gather`);
-            modifierSubSections.push(makeModifierSection('Gathering Quantity', gatherTotal, gatherRows));
+            modifierSummaryParts.push(
+                i18n_js.t('profitDisplay.modifierSummaryGather', { value: (profitData.gatheringQuantity * 100).toFixed(2) })
+            );
+            modifierSubSections.push(
+                makeModifierSection(i18n_js.t('profitDisplay.gatheringQuantityLabel'), gatherTotal, gatherRows)
+            );
         }
 
         // Rare Find
@@ -2384,22 +2556,48 @@
                 rareRows.push(`+${item.value.toFixed(2)}% ${item.name}${enh}`);
             }
             if (rareFindBreakdown.house > 0) {
-                rareRows.push(`+${rareFindBreakdown.house.toFixed(2)}% House rooms`);
+                rareRows.push(
+                    i18n_js.t('profitDisplay.modifierRow', {
+                        icon: '',
+                        value: rareFindBreakdown.house.toFixed(2),
+                        label: i18n_js.t('profitDisplay.houseRoomsPluralLabel'),
+                    })
+                );
             }
             if (rareFindBreakdown.achievement > 0) {
-                rareRows.push(`+${rareFindBreakdown.achievement.toFixed(2)}% Achievement`);
+                rareRows.push(
+                    i18n_js.t('profitDisplay.modifierRow', {
+                        icon: '',
+                        value: rareFindBreakdown.achievement.toFixed(2),
+                        label: i18n_js.t('profitDisplay.achievementLabel'),
+                    })
+                );
             }
             if (rareFindBreakdown.personal > 0) {
                 const icon = dataManager.isBuffBeingSimulated(gatheringActionType, '/buff_types/rare_find')
                     ? scrollSpriteHtml$1('/buff_types/rare_find')
                     : '';
-                rareRows.push(`${icon}+${rareFindBreakdown.personal.toFixed(2)}% Scroll of Rare Find`);
+                rareRows.push(
+                    i18n_js.t('profitDisplay.modifierRow', {
+                        icon,
+                        value: rareFindBreakdown.personal.toFixed(2),
+                        label: i18n_js.t('profitDisplay.scrollOfRareFindLabel'),
+                    })
+                );
             }
             if (rareFindBreakdown.guild > 0) {
-                rareRows.push(`+${rareFindBreakdown.guild.toFixed(2)}% Guild Shrine`);
+                rareRows.push(
+                    i18n_js.t('profitDisplay.modifierRow', {
+                        icon: '',
+                        value: rareFindBreakdown.guild.toFixed(2),
+                        label: i18n_js.t('profitDisplay.guildShrineLabel'),
+                    })
+                );
             }
-            modifierSummaryParts.push(`+${rareFindBonus.toFixed(2)}% rare`);
-            modifierSubSections.push(makeModifierSection('Rare Find', `${rareFindBonus.toFixed(2)}%`, rareRows));
+            modifierSummaryParts.push(i18n_js.t('profitDisplay.modifierSummaryRare', { value: rareFindBonus.toFixed(2) }));
+            modifierSubSections.push(
+                makeModifierSection(i18n_js.t('profitDisplay.rareFindLabel'), `${rareFindBonus.toFixed(2)}%`, rareRows)
+            );
         }
 
         // Assemble Detailed Breakdown (WITHOUT net profit - that goes in top level)
@@ -2413,7 +2611,7 @@
             }
             const modifiersSection = uiComponents_js.createCollapsibleSection(
                 '⚙️',
-                'Modifiers',
+                i18n_js.t('profitDisplay.modifiersHeader'),
                 modifierSummaryParts.join(' | '),
                 modifierContent,
                 false,
@@ -2425,7 +2623,10 @@
         // Create "Detailed Breakdown" collapsible
         const topLevelContent = document.createElement('div');
         topLevelContent.innerHTML = `
-        <div style="margin-bottom: 4px;">Actions: ${profitData.actionsPerHour.toFixed(2)}/hr | Efficiency: +${profitData.totalEfficiency.toFixed(2)}%</div>
+        <div style="margin-bottom: 4px;">${i18n_js.t('profitDisplay.actionsEfficiencyLine', {
+            actions: `${profitData.actionsPerHour.toFixed(2)}${i18n_js.t('profitDisplay.hrSuffix')}`,
+            efficiency: profitData.totalEfficiency.toFixed(2),
+        })}</div>
     `;
 
         // Add Net Profit line at top level (always visible when Profitability is expanded)
@@ -2437,8 +2638,13 @@
         margin-bottom: 8px;
     `;
         netProfitLine.textContent = netMissing
-            ? 'Net Profit: -- ⚠'
-            : `Net Profit: ${formatters_js.formatLargeNumber(profit)}/hr, ${formatters_js.formatLargeNumber(profitPerDay)}/day`;
+            ? i18n_js.t('profitDisplay.netProfitLine', { value: '-- ⚠' })
+            : i18n_js.t('profitDisplay.netProfitLine', {
+                  value: i18n_js.t('profitDisplay.perHourPerDay', {
+                      perHour: `${formatters_js.formatLargeNumber(profit)}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                      perDay: `${formatters_js.formatLargeNumber(profitPerDay)}${i18n_js.t('profitDisplay.daySuffix')}`,
+                  }),
+              });
         topLevelContent.appendChild(netProfitLine);
 
         // Add pricing mode label
@@ -2452,12 +2658,12 @@
         font-size: 0.85em;
     `;
         const gatheringLoadoutLabel = getAutomaticLoadoutLabel(gatheringActionType);
-        modeDiv.textContent = `Pricing Mode: ${modeLabel}  •  Loadout: ${gatheringLoadoutLabel}`;
+        modeDiv.textContent = i18n_js.t('profitDisplay.pricingModeLine', { mode: modeLabel, loadout: gatheringLoadoutLabel });
         topLevelContent.appendChild(modeDiv);
 
         const detailedBreakdownSection = uiComponents_js.createCollapsibleSection(
             '📊',
-            'Per hour breakdown',
+            i18n_js.t('profitDisplay.perHourBreakdownTitle'),
             null,
             detailsContent,
             false,
@@ -2499,7 +2705,7 @@
 
         // Create main profit section
         const profitSection = compactActionPanelSection(
-            uiComponents_js.createCollapsibleSection('💰', 'Profitability', summary, topLevelContent, false, 0)
+            uiComponents_js.createCollapsibleSection('💰', i18n_js.t('profitDisplay.profitabilityTitle'), summary, topLevelContent, false, 0)
         );
         profitSection.id = 'mwi-foraging-profit';
         profitSection.setAttribute('data-mwi-profit-display', 'true');
@@ -2513,18 +2719,27 @@
         if (inputField && profitSummaryDiv) {
             const baseSummary = formatMissingLabel(
                 netMissing,
-                `${formatters_js.formatLargeNumber(profit)}/hr, ${formatters_js.formatLargeNumber(profitPerDay)}/day`
+                i18n_js.t('profitDisplay.perHourPerDay', {
+                    perHour: `${formatters_js.formatLargeNumber(profit)}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                    perDay: `${formatters_js.formatLargeNumber(profitPerDay)}${i18n_js.t('profitDisplay.daySuffix')}`,
+                })
             );
 
             const updateSummary = (newValue) => {
                 if (netMissing) {
-                    profitSummaryDiv.textContent = `${baseSummary} | Total profit: -- ⚠`;
+                    profitSummaryDiv.textContent = i18n_js.t('profitDisplay.totalProfitSummary', {
+                        base: baseSummary,
+                        value: '-- ⚠',
+                    });
                     return;
                 }
                 const inputValue = inputField.value;
 
                 if (inputValue === '∞') {
-                    profitSummaryDiv.textContent = `${baseSummary} | Total profit: ∞`;
+                    profitSummaryDiv.textContent = i18n_js.t('profitDisplay.totalProfitSummary', {
+                        base: baseSummary,
+                        value: '∞',
+                    });
                 } else if (newValue > 0) {
                     const totals = profitHelpers_js.calculateGatheringActionTotalsFromBase({
                         actionsCount: newValue,
@@ -2537,9 +2752,12 @@
                         efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
                     });
                     const totalProfit = Math.round(totals.totalProfit);
-                    profitSummaryDiv.textContent = `${baseSummary} | Total profit: ${formatters_js.formatLargeNumber(totalProfit)}`;
+                    profitSummaryDiv.textContent = i18n_js.t('profitDisplay.totalProfitSummary', {
+                        base: baseSummary,
+                        value: formatters_js.formatLargeNumber(totalProfit),
+                    });
                 } else {
-                    profitSummaryDiv.textContent = `${baseSummary} | Total profit: 0`;
+                    profitSummaryDiv.textContent = i18n_js.t('profitDisplay.totalProfitSummary', { base: baseSummary, value: '0' });
                 }
             };
 
@@ -2691,7 +2909,13 @@
         const costs = Math.round(profitData.materialCostPerHour + profitData.totalTeaCostPerHour + marketTax);
         const summary = netMissing
             ? '-- ⚠'
-            : `${formatters_js.formatLargeNumber(profit)}/hr, ${formatters_js.formatLargeNumber(profitPerDay)}/day | Total profit: 0`;
+            : i18n_js.t('profitDisplay.totalProfitSummary', {
+                  base: i18n_js.t('profitDisplay.perHourPerDay', {
+                      perHour: `${formatters_js.formatLargeNumber(profit)}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                      perDay: `${formatters_js.formatLargeNumber(profitPerDay)}${i18n_js.t('profitDisplay.daySuffix')}`,
+                  }),
+                  value: '0',
+              });
 
         const detailsContent = document.createElement('div');
 
@@ -2699,10 +2923,8 @@
         const revenueDiv = document.createElement('div');
         const revenueLabel = revenueMissing
             ? '-- ⚠'
-            : revenueEstimated
-              ? `${formatters_js.formatLargeNumber(revenue)}/hr ⚠`
-              : `${formatters_js.formatLargeNumber(revenue)}/hr`;
-        revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">Revenue: ${revenueLabel}</div>`;
+            : `${formatters_js.formatLargeNumber(revenue)}${i18n_js.t('profitDisplay.hrSuffix')}${revenueEstimated ? ' ⚠' : ''}`;
+        revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">${i18n_js.t('profitDisplay.revenueHeader', { label: revenueLabel })}</div>`;
 
         // Primary Outputs subsection
         const primaryOutputContent = document.createElement('div');
@@ -2711,13 +2933,26 @@
         const baseOutputMissingNote = getMissingPriceIndicator(
             profitData.outputPriceMissing || profitData.outputPriceEstimated
         );
-        baseOutputLine.textContent = `• ${profitData.itemName} (Base): ${profitData.itemsPerHour.toFixed(2)}/hr @ ${formatters_js.formatWithSeparator(Math.round(profitData.outputPrice))}${baseOutputMissingNote} each → ${formatters_js.formatLargeNumber(Math.round(profitData.itemsPerHour * profitData.outputPrice))}/hr`;
+        baseOutputLine.textContent = i18n_js.t('profitDisplay.baseOutputLine', {
+            name: profitData.itemName,
+            rate: `${profitData.itemsPerHour.toFixed(2)}${i18n_js.t('profitDisplay.hrSuffix')}`,
+            price: formatters_js.formatWithSeparator(Math.round(profitData.outputPrice)),
+            missingNote: baseOutputMissingNote,
+            revenue: `${formatters_js.formatLargeNumber(Math.round(profitData.itemsPerHour * profitData.outputPrice))}${i18n_js.t('profitDisplay.hrSuffix')}`,
+        });
         primaryOutputContent.appendChild(baseOutputLine);
 
         if (profitData.gourmetBonusItems > 0) {
             const gourmetLine = document.createElement('div');
             gourmetLine.style.marginLeft = '8px';
-            gourmetLine.textContent = `• ${profitData.itemName} (Gourmet +${formatters_js.formatPercentage(profitData.gourmetBonus, 1)}): ${profitData.gourmetBonusItems.toFixed(2)}/hr @ ${formatters_js.formatWithSeparator(Math.round(profitData.outputPrice))}${baseOutputMissingNote} each → ${formatters_js.formatLargeNumber(Math.round(profitData.gourmetBonusItems * profitData.outputPrice))}/hr`;
+            gourmetLine.textContent = i18n_js.t('profitDisplay.gourmetOutputLinePlus', {
+                name: profitData.itemName,
+                pct: formatters_js.formatPercentage(profitData.gourmetBonus, 1),
+                rate: `${profitData.gourmetBonusItems.toFixed(2)}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                price: formatters_js.formatWithSeparator(Math.round(profitData.outputPrice)),
+                missingNote: baseOutputMissingNote,
+                revenue: `${formatters_js.formatLargeNumber(Math.round(profitData.gourmetBonusItems * profitData.outputPrice))}${i18n_js.t('profitDisplay.hrSuffix')}`,
+            });
             primaryOutputContent.appendChild(gourmetLine);
         }
 
@@ -2726,10 +2961,15 @@
         const primaryRevenue = baseRevenue + gourmetRevenue;
         const primaryRevenueLabel = outputMissing ? '-- ⚠' : formatters_js.formatLargeNumber(Math.round(primaryRevenue));
         const gourmetLabel =
-            profitData.gourmetBonus > 0 ? ` (${formatters_js.formatPercentage(profitData.gourmetBonus, 1)} gourmet)` : '';
+            profitData.gourmetBonus > 0
+                ? i18n_js.t('profitDisplay.gourmetSuffixParen', { pct: formatters_js.formatPercentage(profitData.gourmetBonus, 1) })
+                : '';
         const primaryOutputSection = uiComponents_js.createCollapsibleSection(
             '',
-            `Primary Outputs: ${primaryRevenueLabel}/hr${gourmetLabel}`,
+            i18n_js.t('profitDisplay.primaryOutputsHeaderProduction', {
+                label: `${primaryRevenueLabel}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                gourmetSuffix: gourmetLabel,
+            }),
             null,
             primaryOutputContent,
             false,
@@ -2752,7 +2992,12 @@
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const dropRatePct = formatters_js.formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
-                line.textContent = `• ${drop.itemName}: ${dropsPerHour.toFixed(decimals)}/hr (${dropRatePct}) → ${formatters_js.formatLargeNumber(Math.round(revenuePerHour))}/hr`;
+                line.textContent = i18n_js.t('profitDisplay.dropLine', {
+                    itemName: drop.itemName,
+                    rate: `${dropsPerHour.toFixed(decimals)}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                    pct: dropRatePct,
+                    revenue: `${formatters_js.formatLargeNumber(Math.round(revenuePerHour))}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                });
                 essenceContent.appendChild(line);
             }
 
@@ -2764,7 +3009,11 @@
             const essenceFindBonus = profitData.bonusRevenue?.essenceFindBonus || 0;
             essenceSection = uiComponents_js.createCollapsibleSection(
                 '',
-                `Essence Drops: ${essenceRevenueLabel}/hr (${essenceDrops.length} item${essenceDrops.length !== 1 ? 's' : ''}, ${essenceFindBonus.toFixed(2)}% essence find)`,
+                i18n_js.t('profitDisplay.essenceDropsHeader', {
+                    label: `${essenceRevenueLabel}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                    count: essenceDrops.length,
+                    pct: essenceFindBonus.toFixed(2),
+                }),
                 null,
                 essenceContent,
                 false,
@@ -2782,7 +3031,12 @@
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const dropRatePct = formatters_js.formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
-                line.textContent = `• ${drop.itemName}: ${dropsPerHour.toFixed(decimals)}/hr (${dropRatePct}) → ${formatters_js.formatLargeNumber(Math.round(revenuePerHour))}/hr`;
+                line.textContent = i18n_js.t('profitDisplay.dropLine', {
+                    itemName: drop.itemName,
+                    rate: `${dropsPerHour.toFixed(decimals)}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                    pct: dropRatePct,
+                    revenue: `${formatters_js.formatLargeNumber(Math.round(revenuePerHour))}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                });
                 rareFindContent.appendChild(line);
             }
 
@@ -2794,7 +3048,11 @@
             const rareFindSummary = formatRareFindBonusSummary(profitData.bonusRevenue);
             rareFindSection = uiComponents_js.createCollapsibleSection(
                 '',
-                `Rare Finds: ${rareFindRevenueLabel}/hr (${rareFinds.length} item${rareFinds.length !== 1 ? 's' : ''}, ${rareFindSummary})`,
+                i18n_js.t('profitDisplay.rareFindsHeader', {
+                    label: `${rareFindRevenueLabel}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                    count: rareFinds.length,
+                    summary: rareFindSummary,
+                }),
                 null,
                 rareFindContent,
                 false,
@@ -2813,10 +3071,8 @@
         const costsDiv = document.createElement('div');
         const costsLabel = costsMissing
             ? '-- ⚠'
-            : costsEstimated
-              ? `${formatters_js.formatLargeNumber(costs)}/hr ⚠`
-              : `${formatters_js.formatLargeNumber(costs)}/hr`;
-        costsDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_LOSS}; margin-top: 12px; margin-bottom: 4px;">Costs: ${costsLabel}</div>`;
+            : `${formatters_js.formatLargeNumber(costs)}${i18n_js.t('profitDisplay.hrSuffix')}${costsEstimated ? ' ⚠' : ''}`;
+        costsDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_LOSS}; margin-top: 12px; margin-bottom: 4px;">${i18n_js.t('profitDisplay.costsHeader', { label: costsLabel })}</div>`;
 
         // Material Costs subsection
         const materialCostsContent = document.createElement('div');
@@ -2829,20 +3085,28 @@
                 const efficiencyMultiplier = profitData.efficiencyMultiplier;
                 const amountPerHour = amountPerAction * profitData.actionsPerHour * efficiencyMultiplier;
 
-                // Build material line with embedded Artisan information
-                let materialText = `• ${material.itemName}: ${amountPerHour.toFixed(2)}/hr`;
-
                 // Add Artisan reduction info if present (only show if actually reduced)
+                let artisanNote = '';
                 if (profitData.artisanBonus > 0 && material.baseAmount && material.amount !== material.baseAmount) {
                     const baseAmountPerHour = material.baseAmount * profitData.actionsPerHour * efficiencyMultiplier;
-                    materialText += ` (${baseAmountPerHour.toFixed(2)} base -${formatters_js.formatPercentage(profitData.artisanBonus, 1)} 🍵)`;
+                    artisanNote = i18n_js.t('profitDisplay.artisanReductionNote', {
+                        baseAmount: baseAmountPerHour.toFixed(2),
+                        pct: formatters_js.formatPercentage(profitData.artisanBonus, 1),
+                    });
                 }
 
                 const missingPriceNote = getMissingPriceIndicator(material.missingPrice);
                 const customPriceNote = material.customPrice ? ' *' : '';
-                materialText += ` @ ${formatters_js.formatWithSeparator(Math.round(material.askPrice))}${missingPriceNote}${customPriceNote} → ${formatters_js.formatLargeNumber(Math.round(material.totalCost * profitData.actionsPerHour * efficiencyMultiplier))}/hr`;
 
-                line.textContent = materialText;
+                line.textContent = i18n_js.t('profitDisplay.materialCostLine', {
+                    name: material.itemName,
+                    rate: `${amountPerHour.toFixed(2)}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                    artisanNote,
+                    price: formatters_js.formatWithSeparator(Math.round(material.askPrice)),
+                    missingNote: missingPriceNote,
+                    customNote: customPriceNote,
+                    revenue: `${formatters_js.formatLargeNumber(Math.round(material.totalCost * profitData.actionsPerHour * efficiencyMultiplier))}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                });
                 materialCostsContent.appendChild(line);
             }
         }
@@ -2853,7 +3117,10 @@
         );
         const materialCostsSection = uiComponents_js.createCollapsibleSection(
             '',
-            `Material Costs: ${materialCostsLabel}/hr (${profitData.materialCosts?.length || 0} material${profitData.materialCosts?.length !== 1 ? 's' : ''})`,
+            i18n_js.t('profitDisplay.materialCostsHeader', {
+                label: `${materialCostsLabel}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                count: profitData.materialCosts?.length || 0,
+            }),
             null,
             materialCostsContent,
             false,
@@ -2868,7 +3135,13 @@
                 line.style.marginLeft = '8px';
                 // Tea structure: { itemName, pricePerDrink, drinksPerHour, totalCost }
                 const missingPriceNote = getMissingPriceIndicator(tea.missingPrice);
-                line.textContent = `• ${tea.itemName}: ${tea.drinksPerHour.toFixed(2)}/hr @ ${formatters_js.formatWithSeparator(Math.round(tea.pricePerDrink))}${missingPriceNote} → ${formatters_js.formatLargeNumber(Math.round(tea.totalCost))}/hr`;
+                line.textContent = i18n_js.t('profitDisplay.drinkCostLineNoEach', {
+                    name: tea.itemName,
+                    rate: `${tea.drinksPerHour.toFixed(2)}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                    price: formatters_js.formatWithSeparator(Math.round(tea.pricePerDrink)),
+                    missingNote: missingPriceNote,
+                    revenue: `${formatters_js.formatLargeNumber(Math.round(tea.totalCost))}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                });
                 teaCostsContent.appendChild(line);
             }
         }
@@ -2877,7 +3150,10 @@
         const teaCostsLabel = formatMissingLabel(teaMissing, formatters_js.formatLargeNumber(Math.round(profitData.totalTeaCostPerHour)));
         const teaCostsSection = uiComponents_js.createCollapsibleSection(
             '',
-            `Drink Costs: ${teaCostsLabel}/hr (${teaCount} drink${teaCount !== 1 ? 's' : ''})`,
+            i18n_js.t('profitDisplay.drinkCostsHeader', {
+                label: `${teaCostsLabel}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                count: teaCount,
+            }),
             null,
             teaCostsContent,
             false,
@@ -2893,16 +3169,14 @@
         marketTaxLine.style.marginLeft = '8px';
         const marketTaxLabel = marketTaxMissing
             ? '-- ⚠'
-            : marketTaxEstimated
-              ? `${formatters_js.formatLargeNumber(marketTax)}/hr ⚠`
-              : `${formatters_js.formatLargeNumber(marketTax)}/hr`;
-        marketTaxLine.textContent = `• Market Tax: ${profitConstants_js.MARKET_TAX * 100}% of revenue → ${marketTaxLabel}`;
+            : `${formatters_js.formatLargeNumber(marketTax)}${i18n_js.t('profitDisplay.hrSuffix')}${marketTaxEstimated ? ' ⚠' : ''}`;
+        marketTaxLine.textContent = i18n_js.t('profitDisplay.marketTaxLine', { pct: profitConstants_js.MARKET_TAX * 100, label: marketTaxLabel });
         marketTaxContent.appendChild(marketTaxLine);
 
         const marketTaxHeader = marketTaxLabel;
         const marketTaxSection = uiComponents_js.createCollapsibleSection(
             '',
-            `Market Tax: ${marketTaxHeader} (${profitConstants_js.MARKET_TAX * 100}%)`,
+            i18n_js.t('profitDisplay.marketTaxSectionTitle', { label: marketTaxHeader, pct: profitConstants_js.MARKET_TAX * 100 }),
             null,
             marketTaxContent,
             false,
@@ -2923,19 +3197,44 @@
                 line.innerHTML = row;
                 content.appendChild(line);
             }
-            return uiComponents_js.createCollapsibleSection(null, `${title}: +${total}`, null, content, false, 1);
+            return uiComponents_js.createCollapsibleSection(
+                null,
+                i18n_js.t('profitDisplay.modifierSectionTitle', { title, total }),
+                null,
+                content,
+                false,
+                1
+            );
         };
 
         // Efficiency
         const effRows = [];
         if (profitData.levelEfficiency > 0) {
-            effRows.push(`+${profitData.levelEfficiency}% Level advantage`);
+            effRows.push(
+                i18n_js.t('profitDisplay.modifierRow', {
+                    icon: '',
+                    value: profitData.levelEfficiency,
+                    label: i18n_js.t('profitDisplay.levelAdvantageLabel'),
+                })
+            );
         }
         if (profitData.houseEfficiency > 0) {
-            effRows.push(`+${profitData.houseEfficiency.toFixed(2)}% House room`);
+            effRows.push(
+                i18n_js.t('profitDisplay.modifierRow', {
+                    icon: '',
+                    value: profitData.houseEfficiency.toFixed(2),
+                    label: i18n_js.t('profitDisplay.houseRoomLabel'),
+                })
+            );
         }
         if (profitData.teaEfficiency > 0) {
-            effRows.push(`+${profitData.teaEfficiency.toFixed(2)}% Tea`);
+            effRows.push(
+                i18n_js.t('profitDisplay.modifierRow', {
+                    icon: '',
+                    value: profitData.teaEfficiency.toFixed(2),
+                    label: i18n_js.t('profitDisplay.teaLabel'),
+                })
+            );
         }
         if ((profitData.equipmentEfficiencyItems || []).length > 0) {
             for (const item of profitData.equipmentEfficiencyItems) {
@@ -2943,24 +3242,54 @@
                 effRows.push(`+${item.value.toFixed(2)}% ${item.name}${enh}`);
             }
         } else if (profitData.equipmentEfficiency > 0) {
-            effRows.push(`+${profitData.equipmentEfficiency.toFixed(2)}% Equipment`);
+            effRows.push(
+                i18n_js.t('profitDisplay.modifierRow', {
+                    icon: '',
+                    value: profitData.equipmentEfficiency.toFixed(2),
+                    label: i18n_js.t('profitDisplay.equipmentLabel'),
+                })
+            );
         }
         if (profitData.communityEfficiency > 0) {
-            effRows.push(`+${profitData.communityEfficiency.toFixed(2)}% Community buff`);
+            effRows.push(
+                i18n_js.t('profitDisplay.modifierRow', {
+                    icon: '',
+                    value: profitData.communityEfficiency.toFixed(2),
+                    label: i18n_js.t('profitDisplay.communityBuffLabel'),
+                })
+            );
         }
         if (profitData.achievementEfficiency > 0) {
-            effRows.push(`+${profitData.achievementEfficiency.toFixed(2)}% Achievement`);
+            effRows.push(
+                i18n_js.t('profitDisplay.modifierRow', {
+                    icon: '',
+                    value: profitData.achievementEfficiency.toFixed(2),
+                    label: i18n_js.t('profitDisplay.achievementLabel'),
+                })
+            );
         }
         if (profitData.personalEfficiency > 0) {
             const simSprite = dataManager.isBuffBeingSimulated(productionActionType, '/buff_types/efficiency')
                 ? scrollSpriteHtml$1('/buff_types/efficiency')
                 : '';
-            effRows.push(`${simSprite}+${profitData.personalEfficiency.toFixed(2)}% Scroll of Efficiency`);
+            effRows.push(
+                i18n_js.t('profitDisplay.modifierRow', {
+                    icon: simSprite,
+                    value: profitData.personalEfficiency.toFixed(2),
+                    label: i18n_js.t('profitDisplay.scrollOfEfficiencyLabel'),
+                })
+            );
         }
         if (effRows.length > 0) {
-            modifierSummaryParts.push(`+${profitData.totalEfficiency.toFixed(2)}% eff`);
+            modifierSummaryParts.push(
+                i18n_js.t('profitDisplay.modifierSummaryEff', { value: profitData.totalEfficiency.toFixed(2) })
+            );
             modifierSubSections.push(
-                makeModifierSectionProd('Efficiency', `${profitData.totalEfficiency.toFixed(2)}%`, effRows)
+                makeModifierSectionProd(
+                    i18n_js.t('profitDisplay.efficiencyLabel'),
+                    `${profitData.totalEfficiency.toFixed(2)}%`,
+                    effRows
+                )
             );
         }
 
@@ -2974,32 +3303,60 @@
                 rareRows.push(`+${item.value.toFixed(2)}% ${item.name}${enh}`);
             }
             if (productionRareFindBreakdown.house > 0) {
-                rareRows.push(`+${productionRareFindBreakdown.house.toFixed(2)}% House rooms`);
+                rareRows.push(
+                    i18n_js.t('profitDisplay.modifierRow', {
+                        icon: '',
+                        value: productionRareFindBreakdown.house.toFixed(2),
+                        label: i18n_js.t('profitDisplay.houseRoomsPluralLabel'),
+                    })
+                );
             }
             if (productionRareFindBreakdown.achievement > 0) {
-                rareRows.push(`+${productionRareFindBreakdown.achievement.toFixed(2)}% Achievement`);
+                rareRows.push(
+                    i18n_js.t('profitDisplay.modifierRow', {
+                        icon: '',
+                        value: productionRareFindBreakdown.achievement.toFixed(2),
+                        label: i18n_js.t('profitDisplay.achievementLabel'),
+                    })
+                );
             }
             if (productionRareFindBreakdown.personal > 0) {
                 const simSprite = dataManager.isBuffBeingSimulated(productionActionType, '/buff_types/rare_find')
                     ? scrollSpriteHtml$1('/buff_types/rare_find')
                     : '';
-                rareRows.push(`${simSprite}+${productionRareFindBreakdown.personal.toFixed(2)}% Scroll of Rare Find`);
+                rareRows.push(
+                    i18n_js.t('profitDisplay.modifierRow', {
+                        icon: simSprite,
+                        value: productionRareFindBreakdown.personal.toFixed(2),
+                        label: i18n_js.t('profitDisplay.scrollOfRareFindLabel'),
+                    })
+                );
             }
-            modifierSummaryParts.push(`+${productionRareFindBonus.toFixed(2)}% rare`);
+            modifierSummaryParts.push(
+                i18n_js.t('profitDisplay.modifierSummaryRare', { value: productionRareFindBonus.toFixed(2) })
+            );
             modifierSubSections.push(
-                makeModifierSectionProd('Rare Find', `${productionRareFindBonus.toFixed(2)}%`, rareRows)
+                makeModifierSectionProd(
+                    i18n_js.t('profitDisplay.rareFindLabel'),
+                    `${productionRareFindBonus.toFixed(2)}%`,
+                    rareRows
+                )
             );
         }
 
         // Artisan Bonus (no sub-breakdown needed — single source)
         if (profitData.artisanBonus > 0) {
             const artisanContent = document.createElement('div');
-            artisanContent.textContent = `-${formatters_js.formatPercentage(profitData.artisanBonus, 1)} material requirement from Artisan Tea`;
-            modifierSummaryParts.push(`-${formatters_js.formatPercentage(profitData.artisanBonus, 1)} artisan`);
+            artisanContent.textContent = i18n_js.t('profitDisplay.artisanReductionSentence', {
+                value: formatters_js.formatPercentage(profitData.artisanBonus, 1),
+            });
+            modifierSummaryParts.push(
+                i18n_js.t('profitDisplay.modifierSummaryArtisan', { value: formatters_js.formatPercentage(profitData.artisanBonus, 1) })
+            );
             modifierSubSections.push(
                 uiComponents_js.createCollapsibleSection(
                     null,
-                    `Artisan: -${formatters_js.formatPercentage(profitData.artisanBonus, 1)}`,
+                    i18n_js.t('profitDisplay.artisanSectionTitle', { value: formatters_js.formatPercentage(profitData.artisanBonus, 1) }),
                     null,
                     artisanContent,
                     false,
@@ -3011,12 +3368,16 @@
         // Gourmet Bonus (no sub-breakdown needed — single source)
         if (profitData.gourmetBonus > 0) {
             const gourmetContent = document.createElement('div');
-            gourmetContent.textContent = `+${formatters_js.formatPercentage(profitData.gourmetBonus, 1)} bonus items from Gourmet Tea`;
-            modifierSummaryParts.push(`+${formatters_js.formatPercentage(profitData.gourmetBonus, 1)} gourmet`);
+            gourmetContent.textContent = i18n_js.t('profitDisplay.gourmetBonusSentence', {
+                value: formatters_js.formatPercentage(profitData.gourmetBonus, 1),
+            });
+            modifierSummaryParts.push(
+                i18n_js.t('profitDisplay.modifierSummaryGourmet', { value: formatters_js.formatPercentage(profitData.gourmetBonus, 1) })
+            );
             modifierSubSections.push(
                 uiComponents_js.createCollapsibleSection(
                     null,
-                    `Gourmet: +${formatters_js.formatPercentage(profitData.gourmetBonus, 1)}`,
+                    i18n_js.t('profitDisplay.gourmetSectionTitle', { value: formatters_js.formatPercentage(profitData.gourmetBonus, 1) }),
                     null,
                     gourmetContent,
                     false,
@@ -3036,7 +3397,7 @@
             }
             const modifiersSection = uiComponents_js.createCollapsibleSection(
                 '⚙️',
-                'Modifiers',
+                i18n_js.t('profitDisplay.modifiersHeader'),
                 modifierSummaryParts.join(' | '),
                 modifierContent,
                 false,
@@ -3049,7 +3410,9 @@
         const topLevelContent = document.createElement('div');
         const effectiveActionsPerHour = profitData.actionsPerHour * profitData.efficiencyMultiplier;
         topLevelContent.innerHTML = `
-        <div style="margin-bottom: 4px;">Actions: ${effectiveActionsPerHour.toFixed(2)}/hr</div>
+        <div style="margin-bottom: 4px;">${i18n_js.t('profitDisplay.actionsLine', {
+            actions: `${effectiveActionsPerHour.toFixed(2)}${i18n_js.t('profitDisplay.hrSuffix')}`,
+        })}</div>
     `;
 
         // Add Net Profit line at top level (always visible when Profitability is expanded)
@@ -3061,10 +3424,13 @@
         margin-bottom: 8px;
     `;
         netProfitLine.textContent = netMissing
-            ? 'Net Profit: -- ⚠'
-            : netEstimated
-              ? `Net Profit: ${formatters_js.formatLargeNumber(profit)}/hr ⚠, ${formatters_js.formatLargeNumber(profitPerDay)}/day ⚠`
-              : `Net Profit: ${formatters_js.formatLargeNumber(profit)}/hr, ${formatters_js.formatLargeNumber(profitPerDay)}/day`;
+            ? i18n_js.t('profitDisplay.netProfitLine', { value: '-- ⚠' })
+            : i18n_js.t('profitDisplay.netProfitLine', {
+                  value: i18n_js.t('profitDisplay.perHourPerDay', {
+                      perHour: `${formatters_js.formatLargeNumber(profit)}${i18n_js.t('profitDisplay.hrSuffix')}${netEstimated ? ' ⚠' : ''}`,
+                      perDay: `${formatters_js.formatLargeNumber(profitPerDay)}${i18n_js.t('profitDisplay.daySuffix')}${netEstimated ? ' ⚠' : ''}`,
+                  }),
+              });
         topLevelContent.appendChild(netProfitLine);
 
         // Add pricing mode label
@@ -3078,12 +3444,12 @@
         font-size: 0.85em;
     `;
         const productionLoadoutLabel = getAutomaticLoadoutLabel(productionActionType);
-        modeDiv.textContent = `Pricing Mode: ${modeLabel}  •  Loadout: ${productionLoadoutLabel}`;
+        modeDiv.textContent = i18n_js.t('profitDisplay.pricingModeLine', { mode: modeLabel, loadout: productionLoadoutLabel });
         topLevelContent.appendChild(modeDiv);
 
         const detailedBreakdownSection = uiComponents_js.createCollapsibleSection(
             '📊',
-            'Per hour breakdown',
+            i18n_js.t('profitDisplay.perHourBreakdownTitle'),
             null,
             detailsContent,
             false,
@@ -3125,7 +3491,7 @@
 
         // Create main profit section
         const profitSection = compactActionPanelSection(
-            uiComponents_js.createCollapsibleSection('💰', 'Profitability', summary, topLevelContent, false, 0)
+            uiComponents_js.createCollapsibleSection('💰', i18n_js.t('profitDisplay.profitabilityTitle'), summary, topLevelContent, false, 0)
         );
         profitSection.id = 'mwi-production-profit';
         profitSection.setAttribute('data-mwi-profit-display', 'true');
@@ -3137,18 +3503,27 @@
         if (inputField && profitSummaryDiv) {
             const baseSummary = formatMissingLabel(
                 netMissing,
-                `${formatters_js.formatLargeNumber(profit)}/hr, ${formatters_js.formatLargeNumber(profitPerDay)}/day`
+                i18n_js.t('profitDisplay.perHourPerDay', {
+                    perHour: `${formatters_js.formatLargeNumber(profit)}${i18n_js.t('profitDisplay.hrSuffix')}`,
+                    perDay: `${formatters_js.formatLargeNumber(profitPerDay)}${i18n_js.t('profitDisplay.daySuffix')}`,
+                })
             );
 
             const updateSummary = (newValue) => {
                 if (netMissing) {
-                    profitSummaryDiv.textContent = `${baseSummary} | Total profit: -- ⚠`;
+                    profitSummaryDiv.textContent = i18n_js.t('profitDisplay.totalProfitSummary', {
+                        base: baseSummary,
+                        value: '-- ⚠',
+                    });
                     return;
                 }
                 const inputValue = inputField.value;
 
                 if (inputValue === '∞') {
-                    profitSummaryDiv.textContent = `${baseSummary} | Total profit: ∞`;
+                    profitSummaryDiv.textContent = i18n_js.t('profitDisplay.totalProfitSummary', {
+                        base: baseSummary,
+                        value: '∞',
+                    });
                 } else if (newValue > 0) {
                     const totals = profitHelpers_js.calculateProductionActionTotalsFromBase({
                         actionsCount: newValue,
@@ -3162,9 +3537,12 @@
                         efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
                     });
                     const totalProfit = Math.round(totals.totalProfit);
-                    profitSummaryDiv.textContent = `${baseSummary} | Total profit: ${formatters_js.formatLargeNumber(totalProfit)}`;
+                    profitSummaryDiv.textContent = i18n_js.t('profitDisplay.totalProfitSummary', {
+                        base: baseSummary,
+                        value: formatters_js.formatLargeNumber(totalProfit),
+                    });
                 } else {
-                    profitSummaryDiv.textContent = `${baseSummary} | Total profit: 0`;
+                    profitSummaryDiv.textContent = i18n_js.t('profitDisplay.totalProfitSummary', { base: baseSummary, value: '0' });
                 }
             };
 
@@ -3254,8 +3632,11 @@
 
         // Revenue Section
         const revenueDiv = document.createElement('div');
-        const revenueLabel = formatMissingLabel(revenueMissing, `${formatPerAction(revenuePerAction)}/action`);
-        revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">Revenue: ${revenueLabel}</div>`;
+        const revenueLabel = formatMissingLabel(
+            revenueMissing,
+            `${formatPerAction(revenuePerAction)}${i18n_js.t('profitDisplay.actionSuffix')}`
+        );
+        revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">${i18n_js.t('profitDisplay.revenueHeader', { label: revenueLabel })}</div>`;
 
         // Primary Outputs subsection
         const primaryDropsContent = document.createElement('div');
@@ -3266,7 +3647,13 @@
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const missingPriceNote = getMissingPriceIndicator(output.missingPrice);
-                line.textContent = `• ${output.name} (Base): ${itemsPerAction.toFixed(2)}/action @ ${formatters_js.formatWithSeparator(output.priceEach)}${missingPriceNote} each → ${formatPerAction(revPerAction)}/action`;
+                line.textContent = i18n_js.t('profitDisplay.baseOutputLine', {
+                    name: output.name,
+                    rate: `${itemsPerAction.toFixed(2)}${i18n_js.t('profitDisplay.actionSuffix')}`,
+                    price: formatters_js.formatWithSeparator(output.priceEach),
+                    missingNote: missingPriceNote,
+                    revenue: `${formatPerAction(revPerAction)}${i18n_js.t('profitDisplay.actionSuffix')}`,
+                });
                 primaryDropsContent.appendChild(line);
             }
         }
@@ -3278,7 +3665,14 @@
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const missingPriceNote = getMissingPriceIndicator(output.missingPrice);
-                line.textContent = `• ${output.name} (Gourmet ${formatters_js.formatPercentage(profitData.gourmetBonus || 0, 1)}): ${itemsPerAction.toFixed(2)}/action @ ${formatters_js.formatWithSeparator(output.priceEach)}${missingPriceNote} each → ${formatPerAction(revPerAction)}/action`;
+                line.textContent = i18n_js.t('profitDisplay.gourmetOutputLine', {
+                    name: output.name,
+                    pct: formatters_js.formatPercentage(profitData.gourmetBonus || 0, 1),
+                    rate: `${itemsPerAction.toFixed(2)}${i18n_js.t('profitDisplay.actionSuffix')}`,
+                    price: formatters_js.formatWithSeparator(output.priceEach),
+                    missingNote: missingPriceNote,
+                    revenue: `${formatPerAction(revPerAction)}${i18n_js.t('profitDisplay.actionSuffix')}`,
+                });
                 primaryDropsContent.appendChild(line);
             }
         }
@@ -3302,18 +3696,33 @@
 
                 const consumedLine = document.createElement('div');
                 consumedLine.style.marginLeft = '8px';
-                consumedLine.textContent = `• ${conversion.rawItem} consumed: -${rawConsumedPerAction.toFixed(2)}/action @ ${formatters_js.formatWithSeparator(conversion.rawPriceEach)}${missingPriceNote} → -${formatPerAction(consumedRevenuePerAction)}/action`;
+                consumedLine.textContent = i18n_js.t('profitDisplay.processingConsumedLine', {
+                    item: conversion.rawItem,
+                    rate: `${rawConsumedPerAction.toFixed(2)}${i18n_js.t('profitDisplay.actionSuffix')}`,
+                    price: formatters_js.formatWithSeparator(conversion.rawPriceEach),
+                    missingNote: missingPriceNote,
+                    revenue: `${formatPerAction(consumedRevenuePerAction)}${i18n_js.t('profitDisplay.actionSuffix')}`,
+                });
                 processingContent.appendChild(consumedLine);
 
                 const producedLine = document.createElement('div');
                 producedLine.style.marginLeft = '8px';
-                producedLine.textContent = `• ${conversion.processedItem} produced: ${conversionsPerAction.toFixed(2)}/action @ ${formatters_js.formatWithSeparator(conversion.processedPriceEach)}${missingPriceNote} → ${formatPerAction(producedRevenuePerAction)}/action`;
+                producedLine.textContent = i18n_js.t('profitDisplay.processingProducedLine', {
+                    item: conversion.processedItem,
+                    rate: `${conversionsPerAction.toFixed(2)}${i18n_js.t('profitDisplay.actionSuffix')}`,
+                    price: formatters_js.formatWithSeparator(conversion.processedPriceEach),
+                    missingNote: missingPriceNote,
+                    revenue: `${formatPerAction(producedRevenuePerAction)}${i18n_js.t('profitDisplay.actionSuffix')}`,
+                });
                 processingContent.appendChild(producedLine);
             }
 
             const processingSection = uiComponents_js.createCollapsibleSection(
                 '',
-                `• Processing (${formatters_js.formatPercentage(profitData.processingBonus || 0, 1)} proc): Net ${netProcessingLabel}/action`,
+                i18n_js.t('profitDisplay.processingSectionTitle', {
+                    pct: formatters_js.formatPercentage(profitData.processingBonus || 0, 1),
+                    net: `${netProcessingLabel}${i18n_js.t('profitDisplay.actionSuffix')}`,
+                }),
                 null,
                 processingContent,
                 false,
@@ -3332,14 +3741,14 @@
         const primaryRevenuePerAction = baseRevenuePerAction + gourmetRevenuePerAction + processingRevenuePerAction;
         const primaryRevenueLabel = formatMissingLabel(
             primaryMissing,
-            `${formatPerAction(primaryRevenuePerAction)}/action`
+            `${formatPerAction(primaryRevenuePerAction)}${i18n_js.t('profitDisplay.actionSuffix')}`
         );
         const outputItemCount =
             (profitData.baseOutputs?.length || 0) +
             (profitData.processingConversions && profitData.processingConversions.length > 0 ? 1 : 0);
         const primaryDropsSection = uiComponents_js.createCollapsibleSection(
             '',
-            `Primary Outputs: ${primaryRevenueLabel} (${outputItemCount} item${outputItemCount !== 1 ? 's' : ''})`,
+            i18n_js.t('profitDisplay.primaryOutputsHeaderGathering', { label: primaryRevenueLabel, count: outputItemCount }),
             null,
             primaryDropsContent,
             false,
@@ -3361,7 +3770,12 @@
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const dropRatePct = formatters_js.formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
-                line.textContent = `• ${drop.itemName}: ${dropsPA.toFixed(4)}/action (${dropRatePct}) → ${formatPerAction(revenuePA)}/action`;
+                line.textContent = i18n_js.t('profitDisplay.dropLine', {
+                    itemName: drop.itemName,
+                    rate: `${dropsPA.toFixed(4)}${i18n_js.t('profitDisplay.actionSuffix')}`,
+                    pct: dropRatePct,
+                    revenue: `${formatPerAction(revenuePA)}${i18n_js.t('profitDisplay.actionSuffix')}`,
+                });
                 essenceContent.appendChild(line);
             }
 
@@ -3371,12 +3785,16 @@
             );
             const essenceRevenueLabel = formatMissingLabel(
                 bonusMissing,
-                `${formatPerAction(essenceRevenuePerAction)}/action`
+                `${formatPerAction(essenceRevenuePerAction)}${i18n_js.t('profitDisplay.actionSuffix')}`
             );
             const essenceFindBonus = profitData.bonusRevenue?.essenceFindBonus || 0;
             essenceSection = uiComponents_js.createCollapsibleSection(
                 '',
-                `Essence Drops: ${essenceRevenueLabel} (${essenceDrops.length} item${essenceDrops.length !== 1 ? 's' : ''}, ${essenceFindBonus.toFixed(2)}% essence find)`,
+                i18n_js.t('profitDisplay.essenceDropsHeader', {
+                    label: essenceRevenueLabel,
+                    count: essenceDrops.length,
+                    pct: essenceFindBonus.toFixed(2),
+                }),
                 null,
                 essenceContent,
                 false,
@@ -3394,7 +3812,12 @@
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const dropRatePct = formatters_js.formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
-                line.textContent = `• ${drop.itemName}: ${dropsPA.toFixed(4)}/action (${dropRatePct}) → ${formatPerAction(revenuePA)}/action`;
+                line.textContent = i18n_js.t('profitDisplay.dropLine', {
+                    itemName: drop.itemName,
+                    rate: `${dropsPA.toFixed(4)}${i18n_js.t('profitDisplay.actionSuffix')}`,
+                    pct: dropRatePct,
+                    revenue: `${formatPerAction(revenuePA)}${i18n_js.t('profitDisplay.actionSuffix')}`,
+                });
                 rareFindContent.appendChild(line);
             }
 
@@ -3404,12 +3827,16 @@
             );
             const rareFindRevenueLabel = formatMissingLabel(
                 bonusMissing,
-                `${formatPerAction(rareFindRevenuePerAction)}/action`
+                `${formatPerAction(rareFindRevenuePerAction)}${i18n_js.t('profitDisplay.actionSuffix')}`
             );
             const rareFindSummary = formatRareFindBonusSummary(profitData.bonusRevenue);
             rareFindSection = uiComponents_js.createCollapsibleSection(
                 '',
-                `Rare Finds: ${rareFindRevenueLabel} (${rareFinds.length} item${rareFinds.length !== 1 ? 's' : ''}, ${rareFindSummary})`,
+                i18n_js.t('profitDisplay.rareFindsHeader', {
+                    label: rareFindRevenueLabel,
+                    count: rareFinds.length,
+                    summary: rareFindSummary,
+                }),
                 null,
                 rareFindContent,
                 false,
@@ -3427,8 +3854,11 @@
 
         // Costs Section
         const costsDiv = document.createElement('div');
-        const costsLabel = formatMissingLabel(costsMissing, `${formatPerAction(costsPerAction)}/action`);
-        costsDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_LOSS}; margin-top: 12px; margin-bottom: 4px;">Costs: ${costsLabel}</div>`;
+        const costsLabel = formatMissingLabel(
+            costsMissing,
+            `${formatPerAction(costsPerAction)}${i18n_js.t('profitDisplay.actionSuffix')}`
+        );
+        costsDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_LOSS}; margin-top: 12px; margin-bottom: 4px;">${i18n_js.t('profitDisplay.costsHeader', { label: costsLabel })}</div>`;
 
         // Drink Costs subsection
         const drinkCostsContent = document.createElement('div');
@@ -3439,16 +3869,25 @@
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const missingPriceNote = getMissingPriceIndicator(drink.missingPrice);
-                line.textContent = `• ${drink.name}: ${drinksPA.toFixed(2)}/action @ ${formatters_js.formatWithSeparator(drink.priceEach)}${missingPriceNote} each → ${formatPerAction(costPA)}/action`;
+                line.textContent = i18n_js.t('profitDisplay.drinkCostLineEach', {
+                    name: drink.name,
+                    rate: `${drinksPA.toFixed(2)}${i18n_js.t('profitDisplay.actionSuffix')}`,
+                    price: formatters_js.formatWithSeparator(drink.priceEach),
+                    missingNote: missingPriceNote,
+                    revenue: `${formatPerAction(costPA)}${i18n_js.t('profitDisplay.actionSuffix')}`,
+                });
                 drinkCostsContent.appendChild(line);
             }
         }
 
         const drinkCount = profitData.drinkCosts?.length || 0;
-        const drinkCostsLabel = formatMissingLabel(drinkCostsMissing, `${formatPerAction(drinkCostPerAction)}/action`);
+        const drinkCostsLabel = formatMissingLabel(
+            drinkCostsMissing,
+            `${formatPerAction(drinkCostPerAction)}${i18n_js.t('profitDisplay.actionSuffix')}`
+        );
         const drinkCostsSection = uiComponents_js.createCollapsibleSection(
             '',
-            `Drink Costs: ${drinkCostsLabel} (${drinkCount} drink${drinkCount !== 1 ? 's' : ''})`,
+            i18n_js.t('profitDisplay.drinkCostsHeader', { label: drinkCostsLabel, count: drinkCount }),
             null,
             drinkCostsContent,
             false,
@@ -3461,13 +3900,16 @@
         const marketTaxContent = document.createElement('div');
         const marketTaxLine = document.createElement('div');
         marketTaxLine.style.marginLeft = '8px';
-        const marketTaxLabel = formatMissingLabel(marketTaxMissing, `${formatPerAction(marketTaxPerAction)}/action`);
-        marketTaxLine.textContent = `• Market Tax: ${profitConstants_js.MARKET_TAX * 100}% of revenue → ${marketTaxLabel}`;
+        const marketTaxLabel = formatMissingLabel(
+            marketTaxMissing,
+            `${formatPerAction(marketTaxPerAction)}${i18n_js.t('profitDisplay.actionSuffix')}`
+        );
+        marketTaxLine.textContent = i18n_js.t('profitDisplay.marketTaxLine', { pct: profitConstants_js.MARKET_TAX * 100, label: marketTaxLabel });
         marketTaxContent.appendChild(marketTaxLine);
 
         const marketTaxSection = uiComponents_js.createCollapsibleSection(
             '',
-            `Market Tax: ${marketTaxLabel} (${profitConstants_js.MARKET_TAX * 100}%)`,
+            i18n_js.t('profitDisplay.marketTaxSectionTitle', { label: marketTaxLabel, pct: profitConstants_js.MARKET_TAX * 100 }),
             null,
             marketTaxContent,
             false,
@@ -3490,13 +3932,24 @@
         margin-bottom: 8px;
     `;
         netProfitLine.textContent = netMissing
-            ? 'Net Profit: -- ⚠'
-            : `Net Profit: ${formatPerAction(profitPerAction)}/action`;
+            ? i18n_js.t('profitDisplay.netProfitLine', { value: '-- ⚠' })
+            : i18n_js.t('profitDisplay.netProfitLine', {
+                  value: `${formatPerAction(profitPerAction)}${i18n_js.t('profitDisplay.actionSuffix')}`,
+              });
         topLevelContent.appendChild(netProfitLine);
 
         const summarySection = uiComponents_js.createCollapsibleSection(
             '',
-            `Revenue: ${formatMissingLabel(revenueMissing, `${formatPerAction(revenuePerAction)}/action`)} | Costs: ${formatMissingLabel(costsMissing, `${formatPerAction(costsPerAction)}/action`)}`,
+            i18n_js.t('profitDisplay.revenueCostsSummary', {
+                revenue: formatMissingLabel(
+                    revenueMissing,
+                    `${formatPerAction(revenuePerAction)}${i18n_js.t('profitDisplay.actionSuffix')}`
+                ),
+                costs: formatMissingLabel(
+                    costsMissing,
+                    `${formatPerAction(costsPerAction)}${i18n_js.t('profitDisplay.actionSuffix')}`
+                ),
+            }),
             null,
             detailsContent,
             false,
@@ -3504,7 +3957,7 @@
         );
         topLevelContent.appendChild(summarySection);
 
-        return uiComponents_js.createCollapsibleSection('🔢', 'Per action breakdown', null, topLevelContent, false, 0);
+        return uiComponents_js.createCollapsibleSection('🔢', i18n_js.t('profitDisplay.perActionBreakdownTitle'), null, topLevelContent, false, 0);
     }
 
     /**
@@ -3552,10 +4005,8 @@
         const revenueDiv = document.createElement('div');
         const revenueLabel = revenueMissing
             ? '-- ⚠'
-            : revenueEstimated
-              ? `${formatPerAction(revenuePerAction)}/action ⚠`
-              : `${formatPerAction(revenuePerAction)}/action`;
-        revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">Revenue: ${revenueLabel}</div>`;
+            : `${formatPerAction(revenuePerAction)}${i18n_js.t('profitDisplay.actionSuffix')}${revenueEstimated ? ' ⚠' : ''}`;
+        revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">${i18n_js.t('profitDisplay.revenueHeader', { label: revenueLabel })}</div>`;
 
         // Primary Outputs subsection
         const primaryOutputContent = document.createElement('div');
@@ -3564,13 +4015,26 @@
         const baseOutputMissingNote = getMissingPriceIndicator(
             profitData.outputPriceMissing || profitData.outputPriceEstimated
         );
-        baseOutputLine.textContent = `• ${profitData.itemName} (Base): ${baseItemsPerAction.toFixed(2)}/action @ ${formatters_js.formatWithSeparator(Math.round(profitData.outputPrice))}${baseOutputMissingNote} each → ${formatPerAction(baseRevenuePerAction)}/action`;
+        baseOutputLine.textContent = i18n_js.t('profitDisplay.baseOutputLine', {
+            name: profitData.itemName,
+            rate: `${baseItemsPerAction.toFixed(2)}${i18n_js.t('profitDisplay.actionSuffix')}`,
+            price: formatters_js.formatWithSeparator(Math.round(profitData.outputPrice)),
+            missingNote: baseOutputMissingNote,
+            revenue: `${formatPerAction(baseRevenuePerAction)}${i18n_js.t('profitDisplay.actionSuffix')}`,
+        });
         primaryOutputContent.appendChild(baseOutputLine);
 
         if (profitData.gourmetBonus > 0) {
             const gourmetLine = document.createElement('div');
             gourmetLine.style.marginLeft = '8px';
-            gourmetLine.textContent = `• ${profitData.itemName} (Gourmet +${formatters_js.formatPercentage(profitData.gourmetBonus, 1)}): ${gourmetItemsPerAction.toFixed(2)}/action @ ${formatters_js.formatWithSeparator(Math.round(profitData.outputPrice))}${baseOutputMissingNote} each → ${formatPerAction(gourmetRevenuePerAction)}/action`;
+            gourmetLine.textContent = i18n_js.t('profitDisplay.gourmetOutputLinePlus', {
+                name: profitData.itemName,
+                pct: formatters_js.formatPercentage(profitData.gourmetBonus, 1),
+                rate: `${gourmetItemsPerAction.toFixed(2)}${i18n_js.t('profitDisplay.actionSuffix')}`,
+                price: formatters_js.formatWithSeparator(Math.round(profitData.outputPrice)),
+                missingNote: baseOutputMissingNote,
+                revenue: `${formatPerAction(gourmetRevenuePerAction)}${i18n_js.t('profitDisplay.actionSuffix')}`,
+            });
             primaryOutputContent.appendChild(gourmetLine);
         }
 
@@ -3578,14 +4042,14 @@
         const primaryOutputLabel =
             outputMissing && !outputEstimated
                 ? '-- ⚠'
-                : outputEstimated
-                  ? `${formatPerAction(primaryRevenuePerAction)}/action ⚠`
-                  : `${formatPerAction(primaryRevenuePerAction)}/action`;
+                : `${formatPerAction(primaryRevenuePerAction)}${i18n_js.t('profitDisplay.actionSuffix')}${outputEstimated ? ' ⚠' : ''}`;
         const gourmetLabel =
-            profitData.gourmetBonus > 0 ? ` (${formatters_js.formatPercentage(profitData.gourmetBonus, 1)} gourmet)` : '';
+            profitData.gourmetBonus > 0
+                ? i18n_js.t('profitDisplay.gourmetSuffixParen', { pct: formatters_js.formatPercentage(profitData.gourmetBonus, 1) })
+                : '';
         const primaryOutputSection = uiComponents_js.createCollapsibleSection(
             '',
-            `Primary Outputs: ${primaryOutputLabel}${gourmetLabel}`,
+            i18n_js.t('profitDisplay.primaryOutputsHeaderProduction', { label: primaryOutputLabel, gourmetSuffix: gourmetLabel }),
             null,
             primaryOutputContent,
             false,
@@ -3608,7 +4072,12 @@
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const dropRatePct = formatters_js.formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
-                line.textContent = `• ${drop.itemName}: ${dropsPA.toFixed(4)}/action (${dropRatePct}) → ${formatPerAction(revenuePA)}/action`;
+                line.textContent = i18n_js.t('profitDisplay.dropLine', {
+                    itemName: drop.itemName,
+                    rate: `${dropsPA.toFixed(4)}${i18n_js.t('profitDisplay.actionSuffix')}`,
+                    pct: dropRatePct,
+                    revenue: `${formatPerAction(revenuePA)}${i18n_js.t('profitDisplay.actionSuffix')}`,
+                });
                 essenceContent.appendChild(line);
             }
 
@@ -3618,12 +4087,16 @@
             );
             const essenceRevenueLabel = formatMissingLabel(
                 bonusMissing,
-                `${formatPerAction(essenceRevenuePerAction)}/action`
+                `${formatPerAction(essenceRevenuePerAction)}${i18n_js.t('profitDisplay.actionSuffix')}`
             );
             const essenceFindBonus = profitData.bonusRevenue?.essenceFindBonus || 0;
             essenceSection = uiComponents_js.createCollapsibleSection(
                 '',
-                `Essence Drops: ${essenceRevenueLabel} (${essenceDrops.length} item${essenceDrops.length !== 1 ? 's' : ''}, ${essenceFindBonus.toFixed(2)}% essence find)`,
+                i18n_js.t('profitDisplay.essenceDropsHeader', {
+                    label: essenceRevenueLabel,
+                    count: essenceDrops.length,
+                    pct: essenceFindBonus.toFixed(2),
+                }),
                 null,
                 essenceContent,
                 false,
@@ -3641,7 +4114,12 @@
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const dropRatePct = formatters_js.formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
-                line.textContent = `• ${drop.itemName}: ${dropsPA.toFixed(4)}/action (${dropRatePct}) → ${formatPerAction(revenuePA)}/action`;
+                line.textContent = i18n_js.t('profitDisplay.dropLine', {
+                    itemName: drop.itemName,
+                    rate: `${dropsPA.toFixed(4)}${i18n_js.t('profitDisplay.actionSuffix')}`,
+                    pct: dropRatePct,
+                    revenue: `${formatPerAction(revenuePA)}${i18n_js.t('profitDisplay.actionSuffix')}`,
+                });
                 rareFindContent.appendChild(line);
             }
 
@@ -3651,12 +4129,16 @@
             );
             const rareFindRevenueLabel = formatMissingLabel(
                 bonusMissing,
-                `${formatPerAction(rareFindRevenuePerAction)}/action`
+                `${formatPerAction(rareFindRevenuePerAction)}${i18n_js.t('profitDisplay.actionSuffix')}`
             );
             const rareFindSummary = formatRareFindBonusSummary(profitData.bonusRevenue);
             rareFindSection = uiComponents_js.createCollapsibleSection(
                 '',
-                `Rare Finds: ${rareFindRevenueLabel} (${rareFinds.length} item${rareFinds.length !== 1 ? 's' : ''}, ${rareFindSummary})`,
+                i18n_js.t('profitDisplay.rareFindsHeader', {
+                    label: rareFindRevenueLabel,
+                    count: rareFinds.length,
+                    summary: rareFindSummary,
+                }),
                 null,
                 rareFindContent,
                 false,
@@ -3675,10 +4157,8 @@
         const costsDiv = document.createElement('div');
         const costsLabel = costsMissing
             ? '-- ⚠'
-            : costsEstimated
-              ? `${formatPerAction(costsPerAction)}/action ⚠`
-              : `${formatPerAction(costsPerAction)}/action`;
-        costsDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_LOSS}; margin-top: 12px; margin-bottom: 4px;">Costs: ${costsLabel}</div>`;
+            : `${formatPerAction(costsPerAction)}${i18n_js.t('profitDisplay.actionSuffix')}${costsEstimated ? ' ⚠' : ''}`;
+        costsDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_LOSS}; margin-top: 12px; margin-bottom: 4px;">${i18n_js.t('profitDisplay.costsHeader', { label: costsLabel })}</div>`;
 
         // Material Costs subsection
         const materialCostsContent = document.createElement('div');
@@ -3689,26 +4169,41 @@
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
 
-                let materialText = `• ${material.itemName}: ${amountPerAction.toFixed(2)}/action`;
-
+                let artisanNote = '';
                 if (profitData.artisanBonus > 0 && material.baseAmount && material.amount !== material.baseAmount) {
                     const baseAmountPerAction = material.baseAmount; // per-action quantity is fixed, unaffected by efficiency
-                    materialText += ` (${baseAmountPerAction.toFixed(2)} base -${formatters_js.formatPercentage(profitData.artisanBonus, 1)} 🍵)`;
+                    artisanNote = i18n_js.t('profitDisplay.artisanReductionNote', {
+                        baseAmount: baseAmountPerAction.toFixed(2),
+                        pct: formatters_js.formatPercentage(profitData.artisanBonus, 1),
+                    });
                 }
 
                 const missingPriceNote = getMissingPriceIndicator(material.missingPrice);
                 const customPriceNote = material.customPrice ? ' *' : '';
-                materialText += ` @ ${formatters_js.formatWithSeparator(Math.round(material.askPrice))}${missingPriceNote}${customPriceNote} → ${formatPerAction(costPerAction)}/action`;
 
-                line.textContent = materialText;
+                line.textContent = i18n_js.t('profitDisplay.materialCostLine', {
+                    name: material.itemName,
+                    rate: `${amountPerAction.toFixed(2)}${i18n_js.t('profitDisplay.actionSuffix')}`,
+                    artisanNote,
+                    price: formatters_js.formatWithSeparator(Math.round(material.askPrice)),
+                    missingNote: missingPriceNote,
+                    customNote: customPriceNote,
+                    revenue: `${formatPerAction(costPerAction)}${i18n_js.t('profitDisplay.actionSuffix')}`,
+                });
                 materialCostsContent.appendChild(line);
             }
         }
 
-        const materialCostsLabel = formatMissingLabel(materialMissing, `${formatPerAction(materialCostPerAction)}/action`);
+        const materialCostsLabel = formatMissingLabel(
+            materialMissing,
+            `${formatPerAction(materialCostPerAction)}${i18n_js.t('profitDisplay.actionSuffix')}`
+        );
         const materialCostsSection = uiComponents_js.createCollapsibleSection(
             '',
-            `Material Costs: ${materialCostsLabel} (${profitData.materialCosts?.length || 0} material${profitData.materialCosts?.length !== 1 ? 's' : ''})`,
+            i18n_js.t('profitDisplay.materialCostsHeader', {
+                label: materialCostsLabel,
+                count: profitData.materialCosts?.length || 0,
+            }),
             null,
             materialCostsContent,
             false,
@@ -3724,16 +4219,25 @@
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const missingPriceNote = getMissingPriceIndicator(tea.missingPrice);
-                line.textContent = `• ${tea.itemName}: ${drinksPA.toFixed(2)}/action @ ${formatters_js.formatWithSeparator(Math.round(tea.pricePerDrink))}${missingPriceNote} each → ${formatPerAction(costPA)}/action`;
+                line.textContent = i18n_js.t('profitDisplay.drinkCostLineEach', {
+                    name: tea.itemName,
+                    rate: `${drinksPA.toFixed(2)}${i18n_js.t('profitDisplay.actionSuffix')}`,
+                    price: formatters_js.formatWithSeparator(Math.round(tea.pricePerDrink)),
+                    missingNote: missingPriceNote,
+                    revenue: `${formatPerAction(costPA)}${i18n_js.t('profitDisplay.actionSuffix')}`,
+                });
                 teaCostsContent.appendChild(line);
             }
         }
 
         const teaCount = profitData.teaCosts?.length || 0;
-        const teaCostsLabel = formatMissingLabel(teaMissing, `${formatPerAction(teaCostPerAction)}/action`);
+        const teaCostsLabel = formatMissingLabel(
+            teaMissing,
+            `${formatPerAction(teaCostPerAction)}${i18n_js.t('profitDisplay.actionSuffix')}`
+        );
         const teaCostsSection = uiComponents_js.createCollapsibleSection(
             '',
-            `Drink Costs: ${teaCostsLabel} (${teaCount} drink${teaCount !== 1 ? 's' : ''})`,
+            i18n_js.t('profitDisplay.drinkCostsHeader', { label: teaCostsLabel, count: teaCount }),
             null,
             teaCostsContent,
             false,
@@ -3749,15 +4253,13 @@
         marketTaxLine.style.marginLeft = '8px';
         const marketTaxLabel = marketTaxMissing
             ? '-- ⚠'
-            : marketTaxEstimated
-              ? `${formatPerAction(marketTaxPerAction)}/action ⚠`
-              : `${formatPerAction(marketTaxPerAction)}/action`;
-        marketTaxLine.textContent = `• Market Tax: ${profitConstants_js.MARKET_TAX * 100}% of revenue → ${marketTaxLabel}`;
+            : `${formatPerAction(marketTaxPerAction)}${i18n_js.t('profitDisplay.actionSuffix')}${marketTaxEstimated ? ' ⚠' : ''}`;
+        marketTaxLine.textContent = i18n_js.t('profitDisplay.marketTaxLine', { pct: profitConstants_js.MARKET_TAX * 100, label: marketTaxLabel });
         marketTaxContent.appendChild(marketTaxLine);
 
         const marketTaxSection = uiComponents_js.createCollapsibleSection(
             '',
-            `Market Tax: ${marketTaxLabel} (${profitConstants_js.MARKET_TAX * 100}%)`,
+            i18n_js.t('profitDisplay.marketTaxSectionTitle', { label: marketTaxLabel, pct: profitConstants_js.MARKET_TAX * 100 }),
             null,
             marketTaxContent,
             false,
@@ -3780,25 +4282,21 @@
         margin-bottom: 8px;
     `;
         netProfitLine.textContent = netMissing
-            ? 'Net Profit: -- ⚠'
-            : netEstimated
-              ? `Net Profit: ${formatPerAction(profitPerAction)}/action ⚠`
-              : `Net Profit: ${formatPerAction(profitPerAction)}/action`;
+            ? i18n_js.t('profitDisplay.netProfitLine', { value: '-- ⚠' })
+            : i18n_js.t('profitDisplay.netProfitLine', {
+                  value: `${formatPerAction(profitPerAction)}${i18n_js.t('profitDisplay.actionSuffix')}${netEstimated ? ' ⚠' : ''}`,
+              });
         topLevelContent.appendChild(netProfitLine);
 
         const revenueSummaryLabel = revenueMissing
             ? '-- ⚠'
-            : revenueEstimated
-              ? `${formatPerAction(revenuePerAction)}/action ⚠`
-              : `${formatPerAction(revenuePerAction)}/action`;
+            : `${formatPerAction(revenuePerAction)}${i18n_js.t('profitDisplay.actionSuffix')}${revenueEstimated ? ' ⚠' : ''}`;
         const costsSummaryLabel = costsMissing
             ? '-- ⚠'
-            : costsEstimated
-              ? `${formatPerAction(costsPerAction)}/action ⚠`
-              : `${formatPerAction(costsPerAction)}/action`;
+            : `${formatPerAction(costsPerAction)}${i18n_js.t('profitDisplay.actionSuffix')}${costsEstimated ? ' ⚠' : ''}`;
         const summarySection = uiComponents_js.createCollapsibleSection(
             '',
-            `Revenue: ${revenueSummaryLabel} | Costs: ${costsSummaryLabel}`,
+            i18n_js.t('profitDisplay.revenueCostsSummary', { revenue: revenueSummaryLabel, costs: costsSummaryLabel }),
             null,
             detailsContent,
             false,
@@ -3806,7 +4304,7 @@
         );
         topLevelContent.appendChild(summarySection);
 
-        return uiComponents_js.createCollapsibleSection('🔢', 'Per action breakdown', null, topLevelContent, false, 0);
+        return uiComponents_js.createCollapsibleSection('🔢', i18n_js.t('profitDisplay.perActionBreakdownTitle'), null, topLevelContent, false, 0);
     }
 
     /**
@@ -3850,7 +4348,7 @@
         // Revenue Section
         const revenueDiv = document.createElement('div');
         const revenueLabel = formatMissingLabel(revenueMissing, formatters_js.formatLargeNumber(totalRevenue));
-        revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">Revenue: ${revenueLabel}</div>`;
+        revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">${i18n_js.t('profitDisplay.revenueHeader', { label: revenueLabel })}</div>`;
 
         // Primary Outputs subsection
         const primaryDropsContent = document.createElement('div');
@@ -3863,7 +4361,13 @@
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const missingPriceNote = getMissingPriceIndicator(output.missingPrice);
-                line.textContent = `• ${output.name} (Base): ${totalItems.toFixed(2)} items @ ${formatters_js.formatWithSeparator(output.priceEach)}${missingPriceNote} each → ${formatters_js.formatLargeNumber(Math.round(totalRevenueLine))}`;
+                line.textContent = i18n_js.t('profitDisplay.baseOutputLine', {
+                    name: output.name,
+                    rate: `${totalItems.toFixed(2)} ${i18n_js.t('profitDisplay.itemsUnit')}`,
+                    price: formatters_js.formatWithSeparator(output.priceEach),
+                    missingNote: missingPriceNote,
+                    revenue: formatters_js.formatLargeNumber(Math.round(totalRevenueLine)),
+                });
                 primaryDropsContent.appendChild(line);
             }
         }
@@ -3877,7 +4381,14 @@
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const missingPriceNote = getMissingPriceIndicator(output.missingPrice);
-                line.textContent = `• ${output.name} (Gourmet ${formatters_js.formatPercentage(profitData.gourmetBonus || 0, 1)}): ${totalItems.toFixed(2)} items @ ${formatters_js.formatWithSeparator(output.priceEach)}${missingPriceNote} each → ${formatters_js.formatLargeNumber(Math.round(totalRevenueLine))}`;
+                line.textContent = i18n_js.t('profitDisplay.gourmetOutputLine', {
+                    name: output.name,
+                    pct: formatters_js.formatPercentage(profitData.gourmetBonus || 0, 1),
+                    rate: `${totalItems.toFixed(2)} ${i18n_js.t('profitDisplay.itemsUnit')}`,
+                    price: formatters_js.formatWithSeparator(output.priceEach),
+                    missingNote: missingPriceNote,
+                    revenue: formatters_js.formatLargeNumber(Math.round(totalRevenueLine)),
+                });
                 primaryDropsContent.appendChild(line);
             }
         }
@@ -3903,18 +4414,33 @@
 
                 const consumedLine = document.createElement('div');
                 consumedLine.style.marginLeft = '8px';
-                consumedLine.textContent = `• ${conversion.rawItem} consumed: -${totalConsumed.toFixed(2)} items @ ${formatters_js.formatWithSeparator(conversion.rawPriceEach)}${missingPriceNote} → -${formatters_js.formatLargeNumber(Math.round(consumedRevenue))}`;
+                consumedLine.textContent = i18n_js.t('profitDisplay.processingConsumedLine', {
+                    item: conversion.rawItem,
+                    rate: `${totalConsumed.toFixed(2)} ${i18n_js.t('profitDisplay.itemsUnit')}`,
+                    price: formatters_js.formatWithSeparator(conversion.rawPriceEach),
+                    missingNote: missingPriceNote,
+                    revenue: formatters_js.formatLargeNumber(Math.round(consumedRevenue)),
+                });
                 processingContent.appendChild(consumedLine);
 
                 const producedLine = document.createElement('div');
                 producedLine.style.marginLeft = '8px';
-                producedLine.textContent = `• ${conversion.processedItem} produced: ${totalProduced.toFixed(2)} items @ ${formatters_js.formatWithSeparator(conversion.processedPriceEach)}${missingPriceNote} → ${formatters_js.formatLargeNumber(Math.round(producedRevenue))}`;
+                producedLine.textContent = i18n_js.t('profitDisplay.processingProducedLine', {
+                    item: conversion.processedItem,
+                    rate: `${totalProduced.toFixed(2)} ${i18n_js.t('profitDisplay.itemsUnit')}`,
+                    price: formatters_js.formatWithSeparator(conversion.processedPriceEach),
+                    missingNote: missingPriceNote,
+                    revenue: formatters_js.formatLargeNumber(Math.round(producedRevenue)),
+                });
                 processingContent.appendChild(producedLine);
             }
 
             const processingSection = uiComponents_js.createCollapsibleSection(
                 '',
-                `• Processing (${formatters_js.formatPercentage(profitData.processingBonus || 0, 1)} proc): Net ${processingLabel}`,
+                i18n_js.t('profitDisplay.processingSectionTitle', {
+                    pct: formatters_js.formatPercentage(profitData.processingBonus || 0, 1),
+                    net: processingLabel,
+                }),
                 null,
                 processingContent,
                 false,
@@ -3937,7 +4463,7 @@
             (profitData.processingConversions && profitData.processingConversions.length > 0 ? 1 : 0);
         const primaryDropsSection = uiComponents_js.createCollapsibleSection(
             '',
-            `Primary Outputs: ${primaryRevenueLabel} (${outputItemCount} item${outputItemCount !== 1 ? 's' : ''})`,
+            i18n_js.t('profitDisplay.primaryOutputsHeaderGathering', { label: primaryRevenueLabel, count: outputItemCount }),
             null,
             primaryDropsContent,
             false,
@@ -3962,7 +4488,12 @@
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const dropRatePct = formatters_js.formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
-                line.textContent = `• ${drop.itemName}: ${totalDrops.toFixed(2)} drops (${dropRatePct}) → ${formatters_js.formatLargeNumber(Math.round(totalRevenue))}`;
+                line.textContent = i18n_js.t('profitDisplay.dropLine', {
+                    itemName: drop.itemName,
+                    rate: `${totalDrops.toFixed(2)} ${i18n_js.t('profitDisplay.dropsUnit')}`,
+                    pct: dropRatePct,
+                    revenue: formatters_js.formatLargeNumber(Math.round(totalRevenue)),
+                });
                 essenceContent.appendChild(line);
             }
 
@@ -3973,7 +4504,11 @@
             const essenceFindBonus = profitData.bonusRevenue?.essenceFindBonus || 0;
             essenceSection = uiComponents_js.createCollapsibleSection(
                 '',
-                `Essence Drops: ${essenceRevenueLabel} (${essenceDrops.length} item${essenceDrops.length !== 1 ? 's' : ''}, ${essenceFindBonus.toFixed(2)}% essence find)`,
+                i18n_js.t('profitDisplay.essenceDropsHeader', {
+                    label: essenceRevenueLabel,
+                    count: essenceDrops.length,
+                    pct: essenceFindBonus.toFixed(2),
+                }),
                 null,
                 essenceContent,
                 false,
@@ -3994,7 +4529,12 @@
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const dropRatePct = formatters_js.formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
-                line.textContent = `• ${drop.itemName}: ${totalDrops.toFixed(2)} drops (${dropRatePct}) → ${formatters_js.formatLargeNumber(Math.round(totalRevenue))}`;
+                line.textContent = i18n_js.t('profitDisplay.dropLine', {
+                    itemName: drop.itemName,
+                    rate: `${totalDrops.toFixed(2)} ${i18n_js.t('profitDisplay.dropsUnit')}`,
+                    pct: dropRatePct,
+                    revenue: formatters_js.formatLargeNumber(Math.round(totalRevenue)),
+                });
                 rareFindContent.appendChild(line);
             }
 
@@ -4005,7 +4545,11 @@
             const rareFindSummary = formatRareFindBonusSummary(profitData.bonusRevenue);
             rareFindSection = uiComponents_js.createCollapsibleSection(
                 '',
-                `Rare Finds: ${rareFindRevenueLabel} (${rareFinds.length} item${rareFinds.length !== 1 ? 's' : ''}, ${rareFindSummary})`,
+                i18n_js.t('profitDisplay.rareFindsHeader', {
+                    label: rareFindRevenueLabel,
+                    count: rareFinds.length,
+                    summary: rareFindSummary,
+                }),
                 null,
                 rareFindContent,
                 false,
@@ -4024,7 +4568,7 @@
         // Costs Section
         const costsDiv = document.createElement('div');
         const costsLabel = costsMissing ? '-- ⚠' : formatters_js.formatLargeNumber(totalCosts);
-        costsDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_LOSS}; margin-top: 12px; margin-bottom: 4px;">Costs: ${costsLabel}</div>`;
+        costsDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_LOSS}; margin-top: 12px; margin-bottom: 4px;">${i18n_js.t('profitDisplay.costsHeader', { label: costsLabel })}</div>`;
 
         // Drink Costs subsection
         const drinkCostsContent = document.createElement('div');
@@ -4035,7 +4579,13 @@
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const missingPriceNote = getMissingPriceIndicator(drink.missingPrice);
-                line.textContent = `• ${drink.name}: ${totalDrinks.toFixed(2)} drinks @ ${formatters_js.formatWithSeparator(drink.priceEach)}${missingPriceNote} → ${formatters_js.formatLargeNumber(Math.round(totalCostLine))}`;
+                line.textContent = i18n_js.t('profitDisplay.drinkCostLineNoEach', {
+                    name: drink.name,
+                    rate: `${totalDrinks.toFixed(2)} ${i18n_js.t('profitDisplay.drinksUnit')}`,
+                    price: formatters_js.formatWithSeparator(drink.priceEach),
+                    missingNote: missingPriceNote,
+                    revenue: formatters_js.formatLargeNumber(Math.round(totalCostLine)),
+                });
                 drinkCostsContent.appendChild(line);
             }
         }
@@ -4044,7 +4594,7 @@
         const drinkCostsLabel = drinkCostsMissing ? '-- ⚠' : formatters_js.formatLargeNumber(totalDrinkCosts);
         const drinkCostsSection = uiComponents_js.createCollapsibleSection(
             '',
-            `Drink Costs: ${drinkCostsLabel} (${drinkCount} drink${drinkCount !== 1 ? 's' : ''})`,
+            i18n_js.t('profitDisplay.drinkCostsHeader', { label: drinkCostsLabel, count: drinkCount }),
             null,
             drinkCostsContent,
             false,
@@ -4058,13 +4608,13 @@
         const marketTaxLine = document.createElement('div');
         marketTaxLine.style.marginLeft = '8px';
         const marketTaxLabel = marketTaxMissing ? '-- ⚠' : formatters_js.formatLargeNumber(totalMarketTax);
-        marketTaxLine.textContent = `• Market Tax: ${profitConstants_js.MARKET_TAX * 100}% of revenue → ${marketTaxLabel}`;
+        marketTaxLine.textContent = i18n_js.t('profitDisplay.marketTaxLine', { pct: profitConstants_js.MARKET_TAX * 100, label: marketTaxLabel });
         marketTaxContent.appendChild(marketTaxLine);
 
         const marketTaxHeader = marketTaxMissing ? '-- ⚠' : formatters_js.formatLargeNumber(totalMarketTax);
         const marketTaxSection = uiComponents_js.createCollapsibleSection(
             '',
-            `Market Tax: ${marketTaxHeader} (${profitConstants_js.MARKET_TAX * 100}%)`,
+            i18n_js.t('profitDisplay.marketTaxSectionTitle', { label: marketTaxHeader, pct: profitConstants_js.MARKET_TAX * 100 }),
             null,
             marketTaxContent,
             false,
@@ -4086,19 +4636,21 @@
         color: ${profitColor};
         margin-bottom: 8px;
     `;
-        netProfitLine.textContent = netMissing ? 'Net Profit: -- ⚠' : `Net Profit: ${formatters_js.formatLargeNumber(totalProfit)}`;
+        netProfitLine.textContent = netMissing
+            ? i18n_js.t('profitDisplay.netProfitLine', { value: '-- ⚠' })
+            : i18n_js.t('profitDisplay.netProfitLine', { value: formatters_js.formatLargeNumber(totalProfit) });
         topLevelContent.appendChild(netProfitLine);
 
-        const actionsSummary = `Revenue: ${formatMissingLabel(revenueMissing, formatters_js.formatLargeNumber(totalRevenue))} | Costs: ${formatMissingLabel(
-        costsMissing,
-        formatters_js.formatLargeNumber(totalCosts)
-    )}`;
+        const actionsSummary = i18n_js.t('profitDisplay.revenueCostsSummary', {
+            revenue: formatMissingLabel(revenueMissing, formatters_js.formatLargeNumber(totalRevenue)),
+            costs: formatMissingLabel(costsMissing, formatters_js.formatLargeNumber(totalCosts)),
+        });
         const actionsBreakdownSection = uiComponents_js.createCollapsibleSection('', actionsSummary, null, detailsContent, false, 1);
         topLevelContent.appendChild(actionsBreakdownSection);
 
         const mainSection = uiComponents_js.createCollapsibleSection(
             '📋',
-            `${formatters_js.formatWithSeparator(actionsCount)} actions breakdown`,
+            i18n_js.t('profitDisplay.actionsCountBreakdownTitle', { count: formatters_js.formatWithSeparator(actionsCount) }),
             null,
             topLevelContent,
             false,
@@ -4152,12 +4704,8 @@
 
         // Revenue Section
         const revenueDiv = document.createElement('div');
-        const revenueLabel = revenueMissing
-            ? '-- ⚠'
-            : revenueEstimated
-              ? `${formatters_js.formatLargeNumber(totalRevenue)} ⚠`
-              : formatters_js.formatLargeNumber(totalRevenue);
-        revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">Revenue: ${revenueLabel}</div>`;
+        const revenueLabel = revenueMissing ? '-- ⚠' : `${formatters_js.formatLargeNumber(totalRevenue)}${revenueEstimated ? ' ⚠' : ''}`;
+        revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">${i18n_js.t('profitDisplay.revenueHeader', { label: revenueLabel })}</div>`;
 
         // Primary Outputs subsection
         const primaryOutputContent = document.createElement('div');
@@ -4168,7 +4716,13 @@
         const baseOutputMissingNote = getMissingPriceIndicator(
             profitData.outputPriceMissing || profitData.outputPriceEstimated
         );
-        baseOutputLine.textContent = `• ${profitData.itemName} (Base): ${totalBaseItems.toFixed(2)} items @ ${formatters_js.formatWithSeparator(Math.round(profitData.outputPrice))}${baseOutputMissingNote} each → ${formatters_js.formatLargeNumber(Math.round(totalBaseRevenue))}`;
+        baseOutputLine.textContent = i18n_js.t('profitDisplay.baseOutputLine', {
+            name: profitData.itemName,
+            rate: `${totalBaseItems.toFixed(2)} ${i18n_js.t('profitDisplay.itemsUnit')}`,
+            price: formatters_js.formatWithSeparator(Math.round(profitData.outputPrice)),
+            missingNote: baseOutputMissingNote,
+            revenue: formatters_js.formatLargeNumber(Math.round(totalBaseRevenue)),
+        });
         primaryOutputContent.appendChild(baseOutputLine);
 
         if (profitData.gourmetBonus > 0) {
@@ -4176,7 +4730,14 @@
             const totalGourmetRevenue = totals.totalGourmetRevenue;
             const gourmetLine = document.createElement('div');
             gourmetLine.style.marginLeft = '8px';
-            gourmetLine.textContent = `• ${profitData.itemName} (Gourmet +${formatters_js.formatPercentage(profitData.gourmetBonus, 1)}): ${totalGourmetItems.toFixed(2)} items @ ${formatters_js.formatWithSeparator(Math.round(profitData.outputPrice))}${baseOutputMissingNote} each → ${formatters_js.formatLargeNumber(Math.round(totalGourmetRevenue))}`;
+            gourmetLine.textContent = i18n_js.t('profitDisplay.gourmetOutputLinePlus', {
+                name: profitData.itemName,
+                pct: formatters_js.formatPercentage(profitData.gourmetBonus, 1),
+                rate: `${totalGourmetItems.toFixed(2)} ${i18n_js.t('profitDisplay.itemsUnit')}`,
+                price: formatters_js.formatWithSeparator(Math.round(profitData.outputPrice)),
+                missingNote: baseOutputMissingNote,
+                revenue: formatters_js.formatLargeNumber(Math.round(totalGourmetRevenue)),
+            });
             primaryOutputContent.appendChild(gourmetLine);
         }
 
@@ -4184,14 +4745,14 @@
         const primaryOutputLabel =
             outputMissing && !outputEstimated
                 ? '-- ⚠'
-                : outputEstimated
-                  ? `${formatters_js.formatLargeNumber(Math.round(primaryRevenue))} ⚠`
-                  : formatters_js.formatLargeNumber(Math.round(primaryRevenue));
+                : `${formatters_js.formatLargeNumber(Math.round(primaryRevenue))}${outputEstimated ? ' ⚠' : ''}`;
         const gourmetLabel =
-            profitData.gourmetBonus > 0 ? ` (${formatters_js.formatPercentage(profitData.gourmetBonus, 1)} gourmet)` : '';
+            profitData.gourmetBonus > 0
+                ? i18n_js.t('profitDisplay.gourmetSuffixParen', { pct: formatters_js.formatPercentage(profitData.gourmetBonus, 1) })
+                : '';
         const primaryOutputSection = uiComponents_js.createCollapsibleSection(
             '',
-            `Primary Outputs: ${primaryOutputLabel}${gourmetLabel}`,
+            i18n_js.t('profitDisplay.primaryOutputsHeaderProduction', { label: primaryOutputLabel, gourmetSuffix: gourmetLabel }),
             null,
             primaryOutputContent,
             false,
@@ -4218,7 +4779,12 @@
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const dropRatePct = formatters_js.formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
-                line.textContent = `• ${drop.itemName}: ${totalDrops.toFixed(2)} drops (${dropRatePct}) → ${formatters_js.formatLargeNumber(Math.round(totalRevenueLine))}`;
+                line.textContent = i18n_js.t('profitDisplay.dropLine', {
+                    itemName: drop.itemName,
+                    rate: `${totalDrops.toFixed(2)} ${i18n_js.t('profitDisplay.dropsUnit')}`,
+                    pct: dropRatePct,
+                    revenue: formatters_js.formatLargeNumber(Math.round(totalRevenueLine)),
+                });
                 essenceContent.appendChild(line);
             }
 
@@ -4231,7 +4797,11 @@
             const essenceFindBonus = profitData.bonusRevenue?.essenceFindBonus || 0;
             essenceSection = uiComponents_js.createCollapsibleSection(
                 '',
-                `Essence Drops: ${essenceRevenueLabel} (${essenceDrops.length} item${essenceDrops.length !== 1 ? 's' : ''}, ${essenceFindBonus.toFixed(2)}% essence find)`,
+                i18n_js.t('profitDisplay.essenceDropsHeader', {
+                    label: essenceRevenueLabel,
+                    count: essenceDrops.length,
+                    pct: essenceFindBonus.toFixed(2),
+                }),
                 null,
                 essenceContent,
                 false,
@@ -4253,7 +4823,12 @@
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const dropRatePct = formatters_js.formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
-                line.textContent = `• ${drop.itemName}: ${totalDrops.toFixed(2)} drops (${dropRatePct}) → ${formatters_js.formatLargeNumber(Math.round(totalRevenueLine))}`;
+                line.textContent = i18n_js.t('profitDisplay.dropLine', {
+                    itemName: drop.itemName,
+                    rate: `${totalDrops.toFixed(2)} ${i18n_js.t('profitDisplay.dropsUnit')}`,
+                    pct: dropRatePct,
+                    revenue: formatters_js.formatLargeNumber(Math.round(totalRevenueLine)),
+                });
                 rareFindContent.appendChild(line);
             }
 
@@ -4266,7 +4841,11 @@
             const rareFindSummary = formatRareFindBonusSummary(profitData.bonusRevenue);
             rareFindSection = uiComponents_js.createCollapsibleSection(
                 '',
-                `Rare Finds: ${rareFindRevenueLabel} (${rareFinds.length} item${rareFinds.length !== 1 ? 's' : ''}, ${rareFindSummary})`,
+                i18n_js.t('profitDisplay.rareFindsHeader', {
+                    label: rareFindRevenueLabel,
+                    count: rareFinds.length,
+                    summary: rareFindSummary,
+                }),
                 null,
                 rareFindContent,
                 false,
@@ -4283,12 +4862,8 @@
 
         // Costs Section
         const costsDiv = document.createElement('div');
-        const costsLabel = costsMissing
-            ? '-- ⚠'
-            : costsEstimated
-              ? `${formatters_js.formatLargeNumber(totalCosts)} ⚠`
-              : formatters_js.formatLargeNumber(totalCosts);
-        costsDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_LOSS}; margin-top: 12px; margin-bottom: 4px;">Costs: ${costsLabel}</div>`;
+        const costsLabel = costsMissing ? '-- ⚠' : `${formatters_js.formatLargeNumber(totalCosts)}${costsEstimated ? ' ⚠' : ''}`;
+        costsDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_LOSS}; margin-top: 12px; margin-bottom: 4px;">${i18n_js.t('profitDisplay.costsHeader', { label: costsLabel })}</div>`;
 
         // Material Costs subsection
         const materialCostsContent = document.createElement('div');
@@ -4299,19 +4874,28 @@
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
 
-                let materialText = `• ${material.itemName}: ${totalMaterial.toFixed(2)} items`;
-
                 // Add Artisan reduction info if present
+                let artisanNote = '';
                 if (profitData.artisanBonus > 0 && material.baseAmount && material.amount !== material.baseAmount) {
                     const baseTotalAmount = material.baseAmount * actionsCount;
-                    materialText += ` (${baseTotalAmount.toFixed(2)} base -${formatters_js.formatPercentage(profitData.artisanBonus, 1)} 🍵)`;
+                    artisanNote = i18n_js.t('profitDisplay.artisanReductionNote', {
+                        baseAmount: baseTotalAmount.toFixed(2),
+                        pct: formatters_js.formatPercentage(profitData.artisanBonus, 1),
+                    });
                 }
 
                 const missingPriceNote = getMissingPriceIndicator(material.missingPrice);
                 const customPriceNote = material.customPrice ? ' *' : '';
-                materialText += ` @ ${formatters_js.formatWithSeparator(Math.round(material.askPrice))}${missingPriceNote}${customPriceNote} → ${formatters_js.formatLargeNumber(Math.round(totalMaterialCost))}`;
 
-                line.textContent = materialText;
+                line.textContent = i18n_js.t('profitDisplay.materialCostLine', {
+                    name: material.itemName,
+                    rate: `${totalMaterial.toFixed(2)} ${i18n_js.t('profitDisplay.itemsUnit')}`,
+                    artisanNote,
+                    price: formatters_js.formatWithSeparator(Math.round(material.askPrice)),
+                    missingNote: missingPriceNote,
+                    customNote: customPriceNote,
+                    revenue: formatters_js.formatLargeNumber(Math.round(totalMaterialCost)),
+                });
                 materialCostsContent.appendChild(line);
             }
         }
@@ -4320,7 +4904,10 @@
         const materialCostsLabel = formatMissingLabel(materialMissing, formatters_js.formatLargeNumber(Math.round(totalMaterialCost)));
         const materialCostsSection = uiComponents_js.createCollapsibleSection(
             '',
-            `Material Costs: ${materialCostsLabel} (${profitData.materialCosts?.length || 0} material${profitData.materialCosts?.length !== 1 ? 's' : ''})`,
+            i18n_js.t('profitDisplay.materialCostsHeader', {
+                label: materialCostsLabel,
+                count: profitData.materialCosts?.length || 0,
+            }),
             null,
             materialCostsContent,
             false,
@@ -4336,7 +4923,13 @@
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const missingPriceNote = getMissingPriceIndicator(tea.missingPrice);
-                line.textContent = `• ${tea.itemName}: ${totalDrinks.toFixed(2)} drinks @ ${formatters_js.formatWithSeparator(Math.round(tea.pricePerDrink))}${missingPriceNote} → ${formatters_js.formatLargeNumber(Math.round(totalTeaCost))}`;
+                line.textContent = i18n_js.t('profitDisplay.drinkCostLineNoEach', {
+                    name: tea.itemName,
+                    rate: `${totalDrinks.toFixed(2)} ${i18n_js.t('profitDisplay.drinksUnit')}`,
+                    price: formatters_js.formatWithSeparator(Math.round(tea.pricePerDrink)),
+                    missingNote: missingPriceNote,
+                    revenue: formatters_js.formatLargeNumber(Math.round(totalTeaCost)),
+                });
                 teaCostsContent.appendChild(line);
             }
         }
@@ -4346,7 +4939,7 @@
         const teaCostsLabel = formatMissingLabel(teaMissing, formatters_js.formatLargeNumber(Math.round(totalTeaCost)));
         const teaCostsSection = uiComponents_js.createCollapsibleSection(
             '',
-            `Drink Costs: ${teaCostsLabel} (${teaCount} drink${teaCount !== 1 ? 's' : ''})`,
+            i18n_js.t('profitDisplay.drinkCostsHeader', { label: teaCostsLabel, count: teaCount }),
             null,
             teaCostsContent,
             false,
@@ -4362,16 +4955,14 @@
         marketTaxLine.style.marginLeft = '8px';
         const marketTaxLabel = marketTaxMissing
             ? '-- ⚠'
-            : marketTaxEstimated
-              ? `${formatters_js.formatLargeNumber(totalMarketTax)} ⚠`
-              : formatters_js.formatLargeNumber(totalMarketTax);
-        marketTaxLine.textContent = `• Market Tax: ${profitConstants_js.MARKET_TAX * 100}% of revenue → ${marketTaxLabel}`;
+            : `${formatters_js.formatLargeNumber(totalMarketTax)}${marketTaxEstimated ? ' ⚠' : ''}`;
+        marketTaxLine.textContent = i18n_js.t('profitDisplay.marketTaxLine', { pct: profitConstants_js.MARKET_TAX * 100, label: marketTaxLabel });
         marketTaxContent.appendChild(marketTaxLine);
 
         const marketTaxHeader = marketTaxLabel;
         const marketTaxSection = uiComponents_js.createCollapsibleSection(
             '',
-            `Market Tax: ${marketTaxHeader} (${profitConstants_js.MARKET_TAX * 100}%)`,
+            i18n_js.t('profitDisplay.marketTaxSectionTitle', { label: marketTaxHeader, pct: profitConstants_js.MARKET_TAX * 100 }),
             null,
             marketTaxContent,
             false,
@@ -4394,29 +4985,23 @@
         margin-bottom: 8px;
     `;
         netProfitLine.textContent = netMissing
-            ? 'Net Profit: -- ⚠'
-            : netEstimated
-              ? `Net Profit: ${formatters_js.formatLargeNumber(totalProfit)} ⚠`
-              : `Net Profit: ${formatters_js.formatLargeNumber(totalProfit)}`;
+            ? i18n_js.t('profitDisplay.netProfitLine', { value: '-- ⚠' })
+            : i18n_js.t('profitDisplay.netProfitLine', {
+                  value: `${formatters_js.formatLargeNumber(totalProfit)}${netEstimated ? ' ⚠' : ''}`,
+              });
         topLevelContent.appendChild(netProfitLine);
 
         const revenueDisplay = revenueMissing
             ? '-- ⚠'
-            : revenueEstimated
-              ? `${formatters_js.formatLargeNumber(totalRevenue)} ⚠`
-              : formatters_js.formatLargeNumber(totalRevenue);
-        const costsDisplay = costsMissing
-            ? '-- ⚠'
-            : costsEstimated
-              ? `${formatters_js.formatLargeNumber(totalCosts)} ⚠`
-              : formatters_js.formatLargeNumber(totalCosts);
-        const actionsSummary = `Revenue: ${revenueDisplay} | Costs: ${costsDisplay}`;
+            : `${formatters_js.formatLargeNumber(totalRevenue)}${revenueEstimated ? ' ⚠' : ''}`;
+        const costsDisplay = costsMissing ? '-- ⚠' : `${formatters_js.formatLargeNumber(totalCosts)}${costsEstimated ? ' ⚠' : ''}`;
+        const actionsSummary = i18n_js.t('profitDisplay.revenueCostsSummary', { revenue: revenueDisplay, costs: costsDisplay });
         const actionsBreakdownSection = uiComponents_js.createCollapsibleSection('', actionsSummary, null, detailsContent, false, 1);
         topLevelContent.appendChild(actionsBreakdownSection);
 
         const mainSection = uiComponents_js.createCollapsibleSection(
             '📋',
-            `${formatters_js.formatWithSeparator(actionsCount)} actions breakdown`,
+            i18n_js.t('profitDisplay.actionsCountBreakdownTitle', { count: formatters_js.formatWithSeparator(actionsCount) }),
             null,
             topLevelContent,
             false,
@@ -4953,7 +5538,7 @@
             const input = document.createElement('input');
             input.id = 'mwi-action-filter';
             input.type = 'text';
-            input.placeholder = 'Filter actions...';
+            input.placeholder = i18n_js.t('actionFilter.filterPlaceholder');
             input.className = 'MuiInputBase-input'; // Use game's input class
             input.style.padding = '8px 12px';
             input.style.fontSize = '14px';
@@ -4993,16 +5578,16 @@
             // Create sort toggle button
             const SORT_MODES = ['default', 'profit', 'xp', 'coinsPerXp'];
             const SORT_LABELS = {
-                default: 'Sort: Default',
-                profit: 'Sort: Profit',
-                xp: 'Sort: XP',
-                coinsPerXp: 'Sort: Profit/XP',
+                default: i18n_js.t('actionFilter.sortDefaultLabel'),
+                profit: i18n_js.t('actionFilter.sortProfitLabel'),
+                xp: i18n_js.t('actionFilter.sortXpLabel'),
+                coinsPerXp: i18n_js.t('actionFilter.sortProfitXpLabel'),
             };
             const sortBtn = document.createElement('button');
             sortBtn.id = 'mwi-action-sort-toggle';
             const updateSortBtn = () => {
                 const mode = actionPanelSort.getSortMode();
-                sortBtn.textContent = SORT_LABELS[mode] || 'Sort: Default';
+                sortBtn.textContent = SORT_LABELS[mode] || i18n_js.t('actionFilter.sortDefaultLabel');
                 const isActive = mode !== 'default';
                 sortBtn.style.borderColor = isActive ? config.COLOR_ACCENT : 'rgba(255, 255, 255, 0.23)';
                 sortBtn.style.color = isActive ? config.COLOR_ACCENT : 'inherit';
@@ -5039,7 +5624,7 @@
             modeBtn.id = 'mwi-action-profit-mode';
             const updateModeBtn = () => {
                 const mode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
-                modeBtn.textContent = `Mode: ${config.getPricingModeLabel(mode)}`;
+                modeBtn.textContent = i18n_js.t('actionFilter.modeLabel', { mode: config.getPricingModeLabel(mode) });
             };
             modeBtn.style.cssText = `
             padding: 8px 12px;
@@ -5070,11 +5655,10 @@
             // Create craft toggle button
             const craftBtn = document.createElement('button');
             craftBtn.id = 'mwi-action-craft-toggle';
-            craftBtn.title =
-                'When on, uses crafting cost for upgrade items if cheaper than market, and includes crafting time in profit/hr';
+            craftBtn.title = i18n_js.t('actionFilter.craftToggleTooltip');
             const updateCraftBtn = () => {
                 const enabled = config.getSetting('profitCalc_craftUpgradeItems');
-                craftBtn.textContent = enabled ? 'Craft: On' : 'Craft: Off';
+                craftBtn.textContent = enabled ? i18n_js.t('actionFilter.craftOnLabel') : i18n_js.t('actionFilter.craftOffLabel');
             };
             craftBtn.style.cssText = `
             padding: 8px 12px;
@@ -5127,7 +5711,7 @@
                     message.style.padding = '40px 20px';
                     message.style.color = 'rgba(255, 255, 255, 0.6)';
                     message.style.fontSize = '16px';
-                    message.textContent = 'No matching actions';
+                    message.textContent = i18n_js.t('actionFilter.noMatchingActions');
 
                     // Insert after the title
                     titleElement.parentElement.insertBefore(message, titleElement.nextSibling);
@@ -5703,7 +6287,10 @@
             // No mirror used - return traditional result
             optimalStrategy = {
                 protectFrom: optimalTraditional.protectFrom,
-                label: optimalTraditional.protectFrom === 0 ? 'Never' : `+${optimalTraditional.protectFrom}`,
+                label:
+                    optimalTraditional.protectFrom === 0
+                        ? i18n_js.t('tooltipEnhancement.neverProtectionLabel')
+                        : `+${optimalTraditional.protectFrom}`,
                 expectedAttempts: optimalTraditional.expectedAttempts,
                 totalTime: optimalTraditional.totalTime,
                 baseCost: optimalTraditional.baseCost,
@@ -5886,7 +6473,10 @@
 
         return {
             protectFrom: optimalTraditional.protectFrom,
-            label: optimalTraditional.protectFrom === 0 ? 'Never' : `From +${optimalTraditional.protectFrom}`,
+            label:
+                optimalTraditional.protectFrom === 0
+                    ? i18n_js.t('tooltipEnhancement.neverProtectionLabel')
+                    : i18n_js.t('tooltipEnhancement.fromLevelLabel', { level: optimalTraditional.protectFrom }),
             expectedAttempts: totalAttempts,
             totalTime: totalTime,
             baseCost: 0, // Not applicable for mirror phase
@@ -7373,13 +7963,13 @@
         const parts = [];
 
         if (style === 'relative' || style === 'both') {
-            parts.push(`Complete in ${formatters_js.timeReadable(accumulatedTime)}`);
+            parts.push(i18n_js.t('actionTimeDisplay.completeIn', { time: formatters_js.timeReadable(accumulatedTime) }));
         }
         if (style === 'absolute' || style === 'both') {
             const completionDate = new Date();
             completionDate.setSeconds(completionDate.getSeconds() + accumulatedTime);
             const isToday = completionDate.toDateString() === new Date().toDateString();
-            parts.push(`Complete at ${formatCompletionTime(completionDate, !isToday)}`);
+            parts.push(i18n_js.t('actionTimeDisplay.completeAt', { time: formatCompletionTime(completionDate, !isToday) }));
         }
 
         return parts.length ? ` ${parts.join(' · ')}` : '';
@@ -7744,7 +8334,7 @@
                     const actionObj = this.matchActionFromDiv(actionDiv, currentActions, usedActionIds);
 
                     if (!actionObj) {
-                        this.appendTimeToActionDiv(actionDiv, '[Unknown action]');
+                        this.appendTimeToActionDiv(actionDiv, i18n_js.t('actionTimeDisplay.unknownAction'));
                         continue;
                     }
 
@@ -7804,12 +8394,17 @@
                     if (hasTimingUnavailable) {
                         totalText =
                             accumulatedTime > 0
-                                ? `Total: ${formatters_js.timeReadable(accumulatedTime)} + [?]`
-                                : 'Total: [?] (enhancement estimate unavailable)';
+                                ? i18n_js.t('actionTimeDisplay.tooltipTotalWithUnavailable', {
+                                      time: formatters_js.timeReadable(accumulatedTime),
+                                  })
+                                : i18n_js.t('actionTimeDisplay.tooltipTotalUnavailable');
                     } else if (hasInfinite) {
-                        totalText = accumulatedTime > 0 ? `Total: ${formatters_js.timeReadable(accumulatedTime)} + [∞]` : 'Total: [∞]';
+                        totalText =
+                            accumulatedTime > 0
+                                ? i18n_js.t('actionTimeDisplay.tooltipTotalWithInfinite', { time: formatters_js.timeReadable(accumulatedTime) })
+                                : i18n_js.t('actionTimeDisplay.tooltipTotalInfinite');
                     } else {
-                        totalText = `Total: ${formatters_js.timeReadable(accumulatedTime)}`;
+                        totalText = i18n_js.t('actionTimeDisplay.tooltipTotal', { time: formatters_js.timeReadable(accumulatedTime) });
                     }
                     totalDiv.textContent = totalText;
                     actionsContainer.appendChild(totalDiv);
@@ -7993,13 +8588,13 @@
 
             // Derive limit label
             if (limitType === 'gold') {
-                limitLabel = 'gold';
+                limitLabel = i18n_js.t('actionTimeDisplay.limitLabelGold');
             } else if (limitType && limitType.startsWith('material:')) {
-                limitLabel = 'mat';
+                limitLabel = i18n_js.t('actionTimeDisplay.limitLabelMat');
             } else if (limitType && limitType.startsWith('upgrade:')) {
-                limitLabel = 'upgrade';
+                limitLabel = i18n_js.t('actionTimeDisplay.limitLabelUpgrade');
             } else {
-                limitLabel = 'max';
+                limitLabel = i18n_js.t('actionTimeDisplay.limitLabelMax');
             }
 
             return {
@@ -8710,17 +9305,17 @@
             // Queue count
             if (config.getSetting('actionBar_showQueueCount')) {
                 if (queueSizeDisplay !== Infinity) {
-                    statsToAppend.push(`(${queueSizeDisplay.toLocaleString()} queued)`);
+                    statsToAppend.push(i18n_js.t('actionTimeDisplay.queuedCount', { count: queueSizeDisplay.toLocaleString() }));
                 } else if (materialLimit !== null) {
                     let limitLabel = '';
                     if (limitType === 'gold') {
-                        limitLabel = 'gold limit';
+                        limitLabel = i18n_js.t('actionTimeDisplay.limitLabelGoldLimit');
                     } else if (limitType && limitType.startsWith('material:')) {
-                        limitLabel = 'mat limit';
+                        limitLabel = i18n_js.t('actionTimeDisplay.limitLabelMatLimit');
                     } else if (limitType && limitType.startsWith('upgrade:')) {
-                        limitLabel = 'upgrade limit';
+                        limitLabel = i18n_js.t('actionTimeDisplay.limitLabelUpgradeLimit');
                     } else {
-                        limitLabel = 'max';
+                        limitLabel = i18n_js.t('actionTimeDisplay.limitLabelMax');
                     }
                     statsToAppend.push(`(∞ · ${limitLabel}: ${this.formatLargeNumber(materialLimit)})`);
                 } else {
@@ -8730,13 +9325,16 @@
 
             // Time per action
             if (config.getSetting('actionBar_showActionDuration')) {
-                statsToAppend.push(`${actionTime.toFixed(2)}s/action`);
+                statsToAppend.push(i18n_js.t('actionTimeDisplay.secondsPerAction', { time: actionTime.toFixed(2) }));
             }
 
             // Actions/hr and items/hr
             if (config.getSetting('actionBar_showActionsPerHour')) {
                 statsToAppend.push(
-                    `${actionsPerHourWithEfficiency.toFixed(0)} actions/hr (${itemsPerHour.toFixed(0)} items/hr)`
+                    i18n_js.t('actionTimeDisplay.actionsPerHourWithItems', {
+                        actionsPerHour: actionsPerHourWithEfficiency.toFixed(0),
+                        itemsPerHour: itemsPerHour.toFixed(0),
+                    })
                 );
             }
 
@@ -8761,7 +9359,7 @@
                     const recycleIsToday = recycleCompletion.toDateString() === new Date().toDateString();
                     const recycleClockTime = formatCompletionTime(recycleCompletion, !recycleIsToday);
                     const recycleText = buildTimeRemainingText(timeRemainingMode, recycleTimeStr, recycleClockTime);
-                    recycleHtml = `<span style="color:#4dd0a0; margin-left:12px; font-size:11px;">Est. w/ recycle: ${recycleText}</span>`;
+                    recycleHtml = `<span style="color:#4dd0a0; margin-left:12px; font-size:11px;">${i18n_js.t('actionTimeDisplay.estWithRecycle', { text: recycleText })}</span>`;
                 }
                 const timeText = buildTimeRemainingText(timeRemainingMode, timeStr, clockTime);
                 this.displayElement.innerHTML = `<span style="display: inline-flex; flex-wrap: nowrap; align-items: baseline; gap: 0.25em;"><span>⏱</span>${matsLabel} ${timeText}</span>${recycleHtml}`;
@@ -8964,13 +9562,15 @@
             const statsToAppend = [];
 
             if (config.getSetting('actionBar_showActionDuration')) {
-                statsToAppend.push(`${perActionTime.toFixed(2)}s/action`);
+                statsToAppend.push(i18n_js.t('actionTimeDisplay.secondsPerAction', { time: perActionTime.toFixed(2) }));
             }
-            statsToAppend.push(`${actualSuccessRate.toFixed(1)}% success`);
-            statsToAppend.push(`~${formatters_js.formatWithSeparator(effectiveAttempts)} to target`);
+            statsToAppend.push(i18n_js.t('actionTimeDisplay.successRate', { rate: actualSuccessRate.toFixed(1) }));
+            statsToAppend.push(i18n_js.t('actionTimeDisplay.toTarget', { count: formatters_js.formatWithSeparator(effectiveAttempts) }));
 
             if (protectFrom > 0 && effectiveProtections > 0) {
-                statsToAppend.push(`~${formatters_js.formatWithSeparator(effectiveProtections)} protections`);
+                statsToAppend.push(
+                    i18n_js.t('actionTimeDisplay.protections', { count: formatters_js.formatWithSeparator(effectiveProtections) })
+                );
             }
 
             this.appendStatsToActionName(actionNameElement, statsToAppend.join(' · '));
@@ -8988,9 +9588,12 @@
                 const clockTime = formatCompletionTime(completionTime, !isToday);
 
                 const itemIconHtml = this.getItemIconHtml(limitingItemHrid);
-                const matsLabel = itemIconHtml ? `${itemIconHtml}:` : 'Mats:';
+                const matsLabel = itemIconHtml ? `${itemIconHtml}:` : i18n_js.t('actionTimeDisplay.matsLabel');
                 const timeText = buildTimeRemainingText(timeRemainingMode, timeStr, clockTime);
-                this.displayElement.innerHTML = `<span style="display: inline-flex; flex-wrap: nowrap; align-items: baseline; gap: 0.25em;"><span>⏱</span>${matsLabel} ${timeText} (${formatters_js.formatWithSeparator(materialLimit)} actions)</span>`;
+                const actionsCountText = i18n_js.t('actionTimeDisplay.actionsCount', {
+                    count: formatters_js.formatWithSeparator(materialLimit),
+                });
+                this.displayElement.innerHTML = `<span style="display: inline-flex; flex-wrap: nowrap; align-items: baseline; gap: 0.25em;"><span>⏱</span>${matsLabel} ${timeText} ${actionsCountText}</span>`;
             } else {
                 this.displayElement.innerHTML = '';
             }
@@ -9890,7 +10493,7 @@
                         font-size: 0.85em;
                         margin-top: 2px;
                     `;
-                        timeDiv.textContent = '[Unknown action]';
+                        timeDiv.textContent = i18n_js.t('actionTimeDisplay.unknownAction');
 
                         const actionTextContainer = actionDiv.querySelector('[class*="QueuedActions_actionText"]');
                         if (actionTextContainer) {
@@ -10036,13 +10639,13 @@
                         // Material-limited infinite action
                         let limitLabel = '';
                         if (limitType === 'gold') {
-                            limitLabel = 'gold';
+                            limitLabel = i18n_js.t('actionTimeDisplay.limitLabelGold');
                         } else if (limitType && limitType.startsWith('material:')) {
-                            limitLabel = 'mat';
+                            limitLabel = i18n_js.t('actionTimeDisplay.limitLabelMat');
                         } else if (limitType && limitType.startsWith('upgrade:')) {
-                            limitLabel = 'upgrade';
+                            limitLabel = i18n_js.t('actionTimeDisplay.limitLabelUpgrade');
                         } else {
-                            limitLabel = 'max';
+                            limitLabel = i18n_js.t('actionTimeDisplay.limitLabelMax');
                         }
                         const timeStr = formatters_js.timeReadable(totalTime);
                         timeDiv.textContent = `[${timeStr} · ${limitLabel}: ${this.formatLargeNumber(materialLimit)}]${completionText}`;
@@ -10104,17 +10707,21 @@
                 if (hasTimingUnavailable) {
                     totalText =
                         accumulatedTime > 0
-                            ? `Total time: ${formatters_js.timeReadable(accumulatedTime)} + [?]`
-                            : 'Total time: [?] (enhancement estimate unavailable)';
+                            ? i18n_js.t('actionTimeDisplay.queueTotalTimeWithUnavailable', {
+                                  time: formatters_js.timeReadable(accumulatedTime),
+                              })
+                            : i18n_js.t('actionTimeDisplay.queueTotalTimeUnavailable');
                 } else if (hasInfinite) {
                     // Show finite time first, then add infinity indicator
                     if (accumulatedTime > 0) {
-                        totalText = `Total time: ${formatters_js.timeReadable(accumulatedTime)} + [∞]`;
+                        totalText = i18n_js.t('actionTimeDisplay.queueTotalTimeWithInfinite', {
+                            time: formatters_js.timeReadable(accumulatedTime),
+                        });
                     } else {
-                        totalText = 'Total time: [∞]';
+                        totalText = i18n_js.t('actionTimeDisplay.queueTotalTimeInfinite');
                     }
                 } else {
-                    totalText = `Total time: ${formatters_js.timeReadable(accumulatedTime)}`;
+                    totalText = i18n_js.t('actionTimeDisplay.queueTotalTime', { time: formatters_js.timeReadable(accumulatedTime) });
                 }
 
                 totalDiv.innerHTML = totalText;
@@ -10195,7 +10802,9 @@
                                         ? config.getSettingValue('color_profit', '#4ade80')
                                         : config.getSettingValue('color_loss', '#f87171');
                                 const profitSign = actionProfit >= 0 ? '+' : '';
-                                profitDiv.innerHTML = `Profit: <span style="color: ${profitColor};">${profitSign}${this.formatLargeNumber(Math.abs(Math.round(actionProfit)))}</span>`;
+                                profitDiv.innerHTML = i18n_js.t('actionTimeDisplay.queueActionProfit', {
+                                    amount: `<span style="color: ${profitColor};">${profitSign}${this.formatLargeNumber(Math.abs(Math.round(actionProfit)))}</span>`,
+                                });
                             }
                         }
                     }
@@ -10214,7 +10823,9 @@
                             ? config.getSettingValue('color_profit', '#4ade80')
                             : config.getSettingValue('color_loss', '#f87171');
                     const valueSign = totalProfit >= 0 ? '+' : '';
-                    const valueLabel = isEstimatedValue ? 'Estimated value' : 'Total profit';
+                    const valueLabel = isEstimatedValue
+                        ? i18n_js.t('actionTimeDisplay.estimatedValueLabel')
+                        : i18n_js.t('actionTimeDisplay.totalProfitLabel');
                     const valueText = `<br>${valueLabel}: <span style="color: ${valueColor};">${valueSign}${this.formatLargeNumber(Math.abs(Math.round(totalProfit)))}</span>`;
                     totalDiv.innerHTML = baseText + valueText;
                 }
@@ -10403,7 +11014,7 @@
                         : config.getSettingValue('color_loss', '#f87171');
                 const sign = profitPerHour >= 0 ? '+' : '';
 
-                let html = `<span style="color:#888;">Profit:</span> <span style="color:${profitColor}; font-weight:600;">${sign}${this.formatLargeNumber(Math.abs(Math.round(profitPerHour)))}/hr</span>`;
+                let html = `<span style="color:#888;">${i18n_js.t('actionTimeDisplay.profitLabel')}</span> <span style="color:${profitColor}; font-weight:600;">${sign}${this.formatLargeNumber(Math.abs(Math.round(profitPerHour)))}/hr</span>`;
 
                 if (isFinite(remainingActions) && remainingActions > 0 && profitData.actionsPerHour > 0) {
                     const profitPerAction =
@@ -10414,7 +11025,7 @@
                             ? config.getSettingValue('color_profit', '#4ade80')
                             : config.getSettingValue('color_loss', '#f87171');
                     const remSign = remainingProfit >= 0 ? '+' : '';
-                    html += ` <span style="color:#888;">·</span> <span style="color:#888;">remaining</span> <span style="color:${remColor}; font-weight:600;">${remSign}${this.formatLargeNumber(Math.abs(Math.round(remainingProfit)))}</span>`;
+                    html += ` <span style="color:#888;">·</span> <span style="color:#888;">${i18n_js.t('actionTimeDisplay.remainingLabel')}</span> <span style="color:${remColor}; font-weight:600;">${remSign}${this.formatLargeNumber(Math.abs(Math.round(remainingProfit)))}</span>`;
                 }
 
                 if (this.activeBarProfitId !== calcId) return;
@@ -10839,7 +11450,7 @@
 
             const addToggle = document.createElement('button');
             addToggle.textContent = '+';
-            addToggle.title = 'Toggle add mode: click to accumulate counts instead of setting them';
+            addToggle.title = i18n_js.t('quickInputButtons.toggleAddModeTooltip');
             addToggle.style.cssText = `
             font-size: 11px;
             font-weight: 700;
@@ -10861,7 +11472,7 @@
             });
             fragment.appendChild(addToggle);
 
-            fragment.appendChild(document.createTextNode('Do '));
+            fragment.appendChild(document.createTextNode(i18n_js.t('quickInputButtons.doPrefixLabel')));
 
             const activePresetValues = this._parsePresets(
                 config.getSettingValue('actionPanel_quickInputs_countPresets', ''),
@@ -10883,7 +11494,7 @@
                 fragment.appendChild(button);
             });
 
-            const maxButton = this.createButton('Max', () => {
+            const maxButton = this.createButton(i18n_js.t('alchemyBestItems.maxPlaceholder'), () => {
                 const currentInput =
                     panel.querySelector('[class*="maxActionCountInput"] input') ||
                     panel.querySelector('input[type="number"]') ||
@@ -10901,7 +11512,7 @@
             });
             fragment.appendChild(maxButton);
 
-            fragment.appendChild(document.createTextNode(' times'));
+            fragment.appendChild(document.createTextNode(i18n_js.t('quickInputButtons.timesSuffixLabel')));
 
             return fragment;
         }
@@ -11100,14 +11711,24 @@
                         timeAfterEquipment < profitConstants_js.MIN_ACTION_TIME_SECONDS ? ` (${timeAfterEquipment.toFixed(2)}s)` : '';
 
                     speedLines.push(
-                        `Base: ${baseTime.toFixed(2)}s → ${displayTimeAfterEquipment.toFixed(2)}s${equipmentClampSuffix}`
+                        i18n_js.t('taskProfitDisplay.baseSpeedLine', {
+                            base: baseTime.toFixed(2),
+                            after: displayTimeAfterEquipment.toFixed(2),
+                        }) + equipmentClampSuffix
                     );
                     if (speedBonus > 0) {
                         speedLines.push(
-                            `Speed: +${formatters_js.formatPercentage(speedBonus, 1)} | ${profitHelpers_js.calculateActionsPerHour(timeAfterEquipment).toFixed(0)}/hr`
+                            i18n_js.t('taskProfitDisplay.speedBonusLine', {
+                                pct: formatters_js.formatPercentage(speedBonus, 1),
+                                rate: profitHelpers_js.calculateActionsPerHour(timeAfterEquipment).toFixed(0),
+                            })
                         );
                     } else {
-                        speedLines.push(`${profitHelpers_js.calculateActionsPerHour(timeAfterEquipment).toFixed(0)}/hr`);
+                        speedLines.push(
+                            i18n_js.t('alchemyProfitDisplay.actionsPerHourLine', {
+                                value: profitHelpers_js.calculateActionsPerHour(timeAfterEquipment).toFixed(0),
+                            })
+                        );
                     }
 
                     // Add speed breakdown
@@ -11121,7 +11742,11 @@
                                     ? ` (${formatters_js.formatPercentage(item.baseBonus, 1)} + ${formatters_js.formatPercentage(item.enhancementBonus * item.enhancementLevel, 1)})`
                                     : '';
                             speedLines.push(
-                                `  - ${item.itemName}${enhText}: +${formatters_js.formatPercentage(item.scaledBonus, 1)}${detailText}`
+                                i18n_js.t('alchemyProfitDisplay.speedDetailLine', {
+                                    name: item.itemName,
+                                    enh: enhText,
+                                    value: formatters_js.formatPercentage(item.scaledBonus, 1),
+                                }) + detailText
                             );
                         }
 
@@ -11131,7 +11756,13 @@
                                 item.drinkConcentration > 0
                                     ? ` (${item.baseSpeed.toFixed(2)}% × ${(1 + item.drinkConcentration / 100).toFixed(2)})`
                                     : '';
-                            speedLines.push(`  - ${item.name}: +${item.speed.toFixed(2)}%${detailText}`);
+                            speedLines.push(
+                                i18n_js.t('alchemyProfitDisplay.speedDetailLine', {
+                                    name: item.name,
+                                    enh: '',
+                                    value: `${item.speed.toFixed(2)}%`,
+                                }) + detailText
+                            );
                         }
 
                         // Personal buff (Scroll of Action Speed)
@@ -11143,11 +11774,16 @@
                                 ? scrollSpriteHtml('/buff_types/action_speed')
                                 : '';
                             speedLines.push(
-                                `  - ${simSprite}Scroll of Action Speed: +${formatters_js.formatPercentage(personalSpeedBonus, 1)}`
+                                `  - ${simSprite}` +
+                                    i18n_js.t('taskProfitDisplay.scrollOfActionSpeedLine', {
+                                        pct: formatters_js.formatPercentage(personalSpeedBonus, 1),
+                                    })
                             );
                         }
                         if (speedBreakdown.guild > 0) {
-                            speedLines.push(`  - Guild Shrine: +${speedBreakdown.guild.toFixed(1)}%`);
+                            speedLines.push(
+                                i18n_js.t('quickInputButtons.guildShrineBonusLine', { pct: speedBreakdown.guild.toFixed(1) })
+                            );
                         }
                     }
 
@@ -11155,10 +11791,15 @@
                     if (isTaskAction && taskSpeedBonus > 0) {
                         speedLines.push(''); // Empty line separator
                         speedLines.push(
-                            `<span style="font-weight: 500;">Task Speed (multiplicative): +${taskSpeedBonus.toFixed(2)}%</span>`
+                            `<span style="font-weight: 500;">${i18n_js.t('taskProfitDisplay.taskSpeedMultiplicativeLine', { pct: taskSpeedBonus.toFixed(2) })}</span>`
                         );
                         speedLines.push(
-                            `${displayTimeAfterEquipment.toFixed(2)}s${equipmentClampSuffix} → ${actionTime.toFixed(2)}s | ${profitHelpers_js.calculateActionsPerHour(actionTime).toFixed(0)}/hr`
+                            i18n_js.t('quickInputButtons.taskSpeedTimeChangeLine', {
+                                before: displayTimeAfterEquipment.toFixed(2),
+                                clampSuffix: equipmentClampSuffix,
+                                after: actionTime.toFixed(2),
+                                rate: profitHelpers_js.calculateActionsPerHour(actionTime).toFixed(0),
+                            })
                         );
 
                         // Find equipped task badge for details
@@ -11180,7 +11821,11 @@
                                         : '';
 
                                 speedLines.push(
-                                    `  - ${itemDetails.name}${enhText}: +${taskSpeedBonus.toFixed(2)}%${detailText}`
+                                    i18n_js.t('alchemyProfitDisplay.speedDetailLine', {
+                                        name: itemDetails.name,
+                                        enh: enhText,
+                                        value: `${taskSpeedBonus.toFixed(2)}%`,
+                                    }) + detailText
                                 );
                             }
                         }
@@ -11189,7 +11834,7 @@
                     // Add Efficiency breakdown
                     speedLines.push(''); // Empty line
                     speedLines.push(
-                        `<span style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Efficiency: +${totalEfficiency.toFixed(2)}% → Output: ×${efficiencyMultiplier.toFixed(2)} (${Math.round(profitHelpers_js.calculateActionsPerHour(actionTime) * efficiencyMultiplier)}/hr)</span>`
+                        `<span style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">${i18n_js.t('alchemyProfitDisplay.efficiencyOutputLine', { efficiency: totalEfficiency.toFixed(2), multiplier: efficiencyMultiplier.toFixed(2), actionsPerHour: Math.round(profitHelpers_js.calculateActionsPerHour(actionTime) * efficiencyMultiplier) })}</span>`
                     );
 
                     // Detailed efficiency breakdown
@@ -11201,11 +11846,20 @@
                         const rawLevelDelta = efficiencyBreakdown.skillLevel - efficiencyBreakdown.baseRequirement;
 
                         // Show final level efficiency
-                        speedLines.push(`  - Level: +${efficiencyBreakdown.levelEfficiency.toFixed(2)}%`);
+                        speedLines.push(
+                            i18n_js.t('alchemyProfitDisplay.effLevelDetailLine', {
+                                value: efficiencyBreakdown.levelEfficiency.toFixed(2),
+                            })
+                        );
 
                         // Show raw level delta (what you'd get without Action Level bonuses)
                         speedLines.push(
-                            `    - Raw level delta: +${rawLevelDelta.toFixed(2)}% (${efficiencyBreakdown.skillLevel} - ${efficiencyBreakdown.baseRequirement} base requirement)`
+                            '    - ' +
+                                i18n_js.t('taskProfitDisplay.rawLevelDeltaLine', {
+                                    pct: rawLevelDelta.toFixed(2),
+                                    skillLevel: efficiencyBreakdown.skillLevel,
+                                    baseRequirement: efficiencyBreakdown.baseRequirement,
+                                })
                         );
 
                         // Show Action Level bonus teas that reduce level efficiency
@@ -11217,13 +11871,20 @@
                                 // Calculate impact: base tea effect reduces efficiency
                                 const baseTeaImpact = -tea.baseActionLevel;
                                 speedLines.push(
-                                    `    - ${tea.name} impact: ${baseTeaImpact.toFixed(2)}% (raises requirement)`
+                                    '    - ' +
+                                        i18n_js.t('taskProfitDisplay.levelImpactLine', {
+                                            name: tea.name,
+                                            pct: baseTeaImpact.toFixed(2),
+                                        })
                                 );
 
                                 // Show DC contribution as additional reduction if > 0
                                 if (tea.dcContribution > 0) {
                                     const dcImpact = -tea.dcContribution;
-                                    speedLines.push(`      - Drink Concentration: ${dcImpact.toFixed(2)}%`);
+                                    speedLines.push(
+                                        '      - ' +
+                                            i18n_js.t('taskProfitDisplay.drinkConcentrationLine', { pct: dcImpact.toFixed(2) })
+                                    );
                                 }
                             }
                         }
@@ -11232,23 +11893,48 @@
                         // Get house room name
                         const houseRoomName = this.getHouseRoomName(actionDetails.type);
                         speedLines.push(
-                            `  - House: +${efficiencyBreakdown.houseEfficiency.toFixed(2)}% (${houseRoomName})`
+                            '  - ' +
+                                i18n_js.t('taskProfitDisplay.houseEfficiencyLine', {
+                                    pct: efficiencyBreakdown.houseEfficiency.toFixed(2),
+                                    roomLabel: houseRoomName,
+                                })
                         );
                     }
                     if (efficiencyBreakdown.equipmentEfficiency > 0) {
-                        speedLines.push(`  - Equipment: +${efficiencyBreakdown.equipmentEfficiency.toFixed(2)}%`);
+                        speedLines.push(
+                            '  - ' +
+                                i18n_js.t('taskProfitDisplay.equipmentEfficiencyLine', {
+                                    pct: efficiencyBreakdown.equipmentEfficiency.toFixed(2),
+                                })
+                        );
                     }
                     if (efficiencyBreakdown.achievementEfficiency > 0) {
-                        speedLines.push(`  - Achievement: +${efficiencyBreakdown.achievementEfficiency.toFixed(2)}%`);
+                        speedLines.push(
+                            '  - ' +
+                                i18n_js.t('taskProfitDisplay.achievementEfficiencyLine', {
+                                    pct: efficiencyBreakdown.achievementEfficiency.toFixed(2),
+                                })
+                        );
                     }
                     // Break out individual teas - show BASE efficiency on main line, DC as sub-line
                     if (efficiencyBreakdown.teaBreakdown && efficiencyBreakdown.teaBreakdown.length > 0) {
                         for (const tea of efficiencyBreakdown.teaBreakdown) {
                             // Show BASE efficiency (without DC scaling) on main line
-                            speedLines.push(`  - ${tea.name}: +${tea.baseEfficiency.toFixed(2)}%`);
+                            speedLines.push(
+                                i18n_js.t('alchemyProfitDisplay.speedDetailLine', {
+                                    name: tea.name,
+                                    enh: '',
+                                    value: `${tea.baseEfficiency.toFixed(2)}%`,
+                                })
+                            );
                             // Show DC contribution as sub-line if > 0
                             if (tea.dcContribution > 0) {
-                                speedLines.push(`    - Drink Concentration: +${tea.dcContribution.toFixed(2)}%`);
+                                speedLines.push(
+                                    '    - ' +
+                                        i18n_js.t('taskProfitDisplay.drinkConcentrationLine', {
+                                            pct: `+${tea.dcContribution.toFixed(2)}`,
+                                        })
+                                );
                             }
                         }
                     }
@@ -11257,17 +11943,30 @@
                             '/community_buff_types/production_efficiency'
                         );
                         speedLines.push(
-                            `  - Community: +${efficiencyBreakdown.communityEfficiency.toFixed(2)}% (Production Efficiency T${communityBuffLevel})`
+                            '  - ' +
+                                i18n_js.t('taskProfitDisplay.communityEfficiencyLine', {
+                                    pct: efficiencyBreakdown.communityEfficiency.toFixed(2),
+                                    tier: communityBuffLevel,
+                                })
                         );
                     }
                     if (efficiencyBreakdown.personalEfficiency > 0) {
                         const simSprite = dataManager.isBuffBeingSimulated(actionDetails.type, '/buff_types/efficiency')
                             ? scrollSpriteHtml('/buff_types/efficiency')
                             : '';
-                        speedLines.push(`  - ${simSprite}Seal: +${efficiencyBreakdown.personalEfficiency.toFixed(2)}%`);
+                        speedLines.push(
+                            `  - ${simSprite}` +
+                                i18n_js.t('taskProfitDisplay.sealEfficiencyLine', {
+                                    pct: efficiencyBreakdown.personalEfficiency.toFixed(2),
+                                })
+                        );
                     }
                     if (efficiencyBreakdown.guildEfficiency > 0) {
-                        speedLines.push(`  - Guild Shrine: +${efficiencyBreakdown.guildEfficiency.toFixed(2)}%`);
+                        speedLines.push(
+                            i18n_js.t('quickInputButtons.guildShrineBonusLine', {
+                                pct: efficiencyBreakdown.guildEfficiency.toFixed(2),
+                            })
+                        );
                     }
 
                     // Total time (dynamic)
@@ -11287,16 +11986,18 @@
                         const inputValue = numberInput.value;
 
                         if (inputValue === '∞') {
-                            totalTimeLine.textContent = 'Total time: ∞';
+                            totalTimeLine.textContent = i18n_js.t('taskProfitDisplay.totalTimeLine', { time: '∞' });
                             return;
                         }
 
                         const queueCount = parseInt(inputValue) || 0;
                         if (queueCount > 0) {
                             const totalSeconds = computeTotalSeconds(queueCount);
-                            totalTimeLine.textContent = `Total time: ${formatters_js.timeReadable(totalSeconds)}`;
+                            totalTimeLine.textContent = i18n_js.t('taskProfitDisplay.totalTimeLine', {
+                                time: formatters_js.timeReadable(totalSeconds),
+                            });
                         } else {
-                            totalTimeLine.textContent = 'Total time: 0s';
+                            totalTimeLine.textContent = i18n_js.t('taskProfitDisplay.totalTimeLine', { time: '0s' });
                         }
                     };
 
@@ -11311,11 +12012,14 @@
                     const actionsPerHourWithEfficiency = Math.round(
                         profitHelpers_js.calculateEffectiveActionsPerHour(profitHelpers_js.calculateActionsPerHour(actionTime), efficiencyMultiplier)
                     );
-                    const initialSummary = `${actionsPerHourWithEfficiency}/hr | Total time: 0s`;
+                    const initialSummary = i18n_js.t('alchemyProfitDisplay.speedTimeSummary', {
+                        actionsPerHour: actionsPerHourWithEfficiency,
+                        time: '0s',
+                    });
 
                     speedSection = uiComponents_js.createCollapsibleSection(
                         '⏱',
-                        'Action Speed & Time',
+                        i18n_js.t('alchemyProfitDisplay.actionSpeedTimeTitle'),
                         initialSummary,
                         speedContent,
                         false // Collapsed by default
@@ -11332,14 +12036,23 @@
                         if (speedSummaryDiv) {
                             const inputValue = numberInput.value;
                             if (inputValue === '∞') {
-                                speedSummaryDiv.textContent = `${actionsPerHourWithEfficiency}/hr | Total time: ∞`;
+                                speedSummaryDiv.textContent = i18n_js.t('alchemyProfitDisplay.speedTimeSummary', {
+                                    actionsPerHour: actionsPerHourWithEfficiency,
+                                    time: '∞',
+                                });
                             } else {
                                 const queueCount = parseInt(inputValue) || 0;
                                 if (queueCount > 0) {
                                     const totalSeconds = computeTotalSeconds(queueCount);
-                                    speedSummaryDiv.textContent = `${actionsPerHourWithEfficiency}/hr | Total time: ${formatters_js.timeReadable(totalSeconds)}`;
+                                    speedSummaryDiv.textContent = i18n_js.t('alchemyProfitDisplay.speedTimeSummary', {
+                                        actionsPerHour: actionsPerHourWithEfficiency,
+                                        time: formatters_js.timeReadable(totalSeconds),
+                                    });
                                 } else {
-                                    speedSummaryDiv.textContent = `${actionsPerHourWithEfficiency}/hr | Total time: 0s`;
+                                    speedSummaryDiv.textContent = i18n_js.t('alchemyProfitDisplay.speedTimeSummary', {
+                                        actionsPerHour: actionsPerHourWithEfficiency,
+                                        time: '0s',
+                                    });
                                 }
                             }
                         }
@@ -11403,7 +12116,7 @@
                 `;
 
                     // FIRST ROW: Time-based buttons (hours)
-                    queueContent.appendChild(document.createTextNode('Do '));
+                    queueContent.appendChild(document.createTextNode(i18n_js.t('quickInputButtons.doPrefixLabel')));
 
                     const activePresetHours = this._parsePresets(
                         config.getSettingValue('actionPanel_quickInputs_hourPresets', ''),
@@ -11589,7 +12302,7 @@
             };
 
             const roomHrid = roomMapping[actionType];
-            if (!roomHrid) return 'Unknown Room';
+            if (!roomHrid) return i18n_js.t('taskProfitDisplay.unknownRoomLabel');
 
             const room = houseRooms.get(roomHrid);
             const roomName = roomHrid
@@ -11600,7 +12313,7 @@
                 .join(' ');
             const level = room?.level || 0;
 
-            return `${roomName} level ${level}`;
+            return i18n_js.t('taskProfitDisplay.roomLevelLabel', { roomName, level });
         }
 
         /**
@@ -11680,11 +12393,19 @@
             const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, itemDetailMap);
 
             // Check drink slots for Enhancing Teas
-            const enhancingTeas = {
-                '/items/enhancing_tea': { name: 'Enhancing Tea', baseSpeed: 0.02 },
-                '/items/super_enhancing_tea': { name: 'Super Enhancing Tea', baseSpeed: 0.04 },
-                '/items/ultra_enhancing_tea': { name: 'Ultra Enhancing Tea', baseSpeed: 0.06 },
+            const enhancingTeaBaseSpeeds = {
+                '/items/enhancing_tea': 0.02,
+                '/items/super_enhancing_tea': 0.04,
+                '/items/ultra_enhancing_tea': 0.06,
             };
+            const enhancingTeas = {};
+            for (const [hrid, baseSpeed] of Object.entries(enhancingTeaBaseSpeeds)) {
+                const teaItemDetails = dataManager.getItemDetails(hrid);
+                enhancingTeas[hrid] = {
+                    name: teaItemDetails?.name || hrid.split('/').pop().replace(/_/g, ' '),
+                    baseSpeed,
+                };
+            }
 
             for (const drink of drinkSlots) {
                 if (!drink || !drink.itemHrid) continue;
@@ -11932,18 +12653,28 @@
                 const lines = [];
 
                 // Current level and progress
-                lines.push(`Current: Level ${currentLevel} | ${progressPercent.toFixed(2)}% to Level ${nextLevel}`);
+                lines.push(
+                    i18n_js.t('alchemyProfitDisplay.currentLevelProgress', {
+                        level: currentLevel,
+                        percent: progressPercent.toFixed(2),
+                        nextLevel,
+                    })
+                );
                 lines.push('');
 
                 // Action details
                 lines.push(
-                    `XP per action: ${formatters_js.formatWithSeparator(baseXP.toFixed(2))} base → ${formatters_js.formatWithSeparator(modifiedXP.toFixed(2))} (×${xpData.totalMultiplier.toFixed(2)})`
+                    i18n_js.t('alchemyProfitDisplay.xpPerActionLine', {
+                        base: formatters_js.formatWithSeparator(baseXP.toFixed(2)),
+                        modified: formatters_js.formatWithSeparator(modifiedXP.toFixed(2)),
+                        multiplier: xpData.totalMultiplier.toFixed(2),
+                    })
                 );
 
                 // XP breakdown (if any bonuses exist)
                 if (xpData.totalWisdom > 0 || xpData.charmExperience > 0) {
                     const totalXPBonus = xpData.totalWisdom + xpData.charmExperience;
-                    lines.push(`  Total XP Bonus: +${totalXPBonus.toFixed(2)}%`);
+                    lines.push(i18n_js.t('alchemyProfitDisplay.totalXpBonusLine', { value: totalXPBonus.toFixed(2) }));
 
                     // List all sources that contribute
 
@@ -11951,7 +12682,13 @@
                     if (xpData.charmBreakdown && xpData.charmBreakdown.length > 0) {
                         for (const item of xpData.charmBreakdown) {
                             const enhText = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
-                            lines.push(`    • ${item.name}${enhText}: +${item.value.toFixed(2)}%`);
+                            lines.push(
+                                i18n_js.t('alchemyProfitDisplay.xpItemBonusLine', {
+                                    name: item.name,
+                                    enh: enhText,
+                                    value: item.value.toFixed(2),
+                                })
+                            );
                         }
                     }
 
@@ -11959,33 +12696,55 @@
                     if (xpData.wisdomBreakdown && xpData.wisdomBreakdown.length > 0) {
                         for (const item of xpData.wisdomBreakdown) {
                             const enhText = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
-                            lines.push(`    • ${item.name}${enhText}: +${item.value.toFixed(2)}%`);
+                            lines.push(
+                                i18n_js.t('alchemyProfitDisplay.xpItemBonusLine', {
+                                    name: item.name,
+                                    enh: enhText,
+                                    value: item.value.toFixed(2),
+                                })
+                            );
                         }
                     }
 
                     // House rooms
                     if (xpData.breakdown.houseWisdom > 0) {
-                        lines.push(`    • House Rooms: +${xpData.breakdown.houseWisdom.toFixed(2)}%`);
+                        lines.push(
+                            i18n_js.t('alchemyProfitDisplay.xpHouseRoomsLine', { value: xpData.breakdown.houseWisdom.toFixed(2) })
+                        );
                     }
 
                     // Community buff
                     if (xpData.breakdown.communityWisdom > 0) {
-                        lines.push(`    • Community Buff: +${xpData.breakdown.communityWisdom.toFixed(2)}%`);
+                        lines.push(
+                            i18n_js.t('alchemyProfitDisplay.xpCommunityBuffLine', {
+                                value: xpData.breakdown.communityWisdom.toFixed(2),
+                            })
+                        );
                     }
 
                     // Tea/Coffee
                     if (xpData.breakdown.consumableWisdom > 0) {
-                        lines.push(`    • Wisdom Tea: +${xpData.breakdown.consumableWisdom.toFixed(2)}%`);
+                        lines.push(
+                            i18n_js.t('alchemyProfitDisplay.xpWisdomTeaLine', {
+                                value: xpData.breakdown.consumableWisdom.toFixed(2),
+                            })
+                        );
                     }
 
                     // Achievement wisdom
                     if (xpData.breakdown.achievementWisdom > 0) {
-                        lines.push(`    • Achievement: +${xpData.breakdown.achievementWisdom.toFixed(2)}%`);
+                        lines.push(
+                            i18n_js.t('alchemyProfitDisplay.xpAchievementLine', {
+                                value: xpData.breakdown.achievementWisdom.toFixed(2),
+                            })
+                        );
                     }
 
                     // MooPass wisdom
                     if (xpData.breakdown.mooPassWisdom > 0) {
-                        lines.push(`    • MooPass: +${xpData.breakdown.mooPassWisdom.toFixed(2)}%`);
+                        lines.push(
+                            i18n_js.t('alchemyProfitDisplay.xpMooPassLine', { value: xpData.breakdown.mooPassWisdom.toFixed(2) })
+                        );
                     }
 
                     // Personal buff (Scroll of Wisdom)
@@ -11993,10 +12752,18 @@
                         const simSprite = dataManager.isBuffBeingSimulated(actionDetails.type, '/buff_types/wisdom')
                             ? scrollSpriteHtml('/buff_types/wisdom')
                             : '';
-                        lines.push(`    • ${simSprite}Scroll of Wisdom: +${xpData.breakdown.personalWisdom.toFixed(2)}%`);
+                        lines.push(
+                            `    • ${simSprite}` +
+                                i18n_js.t('quickInputButtons.xpScrollOfWisdomLine', {
+                                    value: xpData.breakdown.personalWisdom.toFixed(2),
+                                })
+                        );
                     }
                     if (xpData.breakdown.guildWisdom > 0) {
-                        lines.push(`    • Guild Shrine: +${xpData.breakdown.guildWisdom.toFixed(2)}%`);
+                        lines.push(
+                            `    • ` +
+                                i18n_js.t('quickInputButtons.xpGuildShrineLine', { value: xpData.breakdown.guildWisdom.toFixed(2) })
+                        );
                     }
                 }
 
@@ -12014,10 +12781,12 @@
                 );
 
                 lines.push(
-                    `<span style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">To Level ${nextLevel}:</span>`
+                    `<span style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">${i18n_js.t('alchemyProfitDisplay.toLevelHeader', { level: nextLevel })}</span>`
                 );
-                lines.push(`  Actions: ${formatters_js.formatWithSeparator(singleLevel.actionsNeeded)}`);
-                lines.push(`  Time: ${formatters_js.timeReadable(singleLevel.timeNeeded)}`);
+                lines.push(
+                    i18n_js.t('alchemyProfitDisplay.actionsCountLine', { count: formatters_js.formatWithSeparator(singleLevel.actionsNeeded) })
+                );
+                lines.push(i18n_js.t('alchemyProfitDisplay.timeNeededLine', { time: formatters_js.timeReadable(singleLevel.timeNeeded) }));
 
                 lines.push('');
 
@@ -12026,10 +12795,10 @@
                 const initialTargetLevel =
                     savedTargetLevel && savedTargetLevel > currentLevel ? savedTargetLevel : nextLevel;
                 lines.push(
-                    `<span style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Target Level Calculator:</span>`
+                    `<span style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">${i18n_js.t('alchemyProfitDisplay.targetLevelCalculatorHeader')}</span>`
                 );
                 lines.push(`<div style="margin-top: 4px;">
-                <span>To level </span>
+                <span>${i18n_js.t('alchemyProfitDisplay.toLevelPrefix')} </span>
                 <input
                     type="number"
                     id="mwi-target-level-input"
@@ -12051,12 +12820,15 @@
 
                 // Dynamic result line (will be updated by JS)
                 lines.push(`<div id="mwi-target-level-result" style="margin-top: 4px; margin-left: 8px;">
-                ${formatters_js.formatWithSeparator(singleLevel.actionsNeeded)} actions | ${formatters_js.timeReadable(singleLevel.timeNeeded)}
+                ${i18n_js.t('alchemyProfitDisplay.actionsTimeResult', { actions: formatters_js.formatWithSeparator(singleLevel.actionsNeeded), time: formatters_js.timeReadable(singleLevel.timeNeeded) })}
             </div>`);
 
                 lines.push('');
                 lines.push(
-                    `XP/hour: ${formatters_js.formatWithSeparator(Math.round(xpPerHour))} | XP/day: ${formatters_js.formatWithSeparator(Math.round(xpPerDay))}`
+                    i18n_js.t('alchemyProfitDisplay.xpPerHourPerDayLine', {
+                        perHour: formatters_js.formatWithSeparator(Math.round(xpPerHour)),
+                        perDay: formatters_js.formatWithSeparator(Math.round(xpPerDay)),
+                    })
                 );
 
                 content.innerHTML = lines.join('<br>');
@@ -12081,14 +12853,14 @@
                         );
 
                         targetLevelResult.innerHTML = `
-                        ${formatters_js.formatWithSeparator(result.actionsNeeded)} actions | ${formatters_js.timeReadable(result.timeNeeded)}
+                        ${i18n_js.t('alchemyProfitDisplay.actionsTimeResult', { actions: formatters_js.formatWithSeparator(result.actionsNeeded), time: formatters_js.timeReadable(result.timeNeeded) })}
                     `;
                         targetLevelResult.style.color = 'var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY})';
 
                         // Auto-fill queue input when target level changes
                         this.setInputValue(numberInput, result.actionsNeeded);
                     } else {
-                        targetLevelResult.textContent = 'Invalid level';
+                        targetLevelResult.textContent = i18n_js.t('alchemyProfitDisplay.invalidLevelMessage');
                         targetLevelResult.style.color = 'var(--color-error, #ff4444)';
                     }
                 };
@@ -12116,7 +12888,12 @@
                     );
 
                     targetLevelResult.innerHTML = `
-                    ${formatters_js.formatWithSeparator(actionCount)} actions → Level ${result.finalLevel} (${result.percentToNext.toFixed(2)}% to next) | ${formatters_js.timeReadable(result.timeElapsed)}
+                    ${i18n_js.t('quickInputButtons.actionsToLevelResult', {
+                        actions: formatters_js.formatWithSeparator(actionCount),
+                        level: result.finalLevel,
+                        percent: result.percentToNext.toFixed(2),
+                        time: formatters_js.timeReadable(result.timeElapsed),
+                    })}
                 `;
                     targetLevelResult.style.color = `var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY})`;
                 };
@@ -12130,13 +12907,16 @@
                 }
 
                 // Create summary for collapsed view (time to next level)
-                const summary = `${formatters_js.timeReadable(singleLevel.timeNeeded)} to Level ${nextLevel}`;
+                const summary = i18n_js.t('alchemyProfitDisplay.timeToLevelSummary', {
+                    time: formatters_js.timeReadable(singleLevel.timeNeeded),
+                    level: nextLevel,
+                });
 
                 // Create collapsible section
                 return compactActionPanelSection(
                     uiComponents_js.createCollapsibleSection(
                         '📈',
-                        'Level Progress',
+                        i18n_js.t('alchemyProfitDisplay.levelProgressTitle'),
                         summary,
                         content,
                         false // Collapsed by default
@@ -12860,7 +13640,7 @@
             user-select: none;
             filter: grayscale(100%) brightness(0.7);
         `;
-            pinIcon.title = 'Pin this action to keep it visible';
+            pinIcon.title = i18n_js.t('maxProduceable.pinTooltip');
 
             // Pin hover effect
             pinIcon.addEventListener('mouseenter', () => {
@@ -13104,25 +13884,25 @@
 
             if (showMaxProduceable) {
                 html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                html += `<span style="color: ${canProduceColor};">Can produce: ${maxCrafts.toLocaleString()}</span></div>`;
+                html += `<span style="color: ${canProduceColor};">${i18n_js.t('maxProduceable.canProduceLine', { count: maxCrafts.toLocaleString() })}</span></div>`;
             }
 
             if (showProfit) {
                 if (hasMissingPrices) {
                     html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                    html += `<span data-stat="profit" style="color: ${config.SCRIPT_COLOR_ALERT};">Profit/hr: -- ⚠</span></div>`;
+                    html += `<span data-stat="profit" style="color: ${config.SCRIPT_COLOR_ALERT};">${i18n_js.t('maxProduceable.profitUnknownLine')}</span></div>`;
                 } else if (resolvedProfitPerHour !== null) {
                     const profitColor = resolvedProfitPerHour >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
                     const profitSign = resolvedProfitPerHour >= 0 ? '' : '-';
                     const estimatedNote = outputPriceEstimated ? ' ⚠' : '';
                     html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                    html += `<span data-stat="profit" style="color: ${profitColor};">Profit/hr: ${profitSign}${formatters_js.formatKMB(Math.abs(resolvedProfitPerHour))}${estimatedNote}</span></div>`;
+                    html += `<span data-stat="profit" style="color: ${profitColor};">${i18n_js.t('maxProduceable.profitPerHourLine', { sign: profitSign, value: formatters_js.formatKMB(Math.abs(resolvedProfitPerHour)), note: estimatedNote })}</span></div>`;
                 }
             }
 
             if (showExp && expPerHour !== null && expPerHour > 0) {
                 html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                html += `<span data-stat="exp" style="color: #fff;">Exp/hr: ${formatters_js.formatKMB(expPerHour)}</span></div>`;
+                html += `<span data-stat="exp" style="color: #fff;">${i18n_js.t('maxProduceable.expPerHourLine', { value: formatters_js.formatKMB(expPerHour) })}</span></div>`;
             }
 
             if (
@@ -13134,7 +13914,7 @@
                 expPerHour > 0
             ) {
                 html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                html += `<span data-stat="overall" style="color: #fff;">Eff. XP/hr: ${formatters_js.formatKMB(expPerHour)}</span></div>`;
+                html += `<span data-stat="overall" style="color: #fff;">${i18n_js.t('maxProduceable.effXpPerHourLine', { value: formatters_js.formatKMB(expPerHour) })}</span></div>`;
             }
 
             data.displayElement.innerHTML = html;
@@ -13316,18 +14096,25 @@
                 const overallSpan = data.displayElement.querySelector('[data-stat="overall"]');
                 if (overallSpan) {
                     const effXp = data.effectiveXpPerHour;
-                    const label = effXp != null ? `Eff. XP/hr: ${formatters_js.formatKMB(effXp)}` : stripEmoji(overallSpan.textContent);
+                    const label =
+                        effXp != null
+                            ? i18n_js.t('maxProduceable.effXpPerHourLine', { value: formatters_js.formatKMB(effXp) })
+                            : stripEmoji(overallSpan.textContent);
                     overallSpan.textContent = label + (isBestOverall ? ' 🏆' : '');
 
                     if (data.profitPerHour < 0 && bestProfit > 0 && effXp != null) {
                         const loss = Math.abs(data.profitPerHour);
                         const ratio = loss / bestProfit;
-                        overallSpan.title =
-                            `Gold-neutral XP rate\n` +
-                            `This action: ${formatters_js.formatKMB(data.expPerHour)} XP/hr, -${formatters_js.formatKMB(loss)}/hr\n` +
-                            `Recovery: ${bestProfitName} (+${formatters_js.formatKMB(bestProfit)}/hr, ${formatters_js.formatKMB(bestProfitExp || 0)} XP/hr)\n` +
-                            `Ratio: ${ratio.toFixed(2)}hr recovery per 1hr action\n` +
-                            `Blended: (${formatters_js.formatKMB(data.expPerHour)} + ${ratio.toFixed(2)} × ${formatters_js.formatKMB(bestProfitExp || 0)}) / ${(1 + ratio).toFixed(2)} = ${formatters_js.formatKMB(effXp)}`;
+                        overallSpan.title = i18n_js.t('maxProduceable.goldNeutralTooltip', {
+                            expPerHour: formatters_js.formatKMB(data.expPerHour),
+                            loss: formatters_js.formatKMB(loss),
+                            bestProfitName,
+                            bestProfit: formatters_js.formatKMB(bestProfit),
+                            bestProfitExp: formatters_js.formatKMB(bestProfitExp || 0),
+                            ratio: ratio.toFixed(2),
+                            ratioPlus1: (1 + ratio).toFixed(2),
+                            effXp: formatters_js.formatKMB(effXp),
+                        });
                     } else {
                         overallSpan.title = '';
                     }
@@ -13485,7 +14272,7 @@
                 pinIcon.style.filter = 'grayscale(100%) brightness(0.7)';
                 pinIcon.style.transform = 'scale(1)';
             }
-            pinIcon.title = isPinned ? 'Unpin this action' : 'Pin this action to keep it visible';
+            pinIcon.title = isPinned ? i18n_js.t('maxProduceable.unpinTooltip') : i18n_js.t('maxProduceable.pinTooltip');
         }
 
         /**
@@ -14084,18 +14871,29 @@
                 const overallSpan = data.displayElement.querySelector('[data-stat="overall"]');
                 if (overallSpan) {
                     const effXp = data.effectiveXpPerHour;
-                    const label = effXp != null ? `Eff. XP/hr: ${formatters_js.formatKMB(effXp)}` : stripEmoji(overallSpan.textContent);
+                    // Reuses maxProduceable's key: this text is identical to the one built for
+                    // production action panels in max-produceable.js.
+                    const label =
+                        effXp != null
+                            ? i18n_js.t('maxProduceable.effXpPerHourLine', { value: formatters_js.formatKMB(effXp) })
+                            : stripEmoji(overallSpan.textContent);
                     overallSpan.textContent = label + (isBestOverall ? ' 🏆' : '');
 
                     if (data.profitPerHour < 0 && bestProfit > 0 && effXp != null) {
                         const loss = Math.abs(data.profitPerHour);
                         const ratio = loss / bestProfit;
-                        overallSpan.title =
-                            `Gold-neutral XP rate\n` +
-                            `This action: ${formatters_js.formatKMB(data.expPerHour)} XP/hr, -${formatters_js.formatKMB(loss)}/hr\n` +
-                            `Recovery: ${bestProfitName} (+${formatters_js.formatKMB(bestProfit)}/hr, ${formatters_js.formatKMB(bestProfitExp || 0)} XP/hr)\n` +
-                            `Ratio: ${ratio.toFixed(2)}hr recovery per 1hr action\n` +
-                            `Blended: (${formatters_js.formatKMB(data.expPerHour)} + ${ratio.toFixed(2)} × ${formatters_js.formatKMB(bestProfitExp || 0)}) / ${(1 + ratio).toFixed(2)} = ${formatters_js.formatKMB(effXp)}`;
+                        // Reuses maxProduceable's key: this tooltip is identical to the one built for
+                        // production action panels in max-produceable.js.
+                        overallSpan.title = i18n_js.t('maxProduceable.goldNeutralTooltip', {
+                            expPerHour: formatters_js.formatKMB(data.expPerHour),
+                            loss: formatters_js.formatKMB(loss),
+                            bestProfitName,
+                            bestProfit: formatters_js.formatKMB(bestProfit),
+                            bestProfitExp: formatters_js.formatKMB(bestProfitExp || 0),
+                            ratio: ratio.toFixed(2),
+                            ratioPlus1: (1 + ratio).toFixed(2),
+                            effXp: formatters_js.formatKMB(effXp),
+                        });
                     } else {
                         overallSpan.title = '';
                     }
@@ -14121,17 +14919,18 @@
                 const profitColor = profitPerHour >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
                 const profitSign = profitPerHour >= 0 ? '' : '-';
                 html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                html += `<span data-stat="profit" style="color: ${profitColor};">Profit/hr: ${profitSign}${formatters_js.formatKMB(Math.abs(profitPerHour))}</span></div>`;
+                // Reuses maxProduceable's key (no estimatedNote for gathering actions).
+                html += `<span data-stat="profit" style="color: ${profitColor};">${i18n_js.t('maxProduceable.profitPerHourLine', { sign: profitSign, value: formatters_js.formatKMB(Math.abs(profitPerHour)), note: '' })}</span></div>`;
             }
 
             if (showExp && expPerHour !== null && expPerHour > 0) {
                 html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                html += `<span data-stat="exp" style="color: #fff;">Exp/hr: ${formatters_js.formatKMB(expPerHour)}</span></div>`;
+                html += `<span data-stat="exp" style="color: #fff;">${i18n_js.t('maxProduceable.expPerHourLine', { value: formatters_js.formatKMB(expPerHour) })}</span></div>`;
             }
 
             if (showProfit && showExp && profitPerHour !== null && expPerHour !== null && expPerHour > 0) {
                 html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                html += `<span data-stat="overall" style="color: #fff;">Eff. XP/hr: ${formatters_js.formatKMB(expPerHour)}</span></div>`;
+                html += `<span data-stat="overall" style="color: #fff;">${i18n_js.t('maxProduceable.effXpPerHourLine', { value: formatters_js.formatKMB(expPerHour) })}</span></div>`;
             }
 
             data.displayElement.innerHTML = html;
@@ -14385,9 +15184,11 @@
      * @returns {string}
      */
     function formatRequiredMaterialStatus(material) {
-        const queuedText = material.queued > 0 ? ` (${formatters_js.numberFormatter(material.queued)} Q'd)` : '';
-        let text = `Required: ${formatters_js.numberFormatter(material.required)}${queuedText}`;
-        if (material.missing > 0) text += ` | Missing: ${formatters_js.numberFormatter(material.missing)}`;
+        const queuedSuffix =
+            material.queued > 0 ? i18n_js.t('requiredMaterials.queuedSuffix', { count: formatters_js.numberFormatter(material.queued) }) : '';
+        let text = i18n_js.t('requiredMaterials.requiredLine', { required: formatters_js.numberFormatter(material.required), queuedSuffix });
+        if (material.missing > 0)
+            text += i18n_js.t('requiredMaterials.missingSuffix', { count: formatters_js.numberFormatter(material.missing) });
         return text;
     }
 
@@ -14488,7 +15289,7 @@
                 const warning = document.createElement('div');
                 warning.className = 'mwi-artisan-warning';
                 warning.style.cssText = 'color:#f0a830; font-size:11px; text-align:center; padding:3px 0 1px 0;';
-                warning.textContent = '⚠ Artisan Tea out of stock — full material amounts shown';
+                warning.textContent = i18n_js.t('requiredMaterials.artisanTeaOutOfStock');
                 requiresDiv.insertAdjacentElement('afterend', warning);
             }
 
@@ -14531,7 +15332,7 @@
                     // Build text with queue info
                     let text;
                     if (isIndeterminate) {
-                        text = `Required: ${placeholderLabel}`;
+                        text = i18n_js.t('requiredMaterials.requiredLine', { required: placeholderLabel, queuedSuffix: '' });
                         displaySpan.style.color = '';
                     } else {
                         text = formatRequiredMaterialStatus(material);
@@ -16195,7 +16996,7 @@
         const button = document.createElement('button');
         button.id = 'mwi-missing-mats-button';
         button.type = 'button';
-        button.textContent = 'Missing Mats Marketplace';
+        button.textContent = i18n_js.t('guildCreditValue.missingMatsButtonLabel');
         button.disabled = disabled;
         button.style.cssText = `
     width: 100%;
@@ -16446,9 +17247,9 @@
         const button = document.createElement('button');
         button.id = 'mwi-missing-mats-button';
         button.type = 'button';
-        button.textContent = 'Missing Mats Marketplace';
+        button.textContent = i18n_js.t('guildCreditValue.missingMatsButtonLabel');
         button.disabled = disabled;
-        button.title = disabled && numActions <= 0 ? 'Enter a quantity to check missing materials' : '';
+        button.title = disabled && numActions <= 0 ? i18n_js.t('missingMaterialsButton.enterQuantityTooltip') : '';
         button.style.cssText = `
     width: 100%;
     padding: 10px 16px;
@@ -16676,7 +17477,7 @@
 `;
 
         if (strategyInfo.protectFrom === 0) {
-            indicator.textContent = 'No protection needed';
+            indicator.textContent = i18n_js.t('missingMaterialsButton.noProtectionNeeded');
         } else {
             // Get item sprite URL from existing DOM
             const spriteUse = document.querySelector('use[href*="items_sprite"]');
@@ -16694,7 +17495,7 @@
             }
 
             const label = document.createElement('span');
-            label.textContent = `From: +${strategyInfo.protectFrom}`;
+            label.textContent = i18n_js.t('missingMaterialsButton.protectFromLabel', { level: strategyInfo.protectFrom });
             indicator.appendChild(label);
         }
 
@@ -16755,7 +17556,7 @@
         if (badgeSpan) {
             badgeSpan.innerHTML = `
         <div style="text-align: center;">
-            <div>\u21a9 Return</div>
+            <div>${i18n_js.t('guildCreditValue.returnTabLabel')}</div>
             <div style="font-size: 0.75em; color: #60a5fa;">${displayName}</div>
         </div>
     `;
@@ -17321,11 +18122,12 @@
     `;
         header.innerHTML = `
         <div>
-            <span style="font-size:15px; font-weight:600; color:#e0e0e0;">Budget Calculator</span>
+            <span style="font-size:15px; font-weight:600; color:#e0e0e0;">${i18n_js.t('budgetCalculator.modalTitle')}</span>
             <span style="margin-left:10px; color:#aaa;">
-                Budget: <strong style="color:#fff;">${formatters_js.formatKMB(budget)}</strong>
-                &nbsp;→&nbsp;
-                <strong style="color:#7ec87e;">${formatters_js.formatWithSeparator(result.n)} units</strong>
+                ${i18n_js.t('budgetCalculator.budgetSummaryLine', {
+                    budget: formatters_js.formatKMB(budget),
+                    units: formatters_js.formatWithSeparator(result.n),
+                })}
             </span>
         </div>
         <button id="mwi-budget-modal-close" style="
@@ -17362,7 +18164,7 @@
 
                 const askCell = ask
                     ? `<td style="${tdStyle}">${formatters_js.formatKMB(ask)}</td>`
-                    : `<td style="${tdDimStyle}">${mat.isTradeable ? 'No data' : '—'}</td>`;
+                    : `<td style="${tdDimStyle}">${mat.isTradeable ? i18n_js.t('budgetCalculator.noData') : '—'}</td>`;
 
                 const costCell =
                     lineCost > 0
@@ -17388,22 +18190,22 @@
         <table style="width:100%; border-collapse:collapse;">
             <thead>
                 <tr>
-                    <th style="${thLeftStyle}">Ingredient</th>
-                    <th style="${thStyle}">Required</th>
-                    <th style="${thStyle}">On Hand</th>
-                    <th style="${thStyle}">To Buy</th>
-                    <th style="${thStyle}">Ask Price</th>
-                    <th style="${thStyle}">Total Cost</th>
+                    <th style="${thLeftStyle}">${i18n_js.t('budgetCalculator.colIngredient')}</th>
+                    <th style="${thStyle}">${i18n_js.t('budgetCalculator.colRequired')}</th>
+                    <th style="${thStyle}">${i18n_js.t('budgetCalculator.colOnHand')}</th>
+                    <th style="${thStyle}">${i18n_js.t('budgetCalculator.colToBuy')}</th>
+                    <th style="${thStyle}">${i18n_js.t('budgetCalculator.colAskPrice')}</th>
+                    <th style="${thStyle}">${i18n_js.t('budgetCalculator.colTotalCost')}</th>
                 </tr>
             </thead>
             <tbody>${rows}</tbody>
             <tfoot>
                 <tr>
-                    <td colspan="5" style="${summaryRowStyle}; text-align:left; color:#aaa;">Per unit cost (ask)</td>
+                    <td colspan="5" style="${summaryRowStyle}; text-align:left; color:#aaa;">${i18n_js.t('budgetCalculator.perUnitCostLabel')}</td>
                     <td style="${summaryRowStyle}">${formatters_js.formatKMB(Math.round(perUnitCost))}</td>
                 </tr>
                 <tr>
-                    <td colspan="5" style="${summaryRowStyle}; text-align:left; color:#aaa;">Total spend</td>
+                    <td colspan="5" style="${summaryRowStyle}; text-align:left; color:#aaa;">${i18n_js.t('budgetCalculator.totalSpendLabel')}</td>
                     <td style="${summaryRowStyle}; color:#7ec87e;">${formatters_js.formatKMB(totalSpend)}</td>
                 </tr>
             </tfoot>
@@ -17535,7 +18337,7 @@
 
             const input = document.createElement('input');
             input.type = 'text';
-            input.placeholder = 'Budget (e.g. 50m)';
+            input.placeholder = i18n_js.t('budgetCalculator.budgetInputPlaceholder');
             input.style.cssText = `
             flex: 1;
             background: #2a2a2a;
@@ -17548,7 +18350,7 @@
         `;
 
             const calcBtn = document.createElement('button');
-            calcBtn.textContent = 'Calculate';
+            calcBtn.textContent = i18n_js.t('budgetCalculator.calculateButton');
             calcBtn.style.cssText = `
             background: linear-gradient(180deg, rgba(126,200,126,0.2) 0%, rgba(126,200,126,0.1) 100%);
             color: #e0e0e0;
@@ -17569,7 +18371,7 @@
             });
 
             const detailsLink = document.createElement('span');
-            detailsLink.title = 'View last breakdown';
+            detailsLink.title = i18n_js.t('budgetCalculator.viewLastBreakdownTooltip');
             detailsLink.style.cssText = 'font-size:14px; cursor:pointer; opacity:0.4; user-select:none;';
             detailsLink.textContent = '📋';
             detailsLink.style.display = 'none';
@@ -17584,10 +18386,10 @@
                 const budget = parseKMB(raw);
                 if (isNaN(budget) || budget <= 0) {
                     input.style.borderColor = '#c0392b';
-                    const t = setTimeout(() => {
+                    const invalidBudgetTimer = setTimeout(() => {
                         input.style.borderColor = '#555';
                     }, 1500);
-                    this.timerRegistry.registerTimeout(t);
+                    this.timerRegistry.registerTimeout(invalidBudgetTimer);
                     return;
                 }
                 input.style.borderColor = '#555';
@@ -17597,11 +18399,11 @@
 
                 const result = findMaxUnits(actionHrid, budget);
                 if (!result) {
-                    calcBtn.textContent = 'No data';
-                    const t = setTimeout(() => {
-                        calcBtn.textContent = 'Calculate';
+                    calcBtn.textContent = i18n_js.t('budgetCalculator.noData');
+                    const noDataTimer = setTimeout(() => {
+                        calcBtn.textContent = i18n_js.t('budgetCalculator.calculateButton');
                     }, 2000);
-                    this.timerRegistry.registerTimeout(t);
+                    this.timerRegistry.registerTimeout(noDataTimer);
                     return;
                 }
 
@@ -17752,7 +18554,7 @@
         if (itemHrid === '/items/coin') {
             return {
                 itemHrid,
-                itemName: 'Coin',
+                itemName: i18n_js.t('craftingPlanCalculator.coinItemName'),
                 quantity,
                 strategy: 'buy',
                 unitCost: 1,
@@ -18224,7 +19026,7 @@
     `;
 
         const header = document.createElement('div');
-        header.textContent = 'Cost Summary';
+        header.textContent = i18n_js.t('costSummary.title');
         header.style.cssText = `
         font-size: 13px;
         font-weight: 600;
@@ -18234,10 +19036,10 @@
     `;
         container.appendChild(header);
 
-        container.appendChild(renderLine('Direct recipe cost', directCost, !directComplete));
-        container.appendChild(renderLine('Missing direct mats', missingCost, !missingComplete));
-        container.appendChild(renderLine('Best crafting plan', planCost));
-        container.appendChild(renderLine('Finished item market', marketCost));
+        container.appendChild(renderLine(i18n_js.t('costSummary.directRecipeCostLabel'), directCost, !directComplete));
+        container.appendChild(renderLine(i18n_js.t('costSummary.missingDirectMatsLabel'), missingCost, !missingComplete));
+        container.appendChild(renderLine(i18n_js.t('costSummary.bestCraftingPlanLabel'), planCost));
+        container.appendChild(renderLine(i18n_js.t('costSummary.finishedItemMarketLabel'), marketCost));
 
         return container;
     }
@@ -18262,7 +19064,7 @@
             valueEl.style.color = '#e2e8f0';
             valueEl.style.fontVariantNumeric = 'tabular-nums';
             if (partial) {
-                valueEl.title = 'Partial — some materials have no market data';
+                valueEl.title = i18n_js.t('costSummary.partialDataTooltip');
             }
         }
         row.appendChild(labelEl);
@@ -18673,7 +19475,7 @@
             color: var(--text-color-primary, #fff);
             margin-bottom: 4px;
         `;
-            shoppingHeader.textContent = 'Shopping List';
+            shoppingHeader.textContent = i18n_js.t('craftingPlanTreeRenderer.shoppingListHeader');
             shoppingListContainer.appendChild(shoppingHeader);
 
             // Sort by total cost descending
@@ -18690,9 +19492,13 @@
 
             // Total buy cost
             const totalBuyCost = sortedItems.reduce((sum, item) => sum + item.totalCost, 0);
-            const totalRow = createRow('Total material cost', formatters_js.formatWithSeparator(Math.round(totalBuyCost)), {
-                leftColor: 'var(--text-color-primary, #fff)',
-            });
+            const totalRow = createRow(
+                i18n_js.t('craftingPlanTreeRenderer.totalMaterialCostLabel'),
+                formatters_js.formatWithSeparator(Math.round(totalBuyCost)),
+                {
+                    leftColor: 'var(--text-color-primary, #fff)',
+                }
+            );
             totalRow.style.borderTop = '1px solid var(--border-color, #333)';
             totalRow.style.marginTop = '4px';
             totalRow.style.paddingTop = '4px';
@@ -18719,7 +19525,7 @@
             color: var(--text-color-primary, #fff);
             margin-bottom: 4px;
         `;
-            stepsHeader.textContent = 'Crafting Steps';
+            stepsHeader.textContent = i18n_js.t('craftingPlanTreeRenderer.craftingStepsHeader');
             container.appendChild(stepsHeader);
 
             for (let i = 0; i < craftMetrics.steps.length; i++) {
@@ -18736,9 +19542,13 @@
             }
 
             if (craftMetrics.totalCraftSeconds > 0) {
-                const totalTimeRow = createRow('Total craft time', formatters_js.timeReadable(craftMetrics.totalCraftSeconds), {
-                    leftColor: 'var(--text-color-primary, #fff)',
-                });
+                const totalTimeRow = createRow(
+                    i18n_js.t('craftingPlanTreeRenderer.totalCraftTimeLabel'),
+                    formatters_js.timeReadable(craftMetrics.totalCraftSeconds),
+                    {
+                        leftColor: 'var(--text-color-primary, #fff)',
+                    }
+                );
                 totalTimeRow.style.borderTop = '1px solid var(--border-color, #333)';
                 totalTimeRow.style.marginTop = '4px';
                 totalTimeRow.style.paddingTop = '4px';
@@ -18747,7 +19557,7 @@
 
             if (craftMetrics.totalXP > 0) {
                 container.appendChild(
-                    createRow('Total XP', formatters_js.formatKMB(Math.round(craftMetrics.totalXP)), {
+                    createRow(i18n_js.t('craftingPlanTreeRenderer.totalXpLabel'), formatters_js.formatKMB(Math.round(craftMetrics.totalXP)), {
                         leftColor: 'var(--text-color-primary, #fff)',
                     })
                 );
@@ -18766,17 +19576,31 @@
 
     const UI_ID = 'mwi-crafting-plan';
 
-    const PRICING_MODES = [
-        { value: 'conservative', label: 'Instant Buy' },
-        { value: 'hybrid', label: 'Instant Buy / Patient Sell' },
-        { value: 'optimistic', label: 'Patient Buy / Patient Sell' },
-        { value: 'patientBuy', label: 'Patient Buy' },
-    ];
-    const ARTISAN_MODES = [
-        { value: materialCalculator_js.ARTISAN_MATERIAL_MODE.EXPECTED, label: 'Expected' },
-        { value: materialCalculator_js.ARTISAN_MATERIAL_MODE.WORST_CASE, label: 'Worst-case' },
-        { value: materialCalculator_js.ARTISAN_MATERIAL_MODE.HYBRID, label: 'Hybrid' },
-    ];
+    /**
+     * Build the pricing mode options, resolved at call time so the labels reflect the active locale.
+     * @returns {{value: string, label: string}[]}
+     */
+    function getPricingModes() {
+        return [
+            { value: 'conservative', label: i18n_js.t('craftingPlanDisplay.pricingModeInstantBuy') },
+            { value: 'hybrid', label: i18n_js.t('craftingPlanDisplay.pricingModeInstantBuyPatientSell') },
+            { value: 'optimistic', label: i18n_js.t('craftingPlanDisplay.pricingModePatientBuyPatientSell') },
+            { value: 'patientBuy', label: i18n_js.t('craftingPlanDisplay.pricingModePatientBuy') },
+        ];
+    }
+
+    /**
+     * Build the Artisan material mode options, resolved at call time so the labels reflect the
+     * active locale.
+     * @returns {{value: string, label: string}[]}
+     */
+    function getArtisanModes() {
+        return [
+            { value: materialCalculator_js.ARTISAN_MATERIAL_MODE.EXPECTED, label: i18n_js.t('openableAnalytics.expectedLabel') },
+            { value: materialCalculator_js.ARTISAN_MATERIAL_MODE.WORST_CASE, label: i18n_js.t('craftingPlanDisplay.artisanModeWorstCase') },
+            { value: materialCalculator_js.ARTISAN_MATERIAL_MODE.HYBRID, label: i18n_js.t('craftingPlanDisplay.artisanModeHybrid') },
+        ];
+    }
     let cleanupObserver = null;
     let nativeTabExitCleanup = null;
     const autofillManager = createAutofillManager('CraftingPlan');
@@ -18938,14 +19762,19 @@
 
         // === Summary comparison ===
         const unitCostText = plan.unitCost === Infinity ? '?' : formatters_js.formatWithSeparator(Math.round(plan.unitCost));
-        const buyText = plan.buyPrice !== null ? formatters_js.formatWithSeparator(Math.round(plan.buyPrice)) : 'N/A';
-        const craftText = plan.craftCost !== null ? formatters_js.formatWithSeparator(Math.round(plan.craftCost)) : 'N/A';
-        const strategyText = plan.strategy === 'buy' ? 'Buy from market' : 'Craft from materials';
+        const buyText =
+            plan.buyPrice !== null ? formatters_js.formatWithSeparator(Math.round(plan.buyPrice)) : i18n_js.t('combatSimUi.notAvailableLabel');
+        const craftText =
+            plan.craftCost !== null ? formatters_js.formatWithSeparator(Math.round(plan.craftCost)) : i18n_js.t('combatSimUi.notAvailableLabel');
+        const strategyText =
+            plan.strategy === 'buy'
+                ? i18n_js.t('craftingPlanDisplay.strategyBuyFromMarket')
+                : i18n_js.t('craftingPlanDisplay.strategyCraftFromMaterials');
         const quantityRow =
             requestedQuantity > 1 && plan.unitCost !== Infinity
                 ? `<div style="display: flex; justify-content: space-between; color: var(--text-color-secondary, #888); font-size: 0.9em;">
-                   <span>Quantity: ${formatters_js.formatWithSeparator(requestedQuantity)}</span>
-                   <span>Total: ${formatters_js.formatWithSeparator(Math.round(plan.totalCost))}</span>
+                   <span>${i18n_js.t('craftingPlanDisplay.quantityLine', { quantity: formatters_js.formatWithSeparator(requestedQuantity) })}</span>
+                   <span>${i18n_js.t('craftingPlanDisplay.totalLine', { value: formatters_js.formatWithSeparator(Math.round(plan.totalCost)) })}</span>
                </div>`
                 : '';
 
@@ -18953,44 +19782,43 @@
         summary.style.cssText = 'margin-bottom: 6px;';
         summary.innerHTML = `
         <div style="display: flex; justify-content: space-between; color: var(--text-color-primary, #fff);">
-            <span>Optimal: <strong>${strategyText}</strong></span>
-            <span>${unitCostText}/ea</span>
+            <span>${i18n_js.t('craftingPlanDisplay.optimalStrategyLine', { strategy: strategyText })}</span>
+            <span>${i18n_js.t('craftingPlanDisplay.unitCostPerEach', { cost: unitCostText })}</span>
         </div>
         <div style="display: flex; justify-content: space-between; color: var(--text-color-secondary, #888); font-size: 0.9em;">
-            <span>Market buy: ${buyText}</span>
-            <span>Craft cost: ${craftText}</span>
+            <span>${i18n_js.t('craftingPlanDisplay.marketBuyLine', { value: buyText })}</span>
+            <span>${i18n_js.t('craftingPlanDisplay.craftCostLine', { value: craftText })}</span>
         </div>
         ${quantityRow}
     `;
         content.appendChild(summary);
 
         // === Pricing mode toggle ===
-        const currentMode = PRICING_MODES.find((m) => m.value === pricingModeSetting) || PRICING_MODES[0];
+        const pricingModes = getPricingModes();
+        const currentMode = pricingModes.find((m) => m.value === pricingModeSetting) || pricingModes[0];
         content.appendChild(
-            createModePillRow('Pricing:', currentMode.label, () => {
-                const idx = PRICING_MODES.findIndex((m) => m.value === pricingModeSetting);
-                const next = PRICING_MODES[(idx + 1) % PRICING_MODES.length];
+            createModePillRow(i18n_js.t('craftingPlanDisplay.pricingPillLabel'), currentMode.label, () => {
+                const idx = pricingModes.findIndex((m) => m.value === pricingModeSetting);
+                const next = pricingModes[(idx + 1) % pricingModes.length];
                 config.setSettingValue('profitCalc_pricingMode', next.value);
                 if (onToggle) onToggle();
             })
         );
 
         // === Artisan material mode toggle ===
-        const currentArtisanMode = ARTISAN_MODES.find((m) => m.value === artisanMode) || ARTISAN_MODES[0];
+        const artisanModes = getArtisanModes();
+        const currentArtisanMode = artisanModes.find((m) => m.value === artisanMode) || artisanModes[0];
         content.appendChild(
             createModePillRow(
-                'Artisan mode:',
+                i18n_js.t('craftingPlanDisplay.artisanModePillLabel'),
                 currentArtisanMode.label,
                 () => {
-                    const idx = ARTISAN_MODES.findIndex((m) => m.value === artisanMode);
-                    const next = ARTISAN_MODES[(idx + 1) % ARTISAN_MODES.length];
+                    const idx = artisanModes.findIndex((m) => m.value === artisanMode);
+                    const next = artisanModes[(idx + 1) % artisanModes.length];
                     config.setSettingValue('actions_artisanMaterialMode', next.value);
                     if (onToggle) onToggle();
                 },
-                'How Artisan Tea savings are rounded into material quantities:\n' +
-                    'Expected — pools the savings across the whole batch (average, may run short on a bad action).\n' +
-                    'Worst-case — rounds up every single action before multiplying (safest, may over-buy).\n' +
-                    'Hybrid — worst-case under 100 actions, expected at 100+.'
+                i18n_js.t('craftingPlanDisplay.artisanModeTooltip')
             )
         );
 
@@ -19014,7 +19842,7 @@
             if (onToggle) onToggle();
         });
         matchQuantityRow.appendChild(matchQuantityCheckbox);
-        matchQuantityRow.appendChild(document.createTextNode('Match action panel quantity'));
+        matchQuantityRow.appendChild(document.createTextNode(i18n_js.t('craftingPlanDisplay.matchQuantityLabel')));
         content.appendChild(matchQuantityRow);
 
         // === Buy intermediates toggle ===
@@ -19037,7 +19865,7 @@
             if (onToggle) onToggle();
         });
         toggleRow.appendChild(checkbox);
-        toggleRow.appendChild(document.createTextNode('Buy raw materials only'));
+        toggleRow.appendChild(document.createTextNode(i18n_js.t('craftingPlanDisplay.buyRawMaterialsOnlyLabel')));
         content.appendChild(toggleRow);
 
         // === No processing toggle ===
@@ -19060,7 +19888,7 @@
             if (onToggle) onToggle();
         });
         noProcessingRow.appendChild(noProcessingCheckbox);
-        noProcessingRow.appendChild(document.createTextNode('No processing (buy intermediates)'));
+        noProcessingRow.appendChild(document.createTextNode(i18n_js.t('craftingPlanDisplay.noProcessingLabel')));
         content.appendChild(noProcessingRow);
 
         // === Task mode toggle ===
@@ -19083,7 +19911,7 @@
             if (onToggle) onToggle();
         });
         taskToggleRow.appendChild(taskCheckbox);
-        taskToggleRow.appendChild(document.createTextNode('Task mode (force last step)'));
+        taskToggleRow.appendChild(document.createTextNode(i18n_js.t('craftingPlanDisplay.taskModeLabel')));
         content.appendChild(taskToggleRow);
 
         // === Time cost toggle ===
@@ -19102,7 +19930,7 @@
         timeCostCheckbox.checked = timeCostEnabled;
         timeCostCheckbox.style.cssText = 'margin: 0; cursor: pointer;';
         timeCostRow.appendChild(timeCostCheckbox);
-        timeCostRow.appendChild(document.createTextNode('Factor in time cost'));
+        timeCostRow.appendChild(document.createTextNode(i18n_js.t('craftingPlanDisplay.factorTimeCostLabel')));
 
         const goldInput = document.createElement('input');
         goldInput.type = 'number';
@@ -19115,7 +19943,7 @@
     `;
         goldInput.style.display = timeCostEnabled ? '' : 'none';
         const goldLabel = document.createElement('span');
-        goldLabel.textContent = 'gold/hr';
+        goldLabel.textContent = i18n_js.t('taskProfitDisplay.goldPerHourUnit');
         goldLabel.style.fontSize = '0.85em';
         goldLabel.style.display = timeCostEnabled ? '' : 'none';
 
@@ -19137,7 +19965,14 @@
         // Only show breakdown if crafting is the optimal strategy
         if (plan.strategy !== 'craft' || plan.children.length === 0) {
             const costText = formatCraftingPlanSummary(plan, craftMetrics.totalCraftSeconds);
-            const section = uiComponents_js.createCollapsibleSection('', 'Best Crafting Plan', costText, content, defaultOpen, 0);
+            const section = uiComponents_js.createCollapsibleSection(
+                '',
+                i18n_js.t('craftingPlanDisplay.bestCraftingPlanTitle'),
+                costText,
+                content,
+                defaultOpen,
+                0
+            );
             section.id = UI_ID;
             section.className = 'mwi-crafting-plan-section';
             return compactActionPanelSection(section);
@@ -19155,7 +19990,7 @@
                 // === Buy Missing Materials button ===
                 const buyButton = document.createElement('button');
                 buyButton.type = 'button';
-                buyButton.textContent = 'Buy Missing Materials';
+                buyButton.textContent = i18n_js.t('craftingPlanDisplay.buyMissingMaterialsButton');
                 buyButton.style.cssText = `
                 width: 100%; margin-top: 6px; padding: 6px;
                 background: linear-gradient(135deg, #1e40af, #3b82f6);
@@ -19302,7 +20137,14 @@
         }
 
         const costText = formatCraftingPlanSummary(plan, craftMetrics.totalCraftSeconds);
-        const section = uiComponents_js.createCollapsibleSection('', 'Best Crafting Plan', costText, content, defaultOpen, 0);
+        const section = uiComponents_js.createCollapsibleSection(
+            '',
+            i18n_js.t('craftingPlanDisplay.bestCraftingPlanTitle'),
+            costText,
+            content,
+            defaultOpen,
+            0
+        );
         section.id = UI_ID;
         section.className = 'mwi-crafting-plan-section';
         compactActionPanelSection(section);
@@ -19385,7 +20227,7 @@
         if (badge) {
             badge.innerHTML = `
             <div style="text-align: center;">
-                <div>↩ Return</div>
+                <div>${i18n_js.t('guildCreditValue.returnTabLabel')}</div>
                 <div style="font-size: 0.75em; color: #60a5fa;">${displayName}</div>
             </div>
         `;
@@ -22241,6 +23083,36 @@
         return { actionType, itemHrid, enhancementLevel, itemName };
     }
 
+    // Reuse the already-translated alchemy action type labels from the Skilling Optimizer namespace
+    // rather than displaying the raw internal actionType keyword (e.g. "coinify").
+    const ALCHEMY_TYPE_LABEL_KEYS$1 = {
+        coinify: 'skillingOptimizer.alchemyTypeCoinify',
+        decompose: 'skillingOptimizer.alchemyTypeDecompose',
+        transmute: 'skillingOptimizer.alchemyTypeTransmute',
+    };
+
+    /**
+     * Get a translated display label for an alchemy action type.
+     * @param {string} actionType - 'coinify', 'decompose', or 'transmute'
+     * @returns {string} Translated label, or the raw actionType if unrecognized
+     */
+    function getAlchemyTypeLabel$1(actionType) {
+        const key = ALCHEMY_TYPE_LABEL_KEYS$1[actionType];
+        return key ? i18n_js.t(key) : actionType;
+    }
+
+    /**
+     * Build the "<actionType>: <itemName>" label used to describe an alchemy context.
+     * @param {Object} alchemyContext - { actionType, itemName }
+     * @returns {string} Translated composite label
+     */
+    function getAlchemyTargetLabel(alchemyContext) {
+        return i18n_js.t('teaRecommendation.alchemyTargetLabel', {
+            actionType: getAlchemyTypeLabel$1(alchemyContext.actionType),
+            itemName: alchemyContext.itemName,
+        });
+    }
+
     class TeaRecommendation {
         constructor() {
             this.initialized = false;
@@ -22321,11 +23193,11 @@
         `;
 
             // Create XP button
-            const xpButton = this.createButton('XP', 'xp', config.COLOR_INFO);
+            const xpButton = this.createButton(i18n_js.t('teaRecommendation.xpButtonLabel'), 'xp', config.COLOR_INFO);
             // Create Gold button
-            const goldButton = this.createButton('Gold', 'gold', config.COLOR_PROFIT);
+            const goldButton = this.createButton(i18n_js.t('teaRecommendation.goldButtonLabel'), 'gold', config.COLOR_PROFIT);
             // Create Both button
-            const bothButton = this.createButton('Both', 'both', config.COLOR_ACCENT);
+            const bothButton = this.createButton(i18n_js.t('teaRecommendation.bothButtonLabel'), 'both', config.COLOR_ACCENT);
 
             buttonContainer.appendChild(xpButton);
             buttonContainer.appendChild(goldButton);
@@ -22394,10 +23266,11 @@
             // Detect if we're on the alchemy page by checking if the button is inside an alchemy panel
             const isAlchemy = !!anchorButton.closest('[class*="AlchemyPanel_"]');
 
-            // Get current skill name — action filter doesn't track alchemy, so override when needed
-            const skillName = isAlchemy ? 'Alchemy' : actionFilter.getCurrentSkillName();
+            // Get current skill name — action filter doesn't track alchemy, so override when needed.
+            // Reuses labSim's translated "Alchemy" skill-name label rather than a new key.
+            const skillName = isAlchemy ? i18n_js.t('labSim.skillAlchemy') : actionFilter.getCurrentSkillName();
             if (!skillName) {
-                this.showError(anchorButton, 'Could not detect current skill');
+                this.showError(anchorButton, i18n_js.t('teaRecommendation.errorSkillNotDetected'));
                 return;
             }
 
@@ -22409,7 +23282,7 @@
             if (isAlchemy) {
                 alchemyContext = await getAlchemyContext();
                 if (!alchemyContext) {
-                    this.showError(anchorButton, 'No item selected in alchemy panel');
+                    this.showError(anchorButton, i18n_js.t('teaRecommendation.errorNoAlchemyItemSelected'));
                     return;
                 }
             }
@@ -22494,7 +23367,7 @@
         buildPopupContent(popup, result, goal, skillName, locationTab, drilldownAction, alchemyContext = null) {
             popup.innerHTML = '';
 
-            const goalLabel = goal === 'xp' ? 'XP' : 'Gold';
+            const goalLabel = goal === 'xp' ? i18n_js.t('teaRecommendation.xpButtonLabel') : i18n_js.t('teaRecommendation.goldButtonLabel');
 
             // Header (draggable)
             const header = document.createElement('div');
@@ -22508,18 +23381,24 @@
             cursor: grab;
             user-select: none;
         `;
-            header.title = 'Drag to move';
+            header.title = i18n_js.t('teaRecommendation.dragToMoveTooltip');
             if (drilldownAction) {
-                header.textContent = `Optimal ${goalLabel}/hr for ${drilldownAction}`;
+                header.textContent = i18n_js.t('teaRecommendation.headerTitle', {
+                    goalLabel,
+                    target: drilldownAction,
+                    dcPercent: 0,
+                });
             } else if (alchemyContext) {
                 const dcPercent = result.drinkConcentration ? (result.drinkConcentration * 100).toFixed(2) : 0;
-                const dcSuffix = dcPercent > 0 ? ` (${dcPercent}% DC)` : '';
-                header.textContent = `Optimal ${goalLabel}/hr for ${alchemyContext.actionType}: ${alchemyContext.itemName}${dcSuffix}`;
+                header.textContent = i18n_js.t('teaRecommendation.headerTitle', {
+                    goalLabel,
+                    target: getAlchemyTargetLabel(alchemyContext),
+                    dcPercent,
+                });
             } else {
                 const displayName = locationTab || skillName;
                 const dcPercent = result.drinkConcentration ? (result.drinkConcentration * 100).toFixed(2) : 0;
-                const dcSuffix = dcPercent > 0 ? ` (${dcPercent}% DC)` : '';
-                header.textContent = `Optimal ${goalLabel}/hr for ${displayName}${dcSuffix}`;
+                header.textContent = i18n_js.t('teaRecommendation.headerTitle', { goalLabel, target: displayName, dcPercent });
             }
             popup.appendChild(header);
             this.dragCleanup = this.makeDraggable(popup, header);
@@ -22535,7 +23414,7 @@
                 background: rgba(0, 0, 0, 0.3);
                 border-radius: 4px;
             `;
-                noResult.textContent = 'No valid combinations with current constraints.';
+                noResult.textContent = i18n_js.t('teaRecommendation.noValidCombinationsMessage');
                 popup.appendChild(noResult);
             } else {
                 const teaList = document.createElement('div');
@@ -22593,11 +23472,11 @@
             stats.innerHTML = `
             <div style="margin-bottom: 4px;">
                 <span style="color: ${goal === 'xp' ? config.COLOR_INFO : config.COLOR_PROFIT};">
-                    Avg ${goalLabel}/hr: ${avgValue}
+                    ${i18n_js.t('teaRecommendation.avgRateLine', { goalLabel, value: avgValue })}
                 </span>
             </div>
             <div style="font-size: 11px;">
-                Level ${result.playerLevel} •
+                ${i18n_js.t('teaRecommendation.levelBullet', { level: result.playerLevel })}
             </div>
         `;
 
@@ -22609,7 +23488,7 @@
                 text-decoration: underline;
                 color: rgba(255, 255, 255, 0.5);
             `;
-                backLink.textContent = `← All ${skillName} actions`;
+                backLink.textContent = i18n_js.t('teaRecommendation.backToAllActionsLabel', { skillName });
                 backLink.addEventListener('click', () => {
                     const allResult = findOptimalTeas(skillName, goal, locationTab, null, null, alchemyContext);
                     if (!allResult.error && allResult.optimal) {
@@ -22622,17 +23501,18 @@
                 let actionsText;
                 if (alchemyContext) {
                     // Single alchemy item — no "profitable of N" count needed
-                    actionsText = `${alchemyContext.actionType}: ${alchemyContext.itemName}`;
+                    actionsText = getAlchemyTargetLabel(alchemyContext);
                 } else if (goal === 'gold') {
-                    actionsText =
-                        excludedCount > 0
-                            ? `${profitableCount} profitable of ${result.actionsEvaluated} (+${excludedCount} excluded)`
-                            : `${profitableCount} profitable of ${result.actionsEvaluated}`;
+                    actionsText = i18n_js.t('teaRecommendation.goldActionsSummary', {
+                        profitableCount,
+                        totalCount: result.actionsEvaluated,
+                        excludedCount,
+                    });
                 } else {
-                    actionsText =
-                        excludedCount > 0
-                            ? `${result.actionsEvaluated} actions (+${excludedCount} excluded)`
-                            : `${result.actionsEvaluated} actions evaluated`;
+                    actionsText = i18n_js.t('teaRecommendation.xpActionsSummary', {
+                        totalCount: result.actionsEvaluated,
+                        excludedCount,
+                    });
                 }
 
                 const actionsToggle = document.createElement('span');
@@ -22642,7 +23522,7 @@
                 color: rgba(255, 255, 255, 0.5);
             `;
                 actionsToggle.textContent = actionsText;
-                actionsToggle.title = 'Click to expand';
+                actionsToggle.title = i18n_js.t('teaRecommendation.clickToExpandTooltip');
 
                 const actionsDetail = document.createElement('div');
                 actionsDetail.style.cssText = `
@@ -22720,7 +23600,9 @@
                         color: rgba(255, 255, 255, 0.4);
                         padding-top: 4px;
                     `;
-                        separator.textContent = `Excluded (${excludedActions.length} - level too low)`;
+                        separator.textContent = i18n_js.t('teaRecommendation.excludedActionsHeader', {
+                            count: excludedActions.length,
+                        });
                         actionsDetail.appendChild(separator);
                     }
 
@@ -22740,7 +23622,9 @@
                     `;
 
                         const levelReq = document.createElement('span');
-                        levelReq.textContent = `Lvl ${excluded.requiredLevel}`;
+                        levelReq.textContent = i18n_js.t('teaRecommendation.levelRequirementLabel', {
+                            level: excluded.requiredLevel,
+                        });
                         levelReq.style.cssText = `
                         color: rgba(255, 255, 255, 0.35);
                         font-style: italic;
@@ -22757,17 +23641,16 @@
                     actionsDetail.style.display = isHidden ? 'block' : 'none';
                     let expandedText;
                     if (alchemyContext) {
-                        expandedText = `▼ ${alchemyContext.actionType}: ${alchemyContext.itemName}`;
+                        expandedText = i18n_js.t('teaRecommendation.expandedAlchemyLabel', {
+                            target: getAlchemyTargetLabel(alchemyContext),
+                        });
                     } else if (goal === 'gold') {
-                        expandedText =
-                            excludedCount > 0
-                                ? `▼ ${profitableCount} profitable (+${excludedCount})`
-                                : `▼ ${profitableCount} profitable`;
+                        expandedText = i18n_js.t('teaRecommendation.expandedGoldLabel', { profitableCount, excludedCount });
                     } else {
-                        expandedText =
-                            excludedCount > 0
-                                ? `▼ ${result.actionsEvaluated} (+${excludedCount})`
-                                : `▼ ${result.actionsEvaluated} actions`;
+                        expandedText = i18n_js.t('teaRecommendation.expandedXpLabel', {
+                            totalCount: result.actionsEvaluated,
+                            excludedCount,
+                        });
                     }
                     actionsToggle.textContent = isHidden ? expandedText : actionsText;
                 });
@@ -22788,8 +23671,11 @@
                 text-decoration: underline;
                 color: ${config.COLOR_GOLD};
             `;
-                costToggle.textContent = `Tea cost: ${formatters_js.formatKMB(costData.total)}/hr ▶`;
-                costToggle.title = 'Click to expand';
+                costToggle.textContent = i18n_js.t('teaRecommendation.teaCostLine', {
+                    cost: formatters_js.formatKMB(costData.total),
+                    arrow: '▶',
+                });
+                costToggle.title = i18n_js.t('teaRecommendation.clickToExpandTooltip');
 
                 const costDetail = document.createElement('div');
                 costDetail.style.cssText = `
@@ -22812,11 +23698,15 @@
                 border-bottom: 1px solid rgba(255, 255, 255, 0.15);
                 margin-bottom: 4px;
             `;
-                ['Tea', 'Units/hr', 'Unit cost', 'Cost/hr'].forEach((label) => {
+                [
+                    { text: i18n_js.t('teaRecommendation.costColTea'), align: 'left' },
+                    { text: i18n_js.t('teaRecommendation.costColUnitsPerHour'), align: 'right' },
+                    { text: i18n_js.t('teaRecommendation.costColUnitCost'), align: 'right' },
+                    { text: i18n_js.t('teaRecommendation.costColCostPerHour'), align: 'right' },
+                ].forEach(({ text, align }) => {
                     const cell = document.createElement('span');
-                    cell.textContent = label;
-                    cell.style.textAlign = 'right';
-                    if (label === 'Tea') cell.style.textAlign = 'left';
+                    cell.textContent = text;
+                    cell.style.textAlign = align;
                     headerRow.appendChild(cell);
                 });
                 costDetail.appendChild(headerRow);
@@ -22860,7 +23750,7 @@
                 border-top: 1px solid rgba(255, 255, 255, 0.15);
                 color: rgba(255, 255, 255, 0.5);
             `;
-                ['Total', '', '', formatters_js.formatKMB(costData.total)].forEach((text, i) => {
+                [i18n_js.t('guildCreditValue.totalRowLabel'), '', '', formatters_js.formatKMB(costData.total)].forEach((text, i) => {
                     const cell = document.createElement('span');
                     cell.textContent = text;
                     cell.style.textAlign = i === 0 ? 'left' : 'right';
@@ -22872,7 +23762,10 @@
                 costToggle.addEventListener('click', () => {
                     const isHidden = costDetail.style.display === 'none';
                     costDetail.style.display = isHidden ? 'block' : 'none';
-                    costToggle.textContent = `Tea cost: ${formatters_js.formatKMB(costData.total)}/hr ${isHidden ? '▼' : '▶'}`;
+                    costToggle.textContent = i18n_js.t('teaRecommendation.teaCostLine', {
+                        cost: formatters_js.formatKMB(costData.total),
+                        arrow: isHidden ? '▼' : '▶',
+                    });
                 });
 
                 costSection.appendChild(costToggle);
@@ -22897,7 +23790,7 @@
                 color: rgba(255, 255, 255, 0.5);
                 margin-bottom: 6px;
             `;
-                altHeader.textContent = 'Alternatives:';
+                altHeader.textContent = i18n_js.t('teaRecommendation.alternativesHeader');
                 altSection.appendChild(altHeader);
 
                 // Show top 3 alternatives (skip the optimal)
@@ -22910,8 +23803,14 @@
                     padding: 2px 0;
                 `;
                     const costSuffix =
-                        alt.teaCostPerHour?.total > 0 ? ` · ${formatters_js.formatKMB(alt.teaCostPerHour.total)} cost/hr` : '';
-                    altRow.textContent = `${alt.teas.join(', ')} (${formatters_js.formatKMB(alt.avgScore)}/hr${costSuffix})`;
+                        alt.teaCostPerHour?.total > 0
+                            ? i18n_js.t('teaRecommendation.alternativeCostSuffix', { cost: formatters_js.formatKMB(alt.teaCostPerHour.total) })
+                            : '';
+                    altRow.textContent = i18n_js.t('teaRecommendation.alternativeComboLine', {
+                        teas: alt.teas.join(', '),
+                        rate: formatters_js.formatKMB(alt.avgScore),
+                        costSuffix,
+                    });
                     altSection.appendChild(altRow);
                 }
 
@@ -22928,7 +23827,7 @@
 
             const constraintHeader = document.createElement('div');
             constraintHeader.style.cssText = `font-size: 11px; color: rgba(255,255,255,0.5); margin-bottom: 6px;`;
-            constraintHeader.textContent = 'Tea Constraints:';
+            constraintHeader.textContent = i18n_js.t('teaRecommendation.teaConstraintsHeader');
             constraintSection.appendChild(constraintHeader);
 
             const relevantTeas = getRelevantTeas(skillName.toLowerCase(), goal);
@@ -22964,7 +23863,7 @@
                 // Pin button ⊕
                 const pinBtn = document.createElement('button');
                 pinBtn.textContent = '⊕';
-                pinBtn.title = isPinned ? 'Remove pin' : 'Pin (force include)';
+                pinBtn.title = isPinned ? i18n_js.t('teaRecommendation.removePinTooltip') : i18n_js.t('teaRecommendation.pinTooltip');
                 pinBtn.style.cssText = `
                 background: transparent;
                 border: 1px solid ${isPinned ? config.COLOR_GOLD : 'rgba(255,255,255,0.2)'};
@@ -22987,7 +23886,7 @@
                 // Ban button ⊘
                 const banBtn = document.createElement('button');
                 banBtn.textContent = '⊘';
-                banBtn.title = isBanned ? 'Remove ban' : 'Ban (force exclude)';
+                banBtn.title = isBanned ? i18n_js.t('teaRecommendation.removeBanTooltip') : i18n_js.t('teaRecommendation.banTooltip');
                 banBtn.style.cssText = `
                 background: transparent;
                 border: 1px solid ${isBanned ? config.COLOR_LOSS : 'rgba(255,255,255,0.2)'};
@@ -23067,9 +23966,7 @@
         `;
 
             // Header
-            const displayName = alchemyContext
-                ? `${alchemyContext.actionType}: ${alchemyContext.itemName}`
-                : locationTab || skillName;
+            const displayName = alchemyContext ? getAlchemyTargetLabel(alchemyContext) : locationTab || skillName;
             const header = document.createElement('div');
             header.style.cssText = `
             font-size: 14px;
@@ -23081,8 +23978,8 @@
             cursor: grab;
             user-select: none;
         `;
-            header.textContent = `Optimal Teas for ${displayName}`;
-            header.title = 'Drag to move';
+            header.textContent = i18n_js.t('teaRecommendation.optimalTeasForHeader', { target: displayName });
+            header.title = i18n_js.t('teaRecommendation.dragToMoveTooltip');
             popup.appendChild(header);
 
             this.dragCleanup = this.makeDraggable(popup, header);
@@ -23106,7 +24003,10 @@
                 color: ${config.COLOR_INFO};
                 margin-bottom: 8px;
             `;
-                xpHeader.textContent = `XP/hr: ${formatters_js.formatKMB(xpResult.optimal.avgScore)}`;
+                xpHeader.textContent = i18n_js.t('teaRecommendation.ratePerHourLabel', {
+                    goalLabel: i18n_js.t('teaRecommendation.xpButtonLabel'),
+                    value: formatters_js.formatKMB(xpResult.optimal.avgScore),
+                });
                 xpCol.appendChild(xpHeader);
 
                 for (const tea of xpResult.optimal.teas) {
@@ -23135,7 +24035,10 @@
                 color: ${config.COLOR_PROFIT};
                 margin-bottom: 8px;
             `;
-                goldHeader.textContent = `Gold/hr: ${formatters_js.formatKMB(goldResult.optimal.avgScore)}`;
+                goldHeader.textContent = i18n_js.t('teaRecommendation.ratePerHourLabel', {
+                    goalLabel: i18n_js.t('teaRecommendation.goldButtonLabel'),
+                    value: formatters_js.formatKMB(goldResult.optimal.avgScore),
+                });
                 goldCol.appendChild(goldHeader);
 
                 for (const tea of goldResult.optimal.teas) {
@@ -23789,13 +24692,19 @@
 
     const GATHERING_TYPES = ['/action_types/foraging', '/action_types/woodcutting', '/action_types/milking'];
 
-    const COLUMNS = [
-        { key: 'name', label: 'Action', align: 'left', filterable: false },
-        { key: 'skill', label: 'Skill', align: 'left', filterable: true },
-        { key: 'level', label: 'Lv', align: 'left', filterable: false },
-        { key: 'profitPerHour', label: 'Profit/hr', align: 'right', filterable: false },
-        { key: 'expPerHour', label: 'XP/hr', align: 'right', filterable: false },
-    ];
+    /**
+     * Build the column definitions (translated at call time so the current locale is always used)
+     * @returns {Array} Column definitions
+     */
+    function getColumns() {
+        return [
+            { key: 'name', label: i18n_js.t('pinnedActionsPage.columnAction'), align: 'left', filterable: false },
+            { key: 'skill', label: i18n_js.t('pinnedActionsPage.columnSkill'), align: 'left', filterable: true },
+            { key: 'level', label: i18n_js.t('pinnedActionsPage.columnLevel'), align: 'left', filterable: false },
+            { key: 'profitPerHour', label: i18n_js.t('pinnedActionsPage.columnProfitPerHour'), align: 'right', filterable: false },
+            { key: 'expPerHour', label: i18n_js.t('pinnedActionsPage.columnExpPerHour'), align: 'right', filterable: false },
+        ];
+    }
 
     const GRID_COLUMNS = '28px 1fr 120px 50px 90px 90px';
 
@@ -23823,7 +24732,7 @@
      * @returns {string} Display name, e.g. "Milking"
      */
     function formatSkillName(typeHrid) {
-        if (!typeHrid) return 'Unknown';
+        if (!typeHrid) return i18n_js.t('pinnedActionsPage.unknownSkill');
         const slug = typeHrid.split('/').pop();
         return slug.charAt(0).toUpperCase() + slug.slice(1);
     }
@@ -23932,7 +24841,7 @@
             margin-bottom: 2px;
         `;
 
-            btn.innerHTML = `<span style="font-size: 1.1em;">📌</span><span>Pinned</span>`;
+            btn.innerHTML = `<span style="font-size: 1.1em;">📌</span><span>${i18n_js.t('pinnedActionsPage.navButtonLabel')}</span>`;
 
             btn.addEventListener('mouseenter', () => {
                 if (!this.isActive) {
@@ -24113,7 +25022,7 @@
         `;
             header.innerHTML = `
             <span style="font-size: 1.3em;">📌</span>
-            <span style="font-size: 1.1em; font-weight: bold;">Pinned Actions</span>
+            <span style="font-size: 1.1em; font-weight: bold;">${i18n_js.t('pinnedActionsPage.pageTitle')}</span>
             <span style="color: #888; font-size: 0.85em;">(${actions.length})</span>
         `;
             this.pageContainer.appendChild(header);
@@ -24128,7 +25037,7 @@
         `;
 
             for (const tab of ['overview', 'materials']) {
-                const label = tab === 'overview' ? 'Overview' : 'Materials';
+                const label = tab === 'overview' ? i18n_js.t('pinnedActionsPage.tabOverview') : i18n_js.t('pinnedActionsPage.tabMaterials');
                 const btn = document.createElement('button');
                 btn.dataset.tab = tab;
                 btn.textContent = label;
@@ -24194,9 +25103,9 @@
                 empty.style.cssText = 'text-align: center; padding: 40px 20px; color: #999;';
                 empty.innerHTML = `
                 <div style="font-size: 2em; margin-bottom: 12px;">📌</div>
-                <div style="font-size: 1.1em; margin-bottom: 8px;">No pinned actions</div>
+                <div style="font-size: 1.1em; margin-bottom: 8px;">${i18n_js.t('pinnedActionsPage.emptyStateTitle')}</div>
                 <div style="font-size: 0.85em; color: #666;">
-                    Pin actions using the 📌 icon on action tiles to see them here.
+                    ${i18n_js.t('pinnedActionsPage.emptyStateHint')}
                 </div>
             `;
                 this.contentArea.appendChild(empty);
@@ -24222,7 +25131,7 @@
             const iconHeader = document.createElement('div');
             headerRow.appendChild(iconHeader);
 
-            for (const col of COLUMNS) {
+            for (const col of getColumns()) {
                 const th = document.createElement('div');
                 th.style.cssText = `
                 display: flex;
@@ -24348,7 +25257,7 @@
             if (actions.length === 0 && this.allActions.length > 0) {
                 const noResults = document.createElement('div');
                 noResults.style.cssText = 'text-align: center; padding: 20px; color: #888;';
-                noResults.textContent = 'No actions match the current filter.';
+                noResults.textContent = i18n_js.t('pinnedActionsPage.noFilterMatches');
                 this.contentArea.appendChild(noResults);
             }
         }
@@ -24373,7 +25282,7 @@
             if (productionActions.length === 0) {
                 const empty = document.createElement('div');
                 empty.style.cssText = 'text-align: center; padding: 40px 20px; color: #999;';
-                empty.textContent = 'No production actions pinned';
+                empty.textContent = i18n_js.t('pinnedActionsPage.noProductionActionsPinned');
                 contentArea.appendChild(empty);
                 return;
             }
@@ -24415,7 +25324,7 @@
                 // Can produce count
                 const canProduceEl = document.createElement('div');
                 canProduceEl.style.cssText = `font-size: 0.85em; color: ${canProduce > 0 ? config.COLOR_PROFIT : config.COLOR_LOSS};`;
-                canProduceEl.textContent = `Can produce: ${canProduce.toLocaleString()}`;
+                canProduceEl.textContent = i18n_js.t('pinnedActionsPage.canProduceLabel', { count: canProduce.toLocaleString() });
 
                 groupHeader.appendChild(iconEl);
                 groupHeader.appendChild(nameEl);
@@ -24486,7 +25395,7 @@
 
             // Title
             const title = document.createElement('div');
-            title.textContent = 'Filter by Skill';
+            title.textContent = i18n_js.t('pinnedActionsPage.filterBySkillTitle');
             title.style.cssText = 'color: #fff; font-weight: bold; margin-bottom: 10px; font-size: 0.85em;';
             popup.appendChild(title);
 
@@ -24521,7 +25430,7 @@
             btnRow.style.cssText = 'display: flex; gap: 8px;';
 
             const applyBtn = document.createElement('button');
-            applyBtn.textContent = 'Apply';
+            applyBtn.textContent = i18n_js.t('pinnedActionsPage.applyButton');
             applyBtn.style.cssText = `
             flex: 1;
             padding: 6px;
@@ -24534,7 +25443,7 @@
         `;
 
             const clearBtn = document.createElement('button');
-            clearBtn.textContent = 'Clear';
+            clearBtn.textContent = i18n_js.t('pinnedActionsPage.clearButton');
             clearBtn.style.cssText = `
             flex: 1;
             padding: 6px;
@@ -25117,7 +26026,11 @@
                     const shortDrink = drinks.find((d) => d.totalSeconds === minDrinkSeconds);
                     const queueRow = document.createElement('div');
                     queueRow.style.color = '#f0a830';
-                    queueRow.textContent = `⚠ Queue (${this._formatTime(queueSeconds)}) outlasts ${shortDrink.name} by ${this._formatTime(shortfall)}`;
+                    queueRow.textContent = i18n_js.t('drinkTimer.queueOutlastsWarning', {
+                        queueTime: this._formatTime(queueSeconds),
+                        drinkName: shortDrink.name,
+                        shortfallTime: this._formatTime(shortfall),
+                    });
                     wrapper.appendChild(queueRow);
                 }
             }
@@ -25692,13 +26605,16 @@
             const costs = Math.round(
                 profitData.materialCostPerHour + profitData.catalystCostPerHour + profitData.totalTeaCostPerHour
             );
-            const summary = `${formatters_js.formatLargeNumber(profit)}/hr, ${formatters_js.formatLargeNumber(profitPerDay)}/day`;
+            const summary = i18n_js.t('alchemyProfitDisplay.profitPerHourPerDaySummary', {
+                profit: formatters_js.formatLargeNumber(profit),
+                profitPerDay: formatters_js.formatLargeNumber(profitPerDay),
+            });
 
             const detailsContent = document.createElement('div');
 
             // Revenue Section
             const revenueDiv = document.createElement('div');
-            revenueDiv.innerHTML = `<div style="font-weight: 500; color: var(--text-color-primary, #fff); margin-bottom: 4px;">Revenue: ${formatters_js.formatLargeNumber(revenue)}/hr</div>`;
+            revenueDiv.innerHTML = `<div style="font-weight: 500; color: var(--text-color-primary, #fff); margin-bottom: 4px;">${i18n_js.t('alchemyProfitDisplay.revenueHeader', { revenue: formatters_js.formatLargeNumber(revenue) })}</div>`;
 
             // Split drops into normal, essence, and rare
             const normalDrops = profitData.dropRevenues.filter((drop) => !drop.isEssence && !drop.isRare);
@@ -25727,7 +26643,14 @@
                         line.style.textDecoration = 'line-through';
                         line.style.opacity = '0.6';
                     }
-                    line.textContent = `• ${itemName}: ${dropsDisplay}/hr (${dropRatePct} × ${formatters_js.formatPercentage(profitData.successRate, 1)} success) @ ${formatters_js.formatWithSeparator(Math.round(drop.price))} → ${formatters_js.formatLargeNumber(Math.round(drop.revenuePerHour))}/hr`;
+                    line.textContent = i18n_js.t('alchemyProfitDisplay.normalDropLine', {
+                        itemName,
+                        drops: dropsDisplay,
+                        dropRate: dropRatePct,
+                        successRate: formatters_js.formatPercentage(profitData.successRate, 1),
+                        price: formatters_js.formatWithSeparator(Math.round(drop.price)),
+                        revenue: formatters_js.formatLargeNumber(Math.round(drop.revenuePerHour)),
+                    });
                     normalDropsContent.appendChild(line);
 
                     normalDropsRevenue += drop.revenuePerHour;
@@ -25735,7 +26658,10 @@
 
                 const normalDropsSection = this.createTrackedCollapsible(
                     '',
-                    `Normal Drops: ${formatters_js.formatLargeNumber(Math.round(normalDropsRevenue))}/hr (${normalDrops.length} item${normalDrops.length !== 1 ? 's' : ''})`,
+                    i18n_js.t('alchemyProfitDisplay.normalDropsSectionTitle', {
+                        revenue: formatters_js.formatLargeNumber(Math.round(normalDropsRevenue)),
+                        count: normalDrops.length,
+                    }),
                     null,
                     normalDropsContent,
                     false,
@@ -25757,7 +26683,13 @@
 
                     const line = document.createElement('div');
                     line.style.marginLeft = '8px';
-                    line.textContent = `• ${itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${dropRatePct}, not affected by success rate) @ ${formatters_js.formatWithSeparator(Math.round(drop.price))} → ${formatters_js.formatLargeNumber(Math.round(drop.revenuePerHour))}/hr`;
+                    line.textContent = i18n_js.t('alchemyProfitDisplay.dropLineNoSuccessImpact', {
+                        itemName,
+                        drops: drop.dropsPerHour.toFixed(decimals),
+                        dropRate: dropRatePct,
+                        price: formatters_js.formatWithSeparator(Math.round(drop.price)),
+                        revenue: formatters_js.formatLargeNumber(Math.round(drop.revenuePerHour)),
+                    });
                     essenceContent.appendChild(line);
 
                     essenceRevenue += drop.revenuePerHour;
@@ -25765,7 +26697,10 @@
 
                 const essenceSection = this.createTrackedCollapsible(
                     '',
-                    `Essence Drops: ${formatters_js.formatLargeNumber(Math.round(essenceRevenue))}/hr (${essenceDrops.length} item${essenceDrops.length !== 1 ? 's' : ''})`,
+                    i18n_js.t('alchemyProfitDisplay.essenceDropsSectionTitle', {
+                        revenue: formatters_js.formatLargeNumber(Math.round(essenceRevenue)),
+                        count: essenceDrops.length,
+                    }),
                     null,
                     essenceContent,
                     false,
@@ -25795,9 +26730,23 @@
                     // Show both base and effective drop rate (not affected by success rate)
                     if (profitData.rareFindBreakdown && profitData.rareFindBreakdown.total > 0) {
                         const rareFindBonus = `${profitData.rareFindBreakdown.total.toFixed(2)}%`;
-                        line.textContent = `• ${itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${baseDropRatePct} base × ${rareFindBonus} rare find = ${effectiveDropRatePct}, not affected by success rate) @ ${formatters_js.formatWithSeparator(Math.round(drop.price))} → ${formatters_js.formatLargeNumber(Math.round(drop.revenuePerHour))}/hr`;
+                        line.textContent = i18n_js.t('alchemyProfitDisplay.rareDropLineWithBonus', {
+                            itemName,
+                            drops: drop.dropsPerHour.toFixed(decimals),
+                            baseRate: baseDropRatePct,
+                            bonus: rareFindBonus,
+                            effectiveRate: effectiveDropRatePct,
+                            price: formatters_js.formatWithSeparator(Math.round(drop.price)),
+                            revenue: formatters_js.formatLargeNumber(Math.round(drop.revenuePerHour)),
+                        });
                     } else {
-                        line.textContent = `• ${itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${baseDropRatePct}, not affected by success rate) @ ${formatters_js.formatWithSeparator(Math.round(drop.price))} → ${formatters_js.formatLargeNumber(Math.round(drop.revenuePerHour))}/hr`;
+                        line.textContent = i18n_js.t('alchemyProfitDisplay.dropLineNoSuccessImpact', {
+                            itemName,
+                            drops: drop.dropsPerHour.toFixed(decimals),
+                            dropRate: baseDropRatePct,
+                            price: formatters_js.formatWithSeparator(Math.round(drop.price)),
+                            revenue: formatters_js.formatLargeNumber(Math.round(drop.revenuePerHour)),
+                        });
                     }
 
                     rareContent.appendChild(line);
@@ -25807,7 +26756,10 @@
 
                 const rareSection = this.createTrackedCollapsible(
                     '',
-                    `Rare Drops: ${formatters_js.formatLargeNumber(Math.round(rareRevenue))}/hr (${rareDrops.length} item${rareDrops.length !== 1 ? 's' : ''})`,
+                    i18n_js.t('alchemyProfitDisplay.rareDropsSectionTitle', {
+                        revenue: formatters_js.formatLargeNumber(Math.round(rareRevenue)),
+                        count: rareDrops.length,
+                    }),
                     null,
                     rareContent,
                     false,
@@ -25818,7 +26770,7 @@
 
             // Costs Section
             const costsDiv = document.createElement('div');
-            costsDiv.innerHTML = `<div style="font-weight: 500; color: var(--text-color-primary, #fff); margin-top: 12px; margin-bottom: 4px;">Costs: ${formatters_js.formatLargeNumber(costs)}/hr</div>`;
+            costsDiv.innerHTML = `<div style="font-weight: 500; color: var(--text-color-primary, #fff); margin-top: 12px; margin-bottom: 4px;">${i18n_js.t('alchemyProfitDisplay.costsHeader', { costs: formatters_js.formatLargeNumber(costs) })}</div>`;
 
             // Material Costs subsection (consumed on ALL attempts)
             if (profitData.requirementCosts && profitData.requirementCosts.length > 0) {
@@ -25843,9 +26795,23 @@
                     // Show decomposition value if enhanced
                     if (material.enhancementLevel > 0 && material.decompositionValuePerHour > 0) {
                         const netCostPerHour = material.costPerHour - material.decompositionValuePerHour;
-                        line.textContent = `• ${itemName}${enhText}: ${formattedAmount}/hr @ ${formatters_js.formatWithSeparator(Math.round(material.price))} → ${formatters_js.formatLargeNumber(Math.round(material.costPerHour))}/hr (recovers ${formatters_js.formatLargeNumber(Math.round(material.decompositionValuePerHour))}/hr, net ${formatters_js.formatLargeNumber(Math.round(netCostPerHour))}/hr)`;
+                        line.textContent = i18n_js.t('alchemyProfitDisplay.materialCostLineWithRecovery', {
+                            itemName,
+                            enh: enhText,
+                            amount: formattedAmount,
+                            price: formatters_js.formatWithSeparator(Math.round(material.price)),
+                            cost: formatters_js.formatLargeNumber(Math.round(material.costPerHour)),
+                            recovered: formatters_js.formatLargeNumber(Math.round(material.decompositionValuePerHour)),
+                            net: formatters_js.formatLargeNumber(Math.round(netCostPerHour)),
+                        });
                     } else {
-                        line.textContent = `• ${itemName}${enhText}: ${formattedAmount}/hr (consumed on all attempts) @ ${formatters_js.formatWithSeparator(Math.round(material.price))} → ${formatters_js.formatLargeNumber(Math.round(material.costPerHour))}/hr`;
+                        line.textContent = i18n_js.t('alchemyProfitDisplay.materialCostLine', {
+                            itemName,
+                            enh: enhText,
+                            amount: formattedAmount,
+                            price: formatters_js.formatWithSeparator(Math.round(material.price)),
+                            cost: formatters_js.formatLargeNumber(Math.round(material.costPerHour)),
+                        });
                     }
 
                     materialCostsContent.appendChild(line);
@@ -25853,7 +26819,10 @@
 
                 const materialCostsSection = this.createTrackedCollapsible(
                     '',
-                    `Material Costs: ${formatters_js.formatLargeNumber(Math.round(profitData.materialCostPerHour))}/hr (${profitData.requirementCosts.length} material${profitData.requirementCosts.length !== 1 ? 's' : ''})`,
+                    i18n_js.t('alchemyProfitDisplay.materialCostsSectionTitle', {
+                        cost: formatters_js.formatLargeNumber(Math.round(profitData.materialCostPerHour)),
+                        count: profitData.requirementCosts.length,
+                    }),
                     null,
                     materialCostsContent,
                     false,
@@ -25879,12 +26848,20 @@
 
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
-                line.textContent = `• ${itemName}: ${formattedCatalystAmount}/hr (consumed only on success, ${formatters_js.formatPercentage(profitData.successRate, 2)}) @ ${formatters_js.formatWithSeparator(Math.round(profitData.catalystCost.price))} → ${formatters_js.formatLargeNumber(Math.round(profitData.catalystCost.costPerHour))}/hr`;
+                line.textContent = i18n_js.t('alchemyProfitDisplay.catalystCostLine', {
+                    itemName,
+                    amount: formattedCatalystAmount,
+                    successRate: formatters_js.formatPercentage(profitData.successRate, 2),
+                    price: formatters_js.formatWithSeparator(Math.round(profitData.catalystCost.price)),
+                    cost: formatters_js.formatLargeNumber(Math.round(profitData.catalystCost.costPerHour)),
+                });
                 catalystContent.appendChild(line);
 
                 const catalystSection = this.createTrackedCollapsible(
                     '',
-                    `Catalyst Cost: ${formatters_js.formatLargeNumber(Math.round(profitData.catalystCost.costPerHour))}/hr`,
+                    i18n_js.t('alchemyProfitDisplay.catalystCostSectionTitle', {
+                        cost: formatters_js.formatLargeNumber(Math.round(profitData.catalystCost.costPerHour)),
+                    }),
                     null,
                     catalystContent,
                     false,
@@ -25908,14 +26885,22 @@
 
                     const line = document.createElement('div');
                     line.style.marginLeft = '8px';
-                    line.textContent = `• ${itemName}: ${formattedDrinkAmount}/hr @ ${formatters_js.formatWithSeparator(Math.round(drink.price))} → ${formatters_js.formatLargeNumber(Math.round(drink.costPerHour))}/hr`;
+                    line.textContent = i18n_js.t('alchemyProfitDisplay.drinkCostLine', {
+                        itemName,
+                        amount: formattedDrinkAmount,
+                        price: formatters_js.formatWithSeparator(Math.round(drink.price)),
+                        cost: formatters_js.formatLargeNumber(Math.round(drink.costPerHour)),
+                    });
                     drinkCostsContent.appendChild(line);
                 }
 
                 const drinkCount = profitData.consumableCosts.length;
                 const drinkCostsSection = this.createTrackedCollapsible(
                     '',
-                    `Drink Costs: ${formatters_js.formatLargeNumber(Math.round(profitData.totalTeaCostPerHour))}/hr (${drinkCount} drink${drinkCount !== 1 ? 's' : ''})`,
+                    i18n_js.t('alchemyProfitDisplay.drinkCostsSectionTitle', {
+                        cost: formatters_js.formatLargeNumber(Math.round(profitData.totalTeaCostPerHour)),
+                        count: drinkCount,
+                    }),
                     null,
                     drinkCostsContent,
                     false,
@@ -25933,7 +26918,7 @@
             // Main modifiers header
             const modifiersHeader = document.createElement('div');
             modifiersHeader.style.cssText = 'font-weight: 500; color: var(--text-color-primary, #fff); margin-bottom: 4px;';
-            modifiersHeader.textContent = 'Modifiers:';
+            modifiersHeader.textContent = i18n_js.t('alchemyProfitDisplay.modifiersHeader');
             modifiersDiv.appendChild(modifiersHeader);
 
             // Success Rate breakdown
@@ -25944,20 +26929,26 @@
                 // Base success rate (from player level vs recipe requirement)
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
-                line.textContent = `• Base Success Rate: ${formatters_js.formatPercentage(successBreakdown.base, 1)}`;
+                line.textContent = i18n_js.t('alchemyProfitDisplay.baseSuccessRateLine', {
+                    value: formatters_js.formatPercentage(successBreakdown.base, 1),
+                });
                 successContent.appendChild(line);
 
                 // Tea bonus (from Catalytic Tea)
                 if (successBreakdown.tea > 0) {
                     const teaLine = document.createElement('div');
                     teaLine.style.marginLeft = '8px';
-                    teaLine.textContent = `• Tea Bonus: +${formatters_js.formatPercentage(successBreakdown.tea, 1)} (multiplicative)`;
+                    teaLine.textContent = i18n_js.t('alchemyProfitDisplay.teaBonusMultiplicativeLine', {
+                        value: formatters_js.formatPercentage(successBreakdown.tea, 1),
+                    });
                     successContent.appendChild(teaLine);
                 }
 
                 const successSection = this.createTrackedCollapsible(
                     '',
-                    `Success Rate: ${formatters_js.formatPercentage(profitData.successRate, 1)}`,
+                    i18n_js.t('alchemyProfitDisplay.successRateSectionTitle', {
+                        value: formatters_js.formatPercentage(profitData.successRate, 1),
+                    }),
                     null,
                     successContent,
                     false,
@@ -25968,7 +26959,9 @@
                 // Fallback if breakdown not available
                 const successRateLine = document.createElement('div');
                 successRateLine.style.marginLeft = '8px';
-                successRateLine.textContent = `• Success Rate: ${formatters_js.formatPercentage(profitData.successRate, 1)}`;
+                successRateLine.textContent = i18n_js.t('alchemyProfitDisplay.successRateLine', {
+                    value: formatters_js.formatPercentage(profitData.successRate, 1),
+                });
                 modifiersDiv.appendChild(successRateLine);
             }
 
@@ -25980,48 +26973,62 @@
                 if (effBreakdown.levelEfficiency > 0) {
                     const line = document.createElement('div');
                     line.style.marginLeft = '8px';
-                    line.textContent = `• Level Bonus: +${effBreakdown.levelEfficiency.toFixed(2)}%`;
+                    line.textContent = i18n_js.t('alchemyProfitDisplay.levelBonusLine', {
+                        value: `${effBreakdown.levelEfficiency.toFixed(2)}%`,
+                    });
                     effContent.appendChild(line);
                 }
 
                 if (effBreakdown.houseEfficiency > 0) {
                     const line = document.createElement('div');
                     line.style.marginLeft = '8px';
-                    line.textContent = `• House Bonus: +${effBreakdown.houseEfficiency.toFixed(2)}%`;
+                    line.textContent = i18n_js.t('alchemyProfitDisplay.houseBonusLine', {
+                        value: `${effBreakdown.houseEfficiency.toFixed(2)}%`,
+                    });
                     effContent.appendChild(line);
                 }
 
                 if (effBreakdown.teaEfficiency > 0) {
                     const line = document.createElement('div');
                     line.style.marginLeft = '8px';
-                    line.textContent = `• Tea Bonus: +${effBreakdown.teaEfficiency.toFixed(2)}%`;
+                    line.textContent = i18n_js.t('alchemyProfitDisplay.teaBonusLine', {
+                        value: `${effBreakdown.teaEfficiency.toFixed(2)}%`,
+                    });
                     effContent.appendChild(line);
                 }
 
                 if (effBreakdown.equipmentEfficiency > 0) {
                     const line = document.createElement('div');
                     line.style.marginLeft = '8px';
-                    line.textContent = `• Equipment Bonus: +${effBreakdown.equipmentEfficiency.toFixed(2)}%`;
+                    line.textContent = i18n_js.t('alchemyProfitDisplay.equipmentBonusLine', {
+                        value: `${effBreakdown.equipmentEfficiency.toFixed(2)}%`,
+                    });
                     effContent.appendChild(line);
                 }
 
                 if (effBreakdown.communityEfficiency > 0) {
                     const line = document.createElement('div');
                     line.style.marginLeft = '8px';
-                    line.textContent = `• Community Buff: +${effBreakdown.communityEfficiency.toFixed(2)}%`;
+                    line.textContent = i18n_js.t('alchemyProfitDisplay.communityBuffLine', {
+                        value: `${effBreakdown.communityEfficiency.toFixed(2)}%`,
+                    });
                     effContent.appendChild(line);
                 }
 
                 if (effBreakdown.achievementEfficiency > 0) {
                     const line = document.createElement('div');
                     line.style.marginLeft = '8px';
-                    line.textContent = `• Achievement Bonus: +${effBreakdown.achievementEfficiency.toFixed(2)}%`;
+                    line.textContent = i18n_js.t('alchemyProfitDisplay.achievementBonusLine', {
+                        value: `${effBreakdown.achievementEfficiency.toFixed(2)}%`,
+                    });
                     effContent.appendChild(line);
                 }
 
                 const effSection = this.createTrackedCollapsible(
                     '',
-                    `Efficiency: +${formatters_js.formatPercentage(profitData.efficiency, 1)}`,
+                    i18n_js.t('alchemyProfitDisplay.efficiencySectionTitle', {
+                        value: formatters_js.formatPercentage(profitData.efficiency, 1),
+                    }),
                     null,
                     effContent,
                     false,
@@ -26042,20 +27049,26 @@
                     if (speedBreakdown.equipment > 0) {
                         const line = document.createElement('div');
                         line.style.marginLeft = '8px';
-                        line.textContent = `• Equipment Bonus: +${formatters_js.formatPercentage(speedBreakdown.equipment, 1)}`;
+                        line.textContent = i18n_js.t('alchemyProfitDisplay.equipmentBonusLine', {
+                            value: formatters_js.formatPercentage(speedBreakdown.equipment, 1),
+                        });
                         speedContent.appendChild(line);
                     }
 
                     if (speedBreakdown.tea > 0) {
                         const line = document.createElement('div');
                         line.style.marginLeft = '8px';
-                        line.textContent = `• Tea Bonus: +${formatters_js.formatPercentage(speedBreakdown.tea, 1)}`;
+                        line.textContent = i18n_js.t('alchemyProfitDisplay.teaBonusLine', {
+                            value: formatters_js.formatPercentage(speedBreakdown.tea, 1),
+                        });
                         speedContent.appendChild(line);
                     }
 
                     const speedSection = this.createTrackedCollapsible(
                         '',
-                        `Action Speed: +${formatters_js.formatPercentage(actionSpeed, 1)}`,
+                        i18n_js.t('alchemyProfitDisplay.actionSpeedSectionTitle', {
+                            value: formatters_js.formatPercentage(actionSpeed, 1),
+                        }),
                         null,
                         speedContent,
                         false,
@@ -26075,27 +27088,35 @@
                     if (rareBreakdown.equipment > 0) {
                         const line = document.createElement('div');
                         line.style.marginLeft = '8px';
-                        line.textContent = `• Equipment Bonus: +${rareBreakdown.equipment.toFixed(2)}%`;
+                        line.textContent = i18n_js.t('alchemyProfitDisplay.equipmentBonusLine', {
+                            value: `${rareBreakdown.equipment.toFixed(2)}%`,
+                        });
                         rareContent.appendChild(line);
                     }
 
                     if (rareBreakdown.house > 0) {
                         const line = document.createElement('div');
                         line.style.marginLeft = '8px';
-                        line.textContent = `• House Bonus: +${rareBreakdown.house.toFixed(2)}%`;
+                        line.textContent = i18n_js.t('alchemyProfitDisplay.houseBonusLine', {
+                            value: `${rareBreakdown.house.toFixed(2)}%`,
+                        });
                         rareContent.appendChild(line);
                     }
 
                     if (rareBreakdown.achievement > 0) {
                         const line = document.createElement('div');
                         line.style.marginLeft = '8px';
-                        line.textContent = `• Achievement Bonus: +${rareBreakdown.achievement.toFixed(2)}%`;
+                        line.textContent = i18n_js.t('alchemyProfitDisplay.achievementBonusLine', {
+                            value: `${rareBreakdown.achievement.toFixed(2)}%`,
+                        });
                         rareContent.appendChild(line);
                     }
 
                     const rareSection = this.createTrackedCollapsible(
                         '',
-                        `Rare Find: +${rareBreakdown.total.toFixed(2)}%`,
+                        i18n_js.t('alchemyProfitDisplay.rareFindSectionTitle', {
+                            value: `${rareBreakdown.total.toFixed(2)}%`,
+                        }),
                         null,
                         rareContent,
                         false,
@@ -26115,13 +27136,17 @@
                     if (essenceBreakdown.equipment > 0) {
                         const line = document.createElement('div');
                         line.style.marginLeft = '8px';
-                        line.textContent = `• Equipment Bonus: +${essenceBreakdown.equipment.toFixed(2)}%`;
+                        line.textContent = i18n_js.t('alchemyProfitDisplay.equipmentBonusLine', {
+                            value: `${essenceBreakdown.equipment.toFixed(2)}%`,
+                        });
                         essenceContent.appendChild(line);
                     }
 
                     const essenceSection = this.createTrackedCollapsible(
                         '',
-                        `Essence Find: +${essenceBreakdown.total.toFixed(2)}%`,
+                        i18n_js.t('alchemyProfitDisplay.essenceFindSectionTitle', {
+                            value: `${essenceBreakdown.total.toFixed(2)}%`,
+                        }),
                         null,
                         essenceContent,
                         false,
@@ -26139,7 +27164,10 @@
             // Create "Detailed Breakdown" collapsible
             const topLevelContent = document.createElement('div');
             topLevelContent.innerHTML = `
-            <div style="margin-bottom: 4px;">Actions: ${profitData.actionsPerHour.toFixed(2)}/hr | Success Rate: ${formatters_js.formatPercentage(profitData.successRate, 2)}</div>
+            <div style="margin-bottom: 4px;">${i18n_js.t('alchemyProfitDisplay.actionsSuccessRateLine', {
+                actions: profitData.actionsPerHour.toFixed(2),
+                rate: formatters_js.formatPercentage(profitData.successRate, 2),
+            })}</div>
         `;
 
             // Add Net Profit line at top level (always visible when Profitability is expanded)
@@ -26150,7 +27178,10 @@
             color: ${profitColor};
             margin-bottom: 8px;
         `;
-            netProfitLine.textContent = `Net Profit: ${formatters_js.formatLargeNumber(profit)}/hr, ${formatters_js.formatLargeNumber(profitPerDay)}/day`;
+            netProfitLine.textContent = i18n_js.t('alchemyProfitDisplay.netProfitLine', {
+                profit: formatters_js.formatLargeNumber(profit),
+                profitPerDay: formatters_js.formatLargeNumber(profitPerDay),
+            });
             topLevelContent.appendChild(netProfitLine);
 
             // Add pricing mode label
@@ -26163,12 +27194,12 @@
             color: #888;
             font-size: 0.85em;
         `;
-            modeDiv.textContent = `Pricing Mode: ${modeLabel}`;
+            modeDiv.textContent = i18n_js.t('alchemyProfitDisplay.pricingModeLine', { mode: modeLabel });
             topLevelContent.appendChild(modeDiv);
 
             const detailedBreakdownSection = this.createTrackedCollapsible(
                 '📊',
-                'Detailed Breakdown',
+                i18n_js.t('alchemyProfitDisplay.detailedBreakdownTitle'),
                 null,
                 detailsContent,
                 false,
@@ -26178,9 +27209,15 @@
             topLevelContent.appendChild(detailedBreakdownSection);
 
             // Create main profit section
-            const profitSection = compactActionPanelSection(
-                this.createTrackedCollapsible('💰', 'Profitability', summary, topLevelContent, false, 0)
+            const profitabilitySection = this.createTrackedCollapsible(
+                '💰',
+                i18n_js.t('alchemyProfitDisplay.profitabilityTitle'),
+                summary,
+                topLevelContent,
+                false,
+                0
             );
+            const profitSection = compactActionPanelSection(profitabilitySection);
             profitSection.id = 'mwi-alchemy-profit';
             profitSection.classList.add('mwi-alchemy-profit');
             profitSection.setAttribute('data-mwi-profit-display', 'true');
@@ -26283,63 +27320,112 @@
 
                 // Base time and speed
                 const baseTime = 20;
-                lines.push(`Base: ${baseTime.toFixed(2)}s → ${actionTime.toFixed(2)}s`);
+                lines.push(
+                    i18n_js.t('alchemyProfitDisplay.baseTimeLine', { base: baseTime.toFixed(2), time: actionTime.toFixed(2) })
+                );
 
                 // Always show actions/hr
-                lines.push(`${profitHelpers_js.calculateActionsPerHour(actionTime).toFixed(0)}/hr`);
+                lines.push(
+                    i18n_js.t('alchemyProfitDisplay.actionsPerHourLine', { value: profitHelpers_js.calculateActionsPerHour(actionTime).toFixed(0) })
+                );
 
                 // Speed breakdown (if any bonuses exist)
                 if (profitData.actionSpeedBreakdown && profitData.actionSpeedBreakdown.total > 0) {
                     const speedBonus = profitData.actionSpeedBreakdown.total;
-                    lines.push(`Speed: +${formatters_js.formatPercentage(speedBonus, 1)}`);
+                    lines.push(i18n_js.t('alchemyProfitDisplay.speedBonusLine', { value: formatters_js.formatPercentage(speedBonus, 1) }));
 
                     // Show detailed equipment breakdown if available
                     const speedBreakdown = profitData.actionSpeedBreakdown;
                     if (speedBreakdown.equipmentDetails && speedBreakdown.equipmentDetails.length > 0) {
                         for (const item of speedBreakdown.equipmentDetails) {
                             const enhText = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
-                            lines.push(`  - ${item.name}${enhText}: +${formatters_js.formatPercentage(item.speedBonus, 1)}`);
+                            lines.push(
+                                i18n_js.t('alchemyProfitDisplay.speedDetailLine', {
+                                    name: item.name,
+                                    enh: enhText,
+                                    value: formatters_js.formatPercentage(item.speedBonus, 1),
+                                })
+                            );
                         }
                     } else if (speedBreakdown.equipment > 0) {
                         // Fallback to total if details not available
-                        lines.push(`  - Equipment: +${formatters_js.formatPercentage(speedBreakdown.equipment, 1)}`);
+                        lines.push(
+                            i18n_js.t('alchemyProfitDisplay.speedEquipmentFallbackLine', {
+                                value: formatters_js.formatPercentage(speedBreakdown.equipment, 1),
+                            })
+                        );
                     }
 
                     // Show tea speed if available
                     if (speedBreakdown.teaDetails && speedBreakdown.teaDetails.length > 0) {
                         for (const tea of speedBreakdown.teaDetails) {
-                            lines.push(`  - ${tea.name}: +${formatters_js.formatPercentage(tea.speedBonus, 1)}`);
+                            lines.push(
+                                i18n_js.t('alchemyProfitDisplay.speedDetailLine', {
+                                    name: tea.name,
+                                    enh: '',
+                                    value: formatters_js.formatPercentage(tea.speedBonus, 1),
+                                })
+                            );
                         }
                     } else if (speedBreakdown.tea > 0) {
                         // Fallback to total if details not available
-                        lines.push(`  - Tea: +${formatters_js.formatPercentage(speedBreakdown.tea, 1)}`);
+                        lines.push(
+                            i18n_js.t('alchemyProfitDisplay.speedTeaFallbackLine', {
+                                value: formatters_js.formatPercentage(speedBreakdown.tea, 1),
+                            })
+                        );
                     }
                 }
 
                 // Efficiency breakdown
                 lines.push('');
                 lines.push(
-                    `<span style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Efficiency: +${(profitData.efficiency * 100).toFixed(2)}% → Output: ×${efficiencyMultiplier.toFixed(2)} (${effectiveActionsPerHour}/hr)</span>`
+                    `<span style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">${i18n_js.t(
+                    'alchemyProfitDisplay.efficiencyOutputLine',
+                    {
+                        efficiency: (profitData.efficiency * 100).toFixed(2),
+                        multiplier: efficiencyMultiplier.toFixed(2),
+                        actionsPerHour: effectiveActionsPerHour,
+                    }
+                )}</span>`
                 );
 
                 const effBreakdown = profitData.efficiencyBreakdown;
                 if (effBreakdown.levelEfficiency > 0) {
-                    lines.push(`  - Level: +${effBreakdown.levelEfficiency.toFixed(2)}%`);
+                    lines.push(
+                        i18n_js.t('alchemyProfitDisplay.effLevelDetailLine', { value: effBreakdown.levelEfficiency.toFixed(2) })
+                    );
                 }
                 if (effBreakdown.houseEfficiency > 0) {
-                    lines.push(`  - House: +${effBreakdown.houseEfficiency.toFixed(2)}%`);
+                    lines.push(
+                        i18n_js.t('alchemyProfitDisplay.effHouseDetailLine', { value: effBreakdown.houseEfficiency.toFixed(2) })
+                    );
                 }
                 if (effBreakdown.equipmentEfficiency > 0) {
-                    lines.push(`  - Equipment: +${effBreakdown.equipmentEfficiency.toFixed(2)}%`);
+                    lines.push(
+                        i18n_js.t('alchemyProfitDisplay.effEquipmentDetailLine', {
+                            value: effBreakdown.equipmentEfficiency.toFixed(2),
+                        })
+                    );
                 }
                 if (effBreakdown.teaEfficiency > 0) {
-                    lines.push(`  - Tea: +${effBreakdown.teaEfficiency.toFixed(2)}%`);
+                    lines.push(
+                        i18n_js.t('alchemyProfitDisplay.effTeaDetailLine', { value: effBreakdown.teaEfficiency.toFixed(2) })
+                    );
                 }
                 if (effBreakdown.achievementEfficiency > 0) {
-                    lines.push(`  - Achievement: +${effBreakdown.achievementEfficiency.toFixed(2)}%`);
+                    lines.push(
+                        i18n_js.t('alchemyProfitDisplay.effAchievementDetailLine', {
+                            value: effBreakdown.achievementEfficiency.toFixed(2),
+                        })
+                    );
                 }
                 if (effBreakdown.communityEfficiency > 0) {
-                    lines.push(`  - Community: +${effBreakdown.communityEfficiency.toFixed(2)}%`);
+                    lines.push(
+                        i18n_js.t('alchemyProfitDisplay.effCommunityDetailLine', {
+                            value: effBreakdown.communityEfficiency.toFixed(2),
+                        })
+                    );
                 }
 
                 // Total time (dynamic)
@@ -26354,7 +27440,7 @@
                     const inputValue = inputField.value;
 
                     if (inputValue === '∞') {
-                        totalTimeLine.textContent = 'Total time: ∞';
+                        totalTimeLine.textContent = i18n_js.t('alchemyProfitDisplay.totalTimeLine', { time: '∞' });
                         return;
                     }
 
@@ -26362,9 +27448,11 @@
                     if (repeatCount > 0) {
                         const baseActionsNeeded = Math.ceil(repeatCount / efficiencyMultiplier);
                         const totalSeconds = baseActionsNeeded * actionTime;
-                        totalTimeLine.textContent = `Total time: ${formatters_js.timeReadable(totalSeconds)}`;
+                        totalTimeLine.textContent = i18n_js.t('alchemyProfitDisplay.totalTimeLine', {
+                            time: formatters_js.timeReadable(totalSeconds),
+                        });
                     } else {
-                        totalTimeLine.textContent = 'Total time: 0s';
+                        totalTimeLine.textContent = i18n_js.t('alchemyProfitDisplay.totalTimeLine', { time: '0s' });
                     }
                 };
 
@@ -26385,20 +27473,35 @@
                 const getSummary = () => {
                     const inputValue = inputField.value;
                     if (inputValue === '∞') {
-                        return `${effectiveActionsPerHour}/hr | Total time: ∞`;
+                        return i18n_js.t('alchemyProfitDisplay.speedTimeSummary', {
+                            actionsPerHour: effectiveActionsPerHour,
+                            time: '∞',
+                        });
                     }
                     const repeatCount = parseInt(inputValue) || 0;
                     if (repeatCount > 0) {
                         const baseActionsNeeded = Math.ceil(repeatCount / efficiencyMultiplier);
                         const totalSeconds = baseActionsNeeded * actionTime;
-                        return `${effectiveActionsPerHour}/hr | Total time: ${formatters_js.timeReadable(totalSeconds)}`;
+                        return i18n_js.t('alchemyProfitDisplay.speedTimeSummary', {
+                            actionsPerHour: effectiveActionsPerHour,
+                            time: formatters_js.timeReadable(totalSeconds),
+                        });
                     }
-                    return `${effectiveActionsPerHour}/hr | Total time: 0s`;
+                    return i18n_js.t('alchemyProfitDisplay.speedTimeSummary', {
+                        actionsPerHour: effectiveActionsPerHour,
+                        time: '0s',
+                    });
                 };
 
                 const summary = getSummary();
 
-                return this.createTrackedCollapsible('⏱', 'Action Speed & Time', summary, content, false);
+                return this.createTrackedCollapsible(
+                    '⏱',
+                    i18n_js.t('alchemyProfitDisplay.actionSpeedTimeTitle'),
+                    summary,
+                    content,
+                    false
+                );
             } catch (error) {
                 console.error('[AlchemyProfitDisplay] Error creating action speed/time section:', error);
                 return null;
@@ -26468,7 +27571,13 @@
                 const lines = [];
 
                 // Current level and progress
-                lines.push(`Current: Level ${currentLevel} | ${progressPercent.toFixed(2)}% to Level ${nextLevel}`);
+                lines.push(
+                    i18n_js.t('alchemyProfitDisplay.currentLevelProgress', {
+                        level: currentLevel,
+                        percent: progressPercent.toFixed(2),
+                        nextLevel,
+                    })
+                );
                 lines.push('');
 
                 // Calculate XP breakdown
@@ -26481,26 +27590,39 @@
                 // Show base → modified XP with multiplier
                 const modifiedXPSuccess = baseXP * wisdomMultiplier;
                 lines.push(
-                    `XP per action: ${formatters_js.formatWithSeparator(baseXP.toFixed(2))} base → ${formatters_js.formatWithSeparator(modifiedXPSuccess.toFixed(2))} (×${wisdomMultiplier.toFixed(3)})`
+                    i18n_js.t('alchemyProfitDisplay.xpPerActionLine', {
+                        base: formatters_js.formatWithSeparator(baseXP.toFixed(2)),
+                        modified: formatters_js.formatWithSeparator(modifiedXPSuccess.toFixed(2)),
+                        multiplier: wisdomMultiplier.toFixed(3),
+                    })
                 );
 
                 // Show success rate impact on XP
                 if (profitData.successRate < 1) {
                     lines.push(
-                        `  Expected XP: ${formatters_js.formatWithSeparator(xpPerAction.toFixed(2))} (${formatters_js.formatPercentage(profitData.successRate, 2)} success, 10% XP on fail)`
+                        i18n_js.t('alchemyProfitDisplay.expectedXpLine', {
+                            xp: formatters_js.formatWithSeparator(xpPerAction.toFixed(2)),
+                            rate: formatters_js.formatPercentage(profitData.successRate, 2),
+                        })
                     );
                 }
 
                 // XP breakdown (if any bonuses exist)
                 if (xpData.totalWisdom > 0 || xpData.charmExperience > 0) {
                     const totalXPBonus = xpData.totalWisdom + xpData.charmExperience;
-                    lines.push(`  Total XP Bonus: +${totalXPBonus.toFixed(2)}%`);
+                    lines.push(i18n_js.t('alchemyProfitDisplay.totalXpBonusLine', { value: totalXPBonus.toFixed(2) }));
 
                     // Equipment skill-specific XP (e.g., alchemy-specific equipment)
                     if (xpData.charmBreakdown && xpData.charmBreakdown.length > 0) {
                         for (const item of xpData.charmBreakdown) {
                             const enhText = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
-                            lines.push(`    • ${item.name}${enhText}: +${item.value.toFixed(2)}%`);
+                            lines.push(
+                                i18n_js.t('alchemyProfitDisplay.xpItemBonusLine', {
+                                    name: item.name,
+                                    enh: enhText,
+                                    value: item.value.toFixed(2),
+                                })
+                            );
                         }
                     }
 
@@ -26508,33 +27630,55 @@
                     if (xpData.wisdomBreakdown && xpData.wisdomBreakdown.length > 0) {
                         for (const item of xpData.wisdomBreakdown) {
                             const enhText = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
-                            lines.push(`    • ${item.name}${enhText}: +${item.value.toFixed(2)}%`);
+                            lines.push(
+                                i18n_js.t('alchemyProfitDisplay.xpItemBonusLine', {
+                                    name: item.name,
+                                    enh: enhText,
+                                    value: item.value.toFixed(2),
+                                })
+                            );
                         }
                     }
 
                     // House rooms
                     if (xpData.breakdown.houseWisdom > 0) {
-                        lines.push(`    • House Rooms: +${xpData.breakdown.houseWisdom.toFixed(2)}%`);
+                        lines.push(
+                            i18n_js.t('alchemyProfitDisplay.xpHouseRoomsLine', { value: xpData.breakdown.houseWisdom.toFixed(2) })
+                        );
                     }
 
                     // Community buff
                     if (xpData.breakdown.communityWisdom > 0) {
-                        lines.push(`    • Community Buff: +${xpData.breakdown.communityWisdom.toFixed(2)}%`);
+                        lines.push(
+                            i18n_js.t('alchemyProfitDisplay.xpCommunityBuffLine', {
+                                value: xpData.breakdown.communityWisdom.toFixed(2),
+                            })
+                        );
                     }
 
                     // Tea/Coffee
                     if (xpData.breakdown.consumableWisdom > 0) {
-                        lines.push(`    • Wisdom Tea: +${xpData.breakdown.consumableWisdom.toFixed(2)}%`);
+                        lines.push(
+                            i18n_js.t('alchemyProfitDisplay.xpWisdomTeaLine', {
+                                value: xpData.breakdown.consumableWisdom.toFixed(2),
+                            })
+                        );
                     }
 
                     // Achievement wisdom
                     if (xpData.breakdown.achievementWisdom > 0) {
-                        lines.push(`    • Achievement: +${xpData.breakdown.achievementWisdom.toFixed(2)}%`);
+                        lines.push(
+                            i18n_js.t('alchemyProfitDisplay.xpAchievementLine', {
+                                value: xpData.breakdown.achievementWisdom.toFixed(2),
+                            })
+                        );
                     }
 
                     // MooPass wisdom
                     if (xpData.breakdown.mooPassWisdom > 0) {
-                        lines.push(`    • MooPass: +${xpData.breakdown.mooPassWisdom.toFixed(2)}%`);
+                        lines.push(
+                            i18n_js.t('alchemyProfitDisplay.xpMooPassLine', { value: xpData.breakdown.mooPassWisdom.toFixed(2) })
+                        );
                     }
                 }
 
@@ -26542,10 +27686,13 @@
 
                 // To next level
                 lines.push(
-                    `<span style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">To Level ${nextLevel}:</span>`
+                    `<span style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">${i18n_js.t(
+                    'alchemyProfitDisplay.toLevelHeader',
+                    { level: nextLevel }
+                )}</span>`
                 );
-                lines.push(`  Actions: ${formatters_js.formatWithSeparator(actionsNeeded)}`);
-                lines.push(`  Time: ${formatters_js.timeReadable(timeNeeded)}`);
+                lines.push(i18n_js.t('alchemyProfitDisplay.actionsCountLine', { count: formatters_js.formatWithSeparator(actionsNeeded) }));
+                lines.push(i18n_js.t('alchemyProfitDisplay.timeNeededLine', { time: formatters_js.timeReadable(timeNeeded) }));
 
                 lines.push('');
 
@@ -26553,10 +27700,12 @@
                 const savedTarget = this._alchemyTargetLevel;
                 const initialTargetLevel = savedTarget && savedTarget > currentLevel ? savedTarget : nextLevel;
                 lines.push(
-                    `<span style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Target Level Calculator:</span>`
+                    `<span style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">${i18n_js.t(
+                    'alchemyProfitDisplay.targetLevelCalculatorHeader'
+                )}</span>`
                 );
                 lines.push(`<div style="margin-top: 4px;">
-                <span>To level </span>
+                <span>${i18n_js.t('alchemyProfitDisplay.toLevelPrefix')} </span>
                 <input
                     type="number"
                     id="mwi-alchemy-target-level-input"
@@ -26576,12 +27725,18 @@
                 <span>:</span>
             </div>`);
                 lines.push(`<div id="mwi-alchemy-target-level-result" style="margin-top: 4px; margin-left: 8px;">
-                ${formatters_js.formatWithSeparator(actionsNeeded)} actions | ${formatters_js.timeReadable(timeNeeded)}
+                ${i18n_js.t('alchemyProfitDisplay.actionsTimeResult', {
+                    actions: formatters_js.formatWithSeparator(actionsNeeded),
+                    time: formatters_js.timeReadable(timeNeeded),
+                })}
             </div>`);
 
                 lines.push('');
                 lines.push(
-                    `XP/hour: ${formatters_js.formatWithSeparator(Math.round(xpPerHour))} | XP/day: ${formatters_js.formatWithSeparator(Math.round(xpPerDay))}`
+                    i18n_js.t('alchemyProfitDisplay.xpPerHourPerDayLine', {
+                        perHour: formatters_js.formatWithSeparator(Math.round(xpPerHour)),
+                        perDay: formatters_js.formatWithSeparator(Math.round(xpPerDay)),
+                    })
                 );
 
                 content.innerHTML = lines.join('<br>');
@@ -26604,10 +27759,13 @@
                             xpPerAction,
                             levelExperienceTable
                         );
-                        targetLevelResult.innerHTML = `${formatters_js.formatWithSeparator(result.actionsNeeded)} actions | ${formatters_js.timeReadable(result.timeNeeded)}`;
+                        targetLevelResult.innerHTML = i18n_js.t('alchemyProfitDisplay.actionsTimeResult', {
+                            actions: formatters_js.formatWithSeparator(result.actionsNeeded),
+                            time: formatters_js.timeReadable(result.timeNeeded),
+                        });
                         targetLevelResult.style.color = `var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY})`;
                     } else {
-                        targetLevelResult.textContent = 'Invalid level';
+                        targetLevelResult.textContent = i18n_js.t('alchemyProfitDisplay.invalidLevelMessage');
                         targetLevelResult.style.color = 'var(--color-error, #ff4444)';
                     }
                 };
@@ -26620,10 +27778,19 @@
                 }
 
                 // Create summary for collapsed view
-                const summary = `${formatters_js.timeReadable(timeNeeded)} to Level ${nextLevel}`;
+                const summary = i18n_js.t('alchemyProfitDisplay.timeToLevelSummary', {
+                    time: formatters_js.timeReadable(timeNeeded),
+                    level: nextLevel,
+                });
 
                 return compactActionPanelSection(
-                    this.createTrackedCollapsible('📈', 'Level Progress', summary, content, false)
+                    this.createTrackedCollapsible(
+                        '📈',
+                        i18n_js.t('alchemyProfitDisplay.levelProgressTitle'),
+                        summary,
+                        content,
+                        false
+                    )
                 );
             } catch (error) {
                 console.error('[AlchemyProfitDisplay] Error creating level progress section:', error);
@@ -26732,12 +27899,42 @@
 
     const ALCHEMY_TYPES = ['coinify', 'decompose', 'transmute'];
 
-    const CATALYST_LABELS = {
-        '/items/catalyst_of_coinification': 'Coinify',
-        '/items/catalyst_of_decomposition': 'Decompose',
-        '/items/catalyst_of_transmutation': 'Transmute',
-        '/items/prime_catalyst': 'Prime',
+    // Marker substituted for an item name inside a translated template string, then split back out
+    // so the actual item name can be rendered as a clickable link in the item's original position -
+    // this keeps word order correct across locales (e.g. Chinese vs English) without hardcoding it.
+    const LINK_MARKER = '\u0000';
+
+    const ALCHEMY_TYPE_LABEL_KEYS = {
+        coinify: 'skillingOptimizer.alchemyTypeCoinify',
+        decompose: 'skillingOptimizer.alchemyTypeDecompose',
+        transmute: 'skillingOptimizer.alchemyTypeTransmute',
     };
+
+    /**
+     * Translated label for an alchemy type ('coinify', 'decompose', 'transmute')
+     */
+    function getAlchemyTypeLabel(type) {
+        const key = ALCHEMY_TYPE_LABEL_KEYS[type];
+        return key ? i18n_js.t(key) : type;
+    }
+
+    /**
+     * Translated label for a catalyst item, used as a tooltip on the catalyst icon
+     */
+    function getCatalystLabel(catalystHrid) {
+        switch (catalystHrid) {
+            case '/items/catalyst_of_coinification':
+                return i18n_js.t('skillingOptimizer.alchemyTypeCoinify');
+            case '/items/catalyst_of_decomposition':
+                return i18n_js.t('skillingOptimizer.alchemyTypeDecompose');
+            case '/items/catalyst_of_transmutation':
+                return i18n_js.t('skillingOptimizer.alchemyTypeTransmute');
+            case '/items/prime_catalyst':
+                return i18n_js.t('alchemyBestItems.catalystPrimeLabel');
+            default:
+                return null;
+        }
+    }
 
     /**
      * Get base XP for an alchemy action type and item level
@@ -26845,10 +28042,10 @@
                 if (badge) {
                     const badgeSpan = badge.querySelector('.MuiBadge-badge');
                     badge.textContent = '';
-                    badge.appendChild(document.createTextNode('Best Items'));
+                    badge.appendChild(document.createTextNode(i18n_js.t('alchemyBestItems.tabLabel')));
                     if (badgeSpan) badge.appendChild(badgeSpan);
                 } else {
-                    tab.textContent = 'Best Items';
+                    tab.textContent = i18n_js.t('alchemyBestItems.tabLabel');
                 }
 
                 tab.addEventListener('click', (e) => {
@@ -27041,7 +28238,7 @@
             // Alchemy type tabs
             for (const type of ALCHEMY_TYPES) {
                 const tab = document.createElement('button');
-                tab.textContent = type.charAt(0).toUpperCase() + type.slice(1);
+                tab.textContent = getAlchemyTypeLabel(type);
                 tab.setAttribute('data-mwi-type-tab', type);
                 tab.style.cssText = `
                 padding: 4px 12px; border-radius: 4px; cursor: pointer;
@@ -27063,12 +28260,13 @@
             // Sort toggle
             const sortLabel = document.createElement('span');
             sortLabel.style.cssText = 'color: #aaa; font-size: 0.75rem;';
-            sortLabel.textContent = 'Sort by:';
+            sortLabel.textContent = i18n_js.t('alchemyBestItems.sortByLabel');
             controls.appendChild(sortLabel);
 
             for (const mode of ['profit', 'xp']) {
                 const btn = document.createElement('button');
-                btn.textContent = mode === 'profit' ? 'Profit/hr' : 'XP/hr';
+                btn.textContent =
+                    mode === 'profit' ? i18n_js.t('combatSimUi.colProfitPerHr') : i18n_js.t('pinnedActionsPage.columnExpPerHour');
                 btn.setAttribute('data-mwi-sort-btn', mode);
                 btn.style.cssText = `
                 padding: 3px 8px; border-radius: 4px; cursor: pointer;
@@ -27084,7 +28282,7 @@
             // Profitable only toggle
             const profitToggle = document.createElement('button');
             profitToggle.setAttribute('data-mwi-profit-toggle', 'true');
-            profitToggle.textContent = 'Profitable only';
+            profitToggle.textContent = i18n_js.t('alchemyBestItems.profitableOnlyLabel');
             profitToggle.style.cssText = `
             padding: 3px 8px; border-radius: 4px; cursor: pointer;
             border: 1px solid #555; font-size: 0.75rem; color: #fff;
@@ -27103,7 +28301,7 @@
             searchRow.style.cssText = 'display: flex; margin-bottom: 8px;';
             const searchInput = document.createElement('input');
             searchInput.type = 'text';
-            searchInput.placeholder = 'Search items...';
+            searchInput.placeholder = i18n_js.t('settings.itemSearchPlaceholder');
             searchInput.setAttribute('data-mwi-best-search', 'true');
             searchInput.style.cssText = `
             flex: 1; padding: 5px 10px; border-radius: 4px;
@@ -27131,14 +28329,14 @@
             // Profit/hr filter
             const profitFilter = document.createElement('span');
             profitFilter.style.cssText = 'display: flex; align-items: center; gap: 4px;';
-            profitFilter.innerHTML = 'Profit/hr:';
+            profitFilter.innerHTML = i18n_js.t('alchemyBestItems.profitFilterLabel');
             const profitMin = document.createElement('input');
             profitMin.type = 'text';
-            profitMin.placeholder = 'Min';
+            profitMin.placeholder = i18n_js.t('alchemyBestItems.minPlaceholder');
             profitMin.style.cssText = filterInputStyle;
             const profitMax = document.createElement('input');
             profitMax.type = 'text';
-            profitMax.placeholder = 'Max';
+            profitMax.placeholder = i18n_js.t('alchemyBestItems.maxPlaceholder');
             profitMax.style.cssText = filterInputStyle;
 
             const parseFilterValue = (val) => {
@@ -27169,14 +28367,14 @@
             // Item price filter
             const priceFilter = document.createElement('span');
             priceFilter.style.cssText = 'display: flex; align-items: center; gap: 4px;';
-            priceFilter.innerHTML = 'Item price:';
+            priceFilter.innerHTML = i18n_js.t('alchemyBestItems.itemPriceFilterLabel');
             const priceMin = document.createElement('input');
             priceMin.type = 'text';
-            priceMin.placeholder = 'Min';
+            priceMin.placeholder = i18n_js.t('alchemyBestItems.minPlaceholder');
             priceMin.style.cssText = filterInputStyle;
             const priceMax = document.createElement('input');
             priceMax.type = 'text';
-            priceMax.placeholder = 'Max';
+            priceMax.placeholder = i18n_js.t('alchemyBestItems.maxPlaceholder');
             priceMax.style.cssText = filterInputStyle;
             priceMin.addEventListener('change', onFilterChange);
             priceMax.addEventListener('change', onFilterChange);
@@ -27232,8 +28430,7 @@
             // Update title
             const title = this.modal.querySelector('[data-mwi-best-title]');
             if (title) {
-                const typeLabel = this.currentType.charAt(0).toUpperCase() + this.currentType.slice(1);
-                title.textContent = `Best Items \u2014 ${typeLabel}`;
+                title.textContent = i18n_js.t('alchemyBestItems.modalTitle', { type: getAlchemyTypeLabel(this.currentType) });
             }
 
             // Update tab styling
@@ -27266,12 +28463,18 @@
             const headerRow = document.createElement('tr');
             headerRow.style.cssText = 'border-bottom: 1px solid #555;';
 
-            for (const col of ['#', 'Item', 'Lvl', 'Catalyst', 'Profit/hr', 'XP/hr']) {
+            for (const col of [
+                { label: '#', align: 'center' },
+                { label: i18n_js.t('settings.itemLabel'), align: 'left' },
+                { label: i18n_js.t('alchemyBestItems.colLvl'), align: 'center' },
+                { label: i18n_js.t('riskOfRuinUi.catalystLabel'), align: 'left' },
+                { label: i18n_js.t('combatSimUi.colProfitPerHr'), align: 'right' },
+                { label: i18n_js.t('pinnedActionsPage.columnExpPerHour'), align: 'right' },
+            ]) {
                 const th = document.createElement('th');
-                th.textContent = col;
+                th.textContent = col.label;
                 th.style.cssText = 'padding: 6px 8px; text-align: left; color: #aaa; font-weight: 500;';
-                if (col === '#' || col === 'Lvl') th.style.textAlign = 'center';
-                if (col === 'Profit/hr' || col === 'XP/hr') th.style.textAlign = 'right';
+                th.style.textAlign = col.align;
                 headerRow.appendChild(th);
             }
             thead.appendChild(headerRow);
@@ -27325,7 +28528,7 @@
                     use.setAttribute('href', `${this.itemsSpriteUrl}#${symbolId}`);
                     svg.appendChild(use);
                     catTd.appendChild(svg);
-                    catTd.title = CATALYST_LABELS[item.catalyst] || symbolId;
+                    catTd.title = getCatalystLabel(item.catalyst) || symbolId;
                 } else {
                     catTd.textContent = '\u2014';
                     catTd.style.color = '#555';
@@ -27356,14 +28559,13 @@
             container.innerHTML = '';
 
             if (sorted.length === 0) {
-                container.innerHTML =
-                    '<div style="color: #888; padding: 20px; text-align: center;">No eligible items found</div>';
+                container.innerHTML = `<div style="color: #888; padding: 20px; text-align: center;">${i18n_js.t('alchemyBestItems.noEligibleItemsMessage')}</div>`;
             } else {
                 container.appendChild(table);
                 if (sorted.length > maxRows) {
                     const more = document.createElement('div');
                     more.style.cssText = 'color: #888; text-align: center; padding: 8px; font-size: 0.75rem;';
-                    more.textContent = `Showing top ${maxRows} of ${sorted.length} items`;
+                    more.textContent = i18n_js.t('alchemyBestItems.showingTopItemsMessage', { max: maxRows, total: sorted.length });
                     container.appendChild(more);
                 }
             }
@@ -27407,6 +28609,28 @@
         }
 
         /**
+         * Append a line built from a translated template whose itemName param was set to
+         * LINK_MARKER, splitting the resulting string on that marker so the item name can be
+         * rendered as a clickable link at the position the current locale puts it.
+         */
+        _appendLinkedLine(container, text, itemName, itemHrid, extraStyle = '') {
+            const line = document.createElement('div');
+            line.style.cssText = `margin-left: 8px; color: #aaa;${extraStyle}`;
+            const idx = text.indexOf(LINK_MARKER);
+            if (idx === -1) {
+                line.textContent = text;
+            } else {
+                line.append(
+                    text.slice(0, idx),
+                    this._makeItemLink(itemName, itemHrid),
+                    text.slice(idx + LINK_MARKER.length)
+                );
+            }
+            container.appendChild(line);
+            return line;
+        }
+
+        /**
          * Render breakdown content for an expanded item row
          */
         renderBreakdownContent(item) {
@@ -27414,7 +28638,7 @@
             const profitData = item.profitData;
 
             if (!profitData) {
-                container.textContent = 'No breakdown data available';
+                container.textContent = i18n_js.t('alchemyBestItems.noBreakdownDataMessage');
                 container.style.color = '#888';
                 return container;
             }
@@ -27426,7 +28650,9 @@
                 const totalRevenue = profitData.dropRevenues
                     .filter((d) => !d.isSelfReturn)
                     .reduce((sum, d) => sum + d.revenuePerHour, 0);
-                revenueHeader.textContent = `Revenue: ${formatters_js.formatKMB(Math.round(totalRevenue))}/hr`;
+                revenueHeader.textContent = i18n_js.t('alchemyProfitDisplay.revenueHeader', {
+                    revenue: formatters_js.formatKMB(Math.round(totalRevenue)),
+                });
                 container.appendChild(revenueHeader);
 
                 for (const drop of profitData.dropRevenues) {
@@ -27438,18 +28664,16 @@
                             ? formatters_js.formatKMB(Math.round(drop.dropsPerHour))
                             : drop.dropsPerHour.toFixed(2);
 
-                    const line = document.createElement('div');
-                    line.style.cssText = 'margin-left: 8px; color: #aaa;';
-                    if (drop.isSelfReturn) {
-                        line.style.textDecoration = 'line-through';
-                        line.style.opacity = '0.6';
-                    }
-                    line.append(
-                        `\u2022 `,
-                        this._makeItemLink(itemName, drop.itemHrid),
-                        `: ${dropsDisplay}/hr (${dropRatePct} \u00d7 ${formatters_js.formatPercentage(profitData.successRate, 1)} success) @ ${formatters_js.formatWithSeparator(Math.round(drop.price))} \u2192 ${formatters_js.formatKMB(Math.round(drop.revenuePerHour))}/hr`
-                    );
-                    container.appendChild(line);
+                    const text = i18n_js.t('alchemyProfitDisplay.normalDropLine', {
+                        itemName: LINK_MARKER,
+                        drops: dropsDisplay,
+                        dropRate: dropRatePct,
+                        successRate: formatters_js.formatPercentage(profitData.successRate, 1),
+                        price: formatters_js.formatWithSeparator(Math.round(drop.price)),
+                        revenue: formatters_js.formatKMB(Math.round(drop.revenuePerHour)),
+                    });
+                    const extraStyle = drop.isSelfReturn ? ' text-decoration: line-through; opacity: 0.6;' : '';
+                    this._appendLinkedLine(container, text, itemName, drop.itemHrid, extraStyle);
                 }
             }
 
@@ -27462,7 +28686,9 @@
             if (totalCosts > 0 || profitData.requirementCosts?.length > 0) {
                 const costsHeader = document.createElement('div');
                 costsHeader.style.cssText = 'color: #fff; font-weight: 500; margin-top: 6px; margin-bottom: 2px;';
-                costsHeader.textContent = `Costs: ${formatters_js.formatKMB(Math.round(totalCosts))}/hr`;
+                costsHeader.textContent = i18n_js.t('alchemyProfitDisplay.costsHeader', {
+                    costs: formatters_js.formatKMB(Math.round(totalCosts)),
+                });
                 container.appendChild(costsHeader);
 
                 // Input materials
@@ -27470,14 +28696,13 @@
                     for (const req of profitData.requirementCosts) {
                         const itemDetails = dataManager.getItemDetails(req.itemHrid);
                         const itemName = itemDetails?.name || req.itemHrid.split('/').pop();
-                        const line = document.createElement('div');
-                        line.style.cssText = 'margin-left: 8px; color: #aaa;';
-                        line.append(
-                            `\u2022 `,
-                            this._makeItemLink(itemName, req.itemHrid),
-                            `: ${req.count}\u00d7 @ ${formatters_js.formatWithSeparator(Math.round(req.price))} \u2192 ${formatters_js.formatKMB(Math.round(req.costPerHour))}/hr`
-                        );
-                        container.appendChild(line);
+                        const text = i18n_js.t('alchemyBestItems.materialLine', {
+                            itemName: LINK_MARKER,
+                            count: req.count,
+                            price: formatters_js.formatWithSeparator(Math.round(req.price)),
+                            cost: formatters_js.formatKMB(Math.round(req.costPerHour)),
+                        });
+                        this._appendLinkedLine(container, text, itemName, req.itemHrid);
                     }
                 }
 
@@ -27485,14 +28710,12 @@
                 if (profitData.catalystCost?.itemHrid && profitData.catalystCostPerHour > 0) {
                     const catDetails = dataManager.getItemDetails(profitData.catalystCost.itemHrid);
                     const catName = catDetails?.name || profitData.catalystCost.itemHrid.split('/').pop();
-                    const line = document.createElement('div');
-                    line.style.cssText = 'margin-left: 8px; color: #aaa;';
-                    line.append(
-                        `\u2022 `,
-                        this._makeItemLink(catName, profitData.catalystCost.itemHrid),
-                        ` @ ${formatters_js.formatWithSeparator(Math.round(profitData.catalystCost.price))} \u2192 ${formatters_js.formatKMB(Math.round(profitData.catalystCostPerHour))}/hr`
-                    );
-                    container.appendChild(line);
+                    const text = i18n_js.t('alchemyBestItems.catalystLine', {
+                        itemName: LINK_MARKER,
+                        price: formatters_js.formatWithSeparator(Math.round(profitData.catalystCost.price)),
+                        cost: formatters_js.formatKMB(Math.round(profitData.catalystCostPerHour)),
+                    });
+                    this._appendLinkedLine(container, text, catName, profitData.catalystCost.itemHrid);
                 }
 
                 // Tea
@@ -27500,14 +28723,11 @@
                     for (const tea of profitData.consumableCosts) {
                         const teaDetails = dataManager.getItemDetails(tea.itemHrid);
                         const teaName = teaDetails?.name || tea.itemHrid.split('/').pop();
-                        const line = document.createElement('div');
-                        line.style.cssText = 'margin-left: 8px; color: #aaa;';
-                        line.append(
-                            `\u2022 `,
-                            this._makeItemLink(teaName, tea.itemHrid),
-                            ` \u2192 ${formatters_js.formatKMB(Math.round(tea.costPerHour))}/hr`
-                        );
-                        container.appendChild(line);
+                        const text = i18n_js.t('alchemyBestItems.teaLine', {
+                            itemName: LINK_MARKER,
+                            cost: formatters_js.formatKMB(Math.round(tea.costPerHour)),
+                        });
+                        this._appendLinkedLine(container, text, teaName, tea.itemHrid);
                     }
                 }
             }
@@ -27516,9 +28736,15 @@
             const statsLine = document.createElement('div');
             statsLine.style.cssText = 'color: #888; margin-top: 6px; font-size: 0.7rem;';
             const parts = [];
-            if (profitData.actionsPerHour) parts.push(`${Math.round(profitData.actionsPerHour)}/hr`);
-            if (profitData.successRate) parts.push(`${formatters_js.formatPercentage(profitData.successRate, 1)} success`);
-            if (profitData.efficiency != null) parts.push(`${formatters_js.formatPercentage(profitData.efficiency, 1)} efficiency`);
+            if (profitData.actionsPerHour) {
+                parts.push(i18n_js.t('alchemyBestItems.statsActionsPerHour', { value: Math.round(profitData.actionsPerHour) }));
+            }
+            if (profitData.successRate) {
+                parts.push(i18n_js.t('alchemyBestItems.statsSuccessRate', { value: formatters_js.formatPercentage(profitData.successRate, 1) }));
+            }
+            if (profitData.efficiency != null) {
+                parts.push(i18n_js.t('alchemyBestItems.statsEfficiency', { value: formatters_js.formatPercentage(profitData.efficiency, 1) }));
+            }
             statsLine.textContent = parts.join(' | ');
             container.appendChild(statsLine);
 
@@ -28609,16 +29835,23 @@
     // skill's own optimization goal (XP/hr per gold for XP-goal skills, payback time for Gold-goal
     // gathering skills), so the default view always leads with the metric the panel is already
     // optimizing for.
-    const SORT_MODES = [
-        { value: 'value', label: 'Best Value' },
-        { value: 'payback', label: 'Payback (fastest)' },
-        { value: 'cost', label: 'Cost (cheapest)' },
-        { value: 'xpGain', label: 'XP Gain %' },
-        { value: 'goldGain', label: 'Gold Gain %' },
-        { value: 'xpRatio', label: 'G/0.01% Exp/Hr (cheapest)' },
-        { value: 'profitRatio', label: 'G/0.01% Profit (cheapest)' },
-        { value: 'slot', label: 'Slot Order' },
-    ];
+    /**
+     * Builds the Equipment Progression sort options with live-translated labels (resolved at call
+     * time rather than baked in at module load, so the dropdown always reflects the current locale).
+     * @returns {Array<{value: string, label: string}>}
+     */
+    function getSortModes() {
+        return [
+            { value: 'value', label: i18n_js.t('skillingOptimizer.sortBestValue') },
+            { value: 'payback', label: i18n_js.t('skillingOptimizer.sortPaybackFastest') },
+            { value: 'cost', label: i18n_js.t('skillingOptimizer.sortCostCheapest') },
+            { value: 'xpGain', label: i18n_js.t('skillingOptimizer.sortXpGainPercent') },
+            { value: 'goldGain', label: i18n_js.t('skillingOptimizer.sortGoldGainPercent') },
+            { value: 'xpRatio', label: i18n_js.t('skillingOptimizer.sortXpRatioCheapest') },
+            { value: 'profitRatio', label: i18n_js.t('skillingOptimizer.sortProfitRatioCheapest') },
+            { value: 'slot', label: i18n_js.t('skillingOptimizer.sortSlotOrder') },
+        ];
+    }
 
     class SkillingSimulatorUI {
         constructor() {
@@ -28700,7 +29933,7 @@
             btn.className = `${TAB_CLASS} ${existingTab ? existingTab.className.replace(/Mui-selected/g, '').trim() : ''}`;
             btn.setAttribute('role', 'tab');
             btn.setAttribute('type', 'button');
-            btn.textContent = 'Skilling Sim';
+            btn.textContent = i18n_js.t('skillingOptimizer.tabLabel');
             btn.style.minWidth = 'auto';
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -28777,7 +30010,7 @@
             border-radius: 8px 8px 0 0; flex-shrink: 0;
         `;
             const title = document.createElement('span');
-            title.textContent = 'Skilling Sim';
+            title.textContent = i18n_js.t('skillingOptimizer.tabLabel');
             title.style.cssText = `font-weight: 700; font-size: 14px; color: ${config.COLOR_ACCENT};`;
             const closeBtn = document.createElement('button');
             closeBtn.type = 'button';
@@ -28928,8 +30161,8 @@
             modeRow.style.cssText = 'display: flex; gap: 6px; margin-bottom: 14px;';
 
             for (const [mode, label] of [
-                ['simulator', 'Simulator'],
-                ['optimizer', 'Upgrade'],
+                ['simulator', i18n_js.t('skillingOptimizer.modeSimulator')],
+                ['optimizer', i18n_js.t('skillingOptimizer.modeUpgrade')],
             ]) {
                 const btn = document.createElement('button');
                 btn.type = 'button';
@@ -28960,7 +30193,7 @@
 
                 const simulateBtn = document.createElement('button');
                 simulateBtn.type = 'button';
-                simulateBtn.textContent = 'Simulate';
+                simulateBtn.textContent = i18n_js.t('skillingOptimizer.simulateButton');
                 simulateBtn.style.cssText = `
                 margin-top: 12px; padding: 6px 20px;
                 background: ${config.COLOR_ACCENT}; color: #000;
@@ -28968,12 +30201,12 @@
                 font-size: 12px; font-weight: 700; cursor: pointer;
             `;
                 simulateBtn.addEventListener('click', () => {
-                    simulateBtn.textContent = 'Simulating…';
+                    simulateBtn.textContent = i18n_js.t('skillingOptimizer.simulatingButton');
                     simulateBtn.disabled = true;
                     requestAnimationFrame(() =>
                         setTimeout(() => {
                             this._runSimulation();
-                            simulateBtn.textContent = 'Simulate';
+                            simulateBtn.textContent = i18n_js.t('skillingOptimizer.simulateButton');
                             simulateBtn.disabled = false;
                         }, 0)
                     );
@@ -28989,14 +30222,14 @@
                 const compareRow = document.createElement('div');
                 compareRow.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 8px;';
                 const compareLabel = document.createElement('span');
-                compareLabel.textContent = 'Compare:';
+                compareLabel.textContent = i18n_js.t('skillingOptimizer.compareLabel');
                 compareLabel.style.cssText = 'color: rgba(255,255,255,0.5); font-size: 12px; width: 56px; flex-shrink: 0;';
                 const compareSelect = document.createElement('select');
                 compareSelect.style.cssText =
                     'background: #2a2a2a; color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; padding: 4px 8px; font-size: 12px; flex: 1; cursor: pointer;';
                 const noneOpt = document.createElement('option');
                 noneOpt.value = '';
-                noneOpt.textContent = '— None —';
+                noneOpt.textContent = i18n_js.t('skillingOptimizer.compareNoneOption');
                 compareSelect.appendChild(noneOpt);
 
                 const resolvedComparison = this.optimizerLoadout
@@ -29011,7 +30244,7 @@
                 if (currentComparisonName && !usableComparisonNames.has(currentComparisonName)) {
                     const unavailableOpt = document.createElement('option');
                     unavailableOpt.value = currentComparisonName;
-                    unavailableOpt.textContent = `${currentComparisonName} (Unavailable)`;
+                    unavailableOpt.textContent = i18n_js.t('skillingOptimizer.unavailableLabel', { name: currentComparisonName });
                     unavailableOpt.selected = true;
                     unavailableOpt.disabled = true;
                     compareSelect.appendChild(unavailableOpt);
@@ -29043,7 +30276,7 @@
 
                 const optimizeBtn = document.createElement('button');
                 optimizeBtn.type = 'button';
-                optimizeBtn.textContent = 'Optimize';
+                optimizeBtn.textContent = i18n_js.t('skillingOptimizer.optimizeButton');
                 optimizeBtn.style.cssText = `
                 padding: 6px 20px;
                 background: ${config.COLOR_ACCENT}; color: #000;
@@ -29055,7 +30288,7 @@
                 resultsArea.style.marginTop = '16px';
 
                 optimizeBtn.addEventListener('click', () => {
-                    optimizeBtn.textContent = 'Optimizing…';
+                    optimizeBtn.textContent = i18n_js.t('skillingOptimizer.optimizingButton');
                     optimizeBtn.disabled = true;
                     requestAnimationFrame(() =>
                         setTimeout(() => {
@@ -29092,7 +30325,9 @@
                                     }
                                 } else {
                                     unavailableComparisonName =
-                                        refreshedLoadout?.name || this.optimizerLoadout?.name || 'Selected loadout';
+                                        refreshedLoadout?.name ||
+                                        this.optimizerLoadout?.name ||
+                                        i18n_js.t('skillingOptimizer.selectedLoadoutFallbackName');
                                     if (refreshedLoadout) this.optimizerLoadout = refreshedLoadout;
                                 }
                             }
@@ -29151,7 +30386,7 @@
                                   )
                                 : null;
 
-                            optimizeBtn.textContent = 'Optimize';
+                            optimizeBtn.textContent = i18n_js.t('skillingOptimizer.optimizeButton');
                             optimizeBtn.disabled = false;
                             resultsArea.innerHTML = '';
                             if (result) {
@@ -29163,7 +30398,9 @@
                                 );
                                 if (unavailableComparisonName) {
                                     const warning = document.createElement('div');
-                                    warning.textContent = `Compare loadout “${unavailableComparisonName}” is unavailable. Comparison was not substituted with Current Gear.`;
+                                    warning.textContent = i18n_js.t('skillingOptimizer.compareLoadoutUnavailableWarning', {
+                                        name: unavailableComparisonName,
+                                    });
                                     warning.style.cssText = 'color:#f87171; font-size:11px; margin-bottom:8px;';
                                     resultsArea.prepend(warning);
                                 }
@@ -29197,7 +30434,7 @@
             const row = document.createElement('div');
             row.style.cssText = 'display: flex; align-items: center; gap: 8px;';
             const label = document.createElement('span');
-            label.textContent = 'Alchemy Item:';
+            label.textContent = i18n_js.t('skillingOptimizer.alchemyItemLabel');
             label.style.cssText = 'color: rgba(255,255,255,0.5); font-size: 12px; width: 56px; flex-shrink: 0;';
             row.appendChild(label);
 
@@ -29216,7 +30453,7 @@
         `;
             const items = getAlchemyItemOptions();
             const currentItemLabel = () => {
-                if (!this.alchemyItemOverride?.itemHrid) return '— Auto (from active action) —';
+                if (!this.alchemyItemOverride?.itemHrid) return i18n_js.t('skillingOptimizer.alchemyAutoOption');
                 return this._getItemName(this.alchemyItemOverride.itemHrid) || this.alchemyItemOverride.itemHrid;
             };
             itemBtn.textContent = currentItemLabel();
@@ -29236,7 +30473,7 @@
                         itemBtn.textContent = currentItemLabel();
                         itemBtn.style.color = this.alchemyItemOverride?.itemHrid ? '#fff' : 'rgba(255,255,255,0.5)';
                     },
-                    '— Auto (from active action) —'
+                    i18n_js.t('skillingOptimizer.alchemyAutoOption')
                 );
             });
             row.appendChild(itemBtn);
@@ -29244,10 +30481,10 @@
             const typeSelect = document.createElement('select');
             typeSelect.style.cssText = selectCss + ' width: 100px; flex-shrink: 0;';
             for (const [value, name] of [
-                ['decompose', 'Decompose'],
-                ['coinify', 'Coinify'],
-                ['transmute', 'Transmute'],
-                ['unrefine', 'Unrefine'],
+                ['decompose', i18n_js.t('skillingOptimizer.alchemyTypeDecompose')],
+                ['coinify', i18n_js.t('skillingOptimizer.alchemyTypeCoinify')],
+                ['transmute', i18n_js.t('skillingOptimizer.alchemyTypeTransmute')],
+                ['unrefine', i18n_js.t('skillingOptimizer.alchemyTypeUnrefine')],
             ]) {
                 const opt = document.createElement('option');
                 opt.value = value;
@@ -29262,7 +30499,7 @@
             levelInput.min = '0';
             levelInput.max = '20';
             levelInput.value = String(this.alchemyItemOverride?.enhancementLevel || 0);
-            levelInput.title = 'Enhancement level (ignored for Transmute)';
+            levelInput.title = i18n_js.t('skillingOptimizer.alchemyEnhancementLevelTooltip');
             levelInput.style.cssText = selectCss + ' width: 44px; flex-shrink: 0; cursor: text;';
             row.appendChild(levelInput);
             wrap.appendChild(row);
@@ -29283,8 +30520,7 @@
 
             const hint = document.createElement('div');
             hint.style.cssText = 'color: rgba(255,255,255,0.35); font-size: 10px; font-style: italic;';
-            hint.textContent =
-                'Alchemy Gold/XP are priced against one item - pick one, or leave on Auto to use whatever your character is currently queued to Alchemize.';
+            hint.textContent = i18n_js.t('skillingOptimizer.alchemyItemHint');
             wrap.appendChild(hint);
 
             return wrap;
@@ -29311,7 +30547,7 @@
         `;
 
             // Skill
-            const skillRow = makeRow('Skill:');
+            const skillRow = makeRow(i18n_js.t('skillingOptimizer.skillLabel'));
             const skillSelect = document.createElement('select');
             skillSelect.style.cssText = inputCss + ' flex: 1; cursor: pointer;';
             for (const s of SKILL_NAMES) {
@@ -29325,7 +30561,7 @@
             wrap.appendChild(skillRow);
 
             // Level
-            const levelRow = makeRow('Level:');
+            const levelRow = makeRow(i18n_js.t('skillingOptimizer.levelLabel'));
             const levelInput = document.createElement('input');
             levelInput.type = 'number';
             levelInput.min = '1';
@@ -29337,7 +30573,7 @@
 
             // Loadout (simulator only)
             if (this.currentMode === 'simulator') {
-                const loadoutRow = makeRow('Loadout:');
+                const loadoutRow = makeRow(i18n_js.t('skillingOptimizer.loadoutLabel'));
                 const loadoutSelect = document.createElement('select');
                 loadoutSelect.style.cssText = inputCss + ' flex: 1; cursor: pointer;';
                 this._populateLoadoutSelect(loadoutSelect);
@@ -29346,7 +30582,9 @@
                 const loadoutStatus = document.createElement('div');
                 loadoutStatus.style.cssText = 'color:#f87171; font-size:11px; margin-left:64px;';
                 if (this._simulatorLoadoutUnavailableName) {
-                    loadoutStatus.textContent = `Loadout “${this._simulatorLoadoutUnavailableName}” is unavailable and was not loaded.`;
+                    loadoutStatus.textContent = i18n_js.t('skillingOptimizer.loadoutUnavailableStatus', {
+                        name: this._simulatorLoadoutUnavailableName,
+                    });
                 }
                 wrap.appendChild(loadoutStatus);
                 loadoutSelect.addEventListener('change', () => {
@@ -29356,10 +30594,10 @@
                     if (!this._loadLoadout(name)) {
                         const selectedOption = loadoutSelect.selectedOptions?.[0];
                         if (selectedOption) {
-                            selectedOption.textContent = `${name} (Unavailable)`;
+                            selectedOption.textContent = i18n_js.t('skillingOptimizer.unavailableLabel', { name });
                             selectedOption.disabled = true;
                         }
-                        loadoutStatus.textContent = `Loadout “${name}” is unavailable and was not loaded.`;
+                        loadoutStatus.textContent = i18n_js.t('skillingOptimizer.loadoutUnavailableStatus', { name });
                     }
                 });
             }
@@ -29368,7 +30606,7 @@
             // can't narrow anything the Alchemy Item row above doesn't already cover, and having both
             // visible reads as two competing controls for the same thing.
             if (this.currentSkill !== 'Alchemy') {
-                const actionsRow = makeRow('Actions:');
+                const actionsRow = makeRow(i18n_js.t('skillingOptimizer.actionsLabel'));
                 actionsRow.style.position = 'relative';
                 const actionBtn = document.createElement('button');
                 actionBtn.type = 'button';
@@ -29377,7 +30615,7 @@
                 const getActionLabel = () => {
                     const all = getSkillActionsForDisplay(this.currentSkill, this.currentLevel);
                     const avail = all.filter((a) => a.available);
-                    if (!this.selectedActionHrids) return `All (${avail.length})`;
+                    if (!this.selectedActionHrids) return i18n_js.t('skillingOptimizer.allActionsCount', { count: avail.length });
                     // Counts against the full action list (not just avail) so an explicitly selected
                     // locked action - pending a tea unlock - is still reflected in the count.
                     const n = [...this.selectedActionHrids].filter((h) => all.some((a) => a.hrid === h)).length;
@@ -29432,7 +30670,7 @@
         _populateLoadoutSelect(select) {
             const empty = document.createElement('option');
             empty.value = '';
-            empty.textContent = '— No loadout —';
+            empty.textContent = i18n_js.t('skillingOptimizer.noLoadoutOption');
             if (!this._simulatorLoadoutName) empty.selected = true;
             select.appendChild(empty);
 
@@ -29440,8 +30678,10 @@
             for (const snap of loadoutState.getAllSnapshots()) {
                 const opt = document.createElement('option');
                 opt.value = snap.name;
-                opt.textContent =
-                    snap.name + (snap.isDefault ? ' ★' : '') + (snap.isUsableForCalculation ? '' : ' (Unavailable)');
+                const starSuffix = snap.isDefault ? ' ★' : '';
+                opt.textContent = snap.isUsableForCalculation
+                    ? snap.name + starSuffix
+                    : i18n_js.t('skillingOptimizer.unavailableLabel', { name: snap.name + starSuffix });
                 opt.disabled = !snap.isUsableForCalculation;
                 if (this._simulatorLoadoutName === snap.name) {
                     opt.selected = true;
@@ -29455,7 +30695,9 @@
             if (this._simulatorLoadoutName && !matched) {
                 const unavailableOpt = document.createElement('option');
                 unavailableOpt.value = this._simulatorLoadoutName;
-                unavailableOpt.textContent = `${this._simulatorLoadoutName} (Unavailable)`;
+                unavailableOpt.textContent = i18n_js.t('skillingOptimizer.unavailableLabel', {
+                    name: this._simulatorLoadoutName,
+                });
                 unavailableOpt.selected = true;
                 unavailableOpt.disabled = true;
                 select.appendChild(unavailableOpt);
@@ -29579,7 +30821,7 @@
         _buildEquipmentSection() {
             const section = document.createElement('div');
             section.style.marginTop = '14px';
-            section.appendChild(this._makeSectionHeader('Equipment'));
+            section.appendChild(this._makeSectionHeader(i18n_js.t('skillingOptimizer.equipmentHeader')));
 
             const relevantTool = SKILL_TOOL_LOCATION[this.currentSkill];
             const locations = SKILLING_LOCATIONS.filter((loc) => !loc.endsWith('_tool') || loc === relevantTool);
@@ -29690,7 +30932,7 @@
         _buildTeasSection() {
             const section = document.createElement('div');
             section.style.marginTop = '14px';
-            section.appendChild(this._makeSectionHeader('Teas'));
+            section.appendChild(this._makeSectionHeader(i18n_js.t('skillingOptimizer.teasHeader')));
 
             for (let i = 0; i < 3; i++) {
                 const row = this._buildTeaRow(i);
@@ -29707,7 +30949,7 @@
             row.style.cssText = 'display: flex; align-items: center; gap: 6px; padding: 2px 0;';
 
             const label = document.createElement('span');
-            label.textContent = `TEA ${index + 1}`;
+            label.textContent = i18n_js.t('skillingOptimizer.teaSlotLabel', { index: index + 1 });
             label.style.cssText =
                 'font-size: 10px; color: rgba(255,255,255,0.35); width: 58px; flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.04em;';
             row.appendChild(label);
@@ -29773,9 +31015,9 @@
          * @param {Array<{hrid: string, name: string, available?: boolean, itemLevel?: number}>} items
          * @param {string|null} currentHrid
          * @param {(hrid: string|null) => void} onSelect
-         * @param {string} [emptyLabel] - Label for the "clear selection" row (default '— Empty —')
+         * @param {string} [emptyLabel] - Label for the "clear selection" row (default t('skillingOptimizer.emptyOption'))
          */
-        _openItemPicker(anchorEl, items, currentHrid, onSelect, emptyLabel = '— Empty —') {
+        _openItemPicker(anchorEl, items, currentHrid, onSelect, emptyLabel = i18n_js.t('skillingOptimizer.emptyOption')) {
             this._closePicker();
 
             const popup = document.createElement('div');
@@ -29798,7 +31040,7 @@
 
             // Search input
             const search = document.createElement('input');
-            search.placeholder = 'Search…';
+            search.placeholder = i18n_js.t('skillingOptimizer.searchPlaceholder');
             search.style.cssText = `
             padding: 7px 10px; background: #2a2a2a; color: #fff; font-size: 12px;
             border: none; border-bottom: 1px solid rgba(255,255,255,0.15); outline: none;
@@ -29835,7 +31077,7 @@
 
                 if (locked.length) {
                     const sep = document.createElement('div');
-                    sep.textContent = '— Level locked —';
+                    sep.textContent = i18n_js.t('skillingOptimizer.levelLockedSeparator');
                     sep.style.cssText =
                         'padding: 4px 10px; font-size: 10px; color: rgba(255,255,255,0.3); border-top: 1px solid rgba(255,255,255,0.08);';
                     list.appendChild(sep);
@@ -29956,20 +31198,25 @@
             const allChecked = this.selectedActionHrids === null;
             const itemRows = [];
 
-            const { row: allRow, cb: allCb } = makeRow('All', allChecked, false, (checked) => {
-                if (checked) {
-                    this.selectedActionHrids = null;
-                    itemRows.forEach(({ cb }) => {
-                        cb.checked = true;
-                    });
-                } else {
-                    this.selectedActionHrids = new Set();
-                    itemRows.forEach(({ cb }) => {
-                        cb.checked = false;
-                    });
+            const { row: allRow, cb: allCb } = makeRow(
+                i18n_js.t('skillingOptimizer.allActionsOption'),
+                allChecked,
+                false,
+                (checked) => {
+                    if (checked) {
+                        this.selectedActionHrids = null;
+                        itemRows.forEach(({ cb }) => {
+                            cb.checked = true;
+                        });
+                    } else {
+                        this.selectedActionHrids = new Set();
+                        itemRows.forEach(({ cb }) => {
+                            cb.checked = false;
+                        });
+                    }
+                    anchorBtn.textContent = getBtnLabel();
                 }
-                anchorBtn.textContent = getBtnLabel();
-            });
+            );
             allRow.style.cssText += ' font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.1);';
             popup.appendChild(allRow);
 
@@ -29977,7 +31224,7 @@
             searchWrapper.style.cssText = 'padding: 5px 10px; border-bottom: 1px solid rgba(255,255,255,0.1);';
             const searchInput = document.createElement('input');
             searchInput.type = 'text';
-            searchInput.placeholder = 'Search actions...';
+            searchInput.placeholder = i18n_js.t('skillingOptimizer.searchActionsPlaceholder');
             searchInput.style.cssText = `
             width: 100%; box-sizing: border-box; background: #2a2a2a; color: rgba(255,255,255,0.85);
             border: 1px solid rgba(255,255,255,0.15); border-radius: 4px; padding: 4px 8px; font-size: 12px;
@@ -30005,7 +31252,7 @@
                     this.selectedActionHrids === null ? action.available : this.selectedActionHrids.has(action.hrid);
                 const label = action.available
                     ? action.name
-                    : `${action.name} (lv ${action.requiredLevel} — locked, may unlock via tea)`;
+                    : i18n_js.t('skillingOptimizer.actionLockedLabel', { name: action.name, level: action.requiredLevel });
                 const { row, cb } = makeRow(label, isChecked, false, (checked) => {
                     if (this.selectedActionHrids === null) {
                         this.selectedActionHrids = new Set(available.map((a) => a.hrid));
@@ -30055,7 +31302,7 @@
             this._resultsArea.innerHTML = '';
 
             const section = document.createElement('div');
-            section.appendChild(this._makeSectionHeader('Results'));
+            section.appendChild(this._makeSectionHeader(i18n_js.t('skillingOptimizer.resultsHeader')));
 
             // Alchemy XP/Gold depend on the specific item + enhancement being processed, which this
             // generic action-wide scenario has no context for. A generic number here would silently
@@ -30063,9 +31310,7 @@
             if (this.currentSkill === 'Alchemy') {
                 const unsupported = document.createElement('div');
                 unsupported.style.cssText = 'color: rgba(255,255,255,0.5); font-size: 12px;';
-                unsupported.textContent =
-                    'Alchemy scenario math is not item-aware yet, so a generic Results number here would ' +
-                    'misrepresent real Coinify/Decompose/Transmute economics. Unsupported for now.';
+                unsupported.textContent = i18n_js.t('skillingOptimizer.alchemyUnsupportedNotice');
                 section.appendChild(unsupported);
                 this._resultsArea.appendChild(section);
                 return;
@@ -30084,7 +31329,9 @@
 
             const makeStat = (label, value, color, isIncomplete = false) => {
                 const el = document.createElement('div');
-                const valueText = isIncomplete ? `${formatters_js.formatKMB(value)} (incomplete)` : formatters_js.formatKMB(value);
+                const valueText = isIncomplete
+                    ? i18n_js.t('skillingOptimizer.incompleteValueSuffix', { value: formatters_js.formatKMB(value) })
+                    : formatters_js.formatKMB(value);
                 el.innerHTML = `
                 <div style="font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">${label}</div>
                 <div style="font-size:15px;font-weight:700;color:${color};">${valueText}</div>
@@ -30101,10 +31348,16 @@
                 this.selectedActionHrids === null ? allActionsAvailable.length : this.selectedActionHrids.size;
             const isMultiAction = selectedCount > 1;
 
-            stats.appendChild(makeStat(isMultiAction ? 'Avg XP / hr' : 'XP / hr', result.xpPerHour, config.COLOR_INFO));
             stats.appendChild(
                 makeStat(
-                    isMultiAction ? 'Avg Gold / hr' : 'Gold / hr',
+                    isMultiAction ? i18n_js.t('skillingOptimizer.avgXpPerHourStat') : i18n_js.t('skillingOptimizer.xpPerHourStat'),
+                    result.xpPerHour,
+                    config.COLOR_INFO
+                )
+            );
+            stats.appendChild(
+                makeStat(
+                    isMultiAction ? i18n_js.t('skillingOptimizer.avgGoldPerHourStat') : i18n_js.t('skillingOptimizer.goldPerHourStat'),
                     result.goldPerHour,
                     config.COLOR_PROFIT,
                     result.hasMissingPrice
@@ -30115,7 +31368,7 @@
             if (result.teaCostPerHour > 0) {
                 const cost = document.createElement('div');
                 cost.style.cssText = 'font-size: 11px; color: rgba(255,255,255,0.4);';
-                cost.textContent = `Tea cost: ${formatters_js.formatKMB(result.teaCostPerHour)}/hr`;
+                cost.textContent = i18n_js.t('skillingOptimizer.teaCostPerHour', { cost: formatters_js.formatKMB(result.teaCostPerHour) });
                 section.appendChild(cost);
             }
 
@@ -30139,18 +31392,35 @@
             const ctx = result.alchemyContext;
             if (!ctx) {
                 label.style.color = '#f0ad4e';
-                label.textContent =
-                    'Based on: nothing queued - XP is an item-agnostic estimate, Gold is unavailable. ' +
-                    'Pick an item above, or start an Alchemy action.';
+                label.textContent = i18n_js.t('skillingOptimizer.alchemyBasisNothingQueued');
             } else {
                 label.style.color = 'rgba(255,255,255,0.5)';
                 const itemName = this._getItemName(ctx.itemHrid) || ctx.itemHrid;
-                const typeName = ctx.actionType.charAt(0).toUpperCase() + ctx.actionType.slice(1);
+                const typeName = this._getAlchemyTypeName(ctx.actionType);
                 const levelSuffix = ctx.enhancementLevel ? ` +${ctx.enhancementLevel}` : '';
-                const source = result.alchemyContextIsManual ? 'manually selected' : 'from your active/queued action';
-                label.textContent = `Based on: ${typeName} ${itemName}${levelSuffix} (${source})`;
+                const source = result.alchemyContextIsManual
+                    ? i18n_js.t('skillingOptimizer.alchemyBasisManualSource')
+                    : i18n_js.t('skillingOptimizer.alchemyBasisQueueSource');
+                label.textContent = i18n_js.t('skillingOptimizer.alchemyBasisLabel', { typeName, itemName, levelSuffix, source });
             }
             return label;
+        }
+
+        /**
+         * Translated display name for an Alchemy action-type value, mirroring the same labels used in
+         * the Alchemy Item override row's type <select> (_buildAlchemyItemOverrideRow).
+         * @param {string} actionType - 'decompose' | 'coinify' | 'transmute' | 'unrefine'
+         * @returns {string}
+         */
+        _getAlchemyTypeName(actionType) {
+            const keys = {
+                decompose: 'skillingOptimizer.alchemyTypeDecompose',
+                coinify: 'skillingOptimizer.alchemyTypeCoinify',
+                transmute: 'skillingOptimizer.alchemyTypeTransmute',
+                unrefine: 'skillingOptimizer.alchemyTypeUnrefine',
+            };
+            const key = keys[actionType];
+            return key ? i18n_js.t(key) : actionType;
         }
 
         _renderOptimizerResults(container, result, achievableStats, loadoutItemMap) {
@@ -30160,7 +31430,7 @@
             if (!slotEntries.length) {
                 const empty = document.createElement('div');
                 empty.style.color = 'rgba(255,255,255,0.5)';
-                empty.textContent = 'No relevant equipment found for this skill at the selected level.';
+                empty.textContent = i18n_js.t('skillingOptimizer.noRelevantEquipment');
                 container.appendChild(empty);
                 return;
             }
@@ -30182,12 +31452,12 @@
             const sortRow = document.createElement('div');
             sortRow.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 10px;';
             const sortLabel = document.createElement('span');
-            sortLabel.textContent = 'Sort:';
+            sortLabel.textContent = i18n_js.t('skillingOptimizer.sortLabel');
             sortLabel.style.cssText = 'color: rgba(255,255,255,0.5); font-size: 12px; width: 56px; flex-shrink: 0;';
             const sortSelect = document.createElement('select');
             sortSelect.style.cssText =
                 'background: #2a2a2a; color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; padding: 4px 8px; font-size: 12px; flex: 1; cursor: pointer;';
-            for (const mode of SORT_MODES) {
+            for (const mode of getSortModes()) {
                 const opt = document.createElement('option');
                 opt.value = mode.value;
                 opt.textContent = mode.label;
@@ -30213,7 +31483,7 @@
                           return diff !== 0 ? diff : slotEntries.indexOf(a) - slotEntries.indexOf(b);
                       });
 
-            container.appendChild(this._makeSectionHeader('Equipment Progression'));
+            container.appendChild(this._makeSectionHeader(i18n_js.t('skillingOptimizer.equipmentProgressionHeader')));
             container.appendChild(
                 this._renderProgressionTable(orderedEntries, loadoutItemMap, xpBaseline, goldBaseline, houseRoomCandidate)
             );
@@ -30229,11 +31499,18 @@
             if (hasXp || hasGold) {
                 const statsRow = document.createElement('div');
                 statsRow.style.cssText = 'display: flex; gap: 20px; margin-top: 16px; margin-bottom: 4px;';
-                if (hasXp) statsRow.appendChild(this._makeStat('Avg XP/hr', xpResult.optimal.avgScore, config.COLOR_INFO));
+                if (hasXp)
+                    statsRow.appendChild(
+                        this._makeStat(
+                            i18n_js.t('skillingOptimizer.avgXpPerHourCompactStat'),
+                            xpResult.optimal.avgScore,
+                            config.COLOR_INFO
+                        )
+                    );
                 if (hasGold)
                     statsRow.appendChild(
                         this._makeStat(
-                            'Avg Gold/hr',
+                            i18n_js.t('skillingOptimizer.avgGoldPerHourCompactStat'),
                             goldResult.optimal.avgScore,
                             config.COLOR_PROFIT,
                             goldResult.optimal.hasMissingPrice
@@ -30245,11 +31522,17 @@
             if (hasXp || hasGold) {
                 const teasSection = document.createElement('div');
                 teasSection.style.marginTop = '14px';
-                teasSection.appendChild(this._makeSectionHeader('Optimal Teas'));
+                teasSection.appendChild(this._makeSectionHeader(i18n_js.t('skillingOptimizer.optimalTeasHeader')));
                 const cols = document.createElement('div');
                 cols.style.cssText = 'display: flex; gap: 16px;';
-                if (hasXp) cols.appendChild(this._makeTeaCol('For XP', config.COLOR_INFO, xpResult.optimal.teas));
-                if (hasGold) cols.appendChild(this._makeTeaCol('For Gold', config.COLOR_PROFIT, goldResult.optimal.teas));
+                if (hasXp)
+                    cols.appendChild(
+                        this._makeTeaCol(i18n_js.t('skillingOptimizer.forXpLabel'), config.COLOR_INFO, xpResult.optimal.teas)
+                    );
+                if (hasGold)
+                    cols.appendChild(
+                        this._makeTeaCol(i18n_js.t('skillingOptimizer.forGoldLabel'), config.COLOR_PROFIT, goldResult.optimal.teas)
+                    );
                 teasSection.appendChild(cols);
                 container.appendChild(teasSection);
             }
@@ -30257,8 +31540,8 @@
             const note = document.createElement('div');
             note.style.cssText = 'margin-top: 12px; font-size: 10px; color: rgba(255,255,255,0.3); font-style: italic;';
             note.textContent = loadoutItemMap
-                ? '% shows gain over your compared loadout item for each slot.'
-                : '% shows gain over an empty slot. Select a loadout in Compare to see gains over your current gear.';
+                ? i18n_js.t('skillingOptimizer.compareGainNote')
+                : i18n_js.t('skillingOptimizer.noCompareGainNote');
             container.appendChild(note);
         }
 
@@ -30340,7 +31623,7 @@
          * to prioritize regardless of mode.
          * @param {Object} metrics - Result of _computeSlotMetrics
          * @param {string} goal - 'xp' | 'gold' (the skill's own optimization goal)
-         * @param {string} sortMode - One of SORT_MODES' `value`s
+         * @param {string} sortMode - One of getSortModes()' `value`s
          * @returns {number}
          */
         _sortValueFor(metrics, goal, sortMode) {
@@ -30396,13 +31679,13 @@
                 'color: rgba(255,255,255,0.4); font-weight: 600; white-space: nowrap;';
             const thead = document.createElement('thead');
             thead.innerHTML = `<tr>
-            <th style="${thStyle}">Item</th>
-            <th style="${thStyle}">Cost</th>
-            <th style="${thStyle}">Profit Δ</th>
-            <th style="${thStyle}">G/0.01% Profit</th>
-            <th style="${thStyle}">Exp/Hr Δ</th>
-            <th style="${thStyle}">G/0.01% Exp/Hr</th>
-            <th style="${thStyle}">Payback</th>
+            <th style="${thStyle}">${i18n_js.t('settings.itemLabel')}</th>
+            <th style="${thStyle}">${i18n_js.t('skillingOptimizer.tableHeaderCost')}</th>
+            <th style="${thStyle}">${i18n_js.t('skillingOptimizer.tableHeaderProfitDelta')}</th>
+            <th style="${thStyle}">${i18n_js.t('skillingOptimizer.tableHeaderProfitRatio')}</th>
+            <th style="${thStyle}">${i18n_js.t('skillingOptimizer.tableHeaderXpDelta')}</th>
+            <th style="${thStyle}">${i18n_js.t('skillingOptimizer.tableHeaderXpRatio')}</th>
+            <th style="${thStyle}">${i18n_js.t('skillingOptimizer.tableHeaderPayback')}</th>
         </tr>`;
             table.appendChild(thead);
 
@@ -30443,7 +31726,7 @@
             const label = document.createElement('span');
             label.style.cssText =
                 'font-size: 10px; color: rgba(255,255,255,0.38); text-transform: uppercase; letter-spacing: 0.04em;';
-            label.textContent = 'House Room';
+            label.textContent = i18n_js.t('skillingOptimizer.houseRoomLabel');
             nameTd.appendChild(label);
 
             const transition = document.createElement('span');
@@ -30485,7 +31768,9 @@
                 indicator.textContent = `✓${enhStr}`;
                 indicator.style.color = config.COLOR_PROFIT;
             } else {
-                const loadoutName = loadoutItemHrid ? this._getItemName(loadoutItemHrid) || loadoutItemHrid : 'empty';
+                const loadoutName = loadoutItemHrid
+                    ? this._getItemName(loadoutItemHrid) || loadoutItemHrid
+                    : i18n_js.t('skillingOptimizer.emptySlotLower');
                 indicator.textContent = `≠ ${loadoutName}${enhStr}`;
                 indicator.style.color = config.COLOR_WARNING;
                 indicator.style.fontStyle = 'italic';
@@ -30520,7 +31805,7 @@
                     const none = document.createElement('span');
                     none.style.cssText =
                         'margin-left: 8px; font-size: 11px; color: rgba(255,255,255,0.25); font-style: italic;';
-                    none.textContent = 'Already at optimal enhancement';
+                    none.textContent = i18n_js.t('skillingOptimizer.alreadyOptimal');
                     nameTd.appendChild(none);
                     tr.appendChild(nameTd);
                     const restTd = document.createElement('td');
@@ -30540,7 +31825,7 @@
                     ? sameBaseItem
                         ? `${suggestedEntry.itemName} +${loadoutEntry.enhancementLevel}`
                         : `${this._getItemName(loadoutItemHrid) || loadoutItemHrid} +${loadoutEntry.enhancementLevel}`
-                    : 'Empty';
+                    : i18n_js.t('skillingOptimizer.emptySlotCapitalized');
                 transition.appendChild(fromSpan);
                 transition.appendChild(document.createTextNode(' → '));
 
@@ -30605,9 +31890,7 @@
          */
         _applyRefinedTooltip(nameEl, itemHrid) {
             if (!itemHrid?.includes('_refined')) return;
-            nameEl.title =
-                'Refined item: has higher base stats than its non-refined counterpart, so a lower ' +
-                'enhancement level can still outperform a higher-level non-refined item.';
+            nameEl.title = i18n_js.t('skillingOptimizer.refinedItemTooltip');
             nameEl.style.cursor = 'help';
             nameEl.style.borderBottom = '1px dotted rgba(255,255,255,0.35)';
         }
@@ -30621,8 +31904,8 @@
          */
         _applyIncompleteTooltip(nameEl, hasMissingPrice) {
             if (!hasMissingPrice) return;
-            nameEl.textContent += ' (incomplete)';
-            nameEl.title = 'A required market price is unresolved, so this recommendation is not an exact ranking.';
+            nameEl.textContent = i18n_js.t('skillingOptimizer.incompleteValueSuffix', { value: nameEl.textContent });
+            nameEl.title = i18n_js.t('skillingOptimizer.incompletePriceRankingTooltip');
             nameEl.style.cursor = 'help';
             nameEl.style.color = config.COLOR_WARNING;
         }
@@ -30710,7 +31993,7 @@
             td.style.cssText = 'padding: 4px 8px; white-space: nowrap; color: rgba(255,255,255,0.75);';
             const span = this._makeCoinValueSpan((costIsIncomplete ? '~' : '') + formatters_js.formatKMB(cost), spriteUrl);
             if (costIsIncomplete) {
-                span.title = 'A required market price is unresolved, so this cost is not exact.';
+                span.title = i18n_js.t('skillingOptimizer.incompletePriceCostTooltip');
                 span.style.cursor = 'help';
             }
             td.appendChild(span);
@@ -30834,7 +32117,9 @@
 
         _makeStat(label, value, color, isIncomplete = false) {
             const el = document.createElement('div');
-            const valueText = isIncomplete ? `${formatters_js.formatKMB(value)} (incomplete)` : formatters_js.formatKMB(value);
+            const valueText = isIncomplete
+                ? i18n_js.t('skillingOptimizer.incompleteValueSuffix', { value: formatters_js.formatKMB(value) })
+                : formatters_js.formatKMB(value);
             el.innerHTML = `
             <div style="font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">${label}</div>
             <div style="font-size:15px;font-weight:700;color:${color};">${valueText}</div>
@@ -30945,4 +32230,4 @@
 
     console.log('[Toolasha] Actions library loaded');
 
-})(Toolasha.Core.dataManager, Toolasha.Core.config, Toolasha.Core.domObserver, Toolasha.Utils.enhancementConfig, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.profitConstants, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.efficiency, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.uiComponents, Toolasha.Utils.actionPanelHelper, Toolasha.Core.loadoutState, Toolasha.Core.storage, Toolasha.Utils.dom, Toolasha.Utils.timerRegistry, Toolasha.Utils.teaParser, Toolasha.Core.tooltipObserver, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.actionCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.experienceParser, Toolasha.Utils.reactInput, Toolasha.Utils.experienceCalculator, Toolasha.Utils.materialCalculator, Toolasha.Core, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.houseEfficiency);
+})(Toolasha.Core.dataManager, Toolasha.Core.config, Toolasha.Core.domObserver, Toolasha.Core.i18n, Toolasha.Utils.enhancementConfig, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.profitConstants, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.efficiency, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.uiComponents, Toolasha.Utils.actionPanelHelper, Toolasha.Core.loadoutState, Toolasha.Core.storage, Toolasha.Utils.dom, Toolasha.Utils.timerRegistry, Toolasha.Utils.teaParser, Toolasha.Core.tooltipObserver, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.actionCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.experienceParser, Toolasha.Utils.reactInput, Toolasha.Utils.experienceCalculator, Toolasha.Utils.materialCalculator, Toolasha.Core, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.houseEfficiency);

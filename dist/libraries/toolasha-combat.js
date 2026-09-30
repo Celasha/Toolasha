@@ -1,11 +1,11 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.111.3
+ * Version: 3.0.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, loadoutState, storage, webSocketHook, timerRegistry_js, domObserverHelpers_js, formatters_js, marketAPI, expectedValueCalculator, profitHelpers_js, profitConstants_js, reactInput_js, dom, marketData_js, enhancementCalculator_js, enhancementConfig_js, teaParser_js, abilityCostCalculator_js, equipmentParser_js, actionCalculator_js, efficiency_js, materialCalculator_js, experienceCalculator_js, marketplaceSession_js, tooltipObserver, houseCostCalculator_js) {
+(function (config, dataManager, domObserver, loadoutState, storage, i18n_js, webSocketHook, timerRegistry_js, domObserverHelpers_js, formatters_js, marketAPI, expectedValueCalculator, profitHelpers_js, profitConstants_js, reactInput_js, dom, marketData_js, enhancementCalculator_js, enhancementConfig_js, teaParser_js, abilityCostCalculator_js, equipmentParser_js, actionCalculator_js, efficiency_js, materialCalculator_js, experienceCalculator_js, marketplaceSession_js, tooltipObserver, houseCostCalculator_js) {
     'use strict';
 
     /**
@@ -871,7 +871,7 @@
             const title = document.createElement('span');
             title.style.cssText = `font-size: 0.9rem; font-weight: 600; color: ${config.COLOR_ACCENT};`;
             const contextLabel = this.loadoutName ? this.loadoutName : 'Defaults';
-            title.textContent = `Scroll Simulation — ${contextLabel}`;
+            title.textContent = i18n_js.t('scrollSimulatorUi.headingWithDash', { contextLabel });
 
             const closeBtn = document.createElement('button');
             closeBtn.textContent = '×';
@@ -1053,7 +1053,7 @@
 
         const button = document.createElement('button');
         button.id = BUTTON_ID$1;
-        button.textContent = 'Scroll Simulation';
+        button.textContent = i18n_js.t('scrollSimulatorUi.title');
         button.className = 'Button_button__1Fe9z';
         button.style.cssText = `white-space: nowrap;`;
         button.addEventListener('click', () => popup.open(loadoutName));
@@ -2927,7 +2927,7 @@
 
                     // Get dungeon name from HRID
                     const dungeonInfo = dungeonTrackerStorage.getDungeonInfo(completedRunData.dungeonHrid);
-                    const dungeonName = dungeonInfo ? dungeonInfo.name : 'Unknown';
+                    const dungeonName = dungeonInfo ? dungeonInfo.name : i18n_js.t('dungeonTrackerUi.unknownDungeonFallback');
 
                     // Build run object in unified format
                     const runToSave = {
@@ -3038,7 +3038,7 @@
 
             const validated = firstKeyCountTimestamp !== null;
             const dungeonInfo = dungeonTrackerStorage.getDungeonInfo(currentRun.dungeonHrid);
-            const dungeonName = dungeonInfo ? dungeonInfo.name : 'Unknown';
+            const dungeonName = dungeonInfo ? dungeonInfo.name : i18n_js.t('dungeonTrackerUi.unknownDungeonFallback');
             const keyCountsMap = currentRun.keyCountsMap || {};
             const team = Object.keys(keyCountsMap).sort();
             const teamKey = dungeonTrackerStorage.getTeamKey(team);
@@ -3087,7 +3087,7 @@
                 dungeonHrid: this.currentRun.dungeonHrid,
                 dungeonName: this.currentRun.dungeonHrid
                     ? dungeonTrackerStorage.getDungeonInfo(this.currentRun.dungeonHrid)?.name
-                    : 'Unknown',
+                    : i18n_js.t('dungeonTrackerUi.unknownDungeonFallback'),
                 tier: this.currentRun.tier,
                 currentWave: this.currentRun.currentWave, // Already 1-indexed from new_battle message
                 maxWaves: this.currentRun.maxWaves,
@@ -3357,7 +3357,10 @@
                             .find((e) => e.type === 'battle_start');
 
                         // Use battle_ended if available, otherwise fall back to battle_start
-                        const dungeonName = battleEnded?.dungeonName || battleStart?.dungeonName || 'Unknown';
+                        const dungeonName =
+                            battleEnded?.dungeonName ||
+                            battleStart?.dungeonName ||
+                            i18n_js.t('dungeonTrackerUi.unknownDungeonFallback');
 
                         // Get team key
                         const teamKey = dungeonTrackerStorage.getTeamKey(event.team);
@@ -3790,20 +3793,21 @@
                         dungeonName,
                     });
                 } else if (next?.type === 'fail') {
-                    label = 'FAILED';
+                    label = i18n_js.t('dungeonTrackerChatAnnotations.failedLabel');
                     color = '#ff4c4c'; // Red
                 } else if (next?.type === 'cancel') {
-                    label = 'canceled';
+                    label = i18n_js.t('dungeonTrackerChatAnnotations.canceledLabel');
                     color = '#ffd700'; // Gold
                 } else if (hitBattleStart) {
                     // No key/fail/cancel before the next battle_start — player left the party,
                     // ending the run without a completion key count.
-                    label = 'canceled';
+                    label = i18n_js.t('dungeonTrackerChatAnnotations.canceledLabel');
                     color = '#ffd700'; // Gold
                 }
 
                 if (label) {
-                    const isSuccessfulRun = diff && dungeonName && dungeonName !== 'Unknown';
+                    const isSuccessfulRun =
+                        diff && dungeonName && dungeonName !== i18n_js.t('dungeonTrackerUi.unknownDungeonFallback');
 
                     if (isSuccessfulRun) {
                         // Create unique message ID to prevent duplicate annotation on re-runs
@@ -3854,7 +3858,7 @@
                             this.storedRunNumbers[statsKey][msgTs] = runNumber;
                         }
 
-                        label = `Run #${runNumber}: ${label}`;
+                        label = i18n_js.t('dungeonTrackerChatAnnotations.runNumberedLabel', { number: runNumber, label });
                     }
 
                     // Mark as processed BEFORE inserting (matches working DRT script)
@@ -3870,7 +3874,9 @@
                         const cumulativeAvg = Math.floor(dungeonStats.totalTime / dungeonStats.runCount);
 
                         // Show cumulative average
-                        const avgLabel = `Average: ${this.formatTime(cumulativeAvg)}`;
+                        const avgLabel = i18n_js.t('dungeonTrackerChatAnnotations.averageLabel', {
+                            time: this.formatTime(cumulativeAvg),
+                        });
                         this.insertAnnotation(avgLabel, '#deb887', e.msg, true); // Tan color
                     }
                 }
@@ -3958,7 +3964,7 @@
 
                 // Get dungeon name and team key
                 const dungeonName = this.getDungeonNameWithFallback(events, i);
-                if (!dungeonName || dungeonName === 'Unknown') continue;
+                if (!dungeonName || dungeonName === i18n_js.t('dungeonTrackerUi.unknownDungeonFallback')) continue;
 
                 const teamKey = dungeonTrackerStorage.getTeamKey(event.team);
                 const statsKey = `${teamKey}::${dungeonName}`;
@@ -4100,7 +4106,7 @@
 
             // 2nd priority: Currently active dungeon run
             const currentRun = dungeonTracker.getCurrentRun();
-            if (currentRun?.dungeonName && currentRun.dungeonName !== 'Unknown') {
+            if (currentRun?.dungeonName && currentRun.dungeonName !== i18n_js.t('dungeonTrackerUi.unknownDungeonFallback')) {
                 return currentRun.dungeonName;
             }
 
@@ -4111,7 +4117,7 @@
 
             // Final fallback
             console.warn('[Dungeon Tracker Debug] ALL PRIORITIES FAILED for index', currentIndex, '-> Unknown');
-            return 'Unknown';
+            return i18n_js.t('dungeonTrackerUi.unknownDungeonFallback');
         }
 
         /**
@@ -4495,7 +4501,7 @@
 
             // Prepare data
             // Label runs oldest to newest (Run 1 = oldest, Run N = most recent)
-            const labels = filteredRuns.map((_, i) => `Run ${i + 1}`);
+            const labels = filteredRuns.map((_, i) => i18n_js.t('dungeonTrackerUi.chartRunLabel', { number: i + 1 }));
             const durations = filteredRuns.map((r) => (r.duration || r.totalTime || 0) / 60000); // Convert to minutes
 
             // Calculate stats
@@ -4506,7 +4512,7 @@
             // Create datasets
             const datasets = [
                 {
-                    label: 'Run Times',
+                    label: i18n_js.t('dungeonTrackerUi.chartRunTimesLabel'),
                     data: durations,
                     borderColor: 'rgb(75, 192, 192)',
                     backgroundColor: 'rgba(75, 192, 192, 0.2)',
@@ -4517,7 +4523,7 @@
                     fill: false,
                 },
                 {
-                    label: 'Average',
+                    label: i18n_js.t('dungeonTrackerUi.chartAverageLabel'),
                     data: new Array(durations.length).fill(avgDuration),
                     borderColor: 'rgb(255, 159, 64)',
                     borderWidth: 2,
@@ -4527,7 +4533,7 @@
                     fill: false,
                 },
                 {
-                    label: 'Fastest',
+                    label: i18n_js.t('dungeonTrackerUi.chartFastestLabel'),
                     data: new Array(durations.length).fill(fastestDuration),
                     borderColor: 'rgb(75, 192, 75)',
                     borderWidth: 2,
@@ -4537,7 +4543,7 @@
                     fill: false,
                 },
                 {
-                    label: 'Slowest',
+                    label: i18n_js.t('dungeonTrackerUi.chartSlowestLabel'),
                     data: new Array(durations.length).fill(slowestDuration),
                     borderColor: 'rgb(255, 99, 132)',
                     borderWidth: 2,
@@ -4606,7 +4612,7 @@
                         x: {
                             title: {
                                 display: true,
-                                text: 'Run Number',
+                                text: i18n_js.t('dungeonTrackerUi.chartRunNumberAxisLabel'),
                                 color: '#ccc',
                             },
                             ticks: {
@@ -4619,7 +4625,7 @@
                         y: {
                             title: {
                                 display: true,
-                                text: 'Duration (minutes)',
+                                text: i18n_js.t('dungeonTrackerUi.chartDurationAxisLabel'),
                                 color: '#ccc',
                             },
                             ticks: {
@@ -4676,7 +4682,7 @@
         `;
 
             const title = document.createElement('h3');
-            title.textContent = '📊 Dungeon Run Chart';
+            title.textContent = i18n_js.t('dungeonTrackerUi.chartTitle');
             title.style.cssText = 'color: #ccc; margin: 0; font-size: 18px;';
 
             const closeBtn = document.createElement('button');
@@ -4761,7 +4767,9 @@
 
             // Prepare data (same as main chart)
             // Label runs in reverse chronological order to match list (newest = Run 1, oldest = Run N)
-            const labels = filteredRuns.map((_, i) => `Run ${filteredRuns.length - i}`);
+            const labels = filteredRuns.map((_, i) =>
+                i18n_js.t('dungeonTrackerUi.chartRunLabel', { number: filteredRuns.length - i })
+            );
             const durations = filteredRuns.map((r) => (r.duration || r.totalTime || 0) / 60000);
 
             const avgDuration = durations.reduce((a, b) => a + b, 0) / durations.length;
@@ -4770,7 +4778,7 @@
 
             const datasets = [
                 {
-                    label: 'Run Times',
+                    label: i18n_js.t('dungeonTrackerUi.chartRunTimesLabel'),
                     data: durations,
                     borderColor: 'rgb(75, 192, 192)',
                     backgroundColor: 'rgba(75, 192, 192, 0.2)',
@@ -4781,7 +4789,7 @@
                     fill: false,
                 },
                 {
-                    label: 'Average',
+                    label: i18n_js.t('dungeonTrackerUi.chartAverageLabel'),
                     data: new Array(durations.length).fill(avgDuration),
                     borderColor: 'rgb(255, 159, 64)',
                     borderWidth: 2,
@@ -4791,7 +4799,7 @@
                     fill: false,
                 },
                 {
-                    label: 'Fastest',
+                    label: i18n_js.t('dungeonTrackerUi.chartFastestLabel'),
                     data: new Array(durations.length).fill(fastestDuration),
                     borderColor: 'rgb(75, 192, 75)',
                     borderWidth: 2,
@@ -4801,7 +4809,7 @@
                     fill: false,
                 },
                 {
-                    label: 'Slowest',
+                    label: i18n_js.t('dungeonTrackerUi.chartSlowestLabel'),
                     data: new Array(durations.length).fill(slowestDuration),
                     borderColor: 'rgb(255, 99, 132)',
                     borderWidth: 2,
@@ -4864,7 +4872,7 @@
                         x: {
                             title: {
                                 display: true,
-                                text: 'Run Number',
+                                text: i18n_js.t('dungeonTrackerUi.chartRunNumberAxisLabel'),
                                 color: '#ccc',
                                 font: {
                                     size: 14,
@@ -4880,7 +4888,7 @@
                         y: {
                             title: {
                                 display: true,
-                                text: 'Duration (minutes)',
+                                text: i18n_js.t('dungeonTrackerUi.chartDurationAxisLabel'),
                                 color: '#ccc',
                                 font: {
                                     size: 14,
@@ -4925,7 +4933,7 @@
                 if (!groups[key]) {
                     groups[key] = {
                         key: key,
-                        label: key === 'Solo' ? 'Solo Runs' : key,
+                        label: key === 'Solo' ? i18n_js.t('dungeonTrackerUi.soloRunsLabel') : key,
                         runs: [],
                     };
                 }
@@ -4948,7 +4956,7 @@
             const groups = {};
 
             for (const run of runs) {
-                const key = run.dungeonName || 'Unknown';
+                const key = run.dungeonName || i18n_js.t('dungeonTrackerUi.unknownDungeonFallback');
                 if (!groups[key]) {
                     groups[key] = {
                         key: key,
@@ -5021,8 +5029,7 @@
                 const allRuns = await dungeonTrackerStorage.getAllRuns();
 
                 if (allRuns.length === 0) {
-                    runList.innerHTML =
-                        '<div style="color: #888; font-style: italic; text-align: center; padding: 8px;">No runs yet</div>';
+                    runList.innerHTML = `<div style="color: #888; font-style: italic; text-align: center; padding: 8px;">${i18n_js.t('dungeonTrackerUi.noRunsYet')}</div>`;
                     // Update filter dropdowns with empty options
                     this.updateFilterDropdowns(container, [], []);
                     return;
@@ -5038,8 +5045,7 @@
                 }
 
                 if (filteredRuns.length === 0) {
-                    runList.innerHTML =
-                        '<div style="color: #888; font-style: italic; text-align: center; padding: 8px;">No runs match filters</div>';
+                    runList.innerHTML = `<div style="color: #888; font-style: italic; text-align: center; padding: 8px;">${i18n_js.t('dungeonTrackerUi.noRunsMatchFilters')}</div>`;
                     return;
                 }
 
@@ -5056,8 +5062,7 @@
                 this.updateFilterDropdowns(container, dungeons, teams);
             } catch (error) {
                 console.error('[Dungeon Tracker UI History] Update error:', error);
-                runList.innerHTML =
-                    '<div style="color: #ff6b6b; text-align: center; padding: 8px;">Error loading run history</div>';
+                runList.innerHTML = `<div style="color: #ff6b6b; text-align: center; padding: 8px;">${i18n_js.t('dungeonTrackerUi.errorLoadingRunHistory')}</div>`;
             }
         }
 
@@ -5073,7 +5078,7 @@
             if (dungeonFilter) {
                 const currentValue = dungeonFilter.value;
                 dungeonFilter.innerHTML =
-                    '<option value="all">All Dungeons</option>' +
+                    `<option value="all">${i18n_js.t('dungeonTrackerUi.filterDungeonAllOption')}</option>` +
                     dungeons.map((dungeon) => `<option value="${dungeon}">${dungeon}</option>`).join('');
                 // Restore selection if still valid
                 if (dungeons.includes(currentValue)) {
@@ -5088,7 +5093,7 @@
             if (teamFilter) {
                 const currentValue = teamFilter.value;
                 teamFilter.innerHTML =
-                    '<option value="all">All Teams</option>' +
+                    `<option value="all">${i18n_js.t('dungeonTrackerUi.filterTeamAllOption')}</option>` +
                     teams.map((team) => `<option value="${team}">${team}</option>`).join('');
                 // Restore selection if still valid
                 if (teams.includes(currentValue)) {
@@ -5112,7 +5117,6 @@
                 const bestTime = this.formatTime(group.stats.fastestTime);
                 const worstTime = this.formatTime(group.stats.slowestTime);
                 const avgPerAttempt = this.formatTime(group.stats.avgTimePerAttempt);
-                const failSummary = group.stats.failCount > 0 ? ` | Fails: ${group.stats.failCount}` : '';
 
                 // Check if this group is expanded
                 const isExpanded = this.state.expandedGroups.has(group.label);
@@ -5138,7 +5142,14 @@
                                 ${group.label}
                             </div>
                             <div style="font-size: 10px; color: #aaa;">
-                                Runs: ${group.stats.totalRuns} | Avg Clear: ${avgTime} | Avg/Attempt: ${avgPerAttempt} | Best: ${bestTime} | Worst: ${worstTime}${failSummary}
+                                ${i18n_js.t('dungeonTrackerUi.groupStatsSummary', {
+                                    totalRuns: group.stats.totalRuns,
+                                    avgTime,
+                                    avgPerAttempt,
+                                    bestTime,
+                                    worstTime,
+                                    failCount: group.stats.failCount,
+                                })}
                             </div>
                         </div>
                         <span class="mwi-dt-group-toggle" style="color: #aaa; font-size: 10px;">${toggleIcon}</span>
@@ -5203,10 +5214,10 @@
                 const timeStr = this.formatTime(run.duration);
                 const dateObj = new Date(run.timestamp);
                 const dateTime = formatters_js.formatDateTime(dateObj);
-                const dungeonLabel = run.dungeonName || 'Unknown';
+                const dungeonLabel = run.dungeonName || i18n_js.t('dungeonTrackerUi.unknownDungeonFallback');
                 const isFailed = run.result === 'fail' || run.result === 'cancel';
                 const resultBadge = isFailed
-                    ? `<span style="color: ${run.result === 'fail' ? '#ff6b6b' : '#ffd700'}; font-size: 9px; font-weight: bold; margin-right: 4px;">${run.result === 'fail' ? 'FAILED' : 'CANCELED'}</span>`
+                    ? `<span style="color: ${run.result === 'fail' ? '#ff6b6b' : '#ffd700'}; font-size: 9px; font-weight: bold; margin-right: 4px;">${run.result === 'fail' ? i18n_js.t('dungeonTrackerUi.resultFailedBadge') : i18n_js.t('dungeonTrackerUi.resultCanceledBadge')}</span>`
                     : '';
 
                 html += `
@@ -5232,7 +5243,7 @@
                         padding: 1px 4px;
                         border-radius: 2px;
                         font-weight: bold;
-                    " title="Delete this run">✕</button>
+                    " title="${i18n_js.t('dungeonTrackerUi.deleteRunButtonTitle')}">✕</button>
                 </div>
             `;
             });
@@ -5447,11 +5458,11 @@
             if (!clearBtn) return;
 
             clearBtn.addEventListener('click', async () => {
-                if (confirm('Delete ALL run history data?\n\nThis cannot be undone!')) {
+                if (confirm(i18n_js.t('dungeonTrackerUi.clearAllRunsConfirm'))) {
                     try {
                         // Clear unified storage completely
                         await dungeonTrackerStorage.clearAllRuns();
-                        alert('All run history cleared.');
+                        alert(i18n_js.t('dungeonTrackerUi.clearAllRunsSuccessAlert'));
 
                         // Refresh both history and chart display
                         if (this.callbacks.onUpdateHistory) await this.callbacks.onUpdateHistory();
@@ -5461,7 +5472,7 @@
                         await dungeonTrackerChatAnnotations.refreshRunCounts();
                     } catch (error) {
                         console.error('[Dungeon Tracker UI Interactions] Clear all history error:', error);
-                        alert('Failed to clear run history. Check console for details.');
+                        alert(i18n_js.t('dungeonTrackerUi.clearAllRunsFailedAlert'));
                     }
                 }
             });
@@ -5504,7 +5515,7 @@
 
             backfillBtn.addEventListener('click', async () => {
                 // Change button text to show loading
-                backfillBtn.textContent = '⟳ Processing...';
+                backfillBtn.textContent = i18n_js.t('dungeonTrackerUi.backfillProcessingLabel');
                 backfillBtn.disabled = true;
 
                 try {
@@ -5513,9 +5524,14 @@
 
                     // Show result message
                     if (result.runsAdded > 0) {
-                        alert(`Backfill complete!\n\nRuns added: ${result.runsAdded}\nTeams: ${result.teams.length}`);
+                        alert(
+                            i18n_js.t('dungeonTrackerUi.backfillCompleteAlert', {
+                                runsAdded: result.runsAdded,
+                                teamsCount: result.teams.length,
+                            })
+                        );
                     } else {
-                        alert('No new runs found to backfill.');
+                        alert(i18n_js.t('dungeonTrackerUi.backfillNoRunsAlert'));
                     }
 
                     // Refresh both history and chart display
@@ -5526,10 +5542,10 @@
                     await dungeonTrackerChatAnnotations.refreshRunCounts();
                 } catch (error) {
                     console.error('[Dungeon Tracker UI Interactions] Backfill error:', error);
-                    alert('Backfill failed. Check console for details.');
+                    alert(i18n_js.t('dungeonTrackerUi.backfillFailedAlert'));
                 } finally {
                     // Reset button
-                    backfillBtn.textContent = '⟳ Backfill';
+                    backfillBtn.textContent = i18n_js.t('dungeonTrackerUi.backfillButtonLabel');
                     backfillBtn.disabled = false;
                 }
             });
@@ -5760,7 +5776,7 @@
             this.state.save();
 
             // Show brief notification
-            this.showNotification('Dungeon Tracker position reset');
+            this.showNotification(i18n_js.t('dungeonTrackerUi.positionResetNotification'));
         }
 
         /**
@@ -5930,18 +5946,18 @@
                 ">
                     <div style="flex: 1;">
                         <span id="mwi-dt-dungeon-name" style="font-weight: bold; font-size: 14px; color: #4a9eff;">
-                            Loading...
+                            ${i18n_js.t('dungeonTrackerUi.loadingPlaceholder')}
                         </span>
                     </div>
                     <div style="flex: 0; padding: 0 10px; white-space: nowrap;">
-                        <span id="mwi-dt-time-label" style="font-size: 12px; color: #aaa;" title="Time since dungeon started">Elapsed: </span>
+                        <span id="mwi-dt-time-label" style="font-size: 12px; color: #aaa;" title="${i18n_js.t('dungeonTrackerUi.elapsedTooltip')}">${i18n_js.t('dungeonTrackerUi.elapsedLabel')}</span>
                         <span id="mwi-dt-current-time" style="font-size: 13px; color: #fff; font-weight: bold;">
                             00:00
                         </span>
                     </div>
                     <div style="flex: 1; display: flex; gap: 8px; align-items: center; justify-content: flex-end;">
                         <span id="mwi-dt-wave-counter" style="font-size: 13px; color: #aaa;">
-                            Wave 1/50
+                            ${i18n_js.t('dungeonTrackerUi.waveCounter', { current: 1, max: 50 })}
                         </span>
                         <button id="mwi-dt-collapse-btn" style="
                             background: none;
@@ -5951,7 +5967,7 @@
                             font-size: 16px;
                             padding: 0 4px;
                             line-height: 1;
-                        " title="Collapse/Expand">▼</button>
+                        " title="${i18n_js.t('dungeonTrackerUi.collapseExpandTooltip')}">▼</button>
                     </div>
                 </div>
 
@@ -5965,13 +5981,13 @@
                     color: #ccc;
                     gap: 12px;
                 ">
-                    <span>Last Run: <span id="mwi-dt-header-last" style="color: #fff; font-weight: bold;">--:--</span></span>
+                    <span>${i18n_js.t('dungeonTrackerUi.headerLastRunLabel')}<span id="mwi-dt-header-last" style="color: #fff; font-weight: bold;">--:--</span></span>
                     <span>|</span>
-                    <span>Avg Clear: <span id="mwi-dt-header-avg" style="color: #fff; font-weight: bold;">--:--</span></span>
+                    <span>${i18n_js.t('dungeonTrackerUi.headerAvgClearLabel')}<span id="mwi-dt-header-avg" style="color: #fff; font-weight: bold;">--:--</span></span>
                     <span>|</span>
-                    <span>Runs: <span id="mwi-dt-header-runs" style="color: #fff; font-weight: bold;">0</span></span>
+                    <span>${i18n_js.t('dungeonTrackerUi.headerRunsLabel')}<span id="mwi-dt-header-runs" style="color: #fff; font-weight: bold;">0</span></span>
                     <span>|</span>
-                    <span>Keys: <span id="mwi-dt-header-keys" style="color: #fff; font-weight: bold;">0</span></span>
+                    <span>${i18n_js.t('dungeonTrackerUi.headerKeysLabel')}<span id="mwi-dt-header-keys" style="color: #fff; font-weight: bold;">0</span></span>
                 </div>
             </div>
 
@@ -6004,27 +6020,27 @@
                 <!-- Run-level stats (2x3 grid) -->
                 <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; font-size: 11px; color: #ccc; padding-top: 4px; border-top: 1px solid #444;">
                     <div style="text-align: center;">
-                        <div style="color: #aaa; font-size: 10px;">Avg Clear</div>
+                        <div style="color: #aaa; font-size: 10px;">${i18n_js.t('dungeonTrackerUi.statAvgClear')}</div>
                         <div id="mwi-dt-avg-time" style="color: #fff; font-weight: bold;">--:--</div>
                     </div>
                     <div style="text-align: center;">
-                        <div style="color: #aaa; font-size: 10px;">Last Run</div>
+                        <div style="color: #aaa; font-size: 10px;">${i18n_js.t('dungeonTrackerUi.statLastRun')}</div>
                         <div id="mwi-dt-last-time" style="color: #fff; font-weight: bold;">--:--</div>
                     </div>
                     <div style="text-align: center;">
-                        <div style="color: #aaa; font-size: 10px;">Fastest Run</div>
+                        <div style="color: #aaa; font-size: 10px;">${i18n_js.t('dungeonTrackerUi.statFastestRun')}</div>
                         <div id="mwi-dt-fastest-time" style="color: #5fda5f; font-weight: bold;">--:--</div>
                     </div>
                     <div style="text-align: center;">
-                        <div style="color: #aaa; font-size: 10px;">Slowest Run</div>
+                        <div style="color: #aaa; font-size: 10px;">${i18n_js.t('dungeonTrackerUi.statSlowestRun')}</div>
                         <div id="mwi-dt-slowest-time" style="color: #ff6b6b; font-weight: bold;">--:--</div>
                     </div>
                     <div style="text-align: center;">
-                        <div style="color: #aaa; font-size: 10px;">Avg/Attempt</div>
+                        <div style="color: #aaa; font-size: 10px;">${i18n_js.t('dungeonTrackerUi.statAvgPerAttempt')}</div>
                         <div id="mwi-dt-avg-per-attempt" style="color: #fff; font-weight: bold;">--:--</div>
                     </div>
                     <div style="text-align: center;">
-                        <div style="color: #aaa; font-size: 10px;">Fail Rate</div>
+                        <div style="color: #aaa; font-size: 10px;">${i18n_js.t('dungeonTrackerUi.statFailRate')}</div>
                         <div id="mwi-dt-fail-rate" style="color: #ffb84d; font-weight: bold;">--</div>
                     </div>
                 </div>
@@ -6040,7 +6056,9 @@
                         font-size: 12px;
                         color: #ccc;
                     ">
-                        <span>Keys: <span id="mwi-dt-character-name">Loading...</span> (<span id="mwi-dt-self-keys">0</span>)</span>
+                        <span>${i18n_js.t('dungeonTrackerUi.headerKeysLabel')}<span id="mwi-dt-character-name">${i18n_js.t(
+                            'dungeonTrackerUi.loadingPlaceholder'
+                        )}</span> (<span id="mwi-dt-self-keys">0</span>)</span>
                         <span id="mwi-dt-keys-toggle" style="font-size: 10px;">▼</span>
                     </div>
                     <div id="mwi-dt-keys-list" style="
@@ -6063,7 +6081,9 @@
                         padding: 4px 0;
                         margin-bottom: 8px;
                     ">
-                        <span style="font-size: 12px; font-weight: bold; color: #ccc;">Run History <span id="mwi-dt-run-history-toggle" style="font-size: 10px;">▼</span></span>
+                        <span style="font-size: 12px; font-weight: bold; color: #ccc;">${i18n_js.t(
+                            'dungeonTrackerUi.runHistoryLabel'
+                        )} <span id="mwi-dt-run-history-toggle" style="font-size: 10px;">▼</span></span>
                         <div style="display: flex; gap: 4px;">
                             <button id="mwi-dt-backfill-btn" style="
                                 background: none;
@@ -6074,7 +6094,9 @@
                                 padding: 2px 8px;
                                 border-radius: 3px;
                                 font-weight: bold;
-                            " title="Scan party chat and import historical runs">⟳ Backfill</button>
+                            " title="${i18n_js.t('dungeonTrackerUi.backfillButtonTooltip')}">${i18n_js.t(
+                                'dungeonTrackerUi.backfillButtonLabel'
+                            )}</button>
                             <button id="mwi-dt-clear-all" style="
                                 background: none;
                                 border: 1px solid #ff6b6b;
@@ -6084,7 +6106,9 @@
                                 padding: 2px 8px;
                                 border-radius: 3px;
                                 font-weight: bold;
-                            " title="Clear all runs">✕ Clear</button>
+                            " title="${i18n_js.t('dungeonTrackerUi.clearButtonTooltip')}">${i18n_js.t(
+                                'dungeonTrackerUi.clearButtonLabel'
+                            )}</button>
                         </div>
                     </div>
 
@@ -6098,7 +6122,7 @@
                         margin-bottom: 8px;
                     ">
                         <div style="margin-bottom: 6px;">
-                            <label style="margin-right: 6px;">Group by:</label>
+                            <label style="margin-right: 6px;">${i18n_js.t('dungeonTrackerUi.groupByLabel')}</label>
                             <select id="mwi-dt-group-by" style="
                                 background: #333;
                                 color: #fff;
@@ -6107,13 +6131,13 @@
                                 padding: 2px 4px;
                                 font-size: 11px;
                             ">
-                                <option value="team">Team</option>
-                                <option value="dungeon">Dungeon</option>
+                                <option value="team">${i18n_js.t('dungeonTrackerUi.groupByTeamOption')}</option>
+                                <option value="dungeon">${i18n_js.t('dungeonTrackerUi.groupByDungeonOption')}</option>
                             </select>
                         </div>
                         <div style="display: flex; gap: 12px;">
                             <div>
-                                <label style="margin-right: 6px;">Dungeon:</label>
+                                <label style="margin-right: 6px;">${i18n_js.t('dungeonTrackerUi.filterDungeonLabel')}</label>
                                 <select id="mwi-dt-filter-dungeon" style="
                                     background: #333;
                                     color: #fff;
@@ -6123,11 +6147,11 @@
                                     font-size: 11px;
                                     min-width: 100px;
                                 ">
-                                    <option value="all">All Dungeons</option>
+                                    <option value="all">${i18n_js.t('dungeonTrackerUi.filterDungeonAllOption')}</option>
                                 </select>
                             </div>
                             <div>
-                                <label style="margin-right: 6px;">Team:</label>
+                                <label style="margin-right: 6px;">${i18n_js.t('dungeonTrackerUi.filterTeamLabel')}</label>
                                 <select id="mwi-dt-filter-team" style="
                                     background: #333;
                                     color: #fff;
@@ -6137,7 +6161,7 @@
                                     font-size: 11px;
                                     min-width: 100px;
                                 ">
-                                    <option value="all">All Teams</option>
+                                    <option value="all">${i18n_js.t('dungeonTrackerUi.filterTeamAllOption')}</option>
                                 </select>
                             </div>
                         </div>
@@ -6151,7 +6175,9 @@
                         color: #ccc;
                     ">
                         <!-- Run list populated dynamically -->
-                        <div style="color: #888; font-style: italic; text-align: center; padding: 8px;">No runs yet</div>
+                        <div style="color: #888; font-style: italic; text-align: center; padding: 8px;">${i18n_js.t(
+                            'dungeonTrackerUi.noRunsYet'
+                        )}</div>
                     </div>
                 </div>
 
@@ -6165,7 +6191,9 @@
                         padding: 4px 0;
                         margin-bottom: 8px;
                     ">
-                        <span style="font-size: 12px; font-weight: bold; color: #ccc;">📊 Run Chart <span id="mwi-dt-chart-toggle" style="font-size: 10px;">▼</span></span>
+                        <span style="font-size: 12px; font-weight: bold; color: #ccc;">${i18n_js.t(
+                            'dungeonTrackerUi.runChartLabel'
+                        )} <span id="mwi-dt-chart-toggle" style="font-size: 10px;">▼</span></span>
                         <button id="mwi-dt-chart-popout-btn" style="
                             background: none;
                             border: 1px solid #4a9eff;
@@ -6175,7 +6203,9 @@
                             padding: 2px 8px;
                             border-radius: 3px;
                             font-weight: bold;
-                        " title="Pop out chart">⇱ Pop-out</button>
+                        " title="${i18n_js.t('dungeonTrackerUi.popoutButtonTooltip')}">${i18n_js.t(
+                            'dungeonTrackerUi.popoutButtonLabel'
+                        )}</button>
                     </div>
                     <div id="mwi-dt-chart-container" style="
                         display: block;
@@ -6219,16 +6249,22 @@
             const dungeonName = this.container.querySelector('#mwi-dt-dungeon-name');
             if (dungeonName) {
                 if (run.dungeonName && run.tier !== null) {
-                    dungeonName.textContent = `${run.dungeonName} (T${run.tier})`;
+                    dungeonName.textContent = i18n_js.t('dungeonTrackerUi.dungeonNameWithTier', {
+                        name: run.dungeonName,
+                        tier: run.tier,
+                    });
                 } else {
-                    dungeonName.textContent = 'Dungeon Loading...';
+                    dungeonName.textContent = i18n_js.t('dungeonTrackerUi.dungeonLoading');
                 }
             }
 
             // Update wave counter
             const waveCounter = this.container.querySelector('#mwi-dt-wave-counter');
             if (waveCounter && run.maxWaves) {
-                waveCounter.textContent = `Wave ${run.currentWave}/${run.maxWaves}`;
+                waveCounter.textContent = i18n_js.t('dungeonTrackerUi.waveCounter', {
+                    current: run.currentWave,
+                    max: run.maxWaves,
+                });
             }
 
             // Update current elapsed time
@@ -6241,11 +6277,11 @@
             const timeLabel = this.container.querySelector('#mwi-dt-time-label');
             if (timeLabel) {
                 if (run.hibernationDetected) {
-                    timeLabel.textContent = 'Chat: ';
-                    timeLabel.title = 'Using party chat timestamps (computer sleep detected)';
+                    timeLabel.textContent = i18n_js.t('dungeonTrackerUi.chatLabel');
+                    timeLabel.title = i18n_js.t('dungeonTrackerUi.chatTooltip');
                 } else {
-                    timeLabel.textContent = 'Elapsed: ';
-                    timeLabel.title = 'Time since dungeon started';
+                    timeLabel.textContent = i18n_js.t('dungeonTrackerUi.elapsedLabel');
+                    timeLabel.title = i18n_js.t('dungeonTrackerUi.elapsedTooltip');
                 }
             }
 
@@ -6332,7 +6368,7 @@
             }
 
             if (!characterName) {
-                characterName = 'You'; // Final fallback
+                characterName = i18n_js.t('dungeonTrackerUi.characterNameFallback'); // Final fallback
             }
 
             // Update character name in Keys section
@@ -6432,8 +6468,9 @@
             });
 
             if (playerNames.length === 0) {
-                keysList.innerHTML =
-                    '<div style="color: #888; font-style: italic; text-align: center; padding: 8px;">No key data yet</div>';
+                keysList.innerHTML = `<div style="color: #888; font-style: italic; text-align: center; padding: 8px;">${i18n_js.t(
+                'dungeonTrackerUi.noKeyDataYet'
+            )}</div>`;
                 return;
             }
 
@@ -6742,7 +6779,7 @@
 
                         elem.insertAdjacentHTML(
                             'beforeend',
-                            `<div id="mwi-combat-encounters" style="color: ${textColor};">Encounters/hour: ${encountersPerHour}</div>`
+                            `<div id="mwi-combat-encounters" style="color: ${textColor};">${i18n_js.t('combatSummary.encountersPerHour', { value: encountersPerHour })}</div>`
                         );
                     }
                 }
@@ -6752,7 +6789,7 @@
                     .querySelector('div#mwi-combat-encounters')
                     ?.insertAdjacentHTML(
                         'afterend',
-                        `<div id="mwi-combat-revenue" style="color: ${textColor};">Total revenue: ${formatters_js.formatLargeNumber(Math.round(totalPriceAsk))} / ${formatters_js.formatLargeNumber(Math.round(totalPriceBid))}</div>`
+                        `<div id="mwi-combat-revenue" style="color: ${textColor};">${i18n_js.t('combatSummary.totalRevenue', { ask: formatters_js.formatLargeNumber(Math.round(totalPriceAsk)), bid: formatters_js.formatLargeNumber(Math.round(totalPriceBid)) })}</div>`
                     );
 
                 // Per-hour revenue
@@ -6764,7 +6801,7 @@
                         .querySelector('div#mwi-combat-revenue')
                         ?.insertAdjacentHTML(
                             'afterend',
-                            `<div id="mwi-combat-revenue-hour" style="color: ${textColor};">Revenue/hour: ${formatters_js.formatLargeNumber(Math.round(revenuePerHourAsk))} / ${formatters_js.formatLargeNumber(Math.round(revenuePerHourBid))}</div>`
+                            `<div id="mwi-combat-revenue-hour" style="color: ${textColor};">${i18n_js.t('combatSummary.revenuePerHour', { ask: formatters_js.formatLargeNumber(Math.round(revenuePerHourAsk)), bid: formatters_js.formatLargeNumber(Math.round(revenuePerHourBid)) })}</div>`
                         );
 
                     // Per-day revenue
@@ -6772,7 +6809,7 @@
                         .querySelector('div#mwi-combat-revenue-hour')
                         ?.insertAdjacentHTML(
                             'afterend',
-                            `<div id="mwi-combat-revenue-day" style="color: ${textColor};">Revenue/day: ${formatters_js.formatLargeNumber(Math.round(revenuePerHourAsk * 24))} / ${formatters_js.formatLargeNumber(Math.round(revenuePerHourBid * 24))}</div>`
+                            `<div id="mwi-combat-revenue-day" style="color: ${textColor};">${i18n_js.t('combatSummary.revenuePerDay', { ask: formatters_js.formatLargeNumber(Math.round(revenuePerHourAsk * 24)), bid: formatters_js.formatLargeNumber(Math.round(revenuePerHourBid * 24)) })}</div>`
                         );
                 }
 
@@ -6781,7 +6818,7 @@
                     .querySelector('div#mwi-combat-revenue-day')
                     ?.insertAdjacentHTML(
                         'afterend',
-                        `<div id="mwi-combat-total-exp" style="color: ${textColor};">Total exp: ${formatters_js.formatLargeNumber(Math.round(totalSkillsExp))}</div>`
+                        `<div id="mwi-combat-total-exp" style="color: ${textColor};">${i18n_js.t('combatSummary.totalExp', { value: formatters_js.formatLargeNumber(Math.round(totalSkillsExp)) })}</div>`
                     );
 
                 // Per-hour experience breakdowns
@@ -6793,18 +6830,18 @@
                         .querySelector('div#mwi-combat-total-exp')
                         ?.insertAdjacentHTML(
                             'afterend',
-                            `<div id="mwi-combat-total-exp-hour" style="color: ${textColor};">Total exp/hour: ${formatters_js.formatLargeNumber(Math.round(totalExpPerHour))}</div>`
+                            `<div id="mwi-combat-total-exp-hour" style="color: ${textColor};">${i18n_js.t('combatSummary.totalExpPerHour', { value: formatters_js.formatLargeNumber(Math.round(totalExpPerHour)) })}</div>`
                         );
 
                     // Individual skill exp/hour
                     const skills = [
-                        { skillHrid: '/skills/attack', name: 'Attack' },
-                        { skillHrid: '/skills/magic', name: 'Magic' },
-                        { skillHrid: '/skills/ranged', name: 'Ranged' },
-                        { skillHrid: '/skills/defense', name: 'Defense' },
-                        { skillHrid: '/skills/melee', name: 'Melee' },
-                        { skillHrid: '/skills/intelligence', name: 'Intelligence' },
-                        { skillHrid: '/skills/stamina', name: 'Stamina' },
+                        { skillHrid: '/skills/attack', name: i18n_js.t('simEditor.skillAttack') },
+                        { skillHrid: '/skills/magic', name: i18n_js.t('simEditor.skillMagic') },
+                        { skillHrid: '/skills/ranged', name: i18n_js.t('simEditor.skillRanged') },
+                        { skillHrid: '/skills/defense', name: i18n_js.t('simEditor.skillDefense') },
+                        { skillHrid: '/skills/melee', name: i18n_js.t('simEditor.skillMelee') },
+                        { skillHrid: '/skills/intelligence', name: i18n_js.t('simEditor.skillIntelligence') },
+                        { skillHrid: '/skills/stamina', name: i18n_js.t('simEditor.skillStamina') },
                     ];
 
                     let lastElement = document.querySelector('div#mwi-combat-total-exp-hour');
@@ -6817,7 +6854,7 @@
                                 const expPerHour = expGained / (battleDurationSec / 3600);
                                 lastElement.insertAdjacentHTML(
                                     'afterend',
-                                    `<div style="color: ${textColor};">${skill.name} exp/hour: ${formatters_js.formatLargeNumber(Math.round(expPerHour))}</div>`
+                                    `<div style="color: ${textColor};">${i18n_js.t('combatSummary.skillExpPerHour', { skillName: skill.name, value: formatters_js.formatLargeNumber(Math.round(expPerHour)) })}</div>`
                                 );
                                 // Update lastElement to the newly inserted div
                                 lastElement = lastElement.nextElementSibling;
@@ -7018,11 +7055,14 @@
             }
 
             if (this.isLabyrinth) {
-                el.textContent = `· Attempt #${this.labyrinthAttempt}`;
+                el.textContent = i18n_js.t('combatBattleCounter.attemptLabel', { attempt: this.labyrinthAttempt });
             } else if (this.isDungeon) {
-                el.textContent = `· Wave ${this.currentWave} · Battle #${this.battleId}`;
+                el.textContent = i18n_js.t('combatBattleCounter.dungeonBattleLabel', {
+                    wave: this.currentWave,
+                    battle: this.battleId,
+                });
             } else {
-                el.textContent = `· Battle #${this.battleId}`;
+                el.textContent = i18n_js.t('combatBattleCounter.battleLabel', { battle: this.battleId });
             }
         }
 
@@ -7450,7 +7490,7 @@
          * @param {string|null} roomHrid - Room HRID (e.g. "/skills/milking" or "/monsters/...")
          */
         injectBadge(cell, bestLevel, roomHrid) {
-            let text = `Best: ${bestLevel}`;
+            let text = i18n_js.t('labyrinthBestLevel.bestLevelBadge', { level: bestLevel });
             let tooltip = null;
 
             if (roomHrid && roomHrid.startsWith('/skills/')) {
@@ -7460,14 +7500,14 @@
                     const effectiveLevel = charLevel + EXPERT_TEA_CRATE_BONUS;
                     const offset = bestLevel - effectiveLevel;
                     if (offset > 0) {
-                        text += ` (+${offset})`;
+                        text += ` ${i18n_js.t('labyrinthBestLevel.offsetSuffix', { offset })}`;
                         tooltip =
-                            `Your level: ${charLevel}\n` +
-                            `Expert Tea Crate: +${EXPERT_TEA_CRATE_BONUS}\n` +
-                            `Effective: ${effectiveLevel}\n` +
+                            `${i18n_js.t('labyrinthBestLevel.tooltipYourLevel', { level: charLevel })}\n` +
+                            `${i18n_js.t('labyrinthBestLevel.tooltipExpertTeaCrate', { bonus: EXPERT_TEA_CRATE_BONUS })}\n` +
+                            `${i18n_js.t('labyrinthBestLevel.tooltipEffective', { level: effectiveLevel })}\n` +
                             `\n` +
-                            `Best: ${bestLevel}\n` +
-                            `Gap: +${offset}`;
+                            `${i18n_js.t('labyrinthBestLevel.tooltipBest', { level: bestLevel })}\n` +
+                            `${i18n_js.t('labyrinthBestLevel.tooltipGap', { offset })}`;
                     }
                 }
             }
@@ -9910,7 +9950,11 @@
             const actionTypeHrid = `/action_types/${skillId}`;
             const metrics = this.getSkillingMetrics(skillId, actionTypeHrid);
             if (!metrics) {
-                return { clearChance: 0, expectedSeconds: Infinity, error: 'Configured loadout is unavailable' };
+                return {
+                    clearChance: 0,
+                    expectedSeconds: Infinity,
+                    error: i18n_js.t('labyrinthClearRate.errorLoadoutUnavailable'),
+                };
             }
 
             const skills = dataManager.getSkills();
@@ -9961,7 +10005,11 @@
             const actionTypeHrid = '/action_types/enhancing';
             const metrics = this.getSkillingMetrics(skillId, actionTypeHrid);
             if (!metrics) {
-                return { clearChance: 0, expectedSeconds: Infinity, error: 'Configured loadout is unavailable' };
+                return {
+                    clearChance: 0,
+                    expectedSeconds: Infinity,
+                    error: i18n_js.t('labyrinthClearRate.errorLoadoutUnavailable'),
+                };
             }
 
             const skills = dataManager.getSkills();
@@ -10357,7 +10405,11 @@
             const loadoutId = this.getLabyrinthLoadoutId(monsterHrid);
             const dto = this.buildLabyrinthPlayerDTO(loadoutId);
             if (!dto) {
-                return { clearChance: 0, expectedSeconds: Infinity, error: 'Configured loadout is unavailable' };
+                return {
+                    clearChance: 0,
+                    expectedSeconds: Infinity,
+                    error: i18n_js.t('labyrinthClearRate.errorLoadoutUnavailable'),
+                };
             }
 
             const gameData = buildGameDataPayload();
@@ -10390,7 +10442,7 @@
                     return {
                         clearChance: 0,
                         expectedSeconds: Infinity,
-                        error: 'Configured loadout changed during simulation',
+                        error: i18n_js.t('labyrinthClearRate.errorLoadoutChangedDuringSim'),
                     };
                 }
 
@@ -10404,7 +10456,7 @@
                 const monsterName = monsterDetail?.name || monsterHrid.replace('/monsters/', '').replace(/_/g, ' ');
 
                 const snapshot = loadoutState.getUsableSnapshotById(loadoutId);
-                const loadoutName = snapshot?.name || `Loadout #${loadoutId}`;
+                const loadoutName = snapshot?.name || i18n_js.t('labyrinthClearRate.loadoutFallbackName', { id: loadoutId });
 
                 const result = {
                     clearChance: winRate,
@@ -10538,19 +10590,23 @@
                 if (isSkill) {
                     const threshold = this.findRecommendedThreshold(roomHrid, targetRate);
                     if (loadoutRevision !== this.loadoutRevision) {
-                        if (button) button.textContent = 'Recommend';
+                        if (button) button.textContent = i18n_js.t('labyrinthClearRate.recommendButtonLabel');
                         this.recommendRunning = false;
                         return;
                     }
                     this.recommendations.set(roomHrid, { threshold });
                 } else {
-                    if (button) button.textContent = `Recommending... (${completed + 1}/${totalRooms})`;
+                    if (button)
+                        button.textContent = i18n_js.t('labyrinthClearRate.recommendingProgress', {
+                            current: completed + 1,
+                            total: totalRooms,
+                        });
                     const threshold = await this.findRecommendedThresholdCombat(roomHrid, targetRate);
                     // The loadout-state handler already cleared any prior recommendations. Do not
                     // publish a partial fresh/stale mix after an effective loadout change mid-run;
                     // the user can rerun Recommend against one coherent current state.
                     if (loadoutRevision !== this.loadoutRevision) {
-                        if (button) button.textContent = 'Recommend';
+                        if (button) button.textContent = i18n_js.t('labyrinthClearRate.recommendButtonLabel');
                         this.recommendRunning = false;
                         return;
                     }
@@ -10559,7 +10615,7 @@
                 completed++;
             }
 
-            if (button) button.textContent = 'Recommend';
+            if (button) button.textContent = i18n_js.t('labyrinthClearRate.recommendButtonLabel');
             this.recommendRunning = false;
             this.injectRecommendationBadges();
             this._updateApplyButtonState();
@@ -10586,9 +10642,11 @@
                 const badge = document.createElement('span');
                 badge.className = RECOMMEND_CLASS;
                 badge.style.cssText = 'font-size:0.7rem; margin-left:6px; white-space:nowrap; font-weight:bold;';
-                badge.textContent = `Rec: ${rec.threshold >= 0 ? '+' : ''}${rec.threshold}`;
+                badge.textContent = i18n_js.t('labyrinthClearRate.recommendedBadgeText', {
+                    value: `${rec.threshold >= 0 ? '+' : ''}${rec.threshold}`,
+                });
 
-                badge.title = `Recommended skip threshold for ≥${this._recommendTargetPct}% clear rate`;
+                badge.title = i18n_js.t('labyrinthClearRate.recommendedBadgeTooltip', { percent: this._recommendTargetPct });
 
                 if (currentThreshold <= rec.threshold) {
                     badge.style.color = '#00c896';
@@ -10721,7 +10779,7 @@
             if (!button) return;
 
             if (this._pendingSelfAppliedKey !== null) {
-                button.textContent = 'Apply Skip (saving...)';
+                button.textContent = i18n_js.t('labyrinthClearRate.applySkipSaving');
                 button.disabled = true;
                 button.style.opacity = '0.5';
                 button.style.cursor = 'default';
@@ -10729,7 +10787,7 @@
             }
 
             const remaining = this.getRoomsNeedingSkipUpdate().length;
-            button.textContent = `Apply Skip (${remaining})`;
+            button.textContent = i18n_js.t('labyrinthClearRate.applySkipButton', { count: remaining });
             button.disabled = remaining === 0;
             button.style.opacity = remaining === 0 ? '0.5' : '1';
             button.style.cursor = remaining === 0 ? 'default' : 'pointer';
@@ -10765,7 +10823,7 @@
 
             const rateLabel = document.createElement('span');
             rateLabel.style.cssText = labelStyle;
-            rateLabel.textContent = 'Target Win %';
+            rateLabel.textContent = i18n_js.t('labyrinthClearRate.targetWinPercentLabel');
 
             const rateInput = document.createElement('input');
             rateInput.type = 'number';
@@ -10781,7 +10839,7 @@
 
             const hoursLabel = document.createElement('span');
             hoursLabel.style.cssText = labelStyle;
-            hoursLabel.textContent = 'Sim Hours';
+            hoursLabel.textContent = i18n_js.t('labyrinthClearRate.simHoursLabel');
 
             const hoursInput = document.createElement('input');
             hoursInput.type = 'number';
@@ -10796,14 +10854,14 @@
             });
 
             const button = document.createElement('button');
-            button.textContent = 'Recommend';
+            button.textContent = i18n_js.t('labyrinthClearRate.recommendButtonLabel');
             button.style.cssText =
                 'padding:2px 10px; cursor:pointer; font-size:0.75rem; border-radius:4px; border:1px solid #555; background:#333; color:#ccc;';
             button.addEventListener('click', () => this.runRecommendations());
 
             const applyButton = document.createElement('button');
             applyButton.id = APPLY_SKIP_BUTTON_ID;
-            applyButton.textContent = 'Apply Skip (0)';
+            applyButton.textContent = i18n_js.t('labyrinthClearRate.applySkipButton', { count: 0 });
             applyButton.disabled = true;
             applyButton.style.cssText =
                 'padding:2px 10px; cursor:default; font-size:0.75rem; border-radius:4px; border:1px solid #555; background:#333; color:#ccc; opacity:0.5;';
@@ -10923,19 +10981,43 @@
 
             const chancePct = (estimate.clearChance * 100).toFixed(1);
             if (estimate.isEnhancing) {
-                node.textContent = ` [Clear ${chancePct}% | +${estimate.currentLevel}/+${estimate.targetLevel} | ${estimate.attemptsLeft} left]`;
+                node.textContent = i18n_js.t('labyrinthClearRate.liveClearEnhancing', {
+                    pct: chancePct,
+                    current: estimate.currentLevel,
+                    target: estimate.targetLevel,
+                    left: estimate.attemptsLeft,
+                });
             } else {
-                node.textContent = ` [Clear ${chancePct}% | ${estimate.attemptsLeft} left]`;
+                node.textContent = i18n_js.t('labyrinthClearRate.liveClearSkilling', {
+                    pct: chancePct,
+                    left: estimate.attemptsLeft,
+                });
             }
 
             const tooltipLines = [
-                `Success: ${(estimate.successChance * 100).toFixed(1)}% | Double: ${(estimate.doubleChance * 100).toFixed(1)}%`,
-                `Actions: ${estimate.actionCounter}/${estimate.totalAttempts}`,
+                i18n_js.t('labyrinthClearRate.successDoubleLine', {
+                    success: (estimate.successChance * 100).toFixed(1),
+                    double: (estimate.doubleChance * 100).toFixed(1),
+                }),
+                i18n_js.t('labyrinthClearRate.liveActionsLine', {
+                    current: estimate.actionCounter,
+                    total: estimate.totalAttempts,
+                }),
             ];
             if (estimate.isEnhancing) {
-                tooltipLines.push(`Enhance: +${estimate.currentLevel}/+${estimate.targetLevel}`);
+                tooltipLines.push(
+                    i18n_js.t('labyrinthClearRate.liveEnhanceLine', {
+                        current: estimate.currentLevel,
+                        target: estimate.targetLevel,
+                    })
+                );
             } else {
-                tooltipLines.push(`Progress: ${estimate.currentWorkValue}/${estimate.targetWorkValue}`);
+                tooltipLines.push(
+                    i18n_js.t('labyrinthClearRate.liveProgressLine', {
+                        current: estimate.currentWorkValue,
+                        target: estimate.targetWorkValue,
+                    })
+                );
             }
             node.title = tooltipLines.join('\n');
         }
@@ -11089,7 +11171,7 @@
             const badge = document.createElement('span');
             badge.className = GRID_BADGE_CLASS;
             badge.textContent = '...';
-            badge.title = 'Simulating combat...';
+            badge.title = i18n_js.t('labyrinthClearRate.simulatingCombatTooltip');
             cell.appendChild(badge);
             return badge;
         }
@@ -11100,13 +11182,14 @@
             badge.style.cssText = 'font-size:0.7rem; margin-left:6px; white-space:nowrap;';
             if (result.error) {
                 badge.style.color = '#d9534f';
-                badge.textContent = 'Loadout unavailable';
+                badge.textContent = i18n_js.t('labyrinthClearRate.loadoutUnavailableBadgeText');
                 badge.title = result.error;
             } else {
                 badge.style.color = this.getBadgeColor(result.clearChance);
                 const pct = Math.round(result.clearChance * 100);
                 const timeText = this.formatTime(result.expectedSeconds);
-                badge.textContent = pct >= 100 ? timeText : `${pct}% ${timeText}`;
+                badge.textContent =
+                    pct >= 100 ? timeText : i18n_js.t('labyrinthClearRate.badgePercentTime', { pct, time: timeText });
                 badge.title = this.formatTooltip(result, roomLevel);
             }
 
@@ -11119,7 +11202,7 @@
             badge.className = BADGE_CLASS;
             badge.style.cssText = 'font-size:0.7rem; margin-left:6px; white-space:nowrap; color:#999;';
             badge.textContent = '...';
-            badge.title = 'Simulating combat...';
+            badge.title = i18n_js.t('labyrinthClearRate.simulatingCombatTooltip');
             cell.appendChild(badge);
             return badge;
         }
@@ -11127,7 +11210,7 @@
         updateBadge(badge, result, roomLevel) {
             if (result.error) {
                 badge.style.color = '#d9534f';
-                badge.textContent = 'Loadout unavailable';
+                badge.textContent = i18n_js.t('labyrinthClearRate.loadoutUnavailableBadgeText');
                 badge.title = result.error;
                 return;
             }
@@ -11189,38 +11272,70 @@
 
         formatTooltip(result, roomLevel) {
             if (result?.error) return result.error;
-            const pct = (v) => `${(v * 100).toFixed(1)}%`;
+            const pct = (v) => (v * 100).toFixed(1);
 
             if (result.type === 'skilling') {
                 return [
-                    `Success: ${pct(result.successChance)} | Double: ${pct(result.doubleChance)}`,
-                    `Actions: ${result.attempts} @ ${result.actionSeconds.toFixed(2)}s each`,
-                    `Work Power: ${Math.floor(result.workPower)} → Progress: ${result.progressPerSuccess}/${result.targetProgress} per success`,
-                    `Effective Level: ${Math.floor(result.effectiveLevel)} (base ${result.baseLevel} + ${Math.floor(result.effectiveLevel - result.baseLevel)})`,
-                    `Room Level: ${result.roomLevel} | XP/room: ${result.xpPerRoom}`,
+                    i18n_js.t('labyrinthClearRate.successDoubleLine', {
+                        success: pct(result.successChance),
+                        double: pct(result.doubleChance),
+                    }),
+                    i18n_js.t('labyrinthClearRate.tooltipActionsLine', {
+                        attempts: result.attempts,
+                        seconds: result.actionSeconds.toFixed(2),
+                    }),
+                    i18n_js.t('labyrinthClearRate.tooltipWorkPowerProgress', {
+                        workPower: Math.floor(result.workPower),
+                        progress: result.progressPerSuccess,
+                        target: result.targetProgress,
+                    }),
+                    i18n_js.t('labyrinthClearRate.tooltipEffectiveLevel', {
+                        level: Math.floor(result.effectiveLevel),
+                        baseLevel: result.baseLevel,
+                        bonus: Math.floor(result.effectiveLevel - result.baseLevel),
+                    }),
+                    i18n_js.t('labyrinthClearRate.tooltipRoomLevelXp', {
+                        roomLevel: result.roomLevel,
+                        xp: result.xpPerRoom,
+                    }),
                 ].join('\n');
             }
 
             if (result.type === 'enhancing') {
                 return [
-                    `Success: ${pct(result.successChance)} | Double: ${pct(result.doubleChance)}`,
-                    `Actions: ${result.attempts} @ ${result.actionSeconds.toFixed(2)}s each`,
-                    `Target: +${result.targetLevel} | Effective Level: ${Math.floor(result.effectiveLevel)}`,
-                    `Room Level: ${result.roomLevel}`,
+                    i18n_js.t('labyrinthClearRate.successDoubleLine', {
+                        success: pct(result.successChance),
+                        double: pct(result.doubleChance),
+                    }),
+                    i18n_js.t('labyrinthClearRate.tooltipActionsLine', {
+                        attempts: result.attempts,
+                        seconds: result.actionSeconds.toFixed(2),
+                    }),
+                    i18n_js.t('labyrinthClearRate.tooltipEnhancingTarget', {
+                        targetLevel: result.targetLevel,
+                        level: Math.floor(result.effectiveLevel),
+                    }),
+                    i18n_js.t('labyrinthClearRate.tooltipRoomLevel', { roomLevel: result.roomLevel }),
                 ].join('\n');
             }
 
             if (result.type === 'combat') {
                 return [
-                    `Win Rate: ${pct(result.winRate)} | Avg Fight: ${Math.round(result.avgFightSeconds)}s`,
-                    `Monster: ${result.monsterName} | Room Level: ${result.roomLevel}`,
-                    `Loadout: "${result.loadoutName}"`,
+                    i18n_js.t('labyrinthClearRate.tooltipCombatWinRate', {
+                        winRate: pct(result.winRate),
+                        avgFight: Math.round(result.avgFightSeconds),
+                    }),
+                    i18n_js.t('labyrinthClearRate.tooltipCombatMonsterRoom', {
+                        monster: result.monsterName,
+                        roomLevel: result.roomLevel,
+                    }),
+                    i18n_js.t('labyrinthClearRate.tooltipCombatLoadout', { loadout: result.loadoutName }),
                 ].join('\n');
             }
 
             const clearPct = Math.round(result.clearChance * 100);
             const timeText = this.formatTime(result.expectedSeconds);
-            return `Clear: ${clearPct}% | Expected: ${timeText} | Room level: ${roomLevel}`;
+            return i18n_js.t('labyrinthClearRate.tooltipFallback', { pct: clearPct, time: timeText, roomLevel });
         }
 
         getBadgeColor(clearChance) {
@@ -11367,7 +11482,7 @@
             if (!Number.isFinite(seconds) || seconds <= 0) return '—';
             if (seconds >= 9999) return '∞';
             const s = Math.round(seconds);
-            if (s < 60) return `~${s}s`;
+            if (s < 60) return i18n_js.t('labyrinthClearRate.timeApproxSeconds', { seconds: s });
             const m = Math.floor(s / 60);
             const rem = s % 60;
             return `~${m}:${rem.toString().padStart(2, '0')}`;
@@ -12182,6 +12297,16 @@
      */
 
 
+    const SKILL_NAME_KEYS = {
+        stamina: 'simEditor.skillStamina',
+        intelligence: 'simEditor.skillIntelligence',
+        attack: 'simEditor.skillAttack',
+        melee: 'simEditor.skillMelee',
+        defense: 'simEditor.skillDefense',
+        ranged: 'simEditor.skillRanged',
+        magic: 'simEditor.skillMagic',
+    };
+
     /**
      * Create the skill calculator UI
      * @param {HTMLElement} container - Container element to append to
@@ -12216,7 +12341,7 @@
                 const currentExp = skill.experience || 0;
 
                 skillData[skillName] = {
-                    displayName: capitalize(skillName),
+                    displayName: getSkillDisplayName(skillName),
                     currentLevel,
                     currentExp,
                 };
@@ -12232,7 +12357,7 @@
             row.style.cssText = 'display: flex; justify-content: flex-end; margin-bottom: 4px; align-items: center;';
 
             const label = document.createElement('span');
-            label.textContent = `${skillData[skillName].displayName} to level `;
+            label.textContent = i18n_js.t('skillCalculatorUi.skillToLevelLabel', { skillName: skillData[skillName].displayName });
             label.style.marginRight = '6px';
 
             const input = document.createElement('input');
@@ -12265,7 +12390,7 @@
         daysInput.style.cssText = 'width: 60px; padding: 2px 4px; margin-right: 6px;';
 
         const daysLabel = document.createElement('span');
-        daysLabel.textContent = 'days after';
+        daysLabel.textContent = i18n_js.t('skillCalculatorUi.daysAfterLabel');
 
         daysRow.appendChild(daysInput);
         daysRow.appendChild(daysLabel);
@@ -12369,24 +12494,27 @@
             const currentExp = skillData[activeSkill].currentExp;
             const expRate = expRates[activeSkill] || 0;
 
-            resultsHeader.textContent = `${skillData[activeSkill].displayName} to level ${targetLevel} takes:`;
+            resultsHeader.textContent = i18n_js.t('skillCalculatorUi.resultsHeaderToLevel', {
+                skillName: skillData[activeSkill].displayName,
+                level: targetLevel,
+            });
 
             if (expRate === 0) {
-                resultsContent.innerHTML = '<div>No experience gain (not trained in simulation)</div>';
+                resultsContent.innerHTML = `<div>${i18n_js.t('skillCalculatorUi.noExperienceGainMessage')}</div>`;
             } else if (targetLevel <= currentLevel) {
-                resultsContent.innerHTML = '<div>Already achieved</div>';
+                resultsContent.innerHTML = `<div>${i18n_js.t('skillCalculatorUi.alreadyAchievedMessage')}</div>`;
             } else {
                 const timeResult = calculateTimeToLevel(currentExp, targetLevel, expRate, levelExpTable);
                 if (timeResult) {
                     resultsContent.innerHTML = `<div>[${timeResult.readable}]</div>`;
                 } else {
-                    resultsContent.innerHTML = '<div>Invalid target level</div>';
+                    resultsContent.innerHTML = `<div>${i18n_js.t('skillCalculatorUi.invalidTargetLevelMessage')}</div>`;
                 }
             }
         } else {
             // Calculate levels after X days
             const days = Number(daysInput.value);
-            resultsHeader.textContent = `After ${days} days:`;
+            resultsHeader.textContent = i18n_js.t('skillCalculatorUi.resultsHeaderAfterDays', { days });
 
             const projected = calculateLevelsAfterDays(characterSkills, expRates, days, levelExpTable);
 
@@ -12396,25 +12524,32 @@
 
                 for (const skillName of skillOrder) {
                     if (projected[skillName]) {
-                        html += `<div>${capitalize(skillName)} level ${projected[skillName].level} ${projected[skillName].percentage}%</div>`;
+                        html += `<div>${i18n_js.t('skillCalculatorUi.skillLevelPercentLine', {
+                        skillName: getSkillDisplayName(skillName),
+                        level: projected[skillName].level,
+                        percentage: projected[skillName].percentage,
+                    })}</div>`;
                     }
                 }
 
-                html += `<div style="margin-top: 4px; font-weight: bold;">Combat level: ${projected.combatLevel.toFixed(1)}</div>`;
+                html += `<div style="margin-top: 4px; font-weight: bold;">${i18n_js.t('skillCalculatorUi.combatLevelLine', {
+                level: projected.combatLevel.toFixed(1),
+            })}</div>`;
                 resultsContent.innerHTML = html;
             } else {
-                resultsContent.innerHTML = '<div>Unable to calculate projection</div>';
+                resultsContent.innerHTML = `<div>${i18n_js.t('skillCalculatorUi.unableToCalculateProjectionMessage')}</div>`;
             }
         }
     }
 
     /**
-     * Capitalize first letter of string
-     * @param {string} str - String to capitalize
-     * @returns {string} Capitalized string
+     * Get the translated display name for a skill.
+     * @param {string} skillName - Internal skill name (e.g. 'attack')
+     * @returns {string} Translated display name
      */
-    function capitalize(str) {
-        return str.charAt(0).toUpperCase() + str.slice(1);
+    function getSkillDisplayName(skillName) {
+        const key = SKILL_NAME_KEYS[skillName];
+        return key ? i18n_js.t(key) : skillName;
     }
 
     /**
@@ -12469,6 +12604,16 @@
 
     const timerRegistry$1 = timerRegistry_js.createTimerRegistry();
     const IMPORT_CONTAINER_ID = 'toolasha-import-container';
+
+    /**
+     * Build the import button's default label markup, including a hidden span with the fixed
+     * English string "Import solo/group" that must NOT be translated - JIGS searches the DOM for
+     * that exact text to detect this button (see comment at the original call site).
+     * @returns {string}
+     */
+    function getImportButtonHtml() {
+        return `${i18n_js.t('combatSimIntegration.importButtonLabel')}<span style="display:none;">Import solo/group</span>`;
+    }
 
     // Skill calculator state
     let calculatorObserver = null;
@@ -12549,7 +12694,7 @@
         const button = document.createElement('button');
         button.id = 'toolasha-import-button';
         // Include hidden text for JIGS compatibility (JIGS searches for "Import solo/group")
-        button.innerHTML = 'Import from Toolasha<span style="display:none;">Import solo/group</span>';
+        button.innerHTML = getImportButtonHtml();
         button.style.backgroundColor = config.COLOR_ACCENT;
         button.style.color = 'white';
         button.style.padding = '10px 20px';
@@ -12588,17 +12733,15 @@
             const exportData = await constructExportObject();
 
             if (!exportData) {
-                button.textContent = 'Error: No character data';
+                button.textContent = i18n_js.t('combatSimIntegration.errorNoCharacterDataLabel');
                 button.style.backgroundColor = '#dc3545'; // Red
                 const resetTimeout = setTimeout(() => {
-                    button.innerHTML = 'Import from Toolasha<span style="display:none;">Import solo/group</span>';
+                    button.innerHTML = getImportButtonHtml();
                     button.style.backgroundColor = config.COLOR_ACCENT;
                 }, 3000);
                 timerRegistry$1.registerTimeout(resetTimeout);
                 console.error('[Toolasha Combat Sim] No export data available');
-                alert(
-                    'No character data found. Please:\n1. Refresh the game page\n2. Wait for it to fully load\n3. Try again'
-                );
+                alert(i18n_js.t('combatSimIntegration.noCharacterDataAlert'));
                 return;
             }
 
@@ -12720,10 +12863,10 @@
                 }
 
                 // Update button status
-                button.textContent = '✓ Imported';
+                button.textContent = i18n_js.t('combatSimIntegration.importedLabel');
                 button.style.backgroundColor = '#28a745'; // Green
                 const successResetTimeout = setTimeout(() => {
-                    button.innerHTML = 'Import from Toolasha<span style="display:none;">Import solo/group</span>';
+                    button.innerHTML = getImportButtonHtml();
                     button.style.backgroundColor = config.COLOR_ACCENT;
                 }, 3000);
                 timerRegistry$1.registerTimeout(successResetTimeout);
@@ -12731,10 +12874,10 @@
             timerRegistry$1.registerTimeout(importTimeout);
         } catch (error) {
             console.error('[Toolasha Combat Sim] Import failed:', error);
-            button.textContent = 'Import Failed';
+            button.textContent = i18n_js.t('combatSimIntegration.importFailedLabel');
             button.style.backgroundColor = '#dc3545'; // Red
             const failResetTimeout = setTimeout(() => {
-                button.innerHTML = 'Import from Toolasha<span style="display:none;">Import solo/group</span>';
+                button.innerHTML = getImportButtonHtml();
                 button.style.backgroundColor = config.COLOR_ACCENT;
             }, 3000);
             timerRegistry$1.registerTimeout(failResetTimeout);
@@ -13595,9 +13738,7 @@
             if (!team) {
                 setButtonStatus(button, 'Error: No character data', '#dc3545');
                 console.error('[Toolasha Metz Sim] No export data available');
-                alert(
-                    'No character data found. Please:\n1. Refresh the game page\n2. Wait for it to fully load\n3. Try again'
-                );
+                alert(i18n_js.t('combatSimIntegrationMetz.noCharacterDataAlert'));
                 return;
             }
 
@@ -18426,7 +18567,7 @@
             const applied = this._applyLoadoutToDTO(loadoutName);
             if (!applied) {
                 this._unavailableLoadoutName = loadoutName;
-                this._loadoutStatusMessage = `Configured loadout “${loadoutName}” is unavailable. Simulation is blocked until you choose another loadout or Current Gear.`;
+                this._loadoutStatusMessage = i18n_js.t('simEditor.loadoutUnavailableBlocked', { name: loadoutName });
                 this.renderEditor();
                 return false;
             }
@@ -18462,7 +18603,7 @@
             if (!this._applyLoadoutToDTO(selectedName)) {
                 // applyLoadoutSnapshotToDTO is transactional. Preserve both the previous DTO
                 // and selected-loadout identity instead of silently switching to Current Gear.
-                this._loadoutStatusMessage = `Loadout “${selectedName}” is unavailable. Previous simulation kept.`;
+                this._loadoutStatusMessage = i18n_js.t('simEditor.loadoutUnavailablePreviousKept', { name: selectedName });
                 return false;
             }
 
@@ -18482,8 +18623,7 @@
             try {
                 const { players, playerInfo, selfHrid, missingMembers } = await buildAllPlayerDTOs();
                 if (!players.length) {
-                    editorArea.innerHTML =
-                        '<div style="color:#555; font-size:12px; text-align:center; padding:20px 0;">No character data available.</div>';
+                    editorArea.innerHTML = `<div style="color:#555; font-size:12px; text-align:center; padding:20px 0;">${i18n_js.t('labSim.statusNoCharacterData')}</div>`;
                     return;
                 }
 
@@ -18504,8 +18644,7 @@
                 this.renderEditor();
             } catch (error) {
                 console.error('[SimEditor] Failed to init editor:', error);
-                editorArea.innerHTML =
-                    '<div style="color:#f66; font-size:12px; text-align:center; padding:20px 0;">Failed to load character data.</div>';
+                editorArea.innerHTML = `<div style="color:#f66; font-size:12px; text-align:center; padding:20px 0;">${i18n_js.t('simEditor.failedToLoadCharacterData')}</div>`;
             }
         }
 
@@ -18551,7 +18690,10 @@
                 dto.hrid = `player${nextSlot}`;
                 this._editedDTOs[dto.hrid] = dto;
                 this._originalDTOs[dto.hrid] = structuredClone(dto);
-                this._editedPlayerInfo.push({ hrid: dto.hrid, name: names[i] || `Player ${nextSlot}` });
+                this._editedPlayerInfo.push({
+                    hrid: dto.hrid,
+                    name: names[i] || i18n_js.t('combatSimUi.playerFallbackName', { number: nextSlot }),
+                });
                 nextSlot++;
             }
 
@@ -18596,13 +18738,13 @@
             if (!dto && playerInfo.length === 0) {
                 editorArea.innerHTML = `
                 <div style="text-align:center; padding:20px 0;">
-                    <div style="color:#888; font-size:12px; margin-bottom:10px;">No players loaded.</div>
+                    <div style="color:#888; font-size:12px; margin-bottom:10px;">${i18n_js.t('simEditor.noPlayersLoaded')}</div>
                     <button id="mwi-csim-import-btn" style="
                         background:${ACCENT_BTN_BG$2}; border:1px solid ${ACCENT_BTN_BORDER$2}; color:${ACCENT$2};
                         padding:5px 14px; border-radius:5px; font-size:12px; cursor:pointer;
-                        font-family:inherit; font-weight:600;">+ Import Player</button>
+                        font-family:inherit; font-weight:600;">${i18n_js.t('simEditor.importPlayerButton')}</button>
                     <div id="mwi-csim-import-area" style="display:none; margin-top:10px; text-align:left;">
-                        <textarea id="mwi-csim-import-text" placeholder="Paste Combat Sim Export JSON here..." style="
+                        <textarea id="mwi-csim-import-text" placeholder="${i18n_js.t('simEditor.pasteExportPlaceholder')}" style="
                             width:100%; height:60px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
                             border-radius:4px; padding:6px; font-size:11px; font-family:monospace; resize:vertical;
                             box-sizing:border-box;"></textarea>
@@ -18610,10 +18752,10 @@
                             <button id="mwi-csim-import-go" style="
                                 background:${ACCENT_BTN_BG$2}; border:1px solid ${ACCENT_BTN_BORDER$2}; color:${ACCENT$2};
                                 padding:3px 12px; border-radius:4px; font-size:11px; cursor:pointer; font-family:inherit;
-                                font-weight:600;">Import</button>
+                                font-weight:600;">${i18n_js.t('openableAnalytics.importButtonLabel')}</button>
                             <button id="mwi-csim-import-cancel" style="
                                 background:rgba(255,255,255,0.04); border:1px solid #333; color:#888;
-                                padding:3px 12px; border-radius:4px; font-size:11px; cursor:pointer; font-family:inherit;">Cancel</button>
+                                padding:3px 12px; border-radius:4px; font-size:11px; cursor:pointer; font-family:inherit;">${i18n_js.t('settings.cancelButton')}</button>
                             <span id="mwi-csim-import-error" style="color:#f44; font-size:11px; align-self:center;"></span>
                         </div>
                     </div>
@@ -18633,12 +18775,12 @@
                         const text = editorArea.querySelector('#mwi-csim-import-text')?.value?.trim();
                         const errorEl = editorArea.querySelector('#mwi-csim-import-error');
                         if (!text) {
-                            if (errorEl) errorEl.textContent = 'Paste export data first.';
+                            if (errorEl) errorEl.textContent = i18n_js.t('simEditor.pasteExportDataFirst');
                             return;
                         }
                         const result = parseShykaiImport(text);
                         if (!result || !result.players.length) {
-                            if (errorEl) errorEl.textContent = 'Invalid format. Paste a Combat Sim Export JSON.';
+                            if (errorEl) errorEl.textContent = i18n_js.t('simEditor.invalidFormatCombatSimExport');
                             return;
                         }
                         this.importPlayers(result.players, result.names);
@@ -18673,7 +18815,7 @@
                     ${tabStyle}
                     padding:3px 8px; border-radius:5px; font-size:12px; cursor:pointer;
                     font-family:inherit; transition:all 0.1s; position:relative;
-                ">${name}<span data-remove-player="${hrid}" style="margin-left:4px; color:#f44; cursor:pointer; font-size:14px;" title="Remove player">\u00d7</span></button>`;
+                ">${name}<span data-remove-player="${hrid}" style="margin-left:4px; color:#f44; cursor:pointer; font-size:14px;" title="${i18n_js.t('simEditor.removePlayerTooltip')}">\u00d7</span></button>`;
                 }
             } else if (playerInfo.length === 1) {
                 const { hrid, name } = playerInfo[0];
@@ -18681,17 +18823,17 @@
                 background:${ACCENT_BG$2}; border:1px solid ${ACCENT_BORDER$2}; color:${ACCENT$2}; font-weight:700;
                 padding:3px 8px; border-radius:5px; font-size:12px; cursor:pointer;
                 font-family:inherit; transition:all 0.1s; position:relative;
-            ">${name}<span data-remove-player="${hrid}" style="margin-left:4px; color:#f44; cursor:pointer; font-size:14px;" title="Remove player">\u00d7</span></button>`;
+            ">${name}<span data-remove-player="${hrid}" style="margin-left:4px; color:#f44; cursor:pointer; font-size:14px;" title="${i18n_js.t('simEditor.removePlayerTooltip')}">\u00d7</span></button>`;
             }
             html += `<button id="mwi-csim-import-btn" style="
             background:rgba(255,255,255,0.04); border:1px solid #333; color:#888;
             padding:3px 8px; border-radius:5px; font-size:11px; cursor:pointer;
-            font-family:inherit;" title="Import players from Shykai export string">+ Import</button>`;
+            font-family:inherit;" title="${i18n_js.t('simEditor.importFromShykaiTooltip')}">${i18n_js.t('simEditor.importPlusButton')}</button>`;
             html += '</div>';
 
             // Import paste area (hidden by default)
             html += `<div id="mwi-csim-import-area" style="display:none; margin-bottom:10px;">
-            <textarea id="mwi-csim-import-text" placeholder="Paste Shykai export JSON here..." style="
+            <textarea id="mwi-csim-import-text" placeholder="${i18n_js.t('simEditor.pasteShykaiExportPlaceholder')}" style="
                 width:100%; height:60px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
                 border-radius:4px; padding:6px; font-size:11px; font-family:monospace; resize:vertical;
                 box-sizing:border-box;"></textarea>
@@ -18699,10 +18841,10 @@
                 <button id="mwi-csim-import-go" style="
                     background:${ACCENT_BTN_BG$2}; border:1px solid ${ACCENT_BTN_BORDER$2}; color:${ACCENT$2};
                     padding:3px 12px; border-radius:4px; font-size:11px; cursor:pointer; font-family:inherit;
-                    font-weight:600;">Import</button>
+                    font-weight:600;">${i18n_js.t('openableAnalytics.importButtonLabel')}</button>
                 <button id="mwi-csim-import-cancel" style="
                     background:rgba(255,255,255,0.04); border:1px solid #333; color:#888;
-                    padding:3px 12px; border-radius:4px; font-size:11px; cursor:pointer; font-family:inherit;">Cancel</button>
+                    padding:3px 12px; border-radius:4px; font-size:11px; cursor:pointer; font-family:inherit;">${i18n_js.t('settings.cancelButton')}</button>
                 <span id="mwi-csim-import-error" style="color:#f44; font-size:11px; align-self:center;"></span>
             </div>
         </div>`;
@@ -18730,30 +18872,36 @@
 
                 html += `<div style="display:flex; align-items:center; gap:6px; margin-bottom:8px;">`;
                 if (relevantSnapshots.length > 0 || needsSyntheticUnavailableOption) {
-                    html += `<label style="color:#888; font-size:11px; flex-shrink:0;">Loadout</label>`;
+                    html += `<label style="color:#888; font-size:11px; flex-shrink:0;">${i18n_js.t('simEditor.loadoutLabel')}</label>`;
                     html += `<select id="mwi-csim-loadout-select" style="
                     flex:1; min-width:0; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
                     border-radius:4px; padding:2px 6px; font-size:12px; font-family:inherit;">`;
-                    html += `<option value=""${!displayedLoadoutName ? ' selected' : ''}>— Current Gear —</option>`;
+                    html += `<option value=""${!displayedLoadoutName ? ' selected' : ''}>${i18n_js.t('simEditor.currentGearOption')}</option>`;
                     for (const snap of relevantSnapshots) {
-                        const label =
-                            snap.name +
-                            (snap.actionTypeHrid ? '' : ' (All Skills)') +
-                            (snap.isUsableForCalculation ? '' : ' (Unavailable)');
+                        const label = i18n_js.t('simEditor.loadoutOptionLabel', {
+                            name: snap.name,
+                            allSkills: !snap.actionTypeHrid,
+                            unavailable: !snap.isUsableForCalculation,
+                        });
                         const selected = displayedLoadoutName === snap.name ? ' selected' : '';
                         const disabled = snap.isUsableForCalculation ? '' : ' disabled';
                         html += `<option value="${snap.name}"${selected}${disabled}>${label}</option>`;
                     }
                     if (needsSyntheticUnavailableOption) {
                         const unavailableLabel = selectedSnapshot?.name || displayedLoadoutName;
-                        html += `<option value="${displayedLoadoutName}" selected disabled>${unavailableLabel} (Unavailable)</option>`;
+                        const label = i18n_js.t('simEditor.loadoutOptionLabel', {
+                            name: unavailableLabel,
+                            allSkills: false,
+                            unavailable: true,
+                        });
+                        html += `<option value="${displayedLoadoutName}" selected disabled>${label}</option>`;
                     }
                     html += `</select>`;
                 }
                 html += `<button id="mwi-csim-reset" style="
                 margin-left:auto; background:rgba(255,255,255,0.04); border:1px solid #333; color:#aaa;
                 padding:2px 8px; border-radius:4px; font-size:11px; cursor:pointer;
-                font-family:inherit; flex-shrink:0;">Reset to Current</button>`;
+                font-family:inherit; flex-shrink:0;">${i18n_js.t('simEditor.resetToCurrentButton')}</button>`;
                 html += '</div>';
                 if (this._loadoutStatusMessage) {
                     html += `<div style="color:#f66; font-size:11px; margin:-4px 0 8px 0;">${this._loadoutStatusMessage}</div>`;
@@ -18780,6 +18928,32 @@
             this._wireEditorEvents(editorArea, dto);
         }
 
+        /**
+         * Translated label for an equipment slot type hrid. Falls back to the raw hrid suffix for
+         * an unrecognized slot type rather than throwing.
+         * @private
+         */
+        _equipmentSlotLabel(slotType) {
+            const keys = {
+                '/equipment_types/head': 'simEditor.slotHead',
+                '/equipment_types/body': 'simEditor.slotBody',
+                '/equipment_types/legs': 'simEditor.slotLegs',
+                '/equipment_types/feet': 'simEditor.slotFeet',
+                '/equipment_types/hands': 'simEditor.slotHands',
+                '/equipment_types/main_hand': 'simEditor.slotMainHand',
+                '/equipment_types/two_hand': 'simEditor.slotTwoHand',
+                '/equipment_types/off_hand': 'simEditor.slotOffHand',
+                '/equipment_types/pouch': 'simEditor.slotPouch',
+                '/equipment_types/back': 'simEditor.slotBack',
+                '/equipment_types/neck': 'simEditor.slotNeck',
+                '/equipment_types/earrings': 'simEditor.slotEarrings',
+                '/equipment_types/ring': 'simEditor.slotRing',
+                '/equipment_types/charm': 'simEditor.slotCharm',
+            };
+            const key = keys[slotType];
+            return key ? i18n_js.t(key) : slotType.split('/').pop();
+        }
+
         /** @private */
         _renderEquipmentSection(dto, gameData) {
             const itemDetailMap = gameData.itemDetailMap || {};
@@ -18799,39 +18973,23 @@
                 '/equipment_types/ring',
                 '/equipment_types/charm',
             ];
-            const slotLabels = {
-                '/equipment_types/head': 'Head',
-                '/equipment_types/body': 'Body',
-                '/equipment_types/legs': 'Legs',
-                '/equipment_types/feet': 'Feet',
-                '/equipment_types/hands': 'Hands',
-                '/equipment_types/main_hand': 'Main Hand',
-                '/equipment_types/two_hand': 'Two Hand',
-                '/equipment_types/off_hand': 'Off Hand',
-                '/equipment_types/pouch': 'Pouch',
-                '/equipment_types/back': 'Back',
-                '/equipment_types/neck': 'Neck',
-                '/equipment_types/earrings': 'Earrings',
-                '/equipment_types/ring': 'Ring',
-                '/equipment_types/charm': 'Charm',
-            };
 
             const equippedCount = slotOrder.filter((s) => dto.equipment[s]).length;
             let html = `<div style="margin-bottom:10px;">`;
             html += `<div style="color:${ACCENT$2}; font-weight:700; font-size:12px; margin-bottom:6px; cursor:pointer; user-select:none;" data-toggle="equip-section">`;
-            html += `<span data-arrow="equip-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> Equipment (${equippedCount} items)`;
+            html += `<span data-arrow="equip-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> ${i18n_js.t('simEditor.equipmentSectionHeader', { count: equippedCount })}`;
             html += '</div>';
             html += `<div id="mwi-csim-equip-section" style="display:none;">`;
 
             for (const slotType of slotOrder) {
                 const equip = dto.equipment[slotType];
-                const label = slotLabels[slotType] || slotType.split('/').pop();
+                const label = this._equipmentSlotLabel(slotType);
 
                 if (!equip) {
                     html += `<div style="display:flex; align-items:center; gap:6px; padding:2px 0; font-size:12px;">`;
                     html += `<span style="color:#888; width:70px; flex-shrink:0;">${label}</span>`;
-                    html += `<span style="color:#555; flex:1; font-style:italic;">Empty</span>`;
-                    html += `<button data-equipment-slot="${slotType}" style="background:rgba(255,255,255,0.06); border:1px solid #444; color:#aaa; padding:1px 6px; border-radius:3px; font-size:11px; cursor:pointer; font-family:inherit;">add</button>`;
+                    html += `<span style="color:#555; flex:1; font-style:italic;">${i18n_js.t('skillingOptimizer.emptySlotCapitalized')}</span>`;
+                    html += `<button data-equipment-slot="${slotType}" style="background:rgba(255,255,255,0.06); border:1px solid #444; color:#aaa; padding:1px 6px; border-radius:3px; font-size:11px; cursor:pointer; font-family:inherit;">${i18n_js.t('simEditor.addButton')}</button>`;
                     html += '</div>';
                     continue;
                 }
@@ -18847,7 +19005,7 @@
                 data-enhance-slot="${slotType}"
                 style="width:36px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
                 border-radius:3px; padding:1px 3px; font-size:12px; text-align:center;">`;
-                html += `<button data-equipment-slot="${slotType}" style="background:rgba(255,255,255,0.06); border:1px solid #444; color:#aaa; padding:1px 6px; border-radius:3px; font-size:11px; cursor:pointer; font-family:inherit;">change</button>`;
+                html += `<button data-equipment-slot="${slotType}" style="background:rgba(255,255,255,0.06); border:1px solid #444; color:#aaa; padding:1px 6px; border-radius:3px; font-size:11px; cursor:pointer; font-family:inherit;">${i18n_js.t('simEditor.changeButton')}</button>`;
                 html += '</div>';
             }
 
@@ -18862,7 +19020,7 @@
 
             let html = `<div style="margin-bottom:10px;">`;
             html += `<div style="color:${ACCENT$2}; font-weight:700; font-size:12px; margin-bottom:6px; cursor:pointer; user-select:none;" data-toggle="ability-section">`;
-            html += `<span data-arrow="ability-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> Abilities (${abilityCount} equipped)`;
+            html += `<span data-arrow="ability-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> ${i18n_js.t('simEditor.abilitiesSectionHeader', { count: abilityCount })}`;
             html += '</div>';
             html += `<div id="mwi-csim-ability-section" style="display:none;">`;
 
@@ -18871,13 +19029,14 @@
 
             for (let i = 0; i < slotCount; i++) {
                 const ability = dto.abilities[i];
-                const slotLabel = i === 0 ? 'Special' : `Slot ${i}`;
+                const slotLabel =
+                    i === 0 ? i18n_js.t('simEditor.abilitySpecialSlotLabel') : i18n_js.t('simEditor.abilitySlotLabel', { index: i });
 
                 if (!ability) {
                     html += `<div style="display:flex; align-items:center; gap:6px; padding:2px 0; font-size:12px;">`;
                     html += `<span style="color:#888; width:50px; flex-shrink:0;">${slotLabel}</span>`;
-                    html += `<span style="color:#555; flex:1; font-style:italic;">Empty</span>`;
-                    html += `<button data-ability-slot="${i}" style="background:rgba(255,255,255,0.06); border:1px solid #444; color:#aaa; padding:1px 6px; border-radius:3px; font-size:11px; cursor:pointer; font-family:inherit;">add</button>`;
+                    html += `<span style="color:#555; flex:1; font-style:italic;">${i18n_js.t('skillingOptimizer.emptySlotCapitalized')}</span>`;
+                    html += `<button data-ability-slot="${i}" style="background:rgba(255,255,255,0.06); border:1px solid #444; color:#aaa; padding:1px 6px; border-radius:3px; font-size:11px; cursor:pointer; font-family:inherit;">${i18n_js.t('simEditor.addButton')}</button>`;
                     html += '</div>';
                     continue;
                 }
@@ -18888,12 +19047,12 @@
                 html += `<div style="display:flex; align-items:center; gap:6px; padding:2px 0; font-size:12px;">`;
                 html += `<span style="color:#888; width:50px; flex-shrink:0;">${slotLabel}</span>`;
                 html += `<span style="color:#e0e0e0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${name}</span>`;
-                html += `<span style="color:#666; font-size:11px;">Lv</span>`;
+                html += `<span style="color:#666; font-size:11px;">${i18n_js.t('simEditor.levelAbbreviation')}</span>`;
                 html += `<input type="number" min="1" max="200" value="${ability.level}"
                 data-ability-idx="${i}"
                 style="width:42px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
                 border-radius:3px; padding:1px 3px; font-size:12px; text-align:center;">`;
-                html += `<button data-ability-slot="${i}" style="background:rgba(255,255,255,0.06); border:1px solid #444; color:#aaa; padding:1px 6px; border-radius:3px; font-size:11px; cursor:pointer; font-family:inherit;">change</button>`;
+                html += `<button data-ability-slot="${i}" style="background:rgba(255,255,255,0.06); border:1px solid #444; color:#aaa; padding:1px 6px; border-radius:3px; font-size:11px; cursor:pointer; font-family:inherit;">${i18n_js.t('simEditor.changeButton')}</button>`;
                 html += '</div>';
             }
 
@@ -18913,18 +19072,17 @@
                 ACCENT$2 +
                 '; font-weight:700; font-size:12px; margin-bottom:6px; cursor:pointer; user-select:none;" data-toggle="consumable-section">';
             html +=
-                '<span data-arrow="consumable-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> Consumables (' +
-                foodCount +
-                ' food, ' +
-                drinkCount +
-                ' drinks)';
+                '<span data-arrow="consumable-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> ' +
+                i18n_js.t('simEditor.consumablesSectionHeader', { food: foodCount, drinks: drinkCount });
             html += '</div>';
             html += '<div id="mwi-csim-consumable-section" style="display:none;">';
 
-            html += '<div style="color:#888; font-size:11px; margin-bottom:3px;">Food</div>';
+            html += '<div style="color:#888; font-size:11px; margin-bottom:3px;">' + i18n_js.t('labSim.foodLabel') + '</div>';
             for (let i = 0; i < 3; i++) {
                 const item = dto.food[i];
-                const name = item ? itemDetailMap[item.hrid]?.name || item.hrid.split('/').pop() : 'Empty';
+                const name = item
+                    ? itemDetailMap[item.hrid]?.name || item.hrid.split('/').pop()
+                    : i18n_js.t('skillingOptimizer.emptySlotCapitalized');
                 const nameColor = item ? '#e0e0e0' : '#555';
                 html += '<div style="display:flex; align-items:center; gap:6px; padding:2px 0; font-size:12px;">';
                 html += '<span style="color:#666; width:16px; flex-shrink:0;">' + (i + 1) + '</span>';
@@ -18937,14 +19095,21 @@
                 html +=
                     '<button data-consumable-slot="food-' +
                     i +
-                    '" style="background:rgba(255,255,255,0.06); border:1px solid #444; color:#aaa; padding:1px 6px; border-radius:3px; font-size:11px; cursor:pointer; font-family:inherit;">change</button>';
+                    '" style="background:rgba(255,255,255,0.06); border:1px solid #444; color:#aaa; padding:1px 6px; border-radius:3px; font-size:11px; cursor:pointer; font-family:inherit;">' +
+                    i18n_js.t('simEditor.changeButton') +
+                    '</button>';
                 html += '</div>';
             }
 
-            html += '<div style="color:#888; font-size:11px; margin-bottom:3px; margin-top:6px;">Drinks</div>';
+            html +=
+                '<div style="color:#888; font-size:11px; margin-bottom:3px; margin-top:6px;">' +
+                i18n_js.t('simEditor.drinksHeader') +
+                '</div>';
             for (let i = 0; i < 3; i++) {
                 const item = dto.drinks[i];
-                const name = item ? itemDetailMap[item.hrid]?.name || item.hrid.split('/').pop() : 'Empty';
+                const name = item
+                    ? itemDetailMap[item.hrid]?.name || item.hrid.split('/').pop()
+                    : i18n_js.t('skillingOptimizer.emptySlotCapitalized');
                 const nameColor = item ? '#e0e0e0' : '#555';
                 html += '<div style="display:flex; align-items:center; gap:6px; padding:2px 0; font-size:12px;">';
                 html += '<span style="color:#666; width:16px; flex-shrink:0;">' + (i + 1) + '</span>';
@@ -18957,7 +19122,9 @@
                 html +=
                     '<button data-consumable-slot="drinks-' +
                     i +
-                    '" style="background:rgba(255,255,255,0.06); border:1px solid #444; color:#aaa; padding:1px 6px; border-radius:3px; font-size:11px; cursor:pointer; font-family:inherit;">change</button>';
+                    '" style="background:rgba(255,255,255,0.06); border:1px solid #444; color:#aaa; padding:1px 6px; border-radius:3px; font-size:11px; cursor:pointer; font-family:inherit;">' +
+                    i18n_js.t('simEditor.changeButton') +
+                    '</button>';
                 html += '</div>';
             }
 
@@ -19015,17 +19182,17 @@
                         const hp = item.consumableDetail.hitpointRestore || 0;
                         const mp = item.consumableDetail.manapointRestore || 0;
                         const dur = item.consumableDetail.recoveryDuration || 0;
-                        if (hp > 0 && dur > 0) categoryLabel = 'HP Over Time';
-                        else if (hp > 0) categoryLabel = 'HP Instant';
-                        else if (mp > 0 && dur > 0) categoryLabel = 'MP Over Time';
-                        else if (mp > 0) categoryLabel = 'MP Instant';
-                        else categoryLabel = 'Other';
+                        if (hp > 0 && dur > 0) categoryLabel = i18n_js.t('simEditor.categoryHpOverTime');
+                        else if (hp > 0) categoryLabel = i18n_js.t('simEditor.categoryHpInstant');
+                        else if (mp > 0 && dur > 0) categoryLabel = i18n_js.t('simEditor.categoryMpOverTime');
+                        else if (mp > 0) categoryLabel = i18n_js.t('simEditor.categoryMpInstant');
+                        else categoryLabel = i18n_js.t('simEditor.categoryOther');
                     } else {
                         const buffs = item.consumableDetail.buffs || [];
                         if (buffs.length > 0) {
                             const buffName = buffs[0].uniqueHrid?.split('/').pop()?.replace(/_/g, ' ') || 'buff';
                             categoryLabel = buffName.charAt(0).toUpperCase() + buffName.slice(1);
-                        } else categoryLabel = 'Other';
+                        } else categoryLabel = i18n_js.t('simEditor.categoryOther');
                     }
 
                     items.push({ hrid, name: item.name || hrid.split('/').pop(), conflict, itemLevel, categoryLabel });
@@ -19050,9 +19217,7 @@
             header.style.cssText =
                 'display:flex; justify-content:space-between; align-items:center; padding:8px 14px; border-bottom:1px solid rgba(74,158,255,0.3); flex-shrink:0;';
             header.innerHTML =
-                '<span style="font-weight:700; font-size:13px; color:#4a9eff;">Select ' +
-                (isFood ? 'Food' : 'Drink') +
-                '</span>' +
+                `<span style="font-weight:700; font-size:13px; color:#4a9eff;">${isFood ? i18n_js.t('simEditor.selectFoodHeader') : i18n_js.t('simEditor.selectDrinkHeader')}</span>` +
                 '<button id="mwi-csim-picker-close" style="background:none; border:none; color:#aaa; font-size:20px; cursor:pointer; padding:0; line-height:1;">\u00d7</button>';
             popup.appendChild(header);
 
@@ -19060,7 +19225,7 @@
             searchDiv.style.cssText = 'padding:6px 14px; flex-shrink:0;';
             const searchInput = document.createElement('input');
             searchInput.type = 'search';
-            searchInput.placeholder = 'Search...';
+            searchInput.placeholder = i18n_js.t('simEditor.searchPlaceholder');
             searchInput.style.cssText =
                 'width:100%; padding:5px 8px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15);' +
                 'border-radius:6px; color:#e0e0e0; font-size:12px; font-family:inherit; outline:none;';
@@ -19083,7 +19248,9 @@
 
                 let html =
                     '<div data-pick-hrid="" style="display:flex; align-items:center; gap:8px; padding:4px; cursor:pointer; border-bottom:1px solid #1a1a2e; color:#888; font-style:italic;"' +
-                    ' onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'\'">Empty (clear slot)</div>';
+                    ' onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'\'">' +
+                    i18n_js.t('simEditor.emptyClearSlotOption') +
+                    '</div>';
 
                 let lastCategory = '';
                 for (const item of filtered.slice(0, 80)) {
@@ -19099,14 +19266,16 @@
 
                     const isCurrent = item.hrid === currentHrid;
                     const lvlTag =
-                        '<span style="color:#666; font-size:10px; margin-left:auto; flex-shrink:0;">Lv ' +
-                        item.itemLevel +
+                        '<span style="color:#666; font-size:10px; margin-left:auto; flex-shrink:0;">' +
+                        i18n_js.t('simEditor.levelTag', { level: item.itemLevel }) +
                         '</span>';
                     if (item.conflict) {
                         html +=
                             '<div style="display:flex; align-items:center; gap:8px; padding:3px 4px; border-bottom:1px solid #1a1a2e; color:#555; cursor:default;">' +
                             item.name +
-                            ' <span style="font-size:10px; color:#664;">(in use)</span>' +
+                            ' <span style="font-size:10px; color:#664;">' +
+                            i18n_js.t('simEditor.inUseLabel') +
+                            '</span>' +
                             lvlTag +
                             '</div>';
                     } else {
@@ -19127,9 +19296,9 @@
                 }
                 if (filtered.length > 80) {
                     html +=
-                        '<div style="color:#666; text-align:center; padding:6px;">...' +
-                        (filtered.length - 80) +
-                        ' more</div>';
+                        '<div style="color:#666; text-align:center; padding:6px;">' +
+                        i18n_js.t('simEditor.moreItemsSuffix', { count: filtered.length - 80 }) +
+                        '</div>';
                 }
                 listEl.innerHTML = html;
 
@@ -19177,7 +19346,7 @@
             document.getElementById('mwi-csim-equipment-backdrop')?.remove();
 
             const itemDetailMap = gameData?.itemDetailMap || {};
-            const slotName = slotType.split('/').pop().replace(/_/g, ' ');
+            const slotName = this._equipmentSlotLabel(slotType);
 
             const items = [];
             for (const [hrid, item] of Object.entries(itemDetailMap)) {
@@ -19188,11 +19357,11 @@
                 const reqSkill = primaryReq?.skillHrid?.split('/').pop() || '';
 
                 let categoryLabel;
-                if (reqSkill === 'attack') categoryLabel = 'Attack';
-                else if (reqSkill === 'defense') categoryLabel = 'Defense';
-                else if (reqSkill === 'ranged') categoryLabel = 'Ranged';
-                else if (reqSkill === 'magic') categoryLabel = 'Magic';
-                else categoryLabel = 'General';
+                if (reqSkill === 'attack') categoryLabel = i18n_js.t('simEditor.categoryAttack');
+                else if (reqSkill === 'defense') categoryLabel = i18n_js.t('simEditor.categoryDefense');
+                else if (reqSkill === 'ranged') categoryLabel = i18n_js.t('simEditor.categoryRanged');
+                else if (reqSkill === 'magic') categoryLabel = i18n_js.t('simEditor.categoryMagic');
+                else categoryLabel = i18n_js.t('simEditor.categoryGeneral');
 
                 items.push({
                     hrid,
@@ -19221,7 +19390,7 @@
             header.style.cssText =
                 'display:flex; justify-content:space-between; align-items:center; padding:8px 14px; border-bottom:1px solid rgba(74,158,255,0.3); flex-shrink:0;';
             header.innerHTML =
-                `<span style="font-weight:700; font-size:13px; color:${ACCENT$2};">Select ${slotName}</span>` +
+                `<span style="font-weight:700; font-size:13px; color:${ACCENT$2};">${i18n_js.t('simEditor.selectEquipmentSlotHeader', { slot: slotName })}</span>` +
                 '<button id="mwi-csim-equip-picker-close" style="background:none; border:none; color:#aaa; font-size:20px; cursor:pointer; padding:0; line-height:1;">\u00d7</button>';
             popup.appendChild(header);
 
@@ -19229,7 +19398,7 @@
             searchDiv.style.cssText = 'padding:6px 14px; flex-shrink:0;';
             const searchInput = document.createElement('input');
             searchInput.type = 'search';
-            searchInput.placeholder = 'Search...';
+            searchInput.placeholder = i18n_js.t('simEditor.searchPlaceholder');
             searchInput.style.cssText =
                 'width:100%; padding:5px 8px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15);' +
                 'border-radius:6px; color:#e0e0e0; font-size:12px; font-family:inherit; outline:none;';
@@ -19248,7 +19417,9 @@
 
                 let html =
                     '<div data-pick-hrid="" style="display:flex; align-items:center; gap:8px; padding:4px; cursor:pointer; border-bottom:1px solid #1a1a2e; color:#888; font-style:italic;"' +
-                    ' onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'\'">Empty (remove slot)</div>';
+                    ' onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'\'">' +
+                    i18n_js.t('simEditor.emptyRemoveSlotOption') +
+                    '</div>';
 
                 let lastCategory = '';
                 for (const item of filtered.slice(0, 100)) {
@@ -19260,7 +19431,7 @@
                     const isCurrent = item.hrid === currentHrid;
                     const color = isCurrent ? ACCENT$2 : '#ccc';
                     const indicator = isCurrent ? ` <span style="color:${ACCENT$2};">\u25cf</span>` : '';
-                    const lvlTag = `<span style="color:#666; font-size:10px; margin-left:auto; flex-shrink:0;">Lv ${item.reqLevel}</span>`;
+                    const lvlTag = `<span style="color:#666; font-size:10px; margin-left:auto; flex-shrink:0;">${i18n_js.t('simEditor.levelTag', { level: item.reqLevel })}</span>`;
 
                     html +=
                         `<div data-pick-hrid="${item.hrid}" style="display:flex; align-items:center; gap:8px; padding:3px 4px; cursor:pointer; border-bottom:1px solid #1a1a2e; color:${color};"` +
@@ -19271,7 +19442,7 @@
                         '</div>';
                 }
                 if (filtered.length > 100) {
-                    html += `<div style="color:#666; text-align:center; padding:6px;">...${filtered.length - 100} more</div>`;
+                    html += `<div style="color:#666; text-align:center; padding:6px;">${i18n_js.t('simEditor.moreItemsSuffix', { count: filtered.length - 100 })}</div>`;
                 }
                 listEl.innerHTML = html;
 
@@ -19335,10 +19506,11 @@
                 const effects = ability.abilityEffects || [];
                 const combatStyle = effects[0]?.combatStyleHrid?.split('/').pop() || '';
                 let categoryLabel;
-                if (combatStyle === 'stab' || combatStyle === 'slash' || combatStyle === 'smash') categoryLabel = 'Melee';
-                else if (combatStyle === 'ranged') categoryLabel = 'Ranged';
-                else if (combatStyle === 'magic') categoryLabel = 'Magic';
-                else categoryLabel = 'Other';
+                if (combatStyle === 'stab' || combatStyle === 'slash' || combatStyle === 'smash')
+                    categoryLabel = i18n_js.t('simEditor.categoryMelee');
+                else if (combatStyle === 'ranged') categoryLabel = i18n_js.t('simEditor.categoryRanged');
+                else if (combatStyle === 'magic') categoryLabel = i18n_js.t('simEditor.categoryMagic');
+                else categoryLabel = i18n_js.t('simEditor.categoryOther');
 
                 items.push({
                     hrid,
@@ -19362,12 +19534,14 @@
                 'width:350px; max-height:400px; display:flex; flex-direction:column;' +
                 "font-family:'Segoe UI',sans-serif; color:#e0e0e0; font-size:13px; box-shadow:0 8px 24px rgba(0,0,0,0.6);";
 
-            const slotLabel = isSpecialSlot ? 'Special Ability' : `Ability Slot ${slotIndex}`;
+            const slotLabel = isSpecialSlot
+                ? i18n_js.t('simEditor.specialAbilityLabel')
+                : i18n_js.t('simEditor.abilitySlotNumberLabel', { index: slotIndex });
             const header = document.createElement('div');
             header.style.cssText =
                 'display:flex; justify-content:space-between; align-items:center; padding:8px 14px; border-bottom:1px solid rgba(74,158,255,0.3); flex-shrink:0;';
             header.innerHTML =
-                `<span style="font-weight:700; font-size:13px; color:${ACCENT$2};">Select ${slotLabel}</span>` +
+                `<span style="font-weight:700; font-size:13px; color:${ACCENT$2};">${i18n_js.t('simEditor.selectAbilityHeader', { slotLabel })}</span>` +
                 '<button id="mwi-csim-ability-picker-close" style="background:none; border:none; color:#aaa; font-size:20px; cursor:pointer; padding:0; line-height:1;">\u00d7</button>';
             popup.appendChild(header);
 
@@ -19375,7 +19549,7 @@
             searchDiv.style.cssText = 'padding:6px 14px; flex-shrink:0;';
             const searchInput = document.createElement('input');
             searchInput.type = 'search';
-            searchInput.placeholder = 'Search...';
+            searchInput.placeholder = i18n_js.t('simEditor.searchPlaceholder');
             searchInput.style.cssText =
                 'width:100%; padding:5px 8px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15);' +
                 'border-radius:6px; color:#e0e0e0; font-size:12px; font-family:inherit; outline:none;';
@@ -19394,7 +19568,9 @@
 
                 let html =
                     '<div data-pick-hrid="" style="display:flex; align-items:center; gap:8px; padding:4px; cursor:pointer; border-bottom:1px solid #1a1a2e; color:#888; font-style:italic;"' +
-                    ' onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'\'">Empty (clear slot)</div>';
+                    ' onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'\'">' +
+                    i18n_js.t('simEditor.emptyClearSlotOption') +
+                    '</div>';
 
                 let lastCategory = '';
                 for (const item of filtered) {
@@ -19407,7 +19583,9 @@
                         html +=
                             '<div style="display:flex; align-items:center; gap:8px; padding:3px 4px; border-bottom:1px solid #1a1a2e; color:#555; cursor:default;">' +
                             item.name +
-                            ' <span style="font-size:10px; color:#664;">(in use)</span></div>';
+                            ' <span style="font-size:10px; color:#664;">' +
+                            i18n_js.t('simEditor.inUseLabel') +
+                            '</span></div>';
                     } else {
                         const isCurrent = item.hrid === currentHrid;
                         const color = isCurrent ? ACCENT$2 : '#ccc';
@@ -19465,33 +19643,41 @@
         /** @private */
         _renderSkillLevelsSection(dto) {
             const combatSkills = [
-                { key: 'staminaLevel', label: 'Stamina' },
-                { key: 'intelligenceLevel', label: 'Intelligence' },
-                { key: 'attackLevel', label: 'Attack' },
-                { key: 'meleeLevel', label: 'Melee' },
-                { key: 'defenseLevel', label: 'Defense' },
-                { key: 'rangedLevel', label: 'Ranged' },
-                { key: 'magicLevel', label: 'Magic' },
+                { key: 'staminaLevel', label: i18n_js.t('simEditor.skillStamina'), shortLabel: i18n_js.t('combatSimUi.colStamina') },
+                {
+                    key: 'intelligenceLevel',
+                    label: i18n_js.t('simEditor.skillIntelligence'),
+                    shortLabel: i18n_js.t('combatSimUi.colIntelligence'),
+                },
+                { key: 'attackLevel', label: i18n_js.t('simEditor.skillAttack'), shortLabel: i18n_js.t('combatSimUi.colAttack') },
+                { key: 'meleeLevel', label: i18n_js.t('simEditor.skillMelee'), shortLabel: i18n_js.t('combatSimUi.colMelee') },
+                { key: 'defenseLevel', label: i18n_js.t('simEditor.skillDefense'), shortLabel: i18n_js.t('combatSimUi.colDefense') },
+                { key: 'rangedLevel', label: i18n_js.t('simEditor.skillRanged'), shortLabel: i18n_js.t('combatSimUi.colRanged') },
+                { key: 'magicLevel', label: i18n_js.t('simEditor.skillMagic'), shortLabel: i18n_js.t('combatSimUi.colMagic') },
             ];
             const skillingSkills = [
-                { key: 'woodcuttingLevel', label: 'Woodcutting' },
-                { key: 'foragingLevel', label: 'Foraging' },
-                { key: 'milkingLevel', label: 'Milking' },
-                { key: 'cookingLevel', label: 'Cooking' },
-                { key: 'brewingLevel', label: 'Brewing' },
-                { key: 'cheesesmithingLevel', label: 'Cheesesmithing' },
-                { key: 'craftingLevel', label: 'Crafting' },
-                { key: 'tailoringLevel', label: 'Tailoring' },
-                { key: 'alchemyLevel', label: 'Alchemy' },
-                { key: 'enhancingLevel', label: 'Enhancing' },
+                { key: 'woodcuttingLevel', label: i18n_js.t('labSim.skillWoodcutting'), shortLabel: i18n_js.t('labSim.skillWoodcutting') },
+                { key: 'foragingLevel', label: i18n_js.t('labSim.skillForaging'), shortLabel: i18n_js.t('labSim.skillForaging') },
+                { key: 'milkingLevel', label: i18n_js.t('labSim.skillMilking'), shortLabel: i18n_js.t('labSim.skillMilking') },
+                { key: 'cookingLevel', label: i18n_js.t('labSim.skillCooking'), shortLabel: i18n_js.t('labSim.skillCooking') },
+                { key: 'brewingLevel', label: i18n_js.t('labSim.skillBrewing'), shortLabel: i18n_js.t('labSim.skillBrewing') },
+                {
+                    key: 'cheesesmithingLevel',
+                    label: i18n_js.t('labSim.skillCheesesmithing'),
+                    shortLabel: i18n_js.t('labSim.skillCheesesmithing'),
+                },
+                { key: 'craftingLevel', label: i18n_js.t('labSim.skillCrafting'), shortLabel: i18n_js.t('labSim.skillCrafting') },
+                { key: 'tailoringLevel', label: i18n_js.t('labSim.skillTailoring'), shortLabel: i18n_js.t('labSim.skillTailoring') },
+                { key: 'alchemyLevel', label: i18n_js.t('labSim.skillAlchemy'), shortLabel: i18n_js.t('labSim.skillAlchemy') },
+                { key: 'enhancingLevel', label: i18n_js.t('labSim.skillEnhancing'), shortLabel: i18n_js.t('labSim.skillEnhancing') },
             ];
             const skills = this.skillingMode ? skillingSkills : combatSkills;
 
-            const summary = skills.map((s) => `${s.label.slice(0, 3)} ${dto[s.key]}`).join(' / ');
+            const summary = skills.map((s) => `${s.shortLabel} ${dto[s.key]}`).join(' / ');
 
             let html = `<div style="margin-bottom:10px;">`;
             html += `<div style="color:${ACCENT$2}; font-weight:700; font-size:12px; margin-bottom:6px; cursor:pointer; user-select:none;" data-toggle="skill-section">`;
-            html += `<span data-arrow="skill-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> Skill Levels`;
+            html += `<span data-arrow="skill-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> ${i18n_js.t('simEditor.skillLevelsSectionHeader')}`;
             html += `<span style="color:#888; font-weight:400; font-size:11px; margin-left:6px;">${summary}</span>`;
             html += '</div>';
             html += `<div id="mwi-csim-skill-section" style="display:none;">`;
@@ -19519,8 +19705,8 @@
 
             let html = `<div style="margin-bottom:10px;">`;
             html += `<div style="color:${ACCENT$2}; font-weight:700; font-size:12px; margin-bottom:6px; cursor:pointer; user-select:none;" data-toggle="house-section">`;
-            html += `<span data-arrow="house-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> House Rooms`;
-            html += `<span style="color:#888; font-weight:400; font-size:11px; margin-left:6px;">${activeCount} active</span>`;
+            html += `<span data-arrow="house-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> ${i18n_js.t('simEditor.houseRoomsSectionHeader')}`;
+            html += `<span style="color:#888; font-weight:400; font-size:11px; margin-left:6px;">${i18n_js.t('simEditor.activeCountLabel', { count: activeCount })}</span>`;
             html += '</div>';
             html += `<div id="mwi-csim-house-section" style="display:none;">`;
             html += `<div style="display:grid; grid-template-columns:1fr 1fr; gap:4px 12px;">`;
@@ -19550,8 +19736,8 @@
 
             let html = `<div style="margin-bottom:10px;">`;
             html += `<div style="color:${ACCENT$2}; font-weight:700; font-size:12px; margin-bottom:6px; cursor:pointer; user-select:none;" data-toggle="shrine-section">`;
-            html += `<span data-arrow="shrine-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> Shrines`;
-            html += `<span style="color:#888; font-weight:400; font-size:11px; margin-left:6px;">${activeCount} active</span>`;
+            html += `<span data-arrow="shrine-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> ${i18n_js.t('simEditor.shrinesSectionHeader')}`;
+            html += `<span style="color:#888; font-weight:400; font-size:11px; margin-left:6px;">${i18n_js.t('simEditor.activeCountLabel', { count: activeCount })}</span>`;
             html += '</div>';
             html += `<div id="mwi-csim-shrine-section" style="display:none;">`;
             html += `<div style="display:grid; grid-template-columns:1fr 1fr; gap:4px 12px;">`;
@@ -19588,12 +19774,12 @@
 
             let html = `<div style="margin-bottom:10px;">`;
             html += `<div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">`;
-            html += `<span style="color:${ACCENT$2}; font-weight:700; font-size:12px;">Achievements</span>`;
+            html += `<span style="color:${ACCENT$2}; font-weight:700; font-size:12px;">${i18n_js.t('simEditor.achievementsSectionHeader')}</span>`;
             html += `<div style="display:flex; gap:4px;">`;
             for (const [value, label] of [
-                ['current', 'Current'],
-                ['none', 'None'],
-                ['custom', 'Custom'],
+                ['current', i18n_js.t('simEditor.achievementModeCurrent')],
+                ['none', i18n_js.t('simEditor.achievementModeNone')],
+                ['custom', i18n_js.t('simEditor.achievementModeCustom')],
             ]) {
                 const isActive = mode === value;
                 const btnStyle = isActive
@@ -19605,18 +19791,22 @@
 
             if (mode === 'custom') {
                 if (tiers.length === 0) {
-                    html += `<div style="color:#666; font-size:11px; font-style:italic;">No combat-relevant Achievement Tiers found in current game data.</div>`;
+                    html += `<div style="color:#666; font-size:11px; font-style:italic;">${i18n_js.t('simEditor.noCombatRelevantAchievementTiers')}</div>`;
                 } else {
                     const scenario = this._getAchievementScenario(playerHrid);
                     const completedHrids = scenario.customCompletedHrids || new Set();
 
-                    html += `<div style="color:#666; font-size:10px; font-style:italic; margin-bottom:6px;">Simulation only - does not change your account.</div>`;
+                    html += `<div style="color:#666; font-size:10px; font-style:italic; margin-bottom:6px;">${i18n_js.t('simEditor.achievementSimulationOnlyNote')}</div>`;
 
                     for (const tier of tiers) {
                         const tierId = 'achv-' + tier.tierHrid.replace(/[^a-zA-Z0-9]/g, '_');
                         const completedCount = tier.members.filter((m) => completedHrids.has(m.hrid)).length;
                         const buffText = this._formatTierBuffDescription(tier.buff);
-                        const summary = `${completedCount} / ${tier.members.length}` + (buffText ? ` · ${buffText}` : '');
+                        const summary = i18n_js.t('simEditor.achievementTierSummary', {
+                            completed: completedCount,
+                            total: tier.members.length,
+                            buffText,
+                        });
 
                         html += `<div style="margin-bottom:4px;">`;
                         html += `<div style="color:#ccc; font-weight:600; font-size:12px; margin-bottom:2px; cursor:pointer; user-select:none;" data-toggle="${tierId}">`;
@@ -19642,18 +19832,18 @@
         /** @private */
         _renderTokenUpgradesSection(dto) {
             const upgrades = [
-                { key: 'speed', label: 'Speed' },
-                { key: 'efficiency', label: 'Efficiency' },
-                { key: 'success', label: 'Success Rate' },
-                { key: 'doubleProgress', label: 'Double Progress' },
+                { key: 'speed', label: i18n_js.t('labSim.buffSpeed') },
+                { key: 'efficiency', label: i18n_js.t('profitDisplay.efficiencyLabel') },
+                { key: 'success', label: i18n_js.t('simEditor.tokenSuccessRateLabel') },
+                { key: 'doubleProgress', label: i18n_js.t('simEditor.tokenDoubleProgressLabel') },
             ];
             const tokens = dto.tokenUpgrades || {};
             const activeCount = upgrades.filter((u) => (tokens[u.key] || 0) > 0).length;
 
             let html = `<div style="margin-bottom:10px;">`;
             html += `<div style="color:${ACCENT$2}; font-weight:700; font-size:12px; margin-bottom:6px; cursor:pointer; user-select:none;" data-toggle="token-section">`;
-            html += `<span data-arrow="token-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> Token Upgrades`;
-            html += `<span style="color:#888; font-weight:400; font-size:11px; margin-left:6px;">${activeCount} active</span>`;
+            html += `<span data-arrow="token-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> ${i18n_js.t('simEditor.tokenUpgradesSectionHeader')}`;
+            html += `<span style="color:#888; font-weight:400; font-size:11px; margin-left:6px;">${i18n_js.t('simEditor.activeCountLabel', { count: activeCount })}</span>`;
             html += '</div>';
             html += `<div id="mwi-csim-token-section" style="display:none;">`;
             html += `<div style="display:grid; grid-template-columns:1fr 1fr; gap:4px 12px;">`;
@@ -19676,18 +19866,18 @@
         /** @private */
         _renderCommunityBuffsSection(dto) {
             const buffs = [
-                { key: 'productionEfficiency', label: 'Prod. Efficiency' },
-                { key: 'enhancingSpeed', label: 'Enhancing Speed' },
-                { key: 'gatheringQuantity', label: 'Gathering Qty' },
-                { key: 'experience', label: 'Experience' },
+                { key: 'productionEfficiency', label: i18n_js.t('simEditor.communityProdEfficiencyLabel') },
+                { key: 'enhancingSpeed', label: i18n_js.t('simEditor.communityEnhancingSpeedLabel') },
+                { key: 'gatheringQuantity', label: i18n_js.t('simEditor.communityGatheringQtyLabel') },
+                { key: 'experience', label: i18n_js.t('labSim.buffExperience') },
             ];
             const levels = dto.communityBuffLevels || {};
             const activeCount = buffs.filter((b) => (levels[b.key] || 0) > 0).length;
 
             let html = `<div style="margin-bottom:10px;">`;
             html += `<div style="color:${ACCENT$2}; font-weight:700; font-size:12px; margin-bottom:6px; cursor:pointer; user-select:none;" data-toggle="community-section">`;
-            html += `<span data-arrow="community-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> Community Buffs`;
-            html += `<span style="color:#888; font-weight:400; font-size:11px; margin-left:6px;">${activeCount} active</span>`;
+            html += `<span data-arrow="community-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> ${i18n_js.t('simEditor.communityBuffsSectionHeader')}`;
+            html += `<span style="color:#888; font-weight:400; font-size:11px; margin-left:6px;">${i18n_js.t('simEditor.activeCountLabel', { count: activeCount })}</span>`;
             html += '</div>';
             html += `<div id="mwi-csim-community-section" style="display:none;">`;
             html += `<div style="display:grid; grid-template-columns:1fr 1fr; gap:4px 12px;">`;
@@ -19917,12 +20107,12 @@
                     const text = editorArea.querySelector('#mwi-csim-import-text')?.value?.trim();
                     const errorEl = editorArea.querySelector('#mwi-csim-import-error');
                     if (!text) {
-                        if (errorEl) errorEl.textContent = 'Paste export data first.';
+                        if (errorEl) errorEl.textContent = i18n_js.t('simEditor.pasteExportDataFirst');
                         return;
                     }
                     const result = parseShykaiImport(text);
                     if (!result || !result.players.length) {
-                        if (errorEl) errorEl.textContent = 'Invalid format. Paste a Shykai export JSON.';
+                        if (errorEl) errorEl.textContent = i18n_js.t('simEditor.invalidFormatShykaiExport');
                         return;
                     }
                     this.importPlayers(result.players, result.names);
@@ -19957,7 +20147,7 @@
             const selfHrid = this._selfHrid || this._activeEditPlayer;
             const original = this._originalDTOs?.[selfHrid];
             const edited = this._editedDTOs?.[selfHrid];
-            if (!original || !edited) return this._selectedLoadoutName || 'Current Gear';
+            if (!original || !edited) return this._selectedLoadoutName || i18n_js.t('combatSimUi.currentGearLabel');
 
             const gameData = buildGameDataPayload();
             const itemDetailMap = gameData?.itemDetailMap || {};
@@ -19965,35 +20155,47 @@
 
             const changes = [];
 
-            const slotNames = {
-                '/equipment_types/head': 'Head',
-                '/equipment_types/body': 'Body',
-                '/equipment_types/legs': 'Legs',
-                '/equipment_types/feet': 'Feet',
-                '/equipment_types/hands': 'Hands',
-                '/equipment_types/main_hand': 'Main Hand',
-                '/equipment_types/two_hand': 'Two Hand',
-                '/equipment_types/off_hand': 'Off Hand',
-                '/equipment_types/pouch': 'Pouch',
-                '/equipment_types/back': 'Back',
-                '/equipment_types/neck': 'Neck',
-                '/equipment_types/earrings': 'Earrings',
-                '/equipment_types/ring': 'Ring',
-                '/equipment_types/charm': 'Charm',
-            };
+            const slotHrids = [
+                '/equipment_types/head',
+                '/equipment_types/body',
+                '/equipment_types/legs',
+                '/equipment_types/feet',
+                '/equipment_types/hands',
+                '/equipment_types/main_hand',
+                '/equipment_types/two_hand',
+                '/equipment_types/off_hand',
+                '/equipment_types/pouch',
+                '/equipment_types/back',
+                '/equipment_types/neck',
+                '/equipment_types/earrings',
+                '/equipment_types/ring',
+                '/equipment_types/charm',
+            ];
 
-            for (const slot of Object.keys(slotNames)) {
+            for (const slot of slotHrids) {
                 const origEquip = original.equipment?.[slot];
                 const editEquip = edited.equipment?.[slot];
                 if (!origEquip && !editEquip) continue;
 
                 if (origEquip?.hrid !== editEquip?.hrid) {
-                    const origName = itemDetailMap[origEquip?.hrid]?.name || origEquip?.hrid?.split('/').pop() || 'Empty';
-                    const editName = itemDetailMap[editEquip?.hrid]?.name || editEquip?.hrid?.split('/').pop() || 'Empty';
-                    changes.push(`${origName} \u2192 ${editName}`);
+                    const origName =
+                        itemDetailMap[origEquip?.hrid]?.name ||
+                        origEquip?.hrid?.split('/').pop() ||
+                        i18n_js.t('skillingOptimizer.emptySlotCapitalized');
+                    const editName =
+                        itemDetailMap[editEquip?.hrid]?.name ||
+                        editEquip?.hrid?.split('/').pop() ||
+                        i18n_js.t('skillingOptimizer.emptySlotCapitalized');
+                    changes.push(i18n_js.t('simEditor.itemSwapLabel', { from: origName, to: editName }));
                 } else if (origEquip?.enhancementLevel !== editEquip?.enhancementLevel) {
-                    const label = slotNames[slot];
-                    changes.push(`${label} +${origEquip.enhancementLevel}\u2192+${editEquip.enhancementLevel}`);
+                    const label = this._equipmentSlotLabel(slot);
+                    changes.push(
+                        i18n_js.t('simEditor.enhancementChangeLabel', {
+                            slot: label,
+                            from: origEquip.enhancementLevel,
+                            to: editEquip.enhancementLevel,
+                        })
+                    );
                 }
             }
 
@@ -20003,80 +20205,95 @@
                 if (!origAb && !editAb) continue;
 
                 if (origAb?.hrid !== editAb?.hrid) {
-                    const origName = abilityDetailMap[origAb?.hrid]?.name || origAb?.hrid?.split('/').pop() || 'None';
-                    const editName = abilityDetailMap[editAb?.hrid]?.name || editAb?.hrid?.split('/').pop() || 'None';
-                    changes.push(`${origName} \u2192 ${editName}`);
+                    const origName =
+                        abilityDetailMap[origAb?.hrid]?.name || origAb?.hrid?.split('/').pop() || i18n_js.t('simEditor.noneLabel');
+                    const editName =
+                        abilityDetailMap[editAb?.hrid]?.name || editAb?.hrid?.split('/').pop() || i18n_js.t('simEditor.noneLabel');
+                    changes.push(i18n_js.t('simEditor.itemSwapLabel', { from: origName, to: editName }));
                 } else if (origAb && editAb && origAb.level !== editAb.level) {
                     const name = abilityDetailMap[editAb.hrid]?.name || editAb.hrid.split('/').pop();
-                    changes.push(`${name} Lv ${origAb.level}\u2192${editAb.level}`);
+                    changes.push(i18n_js.t('simEditor.abilityLevelChangeLabel', { name, from: origAb.level, to: editAb.level }));
                 }
             }
 
-            const skillLabels = {
-                staminaLevel: 'Stamina',
-                intelligenceLevel: 'Intelligence',
-                attackLevel: 'Attack',
-                meleeLevel: 'Melee',
-                defenseLevel: 'Defense',
-                rangedLevel: 'Ranged',
-                magicLevel: 'Magic',
-                woodcuttingLevel: 'Woodcutting',
-                foragingLevel: 'Foraging',
-                milkingLevel: 'Milking',
-                cookingLevel: 'Cooking',
-                brewingLevel: 'Brewing',
-                cheesesmithingLevel: 'Cheesesmithing',
-                craftingLevel: 'Crafting',
-                tailoringLevel: 'Tailoring',
-                alchemyLevel: 'Alchemy',
-                enhancingLevel: 'Enhancing',
-            };
-            for (const [key, label] of Object.entries(skillLabels)) {
+            const skillKeys = [
+                ['staminaLevel', i18n_js.t('simEditor.skillStamina')],
+                ['intelligenceLevel', i18n_js.t('simEditor.skillIntelligence')],
+                ['attackLevel', i18n_js.t('simEditor.skillAttack')],
+                ['meleeLevel', i18n_js.t('simEditor.skillMelee')],
+                ['defenseLevel', i18n_js.t('simEditor.skillDefense')],
+                ['rangedLevel', i18n_js.t('simEditor.skillRanged')],
+                ['magicLevel', i18n_js.t('simEditor.skillMagic')],
+                ['woodcuttingLevel', i18n_js.t('labSim.skillWoodcutting')],
+                ['foragingLevel', i18n_js.t('labSim.skillForaging')],
+                ['milkingLevel', i18n_js.t('labSim.skillMilking')],
+                ['cookingLevel', i18n_js.t('labSim.skillCooking')],
+                ['brewingLevel', i18n_js.t('labSim.skillBrewing')],
+                ['cheesesmithingLevel', i18n_js.t('labSim.skillCheesesmithing')],
+                ['craftingLevel', i18n_js.t('labSim.skillCrafting')],
+                ['tailoringLevel', i18n_js.t('labSim.skillTailoring')],
+                ['alchemyLevel', i18n_js.t('labSim.skillAlchemy')],
+                ['enhancingLevel', i18n_js.t('labSim.skillEnhancing')],
+            ];
+            for (const [key, label] of skillKeys) {
                 if (original[key] !== edited[key]) {
-                    changes.push(`${label} ${original[key]}\u2192${edited[key]}`);
+                    changes.push(i18n_js.t('simEditor.skillLevelChangeLabel', { label, from: original[key], to: edited[key] }));
                 }
             }
 
-            const slotLabels = { food: 'Food', drinks: 'Drink' };
-            for (const [slotType, prefix] of Object.entries(slotLabels)) {
+            const slotTypeLabels = { food: i18n_js.t('labSim.foodLabel'), drinks: i18n_js.t('simEditor.drinkLabelSingular') };
+            for (const [slotType, prefix] of Object.entries(slotTypeLabels)) {
                 for (let i = 0; i < 3; i++) {
                     const origHrid = original[slotType]?.[i]?.hrid;
                     const editHrid = edited[slotType]?.[i]?.hrid;
                     if (origHrid !== editHrid) {
-                        const origName = origHrid ? itemDetailMap[origHrid]?.name || origHrid.split('/').pop() : 'Empty';
-                        const editName = editHrid ? itemDetailMap[editHrid]?.name || editHrid.split('/').pop() : 'Empty';
-                        changes.push(`${prefix} ${i + 1}: ${origName}\u2192${editName}`);
+                        const origName = origHrid
+                            ? itemDetailMap[origHrid]?.name || origHrid.split('/').pop()
+                            : i18n_js.t('skillingOptimizer.emptySlotCapitalized');
+                        const editName = editHrid
+                            ? itemDetailMap[editHrid]?.name || editHrid.split('/').pop()
+                            : i18n_js.t('skillingOptimizer.emptySlotCapitalized');
+                        changes.push(
+                            i18n_js.t('simEditor.consumableChangeLabel', { prefix, index: i + 1, from: origName, to: editName })
+                        );
                     }
                 }
             }
 
-            const tokenLabels = { speed: 'Speed', efficiency: 'Efficiency', success: 'Success', doubleProgress: 'DblProg' };
+            const tokenLabels = {
+                speed: i18n_js.t('labSim.buffSpeed'),
+                efficiency: i18n_js.t('profitDisplay.efficiencyLabel'),
+                success: i18n_js.t('labSim.buffSuccess'),
+                doubleProgress: i18n_js.t('simEditor.tokenDoubleProgressShort'),
+            };
             for (const [key, label] of Object.entries(tokenLabels)) {
                 const origVal = original.tokenUpgrades?.[key] || 0;
                 const editVal = edited.tokenUpgrades?.[key] || 0;
                 if (origVal !== editVal) {
-                    changes.push(`Token ${label} ${origVal}\u2192${editVal}`);
+                    changes.push(i18n_js.t('simEditor.tokenChangeLabel', { label, from: origVal, to: editVal }));
                 }
             }
 
             const cbLabels = {
-                productionEfficiency: 'ProdEff',
-                enhancingSpeed: 'EnhSpd',
-                gatheringQuantity: 'GathQty',
-                experience: 'Exp',
+                productionEfficiency: i18n_js.t('simEditor.communityProdEffShort'),
+                enhancingSpeed: i18n_js.t('simEditor.communityEnhSpdShort'),
+                gatheringQuantity: i18n_js.t('simEditor.communityGathQtyShort'),
+                experience: i18n_js.t('simEditor.communityExpShort'),
             };
             for (const [key, label] of Object.entries(cbLabels)) {
                 const origVal = original.communityBuffLevels?.[key] || 0;
                 const editVal = edited.communityBuffLevels?.[key] || 0;
                 if (origVal !== editVal) {
-                    changes.push(`CB ${label} ${origVal}\u2192${editVal}`);
+                    changes.push(i18n_js.t('simEditor.communityBuffChangeLabel', { label, from: origVal, to: editVal }));
                 }
             }
 
             const loadoutPrefix = this._selectedLoadoutName || '';
-            if (changes.length === 0) return loadoutPrefix || 'Current Gear';
+            if (changes.length === 0) return loadoutPrefix || i18n_js.t('combatSimUi.currentGearLabel');
             const changesStr = changes.join(', ');
-            return loadoutPrefix ? loadoutPrefix + ': ' + changesStr : changesStr;
+            return loadoutPrefix
+                ? i18n_js.t('simEditor.loadoutChangesSummary', { prefix: loadoutPrefix, changes: changesStr })
+                : changesStr;
         }
 
         /**
@@ -20320,10 +20537,10 @@
      * @returns {string}
      */
     function formatElapsed$1(seconds) {
-        if (seconds < 60) return `${seconds.toFixed(1)}s`;
+        if (seconds < 60) return i18n_js.t('combatSimUi.durationSeconds', { seconds: seconds.toFixed(1) });
         const m = Math.floor(seconds / 60);
         const s = (seconds % 60).toFixed(0);
-        return `${m}m ${s}s`;
+        return i18n_js.t('combatSimUi.durationMinutesSeconds', { minutes: m, seconds: s });
     }
 
     class CombatSimUI {
@@ -20405,7 +20622,7 @@
             flex-shrink: 0;
         `;
             header.innerHTML = `
-            <span style="font-weight:700; font-size:14px; color:${ACCENT$1};">Combat Simulator</span>
+            <span style="font-weight:700; font-size:14px; color:${ACCENT$1};">${i18n_js.t('combatSimUi.panelTitle')}</span>
             <button id="mwi-csim-close" style="
                 background:none; border:none; color:#aaa; font-size:22px;
                 cursor:pointer; padding:0; line-height:1;">×</button>
@@ -20437,10 +20654,10 @@
             border-bottom: 2px solid ${active ? ACCENT$1 : 'transparent'};
         `;
             tabBar.innerHTML = `
-            <button id="mwi-csim-tab-configure" style="${tabStyle(true)}">Configure</button>
-            <button id="mwi-csim-tab-results" style="${tabStyle(false)}">Results</button>
-            <button id="mwi-csim-tab-seek" style="${tabStyle(false)}">Seek</button>
-            <button id="mwi-csim-tab-upgrade" style="${tabStyle(false)}">Upgrade</button>
+            <button id="mwi-csim-tab-configure" style="${tabStyle(true)}">${i18n_js.t('combatSimUi.tabConfigure')}</button>
+            <button id="mwi-csim-tab-results" style="${tabStyle(false)}">${i18n_js.t('combatSimUi.tabResults')}</button>
+            <button id="mwi-csim-tab-seek" style="${tabStyle(false)}">${i18n_js.t('combatSimUi.tabSeek')}</button>
+            <button id="mwi-csim-tab-upgrade" style="${tabStyle(false)}">${i18n_js.t('combatSimUi.tabUpgrade')}</button>
         `;
 
             // Configure tab content
@@ -20466,12 +20683,12 @@
                 'width:60px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444; border-radius:4px; padding:3px 6px; font-size:12px; text-align:center;';
 
             controls.innerHTML = `
-            <label style="color:#888; font-size:12px;">Zone</label>
+            <label style="color:#888; font-size:12px;">${i18n_js.t('combatSimUi.zoneLabel')}</label>
             <select id="mwi-csim-zone" style="${selectStyle}"></select>
-            <label style="color:#888; font-size:12px;">Tier</label>
+            <label style="color:#888; font-size:12px;">${i18n_js.t('combatSimUi.tierLabel')}</label>
             <select id="mwi-csim-tier" style="${selectStyle} flex:0; width:64px; min-width:64px;">
             </select>
-            <label style="color:#888; font-size:12px;">Hours</label>
+            <label style="color:#888; font-size:12px;">${i18n_js.t('combatSimUi.hoursLabel')}</label>
             <input id="mwi-csim-hours" type="number" min="1" max="10000" value="${config.getSettingValue('combatSim_defaultHours', 100)}" style="${inputStyle}">
             <button id="mwi-csim-run" style="
                 margin-left: auto;
@@ -20482,7 +20699,7 @@
                 padding: 5px 14px;
                 font-size: 12px;
                 font-weight: 600;
-                cursor: pointer;">Simulate</button>
+                cursor: pointer;">${i18n_js.t('combatSimUi.simulateButton')}</button>
         `;
 
             // All Zones controls row
@@ -20502,17 +20719,17 @@
             allZonesRow.innerHTML = `
             <label style="${labelStyle}">
                 <input type="checkbox" id="mwi-csim-allzones-group" style="${checkboxStyle}">
-                Sim All Zones
+                ${i18n_js.t('combatSimUi.simAllZonesLabel')}
             </label>
             <label style="${labelStyle}">
                 <input type="checkbox" id="mwi-csim-allzones-solo" style="${checkboxStyle}">
-                Sim All Solo
+                ${i18n_js.t('combatSimUi.simAllSoloLabel')}
             </label>
-            <label id="mwi-csim-allzones-hours-label" style="color:#888; font-size:12px; display:none;">Hours</label>
+            <label id="mwi-csim-allzones-hours-label" style="color:#888; font-size:12px; display:none;">${i18n_js.t('combatSimUi.hoursLabel')}</label>
             <input id="mwi-csim-allzones-hours" type="number" min="1" max="10000" value="${config.getSettingValue('combatSim_allZonesDefaultHours', 10)}" style="display:none; width:60px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444; border-radius:4px; padding:3px 6px; font-size:12px; text-align:center;">
-            <label id="mwi-csim-earlyexit-label" style="${labelStyle} display:none;" title="Stop simming higher tiers for a zone if both XP/hr and profit/hr declined vs the previous tier">
+            <label id="mwi-csim-earlyexit-label" style="${labelStyle} display:none;" title="${i18n_js.t('combatSimUi.skipWorseTiersTooltip')}">
                 <input type="checkbox" id="mwi-csim-earlyexit" style="${checkboxStyle}" checked>
-                Skip Worse Tiers
+                ${i18n_js.t('combatSimUi.skipWorseTiersLabel')}
             </label>
         `;
 
@@ -20532,7 +20749,7 @@
             const editorArea = document.createElement('div');
             editorArea.id = 'mwi-csim-editor';
             editorArea.style.cssText = 'flex:1; overflow-y:auto; padding:10px 14px;';
-            editorArea.innerHTML = `<div style="color:#555; font-size:12px; text-align:center; padding:20px 0;">Loading loadout...</div>`;
+            editorArea.innerHTML = `<div style="color:#555; font-size:12px; text-align:center; padding:20px 0;">${i18n_js.t('combatSimUi.loadingLoadout')}</div>`;
 
             this._editor = new SimEditor({ editorEl: editorArea, labMode: false });
 
@@ -20585,7 +20802,7 @@
                     font-weight:600;
                     cursor:pointer;
                     font-family:inherit;
-                    flex-shrink:0;">Stop</button>
+                    flex-shrink:0;">${i18n_js.t('combatSimUi.stopButton')}</button>
             </div>
         `;
 
@@ -20613,13 +20830,13 @@
             flex-shrink: 0;
         `;
             seekControls.innerHTML = `
-            <label style="color:#888; font-size:12px;">Item</label>
-            <input id="mwi-csim-seek-input" type="text" placeholder="Search item..." style="
+            <label style="color:#888; font-size:12px;">${i18n_js.t('settings.itemLabel')}</label>
+            <input id="mwi-csim-seek-input" type="text" placeholder="${i18n_js.t('combatSimUi.searchItemPlaceholder')}" style="
                 flex:1; min-width:0;
                 background:#1a1a2e; color:#e0e0e0;
                 border:1px solid #444; border-radius:4px;
                 padding:3px 6px; font-size:12px; font-family:inherit;">
-            <label style="color:#888; font-size:12px;">Hours</label>
+            <label style="color:#888; font-size:12px;">${i18n_js.t('combatSimUi.hoursLabel')}</label>
             <input id="mwi-csim-seek-hours" type="number" min="1" max="10000" value="${config.getSettingValue('combatSim_seekDefaultHours', 10)}" style="
                 width:60px; background:#1a1a2e; color:#e0e0e0;
                 border:1px solid #444; border-radius:4px;
@@ -20633,7 +20850,7 @@
                 font-size: 12px;
                 font-weight: 600;
                 cursor: pointer;
-                font-family: inherit;">Seek</button>
+                font-family: inherit;">${i18n_js.t('combatSimUi.tabSeek')}</button>
             <button id="mwi-csim-seek-stop" style="
                 display:none;
                 background:rgba(244, 67, 54, 0.2);
@@ -20644,7 +20861,7 @@
                 font-size:12px;
                 font-weight:600;
                 cursor:pointer;
-                font-family:inherit;">Stop</button>
+                font-family:inherit;">${i18n_js.t('combatSimUi.stopButton')}</button>
         `;
 
             const seekSuggestions = document.createElement('div');
@@ -20695,30 +20912,30 @@
             flex-shrink: 0;
         `;
             upgradeControls.innerHTML = `
-            <label style="color:#888; font-size:12px;">Player</label>
+            <label style="color:#888; font-size:12px;">${i18n_js.t('combatSimUi.playerLabel')}</label>
             <select id="mwi-csim-upgrade-player" style="${selectStyle}"></select>
-            <label style="color:#888; font-size:12px;">Mode</label>
+            <label style="color:#888; font-size:12px;">${i18n_js.t('combatSimUi.modeLabel')}</label>
             <select id="mwi-csim-upgrade-mode" style="${selectStyle}">
-                <option value="equipment">Equipment</option>
-                <option value="ability_level">Ability Levels</option>
-                <option value="ability_swap">Ability Swaps</option>
-                <option value="house">House Rooms</option>
+                <option value="equipment">${i18n_js.t('combatSimUi.equipmentOption')}</option>
+                <option value="ability_level">${i18n_js.t('combatSimUi.abilityLevelsOption')}</option>
+                <option value="ability_swap">${i18n_js.t('combatSimUi.abilitySwapsOption')}</option>
+                <option value="house">${i18n_js.t('combatSimUi.houseRoomsOption')}</option>
             </select>
             <span id="mwi-csim-upgrade-level-group" style="display:none; align-items:center; gap:4px;">
                 <select id="mwi-csim-upgrade-level-type" style="
                     background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
                     border-radius:3px; padding:3px 5px; font-size:12px;">
-                    <option value="increment">+Levels</option>
-                    <option value="target">Target Lv</option>
+                    <option value="increment">${i18n_js.t('combatSimUi.incrementLevelsOption')}</option>
+                    <option value="target">${i18n_js.t('combatSimUi.targetLevelOption')}</option>
                 </select>
                 <input id="mwi-csim-upgrade-target-level" type="number" min="1" max="200" value="5" placeholder="+5" style="
                     width:55px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
                     border-radius:3px; padding:3px 5px; font-size:12px; text-align:center;"
-                    title="Number of levels to add to each ability">
+                    title="${i18n_js.t('combatSimUi.levelsToAddTitle')}">
             </span>
             <label style="display:flex; align-items:center; gap:4px; color:#888; font-size:12px; cursor:pointer;">
                 <input type="checkbox" id="mwi-csim-upgrade-skip-back" style="margin:0; cursor:pointer;">
-                Skip Back
+                ${i18n_js.t('combatSimUi.skipBackLabel')}
             </label>
             <button id="mwi-csim-upgrade-run" style="
                 background: ${ACCENT_BTN_BG$1};
@@ -20729,7 +20946,7 @@
                 font-size: 12px;
                 font-weight: 600;
                 cursor: pointer;
-                font-family: inherit;">Analyze</button>
+                font-family: inherit;">${i18n_js.t('combatSimUi.analyzeButton')}</button>
             <button id="mwi-csim-upgrade-stop" style="
                 display:none;
                 background:rgba(244, 67, 54, 0.2);
@@ -20740,7 +20957,7 @@
                 font-size:12px;
                 font-weight:600;
                 cursor:pointer;
-                font-family:inherit;">Stop</button>
+                font-family:inherit;">${i18n_js.t('combatSimUi.stopButton')}</button>
         `;
 
             const upgradeProgress = document.createElement('div');
@@ -20768,7 +20985,7 @@
             status.id = 'mwi-csim-status';
             status.style.cssText =
                 'padding:6px 14px; color:#555; font-size:11px; border-top:1px solid #1a1a1a; flex-shrink:0; text-align:center;';
-            status.textContent = 'Select a zone and click Simulate.';
+            status.textContent = i18n_js.t('combatSimUi.statusSelectZoneSimulate');
 
             this.panel.appendChild(header);
             this.panel.appendChild(tabBar);
@@ -20828,11 +21045,11 @@
                 if (e.target.value === 'increment') {
                     input.value = '5';
                     input.placeholder = '+5';
-                    input.title = 'Number of levels to add to each ability';
+                    input.title = i18n_js.t('combatSimUi.levelsToAddTitle');
                 } else {
                     input.value = '';
-                    input.placeholder = 'e.g. 80';
-                    input.title = 'Absolute target level for all abilities';
+                    input.placeholder = i18n_js.t('combatSimUi.exampleLevelPlaceholder');
+                    input.title = i18n_js.t('combatSimUi.absoluteTargetLevelTitle');
                 }
             });
             this.panel.querySelector('#mwi-csim-upgrade-target-level').addEventListener('change', (e) => {
@@ -20904,7 +21121,7 @@
             for (const zone of zones) {
                 const option = document.createElement('option');
                 option.value = zone.hrid;
-                option.textContent = zone.isDungeon ? `[D] ${zone.name}` : zone.name;
+                option.textContent = zone.isDungeon ? i18n_js.t('combatSimUi.dungeonZonePrefix', { name: zone.name }) : zone.name;
                 zoneSelect.appendChild(option);
             }
 
@@ -21017,7 +21234,7 @@
             checklist.innerHTML = `
             <label style="display:flex; align-items:center; gap:4px; color:${ACCENT$1}; font-size:11px; font-weight:600; margin-bottom:4px; cursor:pointer;">
                 <input type="checkbox" id="${checkAllId}" checked style="margin:0; cursor:pointer;">
-                Check All
+                ${i18n_js.t('combatSimUi.checkAllLabel')}
             </label>
         `;
 
@@ -21077,27 +21294,27 @@
             container.style.display = 'block';
 
             const skillCols = [
-                { key: 'totalXP', label: 'Total XP/hr' },
-                { key: 'profitDay', label: 'Profit/day' },
-                { key: 'stamina', label: 'Stam' },
-                { key: 'intelligence', label: 'Int' },
-                { key: 'attack', label: 'Atk' },
-                { key: 'melee', label: 'Melee' },
-                { key: 'defense', label: 'Def' },
-                { key: 'ranged', label: 'Ranged' },
-                { key: 'magic', label: 'Magic' },
+                { key: 'totalXP', label: i18n_js.t('combatSimUi.colTotalXpPerHr') },
+                { key: 'profitDay', label: i18n_js.t('combatSimUi.colProfitPerDay') },
+                { key: 'stamina', label: i18n_js.t('combatSimUi.colStamina') },
+                { key: 'intelligence', label: i18n_js.t('combatSimUi.colIntelligence') },
+                { key: 'attack', label: i18n_js.t('combatSimUi.colAttack') },
+                { key: 'melee', label: i18n_js.t('combatSimUi.colMelee') },
+                { key: 'defense', label: i18n_js.t('combatSimUi.colDefense') },
+                { key: 'ranged', label: i18n_js.t('combatSimUi.colRanged') },
+                { key: 'magic', label: i18n_js.t('combatSimUi.colMagic') },
             ];
 
             const cols = [
-                { key: 'zone', label: 'Zone' },
-                { key: 'tier', label: 'T' },
-                { key: 'encounters', label: 'Enc/hr' },
-                { key: 'deaths', label: 'Deaths/hr' },
-                { key: 'oom', label: 'OOM' },
+                { key: 'zone', label: i18n_js.t('combatSimUi.colZone') },
+                { key: 'tier', label: i18n_js.t('combatSimUi.colTier') },
+                { key: 'encounters', label: i18n_js.t('combatSimUi.colEncPerHr') },
+                { key: 'deaths', label: i18n_js.t('combatSimUi.colDeathsPerHr') },
+                { key: 'oom', label: i18n_js.t('combatSimUi.colOom') },
                 ...skillCols,
-                { key: 'revenue', label: 'Rev/hr' },
-                { key: 'expenses', label: 'Cost/hr' },
-                { key: 'profit', label: 'Profit/hr' },
+                { key: 'revenue', label: i18n_js.t('combatSimUi.colRevPerHr') },
+                { key: 'expenses', label: i18n_js.t('combatSimUi.colCostPerHr') },
+                { key: 'profit', label: i18n_js.t('combatSimUi.colProfitPerHr') },
             ];
 
             // Build row data
@@ -21347,7 +21564,7 @@
                 if (match) {
                     this._seekSelectedItem = match;
                 } else {
-                    this._setStatus('No item selected. Type a name and pick from the list.');
+                    this._setStatus(i18n_js.t('combatSimUi.statusNoItemSelected'));
                     return;
                 }
             }
@@ -21356,7 +21573,7 @@
 
             const gameData = buildGameDataPayload();
             if (!gameData) {
-                this._setStatus('No game data available.');
+                this._setStatus(i18n_js.t('combatSimUi.statusNoGameData'));
                 return;
             }
 
@@ -21364,8 +21581,7 @@
             if (!zones.length) {
                 const resultsEl = this.panel?.querySelector('#mwi-csim-seek-results');
                 if (resultsEl)
-                    resultsEl.innerHTML =
-                        '<div style="color:#888; font-size:12px; padding:20px 0; text-align:center;">No zones drop this item.</div>';
+                    resultsEl.innerHTML = `<div style="color:#888; font-size:12px; padding:20px 0; text-align:center;">${i18n_js.t('combatSimUi.noZonesDropItem')}</div>`;
                 return;
             }
 
@@ -21387,7 +21603,7 @@
             }
 
             if (!playerDTOs.length) {
-                this._setStatus('No character data available.');
+                this._setStatus(i18n_js.t('combatSimUi.statusNoCharacterData'));
                 return;
             }
 
@@ -21415,7 +21631,7 @@
             const zoneCount = zones.length;
             this.elapsedTimer = setInterval(() => {
                 const elapsed = (Date.now() - simStartTime) / 1000;
-                this._setStatus(`Seeking ${itemName} in ${zoneCount} zone/tiers... ${formatElapsed$1(elapsed)}`);
+                this._setStatus(i18n_js.t('combatSimUi.statusSeeking', { itemName, zoneCount, elapsed: formatElapsed$1(elapsed) }));
             }, 100);
 
             try {
@@ -21466,15 +21682,19 @@
                 this._seekSortCol = 'itemsPerHour';
                 this._seekSortAsc = false;
                 this._displaySeekResults(seekRows, itemName);
-                this._setStatus(`Seek complete in ${totalElapsed}: ${seekRows.length} sources found for ${itemName}`);
+                this._setStatus(
+                    i18n_js.t('combatSimUi.statusSeekComplete', { elapsed: totalElapsed, count: seekRows.length, itemName })
+                );
             } catch (error) {
                 clearInterval(this.elapsedTimer);
                 this.elapsedTimer = null;
                 if (error.message === 'Cancelled') {
-                    this._setStatus('Seek cancelled.');
+                    this._setStatus(i18n_js.t('combatSimUi.statusSeekCancelled'));
                 } else {
                     console.error('[CombatSimUI] Seek simulation failed:', error);
-                    this._setStatus(`Seek error: ${error.message || 'Unknown error'}`);
+                    this._setStatus(
+                        i18n_js.t('combatSimUi.statusSeekError', { message: error.message || i18n_js.t('settings.unknownErrorFallback') })
+                    );
                 }
             } finally {
                 this.isRunning = false;
@@ -21497,17 +21717,17 @@
             if (!container) return;
 
             if (!rows.length) {
-                container.innerHTML = `<div style="color:#888; font-size:12px; padding:20px 0; text-align:center;">No zones drop ${itemName}.</div>`;
+                container.innerHTML = `<div style="color:#888; font-size:12px; padding:20px 0; text-align:center;">${i18n_js.t('combatSimUi.noZonesDropItemNamed', { itemName })}</div>`;
                 return;
             }
 
             const cols = [
-                { key: 'zone', label: 'Zone' },
-                { key: 'tier', label: 'T' },
-                { key: 'itemsPerHour', label: 'Items/hr' },
-                { key: 'profitPerHour', label: 'Profit/hr' },
-                { key: 'costPerHour', label: 'Cost/hr' },
-                { key: 'costPerDrop', label: 'Cost/Drop' },
+                { key: 'zone', label: i18n_js.t('combatSimUi.colZone') },
+                { key: 'tier', label: i18n_js.t('combatSimUi.colTier') },
+                { key: 'itemsPerHour', label: i18n_js.t('combatSimUi.colItemsPerHr') },
+                { key: 'profitPerHour', label: i18n_js.t('combatSimUi.colProfitPerHr') },
+                { key: 'costPerHour', label: i18n_js.t('combatSimUi.colCostPerHr') },
+                { key: 'costPerDrop', label: i18n_js.t('combatSimUi.colCostPerDrop') },
             ];
 
             // Sort
@@ -21578,7 +21798,7 @@
                 .join('');
 
             container.innerHTML = `
-            <div style="font-size:11px; color:#888; margin-bottom:8px;">Best sources for <strong style="color:${ACCENT$1};">${itemName}</strong></div>
+            <div style="font-size:11px; color:#888; margin-bottom:8px;">${i18n_js.t('combatSimUi.bestSourcesFor', { itemName: `<strong style="color:${ACCENT$1};">${itemName}</strong>` })}</div>
             <div style="overflow-x:auto;">
                 <table style="width:100%; border-collapse:collapse; min-width:400px;">
                     <thead><tr>${headerCells}</tr></thead>
@@ -21644,22 +21864,22 @@
             if (tab === 'configure') {
                 configureContent.style.display = 'flex';
                 tabConfigure.style.cssText = activeStyle;
-                this._setStatus('Select a zone and click Simulate.');
+                this._setStatus(i18n_js.t('combatSimUi.statusSelectZoneSimulate'));
             } else if (tab === 'seek') {
                 if (seekContent) seekContent.style.display = 'flex';
                 if (tabSeek) tabSeek.style.cssText = activeStyle;
                 this._populateSeekItems();
-                this._setStatus('Search for a combat drop item, then click Seek.');
+                this._setStatus(i18n_js.t('combatSimUi.statusSearchSeek'));
             } else if (tab === 'upgrade') {
                 if (upgradeContent) upgradeContent.style.display = 'flex';
                 if (tabUpgrade) tabUpgrade.style.cssText = activeStyle;
                 this._populateUpgradePlayerSelector();
-                this._setStatus('Select a player and click Analyze.');
+                this._setStatus(i18n_js.t('combatSimUi.statusSelectPlayerAnalyze'));
             } else {
                 resultsContent.style.display = 'flex';
                 tabResults.style.cssText = activeStyle;
                 if (!this.isRunning && !this._lastSimResult && !this._allZonesResults) {
-                    this._setStatus('No results yet. Run a simulation first.');
+                    this._setStatus(i18n_js.t('combatSimUi.statusNoResultsYet'));
                 }
             }
         }
@@ -21673,7 +21893,7 @@
                 // Stop the running simulation
                 cancelSimulation();
                 cancelAllZonesSimulation();
-                this._setStatus('Simulation cancelled.');
+                this._setStatus(i18n_js.t('combatSimUi.statusSimulationCancelled'));
                 this._switchTab('configure');
                 return;
             }
@@ -21695,13 +21915,13 @@
             );
 
             if (!zoneHrid) {
-                this._setStatus('No zone selected.');
+                this._setStatus(i18n_js.t('combatSimUi.statusNoZoneSelected'));
                 return;
             }
 
             const gameData = buildGameDataPayload();
             if (!gameData) {
-                this._setStatus('No game data available.');
+                this._setStatus(i18n_js.t('combatSimUi.statusNoGameData'));
                 return;
             }
 
@@ -21726,7 +21946,7 @@
             }
 
             if (!playerDTOs.length) {
-                this._setStatus('No character data available.');
+                this._setStatus(i18n_js.t('combatSimUi.statusNoCharacterData'));
                 return;
             }
 
@@ -21734,9 +21954,7 @@
             const zones = getCombatZones();
             const selectedZone = zones.find((z) => z.hrid === zoneHrid);
             if (selectedZone && !selectedZone.isDungeon && playerDTOs.length > 3) {
-                this._showWarning(
-                    `Non-dungeon zones support max 3 players (you have ${playerDTOs.length}). Remove players to continue.`
-                );
+                this._showWarning(i18n_js.t('combatSimUi.warningMaxPlayers', { count: playerDTOs.length }));
                 return;
             }
 
@@ -21748,8 +21966,8 @@
             // Show party info
             const partyInfo =
                 playerDTOs.length > 1
-                    ? `Party (${playerDTOs.length} loaded${missingMembers.length ? ', ' + missingMembers.length + ' missing' : ''})`
-                    : 'Solo';
+                    ? i18n_js.t('combatSimUi.partyInfoLabel', { loaded: playerDTOs.length, missing: missingMembers.length })
+                    : i18n_js.t('combatSimUi.soloLabel');
 
             // Disable Simulate button during run
             this.isRunning = true;
@@ -21774,7 +21992,7 @@
             const simStartTime = Date.now();
             this.elapsedTimer = setInterval(() => {
                 const elapsed = (Date.now() - simStartTime) / 1000;
-                this._setStatus(`Simulating (${partyInfo})... ${formatElapsed$1(elapsed)}`);
+                this._setStatus(i18n_js.t('combatSimUi.statusSimulating', { partyInfo, elapsed: formatElapsed$1(elapsed) }));
             }, 100);
 
             try {
@@ -21795,7 +22013,7 @@
                 this._lastGameData = gameData;
 
                 // Generate label before displaying (display may re-render)
-                const historyLabel = this._editor?.generateSimLabel() || 'Current Gear';
+                const historyLabel = this._editor?.generateSimLabel() || i18n_js.t('combatSimUi.currentGearLabel');
 
                 // Add history entry (metrics filled after _displayResults computes them)
                 const historyEntry = {
@@ -21836,27 +22054,37 @@
                 this._displayResults(simResult, hours, gameData);
                 this._switchTab('results');
                 const modeLabels = {
-                    conservative: 'Buy: Ask / Sell: Bid',
-                    hybrid: 'Buy: Ask / Sell: Ask',
-                    optimistic: 'Buy: Bid / Sell: Ask',
-                    patientBuy: 'Buy: Bid / Sell: Bid',
+                    conservative: i18n_js.t('combatSimUi.pricingModeConservative'),
+                    hybrid: i18n_js.t('combatSimUi.pricingModeHybrid'),
+                    optimistic: i18n_js.t('combatSimUi.pricingModeOptimistic'),
+                    patientBuy: i18n_js.t('combatSimUi.pricingModePatientBuy'),
                 };
                 const mode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
                 const modeLabel = modeLabels[mode] || mode;
                 const missingNote = missingMembers.length
-                    ? ` | Missing: ${missingMembers.join(', ')} (open their profiles)`
+                    ? i18n_js.t('combatSimUi.missingMembersNote', { names: missingMembers.join(', ') })
                     : '';
                 this._setStatus(
-                    `Simulation complete in ${totalElapsed}: ${formatters_js.formatWithSeparator(hours)} hours · ${partyInfo} · Pricing: ${modeLabel}${missingNote}`
+                    i18n_js.t('combatSimUi.statusSimulationComplete', {
+                        elapsed: totalElapsed,
+                        hours: formatters_js.formatWithSeparator(hours),
+                        partyInfo,
+                        modeLabel,
+                        missingNote,
+                    })
                 );
             } catch (error) {
                 clearInterval(this.elapsedTimer);
                 this.elapsedTimer = null;
                 if (error.message === 'Cancelled') {
-                    this._setStatus('Simulation cancelled.');
+                    this._setStatus(i18n_js.t('combatSimUi.statusSimulationCancelled'));
                 } else {
                     console.error('[CombatSimUI] Simulation failed:', error);
-                    this._setStatus(`Simulation error: ${error.message || 'Unknown error'}`);
+                    this._setStatus(
+                        i18n_js.t('combatSimUi.statusSimulationError', {
+                            message: error.message || i18n_js.t('settings.unknownErrorFallback'),
+                        })
+                    );
                 }
             } finally {
                 this.isRunning = false;
@@ -21872,7 +22100,7 @@
         async _onSimulateAllZones() {
             const selectedZones = this._getSelectedAllZones();
             if (!selectedZones.length) {
-                this._setStatus('No zones selected.');
+                this._setStatus(i18n_js.t('combatSimUi.statusNoZonesSelected'));
                 return;
             }
 
@@ -21887,7 +22115,7 @@
 
             const gameData = buildGameDataPayload();
             if (!gameData) {
-                this._setStatus('No game data available.');
+                this._setStatus(i18n_js.t('combatSimUi.statusNoGameData'));
                 return;
             }
 
@@ -21904,15 +22132,13 @@
             }
 
             if (!playerDTOs.length) {
-                this._setStatus('No character data available.');
+                this._setStatus(i18n_js.t('combatSimUi.statusNoCharacterData'));
                 return;
             }
 
             // All-zones is always non-dungeon — enforce 3-player max
             if (playerDTOs.length > 3) {
-                this._showWarning(
-                    `Non-dungeon zones support max 3 players (you have ${playerDTOs.length}). Remove players to continue.`
-                );
+                this._showWarning(i18n_js.t('combatSimUi.warningMaxPlayers', { count: playerDTOs.length }));
                 return;
             }
 
@@ -21941,7 +22167,9 @@
             const zoneCount = selectedZones.length;
             this.elapsedTimer = setInterval(() => {
                 const elapsed = (Date.now() - simStartTime) / 1000;
-                this._setStatus(`Simulating ${zoneCount} zones... ${formatElapsed$1(elapsed)}`);
+                this._setStatus(
+                    i18n_js.t('combatSimUi.statusSimulatingZones', { count: zoneCount, elapsed: formatElapsed$1(elapsed) })
+                );
             }, 100);
 
             try {
@@ -21985,16 +22213,24 @@
                 this._displayAllZonesResults(zoneResults, hours, gameData);
                 this._switchTab('results');
                 this._setStatus(
-                    `All zones complete in ${totalElapsed}: ${zoneCount} zones · ${formatters_js.formatWithSeparator(hours)} hours each`
+                    i18n_js.t('combatSimUi.statusAllZonesComplete', {
+                        elapsed: totalElapsed,
+                        count: zoneCount,
+                        hours: formatters_js.formatWithSeparator(hours),
+                    })
                 );
             } catch (error) {
                 clearInterval(this.elapsedTimer);
                 this.elapsedTimer = null;
                 if (error.message === 'Cancelled') {
-                    this._setStatus('Simulation cancelled.');
+                    this._setStatus(i18n_js.t('combatSimUi.statusSimulationCancelled'));
                 } else {
                     console.error('[CombatSimUI] All zones simulation failed:', error);
-                    this._setStatus(`Simulation error: ${error.message || 'Unknown error'}`);
+                    this._setStatus(
+                        i18n_js.t('combatSimUi.statusSimulationError', {
+                            message: error.message || i18n_js.t('settings.unknownErrorFallback'),
+                        })
+                    );
                 }
             } finally {
                 this.isRunning = false;
@@ -22076,13 +22312,13 @@
             const deathsPerHr = playerDeaths / hours;
 
             html += `<div style="${sectionStyle}">`;
-            html += `<div style="${headingStyle}">Overview</div>`;
+            html += `<div style="${headingStyle}">${i18n_js.t('combatSimUi.overviewHeading')}</div>`;
             html += `<div style="${rowStyle}">`;
-            html += `<span style="${labelStyle}">Encounters/hr</span>`;
+            html += `<span style="${labelStyle}">${i18n_js.t('combatSimUi.colEncPerHr')}</span>`;
             html += `<span style="${valueStyle}">${formatters_js.formatWithSeparator(Math.round(encountersPerHr))}${this._formatDelta(encountersPerHr, prevEncPerHr)}</span>`;
             html += '</div>';
             html += `<div style="${rowStyle}">`;
-            html += `<span style="${labelStyle}">Deaths/hr</span>`;
+            html += `<span style="${labelStyle}">${i18n_js.t('combatSimUi.colDeathsPerHr')}</span>`;
             html += `<span style="${valueStyle}">${this._formatDeaths(deathsPerHr)}${this._formatDelta(deathsPerHr, prevDeathsPerHr, false)}</span>`;
             html += '</div>';
 
@@ -22090,13 +22326,13 @@
             const ranOutOfMana = simResult.playerRanOutOfMana?.[activeTab] ?? false;
             const oomColor = ranOutOfMana ? '#ff6b6b' : '#4ade80';
             html += `<div style="${rowStyle}">`;
-            html += `<span style="${labelStyle}">Mana Run Out</span>`;
-            html += `<span style="color:${oomColor}; font-weight:600;">${ranOutOfMana ? 'Yes' : 'No'}</span>`;
+            html += `<span style="${labelStyle}">${i18n_js.t('combatSimUi.manaRunOutLabel')}</span>`;
+            html += `<span style="color:${oomColor}; font-weight:600;">${ranOutOfMana ? i18n_js.t('combatSimUi.yesLabel') : i18n_js.t('combatSimUi.noLabel')}</span>`;
             html += '</div>';
             if (ranOutOfMana && simResult.playerRanOutOfManaTime?.[activeTab] && simResult.simulatedTime) {
                 const oomPercent = computeOomPercent(simResult, activeTab);
                 html += `<div style="${rowStyle}">`;
-                html += `<span style="${labelStyle}">Run Out Ratio</span>`;
+                html += `<span style="${labelStyle}">${i18n_js.t('combatSimUi.runOutRatioLabel')}</span>`;
                 html += `<span style="color:#ff6b6b; font-weight:600;">${oomPercent.toFixed(2)}%</span>`;
                 html += '</div>';
             }
@@ -22105,7 +22341,7 @@
             const debuff = simResult.debuffOnLevelGap?.[activeTab] ?? 0;
             if (debuff !== 0) {
                 html += `<div style="${rowStyle}">`;
-                html += `<span style="${labelStyle}">Debuff on Level Gap</span>`;
+                html += `<span style="${labelStyle}">${i18n_js.t('combatSimUi.debuffOnLevelGapLabel')}</span>`;
                 html += `<span style="color:#ff6b6b; font-weight:600;">${Math.round(Math.abs(debuff) * 100)}%</span>`;
                 html += '</div>';
             }
@@ -22130,7 +22366,7 @@
                     prevPartyDps = prevDamage / compSimSeconds;
                 }
 
-                const dpsLabel = numberOfPlayers > 1 ? 'Party DPS' : 'DPS';
+                const dpsLabel = numberOfPlayers > 1 ? i18n_js.t('combatSimUi.partyDpsLabel') : i18n_js.t('combatSimUi.colDps');
                 html += `<div style="${rowStyle}">`;
                 html += `<span style="${labelStyle}">${dpsLabel}</span>`;
                 html += `<span style="${valueStyle}">${formatters_js.formatWithSeparator(partyDps, 3)}${this._formatDelta(partyDps, prevPartyDps, true, false, 3)}</span>`;
@@ -22157,15 +22393,15 @@
                 const failedPerHr = simResult.dungeonsFailed / hours;
 
                 html += `<div style="${rowStyle}">`;
-                html += `<span style="${labelStyle}">Dungeons completed/hr</span>`;
+                html += `<span style="${labelStyle}">${i18n_js.t('combatSimUi.dungeonsCompletedPerHrLabel')}</span>`;
                 html += `<span style="${valueStyle}">${this._formatRate(completedPerHr)}</span>`;
                 html += '</div>';
                 html += `<div style="${rowStyle}">`;
-                html += `<span style="${labelStyle}">Dungeons failed/hr</span>`;
+                html += `<span style="${labelStyle}">${i18n_js.t('combatSimUi.dungeonsFailedPerHrLabel')}</span>`;
                 html += `<span style="${valueStyle}">${this._formatRate(failedPerHr)}</span>`;
                 html += '</div>';
                 html += `<div style="${rowStyle}">`;
-                html += `<span style="${labelStyle}">Total completed / failed</span>`;
+                html += `<span style="${labelStyle}">${i18n_js.t('combatSimUi.totalCompletedFailedLabel')}</span>`;
                 html += `<span style="${valueStyle}">${formatters_js.formatWithSeparator(simResult.dungeonsCompleted)} / ${formatters_js.formatWithSeparator(simResult.dungeonsFailed)}</span>`;
                 html += '</div>';
                 if (simResult.dungeonsCompleted > 0) {
@@ -22175,19 +22411,19 @@
                     const avgTimeSec = avgTimeNs / 1e9;
                     let avgTimeStr;
                     if (config.getSettingValue('combatSim_decimalMinutes', false)) {
-                        avgTimeStr = `${(avgTimeSec / 60).toFixed(2)} min`;
+                        avgTimeStr = i18n_js.t('combatSimUi.durationDecimalMinutes', { value: (avgTimeSec / 60).toFixed(2) });
                     } else {
                         const avgMin = Math.floor(avgTimeSec / 60);
                         const avgSec = Math.round(avgTimeSec % 60);
-                        avgTimeStr = `${avgMin}m ${avgSec}s`;
+                        avgTimeStr = i18n_js.t('combatSimUi.durationMinutesSeconds', { minutes: avgMin, seconds: avgSec });
                     }
                     html += `<div style="${rowStyle}">`;
-                    html += `<span style="${labelStyle}">Avg completion time</span>`;
+                    html += `<span style="${labelStyle}">${i18n_js.t('combatSimUi.avgCompletionTimeLabel')}</span>`;
                     html += `<span style="${valueStyle}">${avgTimeStr}</span>`;
                     html += '</div>';
                 }
                 html += `<div style="${rowStyle}">`;
-                html += `<span style="${labelStyle}">Max wave reached</span>`;
+                html += `<span style="${labelStyle}">${i18n_js.t('combatSimUi.maxWaveReachedLabel')}</span>`;
                 html += `<span style="${valueStyle}">${simResult.maxWaveReached}</span>`;
                 html += '</div>';
             }
@@ -22212,7 +22448,7 @@
             const xpEntries = Object.entries(xpTotals).filter(([, total]) => total > 0);
             if (xpEntries.length > 0) {
                 html += `<div style="${sectionStyle}">`;
-                html += `<div style="${headingStyle}">XP/hr</div>`;
+                html += `<div style="${headingStyle}">${i18n_js.t('combatSimUi.xpPerHrHeading')}</div>`;
                 for (const [skill, total] of xpEntries) {
                     const perHr = Math.round(total / hours);
                     const prevVal = hasPrev ? prevXpPerHr[skill] || null : null;
@@ -22226,7 +22462,7 @@
                 const totalXpPerHr = xpEntries.reduce((sum, [, total]) => sum + Math.round(total / hours), 0);
                 const prevTotalXpPerHr = hasPrev ? Object.values(prevXpPerHr).reduce((sum, v) => sum + v, 0) : null;
                 html += `<div style="display:flex; justify-content:space-between; padding:4px 0 0; font-size:12px; border-top:1px solid #333; margin-top:4px;">`;
-                html += `<span style="color:#aaa; font-weight:700;">Total</span>`;
+                html += `<span style="color:#aaa; font-weight:700;">${i18n_js.t('combatSimUi.totalLabel')}</span>`;
                 html += `<span style="${valueStyle}">${formatters_js.formatWithSeparator(totalXpPerHr)}${this._formatDelta(totalXpPerHr, prevTotalXpPerHr)}</span>`;
                 html += '</div>';
                 html += '</div>';
@@ -22279,16 +22515,16 @@
                     const colGold = 'flex:0; white-space:nowrap; min-width:76px; text-align:right; white-space:normal;';
 
                     html += `<div style="${sectionStyle}">`;
-                    html += `<div style="${headingStyle}">Drops</div>`;
+                    html += `<div style="${headingStyle}">${i18n_js.t('combatSimUi.dropsHeading')}</div>`;
                     // Column headers
                     html += `<div style="display:flex; align-items:center; padding:0 0 4px; font-size:10px; gap:6px; color:#666;">`;
-                    html += `<span style="flex:1;">Item</span>`;
-                    html += `<span style="${colNum}">/hr</span>`;
-                    html += `<span style="${colNum}">/day</span>`;
-                    html += `<span style="${colGold}">Gold/hr</span>`;
-                    html += `<span style="${colGold}">Gold/day</span>`;
-                    html += `<span style="${colNum}">Total</span>`;
-                    html += `<span style="${colGold}">Total Gold</span>`;
+                    html += `<span style="flex:1;">${i18n_js.t('settings.itemLabel')}</span>`;
+                    html += `<span style="${colNum}">${i18n_js.t('combatSimUi.perHrHeader')}</span>`;
+                    html += `<span style="${colNum}">${i18n_js.t('combatSimUi.perDayHeader')}</span>`;
+                    html += `<span style="${colGold}">${i18n_js.t('combatSimUi.goldPerHrHeader')}</span>`;
+                    html += `<span style="${colGold}">${i18n_js.t('combatSimUi.goldPerDayHeader')}</span>`;
+                    html += `<span style="${colNum}">${i18n_js.t('combatSimUi.totalLabel')}</span>`;
+                    html += `<span style="${colGold}">${i18n_js.t('combatSimUi.totalGoldHeader')}</span>`;
                     html += '</div>';
 
                     for (const drop of dropData) {
@@ -22328,7 +22564,7 @@
                             ? this._formatDelta(dropGoldPerHr, prevRevPerHr, true, true)
                             : '';
                     html += `<div style="display:flex; align-items:center; padding:4px 0 0; font-size:12px; border-top:1px solid #333; margin-top:4px; gap:6px;">`;
-                    html += `<span style="color:#aaa; font-weight:700; flex:1;">Total Revenue</span>`;
+                    html += `<span style="color:#aaa; font-weight:700; flex:1;">${i18n_js.t('combatSimUi.totalRevenueLabel')}</span>`;
                     const revDayDelta =
                         prevRevPerHr !== null && prevRevPerHr !== undefined
                             ? this._formatDelta(dropGoldPerHr * 24, prevRevPerHr * 24, true, true)
@@ -22373,16 +22609,16 @@
                 const costColor = '#ff6b6b';
 
                 html += `<div style="${sectionStyle}">`;
-                html += `<div style="${headingStyle}">Consumable Costs</div>`;
+                html += `<div style="${headingStyle}">${i18n_js.t('combatSimUi.consumableCostsHeading')}</div>`;
                 // Column headers
                 html += `<div style="display:flex; align-items:center; padding:0 0 4px; font-size:10px; gap:6px; color:#666;">`;
-                html += `<span style="flex:1;">Item</span>`;
-                html += `<span style="${colNum}">/hr</span>`;
-                html += `<span style="${colNum}">/day</span>`;
-                html += `<span style="${colGold}">Cost/hr</span>`;
-                html += `<span style="${colGold}">Cost/day</span>`;
-                html += `<span style="${colNum}">Total</span>`;
-                html += `<span style="${colGold}">Total Cost</span>`;
+                html += `<span style="flex:1;">${i18n_js.t('settings.itemLabel')}</span>`;
+                html += `<span style="${colNum}">${i18n_js.t('combatSimUi.perHrHeader')}</span>`;
+                html += `<span style="${colNum}">${i18n_js.t('combatSimUi.perDayHeader')}</span>`;
+                html += `<span style="${colGold}">${i18n_js.t('combatSimUi.colCostPerHr')}</span>`;
+                html += `<span style="${colGold}">${i18n_js.t('combatSimUi.costPerDayHeader')}</span>`;
+                html += `<span style="${colNum}">${i18n_js.t('combatSimUi.totalLabel')}</span>`;
+                html += `<span style="${colGold}">${i18n_js.t('combatSimUi.totalCostHeader')}</span>`;
                 html += '</div>';
 
                 for (const cons of consumableEntries) {
@@ -22424,7 +22660,7 @@
                         ? this._formatDelta(consumableGoldPerHr * 24, prevConsumableCostPerHr * 24, false, true)
                         : '';
                 html += `<div style="display:flex; align-items:center; padding:4px 0 0; font-size:12px; border-top:1px solid #333; margin-top:4px; gap:6px;">`;
-                html += `<span style="color:#aaa; font-weight:700; flex:1;">Total Expenses</span>`;
+                html += `<span style="color:#aaa; font-weight:700; flex:1;">${i18n_js.t('combatSimUi.totalExpensesLabel')}</span>`;
                 html += `<span style="${colNum}"></span>`;
                 html += `<span style="${colNum}"></span>`;
                 html += `<span style="color:${costColor}; font-weight:700; ${colGold}">${formatters_js.formatKMB(Math.round(consumableGoldPerHr))}<br>${expDelta}</span>`;
@@ -22443,15 +22679,15 @@
                 const costColor = '#ff6b6b';
 
                 html += `<div style="${sectionStyle}">`;
-                html += `<div style="${headingStyle}">Key Costs</div>`;
+                html += `<div style="${headingStyle}">${i18n_js.t('combatSimUi.keyCostsHeading')}</div>`;
                 html += `<div style="display:flex; align-items:center; padding:0 0 4px; font-size:10px; gap:6px; color:#666;">`;
-                html += `<span style="flex:1;">Item</span>`;
-                html += `<span style="${colNum}">/hr</span>`;
-                html += `<span style="${colNum}">/day</span>`;
-                html += `<span style="${colGold}">Cost/hr</span>`;
-                html += `<span style="${colGold}">Cost/day</span>`;
-                html += `<span style="${colNum}">Total</span>`;
-                html += `<span style="${colGold}">Total Cost</span>`;
+                html += `<span style="flex:1;">${i18n_js.t('settings.itemLabel')}</span>`;
+                html += `<span style="${colNum}">${i18n_js.t('combatSimUi.perHrHeader')}</span>`;
+                html += `<span style="${colNum}">${i18n_js.t('combatSimUi.perDayHeader')}</span>`;
+                html += `<span style="${colGold}">${i18n_js.t('combatSimUi.colCostPerHr')}</span>`;
+                html += `<span style="${colGold}">${i18n_js.t('combatSimUi.costPerDayHeader')}</span>`;
+                html += `<span style="${colNum}">${i18n_js.t('combatSimUi.totalLabel')}</span>`;
+                html += `<span style="${colGold}">${i18n_js.t('combatSimUi.totalCostHeader')}</span>`;
                 html += '</div>';
 
                 for (const key of dungeonKeyCosts) {
@@ -22479,7 +22715,7 @@
 
                 // Totals row
                 html += `<div style="display:flex; align-items:center; padding:4px 0 0; font-size:12px; border-top:1px solid #333; margin-top:4px; gap:6px;">`;
-                html += `<span style="color:#aaa; font-weight:700; flex:1;">Total Key Costs</span>`;
+                html += `<span style="color:#aaa; font-weight:700; flex:1;">${i18n_js.t('combatSimUi.totalKeyCostsLabel')}</span>`;
                 html += `<span style="${colNum}"></span>`;
                 html += `<span style="${colNum}"></span>`;
                 html += `<span style="color:${costColor}; font-weight:700; ${colGold}">${formatters_js.formatKMB(Math.round(keyCostPerHr))}</span>`;
@@ -22512,7 +22748,7 @@
             const profitDaySign = netProfitPerDay >= 0 ? '' : '-';
 
             html += `<div style="${sectionStyle}">`;
-            html += `<div style="${headingStyle}">Net Profit</div>`;
+            html += `<div style="${headingStyle}">${i18n_js.t('combatSimUi.netProfitHeading')}</div>`;
             const netColGold = 'flex:0; white-space:nowrap; min-width:76px; text-align:right; white-space:normal;';
             const netColNum = 'flex:0; white-space:nowrap; min-width:56px; text-align:right;';
             // Column headers
@@ -22520,13 +22756,13 @@
             html += `<span style="flex:1;"></span>`;
             html += `<span style="${netColNum}"></span>`;
             html += `<span style="${netColNum}"></span>`;
-            html += `<span style="${netColGold}">/hr</span>`;
-            html += `<span style="${netColGold}">/day</span>`;
+            html += `<span style="${netColGold}">${i18n_js.t('combatSimUi.perHrHeader')}</span>`;
+            html += `<span style="${netColGold}">${i18n_js.t('combatSimUi.perDayHeader')}</span>`;
             html += `<span style="${netColNum}"></span>`;
-            html += `<span style="${netColGold}">Total</span>`;
+            html += `<span style="${netColGold}">${i18n_js.t('combatSimUi.totalLabel')}</span>`;
             html += '</div>';
             html += `<div style="display:flex; align-items:center; padding:2px 0; font-size:13px; gap:6px;">`;
-            html += `<span style="color:#aaa; font-weight:700; flex:1;">Profit</span>`;
+            html += `<span style="color:#aaa; font-weight:700; flex:1;">${i18n_js.t('combatSimUi.profitLabel')}</span>`;
             html += `<span style="${netColNum}"></span>`;
             html += `<span style="${netColNum}"></span>`;
             const profitDayDelta =
@@ -22544,7 +22780,7 @@
             const wipeEvents = simResult.wipeEvents;
             if (wipeEvents && wipeEvents.length > 0) {
                 html += `<div style="${sectionStyle}">`;
-                html += `<div style="${headingStyle}">Wipe Events (${wipeEvents.length})</div>`;
+                html += `<div style="${headingStyle}">${i18n_js.t('combatSimUi.wipeEventsHeading', { count: wipeEvents.length })}</div>`;
                 for (let wi = 0; wi < wipeEvents.length; wi++) {
                     const event = wipeEvents[wi];
                     const wave = event.wave ?? '?';
@@ -22555,7 +22791,7 @@
                     display:flex; justify-content:space-between; align-items:center;
                     padding:4px 8px; background:#1a1a1a; cursor:pointer; font-size:12px;
                 ">`;
-                    html += `<span style="color:#aaa;">Wipe #${wi + 1} — Wave ${wave} @ ${timeSec}s</span>`;
+                    html += `<span style="color:#aaa;">${i18n_js.t('combatSimUi.wipeEventLabel', { number: wi + 1, wave, time: timeSec })}</span>`;
                     html += `<span style="color:#666; font-size:10px;">▶</span>`;
                     html += `</div>`;
                     html += `<div id="${eventId}-body" style="display:none; padding:6px 8px; font-size:11px; font-family:monospace; background:#111; max-height:300px; overflow-y:auto;">`;
@@ -22581,24 +22817,29 @@
                         for (const log of group.logs) {
                             const abilityLabel =
                                 log.ability === 'autoAttack'
-                                    ? 'Auto Attack'
+                                    ? i18n_js.t('combatSimUi.abilityAutoAttack')
                                     : log.ability === 'damageOverTime'
-                                      ? 'DoT'
+                                      ? i18n_js.t('combatSimUi.abilityDot')
                                       : log.ability === 'physicalThorns'
-                                        ? 'Physical Thorns'
+                                        ? i18n_js.t('combatSimUi.abilityPhysicalThorns')
                                         : log.ability === 'elementalThorns'
-                                          ? 'Elemental Thorns'
+                                          ? i18n_js.t('combatSimUi.abilityElementalThorns')
                                           : log.ability === 'retaliation'
-                                            ? 'Retaliation'
+                                            ? i18n_js.t('combatSimUi.abilityRetaliation')
                                             : log.ability;
                             const critMark = log.isCrit ? '!!!' : '';
-                            html += `<div style="padding:1px 0; color:#ccc;">`;
-                            html += `<span style="color:#9ca3af;">${log.source}</span>`;
-                            html += ` cast <span style="color:#c4b5fd;">${abilityLabel}</span>`;
-                            html += ` → <span style="color:#93c5fd;">${log.target}</span>`;
-                            html += ` <span style="color:#ff6b6b;">${log.damage}${critMark}</span>`;
-                            html += ` <span style="color:#666;">HP ${log.beforeHp}→${log.afterHp}</span>`;
-                            html += `</div>`;
+                            const sourceHtml = `<span style="color:#9ca3af;">${log.source}</span>`;
+                            const abilityHtml = `<span style="color:#c4b5fd;">${abilityLabel}</span>`;
+                            const targetHtml = `<span style="color:#93c5fd;">${log.target}</span>`;
+                            const damageHtml = `<span style="color:#ff6b6b;">${log.damage}${critMark}</span>`;
+                            const hpChangeHtml = `<span style="color:#666;">${log.beforeHp}→${log.afterHp}</span>`;
+                            html += `<div style="padding:1px 0; color:#ccc;">${i18n_js.t('combatSimUi.combatLogLine', {
+                            source: sourceHtml,
+                            ability: abilityHtml,
+                            target: targetHtml,
+                            damage: damageHtml,
+                            hpChange: hpChangeHtml,
+                        })}</div>`;
                         }
                         // Players HP summary at end of each time group
                         if (group.logs.length > 0 && group.logs[group.logs.length - 1].playersHp) {
@@ -22607,7 +22848,7 @@
                                 const color = p.current <= 0 ? '#ff6b6b' : damagedPlayers.has(p.hrid) ? '#93c5fd' : '#666';
                                 return `<span style="color:${color};">${p.hrid}: ${p.current}/${p.max}</span>`;
                             });
-                            html += `<div style="padding:2px 0; font-size:10px;">Players HP: ${hpParts.join(' | ')}</div>`;
+                            html += `<div style="padding:2px 0; font-size:10px;">${i18n_js.t('combatSimUi.playersHpLabel', { list: hpParts.join(' | ') })}</div>`;
                         }
                     }
 
@@ -22909,15 +23150,14 @@
                 ACCENT$1 +
                 '; font-weight:700; font-size:12px; margin-bottom:6px; cursor:pointer; user-select:none;" data-toggle="history-section">';
             html +=
-                '<span data-arrow="history-section" style="display:inline-block; width:14px; font-size:10px;">&#9660;</span> Comparison (' +
-                history.length +
-                ' runs)';
+                '<span data-arrow="history-section" style="display:inline-block; width:14px; font-size:10px;">&#9660;</span> ' +
+                i18n_js.t('combatSimUi.comparisonHeading', { count: history.length });
             html += '</div>';
             html += '<div id="mwi-csim-history-section" style="display:block;">';
 
             // Baseline selector
             html += '<div style="display:flex; align-items:center; gap:6px; margin-bottom:6px; font-size:11px;">';
-            html += '<span style="color:#888;">Baseline:</span>';
+            html += '<span style="color:#888;">' + i18n_js.t('combatSimUi.baselineLabel') + '</span>';
             html +=
                 '<select id="mwi-csim-baseline-select" style="flex:1; background:#1a1a2e; color:#e0e0e0; border:1px solid #444; border-radius:4px; padding:1px 4px; font-size:11px; font-family:inherit;">';
             for (let i = 0; i < history.length; i++) {
@@ -22929,12 +23169,13 @@
             // Table
             html += '<table style="width:100%; font-size:11px; border-collapse:collapse;">';
             html += '<tr style="border-bottom:1px solid #333; color:#666;">';
-            html += '<th style="text-align:left; padding:2px 4px;">Scenario</th>';
-            html += '<th style="text-align:right; padding:2px 4px;">EPH</th>';
-            html += '<th style="text-align:right; padding:2px 4px;">DPS</th>';
-            html += '<th style="text-align:right; padding:2px 4px;">Profit/hr</th>';
-            html += '<th style="text-align:right; padding:2px 4px;">XP/hr</th>';
-            if (hasDungeon) html += '<th style="text-align:right; padding:2px 4px;">Success</th>';
+            html += '<th style="text-align:left; padding:2px 4px;">' + i18n_js.t('combatSimUi.colScenario') + '</th>';
+            html += '<th style="text-align:right; padding:2px 4px;">' + i18n_js.t('combatSimUi.colEph') + '</th>';
+            html += '<th style="text-align:right; padding:2px 4px;">' + i18n_js.t('combatSimUi.colDps') + '</th>';
+            html += '<th style="text-align:right; padding:2px 4px;">' + i18n_js.t('combatSimUi.colProfitPerHr') + '</th>';
+            html += '<th style="text-align:right; padding:2px 4px;">' + i18n_js.t('combatSimUi.xpPerHrHeading') + '</th>';
+            if (hasDungeon)
+                html += '<th style="text-align:right; padding:2px 4px;">' + i18n_js.t('combatSimUi.colSuccess') + '</th>';
             html += '<th style="width:20px;"></th>';
             html += '<th style="width:20px;"></th>';
             html += '</tr>';
@@ -22976,7 +23217,9 @@
             html +=
                 '<td style="text-align:center; padding:2px; cursor:pointer; color:#555;" data-delete-history="' +
                 baseIdx +
-                '" title="Delete result">✕</td>';
+                '" title="' +
+                i18n_js.t('combatSimUi.deleteResultTooltip') +
+                '">✕</td>';
             html += '</tr>';
             for (const idx of this._comparisonSlots) {
                 if (idx === baseIdx || idx >= history.length) continue;
@@ -23032,11 +23275,15 @@
                 html +=
                     '<td style="text-align:center; padding:2px; cursor:pointer; color:#666;" data-remove-comparison="' +
                     idx +
-                    '" title="Remove from comparison">×</td>';
+                    '" title="' +
+                    i18n_js.t('combatSimUi.removeFromComparisonTooltip') +
+                    '">×</td>';
                 html +=
                     '<td style="text-align:center; padding:2px; cursor:pointer; color:#555;" data-delete-history="' +
                     idx +
-                    '" title="Delete result">✕</td>';
+                    '" title="' +
+                    i18n_js.t('combatSimUi.deleteResultTooltip') +
+                    '">✕</td>';
                 html += '</tr>';
             }
 
@@ -23052,7 +23299,7 @@
                 html += '<div style="margin-top:6px;">';
                 html +=
                     '<select id="mwi-csim-add-comparison" style="width:100%; background:#1a1a2e; color:#aaa; border:1px solid #444; border-radius:4px; padding:2px 4px; font-size:11px; font-family:inherit;">';
-                html += '<option value="">+ Add sim to comparison...</option>';
+                html += '<option value="">' + i18n_js.t('combatSimUi.addSimToComparisonOption') + '</option>';
                 for (const i of available) {
                     html += '<option value="' + i + '">' + history[i].label + '</option>';
                 }
@@ -23312,8 +23559,8 @@
             const NEUTRAL = '#888';
             const WARNING = '#f44336';
             if (oomPercent == null) return { text: '—', color: NEUTRAL };
-            if (oomPercent === 0) return { text: 'No', color: NEUTRAL };
-            if (oomPercent < 0.1) return { text: '<0.1%', color: NEUTRAL };
+            if (oomPercent === 0) return { text: i18n_js.t('combatSimUi.noLabel'), color: NEUTRAL };
+            if (oomPercent < 0.1) return { text: i18n_js.t('combatSimUi.lessThanTenthPercent'), color: NEUTRAL };
             return { text: oomPercent.toFixed(1) + '%', color: WARNING };
         }
 
@@ -23346,14 +23593,14 @@
             playerInfo.forEach((p, i) => {
                 const option = document.createElement('option');
                 option.value = i;
-                option.textContent = p.name || `Player ${i + 1}`;
+                option.textContent = p.name || i18n_js.t('combatSimUi.playerFallbackName', { number: i + 1 });
                 select.appendChild(option);
             });
 
             if (playerInfo.length === 0) {
                 const option = document.createElement('option');
                 option.value = 0;
-                option.textContent = 'Player 1';
+                option.textContent = i18n_js.t('combatSimUi.playerFallbackName', { number: 1 });
                 select.appendChild(option);
             }
         }
@@ -23369,7 +23616,7 @@
             if (typeSelect) typeSelect.value = 'increment';
             input.value = '5';
             input.placeholder = '+5';
-            input.title = 'Number of levels to add to each ability';
+            input.title = i18n_js.t('combatSimUi.levelsToAddTitle');
         }
 
         /**
@@ -23396,13 +23643,13 @@
             );
 
             if (!zoneHrid) {
-                this._setStatus('Select a zone in Configure tab first.');
+                this._setStatus(i18n_js.t('combatSimUi.statusSelectZoneConfigureFirst'));
                 return;
             }
 
             const gameData = buildGameDataPayload();
             if (!gameData) {
-                this._setStatus('No game data available.');
+                this._setStatus(i18n_js.t('combatSimUi.statusNoGameData'));
                 return;
             }
 
@@ -23417,7 +23664,7 @@
             }
 
             if (!playerDTOs?.length || !playerDTOs[playerIndex]) {
-                this._setStatus('No player data available. Configure a simulation first.');
+                this._setStatus(i18n_js.t('combatSimUi.statusNoPlayerData'));
                 return;
             }
 
@@ -23462,14 +23709,14 @@
                 );
 
                 if (this._upgradeAborted) {
-                    this._setStatus('Analysis cancelled.');
+                    this._setStatus(i18n_js.t('combatSimUi.statusAnalysisCancelled'));
                 } else {
                     this._renderUpgradeResults(results);
-                    this._setStatus(`Analysis complete. ${results.results.length} upgrades evaluated.`);
+                    this._setStatus(i18n_js.t('combatSimUi.statusAnalysisComplete', { count: results.results.length }));
                 }
             } catch (error) {
                 console.error('[CombatSimUI] Upgrade analysis failed:', error);
-                this._setStatus('Analysis failed: ' + error.message);
+                this._setStatus(i18n_js.t('combatSimUi.statusAnalysisFailed', { message: error.message }));
             } finally {
                 progressEl.style.display = 'none';
                 runBtn.style.display = 'inline-block';
@@ -23487,8 +23734,7 @@
             if (!container) return;
 
             if (!results.results.length) {
-                container.innerHTML =
-                    '<div style="color:#888; text-align:center; padding:20px;">No upgrade candidates found. Ensure equipment is configured.</div>';
+                container.innerHTML = `<div style="color:#888; text-align:center; padding:20px;">${i18n_js.t('combatSimUi.noUpgradeCandidates')}</div>`;
                 return;
             }
 
@@ -23498,11 +23744,11 @@
 
             let html = `<table style="${tableStyle}">
             <thead><tr>
-                <th style="${thStyle}">Upgrade</th>
-                <th style="${thStyle}">Cost</th>
-                <th style="${thStyle}">Gold/0.1% DPS</th>
-                <th style="${thStyle}">Gold/0.1% EXP</th>
-                <th style="${thStyle}">Gold/0.1% Profit</th>
+                <th style="${thStyle}">${i18n_js.t('combatSimUi.colUpgrade')}</th>
+                <th style="${thStyle}">${i18n_js.t('combatSimUi.colCost')}</th>
+                <th style="${thStyle}">${i18n_js.t('combatSimUi.colGoldPerDps')}</th>
+                <th style="${thStyle}">${i18n_js.t('combatSimUi.colGoldPerExp')}</th>
+                <th style="${thStyle}">${i18n_js.t('combatSimUi.colGoldPerProfit')}</th>
             </tr></thead><tbody>`;
 
             // Find best (lowest non-Infinity) value in each gold/0.1% column
@@ -23575,51 +23821,57 @@
                 // not a real effect, so those three show N/A instead of a misleading value.
                 const naCombatMetrics = r.candidate.isCombatRelevant === false;
                 const naBlock = (label) =>
-                    `<div><div style="color:#888;">${label}</div><div style="color:#666;">N/A</div><div style="color:#666;">not combat-relevant</div></div>`;
+                    `<div><div style="color:#888;">${label}</div><div style="color:#666;">${i18n_js.t('combatSimUi.notAvailableLabel')}</div><div style="color:#666;">${i18n_js.t('combatSimUi.notCombatRelevantLabel')}</div></div>`;
 
                 html += `<tr data-upgrade-detail="${i}" style="display:none;">
                 <td colspan="5" style="padding:6px 12px; background:#0d0d1a; border-bottom:1px solid #222;">
                     <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:8px; font-size:11px;">
                         ${
                             naCombatMetrics
-                                ? naBlock('DPS')
+                                ? naBlock(i18n_js.t('combatSimUi.colDps'))
                                 : `<div>
-                            <div style="color:#888;">DPS</div>
+                            <div style="color:#888;">${i18n_js.t('combatSimUi.colDps')}</div>
                             <div style="color:#e0e0e0;">${formatters_js.formatWithSeparator(r.metrics.dps, 3)}</div>
                             <div style="color:${deltaColor(dpsValueDelta)};">${fmtDpsDelta(dpsValueDelta)} (${r.deltas.dps >= 0 ? '+' : ''}${r.deltas.dps.toFixed(2)}%)</div>
                         </div>`
                         }
                         <div>
-                            <div style="color:#888;">EXP/hr</div>
+                            <div style="color:#888;">${i18n_js.t('combatSimUi.colExpPerHr')}</div>
                             <div style="color:#e0e0e0;">${formatters_js.formatKMB(r.metrics.xpPerHour)}</div>
                             <div style="color:${deltaColor(xpValueDelta)};">${fmtDelta(xpValueDelta)} (${r.deltas.xp >= 0 ? '+' : ''}${r.deltas.xp.toFixed(2)}%)</div>
                         </div>
                         <div>
-                            <div style="color:#888;">Profit/hr</div>
+                            <div style="color:#888;">${i18n_js.t('combatSimUi.colProfitPerHr')}</div>
                             <div style="color:#e0e0e0;">${formatters_js.formatKMB(r.metrics.profitPerHour)}</div>
                             <div style="color:${deltaColor(profitValueDelta)};">${fmtDelta(profitValueDelta)} (${r.deltas.profit >= 0 ? '+' : ''}${r.deltas.profit.toFixed(2)}%)</div>
                         </div>
                         ${
                             naCombatMetrics
-                                ? naBlock('EPH')
+                                ? naBlock(i18n_js.t('combatSimUi.colEph'))
                                 : `<div>
-                            <div style="color:#888;">EPH</div>
+                            <div style="color:#888;">${i18n_js.t('combatSimUi.colEph')}</div>
                             <div style="color:#e0e0e0;">${r.metrics.encountersPerHour.toFixed(1)}</div>
                             <div style="color:${deltaColor(ephDelta)};">${fmtDeltaSmall(ephDelta)} (${r.deltas.encounters >= 0 ? '+' : ''}${r.deltas.encounters.toFixed(2)}%)</div>
                         </div>`
                         }
                         ${
                             naCombatMetrics
-                                ? naBlock('DPH')
+                                ? naBlock(i18n_js.t('combatSimUi.colDph'))
                                 : `<div>
-                            <div style="color:#888;">DPH</div>
+                            <div style="color:#888;">${i18n_js.t('combatSimUi.colDph')}</div>
                             <div style="color:#e0e0e0;">${r.metrics.deathsPerHour.toFixed(1)}</div>
                             <div style="color:${deathDeltaColor(dphDelta)};">${fmtDeltaSmall(dphDelta)} (${r.deltas.deaths >= 0 ? '+' : ''}${r.deltas.deaths.toFixed(2)}%)</div>
                         </div>`
                         }
                     </div>
                     <div style="margin-top:6px; color:#666; font-size:10px;">
-                        Baseline: DPS ${formatters_js.formatWithSeparator(results.baseline.dps, 3)} | EXP ${formatters_js.formatKMB(results.baseline.xpPerHour)} | Profit ${formatters_js.formatKMB(results.baseline.profitPerHour)} | EPH ${results.baseline.encountersPerHour.toFixed(1)} | DPH ${results.baseline.deathsPerHour.toFixed(1)}
+                        ${i18n_js.t('combatSimUi.baselineSummaryLine', {
+                            dps: formatters_js.formatWithSeparator(results.baseline.dps, 3),
+                            exp: formatters_js.formatKMB(results.baseline.xpPerHour),
+                            profit: formatters_js.formatKMB(results.baseline.profitPerHour),
+                            eph: results.baseline.encountersPerHour.toFixed(1),
+                            dph: results.baseline.deathsPerHour.toFixed(1),
+                        })}
                     </div>
                 </td>
             </tr>`;
@@ -23704,7 +23956,7 @@
 
             const button = document.createElement('div');
             button.className = 'MuiButtonBase-root MuiTab-root MuiTab-textColorPrimary css-1q2h7u5 ' + BUTTON_CLASS$1;
-            button.textContent = 'Combat Sim';
+            button.textContent = i18n_js.t('combatSimUi.tabButtonLabel');
             button.style.cssText =
                 'cursor: pointer; background: linear-gradient(135deg, #3a7bd5, #5f3dc4); color: #fff; border-radius: 4px; padding: 4px 10px; font-size: 12px; white-space: nowrap;';
 
@@ -24017,7 +24269,7 @@
             flex-shrink: 0;
         `;
             header.innerHTML = `
-            <span style="font-weight:700; font-size:14px; color:${ACCENT};">Lab Simulator</span>
+            <span style="font-weight:700; font-size:14px; color:${ACCENT};">${i18n_js.t('labSim.panelTitle')}</span>
             <button id="mwi-labsim-close" style="
                 background:none; border:none; color:#aaa; font-size:22px;
                 cursor:pointer; padding:0; line-height:1;">\u00d7</button>
@@ -24043,10 +24295,10 @@
             border-bottom: 2px solid ${active ? ACCENT : 'transparent'};
         `;
             tabBar.innerHTML = `
-            <button id="mwi-labsim-tab-configure" style="${tabStyle(true)}">Configure</button>
-            <button id="mwi-labsim-tab-maxlevel" style="${tabStyle(false)}">Max Level</button>
-            <button id="mwi-labsim-tab-upgrade" style="${tabStyle(false)}">Upgrade</button>
-            <button id="mwi-labsim-tab-skilling" style="${tabStyle(false)}">Skilling</button>
+            <button id="mwi-labsim-tab-configure" style="${tabStyle(true)}">${i18n_js.t('labSim.tabConfigure')}</button>
+            <button id="mwi-labsim-tab-maxlevel" style="${tabStyle(false)}">${i18n_js.t('labSim.tabMaxLevel')}</button>
+            <button id="mwi-labsim-tab-upgrade" style="${tabStyle(false)}">${i18n_js.t('labSim.tabUpgrade')}</button>
+            <button id="mwi-labsim-tab-skilling" style="${tabStyle(false)}">${i18n_js.t('labSim.tabSkilling')}</button>
         `;
 
             const selectStyle =
@@ -24065,11 +24317,11 @@
             padding: 10px 14px; border-bottom: 1px solid #222; flex-shrink: 0;
         `;
             configureControls.innerHTML = `
-            <label style="color:#888; font-size:12px;">Monster</label>
+            <label style="color:#888; font-size:12px;">${i18n_js.t('labSim.monsterLabel')}</label>
             <select id="mwi-labsim-monster" style="${selectStyle}"></select>
-            <label style="color:#888; font-size:12px;">Level</label>
+            <label style="color:#888; font-size:12px;">${i18n_js.t('labSim.levelLabel')}</label>
             <input id="mwi-labsim-level" type="number" min="20" max="300" value="100" style="${inputStyle}">
-            <label style="color:#888; font-size:12px;">Hours</label>
+            <label style="color:#888; font-size:12px;">${i18n_js.t('labSim.hoursLabel')}</label>
             <input id="mwi-labsim-hours" type="number" min="1" max="10000" value="${config.getSettingValue('labyrinthRecommendSimHours', 10)}" style="${inputStyle}">
         `;
 
@@ -24086,34 +24338,33 @@
             const crateSelectStyle =
                 'background:#1a1a2e; color:#e0e0e0; border:1px solid #444; border-radius:4px; padding:3px 6px; font-size:12px;';
             crateRow.innerHTML = `
-            <label style="color:#888;">Tea</label>
+            <label style="color:#888;">${i18n_js.t('labSim.teaLabel')}</label>
             <select id="mwi-labsim-tea" style="${crateSelectStyle}">
-                <option value="">None</option>
-                <option value="/items/basic_tea_crate">Basic</option>
-                <option value="/items/advanced_tea_crate">Advanced</option>
-                <option value="/items/expert_tea_crate" selected>Expert</option>
+                <option value="">${i18n_js.t('labSim.crateNone')}</option>
+                <option value="/items/basic_tea_crate">${i18n_js.t('labSim.crateBasic')}</option>
+                <option value="/items/advanced_tea_crate">${i18n_js.t('labSim.crateAdvanced')}</option>
+                <option value="/items/expert_tea_crate" selected>${i18n_js.t('labSim.crateExpert')}</option>
             </select>
-            <label style="color:#888;">Coffee</label>
+            <label style="color:#888;">${i18n_js.t('labSim.coffeeLabel')}</label>
             <select id="mwi-labsim-coffee" style="${crateSelectStyle}">
-                <option value="">None</option>
-                <option value="/items/basic_coffee_crate">Basic</option>
-                <option value="/items/advanced_coffee_crate">Advanced</option>
-                <option value="/items/expert_coffee_crate" selected>Expert</option>
+                <option value="">${i18n_js.t('labSim.crateNone')}</option>
+                <option value="/items/basic_coffee_crate">${i18n_js.t('labSim.crateBasic')}</option>
+                <option value="/items/advanced_coffee_crate">${i18n_js.t('labSim.crateAdvanced')}</option>
+                <option value="/items/expert_coffee_crate" selected>${i18n_js.t('labSim.crateExpert')}</option>
             </select>
-            <label style="color:#888;">Food</label>
+            <label style="color:#888;">${i18n_js.t('labSim.foodLabel')}</label>
             <select id="mwi-labsim-food" style="${crateSelectStyle}">
-                <option value="">None</option>
-                <option value="/items/basic_food_crate">Basic</option>
-                <option value="/items/advanced_food_crate">Advanced</option>
-                <option value="/items/expert_food_crate" selected>Expert</option>
+                <option value="">${i18n_js.t('labSim.crateNone')}</option>
+                <option value="/items/basic_food_crate">${i18n_js.t('labSim.crateBasic')}</option>
+                <option value="/items/advanced_food_crate">${i18n_js.t('labSim.crateAdvanced')}</option>
+                <option value="/items/expert_food_crate" selected>${i18n_js.t('labSim.crateExpert')}</option>
             </select>
         `;
 
             const editorArea = document.createElement('div');
             editorArea.id = 'mwi-labsim-editor';
             editorArea.style.cssText = 'flex:1; overflow-y:auto; padding:10px 14px;';
-            editorArea.innerHTML =
-                '<div style="color:#555; font-size:12px; text-align:center; padding:20px 0;">Loading loadout...</div>';
+            editorArea.innerHTML = `<div style="color:#555; font-size:12px; text-align:center; padding:20px 0;">${i18n_js.t('labSim.loadingLoadout')}</div>`;
 
             this._editor = new SimEditor({ editorEl: editorArea, labMode: true });
 
@@ -24128,7 +24379,7 @@
             buffsHeader.style.cssText =
                 'display:flex; align-items:center; justify-content:space-between; padding:6px 14px; cursor:pointer; color:#888; font-size:12px;';
             buffsHeader.innerHTML = `
-            <span>Labyrinth Buffs</span>
+            <span>${i18n_js.t('labSim.labyrinthBuffsHeader')}</span>
             <span id="mwi-labsim-buffs-toggle" style="font-size:10px;">\u25B6</span>
         `;
 
@@ -24168,10 +24419,10 @@
                 padding: 5px 14px;
                 font-size: 12px;
                 font-weight: 600;
-                cursor: pointer;">Simulate</button>
-            <label style="display:flex; align-items:center; gap:4px; color:#888; cursor:pointer;" title="Binary search for highest beatable level at the specified win rate threshold">
+                cursor: pointer;">${i18n_js.t('labSim.simulateButton')}</button>
+            <label style="display:flex; align-items:center; gap:4px; color:#888; cursor:pointer;" title="${i18n_js.t('labSim.findMaxTooltip')}">
                 <input type="checkbox" id="mwi-labsim-findmax" style="margin:0; cursor:pointer;">
-                Find Max \u2265
+                ${i18n_js.t('labSim.findMaxLabel')} \u2265
             </label>
             <input id="mwi-labsim-threshold" type="number" min="1" max="100" value="${config.getSettingValue('labyrinthRecommendTargetRate', 95)}" style="width:44px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444; border-radius:4px; padding:3px 4px; font-size:12px; text-align:center;">
             <span style="color:#888; font-size:12px;">%</span>
@@ -24188,7 +24439,7 @@
                 </div>
                 <button id="mwi-labsim-stop" style="
                     background:rgba(255,80,80,0.2); color:#f44; border:1px solid rgba(255,80,80,0.4);
-                    border-radius:4px; padding:2px 10px; font-size:11px; cursor:pointer; font-weight:600;">Stop</button>
+                    border-radius:4px; padding:2px 10px; font-size:11px; cursor:pointer; font-weight:600;">${i18n_js.t('labSim.stopButton')}</button>
             </div>
         `;
 
@@ -24211,7 +24462,7 @@
             padding: 10px 14px; border-bottom: 1px solid #222; flex-shrink: 0;
         `;
             upgradeControls.innerHTML = `
-            <label style="color:#888; font-size:12px;">Player</label>
+            <label style="color:#888; font-size:12px;">${i18n_js.t('labSim.playerLabel')}</label>
             <select id="mwi-labsim-upgrade-player" style="${selectStyle}"></select>
             <button id="mwi-labsim-upgrade-run" style="
                 margin-left: auto;
@@ -24223,7 +24474,7 @@
                 font-size: 12px;
                 font-weight: 600;
                 cursor: pointer;
-                font-family: inherit;">Analyze</button>
+                font-family: inherit;">${i18n_js.t('labSim.analyzeButton')}</button>
             <button id="mwi-labsim-upgrade-stop" style="
                 display:none;
                 background:rgba(244, 67, 54, 0.2);
@@ -24234,7 +24485,7 @@
                 font-size:12px;
                 font-weight:600;
                 cursor:pointer;
-                font-family:inherit;">Stop</button>
+                font-family:inherit;">${i18n_js.t('labSim.stopButton')}</button>
         `;
 
             const upgradeProgress = document.createElement('div');
@@ -24268,7 +24519,7 @@
             padding: 10px 14px; border-bottom: 1px solid #222; flex-shrink: 0;
         `;
             skillingControls.innerHTML = `
-            <label style="color:#888; font-size:12px;">Room Level</label>
+            <label style="color:#888; font-size:12px;">${i18n_js.t('labSim.roomLevelLabel')}</label>
             <input id="mwi-labsim-skilling-level" type="number" min="1" max="300" value="100" style="${inputStyle}">
             <button id="mwi-labsim-skilling-calc" style="
                 background: ${ACCENT_BTN_BG};
@@ -24279,7 +24530,7 @@
                 font-size: 12px;
                 font-weight: 600;
                 cursor: pointer;
-                font-family: inherit;">Calculate</button>
+                font-family: inherit;">${i18n_js.t('labSim.calculateButton')}</button>
             <button id="mwi-labsim-skilling-upgrade" style="
                 background: rgba(255,255,255,0.04);
                 border: 1px solid #333;
@@ -24288,7 +24539,7 @@
                 padding: 5px 10px;
                 font-size: 12px;
                 cursor: pointer;
-                font-family: inherit;">Analyze Upgrades</button>
+                font-family: inherit;">${i18n_js.t('labSim.analyzeUpgradesButton')}</button>
             <button id="mwi-labsim-skilling-stop" style="
                 display:none;
                 background:rgba(244, 67, 54, 0.2);
@@ -24299,7 +24550,7 @@
                 font-size:12px;
                 font-weight:600;
                 cursor:pointer;
-                font-family:inherit;">Stop</button>
+                font-family:inherit;">${i18n_js.t('labSim.stopButton')}</button>
             <select id="mwi-labsim-skilling-filter" style="
                 background:#1a1a2e;
                 color:#e0e0e0;
@@ -24309,17 +24560,17 @@
                 font-size:11px;
                 font-family:inherit;
                 margin-left:auto;">
-                <option value="">All Skills</option>
-                <option value="/skills/woodcutting">Woodcutting</option>
-                <option value="/skills/foraging">Foraging</option>
-                <option value="/skills/milking">Milking</option>
-                <option value="/skills/cooking">Cooking</option>
-                <option value="/skills/brewing">Brewing</option>
-                <option value="/skills/cheesesmithing">Cheesesmithing</option>
-                <option value="/skills/crafting">Crafting</option>
-                <option value="/skills/tailoring">Tailoring</option>
-                <option value="/skills/alchemy">Alchemy</option>
-                <option value="/skills/enhancing">Enhancing</option>
+                <option value="">${i18n_js.t('labSim.allSkillsOption')}</option>
+                <option value="/skills/woodcutting">${i18n_js.t('labSim.skillWoodcutting')}</option>
+                <option value="/skills/foraging">${i18n_js.t('labSim.skillForaging')}</option>
+                <option value="/skills/milking">${i18n_js.t('labSim.skillMilking')}</option>
+                <option value="/skills/cooking">${i18n_js.t('labSim.skillCooking')}</option>
+                <option value="/skills/brewing">${i18n_js.t('labSim.skillBrewing')}</option>
+                <option value="/skills/cheesesmithing">${i18n_js.t('labSim.skillCheesesmithing')}</option>
+                <option value="/skills/crafting">${i18n_js.t('labSim.skillCrafting')}</option>
+                <option value="/skills/tailoring">${i18n_js.t('labSim.skillTailoring')}</option>
+                <option value="/skills/alchemy">${i18n_js.t('labSim.skillAlchemy')}</option>
+                <option value="/skills/enhancing">${i18n_js.t('labSim.skillEnhancing')}</option>
             </select>
         `;
 
@@ -24329,26 +24580,26 @@
             padding: 6px 14px; border-bottom: 1px solid #222; flex-shrink: 0; font-size: 12px;
         `;
             skillingCrateRow.innerHTML = `
-            <label style="color:#888;">Tea</label>
+            <label style="color:#888;">${i18n_js.t('labSim.teaLabel')}</label>
             <select id="mwi-labsim-skilling-tea" style="${crateSelectStyle}">
-                <option value="">None</option>
-                <option value="/items/basic_tea_crate">Basic</option>
-                <option value="/items/advanced_tea_crate">Advanced</option>
-                <option value="/items/expert_tea_crate" selected>Expert</option>
+                <option value="">${i18n_js.t('labSim.crateNone')}</option>
+                <option value="/items/basic_tea_crate">${i18n_js.t('labSim.crateBasic')}</option>
+                <option value="/items/advanced_tea_crate">${i18n_js.t('labSim.crateAdvanced')}</option>
+                <option value="/items/expert_tea_crate" selected>${i18n_js.t('labSim.crateExpert')}</option>
             </select>
-            <label style="color:#888;">Coffee</label>
+            <label style="color:#888;">${i18n_js.t('labSim.coffeeLabel')}</label>
             <select id="mwi-labsim-skilling-coffee" style="${crateSelectStyle}">
-                <option value="">None</option>
-                <option value="/items/basic_coffee_crate">Basic</option>
-                <option value="/items/advanced_coffee_crate">Advanced</option>
-                <option value="/items/expert_coffee_crate" selected>Expert</option>
+                <option value="">${i18n_js.t('labSim.crateNone')}</option>
+                <option value="/items/basic_coffee_crate">${i18n_js.t('labSim.crateBasic')}</option>
+                <option value="/items/advanced_coffee_crate">${i18n_js.t('labSim.crateAdvanced')}</option>
+                <option value="/items/expert_coffee_crate" selected>${i18n_js.t('labSim.crateExpert')}</option>
             </select>
-            <label style="color:#888;">Food</label>
+            <label style="color:#888;">${i18n_js.t('labSim.foodLabel')}</label>
             <select id="mwi-labsim-skilling-food" style="${crateSelectStyle}">
-                <option value="">None</option>
-                <option value="/items/basic_food_crate">Basic</option>
-                <option value="/items/advanced_food_crate">Advanced</option>
-                <option value="/items/expert_food_crate" selected>Expert</option>
+                <option value="">${i18n_js.t('labSim.crateNone')}</option>
+                <option value="/items/basic_food_crate">${i18n_js.t('labSim.crateBasic')}</option>
+                <option value="/items/advanced_food_crate">${i18n_js.t('labSim.crateAdvanced')}</option>
+                <option value="/items/expert_food_crate" selected>${i18n_js.t('labSim.crateExpert')}</option>
             </select>
         `;
 
@@ -24360,8 +24611,7 @@
             const skillingEditorArea = document.createElement('div');
             skillingEditorArea.id = 'mwi-labsim-skilling-editor';
             skillingEditorArea.style.cssText = 'overflow-y:auto; padding:10px 14px; max-height:200px; flex-shrink:0;';
-            skillingEditorArea.innerHTML =
-                '<div style="color:#555; font-size:12px; text-align:center; padding:20px 0;">Loading loadout...</div>';
+            skillingEditorArea.innerHTML = `<div style="color:#555; font-size:12px; text-align:center; padding:20px 0;">${i18n_js.t('labSim.loadingLoadout')}</div>`;
 
             this._skillingEditor = new SimEditor({ editorEl: skillingEditorArea, labMode: true, skillingMode: true });
 
@@ -24393,7 +24643,7 @@
             status.id = 'mwi-labsim-status';
             status.style.cssText =
                 'padding:6px 14px; color:#555; font-size:11px; border-top:1px solid #1a1a1a; flex-shrink:0; text-align:center;';
-            status.textContent = 'Select a monster in Configure, then use Max Level or Upgrade to simulate.';
+            status.textContent = i18n_js.t('labSim.statusDefault');
 
             // Assemble
             this.panel.appendChild(header);
@@ -24450,7 +24700,7 @@
             this.panel.querySelector('#mwi-labsim-stop').addEventListener('click', () => {
                 cancelSimulation();
                 this.isRunning = false;
-                this._setStatus('Labyrinth simulation cancelled.');
+                this._setStatus(i18n_js.t('labSim.statusSimCancelled'));
                 this.panel.querySelector('#mwi-labsim-progress').style.display = 'none';
             });
             this.panel.querySelector('#mwi-labsim-findmax').addEventListener('change', (e) => {
@@ -24537,14 +24787,14 @@
             playerInfo.forEach((p, i) => {
                 const option = document.createElement('option');
                 option.value = i;
-                option.textContent = p.name || `Player ${i + 1}`;
+                option.textContent = p.name || i18n_js.t('labSim.playerFallbackName', { index: i + 1 });
                 select.appendChild(option);
             });
 
             if (playerInfo.length === 0) {
                 const option = document.createElement('option');
                 option.value = 0;
-                option.textContent = 'Player 1';
+                option.textContent = i18n_js.t('labSim.playerFallbackName', { index: 1 });
                 select.appendChild(option);
             }
         }
@@ -24556,38 +24806,38 @@
 
             const info = dataManager.characterData?.characterInfo;
             if (!info) {
-                container.innerHTML = '<div style="color:#555;">No character data available.</div>';
+                container.innerHTML = `<div style="color:#555;">${i18n_js.t('labSim.buffsUnavailable')}</div>`;
                 return;
             }
 
             const groups = [
                 {
-                    label: 'Combat',
+                    label: i18n_js.t('labSim.buffGroupCombat'),
                     buffs: [
-                        { key: 'labyrinthCombatDamageLevel', name: 'Damage' },
-                        { key: 'labyrinthAttackSpeedLevel', name: 'Atk Speed' },
-                        { key: 'labyrinthCastSpeedLevel', name: 'Cast Speed' },
-                        { key: 'labyrinthCriticalRateLevel', name: 'Crit Rate' },
+                        { key: 'labyrinthCombatDamageLevel', name: i18n_js.t('labSim.buffDamage') },
+                        { key: 'labyrinthAttackSpeedLevel', name: i18n_js.t('labSim.buffAtkSpeed') },
+                        { key: 'labyrinthCastSpeedLevel', name: i18n_js.t('labSim.buffCastSpeed') },
+                        { key: 'labyrinthCriticalRateLevel', name: i18n_js.t('labSim.buffCritRate') },
                     ],
                 },
                 {
-                    label: 'Skilling',
+                    label: i18n_js.t('labSim.buffGroupSkilling'),
                     buffs: [
-                        { key: 'labyrinthSkillActionSpeedLevel', name: 'Speed' },
-                        { key: 'labyrinthSkillingEfficiencyLevel', name: 'Efficiency' },
-                        { key: 'labyrinthSkillingSuccessLevel', name: 'Success' },
-                        { key: 'labyrinthSkillingDoubleProgressLevel', name: 'Double' },
+                        { key: 'labyrinthSkillActionSpeedLevel', name: i18n_js.t('labSim.buffSpeed') },
+                        { key: 'labyrinthSkillingEfficiencyLevel', name: i18n_js.t('labSim.buffEfficiency') },
+                        { key: 'labyrinthSkillingSuccessLevel', name: i18n_js.t('labSim.buffSuccess') },
+                        { key: 'labyrinthSkillingDoubleProgressLevel', name: i18n_js.t('labSim.buffDouble') },
                     ],
                 },
                 {
-                    label: 'Other',
+                    label: i18n_js.t('labSim.buffGroupOther'),
                     buffs: [
-                        { key: 'labyrinthExperienceLevel', name: 'Experience' },
-                        { key: 'labyrinthCooldownLevel', name: 'Cooldown' },
-                        { key: 'labyrinthTorchLevel', name: 'Torch' },
-                        { key: 'labyrinthShroudLevel', name: 'Shroud' },
-                        { key: 'labyrinthBeaconLevel', name: 'Beacon' },
-                        { key: 'labyrinthAutomationLevel', name: 'Automation' },
+                        { key: 'labyrinthExperienceLevel', name: i18n_js.t('labSim.buffExperience') },
+                        { key: 'labyrinthCooldownLevel', name: i18n_js.t('labSim.buffCooldown') },
+                        { key: 'labyrinthTorchLevel', name: i18n_js.t('labSim.buffTorch') },
+                        { key: 'labyrinthShroudLevel', name: i18n_js.t('labSim.buffShroud') },
+                        { key: 'labyrinthBeaconLevel', name: i18n_js.t('labSim.buffBeacon') },
+                        { key: 'labyrinthAutomationLevel', name: i18n_js.t('labSim.buffAutomation') },
                     ],
                 },
             ];
@@ -24686,15 +24936,13 @@
         async _onSimulate() {
             if (this.isRunning) {
                 cancelSimulation();
-                this._setStatus('Labyrinth simulation cancelled.');
+                this._setStatus(i18n_js.t('labSim.statusSimCancelled'));
                 return;
             }
 
             const blockedLoadoutName = this._getBlockedCombatLoadoutName();
             if (blockedLoadoutName) {
-                this._setStatus(
-                    `Configured combat loadout unavailable: ${blockedLoadoutName}. Choose another loadout or Current Gear.`
-                );
+                this._setStatus(i18n_js.t('labSim.statusLoadoutUnavailable', { name: blockedLoadoutName }));
                 return;
             }
 
@@ -24706,13 +24954,13 @@
             );
 
             if (!monsterHrid) {
-                this._setStatus('Select a monster first.');
+                this._setStatus(i18n_js.t('labSim.statusSelectMonsterFirst'));
                 return;
             }
 
             const gameData = buildGameDataPayload();
             if (!gameData) {
-                this._setStatus('No game data available.');
+                this._setStatus(i18n_js.t('labSim.statusNoGameData'));
                 return;
             }
 
@@ -24729,7 +24977,7 @@
             }
 
             if (!playerDTOs.length) {
-                this._setStatus('No character data available.');
+                this._setStatus(i18n_js.t('labSim.statusNoCharacterData'));
                 return;
             }
 
@@ -24776,7 +25024,12 @@
                         (progress) => {
                             const percent = Math.round((progress.step / progress.totalSteps) * 100);
                             progressFill.style.width = `${percent}%`;
-                            progressText.textContent = `Level ${progress.level} — ${(progress.winRate * 100).toFixed(0)}% (step ${progress.step}/${progress.totalSteps})`;
+                            progressText.textContent = i18n_js.t('labSim.progressLevelStep', {
+                                level: progress.level,
+                                winRate: (progress.winRate * 100).toFixed(0),
+                                step: progress.step,
+                                total: progress.totalSteps,
+                            });
                         }
                     );
 
@@ -24809,7 +25062,7 @@
             } catch (error) {
                 if (error.message !== 'Cancelled') {
                     console.error('[LabSimUI] Simulation failed:', error);
-                    this._setStatus('Simulation failed: ' + error.message);
+                    this._setStatus(i18n_js.t('labSim.statusSimFailed', { error: error.message }));
                 }
             } finally {
                 this.isRunning = false;
@@ -24843,19 +25096,19 @@
             container.innerHTML = `
             <div style="margin-bottom:12px;">
                 <div style="color:${ACCENT}; font-weight:700; font-size:13px; margin-bottom:6px;">
-                    ${monsterName} \u2014 Level ${roomLevel}
+                    ${i18n_js.t('labSim.resultMonsterLevel', { monster: monsterName, level: roomLevel })}
                 </div>
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px 20px; font-size:12px;">
-                    <div><span style="color:#888;">Win Rate:</span> <span style="color:${parseFloat(winRate) >= 95 ? '#4caf50' : parseFloat(winRate) >= 50 ? '#ff9800' : '#f44336'}; font-weight:600;">${winRate}%</span></div>
-                    <div><span style="color:#888;">Encounters:</span> ${formatters_js.formatWithSeparator(attempts)}</div>
-                    <div><span style="color:#888;">Deaths:</span> <span style="color:${deaths > 0 ? '#f44336' : '#4caf50'};">${formatters_js.formatWithSeparator(deaths)}</span></div>
-                    <div><span style="color:#888;">Sim Time:</span> ${simHours.toFixed(1)}h</div>
+                    <div><span style="color:#888;">${i18n_js.t('labSim.winRateLabel')}</span> <span style="color:${parseFloat(winRate) >= 95 ? '#4caf50' : parseFloat(winRate) >= 50 ? '#ff9800' : '#f44336'}; font-weight:600;">${winRate}%</span></div>
+                    <div><span style="color:#888;">${i18n_js.t('labSim.encountersLabel')}</span> ${formatters_js.formatWithSeparator(attempts)}</div>
+                    <div><span style="color:#888;">${i18n_js.t('labSim.deathsLabel')}</span> <span style="color:${deaths > 0 ? '#f44336' : '#4caf50'};">${formatters_js.formatWithSeparator(deaths)}</span></div>
+                    <div><span style="color:#888;">${i18n_js.t('labSim.simTimeLabel')}</span> ${simHours.toFixed(1)}h</div>
                 </div>
-                <div style="color:#555; font-size:10px; margin-top:6px;">Completed in ${totalElapsed}</div>
+                <div style="color:#555; font-size:10px; margin-top:6px;">${i18n_js.t('labSim.completedIn', { time: totalElapsed })}</div>
             </div>
         `;
 
-            this._setStatus(`Simulation complete \u2014 ${winRate}% win rate at level ${roomLevel}.`);
+            this._setStatus(i18n_js.t('labSim.statusSimComplete', { winRate, level: roomLevel }));
         }
 
         /** @private */
@@ -24875,24 +25128,27 @@
             container.innerHTML = `
             <div style="margin-bottom:12px;">
                 <div style="color:${ACCENT}; font-weight:700; font-size:13px; margin-bottom:6px;">
-                    ${monsterName} \u2014 Find Max Result
+                    ${i18n_js.t('labSim.resultFindMaxTitle', { monster: monsterName })}
                 </div>
                 <div style="font-size:24px; font-weight:700; color:#4caf50; margin-bottom:6px;">
-                    Level ${maxResult.maxLevel}
+                    ${i18n_js.t('labSim.levelValue', { level: maxResult.maxLevel })}
                 </div>
                 <div style="font-size:12px; color:#888;">
-                    Win Rate: <span style="color:#e0e0e0; font-weight:600;">${(maxResult.winRate * 100).toFixed(1)}%</span>
-                    at level ${maxResult.maxLevel}
+                    ${i18n_js.t('labSim.winRateLabel')} <span style="color:#e0e0e0; font-weight:600;">${(maxResult.winRate * 100).toFixed(1)}%</span>
+                    ${i18n_js.t('labSim.atLevelSuffix', { level: maxResult.maxLevel })}
                 </div>
                 <div style="font-size:12px; color:#888; margin-top:4px;">
-                    Recommended skip: <span style="color:#e0e0e0; font-weight:600;">${recommendedSkip}</span>
+                    ${i18n_js.t('labSim.recommendedSkipLabel')} <span style="color:#e0e0e0; font-weight:600;">${recommendedSkip}</span>
                 </div>
-                <div style="color:#555; font-size:10px; margin-top:6px;">Completed in ${totalElapsed} (${maxResult.steps} steps)</div>
+                <div style="color:#555; font-size:10px; margin-top:6px;">${i18n_js.t('labSim.completedInSteps', { time: totalElapsed, steps: maxResult.steps })}</div>
             </div>
         `;
 
             this._setStatus(
-                `Max beatable level: ${maxResult.maxLevel} (${(maxResult.winRate * 100).toFixed(1)}% win rate).`
+                i18n_js.t('labSim.statusMaxBeatableLevel', {
+                    level: maxResult.maxLevel,
+                    winRate: (maxResult.winRate * 100).toFixed(1),
+                })
             );
         }
 
@@ -24900,9 +25156,7 @@
         async _onUpgradeAnalyze() {
             const blockedLoadoutName = this._getBlockedCombatLoadoutName();
             if (blockedLoadoutName) {
-                this._setStatus(
-                    `Configured combat loadout unavailable: ${blockedLoadoutName}. Choose another loadout or Current Gear.`
-                );
+                this._setStatus(i18n_js.t('labSim.statusLoadoutUnavailable', { name: blockedLoadoutName }));
                 return;
             }
 
@@ -24915,7 +25169,7 @@
             );
 
             if (!monsterHrid) {
-                this._setStatus('Select a monster in the Configure tab first.');
+                this._setStatus(i18n_js.t('labSim.statusSelectMonsterConfigureTab'));
                 return;
             }
 
@@ -24923,7 +25177,7 @@
 
             const gameData = buildGameDataPayload();
             if (!gameData) {
-                this._setStatus('No game data available.');
+                this._setStatus(i18n_js.t('labSim.statusNoGameData'));
                 return;
             }
 
@@ -24937,7 +25191,7 @@
             }
 
             if (!playerDTOs?.length || !playerDTOs[playerIndex]) {
-                this._setStatus('No player data available.');
+                this._setStatus(i18n_js.t('labSim.statusNoPlayerData'));
                 return;
             }
 
@@ -24972,7 +25226,7 @@
                         const fill = this.panel.querySelector('#mwi-labsim-upgrade-progress-fill');
                         const text = this.panel.querySelector('#mwi-labsim-upgrade-progress-text');
                         if (fill) fill.style.width = `${Math.round((current / total) * 100)}%`;
-                        if (text) text.textContent = `${current} / ${total}: ${description}`;
+                        if (text) text.textContent = i18n_js.t('labSim.progressCurrentTotalDesc', { current, total, description });
                     },
                     { abortSignal: () => this._upgradeAborted }
                 );
@@ -24981,7 +25235,7 @@
             } catch (error) {
                 if (error.message !== 'Cancelled' && error.message !== 'Aborted') {
                     console.error('[LabSimUI] Upgrade analysis failed:', error);
-                    this._setStatus('Upgrade analysis failed: ' + error.message);
+                    this._setStatus(i18n_js.t('labSim.statusUpgradeAnalysisFailed', { error: error.message }));
                 }
             } finally {
                 progressEl.style.display = 'none';
@@ -24994,9 +25248,8 @@
         _renderUpgradeResults(analysisResult, container) {
             const results = analysisResult?.results;
             if (!results || !results.length) {
-                container.innerHTML =
-                    '<div style="color:#888; font-size:12px; padding:20px 0; text-align:center;">No upgrade candidates found.</div>';
-                this._setStatus('No upgrade candidates found.');
+                container.innerHTML = `<div style="color:#888; font-size:12px; padding:20px 0; text-align:center;">${i18n_js.t('labSim.noUpgradeCandidates')}</div>`;
+                this._setStatus(i18n_js.t('labSim.noUpgradeCandidates'));
                 return;
             }
 
@@ -25019,7 +25272,7 @@
                 } else if (r.metricType === 'experience') {
                     rateVal = 0;
                     deltaVal = r.xpDeltaPct || 0;
-                    rateStr = 'XP';
+                    rateStr = i18n_js.t('labSim.xpAbbreviation');
                 } else {
                     rateVal = (r.winRate || 0) * 100;
                     deltaVal = (r.winRateDelta || 0) * 100;
@@ -25089,14 +25342,14 @@
                     return `<th data-sort-key="${key}" data-table="token" style="${style}">${label}${ind}</th>`;
                 };
 
-                let html = `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:4px;">Token Upgrades</div>`;
+                let html = `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:4px;">${i18n_js.t('labSim.tokenUpgradesHeader')}</div>`;
                 html += '<table style="width:100%; border-collapse:collapse; font-size:11px; margin-bottom:12px;">';
                 html += `<thead><tr>
-                ${th('Upgrade', 'desc', 'left')}
-                ${th('Tokens', 'tokenCost', 'right')}
-                ${th('Rate', 'rateVal', 'right')}
-                ${th('Delta', 'deltaVal', 'right')}
-                ${th('Tokens/1%', 'tokensPerPct', 'right')}
+                ${th(i18n_js.t('labSim.colUpgrade'), 'desc', 'left')}
+                ${th(i18n_js.t('labSim.colTokens'), 'tokenCost', 'right')}
+                ${th(i18n_js.t('labSim.colRate'), 'rateVal', 'right')}
+                ${th(i18n_js.t('labSim.colDelta'), 'deltaVal', 'right')}
+                ${th(i18n_js.t('labSim.colTokensPerPct'), 'tokensPerPct', 'right')}
             </tr></thead><tbody>`;
 
                 for (const row of tokenRows) {
@@ -25120,14 +25373,14 @@
                     return `<th data-sort-key="${key}" data-table="gold" style="${style}">${label}${ind}</th>`;
                 };
 
-                let html = `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:4px;">Gold Upgrades</div>`;
+                let html = `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:4px;">${i18n_js.t('labSim.goldUpgradesHeader')}</div>`;
                 html += '<table style="width:100%; border-collapse:collapse; font-size:11px;">';
                 html += `<thead><tr>
-                ${th('Upgrade', 'desc', 'left')}
-                ${th('Cost', 'cost', 'right')}
-                ${th('Win Rate', 'winRate', 'right')}
-                ${th('Delta', 'deltaVal', 'right')}
-                ${th('Gold/1%', 'goldPerPct', 'right')}
+                ${th(i18n_js.t('labSim.colUpgrade'), 'desc', 'left')}
+                ${th(i18n_js.t('labSim.colCost'), 'cost', 'right')}
+                ${th(i18n_js.t('labSim.colWinRate'), 'winRate', 'right')}
+                ${th(i18n_js.t('labSim.colDelta'), 'deltaVal', 'right')}
+                ${th(i18n_js.t('labSim.colGoldPerPct'), 'goldPerPct', 'right')}
             </tr></thead><tbody>`;
 
                 for (const row of goldRows) {
@@ -25169,7 +25422,7 @@
                 renderAll();
             });
 
-            this._setStatus(`${results.length} upgrade candidates analyzed.`);
+            this._setStatus(i18n_js.t('labSim.statusUpgradeCandidatesAnalyzed', { count: results.length }));
         }
 
         /** @private */
@@ -25197,16 +25450,24 @@
             const allSkillsSnapshots = allSnapshots.filter((s) => !s.actionTypeHrid);
 
             const skills = [
-                { hrid: '/skills/woodcutting', label: 'Woodcutting', actionType: '/action_types/woodcutting' },
-                { hrid: '/skills/foraging', label: 'Foraging', actionType: '/action_types/foraging' },
-                { hrid: '/skills/milking', label: 'Milking', actionType: '/action_types/milking' },
-                { hrid: '/skills/cooking', label: 'Cooking', actionType: '/action_types/cooking' },
-                { hrid: '/skills/brewing', label: 'Brewing', actionType: '/action_types/brewing' },
-                { hrid: '/skills/cheesesmithing', label: 'Cheesesmithing', actionType: '/action_types/cheesesmithing' },
-                { hrid: '/skills/crafting', label: 'Crafting', actionType: '/action_types/crafting' },
-                { hrid: '/skills/tailoring', label: 'Tailoring', actionType: '/action_types/tailoring' },
-                { hrid: '/skills/alchemy', label: 'Alchemy', actionType: '/action_types/alchemy' },
-                { hrid: '/skills/enhancing', label: 'Enhancing', actionType: '/action_types/enhancing' },
+                {
+                    hrid: '/skills/woodcutting',
+                    label: i18n_js.t('labSim.skillWoodcutting'),
+                    actionType: '/action_types/woodcutting',
+                },
+                { hrid: '/skills/foraging', label: i18n_js.t('labSim.skillForaging'), actionType: '/action_types/foraging' },
+                { hrid: '/skills/milking', label: i18n_js.t('labSim.skillMilking'), actionType: '/action_types/milking' },
+                { hrid: '/skills/cooking', label: i18n_js.t('labSim.skillCooking'), actionType: '/action_types/cooking' },
+                { hrid: '/skills/brewing', label: i18n_js.t('labSim.skillBrewing'), actionType: '/action_types/brewing' },
+                {
+                    hrid: '/skills/cheesesmithing',
+                    label: i18n_js.t('labSim.skillCheesesmithing'),
+                    actionType: '/action_types/cheesesmithing',
+                },
+                { hrid: '/skills/crafting', label: i18n_js.t('labSim.skillCrafting'), actionType: '/action_types/crafting' },
+                { hrid: '/skills/tailoring', label: i18n_js.t('labSim.skillTailoring'), actionType: '/action_types/tailoring' },
+                { hrid: '/skills/alchemy', label: i18n_js.t('labSim.skillAlchemy'), actionType: '/action_types/alchemy' },
+                { hrid: '/skills/enhancing', label: i18n_js.t('labSim.skillEnhancing'), actionType: '/action_types/enhancing' },
             ];
 
             // Load persisted overrides once
@@ -25267,7 +25528,7 @@
 
             const arrow = collapsed ? '&#9654;' : '&#9660;';
             let html = `<div id="mwi-labsim-loadout-toggle" style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:4px; cursor:pointer; user-select:none;">
-            <span style="display:inline-block; width:14px; font-size:10px;">${arrow}</span> Skill Loadouts
+            <span style="display:inline-block; width:14px; font-size:10px;">${arrow}</span> ${i18n_js.t('labSim.skillLoadoutsHeader')}
         </div>`;
             html += `<div id="mwi-labsim-loadout-grid" style="display:${collapsed ? 'none' : 'grid'}; grid-template-columns:1fr 1fr; gap:3px 10px;">`;
 
@@ -25276,12 +25537,12 @@
                 html += `<div style="display:flex; align-items:center; gap:4px; font-size:11px;">`;
                 html += `<span style="color:#888; width:85px; flex-shrink:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${skill.label}">${skill.label}</span>`;
                 html += `<select data-skill-loadout="${skill.hrid}" style="${selectStyle}">`;
-                html += `<option value=""${!current ? ' selected' : ''}>Current Gear</option>`;
+                html += `<option value=""${!current ? ' selected' : ''}>${i18n_js.t('labSim.currentGearOption')}</option>`;
                 if (current && !usableSnapshotNames.has(current)) {
-                    html += `<option value="${current}" selected>${current} (Unavailable)</option>`;
+                    html += `<option value="${current}" selected>${i18n_js.t('labSim.unavailableSuffix', { name: current })}</option>`;
                 }
                 for (const snap of [...nonCombatSnapshots, ...allSkillsSnapshots]) {
-                    const label = snap.name + (snap.actionTypeHrid ? '' : ' (All)');
+                    const label = snap.actionTypeHrid ? snap.name : i18n_js.t('labSim.allSuffix', { name: snap.name });
                     const selected = current === snap.name ? ' selected' : '';
                     html += `<option value="${snap.name}"${selected}>${label}</option>`;
                 }
@@ -25321,20 +25582,20 @@
             const roomLevel = parseInt(this.panel.querySelector('#mwi-labsim-skilling-level')?.value) || 100;
             const gameData = buildGameDataPayload();
             if (!gameData) {
-                this._setStatus('No game data available.');
+                this._setStatus(i18n_js.t('labSim.statusNoGameData'));
                 return;
             }
 
             const editedDTOs = this._skillingEditor?.getEditedDTOs();
             if (!editedDTOs) {
-                this._setStatus('No character data. Wait for editor to load.');
+                this._setStatus(i18n_js.t('labSim.statusNoCharacterDataWaitEditor'));
                 return;
             }
 
             const selfHrid = this._skillingEditor.getSelfHrid();
             const dto = editedDTOs[selfHrid] || Object.values(editedDTOs)[0];
             if (!dto) {
-                this._setStatus('No player data available.');
+                this._setStatus(i18n_js.t('labSim.statusNoPlayerData'));
                 return;
             }
 
@@ -25342,7 +25603,7 @@
             const { equipmentMap: skillEquipmentMap, unavailableSelections } = this._buildSkillEquipmentMap(gameData);
             if (unavailableSelections.length > 0) {
                 const names = [...new Set(unavailableSelections.map((entry) => entry.loadoutName))].join(', ');
-                this._setStatus(`Selected skilling loadout unavailable: ${names}. Choose another loadout or Current Gear.`);
+                this._setStatus(i18n_js.t('labSim.statusSkillingLoadoutUnavailable', { names }));
                 this._renderSkillLoadoutTable();
                 return;
             }
@@ -25362,20 +25623,20 @@
             const tdStyle = 'padding:3px 4px; text-align:right; font-size:11px;';
 
             let html = `<div style="color:${ACCENT}; font-weight:700; font-size:13px; margin-bottom:6px;">
-            Skilling Room Level ${roomLevel}
+            ${i18n_js.t('labSim.skillingRoomLevelTitle', { level: roomLevel })}
             <span style="color:#888; font-weight:400; font-size:11px; margin-left:8px;">
-                Avg Clear: <span style="color:${avgClearRate >= 0.95 ? '#4caf50' : avgClearRate >= 0.5 ? '#ff9800' : '#f44336'}; font-weight:600;">${(avgClearRate * 100).toFixed(1)}%</span>
+                ${i18n_js.t('labSim.avgClearLabel')} <span style="color:${avgClearRate >= 0.95 ? '#4caf50' : avgClearRate >= 0.5 ? '#ff9800' : '#f44336'}; font-weight:600;">${(avgClearRate * 100).toFixed(1)}%</span>
             </span>
         </div>`;
 
             html += '<table style="width:100%; border-collapse:collapse; font-size:11px;">';
             html += `<thead><tr>
-            <th style="${thLeftStyle}">Skill</th>
-            <th style="${thStyle}">Level</th>
-            <th style="${thStyle}">Eff. Lvl</th>
-            <th style="${thStyle}">Success</th>
-            <th style="${thStyle}">Clear</th>
-            <th style="${thStyle}">Actions</th>
+            <th style="${thLeftStyle}">${i18n_js.t('labSim.colSkill')}</th>
+            <th style="${thStyle}">${i18n_js.t('labSim.colLevel')}</th>
+            <th style="${thStyle}">${i18n_js.t('labSim.colEffLevel')}</th>
+            <th style="${thStyle}">${i18n_js.t('labSim.colSuccess')}</th>
+            <th style="${thStyle}">${i18n_js.t('labSim.colClear')}</th>
+            <th style="${thStyle}">${i18n_js.t('labSim.colActions')}</th>
         </tr></thead><tbody>`;
 
             for (const r of results) {
@@ -25395,7 +25656,7 @@
 
             html += '</tbody></table>';
             container.innerHTML = html;
-            this._setStatus(`Skilling clear rates calculated for level ${roomLevel}.`);
+            this._setStatus(i18n_js.t('labSim.statusSkillingClearRatesCalculated', { level: roomLevel }));
         }
 
         /** @private */
@@ -25403,20 +25664,20 @@
             const roomLevel = parseInt(this.panel.querySelector('#mwi-labsim-skilling-level')?.value) || 100;
             const gameData = buildGameDataPayload();
             if (!gameData) {
-                this._setStatus('No game data available.');
+                this._setStatus(i18n_js.t('labSim.statusNoGameData'));
                 return;
             }
 
             const editedDTOs = this._skillingEditor?.getEditedDTOs();
             if (!editedDTOs) {
-                this._setStatus('No character data. Wait for editor to load.');
+                this._setStatus(i18n_js.t('labSim.statusNoCharacterDataWaitEditor'));
                 return;
             }
 
             const selfHrid = this._skillingEditor.getSelfHrid();
             const dto = editedDTOs[selfHrid] || Object.values(editedDTOs)[0];
             if (!dto) {
-                this._setStatus('No player data available.');
+                this._setStatus(i18n_js.t('labSim.statusNoPlayerData'));
                 return;
             }
 
@@ -25424,7 +25685,7 @@
             const { equipmentMap: skillEquipmentMap, unavailableSelections } = this._buildSkillEquipmentMap(gameData);
             if (unavailableSelections.length > 0) {
                 const names = [...new Set(unavailableSelections.map((entry) => entry.loadoutName))].join(', ');
-                this._setStatus(`Selected skilling loadout unavailable: ${names}. Choose another loadout or Current Gear.`);
+                this._setStatus(i18n_js.t('labSim.statusSkillingLoadoutUnavailable', { names }));
                 this._renderSkillLoadoutTable();
                 return;
             }
@@ -25450,7 +25711,7 @@
                         const fill = this.panel.querySelector('#mwi-labsim-skilling-progress-fill');
                         const text = this.panel.querySelector('#mwi-labsim-skilling-progress-text');
                         if (fill) fill.style.width = `${Math.round((current / total) * 100)}%`;
-                        if (text) text.textContent = `${current} / ${total}: ${description}`;
+                        if (text) text.textContent = i18n_js.t('labSim.progressCurrentTotalDesc', { current, total, description });
                     },
                     { abortSignal: () => this._skillingAborted }
                 );
@@ -25458,7 +25719,7 @@
                 this._renderSkillingUpgradeResults(analysisResult, resultsEl);
             } catch (error) {
                 console.error('[LabSimUI] Skilling upgrade analysis failed:', error);
-                this._setStatus('Skilling upgrade analysis failed: ' + error.message);
+                this._setStatus(i18n_js.t('labSim.statusSkillingUpgradeAnalysisFailed', { error: error.message }));
             } finally {
                 progressEl.style.display = 'none';
                 calcBtn.style.display = '';
@@ -25471,9 +25732,8 @@
         _renderSkillingUpgradeResults(analysisResult, container) {
             const results = analysisResult?.results;
             if (!results || !results.length) {
-                container.innerHTML =
-                    '<div style="color:#888; font-size:12px; padding:20px 0; text-align:center;">No upgrade candidates found.</div>';
-                this._setStatus('No skilling upgrade candidates found.');
+                container.innerHTML = `<div style="color:#888; font-size:12px; padding:20px 0; text-align:center;">${i18n_js.t('labSim.noUpgradeCandidates')}</div>`;
+                this._setStatus(i18n_js.t('labSim.statusNoSkillingUpgradeCandidates'));
                 return;
             }
 
@@ -25548,14 +25808,14 @@
                     return `<th data-sort-key="${key}" data-table="token" style="${style}">${label}${ind}</th>`;
                 };
 
-                let html = `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:4px;">Token Upgrades</div>`;
+                let html = `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:4px;">${i18n_js.t('labSim.tokenUpgradesHeader')}</div>`;
                 html += '<table style="width:100%; border-collapse:collapse; font-size:11px; margin-bottom:12px;">';
                 html += `<thead><tr>
-                ${th('Upgrade', 'desc', 'left')}
-                ${th('Tokens', 'tokenCost', 'right')}
-                ${th('Clear Rate', 'clearRate', 'right')}
-                ${th('Delta', 'deltaVal', 'right')}
-                ${th('Tokens/1%', 'tokensPerPct', 'right')}
+                ${th(i18n_js.t('labSim.colUpgrade'), 'desc', 'left')}
+                ${th(i18n_js.t('labSim.colTokens'), 'tokenCost', 'right')}
+                ${th(i18n_js.t('labSim.colClearRate'), 'clearRate', 'right')}
+                ${th(i18n_js.t('labSim.colDelta'), 'deltaVal', 'right')}
+                ${th(i18n_js.t('labSim.colTokensPerPct'), 'tokensPerPct', 'right')}
             </tr></thead><tbody>`;
 
                 for (const row of tokenRows) {
@@ -25579,14 +25839,14 @@
                     return `<th data-sort-key="${key}" data-table="gold" style="${style}">${label}${ind}</th>`;
                 };
 
-                let html = `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:4px;">Equipment Upgrades</div>`;
+                let html = `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:4px;">${i18n_js.t('labSim.equipmentUpgradesHeader')}</div>`;
                 html += '<table style="width:100%; border-collapse:collapse; font-size:11px;">';
                 html += `<thead><tr>
-                ${th('Upgrade', 'desc', 'left')}
-                ${th('Cost', 'cost', 'right')}
-                ${th('Clear Rate', 'clearRate', 'right')}
-                ${th('Delta', 'deltaVal', 'right')}
-                ${th('Gold/1%', 'goldPerPct', 'right')}
+                ${th(i18n_js.t('labSim.colUpgrade'), 'desc', 'left')}
+                ${th(i18n_js.t('labSim.colCost'), 'cost', 'right')}
+                ${th(i18n_js.t('labSim.colClearRate'), 'clearRate', 'right')}
+                ${th(i18n_js.t('labSim.colDelta'), 'deltaVal', 'right')}
+                ${th(i18n_js.t('labSim.colGoldPerPct'), 'goldPerPct', 'right')}
             </tr></thead><tbody>`;
 
                 for (const row of goldRows) {
@@ -25606,7 +25866,7 @@
                 sortRows(tokenRows, sortState.token.key, sortState.token.dir);
                 sortRows(goldRows, sortState.gold.key, sortState.gold.dir);
                 let html = `<div style="color:#888; font-size:11px; margin-bottom:8px;">
-                Baseline Avg Clear: <span style="color:#e0e0e0; font-weight:600;">${((baseline?.clearRate || 0) * 100).toFixed(1)}%</span>
+                ${i18n_js.t('labSim.baselineAvgClear')} <span style="color:#e0e0e0; font-weight:600;">${((baseline?.clearRate || 0) * 100).toFixed(1)}%</span>
             </div>`;
                 if (tokenRows.length > 0) html += renderTokenTable();
                 if (goldRows.length > 0) html += renderGoldTable();
@@ -25630,7 +25890,7 @@
                 renderAll();
             });
 
-            this._setStatus(`${results.length} skilling upgrade candidates analyzed.`);
+            this._setStatus(i18n_js.t('labSim.statusSkillingUpgradeCandidatesAnalyzed', { count: results.length }));
         }
 
         toggle() {
@@ -25767,7 +26027,7 @@
 
             const button = document.createElement('div');
             button.className = 'MuiButtonBase-root MuiTab-root MuiTab-textColorPrimary css-1q2h7u5 ' + BUTTON_CLASS;
-            button.textContent = 'Lab Sim';
+            button.textContent = i18n_js.t('labSim.tabButtonLabel');
             button.style.cssText =
                 'cursor: pointer; background: linear-gradient(135deg, #3a7bd5, #5f3dc4); color: #fff; border-radius: 4px; padding: 4px 10px; font-size: 12px; white-space: nowrap;';
 
@@ -27149,7 +27409,7 @@
         if (itemHrid === '/items/coin') {
             return {
                 itemHrid,
-                itemName: 'Coin',
+                itemName: i18n_js.t('craftingPlanCalculator.coinItemName'),
                 quantity,
                 strategy: 'buy',
                 unitCost: 1,
@@ -27834,7 +28094,7 @@
             items.push({
                 count: loot.count,
                 itemHrid: loot.itemHrid,
-                itemName: itemDetails?.name || 'Unknown',
+                itemName: itemDetails?.name || i18n_js.t('combatStatsCalculator.unknownItemFallback'),
                 rarity: itemDetails?.rarity || 0,
                 totalValue,
             });
@@ -28278,7 +28538,7 @@
             color: var(--text-color-primary, #fff);
             margin-bottom: 4px;
         `;
-            shoppingHeader.textContent = 'Shopping List';
+            shoppingHeader.textContent = i18n_js.t('craftingPlanTreeRenderer.shoppingListHeader');
             shoppingListContainer.appendChild(shoppingHeader);
 
             // Sort by total cost descending
@@ -28295,9 +28555,13 @@
 
             // Total buy cost
             const totalBuyCost = sortedItems.reduce((sum, item) => sum + item.totalCost, 0);
-            const totalRow = createRow('Total material cost', formatters_js.formatWithSeparator(Math.round(totalBuyCost)), {
-                leftColor: 'var(--text-color-primary, #fff)',
-            });
+            const totalRow = createRow(
+                i18n_js.t('craftingPlanTreeRenderer.totalMaterialCostLabel'),
+                formatters_js.formatWithSeparator(Math.round(totalBuyCost)),
+                {
+                    leftColor: 'var(--text-color-primary, #fff)',
+                }
+            );
             totalRow.style.borderTop = '1px solid var(--border-color, #333)';
             totalRow.style.marginTop = '4px';
             totalRow.style.paddingTop = '4px';
@@ -28324,7 +28588,7 @@
             color: var(--text-color-primary, #fff);
             margin-bottom: 4px;
         `;
-            stepsHeader.textContent = 'Crafting Steps';
+            stepsHeader.textContent = i18n_js.t('craftingPlanTreeRenderer.craftingStepsHeader');
             container.appendChild(stepsHeader);
 
             for (let i = 0; i < craftMetrics.steps.length; i++) {
@@ -28341,9 +28605,13 @@
             }
 
             if (craftMetrics.totalCraftSeconds > 0) {
-                const totalTimeRow = createRow('Total craft time', formatters_js.timeReadable(craftMetrics.totalCraftSeconds), {
-                    leftColor: 'var(--text-color-primary, #fff)',
-                });
+                const totalTimeRow = createRow(
+                    i18n_js.t('craftingPlanTreeRenderer.totalCraftTimeLabel'),
+                    formatters_js.timeReadable(craftMetrics.totalCraftSeconds),
+                    {
+                        leftColor: 'var(--text-color-primary, #fff)',
+                    }
+                );
                 totalTimeRow.style.borderTop = '1px solid var(--border-color, #333)';
                 totalTimeRow.style.marginTop = '4px';
                 totalTimeRow.style.paddingTop = '4px';
@@ -28352,7 +28620,7 @@
 
             if (craftMetrics.totalXP > 0) {
                 container.appendChild(
-                    createRow('Total XP', formatters_js.formatKMB(Math.round(craftMetrics.totalXP)), {
+                    createRow(i18n_js.t('craftingPlanTreeRenderer.totalXpLabel'), formatters_js.formatKMB(Math.round(craftMetrics.totalXP)), {
                         leftColor: 'var(--text-color-primary, #fff)',
                     })
                 );
@@ -28391,30 +28659,34 @@
      */
     function formatRunway(seconds) {
         if (!Number.isFinite(seconds)) {
-            return 'No usage observed';
+            return i18n_js.t('combatStatsUi.runwayNoUsage');
         }
         if (seconds <= 0) {
-            return 'Out now';
+            return i18n_js.t('combatStatsUi.runwayOutNow');
         }
         if (seconds >= YEAR_SECONDS) {
-            return '>1y';
+            return i18n_js.t('combatStatsUi.runwayOverOneYear');
         }
         if (seconds < 3600) {
-            return `~${Math.ceil(seconds / 60)}m`;
+            return i18n_js.t('combatStatsUi.runwayMinutes', { minutes: Math.ceil(seconds / 60) });
         }
         if (seconds < 86400) {
             const h = Math.floor(seconds / 3600);
             const m = Math.floor((seconds % 3600) / 60);
-            return m > 0 ? `~${h}h ${m}m` : `~${h}h`;
+            return m > 0
+                ? i18n_js.t('combatStatsUi.runwayHoursMinutes', { hours: h, minutes: m })
+                : i18n_js.t('combatStatsUi.runwayHours', { hours: h });
         }
         const d = Math.floor(seconds / 86400);
         // 3+ digit day counts push "~XXXd Yh" onto two lines in the narrow Combat Consumables tiles -
         // drop the hours once days alone is already the meaningful precision.
         if (d >= 100) {
-            return `~${d}d`;
+            return i18n_js.t('combatStatsUi.runwayDays', { days: d });
         }
         const h = Math.floor((seconds % 86400) / 3600);
-        return h > 0 ? `~${d}d ${h}h` : `~${d}d`;
+        return h > 0
+            ? i18n_js.t('combatStatsUi.runwayDaysHours', { days: d, hours: h })
+            : i18n_js.t('combatStatsUi.runwayDays', { days: d });
     }
 
     /**
@@ -28431,7 +28703,9 @@
         if (d === 0) {
             return formatRunway(seconds);
         }
-        return h > 0 ? `~${d}d ${h}h` : `~${d}d`;
+        return h > 0
+            ? i18n_js.t('combatStatsUi.runwayDaysHours', { days: d, hours: h })
+            : i18n_js.t('combatStatsUi.runwayDays', { days: d });
     }
 
     /**
@@ -28583,7 +28857,7 @@
             const button = document.createElement('div');
             button.className =
                 'MuiButtonBase-root MuiTab-root MuiTab-textColorPrimary css-1q2h7u5 toolasha-combat-stats-btn';
-            button.textContent = 'Statistics';
+            button.textContent = i18n_js.t('combatStatsUi.statisticsButtonLabel');
             button.style.cursor = 'pointer';
 
             button.onclick = () => this.showPopup();
@@ -28640,7 +28914,7 @@
                                 case '{encountersPerHour}':
                                     return formatNum(stats.encountersPerHour);
                                 case '{duration}':
-                                    return stats.durationFormatted || '0s';
+                                    return stats.durationFormatted || i18n_js.t('combatStatsUi.durationFallback');
                                 default:
                                     return item.key;
                             }
@@ -28655,7 +28929,7 @@
                 const useKMB = formatters_js.isAbbreviationEnabled();
                 const formatNum = (num) => (useKMB ? formatters_js.coinFormatter(Math.round(num)) : formatters_js.formatWithSeparator(Math.round(num)));
 
-                message = (messageTemplate || 'Combat Stats: {income} income | {dailyProfit} profit/d | {exp} exp/h')
+                message = (messageTemplate || i18n_js.t('combatStatsUi.defaultChatMessageTemplate'))
                     .replace('{income}', formatNum(stats.income[priceKey]))
                     .replace('{dailyIncome}', formatNum(stats.dailyIncome[priceKey]))
                     .replace('{dailyProfit}', formatNum(stats.dailyProfit[priceKey]))
@@ -28712,7 +28986,7 @@
                 const marketData = await marketAPI.fetch();
                 if (!marketData) {
                     console.error('[Combat Stats] Market data not available');
-                    alert('Market data not available. Please try again.');
+                    alert(i18n_js.t('combatStatsUi.marketDataUnavailableAlert'));
                     return;
                 }
             }
@@ -28727,7 +29001,7 @@
             }
 
             if (!combatData || !combatData.players || combatData.players.length === 0) {
-                alert('No combat data available. Start a combat run first.');
+                alert(i18n_js.t('combatStatsUi.noCombatDataAlert'));
                 return;
             }
 
@@ -28818,7 +29092,7 @@
         `;
 
             const title = document.createElement('h2');
-            title.textContent = 'Combat Statistics';
+            title.textContent = i18n_js.t('combatStatsUi.popupTitle');
             title.style.cssText = `
             margin: 0;
             color: ${textColor};
@@ -28834,7 +29108,7 @@
         `;
 
             const resetButton = document.createElement('button');
-            resetButton.textContent = 'Reset Consumable Tracking';
+            resetButton.textContent = i18n_js.t('combatStatsUi.resetConsumableTrackingButton');
             resetButton.style.cssText = `
             background: #4a4a4a;
             border: 1px solid #5a5a5a;
@@ -28851,7 +29125,7 @@
                 resetButton.style.background = '#4a4a4a';
             };
             resetButton.onclick = async () => {
-                if (confirm('Reset consumable tracking? This will clear all tracked consumption data and start fresh.')) {
+                if (confirm(i18n_js.t('combatStatsUi.resetConsumableTrackingConfirm'))) {
                     await combatStatsDataCollector.resetConsumableTracking();
 
                     // Clear stale consumable data from the in-memory snapshot so the
@@ -28915,9 +29189,7 @@
             popup.appendChild(header);
             if (connectionInterrupted) {
                 const banner = document.createElement('div');
-                banner.textContent =
-                    '⚠️ Connection was interrupted during this session — some events may have been ' +
-                    'missed, so these numbers may be incomplete.';
+                banner.textContent = i18n_js.t('combatStatsUi.connectionInterruptedBanner');
                 banner.style.cssText = `
                 background: #4a3a1a;
                 border: 1px solid #8a6a2a;
@@ -29038,43 +29310,49 @@
             const priceKey = resolveDisplayPriceKey(getKeyPricingModeSetting());
 
             const statsRows = [
-                { label: 'Duration', value: stats.durationFormatted || '0s' },
-                { label: 'Encounters/Hour', value: formatNum(stats.encountersPerHour) },
                 {
-                    label: 'Income',
+                    label: i18n_js.t('combatStatsUi.durationLabel'),
+                    value: stats.durationFormatted || i18n_js.t('combatStatsUi.durationFallback'),
+                },
+                { label: i18n_js.t('combatStatsUi.encountersPerHourLabel'), value: formatNum(stats.encountersPerHour) },
+                {
+                    label: i18n_js.t('combatStatsUi.incomeLabel'),
                     value: formatNum(stats.income[priceKey]),
                     ...(stats.isDungeonRun && stats.incomeBreakdown?.length > 0
                         ? { expandable: true, incomeBreakdown: stats.incomeBreakdown }
                         : {}),
                 },
-                { label: 'Daily Income', value: `${formatNum(stats.dailyIncome[priceKey])}/d` },
                 {
-                    label: 'Consumable Costs',
+                    label: i18n_js.t('combatStatsUi.dailyIncomeLabel'),
+                    value: i18n_js.t('combatStatsUi.perDaySuffix', { value: formatNum(stats.dailyIncome[priceKey]) }),
+                },
+                {
+                    label: i18n_js.t('combatStatsUi.consumableCostsLabel'),
                     value: formatNumDecimals(stats.consumableCosts),
                     color: '#ff6b6b',
                     expandable: true,
                     breakdown: stats.consumableBreakdown,
                 },
                 {
-                    label: 'Daily Consumable Costs',
-                    value: `${formatNumDecimals(stats.dailyConsumableCosts)}/d`,
+                    label: i18n_js.t('combatStatsUi.dailyConsumableCostsLabel'),
+                    value: i18n_js.t('combatStatsUi.perDaySuffix', { value: formatNumDecimals(stats.dailyConsumableCosts) }),
                     color: '#ff6b6b',
                     expandable: true,
                     breakdown: stats.consumableBreakdown,
                     isDaily: true,
                 },
                 {
-                    label: 'Lowest runway',
+                    label: i18n_js.t('combatStatsUi.lowestRunwayLabel'),
                     value: stats.firstToRunOut
                         ? `${stats.firstToRunOut.itemName} · ${formatRunway(stats.firstToRunOut.timeToZeroSeconds)}`
-                        : 'No usage observed',
+                        : i18n_js.t('combatStatsUi.runwayNoUsage'),
                     color: stats.firstToRunOut ? getRunwayColor(stats.firstToRunOut.timeToZeroSeconds) : undefined,
                     title: stats.firstToRunOut ? formatRunwayExact(stats.firstToRunOut.timeToZeroSeconds) : undefined,
                 },
                 ...(stats.keyBreakdown && stats.keyBreakdown.length > 0
                     ? [
                           {
-                              label: 'Key Costs',
+                              label: i18n_js.t('combatStatsUi.keyCostsLabel'),
                               value: formatNum(stats.keyCosts[priceKey]),
                               color: '#ff6b6b',
                               expandable: true,
@@ -29083,8 +29361,8 @@
                               showKeyPricingNote: true,
                           },
                           {
-                              label: 'Daily Key Costs',
-                              value: `${formatNum(stats.dailyKeyCosts)}/d`,
+                              label: i18n_js.t('combatStatsUi.dailyKeyCostsLabel'),
+                              value: i18n_js.t('combatStatsUi.perDaySuffix', { value: formatNum(stats.dailyKeyCosts) }),
                               color: '#ff6b6b',
                               expandable: true,
                               breakdown: stats.keyBreakdown,
@@ -29095,27 +29373,34 @@
                       ]
                     : []),
                 {
-                    label: 'Daily Profit',
-                    value: `${formatNum(stats.dailyProfit[priceKey])}/d`,
+                    label: i18n_js.t('combatStatsUi.dailyProfitLabel'),
+                    value: i18n_js.t('combatStatsUi.perDaySuffix', { value: formatNum(stats.dailyProfit[priceKey]) }),
                     color: stats.dailyProfit[priceKey] >= 0 ? '#51cf66' : '#ff6b6b',
                 },
                 ...(stats.actualVsExpected && config.getSettingValue('combatStats_showLootLuck', true)
                     ? (() => {
-                          const sampleHeading = `Loot Luck sample · ${formatNum(stats.actualVsExpected.sampleSize)} encounters · ${formatRunway(stats.actualVsExpected.elapsedSeconds)}`;
+                          const sampleHeading = i18n_js.t('combatStatsUi.lootLuckSampleHeading', {
+                              count: formatNum(stats.actualVsExpected.sampleSize),
+                              elapsed: formatRunway(stats.actualVsExpected.elapsedSeconds),
+                          });
                           return [
                               {
-                                  label: 'Actual Rate',
-                                  value: `${formatNum(stats.actualVsExpected.actualRevenuePerDay)}/d`,
+                                  label: i18n_js.t('combatStatsUi.actualRateLabel'),
+                                  value: i18n_js.t('combatStatsUi.perDaySuffix', {
+                                      value: formatNum(stats.actualVsExpected.actualRevenuePerDay),
+                                  }),
                                   group: 'actualVsExpected',
                                   groupLabel: sampleHeading,
                               },
                               {
-                                  label: 'Expected Rate',
-                                  value: `${formatNum(stats.actualVsExpected.expectedRevenuePerDay)}/d`,
+                                  label: i18n_js.t('combatStatsUi.expectedRateLabel'),
+                                  value: i18n_js.t('combatStatsUi.perDaySuffix', {
+                                      value: formatNum(stats.actualVsExpected.expectedRevenuePerDay),
+                                  }),
                                   group: 'actualVsExpected',
                               },
                               {
-                                  label: 'Loot Luck',
+                                  label: i18n_js.t('combatStatsUi.lootLuckLabel'),
                                   value: `${formatNum(stats.actualVsExpected.rngDeltaValue)} (${stats.actualVsExpected.rngDeltaPercent >= 0 ? '+' : ''}${stats.actualVsExpected.rngDeltaPercent.toFixed(1)}%)${stats.actualVsExpected.isPartial ? ' *' : ''}`,
                                   color: stats.actualVsExpected.rngDeltaValue >= 0 ? '#51cf66' : '#ff6b6b',
                                   expandable: true,
@@ -29124,24 +29409,34 @@
                                   group: 'actualVsExpected',
                               },
                               {
-                                  label: 'Actual Profit/day',
-                                  value: `${formatNum(stats.actualVsExpected.actualProfitPerDay)}/d`,
+                                  label: i18n_js.t('combatStatsUi.actualProfitPerDayLabel'),
+                                  value: i18n_js.t('combatStatsUi.perDaySuffix', {
+                                      value: formatNum(stats.actualVsExpected.actualProfitPerDay),
+                                  }),
                                   color: stats.actualVsExpected.actualProfitPerDay >= 0 ? '#51cf66' : '#ff6b6b',
                                   group: 'actualVsExpected',
                               },
                               {
-                                  label: 'Expected Profit/day',
-                                  value: `${formatNum(stats.actualVsExpected.expectedProfitPerDay)}/d`,
+                                  label: i18n_js.t('combatStatsUi.expectedProfitPerDayLabel'),
+                                  value: i18n_js.t('combatStatsUi.perDaySuffix', {
+                                      value: formatNum(stats.actualVsExpected.expectedProfitPerDay),
+                                  }),
                                   color: stats.actualVsExpected.expectedProfitPerDay >= 0 ? '#51cf66' : '#ff6b6b',
                                   group: 'actualVsExpected',
                               },
                           ];
                       })()
                     : []),
-                { label: 'Total EXP', value: formatNum(stats.totalExp) },
-                { label: 'EXP/hour', value: `${formatNum(stats.expPerHour)}/h` },
-                { label: 'Death Count', value: `${stats.deathCount}` },
-                { label: 'Deaths/hr', value: `${stats.deathsPerHour.toFixed(2)}/h` },
+                { label: i18n_js.t('combatStatsUi.totalExpLabel'), value: formatNum(stats.totalExp) },
+                {
+                    label: i18n_js.t('combatStatsUi.expPerHourLabel'),
+                    value: i18n_js.t('combatStatsUi.perHourSuffix', { value: formatNum(stats.expPerHour) }),
+                },
+                { label: i18n_js.t('combatStatsUi.deathCountLabel'), value: `${stats.deathCount}` },
+                {
+                    label: i18n_js.t('combatStatsUi.deathsPerHrLabel'),
+                    value: i18n_js.t('combatStatsUi.perHourSuffix', { value: stats.deathsPerHour.toFixed(2) }),
+                },
             ];
 
             const statsContainer = document.createElement('div');
@@ -29163,7 +29458,7 @@
                         background: rgba(255, 255, 255, 0.03);
                     `;
                         const groupHeading = document.createElement('div');
-                        groupHeading.textContent = row.groupLabel || 'Recent sample';
+                        groupHeading.textContent = row.groupLabel || i18n_js.t('combatStatsUi.recentSampleLabel');
                         groupHeading.style.cssText = `
                         font-size: 11px;
                         color: #888;
@@ -29188,7 +29483,7 @@
             `;
 
                 const label = document.createElement('span');
-                label.textContent = row.label + ':';
+                label.textContent = row.label;
                 label.style.color = textColor;
 
                 const value = document.createElement('span');
@@ -29202,14 +29497,14 @@
                 if (row.expandable) {
                     rowDiv.style.cursor = 'pointer';
                     rowDiv.style.userSelect = 'none';
-                    label.textContent = '▶ ' + row.label + ':';
+                    label.textContent = '▶ ' + row.label;
 
                     let isExpanded = false;
                     let breakdownDiv = null;
 
                     rowDiv.onclick = () => {
                         isExpanded = !isExpanded;
-                        label.textContent = (isExpanded ? '▼ ' : '▶ ') + row.label + ':';
+                        label.textContent = (isExpanded ? '▼ ' : '▶ ') + row.label;
 
                         if (isExpanded) {
                             // Create breakdown
@@ -29237,17 +29532,17 @@
                                 color: ${textColor};
                             `;
                                 header.innerHTML = `
-                                <span>Item</span>
-                                <span style="text-align: right;">Actual/d</span>
-                                <span style="text-align: right;">Expected/d</span>
-                                <span style="text-align: right;">Value Δ</span>
+                                <span>${i18n_js.t('settings.itemLabel')}</span>
+                                <span style="text-align: right;">${i18n_js.t('combatStatsUi.actualPerDayColumn')}</span>
+                                <span style="text-align: right;">${i18n_js.t('combatStatsUi.expectedPerDayColumn')}</span>
+                                <span style="text-align: right;">${i18n_js.t('combatStatsUi.valueDeltaColumn')}</span>
                             `;
                                 breakdownDiv.appendChild(header);
 
                                 if (row.itemDeltas.length === 0) {
                                     const emptyNote = document.createElement('div');
                                     emptyNote.style.color = '#888';
-                                    emptyNote.textContent = 'No valued items yet';
+                                    emptyNote.textContent = i18n_js.t('combatStatsUi.noValuedItemsYetMessage');
                                     breakdownDiv.appendChild(emptyNote);
                                 }
 
@@ -29279,7 +29574,9 @@
                                     font-size: 11px;
                                     color: #f0a830;
                                 `;
-                                    partialNote.textContent = `⚠ Partial - could not value ${row.unvaluedItemHrids.length} item(s)`;
+                                    partialNote.textContent = i18n_js.t('combatStatsUi.partialCouldNotValueNote', {
+                                        count: row.unvaluedItemHrids.length,
+                                    });
                                     breakdownDiv.appendChild(partialNote);
                                 }
                             } else if (row.incomeBreakdown) {
@@ -29291,7 +29588,9 @@
                                 font-size: 12px;
                                 color: #aaa;
                             `;
-                                pricingNote.textContent = `Pricing: ${config.getPricingModeLabel(pricingMode)}`;
+                                pricingNote.textContent = i18n_js.t('combatStatsUi.pricingNoteLabel', {
+                                    label: config.getPricingModeLabel(pricingMode),
+                                });
                                 breakdownDiv.appendChild(pricingNote);
 
                                 // Column header
@@ -29307,10 +29606,10 @@
                                 color: ${textColor};
                             `;
                                 incomeHeader.innerHTML = `
-                                <span>Chest</span>
-                                <span style="text-align: right;">Received</span>
-                                <span style="text-align: right;">EV Each</span>
-                                <span style="text-align: right;">Total EV</span>
+                                <span>${i18n_js.t('combatStatsUi.chestColumnHeader')}</span>
+                                <span style="text-align: right;">${i18n_js.t('combatStatsUi.receivedColumnHeader')}</span>
+                                <span style="text-align: right;">${i18n_js.t('combatStatsUi.evEachColumnHeader')}</span>
+                                <span style="text-align: right;">${i18n_js.t('combatStatsUi.totalEvColumnHeader')}</span>
                             `;
                                 breakdownDiv.appendChild(incomeHeader);
 
@@ -29373,11 +29672,11 @@
                                             border-bottom: 1px solid #3a3a3a;
                                         `;
                                             subHeader.innerHTML = `
-                                            <span>Item</span>
-                                            <span style="text-align: right;">Rate</span>
-                                            <span style="text-align: right;">Avg Qty</span>
+                                            <span>${i18n_js.t('settings.itemLabel')}</span>
+                                            <span style="text-align: right;">${i18n_js.t('guildCreditValue.columnRate')}</span>
+                                            <span style="text-align: right;">${i18n_js.t('combatStatsUi.avgQtyColumnHeader')}</span>
                                             <span style="text-align: right;">@</span>
-                                            <span style="text-align: right;">EV</span>
+                                            <span style="text-align: right;">${i18n_js.t('combatStatsUi.evColumnHeader')}</span>
                                         `;
                                             chestBreakdownDiv.appendChild(subHeader);
                                             for (const drop of chest.drops) {
@@ -29408,7 +29707,7 @@
                                             gap: 8px;
                                         `;
                                             evTotalRow.innerHTML = `
-                                            <span>Total</span>
+                                            <span>${i18n_js.t('guildCreditValue.totalRowLabel')}</span>
                                             <span></span>
                                             <span></span>
                                             <span></span>
@@ -29438,7 +29737,7 @@
                                 color: ${textColor};
                             `;
                                 incomeTotalRow.innerHTML = `
-                                <span>Total</span>
+                                <span>${i18n_js.t('guildCreditValue.totalRowLabel')}</span>
                                 <span></span>
                                 <span></span>
                                 <span style="text-align: right;">${row.value}</span>
@@ -29456,11 +29755,13 @@
                                 `;
                                     const keyPricingLabel =
                                         keyPricing === 'bid'
-                                            ? 'Bid (patient buy)'
+                                            ? i18n_js.t('combatStatsUi.keyPricingLabelBid')
                                             : keyPricing === KEY_PRICING_MODE_CHEAPEST
-                                              ? 'Cheapest (buy or craft)'
-                                              : 'Ask (instant buy)';
-                                    keyPricingNote.textContent = `Pricing: ${keyPricingLabel}`;
+                                              ? i18n_js.t('combatStatsUi.keyPricingLabelCheapest')
+                                              : i18n_js.t('combatStatsUi.keyPricingLabelAsk');
+                                    keyPricingNote.textContent = i18n_js.t('combatStatsUi.pricingNoteLabel', {
+                                        label: keyPricingLabel,
+                                    });
                                     breakdownDiv.appendChild(keyPricingNote);
                                 }
 
@@ -29477,10 +29778,10 @@
                                 color: ${textColor};
                             `;
                                 header.innerHTML = `
-                                <span>Item</span>
-                                <span style="text-align: right;">Consumed</span>
-                                <span style="text-align: right;">Price</span>
-                                <span style="text-align: right;">Cost</span>
+                                <span>${i18n_js.t('settings.itemLabel')}</span>
+                                <span style="text-align: right;">${i18n_js.t('combatStatsUi.consumedColumnHeader')}</span>
+                                <span style="text-align: right;">${i18n_js.t('combatStatsUi.priceColumnHeader')}</span>
+                                <span style="text-align: right;">${i18n_js.t('labSim.colCost')}</span>
                             `;
                                 breakdownDiv.appendChild(header);
 
@@ -29536,7 +29837,9 @@
                                         margin-top: -2px;
                                         margin-bottom: 3px;
                                     `;
-                                        remainingRow.textContent = `Remaining: ${formatRunway(item.timeToZeroSeconds)}`;
+                                        remainingRow.textContent = i18n_js.t('combatStatsUi.remainingLabel', {
+                                            runway: formatRunway(item.timeToZeroSeconds),
+                                        });
                                         remainingRow.title = formatRunwayExact(item.timeToZeroSeconds);
                                         breakdownDiv.appendChild(remainingRow);
                                     }
@@ -29555,7 +29858,7 @@
                                 color: ${textColor};
                             `;
                                 totalRow.innerHTML = `
-                                <span>Total</span>
+                                <span>${i18n_js.t('guildCreditValue.totalRowLabel')}</span>
                                 <span></span>
                                 <span></span>
                                 <span style="text-align: right; color: #ff6b6b;">${row.value}</span>
@@ -29576,12 +29879,18 @@
 
                                     // Format tracking duration
                                     const formatTrackingDuration = (seconds) => {
-                                        if (seconds < 60) return `${seconds}s`;
-                                        if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+                                        if (seconds < 60) return i18n_js.t('combatStatsUi.trackingSeconds', { seconds });
+                                        if (seconds < 3600) {
+                                            return i18n_js.t('combatStatsUi.trackingMinutes', {
+                                                minutes: Math.floor(seconds / 60),
+                                            });
+                                        }
                                         if (seconds < 86400) {
                                             const h = Math.floor(seconds / 3600);
                                             const m = Math.floor((seconds % 3600) / 60);
-                                            return m > 0 ? `${h}h ${m}m` : `${h}h`;
+                                            return m > 0
+                                                ? i18n_js.t('combatStatsUi.trackingHoursMinutes', { hours: h, minutes: m })
+                                                : i18n_js.t('combatStatsUi.trackingHours', { hours: h });
                                         }
                                         // Days
                                         const d = Math.floor(seconds / 86400);
@@ -29589,9 +29898,13 @@
                                         if (d >= 30) {
                                             const months = Math.floor(d / 30);
                                             const days = d % 30;
-                                            return days > 0 ? `${months}mo ${days}d` : `${months}mo`;
+                                            return days > 0
+                                                ? i18n_js.t('combatStatsUi.trackingMonthsDays', { months, days })
+                                                : i18n_js.t('combatStatsUi.trackingMonths', { months });
                                         }
-                                        return h > 0 ? `${d}d ${h}h` : `${d}d`;
+                                        return h > 0
+                                            ? i18n_js.t('combatStatsUi.trackingDaysHours', { days: d, hours: h })
+                                            : i18n_js.t('combatStatsUi.trackingDays', { days: d });
                                     };
 
                                     // Display tracking info with MCS-style calculation note
@@ -29600,15 +29913,19 @@
                                     const hasActualData = firstItem.actualConsumed > 0;
 
                                     if (!hasActualData) {
-                                        trackingNote.textContent = `📊 Tracked ${formatTrackingDuration(trackingDuration)} - No consumption yet (rate decreases over time)`;
+                                        trackingNote.textContent = i18n_js.t('combatStatsUi.noConsumptionYetNote', {
+                                            duration: formatTrackingDuration(trackingDuration),
+                                        });
                                     } else {
-                                        trackingNote.textContent = `📊 Tracked ${formatTrackingDuration(trackingDuration)} - 90% actual + 10% baseline blend`;
+                                        trackingNote.textContent = i18n_js.t('combatStatsUi.blendNote', {
+                                            duration: formatTrackingDuration(trackingDuration),
+                                        });
                                     }
 
                                     breakdownDiv.appendChild(trackingNote);
                                 }
                             } else if (breakdownDiv) {
-                                breakdownDiv.textContent = 'No consumables used';
+                                breakdownDiv.textContent = i18n_js.t('combatStatsUi.noConsumablesUsedMessage');
                                 breakdownDiv.style.color = '#888';
                             }
 
@@ -29629,7 +29946,7 @@
             // Drop list
             if (stats.lootList && stats.lootList.length > 0) {
                 const dropHeader = document.createElement('div');
-                dropHeader.textContent = 'Drops';
+                dropHeader.textContent = i18n_js.t('combatStatsUi.dropsHeading');
                 dropHeader.style.cssText = `
                 font-weight: bold;
                 margin-top: 10px;
@@ -29758,39 +30075,54 @@
             const formatPrice = (val) => formatters_js.formatKMB(Math.round(val));
             const showDropsSetting = config.getSettingValue('expectedValue_showDrops', 'All');
 
-            let html = `<div style="font-weight:bold;margin-bottom:4px;">EXPECTED VALUE</div>`;
+            let html = `<div style="font-weight:bold;margin-bottom:4px;">${i18n_js.t('combatStatsUi.expectedValueHeading')}</div>`;
             html += `<div style="font-size:0.9em;margin-left:8px;">`;
-            html += `<div style="color:${config.COLOR_TOOLTIP_PROFIT};font-weight:bold;">Expected Return: ${formatPrice(evData.expectedValue)}</div>`;
+            html += `<div style="color:${config.COLOR_TOOLTIP_PROFIT};font-weight:bold;">${i18n_js.t('combatStatsUi.expectedReturnLabel', { value: formatPrice(evData.expectedValue) })}</div>`;
             html += `</div>`;
 
             if (showDropsSetting !== 'None' && evData.drops.length > 0) {
                 html += `<div style="border-top:1px solid rgba(255,255,255,0.2);margin:8px 0;"></div>`;
 
                 let dropsToShow = evData.drops;
-                let headerLabel = 'All Drops';
+                let headerLabel = i18n_js.t('combatStatsUi.allDropsLabel');
                 if (showDropsSetting === 'Top 5') {
                     dropsToShow = evData.drops.slice(0, 5);
-                    headerLabel = 'Top 5 Drops';
+                    headerLabel = i18n_js.t('combatStatsUi.top5DropsLabel');
                 } else if (showDropsSetting === 'Top 10') {
                     dropsToShow = evData.drops.slice(0, 10);
-                    headerLabel = 'Top 10 Drops';
+                    headerLabel = i18n_js.t('combatStatsUi.top10DropsLabel');
                 }
 
-                html += `<div style="font-weight:bold;margin-bottom:4px;">${headerLabel} (${evData.drops.length} total):</div>`;
+                html += `<div style="font-weight:bold;margin-bottom:4px;">${i18n_js.t('combatStatsUi.dropsHeaderWithTotal', { headerLabel, total: evData.drops.length })}</div>`;
                 html += `<div style="font-size:0.9em;margin-left:8px;">`;
 
                 for (const drop of dropsToShow) {
                     if (!drop.hasPriceData) {
-                        html += `<div style="color:${config.COLOR_TEXT_SECONDARY};">• ${drop.itemName} (${formatters_js.formatPercentage(drop.dropRate, 2)}): ${drop.avgCount.toFixed(2)} avg → No price data</div>`;
+                        html += `<div style="color:${config.COLOR_TEXT_SECONDARY};">${i18n_js.t('combatStatsUi.dropLineNoPrice', {
+                        itemName: drop.itemName,
+                        dropRate: formatters_js.formatPercentage(drop.dropRate, 2),
+                        avgCount: drop.avgCount.toFixed(2),
+                    })}</div>`;
                     } else {
                         const dropRatePercent = formatters_js.formatPercentage(drop.dropRate, 2);
-                        html += `<div>• ${drop.itemName} (${dropRatePercent}): ${drop.avgCount.toFixed(2)} avg → ${formatPrice(drop.expectedValue)}</div>`;
+                        html += `<div>${i18n_js.t('combatStatsUi.dropLineWithValue', {
+                        itemName: drop.itemName,
+                        dropRate: dropRatePercent,
+                        avgCount: drop.avgCount.toFixed(2),
+                        value: formatPrice(drop.expectedValue),
+                    })}</div>`;
                     }
                 }
 
                 html += `</div>`;
                 html += `<div style="border-top:1px solid rgba(255,255,255,0.2);margin:4px 0;"></div>`;
-                html += `<div style="font-size:0.9em;margin-left:8px;font-weight:bold;">Total from ${evData.drops.length} drops: ${formatPrice(evData.expectedValue)}</div>`;
+                html += `<div style="font-size:0.9em;margin-left:8px;font-weight:bold;">${i18n_js.t(
+                'combatStatsUi.totalFromDropsLabel',
+                {
+                    count: evData.drops.length,
+                    value: formatPrice(evData.expectedValue),
+                }
+            )}</div>`;
             }
 
             return html;
@@ -30991,10 +31323,10 @@
 
             calculatorDiv.innerHTML = `
             <div style="margin-bottom: 8px; font-size: 0.95em;">
-                <strong>Current level:</strong> <span id="currentLevelValue">${currentLevel}</span>
+                <strong>${i18n_js.t('abilityBookCalculator.currentLevelLabel')}</strong> <span id="currentLevelValue">${currentLevel}</span>
             </div>
             <div style="margin-bottom: 8px;">
-                <label for="tillLevelInput">To level: </label>
+                <label for="tillLevelInput">${i18n_js.t('abilityBookCalculator.toLevelLabel')}</label>
                 <input
                     id="tillLevelInput"
                     type="number"
@@ -31005,9 +31337,12 @@
                 >
             </div>
             <div id="tillLevelNumber" style="font-size: 0.95em;">
-                Books needed: <strong>${formatters_js.numberFormatter(booksNeeded)}</strong>
+                ${i18n_js.t('abilityBookCalculator.booksNeededLine', { books: formatters_js.numberFormatter(booksNeeded) })}
                 <br>
-                Cost: ${formatters_js.formatKMB(Math.ceil(booksNeeded * ask))} / ${formatters_js.formatKMB(Math.ceil(booksNeeded * bid))} (ask / bid)
+                ${i18n_js.t('abilityBookCalculator.costAskBidLine', {
+                    askCost: formatters_js.formatKMB(Math.ceil(booksNeeded * ask)),
+                    bidCost: formatters_js.formatKMB(Math.ceil(booksNeeded * bid)),
+                })}
             </div>
         `;
 
@@ -31025,13 +31360,16 @@
                     const books = this.calculateBooksNeeded(currentLevel, currentXp, target, xpPerBook);
                     currentBooks = books;
                     display.innerHTML = `
-                    Books needed: <strong>${formatters_js.numberFormatter(books)}</strong>
+                    ${i18n_js.t('abilityBookCalculator.booksNeededLine', { books: formatters_js.numberFormatter(books) })}
                     <br>
-                    Cost: ${formatters_js.formatKMB(Math.ceil(books * ask))} / ${formatters_js.formatKMB(Math.ceil(books * bid))} (ask / bid)
+                    ${i18n_js.t('abilityBookCalculator.costAskBidLine', {
+                        askCost: formatters_js.formatKMB(Math.ceil(books * ask)),
+                        bidCost: formatters_js.formatKMB(Math.ceil(books * bid)),
+                    })}
                 `;
                 } else {
                     currentBooks = 0;
-                    display.innerHTML = `<span style="color: ${config.COLOR_LOSS};">Invalid target level</span>`;
+                    display.innerHTML = `<span style="color: ${config.COLOR_LOSS};">${i18n_js.t('skillCalculatorUi.invalidTargetLevelMessage')}</span>`;
                 }
             };
 
@@ -31063,7 +31401,7 @@
             // Buy on Marketplace button
             const buyButton = document.createElement('button');
             buyButton.type = 'button';
-            buyButton.textContent = 'Buy on Marketplace';
+            buyButton.textContent = i18n_js.t('abilityBookCalculator.buyOnMarketplaceButton');
             buyButton.style.cssText = `
             margin-top: 8px;
             padding: 4px 10px;
@@ -32597,7 +32935,7 @@ self.onmessage = function (e) {
         }
 
         if (candidates.length === 0) {
-            return { cost: null, complete: false, reason: 'No complete acquisition route could be priced' };
+            return { cost: null, complete: false, reason: i18n_js.t('equipmentResolver.noCompleteRouteReason') };
         }
         return { cost: Math.min(...candidates), complete: true };
     }
@@ -32778,13 +33116,23 @@ self.onmessage = function (e) {
      */
 
 
-    const GUILD_SHRINE_LABELS = {
-        '/guild_shrines/force': 'Force',
-        '/guild_shrines/tempo': 'Tempo',
-        '/guild_shrines/rarity': 'Rarity',
-        '/guild_shrines/scholar': 'Scholar',
-        '/guild_shrines/spirit': 'Spirit',
-    };
+    /**
+     * Translated display label for a guild shrine hrid, mirroring the labels already
+     * used by src/features/guild/guild-credit-value.js (guildCreditValue.shrine* keys).
+     * Built at call time (not module scope) so it stays correct if the locale changes.
+     * @param {string} shrineHrid - e.g. '/guild_shrines/force'
+     * @returns {string|undefined}
+     */
+    function getGuildShrineLabel(shrineHrid) {
+        const labels = {
+            '/guild_shrines/force': i18n_js.t('guildCreditValue.shrineForce'),
+            '/guild_shrines/tempo': i18n_js.t('guildCreditValue.shrineTempo'),
+            '/guild_shrines/rarity': i18n_js.t('guildCreditValue.shrineRarity'),
+            '/guild_shrines/scholar': i18n_js.t('guildCreditValue.shrineScholar'),
+            '/guild_shrines/spirit': i18n_js.t('guildCreditValue.shrineSpirit'),
+        };
+        return labels[shrineHrid];
+    }
 
     /**
      * Build the human-readable display name for a guild shrine buff.
@@ -32793,9 +33141,12 @@ self.onmessage = function (e) {
      * @returns {string}
      */
     function buildGuildBuffDisplayName(buffHrid, buff) {
-        const shrineLabel = GUILD_SHRINE_LABELS[buff?.shrineHrid] || buff?.shrineHrid?.split('/').pop() || 'Shrine';
-        const typeLabel = buff?.isCombat ? 'Combat' : 'Skilling';
-        return `Shrine of ${shrineLabel} - ${typeLabel}`;
+        const shrineLabel =
+            getGuildShrineLabel(buff?.shrineHrid) ||
+            buff?.shrineHrid?.split('/').pop() ||
+            i18n_js.t('networthCalculator.shrineFallbackLabel');
+        const typeLabel = buff?.isCombat ? i18n_js.t('guildCreditValue.buffLabelCombat') : i18n_js.t('guildCreditValue.buffLabelSkilling');
+        return i18n_js.t('networthCalculator.guildBuffDisplayName', { shrine: shrineLabel, type: typeLabel });
     }
 
     /**
@@ -33709,7 +34060,6 @@ self.onmessage = function (e) {
     const SCORE_PANEL_DESKTOP_WIDTH = 280;
     const SCORE_PANEL_GAP = 8;
     const SCORE_PANEL_VIEWPORT_MARGIN = 10;
-    const HIDDEN_EQUIPMENT_TOOLTIP = 'Equipment is hidden in this profile, so it is not included in the Score.';
 
     /**
      * CombatScore class manages combat score display on profiles
@@ -33889,7 +34239,7 @@ self.onmessage = function (e) {
             const reasonInfo = item.reason
                 ? ` <span title="${item.reason.replace(/"/g, '&quot;')}" style="cursor: help; opacity: 0.7;">ⓘ</span>`
                 : '';
-            if (item.value === null) return `N/A${reasonInfo}`;
+            if (item.value === null) return `${i18n_js.t('combatSimUi.notAvailableLabel')}${reasonInfo}`;
             return `${item.value}${item.complete === false ? '+' : ''}${reasonInfo}`;
         }
 
@@ -33920,7 +34270,7 @@ self.onmessage = function (e) {
          */
         formatCategoryHeaderValue(categoryValue, complete, { hidden = false } = {}) {
             if (hidden) {
-                return `N/A <span title="${HIDDEN_EQUIPMENT_TOOLTIP}" style="cursor: help; opacity: 0.7;">ⓘ</span>`;
+                return `${i18n_js.t('combatSimUi.notAvailableLabel')} <span title="${i18n_js.t('combatScore.hiddenEquipmentTooltip')}" style="cursor: help; opacity: 0.7;">ⓘ</span>`;
             }
             return `${formatters_js.numberFormatter(categoryValue.toFixed(1))}${complete === false ? '+' : ''}`;
         }
@@ -33933,49 +34283,48 @@ self.onmessage = function (e) {
          * @returns {string}
          */
         buildScoreSectionsHTML(scoreData) {
-            const scoreTooltip =
-                'Estimated cost for you to reproduce this persistent build now, using current acquisition prices and your current Enhancing setup. Market values use current best Ask/unit estimates and are not order-book-depth adjusted.';
+            const scoreTooltip = i18n_js.t('combatScore.scoreTooltip');
             const scoreVisibility = !config.getSetting('combatScore') ? 'display: none;' : '';
 
             if (!scoreData) {
                 return `
                 <div style="font-weight: bold; margin-bottom: 8px; color: ${config.COLOR_PROFIT}; ${scoreVisibility}" id="mwi-score-toggle" title="${scoreTooltip}">
-                    Combat Score: Calculating…
+                    ${i18n_js.t('combatScore.combatScoreCalculatingLabel')}
                 </div>
                 <div style="font-weight: bold; margin-top: 12px; margin-bottom: 8px; color: ${config.COLOR_PROFIT}; ${scoreVisibility}" id="mwi-skiller-score-toggle" title="${scoreTooltip}">
-                    Skiller Score: Calculating…
+                    ${i18n_js.t('combatScore.skillerScoreCalculatingLabel')}
                 </div>
             `;
             }
 
             return `
             <div style="cursor: pointer; font-weight: bold; margin-bottom: 8px; color: ${config.COLOR_PROFIT}; ${scoreVisibility}" id="mwi-score-toggle" title="${scoreTooltip}">
-                + Combat Score: ${formatters_js.numberFormatter(scoreData.total.toFixed(1))}${scoreData.complete === false ? '+' : ''}
+                + ${i18n_js.t('combatScore.combatScoreLine', { value: `${formatters_js.numberFormatter(scoreData.total.toFixed(1))}${scoreData.complete === false ? '+' : ''}` })}
             </div>
             <div id="mwi-score-details" style="display: none; margin-left: 10px; color: ${config.COLOR_TEXT_PRIMARY};">
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-house-toggle">
-                    + House: ${this.formatCategoryHeaderValue(scoreData.house, scoreData.houseComplete)}
+                    + ${i18n_js.t('combatScore.houseLine', { value: this.formatCategoryHeaderValue(scoreData.house, scoreData.houseComplete) })}
                 </div>
                 <div id="mwi-house-breakdown" style="display: none; margin-bottom: 6px;">
                     ${this.buildBreakdownHTML(scoreData.breakdown.houses)}
                 </div>
 
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-ability-toggle">
-                    + Ability: ${this.formatCategoryHeaderValue(scoreData.ability, scoreData.abilityComplete)}
+                    + ${i18n_js.t('combatScore.abilityLine', { value: this.formatCategoryHeaderValue(scoreData.ability, scoreData.abilityComplete) })}
                 </div>
                 <div id="mwi-ability-breakdown" style="display: none; margin-bottom: 6px;">
                     ${this.buildBreakdownHTML(scoreData.breakdown.abilities)}
                 </div>
 
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-equipment-toggle">
-                    + Equipment: ${this.formatCategoryHeaderValue(scoreData.equipment, scoreData.equipmentComplete, { hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData })}
+                    + ${i18n_js.t('combatScore.equipmentLine', { value: this.formatCategoryHeaderValue(scoreData.equipment, scoreData.equipmentComplete, { hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData }) })}
                 </div>
                 <div id="mwi-equipment-breakdown" style="display: none; margin-bottom: 6px;">
                     ${this.buildBreakdownHTML(scoreData.breakdown.equipment)}
                 </div>
 
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-shrine-toggle">
-                    + Shrines: ${this.formatCategoryHeaderValue(scoreData.shrine || 0, scoreData.shrineComplete)}
+                    + ${i18n_js.t('combatScore.shrinesLine', { value: this.formatCategoryHeaderValue(scoreData.shrine || 0, scoreData.shrineComplete) })}
                 </div>
                 <div id="mwi-shrine-breakdown" style="display: none;">
                     ${this.buildBreakdownHTML(scoreData.breakdown.shrines)}
@@ -33983,25 +34332,25 @@ self.onmessage = function (e) {
             </div>
 
             <div style="cursor: pointer; font-weight: bold; margin-top: 12px; margin-bottom: 8px; color: ${config.COLOR_PROFIT}; ${scoreVisibility}" id="mwi-skiller-score-toggle" title="${scoreTooltip}">
-                + Skiller Score: ${formatters_js.numberFormatter(scoreData.skillerTotal.toFixed(1))}${scoreData.skillerComplete === false ? '+' : ''}
+                + ${i18n_js.t('combatScore.skillerScoreLine', { value: `${formatters_js.numberFormatter(scoreData.skillerTotal.toFixed(1))}${scoreData.skillerComplete === false ? '+' : ''}` })}
             </div>
             <div id="mwi-skiller-score-details" style="display: none; margin-left: 10px; color: ${config.COLOR_TEXT_PRIMARY};">
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-skiller-house-toggle">
-                    + House: ${this.formatCategoryHeaderValue(scoreData.skillerHouse || 0, scoreData.skillerHouseComplete)}
+                    + ${i18n_js.t('combatScore.houseLine', { value: this.formatCategoryHeaderValue(scoreData.skillerHouse || 0, scoreData.skillerHouseComplete) })}
                 </div>
                 <div id="mwi-skiller-house-breakdown" style="display: none; margin-bottom: 6px;">
                     ${this.buildBreakdownHTML(scoreData.skillerBreakdown.houses)}
                 </div>
 
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-skiller-equipment-toggle">
-                    + Equipment: ${this.formatCategoryHeaderValue(scoreData.skillerEquipment, scoreData.skillerEquipmentComplete, { hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData })}
+                    + ${i18n_js.t('combatScore.equipmentLine', { value: this.formatCategoryHeaderValue(scoreData.skillerEquipment, scoreData.skillerEquipmentComplete, { hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData }) })}
                 </div>
                 <div id="mwi-skiller-equipment-breakdown" style="display: none; margin-bottom: 6px;">
                     ${this.buildBreakdownHTML(scoreData.skillerBreakdown.equipment)}
                 </div>
 
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-skiller-shrine-toggle">
-                    + Shrines: ${this.formatCategoryHeaderValue(scoreData.skillerShrine || 0, scoreData.skillerShrineComplete)}
+                    + ${i18n_js.t('combatScore.shrinesLine', { value: this.formatCategoryHeaderValue(scoreData.skillerShrine || 0, scoreData.skillerShrineComplete) })}
                 </div>
                 <div id="mwi-skiller-shrine-breakdown" style="display: none;">
                     ${this.buildBreakdownHTML(scoreData.skillerBreakdown.shrines)}
@@ -34019,7 +34368,7 @@ self.onmessage = function (e) {
          * @returns {string}
          */
         buildPanelInnerHTML(profileData, scoreData) {
-            const playerName = profileData.profile?.sharableCharacter?.name || 'Player';
+            const playerName = profileData.profile?.sharableCharacter?.name || i18n_js.t('combatScore.playerFallbackName');
 
             // Build View Card button HTML (only if characterCard setting is enabled)
             const viewCardButtonHTML = config.getSetting('characterCard')
@@ -34034,7 +34383,7 @@ self.onmessage = function (e) {
                     font-weight: bold;
                     font-size: 0.85rem;
                     flex: 1;
-                ">View Card</button>
+                ">${i18n_js.t('combatScore.viewCardButton')}</button>
                 <button id="mwi-character-card-loadout-btn" style="
                     padding: 8px 10px;
                     background: ${config.COLOR_ACCENT};
@@ -34072,7 +34421,7 @@ self.onmessage = function (e) {
                     color: #aaa;
                     padding: 0 5px;
                     line-height: 1;
-                " title="Close">×</span>
+                " title="${i18n_js.t('combatScore.closeTooltip')}">×</span>
             </div>
             ${this.buildScoreSectionsHTML(scoreData)}
             <div id="mwi-button-container" style="margin-top: 12px; display: flex; flex-direction: column; gap: 6px;">
@@ -34087,7 +34436,7 @@ self.onmessage = function (e) {
                         font-weight: bold;
                         font-size: 0.85rem;
                         flex: 1;
-                    ">Metz Sim Export</button>
+                    ">${i18n_js.t('combatScore.metzSimExportButton')}</button>
                     <button id="mwi-metz-sim-loadout-btn" style="
                         padding: 8px 10px;
                         background: ${config.COLOR_ACCENT};
@@ -34124,7 +34473,7 @@ self.onmessage = function (e) {
                     font-weight: bold;
                     font-size: 0.85rem;
                     width: 100%;
-                ">Sim Character</button>
+                ">${i18n_js.t('combatScore.simCharacterButton')}</button>
                 <button id="mwi-milkonomy-export-btn" style="
                     padding: 8px 12px;
                     background: ${config.COLOR_ACCENT};
@@ -34135,7 +34484,7 @@ self.onmessage = function (e) {
                     font-weight: bold;
                     font-size: 0.85rem;
                     width: 100%;
-                ">Milkonomy Export</button>
+                ">${i18n_js.t('combatScore.milkonomyExportButton')}</button>
                 ${viewCardButtonHTML}
             </div>
         `;
@@ -34275,7 +34624,9 @@ self.onmessage = function (e) {
                     details.style.display = isCollapsed ? 'block' : 'none';
                     toggleBtn.textContent =
                         (isCollapsed ? '- ' : '+ ') +
-                        `Combat Score: ${formatters_js.numberFormatter(scoreData.total.toFixed(1))}${scoreData.complete === false ? '+' : ''}`;
+                        i18n_js.t('combatScore.combatScoreLine', {
+                            value: `${formatters_js.numberFormatter(scoreData.total.toFixed(1))}${scoreData.complete === false ? '+' : ''}`,
+                        });
                 });
             }
 
@@ -34288,7 +34639,9 @@ self.onmessage = function (e) {
                     houseBreakdown.style.display = isCollapsed ? 'block' : 'none';
                     houseToggle.textContent =
                         (isCollapsed ? '- ' : '+ ') +
-                        `House: ${this.formatCategoryHeaderValue(scoreData.house, scoreData.houseComplete)}`;
+                        i18n_js.t('combatScore.houseLine', {
+                            value: this.formatCategoryHeaderValue(scoreData.house, scoreData.houseComplete),
+                        });
                 });
             }
 
@@ -34301,7 +34654,9 @@ self.onmessage = function (e) {
                     abilityBreakdown.style.display = isCollapsed ? 'block' : 'none';
                     abilityToggle.textContent =
                         (isCollapsed ? '- ' : '+ ') +
-                        `Ability: ${this.formatCategoryHeaderValue(scoreData.ability, scoreData.abilityComplete)}`;
+                        i18n_js.t('combatScore.abilityLine', {
+                            value: this.formatCategoryHeaderValue(scoreData.ability, scoreData.abilityComplete),
+                        });
                 });
             }
 
@@ -34314,7 +34669,11 @@ self.onmessage = function (e) {
                     equipmentBreakdown.style.display = isCollapsed ? 'block' : 'none';
                     equipmentToggle.innerHTML =
                         (isCollapsed ? '- ' : '+ ') +
-                        `Equipment: ${this.formatCategoryHeaderValue(scoreData.equipment, scoreData.equipmentComplete, { hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData })}`;
+                        i18n_js.t('combatScore.equipmentLine', {
+                            value: this.formatCategoryHeaderValue(scoreData.equipment, scoreData.equipmentComplete, {
+                                hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData,
+                            }),
+                        });
                 });
             }
 
@@ -34327,7 +34686,9 @@ self.onmessage = function (e) {
                     shrineBreakdown.style.display = isCollapsed ? 'block' : 'none';
                     shrineToggle.textContent =
                         (isCollapsed ? '- ' : '+ ') +
-                        `Shrines: ${this.formatCategoryHeaderValue(scoreData.shrine || 0, scoreData.shrineComplete)}`;
+                        i18n_js.t('combatScore.shrinesLine', {
+                            value: this.formatCategoryHeaderValue(scoreData.shrine || 0, scoreData.shrineComplete),
+                        });
                 });
             }
 
@@ -34340,7 +34701,9 @@ self.onmessage = function (e) {
                     skillerScoreDetails.style.display = isCollapsed ? 'block' : 'none';
                     skillerScoreToggle.textContent =
                         (isCollapsed ? '- ' : '+ ') +
-                        `Skiller Score: ${formatters_js.numberFormatter(scoreData.skillerTotal.toFixed(1))}${scoreData.skillerComplete === false ? '+' : ''}`;
+                        i18n_js.t('combatScore.skillerScoreLine', {
+                            value: `${formatters_js.numberFormatter(scoreData.skillerTotal.toFixed(1))}${scoreData.skillerComplete === false ? '+' : ''}`,
+                        });
                 });
             }
 
@@ -34353,7 +34716,12 @@ self.onmessage = function (e) {
                     skillerHouseBreakdown.style.display = isCollapsed ? 'block' : 'none';
                     skillerHouseToggle.textContent =
                         (isCollapsed ? '- ' : '+ ') +
-                        `House: ${this.formatCategoryHeaderValue(scoreData.skillerHouse || 0, scoreData.skillerHouseComplete)}`;
+                        i18n_js.t('combatScore.houseLine', {
+                            value: this.formatCategoryHeaderValue(
+                                scoreData.skillerHouse || 0,
+                                scoreData.skillerHouseComplete
+                            ),
+                        });
                 });
             }
 
@@ -34366,7 +34734,13 @@ self.onmessage = function (e) {
                     skillerEquipmentBreakdown.style.display = isCollapsed ? 'block' : 'none';
                     skillerEquipmentToggle.innerHTML =
                         (isCollapsed ? '- ' : '+ ') +
-                        `Equipment: ${this.formatCategoryHeaderValue(scoreData.skillerEquipment, scoreData.skillerEquipmentComplete, { hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData })}`;
+                        i18n_js.t('combatScore.equipmentLine', {
+                            value: this.formatCategoryHeaderValue(
+                                scoreData.skillerEquipment,
+                                scoreData.skillerEquipmentComplete,
+                                { hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData }
+                            ),
+                        });
                 });
             }
 
@@ -34379,7 +34753,12 @@ self.onmessage = function (e) {
                     skillerShrineBreakdown.style.display = isCollapsed ? 'block' : 'none';
                     skillerShrineToggle.textContent =
                         (isCollapsed ? '- ' : '+ ') +
-                        `Shrines: ${this.formatCategoryHeaderValue(scoreData.skillerShrine || 0, scoreData.skillerShrineComplete)}`;
+                        i18n_js.t('combatScore.shrinesLine', {
+                            value: this.formatCategoryHeaderValue(
+                                scoreData.skillerShrine || 0,
+                                scoreData.skillerShrineComplete
+                            ),
+                        });
                 });
             }
 
@@ -34401,13 +34780,13 @@ self.onmessage = function (e) {
             const simCharBtn = panel.querySelector('#mwi-sim-character-btn');
             if (simCharBtn) {
                 simCharBtn.addEventListener('click', () => {
-                    const playerName = profileData?.profile?.sharableCharacter?.name || 'Player';
+                    const playerName = profileData?.profile?.sharableCharacter?.name || i18n_js.t('combatScore.playerFallbackName');
                     const dto = buildPlayerDTOFromProfile(profileData);
                     if (!dto) {
-                        simCharBtn.textContent = '\u2717 No Data';
+                        simCharBtn.textContent = i18n_js.t('combatScore.noDataStatus');
                         simCharBtn.style.background = config.COLOR_LOSS;
                         const resetTimeout = setTimeout(() => {
-                            simCharBtn.textContent = 'Sim Character';
+                            simCharBtn.textContent = i18n_js.t('combatScore.simCharacterButton');
                             simCharBtn.style.background = 'linear-gradient(135deg, #3a7bd5, #5f3dc4)';
                         }, 3000);
                         this.timerRegistry.registerTimeout(resetTimeout);
@@ -34612,7 +34991,7 @@ self.onmessage = function (e) {
                 return;
             }
 
-            const playerName = profileData.profile?.sharableCharacter?.name || 'Player';
+            const playerName = profileData.profile?.sharableCharacter?.name || i18n_js.t('combatScore.playerFallbackName');
 
             // Create panel element
             const panel = document.createElement('div');
@@ -34636,7 +35015,7 @@ self.onmessage = function (e) {
             // Create panel HTML
             panel.innerHTML = `
             <div id="mwi-abilities-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; flex-shrink: 0; cursor: move; user-select: none;">
-                <div style="font-weight: bold; color: ${config.COLOR_ACCENT}; font-size: 0.9rem;">${playerName} - Abilities & Triggers</div>
+                <div style="font-weight: bold; color: ${config.COLOR_ACCENT}; font-size: 0.9rem;">${i18n_js.t('combatScore.abilitiesTriggersPanelTitle', { playerName })}</div>
                 <div style="display: flex; align-items: center; gap: 4px;">
                     <span id="mwi-abilities-expand-btn" style="
                         cursor: pointer;
@@ -34645,18 +35024,18 @@ self.onmessage = function (e) {
                         padding: 0 5px;
                         line-height: 1;
                         user-select: none;
-                    " title="Expand / Collapse">⤢</span>
+                    " title="${i18n_js.t('combatScore.expandCollapseTooltip')}">⤢</span>
                     <span id="mwi-abilities-close-btn" style="
                         cursor: pointer;
                         font-size: 18px;
                         color: #aaa;
                         padding: 0 5px;
                         line-height: 1;
-                    " title="Close">×</span>
+                    " title="${i18n_js.t('combatScore.closeTooltip')}">×</span>
                 </div>
             </div>
             <div style="cursor: pointer; font-weight: bold; margin-bottom: 8px; color: ${config.COLOR_ACCENT}; flex-shrink: 0;" id="mwi-abilities-toggle">
-                + Show Details
+                + ${i18n_js.t('combatScore.showDetailsLabel')}
             </div>
             <div id="mwi-abilities-details" style="display: none; overflow-y: auto; flex: 1; min-height: 0;">
                 ${abilitiesTriggersHTML}
@@ -34727,11 +35106,11 @@ self.onmessage = function (e) {
                     expanded = !expanded;
                     panel.style.maxHeight = expanded ? 'none' : '200px';
                     expandBtn.textContent = expanded ? '⤡' : '⤢';
-                    expandBtn.title = expanded ? 'Collapse' : 'Expand';
+                    expandBtn.title = expanded ? i18n_js.t('combatScore.collapseLabel') : i18n_js.t('combatScore.expandLabel');
 
                     if (expanded && details && details.style.display === 'none') {
                         details.style.display = 'block';
-                        if (toggleBtn) toggleBtn.textContent = '- Hide Details';
+                        if (toggleBtn) toggleBtn.textContent = '- ' + i18n_js.t('combatScore.hideDetailsLabel');
                     }
 
                     // Anchor bottom of panel to bottom of screen
@@ -34752,7 +35131,9 @@ self.onmessage = function (e) {
                 toggleBtn.addEventListener('click', () => {
                     const isCollapsed = details.style.display === 'none';
                     details.style.display = isCollapsed ? 'block' : 'none';
-                    toggleBtn.textContent = (isCollapsed ? '- ' : '+ ') + (isCollapsed ? 'Hide Details' : 'Show Details');
+                    toggleBtn.textContent =
+                        (isCollapsed ? '- ' : '+ ') +
+                        (isCollapsed ? i18n_js.t('combatScore.hideDetailsLabel') : i18n_js.t('combatScore.showDetailsLabel'));
                     // Re-anchor to bottom after size change
                     requestAnimationFrame(() => {
                         const bottomGap = 10;
@@ -34864,7 +35245,7 @@ self.onmessage = function (e) {
                 // Base character (skills, house, achievements, triggers, hasMooPass) - own character only
                 const character = await constructMetzCharacterExport(null);
                 if (!character) {
-                    button.textContent = '✗ No Data';
+                    button.textContent = i18n_js.t('combatScore.noDataStatus');
                     button.style.background = `${config.COLOR_LOSS}`;
                     const resetTimeout = setTimeout(() => {
                         button.textContent = originalText;
@@ -34908,7 +35289,7 @@ self.onmessage = function (e) {
 
                 await navigator.clipboard.writeText(JSON.stringify(overridden));
 
-                button.textContent = '✓ Copied';
+                button.textContent = i18n_js.t('combatScore.copiedStatus');
                 button.style.background = `${config.COLOR_PROFIT}`;
                 const resetTimeout = setTimeout(() => {
                     button.textContent = originalText;
@@ -34917,7 +35298,7 @@ self.onmessage = function (e) {
                 this.timerRegistry.registerTimeout(resetTimeout);
             } catch (error) {
                 console.error('[Combat Score] Metz Sim snapshot export failed:', error);
-                button.textContent = '✗ Failed';
+                button.textContent = i18n_js.t('combatScore.failedStatus');
                 button.style.background = `${config.COLOR_LOSS}`;
                 const resetTimeout = setTimeout(() => {
                     button.textContent = originalText;
@@ -34941,7 +35322,7 @@ self.onmessage = function (e) {
 
                 const character = await constructMetzCharacterExport(currentProfileId);
                 if (!character) {
-                    button.textContent = '✗ No Data';
+                    button.textContent = i18n_js.t('combatScore.noDataStatus');
                     button.style.background = `${config.COLOR_LOSS}`;
                     const resetTimeout = setTimeout(() => {
                         button.textContent = originalText;
@@ -34953,7 +35334,7 @@ self.onmessage = function (e) {
 
                 await navigator.clipboard.writeText(JSON.stringify(character));
 
-                button.textContent = '✓ Copied';
+                button.textContent = i18n_js.t('combatScore.copiedStatus');
                 button.style.background = `${config.COLOR_PROFIT}`;
                 const resetTimeout = setTimeout(() => {
                     button.textContent = originalText;
@@ -34962,7 +35343,7 @@ self.onmessage = function (e) {
                 this.timerRegistry.registerTimeout(resetTimeout);
             } catch (error) {
                 console.error('[Combat Score] Metz Sim export failed:', error);
-                button.textContent = '✗ Failed';
+                button.textContent = i18n_js.t('combatScore.failedStatus');
                 button.style.background = `${config.COLOR_LOSS}`;
                 const resetTimeout = setTimeout(() => {
                     button.textContent = originalText;
@@ -34987,7 +35368,7 @@ self.onmessage = function (e) {
                 // Get export data (pass profile ID if viewing external profile)
                 const exportData = await constructMilkonomyExport(currentProfileId);
                 if (!exportData) {
-                    button.textContent = '✗ No Data';
+                    button.textContent = i18n_js.t('combatScore.noDataStatus');
                     button.style.background = '${config.COLOR_LOSS}';
                     const resetTimeout = setTimeout(() => {
                         button.textContent = originalText;
@@ -35000,7 +35381,7 @@ self.onmessage = function (e) {
                 const exportString = JSON.stringify(exportData);
                 await navigator.clipboard.writeText(exportString);
 
-                button.textContent = '✓ Copied';
+                button.textContent = i18n_js.t('combatScore.copiedStatus');
                 button.style.background = '${config.COLOR_PROFIT}';
                 const resetTimeout = setTimeout(() => {
                     button.textContent = originalText;
@@ -35009,7 +35390,7 @@ self.onmessage = function (e) {
                 this.timerRegistry.registerTimeout(resetTimeout);
             } catch (error) {
                 console.error('[Combat Score] Milkonomy export failed:', error);
-                button.textContent = '✗ Failed';
+                button.textContent = i18n_js.t('combatScore.failedStatus');
                 button.style.background = '${config.COLOR_LOSS}';
                 const resetTimeout = setTimeout(() => {
                     button.textContent = originalText;
@@ -35045,10 +35426,10 @@ self.onmessage = function (e) {
          */
         formatDependency(dependencyHrid) {
             const map = {
-                '/combat_trigger_dependencies/self': 'Self',
-                '/combat_trigger_dependencies/targeted_enemy': 'Target',
-                '/combat_trigger_dependencies/all_enemies': 'All Enemies',
-                '/combat_trigger_dependencies/all_allies': 'All Allies',
+                '/combat_trigger_dependencies/self': i18n_js.t('combatScore.dependencySelf'),
+                '/combat_trigger_dependencies/targeted_enemy': i18n_js.t('combatScore.dependencyTarget'),
+                '/combat_trigger_dependencies/all_enemies': i18n_js.t('combatScore.dependencyAllEnemies'),
+                '/combat_trigger_dependencies/all_allies': i18n_js.t('combatScore.dependencyAllAllies'),
             };
             return map[dependencyHrid] || dependencyHrid.split('/').pop().replace(/_/g, ' ');
         }
@@ -35060,11 +35441,11 @@ self.onmessage = function (e) {
          */
         formatCondition(conditionHrid) {
             const map = {
-                '/combat_trigger_conditions/current_hp': 'HP',
-                '/combat_trigger_conditions/missing_hp': 'Missing HP',
-                '/combat_trigger_conditions/current_mp': 'MP',
-                '/combat_trigger_conditions/missing_mp': 'Missing MP',
-                '/combat_trigger_conditions/number_of_active_units': 'Active Units',
+                '/combat_trigger_conditions/current_hp': i18n_js.t('combatScore.conditionHp'),
+                '/combat_trigger_conditions/missing_hp': i18n_js.t('combatScore.conditionMissingHp'),
+                '/combat_trigger_conditions/current_mp': i18n_js.t('combatScore.conditionMp'),
+                '/combat_trigger_conditions/missing_mp': i18n_js.t('combatScore.conditionMissingMp'),
+                '/combat_trigger_conditions/number_of_active_units': i18n_js.t('combatScore.conditionActiveUnits'),
             };
             if (map[conditionHrid]) return map[conditionHrid];
 
@@ -35088,8 +35469,8 @@ self.onmessage = function (e) {
                 '/combat_trigger_comparators/greater_than': '>',
                 '/combat_trigger_comparators/less_than': '<',
                 '/combat_trigger_comparators/equal': '=',
-                '/combat_trigger_comparators/is_active': 'is active',
-                '/combat_trigger_comparators/is_inactive': 'is inactive',
+                '/combat_trigger_comparators/is_active': i18n_js.t('combatScore.comparatorIsActive'),
+                '/combat_trigger_comparators/is_inactive': i18n_js.t('combatScore.comparatorIsInactive'),
             };
             return map[comparatorHrid] || comparatorHrid.split('/').pop().replace(/_/g, ' ');
         }
@@ -35104,12 +35485,21 @@ self.onmessage = function (e) {
             const conditionName = this.formatCondition(condition.conditionHrid);
             const comparator = this.formatComparator(condition.comparatorHrid);
 
-            // Handle is_active/is_inactive specially
-            if (comparator === 'is active' || comparator === 'is inactive') {
-                return `${dependency}: ${conditionName} ${comparator}`;
+            // Handle is_active/is_inactive specially - checked against the HRID (not the translated
+            // comparator text) so this branch keeps working once formatComparator's output is localized.
+            const isActivityComparator =
+                condition.comparatorHrid === '/combat_trigger_comparators/is_active' ||
+                condition.comparatorHrid === '/combat_trigger_comparators/is_inactive';
+            if (isActivityComparator) {
+                return i18n_js.t('combatScore.triggerConditionActive', { dependency, condition: conditionName, comparator });
             }
 
-            return `${dependency}: ${conditionName} ${comparator} ${condition.value}`;
+            return i18n_js.t('combatScore.triggerConditionValue', {
+                dependency,
+                condition: conditionName,
+                comparator,
+                value: condition.value,
+            });
         }
 
         /**
@@ -35118,9 +35508,9 @@ self.onmessage = function (e) {
          * @returns {string} Formatted trigger string
          */
         formatTriggers(conditions) {
-            if (!conditions || conditions.length === 0) return 'No trigger';
+            if (!conditions || conditions.length === 0) return i18n_js.t('combatScore.noTriggerLabel');
 
-            return conditions.map((c) => this.formatTriggerCondition(c)).join(' AND ');
+            return conditions.map((c) => this.formatTriggerCondition(c)).join(i18n_js.t('combatScore.triggerAndSeparator'));
         }
 
         /**
@@ -35178,11 +35568,11 @@ self.onmessage = function (e) {
                 for (const ability of abilities) {
                     const abilityIconId = ability.abilityHrid.split('/').pop();
                     const triggers = abilityTriggers[ability.abilityHrid];
-                    const triggerText = triggers ? this.formatTriggers(triggers) : 'No trigger';
+                    const triggerText = triggers ? this.formatTriggers(triggers) : i18n_js.t('combatScore.noTriggerLabel');
 
                     html += `
                     <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
-                        <svg role="img" aria-label="Ability" style="width: 24px; height: 24px; flex-shrink: 0;">
+                        <svg role="img" aria-label="${i18n_js.t('combatScore.abilityAriaLabel')}" style="width: 24px; height: 24px; flex-shrink: 0;">
                             <use href="${abilitiesSpriteUrl}#${abilityIconId}"></use>
                         </svg>
                         <span style="font-size: 0.75rem; color: #999; line-height: 1.3;">${triggerText}</span>
@@ -35195,17 +35585,17 @@ self.onmessage = function (e) {
             const consumableKeys = Object.keys(consumableTriggers);
             if (consumableKeys.length > 0 && itemsSpriteUrl) {
                 if (abilities.length > 0) {
-                    html += `<div style="margin-top: 6px; margin-bottom: 6px; font-weight: 600; color: ${config.COLOR_TEXT_SECONDARY}; font-size: 0.85rem;">Food & Drinks</div>`;
+                    html += `<div style="margin-top: 6px; margin-bottom: 6px; font-weight: 600; color: ${config.COLOR_TEXT_SECONDARY}; font-size: 0.85rem;">${i18n_js.t('combatScore.foodAndDrinksHeader')}</div>`;
                 }
 
                 for (const itemHrid of consumableKeys) {
                     const itemIconId = itemHrid.split('/').pop();
                     const triggers = consumableTriggers[itemHrid];
-                    const triggerText = triggers ? this.formatTriggers(triggers) : 'No trigger';
+                    const triggerText = triggers ? this.formatTriggers(triggers) : i18n_js.t('combatScore.noTriggerLabel');
 
                     html += `
                     <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
-                        <svg role="img" aria-label="Item" style="width: 24px; height: 24px; flex-shrink: 0;">
+                        <svg role="img" aria-label="${i18n_js.t('combatScore.itemAriaLabel')}" style="width: 24px; height: 24px; flex-shrink: 0;">
                             <use href="${itemsSpriteUrl}#${itemIconId}"></use>
                         </svg>
                         <span style="font-size: 0.75rem; color: #999; line-height: 1.3;">${triggerText}</span>
@@ -35255,7 +35645,6 @@ self.onmessage = function (e) {
 
     const ICON_ID = 'mwi-elite-achievement-reminder-icon';
     const ELITE_TIER_HRID = '/achievement_tiers/elite';
-    const DEFAULT_MESSAGE = 'Be Elite. Do your Elite achievements.';
 
     /**
      * Determine whether a shared profile's Elite achievement tier is incomplete.
@@ -35378,7 +35767,7 @@ self.onmessage = function (e) {
             const icon = document.createElement('span');
             icon.id = ICON_ID;
             icon.textContent = '✉️';
-            icon.title = 'Remind about Elite achievements';
+            icon.title = i18n_js.t('eliteAchievementReminder.reminderTooltip');
             icon.style.cssText = `
             cursor: pointer;
             margin-left: 6px;
@@ -35403,7 +35792,8 @@ self.onmessage = function (e) {
             const chatInput = document.querySelector('[class*="Chat_chatInputContainer"] input');
             if (!chatInput) return;
 
-            const message = config.getSettingValue('eliteAchievementReminderMessage', DEFAULT_MESSAGE) || DEFAULT_MESSAGE;
+            const defaultMessage = i18n_js.t('eliteAchievementReminder.defaultMessage');
+            const message = config.getSettingValue('eliteAchievementReminderMessage', defaultMessage) || defaultMessage;
             const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
             setter.call(chatInput, `/w ${playerName} ${message}`);
             chatInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -35511,4 +35901,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] Combat library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.loadoutState, Toolasha.Core.storage, Toolasha.Core.webSocketHook, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.profitHelpers, Toolasha.Utils.profitConstants, Toolasha.Utils.reactInput, Toolasha.Utils.dom, Toolasha.Utils.marketData, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.teaParser, Toolasha.Utils.abilityCalc, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.efficiency, Toolasha.Utils.materialCalculator, Toolasha.Utils.experienceCalculator, Toolasha.Core, Toolasha.Core.tooltipObserver, Toolasha.Utils.houseCostCalculator);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.loadoutState, Toolasha.Core.storage, Toolasha.Core.i18n, Toolasha.Core.webSocketHook, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.profitHelpers, Toolasha.Utils.profitConstants, Toolasha.Utils.reactInput, Toolasha.Utils.dom, Toolasha.Utils.marketData, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.teaParser, Toolasha.Utils.abilityCalc, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.efficiency, Toolasha.Utils.materialCalculator, Toolasha.Utils.experienceCalculator, Toolasha.Core, Toolasha.Core.tooltipObserver, Toolasha.Utils.houseCostCalculator);
