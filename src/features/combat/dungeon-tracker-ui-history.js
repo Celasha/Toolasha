@@ -69,8 +69,9 @@ class DungeonTrackerUIHistory {
 
     /**
      * Calculate stats for a set of runs. Failed/canceled attempts cost real time but aren't
-     * clears, so the clear-only stats (avg/fastest/slowest) stay unaffected by them while
-     * avgTimePerAttempt/failCount surface the real time cost.
+     * clears, so the clear-only stats (avg/fastest/slowest) stay unaffected by them. A cancel is
+     * a voluntary withdrawal, not a failure, so failCount/totalAttempts exclude it entirely while
+     * avgTimePerAttempt still folds in its time cost.
      * @param {Array} allAttempts - Array of runs (successes + fails/cancels)
      * @returns {Object} Stats object
      */
@@ -80,7 +81,8 @@ class DungeonTrackerUIHistory {
         // rather than let it skew avg/fastest/slowest.
         const reliableAttempts = (allAttempts || []).filter((r) => !r.hibernationDetected || r.validated);
         const runs = reliableAttempts.filter((r) => !r.result || r.result === 'success');
-        const failedAttempts = reliableAttempts.filter((r) => r.result === 'fail' || r.result === 'cancel');
+        const failedOrCanceledAttempts = reliableAttempts.filter((r) => r.result === 'fail' || r.result === 'cancel');
+        const failedAttempts = reliableAttempts.filter((r) => r.result === 'fail');
 
         if (runs.length === 0) {
             return {
@@ -96,14 +98,14 @@ class DungeonTrackerUIHistory {
 
         const durations = runs.map((r) => r.duration);
         const total = durations.reduce((sum, d) => sum + d, 0);
-        const failedTotal = failedAttempts.reduce((sum, r) => sum + (r.duration || 0), 0);
+        const failedOrCanceledTotal = failedOrCanceledAttempts.reduce((sum, r) => sum + (r.duration || 0), 0);
 
         return {
             totalRuns: runs.length,
             avgTime: Math.floor(total / runs.length),
             fastestTime: Math.min(...durations),
             slowestTime: Math.max(...durations),
-            avgTimePerAttempt: Math.floor((total + failedTotal) / runs.length),
+            avgTimePerAttempt: Math.floor((total + failedOrCanceledTotal) / runs.length),
             failCount: failedAttempts.length,
             totalAttempts: runs.length + failedAttempts.length,
         };

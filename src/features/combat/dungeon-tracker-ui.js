@@ -493,9 +493,12 @@ class DungeonTrackerUI {
         allAttempts = allAttempts.filter((r) => !r.hibernationDetected || r.validated);
 
         // Failed/canceled attempts cost real time but aren't clears - keep the existing
-        // clear-only stats (avg/fastest/slowest/last) unaffected by them.
+        // clear-only stats (avg/fastest/slowest/last) unaffected by them. A cancel is a
+        // voluntary withdrawal, not a failure, so it's excluded from failCount/failRate
+        // entirely while still counting toward the time cost in avgTimePerAttempt.
         const runHistory = allAttempts.filter((r) => !r.result || r.result === 'success');
-        const failedAttempts = allAttempts.filter((r) => r.result === 'fail' || r.result === 'cancel');
+        const failedOrCanceledAttempts = allAttempts.filter((r) => r.result === 'fail' || r.result === 'cancel');
+        const failedAttempts = allAttempts.filter((r) => r.result === 'fail');
 
         // Calculate stats from filtered runs
         if (runHistory.length > 0) {
@@ -504,17 +507,20 @@ class DungeonTrackerUI {
 
             const durations = runHistory.map((r) => r.duration || r.totalTime || 0);
             const total = durations.reduce((sum, d) => sum + d, 0);
-            const failedTotal = failedAttempts.reduce((sum, r) => sum + (r.duration || r.totalTime || 0), 0);
-            const totalAttempts = runHistory.length + failedAttempts.length;
+            const failedOrCanceledTotal = failedOrCanceledAttempts.reduce(
+                (sum, r) => sum + (r.duration || r.totalTime || 0),
+                0
+            );
+            const totalOutcomes = runHistory.length + failedAttempts.length;
 
             stats = {
                 totalRuns: runHistory.length,
                 avgTime: Math.floor(total / runHistory.length),
                 fastestTime: Math.min(...durations),
                 slowestTime: Math.max(...durations),
-                avgTimePerAttempt: Math.floor((total + failedTotal) / runHistory.length),
+                avgTimePerAttempt: Math.floor((total + failedOrCanceledTotal) / runHistory.length),
                 failCount: failedAttempts.length,
-                failRate: totalAttempts > 0 ? failedAttempts.length / totalAttempts : 0,
+                failRate: totalOutcomes > 0 ? failedAttempts.length / totalOutcomes : 0,
             };
 
             lastRunTime = durations[0]; // First run after sorting (most recent)
