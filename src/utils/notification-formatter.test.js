@@ -202,3 +202,24 @@ describe('getAllNotificationCategories', () => {
         expect(categories.length).toBe(new Set(categories).size);
     });
 });
+
+describe('notificationFormatter locale templates', () => {
+    test('every real en.js/zh.js template is a plain string, not a function', async () => {
+        // formatNotificationMessage calls t(key) with no params and relies on the raw {{var}}/
+        // $t(table.{{var}}) placeholders surviving intact for its own regex substitution. A
+        // function-valued template (i18n.js's mechanism for callers that DO pass params, e.g.
+        // pluralization) gets invoked immediately with an empty params object here, baking
+        // "undefined" into the string before this file's substitution ever runs.
+        const { default: enLocale } = await import('../locales/en.js');
+        const { default: zhLocale } = await import('../locales/zh.js');
+
+        for (const [locale, table] of [
+            ['en', enLocale.notificationFormatter],
+            ['zh', zhLocale.notificationFormatter],
+        ]) {
+            for (const [key, value] of Object.entries(table)) {
+                expect(typeof value, `${locale}.notificationFormatter.${key} must be a string`).toBe('string');
+            }
+        }
+    });
+});
