@@ -41,7 +41,7 @@ describe('calculateOfflineEconomics', () => {
         });
 
         expect(mockResolveSellSideValue).toHaveBeenCalledWith('/items/cheese', 0);
-        expect(result.revenue).toBeCloseTo(10 * 100 * 0.95); // MARKET_TAX = 0.05
+        expect(result.revenue).toBeCloseTo(10 * 100 * 0.96); // MARKET_TAX = 0.04
         expect(result.cost).toBe(0);
         expect(result.profit).toBeCloseTo(result.revenue);
         expect(result.isPartial).toBe(false);

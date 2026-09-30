@@ -245,9 +245,9 @@ describe('calculateTeaCostsPerHour', () => {
 
 describe('calculatePriceAfterTax', () => {
     test('applies the default marketplace tax', () => {
-        expect(calculatePriceAfterTax(100)).toBe(95);
-        expect(calculatePriceAfterTax(1000)).toBe(950);
-        expect(calculatePriceAfterTax(50)).toBe(47.5);
+        expect(calculatePriceAfterTax(100)).toBe(96);
+        expect(calculatePriceAfterTax(1000)).toBe(960);
+        expect(calculatePriceAfterTax(50)).toBe(48);
     });
 
     test('uses default MARKET_TAX when taxRate omitted', () => {
@@ -266,7 +266,7 @@ describe('calculatePriceAfterTax', () => {
     });
 
     test('handles fractional prices', () => {
-        expect(calculatePriceAfterTax(99.99)).toBeCloseTo(94.99, 2);
+        expect(calculatePriceAfterTax(99.99)).toBeCloseTo(95.99, 2);
     });
 });
 
@@ -295,8 +295,8 @@ describe('calculateProductionActionTotalsFromBase', () => {
         expect(result.totalMarketTax).toBeCloseTo(3420 * MARKET_TAX, 6);
         expect(result.totalMaterialCost).toBe(250);
         expect(result.totalTeaCost).toBe(20);
-        expect(result.totalCosts).toBeCloseTo(441, 6);
-        expect(result.totalProfit).toBeCloseTo(2979, 6);
+        expect(result.totalCosts).toBeCloseTo(406.8, 6);
+        expect(result.totalProfit).toBeCloseTo(3013.2, 6);
     });
 
     test('handles zero actionsPerHour without tea costs', () => {
@@ -363,8 +363,8 @@ describe('calculateGatheringActionTotalsFromBase', () => {
         expect(result.totalRevenue).toBe(77.5);
         expect(result.totalMarketTax).toBeCloseTo(77.5 * MARKET_TAX, 6);
         expect(result.totalDrinkCost).toBeCloseTo(15, 6);
-        expect(result.totalCosts).toBeCloseTo(18.875, 6);
-        expect(result.totalProfit).toBeCloseTo(58.625, 6);
+        expect(result.totalCosts).toBeCloseTo(18.1, 6);
+        expect(result.totalProfit).toBeCloseTo(59.4, 6);
     });
 
     test('handles missing inputs with zero actionsPerHour', () => {
@@ -414,8 +414,8 @@ describe('Real-world profit scenarios', () => {
             efficiencyMultiplier,
         });
 
-        // 100 completed actions: revenue = 10,000, materials = 5,000, tax = 500 → profit = 4,500
-        expect(result.totalProfit).toBe(4500);
+        // 100 completed actions: revenue = 10,000, materials = 5,000, tax = 400 → profit = 4,600
+        expect(result.totalProfit).toBe(4600);
     });
 
     test('Gathering with 50% efficiency', () => {
@@ -437,8 +437,8 @@ describe('Real-world profit scenarios', () => {
             efficiencyMultiplier: 1.5,
         });
 
-        // 500 actions × 20 revenue per action minus tax = 9,500
-        expect(result.totalProfit).toBe(9500);
+        // 500 actions × 20 revenue per action minus tax = 9,600
+        expect(result.totalProfit).toBe(9600);
     });
 
     test('Loss-making action (material cost > sale price)', () => {

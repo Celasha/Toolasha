@@ -67,8 +67,8 @@ describe('calculateSimRevenue - canonical sell-side valuation + tax reuse (CSIM-
 
         const revenue = calculateSimRevenue(result, gameData, 'player1', 10);
 
-        // 10 kills * 1 gold_ore each = 10 total / 10 hours = 1/hr, * (1000 * 0.95 tax) = 950/hr
-        expect(revenue.revenuePerHour).toBeCloseTo(950);
+        // 10 kills * 1 gold_ore each = 10 total / 10 hours = 1/hr, * (1000 * 0.96 tax) = 960/hr
+        expect(revenue.revenuePerHour).toBeCloseTo(960);
     });
 
     test('does not apply tax when resolveSellSideValue says needsTax is false (e.g. Coin)', () => {

@@ -249,7 +249,7 @@ describe('getDropBreakdown (regression - tax application unchanged by the resolv
         const cheeseDrop = drops.find((d) => d.itemHrid === '/items/cheese');
 
         expect(coinDrop.expectedValue).toBe(100); // 100 * 1 * 1, no tax
-        expect(cheeseDrop.expectedValue).toBeCloseTo(0.5 * 10 * 100 * 0.95); // MARKET_TAX = 0.05
+        expect(cheeseDrop.expectedValue).toBeCloseTo(0.5 * 10 * 100 * 0.96); // MARKET_TAX = 0.04
     });
 
     test('marks a drop with no price data as having no price data rather than a fake value', () => {

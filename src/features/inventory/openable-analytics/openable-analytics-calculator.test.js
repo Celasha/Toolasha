@@ -68,8 +68,8 @@ describe('calculateActualValue', () => {
 
         const { value, complete } = calculateActualValue([{ itemHrid: '/items/x', enhancementLevel: 0, count: 2 }]);
 
-        // 100 * 2 = 200, taxed at 5% => 190
-        expect(value).toBeCloseTo(190);
+        // 100 * 2 = 200, taxed at 4% => 192
+        expect(value).toBeCloseTo(192);
         expect(complete).toBe(true);
     });
 

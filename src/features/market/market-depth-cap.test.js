@@ -7,6 +7,7 @@ vi.mock('../../core/config.js', () => ({ default: { getSetting: vi.fn(() => true
 vi.mock('../risk-of-ruin/risk-of-ruin-ui.js', () => ({ default: { getDepthCapContext: vi.fn(() => null) } }));
 
 const { calculateDepthCap } = await import('./market-depth-cap.js');
+const { MARKET_TAX } = await import('../../utils/profit-constants.js');
 
 describe('calculateDepthCap', () => {
     test('sums quantity across bid levels that still clear the cost threshold', () => {
@@ -76,7 +77,12 @@ describe('calculateDepthCap', () => {
     test('defaults marketTax to the shared MARKET_TAX constant when omitted', () => {
         const bids = [{ price: 100, quantity: 10 }];
         const withDefault = calculateDepthCap({ bids, costPerAction: 100, quantityPerAction: 1 });
-        const withExplicit = calculateDepthCap({ bids, costPerAction: 100, quantityPerAction: 1, marketTax: 0.05 });
+        const withExplicit = calculateDepthCap({
+            bids,
+            costPerAction: 100,
+            quantityPerAction: 1,
+            marketTax: MARKET_TAX,
+        });
 
         expect(withDefault).toEqual(withExplicit);
     });

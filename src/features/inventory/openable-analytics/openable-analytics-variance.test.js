@@ -47,8 +47,8 @@ describe('calculatePerOpeningVariance', () => {
         });
         expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 100 });
 
-        // perUnit = 100 * 0.95 = 95; Var = 95^2 * (0.5*0 + 0.5*0.5*10^2) = 9025 * 25 = 225625
-        expect(calculatePerOpeningVariance('/items/box')).toBeCloseTo(225625);
+        // perUnit = 100 * 0.96 = 96; Var = 96^2 * (0.5*0 + 0.5*0.5*10^2) = 9216 * 25 = 230400
+        expect(calculatePerOpeningVariance('/items/box')).toBeCloseTo(230400);
     });
 
     test('a guaranteed drop with a variable count contributes variance from the count spread alone', () => {
@@ -59,9 +59,9 @@ describe('calculatePerOpeningVariance', () => {
         });
         expectedValueCalculator.resolveSellSideValue.mockReturnValue({ value: 10 });
 
-        // perUnit = 10 * 0.95 = 9.5; n=3, Var[Q] = (9-1)/12 = 0.6667
-        // Var = 9.5^2 * (1*0.6667 + 1*0*1) ≈ 60.17
-        expect(calculatePerOpeningVariance('/items/box')).toBeCloseTo(60.17, 1);
+        // perUnit = 10 * 0.96 = 9.6; n=3, Var[Q] = (9-1)/12 = 0.6667
+        // Var = 9.6^2 * (1*0.6667 + 1*0*1) ≈ 61.44
+        expect(calculatePerOpeningVariance('/items/box')).toBeCloseTo(61.44, 1);
     });
 
     test('coin drops are never taxed', () => {
@@ -113,8 +113,8 @@ describe('calculatePerOpeningVariance', () => {
             hrid === '/items/coin' ? { value: 1 } : { value: 100 }
         );
 
-        // 225625 (gem, taxed) + 25 (coin, untaxed)
-        expect(calculatePerOpeningVariance('/items/box')).toBeCloseTo(225650);
+        // 230400 (gem, taxed) + 25 (coin, untaxed)
+        expect(calculatePerOpeningVariance('/items/box')).toBeCloseTo(230425);
     });
 });
 
@@ -130,8 +130,8 @@ describe('calculateIncomeStdDev', () => {
         const oneOpening = calculateIncomeStdDev('/items/box', 1);
         const fourOpenings = calculateIncomeStdDev('/items/box', 4);
 
-        expect(oneOpening).toBeCloseTo(475);
-        expect(fourOpenings).toBeCloseTo(950);
+        expect(oneOpening).toBeCloseTo(480);
+        expect(fourOpenings).toBeCloseTo(960);
     });
 
     test('returns null when there is no drop table to model', () => {

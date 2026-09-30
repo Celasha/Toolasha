@@ -209,7 +209,7 @@ describe('calculateValuedRevenue - shared Actual/Expected valuation semantics', 
 
         const { revenue } = calculateValuedRevenue([{ itemHrid: '/items/log', count: 10 }]);
 
-        expect(revenue).toBeCloseTo(100 * 0.95 * 10, 5); // MARKET_TAX = 0.05
+        expect(revenue).toBeCloseTo(100 * 0.96 * 10, 5); // MARKET_TAX = 0.04
     });
 
     test('does not apply tax for an openable valued via Expected Value (needsTax false)', () => {
