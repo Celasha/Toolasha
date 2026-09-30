@@ -18,6 +18,7 @@ import { settingsGroups } from '../core/settings-schema.js';
 import { setCurrentProfile, getCurrentProfile, clearCurrentProfile } from '../core/profile-manager.js';
 import { marketplaceSession, MARKETPLACE_OWNER } from '../core/marketplace-session.js';
 import tooltipObserver from '../core/tooltip-observer.js';
+import i18n from '../core/i18n.js';
 import performanceMonitor from '../utils/performance-monitor.js';
 
 // API modules
@@ -42,6 +43,7 @@ toolashaRoot.Core = {
     settingsStorage,
     settingsGroups,
     tooltipObserver,
+    i18n,
     profileManager: {
         setCurrentProfile,
         getCurrentProfile,
