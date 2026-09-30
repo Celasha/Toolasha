@@ -54,22 +54,45 @@ import {
 
 const PANEL_CSS = `
 /* ---------- Toolasha-active mode on Inventory_items ---------- */
-/* When our tab is active, Inventory_items becomes a flex container.
-   Category wrappers and grids get display:contents so tiles become
-   direct flex children and can be reordered with CSS order. */
+/* When our tab is active, Inventory_items becomes a grid container sized to the game's own
+   item-tile token (--item-size-normal — the same value the native Inventory_itemGrid uses),
+   so tiles line up in a proper multi-column grid instead of one per row. Category wrappers
+   and grids get display:contents so tiles become direct grid children and can be reordered
+   with CSS order. */
 .toolasha-ct-active {
-    display: flex !important;
-    flex-wrap: wrap;
-    align-content: flex-start;
+    display: grid !important;
+    grid-template-columns: repeat(auto-fill, var(--item-size-normal, 60px));
+    justify-content: center;
+    justify-items: start;
+    align-content: start;
     gap: 0;
     padding-top: 0 !important;
 }
-/* Flatten game category wrappers so tiles become direct flex children.
+/* Our own injected elements (topbar, section headers, etc.) span the full row instead of
+   sitting in a single item-sized grid column. */
+.toolasha-ct-active > [class*="toolasha-"] {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+}
+/* Flatten game category wrappers so tiles become direct grid children.
    Exclude our own injected elements (they have class starting with toolasha-). */
 .toolasha-ct-active > *:not([class*="toolasha-"]) {
     display: contents;
 }
 .toolasha-ct-active [class*="Inventory_itemGrid"] {
+    display: contents;
+}
+/* The game now nests each category in its own tab panel and renders tiles only for the
+   selected panel (see _selectNativeAllCategoryTab) — every other panel is an empty div. Hide
+   the category tab strip while our tab is active, and flatten the panel machinery and its
+   wrapper divs so tiles surface as direct grid children like every other wrapper above. */
+.toolasha-ct-active [class*="TabsComponent_tabsContainer"] {
+    display: none !important;
+}
+.toolasha-ct-active [class*="TabsComponent_tabPanelsContainer"],
+.toolasha-ct-active [class*="TabPanel_tabPanel"]:not([class*="TabPanel_hidden"]),
+.toolasha-ct-active [class*="TabPanel_tabPanel"] > div,
+.toolasha-ct-active [class*="TabPanel_tabPanel"] > div > div {
     display: contents;
 }
 
@@ -535,6 +558,11 @@ export default class CustomTabsUI {
         this._tileObserver = null; // MutationObserver for instant tile visibility on React swaps
         this._observedContainer = null; // Container currently being observed by _tileObserver
         this._dragBoundTiles = new WeakSet();
+        // Icon aria-label of the native category tab we switched away from to force "All"
+        // selected (see _selectNativeAllCategoryTab), so it can be restored on deactivation.
+        // null means we haven't switched anything; '' means we switched but couldn't identify
+        // the prior tab.
+        this._savedCategoryTabLabel = null;
     }
 
     // -----------------------------------------------------------------------
@@ -952,7 +980,10 @@ export default class CustomTabsUI {
         }
 
         // Build tile map from all tiles currently in invContainer
-        const tileMap = this._buildTileMap(invContainer);
+        let tileMap = this._buildTileMap(invContainer);
+        if (this._selectNativeAllCategoryTab(invContainer)) {
+            tileMap = this._buildTileMap(invContainer);
+        }
 
         // A native category the player has collapsed renders none of its item tiles into the
         // DOM at all (not just visually hidden) — so any owned item inside one is invisible to
@@ -1220,6 +1251,8 @@ export default class CustomTabsUI {
         this._tileObserver = null;
         this._observedContainer = null;
 
+        this._restoreNativeCategoryTab(this._invContainer);
+
         this._removeInjectedEls();
 
         if (this._invContainer) {
@@ -1443,6 +1476,52 @@ export default class CustomTabsUI {
             }
         }
         return expanded;
+    }
+
+    /**
+     * Select the game's native "All Items" category tab. The game now renders each inventory
+     * category inside its own tab panel and only mounts tiles for the currently selected
+     * panel — every other panel is an empty div with nothing in the DOM at all. Without this,
+     * any category other than whichever one the player last had selected would be invisible to
+     * every check in this file, regardless of custom-tab assignment. "All Items" is always the
+     * first tab (confirmed against the game's own tab list construction and its own
+     * selected-tab fallback, which defaults to the first entry).
+     *
+     * Remembers whichever tab was selected before switching — see _restoreNativeCategoryTab —
+     * because the game persists the selected category tab per character and keeps the
+     * Inventory component mounted across outer character-management tab switches, so an
+     * un-restored switch would silently and permanently overwrite the player's own category
+     * preference the moment they open the Toolasha tab.
+     * @param {HTMLElement} invContainer
+     * @returns {boolean} true if a tab switch was triggered
+     */
+    _selectNativeAllCategoryTab(invContainer) {
+        const tabs = invContainer.querySelectorAll('[class*="TabsComponent_tabsContainer"] [role="tab"]');
+        const allTab = tabs[0];
+        if (!allTab || allTab.getAttribute('aria-selected') === 'true') return false;
+        if (this._savedCategoryTabLabel === null) {
+            const selected = [...tabs].find((tab) => tab.getAttribute('aria-selected') === 'true');
+            this._savedCategoryTabLabel = selected?.querySelector('svg[aria-label]')?.getAttribute('aria-label') || '';
+        }
+        allTab.click();
+        return true;
+    }
+
+    /**
+     * Restore whichever native category tab _selectNativeAllCategoryTab switched away from, so
+     * the player's own category preference (and the game's per-character persisted copy of it)
+     * isn't left on "All" after the Toolasha tab is deactivated.
+     * @param {HTMLElement|null} invContainer
+     */
+    _restoreNativeCategoryTab(invContainer) {
+        const label = this._savedCategoryTabLabel;
+        this._savedCategoryTabLabel = null;
+        if (!label || !invContainer) return;
+        const tabs = invContainer.querySelectorAll('[class*="TabsComponent_tabsContainer"] [role="tab"]');
+        const target = [...tabs].find(
+            (tab) => tab.querySelector('svg[aria-label]')?.getAttribute('aria-label') === label
+        );
+        target?.click();
     }
 
     /**

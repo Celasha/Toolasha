@@ -459,6 +459,131 @@ describe('CustomTabsUI action buttons survive removal of the piggybacked sort-co
 });
 
 // ---------------------------------------------------------------------------
+// Native category tab selection (game's per-category TabPanel nesting)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a fake native category tab strip matching the shape
+ * _selectNativeAllCategoryTab/_restoreNativeCategoryTab expect: a TabsComponent_tabsContainer
+ * wrapping [role="tab"] buttons, each containing an svg[aria-label] naming the category. A
+ * click handler mimics the game's own behavior of moving aria-selected to the clicked tab.
+ */
+function makeCategoryTabStrip(labels, selectedIndex) {
+    const strip = document.createElement('div');
+    strip.className = 'TabsComponent_tabsContainer_abc';
+    const buttons = [];
+    labels.forEach((label, i) => {
+        const btn = document.createElement('button');
+        btn.setAttribute('role', 'tab');
+        btn.setAttribute('aria-selected', String(i === selectedIndex));
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('aria-label', label);
+        btn.appendChild(svg);
+        strip.appendChild(btn);
+        buttons.push(btn);
+    });
+    buttons.forEach((btn, i) => {
+        btn.addEventListener('click', () => {
+            buttons.forEach((b, j) => b.setAttribute('aria-selected', String(j === i)));
+        });
+    });
+    return { strip, buttons };
+}
+
+describe('CustomTabsUI native category tab selection', () => {
+    let ui;
+
+    beforeEach(() => {
+        document.body.innerHTML = '';
+        ui = new CustomTabsUI();
+    });
+
+    test('switches to "All Items" and remembers the previously selected tab', () => {
+        const container = makeInvContainer([]);
+        const { strip, buttons } = makeCategoryTabStrip(['All Items', 'Equipment', 'Resources'], 1);
+        container.appendChild(strip);
+
+        const switched = ui._selectNativeAllCategoryTab(container);
+
+        expect(switched).toBe(true);
+        expect(buttons[0].getAttribute('aria-selected')).toBe('true');
+        expect(buttons[1].getAttribute('aria-selected')).toBe('false');
+        expect(ui._savedCategoryTabLabel).toBe('Equipment');
+    });
+
+    test('does nothing and reports no switch when "All Items" is already selected', () => {
+        const container = makeInvContainer([]);
+        const { buttons } = makeCategoryTabStrip(['All Items', 'Equipment'], 0);
+        container.appendChild(buttons[0].parentElement);
+
+        const switched = ui._selectNativeAllCategoryTab(container);
+
+        expect(switched).toBe(false);
+        expect(ui._savedCategoryTabLabel).toBeNull();
+    });
+
+    test('a repeated call while already on "All Items" does not overwrite the saved tab', () => {
+        const container = makeInvContainer([]);
+        const { strip } = makeCategoryTabStrip(['All Items', 'Equipment', 'Resources'], 1);
+        container.appendChild(strip);
+
+        ui._selectNativeAllCategoryTab(container);
+        expect(ui._savedCategoryTabLabel).toBe('Equipment');
+
+        // Second pass: already on "All Items" now, must not clobber the saved label.
+        const switchedAgain = ui._selectNativeAllCategoryTab(container);
+        expect(switchedAgain).toBe(false);
+        expect(ui._savedCategoryTabLabel).toBe('Equipment');
+    });
+
+    test('restores the originally selected tab and clears the saved state', () => {
+        const container = makeInvContainer([]);
+        const { strip, buttons } = makeCategoryTabStrip(['All Items', 'Equipment', 'Resources'], 1);
+        container.appendChild(strip);
+        ui._selectNativeAllCategoryTab(container);
+
+        ui._restoreNativeCategoryTab(container);
+
+        expect(buttons[1].getAttribute('aria-selected')).toBe('true');
+        expect(buttons[0].getAttribute('aria-selected')).toBe('false');
+        expect(ui._savedCategoryTabLabel).toBeNull();
+    });
+
+    test('restoring is a no-op when nothing was ever switched', () => {
+        const container = makeInvContainer([]);
+        const { strip, buttons } = makeCategoryTabStrip(['All Items', 'Equipment'], 0);
+        container.appendChild(strip);
+        const clickSpy = vi.spyOn(buttons[0], 'click');
+
+        ui._restoreNativeCategoryTab(container);
+
+        expect(clickSpy).not.toHaveBeenCalled();
+    });
+
+    test("a full activate/deactivate layout cycle restores the player's original category tab", () => {
+        ui._config = { version: 1, tabs: [], selectedTabId: null };
+        vi.spyOn(ui, '_findContentContainer').mockReturnValue(null);
+        vi.spyOn(ui, '_injectActionButtons').mockReturnValue(null);
+
+        const container = makeInvContainer([makeTile('Milk')]);
+        const { strip, buttons } = makeCategoryTabStrip(['All Items', 'Equipment', 'Resources'], 2);
+        container.appendChild(strip);
+
+        ui._applyLayoutSync(container);
+        expect(buttons[0].getAttribute('aria-selected')).toBe('true');
+
+        ui._clearLayout();
+
+        expect(buttons[2].getAttribute('aria-selected')).toBe('true');
+        expect(ui._savedCategoryTabLabel).toBeNull();
+    });
+
+    afterEach(() => {
+        ui._tileObserver?.disconnect();
+    });
+});
+
+// ---------------------------------------------------------------------------
 // Loadout binding effective-enhancement parity
 // ---------------------------------------------------------------------------
 
