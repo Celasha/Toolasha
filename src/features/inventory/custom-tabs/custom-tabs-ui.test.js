@@ -725,3 +725,171 @@ describe('CustomTabsUI loadout binding enhancement resolution', () => {
         expect(ui._save).not.toHaveBeenCalled();
     });
 });
+
+// ---------------------------------------------------------------------------
+// "Add to Tab" item-menu dropdown
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a fake native item action menu matching the DOM shape _injectAddToTabButton expects:
+ * an existing button (to copy styling from), an [class*="Item_name"] element, and an optional
+ * [class*="Item_enhancementLevel"] badge.
+ */
+function makeActionMenu(itemName, enhancementLevel = 0) {
+    const menu = document.createElement('div');
+    menu.className = 'Item_actionMenu_abc';
+
+    const existingBtn = document.createElement('button');
+    existingBtn.className = 'Item_actionButton_xyz';
+    existingBtn.textContent = 'View Item';
+    menu.appendChild(existingBtn);
+
+    const nameEl = document.createElement('div');
+    nameEl.className = 'Item_name_abc';
+    nameEl.textContent = itemName;
+    menu.appendChild(nameEl);
+
+    if (enhancementLevel > 0) {
+        const enhEl = document.createElement('div');
+        enhEl.className = 'Item_enhancementLevel_xyz';
+        enhEl.textContent = `+${enhancementLevel}`;
+        menu.appendChild(enhEl);
+    }
+
+    document.body.appendChild(menu);
+    return menu;
+}
+
+describe('CustomTabsUI "Add to Tab" item-menu dropdown', () => {
+    let ui;
+
+    beforeEach(() => {
+        document.body.innerHTML = '';
+        ui = new CustomTabsUI();
+        ui._isActive = false;
+        ui._config = {
+            version: 1,
+            selectedTabId: null,
+            tabs: [
+                { id: 'tab-1', name: 'Food', color: null, open: true, items: ['/items/milk'], children: [] },
+                { id: 'tab-2', name: 'Weapons', color: null, open: true, items: [], children: [] },
+            ],
+        };
+        vi.spyOn(ui, '_save').mockImplementation(() => {});
+        vi.spyOn(ui, '_findContentContainer').mockReturnValue(null);
+    });
+
+    afterEach(() => {
+        ui._tileObserver?.disconnect();
+        document.body.innerHTML = '';
+    });
+
+    test('opening the dropdown renders it as a body-appended, fixed-position portal (not clipped by the native menu)', () => {
+        const menu = makeActionMenu('Milk');
+        ui._injectAddToTabButton(menu);
+
+        const toggle = menu.querySelector('.toolasha-ct-add-to-tab button');
+        expect(toggle).not.toBeNull();
+        toggle.click();
+
+        const panel = document.body.querySelector('.toolasha-ct-add-to-tab-panel');
+        expect(panel).not.toBeNull();
+        expect(panel.parentElement).toBe(document.body);
+        expect(menu.contains(panel)).toBe(false);
+        expect(panel.style.position).toBe('fixed');
+        expect(panel.style.display).toBe('flex');
+    });
+
+    test('clicking a tab not yet containing the item adds it and keeps the dropdown open', () => {
+        const menu = makeActionMenu('Sword');
+        ui._injectAddToTabButton(menu);
+        menu.querySelector('.toolasha-ct-add-to-tab button').click();
+
+        const panel = document.body.querySelector('.toolasha-ct-add-to-tab-panel');
+        const weaponsBtn = [...panel.querySelectorAll('button')].find((b) => b.textContent.includes('Weapons'));
+        expect(weaponsBtn).toBeDefined();
+
+        weaponsBtn.click();
+
+        expect(ui._config.tabs[1].items).toContain('/items/sword');
+        expect(ui._save).toHaveBeenCalled();
+        // The dropdown must stay open so the player can toggle multiple tabs in one visit.
+        expect(panel.style.display).toBe('flex');
+        expect(document.body.contains(panel)).toBe(true);
+    });
+
+    test('clicking a tab the item is already in removes it (toggle) and keeps the dropdown open', () => {
+        const menu = makeActionMenu('Milk');
+        ui._injectAddToTabButton(menu);
+        menu.querySelector('.toolasha-ct-add-to-tab button').click();
+
+        const panel = document.body.querySelector('.toolasha-ct-add-to-tab-panel');
+        const foodBtn = [...panel.querySelectorAll('button')].find((b) => b.textContent.includes('Food'));
+        expect(foodBtn.textContent).toContain('✓');
+
+        foodBtn.click();
+
+        expect(ui._config.tabs[0].items).not.toContain('/items/milk');
+        expect(ui._save).toHaveBeenCalled();
+        expect(panel.style.display).toBe('flex');
+    });
+
+    test("removing an item also clears it from loadout bindings, mirroring the tab editor's remove button", () => {
+        ui._config.tabs[0].loadoutBindings = { Combat: ['/items/milk'] };
+        const menu = makeActionMenu('Milk');
+        ui._injectAddToTabButton(menu);
+        menu.querySelector('.toolasha-ct-add-to-tab button').click();
+
+        const panel = document.body.querySelector('.toolasha-ct-add-to-tab-panel');
+        const foodBtn = [...panel.querySelectorAll('button')].find((b) => b.textContent.includes('Food'));
+        foodBtn.click();
+
+        expect(ui._config.tabs[0].loadoutBindings).toEqual({});
+    });
+
+    test('the "New Tab" entry creates a root-level tab, adds the item, closes the native menu, and opens the editor', () => {
+        const menu = makeActionMenu('Sword');
+        ui._injectAddToTabButton(menu);
+        menu.querySelector('.toolasha-ct-add-to-tab button').click();
+
+        const openEditorSpy = vi.spyOn(ui, '_openEditor').mockImplementation(() => {});
+        const escapeListener = vi.fn();
+        document.addEventListener('keydown', escapeListener);
+
+        const panel = document.body.querySelector('.toolasha-ct-add-to-tab-panel');
+        const newTabBtn = [...panel.querySelectorAll('button')].at(-1);
+        expect(newTabBtn.textContent).toContain('New Tab');
+
+        newTabBtn.click();
+        document.removeEventListener('keydown', escapeListener);
+
+        expect(ui._config.tabs).toHaveLength(3);
+        const created = ui._config.tabs[2];
+        expect(created.items).toContain('/items/sword');
+        expect(ui._save).toHaveBeenCalled();
+        expect(escapeListener).toHaveBeenCalledWith(expect.objectContaining({ key: 'Escape' }));
+        expect(openEditorSpy).toHaveBeenCalledWith(created.id);
+        // Unlike add/remove toggles, creating a tab closes the dropdown since the editor modal
+        // takes over from here.
+        expect(panel.style.display).toBe('none');
+    });
+
+    test('cleanup() removes body-portaled dropdown panels left open across item menus', () => {
+        const menu = makeActionMenu('Milk');
+        ui._injectAddToTabButton(menu);
+        menu.querySelector('.toolasha-ct-add-to-tab button').click();
+        expect(document.body.querySelector('.toolasha-ct-add-to-tab-panel')).not.toBeNull();
+
+        ui.cleanup();
+
+        expect(document.body.querySelector('.toolasha-ct-add-to-tab-panel')).toBeNull();
+    });
+
+    test('does nothing when there are no tabs configured yet', () => {
+        ui._config = { version: 1, tabs: [], selectedTabId: null };
+        const menu = makeActionMenu('Milk');
+        ui._injectAddToTabButton(menu);
+
+        expect(menu.querySelector('.toolasha-ct-add-to-tab')).toBeNull();
+    });
+});

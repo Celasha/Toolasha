@@ -677,6 +677,7 @@ export default class CustomTabsUI {
         this._actionBtnsEl = null;
         this._styleEl?.remove();
         document.querySelectorAll('.toolasha-ct-add-to-tab').forEach((el) => el.remove());
+        document.querySelectorAll('.toolasha-ct-add-to-tab-panel').forEach((el) => el.remove());
         this._isActive = false;
     }
 
@@ -3132,13 +3133,14 @@ export default class CustomTabsUI {
         toggle.appendChild(label);
         toggle.appendChild(chevron);
 
+        // Rendered as a fixed-position portal appended to <body> rather than nested inside the
+        // game's own action menu, since that native menu is a short, overflow-clipped popup that
+        // would otherwise clip the tab list off-screen (see marketplace-shortcuts.js buildDropdown).
         const panel = document.createElement('div');
+        panel.className = 'toolasha-ct-add-to-tab-panel';
         panel.style.cssText = `
             display: none;
-            position: absolute;
-            top: calc(100% + 4px);
-            left: 0;
-            width: 100%;
+            position: fixed;
             z-index: 9999;
             flex-direction: column;
             background: var(--color-surface, #1e1e2e);
@@ -3151,30 +3153,46 @@ export default class CustomTabsUI {
             box-sizing: border-box;
         `;
 
-        // Populate panel with all tabs (depth-first)
-        const flatTabs = this._flattenTabs(this._config.tabs);
-        for (const { tab, depth } of flatTabs) {
-            const alreadyAdded = tab.items.includes(itemHrid);
-            const btn = document.createElement('button');
-            btn.textContent = '\u00a0'.repeat(depth * 2) + tab.name;
-            btn.style.cssText = `
-                display: block;
-                width: 100%;
-                padding: 6px 12px;
-                border: none;
-                border-radius: 4px;
-                cursor: ${alreadyAdded ? 'default' : 'pointer'};
-                font-size: 0.85rem;
-                font-weight: 600;
-                color: ${alreadyAdded ? '#888' : '#fff'};
-                background: ${tab.color ? tab.color + '55' : 'rgba(255,255,255,0.08)'};
-                text-align: left;
-                transition: opacity 0.15s;
-            `;
-            if (tab.color && !alreadyAdded) btn.style.borderLeft = `3px solid ${tab.color}`;
-            if (alreadyAdded) {
-                btn.title = t('customTabsUi.alreadyInTabTooltip');
-            } else {
+        const closeNativeMenu = () => {
+            document.dispatchEvent(
+                new KeyboardEvent('keydown', {
+                    key: 'Escape',
+                    code: 'Escape',
+                    keyCode: 27,
+                    which: 27,
+                    bubbles: true,
+                    cancelable: true,
+                })
+            );
+        };
+
+        // Populate panel with all tabs (depth-first) plus a trailing "New Tab" entry.
+        // Re-run after every add/remove toggle so checkmarks reflect the latest membership
+        // without closing the dropdown, letting the player toggle several tabs in one visit.
+        const renderRows = () => {
+            panel.innerHTML = '';
+
+            const flatTabs = this._flattenTabs(this._config.tabs);
+            for (const { tab, depth } of flatTabs) {
+                const alreadyAdded = tab.items.includes(itemHrid);
+                const btn = document.createElement('button');
+                btn.textContent = (alreadyAdded ? '\u2713 ' : '') + '\u00a0'.repeat(depth * 2) + tab.name;
+                btn.style.cssText = `
+                    display: block;
+                    width: 100%;
+                    padding: 6px 12px;
+                    border: none;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-size: 0.85rem;
+                    font-weight: 600;
+                    color: ${alreadyAdded ? '#ccc' : '#fff'};
+                    background: ${tab.color ? tab.color + '55' : 'rgba(255,255,255,0.08)'};
+                    text-align: left;
+                    transition: opacity 0.15s;
+                `;
+                if (tab.color) btn.style.borderLeft = `3px solid ${tab.color}`;
+                btn.title = alreadyAdded ? t('customTabsUi.removeFromTabTooltip') : t('customTabsUi.addToTabTooltip');
                 btn.addEventListener('mouseenter', () => {
                     btn.style.opacity = '0.8';
                 });
@@ -3184,33 +3202,71 @@ export default class CustomTabsUI {
                 btn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     e.preventDefault();
-                    this._config = addItem(this._config, tab.id, itemHrid);
+                    if (alreadyAdded) {
+                        this._config = removeItem(this._config, tab.id, itemHrid);
+                        this._config = removeItemFromBindings(this._config, tab.id, itemHrid);
+                    } else {
+                        this._config = addItem(this._config, tab.id, itemHrid);
+                    }
                     this._save();
                     if (this._isActive) {
                         this._removeInjectedEls();
                         this._applyLayout();
                     }
-                    closePanel();
-                    document.dispatchEvent(
-                        new KeyboardEvent('keydown', {
-                            key: 'Escape',
-                            code: 'Escape',
-                            keyCode: 27,
-                            which: 27,
-                            bubbles: true,
-                            cancelable: true,
-                        })
-                    );
+                    renderRows();
                 });
+                panel.appendChild(btn);
             }
-            panel.appendChild(btn);
-        }
+
+            const newTabBtn = document.createElement('button');
+            newTabBtn.textContent = t('customTabsUi.newTabDropdownOption');
+            newTabBtn.style.cssText = `
+                display: block;
+                width: 100%;
+                padding: 6px 12px;
+                border: none;
+                border-top: 1px solid rgba(255,255,255,0.15);
+                border-radius: 4px;
+                margin-top: 2px;
+                cursor: pointer;
+                font-size: 0.85rem;
+                font-weight: 600;
+                color: #fff;
+                background: rgba(255,255,255,0.08);
+                text-align: left;
+                transition: opacity 0.15s;
+            `;
+            newTabBtn.addEventListener('mouseenter', () => {
+                newTabBtn.style.opacity = '0.8';
+            });
+            newTabBtn.addEventListener('mouseleave', () => {
+                newTabBtn.style.opacity = '1';
+            });
+            newTabBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                const result = addTab(this._config, null, t('customTabsUi.newTabDefaultName'));
+                this._config = result.config;
+                this._config = addItem(this._config, result.tabId, itemHrid);
+                this._save();
+                if (this._isActive) {
+                    this._removeInjectedEls();
+                    this._applyLayout();
+                }
+                closePanel();
+                closeNativeMenu();
+                this._openEditor(result.tabId);
+            });
+            panel.appendChild(newTabBtn);
+        };
+
+        renderRows();
 
         let open = false;
         let outsideBound = false;
         let outsideTimer = null;
         const outsideClick = (e) => {
-            if (!wrapper.contains(e.target)) {
+            if (!wrapper.contains(e.target) && !panel.contains(e.target)) {
                 closePanel();
             }
         };
@@ -3236,6 +3292,10 @@ export default class CustomTabsUI {
                 return;
             }
             open = true;
+            const rect = toggle.getBoundingClientRect();
+            panel.style.top = `${rect.bottom + 4}px`;
+            panel.style.left = `${rect.left}px`;
+            panel.style.width = `${rect.width}px`;
             panel.style.display = 'flex';
             chevron.style.transform = 'rotate(180deg)';
             if (!outsideBound && outsideTimer === null) {
@@ -3249,7 +3309,7 @@ export default class CustomTabsUI {
         });
 
         wrapper.appendChild(toggle);
-        wrapper.appendChild(panel);
+        document.body.appendChild(panel);
         actionMenu.appendChild(wrapper);
     }
 
