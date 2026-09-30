@@ -1,5 +1,23 @@
 # Changelog
 
+## [3.0.0](https://github.com/Celasha/Toolasha/compare/v2.111.3...v3.0.0) (2026-09-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* marks the v3 milestone. Production library bundles now require toolasha-core.js to expose window.Toolasha.Core.i18n before they load, changing the internal cross-bundle contract — no player-facing behavior changes.
+
+### Features
+
+* add Chinese (zh) localization support ([ccc6f2c](https://github.com/Celasha/Toolasha/commit/ccc6f2cb851ce7de858dc923a0b12cee4bdeefd4))
+
+
+### Bug Fixes
+
+* complete Chinese localization coverage across ~65 files ([d280346](https://github.com/Celasha/Toolasha/commit/d28034674963382f1cc867f62ac3bfce0150db20))
+* externalize i18n as a shared Core singleton to fix oversized combat bundle ([59fbe9a](https://github.com/Celasha/Toolasha/commit/59fbe9ad1749a71e544292364401ff9144860d02))
+* restore Toolasha tab grid after game nested inventory categories ([4bd729c](https://github.com/Celasha/Toolasha/commit/4bd729c90bd33a372772879a936c7e0a08e8061b))
+
 ## [2.111.3](https://github.com/Celasha/Toolasha/compare/v2.111.2...v2.111.3) (2026-09-25)
 
 ### Bug Fixes
