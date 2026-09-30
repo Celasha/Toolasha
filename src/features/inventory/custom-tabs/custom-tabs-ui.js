@@ -53,15 +53,21 @@ import {
 
 const PANEL_CSS = `
 /* ---------- Toolasha-active mode on Inventory_items ---------- */
-/* When our tab is active, Inventory_items becomes a flex container.
+/* When our tab is active, Inventory_items becomes a grid container.
    Category wrappers and grids get display:contents so tiles become
-   direct flex children and can be reordered with CSS order. */
+   direct grid children and can be reordered with CSS order. */
 .toolasha-ct-active {
-    display: flex !important;
-    flex-wrap: wrap;
-    align-content: flex-start;
+    display: grid !important;
+    grid-template-columns: repeat(auto-fill, var(--toolasha-ct-tile-w, 60px));
+    justify-content: center;
+    justify-items: start;
+    align-content: start;
     gap: 0;
     padding-top: 0 !important;
+}
+.toolasha-ct-active > [class*="toolasha-"] {
+    grid-column: 1 / -1;
+    justify-self: stretch;
 }
 /* Flatten game category wrappers so tiles become direct flex children.
    Exclude our own injected elements (they have class starting with toolasha-). */
@@ -69,6 +75,15 @@ const PANEL_CSS = `
     display: contents;
 }
 .toolasha-ct-active [class*="Inventory_itemGrid"] {
+    display: contents;
+}
+.toolasha-ct-active [class*="TabsComponent_tabsContainer"] {
+    display: none !important;
+}
+.toolasha-ct-active [class*="TabsComponent_tabPanelsContainer"],
+.toolasha-ct-active [class*="TabPanel_tabPanel"]:not([class*="TabPanel_hidden"]),
+.toolasha-ct-active [class*="TabPanel_tabPanel"] > div,
+.toolasha-ct-active [class*="TabPanel_tabPanel"] > div > div {
     display: contents;
 }
 
@@ -98,16 +113,6 @@ const PANEL_CSS = `
     box-sizing: border-box;
     gap: 4px;
 }
-.toolasha-ct-add-btn {
-    background: #444;
-    color: #aaa;
-    border: none;
-    border-radius: 4px;
-    padding: 2px 8px;
-    cursor: pointer;
-    font-size: 12px;
-}
-.toolasha-ct-add-btn:hover { background: #555; }
 
 /* ---------- Accordion header (injected into Inventory_items) ---------- */
 .toolasha-ct-section-header {
@@ -743,6 +748,15 @@ export default class CustomTabsUI {
         el.style.gap = `${config.getSettingValue('inventoryTabs_tileGap', 4)}px`;
     }
 
+    _applyTileColumnWidth(container) {
+        const item = container.querySelector(
+            '[class*="Item_itemContainer"].toolasha-ct-visible [class*="Item_item__"]'
+        );
+        const width = item?.offsetWidth;
+        if (!width) return;
+        container.style.setProperty('--toolasha-ct-tile-w', `${width}px`);
+    }
+
     _activatePanel() {
         if (this._isActive) return;
         this._isActive = true;
@@ -951,7 +965,10 @@ export default class CustomTabsUI {
         }
 
         // Build tile map from all tiles currently in invContainer
-        const tileMap = this._buildTileMap(invContainer);
+        let tileMap = this._buildTileMap(invContainer);
+        if (this._selectNativeAllCategoryTab(invContainer)) {
+            tileMap = this._buildTileMap(invContainer);
+        }
 
         // A native category the player has collapsed renders none of its item tiles into the
         // DOM at all (not just visually hidden) — so any owned item inside one is invisible to
@@ -1045,6 +1062,8 @@ export default class CustomTabsUI {
             // Lightweight update: headers already exist, just re-apply tile order/visibility
             this._updateTileVisibility(invContainer, tileMap);
         }
+
+        this._applyTileColumnWidth(invContainer);
 
         // Attach tile observer if not already watching this container.
         // The observer fires synchronously (as a microtask) after React swaps a tile
@@ -1223,6 +1242,7 @@ export default class CustomTabsUI {
 
         if (this._invContainer) {
             this._invContainer.classList.remove('toolasha-ct-active');
+            this._invContainer.style.removeProperty('--toolasha-ct-tile-w');
 
             // Remove visible class and inline order from all tiles
             const tiles = this._invContainer.querySelectorAll('[class*="Item_itemContainer"]');
@@ -1268,55 +1288,49 @@ export default class CustomTabsUI {
 
         const actionsDiv = document.createElement('div');
         actionsDiv.className = 'toolasha-ct-action-btns';
-        actionsDiv.style.cssText = 'display:flex;gap:4px;flex-shrink:0;';
+        actionsDiv.style.cssText = 'display:flex;flex-wrap:wrap;gap:3px;flex:1 1 auto;min-width:0;';
 
-        const addBtn = document.createElement('button');
-        addBtn.className = 'toolasha-ct-add-btn';
-        addBtn.textContent = '+ Tab';
-        addBtn.addEventListener('click', () => this._onAddTab(null));
+        const createButton = (label, onClick) => {
+            const btn = document.createElement('button');
+            btn.className = 'toolasha-ct-add-btn';
+            btn.textContent = label;
+            btn.style.cssText = `
+                border-radius: 4px;
+                padding: 2px 8px;
+                border: none;
+                cursor: pointer;
+                font-size: 12px;
+                transition: all 0.2s;
+                background-color: #444;
+                color: #aaa;
+                font-weight: normal;
+            `;
+            btn.addEventListener('click', onClick);
+            return btn;
+        };
 
-        const exportBtn = document.createElement('button');
-        exportBtn.className = 'toolasha-ct-add-btn';
-        exportBtn.textContent = 'Export';
-        exportBtn.addEventListener('click', () => this._exportLayout());
-
-        const importBtn = document.createElement('div');
-        importBtn.className = 'toolasha-ct-add-btn';
-        importBtn.style.position = 'relative';
-        importBtn.style.overflow = 'hidden';
-        importBtn.textContent = 'Import';
         const importInput = document.createElement('input');
         importInput.type = 'file';
         importInput.accept = '.json,application/json';
-        importInput.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;opacity:0;cursor:pointer;';
+        importInput.style.display = 'none';
         importInput.addEventListener('change', () => {
             const file = importInput.files?.[0];
             if (file) this._handleImportFile(file);
             importInput.value = '';
         });
-        importBtn.appendChild(importInput);
 
-        actionsDiv.appendChild(addBtn);
-        actionsDiv.appendChild(exportBtn);
-        actionsDiv.appendChild(importBtn);
-
-        const expandBtn = document.createElement('button');
-        expandBtn.className = 'toolasha-ct-add-btn';
-        expandBtn.textContent = 'Expand All';
-        expandBtn.addEventListener('click', () => this._onSetAllTabsOpen(true));
-        actionsDiv.appendChild(expandBtn);
-
-        const collapseBtn = document.createElement('button');
-        collapseBtn.className = 'toolasha-ct-add-btn';
-        collapseBtn.textContent = 'Collapse All';
-        collapseBtn.addEventListener('click', () => this._onSetAllTabsOpen(false));
-        actionsDiv.appendChild(collapseBtn);
+        actionsDiv.appendChild(createButton('+ Tab', () => this._onAddTab(null)));
+        actionsDiv.appendChild(createButton('Export', () => this._exportLayout()));
+        actionsDiv.appendChild(createButton('Import', () => importInput.click()));
+        actionsDiv.appendChild(importInput);
+        actionsDiv.appendChild(createButton('Expand All', () => this._onSetAllTabsOpen(true)));
+        actionsDiv.appendChild(createButton('Collapse All', () => this._onSetAllTabsOpen(false)));
 
         this._actionBtnsEl = actionsDiv;
 
         const sortControls = document.querySelector('.mwi-inventory-sort-controls');
         if (sortControls) {
-            actionsDiv.style.marginLeft = 'auto';
+            actionsDiv.style.justifyContent = 'flex-end';
             sortControls.appendChild(actionsDiv);
             return null; // no topbar needed
         }
@@ -1420,6 +1434,13 @@ export default class CustomTabsUI {
             if (!tileMap.has(hrid)) return true;
         }
         return false;
+    }
+
+    _selectNativeAllCategoryTab(invContainer) {
+        const allTab = invContainer.querySelector('[class*="TabsComponent_tabsContainer"] [role="tab"]');
+        if (!allTab || allTab.getAttribute('aria-selected') === 'true') return false;
+        allTab.click();
+        return true;
     }
 
     /**

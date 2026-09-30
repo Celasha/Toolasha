@@ -223,6 +223,7 @@ class InventorySort {
             margin-top: -8px;
             margin-bottom: 0;
             display: flex;
+            flex-wrap: wrap;
             align-items: center;
             gap: 3px;
         `;
