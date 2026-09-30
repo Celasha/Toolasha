@@ -8,6 +8,7 @@ import domObserver from '../../core/dom-observer.js';
 import webSocketHook from '../../core/websocket.js';
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
+import { t } from '../../core/i18n.js';
 import { guildXPTracker } from './guild-xp-tracker.js';
 import { formatDateTime, timeReadable } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
@@ -40,15 +41,14 @@ function formatTimeLeft(ms) {
     const h = Math.floor((ms % d1) / h1);
     const m = Math.ceil((ms % h1) / m1);
 
-    const s = (n) => (n === 1 ? '' : 's');
     const parts = [];
 
-    if (w >= 1) parts.push(`${w} week${s(w)}`);
-    if (d >= 1) parts.push(`${d} day${s(d)}`);
-    if (ms < w1 && h >= 1) parts.push(`${h} hour${s(h)}`);
-    if (ms < 6 * h1 && m >= 1) parts.push(`${m} minute${s(m)}`);
+    if (w >= 1) parts.push(t('guildXpDisplay.weeksCount', { count: w }));
+    if (d >= 1) parts.push(t('guildXpDisplay.daysCount', { count: d }));
+    if (ms < w1 && h >= 1) parts.push(t('guildXpDisplay.hoursCount', { count: h }));
+    if (ms < 6 * h1 && m >= 1) parts.push(t('guildXpDisplay.minutesCount', { count: m }));
 
-    return parts.join(' ') || '< 1 minute';
+    return parts.join(' ') || t('guildXpDisplay.lessThanOneMinute');
 }
 
 // ─── Chart rendering ────────────────────────────────────────────────────────
@@ -59,7 +59,8 @@ function formatTimeLeft(ms) {
  * @returns {string} HTML
  */
 function buildChart(chart) {
-    if (chart.length === 0) return '<div style="color: var(--color-disabled);">Not enough data for chart</div>';
+    if (chart.length === 0)
+        return `<div style="color: var(--color-disabled);">${t('guildXpDisplay.notEnoughDataForChart')}</div>`;
 
     // Truncate outliers at 2x the median
     let maxXPH = 0;
@@ -297,7 +298,7 @@ class GuildXPDisplay {
         const stats = guildXPTracker.getGuildStats(guildName);
 
         // XP/h stats row
-        const rateLabel = stats.lastHourXPH > 0 ? 'Last hour XP/h' : 'Last XP/h';
+        const rateLabel = stats.lastHourXPH > 0 ? t('guildXpDisplay.lastHourXph') : t('guildXpDisplay.lastXph');
         const rateValue = stats.lastHourXPH > 0 ? stats.lastHourXPH : stats.lastXPH;
 
         const statsHTML = `
@@ -307,7 +308,7 @@ class GuildXPDisplay {
                     <div class="GuildPanel_value__Hm2I9">${fNum(rateValue)}</div>
                 </div>
                 <div class="GuildPanel_dataBlock__3qVhK">
-                    <div class="GuildPanel_label__-A63g">Last day XP/h</div>
+                    <div class="GuildPanel_label__-A63g">${t('guildXpDisplay.lastDayXph')}</div>
                     <div class="GuildPanel_value__Hm2I9">${fNum(stats.lastDayXPH)}</div>
                 </div>
             </div>`;
@@ -316,7 +317,7 @@ class GuildXPDisplay {
         const chartHTML = `
             <div class="GuildPanel_dataBlockGroup__1d2rR ${CSS_PREFIX}" style="grid-column: 1 / 3; max-width: none;">
                 <div class="GuildPanel_dataBlock__3qVhK" style="height: 240px;">
-                    <div class="GuildPanel_label__-A63g">Last week XP/h</div>
+                    <div class="GuildPanel_label__-A63g">${t('guildXpDisplay.lastWeekXph')}</div>
                     ${buildChart(stats.chart)}
                 </div>
             </div>`;
@@ -411,18 +412,23 @@ class GuildXPDisplay {
         let tooltip = '';
         if (slotEta.status === 'ok') {
             etaText = formatTimeLeft(slotEta.etaMs);
-            tooltip = `ETA based on ${slotEta.rateBasis} average: ${fNum(slotEta.rateValue)} XP/h`;
+            tooltip = t('guildXpDisplay.etaBasedOnAverageTooltip', {
+                basis: slotEta.rateBasis,
+                rate: fNum(slotEta.rateValue),
+            });
         } else if (slotEta.status === 'zero-rate') {
-            etaText = 'no recent gains';
-            tooltip = `No guild XP gained in the last ${slotEta.rateBasis === '24h' ? '24 hours' : 'hour'}`;
+            etaText = t('guildXpDisplay.noRecentGains');
+            const period =
+                slotEta.rateBasis === '24h' ? t('guildXpDisplay.period24Hours') : t('guildXpDisplay.periodOneHour');
+            tooltip = t('guildXpDisplay.noGuildXpGainedTooltip', { period });
         } else {
-            etaText = 'collecting data';
+            etaText = t('guildXpDisplay.collectingData');
         }
 
         return `<div class="${CSS_PREFIX}" style="margin-top: 4px; font-size: 13px; line-height: 1.5;"${tooltip ? ` title="${tooltip}"` : ''}>
-            <div style="color: #9ca3af;">Next Guild Level Slot (+1)</div>
-            <div style="color: var(--color-space-300);">To Lv ${slotEta.targetLevel} · ${fNum(slotEta.xpRemaining)} XP</div>
-            <div style="color: var(--color-space-300); opacity: 0.85;">ETA: ${etaText}</div>
+            <div style="color: #9ca3af;">${t('guildXpDisplay.nextGuildLevelSlotHeading')}</div>
+            <div style="color: var(--color-space-300);">${t('guildXpDisplay.toLevelXp', { level: slotEta.targetLevel, xp: fNum(slotEta.xpRemaining) })}</div>
+            <div style="color: var(--color-space-300); opacity: 0.85;">${t('guildXpDisplay.etaLine', { eta: etaText })}</div>
         </div>`;
     }
 
@@ -447,13 +453,13 @@ class GuildXPDisplay {
 
         const idleNamesStr =
             idleNames.length === 0
-                ? '<span style="color: var(--color-success);">None</span>'
+                ? `<span style="color: var(--color-success);">${t('guildXpDisplay.noneLabel')}</span>`
                 : idleNames.map((n) => `<span style="color: #f0a830;">${n}</span>`).join(', ');
 
         const lastUpdate = guildXPTracker.lastMembersUpdateTime;
         const offlineNamesStr =
             offlineMembers.length === 0
-                ? '<span style="color: var(--color-success);">None</span>'
+                ? `<span style="color: var(--color-success);">${t('guildXpDisplay.noneLabel')}</span>`
                 : offlineMembers
                       .map((m) => {
                           const memberInactiveMs = m.inactiveTime ? new Date(m.inactiveTime).getTime() : null;
@@ -471,13 +477,13 @@ class GuildXPDisplay {
         return `
             <div class="GuildPanel_dataBlockGroup__1d2rR ${CSS_PREFIX}" style="grid-column: 1 / 3; max-width: none;">
                 <div class="GuildPanel_dataBlock__3qVhK" style="padding: 8px 12px; height: auto; min-height: 0;">
-                    <div class="GuildPanel_label__-A63g">Online — Idle (${idleNames.length})</div>
+                    <div class="GuildPanel_label__-A63g">${t('guildXpDisplay.onlineIdleLabel', { count: idleNames.length })}</div>
                     <div style="font-size: 13px; line-height: 1.6; max-height: 120px; overflow-y: auto;">${idleNamesStr}</div>
                 </div>
             </div>
             <div class="GuildPanel_dataBlockGroup__1d2rR ${CSS_PREFIX}" style="grid-column: 1 / 3; max-width: none;">
                 <div class="GuildPanel_dataBlock__3qVhK" style="padding: 8px 12px; height: auto; min-height: 0;">
-                    <div class="GuildPanel_label__-A63g">Offline (${offlineMembers.length})</div>
+                    <div class="GuildPanel_label__-A63g">${t('guildXpDisplay.offlineLabel', { count: offlineMembers.length })}</div>
                     <div style="font-size: 13px; line-height: 1.6; max-height: 120px; overflow-y: auto;">${offlineNamesStr}</div>
                 </div>
             </div>`;
@@ -591,7 +597,11 @@ class GuildXPDisplay {
         const isStatusTab = activityIndex >= 0;
         const insertAfter = theadTr.children.length - 1;
 
-        const gameModes = { standard: 'MC', ironcow: 'IC', legacy_ironcow: 'LC' };
+        const gameModes = {
+            standard: t('guildXpDisplay.gameModeStandardAbbr'),
+            ironcow: t('guildXpDisplay.gameModeIroncowAbbr'),
+            legacy_ironcow: t('guildXpDisplay.gameModeLegacyIroncowAbbr'),
+        };
         const showGameMode = config.getSetting('guildMembersShowGameMode', false);
         const showJoined = config.getSetting('guildMembersShowJoined', true);
         const showLastXPH = config.getSetting('guildMembersShowLastXPH', true);
@@ -626,7 +636,7 @@ class GuildXPDisplay {
 
             if (showGameMode) {
                 addColumn(tableEl, CSS_PREFIX, {
-                    name: 'Game Mode',
+                    name: t('guildXpDisplay.gameModeColumn'),
                     insertAfter,
                     data: allStats.map((s) => s.gameMode),
                     format: (v) => gameModes[v] || v || '',
@@ -638,7 +648,7 @@ class GuildXPDisplay {
 
             if (showJoined) {
                 addColumn(tableEl, CSS_PREFIX, {
-                    name: 'Joined',
+                    name: t('guildXpDisplay.joinedColumn'),
                     insertAfter,
                     data: allStats.map((s) => s.joinTime),
                     format: (v) =>
@@ -658,7 +668,7 @@ class GuildXPDisplay {
 
         if (showLastXPH) {
             addColumn(tableEl, CSS_PREFIX, {
-                name: 'Last XP/h',
+                name: t('guildXpDisplay.lastXph'),
                 insertAfter: insertAfter + colOffset,
                 data: allStats.map((s) => s.lastXPH),
                 format: (v, i) => {
@@ -675,7 +685,7 @@ class GuildXPDisplay {
         // Last day XP/h column — Contributions tab
         if (showLastDayXPH) {
             addColumn(tableEl, CSS_PREFIX, {
-                name: 'Last day XP/h',
+                name: t('guildXpDisplay.lastDayXph'),
                 insertAfter: insertAfter + colOffset,
                 data: allStats.map((s) => s.lastDayXPH),
                 format: (v, i) => {
@@ -692,7 +702,7 @@ class GuildXPDisplay {
         // Activity column — Contributions tab (uses cached HTML from game's Status tab render)
         if (activityTab !== 'status') {
             addColumn(tableEl, CSS_PREFIX, {
-                name: 'Activity',
+                name: t('guildXpDisplay.activityColumn'),
                 insertAfter: insertAfter + colOffset,
                 data: allStats.map((s) => ({
                     cached: this._activityCellCache[s.name] ?? null,
@@ -712,7 +722,7 @@ class GuildXPDisplay {
                     const mins = Math.floor(ms / 60000);
                     if (days > 0) return `${days}d ago`;
                     if (hours > 0) return `${hours}h ago`;
-                    return mins > 0 ? `${mins}m ago` : 'just now';
+                    return mins > 0 ? `${mins}m ago` : t('guildXpDisplay.justNow');
                 },
                 makeSortable: true,
                 sortId: 'activityTime',
@@ -898,17 +908,20 @@ class GuildXPDisplay {
             const color = names.length === 0 ? '#4ade80' : '#f0a830';
             const nameStr =
                 names.length === 0
-                    ? 'All signed up ✓'
+                    ? t('guildXpDisplay.allSignedUp')
                     : names
                           .map(
                               (n) =>
                                   `<span class="mwi-trial-name" data-name="${n}" style="cursor:pointer; text-decoration:underline dotted; color:${color};">${n}</span>`
                           )
                           .join('<span style="color:#6b7280;">, </span>');
-            return `<div><span style="color:#9ca3af;">${label} (${names.length} unsigned):</span> <span style="color:${color};">${nameStr}</span></div>`;
+            const labelHTML = t('guildXpDisplay.unsignedListLabel', { label, count: names.length });
+            return `<div><span style="color:#9ca3af;">${labelHTML}</span> <span style="color:${color};">${nameStr}</span></div>`;
         };
 
-        wrapper.innerHTML = makeList('Skilling', unsignedSkilling) + makeList('Combat', unsignedCombat);
+        wrapper.innerHTML =
+            makeList(t('guildXpDisplay.skillingLabel'), unsignedSkilling) +
+            makeList(t('guildXpDisplay.combatLabel'), unsignedCombat);
 
         statusRow.insertAdjacentElement('afterend', wrapper);
 
@@ -918,7 +931,7 @@ class GuildXPDisplay {
                 const chatInput = document.querySelector('[class*="Chat_chatInputContainer"] input');
                 if (!chatInput) return;
                 const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                const DEFAULT_TEMPLATE = "/w {name} Why haven't you signed up for your trial(s) yet?!";
+                const DEFAULT_TEMPLATE = t('guildXpDisplay.defaultWhisperTemplate');
                 let template =
                     config.getSettingValue('guildTrialWhisperTemplate', DEFAULT_TEMPLATE) || DEFAULT_TEMPLATE;
                 if (Array.isArray(template)) {
@@ -979,7 +992,7 @@ class GuildXPDisplay {
         const insertAfter = theadTr.children.length - 1;
 
         addColumn(tableEl, CSS_PREFIX, {
-            name: 'Last XP/h',
+            name: t('guildXpDisplay.lastXph'),
             insertAfter,
             data: allStats.map((s) => s.lastXPH),
             format: (v, i) => (!v || v <= 0 ? '' : `${fNum(v)} ${rankBadge(allStats[i].lastXPH_rank)}`),
@@ -990,7 +1003,7 @@ class GuildXPDisplay {
         });
 
         addColumn(tableEl, CSS_PREFIX, {
-            name: 'Last day XP/h',
+            name: t('guildXpDisplay.lastDayXph'),
             insertAfter: insertAfter + 1,
             data: allStats.map((s) => s.lastDayXPH),
             format: (v, i) => (!v || v <= 0 ? '' : `${fNum(v)} ${rankBadge(allStats[i].lastDayXPH_rank)}`),
@@ -1026,7 +1039,7 @@ class GuildXPDisplay {
     _onBarEnter(event) {
         const el = event.target;
         const xpH = parseFloat(el.dataset.xph);
-        const t = parseInt(el.dataset.t, 10);
+        const timestamp = parseInt(el.dataset.t, 10);
         const truncated = el.dataset.truncated === 'true';
 
         const bb = el.getBoundingClientRect();
@@ -1039,10 +1052,10 @@ class GuildXPDisplay {
             <div class="MuiTooltip-tooltip MuiTooltip-tooltipPlacementTop css-1spb1s5" style="opacity: 1;">
                 <div class="ItemTooltipText_itemTooltipText__zFq3A">
                     <div class="ItemTooltipText_name__2JAHA">
-                        <span>${formatDateTime(new Date(t), { includeSeconds: false })}</span>
+                        <span>${formatDateTime(new Date(timestamp), { includeSeconds: false })}</span>
                     </div>
                     <div>
-                        <span>${fNum(xpH)} XP/h${truncated ? ' (anomalous)' : ''}</span>
+                        <span>${fNum(xpH)} XP/h${truncated ? ` ${t('guildXpDisplay.anomalousSuffix')}` : ''}</span>
                     </div>
                 </div>
             </div>

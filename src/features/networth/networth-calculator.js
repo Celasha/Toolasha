@@ -10,6 +10,7 @@
 
 import dataManager from '../../core/data-manager.js';
 import marketAPI from '../../api/marketplace.js';
+import { t } from '../../core/i18n.js';
 import { calculateAbilityCost } from '../../utils/ability-cost-calculator.js';
 import { calculateHouseBuildCost } from '../../utils/house-cost-calculator.js';
 import { calculateEnhancementPath } from '../enhancement/tooltip-enhancement.js';
@@ -29,13 +30,23 @@ import loadoutState from '../../core/loadout-state.js';
 import { MARKET_TAX, COWBELL_BAG_HRID, COWBELL_BAG_TAX } from '../../utils/profit-constants.js';
 import { buildCheapestPerCredit } from '../../utils/guild-credit-conversion.js';
 
-const GUILD_SHRINE_LABELS = {
-    '/guild_shrines/force': 'Force',
-    '/guild_shrines/tempo': 'Tempo',
-    '/guild_shrines/rarity': 'Rarity',
-    '/guild_shrines/scholar': 'Scholar',
-    '/guild_shrines/spirit': 'Spirit',
-};
+/**
+ * Translated display label for a guild shrine hrid, mirroring the labels already
+ * used by src/features/guild/guild-credit-value.js (guildCreditValue.shrine* keys).
+ * Built at call time (not module scope) so it stays correct if the locale changes.
+ * @param {string} shrineHrid - e.g. '/guild_shrines/force'
+ * @returns {string|undefined}
+ */
+function getGuildShrineLabel(shrineHrid) {
+    const labels = {
+        '/guild_shrines/force': t('guildCreditValue.shrineForce'),
+        '/guild_shrines/tempo': t('guildCreditValue.shrineTempo'),
+        '/guild_shrines/rarity': t('guildCreditValue.shrineRarity'),
+        '/guild_shrines/scholar': t('guildCreditValue.shrineScholar'),
+        '/guild_shrines/spirit': t('guildCreditValue.shrineSpirit'),
+    };
+    return labels[shrineHrid];
+}
 
 /**
  * Calculate the value of a single item
@@ -357,18 +368,17 @@ export function calculateAllAbilitiesCost(characterAbilities, abilityCombatTrigg
     // Create set of equipped ability HRIDs from abilityCombatTriggersMap keys
     const equippedHrids = new Set(Object.keys(abilityCombatTriggersMap || {}));
 
+    const gameData = dataManager.getInitClientData();
+
     for (const ability of characterAbilities) {
         if (!ability.abilityHrid || ability.level === 0) continue;
 
         const cost = calculateAbilityCost(ability.abilityHrid, ability.level);
         totalCost += cost;
 
-        // Format ability name for display
-        const abilityName = ability.abilityHrid
-            .replace('/abilities/', '')
-            .split('_')
-            .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-            .join(' ');
+        // Use the already-localized ability name (mirrors the lookup pattern in
+        // networth-exclusion-popup.js's getExclusionDisplayName for exc.type === 'ability')
+        const abilityName = gameData?.abilityDetailMap?.[ability.abilityHrid]?.name ?? ability.abilityHrid;
 
         const abilityData = {
             hrid: ability.abilityHrid,
@@ -408,9 +418,12 @@ export function calculateAllAbilitiesCost(characterAbilities, abilityCombatTrigg
  * @returns {string}
  */
 export function buildGuildBuffDisplayName(buffHrid, buff) {
-    const shrineLabel = GUILD_SHRINE_LABELS[buff?.shrineHrid] || buff?.shrineHrid?.split('/').pop() || 'Shrine';
-    const typeLabel = buff?.isCombat ? 'Combat' : 'Skilling';
-    return `Shrine of ${shrineLabel} - ${typeLabel}`;
+    const shrineLabel =
+        getGuildShrineLabel(buff?.shrineHrid) ||
+        buff?.shrineHrid?.split('/').pop() ||
+        t('networthCalculator.shrineFallbackLabel');
+    const typeLabel = buff?.isCombat ? t('guildCreditValue.buffLabelCombat') : t('guildCreditValue.buffLabelSkilling');
+    return t('networthCalculator.guildBuffDisplayName', { shrine: shrineLabel, type: typeLabel });
 }
 
 /**
@@ -710,7 +723,7 @@ export async function calculateNetworth() {
 
         // Check exclusions in priority order: assetType > item > loadout
         if (entireEquippedExcluded) {
-            trackExcluded('assetType', 'equipped', 'All Equipped Items', value);
+            trackExcluded('assetType', 'equipped', t('networthExclusionPopup.allEquippedItemsLabel'), value);
             continue;
         }
         if (isExcluded('item', item.itemHrid)) {
@@ -719,7 +732,12 @@ export async function calculateNetworth() {
         }
         const loadoutName = loadoutExcludedHridToName.get(item.itemHrid);
         if (loadoutName) {
-            trackExcluded('loadout', loadoutName, `Loadout: ${loadoutName}`, value);
+            trackExcluded(
+                'loadout',
+                loadoutName,
+                t('networthExclusionPopup.loadoutNameLabel', { name: loadoutName }),
+                value
+            );
             continue;
         }
 
@@ -782,16 +800,28 @@ export async function calculateNetworth() {
         }
         const loadoutName = loadoutExcludedHridToName.get(item.itemHrid);
         if (loadoutName) {
-            trackExcluded('loadout', loadoutName, `Loadout: ${loadoutName}`, value);
+            trackExcluded(
+                'loadout',
+                loadoutName,
+                t('networthExclusionPopup.loadoutNameLabel', { name: loadoutName }),
+                value
+            );
             continue;
         }
         if (isExcluded('category', categoryHrid)) {
-            const categoryName = gameData.itemCategoryDetailMap?.[categoryHrid]?.name || 'Other';
-            trackExcluded('category', categoryHrid, `${categoryName} (category)`, value);
+            const categoryName =
+                gameData.itemCategoryDetailMap?.[categoryHrid]?.name ||
+                t('networthCalculator.otherCategoryFallbackLabel');
+            trackExcluded(
+                'category',
+                categoryHrid,
+                t('networthExclusionPopup.categoryNameSuffix', { name: categoryName }),
+                value
+            );
             continue;
         }
         if (isAbilityBook && !booksAsInventory && isExcluded('assetType', 'abilityBooks')) {
-            trackExcluded('assetType', 'abilityBooks', 'All Ability Books', value);
+            trackExcluded('assetType', 'abilityBooks', t('networthExclusionPopup.allAbilityBooksLabel'), value);
             continue;
         }
 
@@ -806,7 +836,9 @@ export async function calculateNetworth() {
 
             // Coin is always listed individually — never bucketed into a category
             if (item.itemHrid !== '/items/coin') {
-                const categoryName = gameData.itemCategoryDetailMap?.[categoryHrid]?.name || 'Other';
+                const categoryName =
+                    gameData.itemCategoryDetailMap?.[categoryHrid]?.name ||
+                    t('networthCalculator.otherCategoryFallbackLabel');
 
                 if (!inventoryByCategory[categoryName]) {
                     inventoryByCategory[categoryName] = {
@@ -882,14 +914,14 @@ export async function calculateNetworth() {
 
     // Apply listings exclusion
     if (isExcluded('assetType', 'listings') && listingsValue > 0) {
-        trackExcluded('assetType', 'listings', 'All Market Listings', listingsValue);
+        trackExcluded('assetType', 'listings', t('networthExclusionPopup.allMarketListingsLabel'), listingsValue);
         listingsValue = 0;
     }
 
     // Calculate houses value — apply per-room and whole-section exclusions
     let housesData = calculateAllHousesCost(characterHouseRooms);
     if (isExcluded('assetType', 'houses') && housesData.totalCost > 0) {
-        trackExcluded('assetType', 'houses', 'All Houses', housesData.totalCost);
+        trackExcluded('assetType', 'houses', t('networthExclusionPopup.allHousesLabel'), housesData.totalCost);
         housesData = { totalCost: 0, breakdown: [] };
     } else {
         let excludedRoomCost = 0;
@@ -910,7 +942,7 @@ export async function calculateNetworth() {
     // Calculate abilities value — apply per-ability and whole-section exclusions
     let abilitiesData = calculateAllAbilitiesCost(characterAbilities, abilityCombatTriggersMap);
     if (isExcluded('assetType', 'abilities') && abilitiesData.totalCost > 0) {
-        trackExcluded('assetType', 'abilities', 'All Abilities', abilitiesData.totalCost);
+        trackExcluded('assetType', 'abilities', t('networthExclusionPopup.allAbilitiesLabel'), abilitiesData.totalCost);
         abilitiesData = {
             totalCost: 0,
             equippedCost: 0,
@@ -955,7 +987,12 @@ export async function calculateNetworth() {
     // Calculate guild shrines value — apply per-buff and whole-section exclusions
     let guildShrinesData = calculateAllGuildShrinesCost();
     if (isExcluded('assetType', 'guildShrines') && guildShrinesData.totalCost > 0) {
-        trackExcluded('assetType', 'guildShrines', 'All Guild Shrines', guildShrinesData.totalCost);
+        trackExcluded(
+            'assetType',
+            'guildShrines',
+            t('networthExclusionPopup.allGuildShrinesLabel'),
+            guildShrinesData.totalCost
+        );
         guildShrinesData = { totalCost: 0, breakdown: [] };
     } else {
         let excludedBuffCost = 0;

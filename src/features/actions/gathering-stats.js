@@ -9,6 +9,7 @@ import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
 import loadoutState from '../../core/loadout-state.js';
+import { t } from '../../core/i18n.js';
 import actionPanelSort from './action-panel-sort.js';
 import actionFilter from './action-filter.js';
 import { calculateGatheringProfit } from './gathering-profit.js';
@@ -471,18 +472,29 @@ class GatheringStats {
             const overallSpan = data.displayElement.querySelector('[data-stat="overall"]');
             if (overallSpan) {
                 const effXp = data.effectiveXpPerHour;
-                const label = effXp != null ? `Eff. XP/hr: ${formatKMB(effXp)}` : stripEmoji(overallSpan.textContent);
+                // Reuses maxProduceable's key: this text is identical to the one built for
+                // production action panels in max-produceable.js.
+                const label =
+                    effXp != null
+                        ? t('maxProduceable.effXpPerHourLine', { value: formatKMB(effXp) })
+                        : stripEmoji(overallSpan.textContent);
                 overallSpan.textContent = label + (isBestOverall ? ' 🏆' : '');
 
                 if (data.profitPerHour < 0 && bestProfit > 0 && effXp != null) {
                     const loss = Math.abs(data.profitPerHour);
                     const ratio = loss / bestProfit;
-                    overallSpan.title =
-                        `Gold-neutral XP rate\n` +
-                        `This action: ${formatKMB(data.expPerHour)} XP/hr, -${formatKMB(loss)}/hr\n` +
-                        `Recovery: ${bestProfitName} (+${formatKMB(bestProfit)}/hr, ${formatKMB(bestProfitExp || 0)} XP/hr)\n` +
-                        `Ratio: ${ratio.toFixed(2)}hr recovery per 1hr action\n` +
-                        `Blended: (${formatKMB(data.expPerHour)} + ${ratio.toFixed(2)} × ${formatKMB(bestProfitExp || 0)}) / ${(1 + ratio).toFixed(2)} = ${formatKMB(effXp)}`;
+                    // Reuses maxProduceable's key: this tooltip is identical to the one built for
+                    // production action panels in max-produceable.js.
+                    overallSpan.title = t('maxProduceable.goldNeutralTooltip', {
+                        expPerHour: formatKMB(data.expPerHour),
+                        loss: formatKMB(loss),
+                        bestProfitName,
+                        bestProfit: formatKMB(bestProfit),
+                        bestProfitExp: formatKMB(bestProfitExp || 0),
+                        ratio: ratio.toFixed(2),
+                        ratioPlus1: (1 + ratio).toFixed(2),
+                        effXp: formatKMB(effXp),
+                    });
                 } else {
                     overallSpan.title = '';
                 }
@@ -508,17 +520,18 @@ class GatheringStats {
             const profitColor = profitPerHour >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
             const profitSign = profitPerHour >= 0 ? '' : '-';
             html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-            html += `<span data-stat="profit" style="color: ${profitColor};">Profit/hr: ${profitSign}${formatKMB(Math.abs(profitPerHour))}</span></div>`;
+            // Reuses maxProduceable's key (no estimatedNote for gathering actions).
+            html += `<span data-stat="profit" style="color: ${profitColor};">${t('maxProduceable.profitPerHourLine', { sign: profitSign, value: formatKMB(Math.abs(profitPerHour)), note: '' })}</span></div>`;
         }
 
         if (showExp && expPerHour !== null && expPerHour > 0) {
             html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-            html += `<span data-stat="exp" style="color: #fff;">Exp/hr: ${formatKMB(expPerHour)}</span></div>`;
+            html += `<span data-stat="exp" style="color: #fff;">${t('maxProduceable.expPerHourLine', { value: formatKMB(expPerHour) })}</span></div>`;
         }
 
         if (showProfit && showExp && profitPerHour !== null && expPerHour !== null && expPerHour > 0) {
             html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-            html += `<span data-stat="overall" style="color: #fff;">Eff. XP/hr: ${formatKMB(expPerHour)}</span></div>`;
+            html += `<span data-stat="overall" style="color: #fff;">${t('maxProduceable.effXpPerHourLine', { value: formatKMB(expPerHour) })}</span></div>`;
         }
 
         data.displayElement.innerHTML = html;

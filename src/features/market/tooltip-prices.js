@@ -41,6 +41,16 @@ const REGEX_ENHANCEMENT_LEVEL = /\+(\d+)$/;
 const REGEX_ENHANCEMENT_STRIP = /\s*\+\d+$/;
 const REGEX_REFINED_STAR = /\s*★/g;
 
+// Map alchemy action types to existing skillingOptimizer locale keys so the capitalized
+// label shown in the multi-action profit display stays consistent with the rest of the UI
+// instead of naively capitalizing the raw identifier.
+const ACTION_TYPE_LABEL_KEYS = {
+    coinify: 'skillingOptimizer.alchemyTypeCoinify',
+    decompose: 'skillingOptimizer.alchemyTypeDecompose',
+    transmute: 'skillingOptimizer.alchemyTypeTransmute',
+    unrefine: 'skillingOptimizer.alchemyTypeUnrefine',
+};
+
 /**
  * Get the items sprite URL from the DOM (matches pattern used across other display modules)
  * @returns {string|null} Sprite URL or null if not found
@@ -586,7 +596,8 @@ class TooltipPrices {
 
         // Show message if no market data at all
         if (price.ask <= 0 && price.bid <= 0) {
-            priceDiv.innerHTML = `Price: <span style="color: ${config.COLOR_TEXT_SECONDARY}; font-style: italic;">${t('tooltipPrices.noMarketDataLabel')}</span>`;
+            const noDataHtml = `<span style="color: ${config.COLOR_TEXT_SECONDARY}; font-style: italic;">${t('tooltipPrices.noMarketDataLabel')}</span>`;
+            priceDiv.innerHTML = t('tooltipPrices.priceNoDataLine', { noData: noDataHtml });
             tooltipText.appendChild(priceDiv);
             return;
         }
@@ -610,13 +621,13 @@ class TooltipPrices {
         }
 
         // Format: "Price: 1,200 / 950" or "Price: 1,200 / -" or "Price: - / 950"
-        priceDiv.innerHTML = `Price: ${askDisplay} / ${bidDisplay}${totalDisplay}`;
+        priceDiv.innerHTML = t('tooltipPrices.priceLine', { ask: askDisplay, bid: bidDisplay, total: totalDisplay });
 
         if (config.getSetting('itemTooltip_effectivePrices') && (price.ask > 0 || price.bid > 0)) {
             const taxRate = itemHrid === COWBELL_BAG_HRID ? COWBELL_BAG_TAX : MARKET_TAX;
             const effAsk = price.ask > 0 ? formatTooltipPrice(calculatePriceAfterTax(price.ask, taxRate)) : '-';
             const effBid = price.bid > 0 ? formatTooltipPrice(calculatePriceAfterTax(price.bid, taxRate)) : '-';
-            priceDiv.innerHTML += `<br><span style="color: ${config.COLOR_TEXT_SECONDARY};">Eff: ${effAsk} / ${effBid}</span>`;
+            priceDiv.innerHTML += `<br><span style="color: ${config.COLOR_TEXT_SECONDARY};">${t('tooltipPrices.effLine', { ask: effAsk, bid: effBid })}</span>`;
         }
 
         tooltipText.appendChild(priceDiv);
@@ -656,13 +667,13 @@ class TooltipPrices {
 
         if (profitData.itemPrice.bid > 0 && profitData.itemPrice.ask > 0) {
             // Market data available - show profit
-            html += '<div style="font-weight: bold; margin-bottom: 4px;">PROFIT</div>';
+            html += `<div style="font-weight: bold; margin-bottom: 4px;">${t('tooltipPrices.profitHeaderLabel')}</div>`;
             html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 
             const profitPerDay = profitData.profitPerDay;
             const profitColor = profitData.profitPerHour >= 0 ? config.COLOR_TOOLTIP_PROFIT : config.COLOR_TOOLTIP_LOSS;
 
-            html += `<div style="color: ${profitColor}; font-weight: bold;">Net: ${formatKMB(profitData.profitPerHour)}/hr (${formatKMB(profitPerDay)}/day)</div>`;
+            html += `<div style="color: ${profitColor}; font-weight: bold;">${t('tooltipPrices.netLine', { perHour: formatKMB(profitData.profitPerHour), perDay: formatKMB(profitPerDay) })}</div>`;
 
             // Show detailed breakdown if enabled
             if (showDetailed) {
@@ -675,7 +686,7 @@ class TooltipPrices {
             if (showDetailed) {
                 html += this.buildDetailedProfitDisplay(profitData, false);
             } else {
-                html += `<div style="font-weight: bold; color: ${config.COLOR_TOOLTIP_INFO};">Cost: ${formatKMB(profitData.totalMaterialCost)}/item</div>`;
+                html += `<div style="font-weight: bold; color: ${config.COLOR_TOOLTIP_INFO};">${t('tooltipPrices.costPerItemLine', { cost: formatKMB(profitData.totalMaterialCost) })}</div>`;
             }
         }
 
@@ -723,11 +734,28 @@ class TooltipPrices {
             const deeperBid = deeperRows.reduce((s, r) => s + r.bidPrice * r.amount, 0);
             askPrice = craftAsk - deeperAsk;
             bidPrice = (craftBid || craftAsk) - deeperBid;
-            return [{ itemName: `Craft ${upgradeDetails.name}`, amount: 1, askPrice, bidPrice, depth }, ...deeperRows];
+            return [
+                {
+                    itemName: t('tooltipPrices.craftItemName', { itemName: upgradeDetails.name }),
+                    amount: 1,
+                    askPrice,
+                    bidPrice,
+                    depth,
+                },
+                ...deeperRows,
+            ];
         }
 
         if (craftBid > 0 && (bidPrice === 0 || craftBid < bidPrice)) bidPrice = craftBid;
-        return [{ itemName: `Buy ${upgradeDetails.name}`, amount: 1, askPrice, bidPrice, depth }];
+        return [
+            {
+                itemName: t('tooltipPrices.buyItemName', { itemName: upgradeDetails.name }),
+                amount: 1,
+                askPrice,
+                bidPrice,
+                depth,
+            },
+        ];
     }
 
     /**
@@ -745,10 +773,10 @@ class TooltipPrices {
 
             // Table header
             html += `<tr style="border-bottom: 1px solid ${config.COLOR_BORDER};">`;
-            html += '<th style="padding: 2px 4px; text-align: left;">Material</th>';
-            html += '<th style="padding: 2px 4px; text-align: center;">Count</th>';
-            html += '<th style="padding: 2px 4px; text-align: right;">Ask</th>';
-            html += '<th style="padding: 2px 4px; text-align: right;">Bid</th>';
+            html += `<th style="padding: 2px 4px; text-align: left;">${t('tooltipPrices.materialHeader')}</th>`;
+            html += `<th style="padding: 2px 4px; text-align: center;">${t('tooltipPrices.countHeader')}</th>`;
+            html += `<th style="padding: 2px 4px; text-align: right;">${t('tooltipPrices.askHeader')}</th>`;
+            html += `<th style="padding: 2px 4px; text-align: right;">${t('tooltipPrices.bidHeader')}</th>`;
             html += '</tr>';
 
             // Resolve prices for all materials through unified chain
@@ -772,10 +800,21 @@ class TooltipPrices {
                         const subBidTotal = subRows.reduce((s, r) => s + r.bidPrice * r.amount, 0);
                         askPrice = craftAsk - subAskTotal;
                         bidPrice = (craftBid || craftAsk) - subBidTotal;
-                        return { ...material, itemName: `Craft ${material.itemName}`, askPrice, bidPrice, subRows };
+                        return {
+                            ...material,
+                            itemName: t('tooltipPrices.craftItemName', { itemName: material.itemName }),
+                            askPrice,
+                            bidPrice,
+                            subRows,
+                        };
                     }
                     if (craftBid > 0 && (bidPrice === 0 || craftBid < bidPrice)) bidPrice = craftBid;
-                    return { ...material, itemName: `Buy ${material.itemName}`, askPrice, bidPrice };
+                    return {
+                        ...material,
+                        itemName: t('tooltipPrices.buyItemName', { itemName: material.itemName }),
+                        askPrice,
+                        bidPrice,
+                    };
                 }
 
                 return { ...material, askPrice, bidPrice };
@@ -800,7 +839,7 @@ class TooltipPrices {
 
             // Total row
             html += `<tr style="border-bottom: 1px solid ${config.COLOR_BORDER};">`;
-            html += '<td style="padding: 2px 4px; font-weight: bold;">Total</td>';
+            html += `<td style="padding: 2px 4px; font-weight: bold;">${t('tooltipPrices.totalLabel')}</td>`;
             html += `<td style="padding: 2px 4px; text-align: center;">${totalCount.toFixed(1)}</td>`;
             html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(totalAsk)}</td>`;
             html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(totalBid)}</td>`;
@@ -838,7 +877,7 @@ class TooltipPrices {
             const profitPerDay = profitData.profitPerDay;
             const profitColor = profitData.profitPerHour >= 0 ? config.COLOR_TOOLTIP_PROFIT : config.COLOR_TOOLTIP_LOSS;
 
-            html += `<div style="color: ${profitColor};">Profit: ${formatKMB(profitPerAction)}/action, ${formatKMB(profitData.profitPerHour)}/hour, ${formatKMB(profitPerDay)}/day</div>`;
+            html += `<div style="color: ${profitColor};">${t('tooltipPrices.profitSummaryLine', { perAction: formatKMB(profitPerAction), perHour: formatKMB(profitData.profitPerHour), perDay: formatKMB(profitPerDay) })}</div>`;
             html += '</div>';
         }
 
@@ -875,15 +914,17 @@ class TooltipPrices {
         let html = '<div style="border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;">';
 
         // Header
-        html += '<div style="font-weight: bold; margin-bottom: 4px;">EXPECTED VALUE</div>';
+        html += `<div style="font-weight: bold; margin-bottom: 4px;">${t('tooltipPrices.expectedValueHeaderLabel')}</div>`;
         html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 
         // Expected value (simple display)
-        html += `<div style="color: ${config.COLOR_TOOLTIP_PROFIT}; font-weight: bold;">Expected Return: ${formatTooltipPrice(evData.expectedValue)}</div>`;
+        html += `<div style="color: ${config.COLOR_TOOLTIP_PROFIT}; font-weight: bold;">${t('tooltipPrices.expectedReturnLine', { value: formatTooltipPrice(evData.expectedValue) })}</div>`;
         if (keyPrice > 0) {
-            const keyLabel = keyName ? `Key Cost (${keyName})` : 'Key Cost';
-            html += `<div style="color: ${config.COLOR_TOOLTIP_LOSS};">- ${keyLabel}: ${formatTooltipPrice(keyPrice)}</div>`;
-            html += `<div style="color: ${config.COLOR_TOOLTIP_PROFIT}; font-weight: bold;">Net Value: ${formatTooltipPrice(evData.expectedValue - keyPrice)}</div>`;
+            const keyLine = keyName
+                ? t('tooltipPrices.keyCostNamedLine', { name: keyName, value: formatTooltipPrice(keyPrice) })
+                : t('tooltipPrices.keyCostLine', { value: formatTooltipPrice(keyPrice) });
+            html += `<div style="color: ${config.COLOR_TOOLTIP_LOSS};">${keyLine}</div>`;
+            html += `<div style="color: ${config.COLOR_TOOLTIP_PROFIT}; font-weight: bold;">${t('tooltipPrices.netValueLine', { value: formatTooltipPrice(evData.expectedValue - keyPrice) })}</div>`;
         }
 
         html += '</div>'; // Close summary section
@@ -896,30 +937,30 @@ class TooltipPrices {
 
             // Determine how many drops to show
             let dropsToShow = evData.drops;
-            let headerLabel = 'All Drops';
+            let dropsHeader = t('tooltipPrices.allDropsHeader', { count: evData.drops.length });
 
             if (showDropsSetting === 'Top 5') {
                 dropsToShow = evData.drops.slice(0, 5);
-                headerLabel = 'Top 5 Drops';
+                dropsHeader = t('tooltipPrices.top5DropsHeader', { count: evData.drops.length });
             } else if (showDropsSetting === 'Top 10') {
                 dropsToShow = evData.drops.slice(0, 10);
-                headerLabel = 'Top 10 Drops';
+                dropsHeader = t('tooltipPrices.top10DropsHeader', { count: evData.drops.length });
             }
 
-            html += `<div style="font-weight: bold; margin-bottom: 4px;">${headerLabel} (${evData.drops.length} total):</div>`;
+            html += `<div style="font-weight: bold; margin-bottom: 4px;">${dropsHeader}</div>`;
             html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 
             // List each drop
             for (const drop of dropsToShow) {
                 if (!drop.hasPriceData) {
                     // Show item without price data in gray
-                    html += `<div style="color: ${config.COLOR_TEXT_SECONDARY};">• ${drop.itemName} (${formatPercentage(drop.dropRate, 2)}): ${drop.avgCount.toFixed(2)} avg → No price data</div>`;
+                    html += `<div style="color: ${config.COLOR_TEXT_SECONDARY};">${t('tooltipPrices.dropNoPriceLine', { itemName: drop.itemName, dropRate: formatPercentage(drop.dropRate, 2), avgCount: drop.avgCount.toFixed(2) })}</div>`;
                 } else {
                     // Format drop rate percentage
                     const dropRatePercent = formatPercentage(drop.dropRate, 2);
 
                     // Show full drop breakdown
-                    html += `<div>• ${drop.itemName} (${dropRatePercent}%): ${drop.avgCount.toFixed(2)} avg → ${formatTooltipPrice(drop.expectedValue)}</div>`;
+                    html += `<div>${t('tooltipPrices.dropWithPriceLine', { itemName: drop.itemName, dropRate: dropRatePercent, avgCount: drop.avgCount.toFixed(2), value: formatTooltipPrice(drop.expectedValue) })}</div>`;
                 }
             }
 
@@ -927,9 +968,9 @@ class TooltipPrices {
 
             // Show total
             html += '<div style="border-top: 1px solid rgba(255,255,255,0.2); margin: 4px 0;"></div>';
-            html += `<div style="font-size: 0.9em; margin-left: 8px; font-weight: bold;">Total from ${evData.drops.length} drops: ${formatTooltipPrice(evData.expectedValue)}</div>`;
+            html += `<div style="font-size: 0.9em; margin-left: 8px; font-weight: bold;">${t('tooltipPrices.totalFromDropsLine', { count: evData.drops.length, value: formatTooltipPrice(evData.expectedValue) })}</div>`;
             if (keyPrice > 0) {
-                html += `<div style="font-size: 0.9em; margin-left: 8px; font-weight: bold;">Net after key: ${formatTooltipPrice(evData.expectedValue - keyPrice)}</div>`;
+                html += `<div style="font-size: 0.9em; margin-left: 8px; font-weight: bold;">${t('tooltipPrices.netAfterKeyLine', { value: formatTooltipPrice(evData.expectedValue - keyPrice) })}</div>`;
             }
         }
 
@@ -1083,19 +1124,19 @@ class TooltipPrices {
         );
 
         let html = '<div style="border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;">';
-        html += '<div style="font-weight: bold; margin-bottom: 4px;">GATHERING</div>';
+        html += `<div style="font-weight: bold; margin-bottom: 4px;">${t('tooltipPrices.gatheringHeaderLabel')}</div>`;
 
         // Solo actions section
         if (gatheringData.soloActions.length > 0) {
             html += '<div style="font-size: 0.9em; margin-left: 8px; margin-bottom: 6px;">';
-            html += '<div style="font-weight: 500; margin-bottom: 2px;">Solo:</div>';
+            html += `<div style="font-weight: 500; margin-bottom: 2px;">${t('tooltipPrices.soloLabel')}</div>`;
 
             for (const action of gatheringData.soloActions) {
                 const itemsPerHourStr = action.itemsPerHour ? Math.round(action.itemsPerHour) : '?';
                 const profitStr = action.profitPerHour ? formatKMB(Math.round(action.profitPerHour)) : '?';
                 const profitDayStr = action.profitPerHour ? formatKMB(Math.round(action.profitPerHour * 24)) : '?';
 
-                html += `<div style="margin-left: 8px;">• ${action.actionName}: ${itemsPerHourStr} items/hr | ${profitStr}/hr (${profitDayStr}/day)</div>`;
+                html += `<div style="margin-left: 8px;">${t('tooltipPrices.soloActionLine', { actionName: action.actionName, itemsPerHour: itemsPerHourStr, profitPerHour: profitStr, profitPerDay: profitDayStr })}</div>`;
             }
 
             html += '</div>';
@@ -1104,7 +1145,7 @@ class TooltipPrices {
         // Zone actions section
         if (zoneActions.length > 0) {
             html += '<div style="font-size: 0.9em; margin-left: 8px;">';
-            html += '<div style="font-weight: 500; margin-bottom: 2px;">Found in:</div>';
+            html += `<div style="font-weight: 500; margin-bottom: 2px;">${t('tooltipPrices.foundInLabel')}</div>`;
 
             for (const action of zoneActions) {
                 // Use more decimal places for very rare drops (< 0.1%)
@@ -1115,13 +1156,13 @@ class TooltipPrices {
                 let itemsDisplay;
                 if (action.isRareDrop) {
                     const itemsPerDayStr = action.itemsPerDay ? action.itemsPerDay.toFixed(2) : '?';
-                    itemsDisplay = `${itemsPerDayStr} items/day`;
+                    itemsDisplay = t('tooltipPrices.itemsPerDayUnit', { value: itemsPerDayStr });
                 } else {
                     const itemsPerHourStr = action.itemsPerHour ? Math.round(action.itemsPerHour) : '?';
-                    itemsDisplay = `${itemsPerHourStr} items/hr`;
+                    itemsDisplay = t('tooltipPrices.itemsPerHourUnit', { value: itemsPerHourStr });
                 }
 
-                html += `<div style="margin-left: 8px;">• ${action.actionName}: ${itemsDisplay} (${dropRatePercent}% drop)</div>`;
+                html += `<div style="margin-left: 8px;">${t('tooltipPrices.zoneActionLine', { actionName: action.actionName, itemsDisplay, dropRate: dropRatePercent })}</div>`;
             }
 
             html += '</div>';
@@ -1193,13 +1234,16 @@ class TooltipPrices {
         let html = '<div style="border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;">';
 
         // Show heading based on whether item is craftable
-        const heading = isCraftable ? 'Alternative Actions:' : 'Profits:';
+        const heading = isCraftable ? t('tooltipPrices.alternativeActionsHeader') : t('tooltipPrices.profitsHeader');
         html += `<div style="font-weight: bold; margin-bottom: 4px;">${heading}</div>`;
         html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 
         for (let i = 0; i < allProfits.length; i++) {
             const profit = allProfits[i];
-            const label = profit.actionType.charAt(0).toUpperCase() + profit.actionType.slice(1);
+            const labelKey = ACTION_TYPE_LABEL_KEYS[profit.actionType];
+            const label = labelKey
+                ? t(labelKey)
+                : profit.actionType.charAt(0).toUpperCase() + profit.actionType.slice(1);
             const color = profit.profitPerHour >= 0 ? config.COLOR_TOOLTIP_INFO : config.COLOR_TOOLTIP_LOSS;
             html += `<div style="color: ${color};">• ${label}: ${formatKMB(profit.profitPerHour)}/hr`;
 
@@ -1341,21 +1385,21 @@ class TooltipPrices {
         if (!abilityStatus.learned) {
             // Not learned
             html += `<div style="color: ${config.COLOR_TOOLTIP_LOSS}; font-weight: 600;">`;
-            html += `\u26A0 Unlearned</div>`;
+            html += `${t('tooltipPrices.unlearnedLabel')}</div>`;
         } else {
             // Learned
             html += `<div style="color: ${config.COLOR_TOOLTIP_INFO}; font-weight: 600;">`;
-            html += `\u2714 Learned</div>`;
+            html += `${t('tooltipPrices.learnedLabel')}</div>`;
 
             // Show level and progress
             html += `<div style="margin-top: 4px; margin-left: 8px; font-size: 0.9em;">`;
-            html += `<div>Level: ${abilityStatus.level}</div>`;
+            html += `<div>${t('tooltipPrices.levelLine', { level: abilityStatus.level })}</div>`;
 
             if (abilityStatus.maxLevel) {
-                html += `<div style="color: ${config.COLOR_TOOLTIP_INFO};">Max Level Reached</div>`;
+                html += `<div style="color: ${config.COLOR_TOOLTIP_INFO};">${t('tooltipPrices.maxLevelReachedLabel')}</div>`;
             } else if (abilityStatus.percentToNext !== undefined) {
-                html += `<div>Progress: ${formatPercentage(abilityStatus.percentToNext)}</div>`;
-                html += `<div style="opacity: 0.7;">XP to Next: ${numberFormatter(abilityStatus.xpToNext)}</div>`;
+                html += `<div>${t('tooltipPrices.progressLine', { percent: formatPercentage(abilityStatus.percentToNext) })}</div>`;
+                html += `<div style="opacity: 0.7;">${t('tooltipPrices.xpToNextLine', { xp: numberFormatter(abilityStatus.xpToNext) })}</div>`;
             }
 
             html += '</div>';

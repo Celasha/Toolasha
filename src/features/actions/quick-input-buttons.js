@@ -866,7 +866,7 @@ class QuickInputButtons {
                 `;
 
                 // FIRST ROW: Time-based buttons (hours)
-                queueContent.appendChild(document.createTextNode('Do '));
+                queueContent.appendChild(document.createTextNode(t('quickInputButtons.doPrefixLabel')));
 
                 const activePresetHours = this._parsePresets(
                     config.getSettingValue('actionPanel_quickInputs_hourPresets', ''),
@@ -1143,11 +1143,19 @@ class QuickInputButtons {
         const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
 
         // Check drink slots for Enhancing Teas
-        const enhancingTeas = {
-            '/items/enhancing_tea': { name: 'Enhancing Tea', baseSpeed: 0.02 },
-            '/items/super_enhancing_tea': { name: 'Super Enhancing Tea', baseSpeed: 0.04 },
-            '/items/ultra_enhancing_tea': { name: 'Ultra Enhancing Tea', baseSpeed: 0.06 },
+        const enhancingTeaBaseSpeeds = {
+            '/items/enhancing_tea': 0.02,
+            '/items/super_enhancing_tea': 0.04,
+            '/items/ultra_enhancing_tea': 0.06,
         };
+        const enhancingTeas = {};
+        for (const [hrid, baseSpeed] of Object.entries(enhancingTeaBaseSpeeds)) {
+            const teaItemDetails = dataManager.getItemDetails(hrid);
+            enhancingTeas[hrid] = {
+                name: teaItemDetails?.name || hrid.split('/').pop().replace(/_/g, ' '),
+                baseSpeed,
+            };
+        }
 
         for (const drink of drinkSlots) {
             if (!drink || !drink.itemHrid) continue;

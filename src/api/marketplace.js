@@ -4,6 +4,7 @@
  */
 
 import connectionState from '../core/connection-state.js';
+import { t } from '../core/i18n.js';
 import storage from '../core/storage.js';
 import networkAlert from '../features/market/network-alert.js';
 import { createTimerRegistry } from '../utils/timer-registry.js';
@@ -113,13 +114,13 @@ class MarketAPI {
             // Load patches from storage
             await this.loadPatches();
             // Show alert when using expired cache
-            networkAlert.show('⚠️ Using outdated market data');
+            networkAlert.show(t('networkAlert.outdatedData'));
             return this.marketData;
         }
 
         // Total failure - show alert
         console.error('[MarketAPI] ❌ No market data available');
-        networkAlert.show('⚠️ Market data unavailable');
+        networkAlert.show(t('networkAlert.marketDataUnavailable'));
         return null;
     }
 

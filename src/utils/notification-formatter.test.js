@@ -14,6 +14,33 @@ vi.mock('../core/data-manager.js', () => ({
     },
 }));
 
+// Fixture mirroring the real notificationFormatter locale keys this test suite exercises (a
+// subset of the full table, which is merged centrally into src/locales/en.js/zh.js and not owned
+// by this file). Mirrors the real i18n.js fallback contract: an unmocked/unknown key resolves to
+// the lookup key string unchanged, which is how formatNotificationMessage() detects a missing
+// template and falls back to humanizeCamelCase().
+const TEMPLATES_FIXTURE = {
+    addedFriend: 'Added friend: {{name}}',
+    soldItem: 'Sold {{count}} $t(itemNames.{{itemHrid}})',
+    houseConstructed: 'Level {{level}} $t(houseRoomNames.{{roomHrid}}) constructed',
+    upgradePurchased: 'Upgrade purchased: $t(buyableUpgradeNames.{{upgradeHrid}}) (x{{count}})',
+    characterLeveledUp: 'You have reached level {{level}} $t(skillNames.{{skillHrid}})!',
+    buyOrderCompleted: 'Bought {{count}} $t(itemNames.{{itemHrid}}){{enhancement}} - Spent {{coins}} Coins',
+    buyListingProgress: 'Buy listing: $t(itemNames.{{itemHrid}}){{enhancement}} - Progress: {{filled}}/{{total}}',
+    guildCreated: 'Created guild: {{guildName}}',
+    nameChanged: 'Name changed: {{name}}',
+    guildPromotedTo: 'You have been promoted to guild $t(guildCharacterRoleNames.{{role}})',
+    partyCreated: 'Party created',
+};
+
+vi.mock('../core/i18n.js', () => ({
+    default: { getLocale: () => 'en' },
+    t: (key) => {
+        const shortKey = key.replace(/^notificationFormatter\./, '');
+        return shortKey in TEMPLATES_FIXTURE ? TEMPLATES_FIXTURE[shortKey] : key;
+    },
+}));
+
 describe('formatNotificationMessage', () => {
     beforeEach(() => {
         mockGetItemDetails.mockReset();

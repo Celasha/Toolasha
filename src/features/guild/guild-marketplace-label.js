@@ -1,3 +1,5 @@
+import { t } from '../../core/i18n.js';
+
 /**
  * Normalize the text captured from a Guild shrine modal for the Marketplace Return tab.
  * The game renders adjacent shrine/domain labels without guaranteed whitespace, so insert
@@ -14,6 +16,6 @@ export function normalizeGuildShrineReturnLabel(text) {
     return (
         normalized.match(/Shrine of [A-Za-z]+ (?:Combat|Skilling) Level/)?.[0] ||
         normalized.match(/Shrine of [A-Za-z]+/)?.[0] ||
-        'Guild'
+        t('guildCreditValue.returnLabelFallback')
     );
 }

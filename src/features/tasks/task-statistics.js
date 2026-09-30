@@ -151,7 +151,7 @@ class TaskStatistics {
     calculateOverflowTime() {
         const characterInfo = dataManager.characterData?.characterInfo;
         if (!characterInfo) {
-            return { error: 'Character info not available' };
+            return { error: t('taskStatistics.characterInfoNotAvailable') };
         }
 
         const taskSlotCap = characterInfo.taskSlotCap;
@@ -187,7 +187,7 @@ class TaskStatistics {
     calculateSlotStatus() {
         const characterInfo = dataManager.characterData?.characterInfo;
         if (!characterInfo) {
-            return { error: 'Character info not available' };
+            return { error: t('taskStatistics.characterInfoNotAvailable') };
         }
 
         const unreadTaskCount = characterInfo.unreadTaskCount || 0;

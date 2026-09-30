@@ -7,11 +7,11 @@
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import webSocketHook from '../../core/websocket.js';
+import { t } from '../../core/i18n.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 
 const ICON_ID = 'mwi-elite-achievement-reminder-icon';
 const ELITE_TIER_HRID = '/achievement_tiers/elite';
-const DEFAULT_MESSAGE = 'Be Elite. Do your Elite achievements.';
 
 /**
  * Determine whether a shared profile's Elite achievement tier is incomplete.
@@ -134,7 +134,7 @@ class EliteAchievementReminder {
         const icon = document.createElement('span');
         icon.id = ICON_ID;
         icon.textContent = '✉️';
-        icon.title = 'Remind about Elite achievements';
+        icon.title = t('eliteAchievementReminder.reminderTooltip');
         icon.style.cssText = `
             cursor: pointer;
             margin-left: 6px;
@@ -159,7 +159,8 @@ class EliteAchievementReminder {
         const chatInput = document.querySelector('[class*="Chat_chatInputContainer"] input');
         if (!chatInput) return;
 
-        const message = config.getSettingValue('eliteAchievementReminderMessage', DEFAULT_MESSAGE) || DEFAULT_MESSAGE;
+        const defaultMessage = t('eliteAchievementReminder.defaultMessage');
+        const message = config.getSettingValue('eliteAchievementReminderMessage', defaultMessage) || defaultMessage;
         const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
         setter.call(chatInput, `/w ${playerName} ${message}`);
         chatInput.dispatchEvent(new Event('input', { bubbles: true }));

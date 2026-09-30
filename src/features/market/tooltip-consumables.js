@@ -4,6 +4,7 @@
  */
 
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import marketAPI from '../../api/marketplace.js';
 import dataManager from '../../core/data-manager.js';
 import { numberFormatter } from '../../utils/formatters.js';
@@ -283,36 +284,36 @@ class TooltipConsumables {
         let html = '<div style="border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;">';
 
         // CONSUMABLE STATS section
-        html += '<div style="font-weight: bold; margin-bottom: 4px;">CONSUMABLE STATS</div>';
+        html += `<div style="font-weight: bold; margin-bottom: 4px;">${t('tooltipConsumables.statsHeaderLabel')}</div>`;
         html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 
         // Restores line
         if (stats.recoveryDuration > 0) {
-            html += `<div>Restores: ${numberFormatter(stats.restorePerSecond, 1)} ${stats.restoreType}/s</div>`;
+            html += `<div>${t('tooltipConsumables.restoresPerSecondLine', { amount: numberFormatter(stats.restorePerSecond, 1), type: stats.restoreType })}</div>`;
         } else {
-            html += `<div>Restores: ${numberFormatter(stats.restoreAmount)} ${stats.restoreType} (instant)</div>`;
+            html += `<div>${t('tooltipConsumables.restoresInstantLine', { amount: numberFormatter(stats.restoreAmount), type: stats.restoreType })}</div>`;
         }
 
         // Cost efficiency line
         if (stats.costPerPoint > 0) {
-            html += `<div>Cost: ${numberFormatter(stats.costPerPoint, 1)} per ${stats.restoreType}</div>`;
+            html += `<div>${t('tooltipConsumables.costPerPointLine', { cost: numberFormatter(stats.costPerPoint, 1), type: stats.restoreType })}</div>`;
         } else if (stats.askPrice === 0) {
-            html += `<div style="color: gray; font-style: italic;">Cost: No market data</div>`;
+            html += `<div style="color: gray; font-style: italic;">${t('tooltipConsumables.costNoDataLabel')}</div>`;
         }
 
         // Daily maximum line - ALWAYS show (based on cooldown)
         if (stats.dailyMax > 0) {
-            html += `<div>Daily Max: ${numberFormatter(stats.dailyMax)} ${stats.restoreType}</div>`;
+            html += `<div>${t('tooltipConsumables.dailyMaxLine', { amount: numberFormatter(stats.dailyMax), type: stats.restoreType })}</div>`;
         }
 
         // Recovery duration line - ONLY for over-time items
         if (stats.recoveryDuration > 0) {
-            html += `<div>Recovery Time: ${stats.recoveryDuration}s</div>`;
+            html += `<div>${t('tooltipConsumables.recoveryTimeLine', { seconds: stats.recoveryDuration })}</div>`;
         }
 
         // Cooldown line - ALWAYS show
         if (stats.cooldownDuration > 0) {
-            html += `<div>Cooldown: ${stats.cooldownDuration}s (${numberFormatter(stats.usesPerDay)} uses/day)</div>`;
+            html += `<div>${t('tooltipConsumables.cooldownLine', { seconds: stats.cooldownDuration, uses: numberFormatter(stats.usesPerDay) })}</div>`;
         }
 
         html += '</div>';

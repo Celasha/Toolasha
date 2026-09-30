@@ -8,6 +8,7 @@
 
 import domObserver from '../../../core/dom-observer.js';
 import config from '../../../core/config.js';
+import { t } from '../../../core/i18n.js';
 import openableAnalyticsDataCollector from './openable-analytics-data-collector.js';
 import { coinFormatter, formatKMB3Digits } from '../../../utils/formatters.js';
 
@@ -17,11 +18,6 @@ const GAINED_ITEMS_CLASS = 'Inventory_gainedItems';
 const ITEM_CONTAINER_CLASS = 'Item_itemContainer';
 const ITEM_VALUE_LABEL_CLASS = 'toolasha-openable-analytics-item-value';
 const COIN_HRID = '/items/coin';
-
-const LUCK_TOOLTIP =
-    'Luck is Actual loot value minus Expected loot value. It does not include the container/key cost and is not opening profit.';
-const LUCK_UNAVAILABLE_TOOLTIP = `Some required values are missing, so Luck can't be calculated. ${LUCK_TOOLTIP}`;
-const PARTIAL_TOOLTIP = 'One or more gained items could not be priced.';
 
 function formatValue(value) {
     if (value === null || value === undefined) return '—';
@@ -88,16 +84,21 @@ function isMonetaryRewardModal(container, record) {
 function buildFooterContent(record, lifetimeAggregate) {
     const actualPartial = !record.actualValueComplete;
     const actualText = `${formatValue(record.actualValue)}${
-        actualPartial ? ` <span title="${PARTIAL_TOOLTIP}">[Partial]</span>` : ''
+        actualPartial
+            ? ` <span title="${t('openableAnalytics.gainedItemPartialTooltip')}">${t('openableAnalytics.partialLabel')}</span>`
+            : ''
     }`;
     const expectedText = record.expectedValueAvailable ? formatValue(record.expectedValue) : '—';
     const luckAvailable = record.luckValue !== null && record.luckValue !== undefined;
-    const luckTitle = luckAvailable ? LUCK_TOOLTIP : LUCK_UNAVAILABLE_TOOLTIP;
+    const luckTooltipText = t('openableAnalytics.luckTooltip');
+    const luckTitle = luckAvailable
+        ? luckTooltipText
+        : t('openableAnalytics.luckUnavailableTooltip', { luckTooltip: luckTooltipText });
     const luckText = luckAvailable
         ? `<span style="color:${luckColor(record.luckValue)}">${formatLuckValue(record.luckValue)}${formatLuckPercent(record.luckPercent)}</span>`
         : '—';
 
-    const currentLine = `Actual ${actualText} · Expected ${expectedText} · <span title="${luckTitle}">Luck</span> ${luckText}`;
+    const currentLine = `${t('openableAnalytics.actualLabel')} ${actualText} · ${t('openableAnalytics.expectedLabel')} ${expectedText} · <span title="${luckTitle}">${t('openableAnalytics.luckShortLabel')}</span> ${luckText}`;
 
     // Suppress a Lifetime row that would just repeat this exact first event: semantically, this
     // container's Lifetime consists of nothing but this one live event and no imported data.
@@ -114,12 +115,12 @@ function buildFooterContent(record, lifetimeAggregate) {
             ? (lifetimeLuckValue / lifetimeAggregate.expectedValueTotal) * 100
             : null;
 
-    const viewLink = `<span class="toolasha-openable-analytics-view-link" style="cursor:pointer;text-decoration:underline">View Analytics</span>`;
+    const viewLink = `<span class="toolasha-openable-analytics-view-link" style="cursor:pointer;text-decoration:underline">${t('openableAnalytics.viewAnalyticsLink')}</span>`;
     const lifetimeLine = isOnlyEverEvent
         ? viewLink
-        : `Lifetime ×${lifetimeAggregate.containersOpened}${
+        : `${t('openableAnalytics.lifetimeScopeLabel')} ×${lifetimeAggregate.containersOpened}${
               lifetimeLuckAvailable
-                  ? ` · Luck <span style="color:${luckColor(lifetimeLuckValue)}">${formatLuckValue(lifetimeLuckValue)}${formatLuckPercent(lifetimeLuckPercent)}</span>`
+                  ? ` · ${t('openableAnalytics.luckShortLabel')} <span style="color:${luckColor(lifetimeLuckValue)}">${formatLuckValue(lifetimeLuckValue)}${formatLuckPercent(lifetimeLuckPercent)}</span>`
                   : ''
           } · ${viewLink}`;
 

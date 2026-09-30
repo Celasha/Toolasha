@@ -72,7 +72,7 @@ const SKILL_HRID_TO_NAME = {
 function resolveSystemMessage(messageKey, meta) {
     if (messageKey === 'systemChatMessage.characterLeveledUp') {
         const skillName = SKILL_HRID_TO_NAME[meta.skillHrid] || meta.skillHrid.split('/').pop().replace(/_/g, ' ');
-        return `🎉 ${meta.name} reached ${skillName} ${meta.level}!`;
+        return t('popOutChat.levelUpMessage', { name: meta.name, skillName, level: meta.level });
     }
     return null;
 }
@@ -89,7 +89,7 @@ function resolveLink(link) {
         const enhancement = link.itemEnhancementLevel > 0 ? ` +${link.itemEnhancementLevel}` : '';
         const count = link.itemCount > 1 ? ` ×${link.itemCount}` : '';
         const price = formatKMB(link.price);
-        const side = link.isSell ? 'Sell' : 'Buy';
+        const side = link.isSell ? t('popOutChat.marketLinkSellLabel') : t('popOutChat.marketLinkBuyLabel');
         return `[${itemName}${enhancement}${count} @ ${price} ${side}]`;
     }
     if (link.linkType === '/chat_link_types/item') {
@@ -102,27 +102,27 @@ function resolveLink(link) {
     if (link.linkType === '/chat_link_types/ability') {
         const abilityDetails = dataManager.getInitClientData()?.abilityDetailMap?.[link.abilityHrid];
         const abilityName = abilityDetails?.name || link.abilityHrid.split('/').pop().replace(/_/g, ' ');
-        return `[${abilityName} Lv.${link.abilityLevel}]`;
+        return `[${abilityName} ${t('popOutChat.levelAbbreviation')}${link.abilityLevel}]`;
     }
     if (link.linkType === '/chat_link_types/skill') {
         const skillName = SKILL_HRID_TO_NAME[link.skillHrid] || link.skillHrid.split('/').pop().replace(/_/g, ' ');
-        return `[${skillName} Lv.${link.skillLevel}]`;
+        return `[${skillName} ${t('popOutChat.levelAbbreviation')}${link.skillLevel}]`;
     }
     if (link.linkType === '/chat_link_types/party') {
         const actionDetails = dataManager.getActionDetails(link.partyActionHrid);
         const zoneName = actionDetails?.name || link.partyActionHrid.split('/').pop().replace(/_/g, ' ');
         const tier = ` T${link.partyDifficultyTier ?? 0}`;
-        return `[Party: ${zoneName}${tier}]`;
+        return `[${t('popOutChat.partyLinkLabel')} ${zoneName}${tier}]`;
     }
     if (link.linkType === '/chat_link_types/collection') {
         const itemDetails = dataManager.getItemDetails(link.itemHrid);
         const itemName = itemDetails?.name || link.itemHrid.split('/').pop().replace(/_/g, ' ');
-        return `[Collection: ${itemName} ×${formatKMB(link.itemCount)}]`;
+        return `[${t('popOutChat.collectionLinkLabel')} ${itemName} ×${formatKMB(link.itemCount)}]`;
     }
     if (link.linkType === '/chat_link_types/bestiary') {
         const monsterDetails = dataManager.getInitClientData()?.combatMonsterDetailMap?.[link.monsterHrid];
         const monsterName = monsterDetails?.name || link.monsterHrid.split('/').pop().replace(/_/g, ' ');
-        return `[Bestiary: ${monsterName} ×${link.monsterCount}]`;
+        return `[${t('popOutChat.bestiaryLinkLabel')} ${monsterName} ×${link.monsterCount}]`;
     }
     // Fallback: humanize the HRID
     return `[${link.linkType.split('/').pop().replace(/_/g, ' ')}]`;
@@ -229,7 +229,7 @@ class PopOutChat {
         const btn = document.createElement('button');
         btn.setAttribute('data-mwi-popout-chat', 'true');
         btn.textContent = '⧉';
-        btn.title = 'Pop out chat';
+        btn.title = t('popOutChat.popoutButtonTooltip');
         btn.style.cssText = `
             padding: 2px 6px;
             font-size: 13px;
@@ -456,6 +456,13 @@ class PopOutChat {
      */
     _buildPopoutHTML() {
         const sendButtonLabel = t('popOutChat.sendButtonLabel');
+        const addPaneButtonLabel = t('popOutChat.addPaneButtonLabel');
+        const verticalLabelText = t('popOutChat.verticalLabelText');
+        const disconnectBannerText = t('popOutChat.disconnectBannerText');
+        const dragHandleTooltip = t('popOutChat.dragHandleTooltip');
+        const closePaneTooltip = t('popOutChat.closePaneTooltip');
+        const filterInputPlaceholder = t('popOutChat.filterInputPlaceholder');
+        const messageInputPlaceholder = t('popOutChat.messageInputPlaceholder');
         return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -613,9 +620,9 @@ class PopOutChat {
 <div id="topbar">
   <span id="topbar-title">MWI Chat</span>
   <span id="topbar-name"></span>
-  <button id="add-pane-btn">+ Pane</button>
-  <label id="vertical-label"><input type="checkbox" id="vertical-toggle"> Vertical</label>
-  <div id="disconnect-banner">⚠ Disconnected from game tab</div>
+  <button id="add-pane-btn">${addPaneButtonLabel}</button>
+  <label id="vertical-label"><input type="checkbox" id="vertical-toggle"> ${verticalLabelText}</label>
+  <div id="disconnect-banner">${disconnectBannerText}</div>
 </div>
 <div id="panes"></div>
 
@@ -732,7 +739,7 @@ class PopOutChat {
     const dragHandle = document.createElement('span');
     dragHandle.className = 'pane-drag-handle';
     dragHandle.textContent = '⠿';
-    dragHandle.title = 'Drag to reorder';
+    dragHandle.title = '${dragHandleTooltip}';
 
     const select = document.createElement('select');
     select.className = 'pane-channel-select';
@@ -741,7 +748,7 @@ class PopOutChat {
     const closeBtn = document.createElement('button');
     closeBtn.className = 'pane-close-btn';
     closeBtn.textContent = '✕';
-    closeBtn.title = 'Close pane';
+    closeBtn.title = '${closePaneTooltip}';
     closeBtn.addEventListener('click', () => removePane(id));
 
     header.appendChild(dragHandle);
@@ -765,7 +772,7 @@ class PopOutChat {
     const filterInput = document.createElement('input');
     filterInput.className = 'pane-filter-input';
     filterInput.type = 'text';
-    filterInput.placeholder = 'text or /regex/';
+    filterInput.placeholder = '${filterInputPlaceholder}';
     filterInput.value = savedFilterCustom || '';
     filterInput.style.display = filterSelect.value === 'custom' ? '' : 'none';
 
@@ -783,7 +790,7 @@ class PopOutChat {
     const input = document.createElement('input');
     input.type = 'text';
     input.className = 'pane-input';
-    input.placeholder = 'Type a message...';
+    input.placeholder = '${messageInputPlaceholder}';
     input.maxLength = 500;
 
     const sendBtn = document.createElement('button');

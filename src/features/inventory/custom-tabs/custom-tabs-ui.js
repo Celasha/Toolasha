@@ -2202,7 +2202,11 @@ export default class CustomTabsUI {
         const nameInput = modal.querySelector('.toolasha-ct-editor-name');
         nameInput.focus();
         nameInput.addEventListener('change', () => {
-            this._config = renameTab(this._config, tabId, nameInput.value.trim() || 'Untitled');
+            this._config = renameTab(
+                this._config,
+                tabId,
+                nameInput.value.trim() || t('customTabsUi.untitledTabNameFallback')
+            );
             this._save();
         });
 
@@ -2945,7 +2949,7 @@ export default class CustomTabsUI {
     // -----------------------------------------------------------------------
 
     _onAddTab(parentId) {
-        const result = addTab(this._config, parentId, 'New Tab');
+        const result = addTab(this._config, parentId, t('customTabsUi.newTabDefaultName'));
         this._config = result.config;
         this._config = setTabOpen(this._config, result.tabId, true);
         this._removeInjectedEls();

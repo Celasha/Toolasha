@@ -291,17 +291,20 @@ class NetworthHistoryChart {
         `;
         const maOptions = [
             { value: 0, label: t('networthHistoryChart.movingAvgOffOption') },
-            { value: 3, label: '3h' },
-            { value: 6, label: '6h' },
-            { value: 12, label: '12h' },
-            { value: 24, label: '24h' },
-            { value: 48, label: '48h' },
-            { value: 168, label: '7d' },
+            { value: 3, label: t('networthHistoryChart.movingAvg3hOption') },
+            { value: 6, label: t('networthHistoryChart.movingAvg6hOption') },
+            { value: 12, label: t('networthHistoryChart.movingAvg12hOption') },
+            { value: 24, label: t('networthHistoryChart.movingAvg24hOption') },
+            { value: 48, label: t('networthHistoryChart.movingAvg48hOption') },
+            { value: 168, label: t('networthHistoryChart.movingAvg7dOption') },
         ];
         // Check if current value is a custom one not in presets
         const isCustomValue = this.movingAvgWindow > 0 && !maOptions.some((o) => o.value === this.movingAvgWindow);
         if (isCustomValue) {
-            maOptions.push({ value: this.movingAvgWindow, label: `${this.movingAvgWindow}h` });
+            maOptions.push({
+                value: this.movingAvgWindow,
+                label: t('networthHistoryChart.movingAvgCustomHoursOption', { hours: this.movingAvgWindow }),
+            });
         }
         maOptions.push({ value: -1, label: t('networthHistoryChart.movingAvgCustomOption') });
         for (const opt of maOptions) {
@@ -323,7 +326,9 @@ class NetworthHistoryChart {
                     if (!existing) {
                         const customOpt = document.createElement('option');
                         customOpt.value = parsed;
-                        customOpt.textContent = `${parsed}h`;
+                        customOpt.textContent = t('networthHistoryChart.movingAvgCustomHoursOption', {
+                            hours: parsed,
+                        });
                         maSelect.insertBefore(customOpt, maSelect.querySelector('option[value="-1"]'));
                     }
                     maSelect.value = parsed;

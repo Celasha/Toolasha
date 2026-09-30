@@ -57,6 +57,57 @@ vi.mock('./character-activity-storage.js', () => ({
     loadAccountPreferences: vi.fn(async () => mocks.accountPrefs),
 }));
 
+// The `characterActivity` locale namespace is merged centrally into src/locales/en.js elsewhere
+// and isn't present there yet, so mock i18n.js with the exact English text the production code
+// was written against, mirroring the real i18n.js fallback contract (unknown key -> key itself).
+const CHARACTER_ACTIVITY_FIXTURE = {
+    futureActionEnds: 'Action ends',
+    futureQueueEnds: 'Queue ends',
+    futureMaterialsRunOut: 'Materials run out',
+    futureCoinsRunOut: 'Coins run out',
+    futureUpgradeMaterialsRunOut: 'Upgrade materials run out',
+    futureBuffExpiring: 'Buff expiring',
+    futureOfflineLimit: 'Offline limit',
+    pastActionEnded: 'Action ended',
+    pastQueueEnded: 'Queue ended',
+    pastMaterialsRanOut: 'Materials ran out',
+    pastCoinsRanOut: 'Coins ran out',
+    pastUpgradeMaterialsRanOut: 'Upgrade materials ran out',
+    pastBuffExpired: 'Buff expired',
+    pastOfflineProgressStopped: 'Offline progress stopped',
+    uncertainCombat: 'Variable duration · ETA unavailable',
+    uncertainLabyrinth: 'Variable duration · ETA unavailable',
+    uncertainEnhancing: 'Stochastic outcome · ETA unavailable',
+    uncertainSpecial: 'Waiting for party · ETA unavailable',
+    uncertainLoadoutUnavailable: 'Configured loadout unavailable · ETA unavailable',
+    queueUncertain: 'Queue duration uncertain · ETA unavailable',
+    endTimeUnavailable: 'End time unavailable',
+    runsInfiniteKnown: 'Runs ∞ · Offline limit · {{time}}',
+    runsInfiniteUnavailable: 'Runs ∞ · Offline ETA unavailable',
+    runsInfiniteUncertain: 'Runs ∞ · Offline limit uncertain',
+    queueInfiniteKnown: 'Queue → ∞ · Offline limit · {{time}}',
+    queueInfiniteUnavailable: 'Queue → ∞ · Offline ETA unavailable',
+    queueInfiniteUncertain: 'Queue → ∞ · Offline limit uncertain',
+    queuedSuffix: '+{{count}} queued',
+    noActivityDataYet: 'No activity data yet',
+    openCharacterOnceToEnableStatus: 'Open character once to enable status',
+    activityStatusOutdated: 'Activity status outdated',
+    openCharacterToRefresh: 'Open character to refresh',
+    noActiveAction: 'No active action',
+    characterIsIdle: 'Character is idle',
+    noActiveActionExpected: 'No active action expected',
+};
+
+vi.mock('../../core/i18n.js', () => ({
+    default: { getLocale: () => 'en' },
+    t: (key, params = {}) => {
+        const shortKey = key.replace(/^characterActivity\./, '');
+        const template = CHARACTER_ACTIVITY_FIXTURE[shortKey];
+        if (template === undefined) return key;
+        return template.replace(/\{\{(\w+)\}\}/g, (match, name) => (name in params ? String(params[name]) : match));
+    },
+}));
+
 const characterSelectRendererModule = await import('./character-select-renderer.js');
 const { default: characterSelectRenderer, computeSlotDisplayState } = characterSelectRendererModule;
 const { formatActivityStatusTime } = await import('../../utils/formatters.js');

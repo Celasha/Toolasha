@@ -40,6 +40,34 @@ vi.mock('./openable-analytics-data-collector.js', () => ({
     },
 }));
 
+// A few `openableAnalytics.*` keys used here (actualLabel, expectedLabel, partialLabel,
+// lifetimeScopeLabel, luckTooltip) already exist in src/locales/en.js; the rest (luckShortLabel,
+// viewAnalyticsLink, gainedItemPartialTooltip, luckUnavailableTooltip) are merged centrally
+// elsewhere and aren't there yet. Mock i18n.js with the exact English text the production code
+// was written against, mirroring the real i18n.js fallback contract (unknown key -> key itself).
+const OPENABLE_ANALYTICS_FIXTURE = {
+    actualLabel: 'Actual',
+    expectedLabel: 'Expected',
+    luckShortLabel: 'Luck',
+    partialLabel: '[Partial]',
+    gainedItemPartialTooltip: 'One or more gained items could not be priced.',
+    luckTooltip:
+        'Luck is Actual loot value minus Expected loot value. It does not include the container/key cost and is not opening profit.',
+    luckUnavailableTooltip: "Some required values are missing, so Luck can't be calculated. {{luckTooltip}}",
+    viewAnalyticsLink: 'View Analytics',
+    lifetimeScopeLabel: 'Lifetime',
+};
+
+vi.mock('../../../core/i18n.js', () => ({
+    default: { getLocale: () => 'en' },
+    t: (key, params = {}) => {
+        const shortKey = key.replace(/^openableAnalytics\./, '');
+        const template = OPENABLE_ANALYTICS_FIXTURE[shortKey];
+        if (template === undefined) return key;
+        return template.replace(/\{\{(\w+)\}\}/g, (match, name) => (name in params ? String(params[name]) : match));
+    },
+}));
+
 const {
     default: openableAnalyticsModalInjector,
     MODAL_CONTENT_CLASS,

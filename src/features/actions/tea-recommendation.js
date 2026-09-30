@@ -266,8 +266,9 @@ class TeaRecommendation {
         // Detect if we're on the alchemy page by checking if the button is inside an alchemy panel
         const isAlchemy = !!anchorButton.closest('[class*="AlchemyPanel_"]');
 
-        // Get current skill name — action filter doesn't track alchemy, so override when needed
-        const skillName = isAlchemy ? 'Alchemy' : actionFilter.getCurrentSkillName();
+        // Get current skill name — action filter doesn't track alchemy, so override when needed.
+        // Reuses labSim's translated "Alchemy" skill-name label rather than a new key.
+        const skillName = isAlchemy ? t('labSim.skillAlchemy') : actionFilter.getCurrentSkillName();
         if (!skillName) {
             this.showError(anchorButton, t('teaRecommendation.errorSkillNotDetected'));
             return;

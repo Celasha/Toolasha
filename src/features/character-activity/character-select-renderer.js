@@ -8,6 +8,7 @@
  */
 
 import domObserver from '../../core/dom-observer.js';
+import { t } from '../../core/i18n.js';
 import assetManifest from '../../utils/asset-manifest.js';
 import { formatActivityStatusTime } from '../../utils/formatters.js';
 import { resolveCharacterSelectSlots } from './character-select-resolver.js';
@@ -22,56 +23,64 @@ const REFRESH_INTERVAL_MS = 60000;
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const STALE_TOLERANCE_MS = 5000;
 
-const FUTURE_LABELS = {
-    action: 'Action ends',
-    queue: 'Queue ends',
-    materials: 'Materials run out',
-    coins: 'Coins run out',
-    'upgrade-materials': 'Upgrade materials run out',
-    drink: 'Buff expiring',
-    offline: 'Offline limit',
-};
+// Localized future/past-tense limiter labels. Resolved as functions (not module-level consts) so
+// each call reads the current locale from localStorage via t() - a module-load-time value would
+// be baked in before i18n is ready and would never update on a locale change.
+function getFutureLabels() {
+    return {
+        action: t('characterActivity.futureActionEnds'),
+        queue: t('characterActivity.futureQueueEnds'),
+        materials: t('characterActivity.futureMaterialsRunOut'),
+        coins: t('characterActivity.futureCoinsRunOut'),
+        'upgrade-materials': t('characterActivity.futureUpgradeMaterialsRunOut'),
+        drink: t('characterActivity.futureBuffExpiring'),
+        offline: t('characterActivity.futureOfflineLimit'),
+    };
+}
 
-const PAST_LABELS = {
-    action: 'Action ended',
-    queue: 'Queue ended',
-    materials: 'Materials ran out',
-    coins: 'Coins ran out',
-    'upgrade-materials': 'Upgrade materials ran out',
-    drink: 'Buff expired',
-    offline: 'Offline progress stopped',
-};
+function getPastLabels() {
+    return {
+        action: t('characterActivity.pastActionEnded'),
+        queue: t('characterActivity.pastQueueEnded'),
+        materials: t('characterActivity.pastMaterialsRanOut'),
+        coins: t('characterActivity.pastCoinsRanOut'),
+        'upgrade-materials': t('characterActivity.pastUpgradeMaterialsRanOut'),
+        drink: t('characterActivity.pastBuffExpired'),
+        offline: t('characterActivity.pastOfflineProgressStopped'),
+    };
+}
 
 // Per-cause text for the neutral "unknown" branch, keyed by the active uncertain segment's own
-// `stopCause`. Locked copy per the approved UX contract - do not abbreviate the suffix.
-const UNCERTAIN_REASON_TEXT = {
-    combat: 'Variable duration · ETA unavailable',
-    labyrinth: 'Variable duration · ETA unavailable',
-    enhancing: 'Stochastic outcome · ETA unavailable',
-    special: 'Waiting for party · ETA unavailable',
-    'loadout-unavailable': 'Configured loadout unavailable · ETA unavailable',
-};
-// Current segment is still a trustworthy earlier one, but a later segment in the same queue is
-// uncertain - the deadline itself (not the current action) is what's unknowable.
-const QUEUE_UNCERTAIN_TEXT = 'Queue duration uncertain · ETA unavailable';
-const DEFAULT_UNCERTAIN_TEXT = 'End time unavailable';
+// `stopCause`. Locked copy per the approved UX contract - do not abbreviate the suffix. Resolved
+// at call time, not module load, for the same reason as getFutureLabels()/getPastLabels() above.
+function getUncertainReasonText() {
+    return {
+        combat: t('characterActivity.uncertainCombat'),
+        labyrinth: t('characterActivity.uncertainLabyrinth'),
+        enhancing: t('characterActivity.uncertainEnhancing'),
+        special: t('characterActivity.uncertainSpecial'),
+        'loadout-unavailable': t('characterActivity.uncertainLoadoutUnavailable'),
+    };
+}
 
 // TLA-025A locked copy - see evidence/COPY_MATRIX_LOCKED.md. `runs-infinite` is only used when the
 // currently active segment itself is proven truly infinite; `queue-infinite` is only used when a
 // later queued segment is, reached only through structurally non-blocking steps. Exact intermediate
-// duration is never implied by either variant.
-const INFINITE_COPY = {
-    'runs-infinite': {
-        known: (time) => `Runs ∞ · Offline limit · ${time}`,
-        unavailable: 'Runs ∞ · Offline ETA unavailable',
-        uncertain: 'Runs ∞ · Offline limit uncertain',
-    },
-    'queue-infinite': {
-        known: (time) => `Queue → ∞ · Offline limit · ${time}`,
-        unavailable: 'Queue → ∞ · Offline ETA unavailable',
-        uncertain: 'Queue → ∞ · Offline limit uncertain',
-    },
-};
+// duration is never implied by either variant. Resolved at call time, not module load.
+function getInfiniteCopy() {
+    return {
+        'runs-infinite': {
+            known: (time) => t('characterActivity.runsInfiniteKnown', { time }),
+            unavailable: t('characterActivity.runsInfiniteUnavailable'),
+            uncertain: t('characterActivity.runsInfiniteUncertain'),
+        },
+        'queue-infinite': {
+            known: (time) => t('characterActivity.queueInfiniteKnown', { time }),
+            unavailable: t('characterActivity.queueInfiniteUnavailable'),
+            uncertain: t('characterActivity.queueInfiniteUncertain'),
+        },
+    };
+}
 
 const COLOR_HEX = {
     green: '#51cf66',
@@ -112,7 +121,7 @@ function findSegmentAtTime(segments, time) {
 function formatActivityLine(segment, isPaused, queuedCount) {
     let text = segment.displayName || segment.actionName;
     if (isPaused) text += ' ⏸';
-    if (queuedCount > 0) text += ` +${queuedCount} queued`;
+    if (queuedCount > 0) text += ` ${t('characterActivity.queuedSuffix', { count: queuedCount })}`;
     return text;
 }
 
@@ -128,9 +137,9 @@ function formatActivityLine(segment, isPaused, queuedCount) {
 export function computeSlotDisplayState(record, character, prefs, now = Date.now()) {
     if (!record) {
         return {
-            firstLineText: 'No activity data yet',
+            firstLineText: t('characterActivity.noActivityDataYet'),
             limiterColor: 'neutral',
-            limiterText: 'Open character once to enable status',
+            limiterText: t('characterActivity.openCharacterOnceToEnableStatus'),
             activeSegment: null,
         };
     }
@@ -142,9 +151,9 @@ export function computeSlotDisplayState(record, character, prefs, now = Date.now
 
     if (normalizedLastOfflineTime != null && normalizedLastOfflineTime > record.observedAt + STALE_TOLERANCE_MS) {
         return {
-            firstLineText: 'Activity status outdated',
+            firstLineText: t('characterActivity.activityStatusOutdated'),
             limiterColor: 'neutral',
-            limiterText: 'Open character to refresh',
+            limiterText: t('characterActivity.openCharacterToRefresh'),
             activeSegment: null,
         };
     }
@@ -161,9 +170,9 @@ export function computeSlotDisplayState(record, character, prefs, now = Date.now
 
     if (terminalCause === 'idle') {
         return {
-            firstLineText: 'No active action',
+            firstLineText: t('characterActivity.noActiveAction'),
             limiterColor: 'red',
-            limiterText: 'Character is idle',
+            limiterText: t('characterActivity.characterIsIdle'),
             activeSegment: null,
         };
     }
@@ -174,9 +183,9 @@ export function computeSlotDisplayState(record, character, prefs, now = Date.now
 
         if (!activeSegment) {
             return {
-                firstLineText: 'No active action expected',
+                firstLineText: t('characterActivity.noActiveActionExpected'),
                 limiterColor: 'neutral',
-                limiterText: DEFAULT_UNCERTAIN_TEXT,
+                limiterText: t('characterActivity.endTimeUnavailable'),
                 activeSegment: null,
             };
         }
@@ -188,7 +197,7 @@ export function computeSlotDisplayState(record, character, prefs, now = Date.now
             return {
                 firstLineText: formatActivityLine(activeSegment, false, activeSegment.remainingQueuedCount ?? 0),
                 limiterColor: 'neutral',
-                limiterText: INFINITE_COPY[attentionMode][offlineLimitState],
+                limiterText: getInfiniteCopy()[attentionMode][offlineLimitState],
                 activeSegment,
             };
         }
@@ -198,8 +207,8 @@ export function computeSlotDisplayState(record, character, prefs, now = Date.now
         // now, not the future segment that made the total deadline unknowable.
         const limiterText =
             activeSegment.certainty === 'uncertain'
-                ? UNCERTAIN_REASON_TEXT[activeSegment.stopCause] || DEFAULT_UNCERTAIN_TEXT
-                : QUEUE_UNCERTAIN_TEXT;
+                ? getUncertainReasonText()[activeSegment.stopCause] || t('characterActivity.endTimeUnavailable')
+                : t('characterActivity.queueUncertain');
 
         return {
             firstLineText: formatActivityLine(activeSegment, false, activeSegment.remainingQueuedCount ?? 0),
@@ -213,6 +222,7 @@ export function computeSlotDisplayState(record, character, prefs, now = Date.now
     const time = formatActivityStatusTime(terminalAt, prefs, now);
 
     if (hasPassed) {
+        const pastLabels = getPastLabels();
         if (terminalCause === 'offline') {
             const found = findSegmentAtTime(segments, terminalAt) || {
                 segment: segments[segments.length - 1],
@@ -221,14 +231,14 @@ export function computeSlotDisplayState(record, character, prefs, now = Date.now
             return {
                 firstLineText: formatActivityLine(found.segment, true, found.segment.remainingQueuedCount ?? 0),
                 limiterColor: 'red',
-                limiterText: `${PAST_LABELS.offline} · ${time}`,
+                limiterText: `${pastLabels.offline} · ${time}`,
                 activeSegment: found.segment,
             };
         }
         return {
-            firstLineText: 'No active action expected',
+            firstLineText: t('characterActivity.noActiveActionExpected'),
             limiterColor: 'red',
-            limiterText: `${PAST_LABELS[terminalCause]} · ${time}`,
+            limiterText: `${pastLabels[terminalCause]} · ${time}`,
             activeSegment: null,
         };
     }
@@ -239,12 +249,12 @@ export function computeSlotDisplayState(record, character, prefs, now = Date.now
     return {
         firstLineText: found
             ? formatActivityLine(found.segment, false, found.segment.remainingQueuedCount ?? 0)
-            : 'No active action expected',
+            : t('characterActivity.noActiveActionExpected'),
         limiterColor: color,
         limiterText:
             terminalCause === 'offline' && attentionMode && offlineLimitState === 'known'
-                ? INFINITE_COPY[attentionMode].known(time)
-                : `${FUTURE_LABELS[terminalCause]} · ${time}`,
+                ? getInfiniteCopy()[attentionMode].known(time)
+                : `${getFutureLabels()[terminalCause]} · ${time}`,
         activeSegment: found ? found.segment : null,
     };
 }

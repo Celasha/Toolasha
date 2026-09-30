@@ -22,6 +22,7 @@
  * `getProductionCost()`, so a missing required material can never silently become free.
  */
 
+import { t } from '../../../core/i18n.js';
 import { getItemPrice } from '../../../utils/market-data.js';
 import { getCheapestProtectionPrice } from '../../enhancement/tooltip-enhancement.js';
 import { findShopPurchaseInfo } from '../../../utils/special-currency-shop.js';
@@ -131,7 +132,7 @@ export async function resolveEquipmentItemCost(itemHrid, N, itemDetails, enhanci
     }
 
     if (candidates.length === 0) {
-        return { cost: null, complete: false, reason: 'No complete acquisition route could be priced' };
+        return { cost: null, complete: false, reason: t('equipmentResolver.noCompleteRouteReason') };
     }
     return { cost: Math.min(...candidates), complete: true };
 }

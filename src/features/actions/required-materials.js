@@ -27,9 +27,11 @@ import { getActionHridFromName } from '../../utils/game-lookups.js';
  * @returns {string}
  */
 export function formatRequiredMaterialStatus(material) {
-    const queuedText = material.queued > 0 ? ` (${numberFormatter(material.queued)} Q'd)` : '';
-    let text = `Required: ${numberFormatter(material.required)}${queuedText}`;
-    if (material.missing > 0) text += ` | Missing: ${numberFormatter(material.missing)}`;
+    const queuedSuffix =
+        material.queued > 0 ? t('requiredMaterials.queuedSuffix', { count: numberFormatter(material.queued) }) : '';
+    let text = t('requiredMaterials.requiredLine', { required: numberFormatter(material.required), queuedSuffix });
+    if (material.missing > 0)
+        text += t('requiredMaterials.missingSuffix', { count: numberFormatter(material.missing) });
     return text;
 }
 
@@ -173,7 +175,7 @@ class RequiredMaterials {
                 // Build text with queue info
                 let text;
                 if (isIndeterminate) {
-                    text = `Required: ${placeholderLabel}`;
+                    text = t('requiredMaterials.requiredLine', { required: placeholderLabel, queuedSuffix: '' });
                     displaySpan.style.color = '';
                 } else {
                     text = formatRequiredMaterialStatus(material);

@@ -5,6 +5,7 @@
  */
 
 import dataManager from '../../core/data-manager.js';
+import { t } from '../../core/i18n.js';
 import { getItemPrice } from '../../utils/market-data.js';
 import { getShopCoinCost } from '../../utils/game-lookups.js';
 import { parseArtisanBonus, getDrinkConcentration } from '../../utils/tea-parser.js';
@@ -104,7 +105,7 @@ export function computeBestCraftingPlan(
     if (itemHrid === '/items/coin') {
         return {
             itemHrid,
-            itemName: 'Coin',
+            itemName: t('craftingPlanCalculator.coinItemName'),
             quantity,
             strategy: 'buy',
             unitCost: 1,

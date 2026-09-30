@@ -8,6 +8,8 @@
  * border/badge, even over manual protection's green border.
  */
 
+import { t } from '../../core/i18n.js';
+
 const OUTLINE_RED = '2px solid rgba(239, 68, 68, 0.7)';
 const SHADOW_RED = '0 0 8px 2px rgba(239, 68, 68, 0.3)';
 const OUTLINE_GREEN = '2px solid rgba(76, 175, 80, 0.7)';
@@ -31,9 +33,13 @@ export function repaintTaskCard(taskCard) {
     if (isAutoReroll || isTokenFlagged) {
         _setOutline(taskCard, OUTLINE_RED, SHADOW_RED);
         if (isAutoReroll) {
-            _showBadge(taskCard, 'mwi-autoreroll-badge', 'Reroll!');
+            _showBadge(taskCard, 'mwi-autoreroll-badge', t('taskCardVisualState.rerollBadgeText'));
         } else {
-            _showBadge(taskCard, 'mwi-token-badge', taskCard.dataset.mwiTokenFlagText || 'Low tokens!');
+            _showBadge(
+                taskCard,
+                'mwi-token-badge',
+                taskCard.dataset.mwiTokenFlagText || t('taskTokenThreshold.lowTokensFlag')
+            );
         }
         return;
     }

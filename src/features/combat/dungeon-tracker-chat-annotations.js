@@ -7,6 +7,7 @@
 import dungeonTrackerStorage from './dungeon-tracker-storage.js';
 import dungeonTracker from './dungeon-tracker.js';
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 
@@ -399,20 +400,21 @@ class DungeonTrackerChatAnnotations {
                     dungeonName,
                 });
             } else if (next?.type === 'fail') {
-                label = 'FAILED';
+                label = t('dungeonTrackerChatAnnotations.failedLabel');
                 color = '#ff4c4c'; // Red
             } else if (next?.type === 'cancel') {
-                label = 'canceled';
+                label = t('dungeonTrackerChatAnnotations.canceledLabel');
                 color = '#ffd700'; // Gold
             } else if (hitBattleStart) {
                 // No key/fail/cancel before the next battle_start — player left the party,
                 // ending the run without a completion key count.
-                label = 'canceled';
+                label = t('dungeonTrackerChatAnnotations.canceledLabel');
                 color = '#ffd700'; // Gold
             }
 
             if (label) {
-                const isSuccessfulRun = diff && dungeonName && dungeonName !== 'Unknown';
+                const isSuccessfulRun =
+                    diff && dungeonName && dungeonName !== t('dungeonTrackerUi.unknownDungeonFallback');
 
                 if (isSuccessfulRun) {
                     // Create unique message ID to prevent duplicate annotation on re-runs
@@ -463,7 +465,7 @@ class DungeonTrackerChatAnnotations {
                         this.storedRunNumbers[statsKey][msgTs] = runNumber;
                     }
 
-                    label = `Run #${runNumber}: ${label}`;
+                    label = t('dungeonTrackerChatAnnotations.runNumberedLabel', { number: runNumber, label });
                 }
 
                 // Mark as processed BEFORE inserting (matches working DRT script)
@@ -479,7 +481,9 @@ class DungeonTrackerChatAnnotations {
                     const cumulativeAvg = Math.floor(dungeonStats.totalTime / dungeonStats.runCount);
 
                     // Show cumulative average
-                    const avgLabel = `Average: ${this.formatTime(cumulativeAvg)}`;
+                    const avgLabel = t('dungeonTrackerChatAnnotations.averageLabel', {
+                        time: this.formatTime(cumulativeAvg),
+                    });
                     this.insertAnnotation(avgLabel, '#deb887', e.msg, true); // Tan color
                 }
             }
@@ -570,7 +574,7 @@ class DungeonTrackerChatAnnotations {
 
             // Get dungeon name and team key
             const dungeonName = this.getDungeonNameWithFallback(events, i);
-            if (!dungeonName || dungeonName === 'Unknown') continue;
+            if (!dungeonName || dungeonName === t('dungeonTrackerUi.unknownDungeonFallback')) continue;
 
             const teamKey = dungeonTrackerStorage.getTeamKey(event.team);
             const statsKey = `${teamKey}::${dungeonName}`;
@@ -712,7 +716,7 @@ class DungeonTrackerChatAnnotations {
 
         // 2nd priority: Currently active dungeon run
         const currentRun = dungeonTracker.getCurrentRun();
-        if (currentRun?.dungeonName && currentRun.dungeonName !== 'Unknown') {
+        if (currentRun?.dungeonName && currentRun.dungeonName !== t('dungeonTrackerUi.unknownDungeonFallback')) {
             return currentRun.dungeonName;
         }
 
@@ -723,7 +727,7 @@ class DungeonTrackerChatAnnotations {
 
         // Final fallback
         console.warn('[Dungeon Tracker Debug] ALL PRIORITIES FAILED for index', currentIndex, '-> Unknown');
-        return 'Unknown';
+        return t('dungeonTrackerUi.unknownDungeonFallback');
     }
 
     /**

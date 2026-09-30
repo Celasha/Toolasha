@@ -1,89 +1,19 @@
 /**
  * Notification Message Formatter
  * Renders `infoNotification.*` WebSocket messages (see features/chat/notification-log.js) into
- * readable text. Templates below are copied from the game client's own i18n bundle (English):
+ * readable text. Templates live in the locale tables under the `notificationFormatter` namespace
+ * (see src/locales/en.js) and are copied from the game client's own i18n bundle (English):
  * Toolasha runs outside the game's React tree and has no reachable route to its live translator
  * (it is bound to `this.props.t` on a connected component, not exposed on window), so these are
- * a static snapshot rather than a live lookup. Update this table if the game adds/changes keys.
+ * a static snapshot rather than a live lookup. Update the locale tables if the game adds/changes keys.
  */
 
 import dataManager from '../core/data-manager.js';
+import { t } from '../core/i18n.js';
 import { formatWithSeparator } from './formatters.js';
 
 /** Variable names whose values are plain quantities, not names/codes/hrids - format with thousand separators. */
 const NUMERIC_VARS = new Set(['count', 'coins', 'filled', 'total', 'minutes', 'level', 'days', 'limit', 'boundary']);
-
-const TEMPLATES = {
-    addedFriend: 'Added friend: {{name}}',
-    removedFriend: 'Removed friend: {{name}}',
-    blockedCharacter: 'Blocked character: {{name}}',
-    unblockedCharacter: 'Unblocked character: {{name}}',
-    chatReportSubmitted: 'Chat report submitted',
-    loadoutCreated: 'Loadout created',
-    loadoutUpdated: 'Loadout updated',
-    setupImportedToLoadout: 'Imported current setup to loadout',
-    loadoutEquipped: 'Loadout equipped',
-    loadoutDeleted: 'Loadout deleted',
-    boughtItem: 'Bought {{count}} $t(itemNames.{{itemHrid}})',
-    soldItem: 'Sold {{count}} $t(itemNames.{{itemHrid}})',
-    buyOrderCompleted: 'Bought {{count}} $t(itemNames.{{itemHrid}}){{enhancement}} - Spent {{coins}} Coins',
-    sellOrderCompleted: 'Sold {{count}} $t(itemNames.{{itemHrid}}){{enhancement}} - Received {{coins}} Coins',
-    buyListingProgress: 'Buy listing: $t(itemNames.{{itemHrid}}){{enhancement}} - Progress: {{filled}}/{{total}}',
-    sellListingProgress: 'Sell listing: $t(itemNames.{{itemHrid}}){{enhancement}} - Progress: {{filled}}/{{total}}',
-    listingPegged:
-        '$t(itemNames.{{itemHrid}}){{enhancement}} currently listed at {{boundary}} - Your chosen limit: {{limit}}',
-    houseConstructed: 'Level {{level}} $t(houseRoomNames.{{roomHrid}}) constructed',
-    steamCheckoutRequested: 'Steam checkout requested. Please wait...',
-    upgradePurchased: 'Upgrade purchased: $t(buyableUpgradeNames.{{upgradeHrid}}) (x{{count}})',
-    chatIconUnlocked: 'Unlocked chat icon: $t(chatIconNames.{{iconHrid}})',
-    nameColorUnlocked: 'Unlocked name color: $t(nameColorNames.{{colorHrid}})',
-    avatarUnlocked: 'Unlocked new avatar',
-    avatarOutfitUnlocked: 'Unlocked new avatar outfit',
-    avatarBackgroundUnlocked: 'Unlocked new avatar background',
-    avatarBorderUnlocked: 'Unlocked new avatar border',
-    communityBuffAdded: 'Added {{minutes}} minutes of community buff: $t(communityBuffTypeNames.{{buffHrid}})',
-    nameChanged: 'Name changed: {{name}}',
-    guildCreated: 'Created guild: {{guildName}}',
-    guildDisbanded: 'Disbanded guild: {{guildName}}',
-    guildLeft: 'Left guild: {{guildName}}',
-    guildPromotedTo: 'You have been promoted to guild $t(guildCharacterRoleNames.{{role}})',
-    guildDemotedTo: 'You have been demoted to guild $t(guildCharacterRoleNames.{{role}})',
-    guildLeadershipPassed: 'Passed leadership to {{name}}',
-    guildMemberPromoted: 'Promoted {{name}} to $t(guildCharacterRoleNames.{{role}})',
-    guildMemberDemoted: 'Demoted {{name}} to $t(guildCharacterRoleNames.{{role}})',
-    guildMessagePinned: 'New guild pinned message',
-    guildKicked: 'Kicked by guild: {{guildName}}',
-    kickedGuildMember: 'Kicked guild member: {{name}}',
-    guildInvited: 'Invited to guild: {{guildName}}',
-    guildInviteSent: 'Sent guild invite: {{name}}',
-    guildInviteCanceled: 'Guild invite canceled: {{name}}',
-    guildJoined: 'Guild joined: {{guildName}}',
-    guildInviteDeclined: 'Guild invite declined: {{guildName}}',
-    guildApplicationSent: 'Applied to guild: {{guildName}}',
-    guildApplicationAccepted: 'Your application was accepted by {{guildName}}',
-    guildTrialStarted: 'Your guild trial has started!',
-    partyCreated: 'Party created',
-    characterLeveledUp: 'You have reached level {{level}} $t(skillNames.{{skillHrid}})!',
-    achievementCompleted: 'Achievement completed: $t(achievementNames.{{achievementHrid}})',
-    partyOptionsSaved: 'Party options saved',
-    partyOpenForRecruiting: 'Party is open for recruiting',
-    partyLeadershipChanged: 'Party leadership changed to {{name}}',
-    partyJoined: 'You have joined the party',
-    readyToBattle: 'You are ready to battle',
-    notReadyToBattle: 'You are not ready to battle',
-    partyDisbanded: 'Party disbanded',
-    partyLeft: 'You have left the party',
-    partyKicked: 'You have been kicked from the party',
-    partyMemberKicked: 'Kicked {{name}} from the party',
-    referralJoined: 'A new player joined with your referral link. Thanks for sharing!',
-    newReferralBonus: 'New referral bonus granted',
-    cowbellPurchaseCompleted: 'Purchase completed: {{count}} Cowbells',
-    mooPassPurchaseCompleted: 'Purchase completed: {{days}} days of MooPass',
-    mooPassGranted: 'Granted: {{days}} days of MooPass',
-    updateSuccessful: 'Update successful',
-    creatorCodeSet: 'Creator code applied: {{code}}',
-    labyrinthShroudFailed: "Shroud failed! The room level exceeds the shroud's effective range.",
-};
 
 const CATEGORIES = {
     trading: [
@@ -239,8 +169,9 @@ export function formatNotificationMessage(message, variables) {
         }
     }
 
-    const template = TEMPLATES[key];
-    if (!template) {
+    const templateKey = `notificationFormatter.${key}`;
+    const template = t(templateKey);
+    if (!template || template === templateKey) {
         // Unrecognized key (e.g. a new game update added one): still show something useful
         // instead of dropping the notification or throwing.
         const parts = Object.entries(varMap).map(([name, data]) => `${name}: ${data}`);

@@ -403,8 +403,8 @@ class AlchemyActionProtection {
     }
 
     _getCategoryDisplayName(categoryHrid) {
-        const name = categoryHrid.replace('/item_categories/', '').replace(/_/g, ' ');
-        return name.charAt(0).toUpperCase() + name.slice(1);
+        const gameData = dataManager.getInitClientData();
+        return gameData?.itemCategoryDetailMap?.[categoryHrid]?.name || 'Other';
     }
 
     _showWarning(container, message) {

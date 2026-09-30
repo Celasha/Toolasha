@@ -206,7 +206,7 @@ class ChatCommands {
                     this.openItemDictionary(itemHrid);
                 } else {
                     // Item not found in game data (best effort normalization was used)
-                    this.showError(`Item "${command.itemName}" not found in game data`);
+                    this.showError(t('chatCommands.itemNotFoundMessage', { itemName: command.itemName }));
                 }
                 break;
 
@@ -220,7 +220,7 @@ class ChatCommands {
                     this.openMarketplace(itemHrid, command.enhancementLevel ?? 0);
                 } else {
                     // Item not found in game data (best effort normalization was used)
-                    this.showError(`Item "${command.itemName}" not found in game data`);
+                    this.showError(t('chatCommands.itemNotFoundMessage', { itemName: command.itemName }));
                 }
                 break;
         }
@@ -362,7 +362,7 @@ class ChatCommands {
      */
     openItemDictionary(itemHrid) {
         if (!this.gameCore?.handleOpenItemDictionary) {
-            this.showError('Feature unavailable after 2/21/26 game update');
+            this.showError(t('chatCommands.featureUnavailableMessage'));
             return;
         }
 
@@ -370,7 +370,7 @@ class ChatCommands {
             this.gameCore.handleOpenItemDictionary(itemHrid);
         } catch (error) {
             console.error('[Chat Commands] Failed to open Item Dictionary:', error);
-            this.showError('Failed to open Item Dictionary');
+            this.showError(t('chatCommands.itemDictionaryOpenFailedMessage'));
         }
     }
 
@@ -381,7 +381,7 @@ class ChatCommands {
      */
     openMarketplace(itemHrid, enhancementLevel = 0) {
         if (!this.gameCore?.handleGoToMarketplace) {
-            this.showError('Feature unavailable after 2/21/26 game update');
+            this.showError(t('chatCommands.featureUnavailableMessage'));
             return;
         }
 
@@ -389,7 +389,7 @@ class ChatCommands {
             this.gameCore.handleGoToMarketplace(itemHrid, enhancementLevel);
         } catch (error) {
             console.error('[Chat Commands] Failed to open marketplace:', error);
-            this.showError('Failed to open marketplace');
+            this.showError(t('chatCommands.marketplaceOpenFailedMessage'));
         }
     }
 

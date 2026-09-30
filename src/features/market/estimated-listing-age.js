@@ -635,7 +635,7 @@ class EstimatedListingAge {
         const header = document.createElement('th');
         header.classList.add('mwi-estimated-age-header');
         header.textContent = t('estimatedListingAge.ageColumnHeader');
-        header.title = 'Estimated listing age (based on listing ID)';
+        header.title = t('estimatedListingAge.ageColumnHeaderTooltip');
         thead.appendChild(header);
 
         // Track which of user's listings have been matched to prevent duplicates
@@ -867,12 +867,12 @@ class EstimatedListingAge {
      */
     getStalenessTooltip(lastUpdated) {
         if (!lastUpdated) {
-            return 'Order book data - Visit market page to refresh';
+            return t('estimatedListingAge.stalenessTooltipUnknown');
         }
 
         const age = Date.now() - lastUpdated;
         const relativeTime = formatRelativeTime(age);
-        return `Order book data from ${relativeTime} ago - Visit market page to refresh`;
+        return t('estimatedListingAge.stalenessTooltip', { relativeTime });
     }
 
     /**

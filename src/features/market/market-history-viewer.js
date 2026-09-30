@@ -1685,7 +1685,18 @@ class MarketHistoryViewer {
      * Export listings to CSV
      */
     exportCSV() {
-        const headers = ['Date', 'Item', 'Enhancement', 'Type', 'Status', 'Price', 'Quantity', 'Filled', 'Total', 'ID'];
+        const headers = [
+            t('marketHistory.columnDate'),
+            t('marketHistory.columnItem'),
+            t('marketHistory.csvHeaderEnhancement'),
+            t('marketHistory.columnType'),
+            t('marketHistory.columnStatus'),
+            t('marketHistory.columnPrice'),
+            t('marketHistory.columnQuantity'),
+            t('marketHistory.columnFilled'),
+            t('marketHistory.columnTotal'),
+            t('marketHistory.csvHeaderId'),
+        ];
         const rows = this.filteredListings.map((listing) => [
             new Date(listing.createdTimestamp || listing.timestamp).toISOString(),
             this.getItemName(listing.itemHrid),

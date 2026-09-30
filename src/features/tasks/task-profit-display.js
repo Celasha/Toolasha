@@ -860,8 +860,8 @@ class TaskProfitDisplay {
 
             // Handle market data not loaded - add to pending queue
             if (
-                profitData.error === 'Market data not loaded' ||
-                (profitData.rewards && profitData.rewards.error === 'Market data not loaded')
+                profitData.error === t('taskProfitCalculator.marketDataNotLoadedError') ||
+                (profitData.rewards && profitData.rewards.error === t('taskProfitCalculator.marketDataNotLoadedError'))
             ) {
                 // Add to pending queue
                 this.pendingTaskNodes.add(taskNode);

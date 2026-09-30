@@ -6,6 +6,7 @@
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
+import { t } from '../../core/i18n.js';
 import labyrinthTracker from './labyrinth-tracker.js';
 
 class LabyrinthBestLevel {
@@ -186,7 +187,7 @@ class LabyrinthBestLevel {
      * @param {string|null} roomHrid - Room HRID (e.g. "/skills/milking" or "/monsters/...")
      */
     injectBadge(cell, bestLevel, roomHrid) {
-        let text = `Best: ${bestLevel}`;
+        let text = t('labyrinthBestLevel.bestLevelBadge', { level: bestLevel });
         let tooltip = null;
 
         if (roomHrid && roomHrid.startsWith('/skills/')) {
@@ -196,14 +197,14 @@ class LabyrinthBestLevel {
                 const effectiveLevel = charLevel + EXPERT_TEA_CRATE_BONUS;
                 const offset = bestLevel - effectiveLevel;
                 if (offset > 0) {
-                    text += ` (+${offset})`;
+                    text += ` ${t('labyrinthBestLevel.offsetSuffix', { offset })}`;
                     tooltip =
-                        `Your level: ${charLevel}\n` +
-                        `Expert Tea Crate: +${EXPERT_TEA_CRATE_BONUS}\n` +
-                        `Effective: ${effectiveLevel}\n` +
+                        `${t('labyrinthBestLevel.tooltipYourLevel', { level: charLevel })}\n` +
+                        `${t('labyrinthBestLevel.tooltipExpertTeaCrate', { bonus: EXPERT_TEA_CRATE_BONUS })}\n` +
+                        `${t('labyrinthBestLevel.tooltipEffective', { level: effectiveLevel })}\n` +
                         `\n` +
-                        `Best: ${bestLevel}\n` +
-                        `Gap: +${offset}`;
+                        `${t('labyrinthBestLevel.tooltipBest', { level: bestLevel })}\n` +
+                        `${t('labyrinthBestLevel.tooltipGap', { offset })}`;
                 }
             }
         }

@@ -79,13 +79,13 @@ function buildCompletionText(accumulatedTime) {
     const parts = [];
 
     if (style === 'relative' || style === 'both') {
-        parts.push(`Complete in ${timeReadable(accumulatedTime)}`);
+        parts.push(t('actionTimeDisplay.completeIn', { time: timeReadable(accumulatedTime) }));
     }
     if (style === 'absolute' || style === 'both') {
         const completionDate = new Date();
         completionDate.setSeconds(completionDate.getSeconds() + accumulatedTime);
         const isToday = completionDate.toDateString() === new Date().toDateString();
-        parts.push(`Complete at ${formatCompletionTime(completionDate, !isToday)}`);
+        parts.push(t('actionTimeDisplay.completeAt', { time: formatCompletionTime(completionDate, !isToday) }));
     }
 
     return parts.length ? ` ${parts.join(' · ')}` : '';
@@ -510,12 +510,17 @@ export class ActionTimeDisplay {
                 if (hasTimingUnavailable) {
                     totalText =
                         accumulatedTime > 0
-                            ? `Total: ${timeReadable(accumulatedTime)} + [?]`
-                            : 'Total: [?] (enhancement estimate unavailable)';
+                            ? t('actionTimeDisplay.tooltipTotalWithUnavailable', {
+                                  time: timeReadable(accumulatedTime),
+                              })
+                            : t('actionTimeDisplay.tooltipTotalUnavailable');
                 } else if (hasInfinite) {
-                    totalText = accumulatedTime > 0 ? `Total: ${timeReadable(accumulatedTime)} + [∞]` : 'Total: [∞]';
+                    totalText =
+                        accumulatedTime > 0
+                            ? t('actionTimeDisplay.tooltipTotalWithInfinite', { time: timeReadable(accumulatedTime) })
+                            : t('actionTimeDisplay.tooltipTotalInfinite');
                 } else {
-                    totalText = `Total: ${timeReadable(accumulatedTime)}`;
+                    totalText = t('actionTimeDisplay.tooltipTotal', { time: timeReadable(accumulatedTime) });
                 }
                 totalDiv.textContent = totalText;
                 actionsContainer.appendChild(totalDiv);
@@ -699,13 +704,13 @@ export class ActionTimeDisplay {
 
         // Derive limit label
         if (limitType === 'gold') {
-            limitLabel = 'gold';
+            limitLabel = t('actionTimeDisplay.limitLabelGold');
         } else if (limitType && limitType.startsWith('material:')) {
-            limitLabel = 'mat';
+            limitLabel = t('actionTimeDisplay.limitLabelMat');
         } else if (limitType && limitType.startsWith('upgrade:')) {
-            limitLabel = 'upgrade';
+            limitLabel = t('actionTimeDisplay.limitLabelUpgrade');
         } else {
-            limitLabel = 'max';
+            limitLabel = t('actionTimeDisplay.limitLabelMax');
         }
 
         return {
@@ -1416,17 +1421,17 @@ export class ActionTimeDisplay {
         // Queue count
         if (config.getSetting('actionBar_showQueueCount')) {
             if (queueSizeDisplay !== Infinity) {
-                statsToAppend.push(`(${queueSizeDisplay.toLocaleString()} queued)`);
+                statsToAppend.push(t('actionTimeDisplay.queuedCount', { count: queueSizeDisplay.toLocaleString() }));
             } else if (materialLimit !== null) {
                 let limitLabel = '';
                 if (limitType === 'gold') {
-                    limitLabel = 'gold limit';
+                    limitLabel = t('actionTimeDisplay.limitLabelGoldLimit');
                 } else if (limitType && limitType.startsWith('material:')) {
-                    limitLabel = 'mat limit';
+                    limitLabel = t('actionTimeDisplay.limitLabelMatLimit');
                 } else if (limitType && limitType.startsWith('upgrade:')) {
-                    limitLabel = 'upgrade limit';
+                    limitLabel = t('actionTimeDisplay.limitLabelUpgradeLimit');
                 } else {
-                    limitLabel = 'max';
+                    limitLabel = t('actionTimeDisplay.limitLabelMax');
                 }
                 statsToAppend.push(`(∞ · ${limitLabel}: ${this.formatLargeNumber(materialLimit)})`);
             } else {
@@ -1436,13 +1441,16 @@ export class ActionTimeDisplay {
 
         // Time per action
         if (config.getSetting('actionBar_showActionDuration')) {
-            statsToAppend.push(`${actionTime.toFixed(2)}s/action`);
+            statsToAppend.push(t('actionTimeDisplay.secondsPerAction', { time: actionTime.toFixed(2) }));
         }
 
         // Actions/hr and items/hr
         if (config.getSetting('actionBar_showActionsPerHour')) {
             statsToAppend.push(
-                `${actionsPerHourWithEfficiency.toFixed(0)} actions/hr (${itemsPerHour.toFixed(0)} items/hr)`
+                t('actionTimeDisplay.actionsPerHourWithItems', {
+                    actionsPerHour: actionsPerHourWithEfficiency.toFixed(0),
+                    itemsPerHour: itemsPerHour.toFixed(0),
+                })
             );
         }
 
@@ -1467,7 +1475,7 @@ export class ActionTimeDisplay {
                 const recycleIsToday = recycleCompletion.toDateString() === new Date().toDateString();
                 const recycleClockTime = formatCompletionTime(recycleCompletion, !recycleIsToday);
                 const recycleText = buildTimeRemainingText(timeRemainingMode, recycleTimeStr, recycleClockTime);
-                recycleHtml = `<span style="color:#4dd0a0; margin-left:12px; font-size:11px;">Est. w/ recycle: ${recycleText}</span>`;
+                recycleHtml = `<span style="color:#4dd0a0; margin-left:12px; font-size:11px;">${t('actionTimeDisplay.estWithRecycle', { text: recycleText })}</span>`;
             }
             const timeText = buildTimeRemainingText(timeRemainingMode, timeStr, clockTime);
             this.displayElement.innerHTML = `<span style="display: inline-flex; flex-wrap: nowrap; align-items: baseline; gap: 0.25em;"><span>⏱</span>${matsLabel} ${timeText}</span>${recycleHtml}`;
@@ -1670,13 +1678,15 @@ export class ActionTimeDisplay {
         const statsToAppend = [];
 
         if (config.getSetting('actionBar_showActionDuration')) {
-            statsToAppend.push(`${perActionTime.toFixed(2)}s/action`);
+            statsToAppend.push(t('actionTimeDisplay.secondsPerAction', { time: perActionTime.toFixed(2) }));
         }
-        statsToAppend.push(`${actualSuccessRate.toFixed(1)}% success`);
-        statsToAppend.push(`~${formatWithSeparator(effectiveAttempts)} to target`);
+        statsToAppend.push(t('actionTimeDisplay.successRate', { rate: actualSuccessRate.toFixed(1) }));
+        statsToAppend.push(t('actionTimeDisplay.toTarget', { count: formatWithSeparator(effectiveAttempts) }));
 
         if (protectFrom > 0 && effectiveProtections > 0) {
-            statsToAppend.push(`~${formatWithSeparator(effectiveProtections)} protections`);
+            statsToAppend.push(
+                t('actionTimeDisplay.protections', { count: formatWithSeparator(effectiveProtections) })
+            );
         }
 
         this.appendStatsToActionName(actionNameElement, statsToAppend.join(' · '));
@@ -1694,7 +1704,7 @@ export class ActionTimeDisplay {
             const clockTime = formatCompletionTime(completionTime, !isToday);
 
             const itemIconHtml = this.getItemIconHtml(limitingItemHrid);
-            const matsLabel = itemIconHtml ? `${itemIconHtml}:` : 'Mats:';
+            const matsLabel = itemIconHtml ? `${itemIconHtml}:` : t('actionTimeDisplay.matsLabel');
             const timeText = buildTimeRemainingText(timeRemainingMode, timeStr, clockTime);
             const actionsCountText = t('actionTimeDisplay.actionsCount', {
                 count: formatWithSeparator(materialLimit),
@@ -2745,13 +2755,13 @@ export class ActionTimeDisplay {
                     // Material-limited infinite action
                     let limitLabel = '';
                     if (limitType === 'gold') {
-                        limitLabel = 'gold';
+                        limitLabel = t('actionTimeDisplay.limitLabelGold');
                     } else if (limitType && limitType.startsWith('material:')) {
-                        limitLabel = 'mat';
+                        limitLabel = t('actionTimeDisplay.limitLabelMat');
                     } else if (limitType && limitType.startsWith('upgrade:')) {
-                        limitLabel = 'upgrade';
+                        limitLabel = t('actionTimeDisplay.limitLabelUpgrade');
                     } else {
-                        limitLabel = 'max';
+                        limitLabel = t('actionTimeDisplay.limitLabelMax');
                     }
                     const timeStr = timeReadable(totalTime);
                     timeDiv.textContent = `[${timeStr} · ${limitLabel}: ${this.formatLargeNumber(materialLimit)}]${completionText}`;
@@ -2813,17 +2823,21 @@ export class ActionTimeDisplay {
             if (hasTimingUnavailable) {
                 totalText =
                     accumulatedTime > 0
-                        ? `Total time: ${timeReadable(accumulatedTime)} + [?]`
-                        : 'Total time: [?] (enhancement estimate unavailable)';
+                        ? t('actionTimeDisplay.queueTotalTimeWithUnavailable', {
+                              time: timeReadable(accumulatedTime),
+                          })
+                        : t('actionTimeDisplay.queueTotalTimeUnavailable');
             } else if (hasInfinite) {
                 // Show finite time first, then add infinity indicator
                 if (accumulatedTime > 0) {
-                    totalText = `Total time: ${timeReadable(accumulatedTime)} + [∞]`;
+                    totalText = t('actionTimeDisplay.queueTotalTimeWithInfinite', {
+                        time: timeReadable(accumulatedTime),
+                    });
                 } else {
-                    totalText = 'Total time: [∞]';
+                    totalText = t('actionTimeDisplay.queueTotalTimeInfinite');
                 }
             } else {
-                totalText = `Total time: ${timeReadable(accumulatedTime)}`;
+                totalText = t('actionTimeDisplay.queueTotalTime', { time: timeReadable(accumulatedTime) });
             }
 
             totalDiv.innerHTML = totalText;
@@ -2904,7 +2918,9 @@ export class ActionTimeDisplay {
                                     ? config.getSettingValue('color_profit', '#4ade80')
                                     : config.getSettingValue('color_loss', '#f87171');
                             const profitSign = actionProfit >= 0 ? '+' : '';
-                            profitDiv.innerHTML = `Profit: <span style="color: ${profitColor};">${profitSign}${this.formatLargeNumber(Math.abs(Math.round(actionProfit)))}</span>`;
+                            profitDiv.innerHTML = t('actionTimeDisplay.queueActionProfit', {
+                                amount: `<span style="color: ${profitColor};">${profitSign}${this.formatLargeNumber(Math.abs(Math.round(actionProfit)))}</span>`,
+                            });
                         }
                     }
                 }
@@ -2923,7 +2939,9 @@ export class ActionTimeDisplay {
                         ? config.getSettingValue('color_profit', '#4ade80')
                         : config.getSettingValue('color_loss', '#f87171');
                 const valueSign = totalProfit >= 0 ? '+' : '';
-                const valueLabel = isEstimatedValue ? 'Estimated value' : 'Total profit';
+                const valueLabel = isEstimatedValue
+                    ? t('actionTimeDisplay.estimatedValueLabel')
+                    : t('actionTimeDisplay.totalProfitLabel');
                 const valueText = `<br>${valueLabel}: <span style="color: ${valueColor};">${valueSign}${this.formatLargeNumber(Math.abs(Math.round(totalProfit)))}</span>`;
                 totalDiv.innerHTML = baseText + valueText;
             }
@@ -3112,7 +3130,7 @@ export class ActionTimeDisplay {
                     : config.getSettingValue('color_loss', '#f87171');
             const sign = profitPerHour >= 0 ? '+' : '';
 
-            let html = `<span style="color:#888;">Profit:</span> <span style="color:${profitColor}; font-weight:600;">${sign}${this.formatLargeNumber(Math.abs(Math.round(profitPerHour)))}/hr</span>`;
+            let html = `<span style="color:#888;">${t('actionTimeDisplay.profitLabel')}</span> <span style="color:${profitColor}; font-weight:600;">${sign}${this.formatLargeNumber(Math.abs(Math.round(profitPerHour)))}/hr</span>`;
 
             if (isFinite(remainingActions) && remainingActions > 0 && profitData.actionsPerHour > 0) {
                 const profitPerAction =
@@ -3123,7 +3141,7 @@ export class ActionTimeDisplay {
                         ? config.getSettingValue('color_profit', '#4ade80')
                         : config.getSettingValue('color_loss', '#f87171');
                 const remSign = remainingProfit >= 0 ? '+' : '';
-                html += ` <span style="color:#888;">·</span> <span style="color:#888;">remaining</span> <span style="color:${remColor}; font-weight:600;">${remSign}${this.formatLargeNumber(Math.abs(Math.round(remainingProfit)))}</span>`;
+                html += ` <span style="color:#888;">·</span> <span style="color:#888;">${t('actionTimeDisplay.remainingLabel')}</span> <span style="color:${remColor}; font-weight:600;">${remSign}${this.formatLargeNumber(Math.abs(Math.round(remainingProfit)))}</span>`;
             }
 
             if (this.activeBarProfitId !== calcId) return;

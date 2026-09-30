@@ -6,6 +6,7 @@
 import settingsStorage from './settings-storage.js';
 import { settingsGroups } from './settings-schema.js';
 import dataManager from './data-manager.js';
+import { t } from './i18n.js';
 
 /**
  * Config class manages all script configuration
@@ -538,18 +539,21 @@ class Config {
      */
     getPricingModeLabel(mode) {
         const useInstant = this.getSetting('profitCalc_pricingNaming');
+        // hybrid/optimistic reuse craftingPlanDisplay's existing instant-naming labels; conservative/patientBuy
+        // have no existing translated equivalent for the instant-naming variant, so they use new
+        // pricingMode.* keys (see task output for the keys that still need adding to the locale files).
         const labels = useInstant
             ? {
-                  conservative: 'Instant Buy / Instant Sell',
-                  hybrid: 'Instant Buy / Patient Sell',
-                  optimistic: 'Patient Buy / Patient Sell',
-                  patientBuy: 'Patient Buy / Instant Sell',
+                  conservative: t('pricingMode.instantBuyInstantSell'),
+                  hybrid: t('craftingPlanDisplay.pricingModeInstantBuyPatientSell'),
+                  optimistic: t('craftingPlanDisplay.pricingModePatientBuyPatientSell'),
+                  patientBuy: t('pricingMode.patientBuyInstantSell'),
               }
             : {
-                  conservative: 'Buy: Ask / Sell: Bid',
-                  hybrid: 'Buy: Ask / Sell: Ask',
-                  optimistic: 'Buy: Bid / Sell: Ask',
-                  patientBuy: 'Buy: Bid / Sell: Bid',
+                  conservative: t('combatSimUi.pricingModeConservative'),
+                  hybrid: t('combatSimUi.pricingModeHybrid'),
+                  optimistic: t('combatSimUi.pricingModeOptimistic'),
+                  patientBuy: t('combatSimUi.pricingModePatientBuy'),
               };
         return labels[mode] || labels.hybrid;
     }

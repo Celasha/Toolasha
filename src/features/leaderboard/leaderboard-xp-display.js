@@ -6,6 +6,7 @@
 import domObserver from '../../core/dom-observer.js';
 import webSocketHook from '../../core/websocket.js';
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import { leaderboardXPTracker } from './leaderboard-xp-tracker.js';
 import { fNum, rankBadge, addColumn, makeColumnSortable } from '../../utils/table-columns.js';
 
@@ -74,7 +75,7 @@ class LeaderboardXPDisplay {
         const insertAfter = theadTr.children.length - 1;
 
         addColumn(tableEl, CSS_PREFIX, {
-            name: 'Last XP/h',
+            name: t('guildXpDisplay.lastXph'),
             insertAfter,
             data: allStats.map((s) => s.lastXPH),
             format: (v, i) => (!v || v <= 0 ? '' : `${fNum(v)} ${rankBadge(allStats[i].lastXPH_rank)}`),
@@ -85,7 +86,7 @@ class LeaderboardXPDisplay {
         });
 
         addColumn(tableEl, CSS_PREFIX, {
-            name: 'Last day XP/h',
+            name: t('guildXpDisplay.lastDayXph'),
             insertAfter: insertAfter + 1,
             data: allStats.map((s) => s.lastDayXPH),
             format: (v, i) => (!v || v <= 0 ? '' : `${fNum(v)} ${rankBadge(allStats[i].lastDayXPH_rank)}`),

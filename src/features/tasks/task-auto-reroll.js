@@ -14,7 +14,12 @@ import storage from '../../core/storage.js';
 import webSocketHook from '../../core/websocket.js';
 import { t } from '../../core/i18n.js';
 import { repaintTaskCard } from './task-card-visual-state.js';
-import { TASK_SKILL_TYPES, getActionSkillType, countActionsBySkillType } from './task-skill-groups.js';
+import {
+    TASK_SKILL_TYPES,
+    getActionSkillType,
+    countActionsBySkillType,
+    getTaskTypeLabel,
+} from './task-skill-groups.js';
 
 const STORAGE_KEY_PREFIX = 'taskAutoRerollHrids';
 const SKILL_STORAGE_KEY_PREFIX = 'taskAutoRerollSkillTypes';
@@ -80,7 +85,7 @@ class TaskAutoReroll {
         const btn = document.createElement('span');
         btn.className = 'mwi-task-autoreroll-btn';
         btn.textContent = '\u{1F3AF}';
-        btn.title = 'Configure task auto-reroll reminders';
+        btn.title = t('taskAutoReroll.configTooltip');
         btn.style.cssText = 'cursor:pointer; font-size:16px; margin-left:6px; opacity:0.7; transition:opacity 0.1s;';
         btn.addEventListener('mouseover', () => {
             btn.style.opacity = '1';
@@ -286,7 +291,7 @@ class TaskAutoReroll {
         searchDiv.style.cssText = 'padding: 8px 14px; flex-shrink: 0;';
         const searchInput = document.createElement('input');
         searchInput.type = 'search';
-        searchInput.placeholder = 'Search actions, monsters, zones...';
+        searchInput.placeholder = t('taskAutoReroll.searchPlaceholder');
         searchInput.style.cssText = `
             width: 100%;
             padding: 6px 10px;
@@ -345,8 +350,7 @@ class TaskAutoReroll {
 
             let html = '';
             if (!query && filtered.length === 0) {
-                html =
-                    '<div style="color:#666; text-align:center; padding:20px 0;">No auto-reroll tasks yet. Search to add.</div>';
+                html = `<div style="color:#666; text-align:center; padding:20px 0;">${t('taskAutoReroll.noAutoRerollTasksMessage')}</div>`;
             }
 
             for (const item of filtered.slice(0, 50)) {
@@ -359,7 +363,7 @@ class TaskAutoReroll {
                     checkmark = allMarked ? '\u2713' : markedCount > 0 ? '~' : '';
                     checkColor = markedCount > 0 ? '#ef4444' : '#444';
                     nameColor = markedCount > 0 ? '#e0e0e0' : '#aaa';
-                    typeLabel = 'Zone (' + monsters.length + ')';
+                    typeLabel = t('taskAutoReroll.zoneTypeLabel', { count: monsters.length });
                 } else {
                     const isMarked = this.autoRerollHrids.has(item.hrid);
                     const skillType = getActionSkillType(item.hrid, gameData);
@@ -367,7 +371,7 @@ class TaskAutoReroll {
                     checkmark = isMarked ? '\u2713' : viaSkill ? '\u{1F512}' : '';
                     checkColor = isMarked || viaSkill ? '#ef4444' : '#444';
                     nameColor = isMarked || viaSkill ? '#e0e0e0' : '#aaa';
-                    typeLabel = item.type.charAt(0).toUpperCase() + item.type.slice(1);
+                    typeLabel = getTaskTypeLabel(item.type);
                 }
 
                 const borderColor = item.isZone ? '#2a2a4e' : '#1a1a2e';
@@ -384,7 +388,7 @@ class TaskAutoReroll {
             }
 
             if (filtered.length > 50) {
-                html += `<div style="color:#666; text-align:center; padding:8px;">...${filtered.length - 50} more (refine search)</div>`;
+                html += `<div style="color:#666; text-align:center; padding:8px;">${t('taskAutoReroll.moreResultsRefineSearch', { count: filtered.length - 50 })}</div>`;
             }
 
             listContainer.innerHTML = html;

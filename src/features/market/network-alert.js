@@ -5,6 +5,7 @@
 
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
+import { t } from '../../core/i18n.js';
 
 class NetworkAlert {
     constructor() {
@@ -74,7 +75,7 @@ class NetworkAlert {
      * Show the network alert
      * @param {string} message - Alert message to display
      */
-    show(message = '⚠️ Market data unavailable') {
+    show(message = t('networkAlert.marketDataUnavailable')) {
         if (!config.getSetting('networkAlert')) {
             return;
         }

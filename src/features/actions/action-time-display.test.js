@@ -108,6 +108,7 @@ vi.mock('../../utils/enhancement-calculator.js', () => ({
 }));
 
 import { ActionTimeDisplay } from './action-time-display.js';
+import { t } from '../../core/i18n.js';
 import dataManager from '../../core/data-manager.js';
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
@@ -1116,10 +1117,12 @@ describe('ActionTimeDisplay queue completion display style setting (actionQueue_
         config.getSettingValue.mockImplementation((_key, fallback) => fallback);
 
         const rows = renderQueueMenu();
+        const completeAtText = t('actionTimeDisplay.completeAt', { time: '' });
+        const completeInPrefix = t('actionTimeDisplay.completeIn', {});
 
         rows.forEach((text) => {
-            expect(text).toContain('Complete at');
-            expect(text).not.toContain('Complete in');
+            expect(text).toContain(completeAtText);
+            expect(text).not.toContain(completeInPrefix);
         });
     });
 
@@ -1132,11 +1135,12 @@ describe('ActionTimeDisplay queue completion display style setting (actionQueue_
         );
 
         const [row1, row2, row3] = renderQueueMenu();
+        const completeAtPrefix = t('actionTimeDisplay.completeAt', {});
 
-        expect(row1).toContain('Complete in 3900s');
-        expect(row2).toContain('Complete in 13200s');
-        expect(row3).toContain('Complete in 19380s');
-        [row1, row2, row3].forEach((text) => expect(text).not.toContain('Complete at'));
+        expect(row1).toContain(t('actionTimeDisplay.completeIn', { time: '3900s' }));
+        expect(row2).toContain(t('actionTimeDisplay.completeIn', { time: '13200s' }));
+        expect(row3).toContain(t('actionTimeDisplay.completeIn', { time: '19380s' }));
+        [row1, row2, row3].forEach((text) => expect(text).not.toContain(completeAtPrefix));
     });
 
     test("style 'both' shows cumulative duration and clock time together on every row", () => {
@@ -1145,13 +1149,14 @@ describe('ActionTimeDisplay queue completion display style setting (actionQueue_
         );
 
         const [row1, row2, row3] = renderQueueMenu();
+        const completeAtText = t('actionTimeDisplay.completeAt', { time: '' });
 
-        expect(row1).toContain('Complete in 3900s');
-        expect(row1).toContain('Complete at');
-        expect(row2).toContain('Complete in 13200s');
-        expect(row2).toContain('Complete at');
-        expect(row3).toContain('Complete in 19380s');
-        expect(row3).toContain('Complete at');
+        expect(row1).toContain(t('actionTimeDisplay.completeIn', { time: '3900s' }));
+        expect(row1).toContain(completeAtText);
+        expect(row2).toContain(t('actionTimeDisplay.completeIn', { time: '13200s' }));
+        expect(row2).toContain(completeAtText);
+        expect(row3).toContain(t('actionTimeDisplay.completeIn', { time: '19380s' }));
+        expect(row3).toContain(completeAtText);
     });
 
     test('a truly-infinite action still suppresses completion text for itself and every later row, under every style', () => {

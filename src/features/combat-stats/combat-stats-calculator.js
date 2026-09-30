@@ -5,6 +5,7 @@
 
 import marketAPI from '../../api/marketplace.js';
 import dataManager from '../../core/data-manager.js';
+import { t } from '../../core/i18n.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 import { calculatePriceAfterTax } from '../../utils/profit-helpers.js';
 import {
@@ -369,7 +370,7 @@ export function formatLootList(lootMap) {
         items.push({
             count: loot.count,
             itemHrid: loot.itemHrid,
-            itemName: itemDetails?.name || 'Unknown',
+            itemName: itemDetails?.name || t('combatStatsCalculator.unknownItemFallback'),
             rarity: itemDetails?.rarity || 0,
             totalValue,
         });

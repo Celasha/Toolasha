@@ -225,9 +225,13 @@ export function renderCraftingPlanBreakdown(plan, options = {}) {
 
         // Total buy cost
         const totalBuyCost = sortedItems.reduce((sum, item) => sum + item.totalCost, 0);
-        const totalRow = createRow('Total material cost', formatWithSeparator(Math.round(totalBuyCost)), {
-            leftColor: 'var(--text-color-primary, #fff)',
-        });
+        const totalRow = createRow(
+            t('craftingPlanTreeRenderer.totalMaterialCostLabel'),
+            formatWithSeparator(Math.round(totalBuyCost)),
+            {
+                leftColor: 'var(--text-color-primary, #fff)',
+            }
+        );
         totalRow.style.borderTop = '1px solid var(--border-color, #333)';
         totalRow.style.marginTop = '4px';
         totalRow.style.paddingTop = '4px';
@@ -271,9 +275,13 @@ export function renderCraftingPlanBreakdown(plan, options = {}) {
         }
 
         if (craftMetrics.totalCraftSeconds > 0) {
-            const totalTimeRow = createRow('Total craft time', timeReadable(craftMetrics.totalCraftSeconds), {
-                leftColor: 'var(--text-color-primary, #fff)',
-            });
+            const totalTimeRow = createRow(
+                t('craftingPlanTreeRenderer.totalCraftTimeLabel'),
+                timeReadable(craftMetrics.totalCraftSeconds),
+                {
+                    leftColor: 'var(--text-color-primary, #fff)',
+                }
+            );
             totalTimeRow.style.borderTop = '1px solid var(--border-color, #333)';
             totalTimeRow.style.marginTop = '4px';
             totalTimeRow.style.paddingTop = '4px';
@@ -282,7 +290,7 @@ export function renderCraftingPlanBreakdown(plan, options = {}) {
 
         if (craftMetrics.totalXP > 0) {
             container.appendChild(
-                createRow('Total XP', formatKMB(Math.round(craftMetrics.totalXP)), {
+                createRow(t('craftingPlanTreeRenderer.totalXpLabel'), formatKMB(Math.round(craftMetrics.totalXP)), {
                     leftColor: 'var(--text-color-primary, #fff)',
                 })
             );

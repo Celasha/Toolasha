@@ -13,6 +13,7 @@
  */
 
 import dataManager from '../../../core/data-manager.js';
+import { t } from '../../../core/i18n.js';
 import { shouldTrackImportedOpenable } from './openable-analytics-eligibility.js';
 
 const ITEM_HRID_PATTERN = /^\/items\/[a-z0-9_]+$/;
@@ -64,22 +65,22 @@ export function detectImportSource(rawText) {
     try {
         parsed = JSON.parse(rawText);
     } catch {
-        return { source: null, error: 'Could not parse this text as JSON.' };
+        return { source: null, error: t('openableAnalytics.importParseFailedGeneric') };
     }
 
     if (!isPlainObject(parsed)) {
-        return { source: null, error: 'This does not look like a supported export.' };
+        return { source: null, error: t('openableAnalytics.importUnsupportedFormat') };
     }
 
     const hasCombatSuiteShape = isPlainObject(parsed.chests);
     const hasEdibleShape = isPlainObject(parsed.Chest_Open_Data);
 
     if (hasCombatSuiteShape && hasEdibleShape) {
-        return { source: null, error: 'This data matches more than one supported format and cannot be imported.' };
+        return { source: null, error: t('openableAnalytics.importAmbiguousFormat') };
     }
     if (hasCombatSuiteShape) return { source: 'mwi-combat-suite' };
     if (hasEdibleShape) return { source: 'edible' };
-    return { source: null, error: 'This does not match a supported Edible Tools or MWI Combat Suite export.' };
+    return { source: null, error: t('openableAnalytics.importUnrecognizedFormat') };
 }
 
 /**
@@ -112,7 +113,7 @@ export function parseCombatSuiteExport(rawText) {
 
     for (const [containerHrid, chest] of Object.entries(chests)) {
         if (!ITEM_HRID_PATTERN.test(containerHrid)) {
-            warnings.push(`Skipped an entry with an invalid item id: "${containerHrid}".`);
+            warnings.push(t('openableAnalytics.importSkippedInvalidContainerId', { containerHrid }));
             continue;
         }
 
@@ -121,7 +122,9 @@ export function parseCombatSuiteExport(rawText) {
             continue; // no openings recorded - silently ignored, not a warning
         }
         if (!isValidCount(containerCount) || containerCount === 0) {
-            warnings.push(`Skipped ${chest?.name || containerHrid}: invalid opened count.`);
+            warnings.push(
+                t('openableAnalytics.importSkippedInvalidOpenedCount', { name: chest?.name || containerHrid })
+            );
             continue;
         }
 
@@ -130,11 +133,13 @@ export function parseCombatSuiteExport(rawText) {
         // if it were the latter would silently fabricate Actual 0 / a huge Expected / Luck -100%.
         const total = chest?.total || {};
         if (!('loot' in total)) {
-            warnings.push(`Skipped ${chest?.name || containerHrid}: opening count present but loot data is missing.`);
+            warnings.push(t('openableAnalytics.importSkippedMissingLootData', { name: chest?.name || containerHrid }));
             continue;
         }
         if (!isPlainObject(total.loot)) {
-            warnings.push(`Skipped ${chest?.name || containerHrid}: loot data is malformed.`);
+            warnings.push(
+                t('openableAnalytics.importSkippedMalformedLootData', { name: chest?.name || containerHrid })
+            );
             continue;
         }
 
@@ -156,7 +161,7 @@ export function parseCombatSuiteExport(rawText) {
 
         if (hadInvalidItem) {
             warnings.push(
-                `${chest?.name || containerHrid}: one or more gained items had invalid data and were excluded.`
+                t('openableAnalytics.importGainedItemsInvalidDataExcluded', { name: chest?.name || containerHrid })
             );
         }
 
@@ -260,7 +265,7 @@ export function parseEdibleExport(rawText, { playerId } = {}) {
         const containerHrid = nameToHrid[chestName.toLowerCase()];
 
         if (!containerHrid) {
-            warnings.push(`Skipped "${chestName}": could not match to a known item.`);
+            warnings.push(t('openableAnalytics.importSkippedUnmatchedContainerName', { chestName }));
             continue;
         }
         anyChestNameResolved = true;
@@ -270,16 +275,16 @@ export function parseEdibleExport(rawText, { playerId } = {}) {
             continue; // no openings recorded - silently ignored, not a warning
         }
         if (!isValidCount(containerCount)) {
-            warnings.push(`Skipped ${chestName}: invalid opened count.`);
+            warnings.push(t('openableAnalytics.importSkippedInvalidOpenedCount', { name: chestName }));
             continue;
         }
 
         if (!('获得物品' in (chest || {}))) {
-            warnings.push(`Skipped ${chestName}: opening count present but gained-item data is missing.`);
+            warnings.push(t('openableAnalytics.importSkippedMissingGainedItemData', { chestName }));
             continue;
         }
         if (!isPlainObject(chest['获得物品'])) {
-            warnings.push(`Skipped ${chestName}: gained-item data is malformed.`);
+            warnings.push(t('openableAnalytics.importSkippedMalformedGainedItemData', { chestName }));
             continue;
         }
 
@@ -302,10 +307,12 @@ export function parseEdibleExport(rawText, { playerId } = {}) {
         }
 
         if (unmatchedItemCount > 0) {
-            warnings.push(`${chestName}: ${unmatchedItemCount} gained item(s) could not be matched and were excluded.`);
+            warnings.push(
+                t('openableAnalytics.importUnmatchedGainedItemsExcluded', { chestName, count: unmatchedItemCount })
+            );
         }
         if (hadInvalidCount) {
-            warnings.push(`${chestName}: one or more gained items had invalid counts and were excluded.`);
+            warnings.push(t('openableAnalytics.importGainedItemsInvalidCountsExcluded', { chestName }));
         }
 
         if (!shouldTrackImportedOpenable(containerHrid, containerCount, itemTotals)) continue;

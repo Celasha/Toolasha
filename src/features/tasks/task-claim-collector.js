@@ -9,6 +9,7 @@
 import { GAME } from '../../utils/selectors.js';
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
+import { t } from '../../core/i18n.js';
 
 const PROXY_BTN_ID = 'mwi-claim-proxy-btn';
 const CLAIM_BTN_SELECTOR = 'button.Button_button__1Fe9z.Button_buy__3s24l';
@@ -81,7 +82,10 @@ class TaskClaimCollector {
 
         const count = this._getClaimableButtons(taskList).length;
         if (count > 0) {
-            this.proxyButton.textContent = count > 1 ? `Claim Reward (${count})` : 'Claim Reward';
+            this.proxyButton.textContent =
+                count > 1
+                    ? t('taskClaimCollector.claimRewardWithCount', { count })
+                    : t('taskClaimCollector.claimReward');
             this.proxyButton.style.display = '';
         } else {
             this.proxyButton.style.display = 'none';

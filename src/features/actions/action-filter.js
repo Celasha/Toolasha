@@ -127,7 +127,7 @@ class ActionFilter {
         const input = document.createElement('input');
         input.id = 'mwi-action-filter';
         input.type = 'text';
-        input.placeholder = 'Filter actions...';
+        input.placeholder = t('actionFilter.filterPlaceholder');
         input.className = 'MuiInputBase-input'; // Use game's input class
         input.style.padding = '8px 12px';
         input.style.fontSize = '14px';
@@ -167,16 +167,16 @@ class ActionFilter {
         // Create sort toggle button
         const SORT_MODES = ['default', 'profit', 'xp', 'coinsPerXp'];
         const SORT_LABELS = {
-            default: 'Sort: Default',
-            profit: 'Sort: Profit',
-            xp: 'Sort: XP',
-            coinsPerXp: 'Sort: Profit/XP',
+            default: t('actionFilter.sortDefaultLabel'),
+            profit: t('actionFilter.sortProfitLabel'),
+            xp: t('actionFilter.sortXpLabel'),
+            coinsPerXp: t('actionFilter.sortProfitXpLabel'),
         };
         const sortBtn = document.createElement('button');
         sortBtn.id = 'mwi-action-sort-toggle';
         const updateSortBtn = () => {
             const mode = actionPanelSort.getSortMode();
-            sortBtn.textContent = SORT_LABELS[mode] || 'Sort: Default';
+            sortBtn.textContent = SORT_LABELS[mode] || t('actionFilter.sortDefaultLabel');
             const isActive = mode !== 'default';
             sortBtn.style.borderColor = isActive ? config.COLOR_ACCENT : 'rgba(255, 255, 255, 0.23)';
             sortBtn.style.color = isActive ? config.COLOR_ACCENT : 'inherit';
@@ -244,11 +244,10 @@ class ActionFilter {
         // Create craft toggle button
         const craftBtn = document.createElement('button');
         craftBtn.id = 'mwi-action-craft-toggle';
-        craftBtn.title =
-            'When on, uses crafting cost for upgrade items if cheaper than market, and includes crafting time in profit/hr';
+        craftBtn.title = t('actionFilter.craftToggleTooltip');
         const updateCraftBtn = () => {
             const enabled = config.getSetting('profitCalc_craftUpgradeItems');
-            craftBtn.textContent = enabled ? 'Craft: On' : 'Craft: Off';
+            craftBtn.textContent = enabled ? t('actionFilter.craftOnLabel') : t('actionFilter.craftOffLabel');
         };
         craftBtn.style.cssText = `
             padding: 8px 12px;

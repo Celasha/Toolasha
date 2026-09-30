@@ -7,6 +7,7 @@
  */
 
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import { formatKMB3Digits, formatWithSeparator } from '../../utils/formatters.js';
 
 const INLINE_RATE_SELECTOR = '[data-mwi-inline-xp-rate]';
@@ -67,8 +68,14 @@ export function renderInlineXpRate(panel, xpPerHour, { approximate = false, owne
     `;
 
     const roundedRate = Math.round(xpPerHour);
-    rate.textContent = `· ${approximate ? '~' : ''}${formatKMB3Digits(roundedRate)} XP/hr`;
-    rate.title = `${approximate ? 'Expected: ' : ''}${formatWithSeparator(roundedRate)} XP/hr`;
+    rate.textContent = t('inlineXpRate.rateLine', {
+        prefix: approximate ? '~' : '',
+        value: formatKMB3Digits(roundedRate),
+    });
+    rate.title = t('inlineXpRate.rateTooltip', {
+        prefix: approximate ? t('inlineXpRate.expectedPrefix') : '',
+        value: formatWithSeparator(roundedRate),
+    });
     rate.setAttribute('aria-label', rate.title);
 
     if (!rate.isConnected) experienceRow.appendChild(rate);

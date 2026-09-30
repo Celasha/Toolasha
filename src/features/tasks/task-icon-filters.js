@@ -15,6 +15,7 @@
 
 import config from '../../core/config.js';
 import storage from '../../core/storage.js';
+import { t } from '../../core/i18n.js';
 import { GAME } from '../../utils/selectors.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import assetManifest from '../../utils/asset-manifest.js';
@@ -232,7 +233,7 @@ class TaskIconFilters {
         // Create battle icon (combat icon is in misc_sprite)
         const battleIcon = this.createFilterIcon(
             'battle',
-            'Battle',
+            t('taskIconFilters.battleFilterLabel'),
             'combat',
             () => this.getBattleFilterEnabled(),
             'misc'

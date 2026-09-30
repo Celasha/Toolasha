@@ -11,6 +11,7 @@
 
 import { calculateEnhancement } from '../../utils/enhancement-calculator.js';
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 const toolashaConfig = config;
 import dataManager from '../../core/data-manager.js';
 import {
@@ -167,7 +168,10 @@ export function calculateEnhancementPath(itemHrid, currentEnhancementLevel, conf
         // No mirror used - return traditional result
         optimalStrategy = {
             protectFrom: optimalTraditional.protectFrom,
-            label: optimalTraditional.protectFrom === 0 ? 'Never' : `+${optimalTraditional.protectFrom}`,
+            label:
+                optimalTraditional.protectFrom === 0
+                    ? t('tooltipEnhancement.neverProtectionLabel')
+                    : `+${optimalTraditional.protectFrom}`,
             expectedAttempts: optimalTraditional.expectedAttempts,
             totalTime: optimalTraditional.totalTime,
             baseCost: optimalTraditional.baseCost,
@@ -350,7 +354,10 @@ function buildMirrorOptimizedResult(
 
     return {
         protectFrom: optimalTraditional.protectFrom,
-        label: optimalTraditional.protectFrom === 0 ? 'Never' : `From +${optimalTraditional.protectFrom}`,
+        label:
+            optimalTraditional.protectFrom === 0
+                ? t('tooltipEnhancement.neverProtectionLabel')
+                : t('tooltipEnhancement.fromLevelLabel', { level: optimalTraditional.protectFrom }),
         expectedAttempts: totalAttempts,
         totalTime: totalTime,
         baseCost: 0, // Not applicable for mirror phase
@@ -872,27 +879,34 @@ export function buildEnhancementTooltipHTML(enhancementData) {
     }
 
     let html = '<div style="border-top: 1px solid rgba(255,255,255,0.2); margin-top: 8px; padding-top: 8px;">';
-    html += '<div style="font-weight: bold; margin-bottom: 4px;">ENHANCEMENT PATH (+0 → +' + targetLevel + ')</div>';
+    html += `<div style="font-weight: bold; margin-bottom: 4px;">${t('tooltipEnhancement.pathHeaderLine', { targetLevel })}</div>`;
     html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 
     // Optimal strategy
     if (optimalStrategy.protectFrom === 0) {
-        html += '<div>No protection needed for +' + targetLevel + '</div>';
+        html += `<div>${t('tooltipEnhancement.noProtectionNeededLine', { targetLevel })}</div>`;
     } else {
-        html += '<div>Protect from: ' + optimalStrategy.label + '</div>';
+        html += `<div>${t('tooltipEnhancement.protectFromLine', { label: optimalStrategy.label })}</div>`;
     }
+
+    // Look up the localized item name instead of hardcoding the English string
+    const mirrorItemName =
+        dataManager.getInitClientData()?.itemDetailMap?.['/items/philosophers_mirror']?.name || "Philosopher's Mirror";
 
     // Show Philosopher's Mirror usage if applicable
     if (optimalStrategy.usedMirror && optimalStrategy.mirrorStartLevel) {
         html +=
             '<div style="color: ' +
             config.COLOR_MIRROR +
-            ';">Uses Philosopher\'s Mirror from +' +
-            optimalStrategy.mirrorStartLevel +
+            ';">' +
+            t('tooltipEnhancement.usesMirrorFromLine', {
+                mirrorName: mirrorItemName,
+                level: optimalStrategy.mirrorStartLevel,
+            }) +
             '</div>';
     }
 
-    html += '<div>Expected Attempts: ' + formatLargeNumber(optimalStrategy.expectedAttempts.toFixed(1)) + '</div>';
+    html += `<div>${t('tooltipEnhancement.expectedAttemptsLine', { value: formatLargeNumber(optimalStrategy.expectedAttempts.toFixed(1)) })}</div>`;
 
     // Costs table
     html += '<div style="margin-top: 8px;">';
@@ -900,10 +914,10 @@ export function buildEnhancementTooltipHTML(enhancementData) {
 
     // Table header
     html += `<tr style="border-bottom: 1px solid ${config.COLOR_BORDER};">`;
-    html += '<th style="padding: 2px 4px; text-align: left;">Material</th>';
-    html += '<th style="padding: 2px 4px; text-align: center;">Count</th>';
-    html += '<th style="padding: 2px 4px; text-align: right;">Ask</th>';
-    html += '<th style="padding: 2px 4px; text-align: right;">Bid</th>';
+    html += `<th style="padding: 2px 4px; text-align: left;">${t('tooltipEnhancement.materialHeader')}</th>`;
+    html += `<th style="padding: 2px 4px; text-align: center;">${t('tooltipEnhancement.countHeader')}</th>`;
+    html += `<th style="padding: 2px 4px; text-align: right;">${t('tooltipEnhancement.askHeader')}</th>`;
+    html += `<th style="padding: 2px 4px; text-align: right;">${t('tooltipEnhancement.bidHeader')}</th>`;
     html += '</tr>';
 
     // Hoisted so both branches can populate them and the minimum-sell section below can read them
@@ -942,7 +956,7 @@ export function buildEnhancementTooltipHTML(enhancementData) {
             totalAsk += mirrorAsk * optimalStrategy.mirrorCount;
             totalBid += mirrorBid * optimalStrategy.mirrorCount;
             consumedRows.push({
-                name: "Philosopher's Mirror",
+                name: mirrorItemName,
                 count: optimalStrategy.mirrorCount,
                 askPrice: mirrorAsk,
                 bidPrice: mirrorBid,
@@ -966,7 +980,7 @@ export function buildEnhancementTooltipHTML(enhancementData) {
 
         // Total row
         html += `<tr style="border-bottom: 1px solid ${config.COLOR_BORDER};">`;
-        html += '<td style="padding: 2px 4px; font-weight: bold;">Total</td>';
+        html += `<td style="padding: 2px 4px; font-weight: bold;">${t('tooltipEnhancement.totalLabel')}</td>`;
         html += '<td style="padding: 2px 4px; text-align: center;"></td>';
         html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalAskColor ? ' color: ' + totalAskColor + ';' : ''}">${formatKMB(totalAsk)}</td>`;
         html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalBidColor ? ' color: ' + totalBidColor + ';' : ''}">${formatKMB(totalBid)}</td>`;
@@ -991,9 +1005,13 @@ export function buildEnhancementTooltipHTML(enhancementData) {
         const rows = [];
 
         // Base item row
-        const baseItemLabel = optimalStrategy.baseAskIsCrafted ? 'Craft Item' : 'Buy Item';
+        const baseItemLabel = optimalStrategy.baseAskIsCrafted
+            ? t('tooltipEnhancement.craftItemLabel')
+            : t('tooltipEnhancement.buyItemLabel');
         rows.push({
-            name: toolashaConfig.isFeatureEnabled('enhanceSim_baseItemCraftingCost') ? baseItemLabel : 'Base Item',
+            name: toolashaConfig.isFeatureEnabled('enhanceSim_baseItemCraftingCost')
+                ? baseItemLabel
+                : t('tooltipEnhancement.baseItemLabel'),
             count: 1,
             askPrice: optimalStrategy.baseAskPrice || optimalStrategy.baseCost,
             bidPrice: optimalStrategy.baseBidPrice || optimalStrategy.baseCost,
@@ -1021,7 +1039,7 @@ export function buildEnhancementTooltipHTML(enhancementData) {
             totalAsk += askPrice * count;
             totalBid += bidPrice * count;
 
-            let protName = 'Protection';
+            let protName = t('tooltipEnhancement.protectionLabel');
             if (optimalStrategy.protectionItemHrid) {
                 const gameData = dataManager.getInitClientData();
                 const protDetails = gameData?.itemDetailMap[optimalStrategy.protectionItemHrid];
@@ -1049,7 +1067,7 @@ export function buildEnhancementTooltipHTML(enhancementData) {
 
         // Total row
         html += `<tr style="border-bottom: 1px solid ${config.COLOR_BORDER};">`;
-        html += '<td style="padding: 2px 4px; font-weight: bold;">Total</td>';
+        html += `<td style="padding: 2px 4px; font-weight: bold;">${t('tooltipEnhancement.totalLabel')}</td>`;
         html += `<td style="padding: 2px 4px; text-align: center;">${formatKMB(totalCount)}</td>`;
         html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalAskColor ? ' color: ' + totalAskColor + ';' : ''}">${formatKMB(totalAsk)}</td>`;
         html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalBidColor ? ' color: ' + totalBidColor + ';' : ''}">${formatKMB(totalBid)}</td>`;
@@ -1080,26 +1098,26 @@ export function buildEnhancementTooltipHTML(enhancementData) {
 
     if (totalSeconds < 60) {
         // Less than 1 minute: show seconds
-        html += '<div>Time: ~' + Math.round(totalSeconds) + ' seconds</div>';
+        html += `<div>${t('tooltipEnhancement.timeSecondsLine', { value: Math.round(totalSeconds) })}</div>`;
     } else if (totalSeconds < 3600) {
         // Less than 1 hour: show minutes
         const minutes = Math.round(totalSeconds / 60);
-        html += '<div>Time: ~' + minutes + ' minutes</div>';
+        html += `<div>${t('tooltipEnhancement.timeMinutesLine', { value: minutes })}</div>`;
     } else if (totalSeconds < 86400) {
         // Less than 1 day: show hours
         const hours = (totalSeconds / 3600).toFixed(1);
-        html += '<div>Time: ~' + hours + ' hours</div>';
+        html += `<div>${t('tooltipEnhancement.timeHoursLine', { value: hours })}</div>`;
     } else {
         // 1 day or more: show days
         const days = (totalSeconds / 86400).toFixed(1);
-        html += '<div>Time: ~' + days + ' days</div>';
+        html += `<div>${t('tooltipEnhancement.timeDaysLine', { value: days })}</div>`;
     }
 
     if (xpPerHour !== null && xpPerHour > 0) {
-        html += '<div style="margin-top: 4px;">XP/hr: ' + formatLargeNumber(xpPerHour) + '</div>';
+        html += `<div style="margin-top: 4px;">${t('tooltipEnhancement.xpPerHourLine', { value: formatLargeNumber(xpPerHour) })}</div>`;
     }
     if (totalExpectedXP !== null && totalExpectedXP > 0) {
-        html += '<div>Total XP: ~' + formatLargeNumber(totalExpectedXP) + '</div>';
+        html += `<div>${t('tooltipEnhancement.totalXpLine', { value: formatLargeNumber(totalExpectedXP) })}</div>`;
     }
 
     // Target hourly rate / minimum sell price (only shown when a rate is configured)
@@ -1123,10 +1141,10 @@ export function buildEnhancementTooltipHTML(enhancementData) {
                     : config.COLOR_TOOLTIP_LOSS
                 : '';
 
-        html += '<div style="margin-top: 4px;">Your rate: ' + formatKMB3Digits(hourlyRate) + '/hr</div>';
-        html += '<div>Minimum sell: ';
-        html += `<span${askColor ? ` style="color: ${askColor};"` : ''}>${formatKMB3Digits(minSellAsk)}</span>(ask)/`;
-        html += `<span${bidColor ? ` style="color: ${bidColor};"` : ''}>${formatKMB3Digits(minSellBid)}</span>(bid)`;
+        html += `<div style="margin-top: 4px;">${t('tooltipEnhancement.yourRateLine', { value: formatKMB3Digits(hourlyRate) })}</div>`;
+        html += `<div>${t('tooltipEnhancement.minimumSellLabel')} `;
+        html += `<span${askColor ? ` style="color: ${askColor};"` : ''}>${formatKMB3Digits(minSellAsk)}</span>${t('tooltipEnhancement.askSuffixLabel')}/`;
+        html += `<span${bidColor ? ` style="color: ${bidColor};"` : ''}>${formatKMB3Digits(minSellBid)}</span>${t('tooltipEnhancement.bidSuffixLabel')}`;
         html += '</div>';
     }
 
@@ -1185,13 +1203,13 @@ export function buildEnhancementMilestonesHTML(itemHrid, enhancementConfig) {
         `style="padding: 1px 6px; text-align: ${align}; opacity: 0.6; font-weight: normal;"`;
 
     let html = '<div style="border-top: 1px solid rgba(255,255,255,0.2); margin-top: 8px; padding-top: 8px;">';
-    html += '<div style="font-weight: bold; margin-bottom: 4px;">Enhancement Milestones</div>';
+    html += `<div style="font-weight: bold; margin-bottom: 4px;">${t('tooltipEnhancement.milestonesHeaderLabel')}</div>`;
     html += '<table style="font-size: 0.9em; border-collapse: collapse; width: 100%;">';
     html += '<thead><tr>';
-    html += `<th ${thStyle('left')}>Level</th>`;
-    html += `<th ${thStyle()}>Cost</th>`;
-    if (showPrices) html += `<th ${thStyle()}>Ask / Bid</th>`;
-    html += `<th ${thStyle()}>XP</th>`;
+    html += `<th ${thStyle('left')}>${t('tooltipEnhancement.levelHeader')}</th>`;
+    html += `<th ${thStyle()}>${t('tooltipEnhancement.costHeader')}</th>`;
+    if (showPrices) html += `<th ${thStyle()}>${t('tooltipEnhancement.askBidHeader')}</th>`;
+    html += `<th ${thStyle()}>${t('tooltipEnhancement.xpHeader')}</th>`;
     html += '</tr></thead><tbody>';
 
     for (const row of rows) {

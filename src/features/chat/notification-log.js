@@ -122,6 +122,34 @@ function getEntryCategory(entry) {
 }
 
 /**
+ * Human-readable label for a filter category, keyed by the same category names
+ * notification-formatter.js's CATEGORIES / getAllNotificationCategories() use, plus the
+ * Log-only "mentions" category.
+ * @param {string} category
+ * @returns {string}
+ */
+function getCategoryLabel(category) {
+    const CATEGORY_LABEL_KEYS = {
+        trading: 'notificationLog.categoryTrading',
+        guild: 'notificationLog.categoryGuild',
+        party: 'notificationLog.categoryParty',
+        progression: 'notificationLog.categoryProgression',
+        house: 'notificationLog.categoryHouse',
+        social: 'notificationLog.categorySocial',
+        cosmetic: 'notificationLog.categoryCosmetic',
+        loadout: 'notificationLog.categoryLoadout',
+        purchases: 'notificationLog.categoryPurchases',
+        community: 'notificationLog.categoryCommunity',
+        referral: 'notificationLog.categoryReferral',
+        labyrinth: 'notificationLog.categoryLabyrinth',
+        other: 'notificationLog.categoryOther',
+        [MENTION_CATEGORY]: 'notificationLog.categoryMentions',
+    };
+    const key = CATEGORY_LABEL_KEYS[category];
+    return key ? t(key) : category;
+}
+
+/**
  * Render a log entry's display text - a mention entry has no infoNotification.* template, so it
  * is formatted directly from the chat message evidence captured at the time it was mentioned.
  * @param {Object} entry
@@ -341,7 +369,7 @@ class NotificationLog {
             });
 
             const text = document.createElement('span');
-            text.textContent = category.charAt(0).toUpperCase() + category.slice(1);
+            text.textContent = getCategoryLabel(category);
 
             label.appendChild(checkbox);
             label.appendChild(text);

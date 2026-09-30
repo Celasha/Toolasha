@@ -235,7 +235,7 @@ class TaskIcons {
             margin-top: 4px;
         `;
         warning.textContent = t('taskIcons.spriteWarning');
-        warning.title = 'Combat monster sprites need to be loaded. Visit the Combat panel to load them.';
+        warning.title = t('taskIcons.spriteWarningTooltip');
 
         titleElement.appendChild(warning);
         this.spriteWarningShown = true;

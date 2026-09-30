@@ -11,6 +11,7 @@
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import { formatKMB } from '../../utils/formatters.js';
 import { createCleanupRegistry } from '../../utils/cleanup-registry.js';
 
@@ -213,9 +214,11 @@ class QueueLengthEstimator {
 
         // Add tooltip
         if (isEstimated) {
-            displayElement.title = `Estimated total queue depth (extrapolated from ${listings.length} visible orders)`;
+            displayElement.title = t('queueLengthEstimator.estimatedTooltip', { count: listings.length });
         } else {
-            displayElement.title = `Total quantity at best ${isAsk ? 'sell' : 'buy'} price`;
+            displayElement.title = isAsk
+                ? t('queueLengthEstimator.bestSellPriceTooltip')
+                : t('queueLengthEstimator.bestBuyPriceTooltip');
         }
 
         // Insert into button container

@@ -9,6 +9,7 @@
 import config from '../../../core/config.js';
 import dataManager from '../../../core/data-manager.js';
 import domObserver from '../../../core/dom-observer.js';
+import { t } from '../../../core/i18n.js';
 import openableAnalyticsDataCollector from './openable-analytics-data-collector.js';
 import { isMonetaryRewardModal, MODAL_CONTENT_CLASS } from './openable-analytics-modal-injector.js';
 import { calculateOpeningCost } from './openable-analytics-cost.js';
@@ -117,7 +118,7 @@ function mapAggregateToCardInputs(lifetimeAggregate) {
 }
 
 function buildPartialBadge() {
-    return ` <span style="color:${config.COLOR_WARNING || '#ffa500'}; font-size:10px;">(partial)</span>`;
+    return ` <span style="color:${config.COLOR_WARNING || '#ffa500'}; font-size:10px;">${t('openableAnalytics.partialBadgeLabel')}</span>`;
 }
 
 function buildStatRow(label, valueHtml, { stacked = false } = {}) {
@@ -154,7 +155,7 @@ function buildExpandableStatRow(label, valueHtml, toggleKey, contentHtml, expand
         ? 'padding:3px 0; cursor:pointer;'
         : 'display:flex; justify-content:space-between; align-items:baseline; gap:10px; font-size:13px; padding:3px 0; cursor:pointer;';
     const toggleHtml = `
-        <div data-toggle-key="${toggleKey}" style="${toggleRowStyle}" title="Click for details">
+        <div data-toggle-key="${toggleKey}" style="${toggleRowStyle}" title="${t('openableAnalytics.clickForDetailsTooltip')}">
             ${toggleRowHtml}
         </div>
     `;
@@ -188,7 +189,7 @@ function buildDropBreakdownRows(drops, amount, spriteUrl) {
             const total = drop.expectedValue * (amount || 0);
             const priceNote = drop.hasPriceData
                 ? ''
-                : ` <span style="color:${config.COLOR_WARNING || '#ffa500'};">(no price yet)</span>`;
+                : ` <span style="color:${config.COLOR_WARNING || '#ffa500'};">${t('openableAnalytics.noPriceYetNote')}</span>`;
             const icon = buildItemIconHtml(spriteUrl, drop.itemHrid);
             return `<div style="display:flex; justify-content:space-between; gap:8px; padding:1px 0;"><span style="display:flex; align-items:center; min-width:0;">${icon}${drop.itemName}${priceNote}</span><span style="flex-shrink:0;">${formatMoney(total)}</span></div>`;
         })
@@ -228,18 +229,18 @@ function mergeDropsByItem(drops) {
 function buildExpectedBreakdownContent(containerHrid, amount, spriteUrl) {
     const drops = mergeDropsByItem(expectedValueCalculator.getDropBreakdown(containerHrid));
     if (!drops.length) {
-        return '<div>No drop data available for this container.</div>';
+        return `<div>${t('openableAnalytics.noDropDataMessage')}</div>`;
     }
 
     const shown = drops.slice(0, MAX_BREAKDOWN_ROWS);
     const omittedCount = drops.length - shown.length;
     const omittedNote =
         omittedCount > 0
-            ? `<div style="opacity:0.7; margin-top:2px;">+ ${omittedCount} more possible drop${omittedCount === 1 ? '' : 's'} not shown</div>`
+            ? `<div style="opacity:0.7; margin-top:2px;">${t('openableAnalytics.moreDropsNotShown', { count: omittedCount })}</div>`
             : '';
 
     return `
-        <div style="margin-bottom:4px;">What this container can drop, valued at today's market prices for ${formatWithSeparator(Math.round(amount || 0))} opened:</div>
+        <div style="margin-bottom:4px;">${t('openableAnalytics.dropValuationHeader', { amount: formatWithSeparator(Math.round(amount || 0)) })}</div>
         ${buildDropBreakdownRows(shown, amount, spriteUrl)}
         ${omittedNote}
     `;
@@ -253,7 +254,7 @@ function buildExpectedBreakdownContent(containerHrid, amount, spriteUrl) {
  */
 function buildCurrentIncomeBreakdownContent(record, spriteUrl) {
     if (!record?.actualValueBreakdown?.length) {
-        return '<div>No item data available for this opening.</div>';
+        return `<div>${t('openableAnalytics.noItemDataForOpeningMessage')}</div>`;
     }
 
     const rows = record.actualValueBreakdown
@@ -261,13 +262,13 @@ function buildCurrentIncomeBreakdownContent(record, spriteUrl) {
             const name = dataManager.getItemDetails(item.itemHrid)?.name || item.itemHrid;
             const priceNote = item.resolved
                 ? ''
-                : ` <span style="color:${config.COLOR_WARNING || '#ffa500'};">(no price yet)</span>`;
+                : ` <span style="color:${config.COLOR_WARNING || '#ffa500'};">${t('openableAnalytics.noPriceYetNote')}</span>`;
             const icon = buildItemIconHtml(spriteUrl, item.itemHrid);
             return `<div style="display:flex; justify-content:space-between; gap:8px; padding:1px 0;"><span style="display:flex; align-items:center; min-width:0;">${icon}${name} ×${formatWithSeparator(item.count)}${priceNote}</span><span style="flex-shrink:0;">${formatMoney(item.value)}</span></div>`;
         })
         .join('');
 
-    return `<div style="margin-bottom:4px;">Items received this opening:</div>${rows}`;
+    return `<div style="margin-bottom:4px;">${t('openableAnalytics.itemsReceivedHeader')}</div>${rows}`;
 }
 
 /**
@@ -284,7 +285,7 @@ function buildCurrentIncomeBreakdownContent(record, spriteUrl) {
 function buildHistoryIncomeBreakdownContent(aggregate, spriteUrl) {
     const itemHrids = Object.keys(aggregate?.itemTotals || {});
     if (!itemHrids.length) {
-        return '<div>No item data recorded yet.</div>';
+        return `<div>${t('openableAnalytics.noItemDataRecordedMessage')}</div>`;
     }
 
     const items = itemHrids
@@ -299,7 +300,7 @@ function buildHistoryIncomeBreakdownContent(aggregate, spriteUrl) {
     const omittedCount = items.length - shown.length;
     const omittedNote =
         omittedCount > 0
-            ? `<div style="opacity:0.7; margin-top:2px;">+ ${omittedCount} more item${omittedCount === 1 ? '' : 's'} not shown</div>`
+            ? `<div style="opacity:0.7; margin-top:2px;">${t('openableAnalytics.moreItemsNotShown', { count: omittedCount })}</div>`
             : '';
 
     const rows = shown
@@ -307,13 +308,13 @@ function buildHistoryIncomeBreakdownContent(aggregate, spriteUrl) {
             const name = dataManager.getItemDetails(item.itemHrid)?.name || item.itemHrid;
             const priceNote = item.resolved
                 ? ''
-                : ` <span style="color:${config.COLOR_WARNING || '#ffa500'};">(no price yet)</span>`;
+                : ` <span style="color:${config.COLOR_WARNING || '#ffa500'};">${t('openableAnalytics.noPriceYetNote')}</span>`;
             const icon = buildItemIconHtml(spriteUrl, item.itemHrid);
             return `<div style="display:flex; justify-content:space-between; gap:8px; padding:1px 0;"><span style="display:flex; align-items:center; min-width:0;">${icon}${name} ×${formatWithSeparator(item.count)}${priceNote}</span><span style="flex-shrink:0;">${formatMoney(item.value)}</span></div>`;
         })
         .join('');
 
-    return `<div style="margin-bottom:4px;">Cumulative items received across all lifetime openings:</div>${rows}${omittedNote}`;
+    return `<div style="margin-bottom:4px;">${t('openableAnalytics.cumulativeItemsHeader')}</div>${rows}${omittedNote}`;
 }
 
 /**
@@ -344,7 +345,7 @@ function buildCard(title, stats, { keyPrefix, containerHrid, record, aggregate, 
     const rangeHtml =
         stats.stdDev === null || stats.stdDev === undefined
             ? ''
-            : ` <span style="color:${config.COLOR_TEXT_SECONDARY || '#aaa'}; font-size:11px;" title="Actual income for a batch this size usually lands within this range of the expected amount">± ${formatMoney(stats.stdDev)}</span>`;
+            : ` <span style="color:${config.COLOR_TEXT_SECONDARY || '#aaa'}; font-size:11px;" title="${t('openableAnalytics.incomeRangeTooltip')}">± ${formatMoney(stats.stdDev)}</span>`;
     const expectedValueHtml = `${formatMoney(stats.expectedIncome)}${rangeHtml}${stats.expectedIncomeIncomplete ? buildPartialBadge() : ''}`;
     const vsExpectedHtml =
         stats.higher === null
@@ -356,7 +357,7 @@ function buildCard(title, stats, { keyPrefix, containerHrid, record, aggregate, 
         : buildHistoryIncomeBreakdownContent(aggregate, spriteUrl);
 
     const incomeRow = buildExpandableStatRow(
-        'Income',
+        t('openableAnalytics.incomeLabel'),
         incomeValueHtml,
         incomeKey,
         incomeBreakdownHtml,
@@ -365,7 +366,7 @@ function buildCard(title, stats, { keyPrefix, containerHrid, record, aggregate, 
     );
 
     const expectedRow = buildExpandableStatRow(
-        'Expected income',
+        t('openableAnalytics.expectedIncomeLabel'),
         expectedValueHtml,
         expectedKey,
         buildExpectedBreakdownContent(containerHrid, stats.amount, spriteUrl),
@@ -393,21 +394,21 @@ function buildCard(title, stats, { keyPrefix, containerHrid, record, aggregate, 
                 margin-bottom: 6px;
                 border-bottom: 1px solid rgba(255, 255, 255, 0.09);
             ">${title}</div>
-            ${buildStatRow('Opened', formatWithSeparator(Math.round(stats.amount || 0)))}
+            ${buildStatRow(t('openableAnalytics.openedLabel'), formatWithSeparator(Math.round(stats.amount || 0)))}
             <div style="display:flex; gap:12px; align-items:flex-start;">
                 <div style="flex:1; min-width:0;">
                     ${incomeRow.toggleHtml}
-                    ${buildStatRow('Profit', profitHtml, { stacked: true })}
+                    ${buildStatRow(t('openableAnalytics.profitLabel'), profitHtml, { stacked: true })}
                 </div>
                 <div style="flex:1; min-width:0; border-left:1px solid rgba(255, 255, 255, 0.08); padding-left:12px;">
                     ${expectedRow.toggleHtml}
-                    ${buildStatRow('vs. expected', vsExpectedHtml, { stacked: true })}
+                    ${buildStatRow(t('openableAnalytics.vsExpectedLabel'), vsExpectedHtml, { stacked: true })}
                 </div>
             </div>
             ${incomeRow.detailHtml}
             ${expectedRow.detailHtml}
             <div style="height:1px; background:rgba(255, 255, 255, 0.08); margin:8px 0;"></div>
-            ${buildStatRow('Luck', luckHtml)}
+            ${buildStatRow(t('openableAnalytics.luckShortLabel'), luckHtml)}
         </div>
     `;
 }
@@ -492,7 +493,7 @@ class OpenableAnalyticsSidePanel {
         const historyStats = computeStats(record.containerHrid, mapAggregateToCardInputs(lifetimeAggregate));
 
         this.currentPanel.innerHTML =
-            buildCard('Current', currentStats, {
+            buildCard(t('openableAnalytics.currentCardTitle'), currentStats, {
                 keyPrefix: 'current',
                 containerHrid: record.containerHrid,
                 record,
@@ -500,7 +501,7 @@ class OpenableAnalyticsSidePanel {
                 expandedSections: this.expandedSections,
                 spriteUrl: this.itemsSpriteUrl,
             }) +
-            buildCard('History', historyStats, {
+            buildCard(t('openableAnalytics.historyCardTitle'), historyStats, {
                 keyPrefix: 'history',
                 containerHrid: record.containerHrid,
                 record: null,

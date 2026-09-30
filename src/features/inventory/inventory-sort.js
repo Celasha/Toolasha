@@ -232,9 +232,9 @@ class InventorySort {
         const sortLabel = document.createElement('span');
         sortLabel.textContent = t('inventorySort.sortLabel');
 
-        const askButton = this.createSortButton('Ask', 'ask');
-        const bidButton = this.createSortButton('Bid', 'bid');
-        const noneButton = this.createSortButton('None', 'none');
+        const askButton = this.createSortButton(t('inventorySort.askButtonLabel'), 'ask');
+        const bidButton = this.createSortButton(t('inventorySort.bidButtonLabel'), 'bid');
+        const noneButton = this.createSortButton(t('inventorySort.noneButtonLabel'), 'none');
 
         // Assemble controls
         this.controlsContainer.appendChild(sortLabel);

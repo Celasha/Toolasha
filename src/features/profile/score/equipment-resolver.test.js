@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { t } from '../../../core/i18n.js';
 
 const mocks = vi.hoisted(() => ({
     askPrices: {}, // key: `${itemHrid}|${enhancementLevel ?? 0}` -> ask price
@@ -150,7 +151,7 @@ describe('resolveEquipmentItemCost - F-06: no complete path -> partial, never ze
         expect(result).toEqual({
             cost: null,
             complete: false,
-            reason: 'No complete acquisition route could be priced',
+            reason: t('equipmentResolver.noCompleteRouteReason'),
         });
     });
 
@@ -162,7 +163,7 @@ describe('resolveEquipmentItemCost - F-06: no complete path -> partial, never ze
         expect(result).toEqual({
             cost: null,
             complete: false,
-            reason: 'No complete acquisition route could be priced',
+            reason: t('equipmentResolver.noCompleteRouteReason'),
         });
     });
 });
@@ -275,7 +276,7 @@ describe('resolveEquipmentItemCost - PSP-15: worker failure fails closed, never 
         expect(result).toEqual({
             cost: null,
             complete: false,
-            reason: 'No complete acquisition route could be priced',
+            reason: t('equipmentResolver.noCompleteRouteReason'),
         });
     });
 });

@@ -22,6 +22,7 @@
 import domObserver from '../../core/dom-observer.js';
 import storage from '../../core/storage.js';
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 
 const STORAGE_KEY = 'modalPositions3';
 const STORE_NAME = 'settings';
@@ -91,7 +92,7 @@ class DraggableModals {
         // contentEl is a plain wrapper so prepending places the bar at the top visually.
         const bar = document.createElement('div');
         bar.className = 'mwi-drag-bar';
-        bar.title = 'Drag to move';
+        bar.title = t('dragToMoveTooltip');
         bar.style.cssText = [
             'width: 100%',
             'padding: 4px 0',

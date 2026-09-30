@@ -161,13 +161,7 @@ class MarketDepthCap {
             hitBookEnd: result.hitBookEnd,
             count: formatWithSeparator(result.nstar),
         });
-        el.title =
-            (result.hitBookEnd
-                ? 'Every visible resting bid still clears cost — the true cap may be higher than shown. '
-                : 'Estimated number of actions worth of this item the visible order book can absorb before the ' +
-                  'marginal sale price drops below cost. ') +
-            "Ignores the marketplace's tradable range floor (not exposed in game data), so a large sell-off " +
-            'may hit that floor and queue with a delay before this estimate suggests.';
+        el.title = result.hitBookEnd ? t('marketDepthCap.tooltipHitBookEnd') : t('marketDepthCap.tooltipEstimate');
 
         buttonContainer.insertBefore(el, buttonContainer.lastChild);
     }

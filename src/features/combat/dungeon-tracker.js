@@ -7,6 +7,7 @@ import webSocketHook from '../../core/websocket.js';
 import dungeonTrackerStorage from './dungeon-tracker-storage.js';
 import dataManager from '../../core/data-manager.js';
 import storage from '../../core/storage.js';
+import { t } from '../../core/i18n.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 // Heartbeat watchdog: visibilitychange doesn't reliably fire for every stall (a long GC pause, or
@@ -1197,7 +1198,7 @@ class DungeonTracker {
 
                 // Get dungeon name from HRID
                 const dungeonInfo = dungeonTrackerStorage.getDungeonInfo(completedRunData.dungeonHrid);
-                const dungeonName = dungeonInfo ? dungeonInfo.name : 'Unknown';
+                const dungeonName = dungeonInfo ? dungeonInfo.name : t('dungeonTrackerUi.unknownDungeonFallback');
 
                 // Build run object in unified format
                 const runToSave = {
@@ -1308,7 +1309,7 @@ class DungeonTracker {
 
         const validated = firstKeyCountTimestamp !== null;
         const dungeonInfo = dungeonTrackerStorage.getDungeonInfo(currentRun.dungeonHrid);
-        const dungeonName = dungeonInfo ? dungeonInfo.name : 'Unknown';
+        const dungeonName = dungeonInfo ? dungeonInfo.name : t('dungeonTrackerUi.unknownDungeonFallback');
         const keyCountsMap = currentRun.keyCountsMap || {};
         const team = Object.keys(keyCountsMap).sort();
         const teamKey = dungeonTrackerStorage.getTeamKey(team);
@@ -1357,7 +1358,7 @@ class DungeonTracker {
             dungeonHrid: this.currentRun.dungeonHrid,
             dungeonName: this.currentRun.dungeonHrid
                 ? dungeonTrackerStorage.getDungeonInfo(this.currentRun.dungeonHrid)?.name
-                : 'Unknown',
+                : t('dungeonTrackerUi.unknownDungeonFallback'),
             tier: this.currentRun.tier,
             currentWave: this.currentRun.currentWave, // Already 1-indexed from new_battle message
             maxWaves: this.currentRun.maxWaves,
@@ -1627,7 +1628,10 @@ class DungeonTracker {
                         .find((e) => e.type === 'battle_start');
 
                     // Use battle_ended if available, otherwise fall back to battle_start
-                    const dungeonName = battleEnded?.dungeonName || battleStart?.dungeonName || 'Unknown';
+                    const dungeonName =
+                        battleEnded?.dungeonName ||
+                        battleStart?.dungeonName ||
+                        t('dungeonTrackerUi.unknownDungeonFallback');
 
                     // Get team key
                     const teamKey = dungeonTrackerStorage.getTeamKey(event.team);

@@ -6,6 +6,7 @@
 import config from '../../core/config.js';
 import marketAPI from '../../api/marketplace.js';
 import webSocketHook from '../../core/websocket.js';
+import { t } from '../../core/i18n.js';
 import { formatLargeNumber } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 
@@ -156,7 +157,7 @@ class CombatSummary {
 
                     elem.insertAdjacentHTML(
                         'beforeend',
-                        `<div id="mwi-combat-encounters" style="color: ${textColor};">Encounters/hour: ${encountersPerHour}</div>`
+                        `<div id="mwi-combat-encounters" style="color: ${textColor};">${t('combatSummary.encountersPerHour', { value: encountersPerHour })}</div>`
                     );
                 }
             }
@@ -166,7 +167,7 @@ class CombatSummary {
                 .querySelector('div#mwi-combat-encounters')
                 ?.insertAdjacentHTML(
                     'afterend',
-                    `<div id="mwi-combat-revenue" style="color: ${textColor};">Total revenue: ${formatLargeNumber(Math.round(totalPriceAsk))} / ${formatLargeNumber(Math.round(totalPriceBid))}</div>`
+                    `<div id="mwi-combat-revenue" style="color: ${textColor};">${t('combatSummary.totalRevenue', { ask: formatLargeNumber(Math.round(totalPriceAsk)), bid: formatLargeNumber(Math.round(totalPriceBid)) })}</div>`
                 );
 
             // Per-hour revenue
@@ -178,7 +179,7 @@ class CombatSummary {
                     .querySelector('div#mwi-combat-revenue')
                     ?.insertAdjacentHTML(
                         'afterend',
-                        `<div id="mwi-combat-revenue-hour" style="color: ${textColor};">Revenue/hour: ${formatLargeNumber(Math.round(revenuePerHourAsk))} / ${formatLargeNumber(Math.round(revenuePerHourBid))}</div>`
+                        `<div id="mwi-combat-revenue-hour" style="color: ${textColor};">${t('combatSummary.revenuePerHour', { ask: formatLargeNumber(Math.round(revenuePerHourAsk)), bid: formatLargeNumber(Math.round(revenuePerHourBid)) })}</div>`
                     );
 
                 // Per-day revenue
@@ -186,7 +187,7 @@ class CombatSummary {
                     .querySelector('div#mwi-combat-revenue-hour')
                     ?.insertAdjacentHTML(
                         'afterend',
-                        `<div id="mwi-combat-revenue-day" style="color: ${textColor};">Revenue/day: ${formatLargeNumber(Math.round(revenuePerHourAsk * 24))} / ${formatLargeNumber(Math.round(revenuePerHourBid * 24))}</div>`
+                        `<div id="mwi-combat-revenue-day" style="color: ${textColor};">${t('combatSummary.revenuePerDay', { ask: formatLargeNumber(Math.round(revenuePerHourAsk * 24)), bid: formatLargeNumber(Math.round(revenuePerHourBid * 24)) })}</div>`
                     );
             }
 
@@ -195,7 +196,7 @@ class CombatSummary {
                 .querySelector('div#mwi-combat-revenue-day')
                 ?.insertAdjacentHTML(
                     'afterend',
-                    `<div id="mwi-combat-total-exp" style="color: ${textColor};">Total exp: ${formatLargeNumber(Math.round(totalSkillsExp))}</div>`
+                    `<div id="mwi-combat-total-exp" style="color: ${textColor};">${t('combatSummary.totalExp', { value: formatLargeNumber(Math.round(totalSkillsExp)) })}</div>`
                 );
 
             // Per-hour experience breakdowns
@@ -207,18 +208,18 @@ class CombatSummary {
                     .querySelector('div#mwi-combat-total-exp')
                     ?.insertAdjacentHTML(
                         'afterend',
-                        `<div id="mwi-combat-total-exp-hour" style="color: ${textColor};">Total exp/hour: ${formatLargeNumber(Math.round(totalExpPerHour))}</div>`
+                        `<div id="mwi-combat-total-exp-hour" style="color: ${textColor};">${t('combatSummary.totalExpPerHour', { value: formatLargeNumber(Math.round(totalExpPerHour)) })}</div>`
                     );
 
                 // Individual skill exp/hour
                 const skills = [
-                    { skillHrid: '/skills/attack', name: 'Attack' },
-                    { skillHrid: '/skills/magic', name: 'Magic' },
-                    { skillHrid: '/skills/ranged', name: 'Ranged' },
-                    { skillHrid: '/skills/defense', name: 'Defense' },
-                    { skillHrid: '/skills/melee', name: 'Melee' },
-                    { skillHrid: '/skills/intelligence', name: 'Intelligence' },
-                    { skillHrid: '/skills/stamina', name: 'Stamina' },
+                    { skillHrid: '/skills/attack', name: t('simEditor.skillAttack') },
+                    { skillHrid: '/skills/magic', name: t('simEditor.skillMagic') },
+                    { skillHrid: '/skills/ranged', name: t('simEditor.skillRanged') },
+                    { skillHrid: '/skills/defense', name: t('simEditor.skillDefense') },
+                    { skillHrid: '/skills/melee', name: t('simEditor.skillMelee') },
+                    { skillHrid: '/skills/intelligence', name: t('simEditor.skillIntelligence') },
+                    { skillHrid: '/skills/stamina', name: t('simEditor.skillStamina') },
                 ];
 
                 let lastElement = document.querySelector('div#mwi-combat-total-exp-hour');
@@ -231,7 +232,7 @@ class CombatSummary {
                             const expPerHour = expGained / (battleDurationSec / 3600);
                             lastElement.insertAdjacentHTML(
                                 'afterend',
-                                `<div style="color: ${textColor};">${skill.name} exp/hour: ${formatLargeNumber(Math.round(expPerHour))}</div>`
+                                `<div style="color: ${textColor};">${t('combatSummary.skillExpPerHour', { skillName: skill.name, value: formatLargeNumber(Math.round(expPerHour)) })}</div>`
                             );
                             // Update lastElement to the newly inserted div
                             lastElement = lastElement.nextElementSibling;

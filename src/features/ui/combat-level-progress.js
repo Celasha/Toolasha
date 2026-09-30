@@ -12,6 +12,7 @@
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
+import { t } from '../../core/i18n.js';
 import { calculateCombatLevelFromSkills } from '../../utils/combat-level-progress-calculator.js';
 
 const CSS_CLASS = 'mwi-combat-level-precise';
@@ -112,7 +113,7 @@ class CombatLevelProgress {
 
         const decimalText = rawCombatLevel.toFixed(1).split('.')[1];
         span.textContent = `.${decimalText}`;
-        span.title = `Combat Level from current whole skill levels · native display: ${Math.floor(rawCombatLevel)}`;
+        span.title = t('combatLevelProgress.decimalTooltip', { nativeLevel: Math.floor(rawCombatLevel) });
     }
 
     /**

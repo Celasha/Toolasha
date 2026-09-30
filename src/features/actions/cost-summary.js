@@ -210,10 +210,10 @@ export function renderBlock({ directCost, directComplete, missingCost, missingCo
     `;
     container.appendChild(header);
 
-    container.appendChild(renderLine('Direct recipe cost', directCost, !directComplete));
-    container.appendChild(renderLine('Missing direct mats', missingCost, !missingComplete));
-    container.appendChild(renderLine('Best crafting plan', planCost));
-    container.appendChild(renderLine('Finished item market', marketCost));
+    container.appendChild(renderLine(t('costSummary.directRecipeCostLabel'), directCost, !directComplete));
+    container.appendChild(renderLine(t('costSummary.missingDirectMatsLabel'), missingCost, !missingComplete));
+    container.appendChild(renderLine(t('costSummary.bestCraftingPlanLabel'), planCost));
+    container.appendChild(renderLine(t('costSummary.finishedItemMarketLabel'), marketCost));
 
     return container;
 }
@@ -238,7 +238,7 @@ function renderLine(label, value, partial = false) {
         valueEl.style.color = '#e2e8f0';
         valueEl.style.fontVariantNumeric = 'tabular-nums';
         if (partial) {
-            valueEl.title = 'Partial — some materials have no market data';
+            valueEl.title = t('costSummary.partialDataTooltip');
         }
     }
     row.appendChild(labelEl);

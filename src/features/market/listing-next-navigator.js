@@ -10,6 +10,7 @@
  */
 
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import { navigateToMyListings } from '../../utils/marketplace-tabs.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import listingRefreshNavigator from './listing-refresh-navigator.js';
@@ -113,7 +114,9 @@ class ListingNextNavigator {
             }
         }
 
-        const label = progress.isLast ? 'Back to My Listings' : `Next (${progress.index + 1}/${progress.total})`;
+        const label = progress.isLast
+            ? t('listingNextNavigator.backToMyListingsLabel')
+            : t('listingNextNavigator.nextLabel', { index: progress.index + 1, total: progress.total });
 
         if (!this.nextBtn) {
             const btn = document.createElement('button');

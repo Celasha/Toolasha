@@ -5,6 +5,7 @@
  */
 
 import dataManager from '../../core/data-manager.js';
+import { t } from '../../core/i18n.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 import { calculateGatheringProfit } from '../actions/gathering-profit.js';
 import { calculateProductionProfit } from '../actions/production-profit.js';
@@ -25,7 +26,7 @@ export function calculateTaskTokenValue() {
             tokenValue: null,
             giftPerTask: null,
             totalPerToken: null,
-            error: 'Market data not loaded',
+            error: t('taskProfitCalculator.marketDataNotLoadedError'),
         };
     }
 

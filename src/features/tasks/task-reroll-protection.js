@@ -14,7 +14,12 @@ import { t } from '../../core/i18n.js';
 import storage from '../../core/storage.js';
 import webSocketHook from '../../core/websocket.js';
 import { repaintTaskCard } from './task-card-visual-state.js';
-import { TASK_SKILL_TYPES, getActionSkillType, countActionsBySkillType } from './task-skill-groups.js';
+import {
+    TASK_SKILL_TYPES,
+    getActionSkillType,
+    countActionsBySkillType,
+    getTaskTypeLabel,
+} from './task-skill-groups.js';
 
 const STORAGE_KEY_PREFIX = 'taskProtectedHrids';
 const SKILL_STORAGE_KEY_PREFIX = 'taskProtectedSkillTypes';
@@ -716,7 +721,7 @@ class TaskRerollProtection {
                     checkmark = isProtected ? '✓' : viaSkill ? '🔒' : '';
                     checkColor = isProtected || viaSkill ? '#4caf50' : '#444';
                     nameColor = isProtected || viaSkill ? '#e0e0e0' : '#aaa';
-                    typeLabel = item.type.charAt(0).toUpperCase() + item.type.slice(1);
+                    typeLabel = getTaskTypeLabel(item.type);
                 }
 
                 const borderColor = item.isZone ? '#2a2a4e' : '#1a1a2e';

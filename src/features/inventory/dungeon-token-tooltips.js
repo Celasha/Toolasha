@@ -7,6 +7,7 @@
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
+import { t } from '../../core/i18n.js';
 import dom from '../../utils/dom.js';
 import { formatKMB } from '../../utils/formatters.js';
 import { getItemPrices } from '../../utils/market-data.js';
@@ -155,7 +156,13 @@ class DungeonTokenTooltips {
         const shopItems = this._getDungeonShopItems(tokenHrid);
         if (!shopItems || shopItems.length === 0) return;
 
-        this._injectShopTable(tooltipElement, shopItems, 'Token Shop Value:', 'Gold/Token', isCollectionTooltip);
+        this._injectShopTable(
+            tooltipElement,
+            shopItems,
+            t('dungeonTokenTooltips.tokenShopValueLabel'),
+            t('dungeonTokenTooltips.goldPerTokenLabel'),
+            isCollectionTooltip
+        );
         dom.fixTooltipOverflow(tooltipElement);
     }
 
@@ -167,7 +174,13 @@ class DungeonTokenTooltips {
         const shopItems = this._getTaskShopItems();
         if (!shopItems || shopItems.length === 0) return;
 
-        this._injectShopTable(tooltipElement, shopItems, 'Task Shop Value:', 'Gold/Token', isCollectionTooltip);
+        this._injectShopTable(
+            tooltipElement,
+            shopItems,
+            t('dungeonTokenTooltips.taskShopValueLabel'),
+            t('dungeonTokenTooltips.goldPerTokenLabel'),
+            isCollectionTooltip
+        );
         dom.fixTooltipOverflow(tooltipElement);
     }
 
@@ -178,7 +191,13 @@ class DungeonTokenTooltips {
         const shopItems = this._getLabyrinthShopItems();
         if (!shopItems || shopItems.length === 0) return;
 
-        this._injectShopTable(tooltipElement, shopItems, 'Labyrinth Shop Value:', 'Gold/Token', isCollectionTooltip);
+        this._injectShopTable(
+            tooltipElement,
+            shopItems,
+            t('dungeonTokenTooltips.labyrinthShopValueLabel'),
+            t('dungeonTokenTooltips.goldPerTokenLabel'),
+            isCollectionTooltip
+        );
         dom.fixTooltipOverflow(tooltipElement);
     }
 
@@ -197,8 +216,11 @@ class DungeonTokenTooltips {
 
         this._injectSimpleValue(
             tooltipElement,
-            `Value: ${formatKMB(sealValue)} gold`,
-            `= ${SEAL_TOKEN_COST} Labyrinth Tokens × ${formatKMB(Math.floor(bestGoldPerToken))} gold/token`,
+            t('dungeonTokenTooltips.valueGoldTemplate', { value: formatKMB(sealValue) }),
+            t('dungeonTokenTooltips.sealValueDetail', {
+                cost: SEAL_TOKEN_COST,
+                goldPerToken: formatKMB(Math.floor(bestGoldPerToken)),
+            }),
             isCollectionTooltip
         );
         dom.fixTooltipOverflow(tooltipElement);
@@ -213,7 +235,13 @@ class DungeonTokenTooltips {
         const shopItems = this._getGuildTokenShopItems();
         if (!shopItems || shopItems.length === 0) return;
 
-        this._injectShopTable(tooltipElement, shopItems, 'Guild Credit Value:', 'Gold/Token', isCollectionTooltip);
+        this._injectShopTable(
+            tooltipElement,
+            shopItems,
+            t('dungeonTokenTooltips.guildCreditValueLabel'),
+            t('dungeonTokenTooltips.goldPerTokenLabel'),
+            isCollectionTooltip
+        );
         dom.fixTooltipOverflow(tooltipElement);
     }
 
@@ -229,8 +257,8 @@ class DungeonTokenTooltips {
 
         this._injectSimpleValue(
             tooltipElement,
-            `Value: ${formatKMB(cowbellValue)} gold`,
-            `= Bag of 10 Cowbells (${formatKMB(bagPrice)}) ÷ 10`,
+            t('dungeonTokenTooltips.valueGoldTemplate', { value: formatKMB(cowbellValue) }),
+            t('dungeonTokenTooltips.cowbellValueDetail', { bagPrice: formatKMB(bagPrice) }),
             isCollectionTooltip
         );
         dom.fixTooltipOverflow(tooltipElement);
@@ -285,7 +313,7 @@ class DungeonTokenTooltips {
                 if (!askPrice || askPrice <= 0) return null;
 
                 return {
-                    name: itemDetails?.name || 'Unknown Item',
+                    name: itemDetails?.name || t('enhancementUi.unknownItemFallback'),
                     cost: tokenCost,
                     askPrice,
                     goldPerToken: askPrice / tokenCost,
@@ -334,7 +362,7 @@ class DungeonTokenTooltips {
                 if (itemValue <= 0) return null;
 
                 return {
-                    name: itemDetails?.name || 'Unknown Item',
+                    name: itemDetails?.name || t('enhancementUi.unknownItemFallback'),
                     cost: tokenCost,
                     askPrice: itemValue,
                     goldPerToken: itemValue / tokenCost,
@@ -371,7 +399,7 @@ class DungeonTokenTooltips {
                 const totalValue = askPrice * outputCount;
 
                 return {
-                    name: itemDetails?.name || 'Unknown Item',
+                    name: itemDetails?.name || t('enhancementUi.unknownItemFallback'),
                     cost: tokenCost,
                     askPrice: totalValue,
                     goldPerToken: totalValue / tokenCost,
@@ -423,9 +451,9 @@ class DungeonTokenTooltips {
         let html = `<div style="margin-top: 8px;"><strong>${title}</strong></div>`;
         html += '<table style="width: 100%; margin-top: 4px; font-size: 12px;">';
         html += '<tr style="border-bottom: 1px solid #444;">';
-        html += '<th style="text-align: left; padding: 2px 4px;">Item</th>';
-        html += '<th style="text-align: right; padding: 2px 4px;">Cost</th>';
-        html += '<th style="text-align: right; padding: 2px 4px;">Value</th>';
+        html += `<th style="text-align: left; padding: 2px 4px;">${t('dungeonTokenTooltips.itemColumnHeader')}</th>`;
+        html += `<th style="text-align: right; padding: 2px 4px;">${t('dungeonTokenTooltips.costColumnHeader')}</th>`;
+        html += `<th style="text-align: right; padding: 2px 4px;">${t('dungeonTokenTooltips.valueColumnHeader')}</th>`;
         html += `<th style="text-align: right; padding: 2px 4px;">${efficiencyLabel}</th>`;
         html += '</tr>';
 
