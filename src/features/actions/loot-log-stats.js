@@ -10,11 +10,11 @@ import domObserver from '../../core/dom-observer.js';
 import webSocketHook from '../../core/websocket.js';
 import dataManager from '../../core/data-manager.js';
 import { getItemPrices } from '../../utils/market-data.js';
-import { formatKMB, numberFormatter, formatDateTime } from '../../utils/formatters.js';
+import { formatLargeNumber, numberFormatter, formatDateTime } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 import lootLogHistory from './loot-log-history.js';
-import { mergeCurrentAndHistoricalEntries, aggregatePivotRows } from './loot-log-analytics.js';
+import { mergeCurrentAndHistoricalEntries, aggregatePivotRows, EXCLUDED_XP_SKILL_HRID } from './loot-log-analytics.js';
 
 class LootLogStats {
     constructor() {
@@ -147,6 +147,42 @@ class LootLogStats {
 
         // Calculate and inject average time and daily output
         this.injectTimeAndDailyOutput(thirdDiv, logData);
+
+        // Reformat the game's own per-skill XP and per-item drop count numbers to match the
+        // user's number-format setting (they otherwise always render as raw unabbreviated ints)
+        this.rewriteNativeLootNumbers(lootElem);
+    }
+
+    /**
+     * Reformat the native per-skill XP figures and per-item drop counts within one loot log row
+     * using the user's number-format setting. These are the game's own React-rendered text nodes,
+     * not Toolasha's - unlike the Total Value/Daily Output lines above, there's no formatter call
+     * to redirect, so each target text node is rewritten directly instead.
+     * @param {HTMLElement} lootElem
+     */
+    rewriteNativeLootNumbers(lootElem) {
+        lootElem
+            .querySelectorAll('.LootLogPanel_skillExperience__f-MrV')
+            .forEach((el) => this.rewriteNativeNumberText(el));
+        lootElem.querySelectorAll('.Item_count__1HVvv').forEach((el) => this.rewriteNativeNumberText(el));
+    }
+
+    /**
+     * Rewrite a native element's raw-number text node in place using formatLargeNumber. The real
+     * raw value is cached in a data attribute on first pass (this method only ever runs once per
+     * element, since callers are gated by `processedLogs`), so there is no risk of re-parsing an
+     * already-abbreviated string on a later call.
+     * @param {HTMLElement} el - Element whose only text-node child is the raw number
+     */
+    rewriteNativeNumberText(el) {
+        if (!el) return;
+        const textNode = Array.from(el.childNodes).find((n) => n.nodeType === Node.TEXT_NODE);
+        if (!textNode) return;
+
+        const parsed = Number(textNode.nodeValue.trim().replace(/,/g, ''));
+        if (!Number.isFinite(parsed)) return;
+
+        textNode.nodeValue = formatLargeNumber(parsed, 1);
     }
 
     /**
@@ -291,11 +327,12 @@ class LootLogStats {
 
         // Calculate total value
         const { askTotal, bidTotal } = this.calculateTotalValue(logData.drops);
+        const totalXp = this.calculateTotalXp(logData.xpGains);
 
         // Create wrapper div
         const wrapper = document.createElement('div');
         wrapper.className = 'mwi-loot-log-value';
-        wrapper.style.cssText = 'float: right; margin-left: 8px;';
+        wrapper.style.cssText = 'float: right; margin-left: 8px; text-align: right;';
 
         // Create header (clickable total value line)
         const header = document.createElement('span');
@@ -304,11 +341,15 @@ class LootLogStats {
         if (askTotal === 0 && bidTotal === 0) {
             header.textContent = t('lootLogStats.totalValueEmpty');
             wrapper.appendChild(header);
+            this.appendTotalXpLine(wrapper, totalXp);
             secondDiv.appendChild(wrapper);
             return;
         }
 
-        header.textContent = t('lootLogStats.totalValueHeader', { ask: formatKMB(askTotal), bid: formatKMB(bidTotal) });
+        header.textContent = t('lootLogStats.totalValueHeader', {
+            ask: formatLargeNumber(askTotal, 1),
+            bid: formatLargeNumber(bidTotal, 1),
+        });
         header.style.cursor = 'pointer';
         wrapper.appendChild(header);
 
@@ -326,7 +367,37 @@ class LootLogStats {
             header.textContent = isOpen ? text.replace('▼', '▶') : text.replace('▶', '▼');
         });
 
+        this.appendTotalXpLine(wrapper, totalXp);
         secondDiv.appendChild(wrapper);
+    }
+
+    /**
+     * Sum an entry's per-skill XP gains, excluding the total_level meta-skill (matching the
+     * Analytics pivot table's convention).
+     * @param {Object|undefined} xpGains - { [skillHrid]: amount, ... }
+     * @returns {number}
+     */
+    calculateTotalXp(xpGains) {
+        if (!xpGains) return 0;
+        let total = 0;
+        for (const [skillHrid, amount] of Object.entries(xpGains)) {
+            if (skillHrid === EXCLUDED_XP_SKILL_HRID) continue;
+            total += amount;
+        }
+        return total;
+    }
+
+    /**
+     * Append a "Total XP: N" line below the Total Value header, if this entry earned any.
+     * @param {HTMLElement} wrapper - The .mwi-loot-log-value wrapper
+     * @param {number} totalXp
+     */
+    appendTotalXpLine(wrapper, totalXp) {
+        if (!totalXp) return;
+        const xpLine = document.createElement('div');
+        xpLine.style.cssText = `color: ${config.COLOR_INFO}; font-weight: bold;`;
+        xpLine.textContent = t('lootLogStats.totalXpLine', { xp: formatLargeNumber(totalXp, 1) });
+        wrapper.appendChild(xpLine);
     }
 
     /**
@@ -426,7 +497,7 @@ class LootLogStats {
 
             // Quantity
             const qtySpan = document.createElement('span');
-            qtySpan.textContent = `×${numberFormatter(item.count)}`;
+            qtySpan.textContent = `×${formatLargeNumber(item.count, 1)}`;
             qtySpan.style.cssText = `color: #aaa; flex-shrink: 0;`;
             row.appendChild(qtySpan);
 
@@ -440,7 +511,7 @@ class LootLogStats {
             totalSpan.style.cssText = `color: ${config.COLOR_GOLD}; flex-shrink: 0; text-align: right;`;
 
             if (item.askTotal > 0 || item.bidTotal > 0) {
-                totalSpan.textContent = `${formatKMB(item.askTotal)}/${formatKMB(item.bidTotal)}`;
+                totalSpan.textContent = `${formatLargeNumber(item.askTotal, 1)}/${formatLargeNumber(item.bidTotal, 1)}`;
             } else {
                 totalSpan.textContent = '—';
             }
@@ -536,8 +607,8 @@ class LootLogStats {
             dayValueSpan.textContent = t('lootLogStats.dailyOutputEmpty');
         } else {
             dayValueSpan.textContent = t('lootLogStats.dailyOutputValue', {
-                ask: formatKMB(dayValueAsk),
-                bid: formatKMB(dayValueBid),
+                ask: formatLargeNumber(dayValueAsk, 1),
+                bid: formatLargeNumber(dayValueBid, 1),
             });
         }
 
@@ -768,7 +839,7 @@ class LootLogStats {
 
                 const countEl = document.createElement('span');
                 countEl.style.cssText = 'font-size: 0.8em; color: #ccc; margin-top: 2px;';
-                countEl.textContent = numberFormatter(count);
+                countEl.textContent = formatLargeNumber(count, 1);
                 dropEl.appendChild(countEl);
 
                 dropsDiv.appendChild(dropEl);
@@ -1186,10 +1257,10 @@ class LootLogStats {
                 if (skillIcon) chip.appendChild(skillIcon);
                 const xpText = document.createElement('span');
                 xpText.style.color = config.COLOR_INFO;
-                xpText.textContent = formatKMB(xp.amount);
+                xpText.textContent = formatLargeNumber(xp.amount, 1);
                 const perHourText = document.createElement('span');
                 perHourText.style.cssText = 'color: rgba(255,255,255,0.45); font-size: 0.85em;';
-                perHourText.textContent = t('lootLogStats.perHourParen', { value: formatKMB(xp.perHour) });
+                perHourText.textContent = t('lootLogStats.perHourParen', { value: formatLargeNumber(xp.perHour, 1) });
                 chip.append(xpText, perHourText);
                 xpCell.appendChild(chip);
             }
@@ -1208,11 +1279,11 @@ class LootLogStats {
                 totalLabel.textContent = t('lootLogStats.totalColon');
                 const totalXpText = document.createElement('span');
                 totalXpText.style.cssText = `color: ${config.COLOR_INFO}; font-weight: 600;`;
-                totalXpText.textContent = formatKMB(entry.totalXp);
+                totalXpText.textContent = formatLargeNumber(entry.totalXp, 1);
                 const totalPerHourText = document.createElement('span');
                 totalPerHourText.style.cssText = 'color: rgba(255,255,255,0.45); font-size: 0.85em;';
                 totalPerHourText.textContent = t('lootLogStats.perHourParen', {
-                    value: formatKMB(entry.totalXpPerHour),
+                    value: formatLargeNumber(entry.totalXpPerHour, 1),
                 });
                 totalChip.append(totalLabel, totalXpText, totalPerHourText);
                 xpCell.appendChild(totalChip);
@@ -1223,7 +1294,7 @@ class LootLogStats {
         const valueCell = this.buildAnalyticsCell(
             entry.askTotal === 0 && entry.bidTotal === 0
                 ? '—'
-                : `${formatKMB(entry.askTotal)}/${formatKMB(entry.bidTotal)}`
+                : `${formatLargeNumber(entry.askTotal, 1)}/${formatLargeNumber(entry.bidTotal, 1)}`
         );
         valueCell.style.color = config.COLOR_GOLD;
         tr.appendChild(valueCell);
@@ -1231,7 +1302,7 @@ class LootLogStats {
         const goldPerHourCell = this.buildAnalyticsCell(
             entry.goldPerHourAsk === 0 && entry.goldPerHourBid === 0
                 ? '—'
-                : `${formatKMB(entry.goldPerHourAsk)}/${formatKMB(entry.goldPerHourBid)}`
+                : `${formatLargeNumber(entry.goldPerHourAsk, 1)}/${formatLargeNumber(entry.goldPerHourBid, 1)}`
         );
         goldPerHourCell.style.color = config.COLOR_GOLD;
         tr.appendChild(goldPerHourCell);
@@ -1299,7 +1370,10 @@ class LootLogStats {
 
         const right = document.createElement('span');
         right.style.color = config.COLOR_GOLD;
-        right.textContent = t('lootLogStats.footerTotalValue', { ask: formatKMB(totalAsk), bid: formatKMB(totalBid) });
+        right.textContent = t('lootLogStats.footerTotalValue', {
+            ask: formatLargeNumber(totalAsk, 1),
+            bid: formatLargeNumber(totalBid, 1),
+        });
 
         footer.append(left, right);
         return footer;

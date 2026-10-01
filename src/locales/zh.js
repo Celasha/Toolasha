@@ -1141,6 +1141,7 @@ export default {
         durationSecondsUnit: (p) => `${p.value}秒`,
         totalValueEmpty: '总价值：—',
         totalValueHeader: (p) => `▶ 总价值：${p.ask}/${p.bid}`,
+        totalXpLine: (p) => `总经验：${p.xp}`,
         coinsLabel: '金币',
         dailyOutputEmpty: '每日产出：—',
         dailyOutputValue: (p) => `每日产出：${p.ask}/${p.bid}`,

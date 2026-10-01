@@ -1166,6 +1166,7 @@ export default {
         durationSecondsUnit: (p) => `${p.value}s`,
         totalValueEmpty: 'Total Value: —',
         totalValueHeader: (p) => `▶ Total Value: ${p.ask}/${p.bid}`,
+        totalXpLine: (p) => `Total XP: ${p.xp}`,
         coinsLabel: 'Coins',
         dailyOutputEmpty: 'Daily Output: —',
         dailyOutputValue: (p) => `Daily Output: ${p.ask}/${p.bid}`,
