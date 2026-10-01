@@ -1738,13 +1738,18 @@ class LabyrinthClearRate {
         if (result.error) {
             badge.style.backgroundColor = '';
             badge.style.color = '#d9534f';
+            badge.style.textShadow = '';
             badge.textContent = t('labyrinthClearRate.loadoutUnavailableBadgeText');
             badge.title = result.error;
             return;
         }
         if (isGridBadge) {
+            // Every tier's fill is bright/mid-tone enough that near-black text beats white here -
+            // measured contrast against white runs ~2.2-3.2:1 (fails WCAG's 4.5:1 minimum) on the
+            // green/yellow-green/gold/orange tiers, versus ~5-9.6:1 with dark text on all 5 tiers.
             badge.style.backgroundColor = this.getGridBadgeColor(result.clearChance);
-            badge.style.color = '#fff';
+            badge.style.color = '#000';
+            badge.style.textShadow = 'none';
         } else {
             badge.style.color = this.getBadgeColor(result.clearChance);
         }
