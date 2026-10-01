@@ -253,6 +253,13 @@ class Config {
                     'Real-time dungeon progress tracking in top bar with wave times, statistics, and party chat completion messages',
                 settingKey: 'dungeonTracker',
             },
+            dungeonTrackerUI: {
+                enabled: true,
+                name: 'Show Dungeon Tracker UI panel',
+                category: 'Combat',
+                description: 'Displays dungeon progress panel with wave counter, run history, and statistics',
+                settingKey: 'dungeonTrackerUI',
+            },
             combatStats: {
                 enabled: true,
                 name: 'Combat Statistics',
