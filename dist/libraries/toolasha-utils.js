@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 3.0.0
+ * Version: 3.1.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1941,9 +1941,9 @@
      */
 
     /**
-     * Marketplace tax rate (5%)
+     * Marketplace tax rate (4%)
      */
-    const MARKET_TAX = 0.05;
+    const MARKET_TAX = 0.04;
 
     /**
      * Bag of 10 Cowbells item HRID (subject to 18% market tax)
@@ -3340,11 +3340,11 @@
     /**
      * Calculate price after marketplace tax
      * @param {number} price - Price before tax
-     * @param {number} [taxRate=MARKET_TAX] - Tax rate (e.g., 0.05 for 5%)
+     * @param {number} [taxRate=MARKET_TAX] - Tax rate (e.g., 0.04 for 4%)
      * @returns {number} Price after tax deduction
      *
      * @example
-     * calculatePriceAfterTax(100) // Returns 95
+     * calculatePriceAfterTax(100) // Returns 96
      */
     function calculatePriceAfterTax(price, taxRate = MARKET_TAX) {
         return price * (1 - taxRate);

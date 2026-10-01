@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 3.0.0
+ * Version: 3.1.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4976,8 +4976,9 @@
 
         /**
          * Calculate stats for a set of runs. Failed/canceled attempts cost real time but aren't
-         * clears, so the clear-only stats (avg/fastest/slowest) stay unaffected by them while
-         * avgTimePerAttempt/failCount surface the real time cost.
+         * clears, so the clear-only stats (avg/fastest/slowest) stay unaffected by them. A cancel is
+         * a voluntary withdrawal, not a failure, so failCount/totalAttempts exclude it entirely while
+         * avgTimePerAttempt still folds in its time cost.
          * @param {Array} allAttempts - Array of runs (successes + fails/cancels)
          * @returns {Object} Stats object
          */
@@ -4987,7 +4988,8 @@
             // rather than let it skew avg/fastest/slowest.
             const reliableAttempts = (allAttempts || []).filter((r) => !r.hibernationDetected || r.validated);
             const runs = reliableAttempts.filter((r) => !r.result || r.result === 'success');
-            const failedAttempts = reliableAttempts.filter((r) => r.result === 'fail' || r.result === 'cancel');
+            const failedOrCanceledAttempts = reliableAttempts.filter((r) => r.result === 'fail' || r.result === 'cancel');
+            const failedAttempts = reliableAttempts.filter((r) => r.result === 'fail');
 
             if (runs.length === 0) {
                 return {
@@ -5003,14 +5005,14 @@
 
             const durations = runs.map((r) => r.duration);
             const total = durations.reduce((sum, d) => sum + d, 0);
-            const failedTotal = failedAttempts.reduce((sum, r) => sum + (r.duration || 0), 0);
+            const failedOrCanceledTotal = failedOrCanceledAttempts.reduce((sum, r) => sum + (r.duration || 0), 0);
 
             return {
                 totalRuns: runs.length,
                 avgTime: Math.floor(total / runs.length),
                 fastestTime: Math.min(...durations),
                 slowestTime: Math.max(...durations),
-                avgTimePerAttempt: Math.floor((total + failedTotal) / runs.length),
+                avgTimePerAttempt: Math.floor((total + failedOrCanceledTotal) / runs.length),
                 failCount: failedAttempts.length,
                 totalAttempts: runs.length + failedAttempts.length,
             };
@@ -6317,9 +6319,12 @@
             allAttempts = allAttempts.filter((r) => !r.hibernationDetected || r.validated);
 
             // Failed/canceled attempts cost real time but aren't clears - keep the existing
-            // clear-only stats (avg/fastest/slowest/last) unaffected by them.
+            // clear-only stats (avg/fastest/slowest/last) unaffected by them. A cancel is a
+            // voluntary withdrawal, not a failure, so it's excluded from failCount/failRate
+            // entirely while still counting toward the time cost in avgTimePerAttempt.
             const runHistory = allAttempts.filter((r) => !r.result || r.result === 'success');
-            const failedAttempts = allAttempts.filter((r) => r.result === 'fail' || r.result === 'cancel');
+            const failedOrCanceledAttempts = allAttempts.filter((r) => r.result === 'fail' || r.result === 'cancel');
+            const failedAttempts = allAttempts.filter((r) => r.result === 'fail');
 
             // Calculate stats from filtered runs
             if (runHistory.length > 0) {
@@ -6328,17 +6333,20 @@
 
                 const durations = runHistory.map((r) => r.duration || r.totalTime || 0);
                 const total = durations.reduce((sum, d) => sum + d, 0);
-                const failedTotal = failedAttempts.reduce((sum, r) => sum + (r.duration || r.totalTime || 0), 0);
-                const totalAttempts = runHistory.length + failedAttempts.length;
+                const failedOrCanceledTotal = failedOrCanceledAttempts.reduce(
+                    (sum, r) => sum + (r.duration || r.totalTime || 0),
+                    0
+                );
+                const totalOutcomes = runHistory.length + failedAttempts.length;
 
                 stats = {
                     totalRuns: runHistory.length,
                     avgTime: Math.floor(total / runHistory.length),
                     fastestTime: Math.min(...durations),
                     slowestTime: Math.max(...durations),
-                    avgTimePerAttempt: Math.floor((total + failedTotal) / runHistory.length),
+                    avgTimePerAttempt: Math.floor((total + failedOrCanceledTotal) / runHistory.length),
                     failCount: failedAttempts.length,
-                    failRate: totalAttempts > 0 ? failedAttempts.length / totalAttempts : 0,
+                    failRate: totalOutcomes > 0 ? failedAttempts.length / totalOutcomes : 0,
                 };
 
                 lastRunTime = durations[0]; // First run after sorting (most recent)
@@ -9527,6 +9535,10 @@
     const APPLY_SKIP_BUTTON_ID = 'mwi-apply-skip-btn';
     const LIVE_PROGRESS_CLASS = 'mwi-labyrinth-live-progress';
     const LIVE_PROGRESS_STALE_MS = 5000;
+    // Failsafe only - the normal release is the setting_updated confirmation. Generous enough to
+    // absorb ordinary WebSocket latency, short enough that a dropped/never-arriving confirmation
+    // (server-side rejection, missed message, etc.) doesn't leave Apply Skip stuck indefinitely.
+    const APPLY_SKIP_TIMEOUT_MS = 10000;
 
     // The room grid (the maze the player actually navigates) renders each tile at ~2.875rem, so the
     // badge has to be a tiny absolutely-positioned corner overlay rather than the inline text used
@@ -9541,10 +9553,11 @@
     bottom: 1px;
     z-index: 5;
     max-width: calc(100% - 2px);
-    padding: 0 2px;
-    border-radius: 2px;
+    padding: 0 3px;
+    border-radius: 3px;
     background: rgba(0, 0, 0, 0.6);
     color: #fff;
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.55);
     font-size: 8px;
     line-height: 1.2;
     text-align: right;
@@ -9574,6 +9587,7 @@
             // confirmation - doubles as the one-save-in-flight reentrancy guard (TLA-048).
             this._pendingSelfAppliedKey = null;
             this._pendingSelfAppliedValue = null;
+            this._pendingSelfAppliedTimeout = null;
             this.liveProgressHandler = null;
             this.liveProgressTimeout = null;
             // combat-sim-runner.js keeps one module-level worker slot and cancels any in-flight run
@@ -9603,8 +9617,7 @@
             this.settingHandler = (data) => {
                 const selfKey = this._pendingSelfAppliedKey;
                 const selfValue = this._pendingSelfAppliedValue;
-                this._pendingSelfAppliedKey = null;
-                this._pendingSelfAppliedValue = null;
+                this._releasePendingApply();
 
                 // Our own Apply Skip save also fires setting_updated -- only skip the invalidation
                 // when this event actually confirms that exact save (matched by key AND value), so
@@ -9686,8 +9699,7 @@
             this._simChain = Promise.resolve();
             this.recommendations.clear();
             this.recommendRunning = false;
-            this._pendingSelfAppliedKey = null;
-            this._pendingSelfAppliedValue = null;
+            this._releasePendingApply();
             this.isInitialized = false;
         }
 
@@ -10708,6 +10720,19 @@
         }
 
         /**
+         * Release the one-save-in-flight guard (TLA-048) and cancel its timeout failsafe, if any.
+         * Called on a real `setting_updated` confirmation, on a timeout (TLA-061), and on disable().
+         */
+        _releasePendingApply() {
+            if (this._pendingSelfAppliedTimeout) {
+                clearTimeout(this._pendingSelfAppliedTimeout);
+                this._pendingSelfAppliedTimeout = null;
+            }
+            this._pendingSelfAppliedKey = null;
+            this._pendingSelfAppliedValue = null;
+        }
+
+        /**
          * Apply the next mismatched room's recommended skip threshold: forwards a click to that
          * room's real Edit button, writes the recommended value into the game's own input, then
          * forwards a click to the real Save button. Exactly one Save click, one server request, per
@@ -10720,6 +10745,10 @@
          * accepted here until `settingHandler` clears it on the next `setting_updated` event (self-match
          * or not). A rapid second call while it is still non-null is ignored outright -- never queued,
          * never a second native Edit/Save -- so an accepted save can never be silently overwritten.
+         *
+         * If `setting_updated` never arrives at all (dropped message, server-side rejection, etc.),
+         * `APPLY_SKIP_TIMEOUT_MS` releases the guard anyway so the button can't get stuck on
+         * "(saving...)" forever (TLA-061) -- the user just sees it re-enable and can retry.
          */
         applyNextRecommendedSkip() {
             if (this._pendingSelfAppliedKey !== null) {
@@ -10764,6 +10793,11 @@
 
             this._pendingSelfAppliedKey = this._getSkipSettingKey(roomHrid, isSkill);
             this._pendingSelfAppliedValue = recommendedThreshold;
+            this._pendingSelfAppliedTimeout = setTimeout(() => {
+                console.warn('[Toolasha] Apply Skip: no setting_updated confirmation arrived in time; releasing guard.');
+                this._releasePendingApply();
+                this._updateApplyButtonState();
+            }, APPLY_SKIP_TIMEOUT_MS);
             this._updateApplyButtonState();
             saveButton.click();
         }
@@ -11208,13 +11242,25 @@
         }
 
         updateBadge(badge, result, roomLevel) {
+            const isGridBadge = badge.classList.contains(GRID_BADGE_CLASS);
             if (result.error) {
+                badge.style.backgroundColor = '';
                 badge.style.color = '#d9534f';
+                badge.style.textShadow = '';
                 badge.textContent = i18n_js.t('labyrinthClearRate.loadoutUnavailableBadgeText');
                 badge.title = result.error;
                 return;
             }
-            badge.style.color = this.getBadgeColor(result.clearChance);
+            if (isGridBadge) {
+                // Every tier's fill is bright/mid-tone enough that near-black text beats white here -
+                // measured contrast against white runs ~2.2-3.2:1 (fails WCAG's 4.5:1 minimum) on the
+                // green/yellow-green/gold/orange tiers, versus ~5-9.6:1 with dark text on all 5 tiers.
+                badge.style.backgroundColor = this.getGridBadgeColor(result.clearChance);
+                badge.style.color = '#000';
+                badge.style.textShadow = 'none';
+            } else {
+                badge.style.color = this.getBadgeColor(result.clearChance);
+            }
             const pct = Math.round(result.clearChance * 100);
             const timeText = this.formatTime(result.expectedSeconds);
             // Stack percent and time on two lines instead of one "NN% ~M:SS" line -- the grid
@@ -11342,6 +11388,17 @@
             if (clearChance >= 0.95) return '#00c896';
             if (clearChance >= 0.7) return '#f0ad4e';
             return '#d9534f';
+        }
+
+        // Filled-pill background for the room grid overlay - a graduated 5-step traffic-light scale
+        // reads faster at a glance on a ~46px tile than tinting small text against a flat dark
+        // background (the 3-step getBadgeColor() scheme used for the inline Automation-tab rows).
+        getGridBadgeColor(clearChance) {
+            if (clearChance >= 0.95) return '#1fbf60';
+            if (clearChance >= 0.8) return '#77b82a';
+            if (clearChance >= 0.6) return '#d2ac19';
+            if (clearChance >= 0.4) return '#d27a1f';
+            return '#d84b4b';
         }
 
         /**
