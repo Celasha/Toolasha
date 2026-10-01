@@ -24,6 +24,7 @@ const GRID_BADGE_CLASS = 'mwi-labyrinth-grid-clear';
 const GRID_BADGE_STYLE_ID = 'mwi-labyrinth-grid-clear-style';
 const RECOMMEND_CLASS = 'mwi-labyrinth-recommend';
 const RECOMMEND_CONTROLS_CLASS = 'mwi-labyrinth-recommend-controls';
+const AUTOMATION_ROW_STYLE_ID = 'mwi-labyrinth-automation-row-style';
 const APPLY_SKIP_BUTTON_ID = 'mwi-apply-skip-btn';
 const LIVE_PROGRESS_CLASS = 'mwi-labyrinth-live-progress';
 const LIVE_PROGRESS_STALE_MS = 5000;
@@ -59,6 +60,27 @@ const GRID_BADGE_CSS = `
     text-overflow: ellipsis;
     cursor: default;
     user-select: none;
+}
+`;
+
+// Pins the clear-rate/recommendation badges to a deterministic visual position within the
+// Automation tab's per-room skip-threshold cell, independent of DOM insertion order. Without an
+// explicit `order`, these badges' position relative to the native threshold/Edit content is
+// whatever order React last re-inserted things in (it can reorder its own children across an
+// Edit/Save cycle), which visibly reshuffles the row. Native content is left unset (defaults to
+// `order: 0`), so it always sorts first regardless of mutation timing. Declared here (not only in
+// labyrinth-best-level.js, which adds the same `display: flex` + `.mwi-labyrinth-best { order: 99 }`
+// pair) so this ordering holds even when that other feature is disabled.
+const AUTOMATION_ROW_CSS = `
+[class*="LabyrinthPanel_skipThreshold"] {
+    display: flex;
+    align-items: center;
+}
+.${BADGE_CLASS} {
+    order: 1;
+}
+.${RECOMMEND_CLASS} {
+    order: 2;
 }
 `;
 
@@ -103,6 +125,7 @@ class LabyrinthClearRate {
         }
 
         addStyles(GRID_BADGE_CSS, GRID_BADGE_STYLE_ID);
+        addStyles(AUTOMATION_ROW_CSS, AUTOMATION_ROW_STYLE_ID);
 
         this.wsHandler = (data) => this.onLabyrinthUpdated(data);
         webSocketHook.on('labyrinth_updated', this.wsHandler);
@@ -174,6 +197,7 @@ class LabyrinthClearRate {
         this.clearLiveProgress();
 
         removeStyles(GRID_BADGE_STYLE_ID);
+        removeStyles(AUTOMATION_ROW_STYLE_ID);
 
         this.unregisterHandlers.forEach((fn) => fn());
         this.unregisterHandlers = [];
@@ -1276,7 +1300,12 @@ class LabyrinthClearRate {
             console.warn('[Toolasha] Apply Skip: threshold input not found after clicking Edit', roomHrid);
             return;
         }
-        setReactInputValue(input, recommendedThreshold, { focus: false });
+        // Mirror a real user's edit (type, then tab/click away) rather than only the 'input'
+        // event: this input's Save handler may read a value only committed on blur/change, so an
+        // 'input'-only dispatch can leave Save submitting the previous, unchanged value - a no-op
+        // that never produces a setting_updated confirmation (and so always hits the timeout below).
+        setReactInputValue(input, recommendedThreshold, { focus: true, dispatchChange: true });
+        input.blur();
 
         const saveButton = findButton('Save');
         if (!saveButton) {
