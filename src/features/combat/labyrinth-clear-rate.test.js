@@ -707,6 +707,69 @@ describe('TLA-048: Apply Skip one-save-in-flight reentrancy guard', () => {
         expect(feature._pendingSelfAppliedKey).toBeNull();
         expect(feature._pendingSelfAppliedValue).toBeNull();
     });
+
+    test('TLA-061: a setting_updated confirmation that never arrives releases the guard via timeout instead of sticking forever', () => {
+        vi.useFakeTimers();
+        try {
+            const feature = new LabyrinthClearRate();
+            buildAutomationTable([
+                { roomHrid: '/skills/milking', isSkill: true, settingKey: 'labyrinthSkipMilking', currentValue: 5 },
+                { roomHrid: '/skills/foraging', isSkill: true, settingKey: 'labyrinthSkipForaging', currentValue: 20 },
+            ]);
+            feature.recommendations.set('/skills/milking', { threshold: 15 });
+            feature.recommendations.set('/skills/foraging', { threshold: 30 });
+            feature.injectRecommendControls();
+
+            // The mock Save button writes the setting locally (like the real game eventually
+            // does), but - as in a dropped/rejected confirmation - no setting_updated event fires.
+            feature.applyNextRecommendedSkip();
+            const button = document.getElementById('mwi-apply-skip-btn');
+            expect(feature._pendingSelfAppliedKey).not.toBeNull();
+            expect(button.textContent).toBe('Apply Skip (saving...)');
+            expect(button.disabled).toBe(true);
+
+            vi.advanceTimersByTime(10000);
+
+            expect(feature._pendingSelfAppliedKey).toBeNull();
+            expect(feature._pendingSelfAppliedValue).toBeNull();
+            // Still one real mismatch left (foraging) - button re-enables to reflect that,
+            // proving the release came from the timeout and not a coincidental zero-remaining count.
+            expect(button.disabled).toBe(false);
+            expect(button.textContent).toBe('Apply Skip (1)');
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    test('TLA-061: a real confirmation cancels its timeout so a stale timer cannot later release a different in-flight save early', () => {
+        vi.useFakeTimers();
+        try {
+            const feature = new LabyrinthClearRate();
+            buildAutomationTable([
+                { roomHrid: '/skills/milking', isSkill: true, settingKey: 'labyrinthSkipMilking', currentValue: 5 },
+                { roomHrid: '/skills/foraging', isSkill: true, settingKey: 'labyrinthSkipForaging', currentValue: 20 },
+            ]);
+            feature.recommendations.set('/skills/milking', { threshold: 15 });
+            feature.recommendations.set('/skills/foraging', { threshold: 30 });
+            feature.initialize();
+
+            feature.applyNextRecommendedSkip(); // starts save #1's 10s timeout at t=0
+            vi.advanceTimersByTime(3000); // t=3000
+            feature.settingHandler({ characterSetting: { ...dataManager.characterData.characterSetting } });
+            expect(feature._pendingSelfAppliedKey).toBeNull(); // save #1 confirmed; its timeout must be cancelled
+
+            feature.applyNextRecommendedSkip(); // starts save #2's 10s timeout at t=3000 (fires at t=13000)
+            expect(feature._pendingSelfAppliedKey).toBe('labyrinthSkipForaging');
+
+            vi.advanceTimersByTime(7000); // t=10000 - save #1's original (leaked, if buggy) deadline
+            expect(feature._pendingSelfAppliedKey).toBe('labyrinthSkipForaging'); // still in flight, not released early
+
+            vi.advanceTimersByTime(3000); // t=13000 - save #2's own deadline
+            expect(feature._pendingSelfAppliedKey).toBeNull();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
 });
 
 describe('settingHandler self-triggered-save exemption', () => {

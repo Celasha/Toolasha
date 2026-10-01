@@ -27,6 +27,10 @@ const RECOMMEND_CONTROLS_CLASS = 'mwi-labyrinth-recommend-controls';
 const APPLY_SKIP_BUTTON_ID = 'mwi-apply-skip-btn';
 const LIVE_PROGRESS_CLASS = 'mwi-labyrinth-live-progress';
 const LIVE_PROGRESS_STALE_MS = 5000;
+// Failsafe only - the normal release is the setting_updated confirmation. Generous enough to
+// absorb ordinary WebSocket latency, short enough that a dropped/never-arriving confirmation
+// (server-side rejection, missed message, etc.) doesn't leave Apply Skip stuck indefinitely.
+const APPLY_SKIP_TIMEOUT_MS = 10000;
 
 // The room grid (the maze the player actually navigates) renders each tile at ~2.875rem, so the
 // badge has to be a tiny absolutely-positioned corner overlay rather than the inline text used
@@ -74,6 +78,7 @@ class LabyrinthClearRate {
         // confirmation - doubles as the one-save-in-flight reentrancy guard (TLA-048).
         this._pendingSelfAppliedKey = null;
         this._pendingSelfAppliedValue = null;
+        this._pendingSelfAppliedTimeout = null;
         this.liveProgressHandler = null;
         this.liveProgressTimeout = null;
         // combat-sim-runner.js keeps one module-level worker slot and cancels any in-flight run
@@ -103,8 +108,7 @@ class LabyrinthClearRate {
         this.settingHandler = (data) => {
             const selfKey = this._pendingSelfAppliedKey;
             const selfValue = this._pendingSelfAppliedValue;
-            this._pendingSelfAppliedKey = null;
-            this._pendingSelfAppliedValue = null;
+            this._releasePendingApply();
 
             // Our own Apply Skip save also fires setting_updated -- only skip the invalidation
             // when this event actually confirms that exact save (matched by key AND value), so
@@ -186,8 +190,7 @@ class LabyrinthClearRate {
         this._simChain = Promise.resolve();
         this.recommendations.clear();
         this.recommendRunning = false;
-        this._pendingSelfAppliedKey = null;
-        this._pendingSelfAppliedValue = null;
+        this._releasePendingApply();
         this.isInitialized = false;
     }
 
@@ -1208,6 +1211,19 @@ class LabyrinthClearRate {
     }
 
     /**
+     * Release the one-save-in-flight guard (TLA-048) and cancel its timeout failsafe, if any.
+     * Called on a real `setting_updated` confirmation, on a timeout (TLA-061), and on disable().
+     */
+    _releasePendingApply() {
+        if (this._pendingSelfAppliedTimeout) {
+            clearTimeout(this._pendingSelfAppliedTimeout);
+            this._pendingSelfAppliedTimeout = null;
+        }
+        this._pendingSelfAppliedKey = null;
+        this._pendingSelfAppliedValue = null;
+    }
+
+    /**
      * Apply the next mismatched room's recommended skip threshold: forwards a click to that
      * room's real Edit button, writes the recommended value into the game's own input, then
      * forwards a click to the real Save button. Exactly one Save click, one server request, per
@@ -1220,6 +1236,10 @@ class LabyrinthClearRate {
      * accepted here until `settingHandler` clears it on the next `setting_updated` event (self-match
      * or not). A rapid second call while it is still non-null is ignored outright -- never queued,
      * never a second native Edit/Save -- so an accepted save can never be silently overwritten.
+     *
+     * If `setting_updated` never arrives at all (dropped message, server-side rejection, etc.),
+     * `APPLY_SKIP_TIMEOUT_MS` releases the guard anyway so the button can't get stuck on
+     * "(saving...)" forever (TLA-061) -- the user just sees it re-enable and can retry.
      */
     applyNextRecommendedSkip() {
         if (this._pendingSelfAppliedKey !== null) {
@@ -1264,6 +1284,11 @@ class LabyrinthClearRate {
 
         this._pendingSelfAppliedKey = this._getSkipSettingKey(roomHrid, isSkill);
         this._pendingSelfAppliedValue = recommendedThreshold;
+        this._pendingSelfAppliedTimeout = setTimeout(() => {
+            console.warn('[Toolasha] Apply Skip: no setting_updated confirmation arrived in time; releasing guard.');
+            this._releasePendingApply();
+            this._updateApplyButtonState();
+        }, APPLY_SKIP_TIMEOUT_MS);
         this._updateApplyButtonState();
         saveButton.click();
     }
