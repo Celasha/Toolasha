@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.2.0
+ * Version: 3.3.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7502,6 +7502,13 @@
             metzSimExportButton: 'Metz Sim Export',
             simCharacterButton: 'Sim Character',
             milkonomyExportButton: 'Milkonomy Export',
+            exportFullPartyButton: 'Export Full Party',
+            partyExportPreviewTitle: 'Export Full Party',
+            partyExportCopyButton: 'Copy Party Export',
+            partyExportYouLabel: 'You',
+            partyExportAgeAgoLabel: (p) => `${p.age} ago`,
+            partyExportMissingLabel: 'Missing (open profile)',
+            partyExportUnknownMemberLabel: 'Unknown',
             noDataStatus: '✗ No Data',
             copiedStatus: '✓ Copied',
             failedStatus: '✗ Failed',
@@ -10060,6 +10067,13 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             metzSimExportButton: 'Metz 模拟器导出',
             simCharacterButton: '模拟角色',
             milkonomyExportButton: 'Milkonomy 导出',
+            exportFullPartyButton: '导出整个队伍',
+            partyExportPreviewTitle: '导出整个队伍',
+            partyExportCopyButton: '复制队伍导出',
+            partyExportYouLabel: '你',
+            partyExportAgeAgoLabel: (p) => `${p.age}前`,
+            partyExportMissingLabel: '缺失（请打开资料）',
+            partyExportUnknownMemberLabel: '未知',
             noDataStatus: '✗ 无数据',
             copiedStatus: '✓ 已复制',
             failedStatus: '✗ 失败',
