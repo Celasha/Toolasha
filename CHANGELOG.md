@@ -2,15 +2,13 @@
 
 ## [3.2.0](https://github.com/Celasha/Toolasha/compare/v3.1.0...v3.2.0) (2026-10-01)
 
-
 ### Features
 
-* add Clear All and Import Native Categories to inventory tab toolbar ([a0c702a](https://github.com/Celasha/Toolasha/commit/a0c702ab1a7d51c137197cea01a10de87d86ad5c))
-
+- add Clear All and Import Native Categories to inventory tab toolbar ([a0c702a](https://github.com/Celasha/Toolasha/commit/a0c702ab1a7d51c137197cea01a10de87d86ad5c))
 
 ### Bug Fixes
 
-* restore white bold text and shadow on labyrinth grid badges ([b052b7c](https://github.com/Celasha/Toolasha/commit/b052b7c6f79d328da4636351a477ea6d088ede18))
+- restore white bold text and shadow on labyrinth grid badges ([b052b7c](https://github.com/Celasha/Toolasha/commit/b052b7c6f79d328da4636351a477ea6d088ede18))
 
 ## [3.1.0](https://github.com/Celasha/Toolasha/compare/v3.0.0...v3.1.0) (2026-10-01)
 
