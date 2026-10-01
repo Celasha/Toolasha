@@ -9,8 +9,13 @@ import dataManager from '../../core/data-manager.js';
 import storage from '../../core/storage.js';
 import webSocketHook from '../../core/websocket.js';
 import { calculateCombatScore } from './score-calculator.js';
-import { numberFormatter } from '../../utils/formatters.js';
-import { constructMetzCharacterExport, applyLoadoutOverrideToMetzCharacter } from '../combat/combat-sim-export-metz.js';
+import { numberFormatter, formatRelativeTime } from '../../utils/formatters.js';
+import {
+    constructMetzCharacterExport,
+    constructMetzTeamExport,
+    applyLoadoutOverrideToMetzCharacter,
+} from '../combat/combat-sim-export-metz.js';
+import { getProfileList } from '../combat/combat-sim-export.js';
 import { constructMilkonomyExport } from '../combat/milkonomy-export.js';
 import { handleViewCardClick, handleViewCardFromSnapshot } from './character-card-button.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
@@ -35,6 +40,7 @@ class CombatScore {
         this.isActive = false;
         this.currentPanel = null;
         this.currentAbilitiesPanel = null;
+        this.currentPartyExportPanel = null;
         this.isInitialized = false;
         this.profileSharedHandler = null; // Store handler reference for cleanup
         this.timerRegistry = createTimerRegistry();
@@ -787,17 +793,30 @@ class CombatScore {
 
                     metzSimLoadoutDropdown.innerHTML = combatSnapshots
                         .map(
-                            (s) =>
-                                `<div class="mwi-metz-sim-loadout-option" data-name="${s.name.replace(/"/g, '&quot;')}" style="
-                                padding: 6px 10px;
-                                cursor: pointer;
-                                font-size: 0.8rem;
+                            (s) => `<div style="
+                                display: flex;
+                                align-items: center;
                                 border-bottom: 1px solid #333;
-                                color: #ddd;
-                                white-space: nowrap;
-                                overflow: hidden;
-                                text-overflow: ellipsis;
-                            ">${s.name}</div>`
+                            ">
+                                <div class="mwi-metz-sim-loadout-option" data-name="${s.name.replace(/"/g, '&quot;')}" style="
+                                    flex: 1;
+                                    min-width: 0;
+                                    padding: 6px 10px;
+                                    cursor: pointer;
+                                    font-size: 0.8rem;
+                                    color: #ddd;
+                                    white-space: nowrap;
+                                    overflow: hidden;
+                                    text-overflow: ellipsis;
+                                ">${s.name}</div>
+                                <div class="mwi-metz-sim-party-export-option" data-name="${s.name.replace(/"/g, '&quot;')}" title="${t('combatScore.exportFullPartyButton')}" style="
+                                    flex-shrink: 0;
+                                    padding: 6px 8px;
+                                    cursor: pointer;
+                                    font-size: 0.8rem;
+                                    color: #ddd;
+                                ">👥</div>
+                            </div>`
                         )
                         .join('');
 
@@ -817,6 +836,20 @@ class CombatScore {
                         opt.addEventListener('click', async () => {
                             metzSimLoadoutDropdown.style.display = 'none';
                             await this.handleMetzSimExportFromSnapshot(opt.dataset.name, metzSimBtn);
+                        });
+                        opt.addEventListener('mouseenter', () => {
+                            opt.style.background = 'rgba(255,255,255,0.1)';
+                        });
+                        opt.addEventListener('mouseleave', () => {
+                            opt.style.background = '';
+                        });
+                    });
+
+                    metzSimLoadoutDropdown.querySelectorAll('.mwi-metz-sim-party-export-option').forEach((opt) => {
+                        opt.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            metzSimLoadoutDropdown.style.display = 'none';
+                            this.showPartyExportPreview(opt.dataset.name, metzSimLoadoutBtn);
                         });
                         opt.addEventListener('mouseenter', () => {
                             opt.style.background = 'rgba(255,255,255,0.1)';
@@ -1182,6 +1215,10 @@ class CombatScore {
                 ) {
                     panel.remove();
                     this.currentPanel = null;
+                    if (this.currentPartyExportPanel) {
+                        this.currentPartyExportPanel.remove();
+                        this.currentPartyExportPanel = null;
+                    }
                     cleanupObserver();
                 }
             },
@@ -1190,6 +1227,47 @@ class CombatScore {
                 subtree: true,
             }
         );
+    }
+
+    /**
+     * Build the applyLoadoutOverrideToMetzCharacter params for a saved loadout snapshot. Shared by
+     * the solo "Metz Sim Export" loadout-dropdown flow and the "Export Full Party" flow, so both
+     * resolve a snapshot's equipment/abilities/triggers/food/drinks identically.
+     * @param {Object} snapshot - A usable loadoutState snapshot (from getUsableSnapshotByName)
+     * @returns {{equipment: Array<Object>, abilities: Array<Object|null>, triggerMap: Object, food: Array<Object>, drinks: Array<Object>}}
+     */
+    buildSnapshotOverride(snapshot) {
+        const clientObj = dataManager.getInitClientData();
+
+        // Build ability level lookup from all learned abilities (not just currently equipped)
+        const characterData = dataManager.characterData;
+        const abilityLevelMap = {};
+        for (const ab of characterData?.characterAbilities || []) {
+            if (ab.abilityHrid) abilityLevelMap[ab.abilityHrid] = ab.level || 1;
+        }
+
+        // Preserve the actual saved MWI ability slots (1..5 -> native 0..4), including holes.
+        const abilities = mapLoadoutAbilitiesToNativeSlots(
+            snapshot.abilities,
+            clientObj?.abilityDetailMap || {},
+            (ability) => ({
+                abilityHrid: ability.abilityHrid,
+                level: abilityLevelMap[ability.abilityHrid] || 1,
+            })
+        );
+
+        return {
+            // Equipment is already resolved by Core Loadout State. Do not reinterpret
+            // exact/highest enhancement semantics in feature consumers.
+            equipment: snapshot.equipment,
+            abilities,
+            triggerMap: {
+                ...(snapshot.abilityCombatTriggersMap || {}),
+                ...(snapshot.consumableCombatTriggersMap || {}),
+            },
+            food: snapshot.food,
+            drinks: snapshot.drinks,
+        };
     }
 
     /**
@@ -1221,37 +1299,7 @@ class CombatScore {
                 return;
             }
 
-            const clientObj = dataManager.getInitClientData();
-
-            // Build ability level lookup from all learned abilities (not just currently equipped)
-            const characterData = dataManager.characterData;
-            const abilityLevelMap = {};
-            for (const ab of characterData?.characterAbilities || []) {
-                if (ab.abilityHrid) abilityLevelMap[ab.abilityHrid] = ab.level || 1;
-            }
-
-            // Preserve the actual saved MWI ability slots (1..5 -> native 0..4), including holes.
-            const abilities = mapLoadoutAbilitiesToNativeSlots(
-                snapshot.abilities,
-                clientObj?.abilityDetailMap || {},
-                (ability) => ({
-                    abilityHrid: ability.abilityHrid,
-                    level: abilityLevelMap[ability.abilityHrid] || 1,
-                })
-            );
-
-            const overridden = applyLoadoutOverrideToMetzCharacter(character, {
-                // Equipment is already resolved by Core Loadout State. Do not reinterpret
-                // exact/highest enhancement semantics in feature consumers.
-                equipment: snapshot.equipment,
-                abilities,
-                triggerMap: {
-                    ...(snapshot.abilityCombatTriggersMap || {}),
-                    ...(snapshot.consumableCombatTriggersMap || {}),
-                },
-                food: snapshot.food,
-                drinks: snapshot.drinks,
-            });
+            const overridden = applyLoadoutOverrideToMetzCharacter(character, this.buildSnapshotOverride(snapshot));
 
             await navigator.clipboard.writeText(JSON.stringify(overridden));
 
@@ -1264,6 +1312,177 @@ class CombatScore {
             this.timerRegistry.registerTimeout(resetTimeout);
         } catch (error) {
             console.error('[Combat Score] Metz Sim snapshot export failed:', error);
+            button.textContent = t('combatScore.failedStatus');
+            button.style.background = `${config.COLOR_LOSS}`;
+            const resetTimeout = setTimeout(() => {
+                button.textContent = originalText;
+                button.style.background = originalBg;
+            }, 3000);
+            this.timerRegistry.registerTimeout(resetTimeout);
+        }
+    }
+
+    /**
+     * Show the "Export Full Party" staleness preview panel for a given self loadout snapshot.
+     * Lists every party slot with how long ago its cached profile was captured (or "missing" if
+     * never opened), so the user can tell whether to go refresh a teammate's profile before
+     * copying - rather than silently exporting stale/absent data (the concern raised about
+     * reliability).
+     * @param {string} snapshotName - Loadout snapshot name to use for your own slot
+     * @param {Element} anchorEl - Element to position the preview panel below
+     */
+    async showPartyExportPreview(snapshotName, anchorEl) {
+        if (this.currentPartyExportPanel) {
+            this.currentPartyExportPanel.remove();
+            this.currentPartyExportPanel = null;
+        }
+
+        const characterData = dataManager.characterData;
+        const profileList = await getProfileList();
+        const now = Date.now();
+
+        const rows = [
+            {
+                name: characterData?.character?.name || t('combatScore.playerFallbackName'),
+                ageLabel: t('combatScore.partyExportYouLabel'),
+                missing: false,
+            },
+        ];
+
+        const partySlots = characterData?.partyInfo?.partySlotMap;
+        if (partySlots) {
+            for (const member of Object.values(partySlots)) {
+                if (!member.characterID || member.characterID === characterData.character.id) continue;
+                const profile = profileList.find((p) => p.characterID === member.characterID);
+                if (!profile) {
+                    rows.push({
+                        name: member.characterName || t('combatScore.partyExportUnknownMemberLabel'),
+                        ageLabel: t('combatScore.partyExportMissingLabel'),
+                        missing: true,
+                    });
+                } else {
+                    rows.push({
+                        name: profile.characterName,
+                        ageLabel: t('combatScore.partyExportAgeAgoLabel', {
+                            age: formatRelativeTime(now - (profile.timestamp || 0)),
+                        }),
+                        missing: false,
+                    });
+                }
+            }
+        }
+
+        const panel = document.createElement('div');
+        panel.id = 'mwi-party-export-panel';
+        panel.style.cssText = `
+            position: fixed;
+            background: rgba(30, 30, 30, 0.98);
+            border: 1px solid #555;
+            border-radius: 6px;
+            padding: 10px;
+            width: 240px;
+            font-size: 0.8rem;
+            z-index: 10002;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        `;
+
+        const rowsHTML = rows
+            .map(
+                (
+                    row
+                ) => `<div style="display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; color: ${row.missing ? config.COLOR_LOSS : '#ddd'};">
+                    <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${row.name}</span>
+                    <span style="flex-shrink: 0;">${row.ageLabel}</span>
+                </div>`
+            )
+            .join('');
+
+        panel.innerHTML = `
+            <div style="font-weight: bold; margin-bottom: 6px; color: ${config.COLOR_ACCENT};">${t('combatScore.partyExportPreviewTitle')}</div>
+            ${rowsHTML}
+            <button id="mwi-party-export-copy-btn" style="
+                margin-top: 8px;
+                padding: 6px 10px;
+                width: 100%;
+                background: ${config.COLOR_ACCENT};
+                color: black;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-weight: bold;
+                font-size: 0.8rem;
+            ">${t('combatScore.partyExportCopyButton')}</button>
+        `;
+
+        document.body.appendChild(panel);
+        this.currentPartyExportPanel = panel;
+
+        const anchorRect = anchorEl.getBoundingClientRect();
+        panel.style.top = anchorRect.bottom + 4 + 'px';
+        panel.style.left = Math.max(10, anchorRect.right - 240) + 'px';
+
+        const copyBtn = panel.querySelector('#mwi-party-export-copy-btn');
+        copyBtn.addEventListener('click', async () => {
+            await this.handleExportFullParty(snapshotName, copyBtn);
+        });
+
+        const closePanel = (e) => {
+            if (!document.body.contains(panel)) {
+                document.removeEventListener('click', closePanel);
+                return;
+            }
+            if (!panel.contains(e.target) && e.target !== anchorEl) {
+                panel.remove();
+                if (this.currentPartyExportPanel === panel) this.currentPartyExportPanel = null;
+                document.removeEventListener('click', closePanel);
+            }
+        };
+        // Deferred so the click that opened this panel doesn't also close it.
+        setTimeout(() => document.addEventListener('click', closePanel), 0);
+    }
+
+    /**
+     * Build the full-party Metz team export (self via the chosen loadout snapshot, teammates from
+     * their cached profiles) and copy it to the clipboard as one paste-ready blob.
+     * @param {string} snapshotName - Loadout snapshot name to use for your own slot
+     * @param {Element} button - The "Copy" button in the preview panel (for visual feedback)
+     */
+    async handleExportFullParty(snapshotName, button) {
+        const originalText = button.textContent;
+        const originalBg = button.style.background;
+
+        try {
+            const snapshot = loadoutState.getUsableSnapshotByName(snapshotName);
+            if (!snapshot) {
+                console.error('[Combat Score] Snapshot not found:', snapshotName);
+                return;
+            }
+
+            const team = await constructMetzTeamExport(this.buildSnapshotOverride(snapshot));
+            if (!team) {
+                button.textContent = t('combatScore.noDataStatus');
+                button.style.background = `${config.COLOR_LOSS}`;
+                const resetTimeout = setTimeout(() => {
+                    button.textContent = originalText;
+                    button.style.background = originalBg;
+                }, 3000);
+                this.timerRegistry.registerTimeout(resetTimeout);
+                return;
+            }
+
+            await navigator.clipboard.writeText(JSON.stringify(team));
+
+            button.textContent = t('combatScore.copiedStatus');
+            button.style.background = `${config.COLOR_PROFIT}`;
+            const resetTimeout = setTimeout(() => {
+                if (this.currentPartyExportPanel) {
+                    this.currentPartyExportPanel.remove();
+                    this.currentPartyExportPanel = null;
+                }
+            }, 1200);
+            this.timerRegistry.registerTimeout(resetTimeout);
+        } catch (error) {
+            console.error('[Combat Score] Export Full Party failed:', error);
             button.textContent = t('combatScore.failedStatus');
             button.style.background = `${config.COLOR_LOSS}`;
             const resetTimeout = setTimeout(() => {
@@ -1592,6 +1811,11 @@ class CombatScore {
         if (this.currentAbilitiesPanel) {
             this.currentAbilitiesPanel.remove();
             this.currentAbilitiesPanel = null;
+        }
+
+        if (this.currentPartyExportPanel) {
+            this.currentPartyExportPanel.remove();
+            this.currentPartyExportPanel = null;
         }
 
         this.isActive = false;

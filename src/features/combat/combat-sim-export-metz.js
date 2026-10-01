@@ -255,9 +255,12 @@ function buildSelfMetzCharacter(characterObj, clientObj) {
  * Shykai export uses). Only your own character carries hasMooPass and the owned/speedGear parts
  * of skilling - a teammate's shared profile never exposes full inventory, though it does carry
  * enhancing/alchemy level and tool when present, which still populate skilling best-effort.
+ * @param {Object|null} [selfLoadoutOverride] - If given, applied to your own character via
+ *   applyLoadoutOverrideToMetzCharacter instead of exporting your live equipped state (used by
+ *   the profile-box "Export Full Party" action, which exports a NAMED saved loadout for yourself).
  * @returns {Promise<Array<Object>|null>} null if no character data is available at all
  */
-export async function constructMetzTeamExport() {
+export async function constructMetzTeamExport(selfLoadoutOverride = null) {
     const characterObj = getCharacterData();
     if (!characterObj) {
         return null;
@@ -267,7 +270,11 @@ export async function constructMetzTeamExport() {
     const battleObj = getBattleData();
     const profileList = await getProfileList();
 
-    const team = [buildSelfMetzCharacter(characterObj, clientObj)];
+    let selfCharacter = buildSelfMetzCharacter(characterObj, clientObj);
+    if (selfLoadoutOverride) {
+        selfCharacter = applyLoadoutOverrideToMetzCharacter(selfCharacter, selfLoadoutOverride);
+    }
+    const team = [selfCharacter];
 
     const partySlots = characterObj.partyInfo?.partySlotMap;
     if (partySlots) {

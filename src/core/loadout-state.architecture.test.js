@@ -159,7 +159,9 @@ describe('Loadout State architecture invariants', () => {
 
     test('Profile Combat Sim export uses the shared native-slot mapper and cannot compact saved ability holes', () => {
         const combatScore = source(join(SRC, 'features/profile/combat-score.js'));
-        const methodStart = combatScore.indexOf('async handleMetzSimExportFromSnapshot');
+        // buildSnapshotOverride is the single place a saved loadout snapshot's abilities are
+        // resolved to Metz's slot shape, shared by both the solo and "Export Full Party" flows.
+        const methodStart = combatScore.indexOf('buildSnapshotOverride(snapshot)');
         const methodEnd = combatScore.indexOf('\n    /**', methodStart + 1);
         const method = combatScore.slice(methodStart, methodEnd);
 
