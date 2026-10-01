@@ -45,10 +45,11 @@ const GRID_BADGE_CSS = `
     bottom: 1px;
     z-index: 5;
     max-width: calc(100% - 2px);
-    padding: 0 2px;
-    border-radius: 2px;
+    padding: 0 3px;
+    border-radius: 3px;
     background: rgba(0, 0, 0, 0.6);
     color: #fff;
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.55);
     font-size: 8px;
     line-height: 1.2;
     text-align: right;
@@ -1733,13 +1734,20 @@ class LabyrinthClearRate {
     }
 
     updateBadge(badge, result, roomLevel) {
+        const isGridBadge = badge.classList.contains(GRID_BADGE_CLASS);
         if (result.error) {
+            badge.style.backgroundColor = '';
             badge.style.color = '#d9534f';
             badge.textContent = t('labyrinthClearRate.loadoutUnavailableBadgeText');
             badge.title = result.error;
             return;
         }
-        badge.style.color = this.getBadgeColor(result.clearChance);
+        if (isGridBadge) {
+            badge.style.backgroundColor = this.getGridBadgeColor(result.clearChance);
+            badge.style.color = '#fff';
+        } else {
+            badge.style.color = this.getBadgeColor(result.clearChance);
+        }
         const pct = Math.round(result.clearChance * 100);
         const timeText = this.formatTime(result.expectedSeconds);
         // Stack percent and time on two lines instead of one "NN% ~M:SS" line -- the grid
@@ -1867,6 +1875,17 @@ class LabyrinthClearRate {
         if (clearChance >= 0.95) return '#00c896';
         if (clearChance >= 0.7) return '#f0ad4e';
         return '#d9534f';
+    }
+
+    // Filled-pill background for the room grid overlay - a graduated 5-step traffic-light scale
+    // reads faster at a glance on a ~46px tile than tinting small text against a flat dark
+    // background (the 3-step getBadgeColor() scheme used for the inline Automation-tab rows).
+    getGridBadgeColor(clearChance) {
+        if (clearChance >= 0.95) return '#1fbf60';
+        if (clearChance >= 0.8) return '#77b82a';
+        if (clearChance >= 0.6) return '#d2ac19';
+        if (clearChance >= 0.4) return '#d27a1f';
+        return '#d84b4b';
     }
 
     /**
