@@ -1,5 +1,23 @@
 # Changelog
 
+## [3.1.0](https://github.com/Celasha/Toolasha/compare/v3.0.0...v3.1.0) (2026-10-01)
+
+
+### Features
+
+* enhance the inventory "Add to Tab" dropdown ([6f5296b](https://github.com/Celasha/Toolasha/commit/6f5296bd7273c78128100e5f8ec04373c919fc84))
+
+
+### Bug Fixes
+
+* exclude voluntary cancels from dungeon tracker fail rate ([f0eb30c](https://github.com/Celasha/Toolasha/commit/f0eb30c38e8acd782afc0e4e52fa6244539818bf))
+* register dungeonTrackerUI in config features map ([4f00e01](https://github.com/Celasha/Toolasha/commit/4f00e0178946b21855a21ba4eecdc7b6891f061b))
+* release stuck Apply Skip button via timeout if confirmation never arrives ([1c9935d](https://github.com/Celasha/Toolasha/commit/1c9935db013ffea7474c5086e705bb96df747f25))
+* restore {{var}}-placeholder templates for notification log messages ([6b6e9d5](https://github.com/Celasha/Toolasha/commit/6b6e9d54ed8baff6eb12963ade4ca18ad4ff9644))
+* show labyrinth grid clear-rate badges as colored pills ([c8f4a13](https://github.com/Celasha/Toolasha/commit/c8f4a1345b951d8a259b7feccdf60629216724f8))
+* update marketplace tax rate from 5% to 4% ([8ef8df9](https://github.com/Celasha/Toolasha/commit/8ef8df9f8675f6a945327bda75bd726fe59b16d3))
+* use dark text on labyrinth grid clear-rate pill badges ([c6e6b9b](https://github.com/Celasha/Toolasha/commit/c6e6b9b78b1ff2de053904cbf5b077ce799f1fb6))
+
 ## [3.0.0](https://github.com/Celasha/Toolasha/compare/v2.111.3...v3.0.0) (2026-09-30)
 
 ### ⚠ BREAKING CHANGES
