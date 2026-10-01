@@ -2,15 +2,13 @@
 
 ## [3.3.0](https://github.com/Celasha/Toolasha/compare/v3.2.0...v3.3.0) (2026-10-01)
 
-
 ### Features
 
-* add Export Full Party action to the profile loadout dropdown ([0aed556](https://github.com/Celasha/Toolasha/commit/0aed5564d602c791a809d84cec69b75b61c0e4ab))
-
+- add Export Full Party action to the profile loadout dropdown ([0aed556](https://github.com/Celasha/Toolasha/commit/0aed5564d602c791a809d84cec69b75b61c0e4ab))
 
 ### Bug Fixes
 
-* commit input value before Save and pin Apply Skip row order ([fc13638](https://github.com/Celasha/Toolasha/commit/fc136389a42d8ce1ea71a56be1d8101aeb60a5a5))
+- commit input value before Save and pin Apply Skip row order ([fc13638](https://github.com/Celasha/Toolasha/commit/fc136389a42d8ce1ea71a56be1d8101aeb60a5a5))
 
 ## [3.2.0](https://github.com/Celasha/Toolasha/compare/v3.1.0...v3.2.0) (2026-10-01)
 
