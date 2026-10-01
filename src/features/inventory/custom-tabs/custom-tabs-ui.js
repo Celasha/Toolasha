@@ -1347,6 +1347,18 @@ export default class CustomTabsUI {
         collapseBtn.addEventListener('click', () => this._onSetAllTabsOpen(false));
         actionsDiv.appendChild(collapseBtn);
 
+        const clearAllBtn = document.createElement('button');
+        clearAllBtn.className = 'toolasha-ct-add-btn';
+        clearAllBtn.textContent = t('customTabsUi.clearAllTabsButton');
+        clearAllBtn.addEventListener('click', () => this._onClearAllTabs());
+        actionsDiv.appendChild(clearAllBtn);
+
+        const importCategoriesBtn = document.createElement('button');
+        importCategoriesBtn.className = 'toolasha-ct-add-btn';
+        importCategoriesBtn.textContent = t('customTabsUi.importCategoriesButton');
+        importCategoriesBtn.addEventListener('click', () => this._onImportNativeCategories());
+        actionsDiv.appendChild(importCategoriesBtn);
+
         this._actionBtnsEl = actionsDiv;
 
         const sortControls = document.querySelector('.mwi-inventory-sort-controls');
@@ -3058,6 +3070,47 @@ export default class CustomTabsUI {
         this._applyLayout();
         this._save().catch((error) => {
             console.error('[CustomTabs] Failed to persist expand/collapse all:', error);
+        });
+    }
+
+    /**
+     * Delete every tab after user confirmation, resetting to an empty layout.
+     */
+    _onClearAllTabs() {
+        if (!this._config?.tabs?.length) return;
+        if (!confirm(t('customTabsUi.clearAllTabsConfirm'))) return;
+        this._config = { ...this._config, tabs: [], selectedTabId: null };
+        this._removeInjectedEls();
+        this._applyLayout();
+        this._save().catch((error) => {
+            console.error('[CustomTabs] Failed to persist clear all tabs:', error);
+        });
+    }
+
+    /**
+     * Create one top-level tab per native game item category (skipping categories with no
+     * owned/available items, and categories that already have a matching tab), each populated
+     * via the existing category helper. Safe to click repeatedly — existing category tabs are left
+     * untouched rather than duplicated.
+     */
+    _onImportNativeCategories() {
+        const categories = this._getCategories();
+        if (!categories.length) return;
+        const existingNames = new Set(this._flattenTabs(this._config.tabs).map(({ tab }) => tab.name));
+        for (const cat of categories) {
+            if (existingNames.has(cat.name)) continue;
+            const catItems = this._getItemsInCategory(cat.hrid);
+            if (!catItems.length) continue;
+            const result = addTab(this._config, null, cat.name);
+            this._config = result.config;
+            for (const hrid of catItems) {
+                this._config = addItem(this._config, result.tabId, hrid);
+            }
+        }
+        this._removeInjectedEls();
+        this._applyLayout();
+        this._save().catch((error) => {
+            console.error('[CustomTabs] Failed to persist imported native categories:', error);
         });
     }
 

@@ -53,8 +53,8 @@ vi.mock('../../../core/data-manager.js', () => ({
                 '/items/sword': { name: 'Sword', categoryHrid: '/item_categories/weapon', sortIndex: 4 },
             },
             itemCategoryDetailMap: {
-                '/item_categories/food': { sortIndex: 1 },
-                '/item_categories/weapon': { sortIndex: 2 },
+                '/item_categories/food': { name: 'Food', sortIndex: 1 },
+                '/item_categories/weapon': { name: 'Weapon', sortIndex: 2 },
             },
         })),
     },
@@ -891,5 +891,117 @@ describe('CustomTabsUI "Add to Tab" item-menu dropdown', () => {
         ui._injectAddToTabButton(menu);
 
         expect(menu.querySelector('.toolasha-ct-add-to-tab')).toBeNull();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Toolbar: Clear All / Import Native Categories
+// ---------------------------------------------------------------------------
+
+describe('CustomTabsUI toolbar: Clear All tabs', () => {
+    let ui;
+
+    beforeEach(() => {
+        document.body.innerHTML = '';
+        ui = new CustomTabsUI();
+        ui._isActive = false;
+        ui._config = {
+            version: 1,
+            selectedTabId: 'tab-1',
+            tabs: [{ id: 'tab-1', name: 'Food', color: null, open: true, items: ['/items/milk'], children: [] }],
+        };
+        vi.spyOn(ui, '_save').mockImplementation(() => Promise.resolve());
+        vi.spyOn(ui, '_findContentContainer').mockReturnValue(null);
+    });
+
+    afterEach(() => {
+        ui._tileObserver?.disconnect();
+        vi.restoreAllMocks();
+    });
+
+    test('does nothing when declined via confirm()', () => {
+        vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+        ui._onClearAllTabs();
+
+        expect(ui._config.tabs).toHaveLength(1);
+        expect(ui._save).not.toHaveBeenCalled();
+    });
+
+    test('empties all tabs and persists when confirmed', () => {
+        vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+        ui._onClearAllTabs();
+
+        expect(ui._config.tabs).toEqual([]);
+        expect(ui._config.selectedTabId).toBeNull();
+        expect(ui._save).toHaveBeenCalled();
+    });
+
+    test('is a no-op and does not prompt when there are no tabs to clear', () => {
+        ui._config = { version: 1, tabs: [], selectedTabId: null };
+        const confirmSpy = vi.spyOn(window, 'confirm');
+
+        ui._onClearAllTabs();
+
+        expect(confirmSpy).not.toHaveBeenCalled();
+        expect(ui._save).not.toHaveBeenCalled();
+    });
+});
+
+describe('CustomTabsUI toolbar: Import Native Categories', () => {
+    let ui;
+
+    beforeEach(async () => {
+        document.body.innerHTML = '';
+        const { default: config } = await import('../../../core/config.js');
+        config.getSettingValue.mockImplementation((key, fallback) =>
+            key === 'inventoryTabs_categoryAddAll' ? true : fallback
+        );
+        ui = new CustomTabsUI();
+        ui._isActive = false;
+        ui._config = { version: 1, tabs: [], selectedTabId: null };
+        vi.spyOn(ui, '_save').mockImplementation(() => Promise.resolve());
+        vi.spyOn(ui, '_findContentContainer').mockReturnValue(null);
+    });
+
+    afterEach(() => {
+        ui._tileObserver?.disconnect();
+    });
+
+    test('creates one top-level tab per non-empty native category, populated with its items', () => {
+        ui._onImportNativeCategories();
+
+        const names = ui._config.tabs.map((tab) => tab.name);
+        expect(names).toEqual(['Food', 'Weapon']);
+
+        const foodTab = ui._config.tabs.find((tab) => tab.name === 'Food');
+        expect(foodTab.items).toEqual(['/items/apple_gummy', '/items/milk', '/items/egg']);
+
+        const weaponTab = ui._config.tabs.find((tab) => tab.name === 'Weapon');
+        expect(weaponTab.items).toEqual(['/items/sword']);
+
+        expect(ui._save).toHaveBeenCalled();
+    });
+
+    test('clicking a second time does not duplicate tabs for categories that already have one', () => {
+        ui._onImportNativeCategories();
+        const firstPassTabIds = ui._config.tabs.map((tab) => tab.id);
+
+        ui._onImportNativeCategories();
+
+        expect(ui._config.tabs.map((tab) => tab.id)).toEqual(firstPassTabIds);
+        expect(ui._config.tabs).toHaveLength(2);
+    });
+
+    test('re-importing after a category tab was renamed creates a fresh tab under the original category name', () => {
+        ui._onImportNativeCategories();
+        const foodTab = ui._config.tabs.find((tab) => tab.name === 'Food');
+        foodTab.name = 'My Food Stash';
+
+        ui._onImportNativeCategories();
+
+        const names = ui._config.tabs.map((tab) => tab.name).sort();
+        expect(names).toEqual(['Food', 'My Food Stash', 'Weapon']);
     });
 });
