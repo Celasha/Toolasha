@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 3.1.0
+ * Version: 3.2.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -9558,7 +9558,8 @@
     background: rgba(0, 0, 0, 0.6);
     color: #fff;
     text-shadow: 0 1px 1px rgba(0, 0, 0, 0.55);
-    font-size: 8px;
+    font-size: 9px;
+    font-weight: 700;
     line-height: 1.2;
     text-align: right;
     white-space: nowrap;
@@ -11246,18 +11247,13 @@
             if (result.error) {
                 badge.style.backgroundColor = '';
                 badge.style.color = '#d9534f';
-                badge.style.textShadow = '';
                 badge.textContent = i18n_js.t('labyrinthClearRate.loadoutUnavailableBadgeText');
                 badge.title = result.error;
                 return;
             }
             if (isGridBadge) {
-                // Every tier's fill is bright/mid-tone enough that near-black text beats white here -
-                // measured contrast against white runs ~2.2-3.2:1 (fails WCAG's 4.5:1 minimum) on the
-                // green/yellow-green/gold/orange tiers, versus ~5-9.6:1 with dark text on all 5 tiers.
                 badge.style.backgroundColor = this.getGridBadgeColor(result.clearChance);
-                badge.style.color = '#000';
-                badge.style.textShadow = 'none';
+                badge.style.color = '#fff';
             } else {
                 badge.style.color = this.getBadgeColor(result.clearChance);
             }
@@ -11393,12 +11389,14 @@
         // Filled-pill background for the room grid overlay - a graduated 5-step traffic-light scale
         // reads faster at a glance on a ~46px tile than tinting small text against a flat dark
         // background (the 3-step getBadgeColor() scheme used for the inline Automation-tab rows).
+        // Darkened ~45% from the "vivid" versions of these hues so white text clears WCAG's 4.5:1
+        // contrast minimum (measured ~6.2-9.8:1 here vs. ~2.2-3.2:1 against the undarkened colors).
         getGridBadgeColor(clearChance) {
-            if (clearChance >= 0.95) return '#1fbf60';
-            if (clearChance >= 0.8) return '#77b82a';
-            if (clearChance >= 0.6) return '#d2ac19';
-            if (clearChance >= 0.4) return '#d27a1f';
-            return '#d84b4b';
+            if (clearChance >= 0.95) return '#116935';
+            if (clearChance >= 0.8) return '#416517';
+            if (clearChance >= 0.6) return '#745f0e';
+            if (clearChance >= 0.4) return '#744311';
+            return '#772929';
         }
 
         /**
