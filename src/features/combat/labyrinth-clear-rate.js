@@ -10,7 +10,7 @@ import webSocketHook from '../../core/websocket.js';
 import { t } from '../../core/i18n.js';
 import { buildPlayerDTO, buildGameDataPayload, applyLoadoutSnapshotToDTO } from '../combat-sim/combat-sim-adapter.js';
 import { runLabyrinthSimulation } from '../combat-sim/combat-sim-runner.js';
-import { setReactInputValue } from '../../utils/react-input.js';
+import { typeIntoReactInput } from '../../utils/react-input.js';
 import loadoutState from '../../core/loadout-state.js';
 import { addStyles, removeStyles } from '../../utils/dom.js';
 
@@ -24,14 +24,17 @@ const GRID_BADGE_CLASS = 'mwi-labyrinth-grid-clear';
 const GRID_BADGE_STYLE_ID = 'mwi-labyrinth-grid-clear-style';
 const RECOMMEND_CLASS = 'mwi-labyrinth-recommend';
 const RECOMMEND_CONTROLS_CLASS = 'mwi-labyrinth-recommend-controls';
+const RECOMMEND_CONTROLS_SENTINEL_CLASS = 'mwi-labyrinth-recommend-controls-sentinel';
 const AUTOMATION_ROW_STYLE_ID = 'mwi-labyrinth-automation-row-style';
 const APPLY_SKIP_BUTTON_ID = 'mwi-apply-skip-btn';
 const LIVE_PROGRESS_CLASS = 'mwi-labyrinth-live-progress';
 const LIVE_PROGRESS_STALE_MS = 5000;
-// Failsafe only - the normal release is the setting_updated confirmation. Generous enough to
-// absorb ordinary WebSocket latency, short enough that a dropped/never-arriving confirmation
-// (server-side rejection, missed message, etc.) doesn't leave Apply Skip stuck indefinitely.
-const APPLY_SKIP_TIMEOUT_MS = 10000;
+// Failsafe only - the normal release is the setting_updated confirmation that follows the user's
+// own click on the row's real Save button (TLA-061/TLA-062). Generous because, unlike an
+// automated click, this now waits on a human noticing and clicking - a short deadline tuned for
+// network latency would release (and misleadingly re-enable Apply Skip for a different room)
+// while the user is still right there about to click.
+const APPLY_SKIP_TIMEOUT_MS = 30000;
 
 // The room grid (the maze the player actually navigates) renders each tile at ~2.875rem, so the
 // badge has to be a tiny absolutely-positioned corner overlay rather than the inline text used
@@ -105,6 +108,7 @@ class LabyrinthClearRate {
         this._pendingSelfAppliedTimeout = null;
         this.liveProgressHandler = null;
         this.liveProgressTimeout = null;
+        this._recommendControlsPositionInterval = null;
         // combat-sim-runner.js keeps one module-level worker slot and cancels any in-flight run
         // whenever a new one starts. runRecommendations()'s sequential binary search and
         // processSimQueue()'s DOM-triggered badge fills are two independent async loops that both
@@ -196,6 +200,11 @@ class LabyrinthClearRate {
 
         this.clearLiveProgress();
 
+        if (this._recommendControlsPositionInterval) {
+            clearInterval(this._recommendControlsPositionInterval);
+            this._recommendControlsPositionInterval = null;
+        }
+
         removeStyles(GRID_BADGE_STYLE_ID);
         removeStyles(AUTOMATION_ROW_STYLE_ID);
 
@@ -206,6 +215,7 @@ class LabyrinthClearRate {
         document.querySelectorAll(`.${GRID_BADGE_CLASS}`).forEach((el) => el.remove());
         document.querySelectorAll(`.${RECOMMEND_CLASS}`).forEach((el) => el.remove());
         document.querySelectorAll(`.${RECOMMEND_CONTROLS_CLASS}`).forEach((el) => el.remove());
+        document.querySelectorAll(`.${RECOMMEND_CONTROLS_SENTINEL_CLASS}`).forEach((el) => el.remove());
         document.querySelectorAll(`.${LIVE_PROGRESS_CLASS}`).forEach((el) => el.remove());
 
         this.roomData = null;
@@ -1251,21 +1261,25 @@ class LabyrinthClearRate {
 
     /**
      * Apply the next mismatched room's recommended skip threshold: forwards a click to that
-     * room's real Edit button, writes the recommended value into the game's own input, then
-     * forwards a click to the real Save button. Exactly one Save click, one server request, per
-     * call -- the user repeats the click to work through the rest.
+     * room's real Edit button, then writes the recommended value into the game's own input. The
+     * recommend controls (including this button) stay pinned to the top of the panel while
+     * scrolling (see _bindRecommendControlsScroll()) so the user can scroll down to the row and
+     * click its real Save button themselves - never automated.
+     *
+     * The Save click itself can never be automated (TLA-062): live instrumentation confirmed the
+     * game's own client tags a scripted click's resulting request with `isAuto: true`, which the
+     * server does not act on, while an identical request following a genuine click succeeds.
      *
      * Native MWI exits edit mode synchronously inside its own Save handler, well before the
      * authoritative `setting_updated` confirmation arrives (TLA-048) -- so "is a native edit input
      * currently visible?" cannot be used as the reentrancy boundary. `_pendingSelfAppliedKey` is
-     * therefore also the one-save-in-flight transaction flag: non-null from the moment a save is
-     * accepted here until `settingHandler` clears it on the next `setting_updated` event (self-match
-     * or not). A rapid second call while it is still non-null is ignored outright -- never queued,
-     * never a second native Edit/Save -- so an accepted save can never be silently overwritten.
+     * therefore also the one-save-in-flight transaction flag: non-null from the moment the value
+     * is typed in until `settingHandler` clears it on the next `setting_updated` event (self-match
+     * or not). A rapid second call while it is still non-null is ignored outright.
      *
-     * If `setting_updated` never arrives at all (dropped message, server-side rejection, etc.),
-     * `APPLY_SKIP_TIMEOUT_MS` releases the guard anyway so the button can't get stuck on
-     * "(saving...)" forever (TLA-061) -- the user just sees it re-enable and can retry.
+     * If `setting_updated` never arrives at all (the user abandons the flow, a dropped message,
+     * etc.), `APPLY_SKIP_TIMEOUT_MS` releases the guard anyway so the button can't get stuck on
+     * "(saving...)" forever (TLA-061) -- the row's real Save button remains clickable regardless.
      */
     applyNextRecommendedSkip() {
         if (this._pendingSelfAppliedKey !== null) {
@@ -1300,12 +1314,7 @@ class LabyrinthClearRate {
             console.warn('[Toolasha] Apply Skip: threshold input not found after clicking Edit', roomHrid);
             return;
         }
-        // Mirror a real user's edit (type, then tab/click away) rather than only the 'input'
-        // event: this input's Save handler may read a value only committed on blur/change, so an
-        // 'input'-only dispatch can leave Save submitting the previous, unchanged value - a no-op
-        // that never produces a setting_updated confirmation (and so always hits the timeout below).
-        setReactInputValue(input, recommendedThreshold, { focus: true, dispatchChange: true });
-        input.blur();
+        typeIntoReactInput(input, recommendedThreshold);
 
         const saveButton = findButton('Save');
         if (!saveButton) {
@@ -1321,7 +1330,6 @@ class LabyrinthClearRate {
             this._updateApplyButtonState();
         }, APPLY_SKIP_TIMEOUT_MS);
         this._updateApplyButtonState();
-        saveButton.click();
     }
 
     /**
@@ -1356,7 +1364,10 @@ class LabyrinthClearRate {
         const defaultRate = config.getSettingValue('labyrinthRecommendTargetRate', 70);
         const defaultHours = config.getSettingValue('labyrinthRecommendSimHours', 1);
 
-        if (document.querySelector(`.${RECOMMEND_CONTROLS_CLASS}`)) {
+        const table = document.querySelector('[class*="LabyrinthPanel_automationTable"]');
+
+        const existing = document.querySelector(`.${RECOMMEND_CONTROLS_CLASS}`);
+        if (existing) {
             const rateInput = document.getElementById('mwi-recommend-target-rate');
             const hoursInput = document.getElementById('mwi-recommend-sim-hours');
             if (rateInput && !rateInput.dataset.userEdited) rateInput.value = defaultRate;
@@ -1365,13 +1376,24 @@ class LabyrinthClearRate {
             return;
         }
 
-        const table = document.querySelector('[class*="LabyrinthPanel_automationTable"]');
         if (!table) return;
+
+        const sentinel = document.createElement('div');
+        sentinel.className = RECOMMEND_CONTROLS_SENTINEL_CLASS;
+        sentinel.style.cssText = 'height:0; margin:0; padding:0;';
 
         const container = document.createElement('div');
         container.className = RECOMMEND_CONTROLS_CLASS;
+        // Normal flow by default (same spot it originally rendered, right above the table). A
+        // scroll listener set up in _bindRecommendControlsScroll() below switches this to
+        // position:fixed only once the real scrolling ancestor has scrolled it out of view, so it
+        // stays reachable while scrolling down through the room list to reach each row's real
+        // Edit/Save buttons. Plain CSS `position: sticky` doesn't work here: the nearest
+        // overflow:auto ancestor (LabyrinthPanel_automationTab) never actually overflows itself, so
+        // sticky binds to its permanently-zero scroll offset instead of the real scrolling ancestor
+        // (TabPanel_tabPanel) one level further out - confirmed via a captured DOM/layout snapshot.
         container.style.cssText =
-            'display:flex; align-items:center; gap:8px; margin-bottom:6px; font-size:0.8rem; flex-wrap:wrap;';
+            'display:flex; align-items:center; gap:8px; padding:4px 0; font-size:0.8rem; flex-wrap:wrap; background:rgba(20, 20, 30, 0.97); transition:none;';
 
         const inputStyle =
             'width:50px; background:#1a1a2e; color:#e0e0e0; border:1px solid #555; border-radius:4px; padding:2px 4px; font-size:0.75rem; text-align:center;';
@@ -1429,8 +1451,79 @@ class LabyrinthClearRate {
         container.appendChild(hoursInput);
         container.appendChild(button);
         container.appendChild(applyButton);
+        table.parentNode.insertBefore(sentinel, table);
         table.parentNode.insertBefore(container, table);
+        this._bindRecommendControlsScroll(sentinel, container);
         this._updateApplyButtonState();
+    }
+
+    /**
+     * Keep the recommend-controls bar visible while scrolling the automation room list, without
+     * relying on CSS `position: sticky` (the nearest overflow:auto ancestor,
+     * LabyrinthPanel_automationTab, never actually overflows itself, so a sticky descendant binds
+     * to its permanently-zero scroll offset and silently never sticks). Re-measures on a plain
+     * interval rather than listening for specific scroll/resize/animation events - this game's
+     * tab-switch transitions and data-driven re-renders can leave the table in a transient
+     * position for an unpredictable amount of time, and polling self-corrects regardless of what
+     * caused the delay instead of trying to catch the right one-off event. `sentinel` is a
+     * zero-height marker left permanently in normal flow at the bar's original spot; `container`
+     * is toggled between normal flow and `position: fixed`, anchored to the bottom edge of the
+     * always-visible tab bar (Labyrinth/Room/Automation/...), once the sentinel's natural position
+     * has scrolled above that edge.
+     * @param {HTMLElement} sentinel
+     * @param {HTMLElement} container
+     */
+    _bindRecommendControlsScroll(sentinel, container) {
+        const getAnchorTop = () => {
+            // Scoped to the Labyrinth panel specifically - this game reuses the same TabsComponent
+            // for other panels too (chat tabs, inventory tabs), so an unscoped document-wide query
+            // for ".TabsComponent_tabsContainer" can match an unrelated tabs bar elsewhere on the
+            // page and produce a nonsensical threshold.
+            const labyrinthPanel = sentinel.closest('[class*="LabyrinthPanel_labyrinthPanel"]');
+            const tabsBar = labyrinthPanel?.querySelector('[class*="TabsComponent_tabsContainer"]');
+            return tabsBar ? tabsBar.getBoundingClientRect().bottom : 0;
+        };
+        const reposition = () => {
+            if (!sentinel.isConnected) {
+                clearInterval(this._recommendControlsPositionInterval);
+                this._recommendControlsPositionInterval = null;
+                return;
+            }
+            const sentinelRect = sentinel.getBoundingClientRect();
+            const anchorTop = getAnchorTop();
+            if (sentinelRect.top < anchorTop) {
+                if (!container.dataset.fixed) {
+                    // Reserve the space the container used to occupy in normal flow so switching
+                    // to position:fixed doesn't collapse it and shift the content below - a shift
+                    // mid-scroll changes scroll metrics and can cause visible jitter against the
+                    // next poll tick's measurement.
+                    sentinel.style.height = `${container.offsetHeight}px`;
+                    container.dataset.fixed = '1';
+                }
+                container.style.position = 'fixed';
+                container.style.top = `${anchorTop}px`;
+                container.style.left = `${sentinelRect.left}px`;
+                container.style.width = `${sentinelRect.width}px`;
+                container.style.zIndex = '10';
+            } else {
+                if (container.dataset.fixed) {
+                    sentinel.style.height = '0';
+                    delete container.dataset.fixed;
+                }
+                container.style.position = '';
+                container.style.top = '';
+                container.style.left = '';
+                container.style.width = '';
+                container.style.zIndex = '';
+            }
+        };
+        // No immediate call here on purpose - the panel can still be mid-transition/mid-initial
+        // render in this exact instant, and deciding "fixed" off a stale measurement would freeze
+        // the bar at a wrong screen coordinate (position:fixed takes it out of flow, so it stops
+        // drifting along naturally with the rest of the panel while it settles). Leaving it in its
+        // normal, correctly-laid-out static position for setInterval's first 200ms delay avoids
+        // that initial wrong-position flash entirely.
+        this._recommendControlsPositionInterval = setInterval(reposition, 200);
     }
 
     /**

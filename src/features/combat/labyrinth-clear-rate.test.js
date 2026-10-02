@@ -151,6 +151,17 @@ function buildAutomationTable(rooms) {
     return cells;
 }
 
+/**
+ * Call applyNextRecommendedSkip() (auto-fills the value but never auto-clicks Save - a genuine
+ * click is required, per TLA-062), then simulate that click on the given cell's resulting Save
+ * button, exactly as the user would after scrolling down to the row themselves.
+ */
+function applySkipAndClickSave(feature, cell) {
+    feature.applyNextRecommendedSkip();
+    const saveButton = Array.from(cell.querySelectorAll('button')).find((b) => b.textContent.trim() === 'Save');
+    saveButton?.click();
+}
+
 beforeEach(() => {
     vi.clearAllMocks();
     savedCalls = [];
@@ -495,12 +506,12 @@ describe('getRoomsNeedingSkipUpdate', () => {
 describe('applyNextRecommendedSkip', () => {
     test('forwards Edit then Save with the recommended value, resulting in exactly one save', () => {
         const feature = new LabyrinthClearRate();
-        buildAutomationTable([
+        const [cell] = buildAutomationTable([
             { roomHrid: '/skills/milking', isSkill: true, settingKey: 'labyrinthSkipMilking', currentValue: 5 },
         ]);
         feature.recommendations.set('/skills/milking', { threshold: 15 });
 
-        feature.applyNextRecommendedSkip();
+        applySkipAndClickSave(feature, cell);
 
         expect(savedCalls).toHaveLength(1);
         expect(savedCalls[0]).toEqual({ roomHrid: '/skills/milking', settingKey: 'labyrinthSkipMilking', value: 15 });
@@ -509,7 +520,7 @@ describe('applyNextRecommendedSkip', () => {
 
     test('applies a negative recommendation once, then advances to the next mismatched room after confirmation', () => {
         const feature = new LabyrinthClearRate();
-        buildAutomationTable([
+        const [pyreHunterCell, frostSniperCell] = buildAutomationTable([
             {
                 roomHrid: '/monsters/pyre_hunter',
                 isSkill: false,
@@ -527,7 +538,7 @@ describe('applyNextRecommendedSkip', () => {
         feature.recommendations.set('/monsters/frost_sniper', { threshold: 44 });
         feature.initialize();
 
-        feature.applyNextRecommendedSkip();
+        applySkipAndClickSave(feature, pyreHunterCell);
         expect(savedCalls).toEqual([
             { roomHrid: '/monsters/pyre_hunter', settingKey: 'labyrinthSkipPyreHunter', value: -22 },
         ]);
@@ -537,7 +548,7 @@ describe('applyNextRecommendedSkip', () => {
         // click is allowed to submit anything (TLA-048).
         feature.settingHandler({ characterSetting: { ...dataManager.characterData.characterSetting } });
 
-        feature.applyNextRecommendedSkip();
+        applySkipAndClickSave(feature, frostSniperCell);
         expect(savedCalls[1]).toEqual({
             roomHrid: '/monsters/frost_sniper',
             settingKey: 'labyrinthSkipFrostSniper',
@@ -577,7 +588,7 @@ describe('applyNextRecommendedSkip', () => {
 
     test('sets the correct settingKey/value for a combat room', () => {
         const feature = new LabyrinthClearRate();
-        buildAutomationTable([
+        const [cell] = buildAutomationTable([
             {
                 roomHrid: '/monsters/fire_sprite',
                 isSkill: false,
@@ -587,7 +598,7 @@ describe('applyNextRecommendedSkip', () => {
         ]);
         feature.recommendations.set('/monsters/fire_sprite', { threshold: 42 });
 
-        feature.applyNextRecommendedSkip();
+        applySkipAndClickSave(feature, cell);
 
         expect(savedCalls).toEqual([
             { roomHrid: '/monsters/fire_sprite', settingKey: 'labyrinthSkipFireSprite', value: 42 },
@@ -598,7 +609,7 @@ describe('applyNextRecommendedSkip', () => {
 describe('TLA-048: Apply Skip one-save-in-flight reentrancy guard', () => {
     test('TLA048-01: an immediate second invocation before ACK is ignored - exactly one Save, first room only', () => {
         const feature = new LabyrinthClearRate();
-        buildAutomationTable([
+        const [milkingCell] = buildAutomationTable([
             { roomHrid: '/skills/milking', isSkill: true, settingKey: 'labyrinthSkipMilking', currentValue: 5 },
             { roomHrid: '/skills/foraging', isSkill: true, settingKey: 'labyrinthSkipForaging', currentValue: 20 },
         ]);
@@ -607,6 +618,11 @@ describe('TLA-048: Apply Skip one-save-in-flight reentrancy guard', () => {
 
         feature.applyNextRecommendedSkip();
         feature.applyNextRecommendedSkip(); // immediate second call, before any setting_updated
+
+        const saveButton = Array.from(milkingCell.querySelectorAll('button')).find(
+            (b) => b.textContent.trim() === 'Save'
+        );
+        saveButton.click();
 
         expect(savedCalls).toHaveLength(1);
         expect(savedCalls[0]).toEqual({ roomHrid: '/skills/milking', settingKey: 'labyrinthSkipMilking', value: 15 });
@@ -617,7 +633,7 @@ describe('TLA-048: Apply Skip one-save-in-flight reentrancy guard', () => {
 
     test('TLA048-02: a real DOM double-click on the Apply Skip button before ACK produces only one Save', () => {
         const feature = new LabyrinthClearRate();
-        buildAutomationTable([
+        const [cell] = buildAutomationTable([
             { roomHrid: '/skills/milking', isSkill: true, settingKey: 'labyrinthSkipMilking', currentValue: 5 },
         ]);
         feature.recommendations.set('/skills/milking', { threshold: 15 });
@@ -627,17 +643,19 @@ describe('TLA-048: Apply Skip one-save-in-flight reentrancy guard', () => {
         expect(button.disabled).toBe(false);
 
         button.click();
-        expect(savedCalls).toHaveLength(1);
         expect(button.disabled).toBe(true); // busy state reflected immediately, before any ACK
         expect(button.textContent).toBe('Apply Skip (saving...)');
 
         button.click(); // second real click while still awaiting ACK
+
+        const saveButton = Array.from(cell.querySelectorAll('button')).find((b) => b.textContent.trim() === 'Save');
+        saveButton.click();
         expect(savedCalls).toHaveLength(1); // no second Save
     });
 
     test('TLA048-03: exact self ACK preserves recommendations, releases the guard, and unlocks the next room', () => {
         const feature = new LabyrinthClearRate();
-        buildAutomationTable([
+        const [milkingCell, foragingCell] = buildAutomationTable([
             { roomHrid: '/skills/milking', isSkill: true, settingKey: 'labyrinthSkipMilking', currentValue: 5 },
             { roomHrid: '/skills/foraging', isSkill: true, settingKey: 'labyrinthSkipForaging', currentValue: 20 },
         ]);
@@ -646,7 +664,7 @@ describe('TLA-048: Apply Skip one-save-in-flight reentrancy guard', () => {
         feature.initialize();
         feature.injectRecommendControls();
 
-        feature.applyNextRecommendedSkip();
+        applySkipAndClickSave(feature, milkingCell);
         feature.settingHandler({ characterSetting: { ...dataManager.characterData.characterSetting } });
 
         expect(feature.recommendations.size).toBe(2);
@@ -655,7 +673,7 @@ describe('TLA-048: Apply Skip one-save-in-flight reentrancy guard', () => {
         expect(button.disabled).toBe(false);
         expect(button.textContent).toBe('Apply Skip (1)');
 
-        feature.applyNextRecommendedSkip();
+        applySkipAndClickSave(feature, foragingCell);
         expect(savedCalls[1]).toEqual({ roomHrid: '/skills/foraging', settingKey: 'labyrinthSkipForaging', value: 30 });
     });
 
@@ -720,22 +738,23 @@ describe('TLA-048: Apply Skip one-save-in-flight reentrancy guard', () => {
             feature.recommendations.set('/skills/foraging', { threshold: 30 });
             feature.injectRecommendControls();
 
-            // The mock Save button writes the setting locally (like the real game eventually
-            // does), but - as in a dropped/rejected confirmation - no setting_updated event fires.
+            // The user never clicks the relocated Save button at all - as in a dropped/rejected
+            // confirmation, no setting_updated event ever fires.
             feature.applyNextRecommendedSkip();
             const button = document.getElementById('mwi-apply-skip-btn');
             expect(feature._pendingSelfAppliedKey).not.toBeNull();
             expect(button.textContent).toBe('Apply Skip (saving...)');
             expect(button.disabled).toBe(true);
 
-            vi.advanceTimersByTime(10000);
+            vi.advanceTimersByTime(30000);
 
             expect(feature._pendingSelfAppliedKey).toBeNull();
             expect(feature._pendingSelfAppliedValue).toBeNull();
-            // Still one real mismatch left (foraging) - button re-enables to reflect that,
-            // proving the release came from the timeout and not a coincidental zero-remaining count.
+            // Neither room was ever actually saved (the user never clicked Save), so both remain
+            // mismatched - confirms the release came from the timeout, not a save that quietly
+            // succeeded without a matching confirmation.
             expect(button.disabled).toBe(false);
-            expect(button.textContent).toBe('Apply Skip (1)');
+            expect(button.textContent).toBe('Apply Skip (2)');
         } finally {
             vi.useRealTimers();
         }
@@ -745,7 +764,7 @@ describe('TLA-048: Apply Skip one-save-in-flight reentrancy guard', () => {
         vi.useFakeTimers();
         try {
             const feature = new LabyrinthClearRate();
-            buildAutomationTable([
+            const [milkingCell] = buildAutomationTable([
                 { roomHrid: '/skills/milking', isSkill: true, settingKey: 'labyrinthSkipMilking', currentValue: 5 },
                 { roomHrid: '/skills/foraging', isSkill: true, settingKey: 'labyrinthSkipForaging', currentValue: 20 },
             ]);
@@ -753,18 +772,25 @@ describe('TLA-048: Apply Skip one-save-in-flight reentrancy guard', () => {
             feature.recommendations.set('/skills/foraging', { threshold: 30 });
             feature.initialize();
 
-            feature.applyNextRecommendedSkip(); // starts save #1's 10s timeout at t=0
+            feature.applyNextRecommendedSkip(); // starts save #1's 30s timeout at t=0
             vi.advanceTimersByTime(3000); // t=3000
+
+            // The user clicks the relocated Save button at t=3000 - writes the setting and
+            // reverts milking's row to view mode, so save #2 can legitimately start afterward.
+            const saveButton = Array.from(milkingCell.querySelectorAll('button')).find(
+                (b) => b.textContent.trim() === 'Save'
+            );
+            saveButton.click();
             feature.settingHandler({ characterSetting: { ...dataManager.characterData.characterSetting } });
             expect(feature._pendingSelfAppliedKey).toBeNull(); // save #1 confirmed; its timeout must be cancelled
 
-            feature.applyNextRecommendedSkip(); // starts save #2's 10s timeout at t=3000 (fires at t=13000)
+            feature.applyNextRecommendedSkip(); // starts save #2's 30s timeout at t=3000 (fires at t=33000)
             expect(feature._pendingSelfAppliedKey).toBe('labyrinthSkipForaging');
 
-            vi.advanceTimersByTime(7000); // t=10000 - save #1's original (leaked, if buggy) deadline
+            vi.advanceTimersByTime(27000); // t=30000 - save #1's original (leaked, if buggy) deadline
             expect(feature._pendingSelfAppliedKey).toBe('labyrinthSkipForaging'); // still in flight, not released early
 
-            vi.advanceTimersByTime(3000); // t=13000 - save #2's own deadline
+            vi.advanceTimersByTime(3000); // t=33000 - save #2's own deadline
             expect(feature._pendingSelfAppliedKey).toBeNull();
         } finally {
             vi.useRealTimers();
@@ -775,7 +801,7 @@ describe('TLA-048: Apply Skip one-save-in-flight reentrancy guard', () => {
 describe('settingHandler self-triggered-save exemption', () => {
     test('does not clear recommendations when the event confirms our own Apply Skip save', () => {
         const feature = new LabyrinthClearRate();
-        buildAutomationTable([
+        const [milkingCell] = buildAutomationTable([
             { roomHrid: '/skills/milking', isSkill: true, settingKey: 'labyrinthSkipMilking', currentValue: 5 },
             { roomHrid: '/skills/foraging', isSkill: true, settingKey: 'labyrinthSkipForaging', currentValue: 20 },
         ]);
@@ -783,7 +809,7 @@ describe('settingHandler self-triggered-save exemption', () => {
         feature.recommendations.set('/skills/foraging', { threshold: 30 });
         feature.initialize();
 
-        feature.applyNextRecommendedSkip();
+        applySkipAndClickSave(feature, milkingCell);
         feature.settingHandler({ characterSetting: { ...dataManager.characterData.characterSetting } });
 
         expect(feature.recommendations.size).toBe(2);
@@ -792,7 +818,7 @@ describe('settingHandler self-triggered-save exemption', () => {
 
     test('preserves recommendations when a negative Apply Skip value is confirmed exactly', () => {
         const feature = new LabyrinthClearRate();
-        buildAutomationTable([
+        const [pyreHunterCell] = buildAutomationTable([
             {
                 roomHrid: '/monsters/pyre_hunter',
                 isSkill: false,
@@ -810,7 +836,7 @@ describe('settingHandler self-triggered-save exemption', () => {
         feature.recommendations.set('/monsters/frost_sniper', { threshold: 44 });
         feature.initialize();
 
-        feature.applyNextRecommendedSkip();
+        applySkipAndClickSave(feature, pyreHunterCell);
         feature.settingHandler({ characterSetting: { ...dataManager.characterData.characterSetting } });
 
         expect(feature.recommendations.size).toBe(2);

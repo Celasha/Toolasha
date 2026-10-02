@@ -60,6 +60,57 @@ export function setReactInputValue(input, value, options = {}) {
 }
 
 /**
+ * Simulate a real user fully retyping an input's value: focus, clear via the native value
+ * setter, then type each character with a full keydown/keypress/input(insertText)/keyup event
+ * sequence, finishing with an Enter keypress (many numeric inputs only commit on Enter, a
+ * distinct code path from blur), 'change', and blur. Some React inputs commit their value to
+ * internal state only in response to genuine keystroke-driven input events rather than
+ * setReactInputValue's value+_valueTracker trick - that trick can leave the DOM's raw `.value`
+ * reading back correctly while React's own controlled state (what a Save handler actually reads)
+ * never updates, silently reverting to the old value once React next re-renders. Prefer
+ * setReactInputValue for inputs that are confirmed to work with it; reach for this only when that
+ * trick is confirmed insufficient.
+ * @param {HTMLInputElement} input
+ * @param {string|number} value - Final value to type
+ */
+export function typeIntoReactInput(input, value) {
+    if (!input) {
+        console.warn('[React Input] No input element provided');
+        return;
+    }
+
+    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+    const setValue = (v) => {
+        if (nativeSetter) {
+            nativeSetter.call(input, v);
+        } else {
+            input.value = v;
+        }
+    };
+
+    input.focus();
+
+    // Clear existing content first, mirroring a user selecting-all then deleting before retyping.
+    setValue('');
+    input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward' }));
+
+    let typed = '';
+    for (const char of String(value)) {
+        typed += char;
+        input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: char }));
+        input.dispatchEvent(new KeyboardEvent('keypress', { bubbles: true, key: char }));
+        setValue(typed);
+        input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: char }));
+        input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: char }));
+    }
+
+    input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter', code: 'Enter', keyCode: 13 }));
+    input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Enter', code: 'Enter', keyCode: 13 }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    input.blur();
+}
+
+/**
  * Check if an input element is React-controlled
  * React-controlled inputs have an internal _valueTracker property
  *
