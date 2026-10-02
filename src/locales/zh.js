@@ -1302,6 +1302,7 @@ export default {
         itemAriaLabel: '物品',
     },
     alchemyHistoryViewer: {
+        unifiedModalTitle: '炼金历史',
         historyTabTitle: (p) => `${p.actionName}历史记录`,
         colSessionStart: '会话开始',
         colInputItem: '输入物品',

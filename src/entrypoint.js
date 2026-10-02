@@ -710,24 +710,10 @@ function registerFeatures() {
             async: false,
         },
         {
-            key: 'alchemy_transmuteHistoryViewer',
-            name: 'Transmute History Viewer',
-            category: 'Alchemy',
-            module: UI.transmuteHistoryViewer,
-            async: false,
-        },
-        {
             key: 'alchemy_coinifyHistory',
             name: 'Coinify History Tracker',
             category: 'Alchemy',
             module: UI.coinifyHistoryTracker,
-            async: false,
-        },
-        {
-            key: 'alchemy_coinifyHistoryViewer',
-            name: 'Coinify History Viewer',
-            category: 'Alchemy',
-            module: UI.coinifyHistoryViewer,
             async: false,
         },
         {
@@ -738,10 +724,10 @@ function registerFeatures() {
             async: false,
         },
         {
-            key: 'alchemy_decomposeHistoryViewer',
-            name: 'Decompose History Viewer',
+            key: 'alchemy_historyViewer',
+            name: 'Alchemy History Viewer',
             category: 'Alchemy',
-            module: UI.decomposeHistoryViewer,
+            module: UI.alchemyHistoryViewer,
             async: false,
         },
         {

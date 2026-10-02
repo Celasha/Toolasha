@@ -1,36 +1,144 @@
 /**
- * Transmute History Viewer
- * Modal UI for browsing transmute session history.
- * Injected as a tab in the alchemy panel tab bar.
+ * Alchemy History Viewer
+ * Single modal UI for browsing transmute/coinify/decompose session history, with an internal
+ * switcher between the enabled types. Injected as one tab in the alchemy panel tab bar,
+ * replacing what used to be three separate tabs/modals (one per type).
  */
 
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import { t } from '../../core/i18n.js';
 import { transmuteHistoryTracker } from './transmute-history-tracker.js';
+import { coinifyHistoryTracker } from './coinify-history-tracker.js';
+import { decomposeHistoryTracker } from './decompose-history-tracker.js';
 import { formatKMB, formatDateTime } from '../../utils/formatters.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 
-class TransmuteHistoryViewer {
+const CATALYST_OF_COINIFICATION_HRID = '/items/catalyst_of_coinification';
+const CATALYST_OF_DECOMPOSITION_HRID = '/items/catalyst_of_decomposition';
+const PRIME_CATALYST_HRID = '/items/prime_catalyst';
+
+// The native alchemy tab bar's own labels are always in the game's own (possibly non-English)
+// language, but the DOM text we match against to find a reference tab to clone is hardcoded
+// English in the original three viewers this replaces - preserved as-is rather than using our
+// own t()'d action name, which would resolve to Toolasha's locale and likely never match.
+const NATIVE_TAB_TEXT = { transmute: 'Transmute', coinify: 'Coinify', decompose: 'Decompose' };
+
+const TYPE_ORDER = ['transmute', 'coinify', 'decompose'];
+
+const TYPE_CONFIGS = {
+    transmute: {
+        type: 'transmute',
+        tracker: transmuteHistoryTracker,
+        settingKey: 'alchemy_transmuteHistory',
+        actionNameKey: 'skillingOptimizer.alchemyTypeTransmute',
+        emptyStateKey: 'alchemyHistoryViewer.noTransmuteHistoryYet',
+        hasEnhancement: false,
+        hasSuccessRate: false,
+        hasCoins: false,
+        hasResults: true,
+        resultsSupportSelfReturn: true,
+        catalystHrids: [],
+        catalystUsedFields: [],
+        catalystCellAlign: 'left',
+        successRateZeroDisplay: null,
+        clearConfirmLocaleKey: 'alchemyHistoryViewer.clearHistoryConfirmWithWarning',
+        filenamePrefix: 'transmute-history',
+        csvColumns: [
+            { kind: 'date' },
+            { kind: 'itemName' },
+            { kind: 'attempts' },
+            { kind: 'successes' },
+            { kind: 'failures' },
+            { kind: 'results', supportSelfReturn: true },
+        ],
+    },
+    coinify: {
+        type: 'coinify',
+        tracker: coinifyHistoryTracker,
+        settingKey: 'alchemy_coinifyHistory',
+        actionNameKey: 'skillingOptimizer.alchemyTypeCoinify',
+        emptyStateKey: 'alchemyHistoryViewer.noCoinifyHistoryYet',
+        hasEnhancement: true,
+        hasSuccessRate: true,
+        hasCoins: true,
+        hasResults: false,
+        resultsSupportSelfReturn: false,
+        catalystHrids: [CATALYST_OF_COINIFICATION_HRID, PRIME_CATALYST_HRID],
+        catalystUsedFields: ['catalystOfCoinificationUsed', 'primeCatalystUsed'],
+        catalystCellAlign: 'left',
+        successRateZeroDisplay: '—',
+        clearConfirmLocaleKey: 'alchemyHistoryViewer.clearHistoryConfirmPlain',
+        filenamePrefix: 'coinify-history',
+        csvColumns: [
+            { kind: 'date' },
+            { kind: 'itemName' },
+            { kind: 'enhancement', headerKey: 'csvColEnhancementLevelFull' },
+            { kind: 'attempts' },
+            { kind: 'successes' },
+            { kind: 'failures' },
+            { kind: 'successRate' },
+            { kind: 'coinsEarned' },
+            { kind: 'catalystUsed', catalystIndex: 0, headerStyle: 'used' },
+            { kind: 'catalystUsed', catalystIndex: 1, headerStyle: 'used' },
+        ],
+    },
+    decompose: {
+        type: 'decompose',
+        tracker: decomposeHistoryTracker,
+        settingKey: 'alchemy_decomposeHistory',
+        actionNameKey: 'skillingOptimizer.alchemyTypeDecompose',
+        emptyStateKey: 'alchemyHistoryViewer.noDecomposeHistoryYet',
+        hasEnhancement: true,
+        hasSuccessRate: true,
+        hasCoins: false,
+        hasResults: true,
+        resultsSupportSelfReturn: false,
+        catalystHrids: [CATALYST_OF_DECOMPOSITION_HRID, PRIME_CATALYST_HRID],
+        catalystUsedFields: ['catalystOfDecompositionUsed', 'primeCatalystUsed'],
+        catalystCellAlign: 'center',
+        successRateZeroDisplay: '0.0%',
+        clearConfirmLocaleKey: 'alchemyHistoryViewer.clearHistoryConfirmWithWarning',
+        filenamePrefix: 'decompose-history',
+        csvColumns: [
+            { kind: 'date' },
+            { kind: 'itemName' },
+            { kind: 'enhancement', headerKey: 'colEnhLevel' },
+            { kind: 'attempts' },
+            { kind: 'successes' },
+            { kind: 'failures' },
+            { kind: 'successRate' },
+            { kind: 'results', supportSelfReturn: false },
+            { kind: 'catalystUsed', catalystIndex: 0, headerStyle: 'plain' },
+            { kind: 'catalystUsed', catalystIndex: 1, headerStyle: 'plain' },
+        ],
+    },
+};
+
+class AlchemyHistoryViewer {
     constructor() {
         this.isInitialized = false;
         this.modal = null;
-        this.sessions = [];
-        this.filteredSessions = [];
-        this.currentPage = 1;
-        this.rowsPerPage = 50;
-        this.showAll = false;
-        this.sortColumn = 'startTime';
-        this.sortDirection = 'desc';
+        this.enabledTypes = [];
+        this.activeType = null;
 
-        // Column filters
-        this.filters = {
-            dateFrom: null,
-            dateTo: null,
-            selectedInputItems: [], // Array of itemHrids
-            resultsSearch: '', // Text search for result item names
-        };
+        // Per-type state (sessions/filters/pagination/sort) so switching types preserves each
+        // type's own filter/page position rather than resetting on every switch.
+        this.typeState = {};
+        TYPE_ORDER.forEach((type) => {
+            this.typeState[type] = {
+                sessions: [],
+                filteredSessions: [],
+                currentPage: 1,
+                rowsPerPage: 50,
+                showAll: false,
+                sortColumn: 'startTime',
+                sortDirection: 'desc',
+                filters: { dateFrom: null, dateTo: null, selectedInputItems: [], resultsSearch: '' },
+                cachedDateRange: null,
+            };
+        });
 
         this.activeFilterPopup = null;
         this.activeFilterButton = null;
@@ -40,26 +148,42 @@ class TransmuteHistoryViewer {
         this.alchemyTab = null;
         this.tabWatcher = null;
 
-        // Caches
+        // Caches (shared across types - item names/sprite URL don't vary by alching type)
         this.itemNameCache = new Map();
         this.itemsSpriteUrl = null;
-        this.cachedDateRange = null;
 
         this.timerRegistry = createTimerRegistry();
     }
 
     /**
-     * Initialize the viewer
+     * @returns {Object} the active type's per-type state
+     */
+    get state() {
+        return this.typeState[this.activeType];
+    }
+
+    /**
+     * @returns {Object} the active type's config from TYPE_CONFIGS
+     */
+    get activeConfig() {
+        return TYPE_CONFIGS[this.activeType];
+    }
+
+    /**
+     * Initialize the viewer. Mirrors the original three viewers' gating: each type participates
+     * only if its tracker's own setting is on (there is no separate viewer-specific setting).
      */
     initialize() {
         if (this.isInitialized) {
             return;
         }
 
-        if (!config.getSetting('alchemy_transmuteHistory')) {
+        this.enabledTypes = TYPE_ORDER.filter((type) => config.getSetting(TYPE_CONFIGS[type].settingKey));
+        if (this.enabledTypes.length === 0) {
             return;
         }
 
+        this.activeType = this.enabledTypes[0];
         this.isInitialized = true;
         this.addAlchemyTab();
     }
@@ -87,54 +211,43 @@ class TransmuteHistoryViewer {
     // ─── Tab Injection ───────────────────────────────────────────────────────
 
     /**
-     * Inject "Transmute History" tab into the alchemy tab bar.
+     * Inject a single "Alchemy History" tab into the alchemy tab bar.
      * The alchemy tab bar contains Coinify, Decompose, Transmute, Unrefine, Current Action.
-     * We identify it by the presence of a "Transmute" tab text.
+     * We identify it by the presence of any enabled type's native tab text.
      */
     addAlchemyTab() {
         const ensureTabExists = () => {
             const tablist = document.querySelector('[role="tablist"]');
             if (!tablist) return;
 
-            // Verify this is the alchemy tablist by checking for "Transmute" tab
-            const hasTransmute = Array.from(tablist.children).some(
-                (btn) => btn.textContent.includes('Transmute') && !btn.dataset.mwiTransmuteHistoryTab
-            );
-            if (!hasTransmute) return;
-
             // Already injected?
-            if (tablist.querySelector('[data-mwi-transmute-history-tab="true"]')) return;
+            if (tablist.querySelector('[data-mwi-alchemy-history-tab="true"]')) return;
 
-            // Clone an existing tab for structure
+            // Clone an existing tab for structure - matched by the native (English) tab text for
+            // any of our enabled types, since the game's own tab labels aren't run through our t().
             const referenceTab = Array.from(tablist.children).find(
-                (btn) => btn.textContent.includes('Transmute') && !btn.dataset.mwiTransmuteHistoryTab
+                (btn) =>
+                    !btn.dataset.mwiAlchemyHistoryTab &&
+                    this.enabledTypes.some((type) => btn.textContent.includes(NATIVE_TAB_TEXT[type]))
             );
             if (!referenceTab) return;
 
             const tab = referenceTab.cloneNode(true);
-            tab.setAttribute('data-mwi-transmute-history-tab', 'true');
+            tab.setAttribute('data-mwi-alchemy-history-tab', 'true');
             tab.classList.remove('Mui-selected');
             tab.setAttribute('aria-selected', 'false');
             tab.setAttribute('tabindex', '-1');
 
-            // Set label
+            const label = t('alchemyHistoryViewer.unifiedModalTitle');
             const badge = tab.querySelector('.TabsComponent_badge__1Du26');
             if (badge) {
                 // Replace first text node (the label) while keeping badge span
                 const badgeSpan = badge.querySelector('.MuiBadge-badge');
                 badge.textContent = '';
-                badge.appendChild(
-                    document.createTextNode(
-                        t('alchemyHistoryViewer.historyTabTitle', {
-                            actionName: t('skillingOptimizer.alchemyTypeTransmute'),
-                        })
-                    )
-                );
+                badge.appendChild(document.createTextNode(label));
                 if (badgeSpan) badge.appendChild(badgeSpan);
             } else {
-                tab.textContent = t('alchemyHistoryViewer.historyTabTitle', {
-                    actionName: t('skillingOptimizer.alchemyTypeTransmute'),
-                });
+                tab.textContent = label;
             }
 
             tab.addEventListener('click', (e) => {
@@ -144,6 +257,8 @@ class TransmuteHistoryViewer {
             });
 
             tablist.appendChild(tab);
+            tablist.style.overflowX = 'auto';
+            tablist.style.flexWrap = 'nowrap';
             this.alchemyTab = tab;
         };
 
@@ -168,19 +283,20 @@ class TransmuteHistoryViewer {
     // ─── Modal ───────────────────────────────────────────────────────────────
 
     /**
-     * Open the modal — load sessions and render
+     * Open the modal, showing the given type (or the current/first-enabled type if omitted).
+     * @param {string} [initialType]
      */
-    async openModal() {
-        this.sessions = await transmuteHistoryTracker.loadSessions();
-        this.cachedDateRange = null;
-        this.applyFilters();
+    async openModal(initialType) {
+        if (initialType && this.enabledTypes.includes(initialType)) {
+            this.activeType = initialType;
+        }
 
         if (!this.modal) {
             this.createModal();
         }
 
         this.modal.style.display = 'flex';
-        this.renderTable();
+        await this.switchType(this.activeType);
     }
 
     /**
@@ -198,7 +314,7 @@ class TransmuteHistoryViewer {
      */
     createModal() {
         this.modal = document.createElement('div');
-        this.modal.className = 'mwi-transmute-history-modal';
+        this.modal.className = 'mwi-alchemy-history-modal';
         this.modal.style.cssText = `
             position: fixed;
             top: 0; left: 0;
@@ -211,7 +327,7 @@ class TransmuteHistoryViewer {
         `;
 
         const content = document.createElement('div');
-        content.className = 'mwi-transmute-history-content';
+        content.className = 'mwi-alchemy-history-content';
         content.style.cssText = `
             background: #2a2a2a;
             border-radius: 8px;
@@ -230,13 +346,11 @@ class TransmuteHistoryViewer {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
+            margin-bottom: 16px;
         `;
 
         const title = document.createElement('h2');
-        title.textContent = t('alchemyHistoryViewer.historyTabTitle', {
-            actionName: t('skillingOptimizer.alchemyTypeTransmute'),
-        });
+        title.className = 'mwi-alchemy-history-title';
         title.style.cssText = 'margin: 0; color: #fff;';
 
         const closeBtn = document.createElement('button');
@@ -251,9 +365,14 @@ class TransmuteHistoryViewer {
         header.appendChild(title);
         header.appendChild(closeBtn);
 
+        // Type switcher row - hidden entirely when only one type is enabled
+        const switcher = document.createElement('div');
+        switcher.className = 'mwi-alchemy-history-switcher';
+        switcher.style.cssText = 'display: flex; gap: 6px; margin-bottom: 14px;';
+
         // Controls
         const controls = document.createElement('div');
-        controls.className = 'mwi-transmute-history-controls';
+        controls.className = 'mwi-alchemy-history-controls';
         controls.style.cssText = `
             display: flex;
             gap: 10px;
@@ -265,7 +384,7 @@ class TransmuteHistoryViewer {
 
         // Active filter badges row
         const badges = document.createElement('div');
-        badges.className = 'mwi-transmute-history-badges';
+        badges.className = 'mwi-alchemy-history-badges';
         badges.style.cssText = `
             display: flex;
             gap: 8px;
@@ -277,12 +396,12 @@ class TransmuteHistoryViewer {
 
         // Table container
         const tableContainer = document.createElement('div');
-        tableContainer.className = 'mwi-transmute-history-table-container';
+        tableContainer.className = 'mwi-alchemy-history-table-container';
         tableContainer.style.cssText = 'overflow-x: auto;';
 
         // Pagination
         const pagination = document.createElement('div');
-        pagination.className = 'mwi-transmute-history-pagination';
+        pagination.className = 'mwi-alchemy-history-pagination';
         pagination.style.cssText = `
             margin-top: 15px;
             display: flex;
@@ -291,6 +410,7 @@ class TransmuteHistoryViewer {
         `;
 
         content.appendChild(header);
+        content.appendChild(switcher);
         content.appendChild(controls);
         content.appendChild(badges);
         content.appendChild(tableContainer);
@@ -304,32 +424,83 @@ class TransmuteHistoryViewer {
         });
     }
 
+    /**
+     * Render the type-switcher buttons, hidden entirely when only one type is enabled.
+     */
+    renderSwitcher() {
+        const switcher = this.modal.querySelector('.mwi-alchemy-history-switcher');
+        while (switcher.firstChild) switcher.removeChild(switcher.firstChild);
+
+        if (this.enabledTypes.length <= 1) {
+            switcher.style.display = 'none';
+            return;
+        }
+        switcher.style.display = 'flex';
+
+        this.enabledTypes.forEach((type) => {
+            const btn = document.createElement('button');
+            btn.textContent = t(TYPE_CONFIGS[type].actionNameKey);
+            const active = type === this.activeType;
+            btn.style.cssText = active
+                ? 'padding: 6px 14px; background: #4a90e2; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;'
+                : 'padding: 6px 14px; background: #3a3a3a; color: #ccc; border: none; border-radius: 4px; cursor: pointer;';
+            btn.addEventListener('click', () => {
+                if (type !== this.activeType) this.switchType(type);
+            });
+            switcher.appendChild(btn);
+        });
+    }
+
+    /**
+     * Switch the modal to show a different type: loads that type's sessions fresh (alchemy
+     * session history can change in near-real-time while a character is actively alchemy-ing,
+     * so always reloading avoids showing stale attempt counts after switching tabs), then
+     * re-renders. Per-type filter/sort/page state is preserved across switches.
+     * @param {string} type
+     */
+    async switchType(type) {
+        this.activeType = type;
+        this.closeActiveFilterPopup();
+        this.state.sessions = await this.activeConfig.tracker.loadSessions();
+        this.state.cachedDateRange = null;
+        this.applyFilters();
+
+        this.modal.querySelector('.mwi-alchemy-history-title').textContent = t('alchemyHistoryViewer.historyTabTitle', {
+            actionName: t(this.activeConfig.actionNameKey),
+        });
+
+        this.renderSwitcher();
+        this.renderTable();
+    }
+
     // ─── Filtering ───────────────────────────────────────────────────────────
 
     /**
-     * Apply all active filters to this.sessions → this.filteredSessions
+     * Apply all active filters to the active type's sessions → filteredSessions
      */
     applyFilters() {
-        this.cachedDateRange = null;
+        const state = this.state;
+        const activeConfig = this.activeConfig;
+        state.cachedDateRange = null;
 
-        const hasDateFilter = !!(this.filters.dateFrom || this.filters.dateTo);
+        const hasDateFilter = !!(state.filters.dateFrom || state.filters.dateTo);
         let dateToEndOfDay = null;
-        if (hasDateFilter && this.filters.dateTo) {
-            dateToEndOfDay = new Date(this.filters.dateTo);
+        if (hasDateFilter && state.filters.dateTo) {
+            dateToEndOfDay = new Date(state.filters.dateTo);
             dateToEndOfDay.setHours(23, 59, 59, 999);
         }
 
-        const hasItemFilter = this.filters.selectedInputItems.length > 0;
-        const itemFilterSet = hasItemFilter ? new Set(this.filters.selectedInputItems) : null;
+        const hasItemFilter = state.filters.selectedInputItems.length > 0;
+        const itemFilterSet = hasItemFilter ? new Set(state.filters.selectedInputItems) : null;
 
-        const hasResultsFilter = !!this.filters.resultsSearch.trim();
-        const resultsSearch = hasResultsFilter ? this.filters.resultsSearch.trim().toLowerCase() : '';
+        const hasResultsFilter = activeConfig.hasResults && !!state.filters.resultsSearch.trim();
+        const resultsSearch = hasResultsFilter ? state.filters.resultsSearch.trim().toLowerCase() : '';
 
-        const filtered = this.sessions.filter((session) => {
+        const filtered = state.sessions.filter((session) => {
             // Date filter
             if (hasDateFilter) {
                 const d = new Date(session.startTime);
-                if (this.filters.dateFrom && d < this.filters.dateFrom) return false;
+                if (state.filters.dateFrom && d < state.filters.dateFrom) return false;
                 if (dateToEndOfDay && d > dateToEndOfDay) return false;
             }
 
@@ -349,13 +520,13 @@ class TransmuteHistoryViewer {
 
         // Sort
         filtered.sort((a, b) => {
-            const aVal = a[this.sortColumn] ?? 0;
-            const bVal = b[this.sortColumn] ?? 0;
-            return this.sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+            const aVal = a[state.sortColumn] ?? 0;
+            const bVal = b[state.sortColumn] ?? 0;
+            return state.sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
         });
 
-        this.filteredSessions = filtered;
-        this.currentPage = 1;
+        state.filteredSessions = filtered;
+        state.currentPage = 1;
     }
 
     /**
@@ -364,13 +535,14 @@ class TransmuteHistoryViewer {
      * @returns {boolean}
      */
     hasActiveFilter(col) {
+        const state = this.state;
         switch (col) {
             case 'startTime':
-                return !!(this.filters.dateFrom || this.filters.dateTo);
+                return !!(state.filters.dateFrom || state.filters.dateTo);
             case 'inputItemHrid':
-                return this.filters.selectedInputItems.length > 0;
+                return state.filters.selectedInputItems.length > 0;
             case 'results':
-                return !!this.filters.resultsSearch.trim();
+                return !!state.filters.resultsSearch.trim();
             default:
                 return false;
         }
@@ -383,7 +555,7 @@ class TransmuteHistoryViewer {
         return (
             this.hasActiveFilter('startTime') ||
             this.hasActiveFilter('inputItemHrid') ||
-            this.hasActiveFilter('results')
+            (this.activeConfig.hasResults && this.hasActiveFilter('results'))
         );
     }
 
@@ -391,10 +563,11 @@ class TransmuteHistoryViewer {
      * Clear all filters
      */
     clearAllFilters() {
-        this.filters.dateFrom = null;
-        this.filters.dateTo = null;
-        this.filters.selectedInputItems = [];
-        this.filters.resultsSearch = '';
+        const state = this.state;
+        state.filters.dateFrom = null;
+        state.filters.dateTo = null;
+        state.filters.selectedInputItems = [];
+        state.filters.resultsSearch = '';
         this.applyFilters();
         this.renderTable();
     }
@@ -402,13 +575,62 @@ class TransmuteHistoryViewer {
     // ─── Rendering ───────────────────────────────────────────────────────────
 
     /**
-     * Full render: controls + badges + table + pagination
+     * Build the column definition list for a given type's config.
+     * @param {Object} activeConfig
+     * @returns {Array<Object>}
+     */
+    buildColumns(activeConfig) {
+        const columns = [
+            { key: 'startTime', label: t('alchemyHistoryViewer.colSessionStart'), filterable: true },
+            { key: 'inputItemHrid', label: t('alchemyHistoryViewer.colInputItem'), filterable: true },
+        ];
+        if (activeConfig.hasEnhancement) {
+            columns.push({
+                key: 'enhancementLevel',
+                label: t('alchemyHistoryViewer.colEnhLevel'),
+                filterable: false,
+            });
+        }
+        columns.push({ key: 'totalAttempts', label: t('alchemyHistoryViewer.colAttempts'), filterable: false });
+        columns.push({ key: 'totalSuccesses', label: t('alchemyHistoryViewer.colSuccesses'), filterable: false });
+        if (activeConfig.hasSuccessRate) {
+            columns.push({
+                key: '_successRate',
+                label: t('alchemyHistoryViewer.colSuccessRate'),
+                filterable: false,
+            });
+        }
+        if (activeConfig.hasCoins) {
+            columns.push({
+                key: 'totalCoinsEarned',
+                label: t('alchemyHistoryViewer.colCoinsEarned'),
+                filterable: false,
+            });
+        }
+        if (activeConfig.hasResults) {
+            columns.push({ key: 'results', label: t('alchemyHistoryViewer.colResults'), filterable: true });
+        }
+        activeConfig.catalystHrids.forEach((hrid, i) => {
+            columns.push({
+                key: `_catalyst${i}`,
+                label: this.getItemName(hrid),
+                filterable: false,
+                catalystHrid: hrid,
+            });
+        });
+        columns.push({ key: '_delete', label: '', filterable: false });
+        return columns;
+    }
+
+    /**
+     * Full render: switcher + controls + badges + table + pagination
      */
     renderTable() {
+        this.renderSwitcher();
         this.renderControls();
         this.renderBadges();
 
-        const tableContainer = this.modal.querySelector('.mwi-transmute-history-table-container');
+        const tableContainer = this.modal.querySelector('.mwi-alchemy-history-table-container');
         while (tableContainer.firstChild) tableContainer.removeChild(tableContainer.firstChild);
 
         const table = document.createElement('table');
@@ -419,14 +641,8 @@ class TransmuteHistoryViewer {
         const headerRow = document.createElement('tr');
         headerRow.style.background = '#1a1a1a';
 
-        const columns = [
-            { key: 'startTime', label: t('alchemyHistoryViewer.colSessionStart'), filterable: true },
-            { key: 'inputItemHrid', label: t('alchemyHistoryViewer.colInputItem'), filterable: true },
-            { key: 'totalAttempts', label: t('alchemyHistoryViewer.colAttempts'), filterable: false },
-            { key: 'totalSuccesses', label: t('alchemyHistoryViewer.colSuccesses'), filterable: false },
-            { key: 'results', label: t('alchemyHistoryViewer.colResults'), filterable: true },
-            { key: '_delete', label: '', filterable: false },
-        ];
+        const activeConfig = this.activeConfig;
+        const columns = this.buildColumns(activeConfig);
 
         columns.forEach((col) => {
             const th = document.createElement('th');
@@ -444,23 +660,32 @@ class TransmuteHistoryViewer {
             const labelSpan = document.createElement('span');
             labelSpan.style.cursor = 'pointer';
 
-            const isSortable = col.key !== 'results';
+            // Computed columns (starting with _) and 'results' are not directly sortable by field
+            const isSortable = !col.key.startsWith('_') && col.key !== 'results';
+            const isCatalystCol = col.key.startsWith('_catalyst');
+
             if (isSortable) {
-                if (this.sortColumn === col.key) {
-                    labelSpan.textContent = col.label + (this.sortDirection === 'asc' ? ' ▲' : ' ▼');
+                if (this.state.sortColumn === col.key) {
+                    labelSpan.textContent = col.label + (this.state.sortDirection === 'asc' ? ' ▲' : ' ▼');
                 } else {
                     labelSpan.textContent = col.label;
                 }
                 labelSpan.addEventListener('click', () => {
-                    if (this.sortColumn === col.key) {
-                        this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+                    const state = this.state;
+                    if (state.sortColumn === col.key) {
+                        state.sortDirection = state.sortDirection === 'asc' ? 'desc' : 'asc';
                     } else {
-                        this.sortColumn = col.key;
-                        this.sortDirection = 'desc';
+                        state.sortColumn = col.key;
+                        state.sortDirection = 'desc';
                     }
                     this.applyFilters();
                     this.renderTable();
                 });
+            } else if (isCatalystCol) {
+                // Render icon as header with item name as tooltip
+                labelSpan.title = col.label;
+                labelSpan.style.cursor = 'default';
+                this.appendItemIcon(labelSpan, col.catalystHrid, 20);
             } else {
                 labelSpan.textContent = col.label;
                 labelSpan.style.cursor = 'default';
@@ -500,82 +725,15 @@ class TransmuteHistoryViewer {
             const cell = document.createElement('td');
             cell.colSpan = columns.length;
             cell.textContent =
-                this.sessions.length === 0
-                    ? t('alchemyHistoryViewer.noTransmuteHistoryYet')
+                this.state.sessions.length === 0
+                    ? t(activeConfig.emptyStateKey)
                     : t('alchemyHistoryViewer.noSessionsMatchFilters');
             cell.style.cssText = 'padding: 20px; text-align: center; color: #888;';
             row.appendChild(cell);
             tbody.appendChild(row);
         } else {
             paginated.forEach((session, index) => {
-                const row = document.createElement('tr');
-                row.style.cssText = `
-                    border-bottom: 1px solid #333;
-                    background: ${index % 2 === 0 ? '#2a2a2a' : '#252525'};
-                `;
-
-                // Session Start
-                const dateCell = document.createElement('td');
-                dateCell.textContent = formatDateTime(new Date(session.startTime));
-                dateCell.style.padding = '6px 10px';
-                row.appendChild(dateCell);
-
-                // Input Item
-                const inputCell = document.createElement('td');
-                inputCell.style.cssText = 'padding: 6px 10px; display: flex; align-items: center; gap: 8px;';
-                this.appendItemIcon(inputCell, session.inputItemHrid, 20);
-                const inputName = document.createElement('span');
-                inputName.textContent = this.getItemName(session.inputItemHrid);
-                inputCell.appendChild(inputName);
-                row.appendChild(inputCell);
-
-                // Attempts
-                const attemptsCell = document.createElement('td');
-                attemptsCell.textContent = session.totalAttempts;
-                attemptsCell.style.padding = '6px 10px';
-                row.appendChild(attemptsCell);
-
-                // Successes
-                const successCell = document.createElement('td');
-                const failures = session.totalAttempts - session.totalSuccesses;
-                successCell.textContent = t('alchemyHistoryViewer.successesFailedLabel', {
-                    successes: session.totalSuccesses,
-                    failures,
-                });
-                successCell.style.cssText = `
-                    padding: 6px 10px;
-                    color: ${failures > 0 ? '#fbbf24' : '#4ade80'};
-                `;
-                row.appendChild(successCell);
-
-                // Results
-                const resultsCell = document.createElement('td');
-                resultsCell.style.cssText = 'padding: 6px 10px;';
-                this.renderResultsCell(resultsCell, session);
-                row.appendChild(resultsCell);
-
-                // Delete
-                const deleteCell = document.createElement('td');
-                deleteCell.style.cssText = 'padding: 6px 4px; text-align: center;';
-                const deleteBtn = document.createElement('button');
-                deleteBtn.textContent = '✕';
-                deleteBtn.title = t('alchemyHistoryViewer.deleteSessionTitle');
-                deleteBtn.style.cssText = `
-                    background: none; border: none; color: #dc2626;
-                    cursor: pointer; font-size: 14px; padding: 2px 6px;
-                    border-radius: 3px; line-height: 1;
-                `;
-                deleteBtn.addEventListener('mouseenter', () => {
-                    deleteBtn.style.background = 'rgba(220,38,38,0.15)';
-                });
-                deleteBtn.addEventListener('mouseleave', () => {
-                    deleteBtn.style.background = 'none';
-                });
-                deleteBtn.addEventListener('click', () => this.deleteSession(session.id));
-                deleteCell.appendChild(deleteBtn);
-                row.appendChild(deleteCell);
-
-                tbody.appendChild(row);
+                tbody.appendChild(this.buildRow(session, index, activeConfig));
             });
         }
 
@@ -585,12 +743,130 @@ class TransmuteHistoryViewer {
     }
 
     /**
-     * Render the results cell for a session
-     * Results sorted by totalValue desc, self-returns last
+     * Build one table row for a session, per the active type's config.
+     * @param {Object} session
+     * @param {number} index
+     * @param {Object} activeConfig
+     * @returns {HTMLElement}
+     */
+    buildRow(session, index, activeConfig) {
+        const row = document.createElement('tr');
+        row.style.cssText = `
+            border-bottom: 1px solid #333;
+            background: ${index % 2 === 0 ? '#2a2a2a' : '#252525'};
+        `;
+
+        // Session Start
+        const dateCell = document.createElement('td');
+        dateCell.textContent = formatDateTime(new Date(session.startTime));
+        dateCell.style.padding = '6px 10px';
+        row.appendChild(dateCell);
+
+        // Input Item
+        const inputCell = document.createElement('td');
+        inputCell.style.cssText = 'padding: 6px 10px; display: flex; align-items: center; gap: 8px;';
+        this.appendItemIcon(inputCell, session.inputItemHrid, 20);
+        const inputName = document.createElement('span');
+        inputName.textContent = this.getItemName(session.inputItemHrid);
+        inputCell.appendChild(inputName);
+        row.appendChild(inputCell);
+
+        // Enhancement Level
+        if (activeConfig.hasEnhancement) {
+            const enhCell = document.createElement('td');
+            enhCell.textContent = session.enhancementLevel > 0 ? `+${session.enhancementLevel}` : '0';
+            enhCell.style.cssText = 'padding: 6px 10px; text-align: center;';
+            row.appendChild(enhCell);
+        }
+
+        // Attempts
+        const attemptsCell = document.createElement('td');
+        attemptsCell.textContent = session.totalAttempts;
+        attemptsCell.style.padding = '6px 10px';
+        row.appendChild(attemptsCell);
+
+        // Successes
+        const successCell = document.createElement('td');
+        const failures = session.totalAttempts - session.totalSuccesses;
+        successCell.textContent = t('alchemyHistoryViewer.successesFailedLabel', {
+            successes: session.totalSuccesses,
+            failures,
+        });
+        successCell.style.cssText = `
+            padding: 6px 10px;
+            color: ${failures > 0 ? '#fbbf24' : '#4ade80'};
+        `;
+        row.appendChild(successCell);
+
+        // Success Rate
+        if (activeConfig.hasSuccessRate) {
+            const rateCell = document.createElement('td');
+            rateCell.textContent =
+                session.totalAttempts > 0
+                    ? `${((session.totalSuccesses / session.totalAttempts) * 100).toFixed(1)}%`
+                    : activeConfig.successRateZeroDisplay;
+            rateCell.style.padding = '6px 10px';
+            row.appendChild(rateCell);
+        }
+
+        // Coins Earned
+        if (activeConfig.hasCoins) {
+            const earnedCell = document.createElement('td');
+            earnedCell.textContent = formatKMB(session.totalCoinsEarned || 0, 1);
+            earnedCell.style.cssText = 'padding: 6px 10px; color: #fbbf24;';
+            row.appendChild(earnedCell);
+        }
+
+        // Results
+        if (activeConfig.hasResults) {
+            const resultsCell = document.createElement('td');
+            resultsCell.style.cssText = 'padding: 6px 10px;';
+            this.renderResultsCell(resultsCell, session, activeConfig);
+            row.appendChild(resultsCell);
+        }
+
+        // Catalysts
+        activeConfig.catalystHrids.forEach((hrid, i) => {
+            const cell = document.createElement('td');
+            cell.style.cssText = `padding: 6px 10px;${activeConfig.catalystCellAlign === 'center' ? ' text-align: center;' : ''}`;
+            const used = session[activeConfig.catalystUsedFields[i]] || 0;
+            this.renderCatalystCell(cell, hrid, used);
+            row.appendChild(cell);
+        });
+
+        // Delete
+        const deleteCell = document.createElement('td');
+        deleteCell.style.cssText = 'padding: 6px 4px; text-align: center;';
+        const deleteBtn = document.createElement('button');
+        deleteBtn.textContent = '✕';
+        deleteBtn.title = t('alchemyHistoryViewer.deleteSessionTitle');
+        deleteBtn.style.cssText = `
+            background: none; border: none; color: #dc2626;
+            cursor: pointer; font-size: 14px; padding: 2px 6px;
+            border-radius: 3px; line-height: 1;
+        `;
+        deleteBtn.addEventListener('mouseenter', () => {
+            deleteBtn.style.background = 'rgba(220,38,38,0.15)';
+        });
+        deleteBtn.addEventListener('mouseleave', () => {
+            deleteBtn.style.background = 'none';
+        });
+        deleteBtn.addEventListener('click', () => this.deleteSession(session.id));
+        deleteCell.appendChild(deleteBtn);
+        row.appendChild(deleteCell);
+
+        return row;
+    }
+
+    /**
+     * Render the results cell for a session. When resultsSupportSelfReturn is true (transmute),
+     * self-returns sort last and render with a muted "self-return" label; decompose has no
+     * self-return concept and just sorts by totalValue desc.
      * @param {HTMLElement} cell
      * @param {Object} session
+     * @param {Object} activeConfig
      */
-    renderResultsCell(cell, session) {
+    renderResultsCell(cell, session, activeConfig) {
         const results = session.results || {};
         const entries = Object.entries(results);
 
@@ -602,15 +878,15 @@ class TransmuteHistoryViewer {
             return;
         }
 
-        // Sort: non-self-returns by totalValue desc, self-returns last
-        // Exclude incidental drops (essences, artisan's crates) recorded in older sessions
-        const filteredEntries = entries.sort(([, a], [, b]) => {
-            if (a.isSelfReturn && !b.isSelfReturn) return 1;
-            if (!a.isSelfReturn && b.isSelfReturn) return -1;
-            return (b.totalValue || 0) - (a.totalValue || 0);
-        });
+        const sortedEntries = activeConfig.resultsSupportSelfReturn
+            ? entries.sort(([, a], [, b]) => {
+                  if (a.isSelfReturn && !b.isSelfReturn) return 1;
+                  if (!a.isSelfReturn && b.isSelfReturn) return -1;
+                  return (b.totalValue || 0) - (a.totalValue || 0);
+              })
+            : entries.sort(([, a], [, b]) => (b.totalValue || 0) - (a.totalValue || 0));
 
-        filteredEntries.forEach(([itemHrid, result]) => {
+        sortedEntries.forEach(([itemHrid, result]) => {
             const line = document.createElement('div');
             line.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-bottom: 2px;';
 
@@ -619,7 +895,7 @@ class TransmuteHistoryViewer {
             const text = document.createElement('span');
             const name = this.getItemName(itemHrid);
 
-            if (result.isSelfReturn) {
+            if (activeConfig.resultsSupportSelfReturn && result.isSelfReturn) {
                 text.textContent = t('alchemyHistoryViewer.selfReturnResultLine', { name, count: result.count });
                 text.style.color = '#888';
             } else {
@@ -634,16 +910,43 @@ class TransmuteHistoryViewer {
     }
 
     /**
-     * Render controls bar (stats + clear history button)
+     * Render a catalyst cell: icon + count, or — if zero
+     * @param {HTMLElement} cell
+     * @param {string} catalystHrid
+     * @param {number} count
+     */
+    renderCatalystCell(cell, catalystHrid, count) {
+        if (count === 0) {
+            const dash = document.createElement('span');
+            dash.textContent = '—';
+            dash.style.color = '#888';
+            cell.appendChild(dash);
+            return;
+        }
+
+        const wrapper = document.createElement('div');
+        wrapper.style.cssText = 'display: flex; align-items: center; gap: 4px;';
+
+        this.appendItemIcon(wrapper, catalystHrid, 18);
+
+        const countSpan = document.createElement('span');
+        countSpan.textContent = count.toLocaleString();
+        wrapper.appendChild(countSpan);
+
+        cell.appendChild(wrapper);
+    }
+
+    /**
+     * Render controls bar (stats + action buttons)
      */
     renderControls() {
-        const controls = this.modal.querySelector('.mwi-transmute-history-controls');
+        const controls = this.modal.querySelector('.mwi-alchemy-history-controls');
         while (controls.firstChild) controls.removeChild(controls.firstChild);
 
         // Stats
         const stats = document.createElement('span');
         stats.style.cssText = 'color: #aaa; font-size: 14px;';
-        stats.textContent = t('alchemyHistoryViewer.sessionCountStat', { count: this.filteredSessions.length });
+        stats.textContent = t('alchemyHistoryViewer.sessionCountStat', { count: this.state.filteredSessions.length });
         controls.appendChild(stats);
 
         const rightGroup = document.createElement('div');
@@ -688,47 +991,51 @@ class TransmuteHistoryViewer {
      * Render active filter badges
      */
     renderBadges() {
-        const container = this.modal.querySelector('.mwi-transmute-history-badges');
+        const container = this.modal.querySelector('.mwi-alchemy-history-badges');
         while (container.firstChild) container.removeChild(container.firstChild);
 
+        const state = this.state;
+        const activeConfig = this.activeConfig;
         const badges = [];
 
-        if (this.filters.dateFrom || this.filters.dateTo) {
+        if (state.filters.dateFrom || state.filters.dateTo) {
             const parts = [];
-            if (this.filters.dateFrom) parts.push(formatDateTime(this.filters.dateFrom, { includeTime: false }));
-            if (this.filters.dateTo) parts.push(formatDateTime(this.filters.dateTo, { includeTime: false }));
+            if (state.filters.dateFrom) parts.push(formatDateTime(state.filters.dateFrom, { includeTime: false }));
+            if (state.filters.dateTo) parts.push(formatDateTime(state.filters.dateTo, { includeTime: false }));
             badges.push({
                 label: t('marketHistory.dateFilterBadge', { range: parts.join(' - ') }),
                 onRemove: () => {
-                    this.filters.dateFrom = null;
-                    this.filters.dateTo = null;
+                    state.filters.dateFrom = null;
+                    state.filters.dateTo = null;
                     this.applyFilters();
                     this.renderTable();
                 },
             });
         }
 
-        if (this.filters.selectedInputItems.length > 0) {
+        if (state.filters.selectedInputItems.length > 0) {
             const label =
-                this.filters.selectedInputItems.length === 1
-                    ? this.getItemName(this.filters.selectedInputItems[0])
-                    : t('alchemyHistoryViewer.inputItemsCountLabel', { count: this.filters.selectedInputItems.length });
+                state.filters.selectedInputItems.length === 1
+                    ? this.getItemName(state.filters.selectedInputItems[0])
+                    : t('alchemyHistoryViewer.inputItemsCountLabel', {
+                          count: state.filters.selectedInputItems.length,
+                      });
             badges.push({
                 label: t('alchemyHistoryViewer.inputFilterBadge', { label }),
-                icon: this.filters.selectedInputItems[0],
+                icon: state.filters.selectedInputItems[0],
                 onRemove: () => {
-                    this.filters.selectedInputItems = [];
+                    state.filters.selectedInputItems = [];
                     this.applyFilters();
                     this.renderTable();
                 },
             });
         }
 
-        if (this.filters.resultsSearch.trim()) {
+        if (activeConfig.hasResults && state.filters.resultsSearch.trim()) {
             badges.push({
-                label: t('alchemyHistoryViewer.resultsFilterBadge', { text: this.filters.resultsSearch.trim() }),
+                label: t('alchemyHistoryViewer.resultsFilterBadge', { text: state.filters.resultsSearch.trim() }),
                 onRemove: () => {
-                    this.filters.resultsSearch = '';
+                    state.filters.resultsSearch = '';
                     this.applyFilters();
                     this.renderTable();
                 },
@@ -769,8 +1076,10 @@ class TransmuteHistoryViewer {
      * Render pagination controls
      */
     renderPagination() {
-        const pagination = this.modal.querySelector('.mwi-transmute-history-pagination');
+        const pagination = this.modal.querySelector('.mwi-alchemy-history-pagination');
         while (pagination.firstChild) pagination.removeChild(pagination.firstChild);
+
+        const state = this.state;
 
         const leftSide = document.createElement('div');
         leftSide.style.cssText = 'display: flex; gap: 8px; align-items: center; color: #aaa;';
@@ -780,18 +1089,18 @@ class TransmuteHistoryViewer {
 
         const rowsInput = document.createElement('input');
         rowsInput.type = 'number';
-        rowsInput.value = this.rowsPerPage;
+        rowsInput.value = state.rowsPerPage;
         rowsInput.min = '1';
-        rowsInput.disabled = this.showAll;
+        rowsInput.disabled = state.showAll;
         rowsInput.style.cssText = `
             width: 60px; padding: 4px 8px;
             border: 1px solid #555; border-radius: 4px;
-            background: ${this.showAll ? '#333' : '#1a1a1a'};
-            color: ${this.showAll ? '#666' : '#fff'};
+            background: ${state.showAll ? '#333' : '#1a1a1a'};
+            color: ${state.showAll ? '#666' : '#fff'};
         `;
         rowsInput.addEventListener('change', (e) => {
-            this.rowsPerPage = Math.max(1, parseInt(e.target.value) || 50);
-            this.currentPage = 1;
+            state.rowsPerPage = Math.max(1, parseInt(e.target.value) || 50);
+            state.currentPage = 1;
             this.renderTable();
         });
 
@@ -800,14 +1109,14 @@ class TransmuteHistoryViewer {
 
         const showAllCheckbox = document.createElement('input');
         showAllCheckbox.type = 'checkbox';
-        showAllCheckbox.checked = this.showAll;
+        showAllCheckbox.checked = state.showAll;
         showAllCheckbox.style.cursor = 'pointer';
         showAllCheckbox.addEventListener('change', (e) => {
-            this.showAll = e.target.checked;
-            rowsInput.disabled = this.showAll;
-            rowsInput.style.background = this.showAll ? '#333' : '#1a1a1a';
-            rowsInput.style.color = this.showAll ? '#666' : '#fff';
-            this.currentPage = 1;
+            state.showAll = e.target.checked;
+            rowsInput.disabled = state.showAll;
+            rowsInput.style.background = state.showAll ? '#333' : '#1a1a1a';
+            rowsInput.style.color = state.showAll ? '#666' : '#fff';
+            state.currentPage = 1;
             this.renderTable();
         });
 
@@ -821,42 +1130,45 @@ class TransmuteHistoryViewer {
         const rightSide = document.createElement('div');
         rightSide.style.cssText = 'display: flex; gap: 8px; align-items: center; color: #aaa;';
 
-        if (!this.showAll) {
+        if (!state.showAll) {
             const totalPages = this.getTotalPages();
 
             const prevBtn = document.createElement('button');
             prevBtn.textContent = '◀';
-            prevBtn.disabled = this.currentPage === 1;
+            prevBtn.disabled = state.currentPage === 1;
             prevBtn.style.cssText = `
                 padding: 4px 12px;
-                background: ${this.currentPage === 1 ? '#333' : '#4a90e2'};
-                color: ${this.currentPage === 1 ? '#666' : 'white'};
+                background: ${state.currentPage === 1 ? '#333' : '#4a90e2'};
+                color: ${state.currentPage === 1 ? '#666' : 'white'};
                 border: none; border-radius: 4px;
-                cursor: ${this.currentPage === 1 ? 'default' : 'pointer'};
+                cursor: ${state.currentPage === 1 ? 'default' : 'pointer'};
             `;
             prevBtn.addEventListener('click', () => {
-                if (this.currentPage > 1) {
-                    this.currentPage--;
+                if (state.currentPage > 1) {
+                    state.currentPage--;
                     this.renderTable();
                 }
             });
 
             const pageInfo = document.createElement('span');
-            pageInfo.textContent = t('marketHistory.pageInfo', { current: this.currentPage, total: totalPages || 1 });
+            pageInfo.textContent = t('marketHistory.pageInfo', {
+                current: state.currentPage,
+                total: totalPages || 1,
+            });
 
             const nextBtn = document.createElement('button');
             nextBtn.textContent = '▶';
-            nextBtn.disabled = this.currentPage >= totalPages;
+            nextBtn.disabled = state.currentPage >= totalPages;
             nextBtn.style.cssText = `
                 padding: 4px 12px;
-                background: ${this.currentPage >= totalPages ? '#333' : '#4a90e2'};
-                color: ${this.currentPage >= totalPages ? '#666' : 'white'};
+                background: ${state.currentPage >= totalPages ? '#333' : '#4a90e2'};
+                color: ${state.currentPage >= totalPages ? '#666' : 'white'};
                 border: none; border-radius: 4px;
-                cursor: ${this.currentPage >= totalPages ? 'default' : 'pointer'};
+                cursor: ${state.currentPage >= totalPages ? 'default' : 'pointer'};
             `;
             nextBtn.addEventListener('click', () => {
-                if (this.currentPage < totalPages) {
-                    this.currentPage++;
+                if (state.currentPage < totalPages) {
+                    state.currentPage++;
                     this.renderTable();
                 }
             });
@@ -866,7 +1178,7 @@ class TransmuteHistoryViewer {
             rightSide.appendChild(nextBtn);
         } else {
             const info = document.createElement('span');
-            info.textContent = t('alchemyHistoryViewer.showingAllSessions', { count: this.filteredSessions.length });
+            info.textContent = t('alchemyHistoryViewer.showingAllSessions', { count: state.filteredSessions.length });
             rightSide.appendChild(info);
         }
 
@@ -899,6 +1211,7 @@ class TransmuteHistoryViewer {
                 popup = this.createInputItemFilterPopup();
                 break;
             case 'results':
+                if (!this.activeConfig.hasResults) return;
                 popup = this.createResultsFilterPopup();
                 break;
             default:
@@ -921,8 +1234,8 @@ class TransmuteHistoryViewer {
                 this.closeActiveFilterPopup();
             }
         };
-        const t = setTimeout(() => document.addEventListener('click', this.popupCloseHandler), 10);
-        this.timerRegistry.registerTimeout(t);
+        const timeoutId = setTimeout(() => document.addEventListener('click', this.popupCloseHandler), 10);
+        this.timerRegistry.registerTimeout(timeoutId);
     }
 
     /**
@@ -945,22 +1258,23 @@ class TransmuteHistoryViewer {
      * @returns {HTMLElement}
      */
     createDateFilterPopup() {
+        const state = this.state;
         const popup = this.createPopupBase(t('marketHistory.filterByDateTitle'));
 
         // Compute available range
-        if (!this.cachedDateRange) {
-            const timestamps = this.sessions.map((s) => s.startTime).filter(Boolean);
+        if (!state.cachedDateRange) {
+            const timestamps = state.sessions.map((s) => s.startTime).filter(Boolean);
             if (timestamps.length > 0) {
-                this.cachedDateRange = {
+                state.cachedDateRange = {
                     minDate: new Date(Math.min(...timestamps)),
                     maxDate: new Date(Math.max(...timestamps)),
                 };
             } else {
-                this.cachedDateRange = { minDate: null, maxDate: null };
+                state.cachedDateRange = { minDate: null, maxDate: null };
             }
         }
 
-        const { minDate, maxDate } = this.cachedDateRange;
+        const { minDate, maxDate } = state.cachedDateRange;
 
         if (minDate && maxDate) {
             const rangeInfo = document.createElement('div');
@@ -976,13 +1290,13 @@ class TransmuteHistoryViewer {
 
         const fromInput = this.createDateInput(
             t('marketHistory.fromLabel'),
-            this.filters.dateFrom ? this.filters.dateFrom.toISOString().split('T')[0] : '',
+            state.filters.dateFrom ? state.filters.dateFrom.toISOString().split('T')[0] : '',
             minDate,
             maxDate
         );
         const toInput = this.createDateInput(
             t('marketHistory.toLabel'),
-            this.filters.dateTo ? this.filters.dateTo.toISOString().split('T')[0] : '',
+            state.filters.dateTo ? state.filters.dateTo.toISOString().split('T')[0] : '',
             minDate,
             maxDate
         );
@@ -994,15 +1308,15 @@ class TransmuteHistoryViewer {
 
         const btnRow = this.createPopupButtonRow(
             () => {
-                this.filters.dateFrom = fromInput.input.value ? new Date(fromInput.input.value) : null;
-                this.filters.dateTo = toInput.input.value ? new Date(toInput.input.value) : null;
+                state.filters.dateFrom = fromInput.input.value ? new Date(fromInput.input.value) : null;
+                state.filters.dateTo = toInput.input.value ? new Date(toInput.input.value) : null;
                 this.applyFilters();
                 this.renderTable();
                 this.closeActiveFilterPopup();
             },
             () => {
-                this.filters.dateFrom = null;
-                this.filters.dateTo = null;
+                state.filters.dateFrom = null;
+                state.filters.dateTo = null;
                 this.applyFilters();
                 this.renderTable();
                 this.closeActiveFilterPopup();
@@ -1018,12 +1332,13 @@ class TransmuteHistoryViewer {
      * @returns {HTMLElement}
      */
     createInputItemFilterPopup() {
+        const state = this.state;
         const popup = this.createPopupBase(t('alchemyHistoryViewer.filterByInputItemTitle'));
         popup.style.minWidth = '220px';
 
         // Gather unique input items from all sessions
         const itemSet = new Map();
-        this.sessions.forEach((s) => {
+        state.sessions.forEach((s) => {
             if (!itemSet.has(s.inputItemHrid)) {
                 itemSet.set(s.inputItemHrid, this.getItemName(s.inputItemHrid));
             }
@@ -1031,7 +1346,7 @@ class TransmuteHistoryViewer {
         const allItems = Array.from(itemSet.entries()).sort((a, b) => a[1].localeCompare(b[1]));
 
         // Track pending selection (local to this popup)
-        const pending = new Set(this.filters.selectedInputItems);
+        const pending = new Set(state.filters.selectedInputItems);
 
         // Search box
         const searchInput = document.createElement('input');
@@ -1086,13 +1401,13 @@ class TransmuteHistoryViewer {
 
         const btnRow = this.createPopupButtonRow(
             () => {
-                this.filters.selectedInputItems = Array.from(pending);
+                state.filters.selectedInputItems = Array.from(pending);
                 this.applyFilters();
                 this.renderTable();
                 this.closeActiveFilterPopup();
             },
             () => {
-                this.filters.selectedInputItems = [];
+                state.filters.selectedInputItems = [];
                 this.applyFilters();
                 this.renderTable();
                 this.closeActiveFilterPopup();
@@ -1108,13 +1423,14 @@ class TransmuteHistoryViewer {
      * @returns {HTMLElement}
      */
     createResultsFilterPopup() {
+        const state = this.state;
         const popup = this.createPopupBase(t('alchemyHistoryViewer.filterByResultItemTitle'));
         popup.style.minWidth = '220px';
 
         const searchInput = document.createElement('input');
         searchInput.type = 'text';
         searchInput.placeholder = t('alchemyHistoryViewer.itemNamePlaceholder');
-        searchInput.value = this.filters.resultsSearch;
+        searchInput.value = state.filters.resultsSearch;
         searchInput.style.cssText = `
             width: 100%; padding: 6px; margin-bottom: 10px;
             background: #1a1a1a; border: 1px solid #555;
@@ -1125,13 +1441,13 @@ class TransmuteHistoryViewer {
 
         const btnRow = this.createPopupButtonRow(
             () => {
-                this.filters.resultsSearch = searchInput.value;
+                state.filters.resultsSearch = searchInput.value;
                 this.applyFilters();
                 this.renderTable();
                 this.closeActiveFilterPopup();
             },
             () => {
-                this.filters.resultsSearch = '';
+                state.filters.resultsSearch = '';
                 this.applyFilters();
                 this.renderTable();
                 this.closeActiveFilterPopup();
@@ -1280,9 +1596,10 @@ class TransmuteHistoryViewer {
      * @returns {Array}
      */
     getPaginatedSessions() {
-        if (this.showAll) return this.filteredSessions;
-        const start = (this.currentPage - 1) * this.rowsPerPage;
-        return this.filteredSessions.slice(start, start + this.rowsPerPage);
+        const state = this.state;
+        if (state.showAll) return state.filteredSessions;
+        const start = (state.currentPage - 1) * state.rowsPerPage;
+        return state.filteredSessions.slice(start, start + state.rowsPerPage);
     }
 
     /**
@@ -1290,8 +1607,9 @@ class TransmuteHistoryViewer {
      * @returns {number}
      */
     getTotalPages() {
-        if (this.showAll) return 1;
-        return Math.ceil(this.filteredSessions.length / this.rowsPerPage);
+        const state = this.state;
+        if (state.showAll) return 1;
+        return Math.ceil(state.filteredSessions.length / state.rowsPerPage);
     }
 
     /**
@@ -1299,12 +1617,14 @@ class TransmuteHistoryViewer {
      * @param {string} sessionId
      */
     async deleteSession(sessionId) {
-        this.sessions = this.sessions.filter((s) => s.id !== sessionId);
+        const state = this.state;
+        const activeConfig = this.activeConfig;
+        state.sessions = state.sessions.filter((s) => s.id !== sessionId);
 
         try {
-            await transmuteHistoryTracker.deleteSessions(this.sessions);
+            await activeConfig.tracker.deleteSessions(state.sessions);
         } catch (error) {
-            console.error('[TransmuteHistoryViewer] Failed to delete session:', error);
+            console.error('[AlchemyHistoryViewer] Failed to delete session:', error);
         }
 
         this.applyFilters();
@@ -1312,45 +1632,128 @@ class TransmuteHistoryViewer {
     }
 
     /**
-     * Export all sessions to a CSV file download
+     * Resolve a CSV column's header text, driven by the active type's csvColumns config entry
+     * rather than inferred from hasX flags - preserves pre-existing per-type wording differences
+     * (e.g. coinify's "Enhancement Level" vs decompose's "Enh. Level") exactly.
+     * @param {Object} col
+     * @param {Object} activeConfig
+     * @returns {string}
+     */
+    getCsvHeader(col, activeConfig) {
+        switch (col.kind) {
+            case 'date':
+                return t('alchemyHistoryViewer.colSessionStart');
+            case 'itemName':
+                return t('alchemyHistoryViewer.colInputItem');
+            case 'enhancement':
+                return t(`alchemyHistoryViewer.${col.headerKey}`);
+            case 'attempts':
+                return t('alchemyHistoryViewer.colAttempts');
+            case 'successes':
+                return t('alchemyHistoryViewer.colSuccesses');
+            case 'failures':
+                return t('alchemyHistoryViewer.colFailures');
+            case 'successRate':
+                return t('alchemyHistoryViewer.colSuccessRate');
+            case 'coinsEarned':
+                return t('alchemyHistoryViewer.colCoinsEarned');
+            case 'results':
+                return t('alchemyHistoryViewer.colResults');
+            case 'catalystUsed': {
+                const hrid = activeConfig.catalystHrids[col.catalystIndex];
+                const name = this.getItemName(hrid);
+                return col.headerStyle === 'used' ? t('alchemyHistoryViewer.csvColItemUsedHeader', { name }) : name;
+            }
+            default:
+                return '';
+        }
+    }
+
+    /**
+     * Resolve a CSV column's value for one session.
+     * @param {Object} col
+     * @param {Object} session
+     * @param {Object} activeConfig
+     * @returns {string|number}
+     */
+    getCsvValue(col, session, activeConfig) {
+        switch (col.kind) {
+            case 'date':
+                return formatDateTime(new Date(session.startTime));
+            case 'itemName':
+                return this.getItemName(session.inputItemHrid);
+            case 'enhancement':
+                return session.enhancementLevel;
+            case 'attempts':
+                return session.totalAttempts;
+            case 'successes':
+                return session.totalSuccesses;
+            case 'failures':
+                return session.totalAttempts - session.totalSuccesses;
+            case 'successRate':
+                return session.totalAttempts > 0
+                    ? `${((session.totalSuccesses / session.totalAttempts) * 100).toFixed(1)}%`
+                    : activeConfig.successRateZeroDisplay;
+            case 'coinsEarned':
+                return session.totalCoinsEarned || 0;
+            case 'results':
+                return this.formatResultsForCsv(session, col.supportSelfReturn);
+            case 'catalystUsed': {
+                const field = activeConfig.catalystUsedFields[col.catalystIndex];
+                return session[field] || 0;
+            }
+            default:
+                return '';
+        }
+    }
+
+    /**
+     * Format a session's results map as a single CSV cell string.
+     * @param {Object} session
+     * @param {boolean} supportSelfReturn
+     * @returns {string}
+     */
+    formatResultsForCsv(session, supportSelfReturn) {
+        const entries = Object.entries(session.results || {});
+        const sorted = supportSelfReturn
+            ? entries.sort(([, a], [, b]) => {
+                  if (a.isSelfReturn && !b.isSelfReturn) return 1;
+                  if (!a.isSelfReturn && b.isSelfReturn) return -1;
+                  return (b.totalValue || 0) - (a.totalValue || 0);
+              })
+            : entries.sort(([, a], [, b]) => (b.totalValue || 0) - (a.totalValue || 0));
+
+        return sorted
+            .map(([hrid, result]) => {
+                const name = this.getItemName(hrid);
+                if (supportSelfReturn && result.isSelfReturn) {
+                    return t('alchemyHistoryViewer.selfReturnResultLine', { name, count: result.count });
+                }
+                const total = formatKMB(result.totalValue || 0, 1);
+                const each = formatKMB(result.priceEach || 0, 1);
+                return t('alchemyHistoryViewer.resultLine', { name, count: result.count, total, each });
+            })
+            .join('; ');
+    }
+
+    /**
+     * Export the active type's sessions to a CSV file download. Column headers/values are
+     * driven by the active config's csvColumns list rather than inferred from hasX flags, since
+     * coinify/decompose have small pre-existing differences in header wording and zero-attempt
+     * success-rate display that are preserved exactly, not silently unified.
      */
     exportHistory() {
+        const state = this.state;
+        const activeConfig = this.activeConfig;
         const escape = (val) => `"${String(val === null || val === undefined ? '' : val).replace(/"/g, '""')}"`;
 
-        const headers = [
-            t('alchemyHistoryViewer.colSessionStart'),
-            t('alchemyHistoryViewer.colInputItem'),
-            t('alchemyHistoryViewer.colAttempts'),
-            t('alchemyHistoryViewer.colSuccesses'),
-            t('alchemyHistoryViewer.colFailures'),
-            t('alchemyHistoryViewer.colResults'),
-        ];
-
-        const rows = this.sessions.map((session) => {
-            const start = formatDateTime(new Date(session.startTime));
-            const inputName = this.getItemName(session.inputItemHrid);
-            const failures = session.totalAttempts - session.totalSuccesses;
-
-            const resultParts = Object.entries(session.results || {})
-                .sort(([, a], [, b]) => {
-                    if (a.isSelfReturn && !b.isSelfReturn) return 1;
-                    if (!a.isSelfReturn && b.isSelfReturn) return -1;
-                    return (b.totalValue || 0) - (a.totalValue || 0);
-                })
-                .map(([hrid, result]) => {
-                    const name = this.getItemName(hrid);
-                    if (result.isSelfReturn) {
-                        return t('alchemyHistoryViewer.selfReturnResultLine', { name, count: result.count });
-                    }
-                    const total = formatKMB(result.totalValue || 0, 1);
-                    const each = formatKMB(result.priceEach || 0, 1);
-                    return t('alchemyHistoryViewer.resultLine', { name, count: result.count, total, each });
-                });
-
-            return [start, inputName, session.totalAttempts, session.totalSuccesses, failures, resultParts.join('; ')]
+        const headers = activeConfig.csvColumns.map((col) => this.getCsvHeader(col, activeConfig));
+        const rows = state.sessions.map((session) =>
+            activeConfig.csvColumns
+                .map((col) => this.getCsvValue(col, session, activeConfig))
                 .map(escape)
-                .join(',');
-        });
+                .join(',')
+        );
 
         const csv = [headers.map(escape).join(','), ...rows].join('\n');
         const date = new Date().toISOString().slice(0, 10);
@@ -1359,46 +1762,50 @@ class TransmuteHistoryViewer {
 
         const a = document.createElement('a');
         a.href = url;
-        a.download = `transmute-history-${date}.csv`;
+        a.download = `${activeConfig.filenamePrefix}-${date}.csv`;
         a.click();
 
         URL.revokeObjectURL(url);
     }
 
     /**
-     * Clear all history after confirmation
+     * Clear all history for the active type after confirmation
      */
     async clearHistory() {
+        const state = this.state;
+        const activeConfig = this.activeConfig;
         const confirmed = confirm(
-            t('alchemyHistoryViewer.clearHistoryConfirmWithWarning', {
-                actionName: t('skillingOptimizer.alchemyTypeTransmute'),
-                count: this.sessions.length,
+            t(activeConfig.clearConfirmLocaleKey, {
+                actionName: t(activeConfig.actionNameKey),
+                count: state.sessions.length,
             })
         );
         if (!confirmed) return;
 
         try {
-            await transmuteHistoryTracker.clearHistory();
-            this.sessions = [];
-            this.filteredSessions = [];
+            await activeConfig.tracker.clearHistory();
+            state.sessions = [];
+            state.filteredSessions = [];
             alert(
                 t('alchemyHistoryViewer.historyClearedAlert', {
-                    actionName: t('skillingOptimizer.alchemyTypeTransmute'),
+                    actionName: t(activeConfig.actionNameKey),
                 })
             );
             this.applyFilters();
             this.renderTable();
         } catch (error) {
-            console.error('[TransmuteHistoryViewer] Failed to clear history:', error);
+            console.error('[AlchemyHistoryViewer] Failed to clear history:', error);
             alert(t('marketHistory.clearHistoryFailedAlert', { error: error.message }));
         }
     }
 }
 
-const transmuteHistoryViewer = new TransmuteHistoryViewer();
+const alchemyHistoryViewer = new AlchemyHistoryViewer();
+
+export { AlchemyHistoryViewer, TYPE_CONFIGS };
 
 export default {
-    name: 'Transmute History Viewer',
-    initialize: () => transmuteHistoryViewer.initialize(),
-    cleanup: () => transmuteHistoryViewer.disable(),
+    name: 'Alchemy History Viewer',
+    initialize: () => alchemyHistoryViewer.initialize(),
+    cleanup: () => alchemyHistoryViewer.disable(),
 };

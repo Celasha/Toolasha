@@ -41,8 +41,7 @@ Toolasha is a complete rewrite of the popular MWITools userscript, rebuilt from 
 ### ⚗️ Alchemy
 
 - **Alchemy Profit Display** — Profit calculator for transmute and coinify actions
-- **Transmute History** — Records and displays transmute session history
-- **Coinify History** — Records and displays coinify session history with catalyst tracking
+- **Alchemy History** — Records and displays transmute/coinify/decompose session history with catalyst tracking
 
 ### 🔨 Enhancement & Crafting
 

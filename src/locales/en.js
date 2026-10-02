@@ -1329,6 +1329,7 @@ export default {
         itemAriaLabel: 'Item',
     },
     alchemyHistoryViewer: {
+        unifiedModalTitle: 'Alchemy History',
         historyTabTitle: (p) => `${p.actionName} History`,
         colSessionStart: 'Session Start',
         colInputItem: 'Input Item',

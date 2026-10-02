@@ -33,11 +33,9 @@ import viewActionButton from '../features/dictionary/view-action-button.js';
 
 // Alchemy History
 import transmuteHistoryTracker from '../features/alchemy/transmute-history-tracker.js';
-import transmuteHistoryViewer from '../features/alchemy/transmute-history-viewer.js';
 import coinifyHistoryTracker from '../features/alchemy/coinify-history-tracker.js';
-import coinifyHistoryViewer from '../features/alchemy/coinify-history-viewer.js';
 import decomposeHistoryTracker from '../features/alchemy/decompose-history-tracker.js';
-import decomposeHistoryViewer from '../features/alchemy/decompose-history-viewer.js';
+import alchemyHistoryViewer from '../features/alchemy/alchemy-history-viewer.js';
 import alchemyActionProtection from '../features/alchemy/alchemy-action-protection.js';
 
 // Enhancement
@@ -86,11 +84,9 @@ toolashaRoot.UI = Object.assign(toolashaRoot.UI || {}, {
     transmuteRates,
     viewActionButton,
     transmuteHistoryTracker,
-    transmuteHistoryViewer,
     coinifyHistoryTracker,
-    coinifyHistoryViewer,
     decomposeHistoryTracker,
-    decomposeHistoryViewer,
+    alchemyHistoryViewer,
     alchemyActionProtection,
     enhancementFeature,
     xphCalculator,
