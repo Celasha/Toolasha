@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.3.0
+ * Version: 3.4.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7376,6 +7376,7 @@
             durationSecondsUnit: (p) => `${p.value}s`,
             totalValueEmpty: 'Total Value: —',
             totalValueHeader: (p) => `▶ Total Value: ${p.ask}/${p.bid}`,
+            totalXpLine: (p) => `Total XP: ${p.xp}`,
             coinsLabel: 'Coins',
             dailyOutputEmpty: 'Daily Output: —',
             dailyOutputValue: (p) => `Daily Output: ${p.ask}/${p.bid}`,
@@ -7538,6 +7539,7 @@
             itemAriaLabel: 'Item',
         },
         alchemyHistoryViewer: {
+            unifiedModalTitle: 'Alchemy History',
             historyTabTitle: (p) => `${p.actionName} History`,
             colSessionStart: 'Session Start',
             colInputItem: 'Input Item',
@@ -9943,6 +9945,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             durationSecondsUnit: (p) => `${p.value}秒`,
             totalValueEmpty: '总价值：—',
             totalValueHeader: (p) => `▶ 总价值：${p.ask}/${p.bid}`,
+            totalXpLine: (p) => `总经验：${p.xp}`,
             coinsLabel: '金币',
             dailyOutputEmpty: '每日产出：—',
             dailyOutputValue: (p) => `每日产出：${p.ask}/${p.bid}`,
@@ -10103,6 +10106,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             itemAriaLabel: '物品',
         },
         alchemyHistoryViewer: {
+            unifiedModalTitle: '炼金历史',
             historyTabTitle: (p) => `${p.actionName}历史记录`,
             colSessionStart: '会话开始',
             colInputItem: '输入物品',

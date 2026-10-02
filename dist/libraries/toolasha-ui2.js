@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.3.0
+ * Version: 3.4.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1656,6 +1656,42 @@
 
             // Calculate and inject average time and daily output
             this.injectTimeAndDailyOutput(thirdDiv, logData);
+
+            // Reformat the game's own per-skill XP and per-item drop count numbers to match the
+            // user's number-format setting (they otherwise always render as raw unabbreviated ints)
+            this.rewriteNativeLootNumbers(lootElem);
+        }
+
+        /**
+         * Reformat the native per-skill XP figures and per-item drop counts within one loot log row
+         * using the user's number-format setting. These are the game's own React-rendered text nodes,
+         * not Toolasha's - unlike the Total Value/Daily Output lines above, there's no formatter call
+         * to redirect, so each target text node is rewritten directly instead.
+         * @param {HTMLElement} lootElem
+         */
+        rewriteNativeLootNumbers(lootElem) {
+            lootElem
+                .querySelectorAll('.LootLogPanel_skillExperience__f-MrV')
+                .forEach((el) => this.rewriteNativeNumberText(el));
+            lootElem.querySelectorAll('.Item_count__1HVvv').forEach((el) => this.rewriteNativeNumberText(el));
+        }
+
+        /**
+         * Rewrite a native element's raw-number text node in place using formatLargeNumber. The real
+         * raw value is cached in a data attribute on first pass (this method only ever runs once per
+         * element, since callers are gated by `processedLogs`), so there is no risk of re-parsing an
+         * already-abbreviated string on a later call.
+         * @param {HTMLElement} el - Element whose only text-node child is the raw number
+         */
+        rewriteNativeNumberText(el) {
+            if (!el) return;
+            const textNode = Array.from(el.childNodes).find((n) => n.nodeType === Node.TEXT_NODE);
+            if (!textNode) return;
+
+            const parsed = Number(textNode.nodeValue.trim().replace(/,/g, ''));
+            if (!Number.isFinite(parsed)) return;
+
+            textNode.nodeValue = formatters_js.formatLargeNumber(parsed, 1);
         }
 
         /**
@@ -1800,11 +1836,12 @@
 
             // Calculate total value
             const { askTotal, bidTotal } = this.calculateTotalValue(logData.drops);
+            const totalXp = this.calculateTotalXp(logData.xpGains);
 
             // Create wrapper div
             const wrapper = document.createElement('div');
             wrapper.className = 'mwi-loot-log-value';
-            wrapper.style.cssText = 'float: right; margin-left: 8px;';
+            wrapper.style.cssText = 'float: right; margin-left: 8px; text-align: right;';
 
             // Create header (clickable total value line)
             const header = document.createElement('span');
@@ -1813,11 +1850,15 @@
             if (askTotal === 0 && bidTotal === 0) {
                 header.textContent = i18n_js.t('lootLogStats.totalValueEmpty');
                 wrapper.appendChild(header);
+                this.appendTotalXpLine(wrapper, totalXp);
                 secondDiv.appendChild(wrapper);
                 return;
             }
 
-            header.textContent = i18n_js.t('lootLogStats.totalValueHeader', { ask: formatters_js.formatKMB(askTotal), bid: formatters_js.formatKMB(bidTotal) });
+            header.textContent = i18n_js.t('lootLogStats.totalValueHeader', {
+                ask: formatters_js.formatLargeNumber(askTotal, 1),
+                bid: formatters_js.formatLargeNumber(bidTotal, 1),
+            });
             header.style.cursor = 'pointer';
             wrapper.appendChild(header);
 
@@ -1835,7 +1876,37 @@
                 header.textContent = isOpen ? text.replace('▼', '▶') : text.replace('▶', '▼');
             });
 
+            this.appendTotalXpLine(wrapper, totalXp);
             secondDiv.appendChild(wrapper);
+        }
+
+        /**
+         * Sum an entry's per-skill XP gains, excluding the total_level meta-skill (matching the
+         * Analytics pivot table's convention).
+         * @param {Object|undefined} xpGains - { [skillHrid]: amount, ... }
+         * @returns {number}
+         */
+        calculateTotalXp(xpGains) {
+            if (!xpGains) return 0;
+            let total = 0;
+            for (const [skillHrid, amount] of Object.entries(xpGains)) {
+                if (skillHrid === EXCLUDED_XP_SKILL_HRID) continue;
+                total += amount;
+            }
+            return total;
+        }
+
+        /**
+         * Append a "Total XP: N" line below the Total Value header, if this entry earned any.
+         * @param {HTMLElement} wrapper - The .mwi-loot-log-value wrapper
+         * @param {number} totalXp
+         */
+        appendTotalXpLine(wrapper, totalXp) {
+            if (!totalXp) return;
+            const xpLine = document.createElement('div');
+            xpLine.style.cssText = `color: ${config.COLOR_INFO}; font-weight: bold;`;
+            xpLine.textContent = i18n_js.t('lootLogStats.totalXpLine', { xp: formatters_js.formatLargeNumber(totalXp, 1) });
+            wrapper.appendChild(xpLine);
         }
 
         /**
@@ -1935,7 +2006,7 @@
 
                 // Quantity
                 const qtySpan = document.createElement('span');
-                qtySpan.textContent = `×${formatters_js.numberFormatter(item.count)}`;
+                qtySpan.textContent = `×${formatters_js.formatLargeNumber(item.count, 1)}`;
                 qtySpan.style.cssText = `color: #aaa; flex-shrink: 0;`;
                 row.appendChild(qtySpan);
 
@@ -1949,7 +2020,7 @@
                 totalSpan.style.cssText = `color: ${config.COLOR_GOLD}; flex-shrink: 0; text-align: right;`;
 
                 if (item.askTotal > 0 || item.bidTotal > 0) {
-                    totalSpan.textContent = `${formatters_js.formatKMB(item.askTotal)}/${formatters_js.formatKMB(item.bidTotal)}`;
+                    totalSpan.textContent = `${formatters_js.formatLargeNumber(item.askTotal, 1)}/${formatters_js.formatLargeNumber(item.bidTotal, 1)}`;
                 } else {
                     totalSpan.textContent = '—';
                 }
@@ -2045,8 +2116,8 @@
                 dayValueSpan.textContent = i18n_js.t('lootLogStats.dailyOutputEmpty');
             } else {
                 dayValueSpan.textContent = i18n_js.t('lootLogStats.dailyOutputValue', {
-                    ask: formatters_js.formatKMB(dayValueAsk),
-                    bid: formatters_js.formatKMB(dayValueBid),
+                    ask: formatters_js.formatLargeNumber(dayValueAsk, 1),
+                    bid: formatters_js.formatLargeNumber(dayValueBid, 1),
                 });
             }
 
@@ -2277,7 +2348,7 @@
 
                     const countEl = document.createElement('span');
                     countEl.style.cssText = 'font-size: 0.8em; color: #ccc; margin-top: 2px;';
-                    countEl.textContent = formatters_js.numberFormatter(count);
+                    countEl.textContent = formatters_js.formatLargeNumber(count, 1);
                     dropEl.appendChild(countEl);
 
                     dropsDiv.appendChild(dropEl);
@@ -2695,10 +2766,10 @@
                     if (skillIcon) chip.appendChild(skillIcon);
                     const xpText = document.createElement('span');
                     xpText.style.color = config.COLOR_INFO;
-                    xpText.textContent = formatters_js.formatKMB(xp.amount);
+                    xpText.textContent = formatters_js.formatLargeNumber(xp.amount, 1);
                     const perHourText = document.createElement('span');
                     perHourText.style.cssText = 'color: rgba(255,255,255,0.45); font-size: 0.85em;';
-                    perHourText.textContent = i18n_js.t('lootLogStats.perHourParen', { value: formatters_js.formatKMB(xp.perHour) });
+                    perHourText.textContent = i18n_js.t('lootLogStats.perHourParen', { value: formatters_js.formatLargeNumber(xp.perHour, 1) });
                     chip.append(xpText, perHourText);
                     xpCell.appendChild(chip);
                 }
@@ -2717,11 +2788,11 @@
                     totalLabel.textContent = i18n_js.t('lootLogStats.totalColon');
                     const totalXpText = document.createElement('span');
                     totalXpText.style.cssText = `color: ${config.COLOR_INFO}; font-weight: 600;`;
-                    totalXpText.textContent = formatters_js.formatKMB(entry.totalXp);
+                    totalXpText.textContent = formatters_js.formatLargeNumber(entry.totalXp, 1);
                     const totalPerHourText = document.createElement('span');
                     totalPerHourText.style.cssText = 'color: rgba(255,255,255,0.45); font-size: 0.85em;';
                     totalPerHourText.textContent = i18n_js.t('lootLogStats.perHourParen', {
-                        value: formatters_js.formatKMB(entry.totalXpPerHour),
+                        value: formatters_js.formatLargeNumber(entry.totalXpPerHour, 1),
                     });
                     totalChip.append(totalLabel, totalXpText, totalPerHourText);
                     xpCell.appendChild(totalChip);
@@ -2732,7 +2803,7 @@
             const valueCell = this.buildAnalyticsCell(
                 entry.askTotal === 0 && entry.bidTotal === 0
                     ? '—'
-                    : `${formatters_js.formatKMB(entry.askTotal)}/${formatters_js.formatKMB(entry.bidTotal)}`
+                    : `${formatters_js.formatLargeNumber(entry.askTotal, 1)}/${formatters_js.formatLargeNumber(entry.bidTotal, 1)}`
             );
             valueCell.style.color = config.COLOR_GOLD;
             tr.appendChild(valueCell);
@@ -2740,7 +2811,7 @@
             const goldPerHourCell = this.buildAnalyticsCell(
                 entry.goldPerHourAsk === 0 && entry.goldPerHourBid === 0
                     ? '—'
-                    : `${formatters_js.formatKMB(entry.goldPerHourAsk)}/${formatters_js.formatKMB(entry.goldPerHourBid)}`
+                    : `${formatters_js.formatLargeNumber(entry.goldPerHourAsk, 1)}/${formatters_js.formatLargeNumber(entry.goldPerHourBid, 1)}`
             );
             goldPerHourCell.style.color = config.COLOR_GOLD;
             tr.appendChild(goldPerHourCell);
@@ -2808,7 +2879,10 @@
 
             const right = document.createElement('span');
             right.style.color = config.COLOR_GOLD;
-            right.textContent = i18n_js.t('lootLogStats.footerTotalValue', { ask: formatters_js.formatKMB(totalAsk), bid: formatters_js.formatKMB(totalBid) });
+            right.textContent = i18n_js.t('lootLogStats.footerTotalValue', {
+                ask: formatters_js.formatLargeNumber(totalAsk, 1),
+                bid: formatters_js.formatLargeNumber(totalBid, 1),
+            });
 
             footer.append(left, right);
             return footer;
@@ -6682,1404 +6756,6 @@
     };
 
     /**
-     * Transmute History Viewer
-     * Modal UI for browsing transmute session history.
-     * Injected as a tab in the alchemy panel tab bar.
-     */
-
-
-    class TransmuteHistoryViewer {
-        constructor() {
-            this.isInitialized = false;
-            this.modal = null;
-            this.sessions = [];
-            this.filteredSessions = [];
-            this.currentPage = 1;
-            this.rowsPerPage = 50;
-            this.showAll = false;
-            this.sortColumn = 'startTime';
-            this.sortDirection = 'desc';
-
-            // Column filters
-            this.filters = {
-                dateFrom: null,
-                dateTo: null,
-                selectedInputItems: [], // Array of itemHrids
-                resultsSearch: '', // Text search for result item names
-            };
-
-            this.activeFilterPopup = null;
-            this.activeFilterButton = null;
-            this.popupCloseHandler = null;
-
-            // Tab injection
-            this.alchemyTab = null;
-            this.tabWatcher = null;
-
-            // Caches
-            this.itemNameCache = new Map();
-            this.itemsSpriteUrl = null;
-            this.cachedDateRange = null;
-
-            this.timerRegistry = timerRegistry_js.createTimerRegistry();
-        }
-
-        /**
-         * Initialize the viewer
-         */
-        initialize() {
-            if (this.isInitialized) {
-                return;
-            }
-
-            if (!config.getSetting('alchemy_transmuteHistory')) {
-                return;
-            }
-
-            this.isInitialized = true;
-            this.addAlchemyTab();
-        }
-
-        /**
-         * Disable the viewer
-         */
-        disable() {
-            if (this.tabWatcher) {
-                this.tabWatcher();
-                this.tabWatcher = null;
-            }
-            if (this.alchemyTab && this.alchemyTab.parentNode) {
-                this.alchemyTab.remove();
-                this.alchemyTab = null;
-            }
-            if (this.modal) {
-                this.modal.remove();
-                this.modal = null;
-            }
-            this.timerRegistry.clearAll();
-            this.isInitialized = false;
-        }
-
-        // ─── Tab Injection ───────────────────────────────────────────────────────
-
-        /**
-         * Inject "Transmute History" tab into the alchemy tab bar.
-         * The alchemy tab bar contains Coinify, Decompose, Transmute, Unrefine, Current Action.
-         * We identify it by the presence of a "Transmute" tab text.
-         */
-        addAlchemyTab() {
-            const ensureTabExists = () => {
-                const tablist = document.querySelector('[role="tablist"]');
-                if (!tablist) return;
-
-                // Verify this is the alchemy tablist by checking for "Transmute" tab
-                const hasTransmute = Array.from(tablist.children).some(
-                    (btn) => btn.textContent.includes('Transmute') && !btn.dataset.mwiTransmuteHistoryTab
-                );
-                if (!hasTransmute) return;
-
-                // Already injected?
-                if (tablist.querySelector('[data-mwi-transmute-history-tab="true"]')) return;
-
-                // Clone an existing tab for structure
-                const referenceTab = Array.from(tablist.children).find(
-                    (btn) => btn.textContent.includes('Transmute') && !btn.dataset.mwiTransmuteHistoryTab
-                );
-                if (!referenceTab) return;
-
-                const tab = referenceTab.cloneNode(true);
-                tab.setAttribute('data-mwi-transmute-history-tab', 'true');
-                tab.classList.remove('Mui-selected');
-                tab.setAttribute('aria-selected', 'false');
-                tab.setAttribute('tabindex', '-1');
-
-                // Set label
-                const badge = tab.querySelector('.TabsComponent_badge__1Du26');
-                if (badge) {
-                    // Replace first text node (the label) while keeping badge span
-                    const badgeSpan = badge.querySelector('.MuiBadge-badge');
-                    badge.textContent = '';
-                    badge.appendChild(
-                        document.createTextNode(
-                            i18n_js.t('alchemyHistoryViewer.historyTabTitle', {
-                                actionName: i18n_js.t('skillingOptimizer.alchemyTypeTransmute'),
-                            })
-                        )
-                    );
-                    if (badgeSpan) badge.appendChild(badgeSpan);
-                } else {
-                    tab.textContent = i18n_js.t('alchemyHistoryViewer.historyTabTitle', {
-                        actionName: i18n_js.t('skillingOptimizer.alchemyTypeTransmute'),
-                    });
-                }
-
-                tab.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    this.openModal();
-                });
-
-                tablist.appendChild(tab);
-                this.alchemyTab = tab;
-            };
-
-            // Watch for DOM changes that recreate the tablist
-            if (!this.tabWatcher) {
-                this.tabWatcher = domObserverHelpers_js.createMutationWatcher(
-                    document.body,
-                    () => {
-                        // If our tab was removed from DOM, clear reference
-                        if (this.alchemyTab && !document.body.contains(this.alchemyTab)) {
-                            this.alchemyTab = null;
-                        }
-                        ensureTabExists();
-                    },
-                    { childList: true, subtree: true }
-                );
-            }
-
-            ensureTabExists();
-        }
-
-        // ─── Modal ───────────────────────────────────────────────────────────────
-
-        /**
-         * Open the modal — load sessions and render
-         */
-        async openModal() {
-            this.sessions = await transmuteHistoryTracker.loadSessions();
-            this.cachedDateRange = null;
-            this.applyFilters();
-
-            if (!this.modal) {
-                this.createModal();
-            }
-
-            this.modal.style.display = 'flex';
-            this.renderTable();
-        }
-
-        /**
-         * Close the modal
-         */
-        closeModal() {
-            if (this.modal) {
-                this.modal.style.display = 'none';
-            }
-            this.closeActiveFilterPopup();
-        }
-
-        /**
-         * Create modal DOM structure
-         */
-        createModal() {
-            this.modal = document.createElement('div');
-            this.modal.className = 'mwi-transmute-history-modal';
-            this.modal.style.cssText = `
-            position: fixed;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            background: rgba(0,0,0,0.8);
-            display: none;
-            justify-content: center;
-            align-items: center;
-            z-index: 10000;
-        `;
-
-            const content = document.createElement('div');
-            content.className = 'mwi-transmute-history-content';
-            content.style.cssText = `
-            background: #2a2a2a;
-            border-radius: 8px;
-            padding: 20px;
-            width: fit-content;
-            min-width: 500px;
-            max-width: 95vw;
-            max-height: 90%;
-            overflow: auto;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-        `;
-
-            // Header
-            const header = document.createElement('div');
-            header.style.cssText = `
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        `;
-
-            const title = document.createElement('h2');
-            title.textContent = i18n_js.t('alchemyHistoryViewer.historyTabTitle', {
-                actionName: i18n_js.t('skillingOptimizer.alchemyTypeTransmute'),
-            });
-            title.style.cssText = 'margin: 0; color: #fff;';
-
-            const closeBtn = document.createElement('button');
-            closeBtn.textContent = '✕';
-            closeBtn.style.cssText = `
-            background: none; border: none; color: #fff;
-            font-size: 24px; cursor: pointer; padding: 0;
-            width: 30px; height: 30px;
-        `;
-            closeBtn.addEventListener('click', () => this.closeModal());
-
-            header.appendChild(title);
-            header.appendChild(closeBtn);
-
-            // Controls
-            const controls = document.createElement('div');
-            controls.className = 'mwi-transmute-history-controls';
-            controls.style.cssText = `
-            display: flex;
-            gap: 10px;
-            margin-bottom: 8px;
-            flex-wrap: wrap;
-            align-items: center;
-            justify-content: space-between;
-        `;
-
-            // Active filter badges row
-            const badges = document.createElement('div');
-            badges.className = 'mwi-transmute-history-badges';
-            badges.style.cssText = `
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-            align-items: center;
-            min-height: 28px;
-            margin-bottom: 10px;
-        `;
-
-            // Table container
-            const tableContainer = document.createElement('div');
-            tableContainer.className = 'mwi-transmute-history-table-container';
-            tableContainer.style.cssText = 'overflow-x: auto;';
-
-            // Pagination
-            const pagination = document.createElement('div');
-            pagination.className = 'mwi-transmute-history-pagination';
-            pagination.style.cssText = `
-            margin-top: 15px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        `;
-
-            content.appendChild(header);
-            content.appendChild(controls);
-            content.appendChild(badges);
-            content.appendChild(tableContainer);
-            content.appendChild(pagination);
-            this.modal.appendChild(content);
-            document.body.appendChild(this.modal);
-
-            // Close on backdrop click
-            this.modal.addEventListener('click', (e) => {
-                if (e.target === this.modal) this.closeModal();
-            });
-        }
-
-        // ─── Filtering ───────────────────────────────────────────────────────────
-
-        /**
-         * Apply all active filters to this.sessions → this.filteredSessions
-         */
-        applyFilters() {
-            this.cachedDateRange = null;
-
-            const hasDateFilter = !!(this.filters.dateFrom || this.filters.dateTo);
-            let dateToEndOfDay = null;
-            if (hasDateFilter && this.filters.dateTo) {
-                dateToEndOfDay = new Date(this.filters.dateTo);
-                dateToEndOfDay.setHours(23, 59, 59, 999);
-            }
-
-            const hasItemFilter = this.filters.selectedInputItems.length > 0;
-            const itemFilterSet = hasItemFilter ? new Set(this.filters.selectedInputItems) : null;
-
-            const hasResultsFilter = !!this.filters.resultsSearch.trim();
-            const resultsSearch = hasResultsFilter ? this.filters.resultsSearch.trim().toLowerCase() : '';
-
-            const filtered = this.sessions.filter((session) => {
-                // Date filter
-                if (hasDateFilter) {
-                    const d = new Date(session.startTime);
-                    if (this.filters.dateFrom && d < this.filters.dateFrom) return false;
-                    if (dateToEndOfDay && d > dateToEndOfDay) return false;
-                }
-
-                // Input item filter
-                if (hasItemFilter && !itemFilterSet.has(session.inputItemHrid)) return false;
-
-                // Results text search
-                if (hasResultsFilter) {
-                    const resultNames = Object.keys(session.results || {}).map((hrid) =>
-                        this.getItemName(hrid).toLowerCase()
-                    );
-                    if (!resultNames.some((name) => name.includes(resultsSearch))) return false;
-                }
-
-                return true;
-            });
-
-            // Sort
-            filtered.sort((a, b) => {
-                const aVal = a[this.sortColumn] ?? 0;
-                const bVal = b[this.sortColumn] ?? 0;
-                return this.sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
-            });
-
-            this.filteredSessions = filtered;
-            this.currentPage = 1;
-        }
-
-        /**
-         * Check if a column has an active filter
-         * @param {string} col
-         * @returns {boolean}
-         */
-        hasActiveFilter(col) {
-            switch (col) {
-                case 'startTime':
-                    return !!(this.filters.dateFrom || this.filters.dateTo);
-                case 'inputItemHrid':
-                    return this.filters.selectedInputItems.length > 0;
-                case 'results':
-                    return !!this.filters.resultsSearch.trim();
-                default:
-                    return false;
-            }
-        }
-
-        /**
-         * Returns true if any filter is active
-         */
-        hasAnyFilter() {
-            return (
-                this.hasActiveFilter('startTime') ||
-                this.hasActiveFilter('inputItemHrid') ||
-                this.hasActiveFilter('results')
-            );
-        }
-
-        /**
-         * Clear all filters
-         */
-        clearAllFilters() {
-            this.filters.dateFrom = null;
-            this.filters.dateTo = null;
-            this.filters.selectedInputItems = [];
-            this.filters.resultsSearch = '';
-            this.applyFilters();
-            this.renderTable();
-        }
-
-        // ─── Rendering ───────────────────────────────────────────────────────────
-
-        /**
-         * Full render: controls + badges + table + pagination
-         */
-        renderTable() {
-            this.renderControls();
-            this.renderBadges();
-
-            const tableContainer = this.modal.querySelector('.mwi-transmute-history-table-container');
-            while (tableContainer.firstChild) tableContainer.removeChild(tableContainer.firstChild);
-
-            const table = document.createElement('table');
-            table.style.cssText = 'width: max-content; border-collapse: collapse; color: #fff; white-space: nowrap;';
-
-            // Header
-            const thead = document.createElement('thead');
-            const headerRow = document.createElement('tr');
-            headerRow.style.background = '#1a1a1a';
-
-            const columns = [
-                { key: 'startTime', label: i18n_js.t('alchemyHistoryViewer.colSessionStart'), filterable: true },
-                { key: 'inputItemHrid', label: i18n_js.t('alchemyHistoryViewer.colInputItem'), filterable: true },
-                { key: 'totalAttempts', label: i18n_js.t('alchemyHistoryViewer.colAttempts'), filterable: false },
-                { key: 'totalSuccesses', label: i18n_js.t('alchemyHistoryViewer.colSuccesses'), filterable: false },
-                { key: 'results', label: i18n_js.t('alchemyHistoryViewer.colResults'), filterable: true },
-                { key: '_delete', label: '', filterable: false },
-            ];
-
-            columns.forEach((col) => {
-                const th = document.createElement('th');
-                th.style.cssText = `
-                padding: 10px;
-                text-align: left;
-                border-bottom: 2px solid #555;
-                user-select: none;
-                white-space: nowrap;
-            `;
-
-                const headerContent = document.createElement('div');
-                headerContent.style.cssText = 'display: flex; align-items: center; gap: 8px;';
-
-                const labelSpan = document.createElement('span');
-                labelSpan.style.cursor = 'pointer';
-
-                const isSortable = col.key !== 'results';
-                if (isSortable) {
-                    if (this.sortColumn === col.key) {
-                        labelSpan.textContent = col.label + (this.sortDirection === 'asc' ? ' ▲' : ' ▼');
-                    } else {
-                        labelSpan.textContent = col.label;
-                    }
-                    labelSpan.addEventListener('click', () => {
-                        if (this.sortColumn === col.key) {
-                            this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
-                        } else {
-                            this.sortColumn = col.key;
-                            this.sortDirection = 'desc';
-                        }
-                        this.applyFilters();
-                        this.renderTable();
-                    });
-                } else {
-                    labelSpan.textContent = col.label;
-                    labelSpan.style.cursor = 'default';
-                }
-
-                headerContent.appendChild(labelSpan);
-
-                if (col.filterable) {
-                    const filterBtn = document.createElement('button');
-                    filterBtn.textContent = '⋮';
-                    filterBtn.style.cssText = `
-                    background: none; border: none;
-                    color: ${this.hasActiveFilter(col.key) ? '#4a90e2' : '#aaa'};
-                    cursor: pointer; font-size: 16px;
-                    padding: 2px 4px; font-weight: bold;
-                `;
-                    filterBtn.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        this.showFilterPopup(col.key, filterBtn);
-                    });
-                    headerContent.appendChild(filterBtn);
-                }
-
-                th.appendChild(headerContent);
-                headerRow.appendChild(th);
-            });
-
-            thead.appendChild(headerRow);
-            table.appendChild(thead);
-
-            // Body
-            const tbody = document.createElement('tbody');
-            const paginated = this.getPaginatedSessions();
-
-            if (paginated.length === 0) {
-                const row = document.createElement('tr');
-                const cell = document.createElement('td');
-                cell.colSpan = columns.length;
-                cell.textContent =
-                    this.sessions.length === 0
-                        ? i18n_js.t('alchemyHistoryViewer.noTransmuteHistoryYet')
-                        : i18n_js.t('alchemyHistoryViewer.noSessionsMatchFilters');
-                cell.style.cssText = 'padding: 20px; text-align: center; color: #888;';
-                row.appendChild(cell);
-                tbody.appendChild(row);
-            } else {
-                paginated.forEach((session, index) => {
-                    const row = document.createElement('tr');
-                    row.style.cssText = `
-                    border-bottom: 1px solid #333;
-                    background: ${index % 2 === 0 ? '#2a2a2a' : '#252525'};
-                `;
-
-                    // Session Start
-                    const dateCell = document.createElement('td');
-                    dateCell.textContent = formatters_js.formatDateTime(new Date(session.startTime));
-                    dateCell.style.padding = '6px 10px';
-                    row.appendChild(dateCell);
-
-                    // Input Item
-                    const inputCell = document.createElement('td');
-                    inputCell.style.cssText = 'padding: 6px 10px; display: flex; align-items: center; gap: 8px;';
-                    this.appendItemIcon(inputCell, session.inputItemHrid, 20);
-                    const inputName = document.createElement('span');
-                    inputName.textContent = this.getItemName(session.inputItemHrid);
-                    inputCell.appendChild(inputName);
-                    row.appendChild(inputCell);
-
-                    // Attempts
-                    const attemptsCell = document.createElement('td');
-                    attemptsCell.textContent = session.totalAttempts;
-                    attemptsCell.style.padding = '6px 10px';
-                    row.appendChild(attemptsCell);
-
-                    // Successes
-                    const successCell = document.createElement('td');
-                    const failures = session.totalAttempts - session.totalSuccesses;
-                    successCell.textContent = i18n_js.t('alchemyHistoryViewer.successesFailedLabel', {
-                        successes: session.totalSuccesses,
-                        failures,
-                    });
-                    successCell.style.cssText = `
-                    padding: 6px 10px;
-                    color: ${failures > 0 ? '#fbbf24' : '#4ade80'};
-                `;
-                    row.appendChild(successCell);
-
-                    // Results
-                    const resultsCell = document.createElement('td');
-                    resultsCell.style.cssText = 'padding: 6px 10px;';
-                    this.renderResultsCell(resultsCell, session);
-                    row.appendChild(resultsCell);
-
-                    // Delete
-                    const deleteCell = document.createElement('td');
-                    deleteCell.style.cssText = 'padding: 6px 4px; text-align: center;';
-                    const deleteBtn = document.createElement('button');
-                    deleteBtn.textContent = '✕';
-                    deleteBtn.title = i18n_js.t('alchemyHistoryViewer.deleteSessionTitle');
-                    deleteBtn.style.cssText = `
-                    background: none; border: none; color: #dc2626;
-                    cursor: pointer; font-size: 14px; padding: 2px 6px;
-                    border-radius: 3px; line-height: 1;
-                `;
-                    deleteBtn.addEventListener('mouseenter', () => {
-                        deleteBtn.style.background = 'rgba(220,38,38,0.15)';
-                    });
-                    deleteBtn.addEventListener('mouseleave', () => {
-                        deleteBtn.style.background = 'none';
-                    });
-                    deleteBtn.addEventListener('click', () => this.deleteSession(session.id));
-                    deleteCell.appendChild(deleteBtn);
-                    row.appendChild(deleteCell);
-
-                    tbody.appendChild(row);
-                });
-            }
-
-            table.appendChild(tbody);
-            tableContainer.appendChild(table);
-            this.renderPagination();
-        }
-
-        /**
-         * Render the results cell for a session
-         * Results sorted by totalValue desc, self-returns last
-         * @param {HTMLElement} cell
-         * @param {Object} session
-         */
-        renderResultsCell(cell, session) {
-            const results = session.results || {};
-            const entries = Object.entries(results);
-
-            if (entries.length === 0) {
-                const span = document.createElement('span');
-                span.textContent = '—';
-                span.style.color = '#888';
-                cell.appendChild(span);
-                return;
-            }
-
-            // Sort: non-self-returns by totalValue desc, self-returns last
-            // Exclude incidental drops (essences, artisan's crates) recorded in older sessions
-            const filteredEntries = entries.sort(([, a], [, b]) => {
-                if (a.isSelfReturn && !b.isSelfReturn) return 1;
-                if (!a.isSelfReturn && b.isSelfReturn) return -1;
-                return (b.totalValue || 0) - (a.totalValue || 0);
-            });
-
-            filteredEntries.forEach(([itemHrid, result]) => {
-                const line = document.createElement('div');
-                line.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-bottom: 2px;';
-
-                this.appendItemIcon(line, itemHrid, 16);
-
-                const text = document.createElement('span');
-                const name = this.getItemName(itemHrid);
-
-                if (result.isSelfReturn) {
-                    text.textContent = i18n_js.t('alchemyHistoryViewer.selfReturnResultLine', { name, count: result.count });
-                    text.style.color = '#888';
-                } else {
-                    const total = formatters_js.formatKMB(result.totalValue || 0, 1);
-                    const each = formatters_js.formatKMB(result.priceEach || 0, 1);
-                    text.textContent = i18n_js.t('alchemyHistoryViewer.resultLine', { name, count: result.count, total, each });
-                }
-
-                line.appendChild(text);
-                cell.appendChild(line);
-            });
-        }
-
-        /**
-         * Render controls bar (stats + clear history button)
-         */
-        renderControls() {
-            const controls = this.modal.querySelector('.mwi-transmute-history-controls');
-            while (controls.firstChild) controls.removeChild(controls.firstChild);
-
-            // Stats
-            const stats = document.createElement('span');
-            stats.style.cssText = 'color: #aaa; font-size: 14px;';
-            stats.textContent = i18n_js.t('alchemyHistoryViewer.sessionCountStat', { count: this.filteredSessions.length });
-            controls.appendChild(stats);
-
-            const rightGroup = document.createElement('div');
-            rightGroup.style.cssText = 'display: flex; gap: 8px; align-items: center;';
-
-            // Clear All Filters button (only when filters active)
-            if (this.hasAnyFilter()) {
-                const clearFiltersBtn = document.createElement('button');
-                clearFiltersBtn.textContent = i18n_js.t('marketHistory.clearAllFiltersButton');
-                clearFiltersBtn.style.cssText = `
-                padding: 6px 12px; background: #e67e22; color: white;
-                border: none; border-radius: 4px; cursor: pointer;
-            `;
-                clearFiltersBtn.addEventListener('click', () => this.clearAllFilters());
-                rightGroup.appendChild(clearFiltersBtn);
-            }
-
-            // Export button
-            const exportBtn = document.createElement('button');
-            exportBtn.textContent = i18n_js.t('customTabsUi.exportButton');
-            exportBtn.style.cssText = `
-            padding: 6px 12px; background: #2563eb; color: white;
-            border: none; border-radius: 4px; cursor: pointer;
-        `;
-            exportBtn.addEventListener('click', () => this.exportHistory());
-            rightGroup.appendChild(exportBtn);
-
-            // Clear History button
-            const clearBtn = document.createElement('button');
-            clearBtn.textContent = i18n_js.t('marketHistory.clearHistoryButton');
-            clearBtn.style.cssText = `
-            padding: 6px 12px; background: #dc2626; color: white;
-            border: none; border-radius: 4px; cursor: pointer;
-        `;
-            clearBtn.addEventListener('click', () => this.clearHistory());
-            rightGroup.appendChild(clearBtn);
-
-            controls.appendChild(rightGroup);
-        }
-
-        /**
-         * Render active filter badges
-         */
-        renderBadges() {
-            const container = this.modal.querySelector('.mwi-transmute-history-badges');
-            while (container.firstChild) container.removeChild(container.firstChild);
-
-            const badges = [];
-
-            if (this.filters.dateFrom || this.filters.dateTo) {
-                const parts = [];
-                if (this.filters.dateFrom) parts.push(formatters_js.formatDateTime(this.filters.dateFrom, { includeTime: false }));
-                if (this.filters.dateTo) parts.push(formatters_js.formatDateTime(this.filters.dateTo, { includeTime: false }));
-                badges.push({
-                    label: i18n_js.t('marketHistory.dateFilterBadge', { range: parts.join(' - ') }),
-                    onRemove: () => {
-                        this.filters.dateFrom = null;
-                        this.filters.dateTo = null;
-                        this.applyFilters();
-                        this.renderTable();
-                    },
-                });
-            }
-
-            if (this.filters.selectedInputItems.length > 0) {
-                const label =
-                    this.filters.selectedInputItems.length === 1
-                        ? this.getItemName(this.filters.selectedInputItems[0])
-                        : i18n_js.t('alchemyHistoryViewer.inputItemsCountLabel', { count: this.filters.selectedInputItems.length });
-                badges.push({
-                    label: i18n_js.t('alchemyHistoryViewer.inputFilterBadge', { label }),
-                    icon: this.filters.selectedInputItems[0],
-                    onRemove: () => {
-                        this.filters.selectedInputItems = [];
-                        this.applyFilters();
-                        this.renderTable();
-                    },
-                });
-            }
-
-            if (this.filters.resultsSearch.trim()) {
-                badges.push({
-                    label: i18n_js.t('alchemyHistoryViewer.resultsFilterBadge', { text: this.filters.resultsSearch.trim() }),
-                    onRemove: () => {
-                        this.filters.resultsSearch = '';
-                        this.applyFilters();
-                        this.renderTable();
-                    },
-                });
-            }
-
-            badges.forEach((badge) => {
-                const el = document.createElement('div');
-                el.style.cssText = `
-                display: flex; align-items: center; gap: 6px;
-                padding: 4px 8px; background: #3a3a3a;
-                border: 1px solid #555; border-radius: 4px;
-                color: #aaa; font-size: 13px;
-            `;
-
-                if (badge.icon) {
-                    this.appendItemIcon(el, badge.icon, 14);
-                }
-
-                const labelSpan = document.createElement('span');
-                labelSpan.textContent = badge.label;
-                el.appendChild(labelSpan);
-
-                const removeBtn = document.createElement('button');
-                removeBtn.textContent = '✕';
-                removeBtn.style.cssText = `
-                background: none; border: none; color: #aaa;
-                cursor: pointer; padding: 0; font-size: 13px; line-height: 1;
-            `;
-                removeBtn.addEventListener('click', badge.onRemove);
-                el.appendChild(removeBtn);
-
-                container.appendChild(el);
-            });
-        }
-
-        /**
-         * Render pagination controls
-         */
-        renderPagination() {
-            const pagination = this.modal.querySelector('.mwi-transmute-history-pagination');
-            while (pagination.firstChild) pagination.removeChild(pagination.firstChild);
-
-            const leftSide = document.createElement('div');
-            leftSide.style.cssText = 'display: flex; gap: 8px; align-items: center; color: #aaa;';
-
-            const label = document.createElement('span');
-            label.textContent = i18n_js.t('marketHistory.rowsPerPageLabel');
-
-            const rowsInput = document.createElement('input');
-            rowsInput.type = 'number';
-            rowsInput.value = this.rowsPerPage;
-            rowsInput.min = '1';
-            rowsInput.disabled = this.showAll;
-            rowsInput.style.cssText = `
-            width: 60px; padding: 4px 8px;
-            border: 1px solid #555; border-radius: 4px;
-            background: ${this.showAll ? '#333' : '#1a1a1a'};
-            color: ${this.showAll ? '#666' : '#fff'};
-        `;
-            rowsInput.addEventListener('change', (e) => {
-                this.rowsPerPage = Math.max(1, parseInt(e.target.value) || 50);
-                this.currentPage = 1;
-                this.renderTable();
-            });
-
-            const showAllLabel = document.createElement('label');
-            showAllLabel.style.cssText = 'cursor: pointer; color: #aaa; display: flex; align-items: center; gap: 4px;';
-
-            const showAllCheckbox = document.createElement('input');
-            showAllCheckbox.type = 'checkbox';
-            showAllCheckbox.checked = this.showAll;
-            showAllCheckbox.style.cursor = 'pointer';
-            showAllCheckbox.addEventListener('change', (e) => {
-                this.showAll = e.target.checked;
-                rowsInput.disabled = this.showAll;
-                rowsInput.style.background = this.showAll ? '#333' : '#1a1a1a';
-                rowsInput.style.color = this.showAll ? '#666' : '#fff';
-                this.currentPage = 1;
-                this.renderTable();
-            });
-
-            showAllLabel.appendChild(showAllCheckbox);
-            showAllLabel.appendChild(document.createTextNode(i18n_js.t('marketHistory.showAllLabel')));
-
-            leftSide.appendChild(label);
-            leftSide.appendChild(rowsInput);
-            leftSide.appendChild(showAllLabel);
-
-            const rightSide = document.createElement('div');
-            rightSide.style.cssText = 'display: flex; gap: 8px; align-items: center; color: #aaa;';
-
-            if (!this.showAll) {
-                const totalPages = this.getTotalPages();
-
-                const prevBtn = document.createElement('button');
-                prevBtn.textContent = '◀';
-                prevBtn.disabled = this.currentPage === 1;
-                prevBtn.style.cssText = `
-                padding: 4px 12px;
-                background: ${this.currentPage === 1 ? '#333' : '#4a90e2'};
-                color: ${this.currentPage === 1 ? '#666' : 'white'};
-                border: none; border-radius: 4px;
-                cursor: ${this.currentPage === 1 ? 'default' : 'pointer'};
-            `;
-                prevBtn.addEventListener('click', () => {
-                    if (this.currentPage > 1) {
-                        this.currentPage--;
-                        this.renderTable();
-                    }
-                });
-
-                const pageInfo = document.createElement('span');
-                pageInfo.textContent = i18n_js.t('marketHistory.pageInfo', { current: this.currentPage, total: totalPages || 1 });
-
-                const nextBtn = document.createElement('button');
-                nextBtn.textContent = '▶';
-                nextBtn.disabled = this.currentPage >= totalPages;
-                nextBtn.style.cssText = `
-                padding: 4px 12px;
-                background: ${this.currentPage >= totalPages ? '#333' : '#4a90e2'};
-                color: ${this.currentPage >= totalPages ? '#666' : 'white'};
-                border: none; border-radius: 4px;
-                cursor: ${this.currentPage >= totalPages ? 'default' : 'pointer'};
-            `;
-                nextBtn.addEventListener('click', () => {
-                    if (this.currentPage < totalPages) {
-                        this.currentPage++;
-                        this.renderTable();
-                    }
-                });
-
-                rightSide.appendChild(prevBtn);
-                rightSide.appendChild(pageInfo);
-                rightSide.appendChild(nextBtn);
-            } else {
-                const info = document.createElement('span');
-                info.textContent = i18n_js.t('alchemyHistoryViewer.showingAllSessions', { count: this.filteredSessions.length });
-                rightSide.appendChild(info);
-            }
-
-            pagination.appendChild(leftSide);
-            pagination.appendChild(rightSide);
-        }
-
-        // ─── Filter Popups ───────────────────────────────────────────────────────
-
-        /**
-         * Show the appropriate filter popup for a column
-         * @param {string} columnKey
-         * @param {HTMLElement} buttonElement
-         */
-        showFilterPopup(columnKey, buttonElement) {
-            // Toggle behavior
-            if (this.activeFilterPopup && this.activeFilterButton === buttonElement) {
-                this.closeActiveFilterPopup();
-                return;
-            }
-
-            this.closeActiveFilterPopup();
-
-            let popup;
-            switch (columnKey) {
-                case 'startTime':
-                    popup = this.createDateFilterPopup();
-                    break;
-                case 'inputItemHrid':
-                    popup = this.createInputItemFilterPopup();
-                    break;
-                case 'results':
-                    popup = this.createResultsFilterPopup();
-                    break;
-                default:
-                    return;
-            }
-
-            const rect = buttonElement.getBoundingClientRect();
-            popup.style.position = 'fixed';
-            popup.style.top = `${rect.bottom + 5}px`;
-            popup.style.left = `${rect.left}px`;
-            popup.style.zIndex = '10002';
-
-            document.body.appendChild(popup);
-            this.activeFilterPopup = popup;
-            this.activeFilterButton = buttonElement;
-
-            this.popupCloseHandler = (e) => {
-                if (e.target.type === 'date' || e.target.closest?.('input[type="date"]')) return;
-                if (!popup.contains(e.target) && e.target !== buttonElement) {
-                    this.closeActiveFilterPopup();
-                }
-            };
-            const t = setTimeout(() => document.addEventListener('click', this.popupCloseHandler), 10);
-            this.timerRegistry.registerTimeout(t);
-        }
-
-        /**
-         * Close and clean up the active filter popup
-         */
-        closeActiveFilterPopup() {
-            if (this.activeFilterPopup) {
-                this.activeFilterPopup.remove();
-                this.activeFilterPopup = null;
-            }
-            if (this.popupCloseHandler) {
-                document.removeEventListener('click', this.popupCloseHandler);
-                this.popupCloseHandler = null;
-            }
-            this.activeFilterButton = null;
-        }
-
-        /**
-         * Create date range filter popup
-         * @returns {HTMLElement}
-         */
-        createDateFilterPopup() {
-            const popup = this.createPopupBase(i18n_js.t('marketHistory.filterByDateTitle'));
-
-            // Compute available range
-            if (!this.cachedDateRange) {
-                const timestamps = this.sessions.map((s) => s.startTime).filter(Boolean);
-                if (timestamps.length > 0) {
-                    this.cachedDateRange = {
-                        minDate: new Date(Math.min(...timestamps)),
-                        maxDate: new Date(Math.max(...timestamps)),
-                    };
-                } else {
-                    this.cachedDateRange = { minDate: null, maxDate: null };
-                }
-            }
-
-            const { minDate, maxDate } = this.cachedDateRange;
-
-            if (minDate && maxDate) {
-                const rangeInfo = document.createElement('div');
-                rangeInfo.style.cssText = `
-                color: #aaa; font-size: 11px; margin-bottom: 10px;
-                padding: 6px; background: #1a1a1a; border-radius: 3px;
-            `;
-                rangeInfo.textContent = i18n_js.t('marketHistory.availableRangeLabel', {
-                    range: `${formatters_js.formatDateTime(minDate, { includeTime: false })} - ${formatters_js.formatDateTime(maxDate, { includeTime: false })}`,
-                });
-                popup.appendChild(rangeInfo);
-            }
-
-            const fromInput = this.createDateInput(
-                i18n_js.t('marketHistory.fromLabel'),
-                this.filters.dateFrom ? this.filters.dateFrom.toISOString().split('T')[0] : '',
-                minDate,
-                maxDate
-            );
-            const toInput = this.createDateInput(
-                i18n_js.t('marketHistory.toLabel'),
-                this.filters.dateTo ? this.filters.dateTo.toISOString().split('T')[0] : '',
-                minDate,
-                maxDate
-            );
-
-            popup.appendChild(fromInput.label);
-            popup.appendChild(fromInput.input);
-            popup.appendChild(toInput.label);
-            popup.appendChild(toInput.input);
-
-            const btnRow = this.createPopupButtonRow(
-                () => {
-                    this.filters.dateFrom = fromInput.input.value ? new Date(fromInput.input.value) : null;
-                    this.filters.dateTo = toInput.input.value ? new Date(toInput.input.value) : null;
-                    this.applyFilters();
-                    this.renderTable();
-                    this.closeActiveFilterPopup();
-                },
-                () => {
-                    this.filters.dateFrom = null;
-                    this.filters.dateTo = null;
-                    this.applyFilters();
-                    this.renderTable();
-                    this.closeActiveFilterPopup();
-                }
-            );
-            popup.appendChild(btnRow);
-
-            return popup;
-        }
-
-        /**
-         * Create input item filter popup (checkbox list with search)
-         * @returns {HTMLElement}
-         */
-        createInputItemFilterPopup() {
-            const popup = this.createPopupBase(i18n_js.t('alchemyHistoryViewer.filterByInputItemTitle'));
-            popup.style.minWidth = '220px';
-
-            // Gather unique input items from all sessions
-            const itemSet = new Map();
-            this.sessions.forEach((s) => {
-                if (!itemSet.has(s.inputItemHrid)) {
-                    itemSet.set(s.inputItemHrid, this.getItemName(s.inputItemHrid));
-                }
-            });
-            const allItems = Array.from(itemSet.entries()).sort((a, b) => a[1].localeCompare(b[1]));
-
-            // Track pending selection (local to this popup)
-            const pending = new Set(this.filters.selectedInputItems);
-
-            // Search box
-            const searchInput = document.createElement('input');
-            searchInput.type = 'text';
-            searchInput.placeholder = i18n_js.t('marketHistory.searchItemsPlaceholder');
-            searchInput.style.cssText = `
-            width: 100%; padding: 6px; margin-bottom: 8px;
-            background: #1a1a1a; border: 1px solid #555;
-            border-radius: 3px; color: #fff; box-sizing: border-box;
-        `;
-
-            const listContainer = document.createElement('div');
-            listContainer.style.cssText = 'max-height: 200px; overflow-y: auto;';
-
-            const renderList = (filterText) => {
-                while (listContainer.firstChild) listContainer.removeChild(listContainer.firstChild);
-                const term = filterText.toLowerCase();
-                const visible = term ? allItems.filter(([, name]) => name.toLowerCase().includes(term)) : allItems;
-
-                visible.forEach(([hrid, name]) => {
-                    const row = document.createElement('label');
-                    row.style.cssText = `
-                    display: flex; align-items: center; gap: 8px;
-                    padding: 4px 2px; cursor: pointer; color: #ddd;
-                `;
-
-                    const cb = document.createElement('input');
-                    cb.type = 'checkbox';
-                    cb.checked = pending.has(hrid);
-                    cb.style.cursor = 'pointer';
-                    cb.addEventListener('change', () => {
-                        if (cb.checked) pending.add(hrid);
-                        else pending.delete(hrid);
-                    });
-
-                    this.appendItemIcon(row, hrid, 16);
-
-                    const nameSpan = document.createElement('span');
-                    nameSpan.textContent = name;
-
-                    row.appendChild(cb);
-                    row.appendChild(nameSpan);
-                    listContainer.appendChild(row);
-                });
-            };
-
-            searchInput.addEventListener('input', () => renderList(searchInput.value));
-            renderList('');
-
-            popup.appendChild(searchInput);
-            popup.appendChild(listContainer);
-
-            const btnRow = this.createPopupButtonRow(
-                () => {
-                    this.filters.selectedInputItems = Array.from(pending);
-                    this.applyFilters();
-                    this.renderTable();
-                    this.closeActiveFilterPopup();
-                },
-                () => {
-                    this.filters.selectedInputItems = [];
-                    this.applyFilters();
-                    this.renderTable();
-                    this.closeActiveFilterPopup();
-                }
-            );
-            popup.appendChild(btnRow);
-
-            return popup;
-        }
-
-        /**
-         * Create results text search popup
-         * @returns {HTMLElement}
-         */
-        createResultsFilterPopup() {
-            const popup = this.createPopupBase(i18n_js.t('alchemyHistoryViewer.filterByResultItemTitle'));
-            popup.style.minWidth = '220px';
-
-            const searchInput = document.createElement('input');
-            searchInput.type = 'text';
-            searchInput.placeholder = i18n_js.t('alchemyHistoryViewer.itemNamePlaceholder');
-            searchInput.value = this.filters.resultsSearch;
-            searchInput.style.cssText = `
-            width: 100%; padding: 6px; margin-bottom: 10px;
-            background: #1a1a1a; border: 1px solid #555;
-            border-radius: 3px; color: #fff; box-sizing: border-box;
-        `;
-
-            popup.appendChild(searchInput);
-
-            const btnRow = this.createPopupButtonRow(
-                () => {
-                    this.filters.resultsSearch = searchInput.value;
-                    this.applyFilters();
-                    this.renderTable();
-                    this.closeActiveFilterPopup();
-                },
-                () => {
-                    this.filters.resultsSearch = '';
-                    this.applyFilters();
-                    this.renderTable();
-                    this.closeActiveFilterPopup();
-                }
-            );
-            popup.appendChild(btnRow);
-
-            return popup;
-        }
-
-        // ─── Popup Helpers ───────────────────────────────────────────────────────
-
-        /**
-         * Create a styled popup base div with a title
-         * @param {string} titleText
-         * @returns {HTMLElement}
-         */
-        createPopupBase(titleText) {
-            const popup = document.createElement('div');
-            popup.style.cssText = `
-            background: #2a2a2a; border: 1px solid #555;
-            border-radius: 4px; padding: 12px; min-width: 200px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-        `;
-
-            const title = document.createElement('div');
-            title.textContent = titleText;
-            title.style.cssText = 'color: #fff; font-weight: bold; margin-bottom: 10px;';
-            popup.appendChild(title);
-
-            return popup;
-        }
-
-        /**
-         * Create a date input with label
-         * @param {string} labelText
-         * @param {string} value
-         * @param {Date|null} minDate
-         * @param {Date|null} maxDate
-         * @returns {{ label: HTMLElement, input: HTMLInputElement }}
-         */
-        createDateInput(labelText, value, minDate, maxDate) {
-            const label = document.createElement('label');
-            label.textContent = labelText;
-            label.style.cssText = 'display: block; color: #aaa; margin-bottom: 4px; font-size: 12px;';
-
-            const input = document.createElement('input');
-            input.type = 'date';
-            input.value = value;
-            if (minDate) input.min = minDate.toISOString().split('T')[0];
-            if (maxDate) input.max = maxDate.toISOString().split('T')[0];
-            input.style.cssText = `
-            width: 100%; padding: 6px; background: #1a1a1a;
-            border: 1px solid #555; border-radius: 3px; color: #fff; margin-bottom: 10px;
-        `;
-
-            return { label, input };
-        }
-
-        /**
-         * Create Apply + Clear button row for filter popups
-         * @param {Function} onApply
-         * @param {Function} onClear
-         * @returns {HTMLElement}
-         */
-        createPopupButtonRow(onApply, onClear) {
-            const row = document.createElement('div');
-            row.style.cssText = 'display: flex; gap: 8px; margin-top: 10px;';
-
-            const applyBtn = document.createElement('button');
-            applyBtn.textContent = i18n_js.t('marketHistory.applyButton');
-            applyBtn.style.cssText = `
-            flex: 1; padding: 6px; background: #4a90e2; color: white;
-            border: none; border-radius: 3px; cursor: pointer;
-        `;
-            applyBtn.addEventListener('click', onApply);
-
-            const clearBtn = document.createElement('button');
-            clearBtn.textContent = i18n_js.t('settings.clearButton');
-            clearBtn.style.cssText = `
-            flex: 1; padding: 6px; background: #666; color: white;
-            border: none; border-radius: 3px; cursor: pointer;
-        `;
-            clearBtn.addEventListener('click', onClear);
-
-            row.appendChild(applyBtn);
-            row.appendChild(clearBtn);
-            return row;
-        }
-
-        // ─── Utilities ───────────────────────────────────────────────────────────
-
-        /**
-         * Append a 16×16 or 20×20 SVG item icon to an element
-         * @param {HTMLElement} parent
-         * @param {string} itemHrid
-         * @param {number} size
-         */
-        appendItemIcon(parent, itemHrid, size = 20) {
-            const spriteUrl = this.getItemsSpriteUrl();
-            if (!spriteUrl) return;
-
-            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            svg.setAttribute('width', String(size));
-            svg.setAttribute('height', String(size));
-            svg.style.flexShrink = '0';
-
-            const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-            use.setAttribute('href', `${spriteUrl}#${itemHrid.split('/').pop()}`);
-            svg.appendChild(use);
-            parent.appendChild(svg);
-        }
-
-        /**
-         * Get items sprite URL from DOM (cached)
-         * @returns {string|null}
-         */
-        getItemsSpriteUrl() {
-            if (!this.itemsSpriteUrl) {
-                const el = document.querySelector('use[href*="items_sprite"]');
-                if (el) {
-                    const href = el.getAttribute('href');
-                    this.itemsSpriteUrl = href ? href.split('#')[0] : null;
-                }
-            }
-            return this.itemsSpriteUrl;
-        }
-
-        /**
-         * Get item display name from HRID (cached)
-         * @param {string} itemHrid
-         * @returns {string}
-         */
-        getItemName(itemHrid) {
-            if (this.itemNameCache.has(itemHrid)) {
-                return this.itemNameCache.get(itemHrid);
-            }
-            const details = dataManager.getItemDetails(itemHrid);
-            const name = details?.name || itemHrid.split('/').pop().replace(/_/g, ' ');
-            this.itemNameCache.set(itemHrid, name);
-            return name;
-        }
-
-        /**
-         * Get paginated sessions for current page
-         * @returns {Array}
-         */
-        getPaginatedSessions() {
-            if (this.showAll) return this.filteredSessions;
-            const start = (this.currentPage - 1) * this.rowsPerPage;
-            return this.filteredSessions.slice(start, start + this.rowsPerPage);
-        }
-
-        /**
-         * Get total number of pages
-         * @returns {number}
-         */
-        getTotalPages() {
-            if (this.showAll) return 1;
-            return Math.ceil(this.filteredSessions.length / this.rowsPerPage);
-        }
-
-        /**
-         * Delete a single session by ID
-         * @param {string} sessionId
-         */
-        async deleteSession(sessionId) {
-            this.sessions = this.sessions.filter((s) => s.id !== sessionId);
-
-            try {
-                await transmuteHistoryTracker.deleteSessions(this.sessions);
-            } catch (error) {
-                console.error('[TransmuteHistoryViewer] Failed to delete session:', error);
-            }
-
-            this.applyFilters();
-            this.renderTable();
-        }
-
-        /**
-         * Export all sessions to a CSV file download
-         */
-        exportHistory() {
-            const escape = (val) => `"${String(val === null || val === undefined ? '' : val).replace(/"/g, '""')}"`;
-
-            const headers = [
-                i18n_js.t('alchemyHistoryViewer.colSessionStart'),
-                i18n_js.t('alchemyHistoryViewer.colInputItem'),
-                i18n_js.t('alchemyHistoryViewer.colAttempts'),
-                i18n_js.t('alchemyHistoryViewer.colSuccesses'),
-                i18n_js.t('alchemyHistoryViewer.colFailures'),
-                i18n_js.t('alchemyHistoryViewer.colResults'),
-            ];
-
-            const rows = this.sessions.map((session) => {
-                const start = formatters_js.formatDateTime(new Date(session.startTime));
-                const inputName = this.getItemName(session.inputItemHrid);
-                const failures = session.totalAttempts - session.totalSuccesses;
-
-                const resultParts = Object.entries(session.results || {})
-                    .sort(([, a], [, b]) => {
-                        if (a.isSelfReturn && !b.isSelfReturn) return 1;
-                        if (!a.isSelfReturn && b.isSelfReturn) return -1;
-                        return (b.totalValue || 0) - (a.totalValue || 0);
-                    })
-                    .map(([hrid, result]) => {
-                        const name = this.getItemName(hrid);
-                        if (result.isSelfReturn) {
-                            return i18n_js.t('alchemyHistoryViewer.selfReturnResultLine', { name, count: result.count });
-                        }
-                        const total = formatters_js.formatKMB(result.totalValue || 0, 1);
-                        const each = formatters_js.formatKMB(result.priceEach || 0, 1);
-                        return i18n_js.t('alchemyHistoryViewer.resultLine', { name, count: result.count, total, each });
-                    });
-
-                return [start, inputName, session.totalAttempts, session.totalSuccesses, failures, resultParts.join('; ')]
-                    .map(escape)
-                    .join(',');
-            });
-
-            const csv = [headers.map(escape).join(','), ...rows].join('\n');
-            const date = new Date().toISOString().slice(0, 10);
-            const blob = new Blob([csv], { type: 'text/csv' });
-            const url = URL.createObjectURL(blob);
-
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `transmute-history-${date}.csv`;
-            a.click();
-
-            URL.revokeObjectURL(url);
-        }
-
-        /**
-         * Clear all history after confirmation
-         */
-        async clearHistory() {
-            const confirmed = confirm(
-                i18n_js.t('alchemyHistoryViewer.clearHistoryConfirmWithWarning', {
-                    actionName: i18n_js.t('skillingOptimizer.alchemyTypeTransmute'),
-                    count: this.sessions.length,
-                })
-            );
-            if (!confirmed) return;
-
-            try {
-                await transmuteHistoryTracker.clearHistory();
-                this.sessions = [];
-                this.filteredSessions = [];
-                alert(
-                    i18n_js.t('alchemyHistoryViewer.historyClearedAlert', {
-                        actionName: i18n_js.t('skillingOptimizer.alchemyTypeTransmute'),
-                    })
-                );
-                this.applyFilters();
-                this.renderTable();
-            } catch (error) {
-                console.error('[TransmuteHistoryViewer] Failed to clear history:', error);
-                alert(i18n_js.t('marketHistory.clearHistoryFailedAlert', { error: error.message }));
-            }
-        }
-    }
-
-    const transmuteHistoryViewer = new TransmuteHistoryViewer();
-
-    var transmuteHistoryViewer$1 = {
-        name: 'Transmute History Viewer',
-        initialize: () => transmuteHistoryViewer.initialize(),
-        cleanup: () => transmuteHistoryViewer.disable(),
-    };
-
-    /**
      * Coinify History Tracker
      * Records coinify sessions via WebSocket and persists to IndexedDB.
      *
@@ -8099,7 +6775,7 @@
     const COINIFY_ACTION_HRID = '/actions/alchemy/coinify';
     const COIN_ITEM_HRID$1 = '/items/coin';
     const CATALYST_OF_COINIFICATION_HRID$1 = '/items/catalyst_of_coinification';
-    const PRIME_CATALYST_HRID$3 = '/items/prime_catalyst';
+    const PRIME_CATALYST_HRID$2 = '/items/prime_catalyst';
     const STORAGE_KEY$1 = 'coinifySessions';
     const STORAGE_STORE$2 = 'alchemyHistory';
 
@@ -8244,7 +6920,7 @@
             const secondaryHrid = this.extractItemHrid(action.secondaryItemHash);
             if (secondaryHrid === CATALYST_OF_COINIFICATION_HRID$1) {
                 this.activeSession.catalystOfCoinificationUsed += successCount;
-            } else if (secondaryHrid === PRIME_CATALYST_HRID$3) {
+            } else if (secondaryHrid === PRIME_CATALYST_HRID$2) {
                 this.activeSession.primeCatalystUsed += successCount;
             }
 
@@ -8427,1366 +7103,6 @@
         name: 'Coinify History Tracker',
         initialize: () => coinifyHistoryTracker.initialize(),
         cleanup: () => coinifyHistoryTracker.disable(),
-    };
-
-    /**
-     * Coinify History Viewer
-     * Modal UI for browsing coinify session history.
-     * Injected as a tab in the alchemy panel tab bar.
-     */
-
-
-    const CATALYST_OF_COINIFICATION_HRID = '/items/catalyst_of_coinification';
-    const PRIME_CATALYST_HRID$2 = '/items/prime_catalyst';
-
-    class CoinifyHistoryViewer {
-        constructor() {
-            this.isInitialized = false;
-            this.modal = null;
-            this.sessions = [];
-            this.filteredSessions = [];
-            this.currentPage = 1;
-            this.rowsPerPage = 50;
-            this.showAll = false;
-            this.sortColumn = 'startTime';
-            this.sortDirection = 'desc';
-
-            // Column filters
-            this.filters = {
-                dateFrom: null,
-                dateTo: null,
-                selectedInputItems: [], // Array of itemHrids
-            };
-
-            this.activeFilterPopup = null;
-            this.activeFilterButton = null;
-            this.popupCloseHandler = null;
-
-            // Tab injection
-            this.alchemyTab = null;
-            this.tabWatcher = null;
-
-            // Caches
-            this.itemNameCache = new Map();
-            this.itemsSpriteUrl = null;
-            this.cachedDateRange = null;
-
-            this.timerRegistry = timerRegistry_js.createTimerRegistry();
-        }
-
-        /**
-         * Initialize the viewer
-         */
-        initialize() {
-            if (this.isInitialized) {
-                return;
-            }
-
-            if (!config.getSetting('alchemy_coinifyHistory')) {
-                return;
-            }
-
-            this.isInitialized = true;
-            this.addAlchemyTab();
-        }
-
-        /**
-         * Disable the viewer
-         */
-        disable() {
-            if (this.tabWatcher) {
-                this.tabWatcher();
-                this.tabWatcher = null;
-            }
-            if (this.alchemyTab && this.alchemyTab.parentNode) {
-                this.alchemyTab.remove();
-                this.alchemyTab = null;
-            }
-            if (this.modal) {
-                this.modal.remove();
-                this.modal = null;
-            }
-            this.timerRegistry.clearAll();
-            this.isInitialized = false;
-        }
-
-        // ─── Tab Injection ───────────────────────────────────────────────────────
-
-        /**
-         * Inject "Coinify History" tab into the alchemy tab bar.
-         * The alchemy tab bar contains Coinify, Decompose, Transmute, Unrefine, Current Action.
-         * We identify it by the presence of a "Coinify" tab text.
-         */
-        addAlchemyTab() {
-            const ensureTabExists = () => {
-                const tablist = document.querySelector('[role="tablist"]');
-                if (!tablist) return;
-
-                // Verify this is the alchemy tablist by checking for "Coinify" tab
-                const hasCoinify = Array.from(tablist.children).some(
-                    (btn) => btn.textContent.includes('Coinify') && !btn.dataset.mwiCoinifyHistoryTab
-                );
-                if (!hasCoinify) return;
-
-                // Already injected?
-                if (tablist.querySelector('[data-mwi-coinify-history-tab="true"]')) return;
-
-                // Clone an existing tab for structure
-                const referenceTab = Array.from(tablist.children).find(
-                    (btn) => btn.textContent.includes('Coinify') && !btn.dataset.mwiCoinifyHistoryTab
-                );
-                if (!referenceTab) return;
-
-                const tab = referenceTab.cloneNode(true);
-                tab.setAttribute('data-mwi-coinify-history-tab', 'true');
-                tab.classList.remove('Mui-selected');
-                tab.setAttribute('aria-selected', 'false');
-                tab.setAttribute('tabindex', '-1');
-
-                // Set label
-                const badge = tab.querySelector('.TabsComponent_badge__1Du26');
-                if (badge) {
-                    // Replace first text node (the label) while keeping badge span
-                    const badgeSpan = badge.querySelector('.MuiBadge-badge');
-                    badge.textContent = '';
-                    badge.appendChild(
-                        document.createTextNode(
-                            i18n_js.t('alchemyHistoryViewer.historyTabTitle', {
-                                actionName: i18n_js.t('skillingOptimizer.alchemyTypeCoinify'),
-                            })
-                        )
-                    );
-                    if (badgeSpan) badge.appendChild(badgeSpan);
-                } else {
-                    tab.textContent = i18n_js.t('alchemyHistoryViewer.historyTabTitle', {
-                        actionName: i18n_js.t('skillingOptimizer.alchemyTypeCoinify'),
-                    });
-                }
-
-                tab.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    this.openModal();
-                });
-
-                tablist.appendChild(tab);
-                this.alchemyTab = tab;
-            };
-
-            // Watch for DOM changes that recreate the tablist
-            if (!this.tabWatcher) {
-                this.tabWatcher = domObserverHelpers_js.createMutationWatcher(
-                    document.body,
-                    () => {
-                        // If our tab was removed from DOM, clear reference
-                        if (this.alchemyTab && !document.body.contains(this.alchemyTab)) {
-                            this.alchemyTab = null;
-                        }
-                        ensureTabExists();
-                    },
-                    { childList: true, subtree: true }
-                );
-            }
-
-            ensureTabExists();
-        }
-
-        // ─── Modal ───────────────────────────────────────────────────────────────
-
-        /**
-         * Open the modal — load sessions and render
-         */
-        async openModal() {
-            this.sessions = await coinifyHistoryTracker.loadSessions();
-            this.cachedDateRange = null;
-            this.applyFilters();
-
-            if (!this.modal) {
-                this.createModal();
-            }
-
-            this.modal.style.display = 'flex';
-            this.renderTable();
-        }
-
-        /**
-         * Close the modal
-         */
-        closeModal() {
-            if (this.modal) {
-                this.modal.style.display = 'none';
-            }
-            this.closeActiveFilterPopup();
-        }
-
-        /**
-         * Create modal DOM structure
-         */
-        createModal() {
-            this.modal = document.createElement('div');
-            this.modal.className = 'mwi-coinify-history-modal';
-            this.modal.style.cssText = `
-            position: fixed;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            background: rgba(0,0,0,0.8);
-            display: none;
-            justify-content: center;
-            align-items: center;
-            z-index: 10000;
-        `;
-
-            const content = document.createElement('div');
-            content.className = 'mwi-coinify-history-content';
-            content.style.cssText = `
-            background: #2a2a2a;
-            border-radius: 8px;
-            padding: 20px;
-            width: fit-content;
-            min-width: 500px;
-            max-width: 95vw;
-            max-height: 90%;
-            overflow: auto;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-        `;
-
-            // Header
-            const header = document.createElement('div');
-            header.style.cssText = `
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        `;
-
-            const title = document.createElement('h2');
-            title.textContent = i18n_js.t('alchemyHistoryViewer.historyTabTitle', {
-                actionName: i18n_js.t('skillingOptimizer.alchemyTypeCoinify'),
-            });
-            title.style.cssText = 'margin: 0; color: #fff;';
-
-            const closeBtn = document.createElement('button');
-            closeBtn.textContent = '✕';
-            closeBtn.style.cssText = `
-            background: none; border: none; color: #fff;
-            font-size: 24px; cursor: pointer; padding: 0;
-            width: 30px; height: 30px;
-        `;
-            closeBtn.addEventListener('click', () => this.closeModal());
-
-            header.appendChild(title);
-            header.appendChild(closeBtn);
-
-            // Controls
-            const controls = document.createElement('div');
-            controls.className = 'mwi-coinify-history-controls';
-            controls.style.cssText = `
-            display: flex;
-            gap: 10px;
-            margin-bottom: 8px;
-            flex-wrap: wrap;
-            align-items: center;
-            justify-content: space-between;
-        `;
-
-            // Active filter badges row
-            const badges = document.createElement('div');
-            badges.className = 'mwi-coinify-history-badges';
-            badges.style.cssText = `
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-            align-items: center;
-            min-height: 28px;
-            margin-bottom: 10px;
-        `;
-
-            // Table container
-            const tableContainer = document.createElement('div');
-            tableContainer.className = 'mwi-coinify-history-table-container';
-            tableContainer.style.cssText = 'overflow-x: auto;';
-
-            // Pagination
-            const pagination = document.createElement('div');
-            pagination.className = 'mwi-coinify-history-pagination';
-            pagination.style.cssText = `
-            margin-top: 15px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        `;
-
-            content.appendChild(header);
-            content.appendChild(controls);
-            content.appendChild(badges);
-            content.appendChild(tableContainer);
-            content.appendChild(pagination);
-            this.modal.appendChild(content);
-            document.body.appendChild(this.modal);
-
-            // Close on backdrop click
-            this.modal.addEventListener('click', (e) => {
-                if (e.target === this.modal) this.closeModal();
-            });
-        }
-
-        // ─── Filtering ───────────────────────────────────────────────────────────
-
-        /**
-         * Apply all active filters to this.sessions → this.filteredSessions
-         */
-        applyFilters() {
-            this.cachedDateRange = null;
-
-            const hasDateFilter = !!(this.filters.dateFrom || this.filters.dateTo);
-            let dateToEndOfDay = null;
-            if (hasDateFilter && this.filters.dateTo) {
-                dateToEndOfDay = new Date(this.filters.dateTo);
-                dateToEndOfDay.setHours(23, 59, 59, 999);
-            }
-
-            const hasItemFilter = this.filters.selectedInputItems.length > 0;
-            const itemFilterSet = hasItemFilter ? new Set(this.filters.selectedInputItems) : null;
-
-            const filtered = this.sessions.filter((session) => {
-                // Date filter
-                if (hasDateFilter) {
-                    const d = new Date(session.startTime);
-                    if (this.filters.dateFrom && d < this.filters.dateFrom) return false;
-                    if (dateToEndOfDay && d > dateToEndOfDay) return false;
-                }
-
-                // Input item filter
-                if (hasItemFilter && !itemFilterSet.has(session.inputItemHrid)) return false;
-
-                return true;
-            });
-
-            // Sort
-            filtered.sort((a, b) => {
-                const aVal = a[this.sortColumn] ?? 0;
-                const bVal = b[this.sortColumn] ?? 0;
-                return this.sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
-            });
-
-            this.filteredSessions = filtered;
-            this.currentPage = 1;
-        }
-
-        /**
-         * Check if a column has an active filter
-         * @param {string} col
-         * @returns {boolean}
-         */
-        hasActiveFilter(col) {
-            switch (col) {
-                case 'startTime':
-                    return !!(this.filters.dateFrom || this.filters.dateTo);
-                case 'inputItemHrid':
-                    return this.filters.selectedInputItems.length > 0;
-                default:
-                    return false;
-            }
-        }
-
-        /**
-         * Returns true if any filter is active
-         */
-        hasAnyFilter() {
-            return this.hasActiveFilter('startTime') || this.hasActiveFilter('inputItemHrid');
-        }
-
-        /**
-         * Clear all filters
-         */
-        clearAllFilters() {
-            this.filters.dateFrom = null;
-            this.filters.dateTo = null;
-            this.filters.selectedInputItems = [];
-            this.applyFilters();
-            this.renderTable();
-        }
-
-        // ─── Rendering ───────────────────────────────────────────────────────────
-
-        /**
-         * Full render: controls + badges + table + pagination
-         */
-        renderTable() {
-            this.renderControls();
-            this.renderBadges();
-
-            const tableContainer = this.modal.querySelector('.mwi-coinify-history-table-container');
-            while (tableContainer.firstChild) tableContainer.removeChild(tableContainer.firstChild);
-
-            const table = document.createElement('table');
-            table.style.cssText = 'width: max-content; border-collapse: collapse; color: #fff; white-space: nowrap;';
-
-            // Header
-            const thead = document.createElement('thead');
-            const headerRow = document.createElement('tr');
-            headerRow.style.background = '#1a1a1a';
-
-            const columns = [
-                { key: 'startTime', label: i18n_js.t('alchemyHistoryViewer.colSessionStart'), filterable: true },
-                { key: 'inputItemHrid', label: i18n_js.t('alchemyHistoryViewer.colInputItem'), filterable: true },
-                { key: 'enhancementLevel', label: i18n_js.t('alchemyHistoryViewer.colEnhLevel'), filterable: false },
-                { key: 'totalAttempts', label: i18n_js.t('alchemyHistoryViewer.colAttempts'), filterable: false },
-                { key: 'totalSuccesses', label: i18n_js.t('alchemyHistoryViewer.colSuccesses'), filterable: false },
-                { key: '_successRate', label: i18n_js.t('alchemyHistoryViewer.colSuccessRate'), filterable: false },
-                { key: 'totalCoinsEarned', label: i18n_js.t('alchemyHistoryViewer.colCoinsEarned'), filterable: false },
-                {
-                    key: '_catalystOfCoinification',
-                    label: this.getItemName(CATALYST_OF_COINIFICATION_HRID),
-                    filterable: false,
-                },
-                { key: '_primeCatalyst', label: this.getItemName(PRIME_CATALYST_HRID$2), filterable: false },
-                { key: '_delete', label: '', filterable: false },
-            ];
-
-            columns.forEach((col) => {
-                const th = document.createElement('th');
-                th.style.cssText = `
-                padding: 10px;
-                text-align: left;
-                border-bottom: 2px solid #555;
-                user-select: none;
-                white-space: nowrap;
-            `;
-
-                const headerContent = document.createElement('div');
-                headerContent.style.cssText = 'display: flex; align-items: center; gap: 8px;';
-
-                const labelSpan = document.createElement('span');
-                labelSpan.style.cursor = 'pointer';
-
-                // Columns starting with _ are computed, not directly sortable by field
-                const isSortable = !col.key.startsWith('_');
-                const isCatalystCol = col.key === '_catalystOfCoinification' || col.key === '_primeCatalyst';
-
-                if (isSortable) {
-                    if (this.sortColumn === col.key) {
-                        labelSpan.textContent = col.label + (this.sortDirection === 'asc' ? ' ▲' : ' ▼');
-                    } else {
-                        labelSpan.textContent = col.label;
-                    }
-                    labelSpan.addEventListener('click', () => {
-                        if (this.sortColumn === col.key) {
-                            this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
-                        } else {
-                            this.sortColumn = col.key;
-                            this.sortDirection = 'desc';
-                        }
-                        this.applyFilters();
-                        this.renderTable();
-                    });
-                } else if (isCatalystCol) {
-                    // Render icon as header with item name as tooltip
-                    const hrid =
-                        col.key === '_catalystOfCoinification' ? CATALYST_OF_COINIFICATION_HRID : PRIME_CATALYST_HRID$2;
-                    labelSpan.title = col.label;
-                    labelSpan.style.cursor = 'default';
-                    this.appendItemIcon(labelSpan, hrid, 20);
-                } else {
-                    labelSpan.textContent = col.label;
-                    labelSpan.style.cursor = 'default';
-                }
-
-                headerContent.appendChild(labelSpan);
-
-                if (col.filterable) {
-                    const filterBtn = document.createElement('button');
-                    filterBtn.textContent = '⋮';
-                    filterBtn.style.cssText = `
-                    background: none; border: none;
-                    color: ${this.hasActiveFilter(col.key) ? '#4a90e2' : '#aaa'};
-                    cursor: pointer; font-size: 16px;
-                    padding: 2px 4px; font-weight: bold;
-                `;
-                    filterBtn.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        this.showFilterPopup(col.key, filterBtn);
-                    });
-                    headerContent.appendChild(filterBtn);
-                }
-
-                th.appendChild(headerContent);
-                headerRow.appendChild(th);
-            });
-
-            thead.appendChild(headerRow);
-            table.appendChild(thead);
-
-            // Body
-            const tbody = document.createElement('tbody');
-            const paginated = this.getPaginatedSessions();
-
-            if (paginated.length === 0) {
-                const row = document.createElement('tr');
-                const cell = document.createElement('td');
-                cell.colSpan = columns.length;
-                cell.textContent =
-                    this.sessions.length === 0
-                        ? i18n_js.t('alchemyHistoryViewer.noCoinifyHistoryYet')
-                        : i18n_js.t('alchemyHistoryViewer.noSessionsMatchFilters');
-                cell.style.cssText = 'padding: 20px; text-align: center; color: #888;';
-                row.appendChild(cell);
-                tbody.appendChild(row);
-            } else {
-                paginated.forEach((session, index) => {
-                    const row = document.createElement('tr');
-                    row.style.cssText = `
-                    border-bottom: 1px solid #333;
-                    background: ${index % 2 === 0 ? '#2a2a2a' : '#252525'};
-                `;
-
-                    // Session Start
-                    const dateCell = document.createElement('td');
-                    dateCell.textContent = formatters_js.formatDateTime(new Date(session.startTime));
-                    dateCell.style.padding = '6px 10px';
-                    row.appendChild(dateCell);
-
-                    // Input Item
-                    const inputCell = document.createElement('td');
-                    inputCell.style.cssText = 'padding: 6px 10px; display: flex; align-items: center; gap: 8px;';
-                    this.appendItemIcon(inputCell, session.inputItemHrid, 20);
-                    const inputName = document.createElement('span');
-                    inputName.textContent = this.getItemName(session.inputItemHrid);
-                    inputCell.appendChild(inputName);
-                    row.appendChild(inputCell);
-
-                    // Enhancement Level
-                    const enhCell = document.createElement('td');
-                    enhCell.textContent = session.enhancementLevel > 0 ? `+${session.enhancementLevel}` : '0';
-                    enhCell.style.cssText = 'padding: 6px 10px; text-align: center;';
-                    row.appendChild(enhCell);
-
-                    // Attempts
-                    const attemptsCell = document.createElement('td');
-                    attemptsCell.textContent = session.totalAttempts;
-                    attemptsCell.style.padding = '6px 10px';
-                    row.appendChild(attemptsCell);
-
-                    // Successes
-                    const successCell = document.createElement('td');
-                    const failures = session.totalAttempts - session.totalSuccesses;
-                    successCell.textContent = i18n_js.t('alchemyHistoryViewer.successesFailedLabel', {
-                        successes: session.totalSuccesses,
-                        failures,
-                    });
-                    successCell.style.cssText = `
-                    padding: 6px 10px;
-                    color: ${failures > 0 ? '#fbbf24' : '#4ade80'};
-                `;
-                    row.appendChild(successCell);
-
-                    // Success Rate
-                    const rateCell = document.createElement('td');
-                    const rate =
-                        session.totalAttempts > 0
-                            ? ((session.totalSuccesses / session.totalAttempts) * 100).toFixed(1)
-                            : '—';
-                    rateCell.textContent = session.totalAttempts > 0 ? `${rate}%` : '—';
-                    rateCell.style.padding = '6px 10px';
-                    row.appendChild(rateCell);
-
-                    // Coins Earned
-                    const earnedCell = document.createElement('td');
-                    earnedCell.textContent = formatters_js.formatKMB(session.totalCoinsEarned || 0, 1);
-                    earnedCell.style.cssText = 'padding: 6px 10px; color: #fbbf24;';
-                    row.appendChild(earnedCell);
-
-                    // Catalyst of Coinification
-                    const cocCell = document.createElement('td');
-                    cocCell.style.cssText = 'padding: 6px 10px;';
-                    this.renderCatalystCell(
-                        cocCell,
-                        CATALYST_OF_COINIFICATION_HRID,
-                        session.catalystOfCoinificationUsed || 0
-                    );
-                    row.appendChild(cocCell);
-
-                    // Prime Catalyst
-                    const pcCell = document.createElement('td');
-                    pcCell.style.cssText = 'padding: 6px 10px;';
-                    this.renderCatalystCell(pcCell, PRIME_CATALYST_HRID$2, session.primeCatalystUsed || 0);
-                    row.appendChild(pcCell);
-
-                    // Delete
-                    const deleteCell = document.createElement('td');
-                    deleteCell.style.cssText = 'padding: 6px 4px; text-align: center;';
-                    const deleteBtn = document.createElement('button');
-                    deleteBtn.textContent = '✕';
-                    deleteBtn.title = i18n_js.t('alchemyHistoryViewer.deleteSessionTitle');
-                    deleteBtn.style.cssText = `
-                    background: none; border: none; color: #dc2626;
-                    cursor: pointer; font-size: 14px; padding: 2px 6px;
-                    border-radius: 3px; line-height: 1;
-                `;
-                    deleteBtn.addEventListener('mouseenter', () => {
-                        deleteBtn.style.background = 'rgba(220,38,38,0.15)';
-                    });
-                    deleteBtn.addEventListener('mouseleave', () => {
-                        deleteBtn.style.background = 'none';
-                    });
-                    deleteBtn.addEventListener('click', () => this.deleteSession(session.id));
-                    deleteCell.appendChild(deleteBtn);
-                    row.appendChild(deleteCell);
-
-                    tbody.appendChild(row);
-                });
-            }
-
-            table.appendChild(tbody);
-            tableContainer.appendChild(table);
-            this.renderPagination();
-        }
-
-        /**
-         * Render a catalyst cell: icon + count, or — if zero
-         * @param {HTMLElement} cell
-         * @param {string} catalystHrid
-         * @param {number} count
-         */
-        renderCatalystCell(cell, catalystHrid, count) {
-            if (count === 0) {
-                const dash = document.createElement('span');
-                dash.textContent = '—';
-                dash.style.color = '#888';
-                cell.appendChild(dash);
-                return;
-            }
-
-            const wrapper = document.createElement('div');
-            wrapper.style.cssText = 'display: flex; align-items: center; gap: 4px;';
-
-            this.appendItemIcon(wrapper, catalystHrid, 18);
-
-            const countSpan = document.createElement('span');
-            countSpan.textContent = count.toLocaleString();
-            wrapper.appendChild(countSpan);
-
-            cell.appendChild(wrapper);
-        }
-
-        /**
-         * Render controls bar (stats + action buttons)
-         */
-        renderControls() {
-            const controls = this.modal.querySelector('.mwi-coinify-history-controls');
-            while (controls.firstChild) controls.removeChild(controls.firstChild);
-
-            // Stats
-            const stats = document.createElement('span');
-            stats.style.cssText = 'color: #aaa; font-size: 14px;';
-            stats.textContent = i18n_js.t('alchemyHistoryViewer.sessionCountStat', { count: this.filteredSessions.length });
-            controls.appendChild(stats);
-
-            const rightGroup = document.createElement('div');
-            rightGroup.style.cssText = 'display: flex; gap: 8px; align-items: center;';
-
-            // Clear All Filters button (only when filters active)
-            if (this.hasAnyFilter()) {
-                const clearFiltersBtn = document.createElement('button');
-                clearFiltersBtn.textContent = i18n_js.t('marketHistory.clearAllFiltersButton');
-                clearFiltersBtn.style.cssText = `
-                padding: 6px 12px; background: #e67e22; color: white;
-                border: none; border-radius: 4px; cursor: pointer;
-            `;
-                clearFiltersBtn.addEventListener('click', () => this.clearAllFilters());
-                rightGroup.appendChild(clearFiltersBtn);
-            }
-
-            // Export button
-            const exportBtn = document.createElement('button');
-            exportBtn.textContent = i18n_js.t('customTabsUi.exportButton');
-            exportBtn.style.cssText = `
-            padding: 6px 12px; background: #2563eb; color: white;
-            border: none; border-radius: 4px; cursor: pointer;
-        `;
-            exportBtn.addEventListener('click', () => this.exportHistory());
-            rightGroup.appendChild(exportBtn);
-
-            // Clear History button
-            const clearBtn = document.createElement('button');
-            clearBtn.textContent = i18n_js.t('marketHistory.clearHistoryButton');
-            clearBtn.style.cssText = `
-            padding: 6px 12px; background: #dc2626; color: white;
-            border: none; border-radius: 4px; cursor: pointer;
-        `;
-            clearBtn.addEventListener('click', () => this.clearHistory());
-            rightGroup.appendChild(clearBtn);
-
-            controls.appendChild(rightGroup);
-        }
-
-        /**
-         * Render active filter badges
-         */
-        renderBadges() {
-            const container = this.modal.querySelector('.mwi-coinify-history-badges');
-            while (container.firstChild) container.removeChild(container.firstChild);
-
-            const badges = [];
-
-            if (this.filters.dateFrom || this.filters.dateTo) {
-                const parts = [];
-                if (this.filters.dateFrom) parts.push(formatters_js.formatDateTime(this.filters.dateFrom, { includeTime: false }));
-                if (this.filters.dateTo) parts.push(formatters_js.formatDateTime(this.filters.dateTo, { includeTime: false }));
-                badges.push({
-                    label: i18n_js.t('marketHistory.dateFilterBadge', { range: parts.join(' - ') }),
-                    onRemove: () => {
-                        this.filters.dateFrom = null;
-                        this.filters.dateTo = null;
-                        this.applyFilters();
-                        this.renderTable();
-                    },
-                });
-            }
-
-            if (this.filters.selectedInputItems.length > 0) {
-                const label =
-                    this.filters.selectedInputItems.length === 1
-                        ? this.getItemName(this.filters.selectedInputItems[0])
-                        : i18n_js.t('alchemyHistoryViewer.inputItemsCountLabel', { count: this.filters.selectedInputItems.length });
-                badges.push({
-                    label: i18n_js.t('alchemyHistoryViewer.inputFilterBadge', { label }),
-                    icon: this.filters.selectedInputItems[0],
-                    onRemove: () => {
-                        this.filters.selectedInputItems = [];
-                        this.applyFilters();
-                        this.renderTable();
-                    },
-                });
-            }
-
-            badges.forEach((badge) => {
-                const el = document.createElement('div');
-                el.style.cssText = `
-                display: flex; align-items: center; gap: 6px;
-                padding: 4px 8px; background: #3a3a3a;
-                border: 1px solid #555; border-radius: 4px;
-                color: #aaa; font-size: 13px;
-            `;
-
-                if (badge.icon) {
-                    this.appendItemIcon(el, badge.icon, 14);
-                }
-
-                const labelSpan = document.createElement('span');
-                labelSpan.textContent = badge.label;
-                el.appendChild(labelSpan);
-
-                const removeBtn = document.createElement('button');
-                removeBtn.textContent = '✕';
-                removeBtn.style.cssText = `
-                background: none; border: none; color: #aaa;
-                cursor: pointer; padding: 0; font-size: 13px; line-height: 1;
-            `;
-                removeBtn.addEventListener('click', badge.onRemove);
-                el.appendChild(removeBtn);
-
-                container.appendChild(el);
-            });
-        }
-
-        /**
-         * Render pagination controls
-         */
-        renderPagination() {
-            const pagination = this.modal.querySelector('.mwi-coinify-history-pagination');
-            while (pagination.firstChild) pagination.removeChild(pagination.firstChild);
-
-            const leftSide = document.createElement('div');
-            leftSide.style.cssText = 'display: flex; gap: 8px; align-items: center; color: #aaa;';
-
-            const label = document.createElement('span');
-            label.textContent = i18n_js.t('marketHistory.rowsPerPageLabel');
-
-            const rowsInput = document.createElement('input');
-            rowsInput.type = 'number';
-            rowsInput.value = this.rowsPerPage;
-            rowsInput.min = '1';
-            rowsInput.disabled = this.showAll;
-            rowsInput.style.cssText = `
-            width: 60px; padding: 4px 8px;
-            border: 1px solid #555; border-radius: 4px;
-            background: ${this.showAll ? '#333' : '#1a1a1a'};
-            color: ${this.showAll ? '#666' : '#fff'};
-        `;
-            rowsInput.addEventListener('change', (e) => {
-                this.rowsPerPage = Math.max(1, parseInt(e.target.value) || 50);
-                this.currentPage = 1;
-                this.renderTable();
-            });
-
-            const showAllLabel = document.createElement('label');
-            showAllLabel.style.cssText = 'cursor: pointer; color: #aaa; display: flex; align-items: center; gap: 4px;';
-
-            const showAllCheckbox = document.createElement('input');
-            showAllCheckbox.type = 'checkbox';
-            showAllCheckbox.checked = this.showAll;
-            showAllCheckbox.style.cursor = 'pointer';
-            showAllCheckbox.addEventListener('change', (e) => {
-                this.showAll = e.target.checked;
-                rowsInput.disabled = this.showAll;
-                rowsInput.style.background = this.showAll ? '#333' : '#1a1a1a';
-                rowsInput.style.color = this.showAll ? '#666' : '#fff';
-                this.currentPage = 1;
-                this.renderTable();
-            });
-
-            showAllLabel.appendChild(showAllCheckbox);
-            showAllLabel.appendChild(document.createTextNode(i18n_js.t('marketHistory.showAllLabel')));
-
-            leftSide.appendChild(label);
-            leftSide.appendChild(rowsInput);
-            leftSide.appendChild(showAllLabel);
-
-            const rightSide = document.createElement('div');
-            rightSide.style.cssText = 'display: flex; gap: 8px; align-items: center; color: #aaa;';
-
-            if (!this.showAll) {
-                const totalPages = this.getTotalPages();
-
-                const prevBtn = document.createElement('button');
-                prevBtn.textContent = '◀';
-                prevBtn.disabled = this.currentPage === 1;
-                prevBtn.style.cssText = `
-                padding: 4px 12px;
-                background: ${this.currentPage === 1 ? '#333' : '#4a90e2'};
-                color: ${this.currentPage === 1 ? '#666' : 'white'};
-                border: none; border-radius: 4px;
-                cursor: ${this.currentPage === 1 ? 'default' : 'pointer'};
-            `;
-                prevBtn.addEventListener('click', () => {
-                    if (this.currentPage > 1) {
-                        this.currentPage--;
-                        this.renderTable();
-                    }
-                });
-
-                const pageInfo = document.createElement('span');
-                pageInfo.textContent = i18n_js.t('marketHistory.pageInfo', { current: this.currentPage, total: totalPages || 1 });
-
-                const nextBtn = document.createElement('button');
-                nextBtn.textContent = '▶';
-                nextBtn.disabled = this.currentPage >= totalPages;
-                nextBtn.style.cssText = `
-                padding: 4px 12px;
-                background: ${this.currentPage >= totalPages ? '#333' : '#4a90e2'};
-                color: ${this.currentPage >= totalPages ? '#666' : 'white'};
-                border: none; border-radius: 4px;
-                cursor: ${this.currentPage >= totalPages ? 'default' : 'pointer'};
-            `;
-                nextBtn.addEventListener('click', () => {
-                    if (this.currentPage < totalPages) {
-                        this.currentPage++;
-                        this.renderTable();
-                    }
-                });
-
-                rightSide.appendChild(prevBtn);
-                rightSide.appendChild(pageInfo);
-                rightSide.appendChild(nextBtn);
-            } else {
-                const info = document.createElement('span');
-                info.textContent = i18n_js.t('alchemyHistoryViewer.showingAllSessions', { count: this.filteredSessions.length });
-                rightSide.appendChild(info);
-            }
-
-            pagination.appendChild(leftSide);
-            pagination.appendChild(rightSide);
-        }
-
-        // ─── Filter Popups ───────────────────────────────────────────────────────
-
-        /**
-         * Show the appropriate filter popup for a column
-         * @param {string} columnKey
-         * @param {HTMLElement} buttonElement
-         */
-        showFilterPopup(columnKey, buttonElement) {
-            // Toggle behavior
-            if (this.activeFilterPopup && this.activeFilterButton === buttonElement) {
-                this.closeActiveFilterPopup();
-                return;
-            }
-
-            this.closeActiveFilterPopup();
-
-            let popup;
-            switch (columnKey) {
-                case 'startTime':
-                    popup = this.createDateFilterPopup();
-                    break;
-                case 'inputItemHrid':
-                    popup = this.createInputItemFilterPopup();
-                    break;
-                default:
-                    return;
-            }
-
-            const rect = buttonElement.getBoundingClientRect();
-            popup.style.position = 'fixed';
-            popup.style.top = `${rect.bottom + 5}px`;
-            popup.style.left = `${rect.left}px`;
-            popup.style.zIndex = '10002';
-
-            document.body.appendChild(popup);
-            this.activeFilterPopup = popup;
-            this.activeFilterButton = buttonElement;
-
-            this.popupCloseHandler = (e) => {
-                if (e.target.type === 'date' || e.target.closest?.('input[type="date"]')) return;
-                if (!popup.contains(e.target) && e.target !== buttonElement) {
-                    this.closeActiveFilterPopup();
-                }
-            };
-            const t = setTimeout(() => document.addEventListener('click', this.popupCloseHandler), 10);
-            this.timerRegistry.registerTimeout(t);
-        }
-
-        /**
-         * Close and clean up the active filter popup
-         */
-        closeActiveFilterPopup() {
-            if (this.activeFilterPopup) {
-                this.activeFilterPopup.remove();
-                this.activeFilterPopup = null;
-            }
-            if (this.popupCloseHandler) {
-                document.removeEventListener('click', this.popupCloseHandler);
-                this.popupCloseHandler = null;
-            }
-            this.activeFilterButton = null;
-        }
-
-        /**
-         * Create date range filter popup
-         * @returns {HTMLElement}
-         */
-        createDateFilterPopup() {
-            const popup = this.createPopupBase(i18n_js.t('marketHistory.filterByDateTitle'));
-
-            // Compute available range
-            if (!this.cachedDateRange) {
-                const timestamps = this.sessions.map((s) => s.startTime).filter(Boolean);
-                if (timestamps.length > 0) {
-                    this.cachedDateRange = {
-                        minDate: new Date(Math.min(...timestamps)),
-                        maxDate: new Date(Math.max(...timestamps)),
-                    };
-                } else {
-                    this.cachedDateRange = { minDate: null, maxDate: null };
-                }
-            }
-
-            const { minDate, maxDate } = this.cachedDateRange;
-
-            if (minDate && maxDate) {
-                const rangeInfo = document.createElement('div');
-                rangeInfo.style.cssText = `
-                color: #aaa; font-size: 11px; margin-bottom: 10px;
-                padding: 6px; background: #1a1a1a; border-radius: 3px;
-            `;
-                rangeInfo.textContent = i18n_js.t('marketHistory.availableRangeLabel', {
-                    range: `${formatters_js.formatDateTime(minDate, { includeTime: false })} - ${formatters_js.formatDateTime(maxDate, { includeTime: false })}`,
-                });
-                popup.appendChild(rangeInfo);
-            }
-
-            const fromInput = this.createDateInput(
-                i18n_js.t('marketHistory.fromLabel'),
-                this.filters.dateFrom ? this.filters.dateFrom.toISOString().split('T')[0] : '',
-                minDate,
-                maxDate
-            );
-            const toInput = this.createDateInput(
-                i18n_js.t('marketHistory.toLabel'),
-                this.filters.dateTo ? this.filters.dateTo.toISOString().split('T')[0] : '',
-                minDate,
-                maxDate
-            );
-
-            popup.appendChild(fromInput.label);
-            popup.appendChild(fromInput.input);
-            popup.appendChild(toInput.label);
-            popup.appendChild(toInput.input);
-
-            const btnRow = this.createPopupButtonRow(
-                () => {
-                    this.filters.dateFrom = fromInput.input.value ? new Date(fromInput.input.value) : null;
-                    this.filters.dateTo = toInput.input.value ? new Date(toInput.input.value) : null;
-                    this.applyFilters();
-                    this.renderTable();
-                    this.closeActiveFilterPopup();
-                },
-                () => {
-                    this.filters.dateFrom = null;
-                    this.filters.dateTo = null;
-                    this.applyFilters();
-                    this.renderTable();
-                    this.closeActiveFilterPopup();
-                }
-            );
-            popup.appendChild(btnRow);
-
-            return popup;
-        }
-
-        /**
-         * Create input item filter popup (checkbox list with search)
-         * @returns {HTMLElement}
-         */
-        createInputItemFilterPopup() {
-            const popup = this.createPopupBase(i18n_js.t('alchemyHistoryViewer.filterByInputItemTitle'));
-            popup.style.minWidth = '220px';
-
-            // Gather unique input items from all sessions
-            const itemSet = new Map();
-            this.sessions.forEach((s) => {
-                if (!itemSet.has(s.inputItemHrid)) {
-                    itemSet.set(s.inputItemHrid, this.getItemName(s.inputItemHrid));
-                }
-            });
-            const allItems = Array.from(itemSet.entries()).sort((a, b) => a[1].localeCompare(b[1]));
-
-            // Track pending selection (local to this popup)
-            const pending = new Set(this.filters.selectedInputItems);
-
-            // Search box
-            const searchInput = document.createElement('input');
-            searchInput.type = 'text';
-            searchInput.placeholder = i18n_js.t('marketHistory.searchItemsPlaceholder');
-            searchInput.style.cssText = `
-            width: 100%; padding: 6px; margin-bottom: 8px;
-            background: #1a1a1a; border: 1px solid #555;
-            border-radius: 3px; color: #fff; box-sizing: border-box;
-        `;
-
-            const listContainer = document.createElement('div');
-            listContainer.style.cssText = 'max-height: 200px; overflow-y: auto;';
-
-            const renderList = (filterText) => {
-                while (listContainer.firstChild) listContainer.removeChild(listContainer.firstChild);
-                const term = filterText.toLowerCase();
-                const visible = term ? allItems.filter(([, name]) => name.toLowerCase().includes(term)) : allItems;
-
-                visible.forEach(([hrid, name]) => {
-                    const row = document.createElement('label');
-                    row.style.cssText = `
-                    display: flex; align-items: center; gap: 8px;
-                    padding: 4px 2px; cursor: pointer; color: #ddd;
-                `;
-
-                    const cb = document.createElement('input');
-                    cb.type = 'checkbox';
-                    cb.checked = pending.has(hrid);
-                    cb.style.cursor = 'pointer';
-                    cb.addEventListener('change', () => {
-                        if (cb.checked) pending.add(hrid);
-                        else pending.delete(hrid);
-                    });
-
-                    this.appendItemIcon(row, hrid, 16);
-
-                    const nameSpan = document.createElement('span');
-                    nameSpan.textContent = name;
-
-                    row.appendChild(cb);
-                    row.appendChild(nameSpan);
-                    listContainer.appendChild(row);
-                });
-            };
-
-            searchInput.addEventListener('input', () => renderList(searchInput.value));
-            renderList('');
-
-            popup.appendChild(searchInput);
-            popup.appendChild(listContainer);
-
-            const btnRow = this.createPopupButtonRow(
-                () => {
-                    this.filters.selectedInputItems = Array.from(pending);
-                    this.applyFilters();
-                    this.renderTable();
-                    this.closeActiveFilterPopup();
-                },
-                () => {
-                    this.filters.selectedInputItems = [];
-                    this.applyFilters();
-                    this.renderTable();
-                    this.closeActiveFilterPopup();
-                }
-            );
-            popup.appendChild(btnRow);
-
-            return popup;
-        }
-
-        // ─── Popup Helpers ───────────────────────────────────────────────────────
-
-        /**
-         * Create a styled popup base div with a title
-         * @param {string} titleText
-         * @returns {HTMLElement}
-         */
-        createPopupBase(titleText) {
-            const popup = document.createElement('div');
-            popup.style.cssText = `
-            background: #2a2a2a; border: 1px solid #555;
-            border-radius: 4px; padding: 12px; min-width: 200px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-        `;
-
-            const title = document.createElement('div');
-            title.textContent = titleText;
-            title.style.cssText = 'color: #fff; font-weight: bold; margin-bottom: 10px;';
-            popup.appendChild(title);
-
-            return popup;
-        }
-
-        /**
-         * Create a date input with label
-         * @param {string} labelText
-         * @param {string} value
-         * @param {Date|null} minDate
-         * @param {Date|null} maxDate
-         * @returns {{ label: HTMLElement, input: HTMLInputElement }}
-         */
-        createDateInput(labelText, value, minDate, maxDate) {
-            const label = document.createElement('label');
-            label.textContent = labelText;
-            label.style.cssText = 'display: block; color: #aaa; margin-bottom: 4px; font-size: 12px;';
-
-            const input = document.createElement('input');
-            input.type = 'date';
-            input.value = value;
-            if (minDate) input.min = minDate.toISOString().split('T')[0];
-            if (maxDate) input.max = maxDate.toISOString().split('T')[0];
-            input.style.cssText = `
-            width: 100%; padding: 6px; background: #1a1a1a;
-            border: 1px solid #555; border-radius: 3px; color: #fff; margin-bottom: 10px;
-        `;
-
-            return { label, input };
-        }
-
-        /**
-         * Create Apply + Clear button row for filter popups
-         * @param {Function} onApply
-         * @param {Function} onClear
-         * @returns {HTMLElement}
-         */
-        createPopupButtonRow(onApply, onClear) {
-            const row = document.createElement('div');
-            row.style.cssText = 'display: flex; gap: 8px; margin-top: 10px;';
-
-            const applyBtn = document.createElement('button');
-            applyBtn.textContent = i18n_js.t('marketHistory.applyButton');
-            applyBtn.style.cssText = `
-            flex: 1; padding: 6px; background: #4a90e2; color: white;
-            border: none; border-radius: 3px; cursor: pointer;
-        `;
-            applyBtn.addEventListener('click', onApply);
-
-            const clearBtn = document.createElement('button');
-            clearBtn.textContent = i18n_js.t('settings.clearButton');
-            clearBtn.style.cssText = `
-            flex: 1; padding: 6px; background: #666; color: white;
-            border: none; border-radius: 3px; cursor: pointer;
-        `;
-            clearBtn.addEventListener('click', onClear);
-
-            row.appendChild(applyBtn);
-            row.appendChild(clearBtn);
-            return row;
-        }
-
-        // ─── Utilities ───────────────────────────────────────────────────────────
-
-        /**
-         * Append a 16×16 or 20×20 SVG item icon to an element
-         * @param {HTMLElement} parent
-         * @param {string} itemHrid
-         * @param {number} size
-         */
-        appendItemIcon(parent, itemHrid, size = 20) {
-            const spriteUrl = this.getItemsSpriteUrl();
-            if (!spriteUrl) return;
-
-            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            svg.setAttribute('width', String(size));
-            svg.setAttribute('height', String(size));
-            svg.style.flexShrink = '0';
-
-            const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-            use.setAttribute('href', `${spriteUrl}#${itemHrid.split('/').pop()}`);
-            svg.appendChild(use);
-            parent.appendChild(svg);
-        }
-
-        /**
-         * Get items sprite URL from DOM (cached)
-         * @returns {string|null}
-         */
-        getItemsSpriteUrl() {
-            if (!this.itemsSpriteUrl) {
-                const el = document.querySelector('use[href*="items_sprite"]');
-                if (el) {
-                    const href = el.getAttribute('href');
-                    this.itemsSpriteUrl = href ? href.split('#')[0] : null;
-                }
-            }
-            return this.itemsSpriteUrl;
-        }
-
-        /**
-         * Get item display name from HRID (cached)
-         * @param {string} itemHrid
-         * @returns {string}
-         */
-        getItemName(itemHrid) {
-            if (this.itemNameCache.has(itemHrid)) {
-                return this.itemNameCache.get(itemHrid);
-            }
-            const details = dataManager.getItemDetails(itemHrid);
-            const name = details?.name || itemHrid.split('/').pop().replace(/_/g, ' ');
-            this.itemNameCache.set(itemHrid, name);
-            return name;
-        }
-
-        /**
-         * Get paginated sessions for current page
-         * @returns {Array}
-         */
-        getPaginatedSessions() {
-            if (this.showAll) return this.filteredSessions;
-            const start = (this.currentPage - 1) * this.rowsPerPage;
-            return this.filteredSessions.slice(start, start + this.rowsPerPage);
-        }
-
-        /**
-         * Get total number of pages
-         * @returns {number}
-         */
-        getTotalPages() {
-            if (this.showAll) return 1;
-            return Math.ceil(this.filteredSessions.length / this.rowsPerPage);
-        }
-
-        /**
-         * Delete a single session by ID
-         * @param {string} sessionId
-         */
-        async deleteSession(sessionId) {
-            this.sessions = this.sessions.filter((s) => s.id !== sessionId);
-
-            try {
-                await coinifyHistoryTracker.deleteSessions(this.sessions);
-            } catch (error) {
-                console.error('[CoinifyHistoryViewer] Failed to delete session:', error);
-            }
-
-            this.applyFilters();
-            this.renderTable();
-        }
-
-        /**
-         * Export all sessions to a CSV file download
-         */
-        exportHistory() {
-            const escape = (val) => `"${String(val === null || val === undefined ? '' : val).replace(/"/g, '""')}"`;
-
-            const headers = [
-                i18n_js.t('alchemyHistoryViewer.colSessionStart'),
-                i18n_js.t('alchemyHistoryViewer.colInputItem'),
-                i18n_js.t('alchemyHistoryViewer.csvColEnhancementLevelFull'),
-                i18n_js.t('alchemyHistoryViewer.colAttempts'),
-                i18n_js.t('alchemyHistoryViewer.colSuccesses'),
-                i18n_js.t('alchemyHistoryViewer.colFailures'),
-                i18n_js.t('alchemyHistoryViewer.colSuccessRate'),
-                i18n_js.t('alchemyHistoryViewer.colCoinsEarned'),
-                i18n_js.t('alchemyHistoryViewer.csvColItemUsedHeader', { name: this.getItemName(CATALYST_OF_COINIFICATION_HRID) }),
-                i18n_js.t('alchemyHistoryViewer.csvColItemUsedHeader', { name: this.getItemName(PRIME_CATALYST_HRID$2) }),
-            ];
-
-            const rows = this.sessions.map((session) => {
-                const start = formatters_js.formatDateTime(new Date(session.startTime));
-                const inputName = this.getItemName(session.inputItemHrid);
-                const failures = session.totalAttempts - session.totalSuccesses;
-                const rate =
-                    session.totalAttempts > 0
-                        ? `${((session.totalSuccesses / session.totalAttempts) * 100).toFixed(1)}%`
-                        : '—';
-
-                return [
-                    start,
-                    inputName,
-                    session.enhancementLevel,
-                    session.totalAttempts,
-                    session.totalSuccesses,
-                    failures,
-                    rate,
-                    session.totalCoinsEarned || 0,
-                    session.catalystOfCoinificationUsed || 0,
-                    session.primeCatalystUsed || 0,
-                ]
-                    .map(escape)
-                    .join(',');
-            });
-
-            const csv = [headers.map(escape).join(','), ...rows].join('\n');
-            const date = new Date().toISOString().slice(0, 10);
-            const blob = new Blob([csv], { type: 'text/csv' });
-            const url = URL.createObjectURL(blob);
-
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `coinify-history-${date}.csv`;
-            a.click();
-
-            URL.revokeObjectURL(url);
-        }
-
-        /**
-         * Clear all history after confirmation
-         */
-        async clearHistory() {
-            const confirmed = confirm(
-                i18n_js.t('alchemyHistoryViewer.clearHistoryConfirmPlain', {
-                    actionName: i18n_js.t('skillingOptimizer.alchemyTypeCoinify'),
-                    count: this.sessions.length,
-                })
-            );
-            if (!confirmed) return;
-
-            try {
-                await coinifyHistoryTracker.clearHistory();
-                this.sessions = [];
-                this.filteredSessions = [];
-                alert(
-                    i18n_js.t('alchemyHistoryViewer.historyClearedAlert', {
-                        actionName: i18n_js.t('skillingOptimizer.alchemyTypeCoinify'),
-                    })
-                );
-                this.applyFilters();
-                this.renderTable();
-            } catch (error) {
-                console.error('[CoinifyHistoryViewer] Failed to clear history:', error);
-                alert(i18n_js.t('marketHistory.clearHistoryFailedAlert', { error: error.message }));
-            }
-        }
-    }
-
-    const coinifyHistoryViewer = new CoinifyHistoryViewer();
-
-    var coinifyHistoryViewer$1 = {
-        name: 'Coinify History Viewer',
-        initialize: () => coinifyHistoryViewer.initialize(),
-        cleanup: () => coinifyHistoryViewer.disable(),
     };
 
     /**
@@ -10190,34 +7506,137 @@
     };
 
     /**
-     * Decompose History Viewer
-     * Modal UI for browsing decompose session history.
-     * Injected as a tab in the alchemy panel tab bar.
+     * Alchemy History Viewer
+     * Single modal UI for browsing transmute/coinify/decompose session history, with an internal
+     * switcher between the enabled types. Injected as one tab in the alchemy panel tab bar,
+     * replacing what used to be three separate tabs/modals (one per type).
      */
 
 
+    const CATALYST_OF_COINIFICATION_HRID = '/items/catalyst_of_coinification';
     const CATALYST_OF_DECOMPOSITION_HRID = '/items/catalyst_of_decomposition';
     const PRIME_CATALYST_HRID = '/items/prime_catalyst';
 
-    class DecomposeHistoryViewer {
+    // The native alchemy tab bar's own labels are always in the game's own (possibly non-English)
+    // language, but the DOM text we match against to find a reference tab to clone is hardcoded
+    // English in the original three viewers this replaces - preserved as-is rather than using our
+    // own t()'d action name, which would resolve to Toolasha's locale and likely never match.
+    const NATIVE_TAB_TEXT = { transmute: 'Transmute', coinify: 'Coinify', decompose: 'Decompose' };
+
+    const TYPE_ORDER = ['transmute', 'coinify', 'decompose'];
+
+    const TYPE_CONFIGS = {
+        transmute: {
+            type: 'transmute',
+            tracker: transmuteHistoryTracker,
+            settingKey: 'alchemy_transmuteHistory',
+            actionNameKey: 'skillingOptimizer.alchemyTypeTransmute',
+            emptyStateKey: 'alchemyHistoryViewer.noTransmuteHistoryYet',
+            hasEnhancement: false,
+            hasSuccessRate: false,
+            hasCoins: false,
+            hasResults: true,
+            resultsSupportSelfReturn: true,
+            catalystHrids: [],
+            catalystUsedFields: [],
+            catalystCellAlign: 'left',
+            successRateZeroDisplay: null,
+            clearConfirmLocaleKey: 'alchemyHistoryViewer.clearHistoryConfirmWithWarning',
+            filenamePrefix: 'transmute-history',
+            csvColumns: [
+                { kind: 'date' },
+                { kind: 'itemName' },
+                { kind: 'attempts' },
+                { kind: 'successes' },
+                { kind: 'failures' },
+                { kind: 'results', supportSelfReturn: true },
+            ],
+        },
+        coinify: {
+            type: 'coinify',
+            tracker: coinifyHistoryTracker,
+            settingKey: 'alchemy_coinifyHistory',
+            actionNameKey: 'skillingOptimizer.alchemyTypeCoinify',
+            emptyStateKey: 'alchemyHistoryViewer.noCoinifyHistoryYet',
+            hasEnhancement: true,
+            hasSuccessRate: true,
+            hasCoins: true,
+            hasResults: false,
+            resultsSupportSelfReturn: false,
+            catalystHrids: [CATALYST_OF_COINIFICATION_HRID, PRIME_CATALYST_HRID],
+            catalystUsedFields: ['catalystOfCoinificationUsed', 'primeCatalystUsed'],
+            catalystCellAlign: 'left',
+            successRateZeroDisplay: '—',
+            clearConfirmLocaleKey: 'alchemyHistoryViewer.clearHistoryConfirmPlain',
+            filenamePrefix: 'coinify-history',
+            csvColumns: [
+                { kind: 'date' },
+                { kind: 'itemName' },
+                { kind: 'enhancement', headerKey: 'csvColEnhancementLevelFull' },
+                { kind: 'attempts' },
+                { kind: 'successes' },
+                { kind: 'failures' },
+                { kind: 'successRate' },
+                { kind: 'coinsEarned' },
+                { kind: 'catalystUsed', catalystIndex: 0, headerStyle: 'used' },
+                { kind: 'catalystUsed', catalystIndex: 1, headerStyle: 'used' },
+            ],
+        },
+        decompose: {
+            type: 'decompose',
+            tracker: decomposeHistoryTracker,
+            settingKey: 'alchemy_decomposeHistory',
+            actionNameKey: 'skillingOptimizer.alchemyTypeDecompose',
+            emptyStateKey: 'alchemyHistoryViewer.noDecomposeHistoryYet',
+            hasEnhancement: true,
+            hasSuccessRate: true,
+            hasCoins: false,
+            hasResults: true,
+            resultsSupportSelfReturn: false,
+            catalystHrids: [CATALYST_OF_DECOMPOSITION_HRID, PRIME_CATALYST_HRID],
+            catalystUsedFields: ['catalystOfDecompositionUsed', 'primeCatalystUsed'],
+            catalystCellAlign: 'center',
+            successRateZeroDisplay: '0.0%',
+            clearConfirmLocaleKey: 'alchemyHistoryViewer.clearHistoryConfirmWithWarning',
+            filenamePrefix: 'decompose-history',
+            csvColumns: [
+                { kind: 'date' },
+                { kind: 'itemName' },
+                { kind: 'enhancement', headerKey: 'colEnhLevel' },
+                { kind: 'attempts' },
+                { kind: 'successes' },
+                { kind: 'failures' },
+                { kind: 'successRate' },
+                { kind: 'results', supportSelfReturn: false },
+                { kind: 'catalystUsed', catalystIndex: 0, headerStyle: 'plain' },
+                { kind: 'catalystUsed', catalystIndex: 1, headerStyle: 'plain' },
+            ],
+        },
+    };
+
+    class AlchemyHistoryViewer {
         constructor() {
             this.isInitialized = false;
             this.modal = null;
-            this.sessions = [];
-            this.filteredSessions = [];
-            this.currentPage = 1;
-            this.rowsPerPage = 50;
-            this.showAll = false;
-            this.sortColumn = 'startTime';
-            this.sortDirection = 'desc';
+            this.enabledTypes = [];
+            this.activeType = null;
 
-            // Column filters
-            this.filters = {
-                dateFrom: null,
-                dateTo: null,
-                selectedInputItems: [], // Array of itemHrids
-                resultsSearch: '', // Text search for result item names
-            };
+            // Per-type state (sessions/filters/pagination/sort) so switching types preserves each
+            // type's own filter/page position rather than resetting on every switch.
+            this.typeState = {};
+            TYPE_ORDER.forEach((type) => {
+                this.typeState[type] = {
+                    sessions: [],
+                    filteredSessions: [],
+                    currentPage: 1,
+                    rowsPerPage: 50,
+                    showAll: false,
+                    sortColumn: 'startTime',
+                    sortDirection: 'desc',
+                    filters: { dateFrom: null, dateTo: null, selectedInputItems: [], resultsSearch: '' },
+                    cachedDateRange: null,
+                };
+            });
 
             this.activeFilterPopup = null;
             this.activeFilterButton = null;
@@ -10227,26 +7646,42 @@
             this.alchemyTab = null;
             this.tabWatcher = null;
 
-            // Caches
+            // Caches (shared across types - item names/sprite URL don't vary by alching type)
             this.itemNameCache = new Map();
             this.itemsSpriteUrl = null;
-            this.cachedDateRange = null;
 
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
         }
 
         /**
-         * Initialize the viewer
+         * @returns {Object} the active type's per-type state
+         */
+        get state() {
+            return this.typeState[this.activeType];
+        }
+
+        /**
+         * @returns {Object} the active type's config from TYPE_CONFIGS
+         */
+        get activeConfig() {
+            return TYPE_CONFIGS[this.activeType];
+        }
+
+        /**
+         * Initialize the viewer. Mirrors the original three viewers' gating: each type participates
+         * only if its tracker's own setting is on (there is no separate viewer-specific setting).
          */
         initialize() {
             if (this.isInitialized) {
                 return;
             }
 
-            if (!config.getSetting('alchemy_decomposeHistory')) {
+            this.enabledTypes = TYPE_ORDER.filter((type) => config.getSetting(TYPE_CONFIGS[type].settingKey));
+            if (this.enabledTypes.length === 0) {
                 return;
             }
 
+            this.activeType = this.enabledTypes[0];
             this.isInitialized = true;
             this.addAlchemyTab();
         }
@@ -10274,54 +7709,43 @@
         // ─── Tab Injection ───────────────────────────────────────────────────────
 
         /**
-         * Inject "Decompose History" tab into the alchemy tab bar.
+         * Inject a single "Alchemy History" tab into the alchemy tab bar.
          * The alchemy tab bar contains Coinify, Decompose, Transmute, Unrefine, Current Action.
-         * We identify it by the presence of a "Decompose" tab text.
+         * We identify it by the presence of any enabled type's native tab text.
          */
         addAlchemyTab() {
             const ensureTabExists = () => {
                 const tablist = document.querySelector('[role="tablist"]');
                 if (!tablist) return;
 
-                // Verify this is the alchemy tablist by checking for "Decompose" tab
-                const hasDecompose = Array.from(tablist.children).some(
-                    (btn) => btn.textContent.includes('Decompose') && !btn.dataset.mwiDecomposeHistoryTab
-                );
-                if (!hasDecompose) return;
-
                 // Already injected?
-                if (tablist.querySelector('[data-mwi-decompose-history-tab="true"]')) return;
+                if (tablist.querySelector('[data-mwi-alchemy-history-tab="true"]')) return;
 
-                // Clone an existing tab for structure
+                // Clone an existing tab for structure - matched by the native (English) tab text for
+                // any of our enabled types, since the game's own tab labels aren't run through our t().
                 const referenceTab = Array.from(tablist.children).find(
-                    (btn) => btn.textContent.includes('Decompose') && !btn.dataset.mwiDecomposeHistoryTab
+                    (btn) =>
+                        !btn.dataset.mwiAlchemyHistoryTab &&
+                        this.enabledTypes.some((type) => btn.textContent.includes(NATIVE_TAB_TEXT[type]))
                 );
                 if (!referenceTab) return;
 
                 const tab = referenceTab.cloneNode(true);
-                tab.setAttribute('data-mwi-decompose-history-tab', 'true');
+                tab.setAttribute('data-mwi-alchemy-history-tab', 'true');
                 tab.classList.remove('Mui-selected');
                 tab.setAttribute('aria-selected', 'false');
                 tab.setAttribute('tabindex', '-1');
 
-                // Set label
+                const label = i18n_js.t('alchemyHistoryViewer.unifiedModalTitle');
                 const badge = tab.querySelector('.TabsComponent_badge__1Du26');
                 if (badge) {
                     // Replace first text node (the label) while keeping badge span
                     const badgeSpan = badge.querySelector('.MuiBadge-badge');
                     badge.textContent = '';
-                    badge.appendChild(
-                        document.createTextNode(
-                            i18n_js.t('alchemyHistoryViewer.historyTabTitle', {
-                                actionName: i18n_js.t('skillingOptimizer.alchemyTypeDecompose'),
-                            })
-                        )
-                    );
+                    badge.appendChild(document.createTextNode(label));
                     if (badgeSpan) badge.appendChild(badgeSpan);
                 } else {
-                    tab.textContent = i18n_js.t('alchemyHistoryViewer.historyTabTitle', {
-                        actionName: i18n_js.t('skillingOptimizer.alchemyTypeDecompose'),
-                    });
+                    tab.textContent = label;
                 }
 
                 tab.addEventListener('click', (e) => {
@@ -10357,19 +7781,20 @@
         // ─── Modal ───────────────────────────────────────────────────────────────
 
         /**
-         * Open the modal — load sessions and render
+         * Open the modal, showing the given type (or the current/first-enabled type if omitted).
+         * @param {string} [initialType]
          */
-        async openModal() {
-            this.sessions = await decomposeHistoryTracker.loadSessions();
-            this.cachedDateRange = null;
-            this.applyFilters();
+        async openModal(initialType) {
+            if (initialType && this.enabledTypes.includes(initialType)) {
+                this.activeType = initialType;
+            }
 
             if (!this.modal) {
                 this.createModal();
             }
 
             this.modal.style.display = 'flex';
-            this.renderTable();
+            await this.switchType(this.activeType);
         }
 
         /**
@@ -10387,7 +7812,7 @@
          */
         createModal() {
             this.modal = document.createElement('div');
-            this.modal.className = 'mwi-decompose-history-modal';
+            this.modal.className = 'mwi-alchemy-history-modal';
             this.modal.style.cssText = `
             position: fixed;
             top: 0; left: 0;
@@ -10400,7 +7825,7 @@
         `;
 
             const content = document.createElement('div');
-            content.className = 'mwi-decompose-history-content';
+            content.className = 'mwi-alchemy-history-content';
             content.style.cssText = `
             background: #2a2a2a;
             border-radius: 8px;
@@ -10419,17 +7844,15 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
+            margin-bottom: 16px;
         `;
 
             const title = document.createElement('h2');
-            title.textContent = i18n_js.t('alchemyHistoryViewer.historyTabTitle', {
-                actionName: i18n_js.t('skillingOptimizer.alchemyTypeDecompose'),
-            });
+            title.className = 'mwi-alchemy-history-title';
             title.style.cssText = 'margin: 0; color: #fff;';
 
             const closeBtn = document.createElement('button');
-            closeBtn.textContent = '\u2715';
+            closeBtn.textContent = '✕';
             closeBtn.style.cssText = `
             background: none; border: none; color: #fff;
             font-size: 24px; cursor: pointer; padding: 0;
@@ -10440,9 +7863,14 @@
             header.appendChild(title);
             header.appendChild(closeBtn);
 
+            // Type switcher row - hidden entirely when only one type is enabled
+            const switcher = document.createElement('div');
+            switcher.className = 'mwi-alchemy-history-switcher';
+            switcher.style.cssText = 'display: flex; gap: 6px; margin-bottom: 14px;';
+
             // Controls
             const controls = document.createElement('div');
-            controls.className = 'mwi-decompose-history-controls';
+            controls.className = 'mwi-alchemy-history-controls';
             controls.style.cssText = `
             display: flex;
             gap: 10px;
@@ -10454,7 +7882,7 @@
 
             // Active filter badges row
             const badges = document.createElement('div');
-            badges.className = 'mwi-decompose-history-badges';
+            badges.className = 'mwi-alchemy-history-badges';
             badges.style.cssText = `
             display: flex;
             gap: 8px;
@@ -10466,12 +7894,12 @@
 
             // Table container
             const tableContainer = document.createElement('div');
-            tableContainer.className = 'mwi-decompose-history-table-container';
+            tableContainer.className = 'mwi-alchemy-history-table-container';
             tableContainer.style.cssText = 'overflow-x: auto;';
 
             // Pagination
             const pagination = document.createElement('div');
-            pagination.className = 'mwi-decompose-history-pagination';
+            pagination.className = 'mwi-alchemy-history-pagination';
             pagination.style.cssText = `
             margin-top: 15px;
             display: flex;
@@ -10480,6 +7908,7 @@
         `;
 
             content.appendChild(header);
+            content.appendChild(switcher);
             content.appendChild(controls);
             content.appendChild(badges);
             content.appendChild(tableContainer);
@@ -10493,32 +7922,83 @@
             });
         }
 
+        /**
+         * Render the type-switcher buttons, hidden entirely when only one type is enabled.
+         */
+        renderSwitcher() {
+            const switcher = this.modal.querySelector('.mwi-alchemy-history-switcher');
+            while (switcher.firstChild) switcher.removeChild(switcher.firstChild);
+
+            if (this.enabledTypes.length <= 1) {
+                switcher.style.display = 'none';
+                return;
+            }
+            switcher.style.display = 'flex';
+
+            this.enabledTypes.forEach((type) => {
+                const btn = document.createElement('button');
+                btn.textContent = i18n_js.t(TYPE_CONFIGS[type].actionNameKey);
+                const active = type === this.activeType;
+                btn.style.cssText = active
+                    ? 'padding: 6px 14px; background: #4a90e2; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;'
+                    : 'padding: 6px 14px; background: #3a3a3a; color: #ccc; border: none; border-radius: 4px; cursor: pointer;';
+                btn.addEventListener('click', () => {
+                    if (type !== this.activeType) this.switchType(type);
+                });
+                switcher.appendChild(btn);
+            });
+        }
+
+        /**
+         * Switch the modal to show a different type: loads that type's sessions fresh (alchemy
+         * session history can change in near-real-time while a character is actively alchemy-ing,
+         * so always reloading avoids showing stale attempt counts after switching tabs), then
+         * re-renders. Per-type filter/sort/page state is preserved across switches.
+         * @param {string} type
+         */
+        async switchType(type) {
+            this.activeType = type;
+            this.closeActiveFilterPopup();
+            this.state.sessions = await this.activeConfig.tracker.loadSessions();
+            this.state.cachedDateRange = null;
+            this.applyFilters();
+
+            this.modal.querySelector('.mwi-alchemy-history-title').textContent = i18n_js.t('alchemyHistoryViewer.historyTabTitle', {
+                actionName: i18n_js.t(this.activeConfig.actionNameKey),
+            });
+
+            this.renderSwitcher();
+            this.renderTable();
+        }
+
         // ─── Filtering ───────────────────────────────────────────────────────────
 
         /**
-         * Apply all active filters to this.sessions → this.filteredSessions
+         * Apply all active filters to the active type's sessions → filteredSessions
          */
         applyFilters() {
-            this.cachedDateRange = null;
+            const state = this.state;
+            const activeConfig = this.activeConfig;
+            state.cachedDateRange = null;
 
-            const hasDateFilter = !!(this.filters.dateFrom || this.filters.dateTo);
+            const hasDateFilter = !!(state.filters.dateFrom || state.filters.dateTo);
             let dateToEndOfDay = null;
-            if (hasDateFilter && this.filters.dateTo) {
-                dateToEndOfDay = new Date(this.filters.dateTo);
+            if (hasDateFilter && state.filters.dateTo) {
+                dateToEndOfDay = new Date(state.filters.dateTo);
                 dateToEndOfDay.setHours(23, 59, 59, 999);
             }
 
-            const hasItemFilter = this.filters.selectedInputItems.length > 0;
-            const itemFilterSet = hasItemFilter ? new Set(this.filters.selectedInputItems) : null;
+            const hasItemFilter = state.filters.selectedInputItems.length > 0;
+            const itemFilterSet = hasItemFilter ? new Set(state.filters.selectedInputItems) : null;
 
-            const hasResultsFilter = !!this.filters.resultsSearch.trim();
-            const resultsSearch = hasResultsFilter ? this.filters.resultsSearch.trim().toLowerCase() : '';
+            const hasResultsFilter = activeConfig.hasResults && !!state.filters.resultsSearch.trim();
+            const resultsSearch = hasResultsFilter ? state.filters.resultsSearch.trim().toLowerCase() : '';
 
-            const filtered = this.sessions.filter((session) => {
+            const filtered = state.sessions.filter((session) => {
                 // Date filter
                 if (hasDateFilter) {
                     const d = new Date(session.startTime);
-                    if (this.filters.dateFrom && d < this.filters.dateFrom) return false;
+                    if (state.filters.dateFrom && d < state.filters.dateFrom) return false;
                     if (dateToEndOfDay && d > dateToEndOfDay) return false;
                 }
 
@@ -10538,13 +8018,13 @@
 
             // Sort
             filtered.sort((a, b) => {
-                const aVal = a[this.sortColumn] ?? 0;
-                const bVal = b[this.sortColumn] ?? 0;
-                return this.sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+                const aVal = a[state.sortColumn] ?? 0;
+                const bVal = b[state.sortColumn] ?? 0;
+                return state.sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
             });
 
-            this.filteredSessions = filtered;
-            this.currentPage = 1;
+            state.filteredSessions = filtered;
+            state.currentPage = 1;
         }
 
         /**
@@ -10553,13 +8033,14 @@
          * @returns {boolean}
          */
         hasActiveFilter(col) {
+            const state = this.state;
             switch (col) {
                 case 'startTime':
-                    return !!(this.filters.dateFrom || this.filters.dateTo);
+                    return !!(state.filters.dateFrom || state.filters.dateTo);
                 case 'inputItemHrid':
-                    return this.filters.selectedInputItems.length > 0;
+                    return state.filters.selectedInputItems.length > 0;
                 case 'results':
-                    return !!this.filters.resultsSearch.trim();
+                    return !!state.filters.resultsSearch.trim();
                 default:
                     return false;
             }
@@ -10572,7 +8053,7 @@
             return (
                 this.hasActiveFilter('startTime') ||
                 this.hasActiveFilter('inputItemHrid') ||
-                this.hasActiveFilter('results')
+                (this.activeConfig.hasResults && this.hasActiveFilter('results'))
             );
         }
 
@@ -10580,10 +8061,11 @@
          * Clear all filters
          */
         clearAllFilters() {
-            this.filters.dateFrom = null;
-            this.filters.dateTo = null;
-            this.filters.selectedInputItems = [];
-            this.filters.resultsSearch = '';
+            const state = this.state;
+            state.filters.dateFrom = null;
+            state.filters.dateTo = null;
+            state.filters.selectedInputItems = [];
+            state.filters.resultsSearch = '';
             this.applyFilters();
             this.renderTable();
         }
@@ -10591,13 +8073,62 @@
         // ─── Rendering ───────────────────────────────────────────────────────────
 
         /**
-         * Full render: controls + badges + table + pagination
+         * Build the column definition list for a given type's config.
+         * @param {Object} activeConfig
+         * @returns {Array<Object>}
+         */
+        buildColumns(activeConfig) {
+            const columns = [
+                { key: 'startTime', label: i18n_js.t('alchemyHistoryViewer.colSessionStart'), filterable: true },
+                { key: 'inputItemHrid', label: i18n_js.t('alchemyHistoryViewer.colInputItem'), filterable: true },
+            ];
+            if (activeConfig.hasEnhancement) {
+                columns.push({
+                    key: 'enhancementLevel',
+                    label: i18n_js.t('alchemyHistoryViewer.colEnhLevel'),
+                    filterable: false,
+                });
+            }
+            columns.push({ key: 'totalAttempts', label: i18n_js.t('alchemyHistoryViewer.colAttempts'), filterable: false });
+            columns.push({ key: 'totalSuccesses', label: i18n_js.t('alchemyHistoryViewer.colSuccesses'), filterable: false });
+            if (activeConfig.hasSuccessRate) {
+                columns.push({
+                    key: '_successRate',
+                    label: i18n_js.t('alchemyHistoryViewer.colSuccessRate'),
+                    filterable: false,
+                });
+            }
+            if (activeConfig.hasCoins) {
+                columns.push({
+                    key: 'totalCoinsEarned',
+                    label: i18n_js.t('alchemyHistoryViewer.colCoinsEarned'),
+                    filterable: false,
+                });
+            }
+            if (activeConfig.hasResults) {
+                columns.push({ key: 'results', label: i18n_js.t('alchemyHistoryViewer.colResults'), filterable: true });
+            }
+            activeConfig.catalystHrids.forEach((hrid, i) => {
+                columns.push({
+                    key: `_catalyst${i}`,
+                    label: this.getItemName(hrid),
+                    filterable: false,
+                    catalystHrid: hrid,
+                });
+            });
+            columns.push({ key: '_delete', label: '', filterable: false });
+            return columns;
+        }
+
+        /**
+         * Full render: switcher + controls + badges + table + pagination
          */
         renderTable() {
+            this.renderSwitcher();
             this.renderControls();
             this.renderBadges();
 
-            const tableContainer = this.modal.querySelector('.mwi-decompose-history-table-container');
+            const tableContainer = this.modal.querySelector('.mwi-alchemy-history-table-container');
             while (tableContainer.firstChild) tableContainer.removeChild(tableContainer.firstChild);
 
             const table = document.createElement('table');
@@ -10608,22 +8139,8 @@
             const headerRow = document.createElement('tr');
             headerRow.style.background = '#1a1a1a';
 
-            const columns = [
-                { key: 'startTime', label: i18n_js.t('alchemyHistoryViewer.colSessionStart'), filterable: true },
-                { key: 'inputItemHrid', label: i18n_js.t('alchemyHistoryViewer.colInputItem'), filterable: true },
-                { key: 'enhancementLevel', label: i18n_js.t('alchemyHistoryViewer.colEnhLevel'), filterable: false },
-                { key: 'totalAttempts', label: i18n_js.t('alchemyHistoryViewer.colAttempts'), filterable: false },
-                { key: 'totalSuccesses', label: i18n_js.t('alchemyHistoryViewer.colSuccesses'), filterable: false },
-                { key: '_successRate', label: i18n_js.t('alchemyHistoryViewer.colSuccessRate'), filterable: false },
-                { key: 'results', label: i18n_js.t('alchemyHistoryViewer.colResults'), filterable: true },
-                {
-                    key: '_catalystOfDecomposition',
-                    label: this.getItemName(CATALYST_OF_DECOMPOSITION_HRID),
-                    filterable: false,
-                },
-                { key: '_primeCatalyst', label: this.getItemName(PRIME_CATALYST_HRID), filterable: false },
-                { key: '_delete', label: '', filterable: false },
-            ];
+            const activeConfig = this.activeConfig;
+            const columns = this.buildColumns(activeConfig);
 
             columns.forEach((col) => {
                 const th = document.createElement('th');
@@ -10641,33 +8158,32 @@
                 const labelSpan = document.createElement('span');
                 labelSpan.style.cursor = 'pointer';
 
-                // Columns starting with _ are computed, not directly sortable by field
-                const isSortable = !col.key.startsWith('_');
-                const isCatalystCol = col.key === '_catalystOfDecomposition' || col.key === '_primeCatalyst';
+                // Computed columns (starting with _) and 'results' are not directly sortable by field
+                const isSortable = !col.key.startsWith('_') && col.key !== 'results';
+                const isCatalystCol = col.key.startsWith('_catalyst');
 
                 if (isSortable) {
-                    if (this.sortColumn === col.key) {
-                        labelSpan.textContent = col.label + (this.sortDirection === 'asc' ? ' \u25B2' : ' \u25BC');
+                    if (this.state.sortColumn === col.key) {
+                        labelSpan.textContent = col.label + (this.state.sortDirection === 'asc' ? ' ▲' : ' ▼');
                     } else {
                         labelSpan.textContent = col.label;
                     }
                     labelSpan.addEventListener('click', () => {
-                        if (this.sortColumn === col.key) {
-                            this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+                        const state = this.state;
+                        if (state.sortColumn === col.key) {
+                            state.sortDirection = state.sortDirection === 'asc' ? 'desc' : 'asc';
                         } else {
-                            this.sortColumn = col.key;
-                            this.sortDirection = 'desc';
+                            state.sortColumn = col.key;
+                            state.sortDirection = 'desc';
                         }
                         this.applyFilters();
                         this.renderTable();
                     });
                 } else if (isCatalystCol) {
                     // Render icon as header with item name as tooltip
-                    const hrid =
-                        col.key === '_catalystOfDecomposition' ? CATALYST_OF_DECOMPOSITION_HRID : PRIME_CATALYST_HRID;
                     labelSpan.title = col.label;
                     labelSpan.style.cursor = 'default';
-                    this.appendItemIcon(labelSpan, hrid, 20);
+                    this.appendItemIcon(labelSpan, col.catalystHrid, 20);
                 } else {
                     labelSpan.textContent = col.label;
                     labelSpan.style.cursor = 'default';
@@ -10677,7 +8193,7 @@
 
                 if (col.filterable) {
                     const filterBtn = document.createElement('button');
-                    filterBtn.textContent = '\u22EE';
+                    filterBtn.textContent = '⋮';
                     filterBtn.style.cssText = `
                     background: none; border: none;
                     color: ${this.hasActiveFilter(col.key) ? '#4a90e2' : '#aaa'};
@@ -10707,114 +8223,15 @@
                 const cell = document.createElement('td');
                 cell.colSpan = columns.length;
                 cell.textContent =
-                    this.sessions.length === 0
-                        ? i18n_js.t('alchemyHistoryViewer.noDecomposeHistoryYet')
+                    this.state.sessions.length === 0
+                        ? i18n_js.t(activeConfig.emptyStateKey)
                         : i18n_js.t('alchemyHistoryViewer.noSessionsMatchFilters');
                 cell.style.cssText = 'padding: 20px; text-align: center; color: #888;';
                 row.appendChild(cell);
                 tbody.appendChild(row);
             } else {
                 paginated.forEach((session, index) => {
-                    const row = document.createElement('tr');
-                    row.style.cssText = `
-                    border-bottom: 1px solid #333;
-                    background: ${index % 2 === 0 ? '#2a2a2a' : '#252525'};
-                `;
-
-                    // Session Start
-                    const dateCell = document.createElement('td');
-                    dateCell.textContent = formatters_js.formatDateTime(new Date(session.startTime));
-                    dateCell.style.padding = '6px 10px';
-                    row.appendChild(dateCell);
-
-                    // Input Item
-                    const inputCell = document.createElement('td');
-                    inputCell.style.cssText = 'padding: 6px 10px; display: flex; align-items: center; gap: 8px;';
-                    this.appendItemIcon(inputCell, session.inputItemHrid, 20);
-                    const inputName = document.createElement('span');
-                    inputName.textContent = this.getItemName(session.inputItemHrid);
-                    inputCell.appendChild(inputName);
-                    row.appendChild(inputCell);
-
-                    // Enhancement Level
-                    const enhCell = document.createElement('td');
-                    enhCell.textContent = session.enhancementLevel > 0 ? `+${session.enhancementLevel}` : '0';
-                    enhCell.style.cssText = 'padding: 6px 10px; text-align: center;';
-                    row.appendChild(enhCell);
-
-                    // Attempts
-                    const attemptsCell = document.createElement('td');
-                    attemptsCell.textContent = session.totalAttempts;
-                    attemptsCell.style.padding = '6px 10px';
-                    row.appendChild(attemptsCell);
-
-                    // Successes
-                    const successCell = document.createElement('td');
-                    const failures = session.totalAttempts - session.totalSuccesses;
-                    successCell.textContent = i18n_js.t('alchemyHistoryViewer.successesFailedLabel', {
-                        successes: session.totalSuccesses,
-                        failures,
-                    });
-                    successCell.style.cssText = `
-                    padding: 6px 10px;
-                    color: ${failures > 0 ? '#fbbf24' : '#4ade80'};
-                `;
-                    row.appendChild(successCell);
-
-                    // Success Rate
-                    const rateCell = document.createElement('td');
-                    const rate =
-                        session.totalAttempts > 0
-                            ? ((session.totalSuccesses / session.totalAttempts) * 100).toFixed(1)
-                            : '0.0';
-                    rateCell.textContent = `${rate}%`;
-                    rateCell.style.padding = '6px 10px';
-                    row.appendChild(rateCell);
-
-                    // Results
-                    const resultsCell = document.createElement('td');
-                    resultsCell.style.cssText = 'padding: 6px 10px;';
-                    this.renderResultsCell(resultsCell, session);
-                    row.appendChild(resultsCell);
-
-                    // Catalyst of Decomposition
-                    const cocCell = document.createElement('td');
-                    cocCell.style.cssText = 'padding: 6px 10px; text-align: center;';
-                    this.renderCatalystCell(
-                        cocCell,
-                        CATALYST_OF_DECOMPOSITION_HRID,
-                        session.catalystOfDecompositionUsed || 0
-                    );
-                    row.appendChild(cocCell);
-
-                    // Prime Catalyst
-                    const pcCell = document.createElement('td');
-                    pcCell.style.cssText = 'padding: 6px 10px; text-align: center;';
-                    this.renderCatalystCell(pcCell, PRIME_CATALYST_HRID, session.primeCatalystUsed || 0);
-                    row.appendChild(pcCell);
-
-                    // Delete
-                    const deleteCell = document.createElement('td');
-                    deleteCell.style.cssText = 'padding: 6px 4px; text-align: center;';
-                    const deleteBtn = document.createElement('button');
-                    deleteBtn.textContent = '\u2715';
-                    deleteBtn.title = i18n_js.t('alchemyHistoryViewer.deleteSessionTitle');
-                    deleteBtn.style.cssText = `
-                    background: none; border: none; color: #dc2626;
-                    cursor: pointer; font-size: 14px; padding: 2px 6px;
-                    border-radius: 3px; line-height: 1;
-                `;
-                    deleteBtn.addEventListener('mouseenter', () => {
-                        deleteBtn.style.background = 'rgba(220,38,38,0.15)';
-                    });
-                    deleteBtn.addEventListener('mouseleave', () => {
-                        deleteBtn.style.background = 'none';
-                    });
-                    deleteBtn.addEventListener('click', () => this.deleteSession(session.id));
-                    deleteCell.appendChild(deleteBtn);
-                    row.appendChild(deleteCell);
-
-                    tbody.appendChild(row);
+                    tbody.appendChild(this.buildRow(session, index, activeConfig));
                 });
             }
 
@@ -10824,25 +8241,148 @@
         }
 
         /**
-         * Render the results cell for a session
-         * Results sorted by totalValue desc
+         * Build one table row for a session, per the active type's config.
+         * @param {Object} session
+         * @param {number} index
+         * @param {Object} activeConfig
+         * @returns {HTMLElement}
+         */
+        buildRow(session, index, activeConfig) {
+            const row = document.createElement('tr');
+            row.style.cssText = `
+            border-bottom: 1px solid #333;
+            background: ${index % 2 === 0 ? '#2a2a2a' : '#252525'};
+        `;
+
+            // Session Start
+            const dateCell = document.createElement('td');
+            dateCell.textContent = formatters_js.formatDateTime(new Date(session.startTime));
+            dateCell.style.padding = '6px 10px';
+            row.appendChild(dateCell);
+
+            // Input Item
+            const inputCell = document.createElement('td');
+            inputCell.style.cssText = 'padding: 6px 10px; display: flex; align-items: center; gap: 8px;';
+            this.appendItemIcon(inputCell, session.inputItemHrid, 20);
+            const inputName = document.createElement('span');
+            inputName.textContent = this.getItemName(session.inputItemHrid);
+            inputCell.appendChild(inputName);
+            row.appendChild(inputCell);
+
+            // Enhancement Level
+            if (activeConfig.hasEnhancement) {
+                const enhCell = document.createElement('td');
+                enhCell.textContent = session.enhancementLevel > 0 ? `+${session.enhancementLevel}` : '0';
+                enhCell.style.cssText = 'padding: 6px 10px; text-align: center;';
+                row.appendChild(enhCell);
+            }
+
+            // Attempts
+            const attemptsCell = document.createElement('td');
+            attemptsCell.textContent = session.totalAttempts;
+            attemptsCell.style.padding = '6px 10px';
+            row.appendChild(attemptsCell);
+
+            // Successes
+            const successCell = document.createElement('td');
+            const failures = session.totalAttempts - session.totalSuccesses;
+            successCell.textContent = i18n_js.t('alchemyHistoryViewer.successesFailedLabel', {
+                successes: session.totalSuccesses,
+                failures,
+            });
+            successCell.style.cssText = `
+            padding: 6px 10px;
+            color: ${failures > 0 ? '#fbbf24' : '#4ade80'};
+        `;
+            row.appendChild(successCell);
+
+            // Success Rate
+            if (activeConfig.hasSuccessRate) {
+                const rateCell = document.createElement('td');
+                rateCell.textContent =
+                    session.totalAttempts > 0
+                        ? `${((session.totalSuccesses / session.totalAttempts) * 100).toFixed(1)}%`
+                        : activeConfig.successRateZeroDisplay;
+                rateCell.style.padding = '6px 10px';
+                row.appendChild(rateCell);
+            }
+
+            // Coins Earned
+            if (activeConfig.hasCoins) {
+                const earnedCell = document.createElement('td');
+                earnedCell.textContent = formatters_js.formatKMB(session.totalCoinsEarned || 0, 1);
+                earnedCell.style.cssText = 'padding: 6px 10px; color: #fbbf24;';
+                row.appendChild(earnedCell);
+            }
+
+            // Results
+            if (activeConfig.hasResults) {
+                const resultsCell = document.createElement('td');
+                resultsCell.style.cssText = 'padding: 6px 10px;';
+                this.renderResultsCell(resultsCell, session, activeConfig);
+                row.appendChild(resultsCell);
+            }
+
+            // Catalysts
+            activeConfig.catalystHrids.forEach((hrid, i) => {
+                const cell = document.createElement('td');
+                cell.style.cssText = `padding: 6px 10px;${activeConfig.catalystCellAlign === 'center' ? ' text-align: center;' : ''}`;
+                const used = session[activeConfig.catalystUsedFields[i]] || 0;
+                this.renderCatalystCell(cell, hrid, used);
+                row.appendChild(cell);
+            });
+
+            // Delete
+            const deleteCell = document.createElement('td');
+            deleteCell.style.cssText = 'padding: 6px 4px; text-align: center;';
+            const deleteBtn = document.createElement('button');
+            deleteBtn.textContent = '✕';
+            deleteBtn.title = i18n_js.t('alchemyHistoryViewer.deleteSessionTitle');
+            deleteBtn.style.cssText = `
+            background: none; border: none; color: #dc2626;
+            cursor: pointer; font-size: 14px; padding: 2px 6px;
+            border-radius: 3px; line-height: 1;
+        `;
+            deleteBtn.addEventListener('mouseenter', () => {
+                deleteBtn.style.background = 'rgba(220,38,38,0.15)';
+            });
+            deleteBtn.addEventListener('mouseleave', () => {
+                deleteBtn.style.background = 'none';
+            });
+            deleteBtn.addEventListener('click', () => this.deleteSession(session.id));
+            deleteCell.appendChild(deleteBtn);
+            row.appendChild(deleteCell);
+
+            return row;
+        }
+
+        /**
+         * Render the results cell for a session. When resultsSupportSelfReturn is true (transmute),
+         * self-returns sort last and render with a muted "self-return" label; decompose has no
+         * self-return concept and just sorts by totalValue desc.
          * @param {HTMLElement} cell
          * @param {Object} session
+         * @param {Object} activeConfig
          */
-        renderResultsCell(cell, session) {
+        renderResultsCell(cell, session, activeConfig) {
             const results = session.results || {};
             const entries = Object.entries(results);
 
             if (entries.length === 0) {
                 const span = document.createElement('span');
-                span.textContent = '\u2014';
+                span.textContent = '—';
                 span.style.color = '#888';
                 cell.appendChild(span);
                 return;
             }
 
-            // Sort by totalValue desc
-            const sortedEntries = entries.sort(([, a], [, b]) => (b.totalValue || 0) - (a.totalValue || 0));
+            const sortedEntries = activeConfig.resultsSupportSelfReturn
+                ? entries.sort(([, a], [, b]) => {
+                      if (a.isSelfReturn && !b.isSelfReturn) return 1;
+                      if (!a.isSelfReturn && b.isSelfReturn) return -1;
+                      return (b.totalValue || 0) - (a.totalValue || 0);
+                  })
+                : entries.sort(([, a], [, b]) => (b.totalValue || 0) - (a.totalValue || 0));
 
             sortedEntries.forEach(([itemHrid, result]) => {
                 const line = document.createElement('div');
@@ -10852,9 +8392,15 @@
 
                 const text = document.createElement('span');
                 const name = this.getItemName(itemHrid);
-                const total = formatters_js.formatKMB(result.totalValue || 0, 1);
-                const each = formatters_js.formatKMB(result.priceEach || 0, 1);
-                text.textContent = i18n_js.t('alchemyHistoryViewer.resultLine', { name, count: result.count, total, each });
+
+                if (activeConfig.resultsSupportSelfReturn && result.isSelfReturn) {
+                    text.textContent = i18n_js.t('alchemyHistoryViewer.selfReturnResultLine', { name, count: result.count });
+                    text.style.color = '#888';
+                } else {
+                    const total = formatters_js.formatKMB(result.totalValue || 0, 1);
+                    const each = formatters_js.formatKMB(result.priceEach || 0, 1);
+                    text.textContent = i18n_js.t('alchemyHistoryViewer.resultLine', { name, count: result.count, total, each });
+                }
 
                 line.appendChild(text);
                 cell.appendChild(line);
@@ -10870,7 +8416,7 @@
         renderCatalystCell(cell, catalystHrid, count) {
             if (count === 0) {
                 const dash = document.createElement('span');
-                dash.textContent = '\u2014';
+                dash.textContent = '—';
                 dash.style.color = '#888';
                 cell.appendChild(dash);
                 return;
@@ -10884,20 +8430,21 @@
             const countSpan = document.createElement('span');
             countSpan.textContent = count.toLocaleString();
             wrapper.appendChild(countSpan);
+
             cell.appendChild(wrapper);
         }
 
         /**
-         * Render controls bar (stats + clear history button)
+         * Render controls bar (stats + action buttons)
          */
         renderControls() {
-            const controls = this.modal.querySelector('.mwi-decompose-history-controls');
+            const controls = this.modal.querySelector('.mwi-alchemy-history-controls');
             while (controls.firstChild) controls.removeChild(controls.firstChild);
 
             // Stats
             const stats = document.createElement('span');
             stats.style.cssText = 'color: #aaa; font-size: 14px;';
-            stats.textContent = i18n_js.t('alchemyHistoryViewer.sessionCountStat', { count: this.filteredSessions.length });
+            stats.textContent = i18n_js.t('alchemyHistoryViewer.sessionCountStat', { count: this.state.filteredSessions.length });
             controls.appendChild(stats);
 
             const rightGroup = document.createElement('div');
@@ -10942,47 +8489,51 @@
          * Render active filter badges
          */
         renderBadges() {
-            const container = this.modal.querySelector('.mwi-decompose-history-badges');
+            const container = this.modal.querySelector('.mwi-alchemy-history-badges');
             while (container.firstChild) container.removeChild(container.firstChild);
 
+            const state = this.state;
+            const activeConfig = this.activeConfig;
             const badges = [];
 
-            if (this.filters.dateFrom || this.filters.dateTo) {
+            if (state.filters.dateFrom || state.filters.dateTo) {
                 const parts = [];
-                if (this.filters.dateFrom) parts.push(formatters_js.formatDateTime(this.filters.dateFrom, { includeTime: false }));
-                if (this.filters.dateTo) parts.push(formatters_js.formatDateTime(this.filters.dateTo, { includeTime: false }));
+                if (state.filters.dateFrom) parts.push(formatters_js.formatDateTime(state.filters.dateFrom, { includeTime: false }));
+                if (state.filters.dateTo) parts.push(formatters_js.formatDateTime(state.filters.dateTo, { includeTime: false }));
                 badges.push({
                     label: i18n_js.t('marketHistory.dateFilterBadge', { range: parts.join(' - ') }),
                     onRemove: () => {
-                        this.filters.dateFrom = null;
-                        this.filters.dateTo = null;
+                        state.filters.dateFrom = null;
+                        state.filters.dateTo = null;
                         this.applyFilters();
                         this.renderTable();
                     },
                 });
             }
 
-            if (this.filters.selectedInputItems.length > 0) {
+            if (state.filters.selectedInputItems.length > 0) {
                 const label =
-                    this.filters.selectedInputItems.length === 1
-                        ? this.getItemName(this.filters.selectedInputItems[0])
-                        : i18n_js.t('alchemyHistoryViewer.inputItemsCountLabel', { count: this.filters.selectedInputItems.length });
+                    state.filters.selectedInputItems.length === 1
+                        ? this.getItemName(state.filters.selectedInputItems[0])
+                        : i18n_js.t('alchemyHistoryViewer.inputItemsCountLabel', {
+                              count: state.filters.selectedInputItems.length,
+                          });
                 badges.push({
                     label: i18n_js.t('alchemyHistoryViewer.inputFilterBadge', { label }),
-                    icon: this.filters.selectedInputItems[0],
+                    icon: state.filters.selectedInputItems[0],
                     onRemove: () => {
-                        this.filters.selectedInputItems = [];
+                        state.filters.selectedInputItems = [];
                         this.applyFilters();
                         this.renderTable();
                     },
                 });
             }
 
-            if (this.filters.resultsSearch.trim()) {
+            if (activeConfig.hasResults && state.filters.resultsSearch.trim()) {
                 badges.push({
-                    label: i18n_js.t('alchemyHistoryViewer.resultsFilterBadge', { text: this.filters.resultsSearch.trim() }),
+                    label: i18n_js.t('alchemyHistoryViewer.resultsFilterBadge', { text: state.filters.resultsSearch.trim() }),
                     onRemove: () => {
-                        this.filters.resultsSearch = '';
+                        state.filters.resultsSearch = '';
                         this.applyFilters();
                         this.renderTable();
                     },
@@ -11007,7 +8558,7 @@
                 el.appendChild(labelSpan);
 
                 const removeBtn = document.createElement('button');
-                removeBtn.textContent = '\u2715';
+                removeBtn.textContent = '✕';
                 removeBtn.style.cssText = `
                 background: none; border: none; color: #aaa;
                 cursor: pointer; padding: 0; font-size: 13px; line-height: 1;
@@ -11023,8 +8574,10 @@
          * Render pagination controls
          */
         renderPagination() {
-            const pagination = this.modal.querySelector('.mwi-decompose-history-pagination');
+            const pagination = this.modal.querySelector('.mwi-alchemy-history-pagination');
             while (pagination.firstChild) pagination.removeChild(pagination.firstChild);
+
+            const state = this.state;
 
             const leftSide = document.createElement('div');
             leftSide.style.cssText = 'display: flex; gap: 8px; align-items: center; color: #aaa;';
@@ -11034,18 +8587,18 @@
 
             const rowsInput = document.createElement('input');
             rowsInput.type = 'number';
-            rowsInput.value = this.rowsPerPage;
+            rowsInput.value = state.rowsPerPage;
             rowsInput.min = '1';
-            rowsInput.disabled = this.showAll;
+            rowsInput.disabled = state.showAll;
             rowsInput.style.cssText = `
             width: 60px; padding: 4px 8px;
             border: 1px solid #555; border-radius: 4px;
-            background: ${this.showAll ? '#333' : '#1a1a1a'};
-            color: ${this.showAll ? '#666' : '#fff'};
+            background: ${state.showAll ? '#333' : '#1a1a1a'};
+            color: ${state.showAll ? '#666' : '#fff'};
         `;
             rowsInput.addEventListener('change', (e) => {
-                this.rowsPerPage = Math.max(1, parseInt(e.target.value) || 50);
-                this.currentPage = 1;
+                state.rowsPerPage = Math.max(1, parseInt(e.target.value) || 50);
+                state.currentPage = 1;
                 this.renderTable();
             });
 
@@ -11054,14 +8607,14 @@
 
             const showAllCheckbox = document.createElement('input');
             showAllCheckbox.type = 'checkbox';
-            showAllCheckbox.checked = this.showAll;
+            showAllCheckbox.checked = state.showAll;
             showAllCheckbox.style.cursor = 'pointer';
             showAllCheckbox.addEventListener('change', (e) => {
-                this.showAll = e.target.checked;
-                rowsInput.disabled = this.showAll;
-                rowsInput.style.background = this.showAll ? '#333' : '#1a1a1a';
-                rowsInput.style.color = this.showAll ? '#666' : '#fff';
-                this.currentPage = 1;
+                state.showAll = e.target.checked;
+                rowsInput.disabled = state.showAll;
+                rowsInput.style.background = state.showAll ? '#333' : '#1a1a1a';
+                rowsInput.style.color = state.showAll ? '#666' : '#fff';
+                state.currentPage = 1;
                 this.renderTable();
             });
 
@@ -11075,42 +8628,45 @@
             const rightSide = document.createElement('div');
             rightSide.style.cssText = 'display: flex; gap: 8px; align-items: center; color: #aaa;';
 
-            if (!this.showAll) {
+            if (!state.showAll) {
                 const totalPages = this.getTotalPages();
 
                 const prevBtn = document.createElement('button');
-                prevBtn.textContent = '\u25C0';
-                prevBtn.disabled = this.currentPage === 1;
+                prevBtn.textContent = '◀';
+                prevBtn.disabled = state.currentPage === 1;
                 prevBtn.style.cssText = `
                 padding: 4px 12px;
-                background: ${this.currentPage === 1 ? '#333' : '#4a90e2'};
-                color: ${this.currentPage === 1 ? '#666' : 'white'};
+                background: ${state.currentPage === 1 ? '#333' : '#4a90e2'};
+                color: ${state.currentPage === 1 ? '#666' : 'white'};
                 border: none; border-radius: 4px;
-                cursor: ${this.currentPage === 1 ? 'default' : 'pointer'};
+                cursor: ${state.currentPage === 1 ? 'default' : 'pointer'};
             `;
                 prevBtn.addEventListener('click', () => {
-                    if (this.currentPage > 1) {
-                        this.currentPage--;
+                    if (state.currentPage > 1) {
+                        state.currentPage--;
                         this.renderTable();
                     }
                 });
 
                 const pageInfo = document.createElement('span');
-                pageInfo.textContent = i18n_js.t('marketHistory.pageInfo', { current: this.currentPage, total: totalPages || 1 });
+                pageInfo.textContent = i18n_js.t('marketHistory.pageInfo', {
+                    current: state.currentPage,
+                    total: totalPages || 1,
+                });
 
                 const nextBtn = document.createElement('button');
-                nextBtn.textContent = '\u25B6';
-                nextBtn.disabled = this.currentPage >= totalPages;
+                nextBtn.textContent = '▶';
+                nextBtn.disabled = state.currentPage >= totalPages;
                 nextBtn.style.cssText = `
                 padding: 4px 12px;
-                background: ${this.currentPage >= totalPages ? '#333' : '#4a90e2'};
-                color: ${this.currentPage >= totalPages ? '#666' : 'white'};
+                background: ${state.currentPage >= totalPages ? '#333' : '#4a90e2'};
+                color: ${state.currentPage >= totalPages ? '#666' : 'white'};
                 border: none; border-radius: 4px;
-                cursor: ${this.currentPage >= totalPages ? 'default' : 'pointer'};
+                cursor: ${state.currentPage >= totalPages ? 'default' : 'pointer'};
             `;
                 nextBtn.addEventListener('click', () => {
-                    if (this.currentPage < totalPages) {
-                        this.currentPage++;
+                    if (state.currentPage < totalPages) {
+                        state.currentPage++;
                         this.renderTable();
                     }
                 });
@@ -11120,7 +8676,7 @@
                 rightSide.appendChild(nextBtn);
             } else {
                 const info = document.createElement('span');
-                info.textContent = i18n_js.t('alchemyHistoryViewer.showingAllSessions', { count: this.filteredSessions.length });
+                info.textContent = i18n_js.t('alchemyHistoryViewer.showingAllSessions', { count: state.filteredSessions.length });
                 rightSide.appendChild(info);
             }
 
@@ -11153,6 +8709,7 @@
                     popup = this.createInputItemFilterPopup();
                     break;
                 case 'results':
+                    if (!this.activeConfig.hasResults) return;
                     popup = this.createResultsFilterPopup();
                     break;
                 default:
@@ -11175,8 +8732,8 @@
                     this.closeActiveFilterPopup();
                 }
             };
-            const t = setTimeout(() => document.addEventListener('click', this.popupCloseHandler), 10);
-            this.timerRegistry.registerTimeout(t);
+            const timeoutId = setTimeout(() => document.addEventListener('click', this.popupCloseHandler), 10);
+            this.timerRegistry.registerTimeout(timeoutId);
         }
 
         /**
@@ -11199,22 +8756,23 @@
          * @returns {HTMLElement}
          */
         createDateFilterPopup() {
+            const state = this.state;
             const popup = this.createPopupBase(i18n_js.t('marketHistory.filterByDateTitle'));
 
             // Compute available range
-            if (!this.cachedDateRange) {
-                const timestamps = this.sessions.map((s) => s.startTime).filter(Boolean);
+            if (!state.cachedDateRange) {
+                const timestamps = state.sessions.map((s) => s.startTime).filter(Boolean);
                 if (timestamps.length > 0) {
-                    this.cachedDateRange = {
+                    state.cachedDateRange = {
                         minDate: new Date(Math.min(...timestamps)),
                         maxDate: new Date(Math.max(...timestamps)),
                     };
                 } else {
-                    this.cachedDateRange = { minDate: null, maxDate: null };
+                    state.cachedDateRange = { minDate: null, maxDate: null };
                 }
             }
 
-            const { minDate, maxDate } = this.cachedDateRange;
+            const { minDate, maxDate } = state.cachedDateRange;
 
             if (minDate && maxDate) {
                 const rangeInfo = document.createElement('div');
@@ -11230,13 +8788,13 @@
 
             const fromInput = this.createDateInput(
                 i18n_js.t('marketHistory.fromLabel'),
-                this.filters.dateFrom ? this.filters.dateFrom.toISOString().split('T')[0] : '',
+                state.filters.dateFrom ? state.filters.dateFrom.toISOString().split('T')[0] : '',
                 minDate,
                 maxDate
             );
             const toInput = this.createDateInput(
                 i18n_js.t('marketHistory.toLabel'),
-                this.filters.dateTo ? this.filters.dateTo.toISOString().split('T')[0] : '',
+                state.filters.dateTo ? state.filters.dateTo.toISOString().split('T')[0] : '',
                 minDate,
                 maxDate
             );
@@ -11248,15 +8806,15 @@
 
             const btnRow = this.createPopupButtonRow(
                 () => {
-                    this.filters.dateFrom = fromInput.input.value ? new Date(fromInput.input.value) : null;
-                    this.filters.dateTo = toInput.input.value ? new Date(toInput.input.value) : null;
+                    state.filters.dateFrom = fromInput.input.value ? new Date(fromInput.input.value) : null;
+                    state.filters.dateTo = toInput.input.value ? new Date(toInput.input.value) : null;
                     this.applyFilters();
                     this.renderTable();
                     this.closeActiveFilterPopup();
                 },
                 () => {
-                    this.filters.dateFrom = null;
-                    this.filters.dateTo = null;
+                    state.filters.dateFrom = null;
+                    state.filters.dateTo = null;
                     this.applyFilters();
                     this.renderTable();
                     this.closeActiveFilterPopup();
@@ -11272,12 +8830,13 @@
          * @returns {HTMLElement}
          */
         createInputItemFilterPopup() {
+            const state = this.state;
             const popup = this.createPopupBase(i18n_js.t('alchemyHistoryViewer.filterByInputItemTitle'));
             popup.style.minWidth = '220px';
 
             // Gather unique input items from all sessions
             const itemSet = new Map();
-            this.sessions.forEach((s) => {
+            state.sessions.forEach((s) => {
                 if (!itemSet.has(s.inputItemHrid)) {
                     itemSet.set(s.inputItemHrid, this.getItemName(s.inputItemHrid));
                 }
@@ -11285,7 +8844,7 @@
             const allItems = Array.from(itemSet.entries()).sort((a, b) => a[1].localeCompare(b[1]));
 
             // Track pending selection (local to this popup)
-            const pending = new Set(this.filters.selectedInputItems);
+            const pending = new Set(state.filters.selectedInputItems);
 
             // Search box
             const searchInput = document.createElement('input');
@@ -11340,13 +8899,13 @@
 
             const btnRow = this.createPopupButtonRow(
                 () => {
-                    this.filters.selectedInputItems = Array.from(pending);
+                    state.filters.selectedInputItems = Array.from(pending);
                     this.applyFilters();
                     this.renderTable();
                     this.closeActiveFilterPopup();
                 },
                 () => {
-                    this.filters.selectedInputItems = [];
+                    state.filters.selectedInputItems = [];
                     this.applyFilters();
                     this.renderTable();
                     this.closeActiveFilterPopup();
@@ -11362,13 +8921,14 @@
          * @returns {HTMLElement}
          */
         createResultsFilterPopup() {
+            const state = this.state;
             const popup = this.createPopupBase(i18n_js.t('alchemyHistoryViewer.filterByResultItemTitle'));
             popup.style.minWidth = '220px';
 
             const searchInput = document.createElement('input');
             searchInput.type = 'text';
             searchInput.placeholder = i18n_js.t('alchemyHistoryViewer.itemNamePlaceholder');
-            searchInput.value = this.filters.resultsSearch;
+            searchInput.value = state.filters.resultsSearch;
             searchInput.style.cssText = `
             width: 100%; padding: 6px; margin-bottom: 10px;
             background: #1a1a1a; border: 1px solid #555;
@@ -11379,13 +8939,13 @@
 
             const btnRow = this.createPopupButtonRow(
                 () => {
-                    this.filters.resultsSearch = searchInput.value;
+                    state.filters.resultsSearch = searchInput.value;
                     this.applyFilters();
                     this.renderTable();
                     this.closeActiveFilterPopup();
                 },
                 () => {
-                    this.filters.resultsSearch = '';
+                    state.filters.resultsSearch = '';
                     this.applyFilters();
                     this.renderTable();
                     this.closeActiveFilterPopup();
@@ -11534,9 +9094,10 @@
          * @returns {Array}
          */
         getPaginatedSessions() {
-            if (this.showAll) return this.filteredSessions;
-            const start = (this.currentPage - 1) * this.rowsPerPage;
-            return this.filteredSessions.slice(start, start + this.rowsPerPage);
+            const state = this.state;
+            if (state.showAll) return state.filteredSessions;
+            const start = (state.currentPage - 1) * state.rowsPerPage;
+            return state.filteredSessions.slice(start, start + state.rowsPerPage);
         }
 
         /**
@@ -11544,8 +9105,9 @@
          * @returns {number}
          */
         getTotalPages() {
-            if (this.showAll) return 1;
-            return Math.ceil(this.filteredSessions.length / this.rowsPerPage);
+            const state = this.state;
+            if (state.showAll) return 1;
+            return Math.ceil(state.filteredSessions.length / state.rowsPerPage);
         }
 
         /**
@@ -11553,12 +9115,14 @@
          * @param {string} sessionId
          */
         async deleteSession(sessionId) {
-            this.sessions = this.sessions.filter((s) => s.id !== sessionId);
+            const state = this.state;
+            const activeConfig = this.activeConfig;
+            state.sessions = state.sessions.filter((s) => s.id !== sessionId);
 
             try {
-                await decomposeHistoryTracker.deleteSessions(this.sessions);
+                await activeConfig.tracker.deleteSessions(state.sessions);
             } catch (error) {
-                console.error('[DecomposeHistoryViewer] Failed to delete session:', error);
+                console.error('[AlchemyHistoryViewer] Failed to delete session:', error);
             }
 
             this.applyFilters();
@@ -11566,57 +9130,128 @@
         }
 
         /**
-         * Export all sessions to a CSV file download
+         * Resolve a CSV column's header text, driven by the active type's csvColumns config entry
+         * rather than inferred from hasX flags - preserves pre-existing per-type wording differences
+         * (e.g. coinify's "Enhancement Level" vs decompose's "Enh. Level") exactly.
+         * @param {Object} col
+         * @param {Object} activeConfig
+         * @returns {string}
+         */
+        getCsvHeader(col, activeConfig) {
+            switch (col.kind) {
+                case 'date':
+                    return i18n_js.t('alchemyHistoryViewer.colSessionStart');
+                case 'itemName':
+                    return i18n_js.t('alchemyHistoryViewer.colInputItem');
+                case 'enhancement':
+                    return i18n_js.t(`alchemyHistoryViewer.${col.headerKey}`);
+                case 'attempts':
+                    return i18n_js.t('alchemyHistoryViewer.colAttempts');
+                case 'successes':
+                    return i18n_js.t('alchemyHistoryViewer.colSuccesses');
+                case 'failures':
+                    return i18n_js.t('alchemyHistoryViewer.colFailures');
+                case 'successRate':
+                    return i18n_js.t('alchemyHistoryViewer.colSuccessRate');
+                case 'coinsEarned':
+                    return i18n_js.t('alchemyHistoryViewer.colCoinsEarned');
+                case 'results':
+                    return i18n_js.t('alchemyHistoryViewer.colResults');
+                case 'catalystUsed': {
+                    const hrid = activeConfig.catalystHrids[col.catalystIndex];
+                    const name = this.getItemName(hrid);
+                    return col.headerStyle === 'used' ? i18n_js.t('alchemyHistoryViewer.csvColItemUsedHeader', { name }) : name;
+                }
+                default:
+                    return '';
+            }
+        }
+
+        /**
+         * Resolve a CSV column's value for one session.
+         * @param {Object} col
+         * @param {Object} session
+         * @param {Object} activeConfig
+         * @returns {string|number}
+         */
+        getCsvValue(col, session, activeConfig) {
+            switch (col.kind) {
+                case 'date':
+                    return formatters_js.formatDateTime(new Date(session.startTime));
+                case 'itemName':
+                    return this.getItemName(session.inputItemHrid);
+                case 'enhancement':
+                    return session.enhancementLevel;
+                case 'attempts':
+                    return session.totalAttempts;
+                case 'successes':
+                    return session.totalSuccesses;
+                case 'failures':
+                    return session.totalAttempts - session.totalSuccesses;
+                case 'successRate':
+                    return session.totalAttempts > 0
+                        ? `${((session.totalSuccesses / session.totalAttempts) * 100).toFixed(1)}%`
+                        : activeConfig.successRateZeroDisplay;
+                case 'coinsEarned':
+                    return session.totalCoinsEarned || 0;
+                case 'results':
+                    return this.formatResultsForCsv(session, col.supportSelfReturn);
+                case 'catalystUsed': {
+                    const field = activeConfig.catalystUsedFields[col.catalystIndex];
+                    return session[field] || 0;
+                }
+                default:
+                    return '';
+            }
+        }
+
+        /**
+         * Format a session's results map as a single CSV cell string.
+         * @param {Object} session
+         * @param {boolean} supportSelfReturn
+         * @returns {string}
+         */
+        formatResultsForCsv(session, supportSelfReturn) {
+            const entries = Object.entries(session.results || {});
+            const sorted = supportSelfReturn
+                ? entries.sort(([, a], [, b]) => {
+                      if (a.isSelfReturn && !b.isSelfReturn) return 1;
+                      if (!a.isSelfReturn && b.isSelfReturn) return -1;
+                      return (b.totalValue || 0) - (a.totalValue || 0);
+                  })
+                : entries.sort(([, a], [, b]) => (b.totalValue || 0) - (a.totalValue || 0));
+
+            return sorted
+                .map(([hrid, result]) => {
+                    const name = this.getItemName(hrid);
+                    if (supportSelfReturn && result.isSelfReturn) {
+                        return i18n_js.t('alchemyHistoryViewer.selfReturnResultLine', { name, count: result.count });
+                    }
+                    const total = formatters_js.formatKMB(result.totalValue || 0, 1);
+                    const each = formatters_js.formatKMB(result.priceEach || 0, 1);
+                    return i18n_js.t('alchemyHistoryViewer.resultLine', { name, count: result.count, total, each });
+                })
+                .join('; ');
+        }
+
+        /**
+         * Export the active type's sessions to a CSV file download. Column headers/values are
+         * driven by the active config's csvColumns list rather than inferred from hasX flags, since
+         * coinify/decompose have small pre-existing differences in header wording and zero-attempt
+         * success-rate display that are preserved exactly, not silently unified.
          */
         exportHistory() {
+            const state = this.state;
+            const activeConfig = this.activeConfig;
             const escape = (val) => `"${String(val === null || val === undefined ? '' : val).replace(/"/g, '""')}"`;
 
-            const headers = [
-                i18n_js.t('alchemyHistoryViewer.colSessionStart'),
-                i18n_js.t('alchemyHistoryViewer.colInputItem'),
-                i18n_js.t('alchemyHistoryViewer.colEnhLevel'),
-                i18n_js.t('alchemyHistoryViewer.colAttempts'),
-                i18n_js.t('alchemyHistoryViewer.colSuccesses'),
-                i18n_js.t('alchemyHistoryViewer.colFailures'),
-                i18n_js.t('alchemyHistoryViewer.colSuccessRate'),
-                i18n_js.t('alchemyHistoryViewer.colResults'),
-                this.getItemName(CATALYST_OF_DECOMPOSITION_HRID),
-                this.getItemName(PRIME_CATALYST_HRID),
-            ];
-
-            const rows = this.sessions.map((session) => {
-                const start = formatters_js.formatDateTime(new Date(session.startTime));
-                const inputName = this.getItemName(session.inputItemHrid);
-                const failures = session.totalAttempts - session.totalSuccesses;
-                const rate =
-                    session.totalAttempts > 0
-                        ? ((session.totalSuccesses / session.totalAttempts) * 100).toFixed(1) + '%'
-                        : '0.0%';
-
-                const resultParts = Object.entries(session.results || {})
-                    .sort(([, a], [, b]) => (b.totalValue || 0) - (a.totalValue || 0))
-                    .map(([hrid, result]) => {
-                        const name = this.getItemName(hrid);
-                        const total = formatters_js.formatKMB(result.totalValue || 0, 1);
-                        const each = formatters_js.formatKMB(result.priceEach || 0, 1);
-                        return i18n_js.t('alchemyHistoryViewer.resultLine', { name, count: result.count, total, each });
-                    });
-
-                return [
-                    start,
-                    inputName,
-                    session.enhancementLevel,
-                    session.totalAttempts,
-                    session.totalSuccesses,
-                    failures,
-                    rate,
-                    resultParts.join('; '),
-                    session.catalystOfDecompositionUsed || 0,
-                    session.primeCatalystUsed || 0,
-                ]
+            const headers = activeConfig.csvColumns.map((col) => this.getCsvHeader(col, activeConfig));
+            const rows = state.sessions.map((session) =>
+                activeConfig.csvColumns
+                    .map((col) => this.getCsvValue(col, session, activeConfig))
                     .map(escape)
-                    .join(',');
-            });
+                    .join(',')
+            );
 
             const csv = [headers.map(escape).join(','), ...rows].join('\n');
             const date = new Date().toISOString().slice(0, 10);
@@ -11625,48 +9260,50 @@
 
             const a = document.createElement('a');
             a.href = url;
-            a.download = `decompose-history-${date}.csv`;
+            a.download = `${activeConfig.filenamePrefix}-${date}.csv`;
             a.click();
 
             URL.revokeObjectURL(url);
         }
 
         /**
-         * Clear all history after confirmation
+         * Clear all history for the active type after confirmation
          */
         async clearHistory() {
+            const state = this.state;
+            const activeConfig = this.activeConfig;
             const confirmed = confirm(
-                i18n_js.t('alchemyHistoryViewer.clearHistoryConfirmWithWarning', {
-                    actionName: i18n_js.t('skillingOptimizer.alchemyTypeDecompose'),
-                    count: this.sessions.length,
+                i18n_js.t(activeConfig.clearConfirmLocaleKey, {
+                    actionName: i18n_js.t(activeConfig.actionNameKey),
+                    count: state.sessions.length,
                 })
             );
             if (!confirmed) return;
 
             try {
-                await decomposeHistoryTracker.clearHistory();
-                this.sessions = [];
-                this.filteredSessions = [];
+                await activeConfig.tracker.clearHistory();
+                state.sessions = [];
+                state.filteredSessions = [];
                 alert(
                     i18n_js.t('alchemyHistoryViewer.historyClearedAlert', {
-                        actionName: i18n_js.t('skillingOptimizer.alchemyTypeDecompose'),
+                        actionName: i18n_js.t(activeConfig.actionNameKey),
                     })
                 );
                 this.applyFilters();
                 this.renderTable();
             } catch (error) {
-                console.error('[DecomposeHistoryViewer] Failed to clear history:', error);
+                console.error('[AlchemyHistoryViewer] Failed to clear history:', error);
                 alert(i18n_js.t('marketHistory.clearHistoryFailedAlert', { error: error.message }));
             }
         }
     }
 
-    const decomposeHistoryViewer = new DecomposeHistoryViewer();
+    const alchemyHistoryViewer = new AlchemyHistoryViewer();
 
-    var decomposeHistoryViewer$1 = {
-        name: 'Decompose History Viewer',
-        initialize: () => decomposeHistoryViewer.initialize(),
-        cleanup: () => decomposeHistoryViewer.disable(),
+    var alchemyHistoryViewer$1 = {
+        name: 'Alchemy History Viewer',
+        initialize: () => alchemyHistoryViewer.initialize(),
+        cleanup: () => alchemyHistoryViewer.disable(),
     };
 
     /**
@@ -28162,11 +25799,9 @@ self.onmessage = function (e) {
         transmuteRates,
         viewActionButton,
         transmuteHistoryTracker: transmuteHistoryTracker$1,
-        transmuteHistoryViewer: transmuteHistoryViewer$1,
         coinifyHistoryTracker: coinifyHistoryTracker$1,
-        coinifyHistoryViewer: coinifyHistoryViewer$1,
         decomposeHistoryTracker: decomposeHistoryTracker$1,
-        decomposeHistoryViewer: decomposeHistoryViewer$1,
+        alchemyHistoryViewer: alchemyHistoryViewer$1,
         alchemyActionProtection: alchemyActionProtection$1,
         enhancementFeature,
         xphCalculator,
