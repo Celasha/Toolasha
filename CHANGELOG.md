@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.4.1](https://github.com/Celasha/Toolasha/compare/v3.4.0...v3.4.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* resolve action/skill identity by icon sprite and React props, not translated text ([73de809](https://github.com/Celasha/Toolasha/commit/73de809a4fc172e40fb3acdce05a4984cdfd3c6a))
+* translate the settings panel's group titles, labels, and help text to Chinese ([7b6d838](https://github.com/Celasha/Toolasha/commit/7b6d838c38ceac068def68db6192b5bbdf03d8fd))
+
 ## [3.4.0](https://github.com/Celasha/Toolasha/compare/v3.3.0...v3.4.0) (2026-10-02)
 
 ### Features
