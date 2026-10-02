@@ -606,6 +606,120 @@ describe('applyNextRecommendedSkip', () => {
     });
 });
 
+describe('TLA-062: visual Save/Apply Skip swap', () => {
+    test('applyNextRecommendedSkip hides Apply Skip and restyles the real Save button in its place', () => {
+        const feature = new LabyrinthClearRate();
+        const [cell] = buildAutomationTable([
+            { roomHrid: '/skills/milking', isSkill: true, settingKey: 'labyrinthSkipMilking', currentValue: 5 },
+        ]);
+        feature.recommendations.set('/skills/milking', { threshold: 15 });
+        feature.injectRecommendControls();
+        const applyButton = document.getElementById('mwi-apply-skip-btn');
+
+        feature.applyNextRecommendedSkip();
+
+        const saveButton = Array.from(cell.querySelectorAll('button')).find((b) => b.textContent.trim() === 'Save');
+        expect(applyButton.style.visibility).toBe('hidden');
+        expect(saveButton.style.position).toBe('fixed');
+        expect(saveButton.style.cursor).toBe('pointer');
+        expect(feature._pendingSaveButton).toBe(saveButton);
+    });
+
+    test('clicking the swapped Save button immediately un-hides Apply Skip and restores its original style', () => {
+        const feature = new LabyrinthClearRate();
+        const [cell] = buildAutomationTable([
+            { roomHrid: '/skills/milking', isSkill: true, settingKey: 'labyrinthSkipMilking', currentValue: 5 },
+        ]);
+        feature.recommendations.set('/skills/milking', { threshold: 15 });
+        feature.injectRecommendControls();
+        const applyButton = document.getElementById('mwi-apply-skip-btn');
+
+        feature.applyNextRecommendedSkip();
+        const saveButton = Array.from(cell.querySelectorAll('button')).find((b) => b.textContent.trim() === 'Save');
+        saveButton.click();
+
+        expect(applyButton.style.visibility).toBe('');
+        expect(saveButton.style.position).toBe('');
+        expect(feature._pendingSaveButton).toBeNull();
+    });
+
+    test('the timeout failsafe restores the swap if the user never clicks the Save button at all', () => {
+        vi.useFakeTimers();
+        try {
+            const feature = new LabyrinthClearRate();
+            buildAutomationTable([
+                { roomHrid: '/skills/milking', isSkill: true, settingKey: 'labyrinthSkipMilking', currentValue: 5 },
+            ]);
+            feature.recommendations.set('/skills/milking', { threshold: 15 });
+            feature.injectRecommendControls();
+            const applyButton = document.getElementById('mwi-apply-skip-btn');
+
+            feature.applyNextRecommendedSkip();
+            expect(applyButton.style.visibility).toBe('hidden');
+
+            vi.advanceTimersByTime(30000);
+
+            expect(applyButton.style.visibility).toBe('');
+            expect(feature._pendingSaveButton).toBeNull();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    test('disable() restores the swap if the feature is torn down mid-flight', () => {
+        const feature = new LabyrinthClearRate();
+        buildAutomationTable([
+            { roomHrid: '/skills/milking', isSkill: true, settingKey: 'labyrinthSkipMilking', currentValue: 5 },
+        ]);
+        feature.recommendations.set('/skills/milking', { threshold: 15 });
+        feature.injectRecommendControls();
+
+        feature.applyNextRecommendedSkip();
+        expect(feature._pendingSaveButton).not.toBeNull();
+
+        feature.disable();
+
+        expect(feature._pendingSaveButton).toBeNull();
+    });
+
+    test('self-corrects on the next poll tick if the initial position read was transiently wrong', () => {
+        vi.useFakeTimers();
+        try {
+            const feature = new LabyrinthClearRate();
+            buildAutomationTable([
+                { roomHrid: '/skills/milking', isSkill: true, settingKey: 'labyrinthSkipMilking', currentValue: 5 },
+            ]);
+            feature.recommendations.set('/skills/milking', { threshold: 15 });
+            feature.injectRecommendControls();
+            const applyButton = document.getElementById('mwi-apply-skip-btn');
+
+            // jsdom has no real layout, so getBoundingClientRect() always returns a zero rect
+            // regardless of timing - simulate the real bug (a transient bad read right after the
+            // swap) by overriding it to report different values on successive calls, exactly like
+            // a mid-reflow measurement settling one tick later would.
+            let callCount = 0;
+            applyButton.getBoundingClientRect = vi.fn(() => {
+                callCount += 1;
+                return callCount === 1
+                    ? { top: -999, left: 0, width: 0, height: 0 }
+                    : { top: 100, left: 200, width: 90, height: 24 };
+            });
+
+            feature.applyNextRecommendedSkip();
+            expect(applyButton.getBoundingClientRect).toHaveBeenCalledTimes(1);
+
+            vi.advanceTimersByTime(200);
+
+            expect(applyButton.getBoundingClientRect).toHaveBeenCalledTimes(2);
+            const saveButton = feature._pendingSaveButton;
+            expect(saveButton.style.top).toBe('100px');
+            expect(saveButton.style.left).toBe('200px');
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+});
+
 describe('TLA-048: Apply Skip one-save-in-flight reentrancy guard', () => {
     test('TLA048-01: an immediate second invocation before ACK is ignored - exactly one Save, first room only', () => {
         const feature = new LabyrinthClearRate();

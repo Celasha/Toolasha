@@ -106,6 +106,11 @@ class LabyrinthClearRate {
         this._pendingSelfAppliedKey = null;
         this._pendingSelfAppliedValue = null;
         this._pendingSelfAppliedTimeout = null;
+        // The real Save button currently wearing the Apply Skip button's look/position while a
+        // save is in flight (TLA-062 swap), and its original inline style for exact restoration.
+        this._pendingSaveButton = null;
+        this._pendingSaveButtonOriginalStyle = null;
+        this._pendingSaveButtonPositionInterval = null;
         this.liveProgressHandler = null;
         this.liveProgressTimeout = null;
         this._recommendControlsPositionInterval = null;
@@ -1249,6 +1254,9 @@ class LabyrinthClearRate {
     /**
      * Release the one-save-in-flight guard (TLA-048) and cancel its timeout failsafe, if any.
      * Called on a real `setting_updated` confirmation, on a timeout (TLA-061), and on disable().
+     * Also restores the real Save button swapped into Apply Skip's spot back to its native
+     * look/position, if one is still pending (the user may abandon the flow without clicking it
+     * at all, or the feature may be disabled mid-flight).
      */
     _releasePendingApply() {
         if (this._pendingSelfAppliedTimeout) {
@@ -1257,6 +1265,96 @@ class LabyrinthClearRate {
         }
         this._pendingSelfAppliedKey = null;
         this._pendingSelfAppliedValue = null;
+        this._restoreSaveButton();
+    }
+
+    /**
+     * Restore a Save button previously swapped into Apply Skip's spot (TLA-062) back to its
+     * original inline style and un-hide Apply Skip, clearing the pending reference either way.
+     * Called both the instant the swapped button is genuinely clicked and from
+     * _releasePendingApply() (confirmation/timeout/disable), so Apply Skip never stays hidden
+     * if the user abandons the flow without clicking it at all.
+     */
+    _restoreSaveButton() {
+        if (this._pendingSaveButtonPositionInterval) {
+            clearInterval(this._pendingSaveButtonPositionInterval);
+            this._pendingSaveButtonPositionInterval = null;
+        }
+        if (this._pendingSaveButton) {
+            this._pendingSaveButton.style.cssText = this._pendingSaveButtonOriginalStyle || '';
+        }
+        this._pendingSaveButton = null;
+        this._pendingSaveButtonOriginalStyle = null;
+
+        const applyButton = document.getElementById(APPLY_SKIP_BUTTON_ID);
+        if (applyButton) applyButton.style.visibility = '';
+    }
+
+    /**
+     * Visually swap the row's real Save button into the Apply Skip button's spot while a save is
+     * in flight (TLA-062): hides Apply Skip (via `visibility: hidden`, not `display: none`, so it
+     * keeps occupying space and stays measurable - see below) and restyles/repositions the real
+     * Save button to match its look exactly, read from Apply Skip's own computed
+     * style/`getBoundingClientRect()`. The user ends up clicking what looks like the same button
+     * they just clicked, with no automation involved - this only ever changes CSS; Save remains a
+     * completely untouched, genuinely-clicked native element.
+     *
+     * Position is re-read on a poll rather than measured once: clicking the row's Edit button
+     * (just before this runs) swaps that row's DOM into edit mode, which can leave Apply Skip's
+     * own layout transiently unsettled for a frame or two - reading its position synchronously in
+     * that window has produced a one-time-wrong coordinate that then froze in place (confirmed via
+     * a captured DOM/layout snapshot showing the swapped button pinned at `top: -1px`). The same
+     * poll that already keeps the recommend-controls bar correctly positioned while scrolling
+     * self-corrects this the same way, instead of trying to catch the one right moment to measure.
+     *
+     * Restoration happens the instant the real click fires, not on the later setting_updated
+     * confirmation, because native MWI exits edit mode - and may reuse the same DOM node for a
+     * different role - synchronously inside its own click handling, well before that confirmation
+     * arrives (TLA-048). Listening on the capture phase guarantees our handler runs first even if
+     * the actual click lands on an inner child node (icon/text span) rather than the button
+     * element itself, since capture-phase listeners fire top-down before the event reaches that
+     * inner target or bubbles up to wherever the game's own handler is attached.
+     * @param {HTMLButtonElement} saveButton
+     */
+    _swapSaveButtonIntoApplySkipSpot(saveButton) {
+        const applyButton = document.getElementById(APPLY_SKIP_BUTTON_ID);
+        if (!applyButton) return;
+
+        this._pendingSaveButton = saveButton;
+        this._pendingSaveButtonOriginalStyle = saveButton.style.cssText;
+        applyButton.style.visibility = 'hidden';
+
+        const reposition = () => {
+            if (!applyButton.isConnected || !saveButton.isConnected) {
+                clearInterval(this._pendingSaveButtonPositionInterval);
+                this._pendingSaveButtonPositionInterval = null;
+                return;
+            }
+            const rect = applyButton.getBoundingClientRect();
+            const computed = getComputedStyle(applyButton);
+            saveButton.style.cssText = `
+                position: fixed;
+                top: ${rect.top}px;
+                left: ${rect.left}px;
+                width: ${rect.width}px;
+                height: ${rect.height}px;
+                box-sizing: border-box;
+                font-size: ${computed.fontSize};
+                font-family: ${computed.fontFamily};
+                font-weight: ${computed.fontWeight};
+                padding: ${computed.padding};
+                border-radius: ${computed.borderRadius};
+                border: ${computed.border};
+                background: ${computed.backgroundColor};
+                color: ${computed.color};
+                cursor: pointer;
+                z-index: 10001;
+            `;
+        };
+        reposition();
+        this._pendingSaveButtonPositionInterval = setInterval(reposition, 200);
+
+        saveButton.addEventListener('click', () => this._restoreSaveButton(), { once: true, capture: true });
     }
 
     /**
@@ -1321,6 +1419,10 @@ class LabyrinthClearRate {
             console.warn('[Toolasha] Apply Skip: Save button not found for room', roomHrid);
             return;
         }
+
+        // Capture Apply Skip's current (enabled) look/position before _updateApplyButtonState()
+        // below dims it into its "(saving...)" state.
+        this._swapSaveButtonIntoApplySkipSpot(saveButton);
 
         this._pendingSelfAppliedKey = this._getSkipSettingKey(roomHrid, isSkill);
         this._pendingSelfAppliedValue = recommendedThreshold;
