@@ -56,6 +56,7 @@ vi.mock('../../features/crafting-plan/crafting-plan-calculator.js', () => ({
 
 vi.mock('../../utils/game-lookups.js', () => ({
     getActionHridFromName: vi.fn(() => '/actions/crafting/sword'),
+    getActionHridFromFiber: vi.fn(() => null),
 }));
 
 import costSummary, { buildBlock, renderBlock } from './cost-summary.js';

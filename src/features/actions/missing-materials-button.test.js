@@ -74,7 +74,10 @@ vi.mock('./enhancement-display.js', () => ({
 vi.mock('../enhancement/tooltip-enhancement.js', () => ({ calculateEnhancementPath: vi.fn(() => null) }));
 vi.mock('../../utils/enhancement-config.js', () => ({ getEnhancingParams: vi.fn(() => ({})) }));
 vi.mock('../../utils/dom-observer-helpers.js', () => ({ createMutationWatcher: vi.fn(() => vi.fn()) }));
-vi.mock('../../utils/game-lookups.js', () => ({ getActionHridFromName: vi.fn(() => '/actions/crafting/sword') }));
+vi.mock('../../utils/game-lookups.js', () => ({
+    getActionHridFromName: vi.fn(() => '/actions/crafting/sword'),
+    getActionHridFromFiber: vi.fn(() => null),
+}));
 vi.mock('./production-tools-layout.js', () => ({
     getOrCreateProductionToolsBlock: vi.fn(() => null),
     normalizeProductionToolsBlock: vi.fn(),

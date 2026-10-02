@@ -34,7 +34,7 @@ import { parseItemCount } from '../../utils/number-parser.js';
 import { DUNGEON_CHEST_CHEST_KEYS } from '../combat-stats/combat-stats-calculator.js';
 import { getKeyPrice } from '../../utils/dungeon-key-cost.js';
 import { calculateArtisanBonus } from '../../utils/material-calculator.js';
-import { getActionHridFromName } from '../../utils/game-lookups.js';
+import { getActionHridFromName, getActionHridFromFiber } from '../../utils/game-lookups.js';
 
 // Compiled regex patterns (created once, reused for performance)
 const REGEX_ENHANCEMENT_LEVEL = /\+(\d+)$/;
@@ -546,7 +546,10 @@ class TooltipPrices {
         const actionNameEl = actionPanel.querySelector('[class*="SkillActionDetail_name"]');
         if (!actionNameEl) return null;
 
-        const actionHrid = getActionHridFromName(actionNameEl.textContent.trim());
+        // The detail modal renders no hrid-keyed icon of its own, unlike the tile list -
+        // resolve via the component's own React props first, falling back to the name text.
+        const actionHrid =
+            getActionHridFromFiber(actionPanel) || getActionHridFromName(actionNameEl.textContent.trim());
         if (!actionHrid) return null;
 
         const actionDetails = dataManager.getActionDetails(actionHrid);

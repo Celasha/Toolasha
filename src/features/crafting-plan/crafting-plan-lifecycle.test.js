@@ -66,7 +66,10 @@ vi.mock('../../utils/formatters.js', () => ({
     formatWithSeparator: vi.fn((v) => String(v)),
     timeReadable: vi.fn((v) => `${v}s`),
 }));
-vi.mock('../../utils/game-lookups.js', () => ({ getActionHridFromName: vi.fn(() => '/actions/crafting/sword') }));
+vi.mock('../../utils/game-lookups.js', () => ({
+    getActionHridFromName: vi.fn(() => '/actions/crafting/sword'),
+    getActionHridFromFiber: vi.fn(() => null),
+}));
 vi.mock('../../utils/action-panel-helper.js', () => ({
     findActionInput: mockFindActionInput,
     attachInputListeners: vi.fn(),

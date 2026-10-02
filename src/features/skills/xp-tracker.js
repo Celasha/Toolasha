@@ -10,6 +10,7 @@ import webSocketHook from '../../core/websocket.js';
 import config from '../../core/config.js';
 import { formatKMB } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import { getSkillHridFromIconHref } from '../../utils/game-lookups.js';
 
 const STORE_NAME = 'xpHistory';
 const WINDOW_10M = 10 * 60 * 1000;
@@ -40,10 +41,6 @@ const SKILLS = [
     { id: 'magic', hrid: '/skills/magic', name: 'Magic' },
 ];
 
-const SKILL_NAME_TO_ID = {};
-SKILLS.forEach((s) => (SKILL_NAME_TO_ID[s.name.toLowerCase()] = s.id));
-
-// Also map hrid → skill for reverse lookups
 const SKILL_HRID_TO_ID = {};
 SKILLS.forEach((s) => (SKILL_HRID_TO_ID[s.hrid] = s.id));
 
@@ -343,11 +340,11 @@ class XPTracker {
             // Only process nav entries that have an XP bar
             if (!navEl.querySelector('[class*="NavigationBar_currentExperience"]')) return;
 
-            const labelEl = navEl.querySelector('[class*="NavigationBar_label"]');
-            if (!labelEl) return;
-
-            const skillName = labelEl.textContent.trim().toLowerCase();
-            const skillId = SKILL_NAME_TO_ID[skillName];
+            // Resolve via the nav icon's sprite href, not the translated label text - the
+            // label is locale-dependent, the sprite fragment (last hrid segment) is not.
+            const useEl = navEl.querySelector('svg use');
+            const skillHrid = getSkillHridFromIconHref(useEl?.getAttribute('href'));
+            const skillId = skillHrid ? SKILL_HRID_TO_ID[skillHrid] : null;
             if (!skillId) return;
 
             const history = this.xpHistory[skillId];
@@ -436,8 +433,13 @@ class XPTracker {
             return;
         }
 
-        const skillName = divs[0].textContent.trim().toLowerCase();
-        const skillId = SKILL_NAME_TO_ID[skillName];
+        // The tooltip itself carries no icon of its own; its identity comes from whichever nav
+        // bar item it's revealed under (CSS-hover reveal, expected to sit inside that item's
+        // subtree) - resolve via that item's sprite href rather than the translated name text.
+        const navEl = tooltipEl.closest('[class*="NavigationBar_nav"]');
+        const useEl = navEl?.querySelector('svg use');
+        const skillHrid = getSkillHridFromIconHref(useEl?.getAttribute('href'));
+        const skillId = skillHrid ? SKILL_HRID_TO_ID[skillHrid] : null;
         if (!skillId) {
             return;
         }

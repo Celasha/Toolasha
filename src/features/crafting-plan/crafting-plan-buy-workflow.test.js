@@ -63,6 +63,7 @@ vi.mock('../../utils/market-data.js', () => ({
 vi.mock('../../utils/game-lookups.js', () => ({
     getShopCoinCost: vi.fn(() => 0),
     getActionHridFromName: vi.fn(() => '/actions/tailoring/umbral_tunic'),
+    getActionHridFromFiber: vi.fn(() => null),
 }));
 vi.mock('../../utils/action-calculator.js', () => ({ calculateActionStats: vi.fn(() => ({ actionTime: 1 })) }));
 vi.mock('../../utils/efficiency.js', () => ({ calculateEfficiencyMultiplier: vi.fn(() => 1) }));

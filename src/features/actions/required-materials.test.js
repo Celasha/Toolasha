@@ -39,7 +39,10 @@ vi.mock('../../utils/action-panel-helper.js', async () => {
     const actual = await vi.importActual('../../utils/action-panel-helper.js');
     return actual;
 });
-vi.mock('../../utils/game-lookups.js', () => ({ getActionHridFromName: vi.fn(() => '/actions/crafting/sword') }));
+vi.mock('../../utils/game-lookups.js', () => ({
+    getActionHridFromName: vi.fn(() => '/actions/crafting/sword'),
+    getActionHridFromFiber: vi.fn(() => null),
+}));
 vi.mock('../../utils/formatters.js', () => ({
     numberFormatter: vi.fn((value) => new Intl.NumberFormat('en-US').format(value)),
 }));

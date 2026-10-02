@@ -56,7 +56,11 @@ vi.mock('../../utils/timer-registry.js', () => ({
     createTimerRegistry: vi.fn(() => ({ clearAll: vi.fn(), registerTimeout: vi.fn(), registerInterval: vi.fn() })),
 }));
 vi.mock('./action-filter.js', () => ({ default: { initialize: vi.fn(), cleanup: vi.fn() } }));
-vi.mock('../../utils/game-lookups.js', () => ({ getActionHridFromName: vi.fn(), getItemHridFromName: vi.fn() }));
+vi.mock('../../utils/game-lookups.js', () => ({
+    getActionHridFromName: vi.fn(),
+    getItemHridFromName: vi.fn(),
+    getItemHridFromIconHref: vi.fn(),
+}));
 vi.mock('../../utils/enhancement-config.js', () => ({ getEnhancingParams: vi.fn() }));
 vi.mock('../enhancement/tooltip-enhancement.js', () => ({ calculateEnhancementPath: vi.fn() }));
 

@@ -15,7 +15,7 @@ import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import { findActionInput, attachInputListeners, performInitialUpdate } from '../../utils/action-panel-helper.js';
 import { calculateExperienceMultiplier } from '../../utils/experience-parser.js';
-import { getActionHridFromName } from '../../utils/game-lookups.js';
+import { getActionHridFromName, getActionHridFromFiber } from '../../utils/game-lookups.js';
 
 class OutputTotals {
     constructor() {
@@ -311,6 +311,13 @@ class OutputTotals {
      * @returns {string|null} Action HRID or null
      */
     getActionHridFromPanel(detailPanel) {
+        // The detail modal renders no hrid-keyed icon of its own, unlike the tile list -
+        // resolve via the component's own React props first, falling back to the name text.
+        const hridFromFiber = getActionHridFromFiber(detailPanel);
+        if (hridFromFiber) {
+            return hridFromFiber;
+        }
+
         // Find action name element
         const nameElement = detailPanel.querySelector('[class*="SkillActionDetail_name"]');
 
