@@ -399,7 +399,7 @@ class SettingsUI {
             header.innerHTML = `
                 <span class="collapse-icon">▼</span>
                 <span class="icon">${group.icon}</span>
-                ${group.title}
+                ${t(`settingsSchema.groups.${groupKey}.title`)}
             `;
             // Bind toggleGroup method to this instance
             header.addEventListener('click', this.toggleGroup.bind(this, groupContainer));
@@ -527,13 +527,13 @@ class SettingsUI {
         // Create label
         const label = document.createElement('span');
         label.className = 'toolasha-setting-label';
-        label.textContent = settingDef.label;
+        label.textContent = t(`settingsSchema.settings.${settingId}.label`);
 
         // Add help text if present
         if (settingDef.help) {
             const help = document.createElement('span');
             help.className = 'toolasha-setting-help';
-            help.textContent = settingDef.help;
+            help.textContent = t(`settingsSchema.settings.${settingId}.help`);
             label.appendChild(help);
         }
 
