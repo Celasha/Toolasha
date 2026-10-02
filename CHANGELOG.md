@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.4.0](https://github.com/Celasha/Toolasha/compare/v3.3.0...v3.4.0) (2026-10-02)
+
+
+### Features
+
+* merge the three alchemy history tabs/popups into one ([9841a2c](https://github.com/Celasha/Toolasha/commit/9841a2c52aa6ab380f9161cef2f9933b48eac067))
+
+
+### Bug Fixes
+
+* require a genuine click to save Apply Skip, keep controls visible while scrolling ([469adfc](https://github.com/Celasha/Toolasha/commit/469adfc5598d86d9b29e1db436ef4256aeb66e8f))
+* respect number-format setting in Loot & XP Log, add Total XP ([c6cbe31](https://github.com/Celasha/Toolasha/commit/c6cbe310c5c09c14fab4ceefa592e793426cb7f4))
+* visually swap Save into Apply Skip's spot while a save is in flight ([feec3a6](https://github.com/Celasha/Toolasha/commit/feec3a672d812b1b09ea7b94b7e5dcc596892c59))
+
 ## [3.3.0](https://github.com/Celasha/Toolasha/compare/v3.2.0...v3.3.0) (2026-10-01)
 
 ### Features
