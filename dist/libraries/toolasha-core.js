@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 3.4.0
+ * Version: 3.4.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8800,6 +8800,1091 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             sellPriceTooltip: 'Your last sell price',
             sellValueLabel: (p) => `Sell ${p.value}`,
         },
+        settingsSchema: {
+            groups: {
+                ironCow: { title: 'Iron Cow Mode' },
+                general: { title: 'General Settings' },
+                actionBar: { title: 'Action Bar' },
+                skillPageTiles: { title: 'Skill Page & Tiles' },
+                actionPanel: { title: 'Action Panel' },
+                actionQueue: { title: 'Action Queue' },
+                alchemy: { title: 'Alchemy' },
+                missingMaterials: { title: 'Missing Materials & Crafting Plan' },
+                lootLog: { title: 'Loot Log' },
+                tooltips: { title: 'Item Tooltip Enhancements' },
+                enhancementSimulator: { title: 'Enhancement Simulator Settings' },
+                enhancementTracker: { title: 'Enhancement Tracker' },
+                riskOfRuin: { title: 'Risk of Ruin' },
+                marketplace: { title: 'Marketplace' },
+                pricingProfit: { title: 'Pricing & Profit' },
+                inventoryNetWorth: { title: 'Inventory & Net Worth' },
+                inventoryTabs: { title: 'Custom Inventory Tabs' },
+                skills: { title: 'Skills' },
+                combat: { title: 'Combat Features' },
+                tasks: { title: 'Tasks' },
+                ui: { title: 'UI & Appearance' },
+                guild: { title: 'Guild' },
+                house: { title: 'House' },
+                leaderboard: { title: 'Leaderboard' },
+                notifications: { title: 'Notifications' },
+                colors: { title: 'Color Customization' },
+                collectionFilters: { title: 'Collection Filters' },
+            },
+            settings: {
+                ironCow_enabled: {
+                    label: 'Iron Cow Mode',
+                    help: 'Disable all market and profit features for a no-marketplace playthrough.',
+                },
+                chatCommands: {
+                    label: 'Enable chat commands (/item, /wiki, /market)',
+                    help: 'Type /item, /wiki, or /market followed by an item name in chat. Example: /item radiant fiber',
+                },
+                chat_mentionTracker: {
+                    label: 'Show badge when mentioned in chat',
+                    help: 'Displays a red badge on chat tabs when someone @mentions you',
+                },
+                chat_popOut: {
+                    label: 'Enable Pop-out Chat Window button',
+                    help: 'Adds a button to the chat panel to open chat in a separate browser window with multi-channel split view',
+                },
+                chatHistoryExtender: {
+                    label: 'Chat: Extend chat history',
+                    help: 'Preserves messages that the game removes from the live buffer, keeping them visible above the live chat',
+                },
+                chatHistoryExtender_maxHistory: { label: 'Chat: Max messages to retain per tab' },
+                notificationLog: {
+                    label: 'Chat: Add Log tab',
+                    help: 'Adds a Log tab to the chat panel logging item trades, level-ups, guild events, and other in-game toasts',
+                },
+                notificationLog_maxEntries: {
+                    label: 'Chat: Max notifications to keep',
+                    help: 'How many notifications to keep in history, per character. Filtering in the tab only changes what is shown, not what is stored.',
+                },
+                altClickNavigation: {
+                    label: 'Alt+click items to navigate to crafting/gathering or dictionary',
+                    help: 'Hold Alt/Option and click any item to navigate to its crafting/gathering page, or item dictionary if not craftable',
+                },
+                collectionNavigation: {
+                    label: 'Add navigation buttons to collection items',
+                    help: 'Adds View Action and Item Dictionary buttons when clicking collection items',
+                },
+                queueMonitor: {
+                    label: 'Cross-character queue monitor',
+                    help: 'Shows estimated queue time remaining for your other characters in a floating widget',
+                },
+                characterActivityStatus: {
+                    label: 'Character Select: Show activity status',
+                    help: 'On Character Select, shows what each character is expected to be doing and the earliest point they may need attention (action/queue end, materials, or offline cap)',
+                },
+                actionBar_enabled: { label: 'Action bar: Enable action bar display' },
+                actionBar_compactWidth: {
+                    label: 'Action bar: Compact width (800px limit)',
+                    help: 'Limits action bar width to 800px. Useful for wide monitors.',
+                },
+                actionBar_showQueueCount: { label: 'Action bar: Queue/remaining count' },
+                actionBar_showActionDuration: { label: 'Action bar: Time per action (e.g. 14.94s/action)' },
+                actionBar_showActionsPerHour: { label: 'Action bar: Actions/hr and items/hr' },
+                actionBar_showTimeRemaining: { label: 'Action bar: Time remaining display' },
+                actionBar_showRecycleTime: {
+                    label: 'Action bar: Transmute recycle time estimate',
+                    help: 'Shows estimated total time accounting for self-return recycling during transmute actions',
+                },
+                actionBar_showProfit: {
+                    label: 'Action bar: Show current action profit',
+                    help: 'Displays profit/hr and remaining profit for the current action (gathering and production)',
+                },
+                actionPanel_liveCountdown: {
+                    label: 'Action bar: Live countdown timer',
+                    help: 'Replaces the static time display on the action progress bar with a live countdown in seconds',
+                },
+                actionPanel_showFilter: { label: 'Skill page: Filter actions input' },
+                actionPanel_showSort: { label: 'Skill page: Sort button' },
+                actionPanel_showPricingMode: { label: 'Skill page: Pricing mode button' },
+                actionPanel_showCraftToggle: { label: 'Skill page: Craft toggle button' },
+                actionPanel_showProfitPerHour_gathering: {
+                    label: 'Action page: Show profit/hr on gathering tiles',
+                    help: 'Displays profit/hr on gathering action tiles (Foraging, Woodcutting, etc.)',
+                },
+                actionPanel_showProfitPerHour_production: {
+                    label: 'Action page: Show profit/hr on production tiles',
+                    help: 'Displays profit/hr on production action tiles (Crafting, Tailoring, etc.)',
+                },
+                actionPanel_showExpPerHour_gathering: {
+                    label: 'Action page: Show exp/hr on gathering tiles',
+                    help: 'Displays exp/hr on gathering action tiles (Foraging, Woodcutting, etc.)',
+                },
+                actionPanel_showExpPerHour_production: {
+                    label: 'Action page: Show exp/hr on production tiles',
+                    help: 'Displays exp/hr on production action tiles (Crafting, Tailoring, etc.)',
+                },
+                actionPanel_hideNegativeProfit: {
+                    label: 'Action panel: Hide actions with negative profit',
+                    help: 'Hides action panels that would result in a loss (negative profit/hr)',
+                },
+                inventoryCountDisplay: {
+                    label: 'Action panels: Show current inventory count of output item',
+                    help: 'Shows how many of the output item you currently own, on action tiles and in the action detail panel',
+                },
+                actions_pinnedPage: {
+                    label: 'Pinned actions: Enable pinned actions page and pin icons',
+                    help: 'Adds a Pinned button to the left nav bar showing all pinned actions, and shows pin icons on action tiles.',
+                },
+                actionPanel_totalTime: { label: 'Action panel: Total time, times to reach target level, exp/hour' },
+                actionPanel_totalTime_quickInputs: {
+                    label: 'Action panel: Quick input buttons (hours, count presets, Max)',
+                },
+                actionPanel_quickInputs_countPresets: {
+                    label: 'Action panel: Custom count presets (comma-separated, e.g. 100,1000,1000000)',
+                },
+                actionPanel_quickInputs_hourPresets: {
+                    label: 'Action panel: Custom hour presets (comma-separated, e.g. 0.5,1,24,168,720)',
+                },
+                actionPanel_foragingTotal: { label: 'Action panel: Overall profit for multi-outcome foraging' },
+                actionPanel_outputTotals: {
+                    label: 'Action panel: Show total expected outputs below per-action outputs',
+                    help: 'Displays calculated totals when you enter a quantity in the action input',
+                },
+                actionPanel_maxProduceable: {
+                    label: 'Action panel: Show max produceable count on crafting actions',
+                    help: 'Displays how many items you can make based on current inventory',
+                },
+                actionPanel_showProfitDetail: {
+                    label: 'Action panel: Show profitability detail',
+                    help: 'Displays the profitability breakdown section inside gathering, production, and alchemy action panels',
+                },
+                actionPanel_showLevelProgress: {
+                    label: 'Action panel: Show level progress',
+                    help: 'Displays XP and level progress estimates inside action panels',
+                },
+                actionPanel_showSpeedTime: {
+                    label: 'Action panel: Show action speed & time',
+                    help: 'Displays speed breakdown, efficiency, and total time inside action panels',
+                },
+                requiredMaterials: {
+                    label: 'Action panel: Show total required and missing materials',
+                    help: 'Displays total materials needed and shortfall when entering quantity',
+                },
+                actionPanel_enhanceMatLimitProtections: {
+                    label: 'Enhancement material limit: Include protection items',
+                    help: 'When enabled, protection item availability is factored into the material limit estimate. Disable to see material limit based only on enhancement materials.',
+                },
+                actionQueue: { label: 'Queued actions: Show total time and completion time' },
+                actionQueue_showValue: { label: 'Queued actions: Show profit/value for queued actions' },
+                actionQueue_valueMode: {
+                    label: 'Queued actions: Value calculation mode',
+                    help: 'Choose how to calculate the total value for queued actions. Profit shows net earnings after materials and drinks. Estimated Value shows gross revenue after market tax (always positive).',
+                },
+                actionQueue_completionTimeStyle: {
+                    label: 'Queued actions: Completion display',
+                    help: 'How queued-action completion is shown in the Queued Actions popup and hover tooltip',
+                },
+                alchemy_profitDisplay: {
+                    label: 'Alchemy panel: Show profit calculator',
+                    help: 'Displays profit/hour and profit/day for alchemy actions based on success rate and market prices',
+                },
+                alchemy_bestItems: {
+                    label: 'Alchemy panel: Show best items button',
+                    help: 'Adds a button to see items ranked by profit or XP for each alchemy type.',
+                },
+                alchemy_transmuteHistory: {
+                    label: 'Alchemy panel: Track and view transmute session history',
+                    help: 'Records transmutation sessions and displays history in a viewer tab in the Alchemy panel',
+                },
+                alchemy_coinifyHistory: {
+                    label: 'Alchemy panel: Track and view coinify session history',
+                    help: 'Records coinify sessions and displays history in a viewer tab in the Alchemy panel',
+                },
+                alchemy_decomposeHistory: {
+                    label: 'Alchemy panel: Track and view decompose session history',
+                    help: 'Records decompose sessions and displays history in a viewer tab in the Alchemy panel',
+                },
+                alchemy_actionProtection: {
+                    label: 'Alchemy panel: Protect categories from accidental alchemy actions',
+                    help: 'Blocks alchemy action buttons for 3 seconds when the selected item belongs to a protected category. A shield icon appears in the alchemy panel to configure protected categories.',
+                },
+                alchemyItemDimming: { label: 'Alchemy panel: Dim items requiring higher level' },
+                actions_missingMaterialsButton: {
+                    label: 'Show "Missing Mats Marketplace" button on production panels',
+                    help: 'Adds button to production panels that opens marketplace with tabs for missing materials',
+                },
+                actions_missingMaterialsButton_ignoreQueue: {
+                    label: 'Ignore queued actions when calculating missing materials',
+                    help: 'When enabled, missing materials calculation only considers current action request, ignoring materials already reserved by queued actions. Default (off) accounts for queue.',
+                },
+                actions_budgetCalculator: {
+                    label: 'Action panel: Budget calculator',
+                    help: 'Adds a budget input below the Missing Mats button. Enter a gold budget (e.g. 50m) to calculate how many units you can produce by buying missing tradeable materials at ask price.',
+                },
+                actions_costSummary: {
+                    label: 'Action panel: Show cost summary',
+                    help: 'Compact 4-line cost comparison for the selected produce quantity: direct recipe cost, missing direct mats, best crafting plan, and finished item market price.',
+                },
+                actionPanel_bestCraftingPlan: {
+                    label: 'Action panel: Show best crafting plan',
+                    help: 'Shows the cheapest way to obtain a crafted item by comparing buy vs craft at each material tier.',
+                },
+                actionPanel_craftingPlanBuyIntermediates: {
+                    label: 'Action panel: Crafting plan buys raw materials only',
+                    help: 'Always craft items that have a recipe — only buy uncraftable raw materials from the market.',
+                },
+                actionPanel_craftingPlanNoProcessing: {
+                    label: 'Action panel: Crafting plan no processing',
+                    help: 'Only craft the final item — buy all sub-materials from the market instead of processing them yourself.',
+                },
+                actionPanel_craftingPlanTaskMode: {
+                    label: 'Action panel: Crafting plan task mode',
+                    help: 'Forces the final craft step (for task credit) but allows buying intermediate materials if cheaper.',
+                },
+                actionPanel_craftingPlanTimeCost: {
+                    label: 'Action panel: Crafting plan time cost',
+                    help: 'Factor in the time cost of crafting when deciding buy vs craft. Uses your gold/hr value to determine if crafting is worth your time.',
+                },
+                actionPanel_craftingPlanGoldPerHour: {
+                    label: 'Action panel: Crafting plan gold/hr value',
+                    help: 'Your time value in gold per hour. Used to calculate if crafting intermediates is worth the time. Set to your typical hourly profit (e.g., 500000).',
+                },
+                actionPanel_craftingPlanMatchQuantity: {
+                    label: 'Action panel: Crafting plan matches action quantity',
+                    help: 'Scale the Best Crafting Plan (shopping list, craft steps, totals) to the quantity entered in the action panel instead of always planning for 1.',
+                },
+                actions_artisanMaterialMode: {
+                    label: 'Missing materials: Artisan requirement mode',
+                    help: 'Choose how missing materials accounts for Artisan Tea reductions when suggesting what to buy.',
+                },
+                lootLogStats: {
+                    label: 'Loot Log Statistics',
+                    help: 'Display total value, average time, and daily output in loot logs',
+                },
+                lootLogHistory: {
+                    label: 'Loot Log: Persist and display historical entries',
+                    help: 'Saves loot log entries and displays older entries below current ones in the loot log panel',
+                },
+                itemTooltip_prices: { label: 'Show 24-hour average market prices' },
+                itemTooltip_effectivePrices: {
+                    label: 'Show effective (after-tax) prices',
+                    help: 'Shows what you actually receive after the 4% marketplace tax next to ask/bid prices in item tooltips',
+                },
+                itemTooltip_enhancingHourlyRate: {
+                    label: 'Target hourly rate for enhancing (e.g. 50m)',
+                    help: 'Adds a minimum sell price to the enhancement tooltip that covers total cost plus this rate for time spent. Leave blank to disable.',
+                },
+                itemTooltip_enhancingHourlyRateTax: {
+                    label: 'Include marketplace tax in minimum sell price',
+                    help: 'Accounts for the 4% marketplace seller tax so listing at minimum sell still nets your target rate after tax',
+                },
+                itemTooltip_artisanPrices: {
+                    label: 'Adjust tooltip prices for Artisan Tea reduction',
+                    help: 'When viewing a recipe on an action panel, adjusts the total price to reflect actual material cost after Artisan Tea reduction',
+                },
+                itemTooltip_profit: { label: 'Show production cost and profit' },
+                itemTooltip_detailedProfit: {
+                    label: 'Show detailed materials breakdown in profit display',
+                    help: 'Shows material costs table with Ask/Bid prices, actions/hour, and profit breakdown',
+                },
+                itemTooltip_multiActionProfit: {
+                    label: 'Show profit comparison for all item actions',
+                    help: 'Displays best profit/hr highlighted, with other alternative actions (craft, coinify, decompose, transmute) summarized below',
+                },
+                itemTooltip_expectedValue: { label: 'Show expected value for openable containers' },
+                expectedValue_showDrops: { label: 'Expected value drop display' },
+                expectedValue_respectPricingMode: { label: 'Use pricing mode for expected value calculations' },
+                expectedValue_includeCowbells: { label: 'Include cowbell value in expected value calculations' },
+                showConsumTips: { label: 'HP/MP consumables: Restore speed, cost performance' },
+                dungeonTokenTooltips: { label: 'Currency tooltips: Show shop values for tokens, seals, and cowbells' },
+                itemTooltip_gathering: {
+                    label: 'Show gathering sources and profit',
+                    help: 'Shows gathering actions that produce this item (foraging, woodcutting, milking)',
+                },
+                itemTooltip_gatheringRareDrops: {
+                    label: 'Show rare drops from gathering',
+                    help: 'Shows rare find drops from gathering zones (e.g., Thread of Expertise from Asteroid Belt)',
+                },
+                itemTooltip_abilityStatus: {
+                    label: 'Show ability book status',
+                    help: 'Shows whether ability is learned and current level/progress on ability book tooltips',
+                },
+                abilityTooltip_effectiveTiming: {
+                    label: 'Show effective cooldown/cast time (with your stats)',
+                    help: 'Computes actual Cooldown/Cast Time from your current Ability Haste, Cast Speed, and Attack level, and shows it on ability tooltips when different from the base value.',
+                },
+                itemTooltip_enhancementMilestones: {
+                    label: 'Show enhancement milestones (+5/+7/+10/+12)',
+                    help: 'Shows expected cost and XP to reach +5, +7, +10, and +12 on unenhanced equipment tooltips',
+                },
+                itemTooltip_enhancementPath: {
+                    label: 'Show enhancement path on enhanced items',
+                    help: 'Shows the optimal enhancement path cost breakdown when hovering over enhanced (+1 to +20) items',
+                },
+                itemTooltip_pinTop: {
+                    label: 'Pin tooltips to top-center of screen',
+                    help: 'Forces item tooltips to always appear centered at the top of the screen instead of near the hovered item',
+                },
+                itemTooltip_hideInEnhanceSelector: {
+                    label: 'Hide tooltip extras in enhance item selector',
+                    help: 'Suppresses injected tooltip content (prices, profit, milestones) when browsing items in the enhancement selector',
+                },
+                itemDictionary_transmuteRates: {
+                    label: 'Item Dictionary: Show transmutation success rates',
+                    help: 'Displays success rate percentages in the "Transmuted From (Alchemy)" section',
+                },
+                itemDictionary_transmuteIncludeBaseRate: {
+                    label: 'Item Dictionary: Include base success rate in transmutation percentages',
+                    help: 'When enabled, shows total probability (base rate × drop rate). When disabled, shows conditional probability (drop rate only, matching "Transmutes Into" section)',
+                },
+                enhanceSim: { label: 'Show enhancement simulator calculations' },
+                enhanceSim_showConsumedItemsDetail: {
+                    label: 'Enhancement tooltips: Show detailed breakdown for consumed items',
+                    help: "When enabled, shows base/materials/protection breakdown for each consumed item in Philosopher's Mirror calculations",
+                },
+                enhanceSim_baseItemCraftingCost: {
+                    label: 'Enhancement path: Use crafting cost for base item if cheaper',
+                    help: 'When enabled, uses the lower of crafting cost or market price for the base item in enhancement path calculations, applied independently to both the Ask and Bid columns',
+                },
+                enhanceSim_autoTargetLevel: {
+                    label: 'Enhancement: Auto-fill target level on panel open (0 = disabled)',
+                    help: "When non-zero, automatically sets the Target Level input to this value whenever you open an item's enhancement panel. Re-applies each time you switch items.",
+                },
+                enhanceSim_autoProtectFrom: {
+                    label: 'Enhancement: Auto-fill optimal protect-from level when protection item is set',
+                    help: 'When enabled, automatically fills the Protect From Level input with the optimal (cheapest) value whenever a protection item is placed in the slot.',
+                },
+                enhanceSim_autoDetect: {
+                    label: 'Auto-detect your stats (false = use settings below)',
+                    help: 'Most players should leave this off to see realistic professional enhancer costs',
+                },
+                enhanceSim_enhancingLevel: {
+                    label: 'Enhancing skill level',
+                    help: 'Default: 140 (professional enhancer level)',
+                },
+                enhanceSim_houseLevel: { label: 'Observatory house room level', help: 'Default: 8 (max level)' },
+                enhanceSim_achievement: {
+                    label: 'Achievement bonus (+0.2%)',
+                    help: 'Include enhancing achievement success bonus',
+                },
+                enhanceSim_gear_enhancer: { label: 'Enhancer' },
+                enhanceSim_gear_gloves: { label: 'Gloves' },
+                enhanceSim_gear_top: { label: 'Top' },
+                enhanceSim_gear_bottoms: { label: 'Bottoms' },
+                enhanceSim_gear_neck: { label: 'Neck' },
+                enhanceSim_gear_ring: { label: 'Ring' },
+                enhanceSim_gear_earring: { label: 'Earring' },
+                enhanceSim_gear_cape: { label: 'Cape' },
+                enhanceSim_gear_guzzling: { label: 'Guzzling' },
+                enhanceSim_gear_charm: { label: 'Charm' },
+                enhanceSim_tea: { label: 'Enhancing tea', help: 'Enhancing tea provides skill level bonus' },
+                enhanceSim_blessedTea: {
+                    label: 'Blessed Tea active',
+                    help: 'Professional enhancers use this to reduce attempts',
+                },
+                enhanceSim_communityBuff: {
+                    label: 'Community Buff',
+                    help: 'Enhancing speed community buff. Checked = auto-detect from game.',
+                },
+                enhancementTracker: {
+                    label: 'Enable Enhancement Tracker',
+                    help: 'Track enhancement attempts, costs, and statistics',
+                },
+                enhancementTracker_showOnlyOnEnhancingScreen: {
+                    label: 'Show tracker only on Enhancing screen',
+                    help: 'Hide tracker when not on the Enhancing screen',
+                },
+                enhancementXPH: {
+                    label: 'Enhancement: XPH calculator',
+                    help: 'Ranks all enhanceable items by expected XP per hour at your current stats',
+                },
+                enhancementXPH_maxLevel: { label: 'Enhancement XPH: Default max enhancement level (1–20)' },
+                enhancementXPH_protectFrom: { label: 'Enhancement XPH: Default protect from level (0 = no protection)' },
+                riskOfRuin: {
+                    label: 'Enable Risk of Ruin calculator',
+                    help: 'Adds a standalone calculator estimating the chance of hitting 0 gold before reaching a target number of dungeon chests, alchemy Transmute actions, or an enhancement level.',
+                },
+                riskOfRuin_trials: {
+                    label: 'Risk of Ruin: Monte Carlo trial count',
+                    help: 'Higher trial counts give a more precise probability estimate at the cost of a slower calculation.',
+                },
+                sellQueue: {
+                    label: 'Sell Queue (Shift+RightClick inventory items)',
+                    help: 'Shift+RightClick an inventory item to open the marketplace and create a tab for it. Tabs close automatically when the item sells out.',
+                },
+                networkAlert: { label: 'Show alert when market price data cannot be fetched' },
+                marketFilter: { label: 'Marketplace: Filter by level, class, slot' },
+                marketSort: {
+                    label: 'Marketplace: Sort items by profitability',
+                    help: 'Adds a button to sort marketplace items by profit/hour. Items without profit data (drop-only) appear at the end.',
+                },
+                fillMarketOrderPrice: { label: 'Auto-fill marketplace orders with optimal price' },
+                market_autoFillSellStrategy: {
+                    label: 'Auto-fill sell price strategy',
+                    help: 'When creating sell listings, choose whether to match or undercut the current best sell price',
+                },
+                market_autoFillBuyStrategy: {
+                    label: 'Auto-fill buy price strategy',
+                    help: 'When creating buy listings, choose whether to outbid, match, or undercut the current best buy price',
+                },
+                market_autoClickMax: {
+                    label: 'Auto-click Max button on sell listing dialogs',
+                    help: 'Automatically clicks the Max button in the quantity field when opening Sell listing dialogs',
+                },
+                market_quickInputButtons: {
+                    label: 'Marketplace: Quick input buttons on order dialogs',
+                    help: 'Adds 10, 100, 1000 preset quantity buttons to buy/sell dialogs',
+                },
+                market_quickInputButtons_presets: {
+                    label: 'Marketplace: Custom quick input presets',
+                    help: 'Comma-separated preset values (e.g. 50,500,5000). Leave blank for defaults (10, 100, 1000). Max 8 values.',
+                },
+                market_multiplierButtons: {
+                    label: 'Marketplace: ÷2 and ×2 buttons on order dialogs',
+                    help: 'Adds ÷2 and ×2 buttons to the price and quantity rows in buy/sell dialogs',
+                },
+                market_showOwnedInBuyModal: {
+                    label: 'Marketplace: Show owned count in buy dialogs',
+                    help: 'Displays how many of the item you currently own in Buy Now and Buy Listing modals',
+                },
+                market_marketplaceShortcuts: {
+                    label: 'Marketplace: Show "Marketplace Action" button on item menus',
+                    help: 'Adds a Marketplace Action dropdown to item menus with Sell Now, Buy Now, and listing shortcuts',
+                },
+                market_visibleItemCount: {
+                    label: 'Market: Show inventory count on items',
+                    help: 'Displays how many of each item you own when browsing the market',
+                },
+                market_visibleItemCountOpacity: {
+                    label: 'Market: Opacity for items not in inventory',
+                    help: 'How transparent item tiles appear when you own zero of that item',
+                },
+                market_visibleItemCountIncludeEquipped: {
+                    label: 'Market: Count equipped items',
+                    help: 'Include currently equipped items in the displayed count',
+                },
+                market_showListingPrices: {
+                    label: 'Market: Show prices on individual listings',
+                    help: 'Displays top order price and total value on each listing in My Listings table',
+                },
+                market_collectableListingsToTop: {
+                    label: 'Market: Move collectable listings to top of My Listings',
+                    help: 'Listings with something to collect are moved to the top so you can see what "Collect All" grabbed without scrolling. Manually sorting a column takes over until sort is cleared',
+                },
+                market_listingRefreshNavigator: {
+                    label: 'Market: Show Refresh/Next buttons for cycling My Listings',
+                    help: 'Adds a "Refresh" button on My Listings that opens your first listing\'s order book, then a "Next" button on each listing\'s page to move to the next one, ending in "Back to My Listings"',
+                },
+                market_tradeHistory: {
+                    label: 'Market: Show personal trade history',
+                    help: 'Displays your last buy/sell prices for items in marketplace',
+                },
+                market_tradeHistoryComparisonMode: {
+                    label: 'Market: Trade history comparison mode',
+                    help: 'Instant: Compare to instant buy/sell prices. Orders: Compare to buy/sell orders.',
+                },
+                market_listingPricePrecision: {
+                    label: 'Market: Listing price decimal precision',
+                    help: 'Number of decimal places to show for listing prices',
+                },
+                market_showListingAge: {
+                    label: 'Market: Show listing age on My Listings',
+                    help: 'Display how long ago each listing was created on the My Listings tab (e.g., "3h 45m")',
+                },
+                market_showTopOrderAge: {
+                    label: 'Market: Show top order age on My Listings',
+                    help: 'Display estimated age of the top competing order for each of your listings (requires estimated listing age feature to be active)',
+                },
+                market_showEstimatedListingAge: {
+                    label: 'Market: Show estimated age on order book',
+                    help: 'Estimates creation time for all market listings using listing ID interpolation',
+                },
+                market_listingAgeFormat: {
+                    label: 'Market: Listing age display format',
+                    help: 'Choose how to display listing creation times',
+                },
+                market_listingTimeFormat: {
+                    label: 'Time format for date/time display',
+                    help: 'Time format used in marketplace listings and action completion times',
+                },
+                market_listingDateFormat: {
+                    label: 'Date format for date/time display',
+                    help: 'Date format used in marketplace listings and action completion times',
+                },
+                market_showOrderTotals: {
+                    label: 'Market: Show order totals in header',
+                    help: 'Displays buy orders (BO), sell orders (SO), and unclaimed coins (💰) in the header area below gold',
+                },
+                market_showHistoryViewer: {
+                    label: 'Market: Show history viewer button in settings',
+                    help: 'Adds "View Market History" button to settings panel for viewing and exporting all market listing history',
+                },
+                market_showPhiloCalculator: {
+                    label: 'Market: Show Philo Gamba calculator button in settings',
+                    help: 'Adds "Philo Gamba" button to settings panel for calculating transmutation ROI into Philosopher\'s Stones',
+                },
+                market_showQueueLength: {
+                    label: 'Market: Show queue length estimates',
+                    help: 'Displays total quantity at best price below Buy/Sell buttons. Estimated values (20+ orders at same price) are shown in a different color.',
+                },
+                market_depthCapEnabled: {
+                    label: 'Market: Show sell depth cap (Risk of Ruin)',
+                    help: "Shows how many actions worth of the currently-viewed item the order book can profitably absorb, based on the last Risk of Ruin calculation. Ignores the marketplace's tradable range floor, which isn't exposed in game data.",
+                },
+                profitCalc_pricingMode: { label: 'Profit calculation pricing mode' },
+                profitCalc_pricingNaming: {
+                    label: 'Pricing mode naming convention',
+                    help: 'Show pricing modes as "Instant Buy / Instant Sell" instead of "Buy: Ask / Sell: Bid"',
+                },
+                profitCalc_keyPricingMode: {
+                    label: 'Key pricing mode',
+                    help: 'How to value dungeon keys in tooltips, networth, and combat income calculations: ask (instant buy), bid (patient buy), or cheapest (compares buying to crafting the key yourself, using Best Crafting Plan’s engine and your Profit calculation pricing mode’s buy-side basis).',
+                },
+                profitCalc_customPriceOverrides: {
+                    label: 'Custom price overrides',
+                    help: 'Set custom buy/sell prices for specific items. Overrides marketplace prices in profit calculations.',
+                },
+                profitCalc_craftUpgradeItems: {
+                    label: 'Profit: Use crafting cost for upgrade items if cheaper',
+                    help: 'When enabled, uses crafting cost instead of market price for upgrade items if cheaper, and factors crafting time into profit/hr calculations.',
+                },
+                offlineProgressEconomics: {
+                    label: 'Offline Progress: Show Revenue/Cost/Profit summary',
+                    help: 'Adds a Revenue/Cost/Profit summary (with per-day projections) to the native Welcome Back modal, using your Pricing & Profit settings.',
+                },
+                networth: {
+                    label: 'Top right: Show gold count',
+                    help: 'Displays your current gold count next to Total Level in the page header',
+                },
+                invWorth: {
+                    label: 'Below inventory: Show net worth breakdown',
+                    help: 'Shows total net worth with a per-category breakdown (equipment, inventory, listings, houses, abilities) below the inventory panel',
+                },
+                invSort: { label: 'Sort inventory items by value' },
+                invSort_showBadges: { label: 'Show stack value badges when sorting by Ask/Bid' },
+                invSort_badgesOnNone: { label: 'Badge type when "None" sort is selected' },
+                invSort_netOfTax: { label: 'Show badge values net of market tax' },
+                invSort_sortEquipment: { label: 'Enable sorting for Equipment category' },
+                invBadgePrices: {
+                    label: 'Show price badges on item icons',
+                    help: 'Displays per-item ask and bid prices on inventory items',
+                },
+                invCategoryTotals: {
+                    label: 'Show category totals in inventory',
+                    help: 'Displays the total market value of all items in each inventory category',
+                },
+                networth_pricingMode: {
+                    label: 'Net worth pricing mode',
+                    help: 'Ask shows what you could get by listing patiently. Bid shows what you could get by selling instantly.',
+                },
+                networth_highEnhancementUseCost: {
+                    label: 'Use enhancement cost for highly enhanced items',
+                    help: 'Market prices are unreliable for highly enhanced items (+13 and above). Use calculated enhancement cost instead.',
+                },
+                networth_highEnhancementMinLevel: {
+                    label: 'Minimum enhancement level to use cost',
+                    help: 'Enhancement level at which to stop trusting market prices',
+                },
+                networth_includeCowbells: {
+                    label: 'Include cowbells in net worth',
+                    help: 'Cowbells are not tradeable, but they have a value based on Bag of 10 Cowbells market price',
+                },
+                networth_includeTaskTokens: {
+                    label: 'Include task tokens in net worth',
+                    help: 'Value task tokens based on expected value from Task Shop chests. Disable to exclude them from net worth.',
+                },
+                networth_abilityBooksAsInventory: {
+                    label: 'Count ability books as inventory (Current Assets)',
+                    help: 'Move ability books from Fixed Assets to Current Assets inventory value. Useful if you plan to sell them.',
+                },
+                networth_historyChart: {
+                    label: 'Enable net worth history chart',
+                    help: 'Records hourly net worth snapshots and shows a chart icon next to Total Net Worth. Disable to stop tracking and hide the chart button.',
+                },
+                autoAllButton: {
+                    label: 'Auto-click "All" button when opening loot boxes',
+                    help: 'Automatically clicks the "All" button when opening openable containers (crates, chests, caches)',
+                },
+                autoAllButton_excludeSeals: {
+                    label: 'Auto-click "All": Skip Scroll of... items',
+                    help: 'When enabled, Scroll of... items from the Labyrinth are not auto-opened',
+                },
+                openableAnalytics: {
+                    label: 'Openable Analytics: Track Actual vs Expected Value + Luck',
+                    help: 'Shows Actual Value, Expected Value, and Luck for chests/crates/caches you open, plus a character-scoped Analytics view with session/lifetime history',
+                },
+                openableAnalytics_sidePanel: {
+                    label: 'Openable Analytics: Show Current/History side panel',
+                    help: 'Pins a panel to the left of the Opened Loot window with Opened, Income, Profit, Luck, Expected income, and vs. expected for the current opening and its lifetime history',
+                },
+                inventoryTabs: {
+                    label: 'Custom Inventory Tabs: Enable',
+                    help: 'Adds a Toolasha tab to the character panel where you can organize inventory items into personal tabs.',
+                },
+                inventoryTabs_showUnorganized: {
+                    label: 'Custom Inventory Tabs: Show Unorganized bucket',
+                    help: 'Show an "Unorganized" section containing all items not assigned to any tab.',
+                },
+                inventoryTabs_categoryAddAll: {
+                    label: 'Custom Inventory Tabs: Add all items when adding category',
+                    help: 'When adding a category to a tab, add every item in that category (including items not in your inventory). When disabled, only items currently in your inventory are added.',
+                },
+                inventoryTabs_defaultTab: {
+                    label: 'Custom Inventory Tabs: Show Toolasha tab by default',
+                    help: 'Hides the native Inventory tab and automatically activates the Toolasha tab whenever the character panel opens.',
+                },
+                inventoryTabs_tileGap: {
+                    label: 'Custom Inventory Tabs: Item spacing (px)',
+                    help: 'Pixel gap between item tiles on the Toolasha tab.',
+                },
+                inventoryTabs_loadoutIncludeConsumables: {
+                    label: 'Custom Inventory Tabs: Include food & drinks when adding from loadout',
+                    help: 'When adding items from a loadout to a tab, also include food and drink items.',
+                },
+                inventoryTabs_topTabPriority: {
+                    label: 'Custom Inventory Tabs: Items visible in topmost tab only',
+                    help: 'When an item appears in multiple tabs, it only shows in the highest (topmost) tab that contains it. When disabled, collapsing a tab releases its items to lower tabs.',
+                },
+                simulateScrollEffects: {
+                    label: 'Skills: Simulate missing scroll effects in calculations',
+                    help: 'When enabled, profit/XP/speed calculations show hypothetical results as if selected scrolls were active. Configure default scrolls with the button; override per-loadout from the Loadouts panel.',
+                },
+                xpTracker: {
+                    label: 'Left sidebar: Show XP/hr rate on skill bars',
+                    help: 'Displays live XP/hr rate under each skill bar in the navigation panel',
+                },
+                xpTracker_timeTillLevel: {
+                    label: 'Skill tooltip: Show time till next level',
+                    help: 'Shows estimated time remaining until the next level in the skill hover tooltip (based on current XP/hr)',
+                },
+                skillRemainingXP: {
+                    label: 'Left sidebar: Show remaining XP to next level',
+                    help: 'Displays how much XP needed to reach the next level under skill progress bars',
+                },
+                skillRemainingXP_blackBorder: {
+                    label: 'Remaining XP: Add black text border for better visibility',
+                    help: 'Adds a black outline/shadow to the XP text for better readability against progress bars',
+                },
+                skillbook: {
+                    label: 'Skill books: Show books needed to reach target level (in the ability book item dictionary window)',
+                },
+                drinkTimer: {
+                    label: 'Drink timer: Show remaining tea time in consumables box',
+                    help: 'Displays remaining drink supply time and queue coverage under the consumables slots on Gathering/Production, Alchemy, and Enhancing action panels.',
+                },
+                drinkTimer_warningThreshold: {
+                    label: 'Drink timer: warning threshold (hours)',
+                    help: 'Show an amber warning on drink time displays when remaining supply falls below this many hours.',
+                },
+                skillingOptimizer: { label: 'Skilling Simulator/Optimizer: Enable Optimizer tab in character panel' },
+                combatScore: { label: 'Profile panel: Show gear score' },
+                abilitiesTriggers: {
+                    label: 'Profile panel: Show abilities & triggers',
+                    help: 'Displays equipped abilities, consumables, and their combat triggers below the profile',
+                },
+                characterCard: {
+                    label: 'Profile panel: Show View Card button',
+                    help: 'Adds button to open character sheet in external viewer',
+                },
+                eliteAchievementReminder: {
+                    label: 'Profile panel: Show Elite achievement reminder icon',
+                    help: "Shows a ✉️ icon next to a player's name if they haven't completed Elite achievements; click to pre-fill a whisper.",
+                },
+                eliteAchievementReminderMessage: {
+                    label: 'Elite achievement reminder: whisper message',
+                    help: 'Message pre-filled into chat when the Elite achievement reminder icon is clicked.',
+                },
+                dungeonTracker: {
+                    label: 'Dungeon Tracker: Real-time progress tracking',
+                    help: 'Tracks dungeon runs with server-validated duration from party messages',
+                },
+                dungeonTrackerUI: {
+                    label: 'Show Dungeon Tracker UI panel',
+                    help: 'Displays dungeon progress panel with wave counter, run history, and statistics',
+                },
+                dungeonTrackerChatAnnotations: {
+                    label: 'Show run time in party chat',
+                    help: 'Adds colored timer annotations to "Key counts" messages (green if fast, red if slow)',
+                },
+                labyrinthTracker: {
+                    label: 'Labyrinth best level tracker',
+                    help: 'Tracks the highest recommended level enemy defeated per monster type and shows it in the Automation tab',
+                },
+                labyrinthShopPrices: {
+                    label: 'Labyrinth Shop: Show market prices',
+                    help: 'Shows ask/bid market prices on tradeable items in the Labyrinth Shop tab',
+                },
+                labyrinthClearRate: {
+                    label: 'Labyrinth clear rate calculator',
+                    help: 'Shows expected clear time and success rate on labyrinth skilling room tiles',
+                },
+                labyrinthRecommendTargetRate: {
+                    label: 'Labyrinth: Recommend target clear rate (%)',
+                    help: 'Default target clear rate for labyrinth skip threshold recommendations',
+                },
+                labyrinthRecommendSimHours: {
+                    label: 'Labyrinth: Recommend sim hours per step',
+                    help: 'Default hours of combat simulation per binary search step in recommendations',
+                },
+                labyrinthLiveProgress: {
+                    label: 'Labyrinth: Show live clear chance',
+                    help: 'Shows live clear chance during active labyrinth skilling/enhancing rooms',
+                },
+                combatBattleCounter: {
+                    label: 'Show battle/wave counter in current action panel during combat',
+                    help: 'Displays "Battle #N" for regular zones or "Wave N" for dungeons in the top-left action panel',
+                },
+                combatSummary: {
+                    label: 'Combat Summary: Add rate stats to Battle Info panel',
+                    help: 'Adds encounters/hour, revenue, and experience rates to the Battle Info panel for the currently-viewed unit',
+                },
+                combatSim: {
+                    label: 'Combat Simulator',
+                    help: 'Simulate combat encounters to estimate XP/hr, deaths, and consumable usage',
+                },
+                labSim: {
+                    label: 'Lab Simulator',
+                    help: 'Simulate labyrinth runs to estimate performance across skills and combat',
+                },
+                combatSim_defaultHours: {
+                    label: 'Combat Simulator: Default hours (single zone)',
+                    help: 'Default simulation duration in hours for single-zone runs',
+                },
+                combatSim_allZonesDefaultHours: {
+                    label: 'Combat Simulator: Default hours (All Zones)',
+                    help: 'Default simulation duration in hours for All Zones runs',
+                },
+                combatSim_seekDefaultHours: {
+                    label: 'Combat Simulator: Default hours (Seek)',
+                    help: 'Default simulation duration in hours for Seek Best Source runs',
+                },
+                combatSim_decimalMinutes: {
+                    label: 'Combat Simulator: Show completion time as decimal minutes',
+                    help: 'Display avg completion time as "X.XX min" instead of "Xm Ys"',
+                },
+                combatSim_defaultLoadout: {
+                    label: 'Combat Simulator: Default loadout',
+                    help: 'Loadout to use by default for combat estimates instead of currently equipped gear',
+                },
+                combatSim_autoEstimate: {
+                    label: 'Combat Simulator: Auto-run estimate on task cards',
+                    help: 'Automatically run combat estimates using the default loadout when task cards appear',
+                },
+                combatSim_maxThreads: {
+                    label: 'Combat Simulator: Max threads',
+                    help: 'Maximum Web Worker threads for simulations (0 = auto, uses all available cores)',
+                },
+                combatSim_upgradeSkipSkillingRooms: {
+                    label: 'Combat Simulator: Upgrade Advisor - skip skilling house rooms',
+                    help: 'House Rooms Upgrade mode: skip simulating rooms with no combat stat bonus (Brewery, Garden, etc.) to save sim time. They still get a tiny Wisdom/Rare Find bonus like every room, so turn this off to see their (usually negligible) Gold/EXP and Gold/Profit values too.',
+                },
+                combatStats: {
+                    label: 'Combat Statistics: Show Statistics tab in Combat panel',
+                    help: 'Adds a Statistics button to the Combat panel showing income, profit, consumable costs, EXP, and drop details',
+                },
+                combatStats_runwayWarningThreshold: {
+                    label: 'Combat Statistics: consumable runway warning threshold (hours)',
+                    help: 'Highlight combat consumables projected to run out within this many hours. Set to 0 to disable warnings.',
+                },
+                combatStats_showLootLuck: {
+                    label: 'Combat Statistics: Show Loot Luck comparison',
+                    help: 'Shows the Actual vs Expected drop-rate/profit comparison and Loot Luck delta in the Statistics panel.',
+                },
+                combatConsumableTimer: {
+                    label: 'Combat consumable timer: Show remaining food/drink time during battle',
+                    help: 'Shows each active combat food/drink\'s estimated remaining runway below its icon in the Consumables list during battle. Requires "Combat Statistics" to be enabled - the estimate comes from its consumption tracker.',
+                },
+                combatStatsChatMessage: {
+                    label: 'Combat Statistics: Chat message format',
+                    help: 'Message format when Ctrl+clicking player card in Statistics. Click "Edit Template" to customize.',
+                },
+                taskProfitCalculator: { label: 'Show total profit for gathering/production tasks' },
+                taskSpeedBreakdown: {
+                    label: 'Show expandable speed & time breakdown on tasks',
+                    help: 'Displays an expandable action speed, efficiency, and timing breakdown on task cards.',
+                },
+                taskCombatEstimate: {
+                    label: 'Show combat estimate on combat tasks',
+                    help: 'Displays a loadout dropdown and estimate button on combat task cards.',
+                },
+                taskEfficiencyRating: {
+                    label: 'Show task efficiency rating (tokens/profit per hour)',
+                    help: 'Displays a color-graded efficiency score based on expected completion time.',
+                },
+                taskMaterialsIndicator: {
+                    label: 'Show materials availability on production tasks',
+                    help: 'Shows how many task actions you can complete with current inventory.',
+                },
+                taskEfficiencyRatingMode: {
+                    label: 'Efficiency algorithm',
+                    help: 'Choose whether to rate by task token payout or total profit.',
+                },
+                taskEfficiencyGradient: {
+                    label: 'Use relative gradient colors',
+                    help: 'Colors efficiency ratings relative to visible tasks.',
+                },
+                taskQueuedIndicator: {
+                    label: 'Show "Queued" indicator on task cards',
+                    help: 'Displays a status message on task cards when their action is in your action queue',
+                },
+                taskRerollTracker: {
+                    label: 'Track task reroll costs',
+                    help: 'Tracks how much gold/cowbells spent rerolling each task (EXPERIMENTAL - may cause UI freezing)',
+                },
+                taskMapIndex: { label: 'Show combat zone index numbers on tasks' },
+                taskIcons: {
+                    label: 'Show visual icons on task cards',
+                    help: 'Displays semi-transparent item/monster icons on task cards',
+                },
+                taskIconsDungeons: {
+                    label: 'Show dungeon icons on combat tasks',
+                    help: 'Shows which dungeons contain the monster (requires Task Icons enabled)',
+                },
+                taskSorter_autoSort: {
+                    label: 'Automatically sort tasks when opening task panel',
+                    help: 'Automatically sorts tasks by skill type when you open the task panel',
+                },
+                taskSorter_hideButton: {
+                    label: 'Hide Sort Tasks button',
+                    help: 'Hides the Sort Tasks button while keeping auto-sort functional',
+                },
+                taskSorter_sortMode: {
+                    label: 'Task sort mode',
+                    help: 'How tasks are ordered when clicking Sort Tasks. "Time to Completion" sorts fastest tasks first; combat and completed tasks go to the bottom. "Protection" puts unprotected tasks first.',
+                },
+                taskInventoryHighlighter: {
+                    label: 'Enable Task Inventory Highlighter button',
+                    help: 'Adds a button to dim inventory items not needed for your current non-combat tasks',
+                },
+                taskStatistics: {
+                    label: 'Show task statistics button on Tasks panel',
+                    help: 'Adds a Statistics button to the Tasks panel showing overflow time, expected rewards, and completion estimates',
+                },
+                taskClaimCollector: {
+                    label: 'Move Claim Reward buttons to top of task list',
+                    help: 'Moves all Claim Reward buttons to a stack at the top of the task list so you can click the same spot repeatedly to claim all completed tasks',
+                },
+                taskGoMerge: {
+                    label: 'Merge duplicate tasks on Go',
+                    help: 'When clicking Go on a task, combines the required amounts of all in-progress tasks for the same action into a single pre-filled count',
+                },
+                taskRerollProtection: {
+                    label: 'Task reroll protection',
+                    help: 'Protect specific tasks from accidental rerolling. Protected tasks get a green highlight and require a confirmation click before rerolling. A shield icon appears in the task panel to configure protected zones.',
+                },
+                taskRerollProtection_hideHighlight: {
+                    label: 'Task reroll protection: Hide green highlight',
+                    help: 'Removes the green outline/glow from protected tasks while keeping the reroll confirmation active.',
+                },
+                taskAutoReroll: {
+                    label: 'Task auto-reroll reminder',
+                    help: 'Highlights tasks you want to reroll with a red border and reminder badge. Configure per-character via the target icon in the task panel.',
+                },
+                taskTokenThreshold: {
+                    label: 'Flag tasks by Task Token reward for reroll',
+                    help: 'Highlights tasks whose Task Token reward crosses a configurable cutoff (below or above) with the same red border and reminder badge as auto-reroll. Does not click or reroll anything automatically. Configure the cutoff and direction per-character via the icon in the task panel.',
+                },
+                draggableModals: {
+                    label: 'Draggable modals',
+                    help: 'Makes game popup modals draggable. Position is remembered per modal type across sessions.',
+                },
+                formatting_useKMBFormat: {
+                    label: 'Number format mode',
+                    help: 'Controls how large numbers are displayed throughout the UI',
+                },
+                formatting_precision: {
+                    label: 'Abbreviation precision (decimal digits)',
+                    help: 'Number of decimal places shown when numbers are abbreviated with K/M/B suffixes',
+                },
+                ui_externalLinks: {
+                    label: 'Left sidebar: Show external tool links',
+                    help: 'Adds quick links to Combat Sim, Market Tracker, Enhancelator, and Milkonomy',
+                },
+                hideLabyrinthBadge: { label: 'Left sidebar: Hide Labyrinth ping badge' },
+                hideGuildBadge: { label: 'Left sidebar: Hide Guild notification badge' },
+                hideNavBarGlow: {
+                    label: 'Left sidebar: Hide active skill glow effect',
+                    help: "Removes the game's pulsing orange glow animation from the currently active skill's icon in the left navigation bar.",
+                },
+                tabReorder: {
+                    label: 'Character panel: Drag-and-drop tab reordering',
+                    help: 'Drag tabs to rearrange the order of Inventory, Toolasha, Equipment, Houses, Abilities, and Loadout. Order persists through refresh.',
+                },
+                expPercentage: { label: 'Left sidebar: Show skill XP percentages' },
+                combatLevelProgress: {
+                    label: 'Left sidebar: Show decimal Combat Level',
+                    help: "Shows the unrounded Combat Level formula value from current whole skill levels (e.g. 133.2). MWI's native sidebar floors it to an integer for display.",
+                },
+                itemIconLevel: { label: 'Bottom left corner of icons: Show equipment level' },
+                loadoutEnhancementDisplay: {
+                    label: 'Loadout panel: Show highest-owned enhancement level on equipment icons',
+                },
+                loadoutSnapshot: {
+                    label: 'Loadouts: Use saved loadouts in profit/action calculations',
+                    help: "When you queue an action, Toolasha predicts its XP, time, and profit using the current saved game loadout for that skill (skill-default → all-skills-default → matching saved loadout → currently-equipped). 'Use highest enhancement level' is resolved from what you currently own. Unavailable saved equipment makes the prediction fall back to the proven currently-equipped setup; unavailable saved food/drinks do not invalidate the loadout and their missing slots are omitted. Disable to always predict using currently-equipped gear.",
+                },
+                showsKeyInfoInIcon: { label: 'Bottom left corner of key icons: Show zone index' },
+                mapIndex: { label: 'Combat zones: Show zone index numbers' },
+                guildXPTracker: {
+                    label: 'Track guild and member XP over time',
+                    help: 'Records guild and member XP data from WebSocket messages for XP/hr calculations on the Guild panel.',
+                },
+                guildXPDisplay: {
+                    label: 'Show XP/hr stats on Guild panel',
+                    help: 'Displays XP/hr rates, rankings, and a weekly chart on the Guild Overview, Members, and Guild Leaderboard tabs. Disable the standalone Guild XP/h userscript if using this.',
+                },
+                guildIdleDisplay: {
+                    label: 'Guild Overview: Show idle members list',
+                    help: 'Displays a list of guild members who are currently idle (not performing any action) on the Guild Overview tab.',
+                },
+                guildTrialSignupDisplay: {
+                    label: 'Guild Trials: Show unsigned members list',
+                    help: "Displays which guild members have not yet signed up for the current week's skilling and combat trials.",
+                },
+                guildTrialWhisperTemplate: {
+                    label: 'Guild Trials: Whisper message when clicking a name',
+                    help: "Message pre-filled in chat when clicking an unsigned member's name. Use {name} for the player's name.",
+                },
+                guildMembersActivityTab: {
+                    label: 'Guild Members: Show Activity column on',
+                    help: 'Controls where the Activity column appears. "Contributions tab only" hides the native column on Status and shows it on Contributions instead.',
+                },
+                guildMembersShowGameMode: {
+                    label: 'Guild Members: Show Game Mode column',
+                    help: 'Shows the MC/IC/LC game mode column (Status tab).',
+                },
+                guildMembersShowJoined: {
+                    label: 'Guild Members: Show Joined column',
+                    help: 'Shows the date each member joined the guild (Status tab).',
+                },
+                guildMembersShowLastXPH: {
+                    label: 'Guild Members: Show Last XP/h column',
+                    help: 'Shows recent XP/hr tracked by Toolasha (Contributions tab).',
+                },
+                guildMembersShowLastDayXPH: {
+                    label: 'Guild Members: Show Last day XP/h column',
+                    help: 'Shows 24-hour average XP/hr tracked by Toolasha (Contributions tab).',
+                },
+                guildCreditValue: {
+                    label: 'Guild Shop: Show gold cost per credit table',
+                    help: 'Injects a cost-efficiency table into each guild credit exchange modal, sorted cheapest first using your profit pricing mode.',
+                },
+                guildTokenValueComparison: {
+                    label: 'Guild Shop: Show Guild Token gold-value comparison',
+                    help: 'Adds a Guild Token row to the credit exchange cost table, and a Guild Credit Value table to the Guild Token tooltip, showing gold/token via the cheapest tradeable item route to each credit type.',
+                },
+                guildCreditExchangeAdvisor: {
+                    label: 'Guild Shop: Show exchange advisor (sell → rebuy comparison)',
+                    help: 'When the selected item is not the cheapest option, shows whether selling it and rebuying the best item would yield more credits (accounts for 4% seller tax).',
+                },
+                guildShrineUpgradePlanner: {
+                    label: 'Guild Shop: Show shrine upgrade planner',
+                    help: 'Adds a shrine upgrade planner to the guild credit exchange panel, showing total credit and token costs to upgrade from your current level to a target level.',
+                },
+                houseUpgradeCosts: { label: 'Show upgrade costs with market prices and inventory comparison' },
+                leaderboardXPTracker: {
+                    label: 'Track player XP over time from Leaderboard',
+                    help: 'Records player XP from leaderboard WebSocket messages for XP/hr calculations on the Leaderboard panel.',
+                },
+                leaderboardXPDisplay: {
+                    label: 'Show XP/hr columns on Leaderboard',
+                    help: 'Adds Last XP/h and Last day XP/h columns to the player Leaderboard panel.',
+                },
+                notifiEmptyAction: {
+                    label: 'Browser notification when action queue is empty',
+                    help: 'Only works when the game page is open',
+                },
+                color_profit: {
+                    label: 'Profit/Positive Values',
+                    help: 'Color used for profit, gains, and positive values',
+                },
+                color_loss: { label: 'Loss/Negative Values', help: 'Color used for losses, costs, and negative values' },
+                color_warning: { label: 'Warnings', help: 'Color used for warnings and important notices' },
+                color_info: { label: 'Informational', help: 'Color used for informational text and highlights' },
+                color_essence: { label: 'Essences', help: 'Color used for essence drops and essence-related text' },
+                color_tooltip_profit: {
+                    label: 'Tooltip Profit/Positive',
+                    help: 'Color for profit/positive values in tooltips (light backgrounds)',
+                },
+                color_tooltip_loss: {
+                    label: 'Tooltip Loss/Negative',
+                    help: 'Color for loss/negative values in tooltips (light backgrounds)',
+                },
+                color_tooltip_info: {
+                    label: 'Tooltip Informational',
+                    help: 'Color for informational text in tooltips (light backgrounds)',
+                },
+                color_tooltip_warning: {
+                    label: 'Tooltip Warnings',
+                    help: 'Color for warnings in tooltips (light backgrounds)',
+                },
+                color_text_primary: { label: 'Primary Text', help: 'Main text color' },
+                color_text_secondary: { label: 'Secondary Text', help: 'Dimmed/secondary text color' },
+                color_border: { label: 'Borders', help: 'Border and separator color' },
+                color_gold: { label: 'Gold/Currency', help: 'Color used for gold and currency displays' },
+                color_mirror: {
+                    label: "Philosopher's Mirror",
+                    help: "Color for the Philosopher's Mirror usage line in enhancement tooltips",
+                },
+                color_listing_price_1m: {
+                    label: 'Listing Total: 1M+',
+                    help: 'Color for market listing total prices of 1 million or more',
+                },
+                color_listing_price_100k: {
+                    label: 'Listing Total: 100K+',
+                    help: 'Color for market listing total prices of 100K or more',
+                },
+                color_listing_price_10k: {
+                    label: 'Listing Total: 10K+',
+                    help: 'Color for market listing total prices of 10K or more',
+                },
+                color_listing_price_low: {
+                    label: 'Listing Total: <10K',
+                    help: 'Color for market listing total prices under 10K',
+                },
+                color_accent: {
+                    label: 'Script Accent Color',
+                    help: 'Primary accent color for script UI elements (buttons, headers, zone numbers, XP percentages, etc.)',
+                },
+                color_remaining_xp: {
+                    label: 'Remaining XP Text',
+                    help: 'Color for remaining XP text below skill bars in left navigation',
+                },
+                color_xp_rate: {
+                    label: 'XP Rate Text',
+                    help: 'Color for XP/hr rate text on skill bars in left navigation',
+                },
+                color_hours_to_level: {
+                    label: 'Hours to Level Text',
+                    help: 'Color for "hours till next level" text in skill tooltips',
+                },
+                color_inv_count: {
+                    label: 'Inventory Count Text',
+                    help: 'Color for inventory count shown on action tiles and in the action detail panel',
+                },
+                color_invBadge_ask: {
+                    label: 'Inventory Badge: Ask Price',
+                    help: 'Color for Ask price badges on inventory items (seller asking price - better selling value)',
+                },
+                color_invBadge_bid: {
+                    label: 'Inventory Badge: Bid Price',
+                    help: 'Color for Bid price badges on inventory items (buyer bid price - instant-sell value)',
+                },
+                color_transmute: {
+                    label: 'Transmutation Rates',
+                    help: 'Color used for transmutation success rate percentages in Item Dictionary',
+                },
+                color_queueLength_known: {
+                    label: 'Queue Length: Known Value',
+                    help: 'Color for known queue lengths (when all visible orders are counted)',
+                },
+                color_queueLength_estimated: {
+                    label: 'Queue Length: Estimated Value',
+                    help: 'Color for estimated queue lengths (extrapolated from 20+ orders at same price)',
+                },
+                collectionFilters: { label: 'Collection Filters: Count-range, dungeon, and skilling-outfit filters' },
+                collectionFavorites: { label: 'Collection Favorites: Star (★) items to mark and filter favorites' },
+                collectionFavoritesSection: { label: 'Collection Favorites: Show favorites section at top of grid' },
+                collectionFilters_skillingBadges: {
+                    label: 'Show collection count badges on skilling action tiles',
+                    help: 'Displays your collection count on skilling actions (open Collections once to populate counts)',
+                },
+            },
+        },
     };
 
     /**
@@ -11355,6 +12440,959 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             lastLabel: '最近:',
             sellPriceTooltip: '你的最近卖出价',
             sellValueLabel: (p) => `卖出 ${p.value}`,
+        },
+        settingsSchema: {
+            groups: {
+                ironCow: { title: '钢牛模式' },
+                general: { title: '通用设置' },
+                actionBar: { title: '操作栏' },
+                skillPageTiles: { title: '技能页面与图块' },
+                actionPanel: { title: '操作面板' },
+                actionQueue: { title: '操作队列' },
+                alchemy: { title: '炼金' },
+                missingMaterials: { title: '缺失材料与制作计划' },
+                lootLog: { title: '战利品记录' },
+                tooltips: { title: '物品提示框增强' },
+                enhancementSimulator: { title: '强化模拟器设置' },
+                enhancementTracker: { title: '强化追踪器' },
+                riskOfRuin: { title: '破产风险' },
+                marketplace: { title: '市场' },
+                pricingProfit: { title: '定价与利润' },
+                inventoryNetWorth: { title: '物品栏与净资产' },
+                inventoryTabs: { title: '自定义物品栏标签' },
+                skills: { title: '技能' },
+                combat: { title: '战斗功能' },
+                tasks: { title: '任务' },
+                ui: { title: '界面与外观' },
+                guild: { title: '公会' },
+                house: { title: '房屋' },
+                leaderboard: { title: '排行榜' },
+                notifications: { title: '通知' },
+                colors: { title: '颜色自定义' },
+                collectionFilters: { title: '收藏筛选' },
+            },
+            settings: {
+                ironCow_enabled: { label: '钢牛模式', help: '禁用所有市场与利润相关功能，用于无市场的游玩方式。' },
+                chatCommands: {
+                    label: '启用聊天命令（/item、/wiki、/market）',
+                    help: '在聊天中输入 /item、/wiki 或 /market，后接物品名称。例如：/item radiant fiber',
+                },
+                chat_mentionTracker: {
+                    label: '聊天中被提及时显示徽章',
+                    help: '当有人在聊天中 @提及你时，在聊天标签上显示红色徽章',
+                },
+                chat_popOut: {
+                    label: '启用聊天窗口弹出按钮',
+                    help: '在聊天面板添加一个按钮，可在独立浏览器窗口中打开聊天，支持多频道分屏显示',
+                },
+                chatHistoryExtender: {
+                    label: '聊天：扩展聊天历史记录',
+                    help: '保留游戏从实时缓冲区移除的消息，使其继续显示在实时聊天上方',
+                },
+                chatHistoryExtender_maxHistory: { label: '聊天：每个标签保留的最大消息数' },
+                notificationLog: {
+                    label: '聊天：添加日志标签',
+                    help: '在聊天面板添加一个日志标签，记录物品交易、升级、公会事件及其他游戏内通知',
+                },
+                notificationLog_maxEntries: {
+                    label: '聊天：保留的最大通知数',
+                    help: '每个角色保留的通知历史数量。标签中的筛选只改变显示内容，不影响存储内容。',
+                },
+                altClickNavigation: {
+                    label: '按住 Alt 点击物品以跳转到制作/采集页面或物品词典',
+                    help: '按住 Alt/Option 并点击任意物品，可跳转到其制作/采集页面；若该物品不可制作，则跳转到物品词典',
+                },
+                collectionNavigation: {
+                    label: '为收藏物品添加导航按钮',
+                    help: '点击收藏物品时添加“查看操作”和“物品词典”按钮',
+                },
+                queueMonitor: { label: '跨角色队列监视器', help: '在悬浮窗中显示你其他角色的预计剩余队列时间' },
+                characterActivityStatus: {
+                    label: '角色选择：显示活动状态',
+                    help: '在角色选择界面显示每个角色预计正在进行的活动，以及最早可能需要关注的时间点（操作/队列结束、材料不足或离线上限）',
+                },
+                actionBar_enabled: { label: '操作栏：启用操作栏显示' },
+                actionBar_compactWidth: {
+                    label: '操作栏：紧凑宽度（限制 800px）',
+                    help: '将操作栏宽度限制为 800px。适合宽屏显示器使用。',
+                },
+                actionBar_showQueueCount: { label: '操作栏：队列/剩余数量' },
+                actionBar_showActionDuration: { label: '操作栏：单次操作耗时（例如 14.94s/action）' },
+                actionBar_showActionsPerHour: { label: '操作栏：次数/时与物品/时' },
+                actionBar_showTimeRemaining: { label: '操作栏：剩余时间显示' },
+                actionBar_showRecycleTime: {
+                    label: '操作栏：转化循环时间估算',
+                    help: '显示考虑转化操作中自返还循环后的预计总时间',
+                },
+                actionBar_showProfit: {
+                    label: '操作栏：显示当前操作利润',
+                    help: '显示当前操作（采集与生产）的利润/时和剩余利润',
+                },
+                actionPanel_liveCountdown: {
+                    label: '操作栏：实时倒计时',
+                    help: '将操作进度条上的静态时间显示替换为以秒计的实时倒计时',
+                },
+                actionPanel_showFilter: { label: '技能页面：操作筛选输入框' },
+                actionPanel_showSort: { label: '技能页面：排序按钮' },
+                actionPanel_showPricingMode: { label: '技能页面：定价模式按钮' },
+                actionPanel_showCraftToggle: { label: '技能页面：制作切换按钮' },
+                actionPanel_showProfitPerHour_gathering: {
+                    label: '操作页面：在采集方块上显示利润/时',
+                    help: '在采集操作方块上显示利润/时（采集、伐木等）',
+                },
+                actionPanel_showProfitPerHour_production: {
+                    label: '操作页面：在生产方块上显示利润/时',
+                    help: '在生产操作方块上显示利润/时（制作、裁缝等）',
+                },
+                actionPanel_showExpPerHour_gathering: {
+                    label: '操作页面：在采集方块上显示经验/时',
+                    help: '在采集操作方块上显示经验/时（采集、伐木等）',
+                },
+                actionPanel_showExpPerHour_production: {
+                    label: '操作页面：在生产方块上显示经验/时',
+                    help: '在生产操作方块上显示经验/时（制作、裁缝等）',
+                },
+                actionPanel_hideNegativeProfit: {
+                    label: '操作面板：隐藏利润为负的操作',
+                    help: '隐藏会导致亏损（利润/时为负）的操作面板',
+                },
+                inventoryCountDisplay: {
+                    label: '操作面板：显示产出物品的当前物品栏数量',
+                    help: '在操作方块和操作详情面板中显示你当前拥有的产出物品数量',
+                },
+                actions_pinnedPage: {
+                    label: '固定操作：启用固定操作页面与图钉图标',
+                    help: '在左侧导航栏添加“固定”按钮，显示所有已固定的操作，并在操作方块上显示图钉图标。',
+                },
+                actionPanel_totalTime: { label: '操作面板：总时间、达到目标等级所需时间、经验/时' },
+                actionPanel_totalTime_quickInputs: { label: '操作面板：快捷输入按钮（小时、数量预设、最大值）' },
+                actionPanel_quickInputs_countPresets: {
+                    label: '操作面板：自定义数量预设（以逗号分隔，例如 100,1000,1000000）',
+                },
+                actionPanel_quickInputs_hourPresets: {
+                    label: '操作面板：自定义小时预设（以逗号分隔，例如 0.5,1,24,168,720）',
+                },
+                actionPanel_foragingTotal: { label: '操作面板：多结果采集的总体利润' },
+                actionPanel_outputTotals: {
+                    label: '操作面板：在单次产出下方显示预期总产出',
+                    help: '在操作输入框中输入数量后，显示计算得出的总量',
+                },
+                actionPanel_maxProduceable: {
+                    label: '操作面板：在制作操作上显示最大可生产数量',
+                    help: '根据当前物品栏显示可制作的物品数量',
+                },
+                actionPanel_showProfitDetail: {
+                    label: '操作面板：显示利润详情',
+                    help: '在采集、生产和炼金操作面板中显示利润明细区块',
+                },
+                actionPanel_showLevelProgress: {
+                    label: '操作面板：显示等级进度',
+                    help: '在操作面板中显示经验和等级进度估算',
+                },
+                actionPanel_showSpeedTime: {
+                    label: '操作面板：显示操作速度与时间',
+                    help: '在操作面板中显示速度明细、效率和总时间',
+                },
+                requiredMaterials: { label: '操作面板：显示所需材料总量与缺口', help: '输入数量后显示所需材料总量及缺口' },
+                actionPanel_enhanceMatLimitProtections: {
+                    label: '强化材料上限：计入保护材料',
+                    help: '启用后，强化材料上限估算会将保护物品的可用数量计入考虑。关闭则仅根据强化材料本身估算上限。',
+                },
+                actionQueue: { label: '队列中操作：显示总时间与完成时间' },
+                actionQueue_showValue: { label: '队列中操作：显示队列操作的利润/价值' },
+                actionQueue_valueMode: {
+                    label: '队列中操作：价值计算模式',
+                    help: '选择队列操作总价值的计算方式。“利润”显示扣除材料和饮品后的净收益。“预估价值”显示扣除市场税后的毛收入（始终为正）。',
+                },
+                actionQueue_completionTimeStyle: {
+                    label: '队列中操作：完成时间显示方式',
+                    help: '队列操作弹窗及悬浮提示框中完成时间的显示方式',
+                },
+                alchemy_profitDisplay: {
+                    label: '炼金面板：显示利润计算器',
+                    help: '根据成功率和市场价格，显示炼金操作的利润/时和利润/天',
+                },
+                alchemy_bestItems: {
+                    label: '炼金面板：显示最佳物品按钮',
+                    help: '添加一个按钮，可按每种炼金类型查看按利润或经验排序的物品。',
+                },
+                alchemy_transmuteHistory: {
+                    label: '炼金面板：追踪并查看转化会话历史记录',
+                    help: '记录转化会话，并在炼金面板的查看器标签中显示历史记录',
+                },
+                alchemy_coinifyHistory: {
+                    label: '炼金面板：追踪并查看兑换金币会话历史记录',
+                    help: '记录兑换金币会话，并在炼金面板的查看器标签中显示历史记录',
+                },
+                alchemy_decomposeHistory: {
+                    label: '炼金面板：追踪并查看分解会话历史记录',
+                    help: '记录分解会话，并在炼金面板的查看器标签中显示历史记录',
+                },
+                alchemy_actionProtection: {
+                    label: '炼金面板：保护类别以防止误操作炼金',
+                    help: '当所选物品属于受保护类别时，炼金操作按钮将锁定 3 秒。炼金面板中会显示一个盾牌图标，用于配置受保护的类别。',
+                },
+                alchemyItemDimming: { label: '炼金面板：使需要更高等级的物品变暗' },
+                actions_missingMaterialsButton: {
+                    label: '在生产面板上显示“缺失材料市场”按钮',
+                    help: '在生产面板添加按钮，可打开市场并自动创建缺失材料的标签页',
+                },
+                actions_missingMaterialsButton_ignoreQueue: {
+                    label: '计算缺失材料时忽略队列中的操作',
+                    help: '启用后，缺失材料计算仅考虑当前操作请求，忽略队列中操作已预留的材料。默认（关闭）会计入队列。',
+                },
+                actions_budgetCalculator: {
+                    label: '操作面板：预算计算器',
+                    help: '在“缺失材料”按钮下方添加预算输入框。输入金币预算（例如 50m），即可计算按卖价购买缺失的可交易材料后能生产的数量。',
+                },
+                actions_costSummary: {
+                    label: '操作面板：显示费用摘要',
+                    help: '针对所选生产数量，以 4 行精简对比显示费用：直接配方成本、缺失的直接材料、最佳制作方案与成品市场价格。',
+                },
+                actionPanel_bestCraftingPlan: {
+                    label: '操作面板：显示最佳制作方案',
+                    help: '通过比较每个材料层级的购买与制作成本，显示获得制作物品的最便宜方式。',
+                },
+                actionPanel_craftingPlanBuyIntermediates: {
+                    label: '操作面板：制作方案仅购买原材料',
+                    help: '始终制作有配方的物品——仅从市场购买无法制作的原材料。',
+                },
+                actionPanel_craftingPlanNoProcessing: {
+                    label: '操作面板：制作方案不含加工',
+                    help: '仅制作最终物品——所有子材料均从市场购买，而非自行加工。',
+                },
+                actionPanel_craftingPlanTaskMode: {
+                    label: '操作面板：制作方案任务模式',
+                    help: '强制执行最后一步制作（以获得任务进度），但若中间材料购买更便宜则允许直接购买。',
+                },
+                actionPanel_craftingPlanTimeCost: {
+                    label: '操作面板：制作方案时间成本',
+                    help: '在决定购买还是制作时计入制作所需的时间成本，使用你的金币/时价值来判断制作是否值得花费时间。',
+                },
+                actionPanel_craftingPlanGoldPerHour: {
+                    label: '操作面板：制作方案金币/时价值',
+                    help: '你的时间价值，以金币/时表示，用于计算制作中间材料是否值得花费时间。请设置为你典型的每小时利润（例如 500000）。',
+                },
+                actionPanel_craftingPlanMatchQuantity: {
+                    label: '操作面板：制作方案匹配操作数量',
+                    help: '将最佳制作方案（购物清单、制作步骤、总量）按操作面板中输入的数量进行缩放，而不是始终按 1 份规划。',
+                },
+                actions_artisanMaterialMode: {
+                    label: '缺失材料：工匠需求模式',
+                    help: '选择在建议购买材料时，如何计入工匠茶带来的材料减免。',
+                },
+                lootLogStats: { label: '战利品日志统计', help: '在战利品日志中显示总价值、平均用时和每日产出' },
+                lootLogHistory: {
+                    label: '战利品日志：保存并显示历史条目',
+                    help: '保存战利品日志条目，并在战利品日志面板中将较旧的条目显示在当前条目下方',
+                },
+                itemTooltip_prices: { label: '显示 24 小时平均市场价格' },
+                itemTooltip_effectivePrices: {
+                    label: '显示实际（税后）价格',
+                    help: '在物品提示框的卖价/买价旁，显示扣除 4% 市场税后你实际获得的金额',
+                },
+                itemTooltip_enhancingHourlyRate: {
+                    label: '强化的目标每小时收益（例如 50m）',
+                    help: '在强化提示框中添加一个最低卖出价格，该价格可覆盖总成本并为所花时间提供此收益率。留空以禁用。',
+                },
+                itemTooltip_enhancingHourlyRateTax: {
+                    label: '最低卖出价格中计入市场税',
+                    help: '计入 4% 的市场卖家税，使按最低卖出价挂单后，税后仍能达到你的目标收益率',
+                },
+                itemTooltip_artisanPrices: {
+                    label: '根据工匠茶减免调整提示框价格',
+                    help: '在操作面板查看配方时，调整总价格以反映工匠茶减免后的实际材料成本',
+                },
+                itemTooltip_profit: { label: '显示生产成本与利润' },
+                itemTooltip_detailedProfit: {
+                    label: '在利润显示中显示详细材料明细',
+                    help: '显示材料成本表格，包含卖价/买价、次数/时和利润明细',
+                },
+                itemTooltip_multiActionProfit: {
+                    label: '显示该物品所有操作的利润对比',
+                    help: '高亮显示最佳利润/时，并在下方汇总其他可选操作（制作、兑换金币、分解、转化）',
+                },
+                itemTooltip_expectedValue: { label: '显示可开启容器的期望值' },
+                expectedValue_showDrops: { label: '期望值掉落显示' },
+                expectedValue_respectPricingMode: { label: '期望值计算使用定价模式' },
+                expectedValue_includeCowbells: { label: '期望值计算中包含牛铃价值' },
+                showConsumTips: { label: 'HP/MP 消耗品：恢复速度、性价比' },
+                dungeonTokenTooltips: { label: '货币提示框：显示代币、封印、牛铃的商店价值' },
+                itemTooltip_gathering: {
+                    label: '显示采集来源与利润',
+                    help: '显示能产出此物品的采集类动作（觅食、伐木、挤奶）',
+                },
+                itemTooltip_gatheringRareDrops: {
+                    label: '显示采集的稀有掉落',
+                    help: '显示采集区域中的稀有发现掉落（例如 Asteroid Belt 掉落的 Thread of Expertise）',
+                },
+                itemTooltip_abilityStatus: {
+                    label: '显示技能书状态',
+                    help: '在技能书提示框中显示技能是否已学习，以及当前等级/进度',
+                },
+                abilityTooltip_effectiveTiming: {
+                    label: '显示实际冷却/施法时间（基于你的属性）',
+                    help: '根据你当前的技能急速、施法速度和攻击等级计算实际冷却/施法时间，并在与基础值不同时显示在技能提示框中。',
+                },
+                itemTooltip_enhancementMilestones: {
+                    label: '显示强化里程碑（+5/+7/+10/+12）',
+                    help: '在未强化装备的提示框中显示达到 +5、+7、+10 和 +12 所需的预期花费与经验',
+                },
+                itemTooltip_enhancementPath: {
+                    label: '在已强化物品上显示强化路径',
+                    help: '将鼠标悬停在已强化（+1 至 +20）物品上时，显示最优强化路径的费用明细',
+                },
+                itemTooltip_pinTop: {
+                    label: '将提示框固定在屏幕顶部中央',
+                    help: '强制物品提示框始终显示在屏幕顶部中央，而不是显示在鼠标悬停物品附近',
+                },
+                itemTooltip_hideInEnhanceSelector: {
+                    label: '在强化物品选择器中隐藏提示框附加信息',
+                    help: '在强化选择器中浏览物品时，隐藏注入的提示框内容（价格、利润、里程碑）',
+                },
+                itemDictionary_transmuteRates: {
+                    label: '物品词典：显示转化成功率',
+                    help: '在"转化自(炼金)"部分显示成功率百分比',
+                },
+                itemDictionary_transmuteIncludeBaseRate: {
+                    label: '物品词典：转化百分比中包含基础成功率',
+                    help: '启用时，显示总概率（基础成功率 × 掉落率）；禁用时，显示条件概率（仅掉落率，与"转化成(炼金)"部分一致）',
+                },
+                enhanceSim: { label: '显示强化模拟器计算结果' },
+                enhanceSim_showConsumedItemsDetail: {
+                    label: '强化提示框：显示消耗物品的详细明细',
+                    help: '启用后，会在贤者之镜计算中显示每个消耗物品的基础/材料/保护费用明细',
+                },
+                enhanceSim_baseItemCraftingCost: {
+                    label: '强化路径：若制作成本更低，则使用制作成本作为基础物品价格',
+                    help: '启用后，强化路径计算中基础物品价格将取制作成本与市场价格中较低者，该规则对卖价和买价两列分别独立应用',
+                },
+                enhanceSim_autoTargetLevel: {
+                    label: '强化：打开面板时自动填入目标等级（0 = 禁用）',
+                    help: '设为非零值时，每次打开物品的强化面板都会自动将目标等级输入框设为该值；每次切换物品时都会重新应用。',
+                },
+                enhanceSim_autoProtectFrom: {
+                    label: '强化：设置保护物品时自动填入最佳保护起点等级',
+                    help: '启用后，每当槽位中放入保护物品时，会自动将保护起点等级输入框填为最佳（最便宜）的值。',
+                },
+                enhanceSim_autoDetect: {
+                    label: '自动检测你的属性（关闭 = 使用下方设置）',
+                    help: '大多数玩家应保持关闭，以查看符合实际的专业强化师费用',
+                },
+                enhanceSim_enhancingLevel: { label: '强化技能等级', help: '默认值：140（专业强化师等级）' },
+                enhanceSim_houseLevel: { label: '天文台房屋房间等级', help: '默认值：8（最高等级）' },
+                enhanceSim_achievement: { label: '成就加成（+0.2%）', help: '包含强化成就带来的成功率加成' },
+                enhanceSim_gear_enhancer: { label: '强化器' },
+                enhanceSim_gear_gloves: { label: '手套' },
+                enhanceSim_gear_top: { label: '上衣' },
+                enhanceSim_gear_bottoms: { label: '下装' },
+                enhanceSim_gear_neck: { label: '项链' },
+                enhanceSim_gear_ring: { label: '戒指' },
+                enhanceSim_gear_earring: { label: '耳环' },
+                enhanceSim_gear_cape: { label: '披风' },
+                enhanceSim_gear_guzzling: { label: '暴饮' },
+                enhanceSim_gear_charm: { label: '护符' },
+                enhanceSim_tea: { label: '强化茶', help: '强化茶可提供技能等级加成' },
+                enhanceSim_blessedTea: { label: '福气茶已激活', help: '专业强化师用它来减少尝试次数' },
+                enhanceSim_communityBuff: { label: '社群增益', help: '强化速度社群增益。勾选 = 从游戏自动检测。' },
+                enhancementTracker: { label: '启用强化追踪器', help: '追踪强化尝试次数、花费与统计数据' },
+                enhancementTracker_showOnlyOnEnhancingScreen: {
+                    label: '仅在强化界面显示追踪器',
+                    help: '不在强化界面时隐藏追踪器',
+                },
+                enhancementXPH: {
+                    label: '强化：经验/时计算器',
+                    help: '根据你当前的属性，按预期经验/时对所有可强化物品进行排名',
+                },
+                enhancementXPH_maxLevel: { label: '强化经验/时：默认最高强化等级（1–20）' },
+                enhancementXPH_protectFrom: { label: '强化经验/时：默认保护起点等级（0 = 不保护）' },
+                riskOfRuin: {
+                    label: '启用破产风险计算器',
+                    help: '新增一个独立计算器，用于估算在达到目标副本宝箱数量、炼金转化次数或强化等级之前，金币归零的概率。',
+                },
+                riskOfRuin_trials: {
+                    label: '破产风险：蒙特卡洛试验次数',
+                    help: '更高的试验次数能给出更精确的概率估算，但计算速度会变慢。',
+                },
+                sellQueue: {
+                    label: '出售队列（Shift+右键点击物品栏物品）',
+                    help: '按住 Shift 并右键点击物品栏中的物品，即可打开市场并为该物品创建一个标签页；物品售罄后标签页会自动关闭。',
+                },
+                networkAlert: { label: '无法获取市场价格数据时显示提示' },
+                marketFilter: { label: '市场：按等级、职业、槽位筛选' },
+                marketSort: {
+                    label: '市场：按利润对物品排序',
+                    help: '新增一个按钮，可按利润/时对市场物品排序；没有利润数据（仅掉落获得）的物品会排在最后。',
+                },
+                fillMarketOrderPrice: { label: '自动为市场订单填入最优价格' },
+                market_autoFillSellStrategy: {
+                    label: '自动填充卖出价格策略',
+                    help: '创建卖出挂单时，可选择与当前最优卖价持平或低于该价格',
+                },
+                market_autoFillBuyStrategy: {
+                    label: '自动填充买入价格策略',
+                    help: '创建买入挂单时，可选择高于、持平或低于当前最优买价',
+                },
+                market_autoClickMax: {
+                    label: '在卖出挂单对话框中自动点击最大按钮',
+                    help: '打开卖出挂单对话框时，自动点击数量字段中的"最大"按钮',
+                },
+                market_quickInputButtons: {
+                    label: '市场：订单对话框中的快捷输入按钮',
+                    help: '在买入/卖出对话框中新增 10、100、1000 的预设数量按钮',
+                },
+                market_quickInputButtons_presets: {
+                    label: '市场：自定义快捷输入预设值',
+                    help: '以英文逗号分隔的预设值（例如 50,500,5000）。留空则使用默认值（10、100、1000）。最多 8 个值。',
+                },
+                market_multiplierButtons: {
+                    label: '市场：订单对话框中的 ÷2 和 ×2 按钮',
+                    help: '在买入/卖出对话框的价格与数量行中新增 ÷2 和 ×2 按钮',
+                },
+                market_showOwnedInBuyModal: {
+                    label: '市场：在购买对话框中显示持有数量',
+                    help: '在"立即购买"和"购买挂单"弹窗中显示你当前持有该物品的数量',
+                },
+                market_marketplaceShortcuts: {
+                    label: '市场：在物品菜单中显示"市场操作"按钮',
+                    help: '在物品菜单中新增"市场操作"下拉菜单，包含立即出售、立即购买及挂单快捷方式',
+                },
+                market_visibleItemCount: {
+                    label: '市场：在物品上显示物品栏数量',
+                    help: '浏览市场时显示你拥有的每种物品的数量',
+                },
+                market_visibleItemCountOpacity: {
+                    label: '市场：未持有物品的不透明度',
+                    help: '当你拥有数量为零的物品时，物品图块显示的透明程度',
+                },
+                market_visibleItemCountIncludeEquipped: {
+                    label: '市场：计入已装备物品',
+                    help: '将当前已装备的物品计入显示的数量中',
+                },
+                market_showListingPrices: {
+                    label: '市场：在单条挂单上显示价格',
+                    help: '在"我的挂单"表格中为每条挂单显示最优订单价格与总价值',
+                },
+                market_collectableListingsToTop: {
+                    label: '市场：将可领取的挂单置顶于"我的挂单"',
+                    help: '有可领取内容的挂单会被移到顶部，这样无需滚动即可看到"全部领取"抓取的内容；手动按列排序后会覆盖此行为，直到清除排序为止',
+                },
+                market_listingRefreshNavigator: {
+                    label: '市场：显示用于循环浏览"我的挂单"的刷新/下一个按钮',
+                    help: '在"我的挂单"中新增"刷新"按钮，用于打开第一条挂单的订单簿；再在每条挂单页面新增"下一个"按钮以切换到下一条，最终以"返回我的挂单"结束',
+                },
+                market_tradeHistory: {
+                    label: '市场：显示个人交易历史',
+                    help: '在市场中显示你对各物品最近一次的买入/卖出价格',
+                },
+                market_tradeHistoryComparisonMode: {
+                    label: '市场：交易历史对比模式',
+                    help: '即时：与即时买入/卖出价格对比。挂单：与买入/卖出挂单对比。',
+                },
+                market_listingPricePrecision: { label: '市场：挂单价格小数精度', help: '挂单价格显示的小数位数' },
+                market_showListingAge: {
+                    label: '市场：在"我的挂单"中显示挂单时长',
+                    help: '在"我的挂单"标签页中显示每条挂单创建至今的时间（例如"3h 45m"）',
+                },
+                market_showTopOrderAge: {
+                    label: '市场：在"我的挂单"中显示最优竞争订单时长',
+                    help: '显示你每条挂单对应的最优竞争订单的估算时长（需要启用"估算挂单时长"功能）',
+                },
+                market_showEstimatedListingAge: {
+                    label: '市场：在订单簿中显示估算时长',
+                    help: '通过挂单 ID 插值估算所有市场挂单的创建时间',
+                },
+                market_listingAgeFormat: { label: '市场：挂单时长显示格式', help: '选择挂单创建时间的显示方式' },
+                market_listingTimeFormat: {
+                    label: '日期/时间显示的时间格式',
+                    help: '用于市场挂单和操作完成时间的时间格式',
+                },
+                market_listingDateFormat: {
+                    label: '日期/时间显示的日期格式',
+                    help: '用于市场挂单和操作完成时间的日期格式',
+                },
+                market_showOrderTotals: {
+                    label: '市场：在页眉中显示订单总计',
+                    help: '在金币下方的页眉区域显示买单（BO）、卖单（SO）和未领取金币（💰）',
+                },
+                market_showHistoryViewer: {
+                    label: '市场：在设置中显示历史查看器按钮',
+                    help: '在设置面板中新增"查看市场历史"按钮，用于查看和导出全部市场挂单历史',
+                },
+                market_showPhiloCalculator: {
+                    label: '市场：在设置中显示 Philo Gamba 计算器按钮',
+                    help: '在设置面板中新增"Philo Gamba"按钮，用于计算转化为贤者之石的投资回报率',
+                },
+                market_showQueueLength: {
+                    label: '市场：显示队列长度估算',
+                    help: '在购买/出售按钮下方显示最优价格处的总数量；估算值（同价位 20 个以上订单）会以不同颜色显示',
+                },
+                market_depthCapEnabled: {
+                    label: '市场：显示卖出深度上限（破产风险）',
+                    help: '根据上一次破产风险计算结果，显示订单簿能够有利润地吸纳当前查看物品的操作次数；此计算忽略市场可交易区间下限，因为该数据未在游戏数据中公开。',
+                },
+                profitCalc_pricingMode: { label: '利润计算定价模式' },
+                profitCalc_pricingNaming: {
+                    label: '定价模式命名方式',
+                    help: '将定价模式显示为"即时买入 / 即时卖出"，而非"买入：卖价 / 卖出：买价"',
+                },
+                profitCalc_keyPricingMode: {
+                    label: '钥匙定价模式',
+                    help: '在提示框、净资产和战斗收入计算中如何为副本钥匙估值：卖价（即时买入）、买价（耐心买入），或最低价（比较直接购买与使用"最佳制作方案"引擎按你利润计算定价模式的买入基准自行制作钥匙两者的费用）。',
+                },
+                profitCalc_customPriceOverrides: {
+                    label: '自定义价格覆盖',
+                    help: '为特定物品设置自定义买入/卖出价格，在利润计算中覆盖市场价格。',
+                },
+                profitCalc_craftUpgradeItems: {
+                    label: '利润：若制作成本更低，升级材料使用制作成本',
+                    help: '启用后，若升级材料的制作成本更低，则使用制作成本代替市场价格，并将制作时间计入利润/时的计算中。',
+                },
+                offlineProgressEconomics: {
+                    label: '离线进度：显示收入/成本/利润摘要',
+                    help: '在原生的"欢迎回来"弹窗中添加收入/成本/利润摘要（含每日预测），使用您的"价格与利润"设置进行计算。',
+                },
+                networth: { label: '右上角：显示金币数量', help: '在页面顶部的总等级旁显示当前金币数量' },
+                invWorth: {
+                    label: '物品栏下方：显示净资产明细',
+                    help: '在物品栏面板下方显示总净资产，并按类别（装备、物品栏、挂单、房屋、技能书）列出明细',
+                },
+                invSort: { label: '按价值排序物品栏物品' },
+                invSort_showBadges: { label: '按卖价/买价排序时显示堆叠价值标签' },
+                invSort_badgesOnNone: { label: '选择"无"排序时的标签类型' },
+                invSort_netOfTax: { label: '标签数值显示扣除市场税后的净值' },
+                invSort_sortEquipment: { label: '启用装备类别的排序' },
+                invBadgePrices: { label: '在物品图标上显示价格标签', help: '在物品栏物品上显示每个物品的卖价和买价' },
+                invCategoryTotals: { label: '在物品栏中显示类别总计', help: '显示物品栏中每个类别内所有物品的市场总价值' },
+                networth_pricingMode: {
+                    label: '净资产定价模式',
+                    help: '卖价显示耐心挂单可获得的金额，买价显示立即卖出可获得的金额。',
+                },
+                networth_highEnhancementUseCost: {
+                    label: '高强化物品使用强化成本计价',
+                    help: '高强化物品（+13 及以上）的市场价格不可靠，改用计算得出的强化成本代替。',
+                },
+                networth_highEnhancementMinLevel: {
+                    label: '使用成本计价的最低强化等级',
+                    help: '从该强化等级开始不再信任市场价格',
+                },
+                networth_includeCowbells: {
+                    label: '净资产中包含牛铃',
+                    help: '牛铃不可交易，但其价值基于"10 个牛铃袋"的市场价格计算',
+                },
+                networth_includeTaskTokens: {
+                    label: '净资产中包含任务代币',
+                    help: '根据任务商店宝箱的期望价值计算任务代币的价值，关闭则将其排除在净资产之外。',
+                },
+                networth_abilityBooksAsInventory: {
+                    label: '将技能书计入物品栏（流动资产）',
+                    help: '将技能书从固定资产移至流动资产的物品栏价值中，适用于计划出售技能书的情况。',
+                },
+                networth_historyChart: {
+                    label: '启用净资产历史图表',
+                    help: '每小时记录净资产快照，并在"总净资产"旁显示图表图标。关闭后将停止记录并隐藏图表按钮。',
+                },
+                autoAllButton: {
+                    label: '开启战利品箱时自动点击"全部"按钮',
+                    help: '打开可开启容器（箱子、宝箱、密藏）时自动点击"全部"按钮',
+                },
+                autoAllButton_excludeSeals: {
+                    label: '自动点击"全部"：跳过"...卷轴"类物品',
+                    help: '启用后，迷宫中的"...卷轴"类物品不会被自动开启',
+                },
+                openableAnalytics: {
+                    label: '开箱分析：追踪实际与预期价值对比 + 幸运值',
+                    help: '显示您开启的宝箱/箱子/密藏的实际价值、预期价值和幸运值，并提供按角色区分的分析视图，包含本次会话与历史记录',
+                },
+                openableAnalytics_sidePanel: {
+                    label: '开箱分析：显示当前/历史侧边面板',
+                    help: '在"已开启战利品"窗口左侧固定一个面板，显示本次开启及其历史记录的已开启数量、收入、利润、幸运值、预期收入和对比预期',
+                },
+                inventoryTabs: {
+                    label: '自定义物品栏标签：启用',
+                    help: '在角色面板中添加一个 Toolasha 标签，您可以在其中将物品栏物品整理到个人标签中。',
+                },
+                inventoryTabs_showUnorganized: {
+                    label: '自定义物品栏标签：显示"未整理"分区',
+                    help: '显示一个"未整理"区域，包含所有未分配到任何标签的物品。',
+                },
+                inventoryTabs_categoryAddAll: {
+                    label: '自定义物品栏标签：添加类别时加入全部物品',
+                    help: '将某个类别添加到标签时，加入该类别中的所有物品（包括物品栏中没有的物品）。关闭后，仅添加当前物品栏中已有的物品。',
+                },
+                inventoryTabs_defaultTab: {
+                    label: '自定义物品栏标签：默认显示 Toolasha 标签',
+                    help: '隐藏原生的"物品栏"标签，并在每次打开角色面板时自动激活 Toolasha 标签。',
+                },
+                inventoryTabs_tileGap: {
+                    label: '自定义物品栏标签：物品间距（像素）',
+                    help: 'Toolasha 标签中物品格之间的像素间距。',
+                },
+                inventoryTabs_loadoutIncludeConsumables: {
+                    label: '自定义物品栏标签：从装备配置添加时包含食物和饮品',
+                    help: '从装备配置添加物品到标签时，同时包含食物和饮品物品。',
+                },
+                inventoryTabs_topTabPriority: {
+                    label: '自定义物品栏标签：物品仅在最上层标签中显示',
+                    help: '当一个物品出现在多个标签中时，仅在包含该物品的最上层标签中显示。关闭后，收起某个标签会将其物品释放给下层标签。',
+                },
+                simulateScrollEffects: {
+                    label: '技能：在计算中模拟缺失的卷轴效果',
+                    help: '启用后，利润/经验/速度计算会显示假设所选卷轴生效时的结果。可通过按钮配置默认卷轴，也可在"装备配置"面板中为单个装备配置单独覆盖。',
+                },
+                xpTracker: {
+                    label: '左侧栏：在技能条上显示经验/时速率',
+                    help: '在导航面板的每个技能条下方实时显示经验/时速率',
+                },
+                xpTracker_timeTillLevel: {
+                    label: '技能提示框：显示距下一等级的剩余时间',
+                    help: '在技能悬停提示框中显示距下一等级的预计剩余时间（基于当前经验/时）',
+                },
+                skillRemainingXP: {
+                    label: '左侧栏：显示距下一等级所需经验',
+                    help: '在技能进度条下方显示到达下一等级所需的经验值',
+                },
+                skillRemainingXP_blackBorder: {
+                    label: '剩余经验：添加黑色文字边框以提高可见度',
+                    help: '为经验文字添加黑色轮廓/阴影，以便在进度条上更清晰可读',
+                },
+                skillbook: { label: '技能书：显示达到目标等级所需的书籍数量（在技能书物品图鉴窗口中）' },
+                drinkTimer: {
+                    label: '饮品计时器：在消耗品栏中显示茶饮剩余时间',
+                    help: '在采集/生产、炼金和强化操作面板的消耗品槽位下方，显示饮品剩余供应时间及队列覆盖情况。',
+                },
+                drinkTimer_warningThreshold: {
+                    label: '饮品计时器：警告阈值（小时）',
+                    help: '当剩余供应时间低于此小时数时，在饮品时间显示上标注黄色警告。',
+                },
+                skillingOptimizer: { label: '生活技能模拟器/优化器：在角色面板中启用优化器标签' },
+                combatScore: { label: '资料面板：显示装备评分' },
+                abilitiesTriggers: {
+                    label: '资料面板：显示技能与触发条件',
+                    help: '在资料下方显示已装备的技能、消耗品及其战斗触发条件',
+                },
+                characterCard: { label: '资料面板：显示"查看卡片"按钮', help: '添加按钮，可在外部查看器中打开角色卡' },
+                eliteAchievementReminder: {
+                    label: '资料面板：显示精英成就提醒图标',
+                    help: '若玩家尚未完成精英成就，则在其名字旁显示 ✉️ 图标；点击可预填一条私聊消息。',
+                },
+                eliteAchievementReminderMessage: {
+                    label: '精英成就提醒：私聊消息',
+                    help: '点击精英成就提醒图标时预填入聊天框的消息内容。',
+                },
+                dungeonTracker: {
+                    label: '副本追踪器：实时进度追踪',
+                    help: '通过队伍消息中经服务器验证的时长来追踪副本记录',
+                },
+                dungeonTrackerUI: {
+                    label: '显示副本追踪器界面面板',
+                    help: '显示副本进度面板，包含波次计数、通关记录和统计数据',
+                },
+                dungeonTrackerChatAnnotations: {
+                    label: '在队伍聊天中显示通关时间',
+                    help: '为"钥匙数量"消息添加彩色计时标注（快则绿色，慢则红色）',
+                },
+                labyrinthTracker: {
+                    label: '迷宫最高等级追踪器',
+                    help: '追踪每种怪物类型已击败的最高推荐等级，并在自动化标签中显示',
+                },
+                labyrinthShopPrices: {
+                    label: '迷宫商店：显示市场价格',
+                    help: '在迷宫商店标签中为可交易物品显示卖价/买价市场价格',
+                },
+                labyrinthClearRate: { label: '迷宫通关率计算器', help: '在迷宫生产房间的格子上显示预计通关时间和成功率' },
+                labyrinthRecommendTargetRate: {
+                    label: '迷宫：建议目标通关率（%）',
+                    help: '迷宫跳过阈值建议所使用的默认目标通关率',
+                },
+                labyrinthRecommendSimHours: {
+                    label: '迷宫：每步建议的模拟小时数',
+                    help: '建议计算中二分查找每一步所使用的默认战斗模拟小时数',
+                },
+                labyrinthLiveProgress: {
+                    label: '迷宫：显示实时通关概率',
+                    help: '在进行中的迷宫生产/强化房间内显示实时通关概率',
+                },
+                combatBattleCounter: {
+                    label: '战斗中在当前操作面板显示战斗/波次计数',
+                    help: '在左上角操作面板中显示普通区域的"战斗 #N"或副本的"第 N 波"',
+                },
+                combatSummary: {
+                    label: '战斗摘要：为战斗信息面板添加速率统计',
+                    help: '为当前查看单位的战斗信息面板添加遭遇/时、收入和经验速率',
+                },
+                combatSim: { label: '战斗模拟器', help: '模拟战斗遭遇，估算经验/时、死亡次数和消耗品使用量' },
+                labSim: { label: '迷宫模拟器', help: '模拟迷宫运行，估算各技能及战斗的表现' },
+                combatSim_defaultHours: { label: '战斗模拟器：默认小时数（单区域）', help: '单区域模拟的默认时长（小时）' },
+                combatSim_allZonesDefaultHours: {
+                    label: '战斗模拟器：默认小时数（全部区域）',
+                    help: '全部区域模拟的默认时长（小时）',
+                },
+                combatSim_seekDefaultHours: {
+                    label: '战斗模拟器：默认小时数（探寻）',
+                    help: '"探寻最佳来源"模拟的默认时长（小时）',
+                },
+                combatSim_decimalMinutes: {
+                    label: '战斗模拟器：以小数分钟显示完成时间',
+                    help: '将平均完成时间显示为"X.XX min"而非"Xm Ys"',
+                },
+                combatSim_defaultLoadout: {
+                    label: '战斗模拟器：默认装备配置',
+                    help: '战斗估算默认使用的装备配置，而非当前已装备的装备',
+                },
+                combatSim_autoEstimate: {
+                    label: '战斗模拟器：在任务卡片上自动运行估算',
+                    help: '任务卡片出现时，使用默认装备配置自动运行战斗估算',
+                },
+                combatSim_maxThreads: {
+                    label: '战斗模拟器：最大线程数',
+                    help: '模拟使用的最大 Web Worker 线程数（0 = 自动，使用所有可用核心）',
+                },
+                combatSim_upgradeSkipSkillingRooms: {
+                    label: '战斗模拟器：升级顾问 - 跳过生产类房屋房间',
+                    help: '房屋房间升级模式：跳过模拟没有战斗属性加成的房间（酿造坊、花园等）以节省模拟时间。这些房间仍会像所有房间一样获得微小的智慧/稀有发现加成，因此关闭此选项也可以查看它们（通常可忽略不计）的金币/经验和金币/利润数值。',
+                },
+                combatStats: {
+                    label: '战斗统计：在战斗面板中显示统计标签',
+                    help: '在战斗面板中添加统计按钮，显示收入、利润、消耗品花费、经验和掉落详情',
+                },
+                combatStats_runwayWarningThreshold: {
+                    label: '战斗统计：消耗品可用时长警告阈值（小时）',
+                    help: '高亮预计在此小时数内耗尽的战斗消耗品。设为 0 可关闭警告。',
+                },
+                combatStats_showLootLuck: {
+                    label: '战斗统计：显示战利品幸运值对比',
+                    help: '在统计面板中显示实际与预期掉落率/利润的对比，以及战利品幸运值差值。',
+                },
+                combatConsumableTimer: {
+                    label: '战斗消耗品计时器：战斗中显示食物/饮品剩余时间',
+                    help: '战斗期间，在消耗品列表中每个生效中的战斗食物/饮品图标下方显示其预计剩余可用时间。需要启用"战斗统计"——该估算数据来自其消耗追踪器。',
+                },
+                combatStatsChatMessage: {
+                    label: '战斗统计：聊天消息格式',
+                    help: '在统计面板中按住 Ctrl 点击玩家卡片时使用的消息格式。点击"编辑模板"进行自定义。',
+                },
+                taskProfitCalculator: { label: '显示采集/生产任务的总利润' },
+                taskSpeedBreakdown: {
+                    label: '在任务上显示可展开的速度与时间明细',
+                    help: '在任务卡片上显示可展开的操作速度、效率和用时明细。',
+                },
+                taskCombatEstimate: {
+                    label: '在战斗任务上显示战斗估算',
+                    help: '在战斗任务卡片上显示装备配置下拉菜单和估算按钮。',
+                },
+                taskEfficiencyRating: {
+                    label: '显示任务效率评分（代币/利润每小时）',
+                    help: '根据预计完成时间显示带颜色分级的效率评分。',
+                },
+                taskMaterialsIndicator: {
+                    label: '在生产任务上显示材料可用情况',
+                    help: '显示以当前物品栏可完成多少次任务操作。',
+                },
+                taskEfficiencyRatingMode: { label: '效率算法', help: '选择按任务代币产出还是按总利润进行评分。' },
+                taskEfficiencyGradient: { label: '使用相对渐变颜色', help: '根据当前可见任务的相对情况为效率评分着色。' },
+                taskQueuedIndicator: {
+                    label: '在任务卡片上显示"已排队"标记',
+                    help: '当任务对应的操作在您的操作队列中时，在任务卡片上显示状态消息',
+                },
+                taskRerollTracker: {
+                    label: '追踪任务重掷花费',
+                    help: '追踪重掷每个任务所花费的金币/牛铃（实验性功能 —— 可能导致界面卡顿）',
+                },
+                taskMapIndex: { label: '在任务上显示战斗区域索引编号' },
+                taskIcons: { label: '在任务卡片上显示视觉图标', help: '在任务卡片上显示半透明的物品/怪物图标' },
+                taskIconsDungeons: {
+                    label: '在战斗任务上显示副本图标',
+                    help: '显示该怪物出现在哪些副本中（需启用任务图标）',
+                },
+                taskSorter_autoSort: { label: '打开任务面板时自动排序任务', help: '打开任务面板时按技能类型自动排序任务' },
+                taskSorter_hideButton: { label: '隐藏任务排序按钮', help: '隐藏任务排序按钮，同时保留自动排序功能' },
+                taskSorter_sortMode: {
+                    label: '任务排序模式',
+                    help: '点击任务排序时的排序方式。"完成所需时间"将最快完成的任务排在最前，战斗任务和已完成任务排在最后。"保护"将未受保护的任务排在最前。',
+                },
+                taskInventoryHighlighter: {
+                    label: '启用任务物品栏高亮按钮',
+                    help: '添加一个按钮，用于淡化当前非战斗任务不需要的物品栏物品',
+                },
+                taskStatistics: {
+                    label: '在任务面板显示任务统计按钮',
+                    help: '在任务面板添加一个统计按钮，显示溢出时间、预期奖励和完成时间估算',
+                },
+                taskClaimCollector: {
+                    label: '将领取奖励按钮移至任务列表顶部',
+                    help: '将所有领取奖励按钮集中堆叠到任务列表顶部，这样你可以反复点击同一位置来领取所有已完成的任务',
+                },
+                taskGoMerge: {
+                    label: '点击前往时合并重复任务',
+                    help: '点击某个任务的前往按钮时，将同一操作的所有进行中任务所需数量合并为一个预填数值',
+                },
+                taskRerollProtection: {
+                    label: '任务重掷保护',
+                    help: '保护特定任务，防止意外重掷。受保护的任务会显示绿色高亮，重掷前需要再次点击确认。任务面板中会出现一个盾牌图标用于配置受保护的区域。',
+                },
+                taskRerollProtection_hideHighlight: {
+                    label: '任务重掷保护：隐藏绿色高亮',
+                    help: '移除受保护任务的绿色描边/光效，同时保留重掷确认功能。',
+                },
+                taskAutoReroll: {
+                    label: '任务自动重掷提醒',
+                    help: '用红色边框和提醒徽章高亮你想要重掷的任务。可通过任务面板中的目标图标按角色进行配置。',
+                },
+                taskTokenThreshold: {
+                    label: '按任务代币奖励标记需要重掷的任务',
+                    help: '当任务的任务代币奖励超出可配置的临界值（低于或高于）时，用与自动重掷相同的红色边框和提醒徽章高亮该任务。此功能不会自动点击或重掷任何内容。可通过任务面板中的图标按角色配置临界值和方向。',
+                },
+                draggableModals: {
+                    label: '可拖动的弹窗',
+                    help: '使游戏弹出窗口可拖动。每种弹窗类型的位置会在会话间被记住。',
+                },
+                formatting_useKMBFormat: { label: '数字格式模式', help: '控制整个界面中大数字的显示方式' },
+                formatting_precision: { label: '缩写精度（小数位数）', help: '数字使用 K/M/B 后缀缩写时显示的小数位数' },
+                ui_externalLinks: {
+                    label: '左侧栏：显示外部工具链接',
+                    help: '添加通往战斗模拟器、市场追踪器、强化计算器和 Milkonomy 的快捷链接',
+                },
+                hideLabyrinthBadge: { label: '左侧栏：隐藏迷宫提示徽章' },
+                hideGuildBadge: { label: '左侧栏：隐藏公会通知徽章' },
+                hideNavBarGlow: {
+                    label: '左侧栏：隐藏当前技能光效',
+                    help: '移除游戏左侧导航栏中当前激活技能图标上的橙色脉动光效动画。',
+                },
+                tabReorder: {
+                    label: '角色面板：拖放重排标签顺序',
+                    help: '拖动标签以重新排列物品栏、Toolasha、装备、房屋、能力和装备配置的顺序。顺序会在刷新后保留。',
+                },
+                expPercentage: { label: '左侧栏：显示技能经验百分比' },
+                combatLevelProgress: {
+                    label: '左侧栏：显示小数战斗等级',
+                    help: '根据当前整数技能等级显示未四舍五入的战斗等级公式值（例如 133.2）。游戏原生侧栏在显示时会向下取整为整数。',
+                },
+                itemIconLevel: { label: '图标左下角：显示装备等级' },
+                loadoutEnhancementDisplay: { label: '装备配置面板：在装备图标上显示拥有的最高强化等级' },
+                loadoutSnapshot: {
+                    label: '装备配置：在利润/操作计算中使用已保存的装备配置',
+                    help: '当你排队一个操作时，Toolasha 会使用该技能当前已保存的游戏装备配置（技能默认 → 全技能默认 → 匹配的已保存装备配置 → 当前已装备）来预测其经验、时间和利润。"使用最高强化等级"会根据你当前拥有的物品来解析。若已保存的装备不可用，预测会回退到可用的当前已装备配置；若已保存的食物/饮品不可用，不会使装备配置失效，其缺失的槽位会被省略。禁用此项将始终使用当前已装备的装备进行预测。',
+                },
+                showsKeyInfoInIcon: { label: '钥匙图标左下角：显示区域索引' },
+                mapIndex: { label: '战斗区域：显示区域索引编号' },
+                guildXPTracker: {
+                    label: '随时间追踪公会与成员经验',
+                    help: '从 WebSocket 消息中记录公会和成员经验数据，用于公会面板的经验/时计算。',
+                },
+                guildXPDisplay: {
+                    label: '在公会面板显示经验/时统计',
+                    help: '在公会概览、成员和公会排行榜标签页上显示经验/时速率、排名和每周图表。若使用此功能，请禁用独立的 Guild XP/h 用户脚本。',
+                },
+                guildIdleDisplay: {
+                    label: '公会概览：显示空闲成员列表',
+                    help: '在公会概览标签页上显示当前处于空闲状态（未执行任何操作）的公会成员列表。',
+                },
+                guildTrialSignupDisplay: {
+                    label: '公会试炼：显示未报名成员列表',
+                    help: '显示哪些公会成员尚未报名参加本周的生活技能和战斗试炼。',
+                },
+                guildTrialWhisperTemplate: {
+                    label: '公会试炼：点击名字时的私聊消息',
+                    help: '点击未报名成员的名字时，预填到聊天框中的消息。使用 {name} 代表该玩家的名字。',
+                },
+                guildMembersActivityTab: {
+                    label: '公会成员：在哪里显示活动列',
+                    help: '控制活动列显示的位置。"仅贡献标签页"会隐藏状态标签页上的原生列，并改在贡献标签页上显示。',
+                },
+                guildMembersShowGameMode: {
+                    label: '公会成员：显示游戏模式列',
+                    help: '显示 MC/IC/LC 游戏模式列（状态标签页）。',
+                },
+                guildMembersShowJoined: {
+                    label: '公会成员：显示加入日期列',
+                    help: '显示每位成员加入公会的日期（状态标签页）。',
+                },
+                guildMembersShowLastXPH: {
+                    label: '公会成员：显示最近经验/时列',
+                    help: '显示由 Toolasha 追踪的最近经验/时（贡献标签页）。',
+                },
+                guildMembersShowLastDayXPH: {
+                    label: '公会成员：显示最近一天经验/时列',
+                    help: '显示由 Toolasha 追踪的 24 小时平均经验/时（贡献标签页）。',
+                },
+                guildCreditValue: {
+                    label: '公会商店：显示每信用点的金币成本表',
+                    help: '在每个公会信用点兑换弹窗中插入成本效率表，按你的利润定价模式从最便宜开始排序。',
+                },
+                guildTokenValueComparison: {
+                    label: '公会商店：显示公会代币金币价值对比',
+                    help: '在信用点兑换成本表中添加公会代币行，并在公会代币提示框中添加公会信用点价值表，通过通往每种信用点类型最便宜的可交易物品路线显示金币/代币价值。',
+                },
+                guildCreditExchangeAdvisor: {
+                    label: '公会商店：显示兑换顾问（卖出 → 回购对比）',
+                    help: '当所选物品不是最便宜的选项时，显示卖出该物品并回购最优物品是否能获得更多信用点（考虑 4% 卖家税）。',
+                },
+                guildShrineUpgradePlanner: {
+                    label: '公会商店：显示神殿升级规划器',
+                    help: '在公会信用点兑换面板添加神殿升级规划器，显示从当前等级升级到目标等级所需的信用点和代币总成本。',
+                },
+                houseUpgradeCosts: { label: '显示升级成本及市场价格与物品栏对比' },
+                leaderboardXPTracker: {
+                    label: '随时间从排行榜追踪玩家经验',
+                    help: '从排行榜 WebSocket 消息中记录玩家经验，用于排行榜面板的经验/时计算。',
+                },
+                leaderboardXPDisplay: {
+                    label: '在排行榜显示经验/时列',
+                    help: '在玩家排行榜面板添加最近经验/时和最近一天经验/时列。',
+                },
+                notifiEmptyAction: { label: '操作队列为空时发送浏览器通知', help: '仅在游戏页面保持打开时有效' },
+                color_profit: { label: '利润/正值', help: '用于利润、收益和正值的颜色' },
+                color_loss: { label: '亏损/负值', help: '用于亏损、成本和负值的颜色' },
+                color_warning: { label: '警告', help: '用于警告和重要提示的颜色' },
+                color_info: { label: '信息提示', help: '用于信息文本和高亮的颜色' },
+                color_essence: { label: '精华', help: '用于精华掉落和精华相关文本的颜色' },
+                color_tooltip_profit: { label: '提示框 利润/正值', help: '提示框中利润/正值的颜色（浅色背景）' },
+                color_tooltip_loss: { label: '提示框 亏损/负值', help: '提示框中亏损/负值的颜色（浅色背景）' },
+                color_tooltip_info: { label: '提示框 信息提示', help: '提示框中信息文本的颜色（浅色背景）' },
+                color_tooltip_warning: { label: '提示框 警告', help: '提示框中警告的颜色（浅色背景）' },
+                color_text_primary: { label: '主要文本', help: '主要文本颜色' },
+                color_text_secondary: { label: '次要文本', help: '暗淡/次要文本颜色' },
+                color_border: { label: '边框', help: '边框与分隔线颜色' },
+                color_gold: { label: '金币/货币', help: '用于金币和货币显示的颜色' },
+                color_mirror: { label: '贤者之镜', help: '强化提示框中贤者之镜用量行的颜色' },
+                color_listing_price_1m: { label: '挂单总额：100 万以上', help: '市场挂单总价为 100 万或以上时的颜色' },
+                color_listing_price_100k: { label: '挂单总额：10 万以上', help: '市场挂单总价为 10 万或以上时的颜色' },
+                color_listing_price_10k: { label: '挂单总额：1 万以上', help: '市场挂单总价为 1 万或以上时的颜色' },
+                color_listing_price_low: { label: '挂单总额：低于 1 万', help: '市场挂单总价低于 1 万时的颜色' },
+                color_accent: {
+                    label: '脚本主题色',
+                    help: '脚本界面元素（按钮、标题、区域编号、经验百分比等）的主要主题色',
+                },
+                color_remaining_xp: { label: '剩余经验文本', help: '左侧导航栏中技能条下方剩余经验文本的颜色' },
+                color_xp_rate: { label: '经验速率文本', help: '左侧导航栏技能条上经验/时速率文本的颜色' },
+                color_hours_to_level: { label: '升级所需时间文本', help: '技能提示框中"距下一等级所需小时数"文本的颜色' },
+                color_inv_count: { label: '物品栏数量文本', help: '操作卡片和操作详情面板中显示的物品栏数量的颜色' },
+                color_invBadge_ask: {
+                    label: '物品栏徽章：卖价',
+                    help: '物品栏物品上卖价徽章的颜色（卖家挂牌价 - 对应较好的出售价值）',
+                },
+                color_invBadge_bid: {
+                    label: '物品栏徽章：买价',
+                    help: '物品栏物品上买价徽章的颜色（买家出价 - 对应即时卖出价值）',
+                },
+                color_transmute: { label: '转化成功率', help: '物品词典中转化成功率百分比所使用的颜色' },
+                color_queueLength_known: {
+                    label: '队列长度：已知值',
+                    help: '已知队列长度（当所有可见订单均已计数时）的颜色',
+                },
+                color_queueLength_estimated: {
+                    label: '队列长度：估算值',
+                    help: '估算队列长度（根据同一价格下 20 个以上订单推算）的颜色',
+                },
+                collectionFilters: { label: '收藏筛选：数量范围、副本和生活技能套装筛选' },
+                collectionFavorites: { label: '收藏夹：为物品加星（★）以标记并筛选收藏' },
+                collectionFavoritesSection: { label: '收藏夹：在网格顶部显示收藏区' },
+                collectionFilters_skillingBadges: {
+                    label: '在生活技能操作图块上显示收藏数量徽章',
+                    help: '在生活技能操作上显示你的收藏数量（请先打开一次收藏页面以填充数量）',
+                },
+            },
         },
     };
 

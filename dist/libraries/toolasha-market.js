@@ -1,11 +1,11 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 3.4.0
+ * Version: 3.4.1
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, i18n_js, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, enhancementCalculator_js, formatters_js, marketData_js, teaParser_js, profitConstants_js, profitHelpers_js, buffParser_js, equipmentParser_js, actionCalculator_js, tokenValuation_js, storage, enhancementConfig_js, dom, materialCalculator_js, timerRegistry_js, cleanupRegistry_js, loadoutState, domObserverHelpers_js, enhancementMultipliers_js, marketplaceSession_js, reactInput_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js, tooltipObserver) {
+(function (config, i18n_js, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, enhancementCalculator_js, formatters_js, marketData_js, teaParser_js, profitConstants_js, profitHelpers_js, buffParser_js, equipmentParser_js, actionCalculator_js, tokenValuation_js, storage, enhancementConfig_js, dom, marketplaceSession_js, materialCalculator_js, timerRegistry_js, cleanupRegistry_js, loadoutState, domObserverHelpers_js, enhancementMultipliers_js, reactInput_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js, tooltipObserver) {
     'use strict';
 
     function _interopNamespaceDefault(e) {
@@ -4947,11 +4947,161 @@ self.onmessage = function (e) {
     }
 
     /**
+     * Marketplace Buy Modal Autofill Utility
+     * Session-aware autofill manager.  Each consumer calls createAutofillManager() to get
+     * an instance, then drives it with startSession / arm / exitSession.
+     *
+     * Exported helpers:
+     *   readMarketplaceRuntimeState()  — reads live Marketplace React component state via fiber
+     *   readMarketplaceItemIdentity()  — @deprecated, DOM-based; absent selector in current client
+     *   createAutofillManager(observerId)
+     */
+
+    const MARKETPLACE_STATE_KEYS = ['marketTabKey', 'marketListingsView', 'itemHrid', 'enhancementLevel', 'isSell'];
+    const REACT_FIBER_PREFIXES = ['__reactFiber$', '__reactInternalInstance$'];
+    const MAX_REACT_TREE_FIBERS = 50000;
+    const MAX_REACT_OWNER_DEPTH = 256;
+
+    function hasMarketplaceStateSignature(state) {
+        return state && typeof state === 'object' && MARKETPLACE_STATE_KEYS.every((key) => key in state);
+    }
+
+    function getReactRootFiber() {
+        const rootElement = document.getElementById('root');
+        const rootContainer = rootElement?._reactRootContainer;
+        return rootContainer?.current || rootContainer?._internalRoot?.current || null;
+    }
+
+    function findReactFiberFromRoot(element) {
+        const rootFiber = getReactRootFiber();
+        if (!rootFiber || !element) return null;
+
+        const stack = [rootFiber];
+        const visited = new Set();
+        let matchedFiber = null;
+
+        while (stack.length > 0) {
+            const fiber = stack.pop();
+            if (!fiber || visited.has(fiber)) continue;
+            visited.add(fiber);
+
+            if (visited.size > MAX_REACT_TREE_FIBERS) return null;
+
+            if (fiber.stateNode === element) {
+                if (matchedFiber && matchedFiber !== fiber) return null;
+                matchedFiber = fiber;
+            }
+
+            if (fiber.sibling) stack.push(fiber.sibling);
+            if (fiber.child) stack.push(fiber.child);
+        }
+
+        return matchedFiber;
+    }
+
+    function getReactFiberFromElement(element) {
+        if (!element) return null;
+
+        const directFibers = new Set(
+            Object.getOwnPropertyNames(element)
+                .filter((key) => REACT_FIBER_PREFIXES.some((prefix) => key.startsWith(prefix)))
+                .map((key) => element[key])
+                .filter(Boolean)
+        );
+        if (directFibers.size > 1) return null;
+        if (directFibers.size === 1) return directFibers.values().next().value;
+
+        // Current MWI builds no longer expose __reactFiber$ keys on DOM nodes.
+        // Resolve the exact host fiber from the public React root instead.
+        return findReactFiberFromRoot(element);
+    }
+
+    function normalizeMarketplaceState(state) {
+        if (!hasMarketplaceStateSignature(state)) return null;
+        if (typeof state.marketTabKey !== 'string' || typeof state.marketListingsView !== 'string') return null;
+        if (state.itemHrid !== null && (typeof state.itemHrid !== 'string' || !state.itemHrid)) return null;
+        if (!Number.isInteger(state.enhancementLevel) || state.enhancementLevel < 0) return null;
+        if (typeof state.isSell !== 'boolean') return null;
+        if (state.showPostListing !== undefined && typeof state.showPostListing !== 'boolean') return null;
+        if (state.isPostNewListing !== undefined && typeof state.isPostNewListing !== 'boolean') return null;
+        if (state.isInstantOrder !== undefined && typeof state.isInstantOrder !== 'boolean') return null;
+        if (
+            state.enhancementLevelInput !== undefined &&
+            (!Number.isInteger(state.enhancementLevelInput) || state.enhancementLevelInput < 0)
+        ) {
+            return null;
+        }
+
+        return {
+            marketTabKey: state.marketTabKey,
+            marketListingsView: state.marketListingsView,
+            itemHrid: state.itemHrid,
+            enhancementLevel: state.enhancementLevel,
+            enhancementLevelInput: state.enhancementLevelInput,
+            isSell: state.isSell,
+            showPostListing: state.showPostListing,
+            isPostNewListing: state.isPostNewListing,
+            isInstantOrder: state.isInstantOrder,
+            quantityInput: state.quantityInput,
+            priceInput: state.priceInput,
+        };
+    }
+
+    /**
+     * Read the live Marketplace React component state from the unique visible Marketplace panel.
+     * The selected component must be on that panel host fiber's bounded return ancestry.
+     *
+     * @returns {{ marketTabKey: string, marketListingsView: string, itemHrid: string|null,
+     *             enhancementLevel: number, enhancementLevelInput: number|undefined, isSell: boolean,
+     *             showPostListing: boolean|undefined, isPostNewListing: boolean|undefined,
+     *             isInstantOrder: boolean|undefined, quantityInput: *, priceInput: * }|null}
+     */
+    function getMarketplaceRuntimeComponentFromElement(element) {
+        let fiber = getReactFiberFromElement(element);
+        let depth = 0;
+        const candidates = [];
+        const seen = new Set();
+
+        while (fiber && depth < MAX_REACT_OWNER_DEPTH) {
+            const stateNode = fiber.stateNode;
+            if (
+                stateNode &&
+                !seen.has(stateNode) &&
+                typeof stateNode.setState === 'function' &&
+                typeof stateNode.handleQuantityInputChanged === 'function' &&
+                hasMarketplaceStateSignature(stateNode.state)
+            ) {
+                seen.add(stateNode);
+                candidates.push(stateNode);
+            }
+            fiber = fiber.return;
+            depth += 1;
+        }
+
+        // Fail closed when the ancestry is unexpectedly deeper than the bound or
+        // contains more than one Marketplace-like owner. The quantity input must
+        // identify one exact live component before we write to a controlled input.
+        if (fiber || candidates.length !== 1) return null;
+        return candidates[0];
+    }
+
+    /**
+     * Read Marketplace state from the exact DOM element that belongs to the live component.
+     * @param {HTMLElement} element
+     * @returns {ReturnType<typeof normalizeMarketplaceState>}
+     */
+    function readMarketplaceRuntimeStateFromElement(element) {
+        return normalizeMarketplaceState(getMarketplaceRuntimeComponentFromElement(element)?.state);
+    }
+
+    /**
      * Game Data Lookup Utilities
      *
-     * Centralized functions for resolving display names to HRIDs.
-     * Handles the ★ ↔ (R) refined item display name difference between
-     * test server and live server.
+     * Centralized functions for resolving display names to HRIDs, plus locale-independent
+     * resolution via icon sprite references (see below) - prefer the sprite-based functions
+     * over the name-based ones wherever a `<use>` element is reachable, since display names are
+     * translated client-side and the name-based functions below only ever match the client's
+     * English-language data, silently failing on any other game locale.
      */
 
 
@@ -4999,6 +5149,27 @@ self.onmessage = function (e) {
             }
         }
 
+        return null;
+    }
+
+    /**
+     * Resolve an action HRID by walking up the React fiber tree from a DOM element inside the
+     * action detail modal (SkillActionDetail) - unlike the tile list, that modal renders no
+     * hrid-keyed icon of its own, but `this.props.actionDetail.hrid` is set on its own component
+     * instance (confirmed against the client bundle), so this is locale-independent, unlike matching
+     * the modal's translated name text.
+     * @param {HTMLElement} element - Any DOM node inside the action detail modal.
+     * @returns {string|null}
+     */
+    function getActionHridFromFiber(element) {
+        if (!element) return null;
+
+        let f = getReactFiberFromElement(element);
+        while (f) {
+            const hrid = f.memoizedProps?.actionDetail?.hrid;
+            if (hrid) return hrid;
+            f = f.return;
+        }
         return null;
     }
 
@@ -6000,7 +6171,10 @@ self.onmessage = function (e) {
             const actionNameEl = actionPanel.querySelector('[class*="SkillActionDetail_name"]');
             if (!actionNameEl) return null;
 
-            const actionHrid = getActionHridFromName(actionNameEl.textContent.trim());
+            // The detail modal renders no hrid-keyed icon of its own, unlike the tile list -
+            // resolve via the component's own React props first, falling back to the name text.
+            const actionHrid =
+                getActionHridFromFiber(actionPanel) || getActionHridFromName(actionNameEl.textContent.trim());
             if (!actionHrid) return null;
 
             const actionDetails = dataManager.getActionDetails(actionHrid);
@@ -18881,154 +19055,6 @@ self.onmessage = function (e) {
     }
 
     const networkAlert = new NetworkAlert();
-
-    /**
-     * Marketplace Buy Modal Autofill Utility
-     * Session-aware autofill manager.  Each consumer calls createAutofillManager() to get
-     * an instance, then drives it with startSession / arm / exitSession.
-     *
-     * Exported helpers:
-     *   readMarketplaceRuntimeState()  — reads live Marketplace React component state via fiber
-     *   readMarketplaceItemIdentity()  — @deprecated, DOM-based; absent selector in current client
-     *   createAutofillManager(observerId)
-     */
-
-    const MARKETPLACE_STATE_KEYS = ['marketTabKey', 'marketListingsView', 'itemHrid', 'enhancementLevel', 'isSell'];
-    const REACT_FIBER_PREFIXES = ['__reactFiber$', '__reactInternalInstance$'];
-    const MAX_REACT_TREE_FIBERS = 50000;
-    const MAX_REACT_OWNER_DEPTH = 256;
-
-    function hasMarketplaceStateSignature(state) {
-        return state && typeof state === 'object' && MARKETPLACE_STATE_KEYS.every((key) => key in state);
-    }
-
-    function getReactRootFiber() {
-        const rootElement = document.getElementById('root');
-        const rootContainer = rootElement?._reactRootContainer;
-        return rootContainer?.current || rootContainer?._internalRoot?.current || null;
-    }
-
-    function findReactFiberFromRoot(element) {
-        const rootFiber = getReactRootFiber();
-        if (!rootFiber || !element) return null;
-
-        const stack = [rootFiber];
-        const visited = new Set();
-        let matchedFiber = null;
-
-        while (stack.length > 0) {
-            const fiber = stack.pop();
-            if (!fiber || visited.has(fiber)) continue;
-            visited.add(fiber);
-
-            if (visited.size > MAX_REACT_TREE_FIBERS) return null;
-
-            if (fiber.stateNode === element) {
-                if (matchedFiber && matchedFiber !== fiber) return null;
-                matchedFiber = fiber;
-            }
-
-            if (fiber.sibling) stack.push(fiber.sibling);
-            if (fiber.child) stack.push(fiber.child);
-        }
-
-        return matchedFiber;
-    }
-
-    function getReactFiberFromElement(element) {
-        if (!element) return null;
-
-        const directFibers = new Set(
-            Object.getOwnPropertyNames(element)
-                .filter((key) => REACT_FIBER_PREFIXES.some((prefix) => key.startsWith(prefix)))
-                .map((key) => element[key])
-                .filter(Boolean)
-        );
-        if (directFibers.size > 1) return null;
-        if (directFibers.size === 1) return directFibers.values().next().value;
-
-        // Current MWI builds no longer expose __reactFiber$ keys on DOM nodes.
-        // Resolve the exact host fiber from the public React root instead.
-        return findReactFiberFromRoot(element);
-    }
-
-    function normalizeMarketplaceState(state) {
-        if (!hasMarketplaceStateSignature(state)) return null;
-        if (typeof state.marketTabKey !== 'string' || typeof state.marketListingsView !== 'string') return null;
-        if (state.itemHrid !== null && (typeof state.itemHrid !== 'string' || !state.itemHrid)) return null;
-        if (!Number.isInteger(state.enhancementLevel) || state.enhancementLevel < 0) return null;
-        if (typeof state.isSell !== 'boolean') return null;
-        if (state.showPostListing !== undefined && typeof state.showPostListing !== 'boolean') return null;
-        if (state.isPostNewListing !== undefined && typeof state.isPostNewListing !== 'boolean') return null;
-        if (state.isInstantOrder !== undefined && typeof state.isInstantOrder !== 'boolean') return null;
-        if (
-            state.enhancementLevelInput !== undefined &&
-            (!Number.isInteger(state.enhancementLevelInput) || state.enhancementLevelInput < 0)
-        ) {
-            return null;
-        }
-
-        return {
-            marketTabKey: state.marketTabKey,
-            marketListingsView: state.marketListingsView,
-            itemHrid: state.itemHrid,
-            enhancementLevel: state.enhancementLevel,
-            enhancementLevelInput: state.enhancementLevelInput,
-            isSell: state.isSell,
-            showPostListing: state.showPostListing,
-            isPostNewListing: state.isPostNewListing,
-            isInstantOrder: state.isInstantOrder,
-            quantityInput: state.quantityInput,
-            priceInput: state.priceInput,
-        };
-    }
-
-    /**
-     * Read the live Marketplace React component state from the unique visible Marketplace panel.
-     * The selected component must be on that panel host fiber's bounded return ancestry.
-     *
-     * @returns {{ marketTabKey: string, marketListingsView: string, itemHrid: string|null,
-     *             enhancementLevel: number, enhancementLevelInput: number|undefined, isSell: boolean,
-     *             showPostListing: boolean|undefined, isPostNewListing: boolean|undefined,
-     *             isInstantOrder: boolean|undefined, quantityInput: *, priceInput: * }|null}
-     */
-    function getMarketplaceRuntimeComponentFromElement(element) {
-        let fiber = getReactFiberFromElement(element);
-        let depth = 0;
-        const candidates = [];
-        const seen = new Set();
-
-        while (fiber && depth < MAX_REACT_OWNER_DEPTH) {
-            const stateNode = fiber.stateNode;
-            if (
-                stateNode &&
-                !seen.has(stateNode) &&
-                typeof stateNode.setState === 'function' &&
-                typeof stateNode.handleQuantityInputChanged === 'function' &&
-                hasMarketplaceStateSignature(stateNode.state)
-            ) {
-                seen.add(stateNode);
-                candidates.push(stateNode);
-            }
-            fiber = fiber.return;
-            depth += 1;
-        }
-
-        // Fail closed when the ancestry is unexpectedly deeper than the bound or
-        // contains more than one Marketplace-like owner. The quantity input must
-        // identify one exact live component before we write to a controlled input.
-        if (fiber || candidates.length !== 1) return null;
-        return candidates[0];
-    }
-
-    /**
-     * Read Marketplace state from the exact DOM element that belongs to the live component.
-     * @param {HTMLElement} element
-     * @returns {ReturnType<typeof normalizeMarketplaceState>}
-     */
-    function readMarketplaceRuntimeStateFromElement(element) {
-        return normalizeMarketplaceState(getMarketplaceRuntimeComponentFromElement(element)?.state);
-    }
 
     /**
      * Marketplace Shortcuts Module
@@ -37222,4 +37248,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] Market library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.tokenValuation, Toolasha.Core.storage, Toolasha.Utils.enhancementConfig, Toolasha.Utils.dom, Toolasha.Utils.materialCalculator, Toolasha.Utils.timerRegistry, Toolasha.Utils.cleanupRegistry, Toolasha.Core.loadoutState, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Core, Toolasha.Utils.reactInput, Toolasha.Core.webSocketHook, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator, Toolasha.Core.tooltipObserver);
+})(Toolasha.Core.config, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.tokenValuation, Toolasha.Core.storage, Toolasha.Utils.enhancementConfig, Toolasha.Utils.dom, Toolasha.Core, Toolasha.Utils.materialCalculator, Toolasha.Utils.timerRegistry, Toolasha.Utils.cleanupRegistry, Toolasha.Core.loadoutState, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Utils.reactInput, Toolasha.Core.webSocketHook, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator, Toolasha.Core.tooltipObserver);

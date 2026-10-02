@@ -1,11 +1,11 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 3.4.0
+ * Version: 3.4.1
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (domObserver, config, formatters_js, timerRegistry_js, domObserverHelpers_js, dom_js, storage, i18n_js, dataManager, marketAPI, efficiency_js, webSocketHook, selectors_js, reactInput_js, actionPanelHelper_js, expectedValueCalculator, bonusRevenueCalculator_js, marketData_js, profitConstants_js, profitHelpers_js, profitCalculator, actionCalculator_js, equipmentParser_js, loadoutState, settingsSchema_js, settingsStorage, enhancementConfig_js, marketplaceSession_js, tooltipObserver, alchemyProfitCalculator, cleanupRegistry_js, teaParser_js, buffParser_js, enhancementCalculator_js) {
+(function (domObserver, config, formatters_js, timerRegistry_js, domObserverHelpers_js, dom_js, storage, i18n_js, dataManager, marketAPI, efficiency_js, webSocketHook, selectors_js, reactInput_js, actionPanelHelper_js, expectedValueCalculator, bonusRevenueCalculator_js, marketData_js, profitConstants_js, profitHelpers_js, profitCalculator, actionCalculator_js, equipmentParser_js, loadoutState, marketplaceSession_js, settingsSchema_js, settingsStorage, enhancementConfig_js, tooltipObserver, alchemyProfitCalculator, cleanupRegistry_js, teaParser_js, buffParser_js, enhancementCalculator_js) {
     'use strict';
 
     /**
@@ -11268,13 +11268,113 @@ ${starCSS}
     const taskIconFilters = new TaskIconFilters();
 
     /**
-     * Game Data Lookup Utilities
+     * Marketplace Buy Modal Autofill Utility
+     * Session-aware autofill manager.  Each consumer calls createAutofillManager() to get
+     * an instance, then drives it with startSession / arm / exitSession.
      *
-     * Centralized functions for resolving display names to HRIDs.
-     * Handles the ★ ↔ (R) refined item display name difference between
-     * test server and live server.
+     * Exported helpers:
+     *   readMarketplaceRuntimeState()  — reads live Marketplace React component state via fiber
+     *   readMarketplaceItemIdentity()  — @deprecated, DOM-based; absent selector in current client
+     *   createAutofillManager(observerId)
      */
 
+    const REACT_FIBER_PREFIXES = ['__reactFiber$', '__reactInternalInstance$'];
+    const MAX_REACT_TREE_FIBERS = 50000;
+
+    function getReactRootFiber() {
+        const rootElement = document.getElementById('root');
+        const rootContainer = rootElement?._reactRootContainer;
+        return rootContainer?.current || rootContainer?._internalRoot?.current || null;
+    }
+
+    function findReactFiberFromRoot(element) {
+        const rootFiber = getReactRootFiber();
+        if (!rootFiber || !element) return null;
+
+        const stack = [rootFiber];
+        const visited = new Set();
+        let matchedFiber = null;
+
+        while (stack.length > 0) {
+            const fiber = stack.pop();
+            if (!fiber || visited.has(fiber)) continue;
+            visited.add(fiber);
+
+            if (visited.size > MAX_REACT_TREE_FIBERS) return null;
+
+            if (fiber.stateNode === element) {
+                if (matchedFiber && matchedFiber !== fiber) return null;
+                matchedFiber = fiber;
+            }
+
+            if (fiber.sibling) stack.push(fiber.sibling);
+            if (fiber.child) stack.push(fiber.child);
+        }
+
+        return matchedFiber;
+    }
+
+    function getReactFiberFromElement(element) {
+        if (!element) return null;
+
+        const directFibers = new Set(
+            Object.getOwnPropertyNames(element)
+                .filter((key) => REACT_FIBER_PREFIXES.some((prefix) => key.startsWith(prefix)))
+                .map((key) => element[key])
+                .filter(Boolean)
+        );
+        if (directFibers.size > 1) return null;
+        if (directFibers.size === 1) return directFibers.values().next().value;
+
+        // Current MWI builds no longer expose __reactFiber$ keys on DOM nodes.
+        // Resolve the exact host fiber from the public React root instead.
+        return findReactFiberFromRoot(element);
+    }
+
+    /**
+     * Game Data Lookup Utilities
+     *
+     * Centralized functions for resolving display names to HRIDs, plus locale-independent
+     * resolution via icon sprite references (see below) - prefer the sprite-based functions
+     * over the name-based ones wherever a `<use>` element is reachable, since display names are
+     * translated client-side and the name-based functions below only ever match the client's
+     * English-language data, silently failing on any other game locale.
+     */
+
+
+    /**
+     * Extract the last path segment from an hrid, e.g. "/actions/gathering/milking" -> "milking".
+     * This is the fragment MWI's sprite sheets key icons by, for both actions and skills.
+     * @param {string} hrid
+     * @returns {string}
+     */
+    function lastHridSegment(hrid) {
+        return hrid.slice(hrid.lastIndexOf('/') + 1);
+    }
+    let skillFragmentToHridMap = null;
+
+    /**
+     * Resolve a skill HRID from its icon sprite `<use>` href (e.g.
+     * ".../skills_sprite.<hash>.svg#milking"), which is locale-independent - the href's fragment is
+     * always the skill's last hrid segment, unlike the nav bar's rendered label text.
+     * @param {string|null|undefined} href
+     * @returns {string|null}
+     */
+    function getSkillHridFromIconHref(href) {
+        if (!href || !href.includes('skills_sprite')) return null;
+        const fragment = href.split('#')[1];
+        if (!fragment) return null;
+
+        if (!skillFragmentToHridMap) {
+            skillFragmentToHridMap = new Map();
+            const gameData = dataManager.getInitClientData();
+            for (const hrid of Object.keys(gameData?.skillDetailMap || {})) {
+                skillFragmentToHridMap.set(lastHridSegment(hrid), hrid);
+            }
+        }
+
+        return skillFragmentToHridMap.get(fragment) || null;
+    }
 
     /**
      * Generate alternate display names to handle ★ ↔ (R) refined item naming.
@@ -11290,6 +11390,28 @@ ${starCSS}
             variants.push(name.replace(/\s*\(R\)/, ' ★'));
         }
         return variants;
+    }
+
+    /**
+     * Resolve a task card's underlying quest object (which carries actionHrid/monsterHrid directly)
+     * by walking the React fiber tree from the card's own "Go"/success button up to the component
+     * holding it as `characterQuest` - locale-independent, unlike parsing the card's translated
+     * "SkillType - TaskName" text.
+     * @param {HTMLElement} taskCard - A RandomTask_randomTask card element.
+     * @returns {Object|null} The characterQuest object, or null if not found.
+     */
+    function getQuestFromTaskCard(taskCard) {
+        const goBtn = taskCard.querySelector('button.Button_success__6d6kU');
+        if (!goBtn) return null;
+
+        let f = getReactFiberFromElement(goBtn)?.return;
+        while (f) {
+            if (f.memoizedProps?.characterQuest && f.memoizedProps?.rerollRandomTaskHandler) {
+                return f.memoizedProps.characterQuest;
+            }
+            f = f.return;
+        }
+        return null;
     }
 
     /**
@@ -11688,14 +11810,22 @@ ${starCSS}
         /**
          * Find action HRID by display name
          */
-        findActionHrid(actionName) {
-            return getActionHridFromName(actionName);
+        findActionHrid(actionName, taskCard = null) {
+            // Resolve via the card's own quest data first - locale-independent, unlike matching
+            // the card's translated task text used as a fallback below.
+            const questActionHrid = taskCard ? getQuestFromTaskCard(taskCard)?.actionHrid : null;
+            return questActionHrid || getActionHridFromName(actionName);
         }
 
         /**
          * Find monster HRID by display name
          */
-        findMonsterHrid(monsterName) {
+        findMonsterHrid(monsterName, taskCard = null) {
+            // Resolve via the card's own quest data first - locale-independent, unlike matching
+            // the card's translated task text used as a fallback below.
+            const questMonsterHrid = taskCard ? getQuestFromTaskCard(taskCard)?.monsterHrid : null;
+            if (questMonsterHrid) return questMonsterHrid;
+
             // Strip zone tier suffix (e.g., "Grizzly BearZ8" → "Grizzly Bear")
             // Format is: MonsterNameZ# where # is the zone index
             const cleanName = monsterName.replace(/Z\d+$/, '').trim();
@@ -11713,7 +11843,7 @@ ${starCSS}
          * Add action icon to task card
          */
         addActionIcon(taskCard, taskInfo) {
-            const actionHrid = this.findActionHrid(taskInfo.taskName);
+            const actionHrid = this.findActionHrid(taskInfo.taskName, taskCard);
             if (!actionHrid) {
                 return;
             }
@@ -11762,7 +11892,7 @@ ${starCSS}
          * Add monster icon to task card
          */
         async addMonsterIcon(taskCard, taskInfo) {
-            const monsterHrid = this.findMonsterHrid(taskInfo.taskName);
+            const monsterHrid = this.findMonsterHrid(taskInfo.taskName, taskCard);
             if (!monsterHrid) {
                 return;
             }
@@ -15777,37 +15907,34 @@ ${starCSS}
          */
         addRemainingXP(progressBar) {
             try {
-                // Try to find skill name - handle both navigation bar and combat skill displays
-                let skillName = null;
+                // Try to find the skill's icon sprite href - handle both navigation bar and combat
+                // skill displays. The sprite fragment (last hrid segment) is locale-independent,
+                // unlike the adjacent NavigationBar_label text.
+                let skillHref = null;
 
                 // Check if we're in a sub-skills container (combat skills)
                 const subSkillsContainer = progressBar.closest('[class*="NavigationBar_subSkills"]');
 
                 if (subSkillsContainer) {
-                    // We're in combat sub-skills - look for label in immediate parent structure
-                    // The label should be in a sibling or nearby element, not in the parent navigationLink
+                    // We're in combat sub-skills - look for the icon in immediate parent structure
+                    // The icon should be in a sibling or nearby element, not in the parent navigationLink
                     const navContainer = progressBar.closest('[class*="NavigationBar_nav"]');
                     if (navContainer) {
-                        const skillNameElement = navContainer.querySelector('[class*="NavigationBar_label"]');
-                        if (skillNameElement) {
-                            skillName = skillNameElement.textContent.trim();
-                        }
+                        skillHref = navContainer.querySelector('svg use')?.getAttribute('href') || null;
                     }
                 } else {
                     // Regular skill (not a sub-skill) - use standard navigation link approach
                     const navLink = progressBar.closest('[class*="NavigationBar_navigationLink"]');
                     if (navLink) {
-                        const skillNameElement = navLink.querySelector('[class*="NavigationBar_label"]');
-                        if (skillNameElement) {
-                            skillName = skillNameElement.textContent.trim();
-                        }
+                        skillHref = navLink.querySelector('svg use')?.getAttribute('href') || null;
                     }
                 }
 
-                if (!skillName) return;
+                const skillHrid = getSkillHridFromIconHref(skillHref);
+                if (!skillHrid) return;
 
                 // Calculate remaining XP for this skill using progress bar width (like XP percentage does)
-                const remainingXP = this.calculateRemainingXPFromProgressBar(progressBar, skillName);
+                const remainingXP = this.calculateRemainingXPFromProgressBar(progressBar, skillHrid);
                 if (remainingXP === null) return;
 
                 // Find the progress bar container (parent of the progress bar)
@@ -15850,13 +15977,10 @@ ${starCSS}
         /**
          * Calculate remaining XP from progress bar width (real-time, like XP percentage)
          * @param {HTMLElement} progressBar - The progress bar element
-         * @param {string} skillName - The skill name (e.g., "Milking", "Combat")
+         * @param {string} skillHrid - The skill's HRID (e.g., "/skills/milking")
          * @returns {number|null} Remaining XP or null if unavailable
          */
-        calculateRemainingXPFromProgressBar(progressBar, skillName) {
-            // Convert skill name to HRID
-            const skillHrid = `/skills/${skillName.toLowerCase()}`;
-
+        calculateRemainingXPFromProgressBar(progressBar, skillHrid) {
             // Get character skills data for level info
             const characterData = dataManager.characterData;
             if (!characterData || !characterData.characterSkills) {
@@ -15965,10 +16089,6 @@ ${starCSS}
         { id: 'magic', hrid: '/skills/magic', name: 'Magic' },
     ];
 
-    const SKILL_NAME_TO_ID = {};
-    SKILLS.forEach((s) => (SKILL_NAME_TO_ID[s.name.toLowerCase()] = s.id));
-
-    // Also map hrid → skill for reverse lookups
     const SKILL_HRID_TO_ID = {};
     SKILLS.forEach((s) => (SKILL_HRID_TO_ID[s.hrid] = s.id));
 
@@ -16268,11 +16388,11 @@ ${starCSS}
                 // Only process nav entries that have an XP bar
                 if (!navEl.querySelector('[class*="NavigationBar_currentExperience"]')) return;
 
-                const labelEl = navEl.querySelector('[class*="NavigationBar_label"]');
-                if (!labelEl) return;
-
-                const skillName = labelEl.textContent.trim().toLowerCase();
-                const skillId = SKILL_NAME_TO_ID[skillName];
+                // Resolve via the nav icon's sprite href, not the translated label text - the
+                // label is locale-dependent, the sprite fragment (last hrid segment) is not.
+                const useEl = navEl.querySelector('svg use');
+                const skillHrid = getSkillHridFromIconHref(useEl?.getAttribute('href'));
+                const skillId = skillHrid ? SKILL_HRID_TO_ID[skillHrid] : null;
                 if (!skillId) return;
 
                 const history = this.xpHistory[skillId];
@@ -16361,8 +16481,13 @@ ${starCSS}
                 return;
             }
 
-            const skillName = divs[0].textContent.trim().toLowerCase();
-            const skillId = SKILL_NAME_TO_ID[skillName];
+            // The tooltip itself carries no icon of its own; its identity comes from whichever nav
+            // bar item it's revealed under (CSS-hover reveal, expected to sit inside that item's
+            // subtree) - resolve via that item's sprite href rather than the translated name text.
+            const navEl = tooltipEl.closest('[class*="NavigationBar_nav"]');
+            const useEl = navEl?.querySelector('svg use');
+            const skillHrid = getSkillHridFromIconHref(useEl?.getAttribute('href'));
+            const skillId = skillHrid ? SKILL_HRID_TO_ID[skillHrid] : null;
             if (!skillId) {
                 return;
             }
@@ -17991,7 +18116,7 @@ ${starCSS}
                 header.innerHTML = `
                 <span class="collapse-icon">▼</span>
                 <span class="icon">${group.icon}</span>
-                ${group.title}
+                ${i18n_js.t(`settingsSchema.groups.${groupKey}.title`)}
             `;
                 // Bind toggleGroup method to this instance
                 header.addEventListener('click', this.toggleGroup.bind(this, groupContainer));
@@ -18119,13 +18244,13 @@ ${starCSS}
             // Create label
             const label = document.createElement('span');
             label.className = 'toolasha-setting-label';
-            label.textContent = settingDef.label;
+            label.textContent = i18n_js.t(`settingsSchema.settings.${settingId}.label`);
 
             // Add help text if present
             if (settingDef.help) {
                 const help = document.createElement('span');
                 help.className = 'toolasha-setting-help';
-                help.textContent = settingDef.help;
+                help.textContent = i18n_js.t(`settingsSchema.settings.${settingId}.help`);
                 label.appendChild(help);
             }
 
@@ -20443,70 +20568,6 @@ ${starCSS}
     }
 
     const settingsUI = new SettingsUI();
-
-    /**
-     * Marketplace Buy Modal Autofill Utility
-     * Session-aware autofill manager.  Each consumer calls createAutofillManager() to get
-     * an instance, then drives it with startSession / arm / exitSession.
-     *
-     * Exported helpers:
-     *   readMarketplaceRuntimeState()  — reads live Marketplace React component state via fiber
-     *   readMarketplaceItemIdentity()  — @deprecated, DOM-based; absent selector in current client
-     *   createAutofillManager(observerId)
-     */
-
-    const REACT_FIBER_PREFIXES = ['__reactFiber$', '__reactInternalInstance$'];
-    const MAX_REACT_TREE_FIBERS = 50000;
-
-    function getReactRootFiber() {
-        const rootElement = document.getElementById('root');
-        const rootContainer = rootElement?._reactRootContainer;
-        return rootContainer?.current || rootContainer?._internalRoot?.current || null;
-    }
-
-    function findReactFiberFromRoot(element) {
-        const rootFiber = getReactRootFiber();
-        if (!rootFiber || !element) return null;
-
-        const stack = [rootFiber];
-        const visited = new Set();
-        let matchedFiber = null;
-
-        while (stack.length > 0) {
-            const fiber = stack.pop();
-            if (!fiber || visited.has(fiber)) continue;
-            visited.add(fiber);
-
-            if (visited.size > MAX_REACT_TREE_FIBERS) return null;
-
-            if (fiber.stateNode === element) {
-                if (matchedFiber && matchedFiber !== fiber) return null;
-                matchedFiber = fiber;
-            }
-
-            if (fiber.sibling) stack.push(fiber.sibling);
-            if (fiber.child) stack.push(fiber.child);
-        }
-
-        return matchedFiber;
-    }
-
-    function getReactFiberFromElement(element) {
-        if (!element) return null;
-
-        const directFibers = new Set(
-            Object.getOwnPropertyNames(element)
-                .filter((key) => REACT_FIBER_PREFIXES.some((prefix) => key.startsWith(prefix)))
-                .map((key) => element[key])
-                .filter(Boolean)
-        );
-        if (directFibers.size > 1) return null;
-        if (directFibers.size === 1) return directFibers.values().next().value;
-
-        // Current MWI builds no longer expose __reactFiber$ keys on DOM nodes.
-        // Resolve the exact host fiber from the public React root instead.
-        return findReactFiberFromRoot(element);
-    }
 
     /**
      * Character Select Native Resolver
@@ -24856,4 +24917,4 @@ ${starCSS}
 
     console.log('[Toolasha] UI library loaded');
 
-})(Toolasha.Core.domObserver, Toolasha.Core.config, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core.marketAPI, Toolasha.Utils.efficiency, Toolasha.Core.webSocketHook, Toolasha.Utils.selectors, Toolasha.Utils.reactInput, Toolasha.Utils.actionPanelHelper, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.actionCalculator, Toolasha.Utils.equipmentParser, Toolasha.Core.loadoutState, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.enhancementConfig, Toolasha.Core, Toolasha.Core.tooltipObserver, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.teaParser, Toolasha.Utils.buffParser, Toolasha.Utils.enhancementCalculator);
+})(Toolasha.Core.domObserver, Toolasha.Core.config, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core.i18n, Toolasha.Core.dataManager, Toolasha.Core.marketAPI, Toolasha.Utils.efficiency, Toolasha.Core.webSocketHook, Toolasha.Utils.selectors, Toolasha.Utils.reactInput, Toolasha.Utils.actionPanelHelper, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.actionCalculator, Toolasha.Utils.equipmentParser, Toolasha.Core.loadoutState, Toolasha.Core, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.enhancementConfig, Toolasha.Core.tooltipObserver, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.teaParser, Toolasha.Utils.buffParser, Toolasha.Utils.enhancementCalculator);

@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.4.0
+ * Version: 3.4.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5973,11 +5973,31 @@
     /**
      * Game Data Lookup Utilities
      *
-     * Centralized functions for resolving display names to HRIDs.
-     * Handles the ★ ↔ (R) refined item display name difference between
-     * test server and live server.
+     * Centralized functions for resolving display names to HRIDs, plus locale-independent
+     * resolution via icon sprite references (see below) - prefer the sprite-based functions
+     * over the name-based ones wherever a `<use>` element is reachable, since display names are
+     * translated client-side and the name-based functions below only ever match the client's
+     * English-language data, silently failing on any other game locale.
      */
 
+
+    /**
+     * Resolve an item HRID from its icon sprite `<use>` href (e.g.
+     * ".../items_sprite.<hash>.svg#redwood_log"), which is locale-independent - unlike items, the
+     * href's fragment IS the full remaining hrid segment (items have no sub-category prefix like
+     * actions/skills do), so no reverse map is needed - just validate it against itemDetailMap.
+     * @param {string|null|undefined} href
+     * @returns {string|null}
+     */
+    function getItemHridFromIconHref(href) {
+        if (!href || !href.includes('items_sprite')) return null;
+        const fragment = href.split('#')[1];
+        if (!fragment) return null;
+
+        const hrid = `/items/${fragment}`;
+        const gameData = dataManager.getInitClientData();
+        return gameData?.itemDetailMap?.[hrid] ? hrid : null;
+    }
 
     /**
      * Generate alternate display names to handle ★ ↔ (R) refined item naming.
@@ -6054,6 +6074,27 @@
             }
         }
 
+        return null;
+    }
+
+    /**
+     * Resolve an action HRID by walking up the React fiber tree from a DOM element inside the
+     * action detail modal (SkillActionDetail) - unlike the tile list, that modal renders no
+     * hrid-keyed icon of its own, but `this.props.actionDetail.hrid` is set on its own component
+     * instance (confirmed against the client bundle), so this is locale-independent, unlike matching
+     * the modal's translated name text.
+     * @param {HTMLElement} element - Any DOM node inside the action detail modal.
+     * @returns {string|null}
+     */
+    function getActionHridFromFiber(element) {
+        if (!element) return null;
+
+        let f = getReactFiberFromElement(element);
+        while (f) {
+            const hrid = f.memoizedProps?.actionDetail?.hrid;
+            if (hrid) return hrid;
+            f = f.return;
+        }
         return null;
     }
 
@@ -6144,7 +6185,10 @@
             if (!nameEl) return;
 
             const itemName = nameEl.textContent.trim();
-            const itemHrid = getItemHridFromName(itemName);
+            // Resolve via the popup's own icon sprite href first - locale-independent, unlike the
+            // translated item name text used as a fallback below.
+            const useEl = actionMenu.querySelector('svg use');
+            const itemHrid = getItemHridFromIconHref(useEl?.getAttribute('href')) || getItemHridFromName(itemName);
             if (!itemHrid) return;
 
             const actionInfo = findActionForItem(itemHrid);
@@ -6185,8 +6229,11 @@
             // Get item name from title
             const itemName = titleElem.textContent.trim();
 
-            // Look up item HRID from display name (handles ★ ↔ (R) refined variants)
-            const itemHrid = getItemHridFromName(itemName);
+            // Resolve via the modal's own icon sprite href first - locale-independent, unlike the
+            // translated title text used as a fallback below.
+            const modalScope = titleElem.closest('[class*="ItemDictionary_modalContent"]') || document;
+            const useEl = modalScope.querySelector('svg use');
+            const itemHrid = getItemHridFromIconHref(useEl?.getAttribute('href')) || getItemHridFromName(itemName);
             if (!itemHrid) return;
 
             // Check if this item has an associated action
@@ -6333,8 +6380,9 @@
                 .join('')
                 .trim();
 
-            // Resolve action HRID from name
-            const actionHrid = getActionHridFromName(actionName);
+            // The detail modal renders no hrid-keyed icon of its own, unlike the tile list -
+            // resolve via the component's own React props first, falling back to the name text.
+            const actionHrid = getActionHridFromFiber(nameEl) || getActionHridFromName(actionName);
             if (!actionHrid) return null;
 
             // Read current numActions from the count input
