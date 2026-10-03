@@ -14,6 +14,7 @@ import { formatLargeNumber } from '../../../utils/formatters.js';
 import openableAnalyticsDataCollector from './openable-analytics-data-collector.js';
 import openableAnalyticsModalInjector, { formatLuckPercent, luckColor } from './openable-analytics-modal-injector.js';
 import { detectImportSource, parseEdibleExport, parseCombatSuiteExport } from './openable-analytics-import-parsers.js';
+import { calculateOpeningCost } from './openable-analytics-cost.js';
 
 const INVENTORY_FILTER_CONTAINER_CLASS = 'Inventory_itemFilterContainer';
 const INVENTORY_BUTTON_CLASS = 'toolasha-openable-analytics-inventory-button';
@@ -472,6 +473,11 @@ class OpenableAnalyticsUI {
         const luckPercent =
             luckEligible && aggregate.expectedValueTotal > 0 ? (luckValue / aggregate.expectedValueTotal) * 100 : null;
 
+        const actualComplete = (aggregate.actualValuePartialEvents || 0) === 0;
+        const openingCost = calculateOpeningCost(containerHrid, aggregate.containersOpened);
+        const profitEligible = actualComplete && openingCost.complete;
+        const profitValue = profitEligible ? aggregate.actualValueTotal - openingCost.cost : null;
+
         const summaryRow = document.createElement('div');
         summaryRow.style.cssText = 'display:flex; justify-content:space-between; margin-bottom:10px; font-size:13px;';
 
@@ -481,6 +487,21 @@ class OpenableAnalyticsUI {
         const expectedCol = document.createElement('div');
         const expectedHasAny = aggregate.expectedValueAvailableEvents > 0;
         expectedCol.innerHTML = `<div style="opacity:0.7; font-size:11px;">${t('openableAnalytics.expectedLabel')}</div>${expectedHasAny ? formatLargeNumber(aggregate.expectedValueTotal) : '—'}`;
+
+        const profitCol = document.createElement('div');
+        profitCol.style.textAlign = 'right';
+        const profitHeader = document.createElement('div');
+        profitHeader.style.cssText = 'opacity:0.7; font-size:11px;';
+        profitHeader.textContent = t('openableAnalytics.profitLabel');
+        const profitValueEl = document.createElement('div');
+        if (!profitEligible) {
+            profitValueEl.textContent = '—';
+        } else {
+            profitValueEl.textContent = formatSignedLargeNumber(profitValue);
+            profitValueEl.style.color = luckColor(profitValue);
+        }
+        profitCol.appendChild(profitHeader);
+        profitCol.appendChild(profitValueEl);
 
         const luckCol = document.createElement('div');
         luckCol.style.textAlign = 'right';
@@ -503,6 +524,7 @@ class OpenableAnalyticsUI {
 
         summaryRow.appendChild(actualCol);
         summaryRow.appendChild(expectedCol);
+        summaryRow.appendChild(profitCol);
         summaryRow.appendChild(luckCol);
         wrapper.appendChild(summaryRow);
 

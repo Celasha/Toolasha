@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
     removeImportResult: true,
     resetContainerResult: true,
     resetAllResult: true,
+    openingCost: { cost: 0, complete: true },
 }));
 
 vi.mock('../../../core/config.js', () => ({
@@ -74,6 +75,10 @@ vi.mock('./openable-analytics-import-parsers.js', () => ({
     detectImportSource: vi.fn(),
     parseEdibleExport: vi.fn(),
     parseCombatSuiteExport: vi.fn(),
+}));
+
+vi.mock('./openable-analytics-cost.js', () => ({
+    calculateOpeningCost: vi.fn(() => mocks.openingCost),
 }));
 
 vi.mock('./openable-analytics-data-collector.js', () => ({
@@ -159,6 +164,7 @@ beforeEach(() => {
     mocks.removeImportResult = true;
     mocks.resetContainerResult = true;
     mocks.resetAllResult = true;
+    mocks.openingCost = { cost: 0, complete: true };
     vi.clearAllMocks();
     document.body.innerHTML = '';
     // Original Storage getter (localStorage) is jsdom-provided; clear between tests.
@@ -521,6 +527,47 @@ describe('Actual/Expected/Luck detail contract (section 10)', () => {
         const row = accordionRow('/items/chest');
         expect(row.textContent).toContain('+500');
         expect(row.textContent).not.toContain('%');
+    });
+});
+
+describe('Profit (section 10)', () => {
+    test('shows Actual minus key cost when both are fully priced', () => {
+        mocks.openingCost = { cost: 60000, complete: true };
+        openableAnalyticsUI.showPopup({ containerHrid: '/items/chest' });
+
+        const row = accordionRow('/items/chest');
+        expect(row.textContent).toContain('Profit');
+        // actualValueTotal (489000) - cost (60000) = 429000
+        expect(row.textContent).toContain('+429.00K');
+    });
+
+    test('shows a dash when the key cost could not be fully priced', () => {
+        mocks.openingCost = { cost: 0, complete: false };
+        openableAnalyticsUI.showPopup({ containerHrid: '/items/chest' });
+
+        const row = accordionRow('/items/chest');
+        const profitHeader = [...row.querySelectorAll('div')].find((el) => el.textContent === 'Profit');
+        expect(profitHeader.nextElementSibling.textContent).toBe('—');
+    });
+
+    test('shows a dash when Actual itself is incomplete, even if the key is fully priced', () => {
+        mocks.aggregates['/items/chest'] = {
+            ...mocks.aggregates['/items/chest'],
+            actualValuePartialEvents: 1,
+        };
+        mocks.openingCost = { cost: 60000, complete: true };
+        openableAnalyticsUI.showPopup({ containerHrid: '/items/chest' });
+
+        const row = accordionRow('/items/chest');
+        const profitHeader = [...row.querySelectorAll('div')].find((el) => el.textContent === 'Profit');
+        expect(profitHeader.nextElementSibling.textContent).toBe('—');
+    });
+
+    test('passes the container total opened count to the cost calculator', async () => {
+        const { calculateOpeningCost } = await import('./openable-analytics-cost.js');
+        openableAnalyticsUI.showPopup({ containerHrid: '/items/chest' });
+
+        expect(calculateOpeningCost).toHaveBeenCalledWith('/items/chest', 6);
     });
 });
 
