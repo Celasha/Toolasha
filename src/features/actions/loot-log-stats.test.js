@@ -187,6 +187,58 @@ describe('LootLogStats position-based matching', () => {
     });
 });
 
+describe('LootLogStats rewriteNativeNumberText', () => {
+    let instance;
+
+    beforeEach(async () => {
+        document.body.innerHTML = '';
+        instance = await lootLogStatsFeature.initialize();
+    });
+
+    function elWithText(text) {
+        const el = document.createElement('span');
+        el.textContent = text;
+        return el;
+    }
+
+    test('promotes an already-abbreviated native K figure to M, matching the Total XP formatter', () => {
+        const el = elWithText('5688K');
+        instance.rewriteNativeNumberText(el);
+        expect(el.textContent).toBe('5.7M');
+    });
+
+    test('promotes a native K figure that rounds down to M', () => {
+        const el = elWithText('2321K');
+        instance.rewriteNativeNumberText(el);
+        expect(el.textContent).toBe('2.3M');
+    });
+
+    test('reformats a plain comma-separated native number', () => {
+        const el = elWithText('8,000,000');
+        instance.rewriteNativeNumberText(el);
+        expect(el.textContent).toBe('8.0M');
+    });
+
+    test('leaves small plain counts like item quantities untouched in value, just reformatted', () => {
+        const el = elWithText('68');
+        instance.rewriteNativeNumberText(el);
+        expect(el.textContent).toBe('68');
+    });
+
+    test('leaves genuinely unparseable text untouched', () => {
+        const el = elWithText('N/A');
+        instance.rewriteNativeNumberText(el);
+        expect(el.textContent).toBe('N/A');
+    });
+
+    test('does nothing when the element has no text node child', () => {
+        const el = document.createElement('span');
+        const icon = document.createElement('svg');
+        el.appendChild(icon);
+        expect(() => instance.rewriteNativeNumberText(el)).not.toThrow();
+    });
+});
+
 describe('LootLogStats Analytics (pivot table) button and panel', () => {
     let instance;
 

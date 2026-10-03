@@ -11,6 +11,7 @@ import webSocketHook from '../../core/websocket.js';
 import dataManager from '../../core/data-manager.js';
 import { getItemPrices } from '../../utils/market-data.js';
 import { formatLargeNumber, numberFormatter, formatDateTime } from '../../utils/formatters.js';
+import { parseItemCount } from '../../utils/number-parser.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 import lootLogHistory from './loot-log-history.js';
@@ -179,7 +180,10 @@ class LootLogStats {
         const textNode = Array.from(el.childNodes).find((n) => n.nodeType === Node.TEXT_NODE);
         if (!textNode) return;
 
-        const parsed = Number(textNode.nodeValue.trim().replace(/,/g, ''));
+        // The game's own text may already be abbreviated (e.g. "5688K"), not just a plain
+        // comma-separated number - parseItemCount handles both so a K-only native figure still
+        // gets promoted to M/B here instead of silently failing to parse and being left as-is.
+        const parsed = parseItemCount(textNode.nodeValue.trim(), NaN);
         if (!Number.isFinite(parsed)) return;
 
         textNode.nodeValue = formatLargeNumber(parsed, 1);
