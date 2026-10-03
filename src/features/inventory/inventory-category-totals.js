@@ -90,7 +90,16 @@ class InventoryCategoryTotals {
             valueKey = inventorySort.currentMode + 'Value';
         }
 
-        for (const categoryDiv of inventoryElem.children) {
+        // Category containers are Inventory_itemGrid elements (one Inventory_label + that
+        // category's Item_itemContainer tiles as flat siblings) nested inside the active tab
+        // panel - inventoryElem's own direct children are just the TabsComponent wrapper, not
+        // one-per-category, since the game added All Items/Favorites/per-category tabs around
+        // the category grid.
+        const categoryDivs = inventoryElem.querySelectorAll(
+            '[class*="TabPanel_tabPanel"]:not([class*="TabPanel_hidden"]) [class*="Inventory_itemGrid"]'
+        );
+
+        for (const categoryDiv of categoryDivs) {
             const labelEl = categoryDiv.querySelector('[class*="Inventory_label"]');
             if (!labelEl) {
                 continue;
