@@ -884,6 +884,10 @@ export default {
         materialCostsHeader: (p) => `Material Costs: ${p.label} (${p.count} material${p.count !== 1 ? 's' : ''})`,
         marketTaxLine: (p) => `• Market Tax: ${p.pct}% of revenue → ${p.label}`,
         marketTaxSectionTitle: (p) => `Market Tax: ${p.label} (${p.pct}%)`,
+        marketTaxExcludedLabel: 'Excluded',
+        marketTaxExcludedLine: '• Market Tax: Excluded (producing for personal use)',
+        marketTaxExcludedSectionTitle: 'Market Tax: Excluded',
+        sellTaxExcludedWarning: '⚠ Sell tax excluded — assumes you keep this output, not an actual sale price',
         modifierRow: (p) => `${p.icon}+${p.value}% ${p.label}`,
         levelAdvantageLabel: 'Level advantage',
         houseRoomLabel: 'House room',
@@ -2081,6 +2085,12 @@ export default {
         craftOnLabel: 'Craft: On',
         craftToggleTooltip:
             'When on, uses crafting cost for upgrade items if cheaper than market, and includes crafting time in profit/hr',
+        sellTaxOnLabel: 'Tax: On',
+        sellTaxOffLabel: '⚠ Tax: Off',
+        sellTaxToggleTooltipOff:
+            'Sell tax is included in profit calculations (the default - accurate if you plan to sell your output)',
+        sellTaxToggleTooltipOn:
+            "Sell tax is excluded from profit calculations - use this when producing for personal use (dungeon keys, food/drinks, labyrinth consumables). Profit numbers will be higher than what you'd actually get by selling the output.",
         filterPlaceholder: 'Filter actions...',
         sortDefaultLabel: 'Sort: Default',
         sortProfitLabel: 'Sort: Profit',
@@ -2426,6 +2436,8 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
         pinTooltip: 'Pin this action to keep it visible',
         profitPerHourLine: (p) => `Profit/hr: ${p.sign}${p.value}${p.note}`,
         profitUnknownLine: 'Profit/hr: -- ⚠',
+        sellTaxExcludedTooltip:
+            'Sell tax excluded — assumes you keep this output, not an actual sale price. Toggle this off on the skill page if you plan to sell it.',
         unpinTooltip: 'Unpin this action',
     },
     mentionTracker: {
@@ -2691,6 +2703,7 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             actionPanel_showSort: { label: 'Skill page: Sort button' },
             actionPanel_showPricingMode: { label: 'Skill page: Pricing mode button' },
             actionPanel_showCraftToggle: { label: 'Skill page: Craft toggle button' },
+            actionPanel_showSellTaxToggle: { label: 'Skill page: Sell tax toggle button' },
             actionPanel_showProfitPerHour_gathering: {
                 label: 'Action page: Show profit/hr on gathering tiles',
                 help: 'Displays profit/hr on gathering action tiles (Foraging, Woodcutting, etc.)',
@@ -3131,6 +3144,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             profitCalc_craftUpgradeItems: {
                 label: 'Profit: Use crafting cost for upgrade items if cheaper',
                 help: 'When enabled, uses crafting cost instead of market price for upgrade items if cheaper, and factors crafting time into profit/hr calculations.',
+            },
+            profitCalc_excludeSellTax: {
+                label: 'Profit: Exclude sell tax (producing for personal use)',
+                help: "When enabled, Net Profit / Profit per hour assumes you keep what you produce instead of selling it, so the marketplace sell tax is not deducted from output value. Use for dungeon keys, food/drinks, labyrinth consumables, or anything else you don't plan to sell. This makes profit numbers higher than what you'd actually get by selling the output - a warning indicator appears while this is on.",
             },
             offlineProgressEconomics: {
                 label: 'Offline Progress: Show Revenue/Cost/Profit summary',

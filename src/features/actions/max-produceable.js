@@ -64,6 +64,7 @@ class MaxProduceable {
         this.buffsUpdatedHandler = null; // Handler for the native live-buff family (TLA-028)
         this.characterSwitchingHandler = null; // Handler for character switch cleanup
         this.pricingModeHandler = null; // Handler for pricing mode changes
+        this.excludeSellTaxHandler = null; // Handler for the sell-tax exclusion toggle
         this.maxProduceableHandler = null;
         this.showProfitPerHourHandler = null;
         this.showExpPerHourHandler = null;
@@ -149,6 +150,10 @@ class MaxProduceable {
             this.updateAllCounts();
         };
         config.onSettingChange('profitCalc_pricingMode', this.pricingModeHandler);
+        this.excludeSellTaxHandler = () => {
+            this.updateAllCounts();
+        };
+        config.onSettingChange('profitCalc_excludeSellTax', this.excludeSellTaxHandler);
         config.onSettingChange('actionPanel_maxProduceable', this.maxProduceableHandler);
         config.onSettingChange('actionPanel_showProfitPerHour_production', this.showProfitPerHourHandler);
         config.onSettingChange('actionPanel_showExpPerHour_production', this.showExpPerHourHandler);
@@ -499,6 +504,7 @@ class MaxProduceable {
         let profitPerHour = null;
         let hasMissingPrices = false;
         let outputPriceEstimated = false;
+        let excludeSellTax = false;
         const actionDetails = dataManager.getActionDetails(data.actionHrid);
 
         if (actionDetails) {
@@ -506,11 +512,13 @@ class MaxProduceable {
                 const profitData = await calculateGatheringProfit(data.actionHrid);
                 profitPerHour = profitData?.profitPerHour || null;
                 hasMissingPrices = profitData?.hasMissingPrices || false;
+                excludeSellTax = profitData?.excludeSellTax || false;
             } else if (PRODUCTION_TYPES.includes(actionDetails.type)) {
                 const profitData = await calculateProductionProfit(data.actionHrid);
                 profitPerHour = profitData?.profitPerHour || null;
                 hasMissingPrices = profitData?.hasMissingPrices || false;
                 outputPriceEstimated = profitData?.outputPriceEstimated || false;
+                excludeSellTax = profitData?.excludeSellTax || false;
             }
         }
 
@@ -586,8 +594,11 @@ class MaxProduceable {
                 const profitColor = resolvedProfitPerHour >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
                 const profitSign = resolvedProfitPerHour >= 0 ? '' : '-';
                 const estimatedNote = outputPriceEstimated ? ' ⚠' : '';
+                const sellTaxNote = excludeSellTax
+                    ? ` <span style="color: ${config.COLOR_WARNING};" title="${t('maxProduceable.sellTaxExcludedTooltip')}">⚠</span>`
+                    : '';
                 html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                html += `<span data-stat="profit" style="color: ${profitColor};">${t('maxProduceable.profitPerHourLine', { sign: profitSign, value: formatKMB(Math.abs(resolvedProfitPerHour)), note: estimatedNote })}</span></div>`;
+                html += `<span data-stat="profit" style="color: ${profitColor};">${t('maxProduceable.profitPerHourLine', { sign: profitSign, value: formatKMB(Math.abs(resolvedProfitPerHour)), note: estimatedNote })}${sellTaxNote}</span></div>`;
             }
         }
 
@@ -1052,6 +1063,11 @@ class MaxProduceable {
         if (this.pricingModeHandler) {
             config.offSettingChange('profitCalc_pricingMode', this.pricingModeHandler);
             this.pricingModeHandler = null;
+        }
+
+        if (this.excludeSellTaxHandler) {
+            config.offSettingChange('profitCalc_excludeSellTax', this.excludeSellTaxHandler);
+            this.excludeSellTaxHandler = null;
         }
 
         if (this.maxProduceableHandler) {

@@ -3018,6 +3018,7 @@ export class ActionTimeDisplay {
                 gourmetRevenueBonusPerAction: profitData.gourmetRevenueBonusPerAction,
                 drinkCostPerHour: profitData.drinkCostPerHour,
                 efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
+                excludeSellTax: profitData.excludeSellTax,
             });
             return valueMode === 'estimated_value' ? totals.totalRevenue : totals.totalProfit;
         }
@@ -3032,6 +3033,7 @@ export class ActionTimeDisplay {
             materialCosts: profitData.materialCosts,
             totalTeaCostPerHour: profitData.totalTeaCostPerHour,
             efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
+            excludeSellTax: profitData.excludeSellTax,
         });
 
         return valueMode === 'estimated_value' ? totals.totalRevenue : totals.totalProfit;

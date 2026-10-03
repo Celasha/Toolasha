@@ -339,6 +339,25 @@ describe('calculateProductionActionTotalsFromBase', () => {
         expect(result.hoursNeeded).toBe(1);
         expect(result.totalTeaCost).toBe(20);
     });
+
+    test('excludeSellTax zeroes totalMarketTax without changing revenue, raising totalProfit by the tax amount', () => {
+        const base = {
+            actionsCount: 10,
+            actionsPerHour: 5,
+            outputAmount: 3,
+            outputPrice: 100,
+            gourmetBonus: 0.1,
+            bonusDrops: [{ revenuePerAction: 5 }, { revenuePerAction: 7 }],
+            materialCosts: [{ totalCost: 20 }, { totalCost: 5 }],
+            totalTeaCostPerHour: 10,
+        };
+        const taxed = calculateProductionActionTotalsFromBase(base);
+        const excluded = calculateProductionActionTotalsFromBase({ ...base, excludeSellTax: true });
+
+        expect(excluded.totalRevenue).toBe(taxed.totalRevenue);
+        expect(excluded.totalMarketTax).toBe(0);
+        expect(excluded.totalProfit).toBeCloseTo(taxed.totalProfit + taxed.totalMarketTax, 6);
+    });
 });
 
 describe('calculateGatheringActionTotalsFromBase', () => {
@@ -384,6 +403,24 @@ describe('calculateGatheringActionTotalsFromBase', () => {
         expect(result.totalDrinkCost).toBe(0);
         expect(result.totalCosts).toBe(0);
         expect(result.totalProfit).toBe(0);
+    });
+
+    test('excludeSellTax zeroes totalMarketTax without changing revenue, raising totalProfit by the tax amount', () => {
+        const base = {
+            actionsCount: 10,
+            actionsPerHour: 4,
+            baseOutputs: [{ revenuePerAction: 3 }, { revenuePerAction: 2 }],
+            bonusDrops: [{ revenuePerAction: 1.5 }],
+            processingRevenueBonusPerAction: 0.5,
+            gourmetRevenueBonusPerAction: 0.75,
+            drinkCostPerHour: 6,
+        };
+        const taxed = calculateGatheringActionTotalsFromBase(base);
+        const excluded = calculateGatheringActionTotalsFromBase({ ...base, excludeSellTax: true });
+
+        expect(excluded.totalRevenue).toBe(taxed.totalRevenue);
+        expect(excluded.totalMarketTax).toBe(0);
+        expect(excluded.totalProfit).toBeCloseTo(taxed.totalProfit + taxed.totalMarketTax, 6);
     });
 });
 

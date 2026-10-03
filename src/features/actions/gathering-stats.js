@@ -27,6 +27,7 @@ class GatheringStats {
         this.buffsUpdatedHandler = null; // Handler for the native live-buff family (TLA-028)
         this.characterSwitchingHandler = null; // Handler for character switch cleanup
         this.pricingModeHandler = null; // Handler for pricing mode changes
+        this.excludeSellTaxHandler = null; // Handler for the sell-tax exclusion toggle
         this.showProfitPerHourHandler = null;
         this.showExpPerHourHandler = null;
         this.loadoutStateHandler = null;
@@ -107,6 +108,10 @@ class GatheringStats {
             this.updateAllStats();
         };
         config.onSettingChange('profitCalc_pricingMode', this.pricingModeHandler);
+        this.excludeSellTaxHandler = () => {
+            this.updateAllStats();
+        };
+        config.onSettingChange('profitCalc_excludeSellTax', this.excludeSellTaxHandler);
         this.showProfitPerHourHandler = () => this.updateAllStats();
         this.showExpPerHourHandler = () => this.updateAllStats();
         config.onSettingChange('actionPanel_showProfitPerHour_gathering', this.showProfitPerHourHandler);
@@ -279,6 +284,7 @@ class GatheringStats {
         const profitData = await calculateGatheringProfit(data.actionHrid);
         const profitPerHour = profitData?.profitPerHour || null;
         const hasMissingPrices = profitData?.hasMissingPrices || false;
+        const excludeSellTax = profitData?.excludeSellTax || false;
 
         // Calculate exp/hr using shared utility
         const expData = calculateExpPerHour(data.actionHrid);
@@ -286,6 +292,7 @@ class GatheringStats {
 
         // Store profit value for sorting and update shared sort manager
         data.profitPerHour = profitPerHour;
+        data.excludeSellTax = excludeSellTax;
         data.expPerHour = expPerHour;
         data.hasMissingPrices = hasMissingPrices;
         actionPanelSort.updateProfit(actionPanel, profitPerHour);
@@ -519,7 +526,7 @@ class GatheringStats {
      * @param {Object} data - Stored action data
      */
     renderIndicators(actionPanel, data) {
-        const { profitPerHour, expPerHour } = data;
+        const { profitPerHour, expPerHour, excludeSellTax } = data;
         const showProfit = config.getSetting('actionPanel_showProfitPerHour_gathering');
         const showExp = config.getSetting('actionPanel_showExpPerHour_gathering');
         let html = '';
@@ -527,9 +534,12 @@ class GatheringStats {
         if (showProfit && profitPerHour !== null) {
             const profitColor = profitPerHour >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
             const profitSign = profitPerHour >= 0 ? '' : '-';
+            const sellTaxNote = excludeSellTax
+                ? ` <span style="color: ${config.COLOR_WARNING};" title="${t('maxProduceable.sellTaxExcludedTooltip')}">⚠</span>`
+                : '';
             html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
             // Reuses maxProduceable's key (no estimatedNote for gathering actions).
-            html += `<span data-stat="profit" style="color: ${profitColor};">${t('maxProduceable.profitPerHourLine', { sign: profitSign, value: formatKMB(Math.abs(profitPerHour)), note: '' })}</span></div>`;
+            html += `<span data-stat="profit" style="color: ${profitColor};">${t('maxProduceable.profitPerHourLine', { sign: profitSign, value: formatKMB(Math.abs(profitPerHour)), note: '' })}${sellTaxNote}</span></div>`;
         }
 
         if (showExp && expPerHour !== null && expPerHour > 0) {
@@ -741,6 +751,11 @@ class GatheringStats {
         if (this.pricingModeHandler) {
             config.offSettingChange('profitCalc_pricingMode', this.pricingModeHandler);
             this.pricingModeHandler = null;
+        }
+
+        if (this.excludeSellTaxHandler) {
+            config.offSettingChange('profitCalc_excludeSellTax', this.excludeSellTaxHandler);
+            this.excludeSellTaxHandler = null;
         }
 
         if (this.showProfitPerHourHandler) {

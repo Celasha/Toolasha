@@ -16,7 +16,9 @@ const mocks = vi.hoisted(() => ({
         actionPanel_showSort: true,
         actionPanel_showPricingMode: true,
         actionPanel_showCraftToggle: true,
+        actionPanel_showSellTaxToggle: true,
         profitCalc_craftUpgradeItems: false,
+        profitCalc_excludeSellTax: false,
     },
     pricingMode: 'hybrid',
     titleCallback: null,
@@ -36,6 +38,7 @@ vi.mock('../../core/config.js', () => ({
             mocks.settingsLoadedHandlers = mocks.settingsLoadedHandlers.filter((h) => h !== cb);
         }),
         COLOR_ACCENT: '#22c55e',
+        COLOR_WARNING: '#ffa500',
     },
 }));
 
@@ -225,5 +228,74 @@ describe('ActionFilter stale filterValue must not leak into non-filterable pages
 
         expect(tile.dataset.mwiFilterHidden).toBe('true');
         expect(tile.style.display).toBe('none');
+    });
+});
+
+describe('Sell tax toggle button', () => {
+    beforeEach(async () => {
+        document.body.innerHTML = '';
+        mocks.settingsLoadedHandlers = [];
+        mocks.pricingMode = 'hybrid';
+        mocks.titleCallback = null;
+        mocks.settings.actionPanel_showSellTaxToggle = true;
+        mocks.settings.profitCalc_excludeSellTax = false;
+        vi.clearAllMocks();
+        await actionFilter.initialize();
+    });
+
+    afterEach(() => {
+        actionFilter.cleanup();
+    });
+
+    test('shows the neutral "Tax: On" label by default', () => {
+        const title = makeTitle();
+        mocks.titleCallback(title);
+
+        const btn = document.getElementById('mwi-action-sell-tax-toggle');
+        expect(btn.textContent).toBe('Tax: On');
+    });
+
+    test('shows the warning label and border color when the setting is already on', () => {
+        mocks.settings.profitCalc_excludeSellTax = true;
+        const title = makeTitle();
+        mocks.titleCallback(title);
+
+        const btn = document.getElementById('mwi-action-sell-tax-toggle');
+        expect(btn.textContent).toBe('⚠ Tax: Off');
+        expect(btn.style.borderColor).toBe('rgb(255, 165, 0)');
+    });
+
+    test('clicking the button flips the setting and refreshes profit displays', async () => {
+        const title = makeTitle();
+        mocks.titleCallback(title);
+
+        const panel = document.createElement('div');
+        panel.className = 'SkillActionDetail_regularComponent__3oCgr';
+        const section = document.createElement('div');
+        section.dataset.mwiActionHrid = '/actions/cooking/yogurt_can';
+        section.dataset.mwiActionType = 'production';
+        panel.appendChild(section);
+        document.body.appendChild(panel);
+
+        const btn = document.getElementById('mwi-action-sell-tax-toggle');
+        btn.click();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(config.setSetting).toHaveBeenCalledWith('profitCalc_excludeSellTax', true);
+        expect(displayProductionProfit).toHaveBeenCalledWith(
+            panel,
+            '/actions/cooking/yogurt_can',
+            'div.SkillActionDetail_dropTable__3ViVp'
+        );
+    });
+
+    test('is hidden when actionPanel_showSellTaxToggle is off', () => {
+        mocks.settings.actionPanel_showSellTaxToggle = false;
+        const title = makeTitle();
+        mocks.titleCallback(title);
+
+        const btn = document.getElementById('mwi-action-sell-tax-toggle');
+        expect(btn.style.display).toBe('none');
     });
 });

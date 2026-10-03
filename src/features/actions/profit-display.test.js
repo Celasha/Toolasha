@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatMissingLabel, getBonusDropPerHourTotals, getBonusDropTotalsForActions } from './profit-display.js';
+import {
+    formatMissingLabel,
+    getBonusDropPerHourTotals,
+    getBonusDropTotalsForActions,
+    formatMarketTaxText,
+} from './profit-display.js';
 
 describe('formatMissingLabel', () => {
     it('returns the provided value when not missing', () => {
@@ -58,5 +63,38 @@ describe('getBonusDropTotalsForActions', () => {
 
         expect(actionTotals.totalDrops).toBeCloseTo(perHour.dropsPerHour * hoursNeeded, 6);
         expect(actionTotals.totalRevenue).toBeCloseTo(perHour.revenuePerHour * hoursNeeded, 6);
+    });
+});
+
+describe('formatMarketTaxText', () => {
+    it('shows the taxed amount when not excluded and not missing', () => {
+        const result = formatMarketTaxText(false, false, 1000, '/hr');
+
+        expect(result.line).toContain('4%');
+        expect(result.line).toContain('1.00K/hr');
+        expect(result.section).toContain('1.00K/hr');
+    });
+
+    it('shows a missing placeholder when the price is missing, regardless of amount', () => {
+        const result = formatMarketTaxText(false, true, 1000, '/hr');
+
+        expect(result.line).toContain('-- ⚠');
+        expect(result.section).toContain('-- ⚠');
+    });
+
+    it('shows Excluded wording when excludeSellTax is on, ignoring missing/amount entirely', () => {
+        const result = formatMarketTaxText(true, true, 1000, '/hr');
+
+        expect(result.line).not.toContain('-- ⚠');
+        expect(result.line).not.toContain('1.00K');
+        expect(result.section).not.toContain('1.00K');
+    });
+
+    it('appends a warning glyph when estimated and not excluded/missing', () => {
+        const normal = formatMarketTaxText(false, false, 1000, '/hr', false);
+        const estimated = formatMarketTaxText(false, false, 1000, '/hr', true);
+
+        expect(estimated.line).not.toBe(normal.line);
+        expect(estimated.line).toContain('⚠');
     });
 });

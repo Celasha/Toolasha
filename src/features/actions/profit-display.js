@@ -27,6 +27,46 @@ import { SCROLL_BUFF_ITEMS } from '../../utils/scroll-buff-values.js';
 
 const getMissingPriceIndicator = (isMissing) => (isMissing ? ' ⚠' : '');
 
+/**
+ * Build the Market Tax line/section text, branching on excludeSellTax so "producing for personal
+ * use" reads as a deliberate state rather than a missing-price/zero-value glitch.
+ * @param {boolean} excludeSellTax
+ * @param {boolean} missing
+ * @param {number} amount
+ * @param {string} suffix - e.g. t('profitDisplay.hrSuffix') or actionSuffix
+ * @param {boolean} [estimated=false]
+ * @returns {{line: string, section: string}}
+ */
+export function formatMarketTaxText(excludeSellTax, missing, amount, suffix, estimated = false) {
+    if (excludeSellTax) {
+        return {
+            line: t('profitDisplay.marketTaxExcludedLine'),
+            section: t('profitDisplay.marketTaxExcludedSectionTitle'),
+        };
+    }
+    const label = missing ? '-- ⚠' : `${formatLargeNumber(amount)}${suffix}${estimated ? ' ⚠' : ''}`;
+    return {
+        line: t('profitDisplay.marketTaxLine', { pct: MARKET_TAX * 100, label }),
+        section: t('profitDisplay.marketTaxSectionTitle', { label, pct: MARKET_TAX * 100 }),
+    };
+}
+
+/**
+ * Build the "sell tax excluded" warning line shown under Net Profit when the toggle is active, so
+ * it's visible even to someone who opens the detail panel without noticing the toggle's state.
+ * @returns {HTMLElement}
+ */
+function buildSellTaxExcludedWarning() {
+    const warning = document.createElement('div');
+    warning.style.cssText = `
+        color: ${config.COLOR_WARNING};
+        font-size: 0.85em;
+        margin-bottom: 8px;
+    `;
+    warning.textContent = t('profitDisplay.sellTaxExcludedWarning');
+    return warning;
+}
+
 function getAutomaticLoadoutLabel(actionTypeHrid) {
     if (!actionTypeHrid || !config.getSetting('loadoutSnapshot')) return t('profitDisplay.equippedLabel');
     const selection = loadoutState.findSnapshotSelectionForActionType(actionTypeHrid);
@@ -135,7 +175,7 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
     const efficiencyMultiplier = profitData.efficiencyMultiplier || 1;
     // Revenue is now gross (pre-tax)
     const revenue = Math.round(profitData.revenuePerHour);
-    const marketTax = Math.round(revenue * MARKET_TAX);
+    const marketTax = Math.round(profitData.marketTax);
     const costs = Math.round(profitData.drinkCostPerHour + marketTax);
     const summary = formatMissingLabel(
         netMissing,
@@ -399,19 +439,16 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
     const marketTaxContent = document.createElement('div');
     const marketTaxLine = document.createElement('div');
     marketTaxLine.style.marginLeft = '8px';
-    const marketTaxLabel = marketTaxMissing ? '-- ⚠' : `${formatLargeNumber(marketTax)}${t('profitDisplay.hrSuffix')}`;
-    marketTaxLine.textContent = t('profitDisplay.marketTaxLine', { pct: MARKET_TAX * 100, label: marketTaxLabel });
+    const marketTaxText = formatMarketTaxText(
+        profitData.excludeSellTax,
+        marketTaxMissing,
+        marketTax,
+        t('profitDisplay.hrSuffix')
+    );
+    marketTaxLine.textContent = marketTaxText.line;
     marketTaxContent.appendChild(marketTaxLine);
 
-    const marketTaxHeader = marketTaxMissing ? '-- ⚠' : `${formatLargeNumber(marketTax)}${t('profitDisplay.hrSuffix')}`;
-    const marketTaxSection = createCollapsibleSection(
-        '',
-        t('profitDisplay.marketTaxSectionTitle', { label: marketTaxHeader, pct: MARKET_TAX * 100 }),
-        null,
-        marketTaxContent,
-        false,
-        1
-    );
+    const marketTaxSection = createCollapsibleSection('', marketTaxText.section, null, marketTaxContent, false, 1);
 
     costsDiv.appendChild(marketTaxSection);
 
@@ -674,6 +711,9 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
               }),
           });
     topLevelContent.appendChild(netProfitLine);
+    if (profitData.excludeSellTax) {
+        topLevelContent.appendChild(buildSellTaxExcludedWarning());
+    }
 
     // Add pricing mode label
     const pricingMode = profitData.pricingMode || 'hybrid';
@@ -778,6 +818,7 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
                     gourmetRevenueBonusPerAction: profitData.gourmetRevenueBonusPerAction,
                     drinkCostPerHour: profitData.drinkCostPerHour,
                     efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
+                    excludeSellTax: profitData.excludeSellTax,
                 });
                 const totalProfit = Math.round(totals.totalProfit);
                 profitSummaryDiv.textContent = t('profitDisplay.totalProfitSummary', {
@@ -933,7 +974,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
             bonusRevenueTotal * efficiencyMultiplier
     );
     // Calculate market tax (percentage of revenue)
-    const marketTax = Math.round(revenue * MARKET_TAX);
+    const marketTax = Math.round(profitData.marketTax);
     const costs = Math.round(profitData.materialCostPerHour + profitData.totalTeaCostPerHour + marketTax);
     const summary = netMissing
         ? '-- ⚠'
@@ -1195,21 +1236,17 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
     const marketTaxContent = document.createElement('div');
     const marketTaxLine = document.createElement('div');
     marketTaxLine.style.marginLeft = '8px';
-    const marketTaxLabel = marketTaxMissing
-        ? '-- ⚠'
-        : `${formatLargeNumber(marketTax)}${t('profitDisplay.hrSuffix')}${marketTaxEstimated ? ' ⚠' : ''}`;
-    marketTaxLine.textContent = t('profitDisplay.marketTaxLine', { pct: MARKET_TAX * 100, label: marketTaxLabel });
+    const marketTaxText = formatMarketTaxText(
+        profitData.excludeSellTax,
+        marketTaxMissing,
+        marketTax,
+        t('profitDisplay.hrSuffix'),
+        marketTaxEstimated
+    );
+    marketTaxLine.textContent = marketTaxText.line;
     marketTaxContent.appendChild(marketTaxLine);
 
-    const marketTaxHeader = marketTaxLabel;
-    const marketTaxSection = createCollapsibleSection(
-        '',
-        t('profitDisplay.marketTaxSectionTitle', { label: marketTaxHeader, pct: MARKET_TAX * 100 }),
-        null,
-        marketTaxContent,
-        false,
-        1
-    );
+    const marketTaxSection = createCollapsibleSection('', marketTaxText.section, null, marketTaxContent, false, 1);
 
     costsDiv.appendChild(marketTaxSection);
 
@@ -1460,6 +1497,9 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
               }),
           });
     topLevelContent.appendChild(netProfitLine);
+    if (profitData.excludeSellTax) {
+        topLevelContent.appendChild(buildSellTaxExcludedWarning());
+    }
 
     // Add pricing mode label
     const pricingMode = profitData.pricingMode || 'hybrid';
@@ -1563,6 +1603,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
                     materialCosts: profitData.materialCosts,
                     totalTeaCostPerHour: profitData.totalTeaCostPerHour,
                     efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
+                    excludeSellTax: profitData.excludeSellTax,
                 });
                 const totalProfit = Math.round(totals.totalProfit);
                 profitSummaryDiv.textContent = t('profitDisplay.totalProfitSummary', {
@@ -1650,8 +1691,7 @@ function buildGatheringPerActionBreakdown(profitData) {
 
     const revenuePerHour = profitData.revenuePerHour;
     const revenuePerAction = revenuePerHour / actionsPerHour;
-    const marketTaxPerHour = revenuePerHour * MARKET_TAX;
-    const marketTaxPerAction = marketTaxPerHour / actionsPerHour;
+    const marketTaxPerAction = profitData.marketTax / actionsPerHour;
     const drinkCostPerAction = profitData.drinkCostPerHour / actionsPerHour;
     const costsPerAction = drinkCostPerAction + marketTaxPerAction;
     const profitPerAction = profitData.profitPerAction;
@@ -1928,16 +1968,22 @@ function buildGatheringPerActionBreakdown(profitData) {
     const marketTaxContent = document.createElement('div');
     const marketTaxLine = document.createElement('div');
     marketTaxLine.style.marginLeft = '8px';
-    const marketTaxLabel = formatMissingLabel(
-        marketTaxMissing,
-        `${formatPerAction(marketTaxPerAction)}${t('profitDisplay.actionSuffix')}`
-    );
-    marketTaxLine.textContent = t('profitDisplay.marketTaxLine', { pct: MARKET_TAX * 100, label: marketTaxLabel });
+    const marketTaxLabel = profitData.excludeSellTax
+        ? t('profitDisplay.marketTaxExcludedLabel')
+        : formatMissingLabel(
+              marketTaxMissing,
+              `${formatPerAction(marketTaxPerAction)}${t('profitDisplay.actionSuffix')}`
+          );
+    marketTaxLine.textContent = profitData.excludeSellTax
+        ? t('profitDisplay.marketTaxExcludedLine')
+        : t('profitDisplay.marketTaxLine', { pct: MARKET_TAX * 100, label: marketTaxLabel });
     marketTaxContent.appendChild(marketTaxLine);
 
     const marketTaxSection = createCollapsibleSection(
         '',
-        t('profitDisplay.marketTaxSectionTitle', { label: marketTaxLabel, pct: MARKET_TAX * 100 }),
+        profitData.excludeSellTax
+            ? t('profitDisplay.marketTaxExcludedSectionTitle')
+            : t('profitDisplay.marketTaxSectionTitle', { label: marketTaxLabel, pct: MARKET_TAX * 100 }),
         null,
         marketTaxContent,
         false,
@@ -1965,6 +2011,9 @@ function buildGatheringPerActionBreakdown(profitData) {
               value: `${formatPerAction(profitPerAction)}${t('profitDisplay.actionSuffix')}`,
           });
     topLevelContent.appendChild(netProfitLine);
+    if (profitData.excludeSellTax) {
+        topLevelContent.appendChild(buildSellTaxExcludedWarning());
+    }
 
     const summarySection = createCollapsibleSection(
         '',
@@ -2021,7 +2070,7 @@ function buildProductionPerActionBreakdown(profitData) {
     const gourmetRevenuePerAction = gourmetItemsPerAction * profitData.outputPrice;
     const bonusRevenuePerAction = bonusRevenueTotal / actionsPerHour;
     const revenuePerAction = baseRevenuePerAction + gourmetRevenuePerAction + bonusRevenuePerAction;
-    const marketTaxPerAction = revenuePerAction * MARKET_TAX;
+    const marketTaxPerAction = profitData.marketTax / actionsPerHour;
     const materialCostPerAction = profitData.totalMaterialCost; // per-action cost is fixed, unaffected by efficiency
     const teaCostPerAction = profitData.totalTeaCostPerHour / actionsPerHour;
     const costsPerAction = materialCostPerAction + teaCostPerAction + marketTaxPerAction;
@@ -2279,15 +2328,21 @@ function buildProductionPerActionBreakdown(profitData) {
     const marketTaxContent = document.createElement('div');
     const marketTaxLine = document.createElement('div');
     marketTaxLine.style.marginLeft = '8px';
-    const marketTaxLabel = marketTaxMissing
-        ? '-- ⚠'
-        : `${formatPerAction(marketTaxPerAction)}${t('profitDisplay.actionSuffix')}${marketTaxEstimated ? ' ⚠' : ''}`;
-    marketTaxLine.textContent = t('profitDisplay.marketTaxLine', { pct: MARKET_TAX * 100, label: marketTaxLabel });
+    const marketTaxLabel = profitData.excludeSellTax
+        ? t('profitDisplay.marketTaxExcludedLabel')
+        : marketTaxMissing
+          ? '-- ⚠'
+          : `${formatPerAction(marketTaxPerAction)}${t('profitDisplay.actionSuffix')}${marketTaxEstimated ? ' ⚠' : ''}`;
+    marketTaxLine.textContent = profitData.excludeSellTax
+        ? t('profitDisplay.marketTaxExcludedLine')
+        : t('profitDisplay.marketTaxLine', { pct: MARKET_TAX * 100, label: marketTaxLabel });
     marketTaxContent.appendChild(marketTaxLine);
 
     const marketTaxSection = createCollapsibleSection(
         '',
-        t('profitDisplay.marketTaxSectionTitle', { label: marketTaxLabel, pct: MARKET_TAX * 100 }),
+        profitData.excludeSellTax
+            ? t('profitDisplay.marketTaxExcludedSectionTitle')
+            : t('profitDisplay.marketTaxSectionTitle', { label: marketTaxLabel, pct: MARKET_TAX * 100 }),
         null,
         marketTaxContent,
         false,
@@ -2315,6 +2370,9 @@ function buildProductionPerActionBreakdown(profitData) {
               value: `${formatPerAction(profitPerAction)}${t('profitDisplay.actionSuffix')}${netEstimated ? ' ⚠' : ''}`,
           });
     topLevelContent.appendChild(netProfitLine);
+    if (profitData.excludeSellTax) {
+        topLevelContent.appendChild(buildSellTaxExcludedWarning());
+    }
 
     const revenueSummaryLabel = revenueMissing
         ? '-- ⚠'
@@ -2351,6 +2409,7 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
         gourmetRevenueBonusPerAction: profitData.gourmetRevenueBonusPerAction,
         drinkCostPerHour: profitData.drinkCostPerHour,
         efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
+        excludeSellTax: profitData.excludeSellTax,
     });
     const hoursNeeded = totals.hoursNeeded;
 
@@ -2635,14 +2694,21 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
     const marketTaxContent = document.createElement('div');
     const marketTaxLine = document.createElement('div');
     marketTaxLine.style.marginLeft = '8px';
-    const marketTaxLabel = marketTaxMissing ? '-- ⚠' : formatLargeNumber(totalMarketTax);
-    marketTaxLine.textContent = t('profitDisplay.marketTaxLine', { pct: MARKET_TAX * 100, label: marketTaxLabel });
+    const marketTaxLabel = profitData.excludeSellTax
+        ? t('profitDisplay.marketTaxExcludedLabel')
+        : marketTaxMissing
+          ? '-- ⚠'
+          : formatLargeNumber(totalMarketTax);
+    marketTaxLine.textContent = profitData.excludeSellTax
+        ? t('profitDisplay.marketTaxExcludedLine')
+        : t('profitDisplay.marketTaxLine', { pct: MARKET_TAX * 100, label: marketTaxLabel });
     marketTaxContent.appendChild(marketTaxLine);
 
-    const marketTaxHeader = marketTaxMissing ? '-- ⚠' : formatLargeNumber(totalMarketTax);
     const marketTaxSection = createCollapsibleSection(
         '',
-        t('profitDisplay.marketTaxSectionTitle', { label: marketTaxHeader, pct: MARKET_TAX * 100 }),
+        profitData.excludeSellTax
+            ? t('profitDisplay.marketTaxExcludedSectionTitle')
+            : t('profitDisplay.marketTaxSectionTitle', { label: marketTaxLabel, pct: MARKET_TAX * 100 }),
         null,
         marketTaxContent,
         false,
@@ -2668,6 +2734,9 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
         ? t('profitDisplay.netProfitLine', { value: '-- ⚠' })
         : t('profitDisplay.netProfitLine', { value: formatLargeNumber(totalProfit) });
     topLevelContent.appendChild(netProfitLine);
+    if (profitData.excludeSellTax) {
+        topLevelContent.appendChild(buildSellTaxExcludedWarning());
+    }
 
     const actionsSummary = t('profitDisplay.revenueCostsSummary', {
         revenue: formatMissingLabel(revenueMissing, formatLargeNumber(totalRevenue)),
@@ -2722,6 +2791,7 @@ function buildProductionActionsBreakdown(profitData, actionsCount) {
         materialCosts: profitData.materialCosts,
         totalTeaCostPerHour: profitData.totalTeaCostPerHour,
         efficiencyMultiplier,
+        excludeSellTax: profitData.excludeSellTax,
     });
     const totalRevenue = Math.round(totals.totalRevenue);
     const totalMarketTax = Math.round(totals.totalMarketTax);
@@ -2981,16 +3051,21 @@ function buildProductionActionsBreakdown(profitData, actionsCount) {
     const marketTaxContent = document.createElement('div');
     const marketTaxLine = document.createElement('div');
     marketTaxLine.style.marginLeft = '8px';
-    const marketTaxLabel = marketTaxMissing
-        ? '-- ⚠'
-        : `${formatLargeNumber(totalMarketTax)}${marketTaxEstimated ? ' ⚠' : ''}`;
-    marketTaxLine.textContent = t('profitDisplay.marketTaxLine', { pct: MARKET_TAX * 100, label: marketTaxLabel });
+    const marketTaxLabel = profitData.excludeSellTax
+        ? t('profitDisplay.marketTaxExcludedLabel')
+        : marketTaxMissing
+          ? '-- ⚠'
+          : `${formatLargeNumber(totalMarketTax)}${marketTaxEstimated ? ' ⚠' : ''}`;
+    marketTaxLine.textContent = profitData.excludeSellTax
+        ? t('profitDisplay.marketTaxExcludedLine')
+        : t('profitDisplay.marketTaxLine', { pct: MARKET_TAX * 100, label: marketTaxLabel });
     marketTaxContent.appendChild(marketTaxLine);
 
-    const marketTaxHeader = marketTaxLabel;
     const marketTaxSection = createCollapsibleSection(
         '',
-        t('profitDisplay.marketTaxSectionTitle', { label: marketTaxHeader, pct: MARKET_TAX * 100 }),
+        profitData.excludeSellTax
+            ? t('profitDisplay.marketTaxExcludedSectionTitle')
+            : t('profitDisplay.marketTaxSectionTitle', { label: marketTaxLabel, pct: MARKET_TAX * 100 }),
         null,
         marketTaxContent,
         false,
@@ -3018,6 +3093,9 @@ function buildProductionActionsBreakdown(profitData, actionsCount) {
               value: `${formatLargeNumber(totalProfit)}${netEstimated ? ' ⚠' : ''}`,
           });
     topLevelContent.appendChild(netProfitLine);
+    if (profitData.excludeSellTax) {
+        topLevelContent.appendChild(buildSellTaxExcludedWarning());
+    }
 
     const revenueDisplay = revenueMissing
         ? '-- ⚠'

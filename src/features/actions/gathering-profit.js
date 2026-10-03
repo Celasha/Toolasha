@@ -11,6 +11,7 @@
  */
 
 import dataManager from '../../core/data-manager.js';
+import config from '../../core/config.js';
 import { formatWithSeparator, formatPercentage } from '../../utils/formatters.js';
 import { calculateBonusRevenue } from '../../utils/bonus-revenue-calculator.js';
 import { getItemPrice } from '../../utils/market-data.js';
@@ -317,8 +318,10 @@ export async function calculateGatheringProfit(actionHrid, options = {}) {
         processingConversions.some((conversion) => conversion.missingPrice) ||
         (bonusRevenue?.hasMissingPrices ?? false);
 
-    // Calculate market tax (percentage of gross revenue)
-    const marketTax = revenuePerHour * MARKET_TAX;
+    // Calculate market tax (percentage of gross revenue) - skipped when producing for personal
+    // use (excludeSellTax), since the output is never actually sold.
+    const excludeSellTax = config.getSettingValue('profitCalc_excludeSellTax', false);
+    const marketTax = excludeSellTax ? 0 : revenuePerHour * MARKET_TAX;
 
     // Calculate net profit (revenue - market tax - drink costs)
     const profitPerHour = revenuePerHour - marketTax - drinkCostPerHour;
@@ -328,6 +331,8 @@ export async function calculateGatheringProfit(actionHrid, options = {}) {
         profitPerAction: calculateProfitPerAction(profitPerHour, actionsPerHour * efficiencyMultiplier), // Profit per action
         profitPerDay: calculateProfitPerDay(profitPerHour), // Profit per day
         revenuePerHour,
+        marketTax,
+        excludeSellTax,
         drinkCostPerHour,
         drinkCosts, // Array of individual drink costs {name, priceEach, costPerHour}
         actionsPerHour, // Base actions per hour (without efficiency)

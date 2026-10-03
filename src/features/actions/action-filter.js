@@ -28,9 +28,11 @@ class ActionFilter {
         this.currentTitleElement = null; // Track which title we're attached to
         this._updateModeBtn = null;
         this._updateCraftBtn = null;
+        this._updateSellTaxBtn = null;
         this._updateSortBtn = null;
         this.pricingModeHandler = null;
         this.craftUpgradeHandler = null;
+        this.excludeSellTaxHandler = null;
         this.settingsLoadedHandler = null;
         this.unregisterSortModeHandler = null;
     }
@@ -63,6 +65,11 @@ class ActionFilter {
         };
         config.onSettingChange('profitCalc_craftUpgradeItems', this.craftUpgradeHandler);
 
+        this.excludeSellTaxHandler = () => {
+            if (this._updateSellTaxBtn) this._updateSellTaxBtn();
+        };
+        config.onSettingChange('profitCalc_excludeSellTax', this.excludeSellTaxHandler);
+
         // Character switches load the new character's settings with per-setting
         // onSettingChange callbacks suppressed (the feature registry fully reinitializes
         // regular features instead). This filter is persistent infrastructure outside that
@@ -72,6 +79,7 @@ class ActionFilter {
         this.settingsLoadedHandler = () => {
             if (this._updateModeBtn) this._updateModeBtn();
             if (this._updateCraftBtn) this._updateCraftBtn();
+            if (this._updateSellTaxBtn) this._updateSellTaxBtn();
             this._refreshProfitDisplays();
         };
         config.onSettingsLoaded(this.settingsLoadedHandler);
@@ -272,6 +280,43 @@ class ActionFilter {
 
         if (!config.getSetting('actionPanel_showCraftToggle')) {
             craftBtn.style.display = 'none';
+        }
+
+        // Create sell-tax exclusion toggle button
+        const sellTaxBtn = document.createElement('button');
+        sellTaxBtn.id = 'mwi-action-sell-tax-toggle';
+        const updateSellTaxBtn = () => {
+            const enabled = config.getSetting('profitCalc_excludeSellTax');
+            sellTaxBtn.textContent = enabled ? t('actionFilter.sellTaxOffLabel') : t('actionFilter.sellTaxOnLabel');
+            sellTaxBtn.title = enabled
+                ? t('actionFilter.sellTaxToggleTooltipOn')
+                : t('actionFilter.sellTaxToggleTooltipOff');
+            sellTaxBtn.style.color = enabled ? config.COLOR_WARNING : '';
+            sellTaxBtn.style.borderColor = enabled ? config.COLOR_WARNING : 'rgba(255, 255, 255, 0.23)';
+        };
+        sellTaxBtn.style.cssText = `
+            padding: 8px 12px;
+            font-size: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.23);
+            border-radius: 4px;
+            background: transparent;
+            cursor: pointer;
+            font-family: inherit;
+            flex-shrink: 0;
+        `;
+        updateSellTaxBtn();
+        this._updateSellTaxBtn = updateSellTaxBtn;
+        sellTaxBtn.addEventListener('click', async () => {
+            const current = config.getSetting('profitCalc_excludeSellTax');
+            config.setSetting('profitCalc_excludeSellTax', !current);
+            updateSellTaxBtn();
+            await this._refreshProfitDisplays();
+        });
+        craftBtn.insertAdjacentElement('afterend', sellTaxBtn);
+        this.sellTaxButton = sellTaxBtn;
+
+        if (!config.getSetting('actionPanel_showSellTaxToggle')) {
+            sellTaxBtn.style.display = 'none';
         }
 
         // Find the container for action panels to inject "No results" message
@@ -503,8 +548,14 @@ class ActionFilter {
             this.craftButton = null;
         }
 
+        if (this.sellTaxButton && this.sellTaxButton.parentElement) {
+            this.sellTaxButton.remove();
+            this.sellTaxButton = null;
+        }
+
         this._updateModeBtn = null;
         this._updateCraftBtn = null;
+        this._updateSellTaxBtn = null;
         this._updateSortBtn = null;
 
         if (this.noResultsMessage && this.noResultsMessage.parentElement) {
@@ -593,6 +644,10 @@ class ActionFilter {
         if (this.craftUpgradeHandler) {
             config.offSettingChange('profitCalc_craftUpgradeItems', this.craftUpgradeHandler);
             this.craftUpgradeHandler = null;
+        }
+        if (this.excludeSellTaxHandler) {
+            config.offSettingChange('profitCalc_excludeSellTax', this.excludeSellTaxHandler);
+            this.excludeSellTaxHandler = null;
         }
         if (this.settingsLoadedHandler) {
             config.offSettingsLoaded(this.settingsLoadedHandler);

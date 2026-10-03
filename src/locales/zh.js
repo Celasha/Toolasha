@@ -864,6 +864,10 @@ export default {
         materialCostsHeader: (p) => `材料成本：${p.label}（${p.count} 种）`,
         marketTaxLine: (p) => `• 市场税：收入的 ${p.pct}% → ${p.label}`,
         marketTaxSectionTitle: (p) => `市场税：${p.label}（${p.pct}%）`,
+        marketTaxExcludedLabel: '已排除',
+        marketTaxExcludedLine: '• 市场税：已排除（自用生产）',
+        marketTaxExcludedSectionTitle: '市场税：已排除',
+        sellTaxExcludedWarning: '⚠ 已排除出售税 — 假设你会保留此产出物，并非实际出售价格',
         modifierRow: (p) => `${p.icon}+${p.value}% ${p.label}`,
         levelAdvantageLabel: '等级优势',
         houseRoomLabel: '房屋房间',
@@ -2043,6 +2047,11 @@ export default {
         craftOffLabel: '制作：关',
         craftOnLabel: '制作：开',
         craftToggleTooltip: '开启后，若制作升级材料比市场购买更便宜，将使用制作成本计算，并将制作时间计入每小时利润',
+        sellTaxOnLabel: '税：开',
+        sellTaxOffLabel: '⚠ 税：关',
+        sellTaxToggleTooltipOff: '利润计算包含出售税（默认设置 - 若你计划出售产出物，此设置更准确）',
+        sellTaxToggleTooltipOn:
+            '利润计算不包含出售税 - 适用于自用生产（地下城钥匙、食物/饮品、迷宫消耗品）。利润数值会高于实际出售产出物所能获得的收益。',
         filterPlaceholder: '筛选操作...',
         sortDefaultLabel: '排序：默认',
         sortProfitLabel: '排序：利润',
@@ -2389,6 +2398,8 @@ export default {
         pinTooltip: '固定此操作以保持可见',
         profitPerHourLine: (p) => `利润/时：${p.sign}${p.value}${p.note}`,
         profitUnknownLine: '利润/时：-- ⚠',
+        sellTaxExcludedTooltip:
+            '已排除出售税 — 假设你会保留此产出物，并非实际出售价格。若计划出售，请在技能页面关闭此开关。',
         unpinTooltip: '取消固定此操作',
     },
     mentionTracker: {
@@ -2647,6 +2658,7 @@ export default {
             actionPanel_showSort: { label: '技能页面：排序按钮' },
             actionPanel_showPricingMode: { label: '技能页面：定价模式按钮' },
             actionPanel_showCraftToggle: { label: '技能页面：制作切换按钮' },
+            actionPanel_showSellTaxToggle: { label: '技能页面：出售税切换按钮' },
             actionPanel_showProfitPerHour_gathering: {
                 label: '操作页面：在采集方块上显示利润/时',
                 help: '在采集操作方块上显示利润/时（采集、伐木等）',
@@ -3058,6 +3070,10 @@ export default {
             profitCalc_craftUpgradeItems: {
                 label: '利润：若制作成本更低，升级材料使用制作成本',
                 help: '启用后，若升级材料的制作成本更低，则使用制作成本代替市场价格，并将制作时间计入利润/时的计算中。',
+            },
+            profitCalc_excludeSellTax: {
+                label: '利润：排除出售税（自用生产）',
+                help: '启用后，每小时净利润/利润计算将假设你会保留生产的物品而不出售，因此不会从产出价值中扣除市场出售税。适用于地下城钥匙、食物/饮品、迷宫消耗品，或任何你不打算出售的物品。这会使利润数值高于实际出售产出物所能获得的收益 - 启用期间会显示警告标志。',
             },
             offlineProgressEconomics: {
                 label: '离线进度：显示收入/成本/利润摘要',

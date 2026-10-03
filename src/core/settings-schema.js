@@ -203,6 +203,12 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: true,
             },
+            actionPanel_showSellTaxToggle: {
+                id: 'actionPanel_showSellTaxToggle',
+                label: 'Skill page: Sell tax toggle button',
+                type: 'checkbox',
+                default: true,
+            },
             actionPanel_showProfitPerHour_gathering: {
                 id: 'actionPanel_showProfitPerHour_gathering',
                 label: 'Action page: Show profit/hr on gathering tiles',
@@ -1322,6 +1328,13 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: true,
                 help: 'When enabled, uses crafting cost instead of market price for upgrade items if cheaper, and factors crafting time into profit/hr calculations.',
+            },
+            profitCalc_excludeSellTax: {
+                id: 'profitCalc_excludeSellTax',
+                label: 'Profit: Exclude sell tax (producing for personal use)',
+                type: 'checkbox',
+                default: false,
+                help: "When enabled, Net Profit / Profit per hour assumes you keep what you produce instead of selling it, so the marketplace sell tax is not deducted from output value. Use for dungeon keys, food/drinks, labyrinth consumables, or anything else you don't plan to sell. This makes profit numbers higher than what you'd actually get by selling the output - a warning indicator appears while this is on.",
             },
             offlineProgressEconomics: {
                 id: 'offlineProgressEconomics',

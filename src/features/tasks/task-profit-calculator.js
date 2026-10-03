@@ -224,6 +224,7 @@ async function calculateGatheringTaskProfit(actionHrid, quantity) {
         gourmetRevenueBonusPerAction: profitData.gourmetRevenueBonusPerAction,
         drinkCostPerHour: profitData.drinkCostPerHour,
         efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
+        excludeSellTax: profitData.excludeSellTax,
     });
 
     return {
@@ -291,6 +292,7 @@ async function calculateProductionTaskProfit(actionHrid, quantity) {
         materialCosts: profitData.materialCosts,
         totalTeaCostPerHour: profitData.totalTeaCostPerHour,
         efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
+        excludeSellTax: profitData.excludeSellTax,
     });
 
     return {

@@ -238,8 +238,10 @@ class ProfitCalculator {
         // Apply efficiency multiplier to bonus revenue (efficiency repeats the action, including bonus rolls)
         const efficiencyBoostedBonusRevenue = (bonusRevenue?.totalBonusRevenue || 0) * efficiencyMultiplier;
 
-        // Calculate market tax (percentage of gross revenue including bonus revenue)
-        const marketTax = (revenuePerHour + efficiencyBoostedBonusRevenue) * MARKET_TAX;
+        // Calculate market tax (percentage of gross revenue including bonus revenue) - skipped
+        // when producing for personal use (excludeSellTax), since the output is never actually sold.
+        const excludeSellTax = config.getSettingValue('profitCalc_excludeSellTax', false);
+        const marketTax = excludeSellTax ? 0 : (revenuePerHour + efficiencyBoostedBonusRevenue) * MARKET_TAX;
 
         // Total costs per hour (materials + teas + market tax)
         const totalCostPerHour = materialCostPerHour + totalTeaCostPerHour + marketTax;
@@ -278,6 +280,8 @@ class ProfitCalculator {
             outputPriceEstimated, // True when outputPriceMissing but crafting cost fallback resolved a price
             priceAfterTax, // Output price after market tax (bid or ask based on mode)
             revenuePerHour,
+            marketTax,
+            excludeSellTax,
             profitPerItem,
             profitPerHour,
             profitPerAction: calculateProfitPerAction(profitPerHour, actionsPerHour * efficiencyMultiplier), // Profit per action
