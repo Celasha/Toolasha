@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.5.0](https://github.com/Celasha/Toolasha/compare/v3.4.2...v3.5.0) (2026-10-03)
+
+
+### Features
+
+* add a sell-tax exclusion toggle for personal-use production ([7282905](https://github.com/Celasha/Toolasha/commit/7282905aca23502f9e4afa53bfbb436b20e3cd0c))
+* add marketplace shortcut to the Enhancing protection item picker ([4c4c90b](https://github.com/Celasha/Toolasha/commit/4c4c90b0d433e26e9c2f4f351c38cb24559569f7))
+
+
+### Bug Fixes
+
+* promote already-abbreviated native loot/XP figures to M/B in the log ([fe1164e](https://github.com/Celasha/Toolasha/commit/fe1164ed90cce51ac85a9e7d4296d9abcbd17f73))
+* show Profit (Actual minus key cost) in the Openable Analytics popup ([0182814](https://github.com/Celasha/Toolasha/commit/0182814a01ab6aa8a1a65c0bffe88856907e3ffd))
+
 ## [3.4.2](https://github.com/Celasha/Toolasha/compare/v3.4.1...v3.4.2) (2026-10-03)
 
 ### Bug Fixes
