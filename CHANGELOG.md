@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.4.2](https://github.com/Celasha/Toolasha/compare/v3.4.1...v3.4.2) (2026-10-03)
+
+### Bug Fixes
+
+- scope category totals to the active tab panel's item grids, not inventoryElem's direct children ([ceb6ea8](https://github.com/Celasha/Toolasha/commit/ceb6ea885bb9b6e40c1f25c2b4e552c701b7be48))
+
 ## [3.4.1](https://github.com/Celasha/Toolasha/compare/v3.4.0...v3.4.1) (2026-10-02)
 
 ### Bug Fixes
