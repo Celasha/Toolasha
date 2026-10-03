@@ -1961,6 +1961,10 @@ export default {
         popupDescription: '选择要为每个炼金动作保护的物品分类。受保护的物品需要3秒确认后才能执行操作。',
         categoryItemCountLabel: (p) => `${p.name}（${p.count} 件物品）`,
     },
+    enhancementProtectionMarketplace: {
+        buyCheapestButtonLabel: '🛒 购买最便宜：{{name}}（{{price}}）',
+    },
+
     enhancementDisplay: {
         autoDetectModeLabel: '🔍 自动',
         manualModeLabel: '✏️ 手动',
@@ -2901,6 +2905,10 @@ export default {
             enhanceSim_autoDetect: {
                 label: '自动检测你的属性（关闭 = 使用下方设置）',
                 help: '大多数玩家应保持关闭，以查看符合实际的专业强化师费用',
+            },
+            enhanceSim_protectionMarketplaceButton: {
+                label: '保护物品选择器：显示"购买最便宜"市场按钮',
+                help: '在强化面板的保护物品选择弹窗中添加一个按钮，点击后跳转到市场购买最便宜的可用保护物品',
             },
             enhanceSim_enhancingLevel: { label: '强化技能等级', help: '默认值：140（专业强化师等级）' },
             enhanceSim_houseLevel: { label: '天文台房屋房间等级', help: '默认值：8（最高等级）' },

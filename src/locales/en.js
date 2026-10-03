@@ -1996,6 +1996,10 @@ export default {
             'Select which item categories to protect from each alchemy action. Protected items require a 3-second confirmation before the action proceeds.',
         categoryItemCountLabel: (p) => `${p.name} (${p.count} items)`,
     },
+    enhancementProtectionMarketplace: {
+        buyCheapestButtonLabel: '🛒 Buy Cheapest: {{name}} ({{price}})',
+    },
+
     enhancementDisplay: {
         autoDetectModeLabel: '🔍 Auto',
         manualModeLabel: '✏️ Manual',
@@ -2954,6 +2958,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             enhanceSim_autoDetect: {
                 label: 'Auto-detect your stats (false = use settings below)',
                 help: 'Most players should leave this off to see realistic professional enhancer costs',
+            },
+            enhanceSim_protectionMarketplaceButton: {
+                label: 'Protection item picker: Show "Buy Cheapest" marketplace button',
+                help: 'Adds a button to the Protection item selector popup in the Enhancing panel that navigates to the Marketplace for the cheapest available protection option',
             },
             enhanceSim_enhancingLevel: {
                 label: 'Enhancing skill level',

@@ -752,6 +752,13 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'enhancementProtectionMarketplace',
+            name: 'Enhancement Protection Marketplace Button',
+            category: 'Enhancement',
+            module: UI.enhancementProtectionMarketplace,
+            async: false,
+        },
+        {
             key: 'riskOfRuin',
             name: 'Risk of Ruin Calculator',
             category: 'Risk of Ruin',

@@ -41,6 +41,7 @@ import alchemyActionProtection from '../features/alchemy/alchemy-action-protecti
 // Enhancement
 import enhancementFeature from '../features/enhancement/enhancement-feature.js';
 import xphCalculator from '../features/enhancement/xph-calculator.js';
+import enhancementProtectionMarketplace from '../features/enhancement/enhancement-protection-marketplace.js';
 
 // Risk of Ruin
 import riskOfRuinUI from '../features/risk-of-ruin/risk-of-ruin-ui.js';
@@ -90,6 +91,7 @@ toolashaRoot.UI = Object.assign(toolashaRoot.UI || {}, {
     alchemyActionProtection,
     enhancementFeature,
     xphCalculator,
+    enhancementProtectionMarketplace,
     riskOfRuinUI,
     guildXPTracker,
     guildXPDisplay,

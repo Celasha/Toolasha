@@ -781,6 +781,13 @@ export const settingsGroups = {
                 default: false,
                 help: 'Most players should leave this off to see realistic professional enhancer costs',
             },
+            enhanceSim_protectionMarketplaceButton: {
+                id: 'enhanceSim_protectionMarketplaceButton',
+                label: 'Protection item picker: Show "Buy Cheapest" marketplace button',
+                type: 'checkbox',
+                default: true,
+                help: 'Adds a button to the Protection item selector popup in the Enhancing panel that navigates to the Marketplace for the cheapest available protection option',
+            },
             // --- ENHANCING ---
             enhanceSim_enhancingLevel: {
                 id: 'enhanceSim_enhancingLevel',
