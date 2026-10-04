@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 3.4.2
+ * Version: 3.5.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -3408,6 +3408,7 @@
         materialCosts = [],
         totalTeaCostPerHour,
         efficiencyMultiplier = 1,
+        excludeSellTax = false,
     }) {
         const effectiveActionsPerHour = calculateEffectiveActionsPerHour(actionsPerHour, efficiencyMultiplier);
         if (!effectiveActionsPerHour || effectiveActionsPerHour <= 0) {
@@ -3434,7 +3435,7 @@
         const totalGourmetRevenue = totalGourmetItems * outputPrice;
         const totalBonusRevenue = bonusDrops.reduce((sum, drop) => sum + (drop.revenuePerAction || 0) * actionsCount, 0);
         const totalRevenue = totalBaseRevenue + totalGourmetRevenue + totalBonusRevenue;
-        const totalMarketTax = totalRevenue * MARKET_TAX;
+        const totalMarketTax = excludeSellTax ? 0 : totalRevenue * MARKET_TAX;
         const totalMaterialCost = materialCosts.reduce((sum, material) => sum + material.totalCost * actionsCount, 0);
         const hoursNeeded = calculateHoursForActions(actionsCount, effectiveActionsPerHour);
         const totalTeaCost = totalTeaCostPerHour * hoursNeeded;
@@ -3481,6 +3482,7 @@
         gourmetRevenueBonusPerAction,
         drinkCostPerHour,
         efficiencyMultiplier = 1,
+        excludeSellTax = false,
     }) {
         const effectiveActionsPerHour = calculateEffectiveActionsPerHour(actionsPerHour, efficiencyMultiplier);
         if (!effectiveActionsPerHour || effectiveActionsPerHour <= 0) {
@@ -3505,7 +3507,7 @@
         const totalProcessingRevenue = (processingRevenueBonusPerAction || 0) * actionsCount;
         const totalGourmetRevenue = (gourmetRevenueBonusPerAction || 0) * actionsCount;
         const totalRevenue = totalBaseRevenue + totalGourmetRevenue + totalBonusRevenue + totalProcessingRevenue;
-        const totalMarketTax = totalRevenue * MARKET_TAX;
+        const totalMarketTax = excludeSellTax ? 0 : totalRevenue * MARKET_TAX;
         const hoursNeeded = calculateHoursForActions(actionsCount, effectiveActionsPerHour);
         const totalDrinkCost = drinkCostPerHour * hoursNeeded;
         const totalCosts = totalDrinkCost + totalMarketTax;

@@ -2,7 +2,7 @@
  * Toolasha UI Library 2
  * Dictionary, house, guild, leaderboard, notifications, alchemy history, risk of ruin,
  * enhancement, queue/character activity, and misc UI features
- * Version: 3.4.2
+ * Version: 3.5.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1338,6 +1338,100 @@
     altClickNavigation.setupSettingListener();
 
     /**
+     * Number Parser Utility
+     * Shared utilities for parsing numeric values from text, including item counts
+     */
+
+    /**
+     * Parse item count from text
+     * Handles various formats including:
+     * - Plain numbers: "100", "1000"
+     * - K/M/B/T suffixes: "1.5K", "2M", "3B", "1.2T"
+     * - International formats with separators: "1,000", "1 000", "1.000"
+     * - Mixed decimal formats: "1.234,56" (European) or "1,234.56" (US)
+     * - Prefixed formats: "x5", "Amount: 1000", "Amount: 1 000"
+     *
+     * @param {string} text - Text containing a number
+     * @param {number} defaultValue - Value to return if parsing fails (default: 1)
+     * @returns {number} Parsed numeric value
+     */
+    function parseItemCount(text, defaultValue = 1) {
+        if (!text) {
+            return defaultValue;
+        }
+
+        // Convert to string and normalize
+        text = String(text).toLowerCase().trim();
+
+        // Extract number from common patterns like "x5", "Amount: 1000"
+        const prefixMatch = text.match(/x([\d,\s.kmb]+)|amount:\s*([\d,\s.kmb]+)/i);
+        if (prefixMatch) {
+            text = prefixMatch[1] || prefixMatch[2];
+        }
+
+        // Determine whether periods and commas are thousands separators or decimal points.
+        // Rules:
+        // 1. If both exist: the one appearing first (or multiple times) is the thousands separator.
+        //    e.g. "1.234,56" → period is thousands, comma is decimal → 1234.56
+        //    e.g. "1,234.56" → comma is thousands, period is decimal → 1234.56
+        // 2. If only commas exist and comma is followed by exactly 3 digits at end: thousands separator.
+        //    e.g. "1,234" → 1234
+        // 3. If only periods exist and period is followed by exactly 3 digits at end: thousands separator.
+        //    e.g. "1.234" → 1234
+        // 4. Otherwise treat as decimal separator.
+        //    e.g. "1.5" → 1.5,  "1,5" → 1.5
+
+        const hasPeriod = text.includes('.');
+        const hasComma = text.includes(',');
+
+        if (hasPeriod && hasComma) {
+            // Both present — whichever comes last is the decimal separator
+            const lastPeriod = text.lastIndexOf('.');
+            const lastComma = text.lastIndexOf(',');
+            if (lastPeriod > lastComma) {
+                // Period is decimal: remove commas as thousands separators
+                text = text.replace(/,/g, '');
+            } else {
+                // Comma is decimal: remove periods as thousands separators, replace comma with period
+                text = text.replace(/\./g, '').replace(',', '.');
+            }
+        } else if (hasComma) {
+            // Only commas: thousands separator if followed by exactly 3 digits at end, else decimal
+            if (/,\d{3}$/.test(text)) {
+                text = text.replace(/,/g, '');
+            } else {
+                text = text.replace(',', '.');
+            }
+        } else if (hasPeriod) {
+            // Only periods: thousands separator if followed by exactly 3 digits at end, else decimal
+            if (/\.\d{3}$/.test(text)) {
+                text = text.replace(/\./g, '');
+            }
+            // else leave as-is (valid decimal like "1.5")
+        }
+
+        // Remove remaining whitespace separators
+        text = text.replace(/\s/g, '');
+
+        // Handle K/M/B/T suffixes (must end with the suffix letter)
+        if (/\d[kmbt]$/.test(text)) {
+            if (text.endsWith('k')) {
+                return parseFloat(text) * 1000;
+            } else if (text.endsWith('m')) {
+                return parseFloat(text) * 1000000;
+            } else if (text.endsWith('b')) {
+                return parseFloat(text) * 1000000000;
+            } else if (text.endsWith('t')) {
+                return parseFloat(text) * 1000000000000;
+            }
+        }
+
+        // Parse plain number
+        const parsed = parseFloat(text);
+        return isNaN(parsed) ? defaultValue : parsed;
+    }
+
+    /**
      * Loot Log History Storage
      * Persists loot log entries to IndexedDB for extended history
      */
@@ -1688,7 +1782,10 @@
             const textNode = Array.from(el.childNodes).find((n) => n.nodeType === Node.TEXT_NODE);
             if (!textNode) return;
 
-            const parsed = Number(textNode.nodeValue.trim().replace(/,/g, ''));
+            // The game's own text may already be abbreviated (e.g. "5688K"), not just a plain
+            // comma-separated number - parseItemCount handles both so a K-only native figure still
+            // gets promoted to M/B here instead of silently failing to parse and being left as-is.
+            const parsed = parseItemCount(textNode.nodeValue.trim(), NaN);
             if (!Number.isFinite(parsed)) return;
 
             textNode.nodeValue = formatters_js.formatLargeNumber(parsed, 1);
@@ -13522,100 +13619,6 @@
     const enhancementFeature = new EnhancementFeature();
 
     /**
-     * Number Parser Utility
-     * Shared utilities for parsing numeric values from text, including item counts
-     */
-
-    /**
-     * Parse item count from text
-     * Handles various formats including:
-     * - Plain numbers: "100", "1000"
-     * - K/M/B/T suffixes: "1.5K", "2M", "3B", "1.2T"
-     * - International formats with separators: "1,000", "1 000", "1.000"
-     * - Mixed decimal formats: "1.234,56" (European) or "1,234.56" (US)
-     * - Prefixed formats: "x5", "Amount: 1000", "Amount: 1 000"
-     *
-     * @param {string} text - Text containing a number
-     * @param {number} defaultValue - Value to return if parsing fails (default: 1)
-     * @returns {number} Parsed numeric value
-     */
-    function parseItemCount(text, defaultValue = 1) {
-        if (!text) {
-            return defaultValue;
-        }
-
-        // Convert to string and normalize
-        text = String(text).toLowerCase().trim();
-
-        // Extract number from common patterns like "x5", "Amount: 1000"
-        const prefixMatch = text.match(/x([\d,\s.kmb]+)|amount:\s*([\d,\s.kmb]+)/i);
-        if (prefixMatch) {
-            text = prefixMatch[1] || prefixMatch[2];
-        }
-
-        // Determine whether periods and commas are thousands separators or decimal points.
-        // Rules:
-        // 1. If both exist: the one appearing first (or multiple times) is the thousands separator.
-        //    e.g. "1.234,56" → period is thousands, comma is decimal → 1234.56
-        //    e.g. "1,234.56" → comma is thousands, period is decimal → 1234.56
-        // 2. If only commas exist and comma is followed by exactly 3 digits at end: thousands separator.
-        //    e.g. "1,234" → 1234
-        // 3. If only periods exist and period is followed by exactly 3 digits at end: thousands separator.
-        //    e.g. "1.234" → 1234
-        // 4. Otherwise treat as decimal separator.
-        //    e.g. "1.5" → 1.5,  "1,5" → 1.5
-
-        const hasPeriod = text.includes('.');
-        const hasComma = text.includes(',');
-
-        if (hasPeriod && hasComma) {
-            // Both present — whichever comes last is the decimal separator
-            const lastPeriod = text.lastIndexOf('.');
-            const lastComma = text.lastIndexOf(',');
-            if (lastPeriod > lastComma) {
-                // Period is decimal: remove commas as thousands separators
-                text = text.replace(/,/g, '');
-            } else {
-                // Comma is decimal: remove periods as thousands separators, replace comma with period
-                text = text.replace(/\./g, '').replace(',', '.');
-            }
-        } else if (hasComma) {
-            // Only commas: thousands separator if followed by exactly 3 digits at end, else decimal
-            if (/,\d{3}$/.test(text)) {
-                text = text.replace(/,/g, '');
-            } else {
-                text = text.replace(',', '.');
-            }
-        } else if (hasPeriod) {
-            // Only periods: thousands separator if followed by exactly 3 digits at end, else decimal
-            if (/\.\d{3}$/.test(text)) {
-                text = text.replace(/\./g, '');
-            }
-            // else leave as-is (valid decimal like "1.5")
-        }
-
-        // Remove remaining whitespace separators
-        text = text.replace(/\s/g, '');
-
-        // Handle K/M/B/T suffixes (must end with the suffix letter)
-        if (/\d[kmbt]$/.test(text)) {
-            if (text.endsWith('k')) {
-                return parseFloat(text) * 1000;
-            } else if (text.endsWith('m')) {
-                return parseFloat(text) * 1000000;
-            } else if (text.endsWith('b')) {
-                return parseFloat(text) * 1000000000;
-            } else if (text.endsWith('t')) {
-                return parseFloat(text) * 1000000000000;
-            }
-        }
-
-        // Parse plain number
-        const parsed = parseFloat(text);
-        return isNaN(parsed) ? defaultValue : parsed;
-    }
-
-    /**
      * Enhancement Tooltip Module
      *
      * Provides enhancement analysis for item tooltips.
@@ -14255,6 +14258,136 @@
     }
 
     const xphCalculator = new XPHCalculator();
+
+    /**
+     * Enhancement Protection Marketplace Button
+     * Adds a "Buy Cheapest" button to the Protection item selector popup in the
+     * Enhancing panel, navigating to the Marketplace for the cheapest available
+     * protection option (the item itself, Mirror of Protection, or a specific
+     * protection item).
+     */
+
+
+    const MENU_WATCH_TIMEOUT_MS = 2000;
+
+    class EnhancementProtectionMarketplace {
+        constructor() {
+            this.isInitialized = false;
+            this.unregisterContainerObserver = null;
+            this.containerClickHandlers = new WeakMap();
+            this.menuWatcher = null;
+            this.menuWatchTimer = null;
+        }
+
+        initialize() {
+            if (this.isInitialized) return;
+            if (!config.getSetting('enhanceSim_protectionMarketplaceButton')) return;
+
+            this.isInitialized = true;
+
+            this.unregisterContainerObserver = domObserver.onClass(
+                'EnhancementProtectionMarketplace',
+                'SkillActionDetail_protectionItemInputContainer',
+                (container) => this._attachClickWatcher(container)
+            );
+
+            document
+                .querySelectorAll('[class*="SkillActionDetail_protectionItemInputContainer"]')
+                .forEach((container) => this._attachClickWatcher(container));
+        }
+
+        _attachClickWatcher(container) {
+            if (this.containerClickHandlers.has(container)) return;
+
+            const handler = () => this._watchForMenu(container);
+            container.addEventListener('click', handler);
+            this.containerClickHandlers.set(container, handler);
+        }
+
+        _watchForMenu(container) {
+            this._stopMenuWatch();
+
+            this.menuWatcher = new MutationObserver(() => {
+                const menu = document.querySelector('[class*="ItemSelector_menu__"]');
+                if (menu && !menu.dataset.mwiProtMktButton) {
+                    this._injectButton(menu, container);
+                    this._stopMenuWatch();
+                }
+            });
+            this.menuWatcher.observe(document.body, { childList: true, subtree: true });
+
+            this.menuWatchTimer = setTimeout(() => this._stopMenuWatch(), MENU_WATCH_TIMEOUT_MS);
+        }
+
+        _stopMenuWatch() {
+            if (this.menuWatcher) {
+                this.menuWatcher.disconnect();
+                this.menuWatcher = null;
+            }
+            if (this.menuWatchTimer) {
+                clearTimeout(this.menuWatchTimer);
+                this.menuWatchTimer = null;
+            }
+        }
+
+        _injectButton(menu, container) {
+            if (menu.dataset.mwiProtMktButton) return;
+            menu.dataset.mwiProtMktButton = 'true';
+
+            const itemHrid = this._getEnhancingItemHrid(container);
+            if (!itemHrid) return;
+
+            const cheapest = getCheapestProtectionPrice(itemHrid);
+            if (!cheapest.itemHrid) return;
+
+            const itemDetails = dataManager.getItemDetails(cheapest.itemHrid);
+            const itemName = itemDetails?.name || cheapest.itemHrid;
+
+            const btn = document.createElement('button');
+            btn.className = 'Button_button__1Fe9z Button_fullWidth__17pVU';
+            btn.style.cssText = 'margin-bottom: 6px;';
+            btn.textContent = i18n_js.t('enhancementProtectionMarketplace.buyCheapestButtonLabel', {
+                name: itemName,
+                price: formatters_js.formatLargeNumber(cheapest.price),
+            });
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                navigateToMarketplace(cheapest.itemHrid, 0);
+                // The button lives inside the popup's own DOM subtree, so the game's click-away
+                // listener (which only closes on clicks it judges "outside") never sees this as a
+                // dismissal. Dispatch a synthetic outside click to close the popup the same way any
+                // other click on the page already does.
+                document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+                document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            });
+
+            menu.insertBefore(btn, menu.firstChild);
+        }
+
+        _getEnhancingItemHrid(container) {
+            const panel = container.closest('[class*="SkillActionDetail_enhancingComponent"]');
+            return panel?.dataset?.mwiItemHrid || null;
+        }
+
+        disable() {
+            if (this.unregisterContainerObserver) {
+                this.unregisterContainerObserver();
+                this.unregisterContainerObserver = null;
+            }
+
+            document.querySelectorAll('[class*="SkillActionDetail_protectionItemInputContainer"]').forEach((container) => {
+                const handler = this.containerClickHandlers.get(container);
+                if (handler) container.removeEventListener('click', handler);
+            });
+            this.containerClickHandlers = new WeakMap();
+
+            this._stopMenuWatch();
+
+            this.isInitialized = false;
+        }
+    }
+
+    const enhancementProtectionMarketplace = new EnhancementProtectionMarketplace();
 
     /**
      * Risk of Ruin Engine
@@ -21668,8 +21801,10 @@ self.onmessage = function (e) {
             processingConversions.some((conversion) => conversion.missingPrice) ||
             (bonusRevenue?.hasMissingPrices ?? false);
 
-        // Calculate market tax (percentage of gross revenue)
-        const marketTax = revenuePerHour * profitConstants_js.MARKET_TAX;
+        // Calculate market tax (percentage of gross revenue) - skipped when producing for personal
+        // use (excludeSellTax), since the output is never actually sold.
+        const excludeSellTax = config.getSettingValue('profitCalc_excludeSellTax', false);
+        const marketTax = excludeSellTax ? 0 : revenuePerHour * profitConstants_js.MARKET_TAX;
 
         // Calculate net profit (revenue - market tax - drink costs)
         const profitPerHour = revenuePerHour - marketTax - drinkCostPerHour;
@@ -21679,6 +21814,8 @@ self.onmessage = function (e) {
             profitPerAction: profitHelpers_js.calculateProfitPerAction(profitPerHour, actionsPerHour * efficiencyMultiplier), // Profit per action
             profitPerDay: profitHelpers_js.calculateProfitPerDay(profitPerHour), // Profit per day
             revenuePerHour,
+            marketTax,
+            excludeSellTax,
             drinkCostPerHour,
             drinkCosts, // Array of individual drink costs {name, priceEach, costPerHour}
             actionsPerHour, // Base actions per hour (without efficiency)
@@ -24794,6 +24931,7 @@ self.onmessage = function (e) {
                     gourmetRevenueBonusPerAction: profitData.gourmetRevenueBonusPerAction,
                     drinkCostPerHour: profitData.drinkCostPerHour,
                     efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
+                    excludeSellTax: profitData.excludeSellTax,
                 });
                 return valueMode === 'estimated_value' ? totals.totalRevenue : totals.totalProfit;
             }
@@ -24808,6 +24946,7 @@ self.onmessage = function (e) {
                 materialCosts: profitData.materialCosts,
                 totalTeaCostPerHour: profitData.totalTeaCostPerHour,
                 efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
+                excludeSellTax: profitData.excludeSellTax,
             });
 
             return valueMode === 'estimated_value' ? totals.totalRevenue : totals.totalProfit;
@@ -25853,6 +25992,7 @@ self.onmessage = function (e) {
         alchemyActionProtection: alchemyActionProtection$1,
         enhancementFeature,
         xphCalculator,
+        enhancementProtectionMarketplace,
         riskOfRuinUI,
         guildXPTracker: guildXPTracker$1,
         guildXPDisplay: guildXPDisplay$1,

@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 3.4.2
+ * Version: 3.5.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1491,8 +1491,10 @@
             // Apply efficiency multiplier to bonus revenue (efficiency repeats the action, including bonus rolls)
             const efficiencyBoostedBonusRevenue = (bonusRevenue?.totalBonusRevenue || 0) * efficiencyMultiplier;
 
-            // Calculate market tax (percentage of gross revenue including bonus revenue)
-            const marketTax = (revenuePerHour + efficiencyBoostedBonusRevenue) * profitConstants_js.MARKET_TAX;
+            // Calculate market tax (percentage of gross revenue including bonus revenue) - skipped
+            // when producing for personal use (excludeSellTax), since the output is never actually sold.
+            const excludeSellTax = config.getSettingValue('profitCalc_excludeSellTax', false);
+            const marketTax = excludeSellTax ? 0 : (revenuePerHour + efficiencyBoostedBonusRevenue) * profitConstants_js.MARKET_TAX;
 
             // Total costs per hour (materials + teas + market tax)
             const totalCostPerHour = materialCostPerHour + totalTeaCostPerHour + marketTax;
@@ -1531,6 +1533,8 @@
                 outputPriceEstimated, // True when outputPriceMissing but crafting cost fallback resolved a price
                 priceAfterTax, // Output price after market tax (bid or ask based on mode)
                 revenuePerHour,
+                marketTax,
+                excludeSellTax,
                 profitPerItem,
                 profitPerHour,
                 profitPerAction: profitHelpers_js.calculateProfitPerAction(profitPerHour, actionsPerHour * efficiencyMultiplier), // Profit per action
@@ -4894,8 +4898,10 @@ self.onmessage = function (e) {
             processingConversions.some((conversion) => conversion.missingPrice) ||
             (bonusRevenue?.hasMissingPrices ?? false);
 
-        // Calculate market tax (percentage of gross revenue)
-        const marketTax = revenuePerHour * profitConstants_js.MARKET_TAX;
+        // Calculate market tax (percentage of gross revenue) - skipped when producing for personal
+        // use (excludeSellTax), since the output is never actually sold.
+        const excludeSellTax = config.getSettingValue('profitCalc_excludeSellTax', false);
+        const marketTax = excludeSellTax ? 0 : revenuePerHour * profitConstants_js.MARKET_TAX;
 
         // Calculate net profit (revenue - market tax - drink costs)
         const profitPerHour = revenuePerHour - marketTax - drinkCostPerHour;
@@ -4905,6 +4911,8 @@ self.onmessage = function (e) {
             profitPerAction: profitHelpers_js.calculateProfitPerAction(profitPerHour, actionsPerHour * efficiencyMultiplier), // Profit per action
             profitPerDay: profitHelpers_js.calculateProfitPerDay(profitPerHour), // Profit per day
             revenuePerHour,
+            marketTax,
+            excludeSellTax,
             drinkCostPerHour,
             drinkCosts, // Array of individual drink costs {name, priceEach, costPerHour}
             actionsPerHour, // Base actions per hour (without efficiency)
@@ -35259,6 +35267,34 @@ self.onmessage = function (e) {
     }
 
     /**
+     * Openable Analytics Cost
+     * Resolves the recurring cost of opening a container: the current buy price of its required key
+     * item (`openKeyItemHrid`), if any. Containers themselves are typically earned as drops/rewards
+     * rather than purchased, so only the consumable key - the one thing actually spent on every
+     * single opening - counts as cost here.
+     */
+
+
+    /**
+     * Calculate the total cost of opening `containerCount` copies of this container.
+     * @param {string} containerHrid
+     * @param {number} containerCount
+     * @returns {{cost: number, complete: boolean}} Total key cost, and whether it could be fully
+     *      priced (a container with no key requirement is always complete with cost 0).
+     */
+    function calculateOpeningCost(containerHrid, containerCount) {
+        if (!(containerCount > 0)) return { cost: 0, complete: true };
+
+        const keyItemHrid = dataManager.getItemDetails(containerHrid)?.openKeyItemHrid;
+        if (!keyItemHrid) return { cost: 0, complete: true };
+
+        const resolved = expectedValueCalculator.resolveBuySideValue(keyItemHrid);
+        if (!resolved) return { cost: 0, complete: false };
+
+        return { cost: resolved.value * containerCount, complete: true };
+    }
+
+    /**
      * Openable Analytics UI
      * Character-scoped Analytics popup: Session/Lifetime toggle, single-open accordion of containers,
      * per-container Actual/Expected/Luck + Loot table, and a collapsed Manage Data section for
@@ -35724,6 +35760,11 @@ self.onmessage = function (e) {
             const luckPercent =
                 luckEligible && aggregate.expectedValueTotal > 0 ? (luckValue / aggregate.expectedValueTotal) * 100 : null;
 
+            const actualComplete = (aggregate.actualValuePartialEvents || 0) === 0;
+            const openingCost = calculateOpeningCost(containerHrid, aggregate.containersOpened);
+            const profitEligible = actualComplete && openingCost.complete;
+            const profitValue = profitEligible ? aggregate.actualValueTotal - openingCost.cost : null;
+
             const summaryRow = document.createElement('div');
             summaryRow.style.cssText = 'display:flex; justify-content:space-between; margin-bottom:10px; font-size:13px;';
 
@@ -35733,6 +35774,21 @@ self.onmessage = function (e) {
             const expectedCol = document.createElement('div');
             const expectedHasAny = aggregate.expectedValueAvailableEvents > 0;
             expectedCol.innerHTML = `<div style="opacity:0.7; font-size:11px;">${i18n_js.t('openableAnalytics.expectedLabel')}</div>${expectedHasAny ? formatters_js.formatLargeNumber(aggregate.expectedValueTotal) : '—'}`;
+
+            const profitCol = document.createElement('div');
+            profitCol.style.textAlign = 'right';
+            const profitHeader = document.createElement('div');
+            profitHeader.style.cssText = 'opacity:0.7; font-size:11px;';
+            profitHeader.textContent = i18n_js.t('openableAnalytics.profitLabel');
+            const profitValueEl = document.createElement('div');
+            if (!profitEligible) {
+                profitValueEl.textContent = '—';
+            } else {
+                profitValueEl.textContent = formatSignedLargeNumber(profitValue);
+                profitValueEl.style.color = luckColor$1(profitValue);
+            }
+            profitCol.appendChild(profitHeader);
+            profitCol.appendChild(profitValueEl);
 
             const luckCol = document.createElement('div');
             luckCol.style.textAlign = 'right';
@@ -35755,6 +35811,7 @@ self.onmessage = function (e) {
 
             summaryRow.appendChild(actualCol);
             summaryRow.appendChild(expectedCol);
+            summaryRow.appendChild(profitCol);
             summaryRow.appendChild(luckCol);
             wrapper.appendChild(summaryRow);
 
@@ -36389,34 +36446,6 @@ self.onmessage = function (e) {
     }
 
     const openableAnalyticsUI = new OpenableAnalyticsUI();
-
-    /**
-     * Openable Analytics Cost
-     * Resolves the recurring cost of opening a container: the current buy price of its required key
-     * item (`openKeyItemHrid`), if any. Containers themselves are typically earned as drops/rewards
-     * rather than purchased, so only the consumable key - the one thing actually spent on every
-     * single opening - counts as cost here.
-     */
-
-
-    /**
-     * Calculate the total cost of opening `containerCount` copies of this container.
-     * @param {string} containerHrid
-     * @param {number} containerCount
-     * @returns {{cost: number, complete: boolean}} Total key cost, and whether it could be fully
-     *      priced (a container with no key requirement is always complete with cost 0).
-     */
-    function calculateOpeningCost(containerHrid, containerCount) {
-        if (!(containerCount > 0)) return { cost: 0, complete: true };
-
-        const keyItemHrid = dataManager.getItemDetails(containerHrid)?.openKeyItemHrid;
-        if (!keyItemHrid) return { cost: 0, complete: true };
-
-        const resolved = expectedValueCalculator.resolveBuySideValue(keyItemHrid);
-        if (!resolved) return { cost: 0, complete: false };
-
-        return { cost: resolved.value * containerCount, complete: true };
-    }
 
     /**
      * Openable Analytics Variance

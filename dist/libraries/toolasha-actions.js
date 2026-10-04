@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 3.4.2
+ * Version: 3.5.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1684,8 +1684,10 @@
             processingConversions.some((conversion) => conversion.missingPrice) ||
             (bonusRevenue?.hasMissingPrices ?? false);
 
-        // Calculate market tax (percentage of gross revenue)
-        const marketTax = revenuePerHour * profitConstants_js.MARKET_TAX;
+        // Calculate market tax (percentage of gross revenue) - skipped when producing for personal
+        // use (excludeSellTax), since the output is never actually sold.
+        const excludeSellTax = config.getSettingValue('profitCalc_excludeSellTax', false);
+        const marketTax = excludeSellTax ? 0 : revenuePerHour * profitConstants_js.MARKET_TAX;
 
         // Calculate net profit (revenue - market tax - drink costs)
         const profitPerHour = revenuePerHour - marketTax - drinkCostPerHour;
@@ -1695,6 +1697,8 @@
             profitPerAction: profitHelpers_js.calculateProfitPerAction(profitPerHour, actionsPerHour * efficiencyMultiplier), // Profit per action
             profitPerDay: profitHelpers_js.calculateProfitPerDay(profitPerHour), // Profit per day
             revenuePerHour,
+            marketTax,
+            excludeSellTax,
             drinkCostPerHour,
             drinkCosts, // Array of individual drink costs {name, priceEach, costPerHour}
             actionsPerHour, // Base actions per hour (without efficiency)
@@ -1999,6 +2003,46 @@
 
     const getMissingPriceIndicator = (isMissing) => (isMissing ? ' ⚠' : '');
 
+    /**
+     * Build the Market Tax line/section text, branching on excludeSellTax so "producing for personal
+     * use" reads as a deliberate state rather than a missing-price/zero-value glitch.
+     * @param {boolean} excludeSellTax
+     * @param {boolean} missing
+     * @param {number} amount
+     * @param {string} suffix - e.g. t('profitDisplay.hrSuffix') or actionSuffix
+     * @param {boolean} [estimated=false]
+     * @returns {{line: string, section: string}}
+     */
+    function formatMarketTaxText(excludeSellTax, missing, amount, suffix, estimated = false) {
+        if (excludeSellTax) {
+            return {
+                line: i18n_js.t('profitDisplay.marketTaxExcludedLine'),
+                section: i18n_js.t('profitDisplay.marketTaxExcludedSectionTitle'),
+            };
+        }
+        const label = missing ? '-- ⚠' : `${formatters_js.formatLargeNumber(amount)}${suffix}${estimated ? ' ⚠' : ''}`;
+        return {
+            line: i18n_js.t('profitDisplay.marketTaxLine', { pct: profitConstants_js.MARKET_TAX * 100, label }),
+            section: i18n_js.t('profitDisplay.marketTaxSectionTitle', { label, pct: profitConstants_js.MARKET_TAX * 100 }),
+        };
+    }
+
+    /**
+     * Build the "sell tax excluded" warning line shown under Net Profit when the toggle is active, so
+     * it's visible even to someone who opens the detail panel without noticing the toggle's state.
+     * @returns {HTMLElement}
+     */
+    function buildSellTaxExcludedWarning() {
+        const warning = document.createElement('div');
+        warning.style.cssText = `
+        color: ${config.COLOR_WARNING};
+        font-size: 0.85em;
+        margin-bottom: 8px;
+    `;
+        warning.textContent = i18n_js.t('profitDisplay.sellTaxExcludedWarning');
+        return warning;
+    }
+
     function getAutomaticLoadoutLabel(actionTypeHrid) {
         if (!actionTypeHrid || !config.getSetting('loadoutSnapshot')) return i18n_js.t('profitDisplay.equippedLabel');
         const selection = loadoutState.findSnapshotSelectionForActionType(actionTypeHrid);
@@ -2107,7 +2151,7 @@
         const efficiencyMultiplier = profitData.efficiencyMultiplier || 1;
         // Revenue is now gross (pre-tax)
         const revenue = Math.round(profitData.revenuePerHour);
-        const marketTax = Math.round(revenue * profitConstants_js.MARKET_TAX);
+        const marketTax = Math.round(profitData.marketTax);
         const costs = Math.round(profitData.drinkCostPerHour + marketTax);
         const summary = formatMissingLabel(
             netMissing,
@@ -2371,19 +2415,16 @@
         const marketTaxContent = document.createElement('div');
         const marketTaxLine = document.createElement('div');
         marketTaxLine.style.marginLeft = '8px';
-        const marketTaxLabel = marketTaxMissing ? '-- ⚠' : `${formatters_js.formatLargeNumber(marketTax)}${i18n_js.t('profitDisplay.hrSuffix')}`;
-        marketTaxLine.textContent = i18n_js.t('profitDisplay.marketTaxLine', { pct: profitConstants_js.MARKET_TAX * 100, label: marketTaxLabel });
+        const marketTaxText = formatMarketTaxText(
+            profitData.excludeSellTax,
+            marketTaxMissing,
+            marketTax,
+            i18n_js.t('profitDisplay.hrSuffix')
+        );
+        marketTaxLine.textContent = marketTaxText.line;
         marketTaxContent.appendChild(marketTaxLine);
 
-        const marketTaxHeader = marketTaxMissing ? '-- ⚠' : `${formatters_js.formatLargeNumber(marketTax)}${i18n_js.t('profitDisplay.hrSuffix')}`;
-        const marketTaxSection = uiComponents_js.createCollapsibleSection(
-            '',
-            i18n_js.t('profitDisplay.marketTaxSectionTitle', { label: marketTaxHeader, pct: profitConstants_js.MARKET_TAX * 100 }),
-            null,
-            marketTaxContent,
-            false,
-            1
-        );
+        const marketTaxSection = uiComponents_js.createCollapsibleSection('', marketTaxText.section, null, marketTaxContent, false, 1);
 
         costsDiv.appendChild(marketTaxSection);
 
@@ -2646,6 +2687,9 @@
                   }),
               });
         topLevelContent.appendChild(netProfitLine);
+        if (profitData.excludeSellTax) {
+            topLevelContent.appendChild(buildSellTaxExcludedWarning());
+        }
 
         // Add pricing mode label
         const pricingMode = profitData.pricingMode || 'hybrid';
@@ -2750,6 +2794,7 @@
                         gourmetRevenueBonusPerAction: profitData.gourmetRevenueBonusPerAction,
                         drinkCostPerHour: profitData.drinkCostPerHour,
                         efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
+                        excludeSellTax: profitData.excludeSellTax,
                     });
                     const totalProfit = Math.round(totals.totalProfit);
                     profitSummaryDiv.textContent = i18n_js.t('profitDisplay.totalProfitSummary', {
@@ -2905,7 +2950,7 @@
                 bonusRevenueTotal * efficiencyMultiplier
         );
         // Calculate market tax (percentage of revenue)
-        const marketTax = Math.round(revenue * profitConstants_js.MARKET_TAX);
+        const marketTax = Math.round(profitData.marketTax);
         const costs = Math.round(profitData.materialCostPerHour + profitData.totalTeaCostPerHour + marketTax);
         const summary = netMissing
             ? '-- ⚠'
@@ -3167,21 +3212,17 @@
         const marketTaxContent = document.createElement('div');
         const marketTaxLine = document.createElement('div');
         marketTaxLine.style.marginLeft = '8px';
-        const marketTaxLabel = marketTaxMissing
-            ? '-- ⚠'
-            : `${formatters_js.formatLargeNumber(marketTax)}${i18n_js.t('profitDisplay.hrSuffix')}${marketTaxEstimated ? ' ⚠' : ''}`;
-        marketTaxLine.textContent = i18n_js.t('profitDisplay.marketTaxLine', { pct: profitConstants_js.MARKET_TAX * 100, label: marketTaxLabel });
+        const marketTaxText = formatMarketTaxText(
+            profitData.excludeSellTax,
+            marketTaxMissing,
+            marketTax,
+            i18n_js.t('profitDisplay.hrSuffix'),
+            marketTaxEstimated
+        );
+        marketTaxLine.textContent = marketTaxText.line;
         marketTaxContent.appendChild(marketTaxLine);
 
-        const marketTaxHeader = marketTaxLabel;
-        const marketTaxSection = uiComponents_js.createCollapsibleSection(
-            '',
-            i18n_js.t('profitDisplay.marketTaxSectionTitle', { label: marketTaxHeader, pct: profitConstants_js.MARKET_TAX * 100 }),
-            null,
-            marketTaxContent,
-            false,
-            1
-        );
+        const marketTaxSection = uiComponents_js.createCollapsibleSection('', marketTaxText.section, null, marketTaxContent, false, 1);
 
         costsDiv.appendChild(marketTaxSection);
 
@@ -3432,6 +3473,9 @@
                   }),
               });
         topLevelContent.appendChild(netProfitLine);
+        if (profitData.excludeSellTax) {
+            topLevelContent.appendChild(buildSellTaxExcludedWarning());
+        }
 
         // Add pricing mode label
         const pricingMode = profitData.pricingMode || 'hybrid';
@@ -3535,6 +3579,7 @@
                         materialCosts: profitData.materialCosts,
                         totalTeaCostPerHour: profitData.totalTeaCostPerHour,
                         efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
+                        excludeSellTax: profitData.excludeSellTax,
                     });
                     const totalProfit = Math.round(totals.totalProfit);
                     profitSummaryDiv.textContent = i18n_js.t('profitDisplay.totalProfitSummary', {
@@ -3622,8 +3667,7 @@
 
         const revenuePerHour = profitData.revenuePerHour;
         const revenuePerAction = revenuePerHour / actionsPerHour;
-        const marketTaxPerHour = revenuePerHour * profitConstants_js.MARKET_TAX;
-        const marketTaxPerAction = marketTaxPerHour / actionsPerHour;
+        const marketTaxPerAction = profitData.marketTax / actionsPerHour;
         const drinkCostPerAction = profitData.drinkCostPerHour / actionsPerHour;
         const costsPerAction = drinkCostPerAction + marketTaxPerAction;
         const profitPerAction = profitData.profitPerAction;
@@ -3900,16 +3944,22 @@
         const marketTaxContent = document.createElement('div');
         const marketTaxLine = document.createElement('div');
         marketTaxLine.style.marginLeft = '8px';
-        const marketTaxLabel = formatMissingLabel(
-            marketTaxMissing,
-            `${formatPerAction(marketTaxPerAction)}${i18n_js.t('profitDisplay.actionSuffix')}`
-        );
-        marketTaxLine.textContent = i18n_js.t('profitDisplay.marketTaxLine', { pct: profitConstants_js.MARKET_TAX * 100, label: marketTaxLabel });
+        const marketTaxLabel = profitData.excludeSellTax
+            ? i18n_js.t('profitDisplay.marketTaxExcludedLabel')
+            : formatMissingLabel(
+                  marketTaxMissing,
+                  `${formatPerAction(marketTaxPerAction)}${i18n_js.t('profitDisplay.actionSuffix')}`
+              );
+        marketTaxLine.textContent = profitData.excludeSellTax
+            ? i18n_js.t('profitDisplay.marketTaxExcludedLine')
+            : i18n_js.t('profitDisplay.marketTaxLine', { pct: profitConstants_js.MARKET_TAX * 100, label: marketTaxLabel });
         marketTaxContent.appendChild(marketTaxLine);
 
         const marketTaxSection = uiComponents_js.createCollapsibleSection(
             '',
-            i18n_js.t('profitDisplay.marketTaxSectionTitle', { label: marketTaxLabel, pct: profitConstants_js.MARKET_TAX * 100 }),
+            profitData.excludeSellTax
+                ? i18n_js.t('profitDisplay.marketTaxExcludedSectionTitle')
+                : i18n_js.t('profitDisplay.marketTaxSectionTitle', { label: marketTaxLabel, pct: profitConstants_js.MARKET_TAX * 100 }),
             null,
             marketTaxContent,
             false,
@@ -3937,6 +3987,9 @@
                   value: `${formatPerAction(profitPerAction)}${i18n_js.t('profitDisplay.actionSuffix')}`,
               });
         topLevelContent.appendChild(netProfitLine);
+        if (profitData.excludeSellTax) {
+            topLevelContent.appendChild(buildSellTaxExcludedWarning());
+        }
 
         const summarySection = uiComponents_js.createCollapsibleSection(
             '',
@@ -3993,7 +4046,7 @@
         const gourmetRevenuePerAction = gourmetItemsPerAction * profitData.outputPrice;
         const bonusRevenuePerAction = bonusRevenueTotal / actionsPerHour;
         const revenuePerAction = baseRevenuePerAction + gourmetRevenuePerAction + bonusRevenuePerAction;
-        const marketTaxPerAction = revenuePerAction * profitConstants_js.MARKET_TAX;
+        const marketTaxPerAction = profitData.marketTax / actionsPerHour;
         const materialCostPerAction = profitData.totalMaterialCost; // per-action cost is fixed, unaffected by efficiency
         const teaCostPerAction = profitData.totalTeaCostPerHour / actionsPerHour;
         const costsPerAction = materialCostPerAction + teaCostPerAction + marketTaxPerAction;
@@ -4251,15 +4304,21 @@
         const marketTaxContent = document.createElement('div');
         const marketTaxLine = document.createElement('div');
         marketTaxLine.style.marginLeft = '8px';
-        const marketTaxLabel = marketTaxMissing
-            ? '-- ⚠'
-            : `${formatPerAction(marketTaxPerAction)}${i18n_js.t('profitDisplay.actionSuffix')}${marketTaxEstimated ? ' ⚠' : ''}`;
-        marketTaxLine.textContent = i18n_js.t('profitDisplay.marketTaxLine', { pct: profitConstants_js.MARKET_TAX * 100, label: marketTaxLabel });
+        const marketTaxLabel = profitData.excludeSellTax
+            ? i18n_js.t('profitDisplay.marketTaxExcludedLabel')
+            : marketTaxMissing
+              ? '-- ⚠'
+              : `${formatPerAction(marketTaxPerAction)}${i18n_js.t('profitDisplay.actionSuffix')}${marketTaxEstimated ? ' ⚠' : ''}`;
+        marketTaxLine.textContent = profitData.excludeSellTax
+            ? i18n_js.t('profitDisplay.marketTaxExcludedLine')
+            : i18n_js.t('profitDisplay.marketTaxLine', { pct: profitConstants_js.MARKET_TAX * 100, label: marketTaxLabel });
         marketTaxContent.appendChild(marketTaxLine);
 
         const marketTaxSection = uiComponents_js.createCollapsibleSection(
             '',
-            i18n_js.t('profitDisplay.marketTaxSectionTitle', { label: marketTaxLabel, pct: profitConstants_js.MARKET_TAX * 100 }),
+            profitData.excludeSellTax
+                ? i18n_js.t('profitDisplay.marketTaxExcludedSectionTitle')
+                : i18n_js.t('profitDisplay.marketTaxSectionTitle', { label: marketTaxLabel, pct: profitConstants_js.MARKET_TAX * 100 }),
             null,
             marketTaxContent,
             false,
@@ -4287,6 +4346,9 @@
                   value: `${formatPerAction(profitPerAction)}${i18n_js.t('profitDisplay.actionSuffix')}${netEstimated ? ' ⚠' : ''}`,
               });
         topLevelContent.appendChild(netProfitLine);
+        if (profitData.excludeSellTax) {
+            topLevelContent.appendChild(buildSellTaxExcludedWarning());
+        }
 
         const revenueSummaryLabel = revenueMissing
             ? '-- ⚠'
@@ -4323,6 +4385,7 @@
             gourmetRevenueBonusPerAction: profitData.gourmetRevenueBonusPerAction,
             drinkCostPerHour: profitData.drinkCostPerHour,
             efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
+            excludeSellTax: profitData.excludeSellTax,
         });
         const hoursNeeded = totals.hoursNeeded;
 
@@ -4607,14 +4670,21 @@
         const marketTaxContent = document.createElement('div');
         const marketTaxLine = document.createElement('div');
         marketTaxLine.style.marginLeft = '8px';
-        const marketTaxLabel = marketTaxMissing ? '-- ⚠' : formatters_js.formatLargeNumber(totalMarketTax);
-        marketTaxLine.textContent = i18n_js.t('profitDisplay.marketTaxLine', { pct: profitConstants_js.MARKET_TAX * 100, label: marketTaxLabel });
+        const marketTaxLabel = profitData.excludeSellTax
+            ? i18n_js.t('profitDisplay.marketTaxExcludedLabel')
+            : marketTaxMissing
+              ? '-- ⚠'
+              : formatters_js.formatLargeNumber(totalMarketTax);
+        marketTaxLine.textContent = profitData.excludeSellTax
+            ? i18n_js.t('profitDisplay.marketTaxExcludedLine')
+            : i18n_js.t('profitDisplay.marketTaxLine', { pct: profitConstants_js.MARKET_TAX * 100, label: marketTaxLabel });
         marketTaxContent.appendChild(marketTaxLine);
 
-        const marketTaxHeader = marketTaxMissing ? '-- ⚠' : formatters_js.formatLargeNumber(totalMarketTax);
         const marketTaxSection = uiComponents_js.createCollapsibleSection(
             '',
-            i18n_js.t('profitDisplay.marketTaxSectionTitle', { label: marketTaxHeader, pct: profitConstants_js.MARKET_TAX * 100 }),
+            profitData.excludeSellTax
+                ? i18n_js.t('profitDisplay.marketTaxExcludedSectionTitle')
+                : i18n_js.t('profitDisplay.marketTaxSectionTitle', { label: marketTaxLabel, pct: profitConstants_js.MARKET_TAX * 100 }),
             null,
             marketTaxContent,
             false,
@@ -4640,6 +4710,9 @@
             ? i18n_js.t('profitDisplay.netProfitLine', { value: '-- ⚠' })
             : i18n_js.t('profitDisplay.netProfitLine', { value: formatters_js.formatLargeNumber(totalProfit) });
         topLevelContent.appendChild(netProfitLine);
+        if (profitData.excludeSellTax) {
+            topLevelContent.appendChild(buildSellTaxExcludedWarning());
+        }
 
         const actionsSummary = i18n_js.t('profitDisplay.revenueCostsSummary', {
             revenue: formatMissingLabel(revenueMissing, formatters_js.formatLargeNumber(totalRevenue)),
@@ -4694,6 +4767,7 @@
             materialCosts: profitData.materialCosts,
             totalTeaCostPerHour: profitData.totalTeaCostPerHour,
             efficiencyMultiplier,
+            excludeSellTax: profitData.excludeSellTax,
         });
         const totalRevenue = Math.round(totals.totalRevenue);
         const totalMarketTax = Math.round(totals.totalMarketTax);
@@ -4953,16 +5027,21 @@
         const marketTaxContent = document.createElement('div');
         const marketTaxLine = document.createElement('div');
         marketTaxLine.style.marginLeft = '8px';
-        const marketTaxLabel = marketTaxMissing
-            ? '-- ⚠'
-            : `${formatters_js.formatLargeNumber(totalMarketTax)}${marketTaxEstimated ? ' ⚠' : ''}`;
-        marketTaxLine.textContent = i18n_js.t('profitDisplay.marketTaxLine', { pct: profitConstants_js.MARKET_TAX * 100, label: marketTaxLabel });
+        const marketTaxLabel = profitData.excludeSellTax
+            ? i18n_js.t('profitDisplay.marketTaxExcludedLabel')
+            : marketTaxMissing
+              ? '-- ⚠'
+              : `${formatters_js.formatLargeNumber(totalMarketTax)}${marketTaxEstimated ? ' ⚠' : ''}`;
+        marketTaxLine.textContent = profitData.excludeSellTax
+            ? i18n_js.t('profitDisplay.marketTaxExcludedLine')
+            : i18n_js.t('profitDisplay.marketTaxLine', { pct: profitConstants_js.MARKET_TAX * 100, label: marketTaxLabel });
         marketTaxContent.appendChild(marketTaxLine);
 
-        const marketTaxHeader = marketTaxLabel;
         const marketTaxSection = uiComponents_js.createCollapsibleSection(
             '',
-            i18n_js.t('profitDisplay.marketTaxSectionTitle', { label: marketTaxHeader, pct: profitConstants_js.MARKET_TAX * 100 }),
+            profitData.excludeSellTax
+                ? i18n_js.t('profitDisplay.marketTaxExcludedSectionTitle')
+                : i18n_js.t('profitDisplay.marketTaxSectionTitle', { label: marketTaxLabel, pct: profitConstants_js.MARKET_TAX * 100 }),
             null,
             marketTaxContent,
             false,
@@ -4990,6 +5069,9 @@
                   value: `${formatters_js.formatLargeNumber(totalProfit)}${netEstimated ? ' ⚠' : ''}`,
               });
         topLevelContent.appendChild(netProfitLine);
+        if (profitData.excludeSellTax) {
+            topLevelContent.appendChild(buildSellTaxExcludedWarning());
+        }
 
         const revenueDisplay = revenueMissing
             ? '-- ⚠'
@@ -5439,9 +5521,11 @@
             this.currentTitleElement = null; // Track which title we're attached to
             this._updateModeBtn = null;
             this._updateCraftBtn = null;
+            this._updateSellTaxBtn = null;
             this._updateSortBtn = null;
             this.pricingModeHandler = null;
             this.craftUpgradeHandler = null;
+            this.excludeSellTaxHandler = null;
             this.settingsLoadedHandler = null;
             this.unregisterSortModeHandler = null;
         }
@@ -5474,6 +5558,11 @@
             };
             config.onSettingChange('profitCalc_craftUpgradeItems', this.craftUpgradeHandler);
 
+            this.excludeSellTaxHandler = () => {
+                if (this._updateSellTaxBtn) this._updateSellTaxBtn();
+            };
+            config.onSettingChange('profitCalc_excludeSellTax', this.excludeSellTaxHandler);
+
             // Character switches load the new character's settings with per-setting
             // onSettingChange callbacks suppressed (the feature registry fully reinitializes
             // regular features instead). This filter is persistent infrastructure outside that
@@ -5483,6 +5572,7 @@
             this.settingsLoadedHandler = () => {
                 if (this._updateModeBtn) this._updateModeBtn();
                 if (this._updateCraftBtn) this._updateCraftBtn();
+                if (this._updateSellTaxBtn) this._updateSellTaxBtn();
                 this._refreshProfitDisplays();
             };
             config.onSettingsLoaded(this.settingsLoadedHandler);
@@ -5683,6 +5773,43 @@
 
             if (!config.getSetting('actionPanel_showCraftToggle')) {
                 craftBtn.style.display = 'none';
+            }
+
+            // Create sell-tax exclusion toggle button
+            const sellTaxBtn = document.createElement('button');
+            sellTaxBtn.id = 'mwi-action-sell-tax-toggle';
+            const updateSellTaxBtn = () => {
+                const enabled = config.getSetting('profitCalc_excludeSellTax');
+                sellTaxBtn.textContent = enabled ? i18n_js.t('actionFilter.sellTaxOffLabel') : i18n_js.t('actionFilter.sellTaxOnLabel');
+                sellTaxBtn.title = enabled
+                    ? i18n_js.t('actionFilter.sellTaxToggleTooltipOn')
+                    : i18n_js.t('actionFilter.sellTaxToggleTooltipOff');
+                sellTaxBtn.style.color = enabled ? config.COLOR_WARNING : '';
+                sellTaxBtn.style.borderColor = enabled ? config.COLOR_WARNING : 'rgba(255, 255, 255, 0.23)';
+            };
+            sellTaxBtn.style.cssText = `
+            padding: 8px 12px;
+            font-size: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.23);
+            border-radius: 4px;
+            background: transparent;
+            cursor: pointer;
+            font-family: inherit;
+            flex-shrink: 0;
+        `;
+            updateSellTaxBtn();
+            this._updateSellTaxBtn = updateSellTaxBtn;
+            sellTaxBtn.addEventListener('click', async () => {
+                const current = config.getSetting('profitCalc_excludeSellTax');
+                config.setSetting('profitCalc_excludeSellTax', !current);
+                updateSellTaxBtn();
+                await this._refreshProfitDisplays();
+            });
+            craftBtn.insertAdjacentElement('afterend', sellTaxBtn);
+            this.sellTaxButton = sellTaxBtn;
+
+            if (!config.getSetting('actionPanel_showSellTaxToggle')) {
+                sellTaxBtn.style.display = 'none';
             }
 
             // Find the container for action panels to inject "No results" message
@@ -5914,8 +6041,14 @@
                 this.craftButton = null;
             }
 
+            if (this.sellTaxButton && this.sellTaxButton.parentElement) {
+                this.sellTaxButton.remove();
+                this.sellTaxButton = null;
+            }
+
             this._updateModeBtn = null;
             this._updateCraftBtn = null;
+            this._updateSellTaxBtn = null;
             this._updateSortBtn = null;
 
             if (this.noResultsMessage && this.noResultsMessage.parentElement) {
@@ -6004,6 +6137,10 @@
             if (this.craftUpgradeHandler) {
                 config.offSettingChange('profitCalc_craftUpgradeItems', this.craftUpgradeHandler);
                 this.craftUpgradeHandler = null;
+            }
+            if (this.excludeSellTaxHandler) {
+                config.offSettingChange('profitCalc_excludeSellTax', this.excludeSellTaxHandler);
+                this.excludeSellTaxHandler = null;
             }
             if (this.settingsLoadedHandler) {
                 config.offSettingsLoaded(this.settingsLoadedHandler);
@@ -11428,6 +11565,7 @@
                     gourmetRevenueBonusPerAction: profitData.gourmetRevenueBonusPerAction,
                     drinkCostPerHour: profitData.drinkCostPerHour,
                     efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
+                    excludeSellTax: profitData.excludeSellTax,
                 });
                 return valueMode === 'estimated_value' ? totals.totalRevenue : totals.totalProfit;
             }
@@ -11442,6 +11580,7 @@
                 materialCosts: profitData.materialCosts,
                 totalTeaCostPerHour: profitData.totalTeaCostPerHour,
                 efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
+                excludeSellTax: profitData.excludeSellTax,
             });
 
             return valueMode === 'estimated_value' ? totals.totalRevenue : totals.totalProfit;
@@ -13917,6 +14056,7 @@
             this.buffsUpdatedHandler = null; // Handler for the native live-buff family (TLA-028)
             this.characterSwitchingHandler = null; // Handler for character switch cleanup
             this.pricingModeHandler = null; // Handler for pricing mode changes
+            this.excludeSellTaxHandler = null; // Handler for the sell-tax exclusion toggle
             this.maxProduceableHandler = null;
             this.showProfitPerHourHandler = null;
             this.showExpPerHourHandler = null;
@@ -14002,6 +14142,10 @@
                 this.updateAllCounts();
             };
             config.onSettingChange('profitCalc_pricingMode', this.pricingModeHandler);
+            this.excludeSellTaxHandler = () => {
+                this.updateAllCounts();
+            };
+            config.onSettingChange('profitCalc_excludeSellTax', this.excludeSellTaxHandler);
             config.onSettingChange('actionPanel_maxProduceable', this.maxProduceableHandler);
             config.onSettingChange('actionPanel_showProfitPerHour_production', this.showProfitPerHourHandler);
             config.onSettingChange('actionPanel_showExpPerHour_production', this.showExpPerHourHandler);
@@ -14352,6 +14496,7 @@
             let profitPerHour = null;
             let hasMissingPrices = false;
             let outputPriceEstimated = false;
+            let excludeSellTax = false;
             const actionDetails = dataManager.getActionDetails(data.actionHrid);
 
             if (actionDetails) {
@@ -14359,11 +14504,13 @@
                     const profitData = await calculateGatheringProfit(data.actionHrid);
                     profitPerHour = profitData?.profitPerHour || null;
                     hasMissingPrices = profitData?.hasMissingPrices || false;
+                    excludeSellTax = profitData?.excludeSellTax || false;
                 } else if (PRODUCTION_TYPES$5.includes(actionDetails.type)) {
                     const profitData = await calculateProductionProfit(data.actionHrid);
                     profitPerHour = profitData?.profitPerHour || null;
                     hasMissingPrices = profitData?.hasMissingPrices || false;
                     outputPriceEstimated = profitData?.outputPriceEstimated || false;
+                    excludeSellTax = profitData?.excludeSellTax || false;
                 }
             }
 
@@ -14439,8 +14586,11 @@
                     const profitColor = resolvedProfitPerHour >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
                     const profitSign = resolvedProfitPerHour >= 0 ? '' : '-';
                     const estimatedNote = outputPriceEstimated ? ' ⚠' : '';
+                    const sellTaxNote = excludeSellTax
+                        ? ` <span style="color: ${config.COLOR_WARNING};" title="${i18n_js.t('maxProduceable.sellTaxExcludedTooltip')}">⚠</span>`
+                        : '';
                     html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                    html += `<span data-stat="profit" style="color: ${profitColor};">${i18n_js.t('maxProduceable.profitPerHourLine', { sign: profitSign, value: formatters_js.formatKMB(Math.abs(resolvedProfitPerHour)), note: estimatedNote })}</span></div>`;
+                    html += `<span data-stat="profit" style="color: ${profitColor};">${i18n_js.t('maxProduceable.profitPerHourLine', { sign: profitSign, value: formatters_js.formatKMB(Math.abs(resolvedProfitPerHour)), note: estimatedNote })}${sellTaxNote}</span></div>`;
                 }
             }
 
@@ -14907,6 +15057,11 @@
                 this.pricingModeHandler = null;
             }
 
+            if (this.excludeSellTaxHandler) {
+                config.offSettingChange('profitCalc_excludeSellTax', this.excludeSellTaxHandler);
+                this.excludeSellTaxHandler = null;
+            }
+
             if (this.maxProduceableHandler) {
                 config.offSettingChange('actionPanel_maxProduceable', this.maxProduceableHandler);
                 this.maxProduceableHandler = null;
@@ -14970,6 +15125,7 @@
             this.buffsUpdatedHandler = null; // Handler for the native live-buff family (TLA-028)
             this.characterSwitchingHandler = null; // Handler for character switch cleanup
             this.pricingModeHandler = null; // Handler for pricing mode changes
+            this.excludeSellTaxHandler = null; // Handler for the sell-tax exclusion toggle
             this.showProfitPerHourHandler = null;
             this.showExpPerHourHandler = null;
             this.loadoutStateHandler = null;
@@ -15050,6 +15206,10 @@
                 this.updateAllStats();
             };
             config.onSettingChange('profitCalc_pricingMode', this.pricingModeHandler);
+            this.excludeSellTaxHandler = () => {
+                this.updateAllStats();
+            };
+            config.onSettingChange('profitCalc_excludeSellTax', this.excludeSellTaxHandler);
             this.showProfitPerHourHandler = () => this.updateAllStats();
             this.showExpPerHourHandler = () => this.updateAllStats();
             config.onSettingChange('actionPanel_showProfitPerHour_gathering', this.showProfitPerHourHandler);
@@ -15222,6 +15382,7 @@
             const profitData = await calculateGatheringProfit(data.actionHrid);
             const profitPerHour = profitData?.profitPerHour || null;
             const hasMissingPrices = profitData?.hasMissingPrices || false;
+            const excludeSellTax = profitData?.excludeSellTax || false;
 
             // Calculate exp/hr using shared utility
             const expData = experienceCalculator_js.calculateExpPerHour(data.actionHrid);
@@ -15229,6 +15390,7 @@
 
             // Store profit value for sorting and update shared sort manager
             data.profitPerHour = profitPerHour;
+            data.excludeSellTax = excludeSellTax;
             data.expPerHour = expPerHour;
             data.hasMissingPrices = hasMissingPrices;
             actionPanelSort.updateProfit(actionPanel, profitPerHour);
@@ -15462,7 +15624,7 @@
          * @param {Object} data - Stored action data
          */
         renderIndicators(actionPanel, data) {
-            const { profitPerHour, expPerHour } = data;
+            const { profitPerHour, expPerHour, excludeSellTax } = data;
             const showProfit = config.getSetting('actionPanel_showProfitPerHour_gathering');
             const showExp = config.getSetting('actionPanel_showExpPerHour_gathering');
             let html = '';
@@ -15470,9 +15632,12 @@
             if (showProfit && profitPerHour !== null) {
                 const profitColor = profitPerHour >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
                 const profitSign = profitPerHour >= 0 ? '' : '-';
+                const sellTaxNote = excludeSellTax
+                    ? ` <span style="color: ${config.COLOR_WARNING};" title="${i18n_js.t('maxProduceable.sellTaxExcludedTooltip')}">⚠</span>`
+                    : '';
                 html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
                 // Reuses maxProduceable's key (no estimatedNote for gathering actions).
-                html += `<span data-stat="profit" style="color: ${profitColor};">${i18n_js.t('maxProduceable.profitPerHourLine', { sign: profitSign, value: formatters_js.formatKMB(Math.abs(profitPerHour)), note: '' })}</span></div>`;
+                html += `<span data-stat="profit" style="color: ${profitColor};">${i18n_js.t('maxProduceable.profitPerHourLine', { sign: profitSign, value: formatters_js.formatKMB(Math.abs(profitPerHour)), note: '' })}${sellTaxNote}</span></div>`;
             }
 
             if (showExp && expPerHour !== null && expPerHour > 0) {
@@ -15684,6 +15849,11 @@
             if (this.pricingModeHandler) {
                 config.offSettingChange('profitCalc_pricingMode', this.pricingModeHandler);
                 this.pricingModeHandler = null;
+            }
+
+            if (this.excludeSellTaxHandler) {
+                config.offSettingChange('profitCalc_excludeSellTax', this.excludeSellTaxHandler);
+                this.excludeSellTaxHandler = null;
             }
 
             if (this.showProfitPerHourHandler) {

@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 3.4.2
+ * Version: 3.5.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5781,8 +5781,10 @@ ${starCSS}
             processingConversions.some((conversion) => conversion.missingPrice) ||
             (bonusRevenue?.hasMissingPrices ?? false);
 
-        // Calculate market tax (percentage of gross revenue)
-        const marketTax = revenuePerHour * profitConstants_js.MARKET_TAX;
+        // Calculate market tax (percentage of gross revenue) - skipped when producing for personal
+        // use (excludeSellTax), since the output is never actually sold.
+        const excludeSellTax = config.getSettingValue('profitCalc_excludeSellTax', false);
+        const marketTax = excludeSellTax ? 0 : revenuePerHour * profitConstants_js.MARKET_TAX;
 
         // Calculate net profit (revenue - market tax - drink costs)
         const profitPerHour = revenuePerHour - marketTax - drinkCostPerHour;
@@ -5792,6 +5794,8 @@ ${starCSS}
             profitPerAction: profitHelpers_js.calculateProfitPerAction(profitPerHour, actionsPerHour * efficiencyMultiplier), // Profit per action
             profitPerDay: profitHelpers_js.calculateProfitPerDay(profitPerHour), // Profit per day
             revenuePerHour,
+            marketTax,
+            excludeSellTax,
             drinkCostPerHour,
             drinkCosts, // Array of individual drink costs {name, priceEach, costPerHour}
             actionsPerHour, // Base actions per hour (without efficiency)
@@ -6107,6 +6111,7 @@ ${starCSS}
             gourmetRevenueBonusPerAction: profitData.gourmetRevenueBonusPerAction,
             drinkCostPerHour: profitData.drinkCostPerHour,
             efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
+            excludeSellTax: profitData.excludeSellTax,
         });
 
         return {
@@ -6174,6 +6179,7 @@ ${starCSS}
             materialCosts: profitData.materialCosts,
             totalTeaCostPerHour: profitData.totalTeaCostPerHour,
             efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
+            excludeSellTax: profitData.excludeSellTax,
         });
 
         return {
@@ -23934,6 +23940,7 @@ ${starCSS}
                     gourmetRevenueBonusPerAction: profitData.gourmetRevenueBonusPerAction,
                     drinkCostPerHour: profitData.drinkCostPerHour,
                     efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
+                    excludeSellTax: profitData.excludeSellTax,
                 });
                 return valueMode === 'estimated_value' ? totals.totalRevenue : totals.totalProfit;
             }
@@ -23948,6 +23955,7 @@ ${starCSS}
                 materialCosts: profitData.materialCosts,
                 totalTeaCostPerHour: profitData.totalTeaCostPerHour,
                 efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
+                excludeSellTax: profitData.excludeSellTax,
             });
 
             return valueMode === 'estimated_value' ? totals.totalRevenue : totals.totalProfit;
