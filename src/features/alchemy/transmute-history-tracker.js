@@ -18,7 +18,7 @@ import config from '../../core/config.js';
 import storage from '../../core/storage.js';
 import webSocketHook from '../../core/websocket.js';
 import dataManager from '../../core/data-manager.js';
-import { getItemPrice } from '../../utils/market-data.js';
+import { getItemPriceOutlierInfo } from '../../utils/market-data.js';
 
 const TRANSMUTE_ACTION_HRID = '/actions/alchemy/transmute';
 const COIN_ITEM_HRID = '/items/coin';
@@ -187,6 +187,7 @@ class TransmuteHistoryTracker {
                         totalValue: 0,
                         priceEach: 0,
                         isSelfReturn: isOutputSelfReturn,
+                        isOutlier: false,
                     };
                 }
 
@@ -195,9 +196,13 @@ class TransmuteHistoryTracker {
 
                 // Record market price at time of result
                 if (!isOutputSelfReturn) {
-                    const price = getItemPrice(outputItemHrid, { context: 'profit', side: 'sell' }) || 0;
-                    this.activeSession.results[outputItemHrid].priceEach = price;
-                    this.activeSession.results[outputItemHrid].totalValue += price * bulkMultiplier;
+                    const { value: price, isOutlier } = getItemPriceOutlierInfo(outputItemHrid, {
+                        context: 'profit',
+                        side: 'sell',
+                    });
+                    this.activeSession.results[outputItemHrid].priceEach = price || 0;
+                    this.activeSession.results[outputItemHrid].isOutlier = isOutlier;
+                    this.activeSession.results[outputItemHrid].totalValue += (price || 0) * bulkMultiplier;
                 }
             }
         }

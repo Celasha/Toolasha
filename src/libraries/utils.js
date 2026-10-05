@@ -29,6 +29,8 @@ import * as abilityCalc from '../utils/ability-cost-calculator.js';
 import * as equipmentParser from '../utils/equipment-parser.js';
 import * as uiComponents from '../utils/ui-components.js';
 import * as enhancementConfig from '../utils/enhancement-config.js';
+import * as warningIcon from '../utils/warning-icon.js';
+import * as priceCacheOutlierGuard from '../utils/price-cache-outlier-guard.js';
 import * as enhancementGearDetector from '../utils/enhancement-gear-detector.js';
 import * as reactInput from '../utils/react-input.js';
 import * as materialCalculator from '../utils/material-calculator.js';
@@ -70,6 +72,8 @@ toolashaRoot.Utils = {
     equipmentParser,
     uiComponents,
     enhancementConfig,
+    warningIcon,
+    priceCacheOutlierGuard,
     enhancementGearDetector,
     reactInput,
     materialCalculator,

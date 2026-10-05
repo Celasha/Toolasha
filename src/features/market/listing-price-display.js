@@ -17,6 +17,7 @@ import { coinFormatter, formatKMB, formatRelativeTime } from '../../utils/format
 import { calculatePriceAfterTax } from '../../utils/profit-helpers.js';
 import { createCleanupRegistry } from '../../utils/cleanup-registry.js';
 import { MARKET_TAX, COWBELL_BAG_HRID, COWBELL_BAG_TAX } from '../../utils/profit-constants.js';
+import { applyOutlierGuardToPriceCache } from '../../utils/price-cache-outlier-guard.js';
 
 /**
  * Create a styled table cell for the listings table.
@@ -332,6 +333,7 @@ class ListingPriceDisplay {
             enhancementLevel: listing.enhancementLevel,
         }));
         const priceCache = marketAPI.getPricesBatch(itemsToPrice);
+        const outlierKeys = applyOutlierGuardToPriceCache(priceCache);
 
         // Build set of user's own listing IDs so we can exclude them when
         // looking up the "top competing order" in the shared order book.
@@ -345,7 +347,7 @@ class ListingPriceDisplay {
         this.addDataToRows(tbody);
 
         // Add price displays to each row
-        this.addPriceDisplays(tbody, priceCache, ownListingIds);
+        this.addPriceDisplays(tbody, priceCache, ownListingIds, outlierKeys);
 
         // Check if we should mark as fully processed
         let fullyProcessed = true;
@@ -847,8 +849,9 @@ class ListingPriceDisplay {
      * @param {HTMLElement} tbody - Table body element
      * @param {Map} priceCache - Pre-fetched price cache
      * @param {Set<number>} ownListingIds - User's own listing IDs (excluded from "top competing order")
+     * @param {Set<string>} outlierKeys - "itemHrid:enhancementLevel" keys flagged by the outlier guard
      */
-    addPriceDisplays(tbody, priceCache, ownListingIds = new Set()) {
+    addPriceDisplays(tbody, priceCache, ownListingIds = new Set(), outlierKeys = new Set()) {
         for (const row of tbody.querySelectorAll('tr')) {
             // Skip if displays already added
             if (row.querySelector('.mwi-listing-price-cell')) {
@@ -880,7 +883,8 @@ class ListingPriceDisplay {
                     isSell,
                     price,
                     priceCache,
-                    ownListingIds
+                    ownListingIds,
+                    outlierKeys
                 );
                 row.insertBefore(topOrderCell, insertBeforeCell);
 
@@ -932,8 +936,9 @@ class ListingPriceDisplay {
                     enhancementLevel,
                     isSell,
                     priceCache,
-                    ownListingIds
-                );
+                    ownListingIds,
+                    outlierKeys
+                ).price;
                 row.dataset.mwiTopOrderPrice =
                     topOrderPriceVal !== null && topOrderPriceVal >= 0 ? String(topOrderPriceVal) : '';
                 if (config.getSetting('market_showTopOrderAge')) {
@@ -975,10 +980,12 @@ class ListingPriceDisplay {
     }
 
     /**
-     * Get the top competing order price for a listing (shared by cell display and sort)
-     * @returns {number|null} Price or null if unavailable
+     * Get the top competing order price for a listing (shared by cell display and sort). When no
+     * live order book snapshot is available, falls back to the batch market price cache, which is
+     * only outlier-safe because callers run it through `applyOutlierGuardToPriceCache` first.
+     * @returns {{price: number|null, isOutlier: boolean}}
      */
-    _getTopOrderPrice(itemHrid, enhancementLevel, isSell, priceCache, ownListingIds) {
+    _getTopOrderPrice(itemHrid, enhancementLevel, isSell, priceCache, ownListingIds, outlierKeys = new Set()) {
         const cacheEntry = estimatedListingAge.orderBooksCache[itemHrid];
         if (cacheEntry) {
             const orderBookData = cacheEntry.data || cacheEntry;
@@ -987,13 +994,14 @@ class ListingPriceDisplay {
                 if (orderBook) {
                     const topOrders = isSell ? orderBook.asks : orderBook.bids;
                     const topCompeting = topOrders?.find((o) => !ownListingIds.has(o.listingId));
-                    if (topCompeting) return topCompeting.price;
+                    if (topCompeting) return { price: topCompeting.price, isOutlier: false };
                 }
             }
         }
         const key = `${itemHrid}:${enhancementLevel}`;
         const marketPrice = priceCache.get(key);
-        return marketPrice ? (isSell ? marketPrice.ask : marketPrice.bid) : null;
+        if (!marketPrice) return { price: null, isOutlier: false };
+        return { price: isSell ? marketPrice.ask : marketPrice.bid, isOutlier: outlierKeys.has(key) };
     }
 
     /**
@@ -1028,10 +1036,26 @@ class ListingPriceDisplay {
      * @param {number} price - Listing price
      * @param {Map} priceCache - Pre-fetched price cache (fallback)
      * @param {Set<number>} ownListingIds - User's own listing IDs to exclude
+     * @param {Set<string>} outlierKeys - "itemHrid:enhancementLevel" keys flagged by the outlier guard
      * @returns {HTMLElement} Table cell element
      */
-    createTopOrderPriceCell(itemHrid, enhancementLevel, isSell, price, priceCache, ownListingIds = new Set()) {
-        const topOrderPrice = this._getTopOrderPrice(itemHrid, enhancementLevel, isSell, priceCache, ownListingIds);
+    createTopOrderPriceCell(
+        itemHrid,
+        enhancementLevel,
+        isSell,
+        price,
+        priceCache,
+        ownListingIds = new Set(),
+        outlierKeys = new Set()
+    ) {
+        const { price: topOrderPrice, isOutlier } = this._getTopOrderPrice(
+            itemHrid,
+            enhancementLevel,
+            isSell,
+            priceCache,
+            ownListingIds,
+            outlierKeys
+        );
         const lastUpdated = estimatedListingAge.orderBooksCache[itemHrid]?.lastUpdated ?? null;
 
         if (topOrderPrice === null || topOrderPrice === -1) {
@@ -1047,7 +1071,7 @@ class ListingPriceDisplay {
               : '#00FF00';
         const title = lastUpdated ? estimatedListingAge.getStalenessTooltip(lastUpdated) : undefined;
 
-        return createStyledCell(formatKMB(topOrderPrice, 1), color, { title });
+        return createStyledCell(formatKMB(topOrderPrice, 1) + (isOutlier ? ' ⚠' : ''), color, { title });
     }
 
     /**

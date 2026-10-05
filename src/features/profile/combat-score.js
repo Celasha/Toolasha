@@ -23,6 +23,7 @@ import { createTimerRegistry } from '../../utils/timer-registry.js';
 import loadoutState from '../../core/loadout-state.js';
 import combatSimUI from '../combat-sim/combat-sim-ui.js';
 import { buildPlayerDTOFromProfile, mapLoadoutAbilitiesToNativeSlots } from '../combat-sim/combat-sim-adapter.js';
+import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 
 // TLA-041C: stable desktop Score-panel geometry. The panel is a fixed border-box width in every
 // state (loading shell, final Score, own-profile loadout buttons visible/hidden, hidden equipment,
@@ -203,8 +204,9 @@ class CombatScore {
     /**
      * Format one breakdown leaf's value for display (TLA-041C lower-bound provenance):
      * `N/A` for a leaf with no defensible price, `value+` for a positive-but-incomplete leaf,
-     * plain `value` for a complete leaf. A leaf `reason` renders as a small info tooltip.
-     * @param {{value: string|null, complete: boolean, reason?: string|null}} item
+     * plain `value` for a complete leaf. A leaf `reason` renders as a small info tooltip. A leaf
+     * whose price was substituted by the market-data outlier guard also gets the warning icon.
+     * @param {{value: string|null, complete: boolean, reason?: string|null, isOutlier?: boolean}} item
      * @returns {string}
      */
     formatBreakdownLeaf(item) {
@@ -212,7 +214,7 @@ class CombatScore {
             ? ` <span title="${item.reason.replace(/"/g, '&quot;')}" style="cursor: help; opacity: 0.7;">ⓘ</span>`
             : '';
         if (item.value === null) return `${t('combatSimUi.notAvailableLabel')}${reasonInfo}`;
-        return `${item.value}${item.complete === false ? '+' : ''}${reasonInfo}`;
+        return `${item.value}${item.complete === false ? '+' : ''}${buildOutlierPriceWarningIcon(item.isOutlier)}${reasonInfo}`;
     }
 
     /**
@@ -237,14 +239,14 @@ class CombatScore {
      * priority over the completeness suffix since there is no defensible numeric amount at all.
      * @param {number} categoryValue
      * @param {boolean} complete
-     * @param {{hidden?: boolean}} [options]
+     * @param {{hidden?: boolean, hasOutlierPrice?: boolean}} [options]
      * @returns {string}
      */
-    formatCategoryHeaderValue(categoryValue, complete, { hidden = false } = {}) {
+    formatCategoryHeaderValue(categoryValue, complete, { hidden = false, hasOutlierPrice = false } = {}) {
         if (hidden) {
             return `${t('combatSimUi.notAvailableLabel')} <span title="${t('combatScore.hiddenEquipmentTooltip')}" style="cursor: help; opacity: 0.7;">ⓘ</span>`;
         }
-        return `${numberFormatter(categoryValue.toFixed(1))}${complete === false ? '+' : ''}`;
+        return `${numberFormatter(categoryValue.toFixed(1))}${complete === false ? '+' : ''}${hasOutlierPrice ? ' ⚠' : ''}`;
     }
 
     /**
@@ -271,32 +273,32 @@ class CombatScore {
 
         return `
             <div style="cursor: pointer; font-weight: bold; margin-bottom: 8px; color: ${config.COLOR_PROFIT}; ${scoreVisibility}" id="mwi-score-toggle" title="${scoreTooltip}">
-                + ${t('combatScore.combatScoreLine', { value: `${numberFormatter(scoreData.total.toFixed(1))}${scoreData.complete === false ? '+' : ''}` })}
+                + ${t('combatScore.combatScoreLine', { value: `${numberFormatter(scoreData.total.toFixed(1))}${scoreData.complete === false ? '+' : ''}${buildOutlierPriceWarningIcon(scoreData.hasOutlierPrice)}` })}
             </div>
             <div id="mwi-score-details" style="display: none; margin-left: 10px; color: ${config.COLOR_TEXT_PRIMARY};">
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-house-toggle">
-                    + ${t('combatScore.houseLine', { value: this.formatCategoryHeaderValue(scoreData.house, scoreData.houseComplete) })}
+                    + ${t('combatScore.houseLine', { value: this.formatCategoryHeaderValue(scoreData.house, scoreData.houseComplete, { hasOutlierPrice: scoreData.houseHasOutlierPrice }) })}
                 </div>
                 <div id="mwi-house-breakdown" style="display: none; margin-bottom: 6px;">
                     ${this.buildBreakdownHTML(scoreData.breakdown.houses)}
                 </div>
 
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-ability-toggle">
-                    + ${t('combatScore.abilityLine', { value: this.formatCategoryHeaderValue(scoreData.ability, scoreData.abilityComplete) })}
+                    + ${t('combatScore.abilityLine', { value: this.formatCategoryHeaderValue(scoreData.ability, scoreData.abilityComplete, { hasOutlierPrice: scoreData.abilityHasOutlierPrice }) })}
                 </div>
                 <div id="mwi-ability-breakdown" style="display: none; margin-bottom: 6px;">
                     ${this.buildBreakdownHTML(scoreData.breakdown.abilities)}
                 </div>
 
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-equipment-toggle">
-                    + ${t('combatScore.equipmentLine', { value: this.formatCategoryHeaderValue(scoreData.equipment, scoreData.equipmentComplete, { hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData }) })}
+                    + ${t('combatScore.equipmentLine', { value: this.formatCategoryHeaderValue(scoreData.equipment, scoreData.equipmentComplete, { hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData, hasOutlierPrice: scoreData.equipmentHasOutlierPrice }) })}
                 </div>
                 <div id="mwi-equipment-breakdown" style="display: none; margin-bottom: 6px;">
                     ${this.buildBreakdownHTML(scoreData.breakdown.equipment)}
                 </div>
 
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-shrine-toggle">
-                    + ${t('combatScore.shrinesLine', { value: this.formatCategoryHeaderValue(scoreData.shrine || 0, scoreData.shrineComplete) })}
+                    + ${t('combatScore.shrinesLine', { value: this.formatCategoryHeaderValue(scoreData.shrine || 0, scoreData.shrineComplete, { hasOutlierPrice: scoreData.shrineHasOutlierPrice }) })}
                 </div>
                 <div id="mwi-shrine-breakdown" style="display: none;">
                     ${this.buildBreakdownHTML(scoreData.breakdown.shrines)}
@@ -304,25 +306,25 @@ class CombatScore {
             </div>
 
             <div style="cursor: pointer; font-weight: bold; margin-top: 12px; margin-bottom: 8px; color: ${config.COLOR_PROFIT}; ${scoreVisibility}" id="mwi-skiller-score-toggle" title="${scoreTooltip}">
-                + ${t('combatScore.skillerScoreLine', { value: `${numberFormatter(scoreData.skillerTotal.toFixed(1))}${scoreData.skillerComplete === false ? '+' : ''}` })}
+                + ${t('combatScore.skillerScoreLine', { value: `${numberFormatter(scoreData.skillerTotal.toFixed(1))}${scoreData.skillerComplete === false ? '+' : ''}${buildOutlierPriceWarningIcon(scoreData.skillerHasOutlierPrice)}` })}
             </div>
             <div id="mwi-skiller-score-details" style="display: none; margin-left: 10px; color: ${config.COLOR_TEXT_PRIMARY};">
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-skiller-house-toggle">
-                    + ${t('combatScore.houseLine', { value: this.formatCategoryHeaderValue(scoreData.skillerHouse || 0, scoreData.skillerHouseComplete) })}
+                    + ${t('combatScore.houseLine', { value: this.formatCategoryHeaderValue(scoreData.skillerHouse || 0, scoreData.skillerHouseComplete, { hasOutlierPrice: scoreData.skillerHouseHasOutlierPrice }) })}
                 </div>
                 <div id="mwi-skiller-house-breakdown" style="display: none; margin-bottom: 6px;">
                     ${this.buildBreakdownHTML(scoreData.skillerBreakdown.houses)}
                 </div>
 
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-skiller-equipment-toggle">
-                    + ${t('combatScore.equipmentLine', { value: this.formatCategoryHeaderValue(scoreData.skillerEquipment, scoreData.skillerEquipmentComplete, { hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData }) })}
+                    + ${t('combatScore.equipmentLine', { value: this.formatCategoryHeaderValue(scoreData.skillerEquipment, scoreData.skillerEquipmentComplete, { hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData, hasOutlierPrice: scoreData.skillerEquipmentHasOutlierPrice }) })}
                 </div>
                 <div id="mwi-skiller-equipment-breakdown" style="display: none; margin-bottom: 6px;">
                     ${this.buildBreakdownHTML(scoreData.skillerBreakdown.equipment)}
                 </div>
 
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-skiller-shrine-toggle">
-                    + ${t('combatScore.shrinesLine', { value: this.formatCategoryHeaderValue(scoreData.skillerShrine || 0, scoreData.skillerShrineComplete) })}
+                    + ${t('combatScore.shrinesLine', { value: this.formatCategoryHeaderValue(scoreData.skillerShrine || 0, scoreData.skillerShrineComplete, { hasOutlierPrice: scoreData.skillerShrineHasOutlierPrice }) })}
                 </div>
                 <div id="mwi-skiller-shrine-breakdown" style="display: none;">
                     ${this.buildBreakdownHTML(scoreData.skillerBreakdown.shrines)}
@@ -597,7 +599,7 @@ class CombatScore {
                 toggleBtn.textContent =
                     (isCollapsed ? '- ' : '+ ') +
                     t('combatScore.combatScoreLine', {
-                        value: `${numberFormatter(scoreData.total.toFixed(1))}${scoreData.complete === false ? '+' : ''}`,
+                        value: `${numberFormatter(scoreData.total.toFixed(1))}${scoreData.complete === false ? '+' : ''}${scoreData.hasOutlierPrice ? ' ⚠' : ''}`,
                     });
             });
         }
@@ -612,7 +614,9 @@ class CombatScore {
                 houseToggle.textContent =
                     (isCollapsed ? '- ' : '+ ') +
                     t('combatScore.houseLine', {
-                        value: this.formatCategoryHeaderValue(scoreData.house, scoreData.houseComplete),
+                        value: this.formatCategoryHeaderValue(scoreData.house, scoreData.houseComplete, {
+                            hasOutlierPrice: scoreData.houseHasOutlierPrice,
+                        }),
                     });
             });
         }
@@ -627,7 +631,9 @@ class CombatScore {
                 abilityToggle.textContent =
                     (isCollapsed ? '- ' : '+ ') +
                     t('combatScore.abilityLine', {
-                        value: this.formatCategoryHeaderValue(scoreData.ability, scoreData.abilityComplete),
+                        value: this.formatCategoryHeaderValue(scoreData.ability, scoreData.abilityComplete, {
+                            hasOutlierPrice: scoreData.abilityHasOutlierPrice,
+                        }),
                     });
             });
         }
@@ -644,6 +650,7 @@ class CombatScore {
                     t('combatScore.equipmentLine', {
                         value: this.formatCategoryHeaderValue(scoreData.equipment, scoreData.equipmentComplete, {
                             hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData,
+                            hasOutlierPrice: scoreData.equipmentHasOutlierPrice,
                         }),
                     });
             });
@@ -659,7 +666,9 @@ class CombatScore {
                 shrineToggle.textContent =
                     (isCollapsed ? '- ' : '+ ') +
                     t('combatScore.shrinesLine', {
-                        value: this.formatCategoryHeaderValue(scoreData.shrine || 0, scoreData.shrineComplete),
+                        value: this.formatCategoryHeaderValue(scoreData.shrine || 0, scoreData.shrineComplete, {
+                            hasOutlierPrice: scoreData.shrineHasOutlierPrice,
+                        }),
                     });
             });
         }
@@ -674,7 +683,7 @@ class CombatScore {
                 skillerScoreToggle.textContent =
                     (isCollapsed ? '- ' : '+ ') +
                     t('combatScore.skillerScoreLine', {
-                        value: `${numberFormatter(scoreData.skillerTotal.toFixed(1))}${scoreData.skillerComplete === false ? '+' : ''}`,
+                        value: `${numberFormatter(scoreData.skillerTotal.toFixed(1))}${scoreData.skillerComplete === false ? '+' : ''}${scoreData.skillerHasOutlierPrice ? ' ⚠' : ''}`,
                     });
             });
         }
@@ -691,7 +700,10 @@ class CombatScore {
                     t('combatScore.houseLine', {
                         value: this.formatCategoryHeaderValue(
                             scoreData.skillerHouse || 0,
-                            scoreData.skillerHouseComplete
+                            scoreData.skillerHouseComplete,
+                            {
+                                hasOutlierPrice: scoreData.skillerHouseHasOutlierPrice,
+                            }
                         ),
                     });
             });
@@ -710,7 +722,10 @@ class CombatScore {
                         value: this.formatCategoryHeaderValue(
                             scoreData.skillerEquipment,
                             scoreData.skillerEquipmentComplete,
-                            { hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData }
+                            {
+                                hidden: scoreData.equipmentHidden && !scoreData.hasEquipmentData,
+                                hasOutlierPrice: scoreData.skillerEquipmentHasOutlierPrice,
+                            }
                         ),
                     });
             });
@@ -728,7 +743,8 @@ class CombatScore {
                     t('combatScore.shrinesLine', {
                         value: this.formatCategoryHeaderValue(
                             scoreData.skillerShrine || 0,
-                            scoreData.skillerShrineComplete
+                            scoreData.skillerShrineComplete,
+                            { hasOutlierPrice: scoreData.skillerShrineHasOutlierPrice }
                         ),
                     });
             });

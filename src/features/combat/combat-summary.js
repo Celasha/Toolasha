@@ -9,6 +9,8 @@ import webSocketHook from '../../core/websocket.js';
 import { t } from '../../core/i18n.js';
 import { formatLargeNumber } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import { getItemPrices } from '../../utils/market-data.js';
+import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 
 /**
  * CombatSummary class manages combat completion statistics display
@@ -69,6 +71,7 @@ class CombatSummary {
         // Calculate total revenue from loot (with null check)
         let totalPriceAsk = 0;
         let totalPriceBid = 0;
+        let hasOutlierPrices = false;
 
         if (message.unit.totalLootMap) {
             for (const loot of Object.values(message.unit.totalLootMap)) {
@@ -80,10 +83,11 @@ class CombatSummary {
                     totalPriceBid += itemCount;
                 } else {
                     // Other items: get market price
-                    const prices = marketAPI.getPrice(loot.itemHrid);
+                    const prices = getItemPrices(loot.itemHrid);
                     if (prices) {
                         totalPriceAsk += prices.ask * itemCount;
                         totalPriceBid += prices.bid * itemCount;
+                        if (prices.askOutlier || prices.bidOutlier) hasOutlierPrices = true;
                     }
                 }
             }
@@ -103,7 +107,7 @@ class CombatSummary {
 
         // Wait for battle panel to appear and inject summary
         const tryTimes = 0;
-        this.findAndInjectSummary(message, totalPriceAsk, totalPriceBid, totalSkillsExp, tryTimes);
+        this.findAndInjectSummary(message, totalPriceAsk, totalPriceBid, totalSkillsExp, tryTimes, hasOutlierPrices);
     }
 
     /**
@@ -113,8 +117,9 @@ class CombatSummary {
      * @param {number} totalPriceBid - Total loot value at bid price
      * @param {number} totalSkillsExp - Total experience gained
      * @param {number} tryTimes - Retry counter
+     * @param {boolean} hasOutlierPrices - Whether any priced loot item was substituted by the outlier guard
      */
-    findAndInjectSummary(message, totalPriceAsk, totalPriceBid, totalSkillsExp, tryTimes) {
+    findAndInjectSummary(message, totalPriceAsk, totalPriceBid, totalSkillsExp, tryTimes, hasOutlierPrices) {
         tryTimes++;
 
         // Find the experience section parent
@@ -167,7 +172,7 @@ class CombatSummary {
                 .querySelector('div#mwi-combat-encounters')
                 ?.insertAdjacentHTML(
                     'afterend',
-                    `<div id="mwi-combat-revenue" style="color: ${textColor};">${t('combatSummary.totalRevenue', { ask: formatLargeNumber(Math.round(totalPriceAsk)), bid: formatLargeNumber(Math.round(totalPriceBid)) })}</div>`
+                    `<div id="mwi-combat-revenue" style="color: ${textColor};">${t('combatSummary.totalRevenue', { ask: formatLargeNumber(Math.round(totalPriceAsk)), bid: formatLargeNumber(Math.round(totalPriceBid)) })}${buildOutlierPriceWarningIcon(hasOutlierPrices)}</div>`
                 );
 
             // Per-hour revenue
@@ -179,7 +184,7 @@ class CombatSummary {
                     .querySelector('div#mwi-combat-revenue')
                     ?.insertAdjacentHTML(
                         'afterend',
-                        `<div id="mwi-combat-revenue-hour" style="color: ${textColor};">${t('combatSummary.revenuePerHour', { ask: formatLargeNumber(Math.round(revenuePerHourAsk)), bid: formatLargeNumber(Math.round(revenuePerHourBid)) })}</div>`
+                        `<div id="mwi-combat-revenue-hour" style="color: ${textColor};">${t('combatSummary.revenuePerHour', { ask: formatLargeNumber(Math.round(revenuePerHourAsk)), bid: formatLargeNumber(Math.round(revenuePerHourBid)) })}${buildOutlierPriceWarningIcon(hasOutlierPrices)}</div>`
                     );
 
                 // Per-day revenue
@@ -187,7 +192,7 @@ class CombatSummary {
                     .querySelector('div#mwi-combat-revenue-hour')
                     ?.insertAdjacentHTML(
                         'afterend',
-                        `<div id="mwi-combat-revenue-day" style="color: ${textColor};">${t('combatSummary.revenuePerDay', { ask: formatLargeNumber(Math.round(revenuePerHourAsk * 24)), bid: formatLargeNumber(Math.round(revenuePerHourBid * 24)) })}</div>`
+                        `<div id="mwi-combat-revenue-day" style="color: ${textColor};">${t('combatSummary.revenuePerDay', { ask: formatLargeNumber(Math.round(revenuePerHourAsk * 24)), bid: formatLargeNumber(Math.round(revenuePerHourBid * 24)) })}${buildOutlierPriceWarningIcon(hasOutlierPrices)}</div>`
                     );
             }
 
@@ -245,7 +250,14 @@ class CombatSummary {
         } else if (tryTimes <= 10) {
             // Retry if element not found
             const retryTimeout = setTimeout(() => {
-                this.findAndInjectSummary(message, totalPriceAsk, totalPriceBid, totalSkillsExp, tryTimes);
+                this.findAndInjectSummary(
+                    message,
+                    totalPriceAsk,
+                    totalPriceBid,
+                    totalSkillsExp,
+                    tryTimes,
+                    hasOutlierPrices
+                );
             }, 200);
             this.timerRegistry.registerTimeout(retryTimeout);
         } else {

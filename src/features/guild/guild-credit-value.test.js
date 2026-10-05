@@ -1,9 +1,18 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { normalizeGuildShrineReturnLabel } from './guild-marketplace-label.js';
 
-const { mockGetItemPrice } = vi.hoisted(() => ({ mockGetItemPrice: vi.fn() }));
+const { mockGetItemPrice, mockGetItemPriceOutlierInfo } = vi.hoisted(() => {
+    const getItemPrice = vi.fn();
+    return {
+        mockGetItemPrice: getItemPrice,
+        mockGetItemPriceOutlierInfo: vi.fn((hrid, opts) => ({ value: getItemPrice(hrid, opts), isOutlier: false })),
+    };
+});
 
-vi.mock('../../utils/market-data.js', () => ({ getItemPrice: mockGetItemPrice }));
+vi.mock('../../utils/market-data.js', () => ({
+    getItemPrice: mockGetItemPrice,
+    getItemPriceOutlierInfo: mockGetItemPriceOutlierInfo,
+}));
 
 import { findExchangeConversion, buildCreditRows } from './guild-credit-value.js';
 

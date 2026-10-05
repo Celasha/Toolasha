@@ -9,6 +9,7 @@ const FORAGING_TYPE = '/action_types/foraging';
 const mocks = vi.hoisted(() => ({
     skills: [{ skillHrid: '/skills/foraging', level: 5 }],
     prices: {},
+    outlierPrices: new Set(), // itemHrids whose mocked price should report isOutlier: true
     personalBuffs: {}, // buffTypeHrid -> decimal flat boost
     guildBuffs: {}, // actionType -> [{typeHrid, flatBoost}]
     currentActions: [], // character action queue, for resolveActiveAlchemyItemContext
@@ -47,6 +48,10 @@ vi.mock('../features/market/alchemy-profit-calculator.js', () => ({
 
 vi.mock('./market-data.js', () => ({
     getItemPrice: vi.fn((itemHrid) => (itemHrid in mocks.prices ? mocks.prices[itemHrid] : null)),
+    getItemPriceOutlierInfo: vi.fn((itemHrid) => ({
+        value: itemHrid in mocks.prices ? mocks.prices[itemHrid] : null,
+        isOutlier: mocks.outlierPrices.has(itemHrid),
+    })),
 }));
 
 vi.mock('./bonus-revenue-calculator.js', () => ({

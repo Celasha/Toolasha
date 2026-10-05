@@ -11,6 +11,7 @@ import alchemyProfitCalculator from '../market/alchemy-profit-calculator.js';
 import { calculateExperienceMultiplier } from '../../utils/experience-parser.js';
 import { formatKMB, formatWithSeparator, formatPercentage } from '../../utils/formatters.js';
 import { getItemPrice } from '../../utils/market-data.js';
+import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 import assetManifest from '../../utils/asset-manifest.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import { navigateToMarketplace } from '../../utils/marketplace-tabs.js';
@@ -257,6 +258,7 @@ class AlchemyBestItems {
                 profitPerHour: profitData.profitPerHour,
                 xpPerHour,
                 catalyst: profitData.winningCatalystHrid || null,
+                hasOutlierPrices: profitData.hasOutlierPrices || false,
                 profitData,
             });
         }
@@ -656,7 +658,7 @@ class AlchemyBestItems {
             // Profit/hr
             const profitTd = document.createElement('td');
             const profitVal = Math.round(item.profitPerHour);
-            profitTd.textContent = formatKMB(profitVal);
+            profitTd.innerHTML = formatKMB(profitVal) + buildOutlierPriceWarningIcon(item.hasOutlierPrices);
             profitTd.style.cssText = `padding: 4px 8px; text-align: right; color: ${profitVal >= 0 ? '#4ade80' : '#f87171'};`;
             row.appendChild(profitTd);
 
@@ -791,7 +793,8 @@ class AlchemyBestItems {
                     revenue: formatKMB(Math.round(drop.revenuePerHour)),
                 });
                 const extraStyle = drop.isSelfReturn ? ' text-decoration: line-through; opacity: 0.6;' : '';
-                this._appendLinkedLine(container, text, itemName, drop.itemHrid, extraStyle);
+                const line = this._appendLinkedLine(container, text, itemName, drop.itemHrid, extraStyle);
+                if (drop.isOutlier) line.append(' ⚠');
             }
         }
 
@@ -820,7 +823,8 @@ class AlchemyBestItems {
                         price: formatWithSeparator(Math.round(req.price)),
                         cost: formatKMB(Math.round(req.costPerHour)),
                     });
-                    this._appendLinkedLine(container, text, itemName, req.itemHrid);
+                    const line = this._appendLinkedLine(container, text, itemName, req.itemHrid);
+                    if (req.isOutlier) line.append(' ⚠');
                 }
             }
 
@@ -833,7 +837,8 @@ class AlchemyBestItems {
                     price: formatWithSeparator(Math.round(profitData.catalystCost.price)),
                     cost: formatKMB(Math.round(profitData.catalystCostPerHour)),
                 });
-                this._appendLinkedLine(container, text, catName, profitData.catalystCost.itemHrid);
+                const line = this._appendLinkedLine(container, text, catName, profitData.catalystCost.itemHrid);
+                if (profitData.catalystCost.isOutlier) line.append(' ⚠');
             }
 
             // Tea
@@ -845,7 +850,8 @@ class AlchemyBestItems {
                         itemName: LINK_MARKER,
                         cost: formatKMB(Math.round(tea.costPerHour)),
                     });
-                    this._appendLinkedLine(container, text, teaName, tea.itemHrid);
+                    const line = this._appendLinkedLine(container, text, teaName, tea.itemHrid);
+                    if (tea.isOutlier) line.append(' ⚠');
                 }
             }
         }

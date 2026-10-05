@@ -18,6 +18,7 @@ import { t } from '../../core/i18n.js';
 import { formatPercentage, formatLargeNumber } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } from '../../utils/panel-z-index.js';
+import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 
 // UI Style Constants (matching Ultimate Enhancement Tracker)
 const STYLE = {
@@ -1050,6 +1051,8 @@ class EnhancementUI {
 
         const gameData = dataManager.getInitClientData();
         const detailsId = `cost-details-${session.id}`;
+        const hasOutlierPrices =
+            Object.values(session.materialCosts || {}).some((m) => m.isOutlier) || session.protectionCostIsOutlier;
 
         let html = '<div style="margin-top: 12px; font-size: 13px;">';
 
@@ -1058,7 +1061,7 @@ class EnhancementUI {
             <div style="display: flex; justify-content: space-between; cursor: pointer; font-weight: bold; padding: 5px 0;"
                  onclick="document.getElementById('${detailsId}').style.display = document.getElementById('${detailsId}').style.display === 'none' ? 'block' : 'none'">
                 <span>${t('enhancementUi.totalCostClickDetailsLabel')}</span>
-                <span style="color: ${STYLE.colors.gold};">${this.formatNumber(session.totalCost)}</span>
+                <span style="color: ${STYLE.colors.gold};">${this.formatNumber(session.totalCost)}${buildOutlierPriceWarningIcon(hasOutlierPrices)}</span>
             </div>
         `;
 
@@ -1079,7 +1082,7 @@ class EnhancementUI {
                 html += `
                     <div style="display: flex; justify-content: space-between; margin-top: 2px; font-size: 12px;">
                         <span>${itemName}</span>
-                        <span>${data.count} × ${this.formatNumber(unitCost)} = <span style="color: ${STYLE.colors.gold};">${this.formatNumber(data.totalCost)}</span></span>
+                        <span>${data.count} × ${this.formatNumber(unitCost)} = <span style="color: ${STYLE.colors.gold};">${this.formatNumber(data.totalCost)}</span>${buildOutlierPriceWarningIcon(data.isOutlier)}</span>
                     </div>
                 `;
             }
@@ -1106,7 +1109,7 @@ class EnhancementUI {
             html += `
                 <div style="display: flex; justify-content: space-between; margin-top: 2px; padding: 5px; background: rgba(0, 255, 234, 0.05); border-radius: 4px;">
                     <span style="font-weight: bold; color: ${STYLE.colors.textSecondary};">${protectionItemName} (${session.protectionCount || 0}×):</span>
-                    <span style="color: ${STYLE.colors.gold};">${this.formatNumber(session.protectionCost)}</span>
+                    <span style="color: ${STYLE.colors.gold};">${this.formatNumber(session.protectionCost)}${buildOutlierPriceWarningIcon(session.protectionCostIsOutlier)}</span>
                 </div>
             `;
         }

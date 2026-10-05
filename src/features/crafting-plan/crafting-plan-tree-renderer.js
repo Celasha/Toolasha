@@ -24,12 +24,14 @@ export function collectBuyItems(node, buyItems) {
         if (existing) {
             existing.quantity += node.quantity;
             existing.totalCost += node.totalCost;
+            existing.isOutlier = existing.isOutlier || node.isOutlier;
         } else {
             buyItems.set(node.itemHrid, {
                 itemName: node.itemName,
                 quantity: node.quantity,
                 unitCost: node.unitCost,
                 totalCost: node.totalCost,
+                isOutlier: node.isOutlier || false,
             });
         }
         return;
@@ -76,6 +78,7 @@ export function createRow(leftText, rightText, options = {}) {
         gap: 8px;
         padding: 2px 0;
     `;
+    if (options.title) row.title = options.title;
 
     const left = document.createElement('span');
     left.style.cssText = 'overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
@@ -218,8 +221,11 @@ export function renderCraftingPlanBreakdown(plan, options = {}) {
             const qty = Math.ceil(item.quantity);
             const cost = formatKMB(Math.round(item.totalCost));
             const unit = formatWithSeparator(Math.round(item.unitCost));
+            const outlierSuffix = item.isOutlier ? ' ⚠' : '';
             shoppingListContainer.appendChild(
-                createRow(`${item.itemName} x${formatWithSeparator(qty)}`, `${cost} (${unit}/ea)`)
+                createRow(`${item.itemName} x${formatWithSeparator(qty)}${outlierSuffix}`, `${cost} (${unit}/ea)`, {
+                    title: item.isOutlier ? t('marketData.outlierPriceWarningTooltip') : undefined,
+                })
             );
         }
 

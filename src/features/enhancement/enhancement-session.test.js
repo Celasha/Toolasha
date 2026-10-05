@@ -6,6 +6,8 @@ import {
     normalizeSession,
     getLevelEnhancingLuck,
     getOverallEnhancingLuck,
+    addMaterialCost,
+    addProtectionCost,
 } from './enhancement-session.js';
 
 describe('recordSuccess - Blessed tea tracking', () => {
@@ -198,5 +200,50 @@ describe('Enhancing Luck: actual vs. expected successes', () => {
         expect(legacySession.attemptsPerLevel[0].expectedSuccessSum).toBe(0);
         // Legacy data with no expected chance recorded must not report a misleading luck value.
         expect(getLevelEnhancingLuck(legacySession, 0)).toBeNull();
+    });
+});
+
+describe('addMaterialCost / addProtectionCost - outlier guard propagation', () => {
+    test('flags a material as outlier the first time it is added with isOutlier=true', () => {
+        const session = createSession('/items/sword', 'Sword', 0, 5, 0);
+
+        addMaterialCost(session, '/items/ore', 5, 100, true);
+
+        expect(session.materialCosts['/items/ore'].isOutlier).toBe(true);
+    });
+
+    test('a material defaults to isOutlier=false when not specified', () => {
+        const session = createSession('/items/sword', 'Sword', 0, 5, 0);
+
+        addMaterialCost(session, '/items/ore', 5, 100);
+
+        expect(session.materialCosts['/items/ore'].isOutlier).toBe(false);
+    });
+
+    test('once flagged outlier, a material stays flagged even if a later add is not an outlier', () => {
+        const session = createSession('/items/sword', 'Sword', 0, 5, 0);
+
+        addMaterialCost(session, '/items/ore', 5, 100, true);
+        addMaterialCost(session, '/items/ore', 5, 100, false);
+
+        expect(session.materialCosts['/items/ore'].isOutlier).toBe(true);
+    });
+
+    test('addProtectionCost flags session.protectionCostIsOutlier and it stays sticky', () => {
+        const session = createSession('/items/sword', 'Sword', 0, 5, 0);
+
+        addProtectionCost(session, '/items/mirror_of_protection', 5000, true);
+        addProtectionCost(session, '/items/mirror_of_protection', 5000, false);
+
+        expect(session.protectionCostIsOutlier).toBe(true);
+    });
+
+    test('normalizeSession backfills protectionCostIsOutlier for legacy sessions missing it', () => {
+        const legacySession = createSession('/items/sword', 'Sword', 0, 5, 0);
+        delete legacySession.protectionCostIsOutlier;
+
+        normalizeSession(legacySession);
+
+        expect(legacySession.protectionCostIsOutlier).toBe(false);
     });
 });

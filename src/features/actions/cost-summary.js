@@ -16,7 +16,7 @@ import {
     refreshActionPanels,
 } from '../../utils/action-panel-helper.js';
 import { calculateMaterialRequirements } from '../../utils/material-calculator.js';
-import { getItemPrice, formatPrice } from '../../utils/market-data.js';
+import { getItemPriceOutlierInfo, formatPrice } from '../../utils/market-data.js';
 import { computeBestCraftingPlan } from '../../features/crafting-plan/crafting-plan-calculator.js';
 import { getActionHridFromName, getActionHridFromFiber } from '../../utils/game-lookups.js';
 import { getOrCreateProductionToolsBlock, normalizeProductionToolsBlock } from './production-tools-layout.js';
@@ -142,13 +142,18 @@ export function buildBlock(actionHrid, numActions, outputHrid, outputCount) {
     let missingCost = 0;
     let directComplete = true;
     let missingComplete = true;
+    let directOutlier = false;
+    let missingOutlier = false;
 
     for (const mat of materials) {
         let unitPrice = null;
+        let isOutlier = false;
         if (mat.itemHrid === '/items/coin') {
             unitPrice = 1;
         } else if (mat.isTradeable) {
-            unitPrice = getItemPrice(mat.itemHrid, { mode: 'ask', side: 'buy' });
+            const priceInfo = getItemPriceOutlierInfo(mat.itemHrid, { mode: 'ask', side: 'buy' });
+            unitPrice = priceInfo.value;
+            isOutlier = priceInfo.isOutlier;
         }
 
         if (unitPrice === null) {
@@ -156,6 +161,8 @@ export function buildBlock(actionHrid, numActions, outputHrid, outputCount) {
             if (mat.missing > 0) missingComplete = false;
             continue;
         }
+        if (isOutlier && mat.required > 0) directOutlier = true;
+        if (isOutlier && mat.missing > 0) missingOutlier = true;
         directCost += unitPrice * mat.required;
         missingCost += unitPrice * mat.missing;
     }
@@ -173,24 +180,39 @@ export function buildBlock(actionHrid, numActions, outputHrid, outputCount) {
     }
 
     let marketCost = null;
+    let marketOutlier = false;
     if (outputHrid) {
-        const unitSellPrice = getItemPrice(outputHrid, { mode: 'ask', side: 'buy' });
-        if (unitSellPrice !== null) {
-            marketCost = unitSellPrice * outputCount;
+        const sellPriceInfo = getItemPriceOutlierInfo(outputHrid, { mode: 'ask', side: 'buy' });
+        if (sellPriceInfo.value !== null) {
+            marketCost = sellPriceInfo.value * outputCount;
+            marketOutlier = sellPriceInfo.isOutlier;
         }
     }
 
     return renderBlock({
         directCost: directComplete || directCost > 0 ? directCost : null,
         directComplete,
+        directOutlier,
         missingCost: missingComplete || missingCost > 0 ? missingCost : null,
         missingComplete,
+        missingOutlier,
         planCost,
         marketCost,
+        marketOutlier,
     });
 }
 
-export function renderBlock({ directCost, directComplete, missingCost, missingComplete, planCost, marketCost }) {
+export function renderBlock({
+    directCost,
+    directComplete,
+    directOutlier = false,
+    missingCost,
+    missingComplete,
+    missingOutlier = false,
+    planCost,
+    marketCost,
+    marketOutlier = false,
+}) {
     const container = document.createElement('div');
     container.id = UI_ID;
     container.style.cssText = `
@@ -215,15 +237,19 @@ export function renderBlock({ directCost, directComplete, missingCost, missingCo
     `;
     container.appendChild(header);
 
-    container.appendChild(renderLine(t('costSummary.directRecipeCostLabel'), directCost, !directComplete));
-    container.appendChild(renderLine(t('costSummary.missingDirectMatsLabel'), missingCost, !missingComplete));
+    container.appendChild(
+        renderLine(t('costSummary.directRecipeCostLabel'), directCost, !directComplete, directOutlier)
+    );
+    container.appendChild(
+        renderLine(t('costSummary.missingDirectMatsLabel'), missingCost, !missingComplete, missingOutlier)
+    );
     container.appendChild(renderLine(t('costSummary.bestCraftingPlanLabel'), planCost));
-    container.appendChild(renderLine(t('costSummary.finishedItemMarketLabel'), marketCost));
+    container.appendChild(renderLine(t('costSummary.finishedItemMarketLabel'), marketCost, false, marketOutlier));
 
     return container;
 }
 
-function renderLine(label, value, partial = false) {
+function renderLine(label, value, partial = false, isOutlier = false) {
     const row = document.createElement('div');
     row.style.cssText = `
         display: flex;
@@ -239,11 +265,18 @@ function renderLine(label, value, partial = false) {
         valueEl.textContent = '—';
         valueEl.style.color = '#64748b';
     } else {
-        valueEl.textContent = formatPrice(value, { decimals: 1 }) + (partial ? '*' : '');
+        valueEl.textContent = formatPrice(value, { decimals: 1 }) + (partial ? '*' : '') + (isOutlier ? ' ⚠' : '');
         valueEl.style.color = '#e2e8f0';
         valueEl.style.fontVariantNumeric = 'tabular-nums';
+        const titles = [];
         if (partial) {
-            valueEl.title = t('costSummary.partialDataTooltip');
+            titles.push(t('costSummary.partialDataTooltip'));
+        }
+        if (isOutlier) {
+            titles.push(t('marketData.outlierPriceWarningTooltip'));
+        }
+        if (titles.length > 0) {
+            valueEl.title = titles.join(' ');
         }
     }
     row.appendChild(labelEl);

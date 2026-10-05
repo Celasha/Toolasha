@@ -24,6 +24,7 @@ import {
 } from './upgrade-advisor.js';
 import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } from '../../utils/panel-z-index.js';
 import { formatWithSeparator } from '../../utils/formatters.js';
+import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 import { SimEditor } from './sim-editor.js';
 import labyrinthClearRate from '../combat/labyrinth-clear-rate.js';
 import loadoutState from '../../core/loadout-state.js';
@@ -1152,6 +1153,7 @@ class LabSimUI {
                 desc: r.candidate?.description || '',
                 cost,
                 costStr: cost ? formatWithSeparator(cost) : '\u2014',
+                isOutlier: r.candidate?.isOutlier || false,
                 winRate,
                 winRateStr: winRate.toFixed(2) + '%',
                 deltaVal: delta,
@@ -1228,7 +1230,7 @@ class LabSimUI {
             for (const row of goldRows) {
                 html += `<tr style="border-bottom:1px solid #1a1a1a;">
                     <td style="padding:3px 4px; color:#e0e0e0;">${row.desc}</td>
-                    <td style="${tdStyle} color:#ccc;">${row.costStr}</td>
+                    <td style="${tdStyle} color:#ccc;">${row.costStr}${buildOutlierPriceWarningIcon(row.isOutlier)}</td>
                     <td style="${tdStyle} color:#ccc;">${row.winRateStr}</td>
                     <td style="${tdStyle} color:${row.deltaColor}; font-weight:600;">${row.deltaStr}</td>
                     <td style="${tdStyle} color:#888;">${row.goldPerPctStr}</td>
@@ -1619,6 +1621,7 @@ class LabSimUI {
                 desc: r.candidate?.description || '',
                 cost,
                 costStr: cost ? formatWithSeparator(cost) : '\u2014',
+                isOutlier: r.candidate?.isOutlier || false,
                 clearRate,
                 clearRateStr: clearRate.toFixed(1) + '%',
                 deltaVal,
@@ -1694,7 +1697,7 @@ class LabSimUI {
             for (const row of goldRows) {
                 html += `<tr style="border-bottom:1px solid #1a1a1a;">
                     <td style="padding:3px 4px; color:#e0e0e0;">${row.desc}</td>
-                    <td style="${tdStyle} color:#ccc;">${row.costStr}</td>
+                    <td style="${tdStyle} color:#ccc;">${row.costStr}${buildOutlierPriceWarningIcon(row.isOutlier)}</td>
                     <td style="${tdStyle} color:#ccc;">${row.clearRateStr}</td>
                     <td style="${tdStyle} color:${row.deltaColor}; font-weight:600;">${row.deltaStr}</td>
                     <td style="${tdStyle} color:#888;">${row.goldPerPctStr}</td>

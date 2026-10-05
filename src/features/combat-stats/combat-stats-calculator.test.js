@@ -29,7 +29,11 @@ vi.mock('../market/expected-value-calculator.js', () => ({
     },
 }));
 
-vi.mock('../../utils/market-data.js', () => ({ getPricingMode: vi.fn(() => 'ask') }));
+vi.mock('../../utils/market-data.js', () => ({
+    getPricingMode: vi.fn(() => 'ask'),
+    getItemPriceOutlierInfo: vi.fn(() => ({ value: 500, isOutlier: false })),
+    getItemPrices: vi.fn(() => ({ ask: 500, bid: 400, average: 450, askOutlier: false, bidOutlier: false })),
+}));
 vi.mock('../crafting-plan/crafting-plan-calculator.js', () => ({ computeBestCraftingPlan: vi.fn() }));
 
 import {
@@ -37,11 +41,13 @@ import {
     calculatePlayerStats,
     calculateValuedRevenue,
     calculateKeyCosts,
+    calculateIncome,
 } from './combat-stats-calculator.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 import dataManager from '../../core/data-manager.js';
 import config from '../../core/config.js';
 import { computeBestCraftingPlan } from '../crafting-plan/crafting-plan-calculator.js';
+import { getItemPriceOutlierInfo, getItemPrices } from '../../utils/market-data.js';
 
 describe('calculateConsumableCosts - timeToZeroSeconds zero-safe fallback', () => {
     beforeEach(() => {
@@ -83,6 +89,49 @@ describe('calculateConsumableCosts - timeToZeroSeconds zero-safe fallback', () =
         const { breakdown } = calculateConsumableCosts(consumables, 3600);
 
         expect(breakdown[0].timeToZeroSeconds).toBe(Infinity);
+    });
+});
+
+describe('outlier guard propagation', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    test('calculateIncome flags isOutlier when a priced loot item was substituted by the outlier guard', () => {
+        getItemPrices.mockReturnValueOnce({ ask: 500, bid: 400, average: 450, askOutlier: true, bidOutlier: false });
+        dataManager.getItemDetails.mockReturnValueOnce({ name: 'Test Item', isOpenable: false });
+
+        const income = calculateIncome({ a: { itemHrid: '/items/gold_ore', count: 10 } });
+
+        expect(income.isOutlier).toBe(true);
+    });
+
+    test('calculateIncome does not flag isOutlier when no loot item was substituted', () => {
+        getItemPrices.mockReturnValueOnce({ ask: 500, bid: 400, average: 450, askOutlier: false, bidOutlier: false });
+        dataManager.getItemDetails.mockReturnValueOnce({ name: 'Test Item', isOpenable: false });
+
+        const income = calculateIncome({ a: { itemHrid: '/items/gold_ore', count: 10 } });
+
+        expect(income.isOutlier).toBe(false);
+    });
+
+    test('calculateConsumableCosts flags isOutlier per breakdown entry, instead of reading marketAPI.getPrice raw', () => {
+        getItemPriceOutlierInfo.mockReturnValueOnce({ value: 500, isOutlier: true });
+        const consumables = [{ itemHrid: '/items/coffee', consumed: 5, actualConsumed: 5 }];
+
+        const { breakdown } = calculateConsumableCosts(consumables, 3600);
+
+        expect(breakdown[0].isOutlier).toBe(true);
+    });
+
+    test('calculateConsumableCosts falls back to the 500 default price with isOutlier false when no market data exists', () => {
+        getItemPriceOutlierInfo.mockReturnValueOnce({ value: null, isOutlier: false });
+        const consumables = [{ itemHrid: '/items/coffee', consumed: 5, actualConsumed: 5 }];
+
+        const { breakdown } = calculateConsumableCosts(consumables, 3600);
+
+        expect(breakdown[0].pricePerItem).toBe(500);
+        expect(breakdown[0].isOutlier).toBe(false);
     });
 });
 

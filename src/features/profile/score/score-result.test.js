@@ -4,7 +4,13 @@ import { emptyCategory, attribute, mergeCategory } from './score-result.js';
 
 describe('emptyCategory', () => {
     test('starts complete with zero score/unpricedCount and an empty breakdown', () => {
-        expect(emptyCategory()).toEqual({ score: 0, complete: true, unpricedCount: 0, breakdown: [] });
+        expect(emptyCategory()).toEqual({
+            score: 0,
+            complete: true,
+            unpricedCount: 0,
+            hasOutlierPrice: false,
+            breakdown: [],
+        });
     });
 });
 
@@ -16,7 +22,9 @@ describe('attribute - lower-bound leaf provenance (TLA-041C / LB-01..03, LB-10, 
         expect(category.score).toBeCloseTo(700);
         expect(category.complete).toBe(true);
         expect(category.unpricedCount).toBe(0);
-        expect(category.breakdown).toEqual([{ name: 'Sword +10', value: '700.0', complete: true, reason: null }]);
+        expect(category.breakdown).toEqual([
+            { name: 'Sword +10', value: '700.0', complete: true, reason: null, isOutlier: false },
+        ]);
     });
 
     test('LB-02: an unpriceable leaf stays visible as N/A instead of disappearing', () => {
@@ -26,7 +34,9 @@ describe('attribute - lower-bound leaf provenance (TLA-041C / LB-01..03, LB-10, 
         expect(category.score).toBe(0);
         expect(category.complete).toBe(false);
         expect(category.unpricedCount).toBe(1);
-        expect(category.breakdown).toEqual([{ name: 'Item B', value: null, complete: false, reason: null }]);
+        expect(category.breakdown).toEqual([
+            { name: 'Item B', value: null, complete: false, reason: null, isOutlier: false },
+        ]);
     });
 
     test('LB-03: a positive partial (incomplete) leaf renders a numeric value, not N/A', () => {
@@ -35,7 +45,13 @@ describe('attribute - lower-bound leaf provenance (TLA-041C / LB-01..03, LB-10, 
 
         expect(category.score).toBeCloseTo(55);
         expect(category.complete).toBe(false);
-        expect(category.breakdown[0]).toEqual({ name: 'Observatory 8', value: '55.0', complete: false, reason: null });
+        expect(category.breakdown[0]).toEqual({
+            name: 'Observatory 8',
+            value: '55.0',
+            complete: false,
+            reason: null,
+            isOutlier: false,
+        });
     });
 
     test('preserves an optional reason for an unpriceable leaf', () => {

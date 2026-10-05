@@ -9,8 +9,6 @@
 import dataManager from '../../core/data-manager.js';
 import storage from '../../core/storage.js';
 import loadoutState from '../../core/loadout-state.js';
-import config from '../../core/config.js';
-import marketAPI from '../../api/marketplace.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 import { calculatePriceAfterTax } from '../../utils/profit-helpers.js';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
@@ -1297,8 +1295,8 @@ export const DUNGEON_CHEST_KEYS = {
  * Calculate dungeon key costs from a drop map.
  * Entry keys (1:1 with regular chests) + chest keys (1:1 with all chests).
  * @param {Map<string, number>} dropMap - itemHrid → expected count from calculateExpectedDrops
- * @param {Function} getBuyPrice - Function to get buy price for an item (from UI)
- * @returns {Array<{itemHrid: string, name: string, count: number, unitCost: number, totalCost: number}>}
+ * @param {Function} getBuyPrice - Function (itemHrid) => {value, isOutlier} to get the buy price for an item
+ * @returns {Array<{itemHrid: string, name: string, count: number, unitCost: number, totalCost: number, isOutlier: boolean}>}
  */
 export function calculateDungeonKeyCosts(dropMap, getBuyPrice) {
     const costs = [];
@@ -1323,7 +1321,7 @@ export function calculateDungeonKeyCosts(dropMap, getBuyPrice) {
     }
 
     for (const [keyHrid, count] of Object.entries(keyCounts)) {
-        const unitCost = getBuyPrice(keyHrid);
+        const { value: unitCost, isOutlier } = getBuyPrice(keyHrid);
         const keyDetails = dataManager.getItemDetails(keyHrid);
         costs.push({
             itemHrid: keyHrid,
@@ -1331,6 +1329,7 @@ export function calculateDungeonKeyCosts(dropMap, getBuyPrice) {
             count,
             unitCost,
             totalCost: count * unitCost,
+            isOutlier,
         });
     }
 
@@ -1338,17 +1337,14 @@ export function calculateDungeonKeyCosts(dropMap, getBuyPrice) {
 }
 
 /**
- * Get the buy price for an item based on the global pricing mode.
- * @param {Object|null} priceData - { bid, ask } from marketAPI.getPrice()
- * @returns {number}
+ * Resolve the buy-side price for an item, outlier-guard aware (routes through
+ * expectedValueCalculator.resolveBuySideValue instead of a raw marketAPI.getPrice lookup).
+ * @param {string} itemHrid
+ * @returns {{value: number, isOutlier: boolean}}
  */
-function getBuyPrice(priceData) {
-    if (!priceData) return 0;
-    const mode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
-    if (mode === 'optimistic' || mode === 'patientBuy') {
-        return priceData.bid > 0 ? priceData.bid : 0;
-    }
-    return priceData.ask > 0 ? priceData.ask : 0;
+function resolveBuyPrice(itemHrid) {
+    const resolved = expectedValueCalculator.resolveBuySideValue(itemHrid);
+    return resolved ? { value: resolved.value, isOutlier: resolved.isOutlier } : { value: 0, isOutlier: false };
 }
 
 /**
@@ -1383,7 +1379,13 @@ export function calculateSimRevenue(simResult, gameData, playerHrid, hours) {
         revenuePerHour += perHour;
         if (unitValue > 0) {
             const itemName = dataManager.getItemDetails(itemHrid)?.name || itemHrid.split('/').pop();
-            dropEntries.push({ name: itemName, countPerHour: total / hours, unitValue, totalValue: perHour });
+            dropEntries.push({
+                name: itemName,
+                countPerHour: total / hours,
+                unitValue,
+                totalValue: perHour,
+                isOutlier: resolved.isOutlier,
+            });
         }
     }
     dropEntries.sort((a, b) => b.totalValue - a.totalValue);
@@ -1392,18 +1394,24 @@ export function calculateSimRevenue(simResult, gameData, playerHrid, hours) {
     const consumableEntries = [];
     const consumablesUsed = simResult.consumablesUsed?.[playerHrid] || {};
     for (const [itemHrid, count] of Object.entries(consumablesUsed)) {
-        const unitCost = getBuyPrice(marketAPI.getPrice(itemHrid));
+        const { value: unitCost, isOutlier } = resolveBuyPrice(itemHrid);
         const perHour = (count / hours) * unitCost;
         costPerHour += perHour;
         if (unitCost > 0) {
             const itemName = dataManager.getItemDetails(itemHrid)?.name || itemHrid.split('/').pop();
-            consumableEntries.push({ name: itemName, countPerHour: count / hours, unitCost, totalCost: perHour });
+            consumableEntries.push({
+                name: itemName,
+                countPerHour: count / hours,
+                unitCost,
+                totalCost: perHour,
+                isOutlier,
+            });
         }
     }
 
     let keyCostPerHour = 0;
     if (simResult.isDungeon) {
-        const keyCosts = calculateDungeonKeyCosts(dropMap, (keyHrid) => getBuyPrice(marketAPI.getPrice(keyHrid)));
+        const keyCosts = calculateDungeonKeyCosts(dropMap, resolveBuyPrice);
         for (const key of keyCosts) {
             keyCostPerHour += key.totalCost / hours;
         }

@@ -13,6 +13,12 @@ vi.mock('../../core/data-manager.js', () => ({
 vi.mock('../../utils/market-data.js', () => ({
     getItemPrices: vi.fn((itemHrid) => mocks.askPrices[itemHrid] ?? null),
     getItemPrice: vi.fn((itemHrid) => mocks.askPrices[itemHrid]?.ask ?? -1),
+    getItemPriceOutlierInfo: vi.fn((itemHrid, opts) => {
+        const prices = mocks.askPrices[itemHrid];
+        if (!prices) return { value: null, isOutlier: false };
+        const value = opts?.mode === 'bid' ? prices.bid : prices.ask;
+        return { value: value ?? null, isOutlier: false };
+    }),
 }));
 
 vi.mock('../market/expected-value-calculator.js', () => ({
@@ -86,7 +92,7 @@ describe('TLA041E-25: shared special-currency valuation stays consistent with th
         const shared = getCurrencyOpportunityValue('/items/chimerical_token', { opportunityCache: new Map() });
 
         expect(tooltipBest).toBe(3);
-        expect(shared).toEqual({ value: 3, complete: true });
+        expect(shared).toEqual({ value: 3, complete: true, isOutlier: false });
     });
 
     test('task token (openable EV path): tooltip best Gold/Token matches the shared opportunity-value formula', () => {
@@ -99,7 +105,7 @@ describe('TLA041E-25: shared special-currency valuation stays consistent with th
         const shared = getCurrencyOpportunityValue('/items/task_token', { opportunityCache: new Map() });
 
         expect(tooltipBest).toBe(200);
-        expect(shared).toEqual({ value: 200, complete: true });
+        expect(shared).toEqual({ value: 200, complete: true, isOutlier: false });
     });
 
     test('labyrinth token (outputCount-aware): tooltip best Gold/Token matches the shared opportunity-value formula', () => {
@@ -112,7 +118,7 @@ describe('TLA041E-25: shared special-currency valuation stays consistent with th
         const shared = getCurrencyOpportunityValue('/items/labyrinth_token', { opportunityCache: new Map() });
 
         expect(tooltipBest).toBe(20);
-        expect(shared).toEqual({ value: 20, complete: true });
+        expect(shared).toEqual({ value: 20, complete: true, isOutlier: false });
     });
 });
 
@@ -145,8 +151,8 @@ describe('_getGuildTokenShopItems', () => {
         // Brown: 1000/credit via Item X; 10 tokens/credit -> 100 gold/token
         // Silver: 20/credit via Item Y; 1 token/10 credits -> 200 gold/token, best
         expect(shopItems).toEqual([
-            { name: 'Silver Guild Credit', cost: 1, askPrice: 200, goldPerToken: 200 },
-            { name: 'Brown Guild Credit', cost: 10, askPrice: 1000, goldPerToken: 100 },
+            { name: 'Silver Guild Credit', cost: 1, askPrice: 200, goldPerToken: 200, isOutlier: false },
+            { name: 'Brown Guild Credit', cost: 10, askPrice: 1000, goldPerToken: 100, isOutlier: false },
         ]);
     });
 
@@ -157,5 +163,47 @@ describe('_getGuildTokenShopItems', () => {
         };
 
         expect(dungeonTokenTooltips._getGuildTokenShopItems()).toEqual([]);
+    });
+});
+
+describe('outlier flag propagation on shop item rows', () => {
+    beforeEach(resetMocks);
+
+    test('_getDungeonShopItems carries askOutlier through as isOutlier', () => {
+        mocks.askPrices['/items/griffin_leather'] = { ask: 600, bid: 500, askOutlier: true };
+        mocks.askPrices['/items/manticore_sting'] = { ask: 3000, bid: 2900, askOutlier: false };
+
+        const shopItems = dungeonTokenTooltips._getDungeonShopItems('/items/chimerical_token');
+
+        const griffin = shopItems.find((item) => item.name === 'Griffin Leather');
+        const manticore = shopItems.find((item) => item.name === 'Manticore Sting');
+        expect(griffin.isOutlier).toBe(true);
+        expect(manticore.isOutlier).toBe(false);
+    });
+
+    test('_getTaskShopItems only flags isOutlier for the ask-sourced value, never for EV', () => {
+        mocks.askPrices['/items/task_crystal'] = { ask: 5000, bid: 4900, askOutlier: true };
+        mocks.ev['/items/large_artisans_crate'] = 6000;
+
+        const shopItems = dungeonTokenTooltips._getTaskShopItems();
+
+        const crystal = shopItems.find((item) => item.name === 'Task Crystal');
+        const crate = shopItems.find((item) => item.name === "Large Artisan's Crate");
+        expect(crystal.isOutlier).toBe(true);
+        expect(crystal.valueSource).toBe('ask');
+        expect(crate.isOutlier).toBe(false);
+        expect(crate.valueSource).toBe('EV');
+    });
+
+    test('_getLabyrinthShopItems carries askOutlier through as isOutlier', () => {
+        mocks.askPrices['/items/labyrinth_essence'] = { ask: 2, bid: 1, askOutlier: true };
+        mocks.askPrices['/items/pathbreaker_lodestone'] = { ask: 5000, bid: 4000, askOutlier: false };
+
+        const shopItems = dungeonTokenTooltips._getLabyrinthShopItems();
+
+        const essence = shopItems.find((item) => item.name === 'Labyrinth Essence');
+        const lodestone = shopItems.find((item) => item.name === 'Pathbreaker Lodestone');
+        expect(essence.isOutlier).toBe(true);
+        expect(lodestone.isOutlier).toBe(false);
     });
 });

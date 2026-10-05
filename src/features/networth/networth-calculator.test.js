@@ -11,6 +11,8 @@ const {
     mockIsExcluded,
     mockGetExclusions,
     mockGetAllSnapshots,
+    mockGetMarketValue,
+    mockCheckOutlier,
 } = vi.hoisted(() => ({
     mockGetInitClientData: vi.fn(),
     mockGetCharacterGuildBuffLevel: vi.fn(),
@@ -22,6 +24,8 @@ const {
     mockIsExcluded: vi.fn(),
     mockGetExclusions: vi.fn(() => []),
     mockGetAllSnapshots: vi.fn(() => []),
+    mockGetMarketValue: vi.fn(() => null),
+    mockCheckOutlier: vi.fn((_itemHrid, _level, rawValue) => ({ value: rawValue, isOutlier: false })),
 }));
 
 vi.mock('../../core/data-manager.js', () => ({
@@ -40,6 +44,7 @@ vi.mock('../../core/config.js', () => ({
 }));
 vi.mock('../../utils/market-data.js', () => ({
     getItemPrice: mockGetItemPrice,
+    getItemPriceOutlierInfo: (hrid, opts) => ({ value: mockGetItemPrice(hrid, opts), isOutlier: false }),
     getItemPrices: vi.fn(),
 }));
 vi.mock('../../api/marketplace.js', () => ({
@@ -49,6 +54,9 @@ vi.mock('../../api/marketplace.js', () => ({
         getPricesBatch: mockGetPricesBatch,
         getPrice: vi.fn(() => ({ ask: 0, bid: 0 })),
     },
+}));
+vi.mock('../../api/market-values.js', () => ({
+    default: { getValue: mockGetMarketValue, checkOutlier: mockCheckOutlier },
 }));
 vi.mock('./networth-exclusions.js', () => ({
     isExcluded: mockIsExcluded,
@@ -66,7 +74,9 @@ vi.mock('./networth-cache.js', () => ({
         checkAndInvalidate: vi.fn(),
     },
 }));
-vi.mock('../../utils/ability-cost-calculator.js', () => ({ calculateAbilityCost: vi.fn(() => 0) }));
+vi.mock('../../utils/ability-cost-calculator.js', () => ({
+    calculateAbilityCost: vi.fn(() => ({ cost: 0, isOutlier: false })),
+}));
 vi.mock('../../utils/house-cost-calculator.js', () => ({ calculateHouseBuildCost: vi.fn(() => 0) }));
 vi.mock('../enhancement/tooltip-enhancement.js', () => ({ calculateEnhancementPath: vi.fn(() => null) }));
 vi.mock('../../utils/enhancement-config.js', () => ({ getEnhancingParams: vi.fn(() => ({})) }));
@@ -83,7 +93,12 @@ vi.mock('../../utils/profit-constants.js', () => ({
     COWBELL_BAG_HRID: '/items/bag_of_10_cowbells',
     COWBELL_BAG_TAX: 0.02,
 }));
-import { calculateAllGuildShrinesCost, buildGuildBuffDisplayName, calculateNetworth } from './networth-calculator.js';
+import {
+    calculateAllGuildShrinesCost,
+    buildGuildBuffDisplayName,
+    calculateNetworth,
+    calculateItemValue,
+} from './networth-calculator.js';
 
 const FORCE_COMBAT = '/guild_buffs/force_combat';
 const FORCE_SKILLING = '/guild_buffs/force_skilling';
@@ -547,5 +562,60 @@ describe('calculateNetworth - exclusions (TLA-037)', () => {
         expect(result.currentAssets.total).toBe(1100);
         expect(result.totalNetworth).toBe(1100);
         expect(result.excluded.total).toBe(1000);
+    });
+
+    test('NWX-20: a price flagged by the outlier guard is marked isOutlier on its breakdown entry, unflagged items are not', async () => {
+        mockCheckOutlier.mockImplementation((itemHrid, _level, rawValue) => {
+            if (itemHrid === '/items/sword') {
+                return { value: 1000, isOutlier: true };
+            }
+            return { value: rawValue, isOutlier: false };
+        });
+
+        mockGetCombinedData.mockReturnValue(gameData([item('/items/sword'), item('/items/shield')]));
+        const result = await calculateNetworth();
+
+        const swordEntry = result.currentAssets.inventory.breakdown.find((b) => b.itemHrid === '/items/sword');
+        const shieldEntry = result.currentAssets.inventory.breakdown.find((b) => b.itemHrid === '/items/shield');
+        expect(swordEntry.isOutlier).toBe(true);
+        expect(shieldEntry.isOutlier).toBe(false);
+    });
+});
+
+describe('calculateItemValue - reference market value fallback (getMarketPrice)', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mockGetSetting.mockReturnValue(false);
+        mockGetSettingValue.mockReturnValue('ask');
+    });
+
+    test('unenhanced item with no live price, no recipe, and no shop cost falls back to the reference market value', async () => {
+        mockGetMarketValue.mockReturnValueOnce(777);
+
+        const value = await calculateItemValue({ itemHrid: '/items/loot_only_item', enhancementLevel: 0, count: 3 });
+
+        expect(mockGetMarketValue).toHaveBeenCalledWith('/items/loot_only_item', 0);
+        expect(value).toBe(777 * 3);
+    });
+
+    test('returns 0 when the reference market value is also unavailable', async () => {
+        mockGetMarketValue.mockReturnValueOnce(null);
+
+        const value = await calculateItemValue({ itemHrid: '/items/totally_unpriced_item', enhancementLevel: 0 });
+
+        expect(value).toBe(0);
+    });
+
+    test('an enhanced item with no live price never consults the reference value at its own level - only the pre-existing level-0 fallback path can reach it', async () => {
+        mockGetMarketValue.mockReturnValueOnce(555);
+
+        const value = await calculateItemValue({ itemHrid: '/items/some_gear', enhancementLevel: 5, count: 1 });
+
+        // calculateEnhancementPath is mocked to return null, so this bottoms out at the
+        // pre-existing nested base-item (level 0) getMarketPrice call, never the enhanced
+        // item's own level - that's the enhancement-path replacement-cost calculation's job.
+        expect(mockGetMarketValue).toHaveBeenCalledWith('/items/some_gear', 0);
+        expect(mockGetMarketValue).not.toHaveBeenCalledWith('/items/some_gear', 5);
+        expect(value).toBe(555);
     });
 });

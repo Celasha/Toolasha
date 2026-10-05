@@ -7,6 +7,8 @@ import config from '../../core/config.js';
 import { t } from '../../core/i18n.js';
 import marketAPI from '../../api/marketplace.js';
 import dataManager from '../../core/data-manager.js';
+import { getItemPriceOutlierInfo } from '../../utils/market-data.js';
+import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 import { numberFormatter } from '../../utils/formatters.js';
 import dom from '../../utils/dom.js';
 import domObserver from '../../core/dom-observer.js';
@@ -234,8 +236,9 @@ class TooltipConsumables {
         const restorePerSecond = recoveryDuration > 0 ? restoreAmount / recoveryDuration : 0;
 
         // Get market price for cost calculations
-        const price = marketAPI.getPrice(itemHrid, 0);
-        const askPrice = price?.ask || 0;
+        const priceInfo = getItemPriceOutlierInfo(itemHrid, { mode: 'ask' });
+        const askPrice = priceInfo.value || 0;
+        const isOutlier = askPrice > 0 ? priceInfo.isOutlier : false;
 
         // Cost per HP or MP
         const costPerPoint = askPrice > 0 ? askPrice / restoreAmount : 0;
@@ -252,6 +255,7 @@ class TooltipConsumables {
             cooldownDuration, // How often you can use it
             askPrice,
             costPerPoint,
+            isOutlier,
             dailyMax,
             usesPerDay,
         };
@@ -296,7 +300,7 @@ class TooltipConsumables {
 
         // Cost efficiency line
         if (stats.costPerPoint > 0) {
-            html += `<div>${t('tooltipConsumables.costPerPointLine', { cost: numberFormatter(stats.costPerPoint, 1), type: stats.restoreType })}</div>`;
+            html += `<div>${t('tooltipConsumables.costPerPointLine', { cost: numberFormatter(stats.costPerPoint, 1), type: stats.restoreType })}${buildOutlierPriceWarningIcon(stats.isOutlier)}</div>`;
         } else if (stats.askPrice === 0) {
             html += `<div style="color: gray; font-style: italic;">${t('tooltipConsumables.costNoDataLabel')}</div>`;
         }

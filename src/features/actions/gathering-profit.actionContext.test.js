@@ -33,6 +33,7 @@ vi.mock('../../utils/bonus-revenue-calculator.js', () => ({
 
 vi.mock('../../utils/market-data.js', () => ({
     getItemPrice: vi.fn(() => null),
+    getItemPriceOutlierInfo: vi.fn(() => ({ value: null, isOutlier: false })),
 }));
 
 vi.mock('../../utils/profit-helpers.js', () => ({
@@ -42,6 +43,8 @@ vi.mock('../../utils/profit-helpers.js', () => ({
     calculateTeaCostsPerHour: vi.fn(() => ({ totalCostPerHour: 0, costs: [] })),
     createPriceCache: vi.fn((fn) => fn),
 }));
+
+import { getItemPrice, getItemPriceOutlierInfo } from '../../utils/market-data.js';
 
 const { calculateGatheringProfit } = await import('./gathering-profit.js');
 
@@ -91,5 +94,30 @@ describe('calculateGatheringProfit actionContext passthrough (TLA-027)', () => {
             expect.anything(),
             expect.objectContaining({ actionContextOverride: null })
         );
+    });
+});
+
+describe('calculateGatheringProfit outlier flag propagation', () => {
+    beforeEach(() => {
+        getActionEfficiencyContextMock.mockReset();
+        getActionEfficiencyContextMock.mockReturnValue(baseEffCtx());
+        getItemPrice.mockReturnValue(100);
+        getItemPriceOutlierInfo.mockReturnValue({ value: 100, isOutlier: false });
+    });
+
+    test('hasOutlierPrices is true when the drop price was flagged, and the row carries isOutlier', async () => {
+        getItemPriceOutlierInfo.mockReturnValue({ value: 100, isOutlier: true });
+
+        const result = await calculateGatheringProfit('/actions/foraging/test');
+
+        expect(result.hasOutlierPrices).toBe(true);
+        expect(result.baseOutputs[0].isOutlier).toBe(true);
+    });
+
+    test('hasOutlierPrices is false when nothing was flagged', async () => {
+        const result = await calculateGatheringProfit('/actions/foraging/test');
+
+        expect(result.hasOutlierPrices).toBe(false);
+        expect(result.baseOutputs[0].isOutlier).toBe(false);
     });
 });

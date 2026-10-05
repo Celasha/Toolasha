@@ -19,6 +19,7 @@ import {
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 import { getKeyPricingModeSetting, KEY_PRICING_MODE_CHEAPEST } from '../../utils/dungeon-key-cost.js';
 import { renderCraftingPlanBreakdown } from '../crafting-plan/crafting-plan-tree-renderer.js';
+import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 
 const YEAR_SECONDS = 365 * 86400;
 
@@ -702,6 +703,7 @@ class CombatStatsUI {
             {
                 label: t('combatStatsUi.incomeLabel'),
                 value: formatNum(stats.income[priceKey]),
+                isOutlier: stats.income.isOutlier,
                 ...(stats.isDungeonRun && stats.incomeBreakdown?.length > 0
                     ? { expandable: true, incomeBreakdown: stats.incomeBreakdown }
                     : {}),
@@ -709,6 +711,7 @@ class CombatStatsUI {
             {
                 label: t('combatStatsUi.dailyIncomeLabel'),
                 value: t('combatStatsUi.perDaySuffix', { value: formatNum(stats.dailyIncome[priceKey]) }),
+                isOutlier: stats.income.isOutlier,
             },
             {
                 label: t('combatStatsUi.consumableCostsLabel'),
@@ -716,6 +719,7 @@ class CombatStatsUI {
                 color: '#ff6b6b',
                 expandable: true,
                 breakdown: stats.consumableBreakdown,
+                isOutlier: stats.consumableBreakdown.some((item) => item.isOutlier),
             },
             {
                 label: t('combatStatsUi.dailyConsumableCostsLabel'),
@@ -724,6 +728,7 @@ class CombatStatsUI {
                 expandable: true,
                 breakdown: stats.consumableBreakdown,
                 isDaily: true,
+                isOutlier: stats.consumableBreakdown.some((item) => item.isOutlier),
             },
             {
                 label: t('combatStatsUi.lowestRunwayLabel'),
@@ -743,6 +748,7 @@ class CombatStatsUI {
                           breakdown: stats.keyBreakdown,
                           hideTrackingNote: true,
                           showKeyPricingNote: true,
+                          isOutlier: stats.keyBreakdown.some((item) => item.isOutlier),
                       },
                       {
                           label: t('combatStatsUi.dailyKeyCostsLabel'),
@@ -753,6 +759,7 @@ class CombatStatsUI {
                           isDaily: true,
                           hideTrackingNote: true,
                           showKeyPricingNote: true,
+                          isOutlier: stats.keyBreakdown.some((item) => item.isOutlier),
                       },
                   ]
                 : []),
@@ -760,6 +767,10 @@ class CombatStatsUI {
                 label: t('combatStatsUi.dailyProfitLabel'),
                 value: t('combatStatsUi.perDaySuffix', { value: formatNum(stats.dailyProfit[priceKey]) }),
                 color: stats.dailyProfit[priceKey] >= 0 ? '#51cf66' : '#ff6b6b',
+                isOutlier:
+                    stats.income.isOutlier ||
+                    stats.consumableBreakdown.some((item) => item.isOutlier) ||
+                    (stats.keyBreakdown || []).some((item) => item.isOutlier),
             },
             ...(stats.actualVsExpected && config.getSettingValue('combatStats_showLootLuck', true)
                 ? (() => {
@@ -871,9 +882,13 @@ class CombatStatsUI {
             label.style.color = textColor;
 
             const value = document.createElement('span');
-            value.textContent = row.value;
+            value.textContent = row.value + (row.isOutlier ? ' ⚠' : '');
             value.style.color = row.color || textColor;
-            if (row.title) {
+            if (row.isOutlier) {
+                value.title = row.title
+                    ? `${row.title} ${t('marketData.outlierPriceWarningTooltip')}`
+                    : t('marketData.outlierPriceWarningTooltip');
+            } else if (row.title) {
                 value.title = row.title;
             }
 
@@ -1193,7 +1208,7 @@ class CombatStatsUI {
                                 itemRow.innerHTML = `
                                     <span>${item.itemName}</span>
                                     <span style="text-align: right;">${formatQuantity(displayQty, formatNum)}</span>
-                                    <span style="text-align: right;">${formatNum(displayPrice)}</span>
+                                    <span style="text-align: right;">${formatNum(displayPrice)}${buildOutlierPriceWarningIcon(item.isOutlier)}</span>
                                     <span style="text-align: right; color: #ff6b6b;">${formatNum(displayCost)}</span>
                                 `;
                                 breakdownDiv.appendChild(itemRow);

@@ -11,6 +11,7 @@ import { t } from '../../core/i18n.js';
 import dom from '../../utils/dom.js';
 import { formatKMB } from '../../utils/formatters.js';
 import { getItemPrices } from '../../utils/market-data.js';
+import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 import {
     buildCheapestPerCredit,
     buildGuildTokenValueByCredit,
@@ -253,12 +254,14 @@ class DungeonTokenTooltips {
         const bagPrice = prices?.ask > 0 ? prices.ask : prices?.bid > 0 ? prices.bid : 0;
         if (bagPrice <= 0) return;
 
+        const bagIsOutlier = prices.ask > 0 ? prices.askOutlier : prices.bidOutlier;
         const cowbellValue = Math.floor(bagPrice / 10);
 
         this._injectSimpleValue(
             tooltipElement,
             t('dungeonTokenTooltips.valueGoldTemplate', { value: formatKMB(cowbellValue) }),
-            t('dungeonTokenTooltips.cowbellValueDetail', { bagPrice: formatKMB(bagPrice) }),
+            t('dungeonTokenTooltips.cowbellValueDetail', { bagPrice: formatKMB(bagPrice) }) +
+                buildOutlierPriceWarningIcon(bagIsOutlier),
             isCollectionTooltip
         );
         dom.fixTooltipOverflow(tooltipElement);
@@ -317,6 +320,7 @@ class DungeonTokenTooltips {
                     cost: tokenCost,
                     askPrice,
                     goldPerToken: askPrice / tokenCost,
+                    isOutlier: prices.askOutlier,
                 };
             })
             .filter(Boolean)
@@ -340,12 +344,14 @@ class DungeonTokenTooltips {
 
                 let itemValue = 0;
                 let valueSource = '';
+                let isOutlier = false;
 
                 // Try market price first (tradeable items like Task Crystal)
                 const prices = getItemPrices(shopItem.itemHrid, 0);
                 if (prices?.ask > 0) {
                     itemValue = prices.ask;
                     valueSource = 'ask';
+                    isOutlier = prices.askOutlier;
                 }
 
                 // For openable items, use expected value if higher
@@ -355,6 +361,7 @@ class DungeonTokenTooltips {
                         if (evData.expectedValue > itemValue) {
                             itemValue = evData.expectedValue;
                             valueSource = 'EV';
+                            isOutlier = false;
                         }
                     }
                 }
@@ -367,6 +374,7 @@ class DungeonTokenTooltips {
                     askPrice: itemValue,
                     goldPerToken: itemValue / tokenCost,
                     valueSource,
+                    isOutlier,
                 };
             })
             .filter(Boolean)
@@ -403,6 +411,7 @@ class DungeonTokenTooltips {
                     cost: tokenCost,
                     askPrice: totalValue,
                     goldPerToken: totalValue / tokenCost,
+                    isOutlier: prices.askOutlier,
                     outputCount,
                 };
             })
@@ -420,14 +429,15 @@ class DungeonTokenTooltips {
         const gameData = dataManager.getInitClientData();
         if (!gameData?.itemDetailMap) return [];
 
-        const { sell } = buildCheapestPerCredit(gameData.itemDetailMap);
-        const creditRows = buildGuildTokenValueByCredit(gameData.itemDetailMap, sell);
+        const { sell, sellOutlier } = buildCheapestPerCredit(gameData.itemDetailMap);
+        const creditRows = buildGuildTokenValueByCredit(gameData.itemDetailMap, sell, sellOutlier);
 
         return creditRows.map((row) => ({
             name: gameData.itemDetailMap[row.creditItemHrid]?.name || row.creditItemHrid.split('/').pop(),
             cost: row.itemCount,
             askPrice: row.creditCount * sell[row.creditItemHrid],
             goldPerToken: row.goldPerToken,
+            isOutlier: row.isOutlier,
         }));
     }
 
@@ -470,13 +480,13 @@ class DungeonTokenTooltips {
             const valueDisplay =
                 item.valueSource === 'EV'
                     ? `${formatKMB(item.askPrice)} <span style="color:#888; font-size:10px;">EV</span>`
-                    : formatKMB(item.askPrice);
+                    : formatKMB(item.askPrice) + buildOutlierPriceWarningIcon(item.isOutlier);
 
             html += `<tr style="${rowStyle}">`;
             html += `<td style="padding: 2px 4px;">${nameDisplay}</td>`;
             html += `<td style="text-align: right; padding: 2px 4px;">${formatKMB(item.cost)}</td>`;
             html += `<td style="text-align: right; padding: 2px 4px;">${valueDisplay}</td>`;
-            html += `<td style="text-align: right; padding: 2px 4px; font-weight: ${fontWeight};">${formatKMB(Math.floor(item.goldPerToken))}</td>`;
+            html += `<td style="text-align: right; padding: 2px 4px; font-weight: ${fontWeight};">${formatKMB(Math.floor(item.goldPerToken))}${buildOutlierPriceWarningIcon(item.isOutlier)}</td>`;
             html += '</tr>';
         }
 

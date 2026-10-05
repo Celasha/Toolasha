@@ -17,6 +17,7 @@ import { calculateActionsPerHour } from '../../utils/profit-helpers.js';
 import { calculateMultiLevelProgress } from '../../utils/experience-calculator.js';
 import { compactActionPanelSection } from '../actions/production-tools-layout.js';
 import { removeInlineXpRate, renderInlineXpRate } from '../actions/inline-xp-rate.js';
+import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 
 export class AlchemyProfitDisplay {
     constructor() {
@@ -534,16 +535,18 @@ export class AlchemyProfitDisplay {
         const costs = Math.round(
             profitData.materialCostPerHour + profitData.catalystCostPerHour + profitData.totalTeaCostPerHour
         );
-        const summary = t('alchemyProfitDisplay.profitPerHourPerDaySummary', {
-            profit: formatLargeNumber(profit),
-            profitPerDay: formatLargeNumber(profitPerDay),
-        });
+        const summary =
+            t('alchemyProfitDisplay.profitPerHourPerDaySummary', {
+                profit: formatLargeNumber(profit),
+                profitPerDay: formatLargeNumber(profitPerDay),
+            }) + (profitData.hasOutlierPrices ? ' ⚠' : '');
 
         const detailsContent = document.createElement('div');
 
         // Revenue Section
         const revenueDiv = document.createElement('div');
-        revenueDiv.innerHTML = `<div style="font-weight: 500; color: var(--text-color-primary, #fff); margin-bottom: 4px;">${t('alchemyProfitDisplay.revenueHeader', { revenue: formatLargeNumber(revenue) })}</div>`;
+        const revenueOutlier = (profitData.dropRevenues || []).some((drop) => drop.isOutlier);
+        revenueDiv.innerHTML = `<div style="font-weight: 500; color: var(--text-color-primary, #fff); margin-bottom: 4px;">${t('alchemyProfitDisplay.revenueHeader', { revenue: formatLargeNumber(revenue) })}${buildOutlierPriceWarningIcon(revenueOutlier)}</div>`;
 
         // Split drops into normal, essence, and rare
         const normalDrops = profitData.dropRevenues.filter((drop) => !drop.isEssence && !drop.isRare);
@@ -572,14 +575,18 @@ export class AlchemyProfitDisplay {
                     line.style.textDecoration = 'line-through';
                     line.style.opacity = '0.6';
                 }
-                line.textContent = t('alchemyProfitDisplay.normalDropLine', {
-                    itemName,
-                    drops: dropsDisplay,
-                    dropRate: dropRatePct,
-                    successRate: formatPercentage(profitData.successRate, 1),
-                    price: formatWithSeparator(Math.round(drop.price)),
-                    revenue: formatLargeNumber(Math.round(drop.revenuePerHour)),
-                });
+                line.textContent =
+                    t('alchemyProfitDisplay.normalDropLine', {
+                        itemName,
+                        drops: dropsDisplay,
+                        dropRate: dropRatePct,
+                        successRate: formatPercentage(profitData.successRate, 1),
+                        price: formatWithSeparator(Math.round(drop.price)),
+                        revenue: formatLargeNumber(Math.round(drop.revenuePerHour)),
+                    }) + (drop.isOutlier ? ' ⚠' : '');
+                if (drop.isOutlier) {
+                    line.title = t('marketData.outlierPriceWarningTooltip');
+                }
                 normalDropsContent.appendChild(line);
 
                 normalDropsRevenue += drop.revenuePerHour;
@@ -612,13 +619,17 @@ export class AlchemyProfitDisplay {
 
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
-                line.textContent = t('alchemyProfitDisplay.dropLineNoSuccessImpact', {
-                    itemName,
-                    drops: drop.dropsPerHour.toFixed(decimals),
-                    dropRate: dropRatePct,
-                    price: formatWithSeparator(Math.round(drop.price)),
-                    revenue: formatLargeNumber(Math.round(drop.revenuePerHour)),
-                });
+                line.textContent =
+                    t('alchemyProfitDisplay.dropLineNoSuccessImpact', {
+                        itemName,
+                        drops: drop.dropsPerHour.toFixed(decimals),
+                        dropRate: dropRatePct,
+                        price: formatWithSeparator(Math.round(drop.price)),
+                        revenue: formatLargeNumber(Math.round(drop.revenuePerHour)),
+                    }) + (drop.isOutlier ? ' ⚠' : '');
+                if (drop.isOutlier) {
+                    line.title = t('marketData.outlierPriceWarningTooltip');
+                }
                 essenceContent.appendChild(line);
 
                 essenceRevenue += drop.revenuePerHour;
@@ -677,6 +688,10 @@ export class AlchemyProfitDisplay {
                         revenue: formatLargeNumber(Math.round(drop.revenuePerHour)),
                     });
                 }
+                if (drop.isOutlier) {
+                    line.textContent += ' ⚠';
+                    line.title = t('marketData.outlierPriceWarningTooltip');
+                }
 
                 rareContent.appendChild(line);
 
@@ -699,7 +714,11 @@ export class AlchemyProfitDisplay {
 
         // Costs Section
         const costsDiv = document.createElement('div');
-        costsDiv.innerHTML = `<div style="font-weight: 500; color: var(--text-color-primary, #fff); margin-top: 12px; margin-bottom: 4px;">${t('alchemyProfitDisplay.costsHeader', { costs: formatLargeNumber(costs) })}</div>`;
+        const costsOutlier =
+            (profitData.requirementCosts || []).some((r) => r.isOutlier) ||
+            profitData.catalystCost?.isOutlier ||
+            (profitData.consumableCosts || []).some((c) => c.isOutlier);
+        costsDiv.innerHTML = `<div style="font-weight: 500; color: var(--text-color-primary, #fff); margin-top: 12px; margin-bottom: 4px;">${t('alchemyProfitDisplay.costsHeader', { costs: formatLargeNumber(costs) })}${buildOutlierPriceWarningIcon(costsOutlier)}</div>`;
 
         // Material Costs subsection (consumed on ALL attempts)
         if (profitData.requirementCosts && profitData.requirementCosts.length > 0) {
@@ -741,6 +760,10 @@ export class AlchemyProfitDisplay {
                         price: formatWithSeparator(Math.round(material.price)),
                         cost: formatLargeNumber(Math.round(material.costPerHour)),
                     });
+                }
+                if (material.isOutlier) {
+                    line.textContent += ' ⚠';
+                    line.title = t('marketData.outlierPriceWarningTooltip');
                 }
 
                 materialCostsContent.appendChild(line);
@@ -784,6 +807,10 @@ export class AlchemyProfitDisplay {
                 price: formatWithSeparator(Math.round(profitData.catalystCost.price)),
                 cost: formatLargeNumber(Math.round(profitData.catalystCost.costPerHour)),
             });
+            if (profitData.catalystCost.isOutlier) {
+                line.textContent += ' ⚠';
+                line.title = t('marketData.outlierPriceWarningTooltip');
+            }
             catalystContent.appendChild(line);
 
             const catalystSection = this.createTrackedCollapsible(
@@ -820,6 +847,10 @@ export class AlchemyProfitDisplay {
                     price: formatWithSeparator(Math.round(drink.price)),
                     cost: formatLargeNumber(Math.round(drink.costPerHour)),
                 });
+                if (drink.isOutlier) {
+                    line.textContent += ' ⚠';
+                    line.title = t('marketData.outlierPriceWarningTooltip');
+                }
                 drinkCostsContent.appendChild(line);
             }
 
@@ -1107,10 +1138,14 @@ export class AlchemyProfitDisplay {
             color: ${profitColor};
             margin-bottom: 8px;
         `;
-        netProfitLine.textContent = t('alchemyProfitDisplay.netProfitLine', {
-            profit: formatLargeNumber(profit),
-            profitPerDay: formatLargeNumber(profitPerDay),
-        });
+        netProfitLine.textContent =
+            t('alchemyProfitDisplay.netProfitLine', {
+                profit: formatLargeNumber(profit),
+                profitPerDay: formatLargeNumber(profitPerDay),
+            }) + (profitData.hasOutlierPrices ? ' ⚠' : '');
+        if (profitData.hasOutlierPrices) {
+            netProfitLine.title = t('marketData.outlierPriceWarningTooltip');
+        }
         topLevelContent.appendChild(netProfitLine);
 
         // Add pricing mode label

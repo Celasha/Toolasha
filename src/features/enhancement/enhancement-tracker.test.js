@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
     loadEnhancementState: vi.fn(),
     saveSessions: vi.fn(async () => true),
     saveCurrentSessionId: vi.fn(async () => true),
+    getItemPriceOutlierInfo: vi.fn(() => ({ value: 100, isOutlier: false })),
 }));
 
 vi.mock('../../core/config.js', () => ({
@@ -25,6 +26,10 @@ vi.mock('../../core/data-manager.js', () => ({
 
 vi.mock('../../api/marketplace.js', () => ({
     default: { getPrice: vi.fn(() => ({ ask: 100 })) },
+}));
+
+vi.mock('../../utils/market-data.js', () => ({
+    getItemPriceOutlierInfo: (...args) => mocks.getItemPriceOutlierInfo(...args),
 }));
 
 vi.mock('./enhancement-storage.js', () => ({
@@ -176,5 +181,69 @@ describe('EnhancementTracker character lifecycle', () => {
         await tracker.initialize();
 
         expect(tracker.getCurrentSession().totalBlessed).toBe(0);
+    });
+});
+
+describe('EnhancementTracker cost tracking - outlier guard propagation', () => {
+    test('trackMaterialCost flags the material as outlier when the resolved price was substituted', async () => {
+        const session = createSession('/items/sword', 'Sword', 0, 5, 0);
+        mocks.loadEnhancementState.mockResolvedValue({
+            sessions: { [session.id]: session },
+            currentSessionId: session.id,
+        });
+        mocks.getItemPriceOutlierInfo.mockReturnValueOnce({ value: 100, isOutlier: true });
+        const tracker = new EnhancementTracker();
+        await tracker.initialize();
+
+        await tracker.trackMaterialCost('/items/ore', 5);
+
+        expect(tracker.getCurrentSession().materialCosts['/items/ore'].isOutlier).toBe(true);
+    });
+
+    test('trackMaterialCost falls back to the bid-mode lookup when ask resolves to no price', async () => {
+        const session = createSession('/items/sword', 'Sword', 0, 5, 0);
+        mocks.loadEnhancementState.mockResolvedValue({
+            sessions: { [session.id]: session },
+            currentSessionId: session.id,
+        });
+        mocks.getItemPriceOutlierInfo
+            .mockReturnValueOnce({ value: null, isOutlier: false })
+            .mockReturnValueOnce({ value: 80, isOutlier: true });
+        const tracker = new EnhancementTracker();
+        await tracker.initialize();
+
+        await tracker.trackMaterialCost('/items/ore', 5);
+
+        const material = tracker.getCurrentSession().materialCosts['/items/ore'];
+        expect(material.totalCost).toBe(400);
+        expect(material.isOutlier).toBe(true);
+    });
+
+    test('trackProtectionCost threads a caller-provided isOutlier flag into the session', async () => {
+        const session = createSession('/items/sword', 'Sword', 0, 5, 0);
+        mocks.loadEnhancementState.mockResolvedValue({
+            sessions: { [session.id]: session },
+            currentSessionId: session.id,
+        });
+        const tracker = new EnhancementTracker();
+        await tracker.initialize();
+
+        await tracker.trackProtectionCost('/items/mirror_of_protection', 5000, true);
+
+        expect(tracker.getCurrentSession().protectionCostIsOutlier).toBe(true);
+    });
+
+    test('trackProtectionCost defaults isOutlier to false when the caller omits it', async () => {
+        const session = createSession('/items/sword', 'Sword', 0, 5, 0);
+        mocks.loadEnhancementState.mockResolvedValue({
+            sessions: { [session.id]: session },
+            currentSessionId: session.id,
+        });
+        const tracker = new EnhancementTracker();
+        await tracker.initialize();
+
+        await tracker.trackProtectionCost('/items/mirror_of_protection', 5000);
+
+        expect(tracker.getCurrentSession().protectionCostIsOutlier).toBe(false);
     });
 });

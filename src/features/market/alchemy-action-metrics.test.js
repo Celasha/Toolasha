@@ -16,6 +16,10 @@ const marketPrices = {};
 
 vi.mock('../../utils/market-data.js', () => ({
     getItemPrice: vi.fn((hrid) => (hrid in marketPrices ? marketPrices[hrid] : null)),
+    getItemPriceOutlierInfo: vi.fn((hrid) => ({
+        value: hrid in marketPrices ? marketPrices[hrid] : null,
+        isOutlier: false,
+    })),
 }));
 
 const dataManagerMock = {

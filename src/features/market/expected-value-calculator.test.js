@@ -4,21 +4,29 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 const {
     mockGetItemPrice,
+    mockGetItemPriceOutlierInfo,
     mockCalculateDungeonTokenValue,
     mockGetInitClientData,
     mockGetItemDetails,
     mockGetSetting,
     mockGetCustomPrice,
-} = vi.hoisted(() => ({
-    mockGetItemPrice: vi.fn(),
-    mockCalculateDungeonTokenValue: vi.fn(),
-    mockGetInitClientData: vi.fn(),
-    mockGetItemDetails: vi.fn(),
-    mockGetSetting: vi.fn(() => true),
-    mockGetCustomPrice: vi.fn(() => null),
-}));
+} = vi.hoisted(() => {
+    const getItemPrice = vi.fn();
+    return {
+        mockGetItemPrice: getItemPrice,
+        mockGetItemPriceOutlierInfo: vi.fn((hrid, opts) => ({ value: getItemPrice(hrid, opts), isOutlier: false })),
+        mockCalculateDungeonTokenValue: vi.fn(),
+        mockGetInitClientData: vi.fn(),
+        mockGetItemDetails: vi.fn(),
+        mockGetSetting: vi.fn(() => true),
+        mockGetCustomPrice: vi.fn(() => null),
+    };
+});
 
-vi.mock('../../utils/market-data.js', () => ({ getItemPrice: mockGetItemPrice }));
+vi.mock('../../utils/market-data.js', () => ({
+    getItemPrice: mockGetItemPrice,
+    getItemPriceOutlierInfo: mockGetItemPriceOutlierInfo,
+}));
 vi.mock('../../utils/token-valuation.js', () => ({ calculateDungeonTokenValue: mockCalculateDungeonTokenValue }));
 vi.mock('../../core/config.js', () => ({ default: { getSetting: mockGetSetting } }));
 vi.mock('../../core/data-manager.js', () => ({
@@ -42,6 +50,7 @@ describe('resolveSellSideValue', () => {
             value: 1,
             source: 'coin',
             needsTax: false,
+            isOutlier: false,
         });
     });
 
@@ -49,7 +58,7 @@ describe('resolveSellSideValue', () => {
         mockGetItemPrice.mockReturnValue(100);
         const result = expectedValueCalculator.resolveSellSideValue('/items/cowbell');
         expect(mockGetItemPrice).toHaveBeenCalledWith('/items/bag_of_10_cowbells', { context: 'profit', side: 'sell' });
-        expect(result).toEqual({ value: 8.2, source: 'cowbell', needsTax: false });
+        expect(result).toEqual({ value: 8.2, source: 'cowbell', needsTax: false, isOutlier: false });
     });
 
     test('Cowbell resolves to 0 when the include-cowbells setting is off', () => {
@@ -58,6 +67,7 @@ describe('resolveSellSideValue', () => {
             value: 0,
             source: 'cowbell',
             needsTax: false,
+            isOutlier: false,
         });
     });
 
@@ -67,14 +77,20 @@ describe('resolveSellSideValue', () => {
     });
 
     test('dungeon tokens resolve via calculateDungeonTokenValue, never taxed', () => {
-        mockCalculateDungeonTokenValue.mockReturnValue(42);
+        mockCalculateDungeonTokenValue.mockReturnValue({ value: 42, isOutlier: false });
         const result = expectedValueCalculator.resolveSellSideValue('/items/chimerical_token');
         expect(mockCalculateDungeonTokenValue).toHaveBeenCalledWith(
             '/items/chimerical_token',
             'profitCalc_pricingMode',
             'expectedValue_respectPricingMode'
         );
-        expect(result).toEqual({ value: 42, source: 'dungeonToken', needsTax: false });
+        expect(result).toEqual({ value: 42, source: 'dungeonToken', needsTax: false, isOutlier: false });
+    });
+
+    test('dungeon tokens surface isOutlier when the winning shop item price was substituted', () => {
+        mockCalculateDungeonTokenValue.mockReturnValue({ value: 42, isOutlier: true });
+        const result = expectedValueCalculator.resolveSellSideValue('/items/chimerical_token');
+        expect(result).toEqual({ value: 42, source: 'dungeonToken', needsTax: false, isOutlier: true });
     });
 
     test('dungeon tokens resolve to null when the shop value is unavailable', () => {
@@ -85,7 +101,7 @@ describe('resolveSellSideValue', () => {
     test('a cached container EV wins over ordinary market pricing, never taxed again', () => {
         expectedValueCalculator.containerCache.set('/items/large_treasure_chest', 12345);
         const result = expectedValueCalculator.resolveSellSideValue('/items/large_treasure_chest');
-        expect(result).toEqual({ value: 12345, source: 'expectedValue', needsTax: false });
+        expect(result).toEqual({ value: 12345, source: 'expectedValue', needsTax: false, isOutlier: false });
         expect(mockGetItemPrice).not.toHaveBeenCalled();
     });
 
@@ -97,7 +113,7 @@ describe('resolveSellSideValue', () => {
             context: 'profit',
             side: 'sell',
         });
-        expect(result).toEqual({ value: 500, source: 'market', needsTax: true });
+        expect(result).toEqual({ value: 500, source: 'market', needsTax: true, isOutlier: false });
     });
 
     test('ordinary market item resolves to null when no price is available', () => {
@@ -110,7 +126,7 @@ describe('resolveSellSideValue', () => {
         mockGetCustomPrice.mockReturnValue(777);
         const result = expectedValueCalculator.resolveSellSideValue('/items/cheese', 2);
         expect(mockGetCustomPrice).toHaveBeenCalledWith('/items/cheese', 2, 'sell');
-        expect(result).toEqual({ value: 777, source: 'custom', needsTax: true });
+        expect(result).toEqual({ value: 777, source: 'custom', needsTax: true, isOutlier: false });
     });
 });
 
@@ -124,21 +140,35 @@ describe('resolveBuySideValue', () => {
     });
 
     test('Coin resolves to face value 1', () => {
-        expect(expectedValueCalculator.resolveBuySideValue('/items/coin')).toEqual({ value: 1, source: 'coin' });
+        expect(expectedValueCalculator.resolveBuySideValue('/items/coin')).toEqual({
+            value: 1,
+            source: 'coin',
+            isOutlier: false,
+        });
     });
 
     test('Cowbell resolves to bag buy price / 10, never taxed', () => {
         mockGetItemPrice.mockReturnValue(100);
         const result = expectedValueCalculator.resolveBuySideValue('/items/cowbell');
         expect(mockGetItemPrice).toHaveBeenCalledWith('/items/bag_of_10_cowbells', { context: 'profit', side: 'buy' });
-        expect(result).toEqual({ value: 10, source: 'cowbell' });
+        expect(result).toEqual({ value: 10, source: 'cowbell', isOutlier: false });
     });
 
     test('dungeon tokens resolve via the same shop-derived value as the sell side', () => {
-        mockCalculateDungeonTokenValue.mockReturnValue(42);
+        mockCalculateDungeonTokenValue.mockReturnValue({ value: 42, isOutlier: false });
         expect(expectedValueCalculator.resolveBuySideValue('/items/pirate_token')).toEqual({
             value: 42,
             source: 'dungeonToken',
+            isOutlier: false,
+        });
+    });
+
+    test('dungeon tokens surface isOutlier on the buy side too', () => {
+        mockCalculateDungeonTokenValue.mockReturnValue({ value: 42, isOutlier: true });
+        expect(expectedValueCalculator.resolveBuySideValue('/items/pirate_token')).toEqual({
+            value: 42,
+            source: 'dungeonToken',
+            isOutlier: true,
         });
     });
 
@@ -151,7 +181,7 @@ describe('resolveBuySideValue', () => {
             context: 'profit',
             side: 'buy',
         });
-        expect(result).toEqual({ value: 999, source: 'market' });
+        expect(result).toEqual({ value: 999, source: 'market', isOutlier: false });
     });
 
     test('ordinary market item resolves via getItemPrice buy side with enhancement level propagated', () => {
@@ -162,7 +192,7 @@ describe('resolveBuySideValue', () => {
             context: 'profit',
             side: 'buy',
         });
-        expect(result).toEqual({ value: 250, source: 'market' });
+        expect(result).toEqual({ value: 250, source: 'market', isOutlier: false });
     });
 
     test('resolves to null when no buy price is available', () => {
@@ -175,7 +205,7 @@ describe('resolveBuySideValue', () => {
         mockGetCustomPrice.mockReturnValue(300);
         const result = expectedValueCalculator.resolveBuySideValue('/items/cheese', 1);
         expect(mockGetCustomPrice).toHaveBeenCalledWith('/items/cheese', 1, 'buy');
-        expect(result).toEqual({ value: 300, source: 'custom' });
+        expect(result).toEqual({ value: 300, source: 'custom', isOutlier: false });
     });
 });
 
@@ -198,7 +228,7 @@ describe('getDropPrice regression (must match resolveSellSideValue().value exact
     });
 
     test('dungeon token', () => {
-        mockCalculateDungeonTokenValue.mockReturnValue(7);
+        mockCalculateDungeonTokenValue.mockReturnValue({ value: 7, isOutlier: false });
         expect(expectedValueCalculator.getDropPrice('/items/sinister_token')).toBe(7);
     });
 
@@ -265,5 +295,88 @@ describe('getDropBreakdown (regression - tax application unchanged by the resolv
 
         expect(drops[0].hasPriceData).toBe(false);
         expect(drops[0].expectedValue).toBe(0);
+    });
+
+    test('flags a drop with isOutlier when the market-data guard substituted its price', () => {
+        mockGetInitClientData.mockReturnValue({
+            openableLootDropMap: {
+                '/items/test_chest': [{ itemHrid: '/items/cheese', dropRate: 1, minCount: 1, maxCount: 1 }],
+            },
+        });
+        mockGetItemDetails.mockReturnValue({ name: 'Cheese', isTradable: true, isOpenable: false });
+        mockGetItemPriceOutlierInfo.mockReturnValue({ value: 100, isOutlier: true });
+
+        const drops = expectedValueCalculator.getDropBreakdown('/items/test_chest');
+
+        expect(drops[0].isOutlier).toBe(true);
+    });
+});
+
+describe('getDropPriceInfo', () => {
+    beforeEach(() => {
+        mockGetItemPrice.mockReset();
+        mockGetItemPriceOutlierInfo.mockReset();
+        expectedValueCalculator.containerCache.clear();
+    });
+
+    test('returns the resolved value and isOutlier flag together', () => {
+        mockGetItemPriceOutlierInfo.mockReturnValue({ value: 42, isOutlier: true });
+        expect(expectedValueCalculator.getDropPriceInfo('/items/cheese')).toEqual({ value: 42, isOutlier: true });
+    });
+
+    test('returns a null value with isOutlier false when the drop is unresolvable', () => {
+        mockGetItemPriceOutlierInfo.mockReturnValue({ value: null, isOutlier: false });
+        expect(expectedValueCalculator.getDropPriceInfo('/items/unpriced')).toEqual({
+            value: null,
+            isOutlier: false,
+        });
+    });
+});
+
+describe('calculateExpectedValue hasOutlierPrices aggregate', () => {
+    beforeEach(() => {
+        mockGetItemPrice.mockReset();
+        mockGetItemPriceOutlierInfo.mockReset();
+        mockGetInitClientData.mockReset();
+        mockGetItemDetails.mockReset();
+        mockGetCustomPrice.mockReset().mockReturnValue(null);
+        expectedValueCalculator.containerCache.clear();
+        expectedValueCalculator.isInitialized = true;
+    });
+
+    test('flags hasOutlierPrices true when any drop price was substituted', () => {
+        mockGetInitClientData.mockReturnValue({
+            openableLootDropMap: {
+                '/items/test_chest': [{ itemHrid: '/items/cheese', dropRate: 1, minCount: 1, maxCount: 1 }],
+            },
+        });
+        mockGetItemDetails.mockImplementation((hrid) =>
+            hrid === '/items/test_chest'
+                ? { name: 'Test Chest', isOpenable: true }
+                : { name: 'Cheese', isTradable: true, isOpenable: false }
+        );
+        mockGetItemPriceOutlierInfo.mockReturnValue({ value: 100, isOutlier: true });
+
+        const ev = expectedValueCalculator.calculateExpectedValue('/items/test_chest');
+
+        expect(ev.hasOutlierPrices).toBe(true);
+    });
+
+    test('flags hasOutlierPrices false when no drop price was substituted', () => {
+        mockGetInitClientData.mockReturnValue({
+            openableLootDropMap: {
+                '/items/test_chest': [{ itemHrid: '/items/cheese', dropRate: 1, minCount: 1, maxCount: 1 }],
+            },
+        });
+        mockGetItemDetails.mockImplementation((hrid) =>
+            hrid === '/items/test_chest'
+                ? { name: 'Test Chest', isOpenable: true }
+                : { name: 'Cheese', isTradable: true, isOpenable: false }
+        );
+        mockGetItemPriceOutlierInfo.mockReturnValue({ value: 100, isOutlier: false });
+
+        const ev = expectedValueCalculator.calculateExpectedValue('/items/test_chest');
+
+        expect(ev.hasOutlierPrices).toBe(false);
     });
 });

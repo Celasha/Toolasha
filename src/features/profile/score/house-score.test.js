@@ -24,9 +24,13 @@ describe('calculateHouseScore (TLA-041)', () => {
         const result = calculateHouseScore({ profile: { characterHouseRoomMap: {} } });
 
         expect(result.combat.score).toBeCloseTo(5);
-        expect(result.combat.breakdown).toEqual([{ name: 'Dojo 3', value: '5.0', complete: true, reason: null }]);
+        expect(result.combat.breakdown).toEqual([
+            { name: 'Dojo 3', value: '5.0', complete: true, reason: null, isOutlier: false },
+        ]);
         expect(result.skiller.score).toBeCloseTo(2);
-        expect(result.skiller.breakdown).toEqual([{ name: 'Garden 1', value: '2.0', complete: true, reason: null }]);
+        expect(result.skiller.breakdown).toEqual([
+            { name: 'Garden 1', value: '2.0', complete: true, reason: null, isOutlier: false },
+        ]);
     });
 
     test('an incomplete domain propagates incompleteness to the category', () => {
@@ -63,8 +67,8 @@ describe('calculateHouseScore - LB-04/LB-05: room-level completeness propagation
         expect(result.combat.complete).toBe(false);
         const dojo = result.combat.breakdown.find((leaf) => leaf.name === 'Dojo 3');
         const armory = result.combat.breakdown.find((leaf) => leaf.name === 'Armory 2');
-        expect(dojo).toEqual({ name: 'Dojo 3', value: '5.0', complete: true, reason: null });
-        expect(armory).toEqual({ name: 'Armory 2', value: null, complete: false, reason: null });
+        expect(dojo).toEqual({ name: 'Dojo 3', value: '5.0', complete: true, reason: null, isOutlier: false });
+        expect(armory).toEqual({ name: 'Armory 2', value: null, complete: false, reason: null, isOutlier: false });
     });
 
     test('LB-05: a partially-priceable room propagates room "+" -> House "+" -> (top handled by score-calculator)', () => {
@@ -78,7 +82,7 @@ describe('calculateHouseScore - LB-04/LB-05: room-level completeness propagation
 
         expect(result.combat.complete).toBe(false);
         expect(result.combat.breakdown).toEqual([
-            { name: 'Observatory 8', value: '55.0', complete: false, reason: null },
+            { name: 'Observatory 8', value: '55.0', complete: false, reason: null, isOutlier: false },
         ]);
     });
 

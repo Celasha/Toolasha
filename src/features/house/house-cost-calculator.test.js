@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
-const { mockGetInitClientData, mockGetItemPrice } = vi.hoisted(() => ({
+const { mockGetInitClientData, mockGetItemPrice, mockOutlierHrids } = vi.hoisted(() => ({
     mockGetInitClientData: vi.fn(),
     mockGetItemPrice: vi.fn(),
+    mockOutlierHrids: new Set(),
 }));
 
 vi.mock('../../core/data-manager.js', () => ({
@@ -18,7 +19,13 @@ vi.mock('../../api/marketplace.js', () => ({
         fetch: vi.fn(),
     },
 }));
-vi.mock('../../utils/market-data.js', () => ({ getItemPrice: mockGetItemPrice }));
+vi.mock('../../utils/market-data.js', () => ({
+    getItemPrice: mockGetItemPrice,
+    getItemPriceOutlierInfo: (itemHrid, opts) => ({
+        value: mockGetItemPrice(itemHrid, opts),
+        isOutlier: mockOutlierHrids.has(itemHrid),
+    }),
+}));
 
 import houseCostCalculator from './house-cost-calculator.js';
 
@@ -27,6 +34,7 @@ const SUGAR = '/items/sugar';
 
 beforeEach(() => {
     vi.clearAllMocks();
+    mockOutlierHrids.clear();
     mockGetInitClientData.mockReturnValue({
         houseRoomDetailMap: {
             [ROOM]: {
@@ -68,5 +76,14 @@ describe('HouseCostCalculator market pricing', () => {
             ],
             totalValue: 7_364_000,
         });
+    });
+
+    test('flags totalIsOutlier and the material entry when the material price was substituted', async () => {
+        mockOutlierHrids.add(SUGAR);
+
+        const result = await houseCostCalculator.calculateCumulativeCost(ROOM, 1, 3);
+
+        expect(result.totalIsOutlier).toBe(true);
+        expect(result.materials[0].isOutlier).toBe(true);
     });
 });

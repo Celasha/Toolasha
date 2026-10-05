@@ -6,7 +6,7 @@
 
 import dataManager from '../../core/data-manager.js';
 import { t } from '../../core/i18n.js';
-import { getItemPrice } from '../../utils/market-data.js';
+import { getItemPriceOutlierInfo } from '../../utils/market-data.js';
 import { getShopCoinCost } from '../../utils/game-lookups.js';
 import { parseArtisanBonus, getDrinkConcentration } from '../../utils/tea-parser.js';
 import { calculateActionStats } from '../../utils/action-calculator.js';
@@ -90,15 +90,18 @@ export function computeBestCraftingPlan(
 
     // Get market buy price (min of market ask and shop cost)
     let buyPrice = null;
+    let buyPriceOutlier = false;
     if (isTradable) {
-        const marketPrice = getItemPrice(itemHrid, { mode, context: 'profit', side: 'buy' });
-        if (marketPrice !== null && marketPrice > 0) {
-            buyPrice = marketPrice;
+        const marketPriceInfo = getItemPriceOutlierInfo(itemHrid, { mode, context: 'profit', side: 'buy' });
+        if (marketPriceInfo.value !== null && marketPriceInfo.value > 0) {
+            buyPrice = marketPriceInfo.value;
+            buyPriceOutlier = marketPriceInfo.isOutlier;
         }
     }
     const shopCost = getShopCoinCost(itemHrid);
     if (shopCost > 0 && (buyPrice === null || shopCost < buyPrice)) {
         buyPrice = shopCost;
+        buyPriceOutlier = false; // Shop cost is a fixed vendor price, never a market outlier
     }
 
     // Coins always cost 1 each
@@ -111,6 +114,7 @@ export function computeBestCraftingPlan(
             unitCost: 1,
             totalCost: quantity,
             buyPrice: 1,
+            isOutlier: false,
             craftCost: null,
             actionHrid: null,
             actionsNeeded: 0,
@@ -131,6 +135,7 @@ export function computeBestCraftingPlan(
             unitCost: cachedUnitCost.unitCost,
             totalCost: cachedUnitCost.unitCost * quantity,
             buyPrice,
+            isOutlier: buyPriceOutlier,
             craftCost: cachedUnitCost.craftCost,
             actionHrid: cachedUnitCost.actionHrid,
             actionsNeeded,
@@ -172,6 +177,7 @@ export function computeBestCraftingPlan(
             unitCost: buyPrice ?? Infinity,
             totalCost: (buyPrice ?? Infinity) * quantity,
             buyPrice,
+            isOutlier: buyPriceOutlier,
             craftCost: null,
             actionHrid: null,
             actionsNeeded: 0,
@@ -200,6 +206,7 @@ export function computeBestCraftingPlan(
             unitCost,
             totalCost: unitCost * quantity,
             buyPrice,
+            isOutlier: buyPriceOutlier,
             craftCost: null,
             actionHrid: null,
             actionsNeeded: 0,
@@ -230,6 +237,7 @@ export function computeBestCraftingPlan(
             unitCost,
             totalCost: unitCost * quantity,
             buyPrice,
+            isOutlier: buyPriceOutlier,
             craftCost: null,
             actionHrid: null,
             actionsNeeded: 0,
@@ -383,6 +391,7 @@ export function computeBestCraftingPlan(
         unitCost,
         totalCost: unitCost * quantity,
         buyPrice,
+        isOutlier: buyPriceOutlier,
         craftCost: craftCostPerUnit,
         actionHrid: strategy === 'craft' ? actionHrid : null,
         actionsNeeded: strategy === 'craft' ? actionsNeeded : 0,

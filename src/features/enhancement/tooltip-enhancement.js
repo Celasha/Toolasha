@@ -21,11 +21,13 @@ import {
     formatKMB3Digits,
     isAbbreviationEnabled,
 } from '../../utils/formatters.js';
-import { getItemPrice, getItemPrices } from '../../utils/market-data.js';
+import { getItemPrice, getItemPrices, getItemPriceOutlierInfo } from '../../utils/market-data.js';
 import { parseArtisanBonus, getDrinkConcentration } from '../../utils/tea-parser.js';
 import { parseItemCount } from '../../utils/number-parser.js';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
 import marketAPI from '../../api/marketplace.js';
+import marketValuesAPI from '../../api/market-values.js';
+import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 
 const _costCache = new Map();
 const _chainTimeCache = new Map();
@@ -409,6 +411,8 @@ function calculateTotalCost(itemHrid, targetLevel, protectFrom, config) {
             const materialDetail = gameData.itemDetailMap[material.itemHrid];
             let price;
             let bidPrice = 0;
+            let askOutlier = false;
+            let bidOutlier = false;
 
             // Special case: Trainee charms have fixed 250k price (untradeable)
             if (material.itemHrid.startsWith('/items/trainee_')) {
@@ -434,6 +438,8 @@ function calculateTotalCost(itemHrid, targetLevel, protectFrom, config) {
                     // MCS uses just ask for material prices
                     price = ask;
                     bidPrice = bid;
+                    askOutlier = marketPrice.askOutlier;
+                    bidOutlier = marketPrice.bidOutlier;
                 } else {
                     // Fallback: production cost, then NPC sell price
                     price = getProductionCost(material.itemHrid, 'ask') || materialDetail?.sellPrice || 0;
@@ -451,6 +457,8 @@ function calculateTotalCost(itemHrid, targetLevel, protectFrom, config) {
                 unitPrice: price,
                 bidPrice,
                 totalCost: price * totalQuantity,
+                askOutlier,
+                bidOutlier,
             });
         }
     }
@@ -464,6 +472,7 @@ function calculateTotalCost(itemHrid, targetLevel, protectFrom, config) {
     let protectionCount = 0;
     let protectionAskPrice = 0;
     let protectionBidPrice = 0;
+    let protectionBidOutlier = false;
     if (protectFrom > 0 && pathResult.protectionCount > 0) {
         const protectionInfo = getCheapestProtectionPrice(itemHrid);
         if (protectionInfo.price > 0) {
@@ -473,6 +482,7 @@ function calculateTotalCost(itemHrid, targetLevel, protectFrom, config) {
             protectionAskPrice = protectionInfo.price;
             const protPrices = getItemPrices(protectionInfo.itemHrid, 0);
             protectionBidPrice = protPrices?.bid > 0 ? protPrices.bid : protectionInfo.price;
+            protectionBidOutlier = protPrices?.bid > 0 ? protPrices.bidOutlier : false;
         }
     }
 
@@ -492,6 +502,10 @@ function calculateTotalCost(itemHrid, targetLevel, protectFrom, config) {
     const baseCost = baseAskPrice;
     const baseAskIsCrafted = askIsCrafted;
     const baseBidIsCrafted = askIsCrafted;
+    // Outlier flags only apply when the live market value is the one actually displayed -
+    // not when a crafted/fallback cost took its place instead.
+    const baseAskOutlier = !askIsCrafted && marketAsk > 0 && baseItemPrices?.askOutlier;
+    const baseBidOutlier = !askIsCrafted && marketBid > 0 && baseItemPrices?.bidOutlier;
 
     return {
         baseCost,
@@ -499,6 +513,8 @@ function calculateTotalCost(itemHrid, targetLevel, protectFrom, config) {
         baseBidPrice,
         baseAskIsCrafted,
         baseBidIsCrafted,
+        baseAskOutlier,
+        baseBidOutlier,
         materialCost,
         materialBreakdown,
         protectionCost,
@@ -506,6 +522,7 @@ function calculateTotalCost(itemHrid, targetLevel, protectFrom, config) {
         protectionCount,
         protectionAskPrice,
         protectionBidPrice,
+        protectionBidOutlier,
         totalCost: baseCost + materialCost + protectionCost,
     };
 }
@@ -548,8 +565,12 @@ export function getRealisticBaseItemPrice(itemHrid) {
         return Math.max(bid, productionCost);
     }
 
-    // No market data - use production cost as fallback
-    return productionCost;
+    // No market data - use production cost as fallback, then the game's own reference market
+    // value for items with neither a market nor a computable recipe (e.g. loot-only equipment).
+    if (productionCost > 0) {
+        return productionCost;
+    }
+    return marketValuesAPI.getValue(itemHrid, 0) || 0;
 }
 
 /**
@@ -716,19 +737,20 @@ export function getCheapestProtectionPrice(itemHrid) {
 
 /**
  * Calculate the gold cost of a single enhancement attempt's consumed materials (ask-side
- * market price), including any direct coin line item in enhancementCosts. Materials are
- * consumed on every attempt regardless of success/failure, and this cost is the same at every
- * enhancement level (enhancementCosts is not level-indexed).
+ * market price, through the outlier guard), including any direct coin line item in
+ * enhancementCosts. Materials are consumed on every attempt regardless of success/failure, and
+ * this cost is the same at every enhancement level (enhancementCosts is not level-indexed).
  * @param {Object} itemDetails - Item details containing enhancementCosts.
- * @returns {{cost: number, hasCost: boolean, costPartial: boolean}}
+ * @returns {{cost: number, hasCost: boolean, costPartial: boolean, isOutlier: boolean}}
  */
 export function calculatePerAttemptMaterialCost(itemDetails) {
     let cost = 0;
     let hasCost = false;
     let costPartial = false;
+    let isOutlier = false;
 
     if (!itemDetails.enhancementCosts?.length) {
-        return { cost: 0, hasCost: false, costPartial: false };
+        return { cost: 0, hasCost: false, costPartial: false, isOutlier: false };
     }
 
     for (const material of itemDetails.enhancementCosts) {
@@ -737,16 +759,17 @@ export function calculatePerAttemptMaterialCost(itemDetails) {
             hasCost = true;
             continue;
         }
-        const price = marketAPI.getPrice(material.itemHrid);
-        if (price?.ask > 0) {
-            cost += material.count * price.ask;
+        const priceInfo = getItemPriceOutlierInfo(material.itemHrid, { mode: 'ask' });
+        if (priceInfo.value > 0) {
+            cost += material.count * priceInfo.value;
             hasCost = true;
+            if (priceInfo.isOutlier) isOutlier = true;
         } else {
             costPartial = true;
         }
     }
 
-    return { cost, hasCost, costPartial };
+    return { cost, hasCost, costPartial, isOutlier };
 }
 
 /**
@@ -761,18 +784,23 @@ export function calculatePerAttemptMaterialCost(itemDetails) {
  * @param {number} startLevel - Current enhancement level to start from (0 <= startLevel < targetLevel)
  * @param {number} targetLevel - Desired enhancement level
  * @param {Object} enhancingParams - Viewer's own params from getEnhancingParams()
- * @returns {{cost: number|null, complete: boolean, protectFrom: number|null}}
+ * @returns {{cost: number|null, complete: boolean, protectFrom: number|null, isOutlier: boolean}}
  */
 export function calculateDirectEnhancementCost(itemHrid, startLevel, targetLevel, enhancingParams) {
     const gameData = dataManager.getInitClientData();
     const itemDetails = gameData?.itemDetailMap?.[itemHrid];
     if (!itemDetails?.enhancementCosts?.length) {
-        return { cost: null, complete: false, protectFrom: null };
+        return { cost: null, complete: false, protectFrom: null, isOutlier: false };
     }
 
-    const { cost: perAttemptCost, hasCost, costPartial } = calculatePerAttemptMaterialCost(itemDetails);
+    const {
+        cost: perAttemptCost,
+        hasCost,
+        costPartial,
+        isOutlier: materialIsOutlier,
+    } = calculatePerAttemptMaterialCost(itemDetails);
     if (!hasCost || costPartial) {
-        return { cost: null, complete: false, protectFrom: null };
+        return { cost: null, complete: false, protectFrom: null, isOutlier: false };
     }
 
     const itemLevel = itemDetails.itemLevel || 1;
@@ -800,6 +828,8 @@ export function calculateDirectEnhancementCost(itemHrid, startLevel, targetLevel
 
         let protectionCost = 0;
         if (protectFrom > 0 && stats.protectionCount > 0) {
+            // getCheapestProtectionPrice() has no outlier visibility of its own (same pre-existing
+            // gap documented in equipment-resolver.js) - only the material leg can be flagged here.
             const { price } = getCheapestProtectionPrice(itemHrid);
             if (!(price > 0)) continue; // protection needed but unpriceable - strategy unusable
             protectionCost = price * stats.protectionCount;
@@ -811,7 +841,9 @@ export function calculateDirectEnhancementCost(itemHrid, startLevel, targetLevel
         }
     }
 
-    return best ? { ...best, complete: true } : { cost: null, complete: false, protectFrom: null };
+    return best
+        ? { ...best, complete: true, isOutlier: materialIsOutlier }
+        : { cost: null, complete: false, protectFrom: null, isOutlier: false };
 }
 
 /**
@@ -945,7 +977,16 @@ export function buildEnhancementTooltipHTML(enhancementData) {
             const bidPrice = prices?.bid > 0 ? prices.bid : item.costEach;
             totalAsk += askPrice * item.quantity;
             totalBid += bidPrice * item.quantity;
-            return { name: baseItemName + ' +' + item.level, count: item.quantity, askPrice, bidPrice };
+            const askOutlier = prices?.ask > 0 ? prices.askOutlier : false;
+            const bidOutlier = prices?.bid > 0 ? prices.bidOutlier : false;
+            return {
+                name: baseItemName + ' +' + item.level,
+                count: item.quantity,
+                askPrice,
+                bidPrice,
+                askOutlier,
+                bidOutlier,
+            };
         });
 
         // Philosopher's Mirror row
@@ -960,6 +1001,8 @@ export function buildEnhancementTooltipHTML(enhancementData) {
                 count: optimalStrategy.mirrorCount,
                 askPrice: mirrorAsk,
                 bidPrice: mirrorBid,
+                askOutlier: mirrorAsk > 0 ? mirrorPrices.askOutlier : false,
+                bidOutlier: mirrorBid > 0 ? mirrorPrices.bidOutlier : false,
             });
         }
 
@@ -977,13 +1020,15 @@ export function buildEnhancementTooltipHTML(enhancementData) {
                     ? config.COLOR_TOOLTIP_PROFIT
                     : config.COLOR_TOOLTIP_LOSS
                 : '';
+        const anyRowAskOutlier = consumedRows.some((row) => row.askOutlier);
+        const anyRowBidOutlier = consumedRows.some((row) => row.bidOutlier);
 
         // Total row
         html += `<tr style="border-bottom: 1px solid ${config.COLOR_BORDER};">`;
         html += `<td style="padding: 2px 4px; font-weight: bold;">${t('tooltipEnhancement.totalLabel')}</td>`;
         html += '<td style="padding: 2px 4px; text-align: center;"></td>';
-        html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalAskColor ? ' color: ' + totalAskColor + ';' : ''}">${formatKMB(totalAsk)}</td>`;
-        html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalBidColor ? ' color: ' + totalBidColor + ';' : ''}">${formatKMB(totalBid)}</td>`;
+        html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalAskColor ? ' color: ' + totalAskColor + ';' : ''}">${formatKMB(totalAsk)}${buildOutlierPriceWarningIcon(anyRowAskOutlier)}</td>`;
+        html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalBidColor ? ' color: ' + totalBidColor + ';' : ''}">${formatKMB(totalBid)}${buildOutlierPriceWarningIcon(anyRowBidOutlier)}</td>`;
         html += '</tr>';
 
         // Item rows
@@ -991,8 +1036,8 @@ export function buildEnhancementTooltipHTML(enhancementData) {
             html += '<tr>';
             html += `<td style="padding: 2px 4px;">${row.name}</td>`;
             html += `<td style="padding: 2px 4px; text-align: center;">${formatKMB(row.count)}</td>`;
-            html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(row.askPrice)}</td>`;
-            html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(row.bidPrice)}</td>`;
+            html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(row.askPrice)}${buildOutlierPriceWarningIcon(row.askOutlier)}</td>`;
+            html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(row.bidPrice)}${buildOutlierPriceWarningIcon(row.bidOutlier)}</td>`;
             html += '</tr>';
         }
     } else {
@@ -1015,6 +1060,8 @@ export function buildEnhancementTooltipHTML(enhancementData) {
             count: 1,
             askPrice: optimalStrategy.baseAskPrice || optimalStrategy.baseCost,
             bidPrice: optimalStrategy.baseBidPrice || optimalStrategy.baseCost,
+            askOutlier: optimalStrategy.baseAskOutlier,
+            bidOutlier: optimalStrategy.baseBidOutlier,
         });
 
         // Material rows
@@ -1026,7 +1073,15 @@ export function buildEnhancementTooltipHTML(enhancementData) {
                 totalCount += count;
                 totalAsk += askPrice * count;
                 totalBid += bidPrice * count;
-                rows.push({ name: mat.name, count, askPrice, bidPrice, isCoin: mat.itemHrid === '/items/coin' });
+                rows.push({
+                    name: mat.name,
+                    count,
+                    askPrice,
+                    bidPrice,
+                    isCoin: mat.itemHrid === '/items/coin',
+                    askOutlier: mat.askOutlier,
+                    bidOutlier: mat.bidOutlier,
+                });
             }
         }
 
@@ -1047,7 +1102,7 @@ export function buildEnhancementTooltipHTML(enhancementData) {
                     protName = protDetails.name;
                 }
             }
-            rows.push({ name: protName, count, askPrice, bidPrice });
+            rows.push({ name: protName, count, askPrice, bidPrice, bidOutlier: optimalStrategy.protectionBidOutlier });
         }
 
         // Color total ask/bid by comparison to market price of enhanced item
@@ -1064,13 +1119,15 @@ export function buildEnhancementTooltipHTML(enhancementData) {
                     ? config.COLOR_TOOLTIP_PROFIT
                     : config.COLOR_TOOLTIP_LOSS
                 : '';
+        const anyRowAskOutlier = rows.some((row) => row.askOutlier);
+        const anyRowBidOutlier = rows.some((row) => row.bidOutlier);
 
         // Total row
         html += `<tr style="border-bottom: 1px solid ${config.COLOR_BORDER};">`;
         html += `<td style="padding: 2px 4px; font-weight: bold;">${t('tooltipEnhancement.totalLabel')}</td>`;
         html += `<td style="padding: 2px 4px; text-align: center;">${formatKMB(totalCount)}</td>`;
-        html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalAskColor ? ' color: ' + totalAskColor + ';' : ''}">${formatKMB(totalAsk)}</td>`;
-        html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalBidColor ? ' color: ' + totalBidColor + ';' : ''}">${formatKMB(totalBid)}</td>`;
+        html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalAskColor ? ' color: ' + totalAskColor + ';' : ''}">${formatKMB(totalAsk)}${buildOutlierPriceWarningIcon(anyRowAskOutlier)}</td>`;
+        html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalBidColor ? ' color: ' + totalBidColor + ';' : ''}">${formatKMB(totalBid)}${buildOutlierPriceWarningIcon(anyRowBidOutlier)}</td>`;
         html += '</tr>';
 
         // Item rows
@@ -1083,8 +1140,8 @@ export function buildEnhancementTooltipHTML(enhancementData) {
                 html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(row.count)}</td>`;
             } else {
                 html += `<td style="padding: 2px 4px; text-align: center;">${formatKMB(row.count)}</td>`;
-                html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(row.askPrice)}</td>`;
-                html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(row.bidPrice)}</td>`;
+                html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(row.askPrice)}${buildOutlierPriceWarningIcon(row.askOutlier)}</td>`;
+                html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(row.bidPrice)}${buildOutlierPriceWarningIcon(row.bidOutlier)}</td>`;
             }
             html += '</tr>';
         }
@@ -1188,8 +1245,8 @@ export function buildEnhancementMilestonesHTML(itemHrid, enhancementConfig) {
         let bid = '—';
         if (showPrices) {
             const prices = getItemPrices(itemHrid, level);
-            ask = fmt(prices?.ask);
-            bid = fmt(prices?.bid);
+            ask = fmt(prices?.ask) + buildOutlierPriceWarningIcon(prices?.ask > 0 && prices.askOutlier);
+            bid = fmt(prices?.bid) + buildOutlierPriceWarningIcon(prices?.bid > 0 && prices.bidOutlier);
         }
 
         rows.push({ level, cost, xp, ask, bid });

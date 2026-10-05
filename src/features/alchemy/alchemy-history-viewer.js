@@ -901,7 +901,12 @@ class AlchemyHistoryViewer {
             } else {
                 const total = formatKMB(result.totalValue || 0, 1);
                 const each = formatKMB(result.priceEach || 0, 1);
-                text.textContent = t('alchemyHistoryViewer.resultLine', { name, count: result.count, total, each });
+                text.textContent =
+                    t('alchemyHistoryViewer.resultLine', { name, count: result.count, total, each }) +
+                    (result.isOutlier ? ' ⚠' : '');
+                if (result.isOutlier) {
+                    text.title = t('marketData.outlierPriceWarningTooltip');
+                }
             }
 
             line.appendChild(text);
@@ -1731,7 +1736,10 @@ class AlchemyHistoryViewer {
                 }
                 const total = formatKMB(result.totalValue || 0, 1);
                 const each = formatKMB(result.priceEach || 0, 1);
-                return t('alchemyHistoryViewer.resultLine', { name, count: result.count, total, each });
+                return (
+                    t('alchemyHistoryViewer.resultLine', { name, count: result.count, total, each }) +
+                    (result.isOutlier ? ' ⚠' : '')
+                );
             })
             .join('; ');
     }

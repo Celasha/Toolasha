@@ -291,6 +291,36 @@ describe('renderResultsCell self-return branching', () => {
 
         expect(cell.textContent).not.toContain('self-return');
     });
+
+    test('flags a result row with the outlier warning icon when isOutlier is true', () => {
+        buildTablist(['Decompose']);
+        const viewer = new AlchemyHistoryViewer();
+        viewer.initialize();
+        viewer.activeType = 'decompose';
+
+        const session = {
+            results: { '/items/milk': { count: 10, totalValue: 1000, priceEach: 100, isOutlier: true } },
+        };
+        const cell = document.createElement('td');
+        viewer.renderResultsCell(cell, session, viewer.activeConfig);
+
+        expect(cell.textContent).toContain('⚠');
+    });
+
+    test('does not render the outlier icon when isOutlier is false', () => {
+        buildTablist(['Decompose']);
+        const viewer = new AlchemyHistoryViewer();
+        viewer.initialize();
+        viewer.activeType = 'decompose';
+
+        const session = {
+            results: { '/items/milk': { count: 10, totalValue: 1000, priceEach: 100, isOutlier: false } },
+        };
+        const cell = document.createElement('td');
+        viewer.renderResultsCell(cell, session, viewer.activeConfig);
+
+        expect(cell.textContent).not.toContain('⚠');
+    });
 });
 
 describe('switchType', () => {
@@ -346,6 +376,19 @@ describe('CSV export per type', () => {
             viewer.activeConfig
         );
         expect(value).toContain('self-return');
+    });
+
+    test('CSV results cell appends the outlier warning marker when a result was flagged', async () => {
+        buildTablist(['Transmute']);
+        const viewer = new AlchemyHistoryViewer();
+        viewer.initialize();
+        await viewer.openModal('transmute');
+
+        const session = {
+            results: { '/items/cheese': { count: 5, totalValue: 500, priceEach: 100, isOutlier: true } },
+        };
+        const value = viewer.getCsvValue({ kind: 'results', supportSelfReturn: true }, session, viewer.activeConfig);
+        expect(value).toContain('⚠');
     });
 
     test('coinify CSV uses the "Enhancement Level" header and "—" for zero-attempt success rate', async () => {

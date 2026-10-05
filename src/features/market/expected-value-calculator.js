@@ -7,7 +7,7 @@ import marketAPI from '../../api/marketplace.js';
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import { calculateDungeonTokenValue } from '../../utils/token-valuation.js';
-import { getItemPrice } from '../../utils/market-data.js';
+import { getItemPriceOutlierInfo } from '../../utils/market-data.js';
 import { getCustomPrice } from '../settings/custom-price-overrides.js';
 import { calculatePriceAfterTax } from '../../utils/profit-helpers.js';
 import { calculateEVBatch } from '../../utils/ev-worker-manager.js';
@@ -255,44 +255,63 @@ class ExpectedValueCalculator {
     resolveSellSideValue(itemHrid, enhancementLevel = 0) {
         // Special case: Coin (face value = 1, never taxed)
         if (itemHrid === this.COIN_HRID) {
-            return { value: 1, source: 'coin', needsTax: false };
+            return { value: 1, source: 'coin', needsTax: false, isOutlier: false };
         }
 
         // Special case: Cowbell (use bag price ÷ 10, with 18% tax)
         if (itemHrid === this.COWBELL_HRID) {
             if (!config.getSetting('expectedValue_includeCowbells')) {
-                return { value: 0, source: 'cowbell', needsTax: false };
+                return { value: 0, source: 'cowbell', needsTax: false, isOutlier: false };
             }
             // Get Cowbell Bag price using profit context (sell side - you're selling the bag)
-            const bagValue = getItemPrice(this.COWBELL_BAG_HRID, { context: 'profit', side: 'sell' }) || 0;
+            const bagPriceInfo = getItemPriceOutlierInfo(this.COWBELL_BAG_HRID, { context: 'profit', side: 'sell' });
+            const bagValue = bagPriceInfo.value || 0;
 
             if (bagValue > 0) {
                 // Apply 18% market tax (Cowbell Bag only), then divide by 10
-                return { value: calculatePriceAfterTax(bagValue, 0.18) / 10, source: 'cowbell', needsTax: false };
+                return {
+                    value: calculatePriceAfterTax(bagValue, 0.18) / 10,
+                    source: 'cowbell',
+                    needsTax: false,
+                    isOutlier: bagPriceInfo.isOutlier,
+                };
             }
             return null; // No bag price available
         }
 
         // Special case: Dungeon Tokens (calculate value from shop items)
         if (this.DUNGEON_TOKENS.includes(itemHrid)) {
-            const value = calculateDungeonTokenValue(
+            const token = calculateDungeonTokenValue(
                 itemHrid,
                 'profitCalc_pricingMode',
                 'expectedValue_respectPricingMode'
             );
-            return value !== null ? { value, source: 'dungeonToken', needsTax: false } : null;
+            return token
+                ? { value: token.value, source: 'dungeonToken', needsTax: false, isOutlier: token.isOutlier }
+                : null;
         }
 
         // Check if this is a nested container (use cached EV, already tax-adjusted per-drop)
         if (this.containerCache.has(itemHrid)) {
-            return { value: this.containerCache.get(itemHrid), source: 'expectedValue', needsTax: false };
+            return {
+                value: this.containerCache.get(itemHrid),
+                source: 'expectedValue',
+                needsTax: false,
+                isOutlier: false,
+            };
         }
 
         // Regular market item - get price based on pricing mode (sell side - you're selling drops)
-        const dropPrice = getItemPrice(itemHrid, { enhancementLevel, context: 'profit', side: 'sell' });
+        const dropPriceInfo = getItemPriceOutlierInfo(itemHrid, { enhancementLevel, context: 'profit', side: 'sell' });
+        const dropPrice = dropPriceInfo.value;
         if (!(dropPrice > 0)) return null;
         const hasOverride = getCustomPrice(itemHrid, enhancementLevel, 'sell') !== null;
-        return { value: dropPrice, source: hasOverride ? 'custom' : 'market', needsTax: true };
+        return {
+            value: dropPrice,
+            source: hasOverride ? 'custom' : 'market',
+            needsTax: true,
+            isOutlier: hasOverride ? false : dropPriceInfo.isOutlier,
+        };
     }
 
     /**
@@ -306,32 +325,38 @@ class ExpectedValueCalculator {
      */
     resolveBuySideValue(itemHrid, enhancementLevel = 0) {
         if (itemHrid === this.COIN_HRID) {
-            return { value: 1, source: 'coin' };
+            return { value: 1, source: 'coin', isOutlier: false };
         }
 
         if (itemHrid === this.COWBELL_HRID) {
             if (!config.getSetting('expectedValue_includeCowbells')) {
-                return { value: 0, source: 'cowbell' };
+                return { value: 0, source: 'cowbell', isOutlier: false };
             }
-            const bagValue = getItemPrice(this.COWBELL_BAG_HRID, { context: 'profit', side: 'buy' }) || 0;
-            return bagValue > 0 ? { value: bagValue / 10, source: 'cowbell' } : null;
+            const bagPriceInfo = getItemPriceOutlierInfo(this.COWBELL_BAG_HRID, { context: 'profit', side: 'buy' });
+            const bagValue = bagPriceInfo.value || 0;
+            return bagValue > 0 ? { value: bagValue / 10, source: 'cowbell', isOutlier: bagPriceInfo.isOutlier } : null;
         }
 
         if (this.DUNGEON_TOKENS.includes(itemHrid)) {
-            const value = calculateDungeonTokenValue(
+            const token = calculateDungeonTokenValue(
                 itemHrid,
                 'profitCalc_pricingMode',
                 'expectedValue_respectPricingMode'
             );
-            return value !== null ? { value, source: 'dungeonToken' } : null;
+            return token ? { value: token.value, source: 'dungeonToken', isOutlier: token.isOutlier } : null;
         }
 
         // Ordinary market item (including a consumed openable - valued as a purchase, not an
         // opening) - get price based on pricing mode (buy side - you're re-acquiring this)
-        const buyPrice = getItemPrice(itemHrid, { enhancementLevel, context: 'profit', side: 'buy' });
+        const buyPriceInfo = getItemPriceOutlierInfo(itemHrid, { enhancementLevel, context: 'profit', side: 'buy' });
+        const buyPrice = buyPriceInfo.value;
         if (!(buyPrice > 0)) return null;
         const hasOverride = getCustomPrice(itemHrid, enhancementLevel, 'buy') !== null;
-        return { value: buyPrice, source: hasOverride ? 'custom' : 'market' };
+        return {
+            value: buyPrice,
+            source: hasOverride ? 'custom' : 'market',
+            isOutlier: hasOverride ? false : buyPriceInfo.isOutlier,
+        };
     }
 
     /**
@@ -342,6 +367,19 @@ class ExpectedValueCalculator {
      */
     getDropPrice(itemHrid) {
         return this.resolveSellSideValue(itemHrid)?.value ?? null;
+    }
+
+    /**
+     * Get price and outlier-guard status for a drop item - the mirror of `getDropPrice()` for
+     * callers that want to show a warning icon when the price was substituted.
+     * @param {string} itemHrid - Item HRID
+     * @returns {{value: number|null, isOutlier: boolean}}
+     */
+    getDropPriceInfo(itemHrid) {
+        const resolved = this.resolveSellSideValue(itemHrid);
+        return resolved
+            ? { value: resolved.value, isOutlier: resolved.isOutlier || false }
+            : { value: null, isOutlier: false };
     }
 
     /**
@@ -377,6 +415,7 @@ class ExpectedValueCalculator {
             itemHrid,
             expectedValue: expectedReturn,
             drops,
+            hasOutlierPrices: drops.some((drop) => drop.isOutlier),
         };
     }
 
@@ -427,7 +466,8 @@ class ExpectedValueCalculator {
             const avgCount = (minCount + maxCount) / 2;
 
             // Get price
-            const price = this.getDropPrice(itemHrid);
+            const priceInfo = this.getDropPriceInfo(itemHrid);
+            const price = priceInfo.value;
 
             // Calculate expected value for this drop
             const itemCanBeSold = itemDetails.isTradable !== false;
@@ -450,6 +490,7 @@ class ExpectedValueCalculator {
                 dropRate,
                 avgCount,
                 priceEach: price || 0,
+                isOutlier: priceInfo.isOutlier,
                 expectedValue: dropValue,
                 hasPriceData: price !== null,
             });

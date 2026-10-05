@@ -14,6 +14,7 @@ import { findActionInput } from '../../utils/action-panel-helper.js';
 import { calculateTaskProfit, calculateTaskRewardValue } from './task-profit-calculator.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 import { timeReadable, formatPercentage, formatKMB } from '../../utils/formatters.js';
+import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 import { GAME, TOOLASHA } from '../../utils/selectors.js';
 import {
     calculateSecondsForActions,
@@ -1207,8 +1208,8 @@ class TaskProfitDisplay {
      * @param {number|null} completionSeconds - Seconds to completion (for task sorter)
      * @param {string} loadoutName - Loadout name used (empty = current gear)
      * @param {number} netGoldPerHour - Net gold/hr (drops - consumable costs)
-     * @param {Array} dropEntries - Array of {name, count, unitValue, totalValue} per drop
-     * @param {Array} consumableEntries - Array of {name, count, unitCost, totalCost} per consumable
+     * @param {Array} dropEntries - Array of {name, count, unitValue, totalValue, isOutlier} per drop
+     * @param {Array} consumableEntries - Array of {name, count, unitCost, totalCost, isOutlier} per consumable
      * @private
      */
     _renderCombatEstimateResult(
@@ -1314,7 +1315,7 @@ class TaskProfitDisplay {
                 const taskCount = d.countPerHour * completionHours;
                 const taskTotal = d.totalValue * completionHours;
                 lines.push(
-                    `<div style="margin-left: 10px;">${d.name}: ${taskCount.toFixed(1)} @ ${formatKMB(Math.round(d.unitValue))} = ${formatKMB(Math.round(taskTotal))}</div>`
+                    `<div style="margin-left: 10px;">${d.name}: ${taskCount.toFixed(1)} @ ${formatKMB(Math.round(d.unitValue))}${buildOutlierPriceWarningIcon(d.isOutlier)} = ${formatKMB(Math.round(taskTotal))}</div>`
                 );
             }
         }
@@ -1328,7 +1329,7 @@ class TaskProfitDisplay {
                 const taskCount = c.countPerHour * completionHours;
                 const taskTotal = c.totalCost * completionHours;
                 lines.push(
-                    `<div style="margin-left: 10px;">${c.name}: ${taskCount.toFixed(1)} @ ${formatKMB(Math.round(c.unitCost))} = -${formatKMB(Math.round(taskTotal))}</div>`
+                    `<div style="margin-left: 10px;">${c.name}: ${taskCount.toFixed(1)} @ ${formatKMB(Math.round(c.unitCost))}${buildOutlierPriceWarningIcon(c.isOutlier)} = -${formatKMB(Math.round(taskTotal))}</div>`
                 );
             }
         }

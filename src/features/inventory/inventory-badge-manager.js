@@ -7,6 +7,7 @@
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
 import marketAPI from '../../api/marketplace.js';
+import { applyOutlierGuardToPriceCache } from '../../utils/price-cache-outlier-guard.js';
 import dataManager from '../../core/data-manager.js';
 import { calculateEnhancementPath } from '../enhancement/tooltip-enhancement.js';
 import { getEnhancingParams } from '../../utils/enhancement-config.js';
@@ -16,7 +17,7 @@ import { getItemPrice } from '../../utils/market-data.js';
 import { parseItemCount } from '../../utils/number-parser.js';
 import { MARKET_TAX, COWBELL_BAG_HRID, COWBELL_BAG_TAX } from '../../utils/profit-constants.js';
 import { DUNGEON_CHEST_CHEST_KEYS } from '../combat-stats/combat-stats-calculator.js';
-import { getKeyPrice } from '../../utils/dungeon-key-cost.js';
+import { getKeyPriceInfo } from '../../utils/dungeon-key-cost.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 
 /**
@@ -290,6 +291,7 @@ class InventoryBadgeManager {
             }
         }
         const priceCache = marketAPI.getPricesBatch(itemsToPrice);
+        const outlierKeys = applyOutlierGuardToPriceCache(priceCache);
 
         // Get settings for high enhancement cost mode. The expensive
         // calculateEnhancementPath path only runs when the Net Worth feature
@@ -368,16 +370,20 @@ class InventoryBadgeManager {
                 const evData = expectedValueCalculator.calculateExpectedValue(itemHrid);
                 if (evData && evData.expectedValue > 0) {
                     let netValue = evData.expectedValue;
+                    let isOutlier = evData.hasOutlierPrices || false;
 
                     const chestKeyHrid = DUNGEON_CHEST_CHEST_KEYS[itemHrid];
                     if (chestKeyHrid) {
-                        netValue -= getKeyPrice(chestKeyHrid) ?? 0;
+                        const keyPriceInfo = getKeyPriceInfo(chestKeyHrid);
+                        netValue -= keyPriceInfo.price ?? 0;
+                        isOutlier = isOutlier || keyPriceInfo.isOutlier;
                     }
 
                     itemElem.dataset.askPrice = netValue;
                     itemElem.dataset.bidPrice = netValue;
                     itemElem.dataset.askValue = netValue * itemCount;
                     itemElem.dataset.bidValue = netValue * itemCount;
+                    itemElem.dataset.priceOutlier = isOutlier ? '1' : '0';
                     continue;
                 }
             }
@@ -500,6 +506,7 @@ class InventoryBadgeManager {
             // Store per-item prices (for badge display)
             itemElem.dataset.askPrice = askPrice;
             itemElem.dataset.bidPrice = bidPrice;
+            itemElem.dataset.priceOutlier = outlierKeys.has(`${itemHrid}:${enhancementLevel}`) ? '1' : '0';
 
             // Store stack totals (for sorting and stack value badges)
             itemElem.dataset.askValue = askPrice * itemCount;

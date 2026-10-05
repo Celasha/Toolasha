@@ -5,7 +5,7 @@
 
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
-import marketAPI from '../../api/marketplace.js';
+import { getItemPriceOutlierInfo } from '../../utils/market-data.js';
 import {
     createSession,
     recordSuccess,
@@ -368,11 +368,15 @@ export class EnhancementTracker {
         const session = context.sessions[this.currentSessionId];
         if (!session) return;
 
-        // Get market price
-        const priceData = marketAPI.getPrice(itemHrid, 0);
-        const unitCost = priceData ? priceData.ask || priceData.bid || 0 : 0;
+        // Get market price, outlier-guard aware - ask first, falling back to bid if ask is unset
+        let priceInfo = getItemPriceOutlierInfo(itemHrid, { mode: 'ask' });
+        if (!priceInfo.value) {
+            priceInfo = getItemPriceOutlierInfo(itemHrid, { mode: 'bid' });
+        }
+        const unitCost = priceInfo.value || 0;
+        const isOutlier = priceInfo.value ? priceInfo.isOutlier : false;
 
-        addMaterialCost(session, itemHrid, count, unitCost);
+        addMaterialCost(session, itemHrid, count, unitCost, isOutlier);
         await saveSessions(context.sessions, context.characterId);
     }
 
@@ -396,16 +400,17 @@ export class EnhancementTracker {
      * Track protection item cost for current session
      * @param {string} protectionItemHrid - Protection item HRID
      * @param {number} cost - Protection item cost
+     * @param {boolean} [isOutlier=false] - Whether cost was substituted by the outlier guard
      * @returns {Promise<void>}
      */
-    async trackProtectionCost(protectionItemHrid, cost) {
+    async trackProtectionCost(protectionItemHrid, cost, isOutlier = false) {
         const context = this._captureContext();
         if (!context) return;
 
         const session = context.sessions[this.currentSessionId];
         if (!session) return;
 
-        addProtectionCost(session, protectionItemHrid, cost);
+        addProtectionCost(session, protectionItemHrid, cost, isOutlier);
         await saveSessions(context.sessions, context.characterId);
     }
 

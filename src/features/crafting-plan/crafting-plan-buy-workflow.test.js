@@ -58,6 +58,10 @@ import { marketplaceSession, MARKETPLACE_OWNER } from '../../core/marketplace-se
 
 vi.mock('../../utils/market-data.js', () => ({
     getItemPrice: vi.fn((itemHrid) => (mockPrices.has(itemHrid) ? mockPrices.get(itemHrid) : null)),
+    getItemPriceOutlierInfo: vi.fn((itemHrid) => ({
+        value: mockPrices.has(itemHrid) ? mockPrices.get(itemHrid) : null,
+        isOutlier: false,
+    })),
     getPricingMode: vi.fn(() => 'ask'),
 }));
 vi.mock('../../utils/game-lookups.js', () => ({

@@ -1,15 +1,25 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
-const { mockGetSettingValue, mockGetPrice, mockGetPricingMode, mockComputeBestCraftingPlan } = vi.hoisted(() => ({
+const {
+    mockGetSettingValue,
+    mockGetPrice,
+    mockGetPricingMode,
+    mockGetItemPriceOutlierInfo,
+    mockComputeBestCraftingPlan,
+} = vi.hoisted(() => ({
     mockGetSettingValue: vi.fn(),
     mockGetPrice: vi.fn(),
     mockGetPricingMode: vi.fn(),
+    mockGetItemPriceOutlierInfo: vi.fn(),
     mockComputeBestCraftingPlan: vi.fn(),
 }));
 
 vi.mock('../core/config.js', () => ({ default: { getSettingValue: mockGetSettingValue } }));
 vi.mock('../api/marketplace.js', () => ({ default: { getPrice: mockGetPrice } }));
-vi.mock('./market-data.js', () => ({ getPricingMode: mockGetPricingMode }));
+vi.mock('./market-data.js', () => ({
+    getPricingMode: mockGetPricingMode,
+    getItemPriceOutlierInfo: mockGetItemPriceOutlierInfo,
+}));
 vi.mock('../features/crafting-plan/crafting-plan-calculator.js', () => ({
     computeBestCraftingPlan: mockComputeBestCraftingPlan,
 }));
@@ -47,7 +57,7 @@ describe('getCheapestKeyCost', () => {
         const result = getCheapestKeyCost(KEY_HRID);
 
         expect(mockComputeBestCraftingPlan).toHaveBeenCalledWith(KEY_HRID, 1, 'ask');
-        expect(result).toEqual({ strategy: 'buy', unitCost: 500, plan: null });
+        expect(result).toEqual({ strategy: 'buy', unitCost: 500, isOutlier: false, plan: null });
     });
 
     test('reports craft strategy with the full plan when crafting is cheaper', () => {
@@ -56,7 +66,15 @@ describe('getCheapestKeyCost', () => {
 
         const result = getCheapestKeyCost(KEY_HRID);
 
-        expect(result).toEqual({ strategy: 'craft', unitCost: 300, plan });
+        expect(result).toEqual({ strategy: 'craft', unitCost: 300, isOutlier: false, plan });
+    });
+
+    test('reports isOutlier from the plan when the root item price was substituted', () => {
+        mockComputeBestCraftingPlan.mockReturnValue({ strategy: 'buy', unitCost: 500, isOutlier: true, children: [] });
+
+        const result = getCheapestKeyCost(KEY_HRID);
+
+        expect(result.isOutlier).toBe(true);
     });
 
     test('derives the buy-side price basis from the global profit pricing mode, not a hardcoded ask', () => {
@@ -73,21 +91,23 @@ describe('getCheapestKeyCost', () => {
 describe('getKeyPrice', () => {
     test('ask mode reads the market ask price', () => {
         mockGetSettingValue.mockReturnValue('ask');
-        mockGetPrice.mockReturnValue({ ask: 1000, bid: 900 });
+        mockGetItemPriceOutlierInfo.mockReturnValue({ value: 1000, isOutlier: false });
 
         expect(getKeyPrice(KEY_HRID)).toBe(1000);
+        expect(mockGetItemPriceOutlierInfo).toHaveBeenCalledWith(KEY_HRID, { mode: 'ask' });
     });
 
     test('bid mode reads the market bid price', () => {
         mockGetSettingValue.mockReturnValue('bid');
-        mockGetPrice.mockReturnValue({ ask: 1000, bid: 900 });
+        mockGetItemPriceOutlierInfo.mockReturnValue({ value: 900, isOutlier: false });
 
         expect(getKeyPrice(KEY_HRID)).toBe(900);
+        expect(mockGetItemPriceOutlierInfo).toHaveBeenCalledWith(KEY_HRID, { mode: 'bid' });
     });
 
     test('returns null when there is no market data at all (non-cheapest modes)', () => {
         mockGetSettingValue.mockReturnValue('ask');
-        mockGetPrice.mockReturnValue(null);
+        mockGetItemPriceOutlierInfo.mockReturnValue({ value: null, isOutlier: false });
 
         expect(getKeyPrice(KEY_HRID)).toBeNull();
     });

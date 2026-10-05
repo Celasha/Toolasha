@@ -467,12 +467,13 @@ export function getSkillDrinkItems() {
  * @param {number} enhancementLevel
  * @param {{itemHrid: string, enhancementLevel: number}|null} currentEquipped
  * @param {Object} itemDetailMap
- * @returns {{cost: number, costIsIncomplete: boolean}}
+ * @returns {{cost: number, costIsIncomplete: boolean, isOutlier: boolean}}
  */
 function calculateSlotUpgradeCost(itemHrid, enhancementLevel, currentEquipped, itemDetailMap) {
     const buyResolved = resolveItemPrice(itemHrid, { side: 'buy', enhancementLevel });
     let cost = buyResolved.price;
     let costIsIncomplete = buyResolved.missing;
+    let isOutlier = buyResolved.isOutlier;
 
     if (buyResolved.missing && currentEquipped?.itemHrid === itemHrid) {
         const enhancementResult = calculateDirectEnhancementCost(
@@ -482,9 +483,9 @@ function calculateSlotUpgradeCost(itemHrid, enhancementLevel, currentEquipped, i
             getEnhancingParams()
         );
         if (enhancementResult.complete && enhancementResult.cost !== null) {
-            return { cost: enhancementResult.cost, costIsIncomplete: false };
+            return { cost: enhancementResult.cost, costIsIncomplete: false, isOutlier: !!enhancementResult.isOutlier };
         }
-        return { cost: 0, costIsIncomplete: true };
+        return { cost: 0, costIsIncomplete: true, isOutlier: false };
     }
 
     if (buyResolved.missing && currentEquipped?.itemHrid !== itemHrid) {
@@ -499,6 +500,7 @@ function calculateSlotUpgradeCost(itemHrid, enhancementLevel, currentEquipped, i
             if (enhancementResult.complete && enhancementResult.cost !== null) {
                 cost = baseResolved.price + enhancementResult.cost;
                 costIsIncomplete = false;
+                isOutlier = baseResolved.isOutlier || !!enhancementResult.isOutlier;
             }
         }
     }
@@ -511,13 +513,14 @@ function calculateSlotUpgradeCost(itemHrid, enhancementLevel, currentEquipped, i
                 enhancementLevel: currentEquipped.enhancementLevel || 0,
             });
             if (sellResolved.missing) costIsIncomplete = true;
+            if (sellResolved.isOutlier) isOutlier = true;
             cost = Math.max(0, cost - sellResolved.price);
         }
         // Not tradable: no sell-side value can ever be recovered, so the full buy cost above is
         // already the real answer - never net against a fabricated/nonexistent sell price.
     }
 
-    return { cost, costIsIncomplete };
+    return { cost, costIsIncomplete, isOutlier };
 }
 
 /**
@@ -530,24 +533,26 @@ function calculateSlotUpgradeCost(itemHrid, enhancementLevel, currentEquipped, i
  * @param {string} houseRoomHrid
  * @param {number} targetLevel
  * @param {Object} gameData
- * @returns {{cost: number, costIsIncomplete: boolean}}
+ * @returns {{cost: number, costIsIncomplete: boolean, isOutlier: boolean}}
  */
 function calculateHouseRoomUpgradeCost(houseRoomHrid, targetLevel, gameData) {
     const levelCosts = gameData?.houseRoomDetailMap?.[houseRoomHrid]?.upgradeCostsMap?.[targetLevel];
-    if (!levelCosts) return { cost: 0, costIsIncomplete: true };
+    if (!levelCosts) return { cost: 0, costIsIncomplete: true, isOutlier: false };
 
     let cost = 0;
     let costIsIncomplete = false;
+    let isOutlier = false;
     for (const { itemHrid, count } of levelCosts) {
         if (itemHrid === '/items/coin') {
             cost += count;
             continue;
         }
-        const { price, missing } = resolveItemPrice(itemHrid, { side: 'buy' });
+        const { price, missing, isOutlier: priceIsOutlier } = resolveItemPrice(itemHrid, { side: 'buy' });
         if (missing) costIsIncomplete = true;
+        if (priceIsOutlier) isOutlier = true;
         cost += count * price;
     }
-    return { cost, costIsIncomplete };
+    return { cost, costIsIncomplete, isOutlier };
 }
 
 /**
@@ -593,7 +598,11 @@ export function getHouseRoomCandidate(
     const targetLevel = currentLevel + 1;
     if (targetLevel > maxLevel) return null;
 
-    const { cost, costIsIncomplete } = calculateHouseRoomUpgradeCost(houseRoomHrid, targetLevel, gameData);
+    const {
+        cost,
+        costIsIncomplete,
+        isOutlier: costIsOutlier,
+    } = calculateHouseRoomUpgradeCost(houseRoomHrid, targetLevel, gameData);
     const roomLevelOverride = { hrid: houseRoomHrid, level: targetLevel };
 
     const xpResult = scoreEquipmentSetup(
@@ -625,6 +634,7 @@ export function getHouseRoomCandidate(
         cost,
         costIsIncomplete,
         hasMissingPrice: xpResult.hasMissingPrice || goldResult.hasMissingPrice,
+        isOutlier: costIsOutlier || xpResult.isOutlier || goldResult.isOutlier,
         xpScore: xpResult.score,
         goldScore: goldResult.score,
     };
@@ -682,6 +692,7 @@ function runEquipmentSlotRound(
             let bestItem = null;
             let bestScore = baseline;
             let bestHasMissingPrice = baselineHasMissingPrice;
+            let bestIsOutlier = false;
             let bestEffectiveLevel = bp;
             let bestItemTeaHrids = teaHridsForRound;
 
@@ -709,6 +720,7 @@ function runEquipmentSlotRound(
                 );
                 let candidateScore = candidateResult.score;
                 let candidateHasMissingPrice = candidateResult.hasMissingPrice;
+                let candidateIsOutlier = candidateResult.isOutlier || false;
                 let candidateTeaHrids = teaHridsForRound;
 
                 // FAIL B / OPT-25: Drink Concentration only pays off once a DC-amplified tea is
@@ -750,6 +762,7 @@ function runEquipmentSlotRound(
                     ) {
                         candidateScore = jointTeaResult.optimal.avgScore;
                         candidateHasMissingPrice = jointTeaResult.optimal.hasMissingPrice;
+                        candidateIsOutlier = jointTeaResult.optimal.hasOutlierPrice || false;
                         candidateTeaHrids = jointTeaResult.optimal.teas.map((tea) => tea.hrid);
                     }
                 }
@@ -757,15 +770,20 @@ function runEquipmentSlotRound(
                 if (isBetterCandidate(candidateScore, candidateHasMissingPrice, bestScore, bestHasMissingPrice)) {
                     bestScore = candidateScore;
                     bestHasMissingPrice = candidateHasMissingPrice;
+                    bestIsOutlier = candidateIsOutlier;
                     bestItem = candidate;
                     bestEffectiveLevel = effectiveLevel;
                     bestItemTeaHrids = candidateTeaHrids;
                 }
             }
 
-            const { cost, costIsIncomplete } = bestItem
+            const {
+                cost,
+                costIsIncomplete,
+                isOutlier: costIsOutlier,
+            } = bestItem
                 ? calculateSlotUpgradeCost(bestItem.hrid, bestEffectiveLevel, currentEquipped, itemDetailMap)
-                : { cost: 0, costIsIncomplete: false };
+                : { cost: 0, costIsIncomplete: false, isOutlier: false };
 
             progression.push({
                 breakpoint: bp,
@@ -777,6 +795,9 @@ function runEquipmentSlotRound(
                 // required price - an incomplete number, not a verified exact one. Always false
                 // for XP-goal skills (XP never touches market prices).
                 hasMissingPrice: bestHasMissingPrice,
+                // Whether the winning score's underlying price, or this slot's acquisition cost,
+                // was substituted by the market-data outlier guard.
+                isOutlier: bestIsOutlier || costIsOutlier,
                 // Gold cost to acquire this item (netted against selling whatever currently
                 // occupies the slot, or the full buy price with no current item) - distinct from
                 // hasMissingPrice above, which is about the *score*, not the *cost*.

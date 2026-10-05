@@ -7,7 +7,7 @@
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import { t } from '../../core/i18n.js';
-import marketAPI from '../../api/marketplace.js';
+import { getItemPriceOutlierInfo } from '../../utils/market-data.js';
 import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } from '../../utils/panel-z-index.js';
 import { networthFormatter } from '../../utils/formatters.js';
 import { getExclusions, isExcluded, addExclusion, removeExclusion, clearExclusions } from './networth-exclusions.js';
@@ -187,15 +187,18 @@ class NetworthExclusionPopup {
         for (const snapshot of loadoutState.getAllSnapshots()) {
             if (!snapshot.name || isExcluded('loadout', snapshot.name)) continue;
             const loadoutItems = [...(snapshot.equipment || []), ...(snapshot.unavailableEquipment || [])];
+            let isOutlier = false;
             const amount = loadoutItems.reduce((sum, eq) => {
-                const price = marketAPI.getPrice(eq.itemHrid);
-                return sum + (price?.ask ?? 0);
+                const priceInfo = getItemPriceOutlierInfo(eq.itemHrid, { mode: 'ask' });
+                if (priceInfo.isOutlier) isOutlier = true;
+                return sum + (priceInfo.value ?? 0);
             }, 0);
             add({
                 type: 'loadout',
                 value: snapshot.name,
                 name: t('networthExclusionPopup.loadoutNameLabel', { name: snapshot.name }),
                 amount,
+                isOutlier,
             });
         }
 
@@ -472,8 +475,8 @@ class NetworthExclusionPopup {
                 return loadoutItems.map((eq) => {
                     const details = dataManager.getItemDetails(eq.itemHrid);
                     const name = details?.name || eq.itemHrid.replace('/items/', '');
-                    const price = marketAPI.getPrice(eq.itemHrid);
-                    return { name, value: price?.ask ?? 0 };
+                    const priceInfo = getItemPriceOutlierInfo(eq.itemHrid, { mode: 'ask' });
+                    return { name, value: priceInfo.value ?? 0, isOutlier: priceInfo.isOutlier };
                 });
             }
         }
@@ -547,7 +550,8 @@ class NetworthExclusionPopup {
 
             const amountSpan = document.createElement('span');
             amountSpan.style.cssText = `color: rgba(255,255,255,0.5); white-space: nowrap; font-size: 0.78rem;`;
-            amountSpan.textContent = entry.amount > 0 ? networthFormatter(Math.round(entry.amount)) : '';
+            amountSpan.textContent =
+                entry.amount > 0 ? networthFormatter(Math.round(entry.amount)) + (entry.isOutlier ? ' ⚠' : '') : '';
 
             const actionBtn = document.createElement('button');
             actionBtn.style.cssText = `
@@ -606,7 +610,8 @@ class NetworthExclusionPopup {
 
                     const subVal = document.createElement('span');
                     subVal.style.cssText = `white-space: nowrap; color: rgba(255,255,255,0.4);`;
-                    subVal.textContent = sub.value > 0 ? networthFormatter(Math.round(sub.value)) : '';
+                    subVal.textContent =
+                        sub.value > 0 ? networthFormatter(Math.round(sub.value)) + (sub.isOutlier ? ' ⚠' : '') : '';
 
                     subRow.appendChild(subName);
                     subRow.appendChild(subVal);

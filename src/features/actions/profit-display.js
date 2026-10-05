@@ -162,16 +162,19 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
     // Create top-level summary
     const profit = Math.round(profitData.profitPerHour);
     const profitPerDay = Math.round(profitData.profitPerDay);
-    const baseMissing = profitData.baseOutputs?.some((output) => output.missingPrice) || false;
-    const gourmetMissing = profitData.gourmetBonuses?.some((output) => output.missingPrice) || false;
+    const baseMissing = profitData.baseOutputs?.some((output) => output.missingPrice || output.isOutlier) || false;
+    const gourmetMissing =
+        profitData.gourmetBonuses?.some((output) => output.missingPrice || output.isOutlier) || false;
     const bonusMissing = profitData.bonusRevenue?.hasMissingPrices || false;
-    const processingMissing = profitData.processingConversions?.some((conversion) => conversion.missingPrice) || false;
+    const processingMissing =
+        profitData.processingConversions?.some((conversion) => conversion.missingPrice || conversion.isOutlier) ||
+        false;
     const primaryMissing = baseMissing || gourmetMissing || processingMissing;
     const revenueMissing = primaryMissing || bonusMissing;
     const drinkCostsMissing = profitData.drinkCosts?.some((drink) => drink.missingPrice) || false;
     const costsMissing = drinkCostsMissing || revenueMissing;
     const marketTaxMissing = revenueMissing;
-    const netMissing = profitData.hasMissingPrices;
+    const netMissing = profitData.hasMissingPrices || profitData.hasOutlierPrices;
     const efficiencyMultiplier = profitData.efficiencyMultiplier || 1;
     // Revenue is now gross (pre-tax)
     const revenue = Math.round(profitData.revenuePerHour);
@@ -205,7 +208,7 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
             const decimals = output.itemsPerHour < 1 ? 2 : 1;
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
-            const missingPriceNote = getMissingPriceIndicator(output.missingPrice);
+            const missingPriceNote = getMissingPriceIndicator(output.missingPrice || output.isOutlier);
             line.textContent = t('profitDisplay.baseOutputLine', {
                 name: output.name,
                 rate: `${output.itemsPerHour.toFixed(decimals)}${t('profitDisplay.hrSuffix')}`,
@@ -222,7 +225,7 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
             const decimals = output.itemsPerHour < 1 ? 2 : 1;
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
-            const missingPriceNote = getMissingPriceIndicator(output.missingPrice);
+            const missingPriceNote = getMissingPriceIndicator(output.missingPrice || output.isOutlier);
             line.textContent = t('profitDisplay.gourmetOutputLine', {
                 name: output.name,
                 pct: formatPercentage(profitData.gourmetBonus || 0, 1),
@@ -246,7 +249,7 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
         for (const conversion of profitData.processingConversions) {
             const consumedLine = document.createElement('div');
             consumedLine.style.marginLeft = '8px';
-            const consumedMissingNote = getMissingPriceIndicator(conversion.missingPrice);
+            const consumedMissingNote = getMissingPriceIndicator(conversion.missingPrice || conversion.isOutlier);
             const consumedRevenue = conversion.rawConsumedPerHour * conversion.rawPriceEach;
             consumedLine.textContent = t('profitDisplay.processingConsumedLine', {
                 item: conversion.rawItem,
@@ -259,7 +262,7 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
 
             const producedLine = document.createElement('div');
             producedLine.style.marginLeft = '8px';
-            const producedMissingNote = getMissingPriceIndicator(conversion.missingPrice);
+            const producedMissingNote = getMissingPriceIndicator(conversion.missingPrice || conversion.isOutlier);
             const producedRevenue = conversion.conversionsPerHour * conversion.processedPriceEach;
             producedLine.textContent = t('profitDisplay.processingProducedLine', {
                 item: conversion.processedItem,
@@ -407,7 +410,7 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
         for (const drink of profitData.drinkCosts) {
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
-            const missingPriceNote = getMissingPriceIndicator(drink.missingPrice);
+            const missingPriceNote = getMissingPriceIndicator(drink.missingPrice || drink.isOutlier);
             line.textContent = t('profitDisplay.drinkCostLineNoEach', {
                 name: drink.name,
                 rate: `${drink.drinksPerHour.toFixed(2)}${t('profitDisplay.hrSuffix')}`,
@@ -946,9 +949,10 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
     const outputMissing = profitData.outputPriceMissing || false;
     const outputEstimated = profitData.outputPriceEstimated || false;
     const bonusMissing = profitData.bonusRevenue?.hasMissingPrices || false;
-    const materialMissing = profitData.materialCosts?.some((material) => material.missingPrice) || false;
-    const teaMissing = profitData.teaCosts?.some((tea) => tea.missingPrice) || false;
-    const revenueMissing = (outputMissing && !outputEstimated) || bonusMissing;
+    const materialMissing =
+        profitData.materialCosts?.some((material) => material.missingPrice || material.isOutlier) || false;
+    const teaMissing = profitData.teaCosts?.some((tea) => tea.missingPrice || tea.isOutlier) || false;
+    const revenueMissing = (outputMissing && !outputEstimated) || profitData.outputPriceOutlier || bonusMissing;
 
     // Skip profit display entirely for untradable items (e.g. tailoring back slot items).
     // Action Speed & Time and Level Progress already cover these.
@@ -962,7 +966,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
     const costsEstimated = revenueEstimated && !costsMissing;
     const marketTaxMissing = revenueMissing;
     const marketTaxEstimated = revenueEstimated && !marketTaxMissing;
-    const netMissing = profitData.hasMissingPrices;
+    const netMissing = profitData.hasMissingPrices || profitData.hasOutlierPrices;
     const netEstimated = (revenueEstimated || costsEstimated) && !netMissing;
     const bonusDrops = profitData.bonusRevenue?.bonusDrops || [];
     const bonusRevenueTotal = profitData.bonusRevenue?.totalBonusRevenue || 0;
@@ -1164,7 +1168,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
                 });
             }
 
-            const missingPriceNote = getMissingPriceIndicator(material.missingPrice);
+            const missingPriceNote = getMissingPriceIndicator(material.missingPrice || material.isOutlier);
             const customPriceNote = material.customPrice ? ' *' : '';
 
             line.textContent = t('profitDisplay.materialCostLine', {
@@ -1203,7 +1207,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
             // Tea structure: { itemName, pricePerDrink, drinksPerHour, totalCost }
-            const missingPriceNote = getMissingPriceIndicator(tea.missingPrice);
+            const missingPriceNote = getMissingPriceIndicator(tea.missingPrice || tea.isOutlier);
             line.textContent = t('profitDisplay.drinkCostLineNoEach', {
                 name: tea.itemName,
                 rate: `${tea.drinksPerHour.toFixed(2)}${t('profitDisplay.hrSuffix')}`,
@@ -1677,16 +1681,19 @@ function formatPerAction(value) {
  */
 function buildGatheringPerActionBreakdown(profitData) {
     const actionsPerHour = profitData.actionsPerHour;
-    const baseMissing = profitData.baseOutputs?.some((output) => output.missingPrice) || false;
-    const gourmetMissing = profitData.gourmetBonuses?.some((output) => output.missingPrice) || false;
+    const baseMissing = profitData.baseOutputs?.some((output) => output.missingPrice || output.isOutlier) || false;
+    const gourmetMissing =
+        profitData.gourmetBonuses?.some((output) => output.missingPrice || output.isOutlier) || false;
     const bonusMissing = profitData.bonusRevenue?.hasMissingPrices || false;
-    const processingMissing = profitData.processingConversions?.some((conversion) => conversion.missingPrice) || false;
+    const processingMissing =
+        profitData.processingConversions?.some((conversion) => conversion.missingPrice || conversion.isOutlier) ||
+        false;
     const primaryMissing = baseMissing || gourmetMissing || processingMissing;
     const revenueMissing = primaryMissing || bonusMissing;
     const drinkCostsMissing = profitData.drinkCosts?.some((drink) => drink.missingPrice) || false;
     const costsMissing = drinkCostsMissing || revenueMissing;
     const marketTaxMissing = revenueMissing;
-    const netMissing = profitData.hasMissingPrices;
+    const netMissing = profitData.hasMissingPrices || profitData.hasOutlierPrices;
     const efficiencyMultiplier = profitData.efficiencyMultiplier || 1;
 
     const revenuePerHour = profitData.revenuePerHour;
@@ -1714,7 +1721,7 @@ function buildGatheringPerActionBreakdown(profitData) {
             const revPerAction = output.revenuePerAction ?? output.revenuePerHour / actionsPerHour;
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
-            const missingPriceNote = getMissingPriceIndicator(output.missingPrice);
+            const missingPriceNote = getMissingPriceIndicator(output.missingPrice || output.isOutlier);
             line.textContent = t('profitDisplay.baseOutputLine', {
                 name: output.name,
                 rate: `${itemsPerAction.toFixed(2)}${t('profitDisplay.actionSuffix')}`,
@@ -1732,7 +1739,7 @@ function buildGatheringPerActionBreakdown(profitData) {
             const revPerAction = output.revenuePerAction ?? output.revenuePerHour / actionsPerHour;
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
-            const missingPriceNote = getMissingPriceIndicator(output.missingPrice);
+            const missingPriceNote = getMissingPriceIndicator(output.missingPrice || output.isOutlier);
             line.textContent = t('profitDisplay.gourmetOutputLine', {
                 name: output.name,
                 pct: formatPercentage(profitData.gourmetBonus || 0, 1),
@@ -1760,7 +1767,7 @@ function buildGatheringPerActionBreakdown(profitData) {
                 conversion.conversionsPerAction ?? conversion.conversionsPerHour / actionsPerHour;
             const consumedRevenuePerAction = rawConsumedPerAction * conversion.rawPriceEach;
             const producedRevenuePerAction = conversionsPerAction * conversion.processedPriceEach;
-            const missingPriceNote = getMissingPriceIndicator(conversion.missingPrice);
+            const missingPriceNote = getMissingPriceIndicator(conversion.missingPrice || conversion.isOutlier);
 
             const consumedLine = document.createElement('div');
             consumedLine.style.marginLeft = '8px';
@@ -1936,7 +1943,7 @@ function buildGatheringPerActionBreakdown(profitData) {
             const costPA = drink.costPerHour / actionsPerHour;
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
-            const missingPriceNote = getMissingPriceIndicator(drink.missingPrice);
+            const missingPriceNote = getMissingPriceIndicator(drink.missingPrice || drink.isOutlier);
             line.textContent = t('profitDisplay.drinkCostLineEach', {
                 name: drink.name,
                 rate: `${drinksPA.toFixed(2)}${t('profitDisplay.actionSuffix')}`,
@@ -2048,15 +2055,16 @@ function buildProductionPerActionBreakdown(profitData) {
     const outputMissing = profitData.outputPriceMissing || false;
     const outputEstimated = profitData.outputPriceEstimated || false;
     const bonusMissing = profitData.bonusRevenue?.hasMissingPrices || false;
-    const materialMissing = profitData.materialCosts?.some((material) => material.missingPrice) || false;
-    const teaMissing = profitData.teaCosts?.some((tea) => tea.missingPrice) || false;
-    const revenueMissing = (outputMissing && !outputEstimated) || bonusMissing;
+    const materialMissing =
+        profitData.materialCosts?.some((material) => material.missingPrice || material.isOutlier) || false;
+    const teaMissing = profitData.teaCosts?.some((tea) => tea.missingPrice || tea.isOutlier) || false;
+    const revenueMissing = (outputMissing && !outputEstimated) || profitData.outputPriceOutlier || bonusMissing;
     const revenueEstimated = outputEstimated && !revenueMissing;
     const costsMissing = materialMissing || teaMissing || revenueMissing;
     const costsEstimated = revenueEstimated && !costsMissing;
     const marketTaxMissing = revenueMissing;
     const marketTaxEstimated = revenueEstimated && !marketTaxMissing;
-    const netMissing = profitData.hasMissingPrices;
+    const netMissing = profitData.hasMissingPrices || profitData.hasOutlierPrices;
     const netEstimated = (revenueEstimated || costsEstimated) && !netMissing;
 
     const bonusDrops = profitData.bonusRevenue?.bonusDrops || [];
@@ -2255,7 +2263,7 @@ function buildProductionPerActionBreakdown(profitData) {
                 });
             }
 
-            const missingPriceNote = getMissingPriceIndicator(material.missingPrice);
+            const missingPriceNote = getMissingPriceIndicator(material.missingPrice || material.isOutlier);
             const customPriceNote = material.customPrice ? ' *' : '';
 
             line.textContent = t('profitDisplay.materialCostLine', {
@@ -2295,7 +2303,7 @@ function buildProductionPerActionBreakdown(profitData) {
             const costPA = tea.totalCost / actionsPerHour;
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
-            const missingPriceNote = getMissingPriceIndicator(tea.missingPrice);
+            const missingPriceNote = getMissingPriceIndicator(tea.missingPrice || tea.isOutlier);
             line.textContent = t('profitDisplay.drinkCostLineEach', {
                 name: tea.itemName,
                 rate: `${drinksPA.toFixed(2)}${t('profitDisplay.actionSuffix')}`,
@@ -2414,16 +2422,19 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
     const hoursNeeded = totals.hoursNeeded;
 
     // Calculate totals
-    const baseMissing = profitData.baseOutputs?.some((output) => output.missingPrice) || false;
-    const gourmetMissing = profitData.gourmetBonuses?.some((output) => output.missingPrice) || false;
+    const baseMissing = profitData.baseOutputs?.some((output) => output.missingPrice || output.isOutlier) || false;
+    const gourmetMissing =
+        profitData.gourmetBonuses?.some((output) => output.missingPrice || output.isOutlier) || false;
     const bonusMissing = profitData.bonusRevenue?.hasMissingPrices || false;
-    const processingMissing = profitData.processingConversions?.some((conversion) => conversion.missingPrice) || false;
+    const processingMissing =
+        profitData.processingConversions?.some((conversion) => conversion.missingPrice || conversion.isOutlier) ||
+        false;
     const primaryMissing = baseMissing || gourmetMissing || processingMissing;
     const revenueMissing = primaryMissing || bonusMissing;
     const drinkCostsMissing = profitData.drinkCosts?.some((drink) => drink.missingPrice) || false;
     const costsMissing = drinkCostsMissing || revenueMissing;
     const marketTaxMissing = revenueMissing;
-    const netMissing = profitData.hasMissingPrices;
+    const netMissing = profitData.hasMissingPrices || profitData.hasOutlierPrices;
     const totalRevenue = Math.round(totals.totalRevenue);
     const totalMarketTax = Math.round(totals.totalMarketTax);
     const totalDrinkCosts = Math.round(totals.totalDrinkCost);
@@ -2447,7 +2458,7 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
             const totalRevenueLine = revenuePerAction * actionsCount;
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
-            const missingPriceNote = getMissingPriceIndicator(output.missingPrice);
+            const missingPriceNote = getMissingPriceIndicator(output.missingPrice || output.isOutlier);
             line.textContent = t('profitDisplay.baseOutputLine', {
                 name: output.name,
                 rate: `${totalItems.toFixed(2)} ${t('profitDisplay.itemsUnit')}`,
@@ -2467,7 +2478,7 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
             const totalRevenueLine = revenuePerAction * actionsCount;
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
-            const missingPriceNote = getMissingPriceIndicator(output.missingPrice);
+            const missingPriceNote = getMissingPriceIndicator(output.missingPrice || output.isOutlier);
             line.textContent = t('profitDisplay.gourmetOutputLine', {
                 name: output.name,
                 pct: formatPercentage(profitData.gourmetBonus || 0, 1),
@@ -2497,7 +2508,7 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
             const totalProduced = conversionsPerAction * actionsCount;
             const consumedRevenue = totalConsumed * conversion.rawPriceEach;
             const producedRevenue = totalProduced * conversion.processedPriceEach;
-            const missingPriceNote = getMissingPriceIndicator(conversion.missingPrice);
+            const missingPriceNote = getMissingPriceIndicator(conversion.missingPrice || conversion.isOutlier);
 
             const consumedLine = document.createElement('div');
             consumedLine.style.marginLeft = '8px';
@@ -2665,7 +2676,7 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
             const totalCostLine = drink.costPerHour * hoursNeeded;
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
-            const missingPriceNote = getMissingPriceIndicator(drink.missingPrice);
+            const missingPriceNote = getMissingPriceIndicator(drink.missingPrice || drink.isOutlier);
             line.textContent = t('profitDisplay.drinkCostLineNoEach', {
                 name: drink.name,
                 rate: `${totalDrinks.toFixed(2)} ${t('profitDisplay.drinksUnit')}`,
@@ -2770,15 +2781,16 @@ function buildProductionActionsBreakdown(profitData, actionsCount) {
     const outputMissing = profitData.outputPriceMissing || false;
     const outputEstimated = profitData.outputPriceEstimated || false;
     const bonusMissing = profitData.bonusRevenue?.hasMissingPrices || false;
-    const materialMissing = profitData.materialCosts?.some((material) => material.missingPrice) || false;
-    const teaMissing = profitData.teaCosts?.some((tea) => tea.missingPrice) || false;
-    const revenueMissing = (outputMissing && !outputEstimated) || bonusMissing;
+    const materialMissing =
+        profitData.materialCosts?.some((material) => material.missingPrice || material.isOutlier) || false;
+    const teaMissing = profitData.teaCosts?.some((tea) => tea.missingPrice || tea.isOutlier) || false;
+    const revenueMissing = (outputMissing && !outputEstimated) || profitData.outputPriceOutlier || bonusMissing;
     const revenueEstimated = outputEstimated && !revenueMissing;
     const costsMissing = materialMissing || teaMissing || revenueMissing;
     const costsEstimated = revenueEstimated && !costsMissing;
     const marketTaxMissing = revenueMissing;
     const marketTaxEstimated = revenueEstimated && !marketTaxMissing;
-    const netMissing = profitData.hasMissingPrices;
+    const netMissing = profitData.hasMissingPrices || profitData.hasOutlierPrices;
     const netEstimated = (revenueEstimated || costsEstimated) && !netMissing;
     const bonusDrops = profitData.bonusRevenue?.bonusDrops || [];
     const totals = calculateProductionActionTotalsFromBase({
@@ -2982,7 +2994,7 @@ function buildProductionActionsBreakdown(profitData, actionsCount) {
                 });
             }
 
-            const missingPriceNote = getMissingPriceIndicator(material.missingPrice);
+            const missingPriceNote = getMissingPriceIndicator(material.missingPrice || material.isOutlier);
             const customPriceNote = material.customPrice ? ' *' : '';
 
             line.textContent = t('profitDisplay.materialCostLine', {
@@ -3020,7 +3032,7 @@ function buildProductionActionsBreakdown(profitData, actionsCount) {
             const totalTeaCost = tea.totalCost * totals.hoursNeeded;
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
-            const missingPriceNote = getMissingPriceIndicator(tea.missingPrice);
+            const missingPriceNote = getMissingPriceIndicator(tea.missingPrice || tea.isOutlier);
             line.textContent = t('profitDisplay.drinkCostLineNoEach', {
                 name: tea.itemName,
                 rate: `${totalDrinks.toFixed(2)} ${t('profitDisplay.drinksUnit')}`,

@@ -18,6 +18,7 @@ import expectedValueCalculator from '../../market/expected-value-calculator.js';
 import assetManifest from '../../../utils/asset-manifest.js';
 import { createMutationWatcher } from '../../../utils/dom-observer-helpers.js';
 import { coinFormatter, formatWithSeparator } from '../../../utils/formatters.js';
+import { buildOutlierPriceWarningIcon } from '../../../utils/warning-icon.js';
 
 const PANEL_GAP = 8;
 const PANEL_VIEWPORT_MARGIN = 10;
@@ -190,8 +191,9 @@ function buildDropBreakdownRows(drops, amount, spriteUrl) {
             const priceNote = drop.hasPriceData
                 ? ''
                 : ` <span style="color:${config.COLOR_WARNING || '#ffa500'};">${t('openableAnalytics.noPriceYetNote')}</span>`;
+            const outlierNote = buildOutlierPriceWarningIcon(drop.isOutlier);
             const icon = buildItemIconHtml(spriteUrl, drop.itemHrid);
-            return `<div style="display:flex; justify-content:space-between; gap:8px; padding:1px 0;"><span style="display:flex; align-items:center; min-width:0;">${icon}${drop.itemName}${priceNote}</span><span style="flex-shrink:0;">${formatMoney(total)}</span></div>`;
+            return `<div style="display:flex; justify-content:space-between; gap:8px; padding:1px 0;"><span style="display:flex; align-items:center; min-width:0;">${icon}${drop.itemName}${priceNote}${outlierNote}</span><span style="flex-shrink:0;">${formatMoney(total)}</span></div>`;
         })
         .join('');
 }
@@ -210,6 +212,7 @@ function mergeDropsByItem(drops) {
         const existing = byItemHrid.get(drop.itemHrid);
         if (existing) {
             existing.expectedValue += drop.expectedValue;
+            existing.isOutlier = existing.isOutlier || drop.isOutlier;
         } else {
             byItemHrid.set(drop.itemHrid, { ...drop });
         }

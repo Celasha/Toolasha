@@ -23,6 +23,7 @@ import performanceMonitor from '../utils/performance-monitor.js';
 
 // API modules
 import marketAPI from '../api/marketplace.js';
+import marketValuesAPI from '../api/market-values.js';
 
 // Export to global namespace
 const toolashaRoot = window.Toolasha || {};
@@ -50,6 +51,7 @@ toolashaRoot.Core = {
         clearCurrentProfile,
     },
     marketAPI,
+    marketValuesAPI,
     performanceMonitor,
     marketplaceSession,
     MARKETPLACE_OWNER,

@@ -11,6 +11,7 @@ import dataManager from './core/data-manager.js';
 import featureRegistry from './core/feature-registry.js';
 import networkAlert from './features/market/network-alert.js';
 import marketAPI from './api/marketplace.js';
+import marketValuesAPI from './api/market-values.js';
 import * as combatSimIntegration from './features/combat/combat-sim-integration.js';
 import * as combatSimIntegrationMetz from './features/combat/combat-sim-integration-metz.js';
 import settingsUI from './features/settings/settings-ui.js';
@@ -72,6 +73,14 @@ if (combatSimSite === 'shykai') {
     // Keep the base market snapshot from going stale over a long-lived tab - fetch() only
     // re-checks CACHE_DURATION when something calls it, so this is what makes that check happen.
     marketAPI.startAutoRefresh();
+
+    // Prime the reference market-value fallback cache and keep it from going stale, same as
+    // marketAPI above - unlike marketAPI it has no feature that organically calls fetch() on
+    // its own init, so an explicit kickoff call is needed here.
+    marketValuesAPI.fetch().catch((error) => {
+        console.error('[Toolasha] Initial market values fetch failed:', error);
+    });
+    marketValuesAPI.startAutoRefresh();
 
     // Start capturing client data from localStorage (for Combat Sim export)
     webSocketHook.captureClientDataFromLocalStorage();

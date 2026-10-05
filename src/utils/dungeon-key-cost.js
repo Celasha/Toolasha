@@ -6,8 +6,7 @@
  */
 
 import config from '../core/config.js';
-import marketAPI from '../api/marketplace.js';
-import { getPricingMode } from './market-data.js';
+import { getPricingMode, getItemPriceOutlierInfo } from './market-data.js';
 import { computeBestCraftingPlan } from '../features/crafting-plan/crafting-plan-calculator.js';
 
 export const KEY_PRICING_MODE_CHEAPEST = 'cheapest';
@@ -27,8 +26,10 @@ export function getKeyPricingModeSetting() {
  * ask/bid the player already uses for buy-side profit math), not hardcoded.
  * @param {string} keyHrid
  * @param {number} [quantity=1]
- * @returns {{strategy: 'buy'|'craft', unitCost: number, plan: Object|null}} `plan` is the full
- *   Best Crafting Plan tree when crafting wins (for a materials/craft-steps breakdown), else null.
+ * @returns {{strategy: 'buy'|'craft', unitCost: number, isOutlier: boolean, plan: Object|null}}
+ *   `plan` is the full Best Crafting Plan tree when crafting wins (for a materials/craft-steps
+ *   breakdown), else null. `isOutlier` reflects whether the root item's own market price (shown
+ *   regardless of which strategy won) was substituted by the market-data outlier guard.
  */
 export function getCheapestKeyCost(keyHrid, quantity = 1) {
     const buyMode = getPricingMode('profit', 'buy');
@@ -36,6 +37,7 @@ export function getCheapestKeyCost(keyHrid, quantity = 1) {
     return {
         strategy: plan.strategy,
         unitCost: plan.unitCost,
+        isOutlier: plan.isOutlier || false,
         plan: plan.strategy === 'craft' ? plan : null,
     };
 }
@@ -46,14 +48,25 @@ export function getCheapestKeyCost(keyHrid, quantity = 1) {
  * @returns {number|null} Gold cost, or null if unresolvable (no market data and no recipe).
  */
 export function getKeyPrice(keyHrid) {
+    return getKeyPriceInfo(keyHrid).price;
+}
+
+/**
+ * Price a dungeon key under the player's selected key-pricing mode, along with whether that
+ * price was substituted by the market-data outlier guard - the mirror of `getKeyPrice()` for
+ * callers that want to show a warning icon.
+ * @param {string} keyHrid
+ * @returns {{price: number|null, isOutlier: boolean}}
+ */
+export function getKeyPriceInfo(keyHrid) {
     const mode = getKeyPricingModeSetting();
 
     if (mode === KEY_PRICING_MODE_CHEAPEST) {
-        const { unitCost } = getCheapestKeyCost(keyHrid);
-        return Number.isFinite(unitCost) ? unitCost : null;
+        const { unitCost, isOutlier } = getCheapestKeyCost(keyHrid);
+        return { price: Number.isFinite(unitCost) ? unitCost : null, isOutlier };
     }
 
-    const priceData = marketAPI.getPrice(keyHrid);
-    if (!priceData) return null;
-    return priceData[mode] ?? priceData.ask ?? 0;
+    const priceInfo = getItemPriceOutlierInfo(keyHrid, { mode });
+    if (priceInfo.value === null) return { price: null, isOutlier: false };
+    return { price: priceInfo.value, isOutlier: priceInfo.isOutlier };
 }

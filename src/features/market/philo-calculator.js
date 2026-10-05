@@ -10,6 +10,7 @@ import dataManager from '../../core/data-manager.js';
 import { t } from '../../core/i18n.js';
 import storage from '../../core/storage.js';
 import marketAPI from '../../api/marketplace.js';
+import { getItemPriceOutlierInfo } from '../../utils/market-data.js';
 import { formatLargeNumber, formatPercentage, timeReadable } from '../../utils/formatters.js';
 import { getEnhancementMultiplier } from '../../utils/enhancement-multipliers.js';
 
@@ -137,11 +138,13 @@ class PhiloCalculator {
      * Load default prices from market data
      */
     loadDefaultPrices() {
-        const philoPriceData = marketAPI.getPrice(PHILO_HRID, 0);
-        this.philoPrice = philoPriceData?.bid || 0;
+        const philoPriceInfo = getItemPriceOutlierInfo(PHILO_HRID, { mode: 'bid' });
+        this.philoPrice = philoPriceInfo.value || 0;
+        this.philoPriceIsOutlier = philoPriceInfo.value ? philoPriceInfo.isOutlier : false;
 
-        const catalystPriceData = marketAPI.getPrice(PRIME_CATALYST_HRID, 0);
-        this.catalystPrice = catalystPriceData?.ask || 0;
+        const catalystPriceInfo = getItemPriceOutlierInfo(PRIME_CATALYST_HRID, { mode: 'ask' });
+        this.catalystPrice = catalystPriceInfo.value || 0;
+        this.catalystPriceIsOutlier = catalystPriceInfo.value ? catalystPriceInfo.isOutlier : false;
     }
 
     /**
@@ -305,9 +308,10 @@ class PhiloCalculator {
         const philoChance = successRate * philoDropRate;
 
         // Get item cost (market ask price)
-        const priceData = marketAPI.getPrice(itemHrid, 0);
-        const itemCost = priceData?.ask;
+        const priceInfo = getItemPriceOutlierInfo(itemHrid, { mode: 'ask' });
+        const itemCost = priceInfo.value;
         if (itemCost === null || itemCost === undefined) return null;
+        const itemCostIsOutlier = priceInfo.isOutlier;
 
         // Catalyst cost per action (consumed only on success)
         const catalystCostPerAction = this.useCatalyst ? successRate * this.catalystPrice : 0;
@@ -321,19 +325,24 @@ class PhiloCalculator {
 
         // Calculate EV of all drops (including philo)
         let evPerAction = 0;
+        let dropsHaveOutlier = false;
         for (const drop of alchemy.transmuteDropTable) {
             let dropValue;
             if (drop.itemHrid === PHILO_HRID) {
                 dropValue = this.philoPrice;
+                if (this.philoPriceIsOutlier) dropsHaveOutlier = true;
             } else {
-                const dropPrice = marketAPI.getPrice(drop.itemHrid, 0);
-                dropValue = dropPrice?.bid;
+                const dropPriceInfo = getItemPriceOutlierInfo(drop.itemHrid, { mode: 'bid' });
+                dropValue = dropPriceInfo.value;
                 if (dropValue === null || dropValue === undefined) continue;
+                if (dropPriceInfo.isOutlier) dropsHaveOutlier = true;
             }
 
             const avgCount = (drop.minCount + drop.maxCount) / 2;
             evPerAction += successRate * drop.dropRate * avgCount * dropValue;
         }
+
+        const isOutlier = itemCostIsOutlier || dropsHaveOutlier || (this.useCatalyst && this.catalystPriceIsOutlier);
 
         // Profit per action (EV now includes philo value)
         const profitPerAction = evPerAction - totalCostPerAction;
@@ -387,6 +396,7 @@ class PhiloCalculator {
             profitPerHour,
             revenuePerHour,
             costPerHour,
+            isOutlier,
         };
     }
 
@@ -913,7 +923,7 @@ class PhiloCalculator {
                         break;
                     case 'profitPerPhilo':
                     case 'profitPerHour':
-                        td.textContent = formatLargeNumber(Math.round(value));
+                        td.textContent = formatLargeNumber(Math.round(value)) + (row.isOutlier ? ' ⚠' : '');
                         td.style.color = value >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
                         break;
                     case 'revenuePerHour':

@@ -4,8 +4,8 @@
  */
 
 import config from '../core/config.js';
-import marketAPI from '../api/marketplace.js';
 import dataManager from '../core/data-manager.js';
+import { getItemPriceOutlierInfo } from './market-data.js';
 
 /**
  * Calculate dungeon token value based on best shop item value
@@ -13,7 +13,8 @@ import dataManager from '../core/data-manager.js';
  * @param {string} tokenHrid - Token HRID (e.g., '/items/chimerical_token')
  * @param {string} pricingModeSetting - Config setting key for pricing mode (default: 'profitCalc_pricingMode')
  * @param {string} respectModeSetting - Config setting key for respect pricing mode flag (default: 'expectedValue_respectPricingMode')
- * @returns {number|null} Value per token, or null if no data
+ * @returns {{value: number, isOutlier: boolean}|null} Value per token (outlier-guard clamped) and whether the
+ *   winning shop item's/essence's price was substituted by the outlier guard, or null if no data
  */
 export function calculateDungeonTokenValue(
     tokenHrid,
@@ -31,29 +32,25 @@ export function calculateDungeonTokenValue(
     if (shopItems.length === 0) return null;
 
     let bestValuePerToken = 0;
+    let bestIsOutlier = false;
 
     // For each shop item, calculate market price / token cost
     for (const shopItem of shopItems) {
         const itemHrid = shopItem.itemHrid;
         const tokenCost = shopItem.costs[0].count;
 
-        // Get market price for this item
-        const prices = marketAPI.getPrice(itemHrid, 0);
-        if (!prices) continue;
-
-        // Use pricing mode to determine which price to use
+        // Use pricing mode to determine which price side to use
         const pricingMode = config.getSettingValue(pricingModeSetting, 'conservative');
         const respectPricingMode = config.getSettingValue(respectModeSetting, true);
 
-        let marketPrice = 0;
-        if (respectPricingMode) {
-            // Conservative/Patient Buy: Bid, Hybrid/Optimistic: Ask
-            marketPrice = pricingMode === 'conservative' || pricingMode === 'patientBuy' ? prices.bid : prices.ask;
-        } else {
-            // Always conservative
-            marketPrice = prices.bid;
-        }
-
+        // Conservative/Patient Buy: Bid, Hybrid/Optimistic: Ask
+        const mode = !respectPricingMode
+            ? 'bid'
+            : pricingMode === 'conservative' || pricingMode === 'patientBuy'
+              ? 'bid'
+              : 'ask';
+        const priceInfo = getItemPriceOutlierInfo(itemHrid, { mode });
+        const marketPrice = priceInfo.value || 0;
         if (marketPrice <= 0) continue;
 
         // Calculate value per token
@@ -62,6 +59,7 @@ export function calculateDungeonTokenValue(
         // Keep track of best value
         if (valuePerToken > bestValuePerToken) {
             bestValuePerToken = valuePerToken;
+            bestIsOutlier = priceInfo.isOutlier;
         }
     }
 
@@ -76,27 +74,22 @@ export function calculateDungeonTokenValue(
 
         const essenceHrid = essenceMap[tokenHrid];
         if (essenceHrid) {
-            const essencePrice = marketAPI.getPrice(essenceHrid, 0);
-            if (essencePrice) {
-                const pricingMode = config.getSettingValue(pricingModeSetting, 'conservative');
-                const respectPricingMode = config.getSettingValue(respectModeSetting, true);
+            const pricingMode = config.getSettingValue(pricingModeSetting, 'conservative');
+            const respectPricingMode = config.getSettingValue(respectModeSetting, true);
 
-                let marketPrice = 0;
-                if (respectPricingMode) {
-                    marketPrice =
-                        pricingMode === 'conservative' || pricingMode === 'patientBuy'
-                            ? essencePrice.bid
-                            : essencePrice.ask;
-                } else {
-                    marketPrice = essencePrice.bid;
-                }
+            const mode = !respectPricingMode
+                ? 'bid'
+                : pricingMode === 'conservative' || pricingMode === 'patientBuy'
+                  ? 'bid'
+                  : 'ask';
+            const essencePriceInfo = getItemPriceOutlierInfo(essenceHrid, { mode });
+            const marketPrice = essencePriceInfo.value || 0;
 
-                return marketPrice > 0 ? marketPrice : null;
-            }
+            return marketPrice > 0 ? { value: marketPrice, isOutlier: essencePriceInfo.isOutlier } : null;
         }
     }
 
-    return bestValuePerToken > 0 ? bestValuePerToken : null;
+    return bestValuePerToken > 0 ? { value: bestValuePerToken, isOutlier: bestIsOutlier } : null;
 }
 
 /**

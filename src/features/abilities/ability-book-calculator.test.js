@@ -8,6 +8,7 @@ const {
     mockNavigateToMarketplace,
     mockWatchNativeTabExit,
     mockAutofillManager,
+    mockGetItemPrices,
 } = vi.hoisted(() => ({
     mockReadMarketplaceRuntimeState: vi.fn(),
     mockGetVisibleMarketplaceTabContainer: vi.fn(),
@@ -20,6 +21,7 @@ const {
         exitSession: vi.fn(),
         cleanup: vi.fn(),
     },
+    mockGetItemPrices: vi.fn(() => ({ ask: 0, bid: 0, askOutlier: false, bidOutlier: false })),
 }));
 
 vi.mock('../../core/config.js', () => ({
@@ -37,6 +39,7 @@ vi.mock('../../core/data-manager.js', () => ({
     },
 }));
 vi.mock('../../api/marketplace.js', () => ({ default: { getPrice: vi.fn(() => ({ ask: 0, bid: 0 })) } }));
+vi.mock('../../utils/market-data.js', () => ({ getItemPrices: (...args) => mockGetItemPrices(...args) }));
 vi.mock('../../utils/formatters.js', () => ({
     numberFormatter: vi.fn((value) => String(value)),
     formatKMB: vi.fn((value) => String(value)),
@@ -361,6 +364,55 @@ describe('AbilityBookCalculator live ability state (TLA-016)', () => {
         calculator.injectCalculator(panel, { level: 6, xp: 359 }, 50, '/items/poke');
 
         expect(panel.textContent).not.toContain('Refresh page');
+
+        calculator.disable();
+        panel.remove();
+    });
+
+    test('flags the cost line with a warning icon when the ask price was substituted', () => {
+        mockGetItemPrices.mockReturnValueOnce({ ask: 100, bid: 90, askOutlier: true, bidOutlier: false });
+        const calculator = new AbilityBookCalculator();
+        calculator.initialize();
+
+        const panel = document.createElement('div');
+        document.body.appendChild(panel);
+        calculator.injectCalculator(panel, { level: 6, xp: 359 }, 50, '/items/poke');
+
+        expect(panel.querySelector('#tillLevelNumber').innerHTML).toContain('⚠');
+
+        calculator.disable();
+        panel.remove();
+    });
+
+    test('does not flag the cost line when neither price was substituted', () => {
+        mockGetItemPrices.mockReturnValueOnce({ ask: 100, bid: 90, askOutlier: false, bidOutlier: false });
+        const calculator = new AbilityBookCalculator();
+        calculator.initialize();
+
+        const panel = document.createElement('div');
+        document.body.appendChild(panel);
+        calculator.injectCalculator(panel, { level: 6, xp: 359 }, 50, '/items/poke');
+
+        expect(panel.querySelector('#tillLevelNumber').innerHTML).not.toContain('⚠');
+
+        calculator.disable();
+        panel.remove();
+    });
+
+    test('the outlier flag persists into updateDisplay() after the target level input changes', () => {
+        mockGetItemPrices.mockReturnValueOnce({ ask: 100, bid: 90, askOutlier: false, bidOutlier: true });
+        const calculator = new AbilityBookCalculator();
+        calculator.initialize();
+
+        const panel = document.createElement('div');
+        document.body.appendChild(panel);
+        calculator.injectCalculator(panel, { level: 6, xp: 359 }, 50, '/items/poke');
+
+        const input = panel.querySelector('#tillLevelInput');
+        input.value = '55';
+        input.dispatchEvent(new Event('change'));
+
+        expect(panel.querySelector('#tillLevelNumber').innerHTML).toContain('⚠');
 
         calculator.disable();
         panel.remove();

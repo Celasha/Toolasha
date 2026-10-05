@@ -4,7 +4,7 @@
  * Shared by both gathering and production profit calculators
  */
 
-import marketAPI from '../api/marketplace.js';
+import { getItemPriceOutlierInfo } from './market-data.js';
 import expectedValueCalculator from '../features/market/expected-value-calculator.js';
 import dataManager from '../core/data-manager.js';
 import { parseEssenceFindBonus, parseRareFindBonus, parseRareFindBreakdown } from './equipment-parser.js';
@@ -91,6 +91,7 @@ export function calculateBonusRevenue(
             // Get price: Check if openable container (use EV), otherwise market price
             let itemPrice = 0;
             let isMissingPrice = false;
+            let isOutlier = false;
             if (itemDetails.isOpenable) {
                 // Use expected value for openable containers (with on-demand fallback)
                 itemPrice =
@@ -103,9 +104,10 @@ export function calculateBonusRevenue(
                 }
             } else {
                 // Use market price for regular items
-                const price = marketAPI.getPrice(drop.itemHrid, 0);
-                itemPrice = price?.bid ?? 0; // Use bid price (instant sell)
-                isMissingPrice = price?.bid === null || price?.bid === undefined;
+                const priceInfo = getItemPriceOutlierInfo(drop.itemHrid, { mode: 'bid' });
+                itemPrice = priceInfo.value ?? 0; // Use bid price (instant sell)
+                isMissingPrice = priceInfo.value === null || priceInfo.value === undefined;
+                isOutlier = isMissingPrice ? false : priceInfo.isOutlier;
             }
 
             // Revenue per hour from this drop
@@ -124,6 +126,7 @@ export function calculateBonusRevenue(
                 revenuePerAction,
                 type: 'essence',
                 missingPrice: isMissingPrice,
+                isOutlier,
             });
 
             totalBonusRevenue += revenuePerHour;
@@ -151,6 +154,7 @@ export function calculateBonusRevenue(
             // Get price: Check if openable container (use EV), otherwise market price
             let itemPrice = 0;
             let isMissingPrice = false;
+            let isOutlier = false;
             if (itemDetails.isOpenable) {
                 // Use expected value for openable containers (with on-demand fallback)
                 itemPrice =
@@ -163,9 +167,10 @@ export function calculateBonusRevenue(
                 }
             } else {
                 // Use market price for regular items
-                const price = marketAPI.getPrice(drop.itemHrid, 0);
-                itemPrice = price?.bid ?? 0; // Use bid price (instant sell)
-                isMissingPrice = price?.bid === null || price?.bid === undefined;
+                const priceInfo = getItemPriceOutlierInfo(drop.itemHrid, { mode: 'bid' });
+                itemPrice = priceInfo.value ?? 0; // Use bid price (instant sell)
+                isMissingPrice = priceInfo.value === null || priceInfo.value === undefined;
+                isOutlier = isMissingPrice ? false : priceInfo.isOutlier;
             }
 
             // Revenue per hour from this drop
@@ -184,6 +189,7 @@ export function calculateBonusRevenue(
                 revenuePerAction,
                 type: 'rare_find',
                 missingPrice: isMissingPrice,
+                isOutlier,
             });
 
             totalBonusRevenue += revenuePerHour;

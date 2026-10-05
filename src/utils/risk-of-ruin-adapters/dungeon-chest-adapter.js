@@ -24,7 +24,7 @@ import expectedValueCalculator from '../../features/market/expected-value-calcul
 import { calculatePriceAfterTax } from '../profit-helpers.js';
 import { createSeededRng, drawFromDistribution } from '../risk-of-ruin-engine.js';
 import { DUNGEON_ENTRY_KEYS, DUNGEON_CHEST_KEYS } from '../../features/combat-sim/combat-sim-adapter.js';
-import { getKeyPrice } from '../dungeon-key-cost.js';
+import { getKeyPrice, getKeyPriceInfo } from '../dungeon-key-cost.js';
 
 const COIN_HRID = '/items/coin';
 const DEFAULT_EMPIRICAL_SAMPLE_SIZE = 5000;
@@ -53,8 +53,8 @@ export function getChestOpenCost(containerHrid) {
  * cost-transparency UI.
  * @param {string} containerHrid
  * @returns {{
- *   entryKey: {hrid: string, name: string, price: number}|null,
- *   chestKey: {hrid: string, name: string, price: number}|null,
+ *   entryKey: {hrid: string, name: string, price: number, isOutlier: boolean}|null,
+ *   chestKey: {hrid: string, name: string, price: number, isOutlier: boolean}|null,
  *   total: number,
  * }}
  */
@@ -62,20 +62,27 @@ export function getChestCostBreakdown(containerHrid) {
     const entryKeyHrid = DUNGEON_ENTRY_KEYS[containerHrid];
     const chestKeyHrid = DUNGEON_CHEST_KEYS[containerHrid];
 
-    const entryKey = entryKeyHrid
-        ? {
-              hrid: entryKeyHrid,
-              name: dataManager.getItemDetails(entryKeyHrid)?.name || entryKeyHrid,
-              price: getKeyPrice(entryKeyHrid) ?? 0,
-          }
-        : null;
-    const chestKey = chestKeyHrid
-        ? {
-              hrid: chestKeyHrid,
-              name: dataManager.getItemDetails(chestKeyHrid)?.name || chestKeyHrid,
-              price: getKeyPrice(chestKeyHrid) ?? 0,
-          }
-        : null;
+    let entryKey = null;
+    if (entryKeyHrid) {
+        const { price, isOutlier } = getKeyPriceInfo(entryKeyHrid);
+        entryKey = {
+            hrid: entryKeyHrid,
+            name: dataManager.getItemDetails(entryKeyHrid)?.name || entryKeyHrid,
+            price: price ?? 0,
+            isOutlier,
+        };
+    }
+
+    let chestKey = null;
+    if (chestKeyHrid) {
+        const { price, isOutlier } = getKeyPriceInfo(chestKeyHrid);
+        chestKey = {
+            hrid: chestKeyHrid,
+            name: dataManager.getItemDetails(chestKeyHrid)?.name || chestKeyHrid,
+            price: price ?? 0,
+            isOutlier,
+        };
+    }
 
     return {
         entryKey,

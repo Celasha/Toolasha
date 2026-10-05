@@ -13,9 +13,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../utils/market-data.js', () => ({
-    getItemPrice: vi.fn((itemHrid, opts = {}) => {
+    getItemPriceOutlierInfo: vi.fn((itemHrid, opts = {}) => {
         const level = opts.enhancementLevel ?? 0;
-        return mocks.askPrices[`${itemHrid}|${level}`] ?? -1;
+        return { value: mocks.askPrices[`${itemHrid}|${level}`] ?? -1, isOutlier: false };
     }),
 }));
 
@@ -100,7 +100,7 @@ describe('resolveEquipmentItemCost - F-01: exact finished item wins', () => {
         mocks.table = tableWithLeg(20, { 0: 600_000_000, 17: 360_000_000 });
 
         const result = await resolveEquipmentItemCost(ITEM, 20, itemDetails, ENHANCING_PARAMS, CONTEXT);
-        expect(result).toEqual({ cost: 400_000_000, complete: true });
+        expect(result).toEqual({ cost: 400_000_000, complete: true, isOutlier: false });
     });
 });
 
@@ -113,7 +113,7 @@ describe('resolveEquipmentItemCost - F-02: lower enhancement wins when exact tar
         mocks.table = tableWithLeg(20, { 0: 600_000_000, 17: 260_000_000 }); // 0->20 = 700M; 17->20 = 260M
 
         const result = await resolveEquipmentItemCost(ITEM, 20, itemDetails, ENHANCING_PARAMS, CONTEXT);
-        expect(result).toEqual({ cost: 410_000_000, complete: true });
+        expect(result).toEqual({ cost: 410_000_000, complete: true, isOutlier: false });
     });
 });
 
@@ -126,7 +126,7 @@ describe('resolveEquipmentItemCost - F-03: inflated exact target loses, no heuri
         mocks.table = tableWithLeg(20, { 17: 260_000_000 });
 
         const result = await resolveEquipmentItemCost(ITEM, 20, itemDetails, ENHANCING_PARAMS, CONTEXT);
-        expect(result).toEqual({ cost: 610_000_000, complete: true });
+        expect(result).toEqual({ cost: 610_000_000, complete: true, isOutlier: false });
     });
 });
 
@@ -138,7 +138,7 @@ describe('resolveEquipmentItemCost - F-05: missing one candidate is not global f
         mocks.table = tableWithLeg(20, { 0: 700_000_000 });
 
         const result = await resolveEquipmentItemCost(ITEM, 20, itemDetails, ENHANCING_PARAMS, CONTEXT);
-        expect(result).toEqual({ cost: 720_000_000, complete: true });
+        expect(result).toEqual({ cost: 720_000_000, complete: true, isOutlier: false });
     });
 });
 
@@ -203,7 +203,7 @@ describe('resolveEquipmentItemCost - F-09 / TLA-041E: token equipment must inclu
         mocks.table = tableWithLeg(20, { 0: 50_000_000 });
 
         const result = await resolveEquipmentItemCost(BADGE, 20, tokenItemDetails, ENHANCING_PARAMS, CONTEXT);
-        expect(result).toEqual({ cost: 60_000_000, complete: true }); // base + direct 0->20, no token-only collapse
+        expect(result).toEqual({ cost: 60_000_000, complete: true, isOutlier: false }); // base + direct 0->20, no token-only collapse
     });
 });
 
@@ -226,7 +226,7 @@ describe("resolveEquipmentItemCost - PSP-12: Philosopher's Mirror remains availa
         // base 10M; costs[18] = 10M + 10M = 20M; costs[19] = 10M + 10M = 20M;
         // mirror at 20 = costs[18] + costs[19] + mirrorPrice = 20M + 20M + 5M = 45M, vs traditional
         // costs[20] = 10M + 1000M = 1010M -> Mirror wins.
-        expect(result).toEqual({ cost: 45_000_000, complete: true });
+        expect(result).toEqual({ cost: 45_000_000, complete: true, isOutlier: false });
     });
 });
 
@@ -239,7 +239,7 @@ describe('resolveEquipmentItemCost - PSP-14: exact pruning skips the table entir
         mocks.askPrices[`${ITEM}|17`] = 150_000_000; // K-ask alone already >= best
 
         const result = await resolveEquipmentItemCost(ITEM, 20, itemDetails, ENHANCING_PARAMS, CONTEXT);
-        expect(result).toEqual({ cost: 100_000_000, complete: true });
+        expect(result).toEqual({ cost: 100_000_000, complete: true, isOutlier: false });
         expect(getScoreEnhancementExpectationTable).not.toHaveBeenCalled();
     });
 
@@ -250,7 +250,7 @@ describe('resolveEquipmentItemCost - PSP-14: exact pruning skips the table entir
         mocks.table = tableWithLeg(20, { 17: 10_000_000 }); // 50M + 10M = 60M < 100M
 
         const result = await resolveEquipmentItemCost(ITEM, 20, itemDetails, ENHANCING_PARAMS, CONTEXT);
-        expect(result).toEqual({ cost: 60_000_000, complete: true });
+        expect(result).toEqual({ cost: 60_000_000, complete: true, isOutlier: false });
         expect(getScoreEnhancementExpectationTable).toHaveBeenCalledTimes(1);
     });
 });
@@ -265,7 +265,7 @@ describe('resolveEquipmentItemCost - PSP-15: worker failure fails closed, never 
         mocks.tableError = new Error('worker exploded');
 
         const result = await resolveEquipmentItemCost(ITEM, 20, itemDetails, ENHANCING_PARAMS, CONTEXT);
-        expect(result).toEqual({ cost: 400_000_000, complete: true });
+        expect(result).toEqual({ cost: 400_000_000, complete: true, isOutlier: false });
     });
 
     test('a rejected table request with no exact Ask leaves the item wholly incomplete', async () => {

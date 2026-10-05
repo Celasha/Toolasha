@@ -19,7 +19,7 @@
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import { getDrinkConcentration } from '../../utils/tea-parser.js';
-import { getItemPrice } from '../../utils/market-data.js';
+import { getItemPrice, getItemPriceOutlierInfo } from '../../utils/market-data.js';
 import { SECONDS_PER_HOUR } from '../../utils/profit-constants.js';
 import { getAlchemySuccessBonus } from '../../utils/buff-parser.js';
 import {
@@ -30,7 +30,6 @@ import {
 } from '../../utils/equipment-parser.js';
 import { calculateActionStats } from '../../utils/action-calculator.js';
 import { calculateHouseRareFind } from '../../utils/house-efficiency.js';
-import marketAPI from '../../api/marketplace.js';
 import expectedValueCalculator from './expected-value-calculator.js';
 import {
     calculateActionsPerHour,
@@ -132,12 +131,14 @@ function calculateAlchemyBonusDrops(itemLevel, actionsPerHour, equipment, itemDe
     const essenceDropsPerHour = actionsPerHour * finalEssenceRate;
 
     let essencePrice = 0;
+    let essencePriceOutlier = false;
     const essenceItemDetails = itemDetailMap['/items/alchemy_essence'];
     if (essenceItemDetails?.isOpenable) {
         essencePrice = expectedValueCalculator.getCachedValue('/items/alchemy_essence') || 0;
     } else {
-        const price = marketAPI.getPrice('/items/alchemy_essence', 0);
-        essencePrice = price?.bid ?? 0;
+        const priceInfo = getItemPriceOutlierInfo('/items/alchemy_essence', { context: 'profit', side: 'sell' });
+        essencePrice = priceInfo.value ?? 0;
+        essencePriceOutlier = priceInfo.isOutlier;
     }
 
     const essenceRevenuePerHour = essenceDropsPerHour * essencePrice;
@@ -147,6 +148,7 @@ function calculateAlchemyBonusDrops(itemLevel, actionsPerHour, equipment, itemDe
         dropRate: finalEssenceRate,
         effectiveDropRate: finalEssenceRate,
         price: essencePrice,
+        isOutlier: essencePriceOutlier,
         isEssence: true,
         isRare: false,
         revenuePerAttempt: finalEssenceRate * essencePrice,
@@ -173,6 +175,7 @@ function calculateAlchemyBonusDrops(itemLevel, actionsPerHour, equipment, itemDe
     const rareDropsPerHour = actionsPerHour * finalRareRate;
 
     let cratePrice = 0;
+    let cratePriceOutlier = false;
     const crateItemDetails = itemDetailMap[crateHrid];
     if (crateItemDetails?.isOpenable) {
         // Try cached EV first, then compute on-demand if cache is empty
@@ -181,8 +184,9 @@ function calculateAlchemyBonusDrops(itemLevel, actionsPerHour, equipment, itemDe
             expectedValueCalculator.calculateSingleContainer(crateHrid) ||
             0;
     } else {
-        const price = marketAPI.getPrice(crateHrid, 0);
-        cratePrice = price?.bid ?? 0;
+        const priceInfo = getItemPriceOutlierInfo(crateHrid, { context: 'profit', side: 'sell' });
+        cratePrice = priceInfo.value ?? 0;
+        cratePriceOutlier = priceInfo.isOutlier;
     }
 
     const rareRevenuePerHour = rareDropsPerHour * cratePrice;
@@ -192,6 +196,7 @@ function calculateAlchemyBonusDrops(itemLevel, actionsPerHour, equipment, itemDe
         dropRate: finalRareRate,
         effectiveDropRate: finalRareRate,
         price: cratePrice,
+        isOutlier: cratePriceOutlier,
         isEssence: false,
         isRare: true,
         revenuePerAttempt: finalRareRate * cratePrice,
@@ -306,34 +311,46 @@ class AlchemyProfitCalculator {
         const liveTeaBonus = teaBonusOverride !== null ? teaBonusOverride : getAlchemySuccessBonus();
         const typeSpecificHrid = CATALYST_HRIDS[actionType];
         const primeCatalystHrid = CATALYST_HRIDS.prime;
-        const typeSpecificPrice = getItemPrice(typeSpecificHrid, { context: 'profit', side: 'buy' }) ?? 0;
-        const primeCatalystPrice = getItemPrice(primeCatalystHrid, { context: 'profit', side: 'buy' }) ?? 0;
+        const typeSpecificPriceInfo = getItemPriceOutlierInfo(typeSpecificHrid, { context: 'profit', side: 'buy' });
+        const primeCatalystPriceInfo = getItemPriceOutlierInfo(primeCatalystHrid, { context: 'profit', side: 'buy' });
+        const typeSpecificPrice = typeSpecificPriceInfo.value ?? 0;
+        const primeCatalystPrice = primeCatalystPriceInfo.value ?? 0;
 
         const combinations = [
-            { catalystBonus: 0, catalystHrid: null, catalystPrice: 0, teaBonus: liveTeaBonus },
-            { catalystBonus: 0, catalystHrid: null, catalystPrice: 0, teaBonus: 0 },
+            {
+                catalystBonus: 0,
+                catalystHrid: null,
+                catalystPrice: 0,
+                catalystPriceOutlier: false,
+                teaBonus: liveTeaBonus,
+            },
+            { catalystBonus: 0, catalystHrid: null, catalystPrice: 0, catalystPriceOutlier: false, teaBonus: 0 },
             {
                 catalystBonus: CATALYST_BONUSES.typeSpecific,
                 catalystHrid: typeSpecificHrid,
                 catalystPrice: typeSpecificPrice,
+                catalystPriceOutlier: typeSpecificPriceInfo.isOutlier,
                 teaBonus: liveTeaBonus,
             },
             {
                 catalystBonus: CATALYST_BONUSES.typeSpecific,
                 catalystHrid: typeSpecificHrid,
                 catalystPrice: typeSpecificPrice,
+                catalystPriceOutlier: typeSpecificPriceInfo.isOutlier,
                 teaBonus: 0,
             },
             {
                 catalystBonus: CATALYST_BONUSES.prime,
                 catalystHrid: primeCatalystHrid,
                 catalystPrice: primeCatalystPrice,
+                catalystPriceOutlier: primeCatalystPriceInfo.isOutlier,
                 teaBonus: liveTeaBonus,
             },
             {
                 catalystBonus: CATALYST_BONUSES.prime,
                 catalystHrid: primeCatalystHrid,
                 catalystPrice: primeCatalystPrice,
+                catalystPriceOutlier: primeCatalystPriceInfo.isOutlier,
                 teaBonus: 0,
             },
         ];
@@ -521,6 +538,7 @@ class AlchemyProfitCalculator {
         let catalystBonus = 0;
         let catalystHrid = null;
         let catalystPrice = 0;
+        let catalystPriceOutlier = false;
 
         if (liveCatalystHrid === CATALYST_HRIDS.prime) {
             catalystBonus = CATALYST_BONUSES.prime;
@@ -530,7 +548,9 @@ class AlchemyProfitCalculator {
             catalystHrid = liveCatalystHrid;
         }
         if (catalystHrid) {
-            catalystPrice = getItemPrice(catalystHrid, { context: 'profit', side: 'buy' }) ?? 0;
+            const priceInfo = getItemPriceOutlierInfo(catalystHrid, { context: 'profit', side: 'buy' });
+            catalystPrice = priceInfo.value ?? 0;
+            catalystPriceOutlier = priceInfo.isOutlier;
         }
 
         const successRateBreakdown = this.calculateSuccessRateBreakdown(
@@ -550,6 +570,7 @@ class AlchemyProfitCalculator {
             catalystBonus,
             catalystHrid,
             catalystPrice,
+            catalystPriceOutlier,
             teaBonus: liveTeaBonus,
             successRateBreakdown,
             successRate,
@@ -588,6 +609,7 @@ class AlchemyProfitCalculator {
         let catalystBonus = 0;
         let catalystHrid = null;
         let catalystPrice = 0;
+        let catalystPriceOutlier = false;
 
         if (catalystChoice === 'typeSpecific') {
             catalystBonus = CATALYST_BONUSES.typeSpecific;
@@ -597,7 +619,9 @@ class AlchemyProfitCalculator {
             catalystHrid = CATALYST_HRIDS.prime;
         }
         if (catalystHrid) {
-            catalystPrice = getItemPrice(catalystHrid, { context: 'profit', side: 'buy' }) ?? 0;
+            const priceInfo = getItemPriceOutlierInfo(catalystHrid, { context: 'profit', side: 'buy' });
+            catalystPrice = priceInfo.value ?? 0;
+            catalystPriceOutlier = priceInfo.isOutlier;
         }
 
         const successRateBreakdown = this.calculateSuccessRateBreakdown(
@@ -618,6 +642,7 @@ class AlchemyProfitCalculator {
             catalystBonus,
             catalystHrid,
             catalystPrice,
+            catalystPriceOutlier,
             teaBonus: liveTeaBonus,
             successRateBreakdown,
             successRate,
@@ -717,7 +742,12 @@ class AlchemyProfitCalculator {
 
             // Calculate input cost (material cost)
             const bulkMultiplier = itemDetails.alchemyDetail?.bulkMultiplier || 1;
-            const pricePerItem = getItemPrice(itemHrid, { context: 'profit', side: 'buy', enhancementLevel });
+            const pricePerItemInfo = getItemPriceOutlierInfo(itemHrid, {
+                context: 'profit',
+                side: 'buy',
+                enhancementLevel,
+            });
+            const pricePerItem = pricePerItemInfo.value;
             if (pricePerItem === null) {
                 return null; // No market data
             }
@@ -751,6 +781,7 @@ class AlchemyProfitCalculator {
                 drinkConcentration,
                 itemDetailMap: gameData.itemDetailMap,
                 getItemPrice: (hrid) => getItemPrice(hrid, { context: 'profit', side: 'buy' }),
+                getItemPriceOutlierInfo: (hrid) => getItemPriceOutlierInfo(hrid, { context: 'profit', side: 'buy' }),
             });
 
             // Find the best catalyst+tea combination (tooltip) or use live setup (action page)
@@ -794,6 +825,7 @@ class AlchemyProfitCalculator {
                     itemHrid,
                     count: bulkMultiplier,
                     price: pricePerItem,
+                    isOutlier: pricePerItemInfo.isOutlier,
                     costPerAction: materialCost,
                     costPerHour: materialCost * actionsPerHourWithEfficiency,
                     enhancementLevel: enhancementLevel || 0,
@@ -806,6 +838,7 @@ class AlchemyProfitCalculator {
                     itemHrid: '/items/coin',
                     count: coinCost,
                     price: 1,
+                    isOutlier: false,
                     costPerAction: coinCost,
                     costPerHour: coinCost * actionsPerHourWithEfficiency,
                     enhancementLevel: 0,
@@ -821,6 +854,7 @@ class AlchemyProfitCalculator {
                     dropRate: 1.0, // Coins always drop
                     effectiveDropRate: 1.0,
                     price: 1, // Coins are 1:1
+                    isOutlier: false,
                     isEssence: false,
                     isRare: false,
                     revenuePerAttempt,
@@ -837,6 +871,7 @@ class AlchemyProfitCalculator {
             const catalystCost = {
                 itemHrid: combo.catalystHrid,
                 price: combo.catalystPrice,
+                isOutlier: combo.catalystPriceOutlier || false,
                 costPerSuccess: combo.catalystPrice,
                 costPerAttempt: catalystCostPerAttempt,
                 costPerHour: catalystCostPerHour,
@@ -845,9 +880,16 @@ class AlchemyProfitCalculator {
             const consumableCosts = teaCostData.costs.map((cost) => ({
                 itemHrid: cost.itemHrid,
                 price: cost.pricePerDrink,
+                isOutlier: cost.isOutlier || false,
                 drinksPerHour: cost.drinksPerHour,
                 costPerHour: cost.totalCost,
             }));
+
+            const hasOutlierPrices =
+                requirementCosts.some((r) => r.isOutlier) ||
+                dropRevenues.some((d) => d.isOutlier) ||
+                catalystCost.isOutlier ||
+                consumableCosts.some((c) => c.isOutlier);
 
             // Return comprehensive data matching what action panel needs
             return {
@@ -883,6 +925,7 @@ class AlchemyProfitCalculator {
                 dropRevenues,
                 catalystCost,
                 consumableCosts,
+                hasOutlierPrices,
 
                 // Core stats
                 successRate,
@@ -997,7 +1040,12 @@ class AlchemyProfitCalculator {
             // Some items (e.g. Holy Milk) consume multiple copies per action - bulkMultiplier
             // scales both the input consumed and the base decompose outputs received.
             const bulkMultiplier = itemDetails.alchemyDetail?.bulkMultiplier || 1;
-            const pricePerItem = getItemPrice(itemHrid, { context: 'profit', side: 'buy', enhancementLevel });
+            const pricePerItemInfo = getItemPriceOutlierInfo(itemHrid, {
+                context: 'profit',
+                side: 'buy',
+                enhancementLevel,
+            });
+            const pricePerItem = pricePerItemInfo.value;
             if (pricePerItem === null) {
                 return null; // No market data
             }
@@ -1009,7 +1057,8 @@ class AlchemyProfitCalculator {
 
             // 1. Base decompose items (always received on success)
             for (const output of itemDetails.alchemyDetail.decomposeItems) {
-                const outputPrice = getItemPrice(output.itemHrid, { context: 'profit', side: 'sell' });
+                const outputPriceInfo = getItemPriceOutlierInfo(output.itemHrid, { context: 'profit', side: 'sell' });
+                const outputPrice = outputPriceInfo.value;
                 if (outputPrice !== null) {
                     const afterTax = calculatePriceAfterTax(outputPrice);
                     const outputCount = output.count * bulkMultiplier;
@@ -1020,6 +1069,7 @@ class AlchemyProfitCalculator {
                         itemHrid: output.itemHrid,
                         count: outputCount,
                         price: outputPrice,
+                        isOutlier: outputPriceInfo.isOutlier,
                         afterTax,
                         isEssence: false,
                         expectedValue: dropValue,
@@ -1033,7 +1083,11 @@ class AlchemyProfitCalculator {
                 const itemLevel = itemDetails.itemLevel || 1;
                 essenceAmount = Math.round(2 * (0.5 + 0.1 * Math.pow(1.05, itemLevel)) * Math.pow(2, enhancementLevel));
 
-                const essencePrice = getItemPrice('/items/enhancing_essence', { context: 'profit', side: 'sell' });
+                const essencePriceInfo = getItemPriceOutlierInfo('/items/enhancing_essence', {
+                    context: 'profit',
+                    side: 'sell',
+                });
+                const essencePrice = essencePriceInfo.value;
                 if (essencePrice !== null) {
                     const afterTax = calculatePriceAfterTax(essencePrice);
                     const dropValue = afterTax * essenceAmount;
@@ -1043,6 +1097,7 @@ class AlchemyProfitCalculator {
                         itemHrid: '/items/enhancing_essence',
                         count: essenceAmount,
                         price: essencePrice,
+                        isOutlier: essencePriceInfo.isOutlier,
                         afterTax,
                         isEssence: true,
                         expectedValue: dropValue,
@@ -1072,6 +1127,7 @@ class AlchemyProfitCalculator {
                 drinkConcentration,
                 itemDetailMap: gameData.itemDetailMap,
                 getItemPrice: (hrid) => getItemPrice(hrid, { context: 'profit', side: 'buy' }),
+                getItemPriceOutlierInfo: (hrid) => getItemPriceOutlierInfo(hrid, { context: 'profit', side: 'buy' }),
             });
 
             // Find the best catalyst+tea combination (tooltip) or use live setup (action page)
@@ -1115,6 +1171,7 @@ class AlchemyProfitCalculator {
                     itemHrid,
                     count: bulkMultiplier,
                     price: pricePerItem,
+                    isOutlier: pricePerItemInfo.isOutlier,
                     costPerAction: inputPrice,
                     costPerHour: inputPrice * actionsPerHourWithEfficiency,
                     enhancementLevel: enhancementLevel || 0,
@@ -1127,6 +1184,7 @@ class AlchemyProfitCalculator {
                     itemHrid: '/items/coin',
                     count: coinCost,
                     price: 1,
+                    isOutlier: false,
                     costPerAction: coinCost,
                     costPerHour: coinCost * actionsPerHourWithEfficiency,
                     enhancementLevel: 0,
@@ -1139,6 +1197,7 @@ class AlchemyProfitCalculator {
                 dropRate: 1.0, // Decompose drops are guaranteed on success
                 effectiveDropRate: 1.0,
                 price: drop.price,
+                isOutlier: drop.isOutlier || false,
                 isEssence: drop.isEssence,
                 isRare: false,
                 revenuePerAttempt: drop.expectedValue * successRate,
@@ -1154,6 +1213,7 @@ class AlchemyProfitCalculator {
             const catalystCost = {
                 itemHrid: combo.catalystHrid,
                 price: combo.catalystPrice,
+                isOutlier: combo.catalystPriceOutlier || false,
                 costPerSuccess: combo.catalystPrice,
                 costPerAttempt: catalystCostPerAttempt,
                 costPerHour: catalystCostPerHour,
@@ -1162,9 +1222,16 @@ class AlchemyProfitCalculator {
             const consumableCosts = teaCostData.costs.map((cost) => ({
                 itemHrid: cost.itemHrid,
                 price: cost.pricePerDrink,
+                isOutlier: cost.isOutlier || false,
                 drinksPerHour: cost.drinksPerHour,
                 costPerHour: cost.totalCost,
             }));
+
+            const hasOutlierPrices =
+                requirementCosts.some((r) => r.isOutlier) ||
+                dropRevenues.some((d) => d.isOutlier) ||
+                catalystCost.isOutlier ||
+                consumableCosts.some((c) => c.isOutlier);
 
             // Return comprehensive data matching what action panel needs
             return {
@@ -1200,6 +1267,7 @@ class AlchemyProfitCalculator {
                 dropRevenues,
                 catalystCost,
                 consumableCosts,
+                hasOutlierPrices,
 
                 // Core stats
                 successRate,
@@ -1322,7 +1390,12 @@ class AlchemyProfitCalculator {
 
             // Get input cost (market price of the refined item being unrefined, at its own level)
             const bulkMultiplier = itemDetails.alchemyDetail?.bulkMultiplier || 1;
-            const pricePerItem = getItemPrice(itemHrid, { context: 'profit', side: 'buy', enhancementLevel });
+            const pricePerItemInfo = getItemPriceOutlierInfo(itemHrid, {
+                context: 'profit',
+                side: 'buy',
+                enhancementLevel,
+            });
+            const pricePerItem = pricePerItemInfo.value;
             if (pricePerItem === null) {
                 return null; // No market data
             }
@@ -1332,11 +1405,12 @@ class AlchemyProfitCalculator {
             // (enhancement level is preserved, per the native client's Unrefine drop table), plus
             // refinement shards. Neither output scales with bulkMultiplier there - equipment is
             // never bulk-processed the way stackable materials are.
-            const outputPrice = getItemPrice(unrefineDetail.baseItemHrid, {
+            const outputPriceInfo = getItemPriceOutlierInfo(unrefineDetail.baseItemHrid, {
                 context: 'profit',
                 side: 'sell',
                 enhancementLevel,
             });
+            const outputPrice = outputPriceInfo.value;
             if (outputPrice === null) {
                 return null; // No market data
             }
@@ -1347,6 +1421,7 @@ class AlchemyProfitCalculator {
                     itemHrid: unrefineDetail.baseItemHrid,
                     count: 1,
                     price: outputPrice,
+                    isOutlier: outputPriceInfo.isOutlier,
                     afterTax: baseItemAfterTax,
                     isEssence: false,
                     expectedValue: baseItemAfterTax,
@@ -1357,7 +1432,11 @@ class AlchemyProfitCalculator {
 
             const shardReturn = unrefineDetail.shardReturn;
             if (shardReturn?.itemHrid && shardReturn.count > 0) {
-                const shardPrice = getItemPrice(shardReturn.itemHrid, { context: 'profit', side: 'sell' });
+                const shardPriceInfo = getItemPriceOutlierInfo(shardReturn.itemHrid, {
+                    context: 'profit',
+                    side: 'sell',
+                });
+                const shardPrice = shardPriceInfo.value;
                 if (shardPrice !== null) {
                     const shardAfterTax = calculatePriceAfterTax(shardPrice);
                     const shardValue = shardAfterTax * shardReturn.count;
@@ -1366,6 +1445,7 @@ class AlchemyProfitCalculator {
                         itemHrid: shardReturn.itemHrid,
                         count: shardReturn.count,
                         price: shardPrice,
+                        isOutlier: shardPriceInfo.isOutlier,
                         afterTax: shardAfterTax,
                         isEssence: false,
                         expectedValue: shardValue,
@@ -1397,6 +1477,7 @@ class AlchemyProfitCalculator {
                 drinkConcentration,
                 itemDetailMap: gameData.itemDetailMap,
                 getItemPrice: (hrid) => getItemPrice(hrid, { context: 'profit', side: 'buy' }),
+                getItemPriceOutlierInfo: (hrid) => getItemPriceOutlierInfo(hrid, { context: 'profit', side: 'buy' }),
             });
 
             // Fixed 100% base success rate, clamped there regardless of tea/catalyst - no combo
@@ -1426,6 +1507,7 @@ class AlchemyProfitCalculator {
                     itemHrid,
                     count: bulkMultiplier,
                     price: pricePerItem,
+                    isOutlier: pricePerItemInfo.isOutlier,
                     costPerAction: inputPrice,
                     costPerHour: inputPrice * actionsPerHourWithEfficiency,
                     enhancementLevel: enhancementLevel || 0,
@@ -1437,6 +1519,7 @@ class AlchemyProfitCalculator {
                     itemHrid: '/items/coin',
                     count: coinCost,
                     price: 1,
+                    isOutlier: false,
                     costPerAction: coinCost,
                     costPerHour: coinCost * actionsPerHourWithEfficiency,
                     enhancementLevel: 0,
@@ -1449,6 +1532,7 @@ class AlchemyProfitCalculator {
                 dropRate: 1.0, // Unrefine's own outputs are guaranteed on success
                 effectiveDropRate: 1.0,
                 price: drop.price,
+                isOutlier: drop.isOutlier || false,
                 isEssence: drop.isEssence,
                 isRare: false,
                 revenuePerAttempt: drop.expectedValue * successRate,
@@ -1465,6 +1549,7 @@ class AlchemyProfitCalculator {
             const catalystCost = {
                 itemHrid: null,
                 price: 0,
+                isOutlier: false,
                 costPerSuccess: 0,
                 costPerAttempt: 0,
                 costPerHour: 0,
@@ -1473,9 +1558,15 @@ class AlchemyProfitCalculator {
             const consumableCosts = teaCostData.costs.map((cost) => ({
                 itemHrid: cost.itemHrid,
                 price: cost.pricePerDrink,
+                isOutlier: cost.isOutlier || false,
                 drinksPerHour: cost.drinksPerHour,
                 costPerHour: cost.totalCost,
             }));
+
+            const hasOutlierPrices =
+                requirementCosts.some((r) => r.isOutlier) ||
+                dropRevenues.some((d) => d.isOutlier) ||
+                consumableCosts.some((c) => c.isOutlier);
 
             return {
                 // Basic info
@@ -1510,6 +1601,7 @@ class AlchemyProfitCalculator {
                 dropRevenues,
                 catalystCost,
                 consumableCosts,
+                hasOutlierPrices,
 
                 // Core stats
                 successRate,
@@ -1638,7 +1730,8 @@ class AlchemyProfitCalculator {
             const drinkConcentration = getDrinkConcentration(equipment, gameData.itemDetailMap);
 
             // Get input cost (market price of the item being transmuted)
-            const inputPrice = getItemPrice(itemHrid, { context: 'profit', side: 'buy' });
+            const inputPriceInfo = getItemPriceOutlierInfo(itemHrid, { context: 'profit', side: 'buy' });
+            const inputPrice = inputPriceInfo.value;
             if (inputPrice === null) {
                 return null; // No market data
             }
@@ -1663,7 +1756,8 @@ class AlchemyProfitCalculator {
                     selfReturnCount = averageCount * bulkMultiplier;
                 }
 
-                const outputPrice = getItemPrice(drop.itemHrid, { context: 'profit', side: 'sell' });
+                const outputPriceInfo = getItemPriceOutlierInfo(drop.itemHrid, { context: 'profit', side: 'sell' });
+                const outputPrice = outputPriceInfo.value;
                 if (outputPrice !== null) {
                     const afterTax = calculatePriceAfterTax(outputPrice);
                     // Expected value: price × dropRate × averageCount × bulkMultiplier
@@ -1681,6 +1775,7 @@ class AlchemyProfitCalculator {
                         maxCount: drop.maxCount,
                         averageCount,
                         price: outputPrice,
+                        isOutlier: outputPriceInfo.isOutlier,
                         expectedValue: isSelfReturn ? 0 : dropValue, // Self-return has 0 effective value
                         isSelfReturn,
                     });
@@ -1711,6 +1806,7 @@ class AlchemyProfitCalculator {
                 drinkConcentration,
                 itemDetailMap: gameData.itemDetailMap,
                 getItemPrice: (hrid) => getItemPrice(hrid, { context: 'profit', side: 'buy' }),
+                getItemPriceOutlierInfo: (hrid) => getItemPriceOutlierInfo(hrid, { context: 'profit', side: 'buy' }),
             });
 
             // Force a specific catalyst if the caller asked for one; otherwise find the best
@@ -1770,6 +1866,7 @@ class AlchemyProfitCalculator {
                     itemHrid,
                     count: bulkMultiplier,
                     price: inputPrice,
+                    isOutlier: inputPriceInfo.isOutlier,
                     costPerAction: netMaterialCost, // Net cost after self-return
                     costPerHour: netMaterialCost * actionsPerHourWithEfficiency,
                     enhancementLevel: 0,
@@ -1784,6 +1881,7 @@ class AlchemyProfitCalculator {
                     itemHrid: '/items/coin',
                     count: coinCost,
                     price: 1,
+                    isOutlier: false,
                     costPerAction: coinCost,
                     costPerHour: coinCost * actionsPerHourWithEfficiency,
                     enhancementLevel: 0,
@@ -1796,6 +1894,7 @@ class AlchemyProfitCalculator {
                 dropRate: drop.dropRate,
                 effectiveDropRate: drop.dropRate,
                 price: drop.price,
+                isOutlier: drop.isOutlier || false,
                 isEssence: false,
                 isRare: false,
                 isSelfReturn: drop.isSelfReturn || false,
@@ -1813,6 +1912,7 @@ class AlchemyProfitCalculator {
             const catalystCost = {
                 itemHrid: combo.catalystHrid,
                 price: combo.catalystPrice,
+                isOutlier: combo.catalystPriceOutlier || false,
                 costPerSuccess: combo.catalystPrice,
                 costPerAttempt: catalystCostPerAttempt,
                 costPerHour: catalystCostPerHour,
@@ -1821,9 +1921,16 @@ class AlchemyProfitCalculator {
             const consumableCosts = teaCostData.costs.map((cost) => ({
                 itemHrid: cost.itemHrid,
                 price: cost.pricePerDrink,
+                isOutlier: cost.isOutlier || false,
                 drinksPerHour: cost.drinksPerHour,
                 costPerHour: cost.totalCost,
             }));
+
+            const hasOutlierPrices =
+                requirementCosts.some((r) => r.isOutlier) ||
+                dropRevenues.some((d) => d.isOutlier) ||
+                catalystCost.isOutlier ||
+                consumableCosts.some((c) => c.isOutlier);
 
             // Return comprehensive data matching what action panel needs
             return {
@@ -1861,6 +1968,7 @@ class AlchemyProfitCalculator {
                 dropRevenues,
                 catalystCost,
                 consumableCosts,
+                hasOutlierPrices,
 
                 // Core stats
                 successRate,

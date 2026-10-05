@@ -5,7 +5,7 @@
  * tradeable item that converts into them via item.guildCreditConversions.
  */
 
-import { getItemPrice } from './market-data.js';
+import { getItemPriceOutlierInfo } from './market-data.js';
 
 export const GUILD_TOKEN_HRID = '/items/guild_token';
 
@@ -15,28 +15,40 @@ export const GUILD_TOKEN_HRID = '/items/guild_token';
  * @param {string[]} [excludeHrids=[]] - Source item hrids to skip (e.g. Guild Token itself, which
  *   carries its own guildCreditConversions and would otherwise create a circular credit value —
  *   TLA-041).
- * @returns {{ sell: Object, buy: Object }} Map of creditItemHrid -> cheapest gold cost per credit
+ * @returns {{ sell: Object, buy: Object, sellOutlier: Object, buyOutlier: Object }} Map of
+ *   creditItemHrid -> cheapest gold cost per credit, plus parallel maps of whether that winning
+ *   source item's price was substituted by the market-data outlier guard.
  */
 export function buildCheapestPerCredit(itemDetailMap, excludeHrids = []) {
     const sell = {};
     const buy = {};
+    const sellOutlier = {};
+    const buyOutlier = {};
     for (const [hrid, item] of Object.entries(itemDetailMap)) {
         if (excludeHrids.includes(hrid)) continue;
         for (const conv of item.guildCreditConversions || []) {
             const creditHrid = conv.creditItemHrid;
-            const sellPrice = getItemPrice(hrid, { mode: 'ask' });
-            const buyPrice = getItemPrice(hrid, { mode: 'bid' });
+            const sellInfo = getItemPriceOutlierInfo(hrid, { mode: 'ask' });
+            const buyInfo = getItemPriceOutlierInfo(hrid, { mode: 'bid' });
+            const sellPrice = sellInfo.value;
+            const buyPrice = buyInfo.value;
             if (sellPrice > 0) {
                 const gpc = (sellPrice * conv.itemCount) / conv.creditCount;
-                if (!sell[creditHrid] || gpc < sell[creditHrid]) sell[creditHrid] = gpc;
+                if (!sell[creditHrid] || gpc < sell[creditHrid]) {
+                    sell[creditHrid] = gpc;
+                    sellOutlier[creditHrid] = sellInfo.isOutlier;
+                }
             }
             if (buyPrice > 0) {
                 const gpc = (buyPrice * conv.itemCount) / conv.creditCount;
-                if (!buy[creditHrid] || gpc < buy[creditHrid]) buy[creditHrid] = gpc;
+                if (!buy[creditHrid] || gpc < buy[creditHrid]) {
+                    buy[creditHrid] = gpc;
+                    buyOutlier[creditHrid] = buyInfo.isOutlier;
+                }
             }
         }
     }
-    return { sell, buy };
+    return { sell, buy, sellOutlier, buyOutlier };
 }
 
 /**
@@ -46,9 +58,11 @@ export function buildCheapestPerCredit(itemDetailMap, excludeHrids = []) {
  * can just take index 0.
  * @param {Object} itemDetailMap
  * @param {Object} creditValueTable - creditItemHrid -> coin value per credit
- * @returns {Array<{creditItemHrid: string, itemCount: number, creditCount: number, goldPerToken: number}>}
+ * @param {Object} [creditOutlierTable={}] - creditItemHrid -> whether that value was substituted
+ *   by the market-data outlier guard (from buildCheapestPerCredit's sellOutlier/buyOutlier)
+ * @returns {Array<{creditItemHrid: string, itemCount: number, creditCount: number, goldPerToken: number, isOutlier: boolean}>}
  */
-export function buildGuildTokenValueByCredit(itemDetailMap, creditValueTable) {
+export function buildGuildTokenValueByCredit(itemDetailMap, creditValueTable, creditOutlierTable = {}) {
     const tokenItem = itemDetailMap[GUILD_TOKEN_HRID];
     const rows = [];
     for (const conv of tokenItem?.guildCreditConversions || []) {
@@ -59,6 +73,7 @@ export function buildGuildTokenValueByCredit(itemDetailMap, creditValueTable) {
             itemCount: conv.itemCount,
             creditCount: conv.creditCount,
             goldPerToken: (conv.creditCount / conv.itemCount) * creditValue,
+            isOutlier: creditOutlierTable[conv.creditItemHrid] || false,
         });
     }
     return rows.sort((a, b) => b.goldPerToken - a.goldPerToken);

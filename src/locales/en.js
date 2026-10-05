@@ -301,6 +301,11 @@ export default {
         unpricedItemsNote: '* some items have no market price data',
         missingMatsButtonLabel: 'Missing Mats Marketplace',
     },
+    marketData: {
+        outlierPriceWarningTooltip:
+            "This price was outside the normal range vs. the game's own reference market value, so Toolasha substituted the reference value instead. Adjust or disable this in Settings → Pricing & Profit.",
+    },
+
     marketHistory: {
         modalTitle: 'Market History',
         searchItemsPlaceholder: 'Search items...',
@@ -3135,6 +3140,14 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             market_depthCapEnabled: {
                 label: 'Market: Show sell depth cap (Risk of Ruin)',
                 help: "Shows how many actions worth of the currently-viewed item the order book can profitably absorb, based on the last Risk of Ruin calculation. Ignores the marketplace's tradable range floor, which isn't exposed in game data.",
+            },
+            marketData_outlierGuardEnabled: {
+                label: 'Guard against absurd marketplace listings',
+                help: "Applies everywhere Toolasha reads a market price (profit calculators, net worth, upgrade advisor, etc.). When a live ask/bid is wildly outside the band around the game's own reference market value, Toolasha substitutes the reference value instead and marks the affected number with a ⚠ so you can see where this happened.",
+            },
+            marketData_outlierBandMultiplier: {
+                label: 'Outlier band multiplier',
+                help: 'A live price counts as an outlier when it is more than this many times above or below the reference value (e.g. 3 = outside 1/3x-3x the reference). Only applies to items the reference dataset actually covers.',
             },
             profitCalc_pricingMode: { label: 'Profit calculation pricing mode' },
             profitCalc_pricingNaming: {

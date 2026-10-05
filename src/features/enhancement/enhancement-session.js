@@ -53,12 +53,13 @@ export function createSession(itemHrid, itemName, startLevel, targetLevel, prote
         attemptsPerLevel: {},
 
         // Cost tracking
-        materialCosts: {}, // Format: { itemHrid: { count: 10, totalCost: 50000 } }
+        materialCosts: {}, // Format: { itemHrid: { count: 10, totalCost: 50000, isOutlier: false } }
         coinCost: 0,
         coinCount: 0, // Track number of times coins were spent
         protectionCost: 0,
         protectionCount: 0,
         protectionItemHrid: null, // Track which protection item is being used
+        protectionCostIsOutlier: false,
         totalCost: 0,
 
         // Statistics
@@ -221,17 +222,20 @@ export function recordFailure(session, previousLevel, newLevel, expectedChance =
  * @param {string} itemHrid - Material item HRID
  * @param {number} count - Quantity used
  * @param {number} unitCost - Cost per item (from market)
+ * @param {boolean} [isOutlier=false] - Whether unitCost was substituted by the outlier guard
  */
-export function addMaterialCost(session, itemHrid, count, unitCost) {
+export function addMaterialCost(session, itemHrid, count, unitCost, isOutlier = false) {
     if (!session.materialCosts[itemHrid]) {
         session.materialCosts[itemHrid] = {
             count: 0,
             totalCost: 0,
+            isOutlier: false,
         };
     }
 
     session.materialCosts[itemHrid].count += count;
     session.materialCosts[itemHrid].totalCost += count * unitCost;
+    session.materialCosts[itemHrid].isOutlier = session.materialCosts[itemHrid].isOutlier || isOutlier;
 
     // Update total cost
     recalculateTotalCost(session);
@@ -253,10 +257,12 @@ export function addCoinCost(session, amount) {
  * @param {Object} session - Session object
  * @param {string} protectionItemHrid - Protection item HRID
  * @param {number} cost - Protection item cost
+ * @param {boolean} [isOutlier=false] - Whether cost was substituted by the outlier guard
  */
-export function addProtectionCost(session, protectionItemHrid, cost) {
+export function addProtectionCost(session, protectionItemHrid, cost, isOutlier = false) {
     session.protectionCost += cost;
     session.protectionCount += 1;
+    session.protectionCostIsOutlier = session.protectionCostIsOutlier || isOutlier;
 
     // Store the protection item HRID if not already set
     if (!session.protectionItemHrid) {
@@ -481,6 +487,9 @@ export function normalizeSession(session) {
     }
     if (typeof session.totalExpectedSuccesses !== 'number') {
         session.totalExpectedSuccesses = 0;
+    }
+    if (typeof session.protectionCostIsOutlier !== 'boolean') {
+        session.protectionCostIsOutlier = false;
     }
 
     for (const levelData of Object.values(session.attemptsPerLevel || {})) {

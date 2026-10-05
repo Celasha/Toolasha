@@ -9,6 +9,7 @@ import enhancementTracker from './enhancement-tracker.js';
 import enhancementUI from './enhancement-ui.js';
 import config from '../../core/config.js';
 import marketAPI from '../../api/marketplace.js';
+import { getItemPrices } from '../../utils/market-data.js';
 import { calculateSuccessXP, calculateFailureXP, calculateAdjustedAttemptCount } from './enhancement-xp.js';
 import { calculateSingleLevelSuccessChance } from '../../utils/enhancement-calculator.js';
 import { getAutoDetectedParams } from '../../utils/enhancement-config.js';
@@ -478,8 +479,15 @@ async function handleEnhancementResult(action, _data) {
             // Successful enhancements do NOT consume a protection item
             if (shouldTrack && newLevel <= previousLevel) {
                 // Use market price (like Ultimate Tracker) instead of vendor price
-                const marketPrice = marketAPI.getPrice(protectionItemHrid, 0);
+                const marketPrice = getItemPrices(protectionItemHrid, 0);
                 let protectionCost = marketPrice?.ask || marketPrice?.bid || 0;
+                let protectionIsOutlier = marketPrice
+                    ? marketPrice.ask
+                        ? marketPrice.askOutlier
+                        : marketPrice.bid
+                          ? marketPrice.bidOutlier
+                          : false
+                    : false;
 
                 // Fall back to vendor price if market price unavailable
                 if (protectionCost === 0) {
@@ -491,9 +499,10 @@ async function handleEnhancementResult(action, _data) {
                         );
                     }
                     protectionCost = protectionItem?.vendorSellPrice || 0;
+                    protectionIsOutlier = false;
                 }
 
-                await enhancementTracker.trackProtectionCost(protectionItemHrid, protectionCost);
+                await enhancementTracker.trackProtectionCost(protectionItemHrid, protectionCost, protectionIsOutlier);
             }
         }
 

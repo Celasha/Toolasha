@@ -19,13 +19,13 @@ const TASK_TOKEN_HRID = '/items/task_token';
  * @param {number} enhancementLevel - Enhancement level
  * @param {'sell'|'buy'} side - 'sell' for a gained item, 'buy' for a consumed item
  * @param {Object|null} itemDetails - dataManager.getItemDetails(itemHrid) result
- * @returns {{value: number, source: string}|null} Resolved unit value or null if unavailable
+ * @returns {{value: number, source: string, isOutlier: boolean}|null} Resolved unit value or null if unavailable
  */
 function resolveUnitValue(itemHrid, enhancementLevel, side, itemDetails) {
     if (itemHrid === TASK_TOKEN_HRID) {
         const tokenData = calculateTaskTokenValue();
         if (tokenData.error || !(tokenData.tokenValue > 0)) return null;
-        return { value: tokenData.tokenValue, source: 'taskToken' };
+        return { value: tokenData.tokenValue, source: 'taskToken', isOutlier: false };
     }
 
     if (side === 'sell') {
@@ -35,11 +35,11 @@ function resolveUnitValue(itemHrid, enhancementLevel, side, itemDetails) {
             resolved.needsTax && itemDetails?.isTradable !== false
                 ? calculatePriceAfterTax(resolved.value, MARKET_TAX)
                 : resolved.value;
-        return { value, source: resolved.source };
+        return { value, source: resolved.source, isOutlier: resolved.isOutlier || false };
     }
 
     const resolved = expectedValueCalculator.resolveBuySideValue(itemHrid, enhancementLevel);
-    return resolved ? { value: resolved.value, source: resolved.source } : null;
+    return resolved ? { value: resolved.value, source: resolved.source, isOutlier: resolved.isOutlier || false } : null;
 }
 
 /**
@@ -50,12 +50,13 @@ function resolveUnitValue(itemHrid, enhancementLevel, side, itemDetails) {
  * @param {string} params.currentTimestamp - ISO timestamp from the init_character_data payload
  * @param {string} params.lastOfflineTime - ISO timestamp the character went offline (character.lastOfflineTime)
  * @returns {Object} { revenue, cost, profit, revenuePerDay, costPerDay, profitPerDay,
- *   durationSeconds, isPartial, unvaluedItems, lines }
+ *   durationSeconds, isPartial, hasOutlierPrices, unvaluedItems, lines }
  */
 export function calculateOfflineEconomics({ offlineItems, currentTimestamp, lastOfflineTime }) {
     let revenue = 0;
     let cost = 0;
     let isPartial = false;
+    let hasOutlierPrices = false;
     const unvaluedItems = [];
     const lines = [];
 
@@ -81,6 +82,7 @@ export function calculateOfflineEconomics({ offlineItems, currentTimestamp, last
         } else {
             cost += totalValue;
         }
+        if (resolved.isOutlier) hasOutlierPrices = true;
 
         lines.push({
             itemHrid,
@@ -90,6 +92,7 @@ export function calculateOfflineEconomics({ offlineItems, currentTimestamp, last
             unitValue: resolved.value,
             totalValue,
             source: resolved.source,
+            isOutlier: resolved.isOutlier,
         });
     }
 
@@ -108,6 +111,7 @@ export function calculateOfflineEconomics({ offlineItems, currentTimestamp, last
         profitPerDay: perDay(profit),
         durationSeconds,
         isPartial,
+        hasOutlierPrices,
         unvaluedItems,
         lines,
     };

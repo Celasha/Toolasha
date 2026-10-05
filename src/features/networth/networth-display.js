@@ -10,10 +10,11 @@ import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import { t } from '../../core/i18n.js';
 import { networthFormatter, formatKMB } from '../../utils/formatters.js';
+import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 import networthHistoryChart from './networth-history-chart.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 import { DUNGEON_CHEST_CHEST_KEYS } from '../combat-stats/combat-stats-calculator.js';
-import { getKeyPrice } from '../../utils/dungeon-key-cost.js';
+import { getKeyPriceInfo } from '../../utils/dungeon-key-cost.js';
 import networthExclusionPopup from './networth-exclusion-popup.js';
 import { removeExclusion } from './networth-exclusions.js';
 
@@ -586,7 +587,7 @@ class NetworthInventoryDisplay {
 
         return breakdown
             .map((house) => {
-                return `${house.name} ${house.level}: ${networthFormatter(Math.round(house.cost))}`;
+                return `${house.name} ${house.level}: ${networthFormatter(Math.round(house.cost))}${buildOutlierPriceWarningIcon(house.isOutlier)}`;
             })
             .join('\n');
     }
@@ -603,7 +604,7 @@ class NetworthInventoryDisplay {
 
         return breakdown
             .map((ability) => {
-                return `${ability.name}: ${networthFormatter(Math.round(ability.cost))}`;
+                return `${ability.name}: ${networthFormatter(Math.round(ability.cost))}${buildOutlierPriceWarningIcon(ability.isOutlier)}`;
             })
             .join('\n');
     }
@@ -654,7 +655,7 @@ class NetworthInventoryDisplay {
 
         return breakdown
             .map((item) => {
-                return `${item.name}: ${networthFormatter(Math.round(item.value))}`;
+                return `${item.name}: ${networthFormatter(Math.round(item.value))}${buildOutlierPriceWarningIcon(item.isOutlier)}`;
             })
             .join('\n');
     }
@@ -672,7 +673,7 @@ class NetworthInventoryDisplay {
         return breakdown
             .map((listing) => {
                 const typeLabel = listing.isSell ? t('marketHistory.sellLabel') : t('marketHistory.buyLabel');
-                return `${listing.name} (${typeLabel}): ${networthFormatter(Math.round(listing.value))}`;
+                return `${listing.name} (${typeLabel}): ${networthFormatter(Math.round(listing.value))}${buildOutlierPriceWarningIcon(listing.isOutlier)}`;
             })
             .join('\n');
     }
@@ -702,7 +703,7 @@ class NetworthInventoryDisplay {
                     if (item.isOpenable && item.itemHrid) {
                         return this.renderOpenableItemRow(item);
                     }
-                    return `<div>${item.name} x${formatKMB(item.count)}: ${networthFormatter(Math.round(item.value))}</div>`;
+                    return `<div>${item.name} x${formatKMB(item.count)}: ${networthFormatter(Math.round(item.value))}${buildOutlierPriceWarningIcon(item.isOutlier)}</div>`;
                 })
                 .join('');
 
@@ -961,16 +962,19 @@ class NetworthInventoryDisplay {
             const chestKeyHrid = DUNGEON_CHEST_CHEST_KEYS[item.itemHrid];
             let keyPrice = 0;
             let keyName = null;
+            let keyPriceOutlier = false;
             if (chestKeyHrid) {
-                keyPrice = getKeyPrice(chestKeyHrid) ?? 0;
+                const keyPriceInfo = getKeyPriceInfo(chestKeyHrid);
+                keyPrice = keyPriceInfo.price ?? 0;
+                keyPriceOutlier = keyPriceInfo.isOutlier;
                 keyName = dataManager.getItemDetails(chestKeyHrid)?.name;
             }
-            detailsHTML = this.buildChestDropsHTML(evData, keyPrice, keyName);
+            detailsHTML = this.buildChestDropsHTML(evData, keyPrice, keyName, keyPriceOutlier);
         }
 
         return `
             <div id="${toggleId}" style="cursor: pointer; padding: 1px 0;">
-                + ${item.name} x${formatKMB(item.count)}: ${networthFormatter(Math.round(item.value))}
+                + ${item.name} x${formatKMB(item.count)}: ${networthFormatter(Math.round(item.value))}${buildOutlierPriceWarningIcon(item.isOutlier)}
             </div>
             <div id="${detailId}" style="display: none; margin-left: 16px; color: #bbb; margin-bottom: 2px;">
                 ${detailsHTML}
@@ -982,15 +986,17 @@ class NetworthInventoryDisplay {
      * @param {Object} evData - Expected value data from expectedValueCalculator
      * @param {number} keyPrice - Chest key market price (0 for non-dungeon chests)
      * @param {string|null} keyName - Chest key item name
+     * @param {boolean} [keyPriceOutlier=false] - Whether the key price was substituted by the
+     *   market-data outlier guard
      * @returns {string} HTML string
      */
-    buildChestDropsHTML(evData, keyPrice, keyName) {
-        let html = `<div>${t('networthDisplay.evPerChestLabel', { value: networthFormatter(Math.round(evData.expectedValue)) })}</div>`;
+    buildChestDropsHTML(evData, keyPrice, keyName, keyPriceOutlier = false) {
+        let html = `<div>${t('networthDisplay.evPerChestLabel', { value: networthFormatter(Math.round(evData.expectedValue)) })}${buildOutlierPriceWarningIcon(evData.hasOutlierPrices)}</div>`;
         if (keyPrice > 0) {
             const label = keyName
                 ? t('networthDisplay.keyLabelWithName', { name: keyName })
                 : t('networthDisplay.keyCostLabel');
-            html += `<div>\u2212 ${label}: ${networthFormatter(Math.round(keyPrice))}</div>`;
+            html += `<div>\u2212 ${label}: ${networthFormatter(Math.round(keyPrice))}${buildOutlierPriceWarningIcon(keyPriceOutlier)}</div>`;
             html += `<div>${t('networthDisplay.netPerChestLabel', { value: networthFormatter(Math.round(evData.expectedValue - keyPrice)) })}</div>`;
         }
         const pricedDrops = evData.drops.filter((d) => d.hasPriceData);
@@ -998,7 +1004,7 @@ class NetworthInventoryDisplay {
             html += '<div style="margin-top: 3px;">';
             for (const drop of pricedDrops) {
                 const pct = (drop.dropRate * 100).toFixed(1);
-                html += `<div>\u2022 ${drop.itemName} (${pct}%): ${networthFormatter(Math.round(drop.expectedValue))}</div>`;
+                html += `<div>\u2022 ${drop.itemName} (${pct}%): ${networthFormatter(Math.round(drop.expectedValue))}${buildOutlierPriceWarningIcon(drop.isOutlier)}</div>`;
             }
             html += '</div>';
         }

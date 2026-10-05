@@ -17,7 +17,7 @@ vi.mock('../../../core/data-manager.js', () => ({
 }));
 
 vi.mock('../../../utils/market-data.js', () => ({
-    getItemPrice: vi.fn((itemHrid) => mocks.askPrices[itemHrid] ?? -1),
+    getItemPriceOutlierInfo: vi.fn((itemHrid) => ({ value: mocks.askPrices[itemHrid] ?? -1, isOutlier: false })),
 }));
 
 vi.mock('../../../utils/game-lookups.js', () => ({
@@ -27,7 +27,7 @@ vi.mock('../../../utils/game-lookups.js', () => ({
 vi.mock('./special-currency-valuation.js', () => ({
     getSpecialCurrencyAcquisitionCost: vi.fn((itemHrid) => {
         mocks.getSpecialCurrencyCallCount[itemHrid] = (mocks.getSpecialCurrencyCallCount[itemHrid] || 0) + 1;
-        return mocks.specialCurrencyCosts[itemHrid] ?? { cost: null, complete: false };
+        return mocks.specialCurrencyCosts[itemHrid] ?? { cost: null, complete: false, isOutlier: false };
     }),
 }));
 
@@ -71,7 +71,7 @@ describe('resolveItemAcquisitionCost - TLA041E-20: minimum across every complete
         mocks.askPrices['/items/ore'] = 1000; // craft route = 1000, not cheapest
 
         const result = resolveItemAcquisitionCost(ITEM, createAcquisitionContext());
-        expect(result).toEqual({ cost: 300, complete: true });
+        expect(result).toEqual({ cost: 300, complete: true, isOutlier: false });
     });
 
     test('with no ask/shop/special route, a fully-priced craft recipe wins on its own', () => {
@@ -83,12 +83,12 @@ describe('resolveItemAcquisitionCost - TLA041E-20: minimum across every complete
         mocks.askPrices['/items/ore'] = 1000;
 
         const result = resolveItemAcquisitionCost(ITEM, createAcquisitionContext());
-        expect(result).toEqual({ cost: 2050, complete: true }); // 2*1000 + 50 coin
+        expect(result).toEqual({ cost: 2050, complete: true, isOutlier: false }); // 2*1000 + 50 coin
     });
 
     test('no candidate resolves anywhere -> incomplete, never zero', () => {
         const result = resolveItemAcquisitionCost('/items/unobtainium', createAcquisitionContext());
-        expect(result).toEqual({ cost: null, complete: false });
+        expect(result).toEqual({ cost: null, complete: false, isOutlier: false });
     });
 });
 
@@ -109,7 +109,7 @@ describe('resolveItemAcquisitionCost - TLA041E-19: completeness-aware crafting (
         // mocks.specialCurrencyCosts['/items/pathbreaker_lodestone'] left unset -> incomplete.
 
         const result = resolveItemAcquisitionCost(BOOTS, createAcquisitionContext());
-        expect(result).toEqual({ cost: null, complete: false });
+        expect(result).toEqual({ cost: null, complete: false, isOutlier: false });
     });
 
     test('once every leg (including the special-currency Lodestones) prices completely, the full mixed total is used', () => {
@@ -122,7 +122,7 @@ describe('resolveItemAcquisitionCost - TLA041E-19: completeness-aware crafting (
         mocks.specialCurrencyCosts['/items/pathbreaker_lodestone'] = { cost: 20_000, complete: true }; // 10 * 20,000 = 200,000
 
         const result = resolveItemAcquisitionCost(BOOTS, createAcquisitionContext());
-        expect(result).toEqual({ cost: 30_200_000, complete: true });
+        expect(result).toEqual({ cost: 30_200_000, complete: true, isOutlier: false });
     });
 
     test('a missing ordinary (non-currency) input also fails the whole candidate closed, not just the currency leg', () => {
@@ -134,7 +134,7 @@ describe('resolveItemAcquisitionCost - TLA041E-19: completeness-aware crafting (
         mocks.specialCurrencyCosts['/items/pathbreaker_lodestone'] = { cost: 20_000, complete: true };
 
         const result = resolveItemAcquisitionCost(BOOTS, createAcquisitionContext());
-        expect(result).toEqual({ cost: null, complete: false });
+        expect(result).toEqual({ cost: null, complete: false, isOutlier: false });
     });
 });
 
@@ -148,7 +148,7 @@ describe('resolveItemAcquisitionCost - TLA041E-06/07/08: Task Badge crafting cha
         mocks.specialCurrencyCosts['/items/task_crystal'] = { cost: 5000, complete: true };
 
         const result = resolveItemAcquisitionCost('/items/basic_task_badge', createAcquisitionContext());
-        expect(result).toEqual({ cost: 5000, complete: true });
+        expect(result).toEqual({ cost: 5000, complete: true, isOutlier: false });
     });
 
     test('TLA041E-07: Advanced Task Badge = Basic Task Badge (upgrade) + 4 Task Crystals, never just the 4 crystals', () => {
@@ -165,7 +165,7 @@ describe('resolveItemAcquisitionCost - TLA041E-06/07/08: Task Badge crafting cha
 
         const result = resolveItemAcquisitionCost('/items/advanced_task_badge', createAcquisitionContext());
         // Basic Badge (upgrade item) = 1 crystal = 5000; + 4 more crystals = 20,000; total = 25,000
-        expect(result).toEqual({ cost: 25_000, complete: true });
+        expect(result).toEqual({ cost: 25_000, complete: true, isOutlier: false });
     });
 
     test('TLA041E-08: Expert Task Badge includes the full 21-crystal-from-scratch chain (Basic->Advanced->Expert)', () => {
@@ -187,7 +187,7 @@ describe('resolveItemAcquisitionCost - TLA041E-06/07/08: Task Badge crafting cha
         mocks.specialCurrencyCosts['/items/task_crystal'] = { cost: 5000, complete: true };
 
         const result = resolveItemAcquisitionCost('/items/expert_task_badge', createAcquisitionContext());
-        expect(result).toEqual({ cost: 21 * 5000, complete: true }); // 1 + 4 + 16 = 21 crystals total
+        expect(result).toEqual({ cost: 21 * 5000, complete: true, isOutlier: false }); // 1 + 4 + 16 = 21 crystals total
     });
 
     test('TLA041E-10: with no priceable Task Token opportunity anchor, Task Badge stays incomplete, never zero', () => {
@@ -197,7 +197,7 @@ describe('resolveItemAcquisitionCost - TLA041E-06/07/08: Task Badge crafting cha
         // mocks.specialCurrencyCosts left empty -> Task Crystal itself unpriced.
 
         const result = resolveItemAcquisitionCost('/items/basic_task_badge', createAcquisitionContext());
-        expect(result).toEqual({ cost: null, complete: false });
+        expect(result).toEqual({ cost: null, complete: false, isOutlier: false });
     });
 });
 
@@ -218,7 +218,7 @@ describe('resolveItemAcquisitionCost - TLA041E-15: refined descendant chain (ref
         mocks.specialCurrencyCosts['/items/labyrinth_refinement_shard'] = { cost: 500_000, complete: true }; // 100 * 500,000 = 50,000,000
 
         const result = resolveItemAcquisitionCost('/items/pathbreaker_boots_refined', createAcquisitionContext());
-        expect(result).toEqual({ cost: 200_000 + 50_000_000, complete: true });
+        expect(result).toEqual({ cost: 200_000 + 50_000_000, complete: true, isOutlier: false });
     });
 });
 
@@ -253,7 +253,7 @@ describe('resolveItemAcquisitionCost - TLA041E-30: recursive acquisition memoiza
         resolveItemAcquisitionCost('/items/widget', createAcquisitionContext());
         mocks.askPrices['/items/widget'] = 99; // price changed between "Score generations"
         const result = resolveItemAcquisitionCost('/items/widget', createAcquisitionContext());
-        expect(result).toEqual({ cost: 99, complete: true });
+        expect(result).toEqual({ cost: 99, complete: true, isOutlier: false });
     });
 });
 
@@ -265,7 +265,7 @@ describe('resolveItemAcquisitionCost - defensive cycle guard', () => {
         addAction('/actions/make_b', '/items/item_b', [{ itemHrid: '/items/item_a', count: 1 }]);
 
         const result = resolveItemAcquisitionCost('/items/item_a', createAcquisitionContext());
-        expect(result).toEqual({ cost: null, complete: false });
+        expect(result).toEqual({ cost: null, complete: false, isOutlier: false });
     });
 });
 
@@ -282,7 +282,7 @@ describe('resolvePerAttemptMaterialCost - TLA041E-16: special-currency enhanceme
         mocks.specialCurrencyCosts['/items/labyrinth_essence'] = { cost: 20, complete: true };
 
         const result = resolvePerAttemptMaterialCost(itemDetails, createAcquisitionContext());
-        expect(result).toEqual({ cost: 8 * 20 + 1345, complete: true });
+        expect(result).toEqual({ cost: 8 * 20 + 1345, complete: true, isOutlier: false });
     });
 
     test('a missing enhancement material (no Ask, no special-currency route) fails the whole per-attempt cost closed', () => {
@@ -295,11 +295,11 @@ describe('resolvePerAttemptMaterialCost - TLA041E-16: special-currency enhanceme
         // No specialCurrencyCosts entry -> essence stays unpriced.
 
         const result = resolvePerAttemptMaterialCost(itemDetails, createAcquisitionContext());
-        expect(result).toEqual({ cost: null, complete: false });
+        expect(result).toEqual({ cost: null, complete: false, isOutlier: false });
     });
 
     test('an item with no enhancementCosts at all is incomplete, not a fabricated zero', () => {
         const result = resolvePerAttemptMaterialCost({}, createAcquisitionContext());
-        expect(result).toEqual({ cost: null, complete: false });
+        expect(result).toEqual({ cost: null, complete: false, isOutlier: false });
     });
 });

@@ -14,7 +14,7 @@
 import dataManager from '../../../core/data-manager.js';
 import {
     buildCheapestPerCredit,
-    calculateGuildTokenOpportunityValue,
+    buildGuildTokenValueByCredit,
     GUILD_TOKEN_HRID,
 } from '../../../utils/guild-credit-conversion.js';
 import { buildGuildBuffDisplayName } from '../../networth/networth-calculator.js';
@@ -22,12 +22,13 @@ import { emptyCategory, attribute } from './score-result.js';
 
 /**
  * Sum a buff's `levelCosts[1..level]` using the resolved credit/token coin values.
- * @returns {{cost: number, complete: boolean, tokenCount: number}}
+ * @returns {{cost: number, complete: boolean, tokenCount: number, isOutlier: boolean}}
  */
-function sumLevelCosts(buff, level, creditValueTable, tokenValue) {
+function sumLevelCosts(buff, level, creditValueTable, creditOutlierTable, tokenValue, tokenIsOutlier) {
     let cost = 0;
     let complete = true;
     let tokenCount = 0;
+    let isOutlier = false;
 
     for (let lvl = 1; lvl <= level; lvl++) {
         const levelCost = buff.levelCosts?.[String(lvl)];
@@ -42,6 +43,7 @@ function sumLevelCosts(buff, level, creditValueTable, tokenValue) {
                 complete = false;
                 continue;
             }
+            if (creditOutlierTable?.[itemHrid]) isOutlier = true;
             cost += perCredit * count;
         }
 
@@ -50,12 +52,13 @@ function sumLevelCosts(buff, level, creditValueTable, tokenValue) {
             if (!(tokenValue > 0)) {
                 complete = false;
             } else {
+                if (tokenIsOutlier) isOutlier = true;
                 cost += tokenValue * levelCost.guildTokenCost;
             }
         }
     }
 
-    return { cost, complete, tokenCount };
+    return { cost, complete, tokenCount, isOutlier };
 }
 
 /**
@@ -68,8 +71,12 @@ export function calculateShrineScore(profileData) {
     const itemDetailMap = gameData?.itemDetailMap || {};
     const guildBuffLevelMap = profileData.profile?.guildBuffLevelMap || {};
 
-    const { sell: creditValueTable } = buildCheapestPerCredit(itemDetailMap, [GUILD_TOKEN_HRID]);
-    const tokenValue = calculateGuildTokenOpportunityValue(itemDetailMap, creditValueTable);
+    const { sell: creditValueTable, sellOutlier: creditOutlierTable } = buildCheapestPerCredit(itemDetailMap, [
+        GUILD_TOKEN_HRID,
+    ]);
+    const bestTokenRow = buildGuildTokenValueByCredit(itemDetailMap, creditValueTable, creditOutlierTable)[0];
+    const tokenValue = bestTokenRow?.goldPerToken || 0;
+    const tokenIsOutlier = bestTokenRow?.isOutlier || false;
 
     const combat = emptyCategory();
     const skiller = emptyCategory();
@@ -78,7 +85,14 @@ export function calculateShrineScore(profileData) {
         const level = guildBuffLevelMap[buffHrid] || 0;
         if (level === 0) continue;
 
-        const { cost, complete, tokenCount } = sumLevelCosts(buff, level, creditValueTable, tokenValue);
+        const { cost, complete, tokenCount, isOutlier } = sumLevelCosts(
+            buff,
+            level,
+            creditValueTable,
+            creditOutlierTable,
+            tokenValue,
+            tokenIsOutlier
+        );
         const category = buff.isCombat ? combat : skiller;
         // Natural Guild Token count is preserved in the breakdown label even though the numeric
         // Score uses the coin-equivalent opportunity value (PB-44).
@@ -87,6 +101,7 @@ export function calculateShrineScore(profileData) {
             name: `${buildGuildBuffDisplayName(buffHrid, buff)} ${level}${tokenSuffix}`,
             cost,
             complete,
+            isOutlier,
         });
     }
 

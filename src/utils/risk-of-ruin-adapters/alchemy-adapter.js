@@ -121,12 +121,15 @@ function buildOutcomeDistribution(profit, attemptCost, catalystCostOnSuccess) {
  *   breakdown: {
  *     successRate: number,
  *     materialCost: number,
+ *     materialIsOutlier: boolean,
  *     coinCost: number,
  *     catalystHrid: string|null,
  *     catalystCostOnSuccess: number,
+ *     catalystIsOutlier: boolean,
  *     netOnFail: number,
- *     mainBranches: Array<{itemHrid: string, dropRate: number, count: number, payout: number, isSelfReturn: boolean}>,
- *     bonusDrops: Array<{itemHrid: string, dropRate: number, count: number, payout: number}>,
+ *     mainBranches: Array<{itemHrid: string, dropRate: number, count: number, payout: number, isSelfReturn: boolean, isOutlier: boolean}>,
+ *     bonusDrops: Array<{itemHrid: string, dropRate: number, count: number, payout: number, isOutlier: boolean}>,
+ *     hasOutlierPrices: boolean,
  *   },
  * }|null} null if the item isn't transmutable or has no usable market/success-rate data.
  */
@@ -134,6 +137,7 @@ export function buildAlchemyTransmuteModel(itemHrid, { useLiveSetup = false, cat
     const profit = alchemyProfitCalculator.calculateTransmuteProfit(itemHrid, useLiveSetup, null, catalystChoice);
     if (!profit || !(profit.successRate > 0)) return null;
 
+    const materialRequirement = profit.requirementCosts.find((r) => r.itemHrid !== '/items/coin');
     const coinCost = profit.requirementCosts.find((r) => r.itemHrid === '/items/coin')?.costPerAction ?? 0;
     const attemptCost = profit.grossMaterialCost + coinCost;
     const catalystCostOnSuccess = profit.catalystPrice || 0;
@@ -151,6 +155,7 @@ export function buildAlchemyTransmuteModel(itemHrid, { useLiveSetup = false, cat
             count: d.count,
             payout: mainBranchPayout(d, profit),
             isSelfReturn: d.isSelfReturn || false,
+            isOutlier: d.isOutlier || false,
         }));
     const bonusDrops = dropRevenues
         .filter((d) => (d.isEssence || d.isRare) && d.dropRate > 0)
@@ -159,6 +164,7 @@ export function buildAlchemyTransmuteModel(itemHrid, { useLiveSetup = false, cat
             dropRate: d.dropRate,
             count: d.count,
             payout: d.revenuePerAttempt / d.dropRate,
+            isOutlier: d.isOutlier || false,
         }));
 
     return {
@@ -169,12 +175,15 @@ export function buildAlchemyTransmuteModel(itemHrid, { useLiveSetup = false, cat
         breakdown: {
             successRate: profit.successRate,
             materialCost: profit.grossMaterialCost,
+            materialIsOutlier: materialRequirement?.isOutlier || false,
             coinCost,
             catalystHrid: profit.catalystPrice ? profit.catalystCost?.itemHrid || null : null,
             catalystCostOnSuccess,
+            catalystIsOutlier: profit.catalystCost?.isOutlier || false,
             netOnFail,
             mainBranches,
             bonusDrops,
+            hasOutlierPrices: profit.hasOutlierPrices || false,
         },
     };
 }

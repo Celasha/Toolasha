@@ -36,6 +36,7 @@ const coreExternalGlobals = new Map([
     [normalize(join(__dirname, 'src/core/marketplace-session.js')), 'Toolasha.Core'],
     [normalize(join(__dirname, 'src/core/profile-manager.js')), 'Toolasha.Core.profileManager'],
     [normalize(join(__dirname, 'src/api/marketplace.js')), 'Toolasha.Core.marketAPI'],
+    [normalize(join(__dirname, 'src/api/market-values.js')), 'Toolasha.Core.marketValuesAPI'],
 ]);
 
 const utilsExternalGlobals = new Map([
@@ -62,6 +63,8 @@ const utilsExternalGlobals = new Map([
     [normalize(join(__dirname, 'src/utils/equipment-parser.js')), 'Toolasha.Utils.equipmentParser'],
     [normalize(join(__dirname, 'src/utils/ui-components.js')), 'Toolasha.Utils.uiComponents'],
     [normalize(join(__dirname, 'src/utils/enhancement-config.js')), 'Toolasha.Utils.enhancementConfig'],
+    [normalize(join(__dirname, 'src/utils/warning-icon.js')), 'Toolasha.Utils.warningIcon'],
+    [normalize(join(__dirname, 'src/utils/price-cache-outlier-guard.js')), 'Toolasha.Utils.priceCacheOutlierGuard'],
     [normalize(join(__dirname, 'src/utils/enhancement-gear-detector.js')), 'Toolasha.Utils.enhancementGearDetector'],
     [normalize(join(__dirname, 'src/utils/react-input.js')), 'Toolasha.Utils.reactInput'],
     [normalize(join(__dirname, 'src/utils/material-calculator.js')), 'Toolasha.Utils.materialCalculator'],

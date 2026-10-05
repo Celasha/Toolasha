@@ -14,7 +14,8 @@ import dataManager from '../../core/data-manager.js';
 import config from '../../core/config.js';
 import { formatWithSeparator, formatPercentage } from '../../utils/formatters.js';
 import { calculateBonusRevenue } from '../../utils/bonus-revenue-calculator.js';
-import { getItemPrice } from '../../utils/market-data.js';
+import { getItemPrice, getItemPriceOutlierInfo } from '../../utils/market-data.js';
+import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 import { GATHERING_TYPES, MARKET_TAX } from '../../utils/profit-constants.js';
 import { getActionEfficiencyContext } from '../../utils/efficiency.js';
 import {
@@ -97,6 +98,7 @@ export async function calculateGatheringProfit(actionHrid, options = {}) {
     }
 
     const getCachedPrice = createPriceCache(getItemPrice);
+    const getCachedPriceOutlierInfo = createPriceCache(getItemPriceOutlierInfo);
 
     // Note: Market API is pre-loaded by caller (max-produceable.js)
     // No need to check or fetch here
@@ -140,6 +142,7 @@ export async function calculateGatheringProfit(actionHrid, options = {}) {
         drinkConcentration,
         itemDetailMap: gameData.itemDetailMap,
         getItemPrice: getCachedPrice,
+        getItemPriceOutlierInfo: getCachedPriceOutlierInfo,
     });
     const drinkCostPerHour = teaCostData.totalCostPerHour;
     const drinkCosts = teaCostData.costs.map((tea) => ({
@@ -148,6 +151,7 @@ export async function calculateGatheringProfit(actionHrid, options = {}) {
         drinksPerHour: tea.drinksPerHour,
         costPerHour: tea.totalCost,
         missingPrice: tea.missingPrice,
+        isOutlier: tea.isOutlier,
     }));
 
     const actionsPerHour = calculateActionsPerHour(actualTimePerActionSec);
@@ -169,6 +173,7 @@ export async function calculateGatheringProfit(actionHrid, options = {}) {
         const rawPrice = getCachedPrice(drop.itemHrid, { context: 'profit', side: 'sell' });
         const rawPriceMissing = rawPrice === null;
         const resolvedRawPrice = rawPriceMissing ? 0 : rawPrice;
+        const rawPriceOutlier = getCachedPriceOutlierInfo(drop.itemHrid, { context: 'profit', side: 'sell' }).isOutlier;
         // Apply gathering quantity bonus to drop amounts
         const baseAvgAmount = (drop.minCount + drop.maxCount) / 2;
         const avgAmountPerAction = baseAvgAmount * (1 + totalGathering);
@@ -200,6 +205,7 @@ export async function calculateGatheringProfit(actionHrid, options = {}) {
             revenuePerHour: baseRevenueLine,
             revenuePerAction: baseRevenuePerAction,
             missingPrice: rawPriceMissing,
+            isOutlier: rawPriceOutlier,
         });
 
         if (processedItemHrid && processingBonus > 0) {
@@ -221,6 +227,10 @@ export async function calculateGatheringProfit(actionHrid, options = {}) {
             const processedPrice = getCachedPrice(processedItemHrid, { context: 'profit', side: 'sell' });
             const processedPriceMissing = processedPrice === null;
             const resolvedProcessedPrice = processedPriceMissing ? 0 : processedPrice;
+            const processedPriceOutlier = getCachedPriceOutlierInfo(processedItemHrid, {
+                context: 'profit',
+                side: 'sell',
+            }).isOutlier;
 
             const processedItemsPerHour = actionsPerHour * drop.dropRate * processedPerAction * efficiencyMultiplier;
             const processedItemsPerAction = drop.dropRate * processedPerAction;
@@ -250,6 +260,7 @@ export async function calculateGatheringProfit(actionHrid, options = {}) {
                 revenuePerHour: revenueFromConversion,
                 revenuePerAction: processedItemsPerAction * valueGainPerConversion,
                 missingPrice: rawPriceMissing || processedPriceMissing,
+                isOutlier: rawPriceOutlier || processedPriceOutlier,
             });
         } else {
             // No processing - simple calculation
@@ -268,6 +279,10 @@ export async function calculateGatheringProfit(actionHrid, options = {}) {
                 const processedPrice = getCachedPrice(processedItemHrid, { context: 'profit', side: 'sell' });
                 const processedPriceMissing = processedPrice === null;
                 const resolvedProcessedPrice = processedPriceMissing ? 0 : processedPrice;
+                const processedPriceOutlier = getCachedPriceOutlierInfo(processedItemHrid, {
+                    context: 'profit',
+                    side: 'sell',
+                }).isOutlier;
                 const weightedPrice =
                     (rawPerAction * resolvedRawPrice + processedPerAction * resolvedProcessedPrice) /
                     (rawPerAction + processedPerAction);
@@ -283,6 +298,7 @@ export async function calculateGatheringProfit(actionHrid, options = {}) {
                     revenuePerHour: bonusRevenue,
                     revenuePerAction: bonusItemsPerAction * weightedPrice,
                     missingPrice: rawPriceMissing || processedPriceMissing,
+                    isOutlier: rawPriceOutlier || processedPriceOutlier,
                 });
             } else {
                 const bonusRevenue = bonusItemsPerHour * resolvedRawPrice;
@@ -297,6 +313,7 @@ export async function calculateGatheringProfit(actionHrid, options = {}) {
                     revenuePerHour: bonusRevenue,
                     revenuePerAction: bonusItemsPerAction * resolvedRawPrice,
                     missingPrice: rawPriceMissing,
+                    isOutlier: rawPriceOutlier,
                 });
             }
         }
@@ -317,6 +334,12 @@ export async function calculateGatheringProfit(actionHrid, options = {}) {
         gourmetBonuses.some((output) => output.missingPrice) ||
         processingConversions.some((conversion) => conversion.missingPrice) ||
         (bonusRevenue?.hasMissingPrices ?? false);
+
+    const hasOutlierPrices =
+        drinkCosts.some((drink) => drink.isOutlier) ||
+        baseOutputs.some((output) => output.isOutlier) ||
+        gourmetBonuses.some((output) => output.isOutlier) ||
+        processingConversions.some((conversion) => conversion.isOutlier);
 
     // Calculate market tax (percentage of gross revenue) - skipped when producing for personal
     // use (excludeSellTax), since the output is never actually sold.
@@ -352,6 +375,7 @@ export async function calculateGatheringProfit(actionHrid, options = {}) {
         gatheringQuantity: totalGathering, // Total gathering quantity bonus (as decimal) - renamed for display consistency
         totalGathering, // Alias used by formatProfitDisplay
         hasMissingPrices,
+        hasOutlierPrices,
         // Top-level gathering breakdown for formatProfitDisplay
         gatheringTea,
         communityGathering,
@@ -494,8 +518,9 @@ export function formatProfitDisplay(profitData) {
 
     // Show bonus revenue breakdown (essences and rare finds)
     if (profitData.bonusRevenue && profitData.bonusRevenue.totalBonusRevenue > 0) {
+        const bonusHasOutlier = (profitData.bonusRevenue.bonusDrops || []).some((drop) => drop.isOutlier);
         lines.push(
-            `<br>Bonus revenue: ${formatWithSeparator(Math.round(profitData.bonusRevenue.totalBonusRevenue))}/hour`
+            `<br>Bonus revenue: ${formatWithSeparator(Math.round(profitData.bonusRevenue.totalBonusRevenue))}/hour${buildOutlierPriceWarningIcon(bonusHasOutlier)}`
         );
 
         const bonusParts = [];
@@ -535,7 +560,7 @@ export function formatProfitDisplay(profitData) {
                 const decimals = drop.dropsPerHour < 1 ? 2 : 1;
                 const dropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
                 lines.push(
-                    `• ${drop.itemName}: ${dropRatePct} drop, ~${drop.dropsPerHour.toFixed(decimals)}/hour → ${formatWithSeparator(Math.round(drop.revenuePerHour))}/hour`
+                    `• ${drop.itemName}: ${dropRatePct} drop, ~${drop.dropsPerHour.toFixed(decimals)}/hour → ${formatWithSeparator(Math.round(drop.revenuePerHour))}/hour${buildOutlierPriceWarningIcon(drop.isOutlier)}`
                 );
                 lines.push(`</span>`);
             }

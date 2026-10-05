@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     resolveSellSideValue: vi.fn(),
+    resolveBuySideValue: vi.fn(),
     marketPrices: {},
     itemDetails: {},
     combatMonsterDetailMap: {},
@@ -30,6 +31,7 @@ vi.mock('../../core/config.js', () => ({
 vi.mock('../market/expected-value-calculator.js', () => ({
     default: {
         resolveSellSideValue: (...args) => mocks.resolveSellSideValue(...args),
+        resolveBuySideValue: (...args) => mocks.resolveBuySideValue(...args),
     },
 }));
 
@@ -128,6 +130,11 @@ describe('calculateSimRevenue - dungeon key cost included in own return (CSIM-AU
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.marketPrices = { '/items/chimerical_entry_key': { ask: 50, bid: 40 } };
+        mocks.resolveBuySideValue.mockImplementation((itemHrid) =>
+            itemHrid === '/items/chimerical_entry_key'
+                ? { value: 50, isOutlier: false }
+                : { value: 0, isOutlier: false }
+        );
     });
 
     test('a dungeon result folds key cost into costPerHour/netPerHour and reports keyCostPerHour explicitly', () => {
@@ -172,5 +179,68 @@ describe('calculateSimRevenue - dungeon key cost included in own return (CSIM-AU
 
         const revenue = calculateSimRevenue(result, gameData, 'player1', 1);
         expect(revenue.keyCostPerHour).toBe(0);
+    });
+});
+
+describe('calculateSimRevenue - outlier guard propagation', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.marketPrices = {};
+        mocks.itemDetails = {};
+    });
+
+    test('flags a drop entry as outlier when resolveSellSideValue says so', () => {
+        mocks.resolveSellSideValue.mockReturnValue({ value: 10, source: 'market', needsTax: false, isOutlier: true });
+        const gameData = {
+            combatMonsterDetailMap: {
+                '/monsters/bear': {
+                    dropTable: [
+                        { itemHrid: '/items/log', dropRate: 1, minCount: 1, maxCount: 1, minDifficultyTier: 0 },
+                    ],
+                },
+            },
+        };
+        const result = simResult({ deaths: { '/monsters/bear': 1 } });
+
+        const revenue = calculateSimRevenue(result, gameData, 'player1', 1);
+        expect(revenue.dropEntries[0].isOutlier).toBe(true);
+    });
+
+    test('flags a consumable entry as outlier when resolveBuySideValue says so, instead of reading marketAPI.getPrice raw', () => {
+        mocks.resolveSellSideValue.mockReturnValue({ value: 0, source: 'market', needsTax: false });
+        mocks.resolveBuySideValue.mockReturnValue({ value: 25, isOutlier: true });
+        const gameData = { combatMonsterDetailMap: {} };
+        const result = simResult({ consumablesUsed: { player1: { '/items/potion': 5 } } });
+
+        const revenue = calculateSimRevenue(result, gameData, 'player1', 1);
+        expect(revenue.consumableEntries[0]).toMatchObject({ unitCost: 25, isOutlier: true });
+        expect(mocks.resolveBuySideValue).toHaveBeenCalledWith('/items/potion');
+    });
+
+    test('flags dungeon key cost as outlier when resolveBuySideValue says so', () => {
+        mocks.resolveSellSideValue.mockReturnValue({ value: 0, source: 'market', needsTax: false });
+        mocks.resolveBuySideValue.mockReturnValue({ value: 50, isOutlier: true });
+        const gameData = {
+            actionDetailMap: {
+                '/actions/combat/chimerical_dungeon': {
+                    combatZoneInfo: {
+                        dungeonInfo: {
+                            rewardDropTable: [
+                                { itemHrid: '/items/chimerical_chest', dropRate: 1, minCount: 1, maxCount: 1 },
+                            ],
+                        },
+                    },
+                },
+            },
+        };
+        const result = simResult({
+            isDungeon: true,
+            dungeonsCompleted: 1,
+            zoneName: '/actions/combat/chimerical_dungeon',
+            numberOfPlayers: 1,
+        });
+
+        const revenue = calculateSimRevenue(result, gameData, 'player1', 1);
+        expect(revenue.keyCostPerHour).toBeGreaterThan(0);
     });
 });

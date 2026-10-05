@@ -7,6 +7,8 @@
  * action time shown right next to it.
  */
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { getItemPrice, getItemPriceOutlierInfo } from '../../utils/market-data.js';
+import { resolveItemPrice } from '../../utils/profit-helpers.js';
 
 const getActionEfficiencyContextMock = vi.fn();
 vi.mock('../../utils/efficiency.js', () => ({
@@ -47,15 +49,19 @@ vi.mock('../enhancement/tooltip-enhancement.js', () => ({
     getProductionCost: vi.fn(() => 0),
     getProductionChainTime: vi.fn(() => 0),
 }));
-vi.mock('../../utils/market-data.js', () => ({ getItemPrice: vi.fn(() => null) }));
+vi.mock('../../utils/market-data.js', () => ({
+    getItemPrice: vi.fn(() => null),
+    getItemPrices: vi.fn(() => null),
+    getItemPriceOutlierInfo: vi.fn(() => ({ value: null, isOutlier: false })),
+}));
 vi.mock('../../utils/profit-helpers.js', () => ({
     calculateActionsPerHour: vi.fn(() => 0),
     calculatePriceAfterTax: vi.fn((p) => p),
     calculateProfitPerAction: vi.fn(() => 0),
     calculateProfitPerDay: vi.fn(() => 0),
-    calculateTeaCostsPerHour: vi.fn(() => ({ totalCostPerHour: 0, costs: [] })),
+    calculateTeaCostsPerHour: vi.fn(() => ({ totalCostPerHour: 0, costs: [], hasOutlierPrices: false })),
     createPriceCache: vi.fn((fn) => fn),
-    resolveItemPrice: vi.fn(() => ({ price: 0 })),
+    resolveItemPrice: vi.fn(() => ({ price: 0, isOutlier: false })),
 }));
 
 const { default: profitCalculator } = await import('./profit-calculator.js');
@@ -110,5 +116,46 @@ describe('calculateProfit actionContext passthrough (TLA-027)', () => {
             expect.anything(),
             expect.objectContaining({ actionContextOverride: null })
         );
+    });
+});
+
+describe('calculateProfit outlier flag propagation', () => {
+    beforeEach(() => {
+        getActionEfficiencyContextMock.mockReset();
+        getActionEfficiencyContextMock.mockReturnValue(baseEffCtx());
+        getItemPrice.mockReturnValue(100);
+        getItemPriceOutlierInfo.mockReturnValue({ value: 100, isOutlier: false });
+        resolveItemPrice.mockReturnValue({ price: 10, custom: false, missing: false, isOutlier: false });
+    });
+
+    test('flags hasOutlierPrices and outputPriceOutlier when the output price was substituted', async () => {
+        getItemPriceOutlierInfo.mockReturnValue({ value: 100, isOutlier: true });
+
+        const result = await profitCalculator.calculateProfit(ITEM_HRID);
+
+        expect(result.outputPriceOutlier).toBe(true);
+        expect(result.hasOutlierPrices).toBe(true);
+    });
+
+    test('flags hasOutlierPrices when a material price was substituted, independent of the output price', async () => {
+        dataManagerMock.getActionDetails.mockReturnValueOnce({
+            type: '/action_types/cheesesmithing',
+            baseTimeCost: 10e9,
+            levelRequirement: { level: 1 },
+            inputItems: [{ itemHrid: '/items/material', count: 1 }],
+        });
+        resolveItemPrice.mockReturnValue({ price: 10, custom: false, missing: false, isOutlier: true });
+
+        const result = await profitCalculator.calculateProfit(ITEM_HRID);
+
+        expect(result.materialCosts[0].isOutlier).toBe(true);
+        expect(result.hasOutlierPrices).toBe(true);
+    });
+
+    test('does not flag hasOutlierPrices when nothing was substituted', async () => {
+        const result = await profitCalculator.calculateProfit(ITEM_HRID);
+
+        expect(result.outputPriceOutlier).toBe(false);
+        expect(result.hasOutlierPrices).toBe(false);
     });
 });

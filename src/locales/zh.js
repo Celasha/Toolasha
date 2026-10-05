@@ -288,6 +288,11 @@ export default {
         unpricedItemsNote: '* 部分物品没有市场价格数据',
         missingMatsButtonLabel: '缺失材料市场',
     },
+    marketData: {
+        outlierPriceWarningTooltip:
+            '该价格远超出与游戏官方参考市场价值相比的正常区间，因此 Toolasha 已改用参考价值。可在 设置 → 定价与利润 中调整或关闭此功能。',
+    },
+
     marketHistory: {
         modalTitle: '市场历史',
         searchItemsPlaceholder: '搜索物品...',
@@ -3061,6 +3066,14 @@ export default {
             market_depthCapEnabled: {
                 label: '市场：显示卖出深度上限（破产风险）',
                 help: '根据上一次破产风险计算结果，显示订单簿能够有利润地吸纳当前查看物品的操作次数；此计算忽略市场可交易区间下限，因为该数据未在游戏数据中公开。',
+            },
+            marketData_outlierGuardEnabled: {
+                label: '对异常市场挂单进行防护',
+                help: '适用于 Toolasha 读取市场价格的所有地方（利润计算器、净资产、升级顾问等）。当实时买价/卖价远超出游戏官方参考市场价值周围的区间时，Toolasha 会改用参考价值，并在受影响的数值旁标注 ⚠ 以提示发生了替换。',
+            },
+            marketData_outlierBandMultiplier: {
+                label: '异常值区间倍数',
+                help: '当实时价格超过参考价值的这个倍数（高于或低于）时，视为异常值（例如 3 表示超出参考价值的 1/3 倍至 3 倍区间）。仅适用于参考数据集中实际收录的物品。',
             },
             profitCalc_pricingMode: { label: '利润计算定价模式' },
             profitCalc_pricingNaming: {

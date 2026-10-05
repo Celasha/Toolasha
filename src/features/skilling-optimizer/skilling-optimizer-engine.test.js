@@ -351,6 +351,22 @@ describe('optimizeSkill - equipment recommendation cost (marginal gain per gold 
         expect(calculateDirectEnhancementCost).toHaveBeenCalledWith(NONREFINED_HRID, 7, 12, { enhancingLevel: 100 });
     });
 
+    test('propagates isOutlier from the enhancement-cost fallback estimate', () => {
+        resolveItemPrice.mockImplementation((itemHrid, { side, enhancementLevel }) => {
+            if (itemHrid === NONREFINED_HRID && side === 'buy' && enhancementLevel === 12) {
+                return { price: 0, custom: false, missing: true };
+            }
+            return { price: 0, custom: false, missing: false };
+        });
+        calculateDirectEnhancementCost.mockReturnValue({ cost: 7500, complete: true, protectFrom: 0, isOutlier: true });
+
+        const compareEquipment = new Map([[BACK_LOCATION, { itemHrid: NONREFINED_HRID, enhancementLevel: 7 }]]);
+        const result = optimizeSkill('Crafting', 50, null, { equipment: compareEquipment, drinks: [] });
+        const entry = result.slots[BACK_LOCATION].progression.find((e) => e.breakpoint === 12);
+
+        expect(entry.isOutlier).toBe(true);
+    });
+
     test('when the enhancement-cost estimate itself cannot complete either, cost is incomplete rather than a fabricated number', () => {
         resolveItemPrice.mockImplementation((itemHrid, { side, enhancementLevel }) => {
             if (itemHrid === NONREFINED_HRID && side === 'buy' && enhancementLevel === 12) {

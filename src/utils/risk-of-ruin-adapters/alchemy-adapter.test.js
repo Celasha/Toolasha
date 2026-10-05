@@ -224,13 +224,40 @@ describe('buildAlchemyTransmuteModel', () => {
         expect(model.breakdown.netOnFail).toBe(-1050);
 
         expect(model.breakdown.mainBranches).toEqual([
-            { itemHrid: '/items/output_a', dropRate: 0.6, payout: 500, isSelfReturn: false },
-            { itemHrid: '/items/widget', dropRate: 0.4, payout: 200, isSelfReturn: true },
+            { itemHrid: '/items/output_a', dropRate: 0.6, payout: 500, isSelfReturn: false, isOutlier: false },
+            { itemHrid: '/items/widget', dropRate: 0.4, payout: 200, isSelfReturn: true, isOutlier: false },
         ]);
         // The 0-drop-rate crate row is excluded, not shown as a misleading "0% chance" line.
         expect(model.breakdown.bonusDrops).toEqual([
-            { itemHrid: '/items/alchemy_essence', dropRate: 0.5, payout: 200 },
+            { itemHrid: '/items/alchemy_essence', dropRate: 0.5, payout: 200, isOutlier: false },
         ]);
+    });
+
+    test('propagates isOutlier flags from the underlying profit calculation into the breakdown', () => {
+        mockProfit = baseProfit({
+            successRate: 0.5,
+            catalystPrice: 300,
+            catalystCost: { itemHrid: '/items/prime_catalyst', isOutlier: true },
+            requirementCosts: [{ itemHrid: '/items/mat', costPerAction: 1000, isOutlier: true }],
+            dropRevenues: [
+                {
+                    itemHrid: '/items/output_a',
+                    dropRate: 1,
+                    revenuePerAttempt: 250,
+                    isEssence: false,
+                    isRare: false,
+                    isOutlier: true,
+                },
+            ],
+            hasOutlierPrices: true,
+        });
+
+        const model = buildAlchemyTransmuteModel('/items/widget');
+
+        expect(model.breakdown.materialIsOutlier).toBe(true);
+        expect(model.breakdown.catalystIsOutlier).toBe(true);
+        expect(model.breakdown.mainBranches[0].isOutlier).toBe(true);
+        expect(model.breakdown.hasOutlierPrices).toBe(true);
     });
 
     test('forwards catalystChoice through to calculateTransmuteProfit', () => {

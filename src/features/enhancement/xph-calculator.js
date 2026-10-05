@@ -14,6 +14,7 @@ import { formatKMB, formatWithSeparator } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } from '../../utils/panel-z-index.js';
 import { getCheapestProtectionPrice, calculatePerAttemptMaterialCost } from './tooltip-enhancement.js';
+import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 
 const PANEL_ID = 'mwi-xph-calc-panel';
 const BTN_CLASS = 'mwi-xph-calc-btn';
@@ -25,7 +26,7 @@ const BTN_CLASS = 'mwi-xph-calc-btn';
  * @param {number} maxLevel
  * @param {number} protectFrom
  * @param {Object} params - from getEnhancingParams()
- * @returns {{itemHrid, name, xph, goldPerXP, costPerHour, costPartial}|null}
+ * @returns {{itemHrid, name, xph, goldPerXP, costPerHour, costPartial, isOutlier}|null}
  */
 function calculateItemXPH(itemHrid, itemDetails, maxLevel, protectFrom, params) {
     const itemLevel = itemDetails.itemLevel || 0;
@@ -69,6 +70,7 @@ function calculateItemXPH(itemHrid, itemDetails, maxLevel, protectFrom, params) 
     const materialCost = perAttempt.cost * calc.attempts;
     let costPartial = perAttempt.costPartial;
     const hasCost = perAttempt.hasCost;
+    const isOutlier = perAttempt.isOutlier;
 
     let goldPerXP = hasCost ? materialCost / totalXP : null;
     let costPerHour = hasCost ? goldPerXP * xph : null;
@@ -96,6 +98,7 @@ function calculateItemXPH(itemHrid, itemDetails, maxLevel, protectFrom, params) 
         goldPerXP,
         costPerHour,
         costPartial: hasCost && costPartial,
+        isOutlier,
     };
 }
 
@@ -405,10 +408,10 @@ class XPHCalculator {
                 <td style="${tdL}" title="${r.name}${r.protectionItemName ? ` (${r.protectionItemName})` : ''}">${i + 1}. ${r.name}${r.protectionItemName ? ` <span style="color:#888; font-size:11px;">(${r.protectionItemName})</span>` : ''}</td>
                 <td style="${tdR} color:#00c896;">${formatWithSeparator(r.xph)}</td>
                 <td style="${tdR}${r.goldPerXP === null ? ' color:#444;' : ''}">
-                    ${r.goldPerXP !== null ? `${r.goldPerXP.toFixed(3)}${r.costPartial ? '*' : ''}` : '—'}
+                    ${r.goldPerXP !== null ? `${r.goldPerXP.toFixed(3)}${r.costPartial ? '*' : ''}${buildOutlierPriceWarningIcon(r.isOutlier)}` : '—'}
                 </td>
                 <td style="${tdR}${r.costPerHour === null ? ' color:#444;' : ''}">
-                    ${r.costPerHour !== null ? `${formatKMB(Math.round(r.costPerHour))}${r.costPartial ? '*' : ''}` : '—'}
+                    ${r.costPerHour !== null ? `${formatKMB(Math.round(r.costPerHour))}${r.costPartial ? '*' : ''}${buildOutlierPriceWarningIcon(r.isOutlier)}` : '—'}
                 </td>
             </tr>`
             )

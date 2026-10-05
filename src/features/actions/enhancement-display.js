@@ -12,7 +12,8 @@ import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import { calculateEnhancement, BASE_SUCCESS_RATES } from '../../utils/enhancement-calculator.js';
 import { MIN_ACTION_TIME_SECONDS } from '../../utils/profit-constants.js';
 import { timeReadable, formatLargeNumber } from '../../utils/formatters.js';
-import marketAPI from '../../api/marketplace.js';
+import { getItemPriceOutlierInfo } from '../../utils/market-data.js';
+import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import { removeInlineXpRate, renderInlineXpRate } from './inline-xp-rate.js';
 
@@ -335,13 +336,15 @@ function generateCostsByLevelTable(
             enhancementCosts.forEach((cost) => {
                 const itemDetail = gameData.itemDetailMap[cost.itemHrid];
                 let itemPrice = 0;
+                let itemIsOutlier = false;
 
                 if (cost.itemHrid === '/items/coin') {
                     itemPrice = 1;
                 } else {
-                    const marketData = marketAPI.getPrice(cost.itemHrid, 0);
-                    if (marketData && marketData.ask) {
-                        itemPrice = marketData.ask;
+                    const priceInfo = getItemPriceOutlierInfo(cost.itemHrid, { mode: 'ask' });
+                    if (priceInfo.value) {
+                        itemPrice = priceInfo.value;
+                        itemIsOutlier = priceInfo.isOutlier;
                     } else {
                         itemPrice = itemDetail?.sellPrice || 0;
                     }
@@ -357,6 +360,7 @@ function generateCostsByLevelTable(
                     cost: itemCost,
                     quantity: quantity,
                     unitPrice: itemPrice,
+                    isOutlier: itemIsOutlier,
                 };
             });
         }
@@ -366,10 +370,12 @@ function generateCostsByLevelTable(
         if (calc.protectionCount > 0 && protectionItemHrid && protectionItemHrid !== '/items/philosophers_mirror') {
             const protectionItemDetail = gameData.itemDetailMap[protectionItemHrid];
             let protectionPrice = 0;
+            let protectionIsOutlier = false;
 
-            const protectionMarketData = marketAPI.getPrice(protectionItemHrid, 0);
-            if (protectionMarketData && protectionMarketData.ask) {
-                protectionPrice = protectionMarketData.ask;
+            const protectionPriceInfo = getItemPriceOutlierInfo(protectionItemHrid, { mode: 'ask' });
+            if (protectionPriceInfo.value) {
+                protectionPrice = protectionPriceInfo.value;
+                protectionIsOutlier = protectionPriceInfo.isOutlier;
             } else {
                 protectionPrice = protectionItemDetail?.sellPrice || 0;
             }
@@ -380,10 +386,12 @@ function generateCostsByLevelTable(
                 cost: protectionCost,
                 quantity: calc.protectionCount,
                 unitPrice: protectionPrice,
+                isOutlier: protectionIsOutlier,
             };
         }
 
         const totalCost = materialCost + protectionCost;
+        const hasOutlierPrices = Object.values(materialBreakdown).some((m) => m.isOutlier);
 
         // Override time with buff-map-based per-action time (authoritative source)
         const totalTime = perActionTime * calc.attempts;
@@ -400,6 +408,7 @@ function generateCostsByLevelTable(
             time: totalTime,
             xpPerHour,
             cost: totalCost,
+            isOutlier: hasOutlierPrices,
             breakdown: materialBreakdown,
         });
     }
@@ -410,7 +419,9 @@ function generateCostsByLevelTable(
     let totalSavings = 0;
 
     if (isPhilosopherMirror) {
-        const mirrorPrice = marketAPI.getPrice('/items/philosophers_mirror', 0)?.ask || 0;
+        const mirrorPriceInfo = getItemPriceOutlierInfo('/items/philosophers_mirror', { mode: 'ask' });
+        const mirrorPrice = mirrorPriceInfo.value || 0;
+        const mirrorPriceIsOutlier = mirrorPriceInfo.value ? mirrorPriceInfo.isOutlier : false;
 
         // Calculate mirror cost for each level (starts at +3)
         for (let level = 3; level <= 20; level++) {
@@ -419,6 +430,8 @@ function generateCostsByLevelTable(
 
             costData[level - 1].mirrorCost = mirrorCost;
             costData[level - 1].isMirrorCheaper = mirrorCost < traditionalCost;
+            costData[level - 1].mirrorIsOutlier =
+                mirrorPriceIsOutlier || costData[level - 3].isOutlier || costData[level - 2].isOutlier;
 
             // Find first level where mirror becomes cheaper
             if (mirrorStartLevel === null && mirrorCost < traditionalCost) {
@@ -525,7 +538,7 @@ function generateCostsByLevelTable(
                           });
                 // Format as: quantity × unit price → total cost
                 lines.push(
-                    `<td style="padding: 6px 4px; text-align: right; color: #ccc;">${qty} × ${unitPrice} → ${cost}</td>`
+                    `<td style="padding: 6px 4px; text-align: right; color: #ccc;">${qty} × ${unitPrice} → ${cost}${buildOutlierPriceWarningIcon(matData.isOutlier)}</td>`
                 );
             } else {
                 lines.push(`<td style="padding: 6px 4px; text-align: right; color: #888;">-</td>`);
@@ -537,7 +550,7 @@ function generateCostsByLevelTable(
             `<td style="padding: 6px 4px; text-align: right; color: ${config.COLOR_XP_RATE};">${data.xpPerHour > 0 ? formatLargeNumber(data.xpPerHour) : '-'}</td>`
         );
         lines.push(
-            `<td style="padding: 6px 4px; text-align: right; color: #ffa500;">${formatLargeNumber(Math.round(data.cost))}</td>`
+            `<td style="padding: 6px 4px; text-align: right; color: #ffa500;">${formatLargeNumber(Math.round(data.cost))}${buildOutlierPriceWarningIcon(data.isOutlier)}</td>`
         );
 
         // Add Mirror Cost column if Philosopher's Mirror is equipped
@@ -548,7 +561,7 @@ function generateCostsByLevelTable(
                 const color = isCheaper ? '#FFD700' : '#888';
                 const symbol = isCheaper ? '✨ ' : '';
                 lines.push(
-                    `<td style="padding: 6px 4px; text-align: right; color: ${color}; font-weight: ${isCheaper ? 'bold' : 'normal'};">${symbol}${mirrorCostFormatted}</td>`
+                    `<td style="padding: 6px 4px; text-align: right; color: ${color}; font-weight: ${isCheaper ? 'bold' : 'normal'};">${symbol}${mirrorCostFormatted}${buildOutlierPriceWarningIcon(data.mirrorIsOutlier)}</td>`
                 );
             } else {
                 // Levels 1-2 cannot use mirrors
@@ -953,12 +966,14 @@ function formatEnhancementDisplay(
 
             // Get price
             let itemPrice = 0;
+            let itemIsOutlier = false;
             if (cost.itemHrid === '/items/coin') {
                 itemPrice = 1;
             } else {
-                const marketData = marketAPI.getPrice(cost.itemHrid, 0);
-                if (marketData && marketData.ask) {
-                    itemPrice = marketData.ask;
+                const priceInfo = getItemPriceOutlierInfo(cost.itemHrid, { mode: 'ask' });
+                if (priceInfo.value) {
+                    itemPrice = priceInfo.value;
+                    itemIsOutlier = priceInfo.isOutlier;
                 } else {
                     itemPrice = itemDetail?.sellPrice || 0;
                 }
@@ -969,7 +984,7 @@ function formatEnhancementDisplay(
                 ? cost.count.toLocaleString()
                 : cost.count.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             lines.push(
-                `<div style="font-size: 0.85em; color: #ccc;">${formattedCount}× ${itemName} <span style="color: #888;">(@${itemPrice.toLocaleString()} → ${totalCost.toLocaleString()})</span></div>`
+                `<div style="font-size: 0.85em; color: #ccc;">${formattedCount}× ${itemName} <span style="color: #888;">(@${itemPrice.toLocaleString()} → ${totalCost.toLocaleString()})</span>${buildOutlierPriceWarningIcon(itemIsOutlier)}</div>`
             );
         });
 
@@ -981,15 +996,17 @@ function formatEnhancementDisplay(
 
                 // Get protection item price
                 let protectionPrice = 0;
-                const protectionMarketData = marketAPI.getPrice(protectionItemHrid, 0);
-                if (protectionMarketData && protectionMarketData.ask) {
-                    protectionPrice = protectionMarketData.ask;
+                let protectionIsOutlier = false;
+                const protectionPriceInfo = getItemPriceOutlierInfo(protectionItemHrid, { mode: 'ask' });
+                if (protectionPriceInfo.value) {
+                    protectionPrice = protectionPriceInfo.value;
+                    protectionIsOutlier = protectionPriceInfo.isOutlier;
                 } else {
                     protectionPrice = protectionItemDetail?.sellPrice || 0;
                 }
 
                 lines.push(
-                    `<div style="font-size: 0.85em; color: #ffa500; margin-top: 4px;">1× ${protectionItemName} <span style="color: #888;">${t('enhancementDisplay.ifUsedSuffix')} (@${protectionPrice.toLocaleString()})</span></div>`
+                    `<div style="font-size: 0.85em; color: #ffa500; margin-top: 4px;">1× ${protectionItemName} <span style="color: #888;">${t('enhancementDisplay.ifUsedSuffix')} (@${protectionPrice.toLocaleString()})</span>${buildOutlierPriceWarningIcon(protectionIsOutlier)}</div>`
                 );
             }
         }

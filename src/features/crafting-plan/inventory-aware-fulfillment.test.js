@@ -25,6 +25,10 @@ const { mockDataManager } = vi.hoisted(() => ({
 vi.mock('../../core/data-manager.js', () => ({ default: mockDataManager }));
 vi.mock('../../utils/market-data.js', () => ({
     getItemPrice: vi.fn((itemHrid) => (mockPrices.has(itemHrid) ? mockPrices.get(itemHrid) : null)),
+    getItemPriceOutlierInfo: vi.fn((itemHrid) => ({
+        value: mockPrices.has(itemHrid) ? mockPrices.get(itemHrid) : null,
+        isOutlier: false,
+    })),
 }));
 vi.mock('../../utils/game-lookups.js', () => ({
     getShopCoinCost: vi.fn((itemHrid) => mockShopCosts.get(itemHrid) || 0),
@@ -35,7 +39,7 @@ vi.mock('../../utils/action-calculator.js', () => ({
 vi.mock('../../utils/efficiency.js', () => ({ calculateEfficiencyMultiplier: vi.fn(() => 1) }));
 
 const { computeInventoryAwareMissingMaterials } = await import('./inventory-aware-fulfillment.js');
-const { getItemPrice } = await import('../../utils/market-data.js');
+const { getItemPriceOutlierInfo } = await import('../../utils/market-data.js');
 
 /** Build an itemDetailMap entry. Non-tradeable by default so craft is the only viable strategy. */
 function item(name, { isTradable = false } = {}) {
@@ -554,7 +558,7 @@ describe('CP-MM18: pricing mode is passed through to every market lookup', () =>
             umbralParams({ rootActionHrid: ROOT_ACTION, rootItemHrid: ROOT, mode: 'optimistic' })
         );
 
-        expect(getItemPrice).toHaveBeenCalledWith(MID, expect.objectContaining({ mode: 'optimistic' }));
+        expect(getItemPriceOutlierInfo).toHaveBeenCalledWith(MID, expect.objectContaining({ mode: 'optimistic' }));
     });
 });
 

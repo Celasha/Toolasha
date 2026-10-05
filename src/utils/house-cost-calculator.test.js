@@ -19,6 +19,7 @@ vi.mock('../api/marketplace.js', () => ({
 
 vi.mock('./market-data.js', () => ({
     getItemPrice: vi.fn((itemHrid) => mocks.askPrices[itemHrid] ?? -1),
+    getItemPriceOutlierInfo: vi.fn((itemHrid) => ({ value: mocks.askPrices[itemHrid] ?? -1, isOutlier: false })),
 }));
 
 import {
@@ -62,7 +63,7 @@ describe('calculateHouseRoomCostAskOnly - pure Ask pricing (TLA-041 / F-10)', ()
 
     test('F-10: 100 units at Ask 1,000 (Bid 400 ignored) costs exactly 100,000, never the 70,000 midpoint', () => {
         const result = calculateHouseRoomCostAskOnly('/house_rooms/dojo', 1);
-        expect(result).toEqual({ cost: 100000, complete: true });
+        expect(result).toEqual({ cost: 100000, complete: true, isOutlier: false });
     });
 
     test('coins are priced at face value 1, not looked up on the market', () => {
@@ -70,7 +71,7 @@ describe('calculateHouseRoomCostAskOnly - pure Ask pricing (TLA-041 / F-10)', ()
             1: [{ itemHrid: '/items/coin', count: 500 }],
         };
         const result = calculateHouseRoomCostAskOnly('/house_rooms/dojo', 1);
-        expect(result).toEqual({ cost: 500, complete: true });
+        expect(result).toEqual({ cost: 500, complete: true, isOutlier: false });
     });
 
     test('a required material with no positive Ask marks the room incomplete, not silently zero', () => {
@@ -85,7 +86,11 @@ describe('calculateHouseRoomCostAskOnly - pure Ask pricing (TLA-041 / F-10)', ()
     });
 
     test('unknown room returns incomplete with zero cost', () => {
-        expect(calculateHouseRoomCostAskOnly('/house_rooms/nonexistent', 1)).toEqual({ cost: 0, complete: false });
+        expect(calculateHouseRoomCostAskOnly('/house_rooms/nonexistent', 1)).toEqual({
+            cost: 0,
+            complete: false,
+            isOutlier: false,
+        });
     });
 });
 
@@ -110,14 +115,14 @@ describe('calculateHousesCostByDomain - sums only owned rooms in the requested d
         const rooms = { '/house_rooms/dojo': { level: 1 }, '/house_rooms/garden': { level: 1 } };
         const result = calculateHousesCostByDomain(rooms, 'combat');
         expect(result.totalCost).toBe(1000);
-        expect(result.breakdown).toEqual([{ name: 'Dojo', level: 1, cost: 1000, complete: true }]);
+        expect(result.breakdown).toEqual([{ name: 'Dojo', level: 1, cost: 1000, complete: true, isOutlier: false }]);
     });
 
     test('skilling domain sums only the skilling room, combat room excluded', () => {
         const rooms = { '/house_rooms/dojo': { level: 1 }, '/house_rooms/garden': { level: 1 } };
         const result = calculateHousesCostByDomain(rooms, 'skilling');
         expect(result.totalCost).toBe(500);
-        expect(result.breakdown).toEqual([{ name: 'Garden', level: 1, cost: 500, complete: true }]);
+        expect(result.breakdown).toEqual([{ name: 'Garden', level: 1, cost: 500, complete: true, isOutlier: false }]);
     });
 
     test('a room owned at level 0 is not counted', () => {

@@ -26,10 +26,12 @@ const priceMocks = vi.hoisted(() => ({
     customPrice: null,
     shopCost: 0,
     productionCost: 0,
+    isOutlier: false,
 }));
 
 vi.mock('./market-data.js', () => ({
     getItemPrice: vi.fn(() => priceMocks.marketPrice),
+    getItemPriceOutlierInfo: vi.fn(() => ({ value: priceMocks.marketPrice, isOutlier: priceMocks.isOutlier })),
 }));
 vi.mock('../features/settings/custom-price-overrides.js', () => ({
     getCustomPrice: vi.fn(() => priceMocks.customPrice),
@@ -240,6 +242,48 @@ describe('calculateTeaCostsPerHour', () => {
         expect(result.hasMissingPrices).toBe(true);
         expect(result.totalCostPerHour).toBe(1200);
         expect(result.costs).toHaveLength(2);
+    });
+
+    test('does not flag isOutlier when no getItemPriceOutlierInfo callback is provided', () => {
+        const result = calculateTeaCostsPerHour({
+            drinkSlots: [{ itemHrid: '/items/tea' }],
+            drinkConcentration: 0,
+            itemDetailMap: { '/items/tea': { name: 'Tea' } },
+            getItemPrice: () => 50,
+        });
+
+        expect(result.costs[0].isOutlier).toBe(false);
+        expect(result.hasOutlierPrices).toBe(false);
+    });
+
+    test('flags isOutlier per drink and aggregates hasOutlierPrices when the callback reports a flagged price', () => {
+        const result = calculateTeaCostsPerHour({
+            drinkSlots: [{ itemHrid: '/items/tea' }, { itemHrid: '/items/other_tea' }],
+            drinkConcentration: 0,
+            itemDetailMap: { '/items/tea': { name: 'Tea' }, '/items/other_tea': { name: 'Other Tea' } },
+            getItemPrice: () => 50,
+            getItemPriceOutlierInfo: (itemHrid) => ({
+                value: 50,
+                isOutlier: itemHrid === '/items/tea',
+            }),
+        });
+
+        expect(result.costs[0].isOutlier).toBe(true);
+        expect(result.costs[1].isOutlier).toBe(false);
+        expect(result.hasOutlierPrices).toBe(true);
+    });
+
+    test('never flags isOutlier for a drink with a missing price, even if the callback would say otherwise', () => {
+        const result = calculateTeaCostsPerHour({
+            drinkSlots: [{ itemHrid: '/items/unknown_tea' }],
+            drinkConcentration: 0,
+            itemDetailMap: { '/items/unknown_tea': { name: 'Unknown Tea' } },
+            getItemPrice: () => null,
+            getItemPriceOutlierInfo: () => ({ value: null, isOutlier: true }),
+        });
+
+        expect(result.costs[0].isOutlier).toBe(false);
+        expect(result.hasOutlierPrices).toBe(false);
     });
 });
 
@@ -507,6 +551,7 @@ describe('resolveItemPrice', () => {
         priceMocks.customPrice = null;
         priceMocks.shopCost = 0;
         priceMocks.productionCost = 0;
+        priceMocks.isOutlier = false;
     });
 
     test('a real market price at the requested enhancement level resolves normally', () => {
@@ -514,7 +559,7 @@ describe('resolveItemPrice', () => {
 
         const result = resolveItemPrice(ITEM, { side: 'buy', enhancementLevel: 7 });
 
-        expect(result).toEqual({ price: 500, custom: false, missing: false });
+        expect(result).toEqual({ price: 500, custom: false, missing: false, isOutlier: false });
     });
 
     test('a custom override always wins regardless of enhancement level', () => {
@@ -523,7 +568,7 @@ describe('resolveItemPrice', () => {
 
         const result = resolveItemPrice(ITEM, { side: 'buy', enhancementLevel: 7 });
 
-        expect(result).toEqual({ price: 999, custom: true, missing: false });
+        expect(result).toEqual({ price: 999, custom: true, missing: false, isOutlier: false });
     });
 
     test('the production-cost fallback applies at +0 - no listing there falls back to a fresh craft cost', () => {
@@ -532,7 +577,7 @@ describe('resolveItemPrice', () => {
 
         const result = resolveItemPrice(ITEM, { side: 'buy', enhancementLevel: 0 });
 
-        expect(result).toEqual({ price: 250, custom: false, missing: false });
+        expect(result).toEqual({ price: 250, custom: false, missing: false, isOutlier: false });
     });
 
     test('the production-cost fallback is skipped above +0 - no listing there reports missing, never a mislabeled base-craft cost', () => {
@@ -545,7 +590,7 @@ describe('resolveItemPrice', () => {
 
         const result = resolveItemPrice(ITEM, { side: 'buy', enhancementLevel: 13 });
 
-        expect(result).toEqual({ price: 0, custom: false, missing: true });
+        expect(result).toEqual({ price: 0, custom: false, missing: true, isOutlier: false });
     });
 
     test('a shop floor price still only applies to the buy side, independent of the +0 guard', () => {
@@ -554,6 +599,25 @@ describe('resolveItemPrice', () => {
 
         const result = resolveItemPrice(ITEM, { side: 'buy', enhancementLevel: 0 });
 
-        expect(result).toEqual({ price: 100, custom: false, missing: false });
+        expect(result).toEqual({ price: 100, custom: false, missing: false, isOutlier: false });
+    });
+
+    test('reports isOutlier: true when the market-data outlier guard substituted this price', () => {
+        priceMocks.marketPrice = 1000;
+        priceMocks.isOutlier = true;
+
+        const result = resolveItemPrice(ITEM, { side: 'buy', enhancementLevel: 0 });
+
+        expect(result).toEqual({ price: 1000, custom: false, missing: false, isOutlier: true });
+    });
+
+    test('a custom override reports isOutlier: false even when the underlying market price would have been flagged', () => {
+        priceMocks.customPrice = 999;
+        priceMocks.marketPrice = 1000;
+        priceMocks.isOutlier = true;
+
+        const result = resolveItemPrice(ITEM, { side: 'buy', enhancementLevel: 0 });
+
+        expect(result).toEqual({ price: 999, custom: true, missing: false, isOutlier: false });
     });
 });

@@ -5,7 +5,7 @@
 
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
-import marketAPI from '../../api/marketplace.js';
+import { getItemPrices } from '../../utils/market-data.js';
 import { formatKMB } from '../../utils/formatters.js';
 
 class LabyrinthShopPrices {
@@ -124,14 +124,14 @@ class LabyrinthShopPrices {
     /**
      * Inject or update the ask/bid price element inside an item
      * @param {Element} itemEl
-     * @param {{ ask: number, bid: number }} price
+     * @param {{ ask: number, bid: number, askOutlier: boolean, bidOutlier: boolean }} price
      */
     injectPrice(itemEl, price) {
         const existing = itemEl.querySelector('.mwi-labyrinth-shop-price');
 
         if (existing) {
-            existing.querySelector('.mwi-lsp-ask').textContent = formatKMB(price.ask);
-            existing.querySelector('.mwi-lsp-bid').textContent = formatKMB(price.bid);
+            existing.querySelector('.mwi-lsp-ask').textContent = formatKMB(price.ask) + (price.askOutlier ? ' ⚠' : '');
+            existing.querySelector('.mwi-lsp-bid').textContent = formatKMB(price.bid) + (price.bidOutlier ? ' ⚠' : '');
             return;
         }
 
@@ -148,7 +148,7 @@ class LabyrinthShopPrices {
         const askSpan = document.createElement('span');
         askSpan.className = 'mwi-lsp-ask';
         askSpan.style.color = config.COLOR_INVBADGE_ASK;
-        askSpan.textContent = formatKMB(price.ask);
+        askSpan.textContent = formatKMB(price.ask) + (price.askOutlier ? ' ⚠' : '');
 
         const sepSpan = document.createElement('span');
         sepSpan.style.color = '#888';
@@ -157,7 +157,7 @@ class LabyrinthShopPrices {
         const bidSpan = document.createElement('span');
         bidSpan.className = 'mwi-lsp-bid';
         bidSpan.style.color = config.COLOR_INVBADGE_BID;
-        bidSpan.textContent = formatKMB(price.bid);
+        bidSpan.textContent = formatKMB(price.bid) + (price.bidOutlier ? ' ⚠' : '');
 
         container.appendChild(askSpan);
         container.appendChild(sepSpan);
@@ -176,7 +176,7 @@ class LabyrinthShopPrices {
                 return;
             }
 
-            const price = marketAPI.getPrice(itemHrid);
+            const price = getItemPrices(itemHrid);
             if (!price) {
                 return; // Not tradeable or no price data yet
             }

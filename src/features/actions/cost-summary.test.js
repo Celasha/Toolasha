@@ -2,29 +2,35 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-const { mockGetItemPrice, mockComputeBestCraftingPlan, mockCalculateMaterialRequirements, fakeDataManager } =
-    vi.hoisted(() => {
-        const listeners = new Map();
-        return {
-            mockGetItemPrice: vi.fn(),
-            mockComputeBestCraftingPlan: vi.fn(),
-            mockCalculateMaterialRequirements: vi.fn(),
-            fakeDataManager: {
-                on: (event, handler) => {
-                    if (!listeners.has(event)) listeners.set(event, new Set());
-                    listeners.get(event).add(handler);
-                },
-                off: (event, handler) => {
-                    listeners.get(event)?.delete(handler);
-                },
-                emit: (event, data) => {
-                    for (const handler of Array.from(listeners.get(event) || [])) handler(data);
-                },
-                listenerCount: (event) => listeners.get(event)?.size || 0,
-                getInitClientData: vi.fn(() => null),
+const {
+    mockGetItemPrice,
+    mockOutlierHrids,
+    mockComputeBestCraftingPlan,
+    mockCalculateMaterialRequirements,
+    fakeDataManager,
+} = vi.hoisted(() => {
+    const listeners = new Map();
+    return {
+        mockGetItemPrice: vi.fn(),
+        mockOutlierHrids: new Set(),
+        mockComputeBestCraftingPlan: vi.fn(),
+        mockCalculateMaterialRequirements: vi.fn(),
+        fakeDataManager: {
+            on: (event, handler) => {
+                if (!listeners.has(event)) listeners.set(event, new Set());
+                listeners.get(event).add(handler);
             },
-        };
-    });
+            off: (event, handler) => {
+                listeners.get(event)?.delete(handler);
+            },
+            emit: (event, data) => {
+                for (const handler of Array.from(listeners.get(event) || [])) handler(data);
+            },
+            listenerCount: (event) => listeners.get(event)?.size || 0,
+            getInitClientData: vi.fn(() => null),
+        },
+    };
+});
 
 vi.mock('../../core/config.js', () => ({
     default: { getSetting: vi.fn(() => true) },
@@ -47,6 +53,10 @@ vi.mock('../../utils/material-calculator.js', () => ({
 
 vi.mock('../../utils/market-data.js', () => ({
     getItemPrice: mockGetItemPrice,
+    getItemPriceOutlierInfo: (itemHrid, opts) => ({
+        value: mockGetItemPrice(itemHrid, opts),
+        isOutlier: mockOutlierHrids.has(itemHrid),
+    }),
     formatPrice: vi.fn((value) => String(value)),
 }));
 
@@ -71,6 +81,7 @@ describe('cost-summary', () => {
     beforeEach(() => {
         document.body.innerHTML = '';
         mockGetItemPrice.mockReset();
+        mockOutlierHrids.clear();
         mockComputeBestCraftingPlan.mockReset();
         mockCalculateMaterialRequirements.mockReset();
     });
@@ -161,6 +172,48 @@ describe('cost-summary', () => {
         expect(rows[1]).toEqual(['Missing direct mats', '—']);
         expect(mockGetItemPrice).toHaveBeenCalledWith('/items/unpriced', { mode: 'ask', side: 'buy' });
         expect(mockGetItemPrice).toHaveBeenCalledWith('/items/output', { mode: 'ask', side: 'buy' });
+    });
+
+    test('flags the direct and missing rows when a material price was an outlier, independent of other rows', () => {
+        mockCalculateMaterialRequirements.mockReturnValue([
+            { itemHrid: '/items/cheese', required: 10, missing: 4, isTradeable: true },
+            { itemHrid: '/items/log', required: 2, missing: 1, isTradeable: true },
+        ]);
+        mockGetItemPrice.mockImplementation((itemHrid) => {
+            if (itemHrid === '/items/cheese') return 5;
+            if (itemHrid === '/items/log') return 10;
+            if (itemHrid === '/items/sword') return 100;
+            return null;
+        });
+        mockOutlierHrids.add('/items/log');
+        mockComputeBestCraftingPlan.mockReturnValue({ totalCost: 55 });
+
+        const block = buildBlock('/actions/crafting/sword', 1, '/items/sword', 3);
+        const rows = readRows(block);
+
+        expect(rows[0]).toEqual(['Direct recipe cost', '70 ⚠']);
+        expect(rows[1]).toEqual(['Missing direct mats', '30 ⚠']);
+        expect(rows[2]).toEqual(['Best crafting plan', '55']);
+        expect(rows[3]).toEqual(['Finished item market', '300']);
+    });
+
+    test('flags the finished-item market row independently of the material rows', () => {
+        mockCalculateMaterialRequirements.mockReturnValue([
+            { itemHrid: '/items/cheese', required: 10, missing: 4, isTradeable: true },
+        ]);
+        mockGetItemPrice.mockImplementation((itemHrid) => {
+            if (itemHrid === '/items/cheese') return 5;
+            if (itemHrid === '/items/sword') return 100;
+            return null;
+        });
+        mockOutlierHrids.add('/items/sword');
+        mockComputeBestCraftingPlan.mockReturnValue(null);
+
+        const block = buildBlock('/actions/crafting/sword', 1, '/items/sword', 3);
+        const rows = readRows(block);
+
+        expect(rows[0]).toEqual(['Direct recipe cost', '50']);
+        expect(rows[3]).toEqual(['Finished item market', '300 ⚠']);
     });
 });
 

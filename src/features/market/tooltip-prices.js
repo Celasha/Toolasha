@@ -27,12 +27,13 @@ import {
     isAbbreviationEnabled,
 } from '../../utils/formatters.js';
 import { getItemPrices } from '../../utils/market-data.js';
+import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 import { resolveItemPrice, calculatePriceAfterTax } from '../../utils/profit-helpers.js';
 import { MARKET_TAX, COWBELL_BAG_HRID, COWBELL_BAG_TAX } from '../../utils/profit-constants.js';
 import dom from '../../utils/dom.js';
 import { parseItemCount } from '../../utils/number-parser.js';
 import { DUNGEON_CHEST_CHEST_KEYS } from '../combat-stats/combat-stats-calculator.js';
-import { getKeyPrice } from '../../utils/dungeon-key-cost.js';
+import { getKeyPriceInfo } from '../../utils/dungeon-key-cost.js';
 import { calculateArtisanBonus } from '../../utils/material-calculator.js';
 import { getActionHridFromName, getActionHridFromFiber } from '../../utils/game-lookups.js';
 
@@ -283,16 +284,20 @@ class TooltipPrices {
             if (evData) {
                 // Compute chest key deduction for dungeon chests
                 let keyPrice = 0;
+                let keyPriceOutlier = false;
                 const chestKeyHrid = DUNGEON_CHEST_CHEST_KEYS[itemHrid];
                 if (chestKeyHrid) {
                     const keyDetails = dataManager.getItemDetails(chestKeyHrid);
-                    keyPrice = getKeyPrice(chestKeyHrid) ?? 0;
+                    const keyPriceInfo = getKeyPriceInfo(chestKeyHrid);
+                    keyPrice = keyPriceInfo.price ?? 0;
+                    keyPriceOutlier = keyPriceInfo.isOutlier;
                     this.injectExpectedValueDisplay(
                         tooltipElement,
                         evData,
                         isCollectionTooltip,
                         keyPrice,
-                        keyDetails?.name
+                        keyDetails?.name,
+                        keyPriceOutlier
                     );
                 } else {
                     this.injectExpectedValueDisplay(tooltipElement, evData, isCollectionTooltip);
@@ -606,8 +611,10 @@ class TooltipPrices {
         }
 
         // Format prices, using "-" for missing values
-        const askDisplay = price.ask > 0 ? formatTooltipPrice(price.ask) : '-';
-        const bidDisplay = price.bid > 0 ? formatTooltipPrice(price.bid) : '-';
+        const askDisplay =
+            price.ask > 0 ? formatTooltipPrice(price.ask) + buildOutlierPriceWarningIcon(price.askOutlier) : '-';
+        const bidDisplay =
+            price.bid > 0 ? formatTooltipPrice(price.bid) + buildOutlierPriceWarningIcon(price.bidOutlier) : '-';
 
         // Calculate totals when at least ask exists and amount > 1
         const effectiveAmount = artisanAmount || amount;
@@ -893,7 +900,14 @@ class TooltipPrices {
      * @param {Object} evData - Expected value calculation data
      * @param {boolean} isCollectionTooltip - True if this is a collection tooltip
      */
-    injectExpectedValueDisplay(tooltipElement, evData, isCollectionTooltip = false, keyPrice = 0, keyName = null) {
+    injectExpectedValueDisplay(
+        tooltipElement,
+        evData,
+        isCollectionTooltip = false,
+        keyPrice = 0,
+        keyName = null,
+        keyPriceOutlier = false
+    ) {
         const tooltipText = isCollectionTooltip
             ? tooltipElement.querySelector('.Collection_tooltipContent__2IcSJ')
             : tooltipElement.querySelector('.ItemTooltipText_itemTooltipText__zFq3A');
@@ -921,12 +935,12 @@ class TooltipPrices {
         html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 
         // Expected value (simple display)
-        html += `<div style="color: ${config.COLOR_TOOLTIP_PROFIT}; font-weight: bold;">${t('tooltipPrices.expectedReturnLine', { value: formatTooltipPrice(evData.expectedValue) })}</div>`;
+        html += `<div style="color: ${config.COLOR_TOOLTIP_PROFIT}; font-weight: bold;">${t('tooltipPrices.expectedReturnLine', { value: formatTooltipPrice(evData.expectedValue) })}${buildOutlierPriceWarningIcon(evData.hasOutlierPrices)}</div>`;
         if (keyPrice > 0) {
             const keyLine = keyName
                 ? t('tooltipPrices.keyCostNamedLine', { name: keyName, value: formatTooltipPrice(keyPrice) })
                 : t('tooltipPrices.keyCostLine', { value: formatTooltipPrice(keyPrice) });
-            html += `<div style="color: ${config.COLOR_TOOLTIP_LOSS};">${keyLine}</div>`;
+            html += `<div style="color: ${config.COLOR_TOOLTIP_LOSS};">${keyLine}${buildOutlierPriceWarningIcon(keyPriceOutlier)}</div>`;
             html += `<div style="color: ${config.COLOR_TOOLTIP_PROFIT}; font-weight: bold;">${t('tooltipPrices.netValueLine', { value: formatTooltipPrice(evData.expectedValue - keyPrice) })}</div>`;
         }
 
@@ -963,7 +977,7 @@ class TooltipPrices {
                     const dropRatePercent = formatPercentage(drop.dropRate, 2);
 
                     // Show full drop breakdown
-                    html += `<div>${t('tooltipPrices.dropWithPriceLine', { itemName: drop.itemName, dropRate: dropRatePercent, avgCount: drop.avgCount.toFixed(2), value: formatTooltipPrice(drop.expectedValue) })}</div>`;
+                    html += `<div>${t('tooltipPrices.dropWithPriceLine', { itemName: drop.itemName, dropRate: dropRatePercent, avgCount: drop.avgCount.toFixed(2), value: formatTooltipPrice(drop.expectedValue) })}${buildOutlierPriceWarningIcon(drop.isOutlier)}</div>`;
                 }
             }
 

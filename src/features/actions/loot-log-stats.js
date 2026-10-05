@@ -220,13 +220,14 @@ class LootLogStats {
     /**
      * Calculate total value of drops
      * @param {Object} drops - Drops object { [itemHrid]: count, ... }
-     * @returns {Object} { askTotal, bidTotal }
+     * @returns {Object} { askTotal, bidTotal, hasOutlierPrice }
      */
     calculateTotalValue(drops) {
         let askTotal = 0;
         let bidTotal = 0;
+        let hasOutlierPrice = false;
 
-        if (!drops) return { askTotal, bidTotal };
+        if (!drops) return { askTotal, bidTotal, hasOutlierPrice };
 
         for (const [hrid, count] of Object.entries(drops)) {
             // Strip enhancement level from HRID
@@ -256,12 +257,13 @@ class LootLogStats {
 
             const ask = prices.ask || 0;
             const bid = prices.bid || 0;
+            if (prices.askOutlier || prices.bidOutlier) hasOutlierPrice = true;
 
             askTotal += ask * count;
             bidTotal += bid * count;
         }
 
-        return { askTotal, bidTotal };
+        return { askTotal, bidTotal, hasOutlierPrice };
     }
 
     /**
@@ -330,7 +332,7 @@ class LootLogStats {
         if (!logData || !logData.drops) return;
 
         // Calculate total value
-        const { askTotal, bidTotal } = this.calculateTotalValue(logData.drops);
+        const { askTotal, bidTotal, hasOutlierPrice } = this.calculateTotalValue(logData.drops);
         const totalXp = this.calculateTotalXp(logData.xpGains);
 
         // Create wrapper div
@@ -350,10 +352,14 @@ class LootLogStats {
             return;
         }
 
-        header.textContent = t('lootLogStats.totalValueHeader', {
-            ask: formatLargeNumber(askTotal, 1),
-            bid: formatLargeNumber(bidTotal, 1),
-        });
+        header.textContent =
+            t('lootLogStats.totalValueHeader', {
+                ask: formatLargeNumber(askTotal, 1),
+                bid: formatLargeNumber(bidTotal, 1),
+            }) + (hasOutlierPrice ? ' ⚠' : '');
+        if (hasOutlierPrice) {
+            header.title = t('marketData.outlierPriceWarningTooltip');
+        }
         header.style.cursor = 'pointer';
         wrapper.appendChild(header);
 
@@ -428,6 +434,7 @@ class LootLogStats {
             let name;
             let askPerItem = 0;
             let bidPerItem = 0;
+            let isOutlier = false;
 
             if (baseHrid === '/items/coin') {
                 name = t('lootLogStats.coinsLabel');
@@ -452,6 +459,7 @@ class LootLogStats {
                     if (prices) {
                         askPerItem = prices.ask || 0;
                         bidPerItem = prices.bid || 0;
+                        isOutlier = prices.askOutlier || prices.bidOutlier;
                     }
                 }
             }
@@ -464,6 +472,7 @@ class LootLogStats {
                 bidPerItem,
                 askTotal: askPerItem * count,
                 bidTotal: bidPerItem * count,
+                isOutlier,
             });
         }
 
@@ -515,7 +524,12 @@ class LootLogStats {
             totalSpan.style.cssText = `color: ${config.COLOR_GOLD}; flex-shrink: 0; text-align: right;`;
 
             if (item.askTotal > 0 || item.bidTotal > 0) {
-                totalSpan.textContent = `${formatLargeNumber(item.askTotal, 1)}/${formatLargeNumber(item.bidTotal, 1)}`;
+                totalSpan.textContent =
+                    `${formatLargeNumber(item.askTotal, 1)}/${formatLargeNumber(item.bidTotal, 1)}` +
+                    (item.isOutlier ? ' ⚠' : '');
+                if (item.isOutlier) {
+                    totalSpan.title = t('marketData.outlierPriceWarningTooltip');
+                }
             } else {
                 totalSpan.textContent = '—';
             }
@@ -599,7 +613,7 @@ class LootLogStats {
         thirdDiv.appendChild(avgTimeSpan);
 
         // Calculate total value for daily output
-        const { askTotal, bidTotal } = this.calculateTotalValue(logData.drops);
+        const { askTotal, bidTotal, hasOutlierPrice } = this.calculateTotalValue(logData.drops);
         const dayValueAsk = this.calculateDailyOutput(askTotal, duration);
         const dayValueBid = this.calculateDailyOutput(bidTotal, duration);
 
@@ -610,10 +624,14 @@ class LootLogStats {
         if (dayValueAsk === 0 && dayValueBid === 0) {
             dayValueSpan.textContent = t('lootLogStats.dailyOutputEmpty');
         } else {
-            dayValueSpan.textContent = t('lootLogStats.dailyOutputValue', {
-                ask: formatLargeNumber(dayValueAsk, 1),
-                bid: formatLargeNumber(dayValueBid, 1),
-            });
+            dayValueSpan.textContent =
+                t('lootLogStats.dailyOutputValue', {
+                    ask: formatLargeNumber(dayValueAsk, 1),
+                    bid: formatLargeNumber(dayValueBid, 1),
+                }) + (hasOutlierPrice ? ' ⚠' : '');
+            if (hasOutlierPrice) {
+                dayValueSpan.title = t('marketData.outlierPriceWarningTooltip');
+            }
         }
 
         dayValueSpan.style.float = 'right';
@@ -1002,7 +1020,7 @@ class LootLogStats {
         const name = this.getActionName(row.actionHrid);
         const category = this.getActionCategory(row.actionHrid);
         const tierLabel = row.difficultyTier ? t('lootLogStats.tierSuffixParen', { tier: row.difficultyTier }) : '';
-        const { askTotal, bidTotal } = this.calculateTotalValue(row.drops);
+        const { askTotal, bidTotal, hasOutlierPrice } = this.calculateTotalValue(row.drops);
         const hours = row.totalTimeMs / 3_600_000;
         const goldPerHourAsk = hours > 0 ? askTotal / hours : 0;
         const goldPerHourBid = hours > 0 ? bidTotal / hours : 0;
@@ -1021,6 +1039,7 @@ class LootLogStats {
             displayName: t('lootLogStats.categoryDashName', { category, name, suffix: tierLabel }),
             askTotal,
             bidTotal,
+            hasOutlierPrice,
             hours,
             goldPerHourAsk,
             goldPerHourBid,
@@ -1298,17 +1317,25 @@ class LootLogStats {
         const valueCell = this.buildAnalyticsCell(
             entry.askTotal === 0 && entry.bidTotal === 0
                 ? '—'
-                : `${formatLargeNumber(entry.askTotal, 1)}/${formatLargeNumber(entry.bidTotal, 1)}`
+                : `${formatLargeNumber(entry.askTotal, 1)}/${formatLargeNumber(entry.bidTotal, 1)}` +
+                      (entry.hasOutlierPrice ? ' ⚠' : '')
         );
         valueCell.style.color = config.COLOR_GOLD;
+        if (entry.hasOutlierPrice) {
+            valueCell.title = t('marketData.outlierPriceWarningTooltip');
+        }
         tr.appendChild(valueCell);
 
         const goldPerHourCell = this.buildAnalyticsCell(
             entry.goldPerHourAsk === 0 && entry.goldPerHourBid === 0
                 ? '—'
-                : `${formatLargeNumber(entry.goldPerHourAsk, 1)}/${formatLargeNumber(entry.goldPerHourBid, 1)}`
+                : `${formatLargeNumber(entry.goldPerHourAsk, 1)}/${formatLargeNumber(entry.goldPerHourBid, 1)}` +
+                      (entry.hasOutlierPrice ? ' ⚠' : '')
         );
         goldPerHourCell.style.color = config.COLOR_GOLD;
+        if (entry.hasOutlierPrice) {
+            goldPerHourCell.title = t('marketData.outlierPriceWarningTooltip');
+        }
         tr.appendChild(goldPerHourCell);
 
         const detailRow = document.createElement('tr');
@@ -1365,6 +1392,7 @@ class LootLogStats {
         const totalActions = enriched.reduce((sum, e) => sum + e.row.actionCount, 0);
         const totalAsk = enriched.reduce((sum, e) => sum + e.askTotal, 0);
         const totalBid = enriched.reduce((sum, e) => sum + e.bidTotal, 0);
+        const hasOutlierPrice = enriched.some((e) => e.hasOutlierPrice);
 
         const left = document.createElement('span');
         left.textContent = t('lootLogStats.footerTotalActions', {
@@ -1374,10 +1402,14 @@ class LootLogStats {
 
         const right = document.createElement('span');
         right.style.color = config.COLOR_GOLD;
-        right.textContent = t('lootLogStats.footerTotalValue', {
-            ask: formatLargeNumber(totalAsk, 1),
-            bid: formatLargeNumber(totalBid, 1),
-        });
+        right.textContent =
+            t('lootLogStats.footerTotalValue', {
+                ask: formatLargeNumber(totalAsk, 1),
+                bid: formatLargeNumber(totalBid, 1),
+            }) + (hasOutlierPrice ? ' ⚠' : '');
+        if (hasOutlierPrice) {
+            right.title = t('marketData.outlierPriceWarningTooltip');
+        }
 
         footer.append(left, right);
         return footer;

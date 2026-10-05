@@ -13,7 +13,7 @@ vi.mock('../../utils/market-data.js', () => ({
 }));
 
 vi.mock('../../utils/ability-cost-calculator.js', () => ({
-    calculateAbilityLevelUpCost: vi.fn(() => 1000),
+    calculateAbilityLevelUpCost: vi.fn(() => ({ cost: 1000, isOutlier: false })),
 }));
 
 import { calculateUpgradeCost } from './upgrade-advisor.js';

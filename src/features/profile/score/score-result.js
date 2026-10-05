@@ -13,22 +13,23 @@
  */
 
 /**
- * @returns {{score: number, complete: boolean, unpricedCount: number, breakdown: Array<{name: string, value: string|null, complete: boolean, reason: string|null}>}}
+ * @returns {{score: number, complete: boolean, unpricedCount: number, hasOutlierPrice: boolean, breakdown: Array<{name: string, value: string|null, complete: boolean, reason: string|null}>}}
  */
 export function emptyCategory() {
-    return { score: 0, complete: true, unpricedCount: 0, breakdown: [] };
+    return { score: 0, complete: true, unpricedCount: 0, hasOutlierPrice: false, breakdown: [] };
 }
 
 /**
  * Add one leaf into a category, in place. The leaf is always preserved in `breakdown`, priced or
  * not - only its `value` (null for "no defensible price") and `complete` flag record that.
- * @param {{score: number, complete: boolean, unpricedCount: number, breakdown: Array}} category
- * @param {{name: string, cost: number|null, complete: boolean, reason?: string}} leaf - cost is in raw coins
+ * @param {{score: number, complete: boolean, unpricedCount: number, hasOutlierPrice: boolean, breakdown: Array}} category
+ * @param {{name: string, cost: number|null, complete: boolean, reason?: string, isOutlier?: boolean}} leaf - cost is in raw coins
  */
 export function attribute(category, leaf) {
     const complete = leaf.complete !== false;
     category.complete = category.complete && complete;
     if (!complete) category.unpricedCount += 1;
+    if (leaf.isOutlier) category.hasOutlierPrice = true;
 
     const hasKnownValue = Number.isFinite(leaf.cost) && leaf.cost > 0;
     const scoreValue = hasKnownValue ? leaf.cost / 1_000_000 : null;
@@ -39,13 +40,14 @@ export function attribute(category, leaf) {
         value: scoreValue === null ? null : scoreValue.toFixed(1),
         complete,
         reason: leaf.reason || null,
+        isOutlier: leaf.isOutlier || false,
     });
 }
 
 /**
  * Combine several category results (e.g. Houses + Abilities + Equipment + Shrines into a
  * top-level Combat/Skiller total).
- * @param {Array<{score: number, complete: boolean, unpricedCount: number, breakdown: Array}>} parts
+ * @param {Array<{score: number, complete: boolean, unpricedCount: number, hasOutlierPrice: boolean, breakdown: Array}>} parts
  */
 export function mergeCategory(parts) {
     const merged = emptyCategory();
@@ -53,6 +55,7 @@ export function mergeCategory(parts) {
         merged.score += part.score;
         merged.complete = merged.complete && part.complete;
         merged.unpricedCount += part.unpricedCount;
+        if (part.hasOutlierPrice) merged.hasOutlierPrice = true;
         merged.breakdown.push(...part.breakdown);
     }
     // N/A (value: null) leaves sink to the bottom deterministically instead of comparing via NaN.

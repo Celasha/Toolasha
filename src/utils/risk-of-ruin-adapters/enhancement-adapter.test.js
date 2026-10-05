@@ -12,8 +12,14 @@ vi.mock('../../core/data-manager.js', () => ({
 }));
 
 let protectionPrice = 5000;
+let materialIsOutlier = false;
 vi.mock('../../features/enhancement/tooltip-enhancement.js', () => ({
-    calculatePerAttemptMaterialCost: () => ({ cost: 1000, hasCost: true, costPartial: false }),
+    calculatePerAttemptMaterialCost: () => ({
+        cost: 1000,
+        hasCost: true,
+        costPartial: false,
+        isOutlier: materialIsOutlier,
+    }),
     getCheapestProtectionPrice: () => ({ price: protectionPrice, itemHrid: '/items/mirror_of_protection' }),
 }));
 
@@ -47,6 +53,7 @@ describe('buildEnhancementModel', () => {
         expect(model.costPerAttempt).toBe(1000);
         expect(model.protectionCostOnFailure).toBe(0);
         expect(model.maxSinglePossibleLoss).toBe(1000);
+        expect(model.isOutlier).toBe(false);
 
         // Level 0: BASE_SUCCESS_RATES[0] = 50%
         const [failure0, success0] = model.perLevelOutcomeDistributions[0];
@@ -57,6 +64,20 @@ describe('buildEnhancementModel', () => {
         const [failure1, success1] = model.perLevelOutcomeDistributions[1];
         expect(failure1).toEqual({ prob: 0.55, nextLevel: 0, net: -1000 });
         expect(success1).toEqual({ prob: 0.45, nextLevel: 2, net: -1000 });
+    });
+
+    test('propagates isOutlier from the per-attempt material cost', () => {
+        materialIsOutlier = true;
+        try {
+            const model = buildEnhancementModel('/items/widget', {
+                ...NEUTRAL_PARAMS,
+                targetLevel: 2,
+                protectFrom: 0,
+            });
+            expect(model.isOutlier).toBe(true);
+        } finally {
+            materialIsOutlier = false;
+        }
     });
 
     test('charges protection cost on failure only once protectFrom is reached', () => {

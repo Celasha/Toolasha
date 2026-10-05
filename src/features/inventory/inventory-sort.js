@@ -446,10 +446,17 @@ class InventorySort {
             const existingBadge = itemElem.querySelector('.mwi-stack-price');
 
             if (stackValue > 0) {
+                const isOutlier = itemElem.dataset.priceOutlier === '1';
+                const outlierSuffix = isOutlier ? ' ⚠' : '';
+                const outlierTitle = isOutlier ? t('marketData.outlierPriceWarningTooltip') : '';
                 if (existingBadge) {
-                    existingBadge.textContent = formatKMB(stackValue, 0);
+                    // Preserves this update path's existing precision (0), distinct from the
+                    // newly-created badge's precision (2) below - a pre-existing inconsistency,
+                    // not something to unify here.
+                    existingBadge.textContent = formatKMB(stackValue, 0) + outlierSuffix;
+                    existingBadge.title = outlierTitle;
                 } else {
-                    this.renderPriceBadge(itemElem, stackValue);
+                    this.renderPriceBadge(itemElem, stackValue, outlierSuffix, outlierTitle);
                 }
             } else if (existingBadge) {
                 existingBadge.remove();
@@ -468,8 +475,10 @@ class InventorySort {
      * Render price badge on item
      * @param {Element} itemElem - Item container element
      * @param {number} stackValue - Total stack value
+     * @param {string} [outlierSuffix] - Appended to the badge text when flagged (e.g. ' ⚠')
+     * @param {string} [outlierTitle] - Tooltip text when flagged, empty string otherwise
      */
-    renderPriceBadge(itemElem, stackValue) {
+    renderPriceBadge(itemElem, stackValue, outlierSuffix = '', outlierTitle = '') {
         // Ensure item has relative positioning
         itemElem.style.position = 'relative';
 
@@ -488,7 +497,8 @@ class InventorySort {
             pointer-events: none;
             text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 3px #000;
         `;
-        badge.textContent = formatKMB(stackValue, 2);
+        badge.textContent = formatKMB(stackValue, 2) + outlierSuffix;
+        badge.title = outlierTitle;
 
         // Insert into item
         const itemInner = itemElem.querySelector('[class*="Item_item"]');

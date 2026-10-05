@@ -37,6 +37,7 @@ import {
 } from '../../utils/marketplace-tabs.js';
 import { createAutofillManager } from '../../utils/marketplace-autofill.js';
 import { compactActionPanelSection } from '../actions/production-tools-layout.js';
+import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 
 export { calculateCraftingPlanMetrics, formatCraftingPlanSummary };
 
@@ -235,7 +236,8 @@ function buildPlanUI(actionHrid, panel, onToggle, defaultOpen = false) {
     // === Summary comparison ===
     const unitCostText = plan.unitCost === Infinity ? '?' : formatWithSeparator(Math.round(plan.unitCost));
     const buyText =
-        plan.buyPrice !== null ? formatWithSeparator(Math.round(plan.buyPrice)) : t('combatSimUi.notAvailableLabel');
+        (plan.buyPrice !== null ? formatWithSeparator(Math.round(plan.buyPrice)) : t('combatSimUi.notAvailableLabel')) +
+        buildOutlierPriceWarningIcon(plan.isOutlier);
     const craftText =
         plan.craftCost !== null ? formatWithSeparator(Math.round(plan.craftCost)) : t('combatSimUi.notAvailableLabel');
     const strategyText =

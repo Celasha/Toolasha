@@ -4,7 +4,6 @@
  * Appears in Item Dictionary when viewing ability books
  */
 
-import marketAPI from '../../api/marketplace.js';
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
@@ -12,6 +11,8 @@ import { t } from '../../core/i18n.js';
 import { marketplaceSession, MARKETPLACE_OWNER } from '../../core/marketplace-session.js';
 import dom from '../../utils/dom.js';
 import { numberFormatter, formatKMB } from '../../utils/formatters.js';
+import { getItemPrices } from '../../utils/market-data.js';
+import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 import {
     navigateToMarketplace,
     getVisibleMarketplaceTabContainer,
@@ -346,9 +347,11 @@ export class AbilityBookCalculator {
         const booksNeeded = this.calculateBooksNeeded(currentLevel, currentXp, targetLevel, xpPerBook);
 
         // Get market prices
-        const prices = marketAPI.getPrice(itemHrid, 0);
+        const prices = getItemPrices(itemHrid, 0);
         const ask = prices?.ask || 0;
         const bid = prices?.bid || 0;
+        const askOutlier = prices?.askOutlier || false;
+        const bidOutlier = prices?.bidOutlier || false;
 
         // Create calculator HTML
         const calculatorDiv = dom.createStyledDiv(
@@ -383,8 +386,8 @@ export class AbilityBookCalculator {
                 ${t('abilityBookCalculator.booksNeededLine', { books: numberFormatter(booksNeeded) })}
                 <br>
                 ${t('abilityBookCalculator.costAskBidLine', {
-                    askCost: formatKMB(Math.ceil(booksNeeded * ask)),
-                    bidCost: formatKMB(Math.ceil(booksNeeded * bid)),
+                    askCost: formatKMB(Math.ceil(booksNeeded * ask)) + buildOutlierPriceWarningIcon(askOutlier),
+                    bidCost: formatKMB(Math.ceil(booksNeeded * bid)) + buildOutlierPriceWarningIcon(bidOutlier),
                 })}
             </div>
         `;
@@ -406,8 +409,8 @@ export class AbilityBookCalculator {
                     ${t('abilityBookCalculator.booksNeededLine', { books: numberFormatter(books) })}
                     <br>
                     ${t('abilityBookCalculator.costAskBidLine', {
-                        askCost: formatKMB(Math.ceil(books * ask)),
-                        bidCost: formatKMB(Math.ceil(books * bid)),
+                        askCost: formatKMB(Math.ceil(books * ask)) + buildOutlierPriceWarningIcon(askOutlier),
+                        bidCost: formatKMB(Math.ceil(books * bid)) + buildOutlierPriceWarningIcon(bidOutlier),
                     })}
                 `;
             } else {

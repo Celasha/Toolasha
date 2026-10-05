@@ -1,9 +1,15 @@
 /* @vitest-environment jsdom */
-import { describe, test, expect, vi } from 'vitest';
+import { describe, test, expect, vi, beforeEach } from 'vitest';
+
+const mockCheckOutlier = vi.hoisted(() => vi.fn());
+const mockGetPricesBatch = vi.hoisted(() => vi.fn(() => new Map()));
 
 vi.mock('../../core/dom-observer.js', () => ({ default: { onClass: vi.fn(() => () => {}) } }));
-vi.mock('../../core/config.js', () => ({ default: { getSetting: vi.fn(() => true), getSettingValue: vi.fn() } }));
-vi.mock('../../api/marketplace.js', () => ({ default: { getPricesBatch: vi.fn(() => ({})), getPrice: vi.fn() } }));
+vi.mock('../../core/config.js', () => ({
+    default: { getSetting: vi.fn(() => false), getSettingValue: vi.fn(), isFeatureEnabled: vi.fn(() => false) },
+}));
+vi.mock('../../api/marketplace.js', () => ({ default: { getPricesBatch: mockGetPricesBatch, getPrice: vi.fn() } }));
+vi.mock('../../api/market-values.js', () => ({ default: { checkOutlier: mockCheckOutlier } }));
 vi.mock('../../core/data-manager.js', () => ({
     default: { getInitClientData: vi.fn(() => ({})), getInventory: vi.fn(() => []) },
 }));
@@ -52,5 +58,55 @@ describe('InventoryBadgeManager.getItemHridFromContainer', () => {
         container.innerHTML = '<svg><use href="sprite.svg"></use></svg>';
 
         expect(inventoryBadgeManager.getItemHridFromContainer(container)).toBeNull();
+    });
+});
+
+describe('InventoryBadgeManager.calculateItemPrices - outlier guard', () => {
+    beforeEach(async () => {
+        vi.clearAllMocks();
+        const { default: dataManager } = await import('../../core/data-manager.js');
+        dataManager.getInitClientData.mockReturnValue({ itemDetailMap: {} });
+    });
+
+    test('flags dataset.priceOutlier and uses the corrected price when the batch guard substitutes it', async () => {
+        const { parseItemCount } = await import('../../utils/number-parser.js');
+        parseItemCount.mockReturnValue(5);
+
+        mockGetPricesBatch.mockReturnValue(new Map([['/items/redwood_log:0', { ask: 1_000_000, bid: 900 }]]));
+        mockCheckOutlier.mockImplementation((itemHrid, _level, rawValue) => {
+            if (itemHrid === '/items/redwood_log' && rawValue === 1_000_000) {
+                return { value: 1000, isOutlier: true };
+            }
+            return { value: rawValue, isOutlier: false };
+        });
+
+        const itemElem = buildItemContainer({ ariaLabel: 'Redwood Log', href: '#redwood_log' });
+        const countElem = document.createElement('div');
+        countElem.className = 'Item_count';
+        countElem.textContent = '5';
+        itemElem.appendChild(countElem);
+
+        await inventoryBadgeManager.calculateItemPrices([itemElem], [], new Map());
+
+        expect(itemElem.dataset.priceOutlier).toBe('1');
+        expect(itemElem.dataset.askPrice).toBe('1000');
+    });
+
+    test('does not flag dataset.priceOutlier when nothing was substituted', async () => {
+        const { parseItemCount } = await import('../../utils/number-parser.js');
+        parseItemCount.mockReturnValue(5);
+
+        mockGetPricesBatch.mockReturnValue(new Map([['/items/redwood_log:0', { ask: 1000, bid: 900 }]]));
+        mockCheckOutlier.mockImplementation((_itemHrid, _level, rawValue) => ({ value: rawValue, isOutlier: false }));
+
+        const itemElem = buildItemContainer({ ariaLabel: 'Redwood Log', href: '#redwood_log' });
+        const countElem = document.createElement('div');
+        countElem.className = 'Item_count';
+        countElem.textContent = '5';
+        itemElem.appendChild(countElem);
+
+        await inventoryBadgeManager.calculateItemPrices([itemElem], [], new Map());
+
+        expect(itemElem.dataset.priceOutlier).toBe('0');
     });
 });

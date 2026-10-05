@@ -1,8 +1,17 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
-const { mockGetItemPrice } = vi.hoisted(() => ({ mockGetItemPrice: vi.fn() }));
+const { mockGetItemPrice, mockGetItemPriceOutlierInfo } = vi.hoisted(() => {
+    const getItemPrice = vi.fn();
+    return {
+        mockGetItemPrice: getItemPrice,
+        mockGetItemPriceOutlierInfo: vi.fn((hrid, opts) => ({ value: getItemPrice(hrid, opts), isOutlier: false })),
+    };
+});
 
-vi.mock('./market-data.js', () => ({ getItemPrice: mockGetItemPrice }));
+vi.mock('./market-data.js', () => ({
+    getItemPrice: mockGetItemPrice,
+    getItemPriceOutlierInfo: mockGetItemPriceOutlierInfo,
+}));
 
 import {
     buildCheapestPerCredit,
@@ -97,6 +106,20 @@ describe('buildCheapestPerCredit', () => {
         };
         expect(buildCheapestPerCredit(itemDetailMap)).toEqual(buildCheapestPerCredit(itemDetailMap, []));
     });
+
+    test('tracks isOutlier alongside the winning cheapest price for each side', () => {
+        mockGetItemPriceOutlierInfo.mockImplementation((hrid, opts) => {
+            if (opts.mode === 'ask') return { value: 100, isOutlier: true };
+            return { value: 40, isOutlier: false };
+        });
+
+        const { sellOutlier, buyOutlier } = buildCheapestPerCredit({
+            [ITEM_A]: { guildCreditConversions: [{ creditItemHrid: CREDIT, itemCount: 1, creditCount: 10 }] },
+        });
+
+        expect(sellOutlier[CREDIT]).toBe(true);
+        expect(buyOutlier[CREDIT]).toBe(false);
+    });
 });
 
 const GUILD_TOKEN = '/items/guild_token';
@@ -112,7 +135,13 @@ describe('buildGuildTokenValueByCredit', () => {
         };
         const rows = buildGuildTokenValueByCredit(itemDetailMap, { '/items/silver_guild_credit': 54_000 });
         expect(rows).toEqual([
-            { creditItemHrid: '/items/silver_guild_credit', itemCount: 10, creditCount: 1, goldPerToken: 5_400 },
+            {
+                creditItemHrid: '/items/silver_guild_credit',
+                itemCount: 10,
+                creditCount: 1,
+                goldPerToken: 5_400,
+                isOutlier: false,
+            },
         ]);
     });
 

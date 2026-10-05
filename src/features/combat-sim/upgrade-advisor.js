@@ -986,7 +986,7 @@ export function generateCandidates(
  * cost genuinely couldn't be priced must never be ranked as a known zero-cost upgrade.
  * @param {Object} candidate - Candidate from generateCandidates()
  * @param {Object} gameData - Game data
- * @returns {{cost: number, costIsIncomplete: boolean}}
+ * @returns {{cost: number, costIsIncomplete: boolean, isOutlier: boolean}}
  */
 export function calculateUpgradeCost(candidate, gameData) {
     if (candidate.type === 'ability_level') {
@@ -994,29 +994,31 @@ export function calculateUpgradeCost(candidate, gameData) {
         // current level - substituting the threshold treats every ability as if it had just
         // barely dinged its current level with zero progress, overstating the real book cost.
         const currentXp = candidate.currentXp ?? 0;
-        const cost = calculateAbilityLevelUpCost(
+        const { cost, isOutlier } = calculateAbilityLevelUpCost(
             candidate.currentHrid,
             candidate.currentLevel,
             currentXp,
             candidate.upgradeLevel
         );
-        return { cost, costIsIncomplete: false };
+        return { cost, costIsIncomplete: false, isOutlier };
     }
 
     if (candidate.type === 'ability_swap') {
-        const cost = calculateAbilityLevelUpCost(candidate.upgradeHrid, 0, 0, candidate.upgradeLevel);
-        return { cost, costIsIncomplete: false };
+        const { cost, isOutlier } = calculateAbilityLevelUpCost(candidate.upgradeHrid, 0, 0, candidate.upgradeLevel);
+        return { cost, costIsIncomplete: false, isOutlier };
     }
 
     if (candidate.type === 'cross_slot') {
         let buyCost = 0;
         let costIsIncomplete = false;
+        let isOutlier = false;
         for (const [, item] of Object.entries(candidate.addedSlots)) {
             const price = resolveItemPrice(item.hrid, {
                 side: 'buy',
                 enhancementLevel: item.enhancementLevel,
             });
             if (price.missing) costIsIncomplete = true;
+            if (price.isOutlier) isOutlier = true;
             buyCost += price.price;
         }
         const sellResolved = resolveItemPrice(candidate.currentHrid, {
@@ -1024,7 +1026,8 @@ export function calculateUpgradeCost(candidate, gameData) {
             enhancementLevel: candidate.currentLevel,
         });
         if (sellResolved.missing) costIsIncomplete = true;
-        return { cost: Math.max(0, buyCost - sellResolved.price), costIsIncomplete };
+        if (sellResolved.isOutlier) isOutlier = true;
+        return { cost: Math.max(0, buyCost - sellResolved.price), costIsIncomplete, isOutlier };
     }
 
     if (candidate.type === 'enhancement') {
@@ -1034,7 +1037,11 @@ export function calculateUpgradeCost(candidate, gameData) {
         const currentMarket = getItemPrices(candidate.currentHrid, candidate.currentLevel);
 
         if (upgradedMarket?.ask > 0 && currentMarket?.bid > 0) {
-            return { cost: Math.max(0, upgradedMarket.ask - currentMarket.bid), costIsIncomplete: false };
+            return {
+                cost: Math.max(0, upgradedMarket.ask - currentMarket.bid),
+                costIsIncomplete: false,
+                isOutlier: upgradedMarket.askOutlier || currentMarket.bidOutlier,
+            };
         }
 
         // Fallback: enhancement cost estimate with protection
@@ -1045,7 +1052,7 @@ export function calculateUpgradeCost(candidate, gameData) {
             gameData,
             { slot: candidate.slot }
         );
-        return { cost, costIsIncomplete: false };
+        return { cost, costIsIncomplete: false, isOutlier: false };
     }
 
     if (candidate.type === 'house') {
@@ -1054,16 +1061,18 @@ export function calculateUpgradeCost(candidate, gameData) {
 
         let total = 0;
         let costIsIncomplete = false;
+        let isOutlier = false;
         for (const item of levelCosts) {
             if (item.itemHrid === '/items/coin') {
                 total += item.count;
             } else {
                 const resolved = resolveItemPrice(item.itemHrid, { side: 'buy' });
                 if (resolved.missing) costIsIncomplete = true;
+                if (resolved.isOutlier) isOutlier = true;
                 total += resolved.price * item.count;
             }
         }
-        return { cost: total, costIsIncomplete };
+        return { cost: total, costIsIncomplete, isOutlier };
     }
 
     // Tier upgrade: buy new item at same enhancement - sell current item
@@ -1079,6 +1088,7 @@ export function calculateUpgradeCost(candidate, gameData) {
     return {
         cost: Math.max(0, buyResolved.price - sellResolved.price),
         costIsIncomplete: buyResolved.missing || sellResolved.missing,
+        isOutlier: buyResolved.isOutlier || sellResolved.isOutlier,
     };
 }
 
@@ -1163,8 +1173,8 @@ export async function runUpgradeAnalysis(params, onProgress, options = {}) {
         playerDTOs.length
     );
     const candidatesWithCost = candidates.map((c) => {
-        const { cost, costIsIncomplete } = calculateUpgradeCost(c, gameData);
-        return { ...c, cost, costIsIncomplete };
+        const { cost, costIsIncomplete, isOutlier } = calculateUpgradeCost(c, gameData);
+        return { ...c, cost, costIsIncomplete, isOutlier };
     });
 
     // Skilling-only house rooms (no /action_types/combat actionBuffs) can never move DPS,
@@ -1544,8 +1554,8 @@ export async function runLabyrinthUpgradeAnalysis(params, onProgress, options = 
         skipBackSlot
     );
     const candidatesWithCost = candidates.map((c) => {
-        const { cost, costIsIncomplete } = calculateUpgradeCost(c, gameData);
-        return { ...c, cost, costIsIncomplete };
+        const { cost, costIsIncomplete, isOutlier } = calculateUpgradeCost(c, gameData);
+        return { ...c, cost, costIsIncomplete, isOutlier };
     });
 
     // Generate buff candidates (skilling buffs handled in skilling tab)
@@ -1900,9 +1910,10 @@ export function generateSkillingEquipmentCandidates(editorDTO, gameData, skillEq
                 description: `${itemName} +${currentLevel} \u2192 +${nextBP}`,
                 type: 'enhancement',
             };
-            const { cost, costIsIncomplete } = calculateUpgradeCost(candidate, gameData);
+            const { cost, costIsIncomplete, isOutlier } = calculateUpgradeCost(candidate, gameData);
             candidate.cost = cost;
             candidate.costIsIncomplete = costIsIncomplete;
+            candidate.isOutlier = isOutlier;
             candidates.push(candidate);
         }
     }

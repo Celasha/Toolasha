@@ -4,21 +4,28 @@ const {
     mockGetInitClientData,
     mockGetItemDetails,
     mockGetItemPrice,
+    mockGetItemPriceOutlierInfo,
+    mockGetShopCoinCost,
     mockParseArtisanBonus,
     mockCalculateTotalRequired,
     mockGetArtisanMaterialMode,
-} = vi.hoisted(() => ({
-    mockGetInitClientData: vi.fn(),
-    mockGetItemDetails: vi.fn(),
-    mockGetItemPrice: vi.fn(),
-    mockParseArtisanBonus: vi.fn(),
-    mockCalculateTotalRequired: vi.fn((basePerAction, artisanBonus, numActions, artisanMode) => {
-        const materialsPerAction = basePerAction * (1 - artisanBonus);
-        if (artisanMode === 'worst-case') return Math.ceil(materialsPerAction) * numActions;
-        return Math.ceil(materialsPerAction * numActions);
-    }),
-    mockGetArtisanMaterialMode: vi.fn(() => 'expected'),
-}));
+} = vi.hoisted(() => {
+    const getItemPrice = vi.fn();
+    return {
+        mockGetInitClientData: vi.fn(),
+        mockGetItemDetails: vi.fn(),
+        mockGetItemPrice: getItemPrice,
+        mockGetItemPriceOutlierInfo: vi.fn((hrid, opts) => ({ value: getItemPrice(hrid, opts), isOutlier: false })),
+        mockGetShopCoinCost: vi.fn(() => 0),
+        mockParseArtisanBonus: vi.fn(),
+        mockCalculateTotalRequired: vi.fn((basePerAction, artisanBonus, numActions, artisanMode) => {
+            const materialsPerAction = basePerAction * (1 - artisanBonus);
+            if (artisanMode === 'worst-case') return Math.ceil(materialsPerAction) * numActions;
+            return Math.ceil(materialsPerAction * numActions);
+        }),
+        mockGetArtisanMaterialMode: vi.fn(() => 'expected'),
+    };
+});
 
 vi.mock('../../core/data-manager.js', () => ({
     default: {
@@ -29,8 +36,11 @@ vi.mock('../../core/data-manager.js', () => ({
         getSkills: vi.fn(() => new Map()),
     },
 }));
-vi.mock('../../utils/market-data.js', () => ({ getItemPrice: mockGetItemPrice }));
-vi.mock('../../utils/game-lookups.js', () => ({ getShopCoinCost: vi.fn(() => 0) }));
+vi.mock('../../utils/market-data.js', () => ({
+    getItemPrice: mockGetItemPrice,
+    getItemPriceOutlierInfo: mockGetItemPriceOutlierInfo,
+}));
+vi.mock('../../utils/game-lookups.js', () => ({ getShopCoinCost: mockGetShopCoinCost }));
 vi.mock('../../utils/tea-parser.js', () => ({
     parseArtisanBonus: mockParseArtisanBonus,
     getDrinkConcentration: vi.fn(() => 1),
@@ -49,6 +59,7 @@ const LEATHER = '/items/leather';
 const STRAP = '/items/strap';
 const BOOTS_ACTION = '/actions/tailoring/reptile_boots';
 const STRAP_ACTION = '/actions/tailoring/strap';
+const RAW_MATERIAL = '/items/raw_material';
 
 function setGameData(actionDetailMap, itemDetailMap) {
     mockGetInitClientData.mockReturnValue({ actionDetailMap, itemDetailMap });
@@ -148,5 +159,32 @@ describe('memo-hit reconstruction applies the same artisan mode as a fresh compu
         // Memo-hit reconstruction for the second STRAP node: ceil(5 * 0.9) * 6 = 5 * 6 = 30,
         // not the old continuous qtyPerUnit(4.5) * 6 = 27.
         expect(secondStrap.children[0]).toMatchObject({ itemHrid: LEATHER, quantity: 30 });
+    });
+});
+
+describe('isOutlier propagation on buy nodes', () => {
+    beforeEach(() => {
+        setGameData({}, { [RAW_MATERIAL]: { name: 'Raw Material', isTradable: true } });
+    });
+
+    test('flags a leaf buy node when the market price was substituted by the outlier guard', () => {
+        mockGetItemPriceOutlierInfo.mockReturnValueOnce({ value: 100, isOutlier: true });
+        const plan = computeBestCraftingPlan(RAW_MATERIAL, 1, 'ask');
+        expect(plan.strategy).toBe('buy');
+        expect(plan.isOutlier).toBe(true);
+    });
+
+    test('does not flag a leaf buy node when the market price is within band', () => {
+        mockGetItemPriceOutlierInfo.mockReturnValueOnce({ value: 100, isOutlier: false });
+        const plan = computeBestCraftingPlan(RAW_MATERIAL, 1, 'ask');
+        expect(plan.isOutlier).toBe(false);
+    });
+
+    test('a shop-cost override is never flagged as an outlier even if the market price was', () => {
+        mockGetItemPriceOutlierInfo.mockReturnValueOnce({ value: 100, isOutlier: true });
+        mockGetShopCoinCost.mockReturnValueOnce(10); // Shop cost (10) undercuts the market price (100)
+        const plan = computeBestCraftingPlan(RAW_MATERIAL, 1, 'ask');
+        expect(plan.buyPrice).toBe(10);
+        expect(plan.isOutlier).toBe(false);
     });
 });

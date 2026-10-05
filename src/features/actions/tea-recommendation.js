@@ -11,6 +11,7 @@ import actionFilter from './action-filter.js';
 import alchemyProfit from '../alchemy/alchemy-profit.js';
 import { findOptimalTeas, getTeaBuffDescription, getRelevantTeas } from '../../utils/tea-optimizer.js';
 import { formatKMB } from '../../utils/formatters.js';
+import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 /**
@@ -466,13 +467,14 @@ class TeaRecommendation {
         `;
 
         const avgValue = result.optimal ? formatKMB(result.optimal.avgScore) : '0';
+        const avgValueOutlierIcon = result.optimal ? buildOutlierPriceWarningIcon(result.optimal.hasOutlierPrice) : '';
         const profitableCount = result.profitableActionsCount || result.actionsEvaluated;
         const excludedCount = result.excludedActions?.length || 0;
 
         stats.innerHTML = `
             <div style="margin-bottom: 4px;">
                 <span style="color: ${goal === 'xp' ? config.COLOR_INFO : config.COLOR_PROFIT};">
-                    ${t('teaRecommendation.avgRateLine', { goalLabel, value: avgValue })}
+                    ${t('teaRecommendation.avgRateLine', { goalLabel, value: avgValue })}${avgValueOutlierIcon}
                 </span>
             </div>
             <div style="font-size: 11px;">
@@ -811,6 +813,9 @@ class TeaRecommendation {
                     rate: formatKMB(alt.avgScore),
                     costSuffix,
                 });
+                if (alt.hasOutlierPrice) {
+                    altRow.innerHTML += buildOutlierPriceWarningIcon(true);
+                }
                 altSection.appendChild(altRow);
             }
 
@@ -1035,10 +1040,14 @@ class TeaRecommendation {
                 color: ${config.COLOR_PROFIT};
                 margin-bottom: 8px;
             `;
-            goldHeader.textContent = t('teaRecommendation.ratePerHourLabel', {
-                goalLabel: t('teaRecommendation.goldButtonLabel'),
-                value: formatKMB(goldResult.optimal.avgScore),
-            });
+            goldHeader.textContent =
+                t('teaRecommendation.ratePerHourLabel', {
+                    goalLabel: t('teaRecommendation.goldButtonLabel'),
+                    value: formatKMB(goldResult.optimal.avgScore),
+                }) + (goldResult.optimal.hasOutlierPrice ? ' ⚠' : '');
+            if (goldResult.optimal.hasOutlierPrice) {
+                goldHeader.title = t('marketData.outlierPriceWarningTooltip');
+            }
             goldCol.appendChild(goldHeader);
 
             for (const tea of goldResult.optimal.teas) {

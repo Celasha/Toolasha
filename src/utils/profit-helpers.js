@@ -17,7 +17,7 @@ import {
     MARKET_TAX,
     MIN_ACTION_TIME_SECONDS,
 } from './profit-constants.js';
-import { getItemPrice } from './market-data.js';
+import { getItemPriceOutlierInfo } from './market-data.js';
 import { getCustomPrice } from '../features/settings/custom-price-overrides.js';
 import { getShopCoinCost } from './game-lookups.js';
 import { getProductionCost } from '../features/enhancement/tooltip-enhancement.js';
@@ -161,6 +161,8 @@ export function calculateDrinksPerHour(drinkConcentration = 0) {
  * @param {number} params.drinkConcentration - Drink Concentration stat as decimal
  * @param {Object} params.itemDetailMap - Item detail map for names
  * @param {Function} params.getItemPrice - Price resolver function
+ * @param {Function} [params.getItemPriceOutlierInfo] - Optional outlier-aware resolver
+ *   ((itemHrid, options) => {value, isOutlier}); when omitted, isOutlier is always false
  * @returns {Object} Tea costs breakdown
  */
 export function calculateTeaCostsPerHour({
@@ -168,12 +170,14 @@ export function calculateTeaCostsPerHour({
     drinkConcentration = 0,
     itemDetailMap = {},
     getItemPrice,
+    getItemPriceOutlierInfo,
 }) {
     if (!Array.isArray(drinkSlots) || drinkSlots.length === 0) {
         return {
             costs: [],
             totalCostPerHour: 0,
             hasMissingPrices: false,
+            hasOutlierPrices: false,
             drinksPerHour: calculateDrinksPerHour(drinkConcentration),
         };
     }
@@ -194,6 +198,10 @@ export function calculateTeaCostsPerHour({
         const isPriceMissing = price === null;
         const resolvedPrice = isPriceMissing ? 0 : price;
         const totalCost = resolvedPrice * drinksPerHour;
+        const isOutlier =
+            !isPriceMissing && typeof getItemPriceOutlierInfo === 'function'
+                ? getItemPriceOutlierInfo(drink.itemHrid, { context: 'profit', side: 'buy' }).isOutlier
+                : false;
 
         entries.push({
             itemHrid: drink.itemHrid,
@@ -202,6 +210,7 @@ export function calculateTeaCostsPerHour({
             drinksPerHour,
             totalCost,
             missingPrice: isPriceMissing,
+            isOutlier,
         });
 
         return entries;
@@ -209,11 +218,13 @@ export function calculateTeaCostsPerHour({
 
     const totalCostPerHour = costs.reduce((sum, entry) => sum + entry.totalCost, 0);
     const hasMissingPrices = costs.some((entry) => entry.missingPrice);
+    const hasOutlierPrices = costs.some((entry) => entry.isOutlier);
 
     return {
         costs,
         totalCostPerHour,
         hasMissingPrices,
+        hasOutlierPrices,
         drinksPerHour,
     };
 }
@@ -426,22 +437,24 @@ export function resolveItemPrice(itemHrid, options = {}) {
     // 1. Custom override — absolute priority
     const customPrice = getCustomPrice(itemHrid, enhancementLevel, side);
     if (customPrice !== null) {
-        return { price: customPrice, custom: true, missing: false };
+        return { price: customPrice, custom: true, missing: false, isOutlier: false };
     }
 
-    // 2. Market price (via getItemPrice which handles pricing mode)
-    const marketPrice = getItemPrice(itemHrid, { enhancementLevel, mode, context, side });
+    // 2. Market price (via getItemPriceOutlierInfo, which handles pricing mode and reports
+    // whether the market-data outlier guard substituted the reference value for this price)
+    const marketResult = getItemPriceOutlierInfo(itemHrid, { enhancementLevel, mode, context, side });
+    const marketPrice = marketResult.value;
 
     // 3. Shop price floor (buy-side only)
     if (side === 'buy') {
         const shopCost = getShopCoinCost(itemHrid);
         if (shopCost > 0 && (marketPrice === null || shopCost < marketPrice)) {
-            return { price: shopCost, custom: false, missing: false };
+            return { price: shopCost, custom: false, missing: false, isOutlier: false };
         }
     }
 
     if (marketPrice !== null) {
-        return { price: marketPrice, custom: false, missing: false };
+        return { price: marketPrice, custom: false, missing: false, isOutlier: marketResult.isOutlier };
     }
 
     // 4. Production cost fallback - getProductionCost has no notion of enhancement level, it
@@ -452,12 +465,12 @@ export function resolveItemPrice(itemHrid, options = {}) {
     if (enhancementLevel === 0) {
         const prodCost = getProductionCost(itemHrid, mode || 'ask');
         if (prodCost > 0) {
-            return { price: prodCost, custom: false, missing: false };
+            return { price: prodCost, custom: false, missing: false, isOutlier: false };
         }
     }
 
     // 5. No price found
-    return { price: 0, custom: false, missing: true };
+    return { price: 0, custom: false, missing: true, isOutlier: false };
 }
 
 export default {

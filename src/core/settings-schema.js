@@ -1291,6 +1291,23 @@ export const settingsGroups = {
         title: 'Pricing & Profit',
         icon: '💹',
         settings: {
+            marketData_outlierGuardEnabled: {
+                id: 'marketData_outlierGuardEnabled',
+                label: 'Guard against absurd marketplace listings',
+                type: 'checkbox',
+                default: true,
+                help: "Applies everywhere Toolasha reads a market price (profit calculators, net worth, upgrade advisor, etc.). When a live ask/bid is wildly outside the band around the game's own reference market value, Toolasha substitutes the reference value instead and marks the affected number with a ⚠ so you can see where this happened.",
+            },
+            marketData_outlierBandMultiplier: {
+                id: 'marketData_outlierBandMultiplier',
+                label: 'Outlier band multiplier',
+                type: 'number',
+                default: 3,
+                min: 1.5,
+                max: 20,
+                step: 0.5,
+                help: 'A live price counts as an outlier when it is more than this many times above or below the reference value (e.g. 3 = outside 1/3x-3x the reference). Only applies to items the reference dataset actually covers.',
+            },
             profitCalc_pricingMode: {
                 id: 'profitCalc_pricingMode',
                 label: 'Profit calculation pricing mode',

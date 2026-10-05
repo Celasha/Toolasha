@@ -17,7 +17,7 @@ import {
     parseGatheringQuantityBonus,
 } from './equipment-parser.js';
 import { calculateActionsPerHour, calculateEffectiveActionsPerHour, calculateDrinksPerHour } from './profit-helpers.js';
-import { getItemPrice } from './market-data.js';
+import { getItemPriceOutlierInfo } from './market-data.js';
 import { calculateBonusRevenue } from './bonus-revenue-calculator.js';
 import alchemyProfitCalculator from '../features/market/alchemy-profit-calculator.js';
 import { MARKET_TAX } from './profit-constants.js';
@@ -346,6 +346,7 @@ function calculateGatheringGoldPerHour(actionDetails, buffs, playerLevel, otherE
     // Calculate revenue from drops
     let totalRevenue = 0;
     let hasMissingPrice = false;
+    let isOutlier = false;
     const dropTable = actionDetails.dropTable || [];
     const gatheringBonus = 1 + buffs.gathering + (otherEfficiency.gathering || 0);
     const processingChance = buffs.processing + (otherEfficiency.processing || 0);
@@ -360,20 +361,22 @@ function calculateGatheringGoldPerHour(actionDetails, buffs, playerLevel, otherE
         const avgAmountPerAction = avgCount * gatheringBonus;
 
         // Get item price (use 'sell' side for output items to match tile calculation)
-        const rawPriceResult = getItemPrice(drop.itemHrid, { context: 'profit', side: 'sell' });
-        if (rawPriceResult === null) hasMissingPrice = true;
-        const rawPrice = rawPriceResult || 0;
+        const rawPriceInfo = getItemPriceOutlierInfo(drop.itemHrid, { context: 'profit', side: 'sell' });
+        if (rawPriceInfo.value === null) hasMissingPrice = true;
+        if (rawPriceInfo.isOutlier) isOutlier = true;
+        const rawPrice = rawPriceInfo.value || 0;
 
         // Check for processing conversion
         if (processingChance > 0) {
             const processedData = findProcessingConversion(drop.itemHrid, gameData);
             if (processedData) {
-                const processedPriceResult = getItemPrice(processedData.outputItemHrid, {
+                const processedPriceInfo = getItemPriceOutlierInfo(processedData.outputItemHrid, {
                     context: 'profit',
                     side: 'sell',
                 });
-                if (processedPriceResult === null) hasMissingPrice = true;
-                const processedPrice = processedPriceResult || 0;
+                if (processedPriceInfo.value === null) hasMissingPrice = true;
+                if (processedPriceInfo.isOutlier) isOutlier = true;
+                const processedPrice = processedPriceInfo.value || 0;
                 const conversionRatio = processedData.conversionRatio;
 
                 // Processing Tea check happens per action:
@@ -417,7 +420,7 @@ function calculateGatheringGoldPerHour(actionDetails, buffs, playerLevel, otherE
     // Apply market tax
     const profitPerHour = totalRevenue * (1 - MARKET_TAX);
 
-    return { profitPerHour, hasMissingPrice };
+    return { profitPerHour, hasMissingPrice, isOutlier };
 }
 
 /**
@@ -471,31 +474,37 @@ function calculateProductionGoldPerHour(actionDetails, buffs, playerLevel, other
     // Use 'buy' side for inputs to match tile calculation
     let inputCost = 0;
     let hasMissingPrice = false;
+    let isOutlier = false;
     const artisanReduction = 1 - buffs.artisan;
 
     // Add upgrade item cost (NOT affected by Artisan Tea)
     if (actionDetails.upgradeItemHrid) {
-        const upgradePriceResult = getItemPrice(actionDetails.upgradeItemHrid, { context: 'profit', side: 'buy' });
-        let upgradePrice = upgradePriceResult || 0;
+        const upgradePriceInfo = getItemPriceOutlierInfo(actionDetails.upgradeItemHrid, {
+            context: 'profit',
+            side: 'buy',
+        });
+        let upgradePrice = upgradePriceInfo.value || 0;
         // Special case: Coins have no market price but have face value of 1
         if (actionDetails.upgradeItemHrid === '/items/coin') {
             if (upgradePrice === 0) upgradePrice = 1;
-        } else if (upgradePriceResult === null) {
+        } else if (upgradePriceInfo.value === null) {
             hasMissingPrice = true;
         }
+        if (upgradePriceInfo.isOutlier) isOutlier = true;
         inputCost += upgradePrice; // Always 1 upgrade item, no artisan reduction
     }
 
     // Add regular input item costs (affected by Artisan Tea)
     for (const input of actionDetails.inputItems || []) {
-        const priceResult = getItemPrice(input.itemHrid, { context: 'profit', side: 'buy' });
-        let price = priceResult || 0;
+        const priceInfo = getItemPriceOutlierInfo(input.itemHrid, { context: 'profit', side: 'buy' });
+        let price = priceInfo.value || 0;
         // Special case: Coins have no market price but have face value of 1
         if (input.itemHrid === '/items/coin') {
             if (price === 0) price = 1;
-        } else if (priceResult === null) {
+        } else if (priceInfo.value === null) {
             hasMissingPrice = true;
         }
+        if (priceInfo.isOutlier) isOutlier = true;
         const effectiveCount = input.count * artisanReduction;
         inputCost += price * effectiveCount;
     }
@@ -507,9 +516,10 @@ function calculateProductionGoldPerHour(actionDetails, buffs, playerLevel, other
         actionDetails.type === '/action_types/cooking' || actionDetails.type === '/action_types/brewing';
     const gourmetBonus = isCookingOrBrewing ? 1 + buffs.gourmet + (otherEfficiency.gourmet || 0) : 1;
     for (const output of actionDetails.outputItems || []) {
-        const priceResult = getItemPrice(output.itemHrid, { context: 'profit', side: 'sell' });
-        if (priceResult === null) hasMissingPrice = true;
-        const price = priceResult || 0;
+        const priceInfo = getItemPriceOutlierInfo(output.itemHrid, { context: 'profit', side: 'sell' });
+        if (priceInfo.value === null) hasMissingPrice = true;
+        if (priceInfo.isOutlier) isOutlier = true;
+        const price = priceInfo.value || 0;
         const effectiveCount = output.count * gourmetBonus;
         outputRevenue += price * effectiveCount;
     }
@@ -536,7 +546,7 @@ function calculateProductionGoldPerHour(actionDetails, buffs, playerLevel, other
     const marketTax = (revenuePerHour + efficiencyBoostedBonusRevenue) * MARKET_TAX;
     const netProfitPerHour = grossProfitPerHour + efficiencyBoostedBonusRevenue - marketTax;
 
-    return { profitPerHour: netProfitPerHour, hasMissingPrice };
+    return { profitPerHour: netProfitPerHour, hasMissingPrice, isOutlier };
 }
 
 /**
@@ -605,8 +615,12 @@ function calculateAlchemyGoldPerHour(alchemyContext, buffs, calcContext, teaHrid
         );
     }
 
-    if (!profitData) return { profitPerHour: 0, hasMissingPrice: true };
-    return { profitPerHour: profitData.profitPerHour || 0, hasMissingPrice: false };
+    if (!profitData) return { profitPerHour: 0, hasMissingPrice: true, isOutlier: false };
+    return {
+        profitPerHour: profitData.profitPerHour || 0,
+        hasMissingPrice: false,
+        isOutlier: profitData.hasOutlierPrices || false,
+    };
 }
 
 /**
@@ -885,12 +899,14 @@ function calculateTeaCostPerHour(teaHrids, drinkConcentration) {
     const breakdown = [];
     let total = 0;
     let hasMissingPrice = false;
+    let hasOutlierPrice = false;
 
     for (const teaHrid of teaHrids) {
-        // Use getItemPrice with 'profit' context and 'buy' side to match tile calculation
-        const priceResult = getItemPrice(teaHrid, { context: 'profit', side: 'buy' });
-        if (priceResult === null) hasMissingPrice = true;
-        const unitPrice = priceResult || 0;
+        // Use getItemPriceOutlierInfo with 'profit' context and 'buy' side to match tile calculation
+        const priceInfo = getItemPriceOutlierInfo(teaHrid, { context: 'profit', side: 'buy' });
+        if (priceInfo.value === null) hasMissingPrice = true;
+        if (priceInfo.isOutlier) hasOutlierPrice = true;
+        const unitPrice = priceInfo.value || 0;
         const costPerHour = unitPrice * drinksPerHour;
         const name = gameData?.itemDetailMap?.[teaHrid]?.name || teaHrid;
         breakdown.push({
@@ -899,12 +915,13 @@ function calculateTeaCostPerHour(teaHrids, drinkConcentration) {
             unitsPerHour: drinksPerHour,
             unitPrice,
             costPerHour,
-            missingPrice: priceResult === null,
+            missingPrice: priceInfo.value === null,
+            isOutlier: priceInfo.isOutlier,
         });
         total += costPerHour;
     }
 
-    return { total, breakdown, hasMissingPrice };
+    return { total, breakdown, hasMissingPrice, hasOutlierPrice };
 }
 
 /**
@@ -1134,8 +1151,9 @@ export function findOptimalTeas(
 
         let totalScore = 0;
         let profitableCount = 0;
-        // Tea cost only affects the Gold metric; a missing tea price is irrelevant to XP/hr.
+        // Tea cost only affects the Gold metric; a missing/outlier tea price is irrelevant to XP/hr.
         let hasMissingPrice = goal === 'gold' && teaCostPerHour.hasMissingPrice;
+        let hasOutlierPrice = goal === 'gold' && teaCostPerHour.hasOutlierPrice;
         const actionScores = [];
 
         // Alchemy mode: score the specific item, not all actions
@@ -1153,6 +1171,7 @@ export function findOptimalTeas(
                 const goldResult = calculateAlchemyGoldPerHour(alchemyContext, buffs, calcContext, combo);
                 score = goldResult.profitPerHour;
                 if (goldResult.hasMissingPrice) hasMissingPrice = true;
+                if (goldResult.isOutlier) hasOutlierPrice = true;
             }
             totalScore += score;
             if (score > 0) profitableCount++;
@@ -1173,6 +1192,7 @@ export function findOptimalTeas(
                     );
                     score = goldResult.profitPerHour - teaCostPerHour.total;
                     if (goldResult.hasMissingPrice) hasMissingPrice = true;
+                    if (goldResult.isOutlier) hasOutlierPrice = true;
                 } else {
                     const goldResult = calculateProductionGoldPerHour(
                         action,
@@ -1184,6 +1204,7 @@ export function findOptimalTeas(
                     );
                     score = goldResult.profitPerHour - teaCostPerHour.total;
                     if (goldResult.hasMissingPrice) hasMissingPrice = true;
+                    if (goldResult.isOutlier) hasOutlierPrice = true;
                 }
 
                 // Fixed cohort: every selected action contributes its signed score, whether
@@ -1206,6 +1227,7 @@ export function findOptimalTeas(
             teaCostPerHour,
             profitableCount, // Diagnostic only: how many actions are individually profitable
             hasMissingPrice,
+            hasOutlierPrice,
         });
     }
 
@@ -1275,6 +1297,7 @@ export function findOptimalTeas(
             profitableCount: topResult.profitableCount, // How many actions are profitable
             hasMissingPrice: topResult.hasMissingPrice, // True: a required price is unresolved,
             // this Gold result is incomplete and must not be presented as an exact ranking.
+            hasOutlierPrice: topResult.hasOutlierPrice,
         },
         isConsistent,
         skill: skillName,
@@ -1290,6 +1313,7 @@ export function findOptimalTeas(
             avgScore: r.avgScore,
             teaCostPerHour: r.teaCostPerHour,
             hasMissingPrice: r.hasMissingPrice,
+            hasOutlierPrice: r.hasOutlierPrice,
         })),
         excludedActions: excludedForDisplay, // Actions excluded due to level
         // Include top result's tea cost for debug
@@ -1359,13 +1383,13 @@ export function scoreEquipmentSetup(
     const isGathering = GATHERING_SKILLS.includes(normalizedSkill);
     const isProduction = PRODUCTION_SKILLS.includes(normalizedSkill);
 
-    if (!isGathering && !isProduction) return { score: 0, hasMissingPrice: false };
+    if (!isGathering && !isProduction) return { score: 0, hasMissingPrice: false, isOutlier: false };
 
     const gameData = dataManager.getInitClientData();
-    if (!gameData?.itemDetailMap) return { score: 0, hasMissingPrice: false };
+    if (!gameData?.itemDetailMap) return { score: 0, hasMissingPrice: false, isOutlier: false };
 
     const actionType = SKILL_TO_ACTION_TYPE[normalizedSkill];
-    if (!actionType) return { score: 0, hasMissingPrice: false };
+    if (!actionType) return { score: 0, hasMissingPrice: false, isOutlier: false };
 
     const otherEfficiency = buildNonTeaEfficiencySources(actionType, isProduction, houseRoomLevelOverride);
 
@@ -1376,7 +1400,7 @@ export function scoreEquipmentSetup(
     }
 
     const { available: actions } = getActionsForSkill(normalizedSkill, playerLevel, selectedActionHrids);
-    if (!actions.length) return { score: 0, hasMissingPrice: false };
+    if (!actions.length) return { score: 0, hasMissingPrice: false, isOutlier: false };
 
     const filteredTeas = (teaHrids || []).filter(Boolean);
     const drinkConcentration = getDrinkConcentration(equipment, gameData.itemDetailMap);
@@ -1393,7 +1417,8 @@ export function scoreEquipmentSetup(
               alchemySuccess: 0,
               skillLevels: {},
           };
-    const teaCostPerHour = filteredTeas.length ? calculateTeaCostPerHour(filteredTeas, drinkConcentration).total : 0;
+    const teaCostData = filteredTeas.length ? calculateTeaCostPerHour(filteredTeas, drinkConcentration) : null;
+    const teaCostPerHour = teaCostData?.total || 0;
 
     const calcContext = { equipment, itemDetailMap: gameData.itemDetailMap };
 
@@ -1405,9 +1430,9 @@ export function scoreEquipmentSetup(
     // fails closed to 0 rather than mistakenly returning an XP value for a Gold request.
     if (normalizedSkill === 'alchemy') {
         if (!alchemyContext) {
-            if (goal === 'gold') return { score: 0, hasMissingPrice: false };
+            if (goal === 'gold') return { score: 0, hasMissingPrice: false, isOutlier: false };
             const repItemHrid = getRepresentativeAlchemyItemHrid(playerLevel, gameData.itemDetailMap);
-            if (!repItemHrid) return { score: 0, hasMissingPrice: false };
+            if (!repItemHrid) return { score: 0, hasMissingPrice: false, isOutlier: false };
             return {
                 score: calculateAlchemyXpPerHour(
                     { actionType: 'decompose', itemHrid: repItemHrid },
@@ -1417,6 +1442,7 @@ export function scoreEquipmentSetup(
                     calcContext
                 ),
                 hasMissingPrice: false,
+                isOutlier: false,
             };
         }
 
@@ -1424,6 +1450,7 @@ export function scoreEquipmentSetup(
             return {
                 score: calculateAlchemyXpPerHour(alchemyContext, buffs, playerLevel, otherEfficiency, calcContext),
                 hasMissingPrice: false,
+                isOutlier: false,
             };
         }
 
@@ -1432,12 +1459,17 @@ export function scoreEquipmentSetup(
         // its efficiency/wisdom contribution AND charges its real cost) - teaCostPerHour here
         // must NOT also be subtracted, or this combo's tea cost would be double-counted.
         const goldResult = calculateAlchemyGoldPerHour(alchemyContext, buffs, calcContext, filteredTeas);
-        return { score: goldResult.profitPerHour, hasMissingPrice: goldResult.hasMissingPrice };
+        return {
+            score: goldResult.profitPerHour,
+            hasMissingPrice: goldResult.hasMissingPrice,
+            isOutlier: goldResult.isOutlier,
+        };
     }
 
     let totalScore = 0;
     let count = 0;
     let hasMissingPrice = false;
+    let isOutlier = teaCostData?.hasOutlierPrice || false;
     const teaSkillLevelBonus = buffs.skillLevels[normalizedSkill] || 0;
 
     for (const action of actions) {
@@ -1465,6 +1497,7 @@ export function scoreEquipmentSetup(
             );
             score = goldResult.profitPerHour;
             if (goldResult.hasMissingPrice) hasMissingPrice = true;
+            if (goldResult.isOutlier) isOutlier = true;
             if (filteredTeas.length) score -= teaCostPerHour;
         } else {
             const goldResult = calculateProductionGoldPerHour(
@@ -1477,6 +1510,7 @@ export function scoreEquipmentSetup(
             );
             score = goldResult.profitPerHour;
             if (goldResult.hasMissingPrice) hasMissingPrice = true;
+            if (goldResult.isOutlier) isOutlier = true;
             if (filteredTeas.length) score -= teaCostPerHour;
         }
 
@@ -1486,7 +1520,7 @@ export function scoreEquipmentSetup(
         count++;
     }
 
-    return { score: count > 0 ? totalScore / count : 0, hasMissingPrice };
+    return { score: count > 0 ? totalScore / count : 0, hasMissingPrice, isOutlier };
 }
 
 /**
@@ -1580,14 +1614,14 @@ function formatBuffWithDC(scaledValue, dcBonus, suffix, isPercent) {
  * @param {string[]} teaHrids - Tea item HRIDs (null/empty entries are filtered)
  * @param {number} playerLevel
  * @param {Set<string>|null} selectedActionHrids
- * @returns {{ xpPerHour: number, goldPerHour: number, teaCostPerHour: number, hasMissingPrice: boolean }}
+ * @returns {{ xpPerHour: number, goldPerHour: number, teaCostPerHour: number, hasMissingPrice: boolean, isOutlier: boolean }}
  */
 export function calculateSkillPerformance(skillName, equipment, teaHrids, playerLevel, selectedActionHrids = null) {
     const normalizedSkill = skillName.toLowerCase();
     const isGathering = GATHERING_SKILLS.includes(normalizedSkill);
     const isProduction = PRODUCTION_SKILLS.includes(normalizedSkill);
 
-    const empty = { xpPerHour: 0, goldPerHour: 0, teaCostPerHour: 0, hasMissingPrice: false };
+    const empty = { xpPerHour: 0, goldPerHour: 0, teaCostPerHour: 0, hasMissingPrice: false, isOutlier: false };
     if (!isGathering && !isProduction) return empty;
     if (selectedActionHrids !== null && selectedActionHrids.size === 0) return empty;
 
@@ -1616,6 +1650,7 @@ export function calculateSkillPerformance(skillName, equipment, teaHrids, player
     let totalXp = 0;
     let totalGold = 0;
     let hasMissingPrice = teaCost.hasMissingPrice;
+    let isOutlier = teaCost.hasOutlierPrice;
     const teaSkillLevelBonus = buffs.skillLevels[normalizedSkill] || 0;
 
     for (const action of actions) {
@@ -1630,6 +1665,7 @@ export function calculateSkillPerformance(skillName, equipment, teaHrids, player
             ? calculateGatheringGoldPerHour(action, buffs, playerLevel, otherEfficiency, gameData, calcContext)
             : calculateProductionGoldPerHour(action, buffs, playerLevel, otherEfficiency, gameData, calcContext);
         if (goldResult.hasMissingPrice) hasMissingPrice = true;
+        if (goldResult.isOutlier) isOutlier = true;
         // Fixed cohort: every selected action contributes its signed Gold/hr, whether profitable
         // or not, so the average is never inflated by silently dropping a losing action.
         totalGold += goldResult.profitPerHour - teaCost.total;
@@ -1640,6 +1676,7 @@ export function calculateSkillPerformance(skillName, equipment, teaHrids, player
         goldPerHour: totalGold / actions.length,
         teaCostPerHour: teaCost.total,
         hasMissingPrice,
+        isOutlier,
     };
 }
 

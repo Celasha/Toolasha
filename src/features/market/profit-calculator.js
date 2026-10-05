@@ -5,12 +5,11 @@
 
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
-import marketAPI from '../../api/marketplace.js';
 import { calculateHouseEfficiency } from '../../utils/house-efficiency.js';
 import { getActionEfficiencyContext } from '../../utils/efficiency.js';
 import { calculateBonusRevenue } from '../../utils/bonus-revenue-calculator.js';
 import { getProductionCost, getProductionChainTime } from '../enhancement/tooltip-enhancement.js';
-import { getItemPrice } from '../../utils/market-data.js';
+import { getItemPrice, getItemPrices, getItemPriceOutlierInfo } from '../../utils/market-data.js';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
 import {
     calculateActionsPerHour,
@@ -105,6 +104,7 @@ class ProfitCalculator {
 
         // Initialize price cache for this calculation
         const getCachedPrice = createPriceCache(getItemPrice);
+        const getCachedPriceOutlierInfo = createPriceCache(getItemPriceOutlierInfo);
 
         // Calculate base action time
         // Game uses NANOSECONDS (1e9 = 1 second)
@@ -193,7 +193,7 @@ class ProfitCalculator {
 
         // Get market price for the item
         // Use fallback {ask: 0, bid: 0} if no market data exists (e.g., refined items)
-        const itemPrice = marketAPI.getPrice(itemHrid, 0) || { ask: 0, bid: 0 };
+        const itemPrice = getItemPrices(itemHrid, 0) || { ask: 0, bid: 0 };
 
         // Get output price based on pricing mode setting
         // Uses 'profit' context with 'sell' side to get correct sell price
@@ -202,6 +202,8 @@ class ProfitCalculator {
         const craftingFallback = outputPriceMissing ? this.calculateCraftingCostFallback(itemHrid, getCachedPrice) : 0;
         const outputPriceEstimated = outputPriceMissing && craftingFallback > 0;
         const outputPrice = outputPriceMissing ? craftingFallback : rawOutputPrice;
+        const outputPriceOutlier =
+            !outputPriceMissing && getCachedPriceOutlierInfo(itemHrid, { context: 'profit', side: 'sell' }).isOutlier;
 
         // Apply market tax on sales
         const priceAfterTax = calculatePriceAfterTax(outputPrice);
@@ -222,6 +224,7 @@ class ProfitCalculator {
             drinkConcentration,
             itemDetailMap,
             getItemPrice: getCachedPrice,
+            getItemPriceOutlierInfo: getCachedPriceOutlierInfo,
         });
         const teaCosts = teaCostData.costs;
         const totalTeaCostPerHour = teaCostData.totalCostPerHour;
@@ -234,6 +237,9 @@ class ProfitCalculator {
             materialCosts.some((material) => material.missingPrice) ||
             teaCostData.hasMissingPrices ||
             (bonusRevenue?.hasMissingPrices ?? false);
+
+        const hasOutlierPrices =
+            outputPriceOutlier || materialCosts.some((material) => material.isOutlier) || teaCostData.hasOutlierPrices;
 
         // Apply efficiency multiplier to bonus revenue (efficiency repeats the action, including bonus rolls)
         const efficiencyBoostedBonusRevenue = (bonusRevenue?.totalBonusRevenue || 0) * efficiencyMultiplier;
@@ -278,6 +284,7 @@ class ProfitCalculator {
             outputPrice, // Output price before tax (bid or ask based on mode)
             outputPriceMissing,
             outputPriceEstimated, // True when outputPriceMissing but crafting cost fallback resolved a price
+            outputPriceOutlier, // True when the market-data outlier guard substituted this price
             priceAfterTax, // Output price after market tax (bid or ask based on mode)
             revenuePerHour,
             marketTax,
@@ -288,6 +295,7 @@ class ProfitCalculator {
             profitPerDay: calculateProfitPerDay(profitPerHour), // Profit per day
             bonusRevenue, // Bonus revenue from essences and rare finds
             hasMissingPrices,
+            hasOutlierPrices,
             totalEfficiency, // Total efficiency percentage
             levelEfficiency, // Level advantage efficiency
             houseEfficiency, // House room efficiency
@@ -410,6 +418,7 @@ class ProfitCalculator {
                     customPrice: resolved.custom,
                     isUpgradeItem: true,
                     isCrafted,
+                    isOutlier: resolved.isOutlier || false,
                 });
             }
         }
@@ -445,6 +454,7 @@ class ProfitCalculator {
                     totalCost: resolved.price * reducedAmount,
                     missingPrice: resolved.missing,
                     customPrice: resolved.custom,
+                    isOutlier: resolved.isOutlier || false,
                 });
             }
         }

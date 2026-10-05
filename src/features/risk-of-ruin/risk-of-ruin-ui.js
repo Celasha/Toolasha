@@ -28,6 +28,7 @@ import {
 } from '../../utils/risk-of-ruin-adapters/dungeon-chest-adapter.js';
 import { buildAlchemyTransmuteModel } from '../../utils/risk-of-ruin-adapters/alchemy-adapter.js';
 import { buildEnhancementModel } from '../../utils/risk-of-ruin-adapters/enhancement-adapter.js';
+import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 
 const PANEL_ID = 'mwi-risk-of-ruin-panel';
 const LAUNCHER_ID = 'mwi-risk-of-ruin-launcher';
@@ -511,6 +512,7 @@ class RiskOfRuinUI {
                 protectionCostOnFailure: enhancementModel.protectionCostOnFailure,
                 startLevel,
                 targetLevel,
+                isOutlier: enhancementModel.isOutlier,
             };
             if (itemDetails.isTradable !== false) {
                 this.lastDepthCapContext = {
@@ -734,7 +736,9 @@ class RiskOfRuinUI {
             rows.push(
                 `<div>${t('riskOfRuinUi.entryKeyLine', {
                     name: costBreakdown.entryKey.name,
-                    price: fmtGold(costBreakdown.entryKey.price),
+                    price:
+                        fmtGold(costBreakdown.entryKey.price) +
+                        buildOutlierPriceWarningIcon(costBreakdown.entryKey.isOutlier),
                 })}</div>`
             );
         }
@@ -742,7 +746,9 @@ class RiskOfRuinUI {
             rows.push(
                 `<div>${t('riskOfRuinUi.chestKeyLine', {
                     name: costBreakdown.chestKey.name,
-                    price: fmtGold(costBreakdown.chestKey.price),
+                    price:
+                        fmtGold(costBreakdown.chestKey.price) +
+                        buildOutlierPriceWarningIcon(costBreakdown.chestKey.isOutlier),
                 })}</div>`
             );
         }
@@ -802,7 +808,7 @@ class RiskOfRuinUI {
 
         const rows = [
             `<div>${t('riskOfRuinUi.successRateLine', { rate: formatPercentage(breakdown.successRate, 2) })}</div>`,
-            `<div>${t('riskOfRuinUi.materialCostLine', { cost: fmtGold(breakdown.materialCost) })}</div>`,
+            `<div>${t('riskOfRuinUi.materialCostLine', { cost: fmtGold(breakdown.materialCost) + buildOutlierPriceWarningIcon(breakdown.materialIsOutlier) })}</div>`,
         ];
         if (breakdown.coinCost > 0) {
             rows.push(`<div>${t('riskOfRuinUi.coinCostLine', { cost: fmtGold(breakdown.coinCost) })}</div>`);
@@ -811,7 +817,9 @@ class RiskOfRuinUI {
             catalystName
                 ? `<div>${t('riskOfRuinUi.catalystCostLine', {
                       name: catalystName,
-                      cost: fmtGold(breakdown.catalystCostOnSuccess),
+                      cost:
+                          fmtGold(breakdown.catalystCostOnSuccess) +
+                          buildOutlierPriceWarningIcon(breakdown.catalystIsOutlier),
                   })}</div>`
                 : `<div>${t('riskOfRuinUi.noCatalystUsed')}</div>`
         );
@@ -828,7 +836,7 @@ class RiskOfRuinUI {
                             branch.isSelfReturn ? t('riskOfRuinUi.selfReturnLabel', { itemName }) : itemName
                         }</td>
                         <td style="padding:2px 6px; text-align:right;">${formatPercentage(breakdown.successRate * branch.dropRate, 2)}</td>
-                        <td style="padding:2px 6px; text-align:right;">${fmtGold(branch.payout)}</td>
+                        <td style="padding:2px 6px; text-align:right;">${fmtGold(branch.payout)}${buildOutlierPriceWarningIcon(branch.isOutlier)}</td>
                     </tr>`;
             })
             .join('');
@@ -849,7 +857,7 @@ class RiskOfRuinUI {
                     `<tr>
                         <td style="padding:2px 6px;">${dataManager.getItemDetails(bonus.itemHrid)?.name || bonus.itemHrid}</td>
                         <td style="padding:2px 6px; text-align:right;">${formatPercentage(bonus.dropRate, 2)}</td>
-                        <td style="padding:2px 6px; text-align:right;">${fmtGold(bonus.payout)}</td>
+                        <td style="padding:2px 6px; text-align:right;">${fmtGold(bonus.payout)}${buildOutlierPriceWarningIcon(bonus.isOutlier)}</td>
                     </tr>`
             )
             .join('');
@@ -882,7 +890,7 @@ class RiskOfRuinUI {
     }
 
     _enhancementDetailsHTML(
-        { perLevelOutcomeDistributions, costPerAttempt, protectionCostOnFailure, startLevel, targetLevel },
+        { perLevelOutcomeDistributions, costPerAttempt, protectionCostOnFailure, startLevel, targetLevel, isOutlier },
         startingBalance,
         maxSinglePossibleLoss,
         minActions
@@ -902,7 +910,9 @@ class RiskOfRuinUI {
             })
             .join('');
 
-        const rows2 = [`<div>${t('riskOfRuinUi.costPerAttemptLine', { value: fmtGold(costPerAttempt) })}</div>`];
+        const rows2 = [
+            `<div>${t('riskOfRuinUi.costPerAttemptLine', { value: fmtGold(costPerAttempt) + buildOutlierPriceWarningIcon(isOutlier) })}</div>`,
+        ];
         if (protectionCostOnFailure > 0) {
             rows2.push(
                 `<div>${t('riskOfRuinUi.protectionCostLine', { value: fmtGold(protectionCostOnFailure) })}</div>`

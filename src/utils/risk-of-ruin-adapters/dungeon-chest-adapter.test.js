@@ -19,7 +19,7 @@ vi.mock('../../api/marketplace.js', () => ({
 }));
 
 vi.mock('../../core/config.js', () => ({
-    default: { getSettingValue: () => keyPricingMode },
+    default: { getSettingValue: () => keyPricingMode, getSetting: () => false },
 }));
 
 vi.mock('../../features/market/expected-value-calculator.js', () => ({
@@ -89,8 +89,18 @@ describe('getChestCostBreakdown', () => {
         const breakdown = getChestCostBreakdown('/items/chimerical_chest');
 
         expect(breakdown).toEqual({
-            entryKey: { hrid: '/items/chimerical_entry_key', name: 'Chimerical Entry Key', price: 1000 },
-            chestKey: { hrid: '/items/chimerical_chest_key', name: 'Chimerical Chest Key', price: 2000 },
+            entryKey: {
+                hrid: '/items/chimerical_entry_key',
+                name: 'Chimerical Entry Key',
+                price: 1000,
+                isOutlier: false,
+            },
+            chestKey: {
+                hrid: '/items/chimerical_chest_key',
+                name: 'Chimerical Chest Key',
+                price: 2000,
+                isOutlier: false,
+            },
             total: 3000,
         });
     });
@@ -106,6 +116,7 @@ describe('getChestCostBreakdown', () => {
             hrid: '/items/chimerical_chest_key',
             name: 'Chimerical Chest Key',
             price: 2000,
+            isOutlier: false,
         });
         expect(breakdown.total).toBe(2000);
     });

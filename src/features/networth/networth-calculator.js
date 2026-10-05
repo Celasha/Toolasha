@@ -10,6 +10,8 @@
 
 import dataManager from '../../core/data-manager.js';
 import marketAPI from '../../api/marketplace.js';
+import marketValuesAPI from '../../api/market-values.js';
+import { applyOutlierGuardToPriceCache } from '../../utils/price-cache-outlier-guard.js';
 import { t } from '../../core/i18n.js';
 import { calculateAbilityCost } from '../../utils/ability-cost-calculator.js';
 import { calculateHouseBuildCost } from '../../utils/house-cost-calculator.js';
@@ -23,7 +25,7 @@ import networthCache from './networth-cache.js';
 import { getItemPrice, getItemPrices } from '../../utils/market-data.js';
 import { calculateItemValueBatch } from '../../utils/networth-worker-manager.js';
 import { DUNGEON_CHEST_CHEST_KEYS } from '../combat-stats/combat-stats-calculator.js';
-import { getKeyPrice } from '../../utils/dungeon-key-cost.js';
+import { getKeyPriceInfo } from '../../utils/dungeon-key-cost.js';
 import { getShopCoinCost } from '../../utils/game-lookups.js';
 import { isExcluded, getExclusions } from './networth-exclusions.js';
 import loadoutState from '../../core/loadout-state.js';
@@ -169,7 +171,7 @@ function getMarketPrice(itemHrid, enhancementLevel, priceCache = null) {
                 // Deduct chest key cost for dungeon chests
                 const chestKeyHrid = DUNGEON_CHEST_CHEST_KEYS[itemHrid];
                 if (chestKeyHrid) {
-                    netValue -= getKeyPrice(chestKeyHrid) ?? 0;
+                    netValue -= getKeyPriceInfo(chestKeyHrid).price ?? 0;
                 }
 
                 return netValue;
@@ -186,6 +188,15 @@ function getMarketPrice(itemHrid, enhancementLevel, priceCache = null) {
         const shopCost = getShopCoinCost(itemHrid);
         if (shopCost > 0) {
             return shopCost;
+        }
+
+        // Still nothing - fall back to the game's own reference market value. Enhanced items
+        // deliberately do NOT reach this: calculateItemValue() already recomputes their value via
+        // the enhancement path (replacement cost) whenever this returns 0, which is a more
+        // accurate estimate than this generic reference value would be.
+        const referenceValue = marketValuesAPI.getValue(itemHrid, 0);
+        if (referenceValue && referenceValue > 0) {
+            return referenceValue;
         }
     }
 
@@ -238,17 +249,21 @@ function calculateCurrencyValue(itemHrid) {
     // Dungeon tokens: Best market value per token approach
     // Calculate based on best shop item value (similar to task tokens)
     // Uses profitCalc_pricingMode which defaults to 'hybrid' (ask price)
+    // Note: uses the outlier-guard clamped value for correctness, but doesn't thread isOutlier
+    // into the per-item breakdown here - that breakdown's outlier flags come from a separate
+    // batch ask/bid priceCache check (applyOutlierGuardToPriceCache) that dungeon tokens never
+    // populate, since they have no direct market price of their own.
     if (itemHrid === '/items/chimerical_token') {
-        return calculateDungeonTokenValue(itemHrid, 'profitCalc_pricingMode', null) || 0;
+        return calculateDungeonTokenValue(itemHrid, 'profitCalc_pricingMode', null)?.value || 0;
     }
     if (itemHrid === '/items/sinister_token') {
-        return calculateDungeonTokenValue(itemHrid, 'profitCalc_pricingMode', null) || 0;
+        return calculateDungeonTokenValue(itemHrid, 'profitCalc_pricingMode', null)?.value || 0;
     }
     if (itemHrid === '/items/enchanted_token') {
-        return calculateDungeonTokenValue(itemHrid, 'profitCalc_pricingMode', null) || 0;
+        return calculateDungeonTokenValue(itemHrid, 'profitCalc_pricingMode', null)?.value || 0;
     }
     if (itemHrid === '/items/pirate_token') {
-        return calculateDungeonTokenValue(itemHrid, 'profitCalc_pricingMode', null) || 0;
+        return calculateDungeonTokenValue(itemHrid, 'profitCalc_pricingMode', null)?.value || 0;
     }
 
     return null; // Not a currency
@@ -321,7 +336,7 @@ export function calculateAllHousesCost(characterHouseRooms) {
         const level = houseData.level || 0;
         if (level === 0) continue;
 
-        const cost = calculateHouseBuildCost(houseRoomHrid, level);
+        const { cost, isOutlier } = calculateHouseBuildCost(houseRoomHrid, level);
         totalCost += cost;
 
         // Get human-readable name
@@ -333,6 +348,7 @@ export function calculateAllHousesCost(characterHouseRooms) {
             name: houseName,
             level: level,
             cost: cost,
+            isOutlier,
         });
     }
 
@@ -373,7 +389,7 @@ export function calculateAllAbilitiesCost(characterAbilities, abilityCombatTrigg
     for (const ability of characterAbilities) {
         if (!ability.abilityHrid || ability.level === 0) continue;
 
-        const cost = calculateAbilityCost(ability.abilityHrid, ability.level);
+        const { cost, isOutlier } = calculateAbilityCost(ability.abilityHrid, ability.level);
         totalCost += cost;
 
         // Use the already-localized ability name (mirrors the lookup pattern in
@@ -384,6 +400,7 @@ export function calculateAllAbilitiesCost(characterAbilities, abilityCombatTrigg
             hrid: ability.abilityHrid,
             name: `${abilityName} ${ability.level}`,
             cost: cost,
+            isOutlier,
         };
 
         breakdown.push(abilityData);
@@ -673,6 +690,7 @@ export async function calculateNetworth() {
 
     // Batch fetch all prices at once (eliminates ~400 redundant lookups)
     const priceCache = marketAPI.getPricesBatch(itemsToPrice);
+    const outlierKeys = applyOutlierGuardToPriceCache(priceCache);
 
     // Precompute loadout-excluded item hrids: Map<itemHrid → loadoutName>
     const loadoutExcludedHridToName = new Map();
@@ -747,6 +765,7 @@ export async function calculateNetworth() {
             value,
             itemHrid: item.itemHrid,
             enhancementLevel: item.enhancementLevel || 0,
+            isOutlier: outlierKeys.has(`${item.itemHrid}:${item.enhancementLevel || 0}`),
         });
     }
 
@@ -786,6 +805,7 @@ export async function calculateNetworth() {
             itemHrid: item.itemHrid,
             enhancementLevel: item.enhancementLevel || 0,
             isOpenable: itemDetails?.isOpenable === true,
+            isOutlier: outlierKeys.has(`${item.itemHrid}:${item.enhancementLevel || 0}`),
         };
 
         // Check if this is an ability book
@@ -890,6 +910,7 @@ export async function calculateNetworth() {
                 name: itemName,
                 isSell: true,
                 value: listingValue,
+                isOutlier: outlierKeys.has(`${listing.itemHrid}:${enhancementLevel}`),
             });
         } else {
             // Buying: value is locked coins + unclaimed items
@@ -906,6 +927,7 @@ export async function calculateNetworth() {
                 name: itemName,
                 isSell: false,
                 value: listingValue,
+                isOutlier: outlierKeys.has(`${listing.itemHrid}:${enhancementLevel}`),
             });
         }
     }

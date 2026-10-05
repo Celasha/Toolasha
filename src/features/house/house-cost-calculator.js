@@ -5,7 +5,7 @@
 
 import dataManager from '../../core/data-manager.js';
 import marketAPI from '../../api/marketplace.js';
-import { getItemPrice } from '../../utils/market-data.js';
+import { getItemPriceOutlierInfo } from '../../utils/market-data.js';
 
 class HouseCostCalculator {
     constructor() {
@@ -65,23 +65,26 @@ class HouseCostCalculator {
             if (item.itemHrid === '/items/coin') {
                 totalCoins = item.count;
             } else {
-                const marketPrice = await this.getItemMarketPrice(item.itemHrid);
+                const { price: marketPrice, isOutlier } = await this.getItemMarketPrice(item.itemHrid);
                 materials.push({
                     itemHrid: item.itemHrid,
                     count: item.count,
                     marketPrice: marketPrice,
                     totalValue: marketPrice * item.count,
+                    isOutlier,
                 });
             }
         }
 
         const totalMaterialValue = materials.reduce((sum, m) => sum + m.totalValue, 0);
+        const totalIsOutlier = materials.some((m) => m.isOutlier);
 
         return {
             level: targetLevel,
             coins: totalCoins,
             materials: materials,
             totalValue: totalCoins + totalMaterialValue,
+            totalIsOutlier,
         };
     }
 
@@ -116,6 +119,7 @@ class HouseCostCalculator {
                     const existing = materialMap.get(material.itemHrid);
                     existing.count += material.count;
                     existing.totalValue += material.totalValue;
+                    existing.isOutlier = existing.isOutlier || material.isOutlier;
                 } else {
                     materialMap.set(material.itemHrid, { ...material });
                 }
@@ -124,6 +128,7 @@ class HouseCostCalculator {
 
         const materials = Array.from(materialMap.values());
         const totalMaterialValue = materials.reduce((sum, m) => sum + m.totalValue, 0);
+        const totalIsOutlier = materials.some((m) => m.isOutlier);
 
         return {
             fromLevel: currentLevel,
@@ -131,26 +136,27 @@ class HouseCostCalculator {
             coins: totalCoins,
             materials: materials,
             totalValue: totalCoins + totalMaterialValue,
+            totalIsOutlier,
         };
     }
 
     /**
      * Get market price for an item (uses 'ask' price for buying materials)
      * @param {string} itemHrid - Item HRID
-     * @returns {Promise<number>} Market price
+     * @returns {Promise<{price: number, isOutlier: boolean}>} Market price and outlier flag
      */
     async getItemMarketPrice(itemHrid) {
         // Use 'ask' mode since house upgrades involve buying materials
-        const price = getItemPrice(itemHrid, { mode: 'ask' });
+        const { value: price, isOutlier } = getItemPriceOutlierInfo(itemHrid, { mode: 'ask' });
 
         if (price === null || price === 0) {
             // Fallback to vendor price from game data
             const initData = dataManager.getInitClientData();
             const itemData = initData?.itemDetailMap?.[itemHrid];
-            return itemData?.sellPrice || 0;
+            return { price: itemData?.sellPrice || 0, isOutlier: false };
         }
 
-        return price;
+        return { price, isOutlier };
     }
 
     /**

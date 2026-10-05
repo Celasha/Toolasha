@@ -19,7 +19,7 @@
  */
 
 import dataManager from '../../../core/data-manager.js';
-import { getItemPrice } from '../../../utils/market-data.js';
+import { getItemPriceOutlierInfo } from '../../../utils/market-data.js';
 import { getShopCoinCost } from '../../../utils/game-lookups.js';
 import { getDrinkConcentration, parseArtisanBonus } from '../../../utils/tea-parser.js';
 import { getSpecialCurrencyAcquisitionCost } from './special-currency-valuation.js';
@@ -71,7 +71,7 @@ export function createAcquisitionContext() {
  * contributes 0 - it is simply excluded from the minimum.
  * @param {string} itemHrid
  * @param {{acquisitionCache: Map, opportunityCache: Map, resolving: Set}} context
- * @returns {{cost: number|null, complete: boolean}}
+ * @returns {{cost: number|null, complete: boolean, isOutlier: boolean}}
  */
 export function resolveItemAcquisitionCost(itemHrid, context) {
     const cached = context.acquisitionCache.get(itemHrid);
@@ -79,7 +79,7 @@ export function resolveItemAcquisitionCost(itemHrid, context) {
 
     if (context.resolving.has(itemHrid)) {
         // Defensive cycle guard - not cached, since a future call outside the cycle may still resolve.
-        return { cost: null, complete: false };
+        return { cost: null, complete: false, isOutlier: false };
     }
 
     context.resolving.add(itemHrid);
@@ -97,25 +97,26 @@ export function resolveItemAcquisitionCost(itemHrid, context) {
 /**
  * @param {string} itemHrid
  * @param {Object} context
- * @returns {{cost: number|null, complete: boolean}}
+ * @returns {{cost: number|null, complete: boolean, isOutlier: boolean}}
  */
 function computeItemAcquisitionCost(itemHrid, context) {
     const candidates = [];
 
     const special = getSpecialCurrencyAcquisitionCost(itemHrid, context);
-    if (special.complete) candidates.push(special.cost);
+    if (special.complete) candidates.push({ cost: special.cost, isOutlier: special.isOutlier || false });
 
-    const ask = getItemPrice(itemHrid, { mode: 'ask' });
-    if (ask > 0) candidates.push(ask);
+    const askInfo = getItemPriceOutlierInfo(itemHrid, { mode: 'ask' });
+    if (askInfo.value > 0) candidates.push({ cost: askInfo.value, isOutlier: askInfo.isOutlier });
 
     const shopCost = getShopCoinCost(itemHrid);
-    if (shopCost > 0) candidates.push(shopCost);
+    if (shopCost > 0) candidates.push({ cost: shopCost, isOutlier: false });
 
     const craft = resolveProductionCraftCost(itemHrid, context);
-    if (craft.complete) candidates.push(craft.cost);
+    if (craft.complete) candidates.push({ cost: craft.cost, isOutlier: craft.isOutlier || false });
 
-    if (candidates.length === 0) return { cost: null, complete: false };
-    return { cost: Math.min(...candidates), complete: true };
+    if (candidates.length === 0) return { cost: null, complete: false, isOutlier: false };
+    const best = candidates.reduce((min, c) => (c.cost < min.cost ? c : min));
+    return { cost: best.cost, complete: true, isOutlier: best.isOutlier };
 }
 
 /**
@@ -126,14 +127,14 @@ function computeItemAcquisitionCost(itemHrid, context) {
  * contributing 0 (report's completeness-aware crafting requirement / TLA041E-19).
  * @param {string} itemHrid
  * @param {Object} context
- * @returns {{cost: number|null, complete: boolean}}
+ * @returns {{cost: number|null, complete: boolean, isOutlier: boolean}}
  */
 function resolveProductionCraftCost(itemHrid, context) {
     const gameData = dataManager.getInitClientData();
-    if (!gameData) return { cost: null, complete: false };
+    if (!gameData) return { cost: null, complete: false, isOutlier: false };
 
     const action = getActionOutputIndex(gameData).get(itemHrid);
-    if (!action) return { cost: null, complete: false };
+    if (!action) return { cost: null, complete: false, isOutlier: false };
 
     const outputCount = action.outputItems?.[0]?.count || 1;
 
@@ -150,6 +151,7 @@ function resolveProductionCraftCost(itemHrid, context) {
 
     let total = 0;
     let complete = true;
+    let isOutlier = false;
 
     for (const input of action.inputItems || []) {
         if (input.itemHrid === '/items/coin') {
@@ -162,6 +164,7 @@ function resolveProductionCraftCost(itemHrid, context) {
             complete = false;
             continue;
         }
+        if (materialCost.isOutlier) isOutlier = true;
         total += materialCost.cost * input.count * (1 - artisanBonus);
     }
 
@@ -170,12 +173,13 @@ function resolveProductionCraftCost(itemHrid, context) {
         if (!upgradeCost.complete) {
             complete = false;
         } else {
+            if (upgradeCost.isOutlier) isOutlier = true;
             total += upgradeCost.cost;
         }
     }
 
-    if (!complete) return { cost: null, complete: false };
-    return { cost: total / outputCount, complete: true };
+    if (!complete) return { cost: null, complete: false, isOutlier: false };
+    return { cost: total / outputCount, complete: true, isOutlier };
 }
 
 /**
@@ -185,13 +189,14 @@ function resolveProductionCraftCost(itemHrid, context) {
  * the whole enhancement leg to N/A.
  * @param {Object} itemDetails - Item details containing `enhancementCosts`
  * @param {Object} context
- * @returns {{cost: number|null, complete: boolean}}
+ * @returns {{cost: number|null, complete: boolean, isOutlier: boolean}}
  */
 export function resolvePerAttemptMaterialCost(itemDetails, context) {
-    if (!itemDetails?.enhancementCosts?.length) return { cost: null, complete: false };
+    if (!itemDetails?.enhancementCosts?.length) return { cost: null, complete: false, isOutlier: false };
 
     let cost = 0;
     let complete = true;
+    let isOutlier = false;
 
     for (const material of itemDetails.enhancementCosts) {
         if (material.itemHrid === '/items/coin') {
@@ -204,9 +209,10 @@ export function resolvePerAttemptMaterialCost(itemDetails, context) {
             complete = false;
             continue;
         }
+        if (materialCost.isOutlier) isOutlier = true;
         cost += material.count * materialCost.cost;
     }
 
-    if (!complete) return { cost: null, complete: false };
-    return { cost, complete: true };
+    if (!complete) return { cost: null, complete: false, isOutlier: false };
+    return { cost, complete: true, isOutlier };
 }

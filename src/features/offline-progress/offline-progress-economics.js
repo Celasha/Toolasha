@@ -11,6 +11,7 @@ import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import { calculateOfflineEconomics } from '../../utils/offline-economics-calculator.js';
 import { formatPrice } from '../../utils/market-data.js';
+import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 
 const UI_ID = 'mwi-offline-economics';
@@ -316,7 +317,9 @@ export function buildBlock(economics) {
                 .sort((a, b) => a.offlineCount - b.offlineCount)
         )
     );
-    container.appendChild(renderRow('Profit', economics.profit, economics.profitPerDay, null, null, null));
+    container.appendChild(
+        renderRow('Profit', economics.profit, economics.profitPerDay, null, null, null, economics.hasOutlierPrices)
+    );
 
     return container;
 }
@@ -354,8 +357,11 @@ function buildLineDetail(line) {
     label.title = getSourceLabel(line.source);
 
     const value = document.createElement('span');
-    value.textContent = formatPrice(line.totalValue, { decimals: 1 });
+    value.textContent = formatPrice(line.totalValue, { decimals: 1 }) + (line.isOutlier ? ' ⚠' : '');
     value.style.fontVariantNumeric = 'tabular-nums';
+    if (line.isOutlier) {
+        value.title = t('marketData.outlierPriceWarningTooltip');
+    }
 
     row.appendChild(label);
     row.appendChild(value);
@@ -398,13 +404,16 @@ function buildUnvaluedDetail(item) {
  * @param {'sell'|'buy'|null} side - Which side this row values, for the per-side pricing tooltip
  * @param {Array|null} lines - Valued line items for this side, or null for a non-expandable row
  * @param {Array|null} unvaluedItems - Unvalued items for this side, or null for a non-expandable row
+ * @param {boolean} [forceOutlier=false] - Used for the non-expandable Profit row, which has no
+ *   `lines` of its own to derive this from - true when either Revenue or Cost had an outlier.
  * @returns {Element} Row wrapper element
  */
-function renderRow(labelKey, value, perDay, side, lines, unvaluedItems) {
+function renderRow(labelKey, value, perDay, side, lines, unvaluedItems, forceOutlier = false) {
     const label = t(`offlineProgressEconomics.rowLabel${labelKey}`);
     const wrapper = document.createElement('div');
 
     const hasDetails = (lines && lines.length > 0) || (unvaluedItems && unvaluedItems.length > 0);
+    const hasOutlier = forceOutlier || (lines || []).some((line) => line.isOutlier);
 
     const row = document.createElement('div');
     row.style.cssText = `
@@ -431,7 +440,8 @@ function renderRow(labelKey, value, perDay, side, lines, unvaluedItems) {
     const valueEl = document.createElement('span');
     const sign = value > 0 && labelKey === 'Profit' ? '+' : '';
     const perDayText = perDay !== null ? ` (${sign}${formatPrice(perDay, { decimals: 1 })}/day)` : '';
-    valueEl.textContent = `${sign}${formatPrice(value, { decimals: 1 })}${perDayText}`;
+    valueEl.textContent =
+        `${sign}${formatPrice(value, { decimals: 1 })}${perDayText}` + buildOutlierPriceWarningIcon(hasOutlier);
     valueEl.style.color = '#e2e8f0';
     valueEl.style.fontVariantNumeric = 'tabular-nums';
 

@@ -18,7 +18,7 @@ import config from '../../core/config.js';
 import storage from '../../core/storage.js';
 import webSocketHook from '../../core/websocket.js';
 import dataManager from '../../core/data-manager.js';
-import { getItemPrice } from '../../utils/market-data.js';
+import { getItemPriceOutlierInfo } from '../../utils/market-data.js';
 
 const DECOMPOSE_ACTION_HRID = '/actions/alchemy/decompose';
 const CATALYST_OF_DECOMPOSITION_HRID = '/items/catalyst_of_decomposition';
@@ -199,6 +199,7 @@ class DecomposeHistoryTracker {
                         count: 0,
                         totalValue: 0,
                         priceEach: 0,
+                        isOutlier: false,
                     };
                 }
 
@@ -206,9 +207,13 @@ class DecomposeHistoryTracker {
                 this.activeSession.results[outputItemHrid].count += bulkMultiplier * expectedCount;
 
                 // Record market price at time of result
-                const price = getItemPrice(outputItemHrid, { context: 'profit', side: 'sell' }) || 0;
-                this.activeSession.results[outputItemHrid].priceEach = price;
-                this.activeSession.results[outputItemHrid].totalValue += price * bulkMultiplier * expectedCount;
+                const { value: price, isOutlier } = getItemPriceOutlierInfo(outputItemHrid, {
+                    context: 'profit',
+                    side: 'sell',
+                });
+                this.activeSession.results[outputItemHrid].priceEach = price || 0;
+                this.activeSession.results[outputItemHrid].isOutlier = isOutlier;
+                this.activeSession.results[outputItemHrid].totalValue += (price || 0) * bulkMultiplier * expectedCount;
             }
         }
 

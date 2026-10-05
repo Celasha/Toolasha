@@ -8,6 +8,7 @@ import dataManager from '../../core/data-manager.js';
 import { t } from '../../core/i18n.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 import { calculatePriceAfterTax } from '../../utils/profit-helpers.js';
+import { getItemPriceOutlierInfo, getItemPrices } from '../../utils/market-data.js';
 import {
     getKeyPricingModeSetting,
     getCheapestKeyCost,
@@ -37,14 +38,15 @@ export const DUNGEON_CHEST_CHEST_KEYS = {
 /**
  * Calculate total income from loot
  * @param {Object} lootMap - totalLootMap from player data
- * @returns {Object} { ask: number, bid: number }
+ * @returns {Object} { ask: number, bid: number, isOutlier: boolean }
  */
 export function calculateIncome(lootMap) {
     let totalAsk = 0;
     let totalBid = 0;
+    let isOutlier = false;
 
     if (!lootMap) {
-        return { ask: 0, bid: 0 };
+        return { ask: 0, bid: 0, isOutlier: false };
     }
 
     for (const loot of Object.values(lootMap)) {
@@ -67,16 +69,17 @@ export function calculateIncome(lootMap) {
                 }
             } else {
                 // Other items: get market price
-                const prices = marketAPI.getPrice(loot.itemHrid);
+                const prices = getItemPrices(loot.itemHrid);
                 if (prices) {
                     totalAsk += prices.ask * itemCount;
                     totalBid += prices.bid * itemCount;
+                    if (prices.askOutlier || prices.bidOutlier) isOutlier = true;
                 }
             }
         }
     }
 
-    return { ask: totalAsk, bid: totalBid };
+    return { ask: totalAsk, bid: totalBid, isOutlier };
 }
 
 /**
@@ -174,12 +177,12 @@ export function calculateKeyCosts(lootMap, durationSeconds) {
 
     const priceKey = (keyHrid, quantity) => {
         if (isCheapest) {
-            const { unitCost, plan } = getCheapestKeyCost(keyHrid, quantity);
-            return { price: Number.isFinite(unitCost) ? unitCost : null, plan };
+            const { unitCost, isOutlier, plan } = getCheapestKeyCost(keyHrid, quantity);
+            return { price: Number.isFinite(unitCost) ? unitCost : null, isOutlier, plan };
         }
-        const keyPrices = marketAPI.getPrice(keyHrid);
-        if (!keyPrices) return { price: null, plan: null };
-        return { price: keyPrices[keyPricingSetting] ?? keyPrices.ask, plan: null };
+        const priceInfo = getItemPriceOutlierInfo(keyHrid, { mode: keyPricingSetting });
+        if (priceInfo.value === null) return { price: null, isOutlier: false, plan: null };
+        return { price: priceInfo.value, isOutlier: priceInfo.isOutlier, plan: null };
     };
 
     for (const loot of Object.values(lootMap)) {
@@ -187,7 +190,7 @@ export function calculateKeyCosts(lootMap, durationSeconds) {
         if (!keyHrid) continue;
 
         const chestCount = loot.count;
-        const { price: keyPrice, plan } = priceKey(keyHrid, chestCount);
+        const { price: keyPrice, isOutlier, plan } = priceKey(keyHrid, chestCount);
         if (keyPrice === null) continue;
 
         const itemCost = keyPrice * chestCount;
@@ -205,6 +208,7 @@ export function calculateKeyCosts(lootMap, durationSeconds) {
             count: chestCount,
             consumedPerDay,
             pricePerItem: keyPrice,
+            isOutlier,
             totalCost: itemCost,
             craftPlan: plan,
         });
@@ -219,7 +223,7 @@ export function calculateKeyCosts(lootMap, durationSeconds) {
     }
 
     for (const [keyHrid, count] of Object.entries(chestKeyCounts)) {
-        const { price: keyPrice, plan } = priceKey(keyHrid, count);
+        const { price: keyPrice, isOutlier, plan } = priceKey(keyHrid, count);
         if (keyPrice === null) continue;
 
         const itemCost = keyPrice * count;
@@ -236,6 +240,7 @@ export function calculateKeyCosts(lootMap, durationSeconds) {
             count,
             consumedPerDay,
             pricePerItem: keyPrice,
+            isOutlier,
             totalCost: itemCost,
             craftPlan: plan,
         });
@@ -271,8 +276,9 @@ export function calculateConsumableCosts(consumables, durationSeconds) {
             continue;
         }
 
-        const prices = marketAPI.getPrice(consumable.itemHrid);
-        const itemPrice = prices ? prices.ask : 500;
+        const priceInfo = getItemPriceOutlierInfo(consumable.itemHrid, { mode: 'ask' });
+        const itemPrice = priceInfo.value !== null ? priceInfo.value : 500;
+        const isOutlier = priceInfo.value !== null ? priceInfo.isOutlier : false;
         const itemCost = itemPrice * consumed;
 
         totalCost += itemCost;
@@ -287,6 +293,7 @@ export function calculateConsumableCosts(consumables, durationSeconds) {
             count: consumed,
             consumedPerDay: consumable.consumedPerDay || 0,
             pricePerItem: itemPrice,
+            isOutlier,
             totalCost: itemCost,
             startingCount: consumable.startingCount,
             currentCount: consumable.currentCount,
@@ -509,6 +516,7 @@ export function calculatePlayerStats(playerData, durationSeconds = null, expecte
         income: {
             ask: income.ask,
             bid: income.bid,
+            isOutlier: income.isOutlier,
         },
         dailyIncome: {
             ask: dailyIncomeAsk,

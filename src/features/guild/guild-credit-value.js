@@ -13,7 +13,7 @@ import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import { marketplaceSession, MARKETPLACE_OWNER } from '../../core/marketplace-session.js';
 import { formatKMB } from '../../utils/formatters.js';
-import { getItemPrice } from '../../utils/market-data.js';
+import { getItemPriceOutlierInfo } from '../../utils/market-data.js';
 import {
     navigateToMarketplace,
     createMaterialTab,
@@ -28,6 +28,7 @@ import {
     isMarketplaceMarketListingsSelected,
 } from '../../utils/marketplace-tabs.js';
 import { createAutofillManager } from '../../utils/marketplace-autofill.js';
+import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 import { normalizeGuildShrineReturnLabel } from './guild-marketplace-label.js';
 import {
     buildCheapestPerCredit,
@@ -87,13 +88,20 @@ export { findExchangeConversion, MAX_GUILD_CREDIT_EXCHANGE_BATCH_COUNT };
  * @returns {Array} rows in itemDetailMap iteration order (buildTbody sorts on demand)
  */
 function buildCreditRows(itemDetailMap, creditHrid, { includeToken = true } = {}) {
-    const { sell: cheapestSellAll, buy: cheapestBuyAll } = buildCheapestPerCredit(itemDetailMap);
-    const tokenAskGPC =
-        buildGuildTokenValueByCredit(itemDetailMap, cheapestSellAll).find((r) => r.creditItemHrid === creditHrid)
-            ?.goldPerToken ?? null;
-    const tokenBidGPC =
-        buildGuildTokenValueByCredit(itemDetailMap, cheapestBuyAll).find((r) => r.creditItemHrid === creditHrid)
-            ?.goldPerToken ?? null;
+    const {
+        sell: cheapestSellAll,
+        buy: cheapestBuyAll,
+        sellOutlier,
+        buyOutlier,
+    } = buildCheapestPerCredit(itemDetailMap);
+    const tokenSellRow = buildGuildTokenValueByCredit(itemDetailMap, cheapestSellAll, sellOutlier).find(
+        (r) => r.creditItemHrid === creditHrid
+    );
+    const tokenBuyRow = buildGuildTokenValueByCredit(itemDetailMap, cheapestBuyAll, buyOutlier).find(
+        (r) => r.creditItemHrid === creditHrid
+    );
+    const tokenAskGPC = tokenSellRow?.goldPerToken ?? null;
+    const tokenBidGPC = tokenBuyRow?.goldPerToken ?? null;
 
     const rows = [];
     for (const [hrid, item] of Object.entries(itemDetailMap)) {
@@ -103,8 +111,10 @@ function buildCreditRows(itemDetailMap, creditHrid, { includeToken = true } = {}
         const conv = (item.guildCreditConversions || []).find((c) => c.creditItemHrid === creditHrid);
         if (!conv) continue;
 
-        const sellPrice = isToken ? null : getItemPrice(hrid, { mode: 'ask' });
-        const buyPrice = isToken ? null : getItemPrice(hrid, { mode: 'bid' });
+        const sellInfo = isToken ? null : getItemPriceOutlierInfo(hrid, { mode: 'ask' });
+        const buyInfo = isToken ? null : getItemPriceOutlierInfo(hrid, { mode: 'bid' });
+        const sellPrice = isToken ? null : sellInfo.value;
+        const buyPrice = isToken ? null : buyInfo.value;
         const sellGPC = isToken ? tokenAskGPC : sellPrice > 0 ? (sellPrice * conv.itemCount) / conv.creditCount : null;
         const buyGPC = isToken ? tokenBidGPC : buyPrice > 0 ? (buyPrice * conv.itemCount) / conv.creditCount : null;
 
@@ -118,6 +128,8 @@ function buildCreditRows(itemDetailMap, creditHrid, { includeToken = true } = {}
             buyPrice,
             sellGPC,
             buyGPC,
+            sellOutlier: isToken ? tokenSellRow?.isOutlier || false : sellInfo.isOutlier,
+            buyOutlier: isToken ? tokenBuyRow?.isOutlier || false : buyInfo.isOutlier,
             isToken,
         });
     }
@@ -181,8 +193,10 @@ function buildTopConversions(itemDetailMap, n) {
     for (const [hrid, item] of Object.entries(itemDetailMap)) {
         for (const conv of item.guildCreditConversions || []) {
             const creditHrid = conv.creditItemHrid;
-            const askPrice = getItemPrice(hrid, { mode: 'ask' });
-            const bidPrice = getItemPrice(hrid, { mode: 'bid' });
+            const askInfo = getItemPriceOutlierInfo(hrid, { mode: 'ask' });
+            const bidInfo = getItemPriceOutlierInfo(hrid, { mode: 'bid' });
+            const askPrice = askInfo.value;
+            const bidPrice = bidInfo.value;
             if (!askPrice && !bidPrice) continue;
             const askGPC = askPrice > 0 ? (askPrice * conv.itemCount) / conv.creditCount : null;
             const bidGPC = bidPrice > 0 ? (bidPrice * conv.itemCount) / conv.creditCount : null;
@@ -196,6 +210,8 @@ function buildTopConversions(itemDetailMap, n) {
                 bidPrice,
                 askGPC,
                 bidGPC,
+                askOutlier: askInfo.isOutlier,
+                bidOutlier: bidInfo.isOutlier,
             });
         }
     }
@@ -379,10 +395,10 @@ class GuildCreditValue {
                 tr.innerHTML = `
                 <td style="padding:4px 6px; text-align:left;">${nameDisplay}</td>
                 <td style="padding:4px 6px; text-align:center; color:#9ca3af;">${rate}</td>
-                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.sellPrice ? formatKMB(row.sellPrice) : '–'}</td>
-                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buyPrice ? formatKMB(row.buyPrice) : '–'}</td>
-                <td style="padding:4px 6px; text-align:right; ${sortKey === 'bid' ? 'color:#9ca3af;' : `font-weight:${isTop ? '700' : '400'};`}">${row.sellGPC ? formatKMB(row.sellGPC) : '–'}</td>
-                <td style="padding:4px 6px; text-align:right; ${sortKey === 'ask' ? 'color:#9ca3af;' : `font-weight:${isTop ? '700' : '400'};`}">${row.buyGPC ? formatKMB(row.buyGPC) : '–'}</td>
+                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.sellPrice ? formatKMB(row.sellPrice) + buildOutlierPriceWarningIcon(row.sellOutlier) : '–'}</td>
+                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buyPrice ? formatKMB(row.buyPrice) + buildOutlierPriceWarningIcon(row.buyOutlier) : '–'}</td>
+                <td style="padding:4px 6px; text-align:right; ${sortKey === 'bid' ? 'color:#9ca3af;' : `font-weight:${isTop ? '700' : '400'};`}">${row.sellGPC ? formatKMB(row.sellGPC) + buildOutlierPriceWarningIcon(row.sellOutlier) : '–'}</td>
+                <td style="padding:4px 6px; text-align:right; ${sortKey === 'ask' ? 'color:#9ca3af;' : `font-weight:${isTop ? '700' : '400'};`}">${row.buyGPC ? formatKMB(row.buyGPC) + buildOutlierPriceWarningIcon(row.buyOutlier) : '–'}</td>
             `;
                 tbody.appendChild(tr);
             });
@@ -597,8 +613,12 @@ class GuildCreditValue {
             // Credit costs
             for (const [itemHrid, count] of Object.entries(credits)) {
                 const name = itemDetailMap[itemHrid]?.name || itemHrid.split('/').pop();
-                const price = getItemPrice(itemHrid, { mode: 'ask' });
-                const goldStr = price > 0 ? ` (${formatKMB(price * count)})` : '';
+                const priceInfo = getItemPriceOutlierInfo(itemHrid, { mode: 'ask' });
+                const price = priceInfo.value;
+                const goldStr =
+                    price > 0
+                        ? ` (${formatKMB(price * count)}${buildOutlierPriceWarningIcon(priceInfo.isOutlier)})`
+                        : '';
                 const row = document.createElement('div');
                 row.style.cssText = 'display:flex; justify-content:space-between; padding:2px 0; font-size:12px;';
                 row.innerHTML = `<span style="color:#aaa;">${name}</span><span style="color:#e0e0e0; font-weight:600;">${count.toLocaleString()}<span style="color:#6b7280; font-weight:400;">${goldStr}</span></span>`;
@@ -914,7 +934,12 @@ class GuildCreditValue {
 
         const topConversions = buildTopConversions(gameData.itemDetailMap, 3);
         // Still need cheapest sell/buy for the credit row's own cost columns
-        const { sell: cheapestSell, buy: cheapestBuy } = buildCheapestPerCredit(gameData.itemDetailMap);
+        const {
+            sell: cheapestSell,
+            buy: cheapestBuy,
+            sellOutlier: cheapestSellOutlier,
+            buyOutlier: cheapestBuyOutlier,
+        } = buildCheapestPerCredit(gameData.itemDetailMap);
 
         const itemContainers = Array.from(requirements.querySelectorAll('[class*="Item_itemContainer"]'));
         const inputCounts = Array.from(requirements.querySelectorAll('[class*="GuildPanel_inputCount"]'));
@@ -942,16 +967,28 @@ class GuildCreditValue {
             const isToken = itemHrid.includes('guild_token');
             const isCredit = itemHrid.includes('guild_credit');
 
-            let sellEach = getItemPrice(itemHrid, { mode: 'ask' });
-            let buyEach = getItemPrice(itemHrid, { mode: 'bid' });
+            const sellInfo = getItemPriceOutlierInfo(itemHrid, { mode: 'ask' });
+            const buyInfo = getItemPriceOutlierInfo(itemHrid, { mode: 'bid' });
+            let sellEach = sellInfo.value;
+            let buyEach = buyInfo.value;
+            let sellEachOutlier = sellInfo.isOutlier;
+            let buyEachOutlier = buyInfo.isOutlier;
 
             if (isCredit) {
-                if (!sellEach || sellEach <= 0) sellEach = cheapestSell[itemHrid] || null;
-                if (!buyEach || buyEach <= 0) buyEach = cheapestBuy[itemHrid] || null;
+                if (!sellEach || sellEach <= 0) {
+                    sellEach = cheapestSell[itemHrid] || null;
+                    sellEachOutlier = cheapestSellOutlier[itemHrid] || false;
+                }
+                if (!buyEach || buyEach <= 0) {
+                    buyEach = cheapestBuy[itemHrid] || null;
+                    buyEachOutlier = cheapestBuyOutlier[itemHrid] || false;
+                }
             }
 
             let sellSub = sellEach && effectiveRequired ? sellEach * effectiveRequired : null;
             let buySub = buyEach && effectiveRequired ? buyEach * effectiveRequired : null;
+            let sellSubOutlier = sellEachOutlier;
+            let buySubOutlier = buyEachOutlier;
 
             if (isCredit && effectiveRequired > 0) {
                 const creditOptions = topConversions[itemHrid] || [];
@@ -964,9 +1001,11 @@ class GuildCreditValue {
                 sellSub = askTop?.askPrice
                     ? Math.ceil(effectiveRequired / askTop.creditCount) * askTop.itemCount * askTop.askPrice
                     : null;
+                sellSubOutlier = askTop?.askOutlier || false;
                 buySub = bidTop?.bidPrice
                     ? Math.ceil(effectiveRequired / bidTop.creditCount) * bidTop.itemCount * bidTop.bidPrice
                     : null;
+                buySubOutlier = bidTop?.bidOutlier || false;
             }
 
             if (sellSub !== null) totalSell += sellSub;
@@ -984,6 +1023,10 @@ class GuildCreditValue {
                 buyEach,
                 sellSub,
                 buySub,
+                sellEachOutlier,
+                buyEachOutlier,
+                sellSubOutlier,
+                buySubOutlier,
                 isCredit,
                 creditHrid: isCredit ? itemHrid : null,
             });
@@ -1001,10 +1044,10 @@ class GuildCreditValue {
                 tr.innerHTML = `
                 <td style="padding:4px 6px; text-align:left;">${row.itemName}</td>
                 <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.effectiveRequired.toLocaleString()}${row.owned > 0 ? ` <span style="color:#6b7280;font-size:10px;">${t('guildCreditValue.ownedSuffix', { count: row.owned.toLocaleString() })}</span>` : ''}</td>
-                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.sellEach ? formatKMB(row.sellEach) : '–'}</td>
-                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buyEach ? formatKMB(row.buyEach) : '–'}</td>
-                <td style="padding:4px 6px; text-align:right;">${row.sellSub ? formatKMB(row.sellSub) : '–'}</td>
-                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buySub ? formatKMB(row.buySub) : '–'}</td>
+                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.sellEach ? formatKMB(row.sellEach) + buildOutlierPriceWarningIcon(row.sellEachOutlier) : '–'}</td>
+                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buyEach ? formatKMB(row.buyEach) + buildOutlierPriceWarningIcon(row.buyEachOutlier) : '–'}</td>
+                <td style="padding:4px 6px; text-align:right;">${row.sellSub ? formatKMB(row.sellSub) + buildOutlierPriceWarningIcon(row.sellSubOutlier) : '–'}</td>
+                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buySub ? formatKMB(row.buySub) + buildOutlierPriceWarningIcon(row.buySubOutlier) : '–'}</td>
             `;
                 tbody.appendChild(tr);
 
@@ -1032,10 +1075,10 @@ class GuildCreditValue {
                         subTr.innerHTML = `
                         <td style="padding:2px 6px 2px 16px; text-align:left; color:${nameColor};">${rankPrefix} ${opt.name}</td>
                         <td style="padding:2px 6px; text-align:right; color:${nameColor};">${qtyNeeded.toLocaleString()}</td>
-                        <td style="padding:2px 6px; text-align:right; color:#6b7280;">${opt.askPrice ? formatKMB(opt.askPrice) : '–'}</td>
-                        <td style="padding:2px 6px; text-align:right; color:#6b7280;">${opt.bidPrice ? formatKMB(opt.bidPrice) : '–'}</td>
-                        <td style="padding:2px 6px; text-align:right; ${askStyle}">${askTotal ? formatKMB(askTotal) : '–'}</td>
-                        <td style="padding:2px 6px; text-align:right; ${bidStyle}">${bidTotal ? formatKMB(bidTotal) : '–'}</td>
+                        <td style="padding:2px 6px; text-align:right; color:#6b7280;">${opt.askPrice ? formatKMB(opt.askPrice) + buildOutlierPriceWarningIcon(opt.askOutlier) : '–'}</td>
+                        <td style="padding:2px 6px; text-align:right; color:#6b7280;">${opt.bidPrice ? formatKMB(opt.bidPrice) + buildOutlierPriceWarningIcon(opt.bidOutlier) : '–'}</td>
+                        <td style="padding:2px 6px; text-align:right; ${askStyle}">${askTotal ? formatKMB(askTotal) + buildOutlierPriceWarningIcon(opt.askOutlier) : '–'}</td>
+                        <td style="padding:2px 6px; text-align:right; ${bidStyle}">${bidTotal ? formatKMB(bidTotal) + buildOutlierPriceWarningIcon(opt.bidOutlier) : '–'}</td>
                     `;
                         tbody.appendChild(subTr);
                     });

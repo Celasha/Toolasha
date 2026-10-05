@@ -28,6 +28,7 @@ import { formatKMB, timeReadableCompact } from '../../utils/formatters.js';
 import { buildOwnedEnhancementLevelMap } from '../../utils/owned-enhancement-map.js';
 import loadoutState from '../../core/loadout-state.js';
 import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } from '../../utils/panel-z-index.js';
+import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 
 const TAB_CLASS = 'toolasha-skilling-opt-tab';
 const PANEL_CLASS = 'toolasha-skilling-opt-panel';
@@ -1529,14 +1530,14 @@ class SkillingSimulatorUI {
         const stats = document.createElement('div');
         stats.style.cssText = 'display: flex; gap: 20px; margin-bottom: 8px;';
 
-        const makeStat = (label, value, color, isIncomplete = false) => {
+        const makeStat = (label, value, color, isIncomplete = false, isOutlier = false) => {
             const el = document.createElement('div');
             const valueText = isIncomplete
                 ? t('skillingOptimizer.incompleteValueSuffix', { value: formatKMB(value) })
                 : formatKMB(value);
             el.innerHTML = `
                 <div style="font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">${label}</div>
-                <div style="font-size:15px;font-weight:700;color:${color};">${valueText}</div>
+                <div style="font-size:15px;font-weight:700;color:${color};">${valueText}${buildOutlierPriceWarningIcon(isOutlier)}</div>
             `;
             return el;
         };
@@ -1562,7 +1563,8 @@ class SkillingSimulatorUI {
                 isMultiAction ? t('skillingOptimizer.avgGoldPerHourStat') : t('skillingOptimizer.goldPerHourStat'),
                 result.goldPerHour,
                 config.COLOR_PROFIT,
-                result.hasMissingPrice
+                result.hasMissingPrice,
+                result.isOutlier
             )
         );
         section.appendChild(stats);
@@ -1715,7 +1717,8 @@ class SkillingSimulatorUI {
                         t('skillingOptimizer.avgGoldPerHourCompactStat'),
                         goldResult.optimal.avgScore,
                         config.COLOR_PROFIT,
-                        goldResult.optimal.hasMissingPrice
+                        goldResult.optimal.hasMissingPrice,
+                        goldResult.optimal.hasOutlierPrice
                     )
                 );
             container.appendChild(statsRow);
@@ -1941,7 +1944,7 @@ class SkillingSimulatorUI {
         const toSpan = document.createElement('span');
         toSpan.style.cssText = `color: ${config.COLOR_ACCENT}; font-weight: 600;`;
         toSpan.textContent = `+${houseRoomCandidate.targetLevel}`;
-        this._applyIncompleteTooltip(toSpan, houseRoomCandidate.hasMissingPrice);
+        this._applyIncompleteTooltip(toSpan, houseRoomCandidate.hasMissingPrice, houseRoomCandidate.isOutlier);
         transition.appendChild(toSpan);
         nameTd.appendChild(transition);
         tr.appendChild(nameTd);
@@ -2037,7 +2040,7 @@ class SkillingSimulatorUI {
                 ? `+${suggestedEntry.enhancementLevel}`
                 : `${suggestedEntry.itemName} +${suggestedEntry.enhancementLevel}`;
             this._applyRefinedTooltip(toSpan, suggestedEntry.itemHrid);
-            this._applyIncompleteTooltip(toSpan, suggestedEntry.hasMissingPrice);
+            this._applyIncompleteTooltip(toSpan, suggestedEntry.hasMissingPrice, suggestedEntry.isOutlier);
             transition.appendChild(toSpan);
             nameTd.appendChild(transition);
             tr.appendChild(nameTd);
@@ -2073,7 +2076,7 @@ class SkillingSimulatorUI {
                 nameSpan.style.cssText = `color: ${i === 0 ? 'rgba(255,255,255,0.85)' : config.COLOR_ACCENT}; font-weight: ${i > 0 ? '600' : '400'};`;
                 nameSpan.textContent = tier.itemName;
                 this._applyRefinedTooltip(nameSpan, tier.itemHrid);
-                this._applyIncompleteTooltip(nameSpan, tier.hasMissingPrice);
+                this._applyIncompleteTooltip(nameSpan, tier.hasMissingPrice, tier.isOutlier);
                 nameTd.appendChild(nameSpan);
                 tr.appendChild(nameTd);
 
@@ -2101,15 +2104,25 @@ class SkillingSimulatorUI {
      * FAIL C / OPT-27: a required market price for this recommendation is unresolved, so its score
      * is incomplete - not a verified exact ranking. Mirrors the existing Results "(incomplete)"
      * wording (_makeStat) rather than silently presenting an unresolved-price score as exact.
+     * Also flags when a resolved price was substituted by the market-data outlier guard -
+     * independent of (and can co-occur with) the incomplete-price case above.
      * @param {HTMLElement} nameEl
      * @param {boolean} hasMissingPrice
+     * @param {boolean} [isOutlier=false]
      */
-    _applyIncompleteTooltip(nameEl, hasMissingPrice) {
-        if (!hasMissingPrice) return;
-        nameEl.textContent = t('skillingOptimizer.incompleteValueSuffix', { value: nameEl.textContent });
-        nameEl.title = t('skillingOptimizer.incompletePriceRankingTooltip');
-        nameEl.style.cursor = 'help';
-        nameEl.style.color = config.COLOR_WARNING;
+    _applyIncompleteTooltip(nameEl, hasMissingPrice, isOutlier = false) {
+        if (hasMissingPrice) {
+            nameEl.textContent = t('skillingOptimizer.incompleteValueSuffix', { value: nameEl.textContent });
+            nameEl.title = t('skillingOptimizer.incompletePriceRankingTooltip');
+            nameEl.style.cursor = 'help';
+            nameEl.style.color = config.COLOR_WARNING;
+        }
+        if (isOutlier) {
+            nameEl.textContent += ' ⚠';
+            nameEl.title = nameEl.title
+                ? `${nameEl.title} ${t('marketData.outlierPriceWarningTooltip')}`
+                : t('marketData.outlierPriceWarningTooltip');
+        }
     }
 
     /**
@@ -2299,6 +2312,7 @@ class SkillingSimulatorUI {
                     toLevel: entry.enhancementLevel,
                     score: entry.score,
                     hasMissingPrice: entry.hasMissingPrice,
+                    isOutlier: entry.isOutlier,
                     xpScore: entry.xpScore,
                     goldScore: entry.goldScore,
                     cost: entry.cost,
@@ -2309,6 +2323,7 @@ class SkillingSimulatorUI {
                 // Reflects the latest (highest-enhancement) breakpoint's completeness within this
                 // tier, matching toLevel above.
                 current.hasMissingPrice = entry.hasMissingPrice;
+                current.isOutlier = entry.isOutlier;
                 current.cost = entry.cost;
                 current.costIsIncomplete = entry.costIsIncomplete;
             }
@@ -2317,14 +2332,14 @@ class SkillingSimulatorUI {
         return tiers;
     }
 
-    _makeStat(label, value, color, isIncomplete = false) {
+    _makeStat(label, value, color, isIncomplete = false, isOutlier = false) {
         const el = document.createElement('div');
         const valueText = isIncomplete
             ? t('skillingOptimizer.incompleteValueSuffix', { value: formatKMB(value) })
             : formatKMB(value);
         el.innerHTML = `
             <div style="font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">${label}</div>
-            <div style="font-size:15px;font-weight:700;color:${color};">${valueText}</div>
+            <div style="font-size:15px;font-weight:700;color:${color};">${valueText}${buildOutlierPriceWarningIcon(isOutlier)}</div>
         `;
         return el;
     }

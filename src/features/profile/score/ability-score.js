@@ -21,7 +21,7 @@ export function calculateAbilityScore(profileData) {
     for (const ability of equippedAbilities) {
         if (!ability.abilityHrid || ability.level === 0) continue;
 
-        const { cost, complete } = calculateAbilityBookCostDataDriven(ability.abilityHrid, ability.level);
+        const { cost, complete, isOutlier } = calculateAbilityBookCostDataDriven(ability.abilityHrid, ability.level);
 
         const abilityName = ability.abilityHrid
             .replace('/abilities/', '')
@@ -29,7 +29,7 @@ export function calculateAbilityScore(profileData) {
             .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
             .join(' ');
 
-        attribute(category, { name: `${abilityName} ${ability.level}`, cost, complete });
+        attribute(category, { name: `${abilityName} ${ability.level}`, cost, complete, isOutlier });
     }
 
     return category;

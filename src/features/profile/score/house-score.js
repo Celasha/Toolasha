@@ -25,7 +25,12 @@ export function calculateHouseScore(profileData) {
     ]) {
         const { complete, breakdown } = calculateHousesCostByDomain(characterHouseRooms, domain);
         for (const house of breakdown) {
-            attribute(category, { name: `${house.name} ${house.level}`, cost: house.cost, complete: house.complete });
+            attribute(category, {
+                name: `${house.name} ${house.level}`,
+                cost: house.cost,
+                complete: house.complete,
+                isOutlier: house.isOutlier,
+            });
         }
         // Fail-closed guard: an aggregate-level incompleteness with no representable room leaf
         // (e.g. missing upgradeCostsMap entirely) still marks the category incomplete.

@@ -5,8 +5,7 @@
  */
 
 import dataManager from '../core/data-manager.js';
-import marketAPI from '../api/marketplace.js';
-import { getItemPrice } from './market-data.js';
+import { getItemPrices, getItemPriceOutlierInfo } from './market-data.js';
 
 /**
  * List of starter abilities that give 50 XP per book (others give 500)
@@ -35,14 +34,15 @@ export function isStarterAbility(abilityHrid) {
  * Calculate the cost to reach a specific ability level from level 0
  * @param {string} abilityHrid - Ability HRID (e.g., '/abilities/fireball')
  * @param {number} targetLevel - Target level to reach
- * @returns {number} Total cost in coins
+ * @returns {{cost: number, isOutlier: boolean}} Total cost in coins, plus whether the book's
+ *   price was substituted by the market-data outlier guard
  */
 export function calculateAbilityCost(abilityHrid, targetLevel) {
     const gameData = dataManager.getInitClientData();
-    if (!gameData) return 0;
+    if (!gameData) return { cost: 0, isOutlier: false };
 
     const levelXpTable = gameData.levelExperienceTable;
-    if (!levelXpTable) return 0;
+    if (!levelXpTable) return { cost: 0, isOutlier: false };
 
     // Get XP needed to reach target level from level 0
     const targetXp = levelXpTable[targetLevel] || 0;
@@ -56,25 +56,27 @@ export function calculateAbilityCost(abilityHrid, targetLevel) {
 
     // Get market price for ability book
     const itemHrid = abilityHrid.replace('/abilities/', '/items/');
-    const prices = marketAPI.getPrice(itemHrid, 0);
+    const prices = getItemPrices(itemHrid, 0);
 
-    if (!prices) return 0;
+    if (!prices) return { cost: 0, isOutlier: false };
 
     // Match MCS behavior: if one price is positive and other is negative, use positive for both
     let ask = prices.ask;
     let bid = prices.bid;
+    let isOutlier = prices.askOutlier;
 
     if (ask > 0 && bid < 0) {
         bid = ask;
     }
     if (bid > 0 && ask < 0) {
         ask = bid;
+        isOutlier = prices.bidOutlier;
     }
 
     // Use weighted average
     const weightedPrice = (ask + bid) / 2;
 
-    return booksNeeded * weightedPrice;
+    return { cost: booksNeeded * weightedPrice, isOutlier };
 }
 
 /**
@@ -83,14 +85,15 @@ export function calculateAbilityCost(abilityHrid, targetLevel) {
  * @param {number} currentLevel - Current ability level
  * @param {number} currentXp - Current ability XP
  * @param {number} targetLevel - Target ability level
- * @returns {number} Cost in coins
+ * @returns {{cost: number, isOutlier: boolean}} Cost in coins, plus whether the book's price
+ *   was substituted by the market-data outlier guard
  */
 export function calculateAbilityLevelUpCost(abilityHrid, currentLevel, currentXp, targetLevel) {
     const gameData = dataManager.getInitClientData();
-    if (!gameData) return 0;
+    if (!gameData) return { cost: 0, isOutlier: false };
 
     const levelXpTable = gameData.levelExperienceTable;
-    if (!levelXpTable) return 0;
+    if (!levelXpTable) return { cost: 0, isOutlier: false };
 
     // Calculate XP needed
     const targetXp = levelXpTable[targetLevel] || 0;
@@ -109,25 +112,27 @@ export function calculateAbilityLevelUpCost(abilityHrid, currentLevel, currentXp
 
     // Get market price
     const itemHrid = abilityHrid.replace('/abilities/', '/items/');
-    const prices = marketAPI.getPrice(itemHrid, 0);
+    const prices = getItemPrices(itemHrid, 0);
 
-    if (!prices) return 0;
+    if (!prices) return { cost: 0, isOutlier: false };
 
     // Match MCS behavior: if one price is positive and other is negative, use positive for both
     let ask = prices.ask;
     let bid = prices.bid;
+    let isOutlier = prices.askOutlier;
 
     if (ask > 0 && bid < 0) {
         bid = ask;
     }
     if (bid > 0 && ask < 0) {
         ask = bid;
+        isOutlier = prices.bidOutlier;
     }
 
     // Weighted average
     const weightedPrice = (ask + bid) / 2;
 
-    return booksNeeded * weightedPrice;
+    return { cost: booksNeeded * weightedPrice, isOutlier };
 }
 
 /**
@@ -137,22 +142,23 @@ export function calculateAbilityLevelUpCost(abilityHrid, currentLevel, currentXp
  * `experienceGain` or Ask price marks the result incomplete.
  * @param {string} abilityHrid - Ability HRID
  * @param {number} targetLevel - Target level to reach
- * @returns {{cost: number|null, complete: boolean}}
+ * @returns {{cost: number|null, complete: boolean, isOutlier: boolean}}
  */
 export function calculateAbilityBookCostDataDriven(abilityHrid, targetLevel) {
     const gameData = dataManager.getInitClientData();
     const levelXpTable = gameData?.levelExperienceTable;
-    if (!levelXpTable) return { cost: null, complete: false };
+    if (!levelXpTable) return { cost: null, complete: false, isOutlier: false };
 
     const itemHrid = abilityHrid.replace('/abilities/', '/items/');
     const xpPerBook = gameData.itemDetailMap?.[itemHrid]?.abilityBookDetail?.experienceGain;
-    if (!(xpPerBook > 0)) return { cost: null, complete: false };
+    if (!(xpPerBook > 0)) return { cost: null, complete: false, isOutlier: false };
 
     const targetXp = levelXpTable[targetLevel] || 0;
     const booksNeeded = Math.ceil(targetXp / xpPerBook) + 1; // +1 = initial learn book
 
-    const ask = getItemPrice(itemHrid, { mode: 'ask' });
-    if (!(ask > 0)) return { cost: null, complete: false };
+    const askInfo = getItemPriceOutlierInfo(itemHrid, { mode: 'ask' });
+    const ask = askInfo.value;
+    if (!(ask > 0)) return { cost: null, complete: false, isOutlier: false };
 
-    return { cost: booksNeeded * ask, complete: true };
+    return { cost: booksNeeded * ask, complete: true, isOutlier: askInfo.isOutlier };
 }

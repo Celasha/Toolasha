@@ -81,11 +81,13 @@ function buildLevelOutcomes({
  *   stepFn: function(state: Object, rng: function(): number): Object,
  *   isTargetReached: function(state: Object): boolean,
  *   initialState: {level: number},
+ *   isOutlier: boolean,
  * }|null} null if the item/params are invalid or have no usable cost data. expectedTotalCost is
  *   the closed-form expected gold spend from startLevel to targetLevel (attempts * costPerAttempt
  *   + protectionCount * protectionCostOnFailure) — the natural costPerAction for a depth-cap
  *   check against the resulting item, since exactly one item at targetLevel is produced per
- *   completed run.
+ *   completed run. isOutlier only reflects the per-attempt material cost - getCheapestProtectionPrice()
+ *   has no outlier visibility of its own (same pre-existing gap documented in equipment-resolver.js).
  */
 export function buildEnhancementModel(itemHrid, params) {
     const itemDetails = dataManager.getItemDetails(itemHrid);
@@ -138,5 +140,6 @@ export function buildEnhancementModel(itemHrid, params) {
         },
         isTargetReached: (state) => state.level >= targetLevel,
         initialState: { level: startLevel },
+        isOutlier: perAttemptMaterial.isOutlier || false,
     };
 }

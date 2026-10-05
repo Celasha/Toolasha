@@ -6,10 +6,11 @@
 import config from '../../core/config.js';
 import { t } from '../../core/i18n.js';
 import dataManager from '../../core/data-manager.js';
-import marketAPI from '../../api/marketplace.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } from '../../utils/panel-z-index.js';
 import { formatWithSeparator, formatKMB } from '../../utils/formatters.js';
+import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
+import { getItemPriceOutlierInfo } from '../../utils/market-data.js';
 import {
     buildGameDataPayload,
     buildAllPlayerDTOs,
@@ -1995,20 +1996,25 @@ class CombatSimUI {
             const dropData = [...dropMap.entries()]
                 .filter(([, total]) => total > 0)
                 .map(([itemHrid, total]) => {
-                    const price = marketAPI.getPrice(itemHrid);
                     // Revenue: use sell price based on pricing mode
-                    let unitValue = this._getSellPrice(price);
+                    const priceInfo = getItemPriceOutlierInfo(itemHrid, { context: 'profit', side: 'sell' });
+                    let unitValue = priceInfo.value || 0;
+                    let isOutlier = priceInfo.isOutlier;
                     if (unitValue === 0 && itemHrid === '/items/coin') {
                         unitValue = 1;
+                        isOutlier = false;
                     }
                     if (unitValue === 0) {
                         // Use cached EV or calculate directly (matches combat stats approach)
                         const ev =
                             expectedValueCalculator.getCachedValue(itemHrid) ||
                             expectedValueCalculator.calculateSingleContainer(itemHrid);
-                        if (ev !== null && ev > 0) unitValue = ev;
+                        if (ev !== null && ev > 0) {
+                            unitValue = ev;
+                            isOutlier = false;
+                        }
                     }
-                    return { itemHrid, total, unitValue, totalGold: total * unitValue };
+                    return { itemHrid, total, unitValue, totalGold: total * unitValue, isOutlier };
                 })
                 .sort((a, b) => b.totalGold - a.totalGold); // Sort by gold value descending
 
@@ -2045,7 +2051,10 @@ class CombatSimUI {
                     dropGoldPerHr += goldPerHr;
                     dropGoldTotal += drop.totalGold;
 
-                    const goldHrStr = drop.unitValue > 0 ? formatKMB(Math.round(goldPerHr)) : '—';
+                    const goldHrStr =
+                        drop.unitValue > 0
+                            ? formatKMB(Math.round(goldPerHr)) + buildOutlierPriceWarningIcon(drop.isOutlier)
+                            : '—';
                     const goldDayStr = drop.unitValue > 0 ? formatKMB(Math.round(goldPerHr * 24)) : '—';
                     const goldTotalStr = drop.unitValue > 0 ? formatKMB(Math.round(drop.totalGold)) : '—';
                     const goldColor = drop.unitValue > 0 ? '#e8a87c' : '#444';
@@ -2084,10 +2093,8 @@ class CombatSimUI {
 
             // Compute dungeon key costs from drop map
             if (simResult.isDungeon) {
-                const getBuyPriceForKey = (keyHrid) => {
-                    const price = marketAPI.getPrice(keyHrid);
-                    return this._getBuyPrice(price);
-                };
+                const getBuyPriceForKey = (keyHrid) =>
+                    getItemPriceOutlierInfo(keyHrid, { context: 'profit', side: 'buy' });
                 dungeonKeyCosts = calculateDungeonKeyCosts(dropMap, getBuyPriceForKey);
                 for (const key of dungeonKeyCosts) {
                     keyCostPerHr += (key.count / hours) * key.unitCost;
@@ -2099,9 +2106,9 @@ class CombatSimUI {
         // Consumable costs — same column layout as drops
         const consumableEntries = Object.entries(consumableTotals)
             .map(([itemHrid, total]) => {
-                const price = marketAPI.getPrice(itemHrid);
-                const unitCost = this._getBuyPrice(price);
-                return { itemHrid, total, unitCost, totalCost: total * unitCost };
+                const priceInfo = getItemPriceOutlierInfo(itemHrid, { context: 'profit', side: 'buy' });
+                const unitCost = priceInfo.value || 0;
+                return { itemHrid, total, unitCost, totalCost: total * unitCost, isOutlier: priceInfo.isOutlier };
             })
             .sort((a, b) => b.totalCost - a.totalCost);
 
@@ -2137,7 +2144,10 @@ class CombatSimUI {
                 consumableGoldPerHr += costPerHr;
                 consumableGoldTotal += cons.totalCost;
 
-                const costHrStr = cons.unitCost > 0 ? formatKMB(Math.round(costPerHr)) : '—';
+                const costHrStr =
+                    cons.unitCost > 0
+                        ? formatKMB(Math.round(costPerHr)) + buildOutlierPriceWarningIcon(cons.isOutlier)
+                        : '—';
                 const costDayStr = cons.unitCost > 0 ? formatKMB(Math.round(costPerHr * 24)) : '—';
                 const costTotalStr = cons.unitCost > 0 ? formatKMB(Math.round(cons.totalCost)) : '—';
                 const cColor = cons.unitCost > 0 ? costColor : '#444';
@@ -2200,7 +2210,10 @@ class CombatSimUI {
                 const totalStr = key.count >= 1 ? formatWithSeparator(Math.round(key.count)) : key.count.toFixed(2);
 
                 const costPerHr = perHr * key.unitCost;
-                const costHrStr = key.unitCost > 0 ? formatKMB(Math.round(costPerHr)) : '—';
+                const costHrStr =
+                    key.unitCost > 0
+                        ? formatKMB(Math.round(costPerHr)) + buildOutlierPriceWarningIcon(key.isOutlier)
+                        : '—';
                 const costDayStr = key.unitCost > 0 ? formatKMB(Math.round(costPerHr * 24)) : '—';
                 const costTotalStr = key.unitCost > 0 ? formatKMB(Math.round(key.totalCost)) : '—';
                 const cColor = key.unitCost > 0 ? costColor : '#444';
@@ -2518,8 +2531,7 @@ class CombatSimUI {
             const dropMap = calculateExpectedDrops(simResult, gameData, activeTab);
             for (const [itemHrid, total] of dropMap.entries()) {
                 if (total <= 0) continue;
-                const price = marketAPI.getPrice(itemHrid);
-                let unitValue = this._getSellPrice(price);
+                let unitValue = getItemPriceOutlierInfo(itemHrid, { context: 'profit', side: 'sell' }).value || 0;
                 if (unitValue === 0 && itemHrid === '/items/coin') unitValue = 1;
                 if (unitValue === 0) {
                     const evData = expectedValueCalculator.calculateExpectedValue(itemHrid);
@@ -2533,8 +2545,7 @@ class CombatSimUI {
         let consumableCostPerHr = 0;
         const selfConsumables = simResult.consumablesUsed?.[activeTab] || {};
         for (const [itemHrid, count] of Object.entries(selfConsumables)) {
-            const price = marketAPI.getPrice(itemHrid);
-            const unitCost = this._getBuyPrice(price);
+            const unitCost = getItemPriceOutlierInfo(itemHrid, { context: 'profit', side: 'buy' }).value || 0;
             consumableCostPerHr += (count / hours) * unitCost;
         }
 
@@ -2542,10 +2553,7 @@ class CombatSimUI {
         let keyCostPerHrMetric = 0;
         if (simResult.isDungeon && gameData) {
             const dropMap = calculateExpectedDrops(simResult, gameData, activeTab);
-            const getBuyPriceForKey = (keyHrid) => {
-                const price = marketAPI.getPrice(keyHrid);
-                return this._getBuyPrice(price);
-            };
+            const getBuyPriceForKey = (keyHrid) => getItemPriceOutlierInfo(keyHrid, { context: 'profit', side: 'buy' });
             const keyCosts = calculateDungeonKeyCosts(dropMap, getBuyPriceForKey);
             for (const key of keyCosts) {
                 keyCostPerHrMetric += (key.count / hours) * key.unitCost;
@@ -3034,22 +3042,6 @@ class CombatSimUI {
     }
 
     /**
-     * Get the sell price for an item based on the global pricing mode.
-     * @param {Object} priceData - { bid, ask } from marketAPI
-     * @returns {number}
-     * @private
-     */
-    _getSellPrice(priceData) {
-        if (!priceData) return 0;
-        const mode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
-        // conservative/patientBuy → bid; hybrid/optimistic → ask
-        if (mode === 'conservative' || mode === 'patientBuy') {
-            return priceData.bid > 0 ? priceData.bid : 0;
-        }
-        return priceData.ask > 0 ? priceData.ask : 0;
-    }
-
-    /**
      * Format one player's OOM% for display (UI-001):
      * - exact 0 -> "No" in neutral/default text, never green;
      * - >0 and <0.1% -> "<0.1%" in the same neutral color as "No", never a misleading "0.0%";
@@ -3065,22 +3057,6 @@ class CombatSimUI {
         if (oomPercent === 0) return { text: t('combatSimUi.noLabel'), color: NEUTRAL };
         if (oomPercent < 0.1) return { text: t('combatSimUi.lessThanTenthPercent'), color: NEUTRAL };
         return { text: oomPercent.toFixed(1) + '%', color: WARNING };
-    }
-
-    /**
-     * Get the buy price for an item based on the global pricing mode.
-     * @param {Object} priceData - { bid, ask } from marketAPI
-     * @returns {number}
-     * @private
-     */
-    _getBuyPrice(priceData) {
-        if (!priceData) return 0;
-        const mode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
-        // optimistic/patientBuy → bid; conservative/hybrid → ask
-        if (mode === 'optimistic' || mode === 'patientBuy') {
-            return priceData.bid > 0 ? priceData.bid : 0;
-        }
-        return priceData.ask > 0 ? priceData.ask : 0;
     }
 
     /**
@@ -3268,7 +3244,10 @@ class CombatSimUI {
             // Incomplete cost resolution (CSIM-AUD-013) must never look like a known, precise
             // value - a candidate whose cost genuinely couldn't be fully priced is marked with a
             // "~" prefix rather than being ranked as if it were an exact/free upgrade.
-            const costStr = (r.candidate.costIsIncomplete ? '~' : '') + formatKMB(r.cost);
+            const costStr =
+                (r.candidate.costIsIncomplete ? '~' : '') +
+                formatKMB(r.cost) +
+                buildOutlierPriceWarningIcon(r.candidate.isOutlier);
             // A house room with no combat actionBuffs has no real DPS effect - its deltas.dps is
             // pure sim noise, so only profit (its real effect) should brighten the row.
             const rowColor =

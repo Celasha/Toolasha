@@ -4,6 +4,7 @@
  */
 
 import marketAPI from '../api/marketplace.js';
+import marketValuesAPI from '../api/market-values.js';
 import config from '../core/config.js';
 import { getCustomPrice } from '../features/settings/custom-price-overrides.js';
 
@@ -21,9 +22,25 @@ const loggedWarnings = new Set();
  * @returns {number|null} Price in gold, or null if no market data
  */
 export function getItemPrice(itemHrid, options = {}) {
+    return resolveItemPrice(itemHrid, options).value;
+}
+
+/**
+ * Resolve an item price along with whether the market-data outlier guard substituted it.
+ * Same resolution logic/options as getItemPrice(), for callers that want to show a warning
+ * icon when a live price was replaced by the reference market value.
+ * @param {string} itemHrid
+ * @param {Object} options - Same shape as getItemPrice()
+ * @returns {{value: number|null, isOutlier: boolean}}
+ */
+export function getItemPriceOutlierInfo(itemHrid, options = {}) {
+    return resolveItemPrice(itemHrid, options);
+}
+
+function resolveItemPrice(itemHrid, options = {}) {
     // Validate inputs
     if (!itemHrid || typeof itemHrid !== 'string') {
-        return null;
+        return { value: null, isOutlier: false };
     }
 
     // Handle case where someone passes enhancementLevel as second arg (old API)
@@ -38,21 +55,29 @@ export function getItemPrice(itemHrid, options = {}) {
 
     const { enhancementLevel = 0, mode, context, side = 'sell' } = options;
 
-    // Check for custom price override
+    // Check for custom price override - a user-set price is never second-guessed
     const customPrice = getCustomPrice(itemHrid, enhancementLevel, side);
     if (customPrice !== null) {
-        return customPrice;
+        return { value: customPrice, isOutlier: false };
     }
 
     // Get raw price data from API
     const priceData = marketAPI.getPrice(itemHrid, enhancementLevel);
 
     if (!priceData) {
-        return null;
+        return { value: null, isOutlier: false };
     }
 
     // Determine pricing mode
     const pricingMode = mode || getPricingMode(context, side);
+
+    const resolveSide = (value) => {
+        if (typeof value !== 'number' || value < 0) {
+            return { value: null, isOutlier: false };
+        }
+
+        return marketValuesAPI.checkOutlier(itemHrid, enhancementLevel, value);
+    };
 
     // Validate pricing mode
     const validModes = ['ask', 'bid', 'average'];
@@ -62,39 +87,33 @@ export function getItemPrice(itemHrid, options = {}) {
             console.warn(`[Market Data] Unknown pricing mode: ${pricingMode}, defaulting to ask`);
             loggedWarnings.add(warningKey);
         }
-        return priceData.ask || 0;
+        return marketValuesAPI.checkOutlier(itemHrid, enhancementLevel, priceData.ask || 0);
     }
-
-    const resolvePrice = (value) => {
-        if (typeof value !== 'number') {
-            return null;
-        }
-
-        if (value < 0) {
-            return null;
-        }
-
-        return value;
-    };
 
     // Return price based on mode
     switch (pricingMode) {
         case 'ask':
-            return resolvePrice(priceData.ask);
+            return resolveSide(priceData.ask);
         case 'bid':
-            return resolvePrice(priceData.bid);
-        case 'average':
+            return resolveSide(priceData.bid);
+        case 'average': {
             if (typeof priceData.ask !== 'number' || typeof priceData.bid !== 'number') {
-                return null;
+                return { value: null, isOutlier: false };
             }
 
             if (priceData.ask < 0 || priceData.bid < 0) {
-                return null;
+                return { value: null, isOutlier: false };
             }
 
-            return (priceData.ask + priceData.bid) / 2;
+            const askResult = marketValuesAPI.checkOutlier(itemHrid, enhancementLevel, priceData.ask);
+            const bidResult = marketValuesAPI.checkOutlier(itemHrid, enhancementLevel, priceData.bid);
+            return {
+                value: (askResult.value + bidResult.value) / 2,
+                isOutlier: askResult.isOutlier || bidResult.isOutlier,
+            };
+        }
         default:
-            return resolvePrice(priceData.ask);
+            return resolveSide(priceData.ask);
     }
 }
 
@@ -102,7 +121,7 @@ export function getItemPrice(itemHrid, options = {}) {
  * Get all price variants for an item
  * @param {string} itemHrid - Item HRID
  * @param {number} [enhancementLevel=0] - Enhancement level
- * @returns {Object|null} Object with {ask, bid, average} or null if no market data
+ * @returns {Object|null} Object with {ask, bid, average, askOutlier, bidOutlier} or null
  */
 export function getItemPrices(itemHrid, enhancementLevel = 0) {
     const priceData = marketAPI.getPrice(itemHrid, enhancementLevel);
@@ -111,10 +130,15 @@ export function getItemPrices(itemHrid, enhancementLevel = 0) {
         return null;
     }
 
+    const askResult = marketValuesAPI.checkOutlier(itemHrid, enhancementLevel, priceData.ask);
+    const bidResult = marketValuesAPI.checkOutlier(itemHrid, enhancementLevel, priceData.bid);
+
     return {
-        ask: priceData.ask,
-        bid: priceData.bid,
-        average: (priceData.ask + priceData.bid) / 2,
+        ask: askResult.value,
+        bid: bidResult.value,
+        average: (askResult.value + bidResult.value) / 2,
+        askOutlier: askResult.isOutlier,
+        bidOutlier: bidResult.isOutlier,
     };
 }
 
@@ -242,6 +266,7 @@ export function getItemPricesBatch(items, options = {}) {
 
 export default {
     getItemPrice,
+    getItemPriceOutlierInfo,
     getItemPrices,
     formatPrice,
     getPricingMode,

@@ -8,7 +8,8 @@ import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import dataManager from '../../core/data-manager.js';
 import { t } from '../../core/i18n.js';
-import marketAPI from '../../api/marketplace.js';
+import { getItemPriceOutlierInfo } from '../../utils/market-data.js';
+import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 import { calculateMaterialRequirements } from '../../utils/material-calculator.js';
 import { formatKMB, formatWithSeparator } from '../../utils/formatters.js';
 import { setReactInputValue } from '../../utils/react-input.js';
@@ -87,13 +88,15 @@ function findMaxUnits(actionHrid, budget) {
     const hasTradeableMat = actionDetail.inputItems.some((input) => {
         const itemDetails = gameData.itemDetailMap[input.itemHrid];
         if (!itemDetails?.isTradable) return false;
-        const price = marketAPI.getPrice(input.itemHrid);
-        return price?.ask > 0;
+        const priceInfo = getItemPriceOutlierInfo(input.itemHrid, { mode: 'ask' });
+        return priceInfo.value > 0;
     });
     if (!hasTradeableMat) return null;
 
     /**
-     * Calculate purchase cost for N units using current inventory.
+     * Calculate purchase cost for N units using current inventory. Uses the outlier-guard
+     * clamped ask price, not a raw market read, so an outlier price can't skew the binary
+     * search's resulting "units affordable" count.
      * @param {number} n
      * @returns {number}
      */
@@ -103,9 +106,9 @@ function findMaxUnits(actionHrid, budget) {
         let total = 0;
         for (const mat of mats) {
             if (!mat.isTradeable || mat.missing <= 0) continue;
-            const price = marketAPI.getPrice(mat.itemHrid);
-            if (!price?.ask) continue;
-            total += mat.missing * price.ask;
+            const priceInfo = getItemPriceOutlierInfo(mat.itemHrid, { mode: 'ask' });
+            if (!priceInfo.value) continue;
+            total += mat.missing * priceInfo.value;
         }
         return total;
     };
@@ -200,11 +203,14 @@ function showBreakdownModal(budget, result) {
 
     let totalSpend = 0;
     let perUnitCost = 0;
+    let hasOutlierPrices = false;
 
     const rows = result.materials
         .map((mat) => {
-            const price = mat.isTradeable ? marketAPI.getPrice(mat.itemHrid) : null;
-            const ask = price?.ask > 0 ? price.ask : null;
+            const priceInfo = mat.isTradeable ? getItemPriceOutlierInfo(mat.itemHrid, { mode: 'ask' }) : null;
+            const ask = priceInfo?.value > 0 ? priceInfo.value : null;
+            const askIsOutlier = ask ? priceInfo.isOutlier : false;
+            if (askIsOutlier) hasOutlierPrices = true;
             const lineCost = ask && mat.missing > 0 ? mat.missing * ask : 0;
             totalSpend += lineCost;
             if (ask) perUnitCost += ask * (mat.required / (result.n || 1));
@@ -214,7 +220,7 @@ function showBreakdownModal(budget, result) {
                 : `<td style="${tdDimStyle}">—</td>`;
 
             const askCell = ask
-                ? `<td style="${tdStyle}">${formatKMB(ask)}</td>`
+                ? `<td style="${tdStyle}">${formatKMB(ask)}${buildOutlierPriceWarningIcon(askIsOutlier)}</td>`
                 : `<td style="${tdDimStyle}">${mat.isTradeable ? t('budgetCalculator.noData') : '—'}</td>`;
 
             const costCell =
@@ -253,11 +259,11 @@ function showBreakdownModal(budget, result) {
             <tfoot>
                 <tr>
                     <td colspan="5" style="${summaryRowStyle}; text-align:left; color:#aaa;">${t('budgetCalculator.perUnitCostLabel')}</td>
-                    <td style="${summaryRowStyle}">${formatKMB(Math.round(perUnitCost))}</td>
+                    <td style="${summaryRowStyle}">${formatKMB(Math.round(perUnitCost))}${buildOutlierPriceWarningIcon(hasOutlierPrices)}</td>
                 </tr>
                 <tr>
                     <td colspan="5" style="${summaryRowStyle}; text-align:left; color:#aaa;">${t('budgetCalculator.totalSpendLabel')}</td>
-                    <td style="${summaryRowStyle}; color:#7ec87e;">${formatKMB(totalSpend)}</td>
+                    <td style="${summaryRowStyle}; color:#7ec87e;">${formatKMB(totalSpend)}${buildOutlierPriceWarningIcon(hasOutlierPrices)}</td>
                 </tr>
             </tfoot>
         </table>

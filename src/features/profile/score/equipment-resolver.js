@@ -23,7 +23,7 @@
  */
 
 import { t } from '../../../core/i18n.js';
-import { getItemPrice } from '../../../utils/market-data.js';
+import { getItemPriceOutlierInfo } from '../../../utils/market-data.js';
 import { getCheapestProtectionPrice } from '../../enhancement/tooltip-enhancement.js';
 import { findShopPurchaseInfo } from '../../../utils/special-currency-shop.js';
 import { resolveItemAcquisitionCost, resolvePerAttemptMaterialCost } from './score-acquisition-resolver.js';
@@ -46,7 +46,7 @@ import { priceLegFromTable, buildTargetCostLadder, applyMirrorOptimization } fro
  * @param {Object} enhancingParams - Viewer's own params from getEnhancingParams()
  * @param {{acquisitionCache: Map, opportunityCache: Map, resolving: Set}} context - one shared,
  *   per-Score-generation acquisition context from `createAcquisitionContext()` (TLA-041E)
- * @returns {Promise<{cost: number|null, complete: boolean, reason?: string}>}
+ * @returns {Promise<{cost: number|null, complete: boolean, reason?: string, isOutlier?: boolean}>}
  */
 export async function resolveEquipmentItemCost(itemHrid, N, itemDetails, enhancingParams, context) {
     if (N === 0) {
@@ -57,18 +57,19 @@ export async function resolveEquipmentItemCost(itemHrid, N, itemDetails, enhanci
 
     // Phase 1 (cheap, synchronous, no enhancement math): exact Ask, live lower-K Asks, base
     // acquisition price.
-    const exactAsk = getItemPrice(itemHrid, { enhancementLevel: N, mode: 'ask' });
+    const exactAskInfo = getItemPriceOutlierInfo(itemHrid, { enhancementLevel: N, mode: 'ask' });
+    const exactAsk = exactAskInfo.value;
     const base = resolveItemAcquisitionCost(itemHrid, context);
     const lowerAsks = [];
     if (itemDetails?.enhancementCosts?.length) {
         for (let K = 1; K < N; K++) {
-            const kAsk = getItemPrice(itemHrid, { enhancementLevel: K, mode: 'ask' });
-            if (kAsk > 0) lowerAsks.push({ K, ask: kAsk });
+            const kAskInfo = getItemPriceOutlierInfo(itemHrid, { enhancementLevel: K, mode: 'ask' });
+            if (kAskInfo.value > 0) lowerAsks.push({ K, ask: kAskInfo.value, isOutlier: kAskInfo.isOutlier });
         }
     }
 
     const candidates = [];
-    if (exactAsk > 0) candidates.push(exactAsk);
+    if (exactAsk > 0) candidates.push({ cost: exactAsk, isOutlier: !!exactAskInfo.isOutlier });
     const best = exactAsk > 0 ? exactAsk : Infinity;
 
     // Phase 2: exact pruning.
@@ -93,12 +94,16 @@ export async function resolveEquipmentItemCost(itemHrid, N, itemDetails, enhanci
             console.error('[EquipmentResolver] Enhancement expectation table request failed:', error);
         }
 
-        const { cost: perAttemptMaterialCost, complete: materialCostKnown } = resolvePerAttemptMaterialCost(
-            itemDetails,
-            context
-        );
+        const {
+            cost: perAttemptMaterialCost,
+            complete: materialCostKnown,
+            isOutlier: materialIsOutlier,
+        } = resolvePerAttemptMaterialCost(itemDetails, context);
 
         if (table && materialCostKnown) {
+            // getCheapestProtectionPrice() blends ask/bid/production heuristically and has no
+            // outlier visibility of its own (a pre-existing gap in that legacy helper) - a
+            // protection leg's cost can never be flagged, only the material/base/mirror legs can.
             const { price: protectionUnitPrice } = getCheapestProtectionPrice(itemHrid);
 
             if (needsReconstruction && base.complete) {
@@ -107,11 +112,16 @@ export async function resolveEquipmentItemCost(itemHrid, N, itemDetails, enhanci
                     // opportunity base, not a mirror-tier consumption chain (matches the existing
                     // direct-only token behavior, F-09).
                     const leg = priceLegFromTable(table, N, 0, perAttemptMaterialCost, protectionUnitPrice);
-                    if (leg.complete) candidates.push(base.cost + leg.cost);
+                    if (leg.complete) {
+                        candidates.push({
+                            cost: base.cost + leg.cost,
+                            isOutlier: !!(base.isOutlier || materialIsOutlier),
+                        });
+                    }
                 } else {
                     // Never getRealisticBaseItemPrice() here - it mixes Bid data; the Score
                     // contract is Ask/acquisition-only (report's pricing guard).
-                    const mirrorPrice = getItemPrice('/items/philosophers_mirror', { mode: 'ask' });
+                    const mirrorPriceInfo = getItemPriceOutlierInfo('/items/philosophers_mirror', { mode: 'ask' });
                     const ladder = buildTargetCostLadder(
                         table,
                         N,
@@ -119,14 +129,21 @@ export async function resolveEquipmentItemCost(itemHrid, N, itemDetails, enhanci
                         perAttemptMaterialCost,
                         protectionUnitPrice
                     );
-                    const optimized = applyMirrorOptimization(ladder, mirrorPrice);
-                    if (optimized[N] !== null) candidates.push(optimized[N]);
+                    const optimized = applyMirrorOptimization(ladder, mirrorPriceInfo.value);
+                    if (optimized[N] !== null) {
+                        candidates.push({
+                            cost: optimized[N],
+                            isOutlier: !!(base.isOutlier || materialIsOutlier || mirrorPriceInfo.isOutlier),
+                        });
+                    }
                 }
             }
 
-            for (const { K, ask } of survivingLowerAsks) {
+            for (const { K, ask, isOutlier: kIsOutlier } of survivingLowerAsks) {
                 const leg = priceLegFromTable(table, N, K, perAttemptMaterialCost, protectionUnitPrice);
-                if (leg.complete) candidates.push(ask + leg.cost);
+                if (leg.complete) {
+                    candidates.push({ cost: ask + leg.cost, isOutlier: !!(kIsOutlier || materialIsOutlier) });
+                }
             }
         }
     }
@@ -134,5 +151,6 @@ export async function resolveEquipmentItemCost(itemHrid, N, itemDetails, enhanci
     if (candidates.length === 0) {
         return { cost: null, complete: false, reason: t('equipmentResolver.noCompleteRouteReason') };
     }
-    return { cost: Math.min(...candidates), complete: true };
+    const winner = candidates.reduce((min, c) => (c.cost < min.cost ? c : min));
+    return { cost: winner.cost, complete: true, isOutlier: winner.isOutlier };
 }

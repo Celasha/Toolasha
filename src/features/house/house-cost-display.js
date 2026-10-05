@@ -7,6 +7,7 @@ import houseCostCalculator from './house-cost-calculator.js';
 import config from '../../core/config.js';
 import { t } from '../../core/i18n.js';
 import { coinFormatter } from '../../utils/formatters.js';
+import { buildOutlierPriceWarningIcon } from '../../utils/warning-icon.js';
 import dataManager from '../../core/data-manager.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { createAutofillManager, getReactFiberFromElement } from '../../utils/marketplace-autofill.js';
@@ -251,7 +252,7 @@ class HouseCostDisplay {
     `;
 
         pricingCell.innerHTML = `
-        <span style="color: ${config.COLOR_TEXT_SECONDARY};">@ ${coinFormatter(materialData.marketPrice)}</span>
+        <span style="color: ${config.COLOR_TEXT_SECONDARY};">@ ${coinFormatter(materialData.marketPrice)}${buildOutlierPriceWarningIcon(materialData.isOutlier)}</span>
         <span style="color: ${config.COLOR_ACCENT}; font-weight: bold;">= ${coinFormatter(materialData.totalValue)}</span>
         <span style="color: ${hasEnough ? '#4ade80' : '#f87171'}; margin-left: auto; text-align: right;">${coinFormatter(amountNeeded)}</span>
     `;
@@ -276,9 +277,13 @@ class HouseCostDisplay {
         color: ${config.COLOR_ACCENT};
         text-align: center;
     `;
-        totalDiv.textContent = t('houseCostDisplay.totalMarketValueLine', {
-            value: coinFormatter(costData.totalValue),
-        });
+        totalDiv.textContent =
+            t('houseCostDisplay.totalMarketValueLine', {
+                value: coinFormatter(costData.totalValue),
+            }) + (costData.totalIsOutlier ? ' ⚠' : '');
+        if (costData.totalIsOutlier) {
+            totalDiv.title = t('marketData.outlierPriceWarningTooltip');
+        }
         costsSection.appendChild(totalDiv);
     }
 
@@ -419,9 +424,13 @@ class HouseCostDisplay {
         color: ${config.COLOR_ACCENT};
         text-align: center;
     `;
-        totalDiv.textContent = t('houseCostDisplay.totalMarketValueLine', {
-            value: coinFormatter(costData.totalValue),
-        });
+        totalDiv.textContent =
+            t('houseCostDisplay.totalMarketValueLine', {
+                value: coinFormatter(costData.totalValue),
+            }) + (costData.totalIsOutlier ? ' ⚠' : '');
+        if (costData.totalIsOutlier) {
+            totalDiv.title = t('marketData.outlierPriceWarningTooltip');
+        }
         renderNodes.push(totalDiv);
 
         const missingMaterials = this.getMissingMaterials(costData);
@@ -480,7 +489,12 @@ class HouseCostDisplay {
             color: ${config.COLOR_ACCENT};
             min-width: 180px;
         `;
-            pricingSpan.textContent = `@ ${coinFormatter(material.marketPrice)} = ${coinFormatter(material.totalValue)}`;
+            pricingSpan.textContent =
+                `@ ${coinFormatter(material.marketPrice)} = ${coinFormatter(material.totalValue)}` +
+                (material.isOutlier ? ' ⚠' : '');
+            if (material.isOutlier) {
+                pricingSpan.title = t('marketData.outlierPriceWarningTooltip');
+            }
             row.appendChild(pricingSpan);
         } else {
             const spacer = document.createElement('span');

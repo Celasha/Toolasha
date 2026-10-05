@@ -5,6 +5,7 @@
  */
 
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import domObserver from '../../core/dom-observer.js';
 import marketAPI from '../../api/marketplace.js';
 import { formatKMB } from '../../utils/formatters.js';
@@ -157,14 +158,15 @@ class InventoryBadgePrices {
         // Get per-item prices from dataset
         const bidPrice = parseFloat(itemElem.dataset.bidPrice) || 0;
         const askPrice = parseFloat(itemElem.dataset.askPrice) || 0;
+        const isOutlier = itemElem.dataset.priceOutlier === '1';
 
         // Create or update bid badge
         const existingBid = itemElem.querySelector('.mwi-badge-price-bid');
         if (bidPrice > 0) {
             if (existingBid) {
-                existingBid.textContent = formatKMB(Math.round(bidPrice), 0);
+                this.updatePriceBadgeText(existingBid, bidPrice, isOutlier);
             } else {
-                this.renderPriceBadge(itemElem, bidPrice, 'bid');
+                this.renderPriceBadge(itemElem, bidPrice, 'bid', isOutlier);
             }
         } else if (existingBid) {
             existingBid.remove();
@@ -174,13 +176,24 @@ class InventoryBadgePrices {
         const existingAsk = itemElem.querySelector('.mwi-badge-price-ask');
         if (askPrice > 0) {
             if (existingAsk) {
-                existingAsk.textContent = formatKMB(Math.round(askPrice), 0);
+                this.updatePriceBadgeText(existingAsk, askPrice, isOutlier);
             } else {
-                this.renderPriceBadge(itemElem, askPrice, 'ask');
+                this.renderPriceBadge(itemElem, askPrice, 'ask', isOutlier);
             }
         } else if (existingAsk) {
             existingAsk.remove();
         }
+    }
+
+    /**
+     * Update an existing price badge's text/tooltip in place.
+     * @param {Element} badge - Existing badge element
+     * @param {number} price - Per-item price
+     * @param {boolean} isOutlier - Whether the market-data outlier guard substituted this price
+     */
+    updatePriceBadgeText(badge, price, isOutlier) {
+        badge.textContent = formatKMB(Math.round(price), 0) + (isOutlier ? ' ⚠' : '');
+        badge.title = isOutlier ? t('marketData.outlierPriceWarningTooltip') : '';
     }
 
     /**
@@ -195,8 +208,9 @@ class InventoryBadgePrices {
      * @param {Element} itemElem - Item container element
      * @param {number} price - Per-item price
      * @param {string} type - 'bid' or 'ask'
+     * @param {boolean} isOutlier - Whether the market-data outlier guard substituted this price
      */
-    renderPriceBadge(itemElem, price, type) {
+    renderPriceBadge(itemElem, price, type, isOutlier = false) {
         itemElem.style.position = 'relative';
 
         const badge = document.createElement('div');
@@ -219,7 +233,7 @@ class InventoryBadgePrices {
             pointer-events: none;
             text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 3px #000;
         `;
-        badge.textContent = formatKMB(Math.round(price), 0);
+        this.updatePriceBadgeText(badge, price, isOutlier);
 
         const itemInner = itemElem.querySelector('[class*="Item_item"]');
         if (itemInner) {

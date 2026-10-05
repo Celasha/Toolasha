@@ -2,8 +2,9 @@
 
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
-const { mockCalculateEnhancement } = vi.hoisted(() => ({
+const { mockCalculateEnhancement, mockGetItemPriceOutlierInfo } = vi.hoisted(() => ({
     mockCalculateEnhancement: vi.fn(),
+    mockGetItemPriceOutlierInfo: vi.fn(() => ({ value: 100, isOutlier: false })),
 }));
 
 vi.mock('../../core/config.js', () => ({
@@ -20,6 +21,7 @@ vi.mock('../../core/data-manager.js', () => ({
         getInitClientData: vi.fn(() => ({ itemDetailMap: {} })),
         getActionDetails: vi.fn(),
         getPersonalBuffFlatBoost: vi.fn(() => 0),
+        getCurrentActions: vi.fn(() => []),
     },
 }));
 
@@ -38,6 +40,9 @@ vi.mock('../../utils/formatters.js', () => ({
     formatLargeNumber: vi.fn((value) => String(value)),
 }));
 vi.mock('../../api/marketplace.js', () => ({ default: { getPrice: vi.fn() } }));
+vi.mock('../../utils/market-data.js', () => ({
+    getItemPriceOutlierInfo: (...args) => mockGetItemPriceOutlierInfo(...args),
+}));
 vi.mock('../../utils/dom-observer-helpers.js', () => ({ createMutationWatcher: vi.fn() }));
 vi.mock('./inline-xp-rate.js', () => ({
     renderInlineXpRate: vi.fn(),
@@ -49,7 +54,10 @@ import {
     calculateSelectedEnhancementXpPerHour,
     getEnhancementTargetLevelFromUI,
     getSelectedEnhancementLevelFromUI,
+    displayEnhancementStats,
 } from './enhancement-display.js';
+import { getEnhancingParams } from '../../utils/enhancement-config.js';
+import dataManager from '../../core/data-manager.js';
 
 function makePanel({ startLevel = 5, targetLevel = 7, protectFrom = 6 } = {}) {
     const panel = document.createElement('div');
@@ -149,5 +157,91 @@ describe('Enhancing inline XP/hour calculation', () => {
             )
         ).toBe(0);
         expect(mockCalculateEnhancement).not.toHaveBeenCalled();
+    });
+});
+
+describe('displayEnhancementStats - outlier guard propagation', () => {
+    beforeEach(() => {
+        document.body.innerHTML = '';
+        mockCalculateEnhancement.mockReset();
+        mockGetItemPriceOutlierInfo.mockReset();
+        mockGetItemPriceOutlierInfo.mockReturnValue({ value: 100, isOutlier: false });
+        mockCalculateEnhancement.mockReturnValue({
+            attempts: 2,
+            protectionCount: 0,
+            visitCounts: [2],
+            successRates: [{ actualRate: 50 }],
+        });
+        getEnhancingParams.mockReturnValue({
+            enhancingLevel: 100,
+            houseLevel: 0,
+            toolBonus: 0,
+            speedBonus: 0,
+            experienceBonus: 0,
+            detectedTeaBonus: 0,
+            teas: { blessed: false },
+            guzzlingBonus: 1,
+            equipmentSpeedBonus: 0,
+            houseSpeedBonus: 0,
+            communitySpeedBonus: 0,
+            teaSpeedBonus: 0,
+            houseRareFindBonus: 0,
+            achievementRareFindBonus: 0,
+            rareFindBonus: 0,
+            houseWisdomBonus: 0,
+            teaWisdomBonus: 0,
+            communityWisdomBonus: 0,
+            achievementWisdomBonus: 0,
+        });
+        dataManager.getActionDetails.mockReturnValue({ baseTimeCost: 10e9 });
+    });
+
+    function makeBarePanel() {
+        const panel = document.createElement('div');
+        document.body.appendChild(panel);
+        return panel;
+    }
+
+    test('flags a material cell with the outlier warning icon when its price was substituted', async () => {
+        mockGetItemPriceOutlierInfo.mockImplementation((itemHrid) =>
+            itemHrid === '/items/ore' ? { value: 100, isOutlier: true } : { value: 100, isOutlier: false }
+        );
+        dataManager.getInitClientData.mockReturnValue({
+            itemDetailMap: {
+                '/items/sword': {
+                    name: 'Sword',
+                    itemLevel: 50,
+                    enhancementCosts: [{ itemHrid: '/items/ore', count: 5 }],
+                },
+                '/items/ore': { name: 'Ore', sellPrice: 10 },
+            },
+        });
+        const panel = makeBarePanel();
+
+        await displayEnhancementStats(panel, '/items/sword');
+
+        const table = panel.querySelector('#mwi-enhancement-stats');
+        expect(table).not.toBeNull();
+        expect(table.innerHTML).toContain('⚠');
+    });
+
+    test('does not flag any cell when no material price was substituted', async () => {
+        mockGetItemPriceOutlierInfo.mockReturnValue({ value: 100, isOutlier: false });
+        dataManager.getInitClientData.mockReturnValue({
+            itemDetailMap: {
+                '/items/sword': {
+                    name: 'Sword',
+                    itemLevel: 50,
+                    enhancementCosts: [{ itemHrid: '/items/ore', count: 5 }],
+                },
+                '/items/ore': { name: 'Ore', sellPrice: 10 },
+            },
+        });
+        const panel = makeBarePanel();
+
+        await displayEnhancementStats(panel, '/items/sword');
+
+        const table = panel.querySelector('#mwi-enhancement-stats');
+        expect(table.innerHTML).not.toContain('⚠');
     });
 });

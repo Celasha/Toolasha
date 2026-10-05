@@ -33,14 +33,24 @@ vi.mock('../../core/data-manager.js', () => ({
     default: { getInitClientData: () => ({ itemDetailMap }) },
 }));
 
+const marketPrices = {};
+
 vi.mock('../../utils/market-data.js', () => ({
     getItemPrice: vi.fn(() => 0),
     getItemPrices: vi.fn(() => ({ ask: 400_000_000, bid: 390_000_000 })),
+    getItemPriceOutlierInfo: vi.fn((itemHrid) => {
+        const price = marketPrices[itemHrid];
+        return { value: price?.ask ?? null, isOutlier: price?.askOutlier ?? false };
+    }),
 }));
 
-const marketPrices = {};
 vi.mock('../../api/marketplace.js', () => ({
     default: { getPrice: (itemHrid) => marketPrices[itemHrid], on: () => {} },
+}));
+
+const referenceValues = {};
+vi.mock('../../api/market-values.js', () => ({
+    default: { getValue: (itemHrid) => referenceValues[itemHrid] ?? null },
 }));
 
 import { getItemPrices } from '../../utils/market-data.js';
@@ -50,6 +60,7 @@ const {
     calculateMinimumSellPrice,
     calculatePerAttemptMaterialCost,
     calculateDirectEnhancementCost,
+    getRealisticBaseItemPrice,
 } = await import('./tooltip-enhancement.js');
 
 function makeEnhancementData(overrides = {}) {
@@ -181,6 +192,18 @@ describe('calculatePerAttemptMaterialCost', () => {
         expect(result.cost).toBe(5000 + 3 * 1000);
         expect(result.hasCost).toBe(true);
         expect(result.costPartial).toBe(false);
+        expect(result.isOutlier).toBe(false);
+    });
+
+    test('flags isOutlier when a priced material was substituted by the outlier guard', () => {
+        marketPrices['/items/enhancing_essence'] = { ask: 1000, bid: 900, askOutlier: true };
+        const itemDetails = {
+            enhancementCosts: [{ itemHrid: '/items/enhancing_essence', count: 3 }],
+        };
+
+        const result = calculatePerAttemptMaterialCost(itemDetails);
+
+        expect(result.isOutlier).toBe(true);
     });
 
     test('flags costPartial when a material has no ask price, without discarding priced materials', () => {
@@ -202,7 +225,7 @@ describe('calculatePerAttemptMaterialCost', () => {
     test('returns a zero-cost, non-partial result when there are no enhancement costs', () => {
         const result = calculatePerAttemptMaterialCost({ enhancementCosts: [] });
 
-        expect(result).toEqual({ cost: 0, hasCost: false, costPartial: false });
+        expect(result).toEqual({ cost: 0, hasCost: false, costPartial: false, isOutlier: false });
     });
 });
 
@@ -224,7 +247,7 @@ describe('calculateDirectEnhancementCost - K->N direct Markov cost (TLA-041 / F-
     test('returns incomplete for an item with no enhancementCosts, never a fake zero', () => {
         itemDetailMap['/items/no_enh'] = { itemLevel: 1, enhancementCosts: [] };
         const result = calculateDirectEnhancementCost('/items/no_enh', 1, 4, enhancingParams);
-        expect(result).toEqual({ cost: null, complete: false, protectFrom: null });
+        expect(result).toEqual({ cost: null, complete: false, protectFrom: null, isOutlier: false });
     });
 
     test('returns incomplete when a required material has no ask price, instead of a partial number', () => {
@@ -233,7 +256,7 @@ describe('calculateDirectEnhancementCost - K->N direct Markov cost (TLA-041 / F-
             enhancementCosts: [{ itemHrid: '/items/unpriced', count: 1 }],
         };
         const result = calculateDirectEnhancementCost('/items/partial', 1, 4, enhancingParams);
-        expect(result).toEqual({ cost: null, complete: false, protectFrom: null });
+        expect(result).toEqual({ cost: null, complete: false, protectFrom: null, isOutlier: false });
     });
 
     test('F-04: uses calculateEnhancement with startLevel set directly, never defaulting to a 0-based computation', () => {
@@ -278,6 +301,19 @@ describe('calculateDirectEnhancementCost - K->N direct Markov cost (TLA-041 / F-
         expect(result.complete).toBe(true);
         expect([0, 2, 3, 4]).toContain(result.protectFrom);
         expect(result.cost).toBeGreaterThan(0);
+        expect(result.isOutlier).toBe(false);
+    });
+
+    test('propagates isOutlier from the per-attempt material cost', () => {
+        marketPrices['/items/mat'] = { ask: 1000, bid: 900, askOutlier: true };
+        itemDetailMap['/items/testitem'] = {
+            itemLevel: 1,
+            enhancementCosts: [{ itemHrid: '/items/mat', count: 1 }],
+        };
+
+        const result = calculateDirectEnhancementCost('/items/testitem', 1, 4, enhancingParams);
+        expect(result.complete).toBe(true);
+        expect(result.isOutlier).toBe(true);
     });
 
     test('a protection-requiring strategy with no priceable protection item is excluded, not zero-substituted', () => {
@@ -327,5 +363,84 @@ describe('calculateDirectEnhancementCost - K->N direct Markov cost (TLA-041 / F-
             guzzlingBonus: 2,
         });
         expect(withBlessedAgain.cost).toBeCloseTo(withBlessed.cost, 5);
+    });
+});
+
+describe('getRealisticBaseItemPrice - reference market value fallback', () => {
+    test('uses the reference market value when there is no live ask/bid and no computable recipe', () => {
+        getItemPrices.mockReturnValueOnce(null);
+        referenceValues['/items/loot_only_item'] = 12345;
+
+        expect(getRealisticBaseItemPrice('/items/loot_only_item')).toBe(12345);
+    });
+
+    test('returns 0 when neither live price, production cost, nor reference value is available', () => {
+        getItemPrices.mockReturnValueOnce(null);
+
+        expect(getRealisticBaseItemPrice('/items/totally_unpriced_item')).toBe(0);
+    });
+
+    test('still prefers a live ask price over the reference value when both exist', () => {
+        getItemPrices.mockReturnValueOnce({ ask: 500, bid: 480 });
+        referenceValues['/items/liquid_item'] = 99999;
+
+        expect(getRealisticBaseItemPrice('/items/liquid_item')).toBe(500);
+    });
+});
+
+describe('buildEnhancementTooltipHTML - outlier warning icons', () => {
+    test('flags the base item row when the base price was substituted', () => {
+        const html = buildEnhancementTooltipHTML(makeEnhancementData({ baseAskOutlier: true, baseBidOutlier: false }));
+
+        expect(html).toContain('⚠');
+    });
+
+    test('does not show the icon anywhere when nothing was flagged', () => {
+        const html = buildEnhancementTooltipHTML(makeEnhancementData());
+
+        expect(html).not.toContain('⚠');
+    });
+
+    test('flags a material row independently of the base/protection rows', () => {
+        const html = buildEnhancementTooltipHTML(
+            makeEnhancementData({
+                materialBreakdown: [
+                    {
+                        itemHrid: '/items/widget',
+                        name: 'Widget',
+                        totalQuantity: 2,
+                        unitPrice: 100,
+                        bidPrice: 90,
+                        askOutlier: true,
+                        bidOutlier: false,
+                    },
+                ],
+            })
+        );
+
+        expect(html).toContain('Widget');
+        const widgetRowStart = html.indexOf('Widget');
+        expect(html.slice(widgetRowStart, widgetRowStart + 400)).toContain('⚠');
+    });
+
+    test('flags the protection row via protectionBidOutlier', () => {
+        const html = buildEnhancementTooltipHTML(
+            makeEnhancementData({
+                protectionCost: 1000,
+                protectionCount: 1,
+                protectionAskPrice: 1000,
+                protectionBidPrice: 900,
+                protectionBidOutlier: true,
+            })
+        );
+
+        expect(html).toContain('⚠');
+    });
+
+    test('the total row is flagged whenever any contributing row is flagged', () => {
+        const html = buildEnhancementTooltipHTML(makeEnhancementData({ baseAskOutlier: true }));
+
+        const totalLabelIndex = html.indexOf('Total');
+        expect(html.slice(totalLabelIndex, totalLabelIndex + 400)).toContain('⚠');
     });
 });

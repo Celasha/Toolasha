@@ -153,6 +153,7 @@ vi.mock('../../core/config.js', () => ({
         COLOR_ACCENT: '#5b8def',
         COLOR_TEXT_SECONDARY: '#888',
         COLOR_BORDER: '#444',
+        COLOR_WARNING: '#ffa500',
         SCRIPT_COLOR_MAIN: '#fff',
         COLOR_TEXT: '#fff',
     },
@@ -1619,5 +1620,86 @@ describe('HouseCostDisplay — Section 3 Rev2 correction', () => {
             expect(returnSpy).toHaveBeenCalledWith(ctx);
             returnSpy.mockRestore();
         });
+    });
+});
+
+describe('HouseCostDisplay pricing render outlier warning icons', () => {
+    it('addPricingCell appends the icon when the material price was flagged', () => {
+        const grid = document.createElement('div');
+        const itemContainer = document.createElement('div');
+        grid.appendChild(itemContainer);
+
+        houseCostDisplay.addPricingCell(grid, itemContainer, {
+            itemHrid: '/items/wood',
+            count: 10,
+            marketPrice: 50,
+            totalValue: 500,
+            isOutlier: true,
+        });
+
+        const pricingCell = grid.querySelector('.mwi-house-pricing');
+        expect(pricingCell.innerHTML).toContain('⚠');
+    });
+
+    it('addPricingCell does not append the icon when not flagged', () => {
+        const grid = document.createElement('div');
+        const itemContainer = document.createElement('div');
+        grid.appendChild(itemContainer);
+
+        houseCostDisplay.addPricingCell(grid, itemContainer, {
+            itemHrid: '/items/wood',
+            count: 10,
+            marketPrice: 50,
+            totalValue: 500,
+            isOutlier: false,
+        });
+
+        const pricingCell = grid.querySelector('.mwi-house-pricing');
+        expect(pricingCell.innerHTML).not.toContain('⚠');
+    });
+
+    it('addTotalCost appends the icon and tooltip when totalIsOutlier is true', () => {
+        const costsSection = document.createElement('div');
+
+        houseCostDisplay.addTotalCost(costsSection, { totalValue: 1000, totalIsOutlier: true });
+
+        const totalDiv = costsSection.querySelector('.mwi-house-total');
+        expect(totalDiv.textContent).toContain('⚠');
+        expect(totalDiv.title).not.toBe('');
+    });
+
+    it('addTotalCost does not append the icon when totalIsOutlier is false', () => {
+        const costsSection = document.createElement('div');
+
+        houseCostDisplay.addTotalCost(costsSection, { totalValue: 1000, totalIsOutlier: false });
+
+        const totalDiv = costsSection.querySelector('.mwi-house-total');
+        expect(totalDiv.textContent).not.toContain('⚠');
+    });
+
+    it('appendMaterialRow appends the icon when the material price was flagged', () => {
+        const container = document.createElement('div');
+
+        houseCostDisplay.appendMaterialRow(container, {
+            itemHrid: '/items/wood',
+            count: 10,
+            marketPrice: 50,
+            totalValue: 500,
+            isOutlier: true,
+        });
+
+        expect(container.textContent).toContain('⚠');
+    });
+
+    it('appendMaterialRow does not append the icon for coin rows', () => {
+        const container = document.createElement('div');
+
+        houseCostDisplay.appendMaterialRow(container, {
+            itemHrid: '/items/coin',
+            count: 1000,
+            totalValue: 1000,
+        });
+
+        expect(container.textContent).not.toContain('⚠');
     });
 });
