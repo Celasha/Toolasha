@@ -322,7 +322,15 @@ class TooltipPrices {
             // Get item amount from tooltip (for stacks)
             const amount = this.extractItemAmount(tooltipElement);
             const artisanAmount = this._getArtisanAdjustedAmount(tooltipElement, amount);
-            this.injectPriceDisplay(tooltipElement, price, amount, isCollectionTooltip, artisanAmount, itemHrid);
+            this.injectPriceDisplay(
+                tooltipElement,
+                price,
+                amount,
+                isCollectionTooltip,
+                artisanAmount,
+                itemHrid,
+                enhancementLevel
+            );
         }
 
         // Always show detailed craft profit if enabled
@@ -576,7 +584,8 @@ class TooltipPrices {
      * @param {number} amount - Item amount (base recipe amount)
      * @param {boolean} isCollectionTooltip - True if this is a collection tooltip
      * @param {number|null} artisanAmount - Artisan-adjusted amount, or null if not applicable
-     * @param {string|null} itemHrid - Item HRID for tax rate lookup
+     * @param {string|null} itemHrid - Item HRID for tax rate lookup and decompose value lookup
+     * @param {number} enhancementLevel - Enhancement level, for the decompose value's essence bonus
      */
     injectPriceDisplay(
         tooltipElement,
@@ -584,7 +593,8 @@ class TooltipPrices {
         amount,
         isCollectionTooltip = false,
         artisanAmount = null,
-        itemHrid = null
+        itemHrid = null,
+        enhancementLevel = 0
     ) {
         const tooltipText = isCollectionTooltip
             ? tooltipElement.querySelector('.Collection_tooltipContent__2IcSJ')
@@ -638,6 +648,23 @@ class TooltipPrices {
             const effAsk = price.ask > 0 ? formatTooltipPrice(calculatePriceAfterTax(price.ask, taxRate)) : '-';
             const effBid = price.bid > 0 ? formatTooltipPrice(calculatePriceAfterTax(price.bid, taxRate)) : '-';
             priceDiv.innerHTML += `<br><span style="color: ${config.COLOR_TEXT_SECONDARY};">${t('tooltipPrices.effLine', { ask: effAsk, bid: effBid })}</span>`;
+        }
+
+        if (config.getSetting('itemTooltip_decomposeValue') && itemHrid) {
+            const decomposeValue = alchemyProfitCalculator.calculateDecomposeValue(itemHrid, enhancementLevel);
+            if (decomposeValue && (decomposeValue.ask > 0 || decomposeValue.bid > 0)) {
+                const dvAsk =
+                    decomposeValue.ask > 0
+                        ? formatTooltipPrice(decomposeValue.ask) +
+                          buildOutlierPriceWarningIcon(decomposeValue.askOutlier)
+                        : '-';
+                const dvBid =
+                    decomposeValue.bid > 0
+                        ? formatTooltipPrice(decomposeValue.bid) +
+                          buildOutlierPriceWarningIcon(decomposeValue.bidOutlier)
+                        : '-';
+                priceDiv.innerHTML += `<br>${t('tooltipPrices.decomposeValueLine', { ask: dvAsk, bid: dvBid })}`;
+            }
         }
 
         tooltipText.appendChild(priceDiv);

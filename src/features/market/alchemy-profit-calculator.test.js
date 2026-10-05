@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
 
 const marketPrices = {};
+const marketPricesAskBid = {};
 
 vi.mock('../../utils/market-data.js', () => ({
     getItemPrice: (hrid) => (hrid in marketPrices ? marketPrices[hrid] : null),
@@ -9,6 +10,7 @@ vi.mock('../../utils/market-data.js', () => ({
         value: hrid in marketPrices ? marketPrices[hrid] : null,
         isOutlier: false,
     }),
+    getItemPrices: (hrid) => (hrid in marketPricesAskBid ? marketPricesAskBid[hrid] : null),
 }));
 
 const dataManagerMock = {
@@ -28,7 +30,8 @@ const dataManagerMock = {
 };
 
 vi.mock('../../core/data-manager.js', () => ({ default: dataManagerMock }));
-vi.mock('../../core/config.js', () => ({ default: { getSettingValue: (_key, def) => def, getSetting: () => false } }));
+const configMock = { getSettingValue: (_key, def) => def, getSetting: vi.fn(() => false) };
+vi.mock('../../core/config.js', () => ({ default: configMock }));
 vi.mock('../../api/marketplace.js', () => ({ default: { getPrice: () => null, on: () => {} } }));
 vi.mock('./expected-value-calculator.js', () => ({ default: {} }));
 
@@ -178,6 +181,129 @@ describe('calculateDecomposeProfit', () => {
         expect(profit.requirementCosts[0]).toMatchObject({ count: 1, costPerAction: 1000 });
         const outputDrop = profit.dropRevenues.find((d) => d.itemHrid === OUTPUT_HRID);
         expect(outputDrop.count).toBe(10);
+    });
+});
+
+describe('calculateDecomposeValue', () => {
+    const ITEM_HRID = '/items/test_decompose_value_item';
+    const OUTPUT_A = '/items/test_decompose_output_a';
+    const OUTPUT_B = '/items/test_decompose_output_b';
+
+    beforeEach(() => {
+        configMock.getSetting.mockReturnValue(false); // profitCalc_excludeSellTax off by default
+        for (const key of Object.keys(marketPricesAskBid)) delete marketPricesAskBid[key];
+    });
+
+    function setup({ bulkMultiplier = 1, itemLevel = 10, decomposeItems } = {}) {
+        dataManagerMock.getItemDetails.mockReturnValue({
+            itemLevel,
+            alchemyDetail: { bulkMultiplier, decomposeItems },
+        });
+    }
+
+    test('returns null for an item with no decomposeItems', () => {
+        setup({ decomposeItems: undefined });
+
+        expect(alchemyProfitCalculator.calculateDecomposeValue(ITEM_HRID, 0)).toBeNull();
+    });
+
+    test('sums ask and bid across all outputs, after market tax', () => {
+        setup({
+            decomposeItems: [
+                { itemHrid: OUTPUT_A, count: 10 },
+                { itemHrid: OUTPUT_B, count: 2 },
+            ],
+        });
+        marketPricesAskBid[OUTPUT_A] = { ask: 100, bid: 80, askOutlier: false, bidOutlier: false };
+        marketPricesAskBid[OUTPUT_B] = { ask: 500, bid: 400, askOutlier: false, bidOutlier: false };
+
+        const value = alchemyProfitCalculator.calculateDecomposeValue(ITEM_HRID, 0);
+
+        const expectedAsk = (100 * 10 + 500 * 2) * (1 - MARKET_TAX);
+        const expectedBid = (80 * 10 + 400 * 2) * (1 - MARKET_TAX);
+        expect(value.ask).toBeCloseTo(expectedAsk, 8);
+        expect(value.bid).toBeCloseTo(expectedBid, 8);
+    });
+
+    test('sums every entry in decomposeItems even when the same output hrid appears twice', () => {
+        // Some recipes list the same output hrid more than once (e.g. a bulk amount plus a
+        // bonus amount) - summing the raw array (not deduping by hrid) is required for a
+        // correct total.
+        setup({
+            decomposeItems: [
+                { itemHrid: OUTPUT_A, count: 8 },
+                { itemHrid: OUTPUT_A, count: 1 },
+            ],
+        });
+        marketPricesAskBid[OUTPUT_A] = { ask: 100, bid: 80, askOutlier: false, bidOutlier: false };
+
+        const value = alchemyProfitCalculator.calculateDecomposeValue(ITEM_HRID, 0);
+
+        expect(value.ask).toBeCloseTo(100 * 9 * (1 - MARKET_TAX), 8);
+    });
+
+    test('scales output counts by bulkMultiplier', () => {
+        setup({ bulkMultiplier: 2, decomposeItems: [{ itemHrid: OUTPUT_A, count: 10 }] });
+        marketPricesAskBid[OUTPUT_A] = { ask: 100, bid: 80, askOutlier: false, bidOutlier: false };
+
+        const value = alchemyProfitCalculator.calculateDecomposeValue(ITEM_HRID, 0);
+
+        expect(value.ask).toBeCloseTo(100 * 20 * (1 - MARKET_TAX), 8);
+    });
+
+    test('skips outputs with no market data on a given side rather than failing the whole total', () => {
+        setup({
+            decomposeItems: [
+                { itemHrid: OUTPUT_A, count: 1 },
+                { itemHrid: OUTPUT_B, count: 1 },
+            ],
+        });
+        marketPricesAskBid[OUTPUT_A] = { ask: 100, bid: 80, askOutlier: false, bidOutlier: false };
+        // OUTPUT_B has no entry in marketPricesAskBid at all (getItemPrices returns null)
+
+        const value = alchemyProfitCalculator.calculateDecomposeValue(ITEM_HRID, 0);
+
+        expect(value.ask).toBeCloseTo(100 * (1 - MARKET_TAX), 8);
+    });
+
+    test('adds Enhancing Essence value only when enhancementLevel > 0', () => {
+        setup({ itemLevel: 10, decomposeItems: [{ itemHrid: OUTPUT_A, count: 1 }] });
+        marketPricesAskBid[OUTPUT_A] = { ask: 100, bid: 80, askOutlier: false, bidOutlier: false };
+        marketPricesAskBid['/items/enhancing_essence'] = { ask: 10, bid: 8, askOutlier: false, bidOutlier: false };
+
+        const unenhanced = alchemyProfitCalculator.calculateDecomposeValue(ITEM_HRID, 0);
+        const enhanced = alchemyProfitCalculator.calculateDecomposeValue(ITEM_HRID, 3);
+
+        const essenceAmount = Math.round(2 * (0.5 + 0.1 * Math.pow(1.05, 10)) * Math.pow(2, 3));
+        expect(unenhanced.ask).toBeCloseTo(100 * (1 - MARKET_TAX), 8);
+        expect(enhanced.ask).toBeCloseTo((100 + 10 * essenceAmount) * (1 - MARKET_TAX), 8);
+    });
+
+    test('respects profitCalc_excludeSellTax by skipping the tax deduction entirely', () => {
+        setup({ decomposeItems: [{ itemHrid: OUTPUT_A, count: 1 }] });
+        marketPricesAskBid[OUTPUT_A] = { ask: 100, bid: 80, askOutlier: false, bidOutlier: false };
+        configMock.getSetting.mockReturnValue(true);
+
+        const value = alchemyProfitCalculator.calculateDecomposeValue(ITEM_HRID, 0);
+
+        expect(value.ask).toBe(100);
+        expect(value.bid).toBe(80);
+    });
+
+    test('flags askOutlier/bidOutlier true if any contributing output was flagged', () => {
+        setup({
+            decomposeItems: [
+                { itemHrid: OUTPUT_A, count: 1 },
+                { itemHrid: OUTPUT_B, count: 1 },
+            ],
+        });
+        marketPricesAskBid[OUTPUT_A] = { ask: 100, bid: 80, askOutlier: false, bidOutlier: false };
+        marketPricesAskBid[OUTPUT_B] = { ask: 500, bid: 400, askOutlier: true, bidOutlier: false };
+
+        const value = alchemyProfitCalculator.calculateDecomposeValue(ITEM_HRID, 0);
+
+        expect(value.askOutlier).toBe(true);
+        expect(value.bidOutlier).toBe(false);
     });
 });
 

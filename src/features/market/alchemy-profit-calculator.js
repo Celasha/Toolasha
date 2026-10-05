@@ -19,8 +19,8 @@
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import { getDrinkConcentration } from '../../utils/tea-parser.js';
-import { getItemPrice, getItemPriceOutlierInfo } from '../../utils/market-data.js';
-import { SECONDS_PER_HOUR } from '../../utils/profit-constants.js';
+import { getItemPrice, getItemPriceOutlierInfo, getItemPrices } from '../../utils/market-data.js';
+import { SECONDS_PER_HOUR, MARKET_TAX, COWBELL_BAG_HRID, COWBELL_BAG_TAX } from '../../utils/profit-constants.js';
 import { getAlchemySuccessBonus } from '../../utils/buff-parser.js';
 import {
     parseEquipmentSpeedBonuses,
@@ -1289,6 +1289,70 @@ class AlchemyProfitCalculator {
             };
         } catch (error) {
             console.error('[AlchemyProfitCalculator] Failed to calculate decompose profit:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Calculate the raw gross value of an item's decompose outputs - what the components are
+     * worth on the market right now, independent of the cost to acquire the item being
+     * decomposed, catalyst/coin costs, or the 60% decompose success rate. This answers "sell
+     * this outright, or decompose it?" for an item already owned, which calculateDecomposeProfit
+     * cannot answer because it always nets out an acquisition cost that's sunk once you own the
+     * item. Shows both ask and bid (like the item tooltip's own Price line), not a single
+     * pricing-mode-resolved number.
+     * @param {string} itemHrid - Item HRID
+     * @param {number} enhancementLevel - Enhancement level (default 0); only affects whether the
+     *   Enhancing Essence bonus output is included
+     * @returns {{ask: number, bid: number, askOutlier: boolean, bidOutlier: boolean}|null}
+     *   null if the item has no decompose recipe
+     */
+    calculateDecomposeValue(itemHrid, enhancementLevel = 0) {
+        try {
+            const itemDetails = dataManager.getItemDetails(itemHrid);
+            if (!itemDetails?.alchemyDetail?.decomposeItems) {
+                return null;
+            }
+
+            const bulkMultiplier = itemDetails.alchemyDetail.bulkMultiplier || 1;
+            const excludeSellTax = config.getSetting('profitCalc_excludeSellTax');
+
+            let totalAsk = 0;
+            let totalBid = 0;
+            let askOutlier = false;
+            let bidOutlier = false;
+
+            const addOutput = (outputHrid, count) => {
+                const prices = getItemPrices(outputHrid, 0);
+                if (!prices) {
+                    return;
+                }
+                const taxRate = excludeSellTax ? 0 : outputHrid === COWBELL_BAG_HRID ? COWBELL_BAG_TAX : MARKET_TAX;
+                if (prices.ask !== null && prices.ask > 0) {
+                    totalAsk += calculatePriceAfterTax(prices.ask, taxRate) * count;
+                    askOutlier = askOutlier || prices.askOutlier;
+                }
+                if (prices.bid !== null && prices.bid > 0) {
+                    totalBid += calculatePriceAfterTax(prices.bid, taxRate) * count;
+                    bidOutlier = bidOutlier || prices.bidOutlier;
+                }
+            };
+
+            for (const output of itemDetails.alchemyDetail.decomposeItems) {
+                addOutput(output.itemHrid, output.count * bulkMultiplier);
+            }
+
+            if (enhancementLevel > 0) {
+                const itemLevel = itemDetails.itemLevel || 1;
+                const essenceAmount = Math.round(
+                    2 * (0.5 + 0.1 * Math.pow(1.05, itemLevel)) * Math.pow(2, enhancementLevel)
+                );
+                addOutput('/items/enhancing_essence', essenceAmount);
+            }
+
+            return { ask: totalAsk, bid: totalBid, askOutlier, bidOutlier };
+        } catch (error) {
+            console.error('[AlchemyProfitCalculator] Failed to calculate decompose value:', error);
             return null;
         }
     }

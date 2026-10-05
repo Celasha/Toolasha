@@ -578,6 +578,13 @@ export const settingsGroups = {
                 default: false,
                 help: 'Shows what you actually receive after the 4% marketplace tax next to ask/bid prices in item tooltips',
             },
+            itemTooltip_decomposeValue: {
+                id: 'itemTooltip_decomposeValue',
+                label: 'Show decompose value',
+                type: 'checkbox',
+                default: false,
+                help: 'Shows the market value of what you would get from decomposing this item (ask/bid), below the Price line. This is a raw value of the components only - not netted against catalyst/coin costs or the 60% success rate - so you can compare it directly against selling the item outright.',
+            },
             itemTooltip_enhancingHourlyRate: {
                 id: 'itemTooltip_enhancingHourlyRate',
                 label: 'Target hourly rate for enhancing (e.g. 50m)',

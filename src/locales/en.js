@@ -2223,6 +2223,7 @@ export default {
         costPerItemLine: (p) => `Cost: ${p.cost}/item`,
         countHeader: 'Count',
         craftItemName: (p) => `Craft ${p.itemName}`,
+        decomposeValueLine: (p) => `Decompose Value: ${p.ask} / ${p.bid}`,
         dropNoPriceLine: (p) => `• ${p.itemName} (${p.dropRate}): ${p.avgCount} avg → No price data`,
         dropWithPriceLine: (p) => `• ${p.itemName} (${p.dropRate}%): ${p.avgCount} avg → ${p.value}`,
         effLine: (p) => `Eff: ${p.ask} / ${p.bid}`,
@@ -2875,6 +2876,10 @@ Blended: (${p.expPerHour} + ${p.ratio} × ${p.bestProfitExp}) / ${p.ratioPlus1} 
             itemTooltip_effectivePrices: {
                 label: 'Show effective (after-tax) prices',
                 help: 'Shows what you actually receive after the 4% marketplace tax next to ask/bid prices in item tooltips',
+            },
+            itemTooltip_decomposeValue: {
+                label: 'Show decompose value',
+                help: 'Shows the market value of what you would get from decomposing this item (ask/bid), below the Price line. This is a raw value of the components only - not netted against catalyst/coin costs or the 60% success rate - so you can compare it directly against selling the item outright.',
             },
             itemTooltip_enhancingHourlyRate: {
                 label: 'Target hourly rate for enhancing (e.g. 50m)',

@@ -2185,6 +2185,7 @@ export default {
         costPerItemLine: (p) => `成本: ${p.cost}/件`,
         countHeader: '数量',
         craftItemName: (p) => `制作 ${p.itemName}`,
+        decomposeValueLine: (p) => `分解价值: ${p.ask} / ${p.bid}`,
         dropNoPriceLine: (p) => `• ${p.itemName} (${p.dropRate}): 平均 ${p.avgCount} → 无价格数据`,
         dropWithPriceLine: (p) => `• ${p.itemName} (${p.dropRate}%): 平均 ${p.avgCount} → ${p.value}`,
         effLine: (p) => `有效: ${p.ask} / ${p.bid}`,
@@ -2822,6 +2823,10 @@ export default {
             itemTooltip_effectivePrices: {
                 label: '显示实际（税后）价格',
                 help: '在物品提示框的卖价/买价旁，显示扣除 4% 市场税后你实际获得的金额',
+            },
+            itemTooltip_decomposeValue: {
+                label: '显示分解价值',
+                help: '在价格行下方显示分解此物品可获得的市场价值（卖价/买价）。这只是组件的原始价值——未扣除催化剂/金币成本或 60% 的成功率——因此你可以直接将其与直接卖出该物品进行比较。',
             },
             itemTooltip_enhancingHourlyRate: {
                 label: '强化的目标每小时收益（例如 50m）',
